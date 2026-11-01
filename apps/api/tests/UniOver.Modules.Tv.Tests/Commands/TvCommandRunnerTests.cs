@@ -248,15 +248,22 @@ public class TvCommandRunnerTests
     }
 
     [Fact]
-    public async Task WakeStyleCommands_DoNotWaitForAReply()
+    public async Task Prewarm_DoesNotWaitForAReply_OrCreateAnAuditEntry()
     {
         var (runner, sender, audit, _, _) = Build(TvSendOutcome.Ok(TimeSpan.Zero));
 
-        await runner.RunAsync(Origin, TvCommandNames.Wake, null, Message, waitForReply: false, CancellationToken.None);
+        await runner.RunAsync(
+            Origin,
+            TvCommandNames.Wake,
+            null,
+            Message,
+            waitForReply: false,
+            cancellationToken: CancellationToken.None,
+            auditCommand: false);
 
         sender.Posts.Should().Be(1);
         sender.Requests.Should().Be(0);
-        audit.Entries.Should().ContainSingle();
+        audit.Entries.Should().BeEmpty();
     }
 
     [Theory]

@@ -12,9 +12,10 @@ internal sealed record TvCommandOrigin(Guid UserId, ClientInfo Client);
 
 /// <summary>
 /// O caminho comum de todo comando para a TV: escolhe o agente configurado (o salvo no app, ou a variável de reserva) e
-/// o tempo limite, entrega, e deixa a linha de auditoria (inclusive quando o agente está fora do ar ou não responde).
-/// Falha ao gravar a auditoria nunca impede nem desfaz o comando: vira log de erro. Em produção o <c>ITvCommandAudit</c> que
-/// chega aqui é a fila (<see cref="Adapters.QueuedCommandAudit"/>): o comando responde sem esperar o banco e a linha é gravada depois.
+/// o tempo limite, entrega, e deixa a linha de auditoria dos comandos que alteram a TV (inclusive quando o agente está fora
+/// do ar ou não responde). Falha ao gravar a auditoria nunca impede nem desfaz o comando: vira log de erro. Em produção o
+/// <c>ITvCommandAudit</c> que chega aqui é a fila (<see cref="Adapters.QueuedCommandAudit"/>): o comando responde sem esperar o
+/// banco e a linha é gravada depois.
 /// </summary>
 internal sealed partial class TvCommandRunner(
     IOptions<TvModuleOptions> options,
@@ -40,6 +41,10 @@ internal sealed partial class TvCommandRunner(
     /// Tempo próprio de espera (a limpeza leva vários segundos); sem ele vale o padrão do módulo, que depende de a
     /// sessão com a TV estar dormindo ou não.
     /// </param>
+    /// <param name="auditCommand">
+    /// <c>false</c> somente para avisos técnicos que não alteram a TV. O pré-aquecimento mantém a sessão pronta, mas registrá-lo
+    /// como comando enche a trilha sem representar uma ação da pessoa.
+    /// </param>
     public async Task<TvSendOutcome> RunAsync(
         TvCommandOrigin origin,
         string command,
@@ -47,7 +52,8 @@ internal sealed partial class TvCommandRunner(
         TvMessage message,
         bool waitForReply,
         CancellationToken cancellationToken,
-        TimeSpan? replyTimeout = null)
+        TimeSpan? replyTimeout = null,
+        bool auditCommand = true)
     {
         ArgumentNullException.ThrowIfNull(origin);
         ArgumentNullException.ThrowIfNull(message);
@@ -88,7 +94,11 @@ internal sealed partial class TvCommandRunner(
             AnnounceOffline(target);
         }
 
-        await RecordAsync(origin, target.Id, agentId, command, detail, outcome);
+        if (auditCommand)
+        {
+            await RecordAsync(origin, target.Id, agentId, command, detail, outcome);
+        }
+
         return outcome;
     }
 

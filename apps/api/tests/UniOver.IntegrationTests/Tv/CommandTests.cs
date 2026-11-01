@@ -494,7 +494,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Wake_IsAccepted_WithoutWaitingForAReply()
+    public async Task Wake_IsAccepted_WithoutWaitingForAReply_AndDoesNotCreateAuditWhileKeysDo()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
@@ -504,8 +504,18 @@ public sealed class CommandTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var command = await TvApp.NextCommandAsync(agent);
         command.GetProperty("type").GetString().Should().Be("tv.wake.v1");
+
         await using var db = app.Db();
-        (await db.CommandAudit.SingleAsync(Ct)).Command.Should().Be("tv.wake");
+        (await db.CommandAudit.CountAsync(Ct)).Should().Be(0);
+
+        var keyRequest = app.PostAsync("/api/v1/tv/keys", new { key = "HOME" });
+        var key = await TvApp.NextCommandAsync(agent);
+        key.GetProperty("type").GetString().Should().Be("tv.key.v2");
+        await TvApp.ReplyAsync(agent, key);
+        using var keyResponse = await Within(keyRequest);
+
+        keyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await db.CommandAudit.SingleAsync(Ct)).Command.Should().Be("tv.key");
     }
 
     [Fact]
@@ -517,6 +527,26 @@ public sealed class CommandTests(PostgresFixture postgres)
         using var response = await app.PostAsync("/api/v1/tv/wake");
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task WakeAuditMigration_RemovesOnlyTechnicalPrewarmRows()
+    {
+        var database = await postgres.CreateDatabaseAsync();
+        await using var db = TvApp.CreateContext(database.OwnerConnection);
+        await db.Database.MigrateAsync("20261031221403_AddTvFocusPackages", Ct);
+
+        await db.Database.ExecuteSqlAsync(
+            $"""
+            INSERT INTO tv.command_audit (id, tv_id, user_id, command, ok, occurred_at)
+            VALUES ({Guid.NewGuid()}, {Guid.NewGuid()}, {Guid.NewGuid()}, {"tv.wake"}, {true}, now()),
+                   ({Guid.NewGuid()}, {Guid.NewGuid()}, {Guid.NewGuid()}, {"tv.key"}, {true}, now())
+            """, Ct);
+
+        await db.Database.MigrateAsync(Ct);
+
+        var commands = await db.CommandAudit.AsNoTracking().Select(entry => entry.Command).ToListAsync(Ct);
+        commands.Should().Equal("tv.key");
     }
 
     [Fact]
