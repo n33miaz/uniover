@@ -123,7 +123,8 @@ configuração, certificado nem registros.
   pedir ao supervisor que reinicie (no máximo um a cada 3 h). `uniover-agent diagnose` roda o mesmo exame à mão.
 - **Ocorrências para a API** (`agent.diagnostics.v1`): erros e reparos vão para uma fila local limitada
   (`runtime\diagnostics.jsonl`, o supervisor também escreve nela) e são enviados depois do `hello` e a cada 5 minutos.
-  Antes de gravar, o texto perde segredos, caminhos, IPs, MAC, e-mails e o nome do usuário e do PC; de uma exceção
+  O agente só declara a capacidade e só envia depois de `devices/info` da API listar `agent.diagnostics.v1`
+  (`features`); até lá a fila fica no disco. Antes de gravar, o texto perde segredos, caminhos, IPs, MAC, e-mails e o nome do usuário e do PC; de uma exceção
   só vão o tipo e o ponto do código, nunca a mensagem. A API guarda por 7 dias e só o administrador vê, em Sistema.
 
 ## TV Samsung (Tizen)

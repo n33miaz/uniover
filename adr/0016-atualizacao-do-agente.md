@@ -29,6 +29,10 @@ nada além de ser um zip, e a versão nova só deixava de estar "em prova" quand
   (o supervisor confirma); enquanto está em prova não se atualiza de novo, para não apagar `app.previous`,
   a última versão que se provou boa. Três quedas rápidas, um pulso mudo ou um auto-diagnóstico crítico voltam
   para a anterior.
+- **Capacidade nova só depois da API:** o `hello` do agente declara `agent.diagnostics.v1` (e o agente envia
+  diagnóstico) somente depois de `GET devices/info` listá-la em `features`; uma API anterior recusa capacidade
+  que não conhece, e o deploy em que o agente chega antes da API não pode tirá-lo do ar. Antes disso, as
+  ocorrências ficam na fila local limitada.
 - Atualização que falha tenta de novo em 30 min, 1 h, 2 h... (teto de 6 h), não só na próxima janela.
 
 ## Consequências

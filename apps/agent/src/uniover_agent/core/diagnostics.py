@@ -15,7 +15,7 @@ import os
 import re
 import threading
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Final
 
@@ -203,6 +203,7 @@ class DiagnosticsShipper:
         clock: Clock,
         *,
         interval: float = SHIP_INTERVAL_SECONDS,
+        enabled: Callable[[], bool] = lambda: True,
     ) -> None:
         self._store = store
         self._recorder = recorder
@@ -210,10 +211,14 @@ class DiagnosticsShipper:
         self._envelopes = envelopes
         self._clock = clock
         self._interval = interval
+        # Falso enquanto a API não disse que aceita o diagnóstico: nada sai e a fila local guarda.
+        self._enabled = enabled
 
     async def flush(self) -> int:
         """Envia o que há na fila; devolve quantas ocorrências foram entregues ao transporte."""
         self._recorder.flush_pending()
+        if not self._enabled():
+            return 0
         sent = 0
         for _ in range(MAX_BATCHES_PER_FLUSH):
             batch = await asyncio.to_thread(self._store.take, BATCH_SIZE)
