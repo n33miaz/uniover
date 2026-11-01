@@ -94,6 +94,12 @@ internal sealed class SiriTokensHandler(TvDbContext db, ITvCommandAudit audit, T
             }
         }
 
+        // Uma criação por vez para cada conta: sem a trava, duas criações simultâneas com nove chaves ativas passariam as duas
+        // pela contagem e deixariam onze. A trava é da transação e se solta no commit.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({"tv.siri-tokens:" + origin.UserId.ToString("N")}, 0))", cancellationToken);
+
         var now = time.GetUtcNow();
         var active = await db.SiriTokens.CountAsync(
             t => t.UserId == origin.UserId && t.RevokedAt == null && (t.ExpiresAt == null || t.ExpiresAt > now), cancellationToken);
@@ -113,6 +119,7 @@ internal sealed class SiriTokensHandler(TvDbContext db, ITvCommandAudit audit, T
                 origin.UserId, tv.AgentSlug, TvCommandNames.SiriTokenCreate, token.Name, ok: true, errorCode: null, latencyMs: null,
                 origin.Client, now, tvId),
             cancellationToken);
+        await transaction.CommitAsync(CancellationToken.None);
 
         return (new CreatedSiriToken(token.Id, token.Name, tvId, token.Actions, token.CreatedAt, token.ExpiresAt, secret), null);
     }
