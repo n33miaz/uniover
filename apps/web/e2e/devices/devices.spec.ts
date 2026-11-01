@@ -153,6 +153,49 @@ test.describe('dispositivos', () => {
     await expectNoHorizontalScroll(page);
   });
 
+  test('pergunta como chamar a TV, curto, e manda o apelido junto do pareamento', async ({
+    page,
+    browserName,
+  }, info) => {
+    devices.openCodes.add('BCDF2345');
+    await openDevices(page, browserName);
+    if (browserName !== 'chromium') identity.stepUpValid = true;
+
+    await page.getByRole('button', { name: 'Parear dispositivo' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
+    const nickname = sheet.getByLabel('Como Chamar Esta TV?');
+    await expect(nickname).toHaveValue('');
+    await expect(nickname).toHaveAttribute('placeholder', 'TV');
+    await expect(nickname).toHaveAttribute('maxlength', '20');
+
+    await sheet.getByLabel('Código do dispositivo').fill('bcdf2345');
+    await nickname.fill('#sala');
+    await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeDisabled();
+    await nickname.fill('Sala');
+    await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeEnabled();
+    await expectNoHorizontalScroll(page);
+    await settle(page);
+    await screenshot(
+      page,
+      `${process.env['TV_ADMIN_SHOTS'] ?? 'test-results'}/tv-admin-cadastro-apelido-${info.project.name}.png`,
+    );
+
+    await sheet.getByRole('button', { name: 'Aprovar' }).click();
+    if (browserName === 'chromium') {
+      const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
+      await dialog.getByRole('button', { name: 'Confirmar' }).click();
+    }
+    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
+
+    const approvals = devices.requests.filter((r) => r.path === '/pairing/approve');
+    expect(approvals.at(-1)?.body).toEqual({
+      userCode: 'BCDF2345',
+      name: 'PC de casa',
+      tvName: 'Sala',
+      tvMemberIds: [],
+    });
+  });
+
   test('cancelar a passkey não pareia nem repete o pedido', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'a passkey virtual só existe no Chromium');
     devices.openCodes.add('BCDF2345');

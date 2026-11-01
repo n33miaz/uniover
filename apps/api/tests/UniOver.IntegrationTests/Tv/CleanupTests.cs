@@ -165,7 +165,7 @@ public sealed class CleanupTests(PostgresFixture postgres)
     [Fact]
     public async Task Cleanup_WithNoAgentConfigured_Returns503()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = string.Empty });
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
 
         using var response = await app.PostAsync("/api/v1/tv/cleanup");
 

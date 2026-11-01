@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/agent.diagnostics.v1.schema.json",
+  "title": "agent.diagnostics.v1",
+  "description": "Agente para API: erros e ocorrências do próprio agente (queda, tarefa de fundo que falhou, reparo, atualização recusada), para o administrador ver em Sistema. Sem dados pessoais: o agente já tira caminhos, endereços, nomes e segredos do texto antes de enviar. Em lote, na ordem em que aconteceram; ocorrência repetida vem uma vez só, com `count`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "agent.diagnostics.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "type": "null" },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["events"],
+      "properties": {
+        "events": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "at", "kind", "severity", "detail"],
+            "properties": {
+              "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+              "at": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+              "kind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.]{1,47}$" },
+              "severity": { "enum": ["info", "warn", "error"] },
+              "component": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.]{0,31}$" },
+              "detail": { "type": "string", "minLength": 1, "maxLength": 300 },
+              "count": { "type": "integer", "minimum": 1, "maximum": 10000 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -681,7 +681,7 @@ describe('DevicesPage deep link and connector', () => {
     expect(el.querySelector('app-pair-sheet')).toBeNull();
   });
 
-  it('opens the guest sheet with the code and a suggested TV name for a guest with the TV', async () => {
+  it('opens the guest sheet with the code and an empty nickname for a guest with the TV', async () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
     TestBed.overrideProvider(AuthService, {
       useValue: { authorized: (call: (token: string) => unknown) => call('token') },
@@ -701,7 +701,7 @@ describe('DevicesPage deep link and connector', () => {
     });
     expect(el.querySelector('app-pair-sheet')).toBeNull();
     expect(el.querySelector<HTMLInputElement>('#guest-pair-code')!.value).toBe('BCDF-2345');
-    expect(el.querySelector<HTMLInputElement>('#guest-pair-name')!.value).toBe('TV de Raphael');
+    expect(el.querySelector<HTMLInputElement>('#guest-pair-name')!.value).toBe('');
     await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/ajustes/dispositivos'));
     expect(api.list).not.toHaveBeenCalled();
   });

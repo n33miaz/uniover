@@ -1,7 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Ports;
 using UniOver.Modules.Tv.Tests.Support;
@@ -48,18 +47,16 @@ public class TvAgentResolverTests
     }
 
     private static (TvAgentResolver Resolver, FakeReader Reader, ManualTime Time) Build(
-        string environment = "", ILogger<TvAgentResolver>? logger = null)
+        ILogger<TvAgentResolver>? logger = null)
     {
         var reader = new FakeReader();
         var time = new ManualTime();
-        var options = Options.Create(new TvModuleOptions { AgentId = environment });
-        return (new TvAgentResolver(reader, options, time, logger ?? NullLogger<TvAgentResolver>.Instance), reader, time);
+        return (new TvAgentResolver(reader, time, logger ?? NullLogger<TvAgentResolver>.Instance), reader, time);
     }
-
     [Fact]
-    public async Task SavedRow_WinsOverTheEnvironmentValue()
+    public async Task SavedRow_IsTheConfiguredTv()
     {
-        var (resolver, reader, _) = Build(environment: "pc-antigo");
+        var (resolver, reader, _) = Build();
         reader.Saved = new SavedTv("pc-novo", "TV da sala");
 
         var binding = await resolver.ResolveAsync(CancellationToken.None);
@@ -71,23 +68,9 @@ public class TvAgentResolverTests
     }
 
     [Fact]
-    public async Task WithoutARow_TheEnvironmentValueStillWorks()
+    public async Task WithoutARow_NothingIsConfigured()
     {
-        var (resolver, _, _) = Build(environment: "pc-casa");
-
-        var binding = await resolver.ResolveAsync(CancellationToken.None);
-
-        binding.AgentSlug.Should().Be("pc-casa");
-        binding.Source.Should().Be(TvAgentSource.Environment);
-        binding.IsConfigured.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task WithoutARowAndWithoutTheEnvironmentValue_NothingIsConfigured(string environment)
-    {
-        var (resolver, _, _) = Build(environment);
+        var (resolver, _, _) = Build();
 
         var binding = await resolver.ResolveAsync(CancellationToken.None);
 
@@ -188,10 +171,10 @@ public class TvAgentResolverTests
     }
 
     [Fact]
-    public async Task WhenTheDatabaseFailsAndNothingWasKnown_NothingIsConfigured_NeverTheEnvironmentValue_AndItRetriesSoon()
+    public async Task WhenTheDatabaseFailsAndNothingWasKnown_NothingIsConfigured_AndItRetriesSoon()
     {
-        // A variável aponta o computador de antes da troca feita no app: sem conseguir ler a linha salva, não pode valer.
-        var (resolver, reader, time) = Build(environment: "pc-antigo");
+        // Sem conseguir ler a linha salva e sem valor conhecido, ninguém é escolhido às cegas.
+        var (resolver, reader, time) = Build();
         reader.Fails = true;
 
         var first = await resolver.ResolveAsync(CancellationToken.None);
@@ -202,7 +185,7 @@ public class TvAgentResolverTests
         var afterRetry = await resolver.ResolveAsync(CancellationToken.None);
 
         first.Source.Should().Be(TvAgentSource.None);
-        first.IsConfigured.Should().BeFalse("os comandos respondem 503 em vez de ir ao computador antigo");
+        first.IsConfigured.Should().BeFalse("os comandos respondem 503 em vez de ir a um computador qualquer");
         second.Source.Should().Be(TvAgentSource.None);
         reader.Reads.Should().Be(2, "a segunda pergunta usou o resultado curto da falha; a terceira, depois do prazo curto, leu de novo");
         afterRetry.AgentSlug.Should().Be("pc-novo");
@@ -210,41 +193,24 @@ public class TvAgentResolverTests
     }
 
     [Fact]
-    public async Task AfterAFailureWithNothingKnown_TheEnvironmentValueStillWorksOnceTheDatabaseAnswersWithoutARow()
+    public async Task WhenTheDatabaseFailsAfterAnEmptyRead_NothingStaysConfigured()
     {
-        var (resolver, reader, time) = Build(environment: "pc-casa");
-        reader.Fails = true;
-        (await resolver.ResolveAsync(CancellationToken.None)).IsConfigured.Should().BeFalse();
-
-        reader.Fails = false;
-        reader.Saved = null;
-        time.Advance(TvAgentResolver.RetryAfterFailure + TimeSpan.FromSeconds(1));
-        var binding = await resolver.ResolveAsync(CancellationToken.None);
-
-        binding.AgentSlug.Should().Be("pc-casa");
-        binding.Source.Should().Be(TvAgentSource.Environment, "o banco respondeu e não tem linha: aí a variável vale");
-    }
-
-    [Fact]
-    public async Task WhenTheDatabaseFailsAfterAnEmptyRead_TheEnvironmentValueKeepsWorking()
-    {
-        // O valor de ambiente já foi confrontado com o banco (que respondeu sem linha): é um valor conhecido.
-        var (resolver, reader, time) = Build(environment: "pc-casa");
-        (await resolver.ResolveAsync(CancellationToken.None)).Source.Should().Be(TvAgentSource.Environment);
+        var (resolver, reader, time) = Build();
+        (await resolver.ResolveAsync(CancellationToken.None)).Source.Should().Be(TvAgentSource.None);
 
         reader.Fails = true;
         time.Advance(TvAgentResolver.Lifetime + TimeSpan.FromSeconds(1));
         var binding = await resolver.ResolveAsync(CancellationToken.None);
 
-        binding.AgentSlug.Should().Be("pc-casa");
-        binding.Source.Should().Be(TvAgentSource.Environment);
+        binding.IsConfigured.Should().BeFalse();
+        binding.Source.Should().Be(TvAgentSource.None);
     }
 
     [Fact]
     public async Task WhenTheDatabaseFailsRightAfterInvalidate_NothingIsConfigured()
     {
-        // Invalidate esquece o valor (não se sabe se o salvamento valeu): a falha seguinte não pode cair na variável.
-        var (resolver, reader, _) = Build(environment: "pc-antigo");
+        // Invalidate esquece o valor (não se sabe se o salvamento valeu): a falha seguinte não pode escolher um computador às cegas.
+        var (resolver, reader, _) = Build();
         reader.Saved = new SavedTv("pc-novo", "TV");
         await resolver.ResolveAsync(CancellationToken.None);
 
@@ -259,7 +225,7 @@ public class TvAgentResolverTests
     [Fact]
     public async Task AFailureWithNothingKnown_IsNotReportedAsAKnownValue()
     {
-        var (resolver, reader, _) = Build(environment: "pc-antigo");
+        var (resolver, reader, _) = Build();
         reader.Fails = true;
         await resolver.ResolveAsync(CancellationToken.None);
 
@@ -271,7 +237,7 @@ public class TvAgentResolverTests
     public async Task AReadFailure_LogsOnlyTheErrorType_NeverTheExceptionOrItsMessage()
     {
         var logger = new CapturingLogger<TvAgentResolver>();
-        var (resolver, reader, _) = Build(environment: "pc-casa", logger);
+        var (resolver, reader, _) = Build(logger);
         reader.Fails = true;
         reader.FailureMessage = "Host=ep-segredo.neon.tech;Username=uniover_owner;Password=senha-do-banco";
 
@@ -286,7 +252,7 @@ public class TvAgentResolverTests
     [Fact]
     public async Task WhenTheDatabaseFailsAfterAValueWasKnown_TheLastKnownValueKeepsWorking()
     {
-        var (resolver, reader, time) = Build(environment: "pc-casa");
+        var (resolver, reader, time) = Build();
         reader.Saved = new SavedTv("pc-salvo", "TV");
         await resolver.ResolveAsync(CancellationToken.None);
 
@@ -294,7 +260,7 @@ public class TvAgentResolverTests
         time.Advance(TvAgentResolver.Lifetime + TimeSpan.FromSeconds(1));
         var binding = await resolver.ResolveAsync(CancellationToken.None);
 
-        binding.AgentSlug.Should().Be("pc-salvo", "a TV não volta para a variável só porque o banco ficou fora do ar");
+        binding.AgentSlug.Should().Be("pc-salvo", "o banco fora do ar não derruba a TV que já se conhece");
         binding.Source.Should().Be(TvAgentSource.Saved);
     }
 
@@ -316,7 +282,7 @@ public class TvAgentResolverTests
     [Fact]
     public async Task ACancelledRead_IsNotSwallowedAsADatabaseFailure()
     {
-        var (resolver, reader, _) = Build(environment: "pc-casa");
+        var (resolver, reader, _) = Build();
         reader.Gate = new TaskCompletionSource();
         using var source = new CancellationTokenSource();
 

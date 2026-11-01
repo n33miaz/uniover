@@ -268,4 +268,119 @@ describe('SystemApi', () => {
     http.expectOne('/api/v1/tv/tvs/tv-2/members').flush({});
     await expect(read).rejects.toThrow();
   });
+
+  it('reads what the agents reported about themselves, asking for the newest 50 by default', async () => {
+    const read = api.agentDiagnostics();
+    const request = http.expectOne('/api/v1/devices/agents/diagnostics?limit=50');
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      retentionDays: 7,
+      items: [
+        {
+          id: 'e1',
+          agentId: 'a1',
+          agentName: 'PC da sala',
+          at: '2026-10-31T12:00:00Z',
+          kind: 'background.failed',
+          severity: 'error',
+          component: 'tv.session',
+          detail: 'TimeoutError',
+          count: 3,
+        },
+      ],
+    });
+    const result = await read;
+    expect(result.retentionDays).toBe(7);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ severity: 'error', count: 3, component: 'tv.session' });
+  });
+
+  it('refuses a diagnostics list in an unexpected format', async () => {
+    const read = api.agentDiagnostics(10);
+    http.expectOne('/api/v1/devices/agents/diagnostics?limit=10').flush({});
+    await expect(read).rejects.toThrow();
+  });
+
+  it('reads the focus mode catalog of a TV', async () => {
+    const read = api.tvFocusCatalog('tv-2');
+    const request = http.expectOne('/api/v1/tv/tvs/tv-2/focus-catalog');
+    expect(request.request.method).toBe('GET');
+    request.flush({ packages: ['com.a.b'], defaults: ['com.c.d', 'com.a.b'], isCustom: true });
+    expect(await read).toEqual({
+      packages: ['com.a.b'],
+      defaults: ['com.c.d', 'com.a.b'],
+      isCustom: true,
+    });
+  });
+
+  it('refuses a focus catalog in an unexpected format', async () => {
+    const read = api.tvFocusCatalog('tv-2');
+    http.expectOne('/api/v1/tv/tvs/tv-2/focus-catalog').flush({ packages: 'x' });
+    await expect(read).rejects.toThrow();
+  });
+
+  it('sends the focus catalog on the update only when it is given', async () => {
+    const withCatalog = api.updateTv('tv-2', { focusPackages: ['com.a.b'] });
+    const patch = http.expectOne('/api/v1/tv/tvs/tv-2');
+    expect(patch.request.method).toBe('PATCH');
+    expect(patch.request.body).toEqual({ focusPackages: ['com.a.b'] });
+    patch.flush({ ...TV, id: 'tv-2' });
+    await withCatalog;
+
+    const without = api.updateTv('tv-2', { name: 'Quarto' });
+    const second = http.expectOne('/api/v1/tv/tvs/tv-2');
+    expect(second.request.body).toEqual({ name: 'Quarto' });
+    second.flush({ ...TV, id: 'tv-2' });
+    await without;
+  });
+
+  it('reads the history of a TV by its id and keeps only well-formed rows', async () => {
+    const read = api.tvHistory('tv-2', 20);
+    const request = http.expectOne((r) => r.url === '/api/v1/tv/commands/recent');
+    expect(request.request.params.get('tvId')).toBe('tv-2');
+    expect(request.request.params.get('limit')).toBe('20');
+    request.flush([
+      {
+        id: 'h1',
+        userId: 'u1',
+        command: 'tv.key',
+        detail: 'HOME/SHORT',
+        ok: true,
+        errorCode: null,
+        occurredAt: '2026-10-31T20:00:00Z',
+        byMe: false,
+      },
+      { id: 'sem-usuario', command: 'tv.key', occurredAt: '2026-10-31T20:00:00Z' },
+    ]);
+    expect(await read).toEqual([
+      {
+        id: 'h1',
+        userId: 'u1',
+        command: 'tv.key',
+        detail: 'HOME/SHORT',
+        ok: true,
+        errorCode: null,
+        occurredAt: '2026-10-31T20:00:00Z',
+      },
+    ]);
+  });
+
+  it('refuses a history that is not a list', async () => {
+    const read = api.tvHistory('tv-2');
+    http.expectOne((r) => r.url === '/api/v1/tv/commands/recent').flush({});
+    await expect(read).rejects.toThrow();
+  });
+
+  it('asks for the TVs of each person with one repeated parameter, and asks nothing for nobody', async () => {
+    await expect(api.tvAccess([])).resolves.toEqual([]);
+
+    const read = api.tvAccess(['u1', 'u2']);
+    const request = http.expectOne((r) => r.url === '/api/v1/tv/tvs/access');
+    expect(request.request.params.getAll('userId')).toEqual(['u1', 'u2']);
+    request.flush({ items: [{ userId: 'u1', tvIds: ['tv-1'] }, { userId: 'u2', tvIds: [] }, {}] });
+    expect(await read).toEqual([
+      { userId: 'u1', tvIds: ['tv-1'] },
+      { userId: 'u2', tvIds: [] },
+    ]);
+  });
 });

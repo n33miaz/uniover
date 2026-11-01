@@ -1,19 +1,17 @@
 """Estado pequeno, sem segredo, que o ícone da bandeja consulta."""
 
 import json
-import os
 import threading
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from uniover_agent.adapters.installation import installation_base
 from uniover_agent.core.domain import TvState
 
 
 def status_path() -> Path:
-    local = os.environ.get("LOCALAPPDATA")
-    base = Path(local) if local else Path.home() / ".config"
-    return base / "UniOver" / "runtime" / "tray-status.json"
+    return installation_base() / "runtime" / "tray-status.json"
 
 
 class TrayStatus:

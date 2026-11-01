@@ -47,6 +47,12 @@ public sealed class ConfiguredTv
     /// </summary>
     public bool FocusClosesBackground { get; private set; }
 
+    /// <summary>
+    /// Os apps que ligam o Modo Foco sozinhos nesta TV, em JSON. Nulo é "a lista de fábrica" (<see cref="DefaultFocusPackages"/>),
+    /// que é o que o agente já usa sem receber nada: só uma lista que o administrador mudou fica guardada.
+    /// </summary>
+    public string? FocusPackages { get; private set; }
+
     /// <summary>Lista fechada de apps escolhidos para a restrição; nunca inclui pacote do sistema por confiança no cliente.</summary>
     public string RestrictedBackgroundPackages { get; private set; } = "[]";
 
@@ -162,6 +168,76 @@ public sealed class ConfiguredTv
         UpdatedBy = updatedBy;
         return true;
     }
+
+    /// <summary>
+    /// Troca o catálogo do Modo Foco desta TV. A lista é guardada ordenada e sem repetição; igual à de fábrica ela volta a ser
+    /// "nada guardado", e assim "voltar ao padrão" é só salvar a lista de fábrica. Devolve `false` (sem mexer em nada) quando
+    /// o catálogo efetivo já era esse. Lista vazia é válida: a detecção automática fica sem apps (o interruptor manual segue).
+    /// </summary>
+    public bool SetFocusCatalog(IReadOnlyList<string> packages, Guid updatedBy, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(packages);
+        var wanted = packages.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        var stored = wanted.SequenceEqual(DefaultFocusPackages.Order(StringComparer.Ordinal), StringComparer.Ordinal)
+            ? null
+            : JsonSerializer.Serialize(wanted);
+        if (string.Equals(stored, FocusPackages, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        FocusPackages = stored;
+        UpdatedAt = now;
+        UpdatedBy = updatedBy;
+        return true;
+    }
+
+    /// <summary>O catálogo do Modo Foco que vale nesta TV: o guardado ou, sem nada guardado, o de fábrica.</summary>
+    public IReadOnlyList<string> FocusCatalog()
+    {
+        if (FocusPackages is null)
+        {
+            return DefaultFocusPackages;
+        }
+
+        try { return JsonSerializer.Deserialize<string[]>(FocusPackages) ?? DefaultFocusPackages; }
+        catch (JsonException) { return DefaultFocusPackages; }
+    }
+
+    /// <summary>Quantos apps cabem no catálogo do Modo Foco; o agente recusa mais que isso e a coluna tem tamanho fixo.</summary>
+    public const int FocusPackagesMax = 50;
+
+    private const int FocusPackagesJsonMax = 4000;
+
+    /// <summary>
+    /// Os apps de vídeo que o agente já reconhece de fábrica. É a mesma lista de <c>VIDEO_PACKAGES</c> no agente (um teste do
+    /// agente confere os dois lados): agente antigo, que não recebe catálogo, segue com ela.
+    /// </summary>
+    public static IReadOnlyList<string> DefaultFocusPackages { get; } =
+    [
+        "com.amazon.amazonvideo.livingroom", "com.apple.atve.androidtv.appletv", "com.cbs.ott", "com.cnvs.apptv",
+        "com.crunchyroll.crunchyroid", "com.disney.disneyplus", "com.globo.globotv", "com.google.android.youtube.tv",
+        "com.netflix.ninja", "com.plexapp.android", "com.wbd.stream", "org.videolan.vlc", "org.xbmc.kodi",
+        "tv.pluto.android", "tv.twitch.android.app",
+    ];
+
+    /// <summary>
+    /// O pacote pode ser um app de catálogo: forma plausível e nada de peça do sistema, do lançador ou do teclado. Não usa a
+    /// regra do "remote" da restrição: um app de vídeo pode ter esse trecho no nome sem ser o controle remoto.
+    /// </summary>
+    public static bool CanBeFocusApp(string package) =>
+        package.Length is > 2 and <= 255
+        && System.Text.RegularExpressions.Regex.IsMatch(package, "^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
+        && !BackgroundBlocked.Contains(package)
+        && !BackgroundBlockedPrefixes.Any(prefix => package.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A lista é aceitável? Nula (não veio) é. Recusa item nulo, formato ou app protegido, repetição e tamanho demais.</summary>
+    public static bool IsValidFocusPackages(IReadOnlyList<string?>? packages) =>
+        packages is null
+        || (packages.Count <= FocusPackagesMax
+            && packages.All(package => package is not null && CanBeFocusApp(package))
+            && packages.Distinct(StringComparer.Ordinal).Count() == packages.Count
+            && JsonSerializer.Serialize(packages).Length <= FocusPackagesJsonMax);
 
     public IReadOnlyList<string> BackgroundPackages()
     {

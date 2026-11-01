@@ -96,21 +96,14 @@ describe('AppShell', () => {
     });
     afterEach(() => localStorage.clear());
 
-    it('has the same arrow back to Início as the owner, and the round settings button on the right', async () => {
+    it('has the same arrow back to Início as the owner, and no settings button inside a module', async () => {
       const harness = await RouterTestingHarness.create('/mod');
       const el = root(harness);
       expect(el.querySelector('h1')?.textContent).toBe('Módulo');
       expect(back(el)?.getAttribute('aria-label')).toBe('Voltar ao Início');
-      const settings = settingsLink(el)!;
-      expect(settings.getAttribute('aria-label')).toBe('Configurações');
-      expect(settings.textContent?.trim()).toBe('');
-      expect(settings.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-      // A seta à esquerda, o título no meio, a engrenagem à direita.
-      expect(Array.from(el.querySelector('header')!.children).map((c) => c.className)).toEqual([
-        'lead',
-        'name',
-        'actions',
-      ]);
+      expect(settingsLink(el)).toBeNull();
+      expect(el.querySelector('a[href="/ajustes"]')).toBeNull();
+      expect(el.querySelector('header .actions')?.childElementCount).toBe(0);
     });
 
     it('inside Ajustes there is only the arrow back to Início, not the settings button', async () => {
@@ -135,7 +128,7 @@ describe('AppShell', () => {
       ['has the TV and the Treino', ['module:tv', 'module:training']],
       ['has no module', []],
     ])(
-      'whatever the permissions, a guest who %s has the same arrow and button',
+      'whatever the permissions, a guest who %s has the same arrow and never the settings button',
       async (_name, permissions) => {
         TestBed.inject(SessionState).setUser({
           id: '1',
@@ -148,7 +141,8 @@ describe('AppShell', () => {
         for (const url of ['/mod', '/ajustes']) {
           await harness.navigateByUrl(url);
           expect(back(root(harness))?.getAttribute('aria-label')).toBe('Voltar ao Início');
-          expect(settingsLink(root(harness)) !== null).toBe(url === '/mod');
+          expect(settingsLink(root(harness))).toBeNull();
+          expect(root(harness).querySelector('a[href="/ajustes"]')).toBeNull();
         }
       },
     );
@@ -164,7 +158,7 @@ describe('AppShell', () => {
       expect(root(harness).querySelector('h1')?.textContent).toBe('Perfil');
     });
 
-    it('never shows the settings button to the owner (the arrow stays, as before)', async () => {
+    it('never shows the settings button to the owner either (the arrow stays, as before)', async () => {
       const harness = await RouterTestingHarness.create('/mod');
       expect(settingsLink(root(harness))).toBeNull();
     });

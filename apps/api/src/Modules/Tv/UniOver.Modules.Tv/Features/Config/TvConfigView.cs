@@ -9,16 +9,12 @@ internal static class TvConfigSource
     /// <summary>Salvo no app pelo administrador.</summary>
     public const string Saved = "saved";
 
-    /// <summary>Só a variável de ambiente (valor de reserva).</summary>
-    public const string Environment = "environment";
-
     /// <summary>Nada definido.</summary>
     public const string None = "none";
 
     public static string Of(TvAgentSource source) => source switch
     {
         TvAgentSource.Saved => Saved,
-        TvAgentSource.Environment => Environment,
         _ => None,
     };
 }

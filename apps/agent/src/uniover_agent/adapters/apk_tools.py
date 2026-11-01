@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Final
 
+from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.tv_adb import run_process
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput, is_valid_package
 from uniover_agent.ports import AppIcon, CachedIcon, IconToolError
@@ -124,10 +125,8 @@ def _read_member(apk: Path, name: str, max_bytes: int) -> bytes | None:
 
 
 def default_icons_dir() -> Path:
-    """`%LOCALAPPDATA%\\UniOver\\icons` (fora do repositório, por usuário)."""
-    local = os.environ.get("LOCALAPPDATA")
-    base = Path(local) if local else Path.home() / ".config"
-    return base / "UniOver" / "icons"
+    """`icons` na pasta de instalação (fora do repositório, por usuário)."""
+    return installation_base() / "icons"
 
 
 _MIME_BY_SUFFIX: Final = {".png": "image/png", ".webp": "image/webp"}

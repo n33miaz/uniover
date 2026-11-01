@@ -65,12 +65,17 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("focusEnabled")]
         public bool? FocusEnabled { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("focusPackages")]
+        [JsonConverter(typeof(TvCleanupConfigV1MessagePurpleDecodeArrayConverter))]
+        public string[]? FocusPackages { get; set; }
+
         [JsonPropertyName("lightEnabled")]
         public bool LightEnabled { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("restrictedPackages")]
-        [JsonConverter(typeof(TvCleanupConfigV1MessageDecodeArrayConverter))]
+        [JsonConverter(typeof(TvCleanupConfigV1MessageFluffyDecodeArrayConverter))]
         public string[]? RestrictedPackages { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -99,7 +104,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         };
     }
 
-    internal class TvCleanupConfigV1MessageDecodeArrayConverter : JsonConverter<string[]>
+    internal class TvCleanupConfigV1MessagePurpleDecodeArrayConverter : JsonConverter<string[]>
     {
         public override bool CanConvert(Type t) => t == typeof(string[]);
 
@@ -129,7 +134,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             return;
         }
 
-        public static readonly TvCleanupConfigV1MessageDecodeArrayConverter Singleton = new TvCleanupConfigV1MessageDecodeArrayConverter();
+        public static readonly TvCleanupConfigV1MessagePurpleDecodeArrayConverter Singleton = new TvCleanupConfigV1MessagePurpleDecodeArrayConverter();
     }
 
     internal class TvCleanupConfigV1MessageMinMaxLengthCheckConverter : JsonConverter<string>
@@ -157,6 +162,39 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         }
 
         public static readonly TvCleanupConfigV1MessageMinMaxLengthCheckConverter Singleton = new TvCleanupConfigV1MessageMinMaxLengthCheckConverter();
+    }
+
+    internal class TvCleanupConfigV1MessageFluffyDecodeArrayConverter : JsonConverter<string[]>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string[]);
+
+        public override string[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            reader.Read();
+            var value = new List<string>();
+            while (reader.TokenType != JsonTokenType.EndArray)
+            {
+                var converter = TvCleanupConfigV1MessageMinMaxLengthCheckConverter.Singleton;
+                var arrayItem = (string)converter.Read(ref reader, typeof(string), options);
+                value.Add(arrayItem);
+                reader.Read();
+            }
+            return value.ToArray();
+        }
+
+        public override void Write(Utf8JsonWriter writer, string[] value, JsonSerializerOptions options)
+        {
+            writer.WriteStartArray();
+            foreach (var arrayItem in value)
+            {
+                var converter = TvCleanupConfigV1MessageMinMaxLengthCheckConverter.Singleton;
+                converter.Write(writer, arrayItem, options);
+            }
+            writer.WriteEndArray();
+            return;
+        }
+
+        public static readonly TvCleanupConfigV1MessageFluffyDecodeArrayConverter Singleton = new TvCleanupConfigV1MessageFluffyDecodeArrayConverter();
     }
 
     internal class TvCleanupConfigV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

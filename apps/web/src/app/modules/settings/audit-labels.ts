@@ -218,7 +218,9 @@ function countAfter(target: string, key: string): number | null {
  * convite, de passkey, de pareamento) não ajuda ninguém a ler e fica de fora, assim como qualquer alvo cujo formato a
  * tela não conhece.
  */
-export function describeTarget(item: AuditItem): string | null {
+export function describeTarget(
+  item: Pick<AuditItem, 'action' | 'target' | 'targetAccount'>,
+): string | null {
   if (item.targetAccount) {
     return (
       item.targetAccount.displayName ?? $localize`:@@settings.audit.actor.deleted:Conta apagada`

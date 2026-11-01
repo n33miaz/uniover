@@ -260,12 +260,22 @@ async def test_run_connects_with_vault_token_and_stops_on_revocation(
     assert exit_code == EXIT_CREDENTIAL_REJECTED
     assert api.authorizations == [f"Bearer {TOKEN}"]
     assert api.paths == [f"/api/v1/devices/agents/{AGENT_ID}/ws"]
-    hello, result = api.received
+    # O diagnóstico (a ocorrência de "agente iniciado") segue o `hello`; a ordem em relação ao
+    # resultado do comando depende do momento em que o servidor de mentira o envia.
+    hello, result = [m for m in api.received if m["type"] != "agent.diagnostics.v1"]
+    started = [
+        event
+        for message in api.received
+        if message["type"] == "agent.diagnostics.v1"
+        for event in message["body"]["events"]
+    ]
+    assert [event["kind"] for event in started] == ["agent.started"]
     assert hello["type"] == "agent.hello.v1"
     assert hello["body"]["capabilities"] == [
         "transport.keepalive.v1",
         "agent.logs.v1",
         "agent.maintenance.v1",
+        "agent.diagnostics.v1",
     ]
     # Sem aparelhos habilitados, o comando válido é recusado pelo núcleo e informado à API.
     assert result["type"] == "command.result.v1"

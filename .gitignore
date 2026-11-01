@@ -36,3 +36,6 @@ __pycache__/
 
 # Saída dos bundles de migration
 artifacts/
+
+# Chave do projeto para assinar o launcher da TV (segredos e backups ficam fora do git)
+.secrets/

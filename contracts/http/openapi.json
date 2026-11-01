@@ -71,6 +71,83 @@
         ],
         "type": "object"
       },
+      "AgentDiagnosticItem": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "component": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "count": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "at",
+          "kind",
+          "severity",
+          "component",
+          "detail",
+          "count"
+        ],
+        "type": "object"
+      },
+      "AgentDiagnosticsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentDiagnosticItem"
+            },
+            "type": "array"
+          },
+          "retentionDays": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "retentionDays",
+          "items"
+        ],
+        "type": "object"
+      },
       "AgentLogsRequest": {
         "properties": {
           "lines": {
@@ -3163,10 +3240,15 @@
           },
           "ok": {
             "type": "boolean"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
           "id",
+          "userId",
           "command",
           "detail",
           "ok",
@@ -4117,6 +4199,40 @@
         ],
         "type": "object"
       },
+      "TvAccessPerson": {
+        "properties": {
+          "tvIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "tvIds"
+        ],
+        "type": "object"
+      },
+      "TvAccessResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TvAccessPerson"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "TvAgentChoice": {
         "properties": {
           "name": {
@@ -4390,6 +4506,31 @@
           "source",
           "agentStatus",
           "agents"
+        ],
+        "type": "object"
+      },
+      "TvFocusCatalogResponse": {
+        "properties": {
+          "defaults": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "packages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "packages",
+          "defaults",
+          "isCustom"
         ],
         "type": "object"
       },
@@ -4750,6 +4891,15 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "focusPackages": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
             ]
           },
           "name": {
@@ -5927,6 +6077,69 @@
         },
         "tags": [
           "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/devices/agents/diagnostics": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDiagnosticsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "AgentDiagnosticsEndpoint"
         ]
       }
     },
@@ -13612,6 +13825,68 @@
         ]
       }
     },
+    "/api/v1/tv/tvs/access": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvAccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "TvAccessEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/tvs/nearby": {
       "get": {
         "parameters": [
@@ -13806,6 +14081,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TvCleanupReportsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/tvs/{id}/focus-catalog": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvFocusCatalogResponse"
                 }
               }
             },
@@ -14034,6 +14339,9 @@
       "name": "RecentCommandsEndpoint"
     },
     {
+      "name": "TvAccessEndpoint"
+    },
+    {
       "name": "StreamEventsEndpoint"
     },
     {
@@ -14227,6 +14535,9 @@
     },
     {
       "name": "RevokeAgentEndpoint"
+    },
+    {
+      "name": "AgentDiagnosticsEndpoint"
     },
     {
       "name": "AgentLogsEndpoint"

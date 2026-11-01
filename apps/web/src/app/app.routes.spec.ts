@@ -125,7 +125,14 @@ describe('app routes for a guest', () => {
   const TV = ['module:tv', 'tv:control'];
   const TRAINING = ['module:training'];
   // Telas só do dono: o convidado nunca as abre, qualquer que seja o módulo que a conta dele libera.
-  const OWNER_ONLY = ['/ajustes/pessoas', '/ajustes/auditoria', '/ajustes/sistema', '/nada'];
+  const OWNER_ONLY = [
+    '/ajustes/pessoas',
+    '/ajustes/auditoria',
+    '/ajustes/sistema',
+    '/ajustes/tvs-por-pessoa',
+    '/ajustes/tv/0192f1e4-0000-7000-8000-0000000000d1/historico',
+    '/nada',
+  ];
 
   /** A conta do convidado, com a lista de permissões que a API devolve (sem a lista: resposta antiga, não se sabe). */
   function signInAs(permissions?: string[]) {

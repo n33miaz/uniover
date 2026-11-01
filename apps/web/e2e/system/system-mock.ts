@@ -15,15 +15,31 @@ export interface MockComputer {
   revoked: boolean;
 }
 
+/** Uma ocorrência que o agente contou sobre si, no formato de `GET /devices/agents/diagnostics`. */
+export interface MockDiagnostic {
+  id: string;
+  agentId: string;
+  agentName: string;
+  at: string;
+  kind: string;
+  severity: 'info' | 'warn' | 'error';
+  component: string | null;
+  detail: string;
+  count: number;
+}
+
 export interface SystemMock {
   readonly requests: SystemRequest[];
   readonly computers: MockComputer[];
   /** O computador que controla a TV agora (`null` = nenhum) e de onde vem a escolha. */
   current: string | null;
-  source: 'saved' | 'environment' | 'none';
+  source: 'saved' | 'none';
   /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
   failReads: number;
   settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];
+  /** Os erros dos agentes (lista vazia por padrão) e quantas leituras seguintes dessa lista respondem 500. */
+  diagnostics: MockDiagnostic[];
+  failDiagnostics: number;
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -81,6 +97,8 @@ export async function mockSystemApi(
     current: null,
     source: 'none',
     failReads: 0,
+    diagnostics: [],
+    failDiagnostics: 0,
     settings: [
       { key: 'training.off-contact', value: 'foods@example.test', source: 'server' },
       { key: 'devices.max-per-guest', value: 2, source: 'server' },
@@ -158,6 +176,28 @@ export async function mockSystemApi(
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ total: 0, items: [], unavailableModules: [] }),
+    });
+  });
+
+  // Só o administrador lê o que os agentes contaram sobre si.
+  await context.route('**/api/v1/devices/agents/diagnostics**', async (route) => {
+    if (identity.offline) return route.abort('internetdisconnected');
+    const bearer = route
+      .request()
+      .headers()
+      ['authorization']?.replace(/^Bearer /, '');
+    if (!bearer || !identity.issuedTokens.includes(bearer))
+      return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+    if (identity.role !== 'owner') return route.fulfill({ status: 403 });
+    if (mock.failDiagnostics > 0) {
+      mock.failDiagnostics -= 1;
+      return problem(route, 500, 'internal-error', 'Erro.');
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'cache-control': 'no-store' },
+      body: JSON.stringify({ retentionDays: 7, items: mock.diagnostics }),
     });
   });
 

@@ -179,7 +179,9 @@ test.describe('convidado com a TV', () => {
     const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
-    await expect(sheet.getByLabel('Nome da TV')).toHaveValue(`TV de ${GUEST.displayName}`);
+    // O apelido nasce vazio (a TV se chama "TV"): nenhuma sugestão feita do nome da conta.
+    await expect(sheet.getByLabel('Como Chamar Esta TV?')).toHaveValue('');
+    await sheet.getByLabel('Como Chamar Esta TV?').fill('Quarto');
     // Nada de escolher pessoas: a TV é só dele.
     await expect(sheet.getByRole('switch')).toHaveCount(0);
     await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeDisabled();
@@ -203,12 +205,12 @@ test.describe('convidado com a TV', () => {
     expect(approve.body).toEqual({
       userCode: 'BCDF2345',
       name: null,
-      tvName: `TV de ${GUEST.displayName}`,
+      tvName: 'Quarto',
     });
     expect(devices.requests.some((r) => r.path === '/pairing/approve')).toBe(false);
     expect(devices.tvs).toEqual([
       {
-        name: `TV de ${GUEST.displayName}`,
+        name: 'Quarto',
         agentSlug: devices.agents[0].slug,
         memberIds: [GUEST_ID],
       },
@@ -301,7 +303,8 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([
-      { name: 'TV de Raphael', agentSlug: devices.agents[0].slug, memberIds: [GUEST_ID] },
+      // Sem apelido a TV se chama só "TV": nem o nome do computador nem o da pessoa viram o nome dela.
+      { name: 'TV', agentSlug: devices.agents[0].slug, memberIds: [GUEST_ID] },
     ]);
   });
 
@@ -315,8 +318,6 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
     await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
 
-    expect(devices.tvs).toEqual([
-      { name: 'PC de casa', agentSlug: devices.agents[0].slug, memberIds: [] },
-    ]);
+    expect(devices.tvs).toEqual([{ name: 'TV', agentSlug: devices.agents[0].slug, memberIds: [] }]);
   });
 });

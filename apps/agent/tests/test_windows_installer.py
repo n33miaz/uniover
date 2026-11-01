@@ -2,6 +2,7 @@
 
 import ast
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 
 from uniover_agent.adapters import installation
 from uniover_agent.adapters.process import NO_WINDOW
+from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
 
 from .launcher_isolation import isolated_launcher
 
@@ -465,7 +467,21 @@ def test_the_cmd_writes_a_vbs_that_runs_the_installer_hidden(tmp_path: Path) -> 
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command"
     )
     assert (
-        "irm https://raw.githubusercontent.com/n33miaz/uniover/main/apps/agent/tools/install-windows.ps1"
-        in command
+        f"irm https://raw.githubusercontent.com/n33miaz/uniover/{DEFAULT_CHANNEL}"
+        "/apps/agent/tools/install-windows.ps1" in command
     )
     assert "^" not in command
+
+
+def test_the_channel_is_switched_in_one_place_the_cmd_the_installer_and_the_agent_agree() -> None:
+    """Voltar a publicar pela main é trocar três valores; este teste falha se um ficar para trás."""
+    installer = INSTALLER.read_text(encoding="utf-8")
+    default_ref = re.search(r"\[string\]\$Ref = '([a-z]+)'", installer)
+    assert default_ref is not None
+    assert default_ref.group(1) == DEFAULT_CHANNEL
+    for copy in CMD_COPIES:
+        text = copy.read_text(encoding="ascii")
+        assert f"/n33miaz/uniover/{DEFAULT_CHANNEL}/apps/agent/tools/install-windows.ps1" in text
+    # O instalador grava o ramo no agent.toml, e o agente só aceita um dos canais conhecidos.
+    assert "update_channel" in installer
+    assert set(CHANNELS) == {"main", "develop"}

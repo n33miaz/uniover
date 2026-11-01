@@ -312,6 +312,7 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
         "transport.keepalive.v1",
         "agent.logs.v1",
         "agent.maintenance.v1",
+        "agent.diagnostics.v1",
         "tv.remote",
         "tv.kind.android",
         *ANDROID_KEYS,
@@ -368,7 +369,12 @@ async def test_run_without_certificate_declares_no_capability(
         )
         await run(settings, lambda: store)
     assert [m["body"]["capabilities"] for m in api.received if m["type"] == "agent.hello.v1"] == [
-        ["transport.keepalive.v1", "agent.logs.v1", "agent.maintenance.v1"]
+        [
+            "transport.keepalive.v1",
+            "agent.logs.v1",
+            "agent.maintenance.v1",
+            "agent.diagnostics.v1",
+        ]
     ]
     assert not [m for m in api.received if m["type"] == "tv.state.v1"]
 
@@ -425,6 +431,7 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
         "transport.keepalive.v1",
         "agent.logs.v1",
         "agent.maintenance.v1",
+        "agent.diagnostics.v1",
         "tv.remote",
         "tv.kind.android",
         *ANDROID_KEYS,

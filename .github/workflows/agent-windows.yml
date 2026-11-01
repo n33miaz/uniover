@@ -1,0 +1,67 @@
+name: Agent on Windows
+
+# O agente roda no Windows do dono e dos amigos, e uma parte dele só existe lá: o lançador, o supervisor
+# (rollback, recuperação da pasta `app`, troca de versão), o instalador e a tarefa agendada. Esses testes
+# usam o Windows PowerShell 5.1 de verdade e são PULADOS no Linux do `ci.yml`, então sem este job nada na
+# esteira jamais exercita a volta atrás que mantém um PC vivo depois de uma atualização ruim.
+#
+# Este arquivo é só do agente e não entra no `ci-ok`: ligar o job como exigência de merge é uma decisão
+# do dono (Settings > Branches), não deste arquivo. Todos os testes que mexem na tarefa agendada usam um
+# nome só do teste e a removem no fim; nenhum toca na tarefa `UniOver agente` nem em `%LOCALAPPDATA%` real.
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "apps/agent/**"
+      - ".github/workflows/agent-windows.yml"
+  push:
+    branches: [develop, main]
+    paths:
+      - "apps/agent/**"
+      - ".github/workflows/agent-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-windows:
+    name: agent-windows
+    runs-on: windows-latest
+    # O pytest inteiro leva poucos minutos; o teto existe para um teste de PowerShell travado não prender o runner.
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/agent
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: apps/agent/uv.lock
+      - run: uv sync --locked
+      - name: Testes do lançador, do supervisor e do instalador (nenhum pode ser pulado)
+        run: |
+          $files = @(
+            'tests/test_launcher_recovery.py',
+            'tests/test_run_agent_state.py',
+            'tests/test_run_agent_sync.py',
+            'tests/test_installer_swap.py',
+            'tests/test_windows_installer.py',
+            'tests/test_scheduled_task.py'
+          )
+          $output = uv run pytest -q --no-cov -rs -p no:cacheprovider @files 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) { throw 'testes do Windows falharam' }
+          # No Windows eles têm de rodar: pular aqui seria o mesmo que não ter o job.
+          if ($output -match 'SKIPPED') { throw 'testes que só rodam no Windows foram pulados' }
+      - name: Suíte inteira do agente
+        run: uv run pytest -rs

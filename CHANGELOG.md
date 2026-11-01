@@ -1,17 +1,5 @@
 # Changelog
 
-## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-10-31)
-
-
-### Bug Fixes
-
-* **training:** back and full shapes while loading
-* **training:** free workout button over the dock
-* **training:** shorter suggestion and skip hints
-* **training:** title case on assessments text
-* **training:** shorter body and summary labels
-* **training:** shorter routine and goal hints
-
 ## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
 
 
