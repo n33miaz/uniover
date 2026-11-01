@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-11-01)
+
+
+### Features
+
+* **contracts:** add agent diagnostics message
+* **agent:** queue diagnostics safely
+* **agent:** record why the agent stopped
+* **agent:** verify updates before swapping
+* **agent:** guard the supervisor
+* **agent:** check and repair itself
+* **agent:** simple installer, pick the folder
+* **api:** keep agent diagnostics for 7 days
+* **web:** show agent errors in system
+* **web:** standardize exercise art as webp
+* **web:** add incline curl and row drawings
+* **api:** add own catalog source and new gear
+* **api:** add 37 exercises to the catalog
+* **api:** fill glute and back gaps in templates
+* **web:** add kettlebell, band and cardio gear
+* **web:** add nine more everkinetic pairs
+* **web:** add open exercise art figures
+
+
+### Bug Fixes
+
+* **agent:** install the crash hooks once
+* **agent:** sync with the frozen lock on the pc
+* **agent:** keep background tasks alive
+
 ## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
 
 
