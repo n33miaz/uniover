@@ -242,7 +242,14 @@ internal sealed class TvApp : IAsyncDisposable
         var import = Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
             .OfType<Modules.Tv.Adapters.LegacyAgentImport>().Single();
         await import.StartAsync(TestContext.Current.CancellationToken);
-        Services.GetRequiredService<Modules.Tv.Ports.ITvAgentResolver>().Invalidate();
+    }
+
+    /// <summary>Várias partidas ao mesmo tempo, como duas instâncias da API subindo juntas.</summary>
+    public async Task RunLegacyImportConcurrentlyAsync(int instances)
+    {
+        var import = Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .OfType<Modules.Tv.Adapters.LegacyAgentImport>().Single();
+        await Task.WhenAll(Enumerable.Range(0, instances).Select(_ => import.StartAsync(TestContext.Current.CancellationToken)));
     }
 
     public static TvDbContext CreateContext(string connection)
