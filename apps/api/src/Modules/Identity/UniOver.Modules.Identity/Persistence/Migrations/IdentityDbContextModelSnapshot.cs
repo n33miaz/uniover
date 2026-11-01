@@ -122,6 +122,8 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasName("pk_account_preferences");
 
                     b.ToTable("account_preferences", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.CapacityAlert", b =>
                 {
                     b.Property<Guid>("Id")
