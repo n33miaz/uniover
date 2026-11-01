@@ -146,6 +146,14 @@ async function expectSpecificSkeleton(page: Page, variant: string) {
   await expect(boot.locator(`.bs-variant.bs-${drawing}`)).toBeVisible();
   await expect(boot.locator('.bs-variant.bs-generic')).toBeHidden();
   await expect(page.locator('app-update-skeleton .bs-generic')).toHaveCount(0);
+  // O aviso dos 20 s só aparece depois do prazo, e só o corpo da tela de destino fica à mostra (os das outras abas não).
+  await expect(page.locator('#boot-timeout')).toBeHidden();
+  const shownBodies = await boot.evaluate((root) =>
+    Array.from(root.querySelectorAll("[class*='-content']")).filter(
+      (element) => element.getClientRects().length > 0,
+    ).length,
+  );
+  expect(shownBodies).toBeLessThanOrEqual(1);
 }
 
 async function expectSpecificOverlay(page: Page, variant: string) {

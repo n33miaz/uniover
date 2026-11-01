@@ -94,6 +94,8 @@ test.describe('Topo das páginas dos módulos', () => {
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
       // A casca do Treino mostra "Confirmando a sua conta…" até a conta valer; o que importa é a tela já aberta.
       await expect(page.locator('app-training-account-scope .ui-notice')).toHaveCount(0);
+      // E até a tela montar de verdade (o marcador de pronta): medir antes disso pega o esqueleto da espera da conta.
+      await expect(page.locator('[data-screen-ready]').first()).toBeVisible();
       if (ready) await expect(page.locator(ready).first()).toBeVisible();
       await settle(page);
       const { gap, who } = await gapBelowTopBar(page);

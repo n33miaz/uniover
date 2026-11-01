@@ -54,6 +54,9 @@
   max-width: 42rem;
   margin-inline: auto;
 }
+.bs-boot-timeout[hidden] {
+  display: none;
+}
 .bs-boot-timeout p {
   margin: 0;
 }
@@ -82,12 +85,13 @@ html[data-boot='generic'] .bs-boot .bs-generic {
 }
 
 /* O mesmo invólucro mantém as medidas estáveis, mas cada aba do Treino mostra a composição dela. */
-.bs-training-list-content,
-.bs-training-progress-content,
-.bs-training-body-content,
-.bs-settings-data-content,
-.bs-settings-profile-content,
-.bs-settings-appearance-content {
+/* Com o prefixo, ganha de `.bs-body` e `.bs-list`, que vêm depois e também definem o `display`. */
+.bs-variant .bs-training-list-content,
+.bs-variant .bs-training-progress-content,
+.bs-variant .bs-training-body-content,
+.bs-variant .bs-settings-data-content,
+.bs-variant .bs-settings-profile-content,
+.bs-variant .bs-settings-appearance-content {
   display: none;
 }
 .bs-chart {
@@ -317,6 +321,11 @@ html[data-boot='settings-appearance'] .bs-detail-cards,
   border-top: 1px solid var(--a-line);
   background: var(--a-surface);
 }
+/* A barra de abas de verdade tem 65 px (ícone e rótulo): o desenho guarda a mesma altura para a troca não pular. */
+.bs-tabs {
+  min-height: calc(65px + var(--safe-bottom));
+  box-sizing: border-box;
+}
 .bs-tab {
   width: 40px;
   height: 28px;
@@ -353,6 +362,15 @@ html[data-boot='settings-appearance'] .bs-detail-cards,
 }
 .bs-topbar .bs-end {
   justify-self: end;
+}
+/* O Treino tem o indicador de sincronização à direita: o círculo dele já ocupa o lugar no desenho. */
+.bs-training .bs-topbar .bs-end {
+  width: var(--tap);
+  height: var(--tap);
+  box-sizing: border-box;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
 }
 .bs-body {
   flex: 1;
@@ -397,10 +415,13 @@ html[data-boot='settings-appearance'] .bs-detail-cards,
   height: clamp(28px, 7vw, 36px);
   border-radius: var(--radius-sm);
 }
+/* Uma linha de 44 px como a do cabeçalho de verdade; sem `flex-shrink: 0` o contêiner, cheio, a esmagava a zero. */
 .bs-brand {
+  flex-shrink: 0;
+  align-self: center;
   width: 4.75rem;
   height: 17px;
-  margin-inline: var(--space-1);
+  margin: 13.5px var(--space-1);
 }
 .bs-hero-actions {
   position: absolute;
