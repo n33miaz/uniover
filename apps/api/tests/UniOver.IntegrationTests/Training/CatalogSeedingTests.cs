@@ -177,11 +177,11 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
         var setId = Guid.CreateVersion7();
         var now = DateTimeOffset.UtcNow;
         var expectedLegacyExercises = versionOne.Exercises
-            .Select(e => (e.Source, e.SourceRef, Id: ExerciseIds.ForCatalog(e.Source, e.SourceRef)))
+            .Select(e => (e.Source, (string?)e.SourceRef, Id: ExerciseIds.ForCatalog(e.Source, e.SourceRef)))
             .OrderBy(e => e.Id)
             .ToArray();
         var expectedUniOverExercises = newExercises
-            .Select(e => (e.SourceRef, Id: ExerciseIds.ForCatalog(e.Source, e.SourceRef)))
+            .Select(e => ((string?)e.SourceRef, Id: ExerciseIds.ForCatalog(e.Source, e.SourceRef)))
             .OrderBy(e => e.Id)
             .ToArray();
 
