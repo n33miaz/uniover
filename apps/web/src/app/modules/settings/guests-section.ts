@@ -16,6 +16,8 @@ import { AuthApi, GuestInviteSummary, GuestSummary } from '../../core/auth/auth-
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
 import { GuestPermissions, PeopleApi, PersonUsage } from './people-api';
+import { homeModuleTitles } from './people-home';
+import { ModuleRegistry } from '../../core/modules/module-registry';
 import { PeoplePermissionPicker } from './people-permission-picker';
 import { PeoplePermissionsSheet } from './people-permissions-sheet';
 import { TV_CONTROL_ONLY, hasModule, permissionSummary } from './people-permissions';
@@ -70,6 +72,7 @@ export class GuestsSection {
   private readonly people = inject(PeopleApi);
   private readonly session = inject(SessionState);
   private readonly doc = inject(DOCUMENT);
+  private readonly registry = inject(ModuleRegistry);
   private readonly injector = inject(Injector);
 
   private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
@@ -387,6 +390,23 @@ export class GuestsSection {
     for (const row of this.usage().values()) if (row.role === 'owner') return row;
     return null;
   });
+
+  /**
+   * A Início da pessoa em poucas palavras: os módulos que ela deixou ligados, "Padrão" se nunca personalizou e "Sem dados
+   * ainda" se nunca abriu o app depois de a sincronização existir. O convidado só tem o que as permissões dele liberam.
+   */
+  protected homeLine(row: PersonUsage): string {
+    if (row.home.state === 'unknown')
+      return $localize`:@@settings.usage.home-unknown:Sem dados ainda`;
+    if (row.home.state === 'default') return $localize`:@@settings.usage.home-default:Padrão`;
+    const role = row.role === 'guest' ? 'guest' : 'owner';
+    const permissions =
+      (this.guests() ?? []).find((guest) => guest.id === row.id)?.permissions ?? null;
+    const titles = homeModuleTitles(row.home, this.registry.modules, role, permissions);
+    return titles.length > 0
+      ? titles.join(', ')
+      : $localize`:@@settings.usage.home-none:Nenhum módulo`;
+  }
 
   protected lastAccess(row: PersonUsage): string {
     if (!row.lastAccessAt) return $localize`:@@settings.usage.never:Nunca entrou`;

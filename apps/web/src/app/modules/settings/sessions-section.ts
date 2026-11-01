@@ -4,6 +4,14 @@ import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 
+/** Como o dono lê o aparelho que o app informou (`iphone`, `ipad`, `android` ou `pc`). */
+const PLATFORM_LABELS: Readonly<Record<string, string>> = {
+  iphone: 'iPhone',
+  ipad: 'iPad',
+  android: 'Android',
+  pc: 'PC',
+};
+
 /** Sessões do dono ou da pessoa escolhida. O servidor decide a propriedade de cada família. */
 @Component({
   selector: 'app-sessions-section',
@@ -63,6 +71,14 @@ export class SessionsSection {
           : /Safari\//.test(agent)
             ? 'Safari'
             : $localize`:@@settings.sessions.browser:Navegador`;
+    // O que o próprio app informou (aparelho e se está instalado) vale mais que o texto do navegador, que não diz se é
+    // o app da tela de início. Sessões de antes dessa informação seguem com o texto do navegador.
+    const platform = PLATFORM_LABELS[item.platform ?? ''];
+    if (platform) {
+      return item.installed
+        ? `${platform} · ${$localize`:@@settings.sessions.installed:App Instalado`}`
+        : `${platform} · ${browser}`;
+    }
     const system = /iPhone|iPad/.test(agent)
       ? 'iPhone/iPad'
       : /Android/.test(agent)
