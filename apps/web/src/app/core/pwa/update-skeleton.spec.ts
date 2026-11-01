@@ -96,7 +96,7 @@ describe('UpdateSkeleton', () => {
 
     vi.useRealTimers();
     const pending = TestBed.inject(Router).navigateByUrl('/ok');
-    addReadyMarker('detail');
+    addReadyMarker('home');
     await pending;
     await fixture.whenStable();
     // Sai pela animação de saída (ou já saiu): nunca fica coberto depois da primeira tela.
@@ -112,7 +112,7 @@ describe('UpdateSkeleton', () => {
     fixture.detectChanges();
     vi.advanceTimersByTime(SLOW_BOOT_MS - 100);
     const pending = TestBed.inject(Router).navigateByUrl('/ok');
-    addReadyMarker('detail');
+    addReadyMarker('home');
     await pending;
     vi.advanceTimersByTime(SLOW_BOOT_MS * 3);
     fixture.detectChanges();
@@ -192,7 +192,7 @@ describe('UpdateSkeleton', () => {
     expect(el.querySelector('.bs-root')).not.toBeNull();
 
     const pending = TestBed.inject(Router).navigateByUrl('/ok');
-    addReadyMarker('detail');
+    addReadyMarker('home');
     await pending;
     await fixture.whenStable();
     expect(service.showSkeleton()).toBe(false);
@@ -221,7 +221,13 @@ describe('UpdateSkeleton', () => {
           {
             path: 'privada',
             component: Blank,
-            canActivate: [() => inject(Router).parseUrl('/entrar')],
+            canActivate: [
+              () => {
+                // O navegador já mostra o endereço da tela de entrada quando o redirecionamento termina.
+                history.pushState({}, '', '/entrar');
+                return inject(Router).parseUrl('/entrar');
+              },
+            ],
           },
           { path: 'entrar', component: Blank },
         ]),
@@ -255,8 +261,8 @@ describe('UpdateSkeleton', () => {
 
   it('does not release the overlay for a mounted shell until the destination marker arrives', async () => {
     history.pushState({}, '', '/tv');
+    sessionStorage.setItem('uniover.update.refreshing', String(Date.now()));
     const { service, fixture, el } = setup();
-    service.applyingUpdate.set(true);
     const pending = TestBed.inject(Router).navigateByUrl('/tv');
     await pending;
     await fixture.whenStable();
@@ -296,7 +302,7 @@ describe('UpdateSkeleton', () => {
     expect(document.getElementById(BOOT_SKELETON_ID)).not.toBeNull();
     vi.useRealTimers();
     const pending = TestBed.inject(Router).navigateByUrl('/ok');
-    addReadyMarker('detail');
+    addReadyMarker('home');
     await pending;
     expect(boot.classList.contains('leaving')).toBe(true);
     await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
@@ -336,6 +342,7 @@ describe('UpdateSkeleton', () => {
     const fixture = TestBed.createComponent(UpdateSkeleton);
     const el = fixture.nativeElement as HTMLElement;
     vi.useRealTimers();
+    addReadyMarker('home');
     await router.navigateByUrl('/');
     vi.useFakeTimers();
     const pending = router.navigateByUrl('/tv');
@@ -346,6 +353,8 @@ describe('UpdateSkeleton', () => {
     fixture.detectChanges();
     expect(el.querySelector('.bs-root .bs-tv')).not.toBeNull();
     vi.useRealTimers();
+    // O navegador já mostra /tv quando o guarda libera a navegação.
+    history.pushState({}, '', '/tv');
     release();
     await pending;
     addReadyMarker('tv');
@@ -375,6 +384,8 @@ describe('UpdateSkeleton', () => {
     const router = TestBed.inject(Router);
     const fixture = TestBed.createComponent(UpdateSkeleton);
     vi.useRealTimers();
+    addReadyMarker('tv');
+    history.pushState({}, '', '/tv');
     await router.navigateByUrl('/tv');
     vi.useFakeTimers();
     const pending = router.navigateByUrl('/tv?painel=apps');

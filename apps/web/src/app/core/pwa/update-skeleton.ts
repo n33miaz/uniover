@@ -532,8 +532,12 @@ export class UpdateSkeleton {
     return !!this.doc.querySelector(`[data-screen-ready="${marker}"], [data-screen-skeleton="${marker}"]`);
   }
 
+  /**
+   * O marcador esperado vem do endereço de agora, e não do desenho que cobre a tela: um guarda que redireciona (de /tv
+   * para /entrar) muda a tela que vai aparecer sem trocar o desenho no meio da espera.
+   */
   private screenMarker(): string {
-    const variant = this.variant();
+    const variant = bootVariantFor(this.win?.location.pathname ?? '/');
     if (variant.startsWith('training-')) return 'training';
     if (
       variant === 'settings-system' ||
