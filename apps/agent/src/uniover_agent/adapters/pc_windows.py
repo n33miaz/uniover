@@ -120,11 +120,16 @@ class WindowsPcInput:
         self._send(pc_inputs.media_inputs(action, steps))
 
 
-def _run_shutdown(arguments: list[str]) -> None:
+# `ERROR_NO_SHUTDOWN_IN_PROGRESS`: o `shutdown /a` não tinha contagem para cancelar.
+_NO_SHUTDOWN_IN_PROGRESS = 1116
+
+
+def _run_shutdown(arguments: list[str]) -> int:
+    """Roda o `shutdown.exe` e devolve o código de saída: quem chama decide o que é falha."""
     if not IS_WINDOWS:
         raise PcUnsupported(_UNSUPPORTED)
     # Executável do sistema e argumentos montados aqui (nunca texto vindo da rede).
-    run_hidden(["shutdown", *arguments], capture_output=True, timeout=10)
+    return run_hidden(["shutdown", *arguments], capture_output=True, timeout=10).returncode
 
 
 class WindowsPcPower:
@@ -132,7 +137,7 @@ class WindowsPcPower:
 
     def __init__(
         self,
-        run: Callable[[list[str]], None] | None = None,
+        run: Callable[[list[str]], int] | None = None,
         lock: Callable[[], bool] | None = None,
         suspend: Callable[[], bool] | None = None,
     ) -> None:
@@ -149,10 +154,16 @@ class WindowsPcPower:
             raise OSError("o Windows não conseguiu suspender")
 
     def shutdown(self, delay_seconds: int) -> None:
-        self._run(["/s", "/t", str(max(10, delay_seconds)), "/c", _SHUTDOWN_NOTICE])
+        code = self._run(["/s", "/t", str(max(10, delay_seconds)), "/c", _SHUTDOWN_NOTICE])
+        if code != 0:
+            # Política, UAC ou erro do Windows: não pode virar "feito" nem auditoria de sucesso.
+            raise OSError(f"o Windows recusou agendar o desligamento (código {code})")
 
     def cancel_shutdown(self) -> None:
-        self._run(["/a"])
+        code = self._run(["/a"])
+        # Sem contagem em andamento não é erro (já não há desligamento pendente); o resto é.
+        if code not in (0, _NO_SHUTDOWN_IN_PROGRESS):
+            raise OSError(f"o Windows recusou cancelar o desligamento (código {code})")
 
 
 def _start_file(target: str) -> None:

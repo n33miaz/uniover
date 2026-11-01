@@ -1,7 +1,8 @@
 """Adaptador do Windows com `SendInput` trocado por um registro: nada mexe no mouse real."""
 
+import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pytest
 
@@ -32,9 +33,18 @@ def test_each_command_is_a_single_batch_to_the_system() -> None:
     assert sent.batches[0] == [RawInput("mouse", MOUSE_MOVE, 5, 6)]
 
 
+def exits_with(code: int, calls: list[list[str]] | None = None) -> Callable[[list[str]], int]:
+    def run(arguments: list[str]) -> int:
+        if calls is not None:
+            calls.append(arguments)
+        return code
+
+    return run
+
+
 def test_power_runs_shutdown_with_a_countdown_and_a_notice() -> None:
     calls: list[list[str]] = []
-    power = WindowsPcPower(run=calls.append)
+    power = WindowsPcPower(run=exits_with(0, calls))
     power.shutdown(30)
     power.cancel_shutdown()
     assert calls[0][:3] == ["/s", "/t", "30"]
@@ -44,8 +54,37 @@ def test_power_runs_shutdown_with_a_countdown_and_a_notice() -> None:
 
 def test_shutdown_countdown_never_goes_below_ten_seconds() -> None:
     calls: list[list[str]] = []
-    WindowsPcPower(run=calls.append).shutdown(0)
+    WindowsPcPower(run=exits_with(0, calls)).shutdown(0)
     assert calls[0][2] == "10"
+
+
+def test_a_shutdown_the_system_refused_is_a_failure_not_a_success() -> None:
+    # Política, UAC ou erro do Windows: saída diferente de zero é falha (sem auditoria de sucesso).
+    with pytest.raises(OSError, match=r"agendar o desligamento.*5"):
+        WindowsPcPower(run=exits_with(5)).shutdown(30)
+
+
+def test_cancelling_with_no_countdown_running_is_fine_but_any_other_error_is_not() -> None:
+    WindowsPcPower(run=exits_with(1116)).cancel_shutdown()
+    with pytest.raises(OSError, match=r"cancelar o desligamento.*5"):
+        WindowsPcPower(run=exits_with(5)).cancel_shutdown()
+    with pytest.raises(OSError, match=r"cancelar o desligamento.*1"):
+        WindowsPcPower(run=exits_with(1)).cancel_shutdown()
+
+
+def test_the_real_runner_reports_the_exit_code_of_the_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[list[str]] = []
+
+    def fake(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        seen.append(args)
+        return subprocess.CompletedProcess(args, 1116)
+
+    monkeypatch.setattr(pc_windows, "run_hidden", fake)
+    monkeypatch.setattr(pc_windows, "IS_WINDOWS", True)
+    assert pc_windows._run_shutdown(["/a"]) == 1116
+    assert seen == [["shutdown", "/a"]]
 
 
 def test_lock_and_sleep_report_a_refusal_from_the_system() -> None:
