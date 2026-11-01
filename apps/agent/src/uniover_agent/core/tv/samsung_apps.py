@@ -40,7 +40,13 @@ class SamsungTvApps:
         self._envelopes = envelopes
         self._ids: dict[str, str] = {}
         self._icons: dict[str, AppIcon] = {}
+        self._last_opened_app_id: str | None = None
         self.cache: list[AppEntry] | None = None
+
+    @property
+    def last_opened_app_id(self) -> str | None:
+        """O `appId` Tizen do último app que o UniOver abriu (a manutenção nunca o fecha)."""
+        return self._last_opened_app_id
 
     async def refresh(self) -> list[AppEntry]:
         await self._tv.wake()
@@ -56,7 +62,7 @@ class SamsungTvApps:
                 continue
             # O contrato chama esse campo de pacote e exige segmentos que começam por letra; o
             # id Tizen pode ser só numérico, então o alias fica válido sem perder o id original.
-            alias = _app_alias(app_id)
+            alias = app_alias(app_id)
             self._ids[alias] = app_id
             icon = _icon(item.get("imageBase64"))
             if icon is not None:
@@ -86,10 +92,12 @@ class SamsungTvApps:
         # O app pode ter sido salvo antes da última lista: se vier um `appId` direto, a TV ainda
         # recebe esse valor; se vier o alias atual, recuperamos o identificador Tizen exato.
         await self._tv.wake()
-        await self._driver.run_app(self._ids.get(package, package))
+        app_id = self._ids.get(package, package)
+        await self._driver.run_app(app_id)
+        self._last_opened_app_id = app_id
 
 
-def _app_alias(app_id: str) -> str:
+def app_alias(app_id: str) -> str:
     """Alias válido no contrato para um `appId` Tizen que pode conter só dígitos."""
     if _PACKAGE_PATTERN.fullmatch(app_id):
         return app_id

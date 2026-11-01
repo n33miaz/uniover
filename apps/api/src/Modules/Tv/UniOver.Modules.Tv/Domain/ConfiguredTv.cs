@@ -36,6 +36,12 @@ public sealed class ConfiguredTv
     /// <summary>Permite encerrar apps de fundo nesta TV; desligado até o dono optar explicitamente.</summary>
     public bool AllowBackgroundAppClosing { get; private set; }
 
+    /// <summary>
+    /// Manutenção automática desta TV (hoje só a Samsung a tem): depois de 15 minutos ociosa, fecha apenas apps que a
+    /// própria TV prova estarem em segundo plano. Ligada por padrão; quem administra pode desligar por TV.
+    /// </summary>
+    public bool AutoMaintenanceEnabled { get; private set; } = true;
+
     /// <summary>Preferências leves, sempre desligadas enquanto o administrador não as confirma nesta TV.</summary>
     public bool FocusModeEnabled { get; private set; }
 
@@ -138,6 +144,20 @@ public sealed class ConfiguredTv
         }
 
         AllowBackgroundAppClosing = allow;
+        UpdatedAt = now;
+        UpdatedBy = updatedBy;
+        return true;
+    }
+
+    /// <summary>Liga ou desliga a manutenção automática desta TV; <c>false</c> (sem mexer em nada) se já estava assim.</summary>
+    public bool SetAutoMaintenance(bool enabled, Guid updatedBy, DateTimeOffset now)
+    {
+        if (AutoMaintenanceEnabled == enabled)
+        {
+            return false;
+        }
+
+        AutoMaintenanceEnabled = enabled;
         UpdatedAt = now;
         UpdatedBy = updatedBy;
         return true;

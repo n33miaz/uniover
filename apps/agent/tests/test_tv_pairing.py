@@ -195,6 +195,7 @@ def test_tv_settings_have_the_agreed_defaults() -> None:
     assert settings.tv_host is None
     assert settings.tv_client_name == "UniOver"
     assert settings.tv_hibernate_seconds == 300
+    assert settings.tv_samsung_maintenance_idle_seconds == 15 * 60
 
 
 def test_tv_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:

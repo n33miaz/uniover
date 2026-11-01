@@ -543,6 +543,94 @@ describe('TvEditSheet', () => {
       });
     });
 
+    describe('automatic maintenance', () => {
+      const SAMSUNG: TvItem = {
+        ...TV,
+        capabilities: ['tv.remote', 'tv.kind.samsung', 'tv.maintenance.v1'],
+      };
+      const maintenanceSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle'))
+          .find((label) => label.textContent?.trim() === 'Manutenção Automática')
+          ?.querySelector<HTMLInputElement>('input');
+      const closeAppsSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle')).find((label) =>
+          label.textContent?.includes('Fechar Apps em Segundo Plano'),
+        );
+
+      it('is offered, on by default, in place of the Android switch, only for an agent that announces it', async () => {
+        const { el } = await render(SAMSUNG, [OWN]);
+        expect(maintenanceSwitch(el)?.checked).toBe(true);
+        expect(closeAppsSwitch(el)).toBeUndefined();
+
+        const plain = await render(TV, [OWN]);
+        expect(maintenanceSwitch(plain.el)).toBeUndefined();
+        expect(closeAppsSwitch(plain.el)).toBeDefined();
+      });
+
+      it('sends only the change, and nothing when it was not touched', async () => {
+        const untouched = await render(SAMSUNG, [OWN]);
+        expect(untouched.el.querySelector<HTMLButtonElement>('button[type=submit]')?.disabled).toBe(
+          true,
+        );
+
+        const { el, save, settle } = await render(SAMSUNG, [OWN]);
+        maintenanceSwitch(el)!.click();
+        await settle();
+        await save();
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', { autoMaintenanceEnabled: false });
+      });
+
+      it('shows a turned-off TV as off and can turn it on again', async () => {
+        const { el, save, settle } = await render({ ...SAMSUNG, autoMaintenanceEnabled: false }, [
+          OWN,
+        ]);
+        expect(maintenanceSwitch(el)?.checked).toBe(false);
+        maintenanceSwitch(el)!.click();
+        await settle();
+        await save();
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', { autoMaintenanceEnabled: true });
+      });
+
+      it('writes a maintenance report as a short line with what it did or why it skipped', async () => {
+        api.tvCleanupReports.mockResolvedValue([
+          {
+            kind: 'deep',
+            trigger: 'maintenance',
+            startedAt: '2026-10-31T21:30:00Z',
+            durationMs: 3200,
+            memoryBeforeMb: null,
+            memoryAfterMb: null,
+            closedApps: 2,
+            closedPackages: [],
+            backgroundProcesses: null,
+            sessionOpenMs: null,
+            result: 'completed',
+            reason: null,
+          },
+          {
+            kind: 'deep',
+            trigger: 'maintenance',
+            startedAt: '2026-10-31T20:00:00Z',
+            durationMs: 0,
+            memoryBeforeMb: null,
+            memoryAfterMb: null,
+            closedApps: 0,
+            closedPackages: [],
+            backgroundProcesses: null,
+            sessionOpenMs: null,
+            result: 'skipped',
+            reason: 'foreground-unverifiable',
+          },
+        ]);
+        const { el } = await render(SAMSUNG, [OWN]);
+        const lines = Array.from(el.querySelectorAll('.report')).map((line) => line.textContent);
+        expect(lines[0]).toContain('Manutenção');
+        expect(lines[0]).toContain('Fechou 2 apps');
+        expect(lines[1]).toContain('Manutenção');
+        expect(lines[1]).toContain('Pulada: sem certeza do app em uso');
+      });
+    });
+
     it('turns every light setting off with Voltar ao Original so the agent restores the values it read', async () => {
       const android: TvItem = {
         ...TV,

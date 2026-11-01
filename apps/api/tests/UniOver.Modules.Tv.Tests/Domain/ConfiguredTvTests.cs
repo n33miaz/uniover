@@ -106,6 +106,23 @@ public class ConfiguredTvTests
     }
 
     [Fact]
+    public void AutoMaintenance_StartsOn_AndOnlyAChangeStampsWhoAndWhen()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        tv.AutoMaintenanceEnabled.Should().BeTrue("a manutenção da Samsung vem ligada por padrão");
+
+        tv.SetAutoMaintenance(true, Guid.NewGuid(), Now.AddMinutes(1)).Should().BeFalse();
+        tv.UpdatedAt.Should().Be(Now);
+
+        var other = Guid.NewGuid();
+        tv.SetAutoMaintenance(false, other, Now.AddMinutes(2)).Should().BeTrue();
+        (tv.AutoMaintenanceEnabled, tv.UpdatedBy, tv.UpdatedAt).Should().Be((false, other, Now.AddMinutes(2)));
+
+        tv.SetAutoMaintenance(true, Admin, Now.AddMinutes(3)).Should().BeTrue();
+        tv.AutoMaintenanceEnabled.Should().BeTrue();
+    }
+
+    [Fact]
     public void LightSettings_StartOff_AndOnlyAChangeStampsWhoAndWhen()
     {
         var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);

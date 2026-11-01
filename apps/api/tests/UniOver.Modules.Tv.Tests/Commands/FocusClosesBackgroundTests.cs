@@ -46,6 +46,29 @@ public class FocusClosesBackgroundTests
         body.GetProperty("focusClosesBackground").GetBoolean().Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ASamsungAgentWithTheMaintenanceCapability_GetsTheOldBodyPlusItsOwnSwitch(bool enabled)
+    {
+        var body = CleanupSettingsPublisher.BuildBody(
+            [CleanupSettingsPublisher.MaintenanceCapability], false, false, false, "[]", false, true, true, 700, enabled);
+
+        body.EnumerateObject().Select(p => p.Name).Should()
+            .BeEquivalentTo("lightEnabled", "deepEnabled", "deepThresholdMb", "closeBackgroundApps", "maintenanceEnabled");
+        body.GetProperty("maintenanceEnabled").GetBoolean().Should().Be(enabled);
+    }
+
+    [Fact]
+    public void TheMaintenanceSwitch_NeverReachesAnAgentThatDoesNotAnnounceIt()
+    {
+        var withLight = Body([CleanupSettingsPublisher.Capability, Light, Focus]);
+        var old = Body([CleanupSettingsPublisher.Capability]);
+
+        withLight.TryGetProperty("maintenanceEnabled", out _).Should().BeFalse();
+        old.TryGetProperty("maintenanceEnabled", out _).Should().BeFalse();
+    }
+
     private static AgentPresenceInfo Present(params string[] capabilities) =>
         new("pc-sala", true, Now, "2.0.0", capabilities, Now);
 

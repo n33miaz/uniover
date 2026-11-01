@@ -4688,6 +4688,10 @@
             "default": false,
             "type": "boolean"
           },
+          "autoMaintenanceEnabled": {
+            "default": true,
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -4812,6 +4816,12 @@
             ]
           },
           "allowBackgroundAppClosing": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "autoMaintenanceEnabled": {
             "type": [
               "null",
               "boolean"

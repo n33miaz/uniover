@@ -37,6 +37,8 @@ import {
 const NAME_MAX = 60;
 /** Anunciada pelo agente que fecha os outros apps no Modo Foco; sem ela o campo nem é enviado. */
 const FOCUS_CLOSES_CAPABILITY = 'tv.focus-closes-background.v1';
+/** Anunciada pelo agente que faz a manutenção automática por conta própria (a Samsung, sem ADB). */
+const MAINTENANCE_CAPABILITY = 'tv.maintenance.v1';
 
 /** O que a folha estava fazendo quando deu erro: cada passo tem as suas recusas. */
 type Step = 'create' | 'update' | 'members' | 'delete';
@@ -97,6 +99,11 @@ export class TvEditSheet implements OnInit {
   /** Fechar apps em segundo plano na limpeza desta TV. Desligado por padrão. */
   protected readonly closeBackground = linkedSignal(
     () => this.tv()?.allowBackgroundAppClosing ?? false,
+  );
+  /** Manutenção automática desta TV: ligada por padrão; só o agente que a anuncia a oferece. */
+  protected readonly maintenance = linkedSignal(() => this.tv()?.autoMaintenanceEnabled ?? true);
+  protected readonly supportsMaintenance = computed(
+    () => this.tv()?.capabilities.includes(MAINTENANCE_CAPABILITY) === true,
   );
   protected readonly focusMode = linkedSignal(() => this.tv()?.focusModeEnabled ?? false);
   /**
@@ -190,6 +197,12 @@ export class TvEditSheet implements OnInit {
       !this.creating() &&
       this.closeBackground() !== (this.current()?.allowBackgroundAppClosing ?? false),
   );
+  private readonly maintenanceChanged = computed(
+    () =>
+      !this.creating() &&
+      this.supportsMaintenance() &&
+      this.maintenance() !== (this.current()?.autoMaintenanceEnabled ?? true),
+  );
   private readonly lightSettingsChanged = computed(
     () =>
       !this.creating() &&
@@ -212,6 +225,7 @@ export class TvEditSheet implements OnInit {
       this.nameChanged() ||
       this.agentChanged() ||
       this.closeBackgroundChanged() ||
+      this.maintenanceChanged() ||
       this.lightSettingsChanged() ||
       this.membersChanged()
     );
@@ -298,6 +312,9 @@ export class TvEditSheet implements OnInit {
     if (report.trigger === 'focus') {
       return $localize`:@@settings.system.tv.sheet.report-focus:Modo Foco · ${when}:when:`;
     }
+    if (report.trigger === 'maintenance') {
+      return $localize`:@@settings.system.tv.sheet.report-maintenance:Manutenção · ${when}:when:`;
+    }
     return report.trigger === 'automatic'
       ? $localize`:@@settings.system.tv.sheet.report-auto:${cleanupKindText(report.kind)}:kind: automática · ${when}:when:`
       : $localize`:@@settings.system.tv.sheet.report-manual:${cleanupKindText(report.kind)}:kind: manual · ${when}:when:`;
@@ -342,6 +359,10 @@ export class TvEditSheet implements OnInit {
     this.members.update((list) =>
       on ? (list.includes(id) ? list : [...list, id]) : list.filter((item) => item !== id),
     );
+  }
+
+  protected toggleMaintenance(event: Event): void {
+    this.maintenance.set((event.target as HTMLInputElement).checked);
   }
 
   protected toggleCloseBackground(event: Event): void {
@@ -420,6 +441,7 @@ export class TvEditSheet implements OnInit {
         this.nameChanged() ||
         this.agentChanged() ||
         this.closeBackgroundChanged() ||
+        this.maintenanceChanged() ||
         this.lightSettingsChanged()
       ) {
         tv = await this.api.updateTv(tv.id, {
@@ -428,6 +450,7 @@ export class TvEditSheet implements OnInit {
           ...(this.closeBackgroundChanged()
             ? { allowBackgroundAppClosing: this.closeBackground() }
             : {}),
+          ...(this.maintenanceChanged() ? { autoMaintenanceEnabled: this.maintenance() } : {}),
           ...(this.lightSettingsChanged()
             ? {
                 focusModeEnabled: this.focusMode(),

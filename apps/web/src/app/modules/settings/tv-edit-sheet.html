@@ -292,26 +292,48 @@
       </fieldset>
       <fieldset class="group">
         <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.cleanup">Limpeza</legend>
-        <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.close-background-hint">
-          Ligado, a limpeza pode fechar apps abertos em segundo plano. Desligado, nenhum app é
-          tocado.
-        </p>
-        <ul class="ui-group">
-          <li>
-            <label class="toggle">
-              <span class="toggle-title" i18n="@@settings.system.tv.sheet.close-background"
-                >Fechar Apps em Segundo Plano</span
-              >
-              <input
-                type="checkbox"
-                role="switch"
-                class="ui-switch"
-                [checked]="closeBackground()"
-                (change)="toggleCloseBackground($event)"
-              />
-            </label>
-          </li>
-        </ul>
+        @if (supportsMaintenance()) {
+          <ul class="ui-group">
+            <li>
+              <label class="toggle">
+                <span class="toggle-title" i18n="@@settings.system.tv.sheet.maintenance"
+                  >Manutenção Automática</span
+                >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="ui-switch"
+                  [checked]="maintenance()"
+                  (change)="toggleMaintenance($event)"
+                />
+              </label>
+              <p class="toggle-hint" i18n="@@settings.system.tv.sheet.maintenance-hint">
+                Com a TV parada, fecha só apps que ela confirma em segundo plano.
+              </p>
+            </li>
+          </ul>
+        } @else {
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.close-background-hint">
+            Ligado, a limpeza pode fechar apps abertos em segundo plano. Desligado, nenhum app é
+            tocado.
+          </p>
+          <ul class="ui-group">
+            <li>
+              <label class="toggle">
+                <span class="toggle-title" i18n="@@settings.system.tv.sheet.close-background"
+                  >Fechar Apps em Segundo Plano</span
+                >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="ui-switch"
+                  [checked]="closeBackground()"
+                  (change)="toggleCloseBackground($event)"
+                />
+              </label>
+            </li>
+          </ul>
+        }
         <p class="reports-title ui-section-label" i18n="@@settings.system.tv.sheet.reports">
           Últimas limpezas
         </p>
