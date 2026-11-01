@@ -39,9 +39,9 @@ public sealed class TvLegacyGuestTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/power/off", null, true),
         ("POST", "/api/v1/tv/shortcuts/0192f1e4-0000-7000-8000-0000000000d1/launch", null, true),
         ("POST", "/api/v1/tv/shortcuts/refresh", null, true),
-        ("GET", "/api/v1/tv/commands/recent", null, true),
 
-        // E onde ela era recusada: renomear, ocultar e reordenar atalhos, e tudo fora da TV.
+        // E onde ela era recusada: renomear, ocultar e reordenar atalhos, o histórico (só do administrador) e tudo fora da TV.
+        ("GET", "/api/v1/tv/commands/recent", null, false),
         ("PATCH", "/api/v1/tv/shortcuts/0192f1e4-0000-7000-8000-0000000000d1", new { customLabel = "Meu app" }, false),
         ("PUT", "/api/v1/tv/shortcuts/order", new { ids = new[] { Guid.Parse("0192f1e4-0000-7000-8000-0000000000d1") } }, false),
         ("GET", "/api/v1/devices/agents", null, false),

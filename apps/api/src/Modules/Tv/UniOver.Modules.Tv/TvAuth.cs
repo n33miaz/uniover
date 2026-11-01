@@ -38,7 +38,4 @@ public static class TvAuth
 
     /// <summary>Renomear, ocultar e reordenar os atalhos (<c>tv:edit-shortcuts</c>).</summary>
     internal static readonly string EditShortcuts = AccessPermissions.Policy(AccessPermissions.TvEditShortcuts);
-
-    /// <summary>Ler o histórico de comandos (<c>tv:history</c>); quem não é administrador vê só os próprios.</summary>
-    internal static readonly string History = AccessPermissions.Policy(AccessPermissions.TvHistory);
 }
