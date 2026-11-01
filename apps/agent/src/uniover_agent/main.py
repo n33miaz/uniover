@@ -167,7 +167,7 @@ from uniover_agent.core import (
     unsupported_handler,
     update_body,
 )
-from uniover_agent.core.api_features import ApiFeatures
+from uniover_agent.core.api_features import FEATURES_TIMEOUT_SECONDS, ApiFeatures
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
@@ -1207,8 +1207,11 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     health = TaskHealth(clock)
     # O diagnóstico só é declarado e enviado depois de a API dizer que o aceita (uma API anterior
     # recusaria o `hello`).
-    features = ApiFeatures(lambda: fetch_api_features(api_url), clock)
-    await features.refresh()
+    # A consulta roda em segundo plano, com prazo curto: a primeira conexão nunca espera por ela, e
+    # o `hello` repetido a cada 5 minutos passa a declarar a capacidade assim que a API a listar.
+    features = ApiFeatures(
+        lambda: fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS), clock
+    )
     shipper = DiagnosticsShipper(
         kit.store,
         kit.recorder,
