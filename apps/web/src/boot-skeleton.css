@@ -1,0 +1,689 @@
+/*
+ * Esqueletos de tela inteira, um por tipo de tela. Ficam num estilo GLOBAL (no mesmo pacote do `styles.css`, que é uma
+ * folha bloqueante no `<head>`) porque dois desenhos idênticos os usam: o estático do `index.html`, que cobre a tela antes
+ * de qualquer JavaScript do Angular rodar, e o `UpdateSkeleton`, que cobre atualização, abertura lenta e a espera de uma
+ * rota preguiçosa. Um só CSS garante que a troca de um pelo outro não dê salto. O brilho vem da classe única de espera
+ * (`ui-skeleton`, em styles.css): aqui só a forma de cada osso, com as medidas e os raios da tela real.
+ */
+
+.bs-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--a-bg);
+  color: var(--a-ink);
+}
+/* O desenho estático fica logo abaixo do que o Angular desenha: o de cima assume sem que nada pule. */
+.bs-root.bs-boot {
+  z-index: 999;
+}
+.bs-root.leaving {
+  animation: bs-fade-out var(--dur-exit) var(--ease-out) forwards;
+  pointer-events: none;
+}
+@keyframes bs-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bs-root.leaving {
+    animation: none;
+  }
+  .bs-root.bs-boot.leaving {
+    display: none;
+  }
+}
+/* O esqueleto do Angular já está por cima (mesmo desenho): o estático sai da pintura sem sair do documento. */
+.bs-root.bs-boot.bs-covered {
+  visibility: hidden;
+}
+/* Passou muito tempo sem o app subir (falha de carga): o brilho eterno mentiria, então o desenho sai de cena. */
+.bs-root.bs-stale {
+  display: none;
+}
+
+/* O desenho estático só mostra o tipo que o `boot-route.js` escolheu pelo endereço; sem ele, nada aparece. */
+.bs-boot .bs-variant {
+  display: none;
+}
+html[data-boot='home'] .bs-boot .bs-home,
+html[data-boot='tv'] .bs-boot .bs-tv,
+html[data-boot='training'] .bs-boot .bs-training,
+html[data-boot='settings'] .bs-boot .bs-settings,
+html[data-boot='detail'] .bs-boot .bs-detail,
+html[data-boot='plain'] .bs-boot .bs-plain,
+html[data-boot='generic'] .bs-boot .bs-generic {
+  display: flex;
+}
+
+.bs-variant {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.bs-root .bone {
+  display: block;
+  min-height: 0;
+}
+.bs-root .bs-line {
+  height: 14px;
+}
+.bs-root .bs-line.bs-big {
+  height: 28px;
+}
+.bs-root .bs-w20 {
+  width: 20%;
+}
+.bs-root .bs-w30 {
+  width: 30%;
+}
+.bs-root .bs-w40 {
+  width: 40%;
+}
+.bs-root .bs-w60 {
+  width: 60%;
+}
+.bs-root .bs-w70 {
+  width: 70%;
+}
+.bs-root .bs-w80 {
+  width: 80%;
+}
+
+/* Colunas de página e cartões: as mesmas medidas do app (coluna, respiros, raios). */
+.bs-page {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--gutter) var(--space-4);
+  box-sizing: border-box;
+}
+.bs-card,
+.bs-row {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+.bs-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+}
+.bs-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+}
+.bs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.bs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+}
+.bs-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-pill {
+  width: 120px;
+  height: var(--tap);
+  border-radius: var(--radius);
+  margin-top: var(--space-2);
+}
+.bs-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-xs);
+}
+.bs-icon.bs-round {
+  border-radius: var(--radius-pill);
+}
+.bs-chip {
+  width: 44px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+}
+
+/* Barra de abas de baixo (some em tela larga, como a real). */
+.bs-tabs {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + var(--safe-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+.bs-tab {
+  width: 40px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+}
+
+/* Topo único dos módulos (voltar, título no centro de verdade): a mesma grade da barra de topo da casca. */
+.bs-topbar {
+  display: grid;
+  grid-template-columns: minmax(var(--tap), 1fr) minmax(0, auto) minmax(var(--tap), 1fr);
+  column-gap: 4px;
+  align-items: center;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: calc(var(--space-3) + env(safe-area-inset-top, 0px))
+    max(var(--gutter), env(safe-area-inset-right)) var(--space-1)
+    max(var(--gutter), env(safe-area-inset-left));
+}
+/* Telas de Configurações e outras com a casca padrão: o respiro a mais que a casca põe acima da barra. */
+.bs-topbar.bs-shell {
+  padding-top: calc(var(--gutter) + var(--space-3) + env(safe-area-inset-top, 0px));
+}
+.bs-topbar .bs-back {
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 50%;
+}
+.bs-topbar .bs-title {
+  width: 8.5rem;
+  height: 24px;
+  justify-self: center;
+}
+.bs-topbar .bs-end {
+  justify-self: end;
+}
+.bs-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--gutter) var(--space-4);
+  box-sizing: border-box;
+}
+
+/* ---- Início ---- */
+.bs-page.bs-home {
+  max-width: calc(46rem + 2 * var(--gutter));
+  padding-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--gutter) + var(--safe-bottom));
+}
+.bs-home-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  min-height: clamp(136px, 21vw, 172px);
+  padding: clamp(var(--space-5), 3vw, var(--space-6));
+  border: 1px solid color-mix(in srgb, var(--a-accent) 22%, var(--a-line));
+  border-radius: var(--radius-xl);
+  background: var(--a-hero);
+  box-shadow: var(--shadow-2);
+}
+.bs-home-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-time {
+  width: clamp(76px, 18vw, 104px);
+  height: clamp(28px, 7vw, 36px);
+  border-radius: var(--radius-sm);
+}
+.bs-brand {
+  width: 4.75rem;
+  height: 17px;
+  margin-inline: var(--space-1);
+}
+.bs-hero-actions {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.bs-gear {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+}
+.bs-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+}
+.bs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  margin-top: var(--space-1);
+  padding-inline: var(--space-1);
+}
+.bs-section-head .bs-big {
+  width: 7rem;
+  height: 22px;
+}
+.bs-section-head .bs-w20 {
+  width: 3.5rem;
+}
+.bs-modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.bs-module {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: clamp(160px, 42vw, 176px);
+  padding: var(--space-4) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+}
+.bs-module .bs-line {
+  width: 60%;
+}
+.bs-app {
+  width: clamp(72px, 19vw, 80px);
+  height: clamp(72px, 19vw, 80px);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Controle da TV ---- */
+.bs-tv {
+  --tv-top: 60px;
+  --tv-pill: 52px;
+  --tv-round: clamp(60px, 8.2dvh, 84px);
+  align-items: stretch;
+}
+/* Mesma caixa do `main` + `.tv` do controle: a coluna de 36 rem, o respiro e a altura útil da tela. */
+.bs-tv-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  max-width: calc(36rem + 2 * var(--gutter));
+  margin-inline: auto;
+  box-sizing: border-box;
+  padding: calc(var(--gutter) + env(safe-area-inset-top, 0px)) var(--gutter)
+    calc(var(--gutter) + var(--safe-bottom));
+}
+/* Cabeçalho: voltar e três pontos à esquerda, título no meio, ponto de estado e desligar à direita. */
+.bs-tv-head {
+  --gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(calc(2 * var(--tap) + var(--gap)), 1fr) minmax(0, auto) minmax(
+      calc(2 * var(--tap) + var(--gap)),
+      1fr
+    );
+  column-gap: 4px;
+  align-items: center;
+}
+.bs-tv-lead,
+.bs-tv-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bs-tv-actions {
+  justify-self: end;
+}
+.bs-circle {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 50%;
+}
+.bs-tv-title {
+  width: 3.5rem;
+  height: 24px;
+  border-radius: var(--radius-xs);
+}
+/* O ponto de estado mora na ponta do alvo de 44 px, colado ao desligar. */
+.bs-tv-state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: var(--tap);
+  height: var(--tap);
+}
+.bs-tv-state .bs-state-dot {
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 4px;
+  border-radius: 50%;
+}
+/* Fileira de atalhos: quatro azulejos quadrados, centralizados, na altura da fileira real. */
+.bs-tv-shortcuts {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tv-top);
+}
+.bs-tile {
+  flex: 0 0 auto;
+  width: var(--tv-top);
+  height: var(--tv-top);
+  border-radius: 16px;
+}
+/* Palco: o que sobra de altura; o anel é o maior círculo que cabe na janela dele. */
+.bs-tv-stage {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+.bs-tv-viewport {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 176px;
+  container-type: size;
+  --bs-ring: clamp(150px, 38dvh, 300px);
+}
+@supports (width: 1cqi) {
+  .bs-tv-viewport {
+    --bs-ring: min(100cqi - 4px, 100cqb, 480px);
+  }
+}
+/* O anel é um círculo com a borda que brilha; por dentro, o disco claro, as quatro setas e o OK no meio. */
+.bs-ring {
+  position: relative;
+  flex: none;
+  width: var(--bs-ring);
+  height: var(--bs-ring);
+  border-radius: 50%;
+}
+.bs-disk {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--a-surface);
+}
+.bs-ok {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 37%;
+  height: 37%;
+  border-radius: 50%;
+  translate: -50% -50%;
+}
+.bs-arrow {
+  position: absolute;
+  width: 18px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+}
+.bs-arrow.bs-up {
+  top: 14%;
+  left: calc(50% - 9px);
+}
+.bs-arrow.bs-down {
+  bottom: 14%;
+  left: calc(50% - 9px);
+}
+.bs-arrow.bs-left {
+  top: calc(50% - 5px);
+  left: 14%;
+}
+.bs-arrow.bs-right {
+  top: calc(50% - 5px);
+  right: 14%;
+}
+/* Bolinhas de página: três alvos de 44 px com a bolinha de 8 px no meio. */
+.bs-tv-dots {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: var(--tap);
+}
+.bs-pip-cell {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+}
+.bs-pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+/* Embaixo: pílula de volume, oito botões redondos (4x2) e pílula de canal. */
+.bs-tv-bottom {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: var(--tv-pill) minmax(0, 1fr) var(--tv-pill);
+  gap: 4px;
+  align-items: stretch;
+}
+.bs-vpill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border: 1px solid var(--a-line);
+  border-radius: calc(var(--tv-pill) / 2);
+  background: var(--a-surface);
+}
+.bs-vpill .bs-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+}
+.bs-vpill .bs-level {
+  width: 26px;
+  height: 14px;
+  border-radius: 6px;
+}
+.bs-rounds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 3px;
+  align-content: center;
+  justify-items: center;
+}
+.bs-round-key {
+  width: min(100%, var(--tv-round));
+  min-width: 48px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+/* ---- Treino (topo único + Hoje + abas) ---- */
+.bs-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-segment {
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+.bs-week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.bs-week-head .bs-big {
+  width: 8rem;
+  height: 22px;
+}
+.bs-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+.bs-day {
+  height: 52px;
+  border-radius: var(--radius-sm);
+}
+.bs-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--a-line);
+}
+.bs-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-stat .bs-big {
+  height: 22px;
+}
+.bs-cta {
+  height: var(--tap);
+  border-radius: var(--radius);
+}
+
+/* ---- Configurações (lista) e telas de dentro ---- */
+.bs-section-label {
+  width: 5rem;
+  height: 12px;
+  margin: var(--space-2) var(--space-1) 0;
+}
+.bs-group {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-group > .bs-setting + .bs-setting {
+  border-top: 1px solid var(--a-line);
+}
+.bs-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+}
+.bs-setting .bs-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+.bs-setting .bs-line {
+  width: 40%;
+}
+.bs-setting .bs-chevron {
+  width: 10px;
+  height: 14px;
+  margin-inline-start: auto;
+  border-radius: var(--radius-pill);
+}
+
+/* ---- Telas de entrada (sem casca): um cartão no meio ---- */
+.bs-plain {
+  align-items: center;
+  justify-content: center;
+  padding: var(--gutter);
+  box-sizing: border-box;
+}
+.bs-plain .bs-card {
+  width: 100%;
+  max-width: 24rem;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+.bs-plain .bs-cta {
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .bs-modules {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 640px) {
+  .bs-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .bs-tabs {
+    display: none;
+  }
+}
+
+/* ---- Desenho genérico (último recurso): topo de página, cartão grande, quatro cartões e uma lista ---- */
+.bs-flat-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+}
+.bs-flat-title {
+  flex: 1;
+  max-width: 180px;
+  height: 24px;
+}
+.bs-flat-back {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+}
+.bs-avatar {
+  width: 36px;
+  height: 36px;
+  margin-inline-start: auto;
+  border-radius: var(--radius-pill);
+}

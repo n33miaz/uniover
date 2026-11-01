@@ -35,7 +35,7 @@
                 "output": "/exercise-art"
               }
             ],
-            "styles": ["src/styles.css"],
+            "styles": ["src/styles.css", "src/boot-skeleton.css"],
             "polyfills": ["@angular/localize/init"]
           },
           "configurations": {

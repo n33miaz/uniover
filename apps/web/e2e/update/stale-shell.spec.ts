@@ -105,7 +105,7 @@ test.afterEach(async ({}, info) => {
 const banner = (page: Page) =>
   page.getByRole('status').filter({ hasText: 'Nova versão disponível' });
 const homeCards = (page: Page) => page.locator('article.card');
-const skeleton = (page: Page) => page.locator('app-update-skeleton .overlay');
+const skeleton = (page: Page) => page.locator('app-update-skeleton .bs-root');
 const mainScript = (page: Page) =>
   page.evaluate(() => document.querySelector('script[src^="main-"]')?.getAttribute('src') ?? '');
 
@@ -134,7 +134,7 @@ test.describe('atualização com a casca antiga já aberta', () => {
       state.__blankFrames = 0;
       // Depois que a página nova pintou algo, nenhum quadro pode ficar sem o esqueleto e sem a Início ao mesmo tempo.
       const tick = () => {
-        const hasSkeleton = !!document.querySelector('app-update-skeleton .overlay');
+        const hasSkeleton = !!document.querySelector('app-update-skeleton .bs-root');
         const hasHome = !!document.querySelector('article.card');
         if (!hasHome && !hasSkeleton && document.querySelector('app-root > *'))
           state.__blankFrames++;
@@ -197,7 +197,7 @@ test.describe('atualização com a casca antiga já aberta', () => {
     await context.addInitScript(() => {
       (window as unknown as { __skeletonSeen: boolean }).__skeletonSeen = false;
       new MutationObserver(() => {
-        if (document.querySelector('app-update-skeleton .overlay'))
+        if (document.querySelector('app-update-skeleton .bs-root'))
           (window as unknown as { __skeletonSeen: boolean }).__skeletonSeen = true;
       }).observe(document, { childList: true, subtree: true });
     });
@@ -383,7 +383,7 @@ test.describe('abertura lenta', () => {
   /** Anima o esqueleto? Nome de cada animação em andamento nos ossos (o brilho comum ou, em movimento reduzido, a pulsação). */
   const boneAnimations = (page: Page) =>
     page.evaluate(() =>
-      Array.from(document.querySelectorAll('app-update-skeleton .overlay .bone')).flatMap((bone) =>
+      Array.from(document.querySelectorAll('app-update-skeleton .bs-root .bone')).flatMap((bone) =>
         bone
           .getAnimations()
           .filter((animation) => animation.playState === 'running')
@@ -401,7 +401,7 @@ test.describe('abertura lenta', () => {
       const tick = () => {
         const now = performance.now();
         if (!bootedAt && document.querySelector('app-root > *')) bootedAt = now;
-        const covered = !!document.querySelector('app-update-skeleton .overlay');
+        const covered = !!document.querySelector('app-update-skeleton .bs-root');
         const home = !!document.querySelector('article.card');
         if (bootedAt && now - bootedAt > 800 && !covered && !home && state.__blankLog.length < 5)
           state.__blankLog.push(`${Math.round(now - bootedAt)} ms depois de a casca subir`);

@@ -1,104 +1,276 @@
 import { DOCUMENT } from '@angular/common';
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, afterRenderEffect, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   NavigationCancel,
   NavigationCancellationCode,
   NavigationEnd,
   NavigationError,
+  NavigationStart,
   Router,
 } from '@angular/router';
+import { BootVariant, bootVariantFor } from './boot-variant';
 import { PwaUpdateService } from './pwa-update.service';
 
 /** Quanto a primeira tela pode demorar na abertura antes de o esqueleto cobri-la (abaixo disso, a troca é imperceptível). */
 export const SLOW_BOOT_MS = 300;
+/** Quanto uma navegação dentro do app (download do pedaço da tela, guarda) pode demorar antes de o esqueleto da tela de destino aparecer. */
+export const ROUTE_WAIT_MS = 200;
+/** Identificador do esqueleto estático do `index.html`, que cobre a tela antes de o Angular subir. */
+export const BOOT_SKELETON_ID = 'boot-skeleton';
+/** Tempo da saída do esqueleto estático (a animação `leaving` dura `--dur-exit`); passado isso ele é tirado do documento. */
+const BOOT_LEAVE_MS = 260;
 
 /**
- * Cobre a tela inteira com um esqueleto que brilha em dois momentos em que, sem ele, só haveria o fundo vazio: do toque em
- * "Atualizar" até o primeiro conteúdo da página nova (a casca nova sobe) e na abertura do app quando a primeira tela demora
- * (conexão lenta, servidor acordando: o guarda de entrada espera a sessão antes de mostrar qualquer coisa). Nessa abertura
- * o esqueleto só aparece se a espera passar de `SLOW_BOOT_MS`, para uma abertura rápida não piscar.
+ * Cobre a tela inteira com um esqueleto que brilha nos momentos em que, sem ele, só haveria o fundo vazio: do toque em
+ * "Atualizar" até o primeiro conteúdo da página nova (a casca nova sobe), na abertura do app quando a primeira tela demora
+ * (conexão lenta, servidor acordando: o guarda de entrada espera a sessão antes de mostrar qualquer coisa) e, já dentro do
+ * app, quando abrir uma tela demora (o pedaço de código dela ainda está baixando). O desenho é o da tela de destino
+ * (`bootVariantFor`): o controle da TV tem o dele, o Treino o dele, Configurações o dele; o genérico é só o último recurso.
+ * Na abertura o esqueleto só aparece se a espera passar de `SLOW_BOOT_MS`, para uma abertura rápida não piscar; antes disso
+ * quem cobre a tela é o desenho estático do `index.html` (mesmas formas, mesmo CSS global), que este componente retira
+ * quando a primeira tela fica pronta.
  * Autocontido: só usa os tokens de cor (`--a-*`) e o brilho único do app (ui-skeleton, em styles.css), que segue os dois
  * temas e, com `prefers-reduced-motion`, vira uma pulsação sem deslocamento (parado, ele pareceria travado). A rota que
- * termina de ativar (ou falha) entrega o primeiro conteúdo; o esqueleto sai pela mesma animação de saída dos avisos.
+ * termina de ativar (ou falha) entrega o primeiro conteúdo; o esqueleto sai pela mesma animação de saída dos avisos. O CSS
+ * das formas é global (`boot-skeleton.css`), compartilhado com o desenho estático.
  */
 @Component({
   selector: 'app-update-skeleton',
   template: `
     @if (visible()) {
-      <div class="overlay" role="status" [animate.leave]="'leaving'">
+      <div class="bs-root" role="status" [animate.leave]="'leaving'">
         @if (pwa.showSkeleton()) {
           <span class="ui-visually-hidden" i18n="@@pwa.updating">Atualizando…</span>
         } @else {
           <span class="ui-visually-hidden" i18n="@@pwa.loading">Carregando…</span>
         }
-        @if (home()) {
-          <div class="page home" aria-hidden="true">
-            <span class="bone ui-skeleton brand"></span>
-            <div class="home-hero">
-              <span class="hero-actions">
-                <span class="bone ui-skeleton gear"></span>
-                <span class="bone ui-skeleton dot"></span>
-              </span>
-              <span class="home-hero-text">
-                <span class="bone ui-skeleton line w40"></span>
-                <span class="bone ui-skeleton line big w80"></span>
-              </span>
-              <span class="bone ui-skeleton time"></span>
+        @switch (variant()) {
+          @case ('home') {
+            <div class="bs-variant bs-page bs-home bs-draw" aria-hidden="true">
+              <span class="bone ui-skeleton bs-brand"></span>
+              <div class="bs-home-hero">
+                <span class="bs-hero-actions">
+                  <span class="bone ui-skeleton bs-gear"></span>
+                  <span class="bone ui-skeleton bs-dot"></span>
+                </span>
+                <span class="bs-home-hero-text">
+                  <span class="bone ui-skeleton bs-line bs-w40"></span>
+                  <span class="bone ui-skeleton bs-line bs-big bs-w80"></span>
+                </span>
+                <span class="bone ui-skeleton bs-time"></span>
+              </div>
+              <div class="bs-section-head">
+                <span class="bone ui-skeleton bs-line bs-big bs-w30"></span>
+                <span class="bone ui-skeleton bs-line bs-w20"></span>
+              </div>
+              <div class="bs-modules">
+                @for (module of modules; track module) {
+                  <div class="bs-module">
+                    <span class="bone ui-skeleton bs-app"></span>
+                    <span class="bone ui-skeleton bs-line bs-w60"></span>
+                  </div>
+                }
+              </div>
             </div>
-            <div class="section-head">
-              <span class="bone ui-skeleton line big w30"></span>
-              <span class="bone ui-skeleton line w20"></span>
-            </div>
-            <div class="modules">
-              @for (module of modules; track module) {
-                <div class="module">
-                  <span class="bone ui-skeleton app"></span>
-                  <span class="bone ui-skeleton line w60"></span>
-                </div>
-              }
-            </div>
-          </div>
-        } @else {
-          <div class="page" aria-hidden="true">
-            <div class="top">
-              <span class="bone ui-skeleton back"></span>
-              <span class="bone ui-skeleton title"></span>
-              <span class="bone ui-skeleton avatar"></span>
-            </div>
-            <div class="hero">
-              <span class="bone ui-skeleton line w40"></span>
-              <span class="bone ui-skeleton line big w80"></span>
-              <span class="bone ui-skeleton line w60"></span>
-              <span class="bone ui-skeleton pill"></span>
-            </div>
-            <div class="grid">
-              @for (card of cards; track card) {
-                <div class="card">
-                  <span class="bone ui-skeleton icon"></span>
-                  <span class="bone ui-skeleton line w70"></span>
-                  <span class="bone ui-skeleton line w40"></span>
-                </div>
-              }
-            </div>
-            <div class="list">
-              @for (row of rows; track row) {
-                <div class="row">
-                  <span class="bone ui-skeleton icon round"></span>
-                  <span class="lines">
-                    <span class="bone ui-skeleton line w60"></span>
-                    <span class="bone ui-skeleton line w30"></span>
+          }
+          @case ('tv') {
+            <div class="bs-variant bs-tv bs-draw" aria-hidden="true">
+              <div class="bs-tv-col">
+                <div class="bs-tv-head">
+                  <span class="bs-tv-lead">
+                    <span class="bone ui-skeleton bs-circle"></span>
+                    <span class="bone ui-skeleton bs-circle"></span>
                   </span>
-                  <span class="bone ui-skeleton chip"></span>
+                  <span class="bone ui-skeleton bs-tv-title"></span>
+                  <span class="bs-tv-actions">
+                    <span class="bs-tv-state"
+                      ><span class="bone ui-skeleton bs-state-dot"></span
+                    ></span>
+                    <span class="bone ui-skeleton bs-circle"></span>
+                  </span>
                 </div>
-              }
+                <div class="bs-tv-shortcuts">
+                  @for (tile of tiles; track tile) {
+                    <span class="bone ui-skeleton bs-tile"></span>
+                  }
+                </div>
+                <div class="bs-tv-stage">
+                  <div class="bs-tv-viewport">
+                    <span class="bone ui-skeleton bs-ring">
+                      <span class="bs-disk">
+                        <span class="bone ui-skeleton bs-arrow bs-up"></span>
+                        <span class="bone ui-skeleton bs-arrow bs-right"></span>
+                        <span class="bone ui-skeleton bs-arrow bs-down"></span>
+                        <span class="bone ui-skeleton bs-arrow bs-left"></span>
+                        <span class="bone ui-skeleton bs-ok"></span>
+                      </span>
+                    </span>
+                  </div>
+                  <div class="bs-tv-dots">
+                    @for (pip of pips; track pip) {
+                      <span class="bs-pip-cell"><span class="bone ui-skeleton bs-pip"></span></span>
+                    }
+                  </div>
+                </div>
+                <div class="bs-tv-bottom">
+                  <span class="bs-vpill">
+                    <span class="bone ui-skeleton bs-mark"></span>
+                    <span class="bone ui-skeleton bs-level"></span>
+                    <span class="bone ui-skeleton bs-mark"></span>
+                  </span>
+                  <div class="bs-rounds">
+                    @for (key of keys; track key) {
+                      <span class="bone ui-skeleton bs-round-key"></span>
+                    }
+                  </div>
+                  <span class="bs-vpill">
+                    <span class="bone ui-skeleton bs-mark"></span>
+                    <span class="bone ui-skeleton bs-level"></span>
+                    <span class="bone ui-skeleton bs-mark"></span>
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="tabs" aria-hidden="true">
-            @for (tab of tabs; track tab) {
-              <span class="bone ui-skeleton tab"></span>
-            }
-          </div>
+          }
+          @case ('training') {
+            <div class="bs-variant bs-training bs-draw" aria-hidden="true">
+              <div class="bs-topbar">
+                <span class="bone ui-skeleton bs-back"></span>
+                <span class="bone ui-skeleton bs-title"></span>
+                <span class="bs-end"></span>
+              </div>
+              <div class="bs-body">
+                <div class="bs-hero">
+                  <span class="bone ui-skeleton bs-line bs-w40"></span>
+                  <span class="bone ui-skeleton bs-line bs-big bs-w80"></span>
+                  <span class="bone ui-skeleton bs-cta"></span>
+                </div>
+                <div class="bs-card">
+                  <div class="bs-week-head">
+                    <span class="bone ui-skeleton bs-line bs-big"></span>
+                    <span class="bone ui-skeleton bs-line bs-w20"></span>
+                  </div>
+                  <div class="bs-days">
+                    @for (day of days; track day) {
+                      <span class="bone ui-skeleton bs-day"></span>
+                    }
+                  </div>
+                  <div class="bs-stats">
+                    @for (stat of stats; track stat) {
+                      <span class="bs-stat">
+                        <span class="bone ui-skeleton bs-line bs-big bs-w60"></span>
+                        <span class="bone ui-skeleton bs-line bs-w40"></span>
+                      </span>
+                    }
+                  </div>
+                </div>
+              </div>
+              <div class="bs-tabs">
+                @for (tab of threeTabs; track tab) {
+                  <span class="bone ui-skeleton bs-tab"></span>
+                }
+              </div>
+            </div>
+          }
+          @case ('settings') {
+            <div class="bs-variant bs-settings bs-draw" aria-hidden="true">
+              <div class="bs-topbar bs-shell">
+                <span class="bone ui-skeleton bs-back"></span>
+                <span class="bone ui-skeleton bs-title"></span>
+                <span class="bs-end"></span>
+              </div>
+              <div class="bs-body">
+                <div class="bs-segments">
+                  @for (segment of threeTabs; track segment) {
+                    <span class="bone ui-skeleton bs-segment"></span>
+                  }
+                </div>
+                @for (group of groups; track group) {
+                  <span class="bone ui-skeleton bs-section-label"></span>
+                  <div class="bs-group">
+                    @for (setting of settingRows; track setting) {
+                      <div class="bs-setting">
+                        <span class="bone ui-skeleton bs-icon"></span>
+                        <span class="bone ui-skeleton bs-line"></span>
+                        <span class="bone ui-skeleton bs-chevron"></span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+          @case ('detail') {
+            <div class="bs-variant bs-detail bs-draw" aria-hidden="true">
+              <div class="bs-topbar bs-shell">
+                <span class="bone ui-skeleton bs-back"></span>
+                <span class="bone ui-skeleton bs-title"></span>
+                <span class="bs-end"></span>
+              </div>
+              <div class="bs-body">
+                @for (card of cards; track card) {
+                  <div class="bs-card">
+                    <span class="bone ui-skeleton bs-line bs-w40"></span>
+                    <span class="bone ui-skeleton bs-line bs-w80"></span>
+                    <span class="bone ui-skeleton bs-line bs-w60"></span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+          @case ('plain') {
+            <div class="bs-variant bs-plain bs-draw" aria-hidden="true">
+              <div class="bs-card">
+                <span class="bone ui-skeleton bs-line bs-big bs-w60"></span>
+                <span class="bone ui-skeleton bs-line bs-w80"></span>
+                <span class="bone ui-skeleton bs-cta"></span>
+              </div>
+            </div>
+          }
+          @default {
+            <div class="bs-variant bs-generic bs-draw" aria-hidden="true">
+              <div class="bs-page">
+                <div class="bs-flat-top">
+                  <span class="bone ui-skeleton bs-flat-back"></span>
+                  <span class="bone ui-skeleton bs-flat-title"></span>
+                  <span class="bone ui-skeleton bs-avatar"></span>
+                </div>
+                <div class="bs-hero">
+                  <span class="bone ui-skeleton bs-line bs-w40"></span>
+                  <span class="bone ui-skeleton bs-line bs-big bs-w80"></span>
+                  <span class="bone ui-skeleton bs-line bs-w60"></span>
+                  <span class="bone ui-skeleton bs-pill"></span>
+                </div>
+                <div class="bs-grid">
+                  @for (card of cards; track card) {
+                    <div class="bs-card">
+                      <span class="bone ui-skeleton bs-icon"></span>
+                      <span class="bone ui-skeleton bs-line bs-w70"></span>
+                      <span class="bone ui-skeleton bs-line bs-w40"></span>
+                    </div>
+                  }
+                </div>
+                <div class="bs-list">
+                  @for (row of rows; track row) {
+                    <div class="bs-row">
+                      <span class="bone ui-skeleton bs-icon bs-round"></span>
+                      <span class="bs-lines">
+                        <span class="bone ui-skeleton bs-line bs-w60"></span>
+                        <span class="bone ui-skeleton bs-line bs-w30"></span>
+                      </span>
+                      <span class="bone ui-skeleton bs-chip"></span>
+                    </div>
+                  }
+                </div>
+              </div>
+              <div class="bs-tabs">
+                @for (tab of tabs; track tab) {
+                  <span class="bone ui-skeleton bs-tab"></span>
+                }
+              </div>
+            </div>
+          }
         }
       </div>
     }
@@ -107,310 +279,46 @@ export const SLOW_BOOT_MS = 300;
     :host {
       display: contents;
     }
-    .overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      background: var(--a-bg);
-      color: var(--a-ink);
-      /* Entra cobrindo tudo no mesmo quadro do toque: sem fade de entrada, só a saída é suave. */
-    }
-    .overlay.leaving {
-      animation: fade-out var(--dur-exit) var(--ease-out) forwards;
-      pointer-events: none;
-    }
-    .page {
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-4);
-      width: 100%;
-      max-width: 760px;
-      margin: 0 auto;
-      padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--gutter) var(--space-4);
-      box-sizing: border-box;
-    }
-    .top {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3);
-      min-height: var(--tap);
-    }
-    .top .title {
-      flex: 1;
-      max-width: 180px;
-      height: 24px;
-    }
-    .top .back {
-      width: 28px;
-      height: 28px;
-      border-radius: var(--radius-pill);
-    }
-    .top .avatar {
-      width: 36px;
-      height: 36px;
-      margin-inline-start: auto;
-      border-radius: var(--radius-pill);
-    }
-    .hero,
-    .card,
-    .row {
-      border: 1px solid var(--a-line);
-      background: var(--a-surface);
-    }
-    .hero {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-3);
-      padding: var(--space-5);
-      border-radius: var(--radius-lg);
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--space-3);
-    }
-    .card {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
-      padding: var(--space-4);
-      border-radius: var(--radius-sm);
-    }
-    .list {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
-    }
-    .row {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3);
-      padding: var(--space-3) var(--space-4);
-      border-radius: var(--radius-sm);
-    }
-    .lines {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
-    }
-    .tabs {
-      display: flex;
-      justify-content: space-around;
-      align-items: center;
-      padding: var(--space-3) var(--gutter) calc(var(--space-3) + var(--safe-bottom));
-      border-top: 1px solid var(--a-line);
-      background: var(--a-surface);
-    }
-    .tab {
-      width: 40px;
-      height: 28px;
-      border-radius: var(--radius-pill);
-    }
-    /* Variante da Início: mesma coluna, mesmas medidas e mesmos raios da tela real, para a troca não dar salto. */
-    .page.home {
-      max-width: calc(46rem + 2 * var(--gutter));
-      padding-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
-      padding-bottom: calc(var(--gutter) + var(--safe-bottom));
-      gap: var(--space-4);
-    }
-    .home-hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: end;
-      gap: var(--space-3);
-      min-height: clamp(136px, 21vw, 172px);
-      padding: clamp(var(--space-5), 3vw, var(--space-6));
-      border: 1px solid color-mix(in srgb, var(--a-accent) 22%, var(--a-line));
-      border-radius: var(--radius-xl);
-      background: var(--a-hero);
-      box-shadow: var(--shadow-2);
-    }
-    .home-hero-text {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
-    }
-    .time {
-      width: clamp(76px, 18vw, 104px);
-      height: clamp(28px, 7vw, 36px);
-      border-radius: var(--radius-sm);
-    }
-    .modules {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--space-3);
-    }
-    .module {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid var(--a-line);
-      border-radius: var(--radius);
-      background: var(--a-surface);
-      box-shadow: var(--shadow-1);
-    }
-    /* A marca "UniOver" e as ações do cartão (engrenagem e ponto de estado) ficam onde estão na tela real. */
-    .brand {
-      width: 4.75rem;
-      height: 17px;
-      margin-inline: var(--space-1);
-    }
-    .home-hero {
-      position: relative;
-    }
-    .hero-actions {
-      position: absolute;
-      top: var(--space-3);
-      left: var(--space-3);
-      display: flex;
-      align-items: center;
-      gap: var(--space-2);
-    }
-    .gear {
-      width: 22px;
-      height: 22px;
-      border-radius: var(--radius-pill);
-    }
-    .dot {
-      width: 16px;
-      height: 16px;
-      border-radius: var(--radius-pill);
-    }
-    .section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-3);
-      min-height: var(--tap);
-      margin-top: var(--space-1);
-      padding-inline: var(--space-1);
-    }
-    .section-head .big {
-      width: 7rem;
-      height: 22px;
-    }
-    .section-head .w20 {
-      width: 3.5rem;
-    }
-    .module {
-      flex-direction: column;
-      gap: var(--space-3);
-      min-height: clamp(160px, 42vw, 176px);
-      padding: var(--space-4) var(--space-3);
-    }
-    .module .line {
-      width: 60%;
-    }
-    .app {
-      width: clamp(72px, 19vw, 80px);
-      height: clamp(72px, 19vw, 80px);
-      border-radius: var(--radius-sm);
-    }
-    .w20 {
-      width: 20%;
-    }
-    @media (min-width: 600px) {
-      .modules {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-    }
-    /* O brilho vem da classe única de espera (ui-skeleton, em styles.css): aqui só a forma de cada osso. O mínimo
-       dela não vale: cada osso tem a medida do que ele substitui. */
-    .bone {
-      display: block;
-      min-height: 0;
-    }
-    .line {
-      height: 14px;
-    }
-    .line.big {
-      height: 28px;
-    }
-    .w30 {
-      width: 30%;
-    }
-    .w40 {
-      width: 40%;
-    }
-    .w60 {
-      width: 60%;
-    }
-    .w70 {
-      width: 70%;
-    }
-    .w80 {
-      width: 80%;
-    }
-    .pill {
-      width: 120px;
-      height: var(--tap);
-      border-radius: var(--radius);
-      margin-top: var(--space-2);
-    }
-    .icon {
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius-xs);
-    }
-    .icon.round {
-      border-radius: var(--radius-pill);
-    }
-    .chip {
-      width: 44px;
-      height: 22px;
-      border-radius: var(--radius-pill);
-    }
-    @media (min-width: 640px) {
-      .grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
-      .tabs {
-        display: none;
-      }
-    }
-    @keyframes fade-out {
-      to {
-        opacity: 0;
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .overlay,
-      .overlay.leaving {
-        animation: none;
-      }
-    }
   `,
 })
 export class UpdateSkeleton {
   protected readonly pwa = inject(PwaUpdateService);
-  private readonly win = inject(DOCUMENT).defaultView;
+  private readonly doc = inject(DOCUMENT);
+  private readonly win = this.doc.defaultView;
   /** A primeira navegação do app passou de `SLOW_BOOT_MS` sem terminar: a abertura está lenta. */
   private readonly slowBoot = signal(false);
+  /** Uma navegação já dentro do app passou de `ROUTE_WAIT_MS`: o endereço de destino diz que desenho mostrar. */
+  private readonly routeWait = signal<string | null>(null);
   /** A primeira navegação terminou (ou falhou): um temporizador atrasado não pode ligar o esqueleto depois disso. */
   private bootDone = false;
-  protected readonly visible = computed(() => this.pwa.showSkeleton() || this.slowBoot());
+  private routeTimer: number | undefined;
+  protected readonly visible = computed(
+    () => this.pwa.showSkeleton() || this.slowBoot() || this.routeWait() !== null,
+  );
 
   /**
-   * Na Início (a raiz) o esqueleto reproduz a tela; nas demais rotas, um desenho genérico de página. Lê o endereço do
-   * navegador, e não o do roteador: o roteador ainda diz "/" antes de a primeira navegação terminar, e
-   * quem recarrega em "/tv" não pode ver a Início por baixo do esqueleto.
+   * O desenho que cobre a tela: o da rota de destino quando é uma navegação dentro do app, e o do endereço do navegador
+   * na abertura ou na atualização. Lê o endereço do navegador, e não o do roteador: o roteador ainda diz "/" antes de a
+   * primeira navegação terminar, e quem recarrega em "/tv" não pode ver a Início por baixo do esqueleto.
    */
-  protected readonly home = computed(() => {
+  protected readonly variant = computed<BootVariant>(() => {
     // Relê o endereço só quando o esqueleto aparece: um redirecionamento no meio da espera não troca o desenho.
     this.visible();
-    return this.win?.location.pathname === '/';
+    const target = this.routeWait();
+    return bootVariantFor(target ?? this.win?.location.pathname ?? '/');
   });
   protected readonly modules = [1, 2, 3, 4, 5, 6, 7, 8];
   protected readonly cards = [1, 2, 3, 4];
   protected readonly rows = [1, 2, 3, 4];
   protected readonly tabs = [1, 2, 3, 4];
+  protected readonly threeTabs = [1, 2, 3];
+  protected readonly tiles = [1, 2, 3, 4];
+  protected readonly pips = [1, 2, 3];
+  protected readonly keys = [1, 2, 3, 4, 5, 6, 7, 8];
+  protected readonly days = [1, 2, 3, 4, 5, 6, 7];
+  protected readonly stats = [1, 2, 3];
+  protected readonly groups = [1, 2];
+  protected readonly settingRows = [1, 2, 3];
 
   constructor() {
     const router = inject(Router);
@@ -419,8 +327,13 @@ export class UpdateSkeleton {
     if (router.navigated) {
       this.bootDone = true;
       this.pwa.markContentReady();
+      this.dismissBootSkeleton();
     } else this.watchSlowBoot();
     router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event instanceof NavigationStart) {
+        if (this.bootDone) this.armRouteWait(event.url);
+        return;
+      }
       // Um guarda que redireciona (sessão vencida, boas-vindas) cancela esta navegação e começa outra: ainda não há conteúdo,
       // o esqueleto segue até a navegação seguinte terminar.
       const handedOver =
@@ -436,7 +349,15 @@ export class UpdateSkeleton {
         this.pwa.markContentReady();
         this.bootDone = true;
         this.slowBoot.set(false);
+        this.clearRouteWait();
+        this.dismissBootSkeleton();
       }
+    });
+    inject(DestroyRef).onDestroy(() => this.win?.clearTimeout(this.routeTimer));
+    // Com o desenho do Angular por cima, o estático (idêntico) fica oculto por baixo: duas camadas de brilho custam pintura
+    // em dobro, e num celular lento isso derruba a fluidez justo na espera.
+    afterRenderEffect(() => {
+      this.doc.getElementById(BOOT_SKELETON_ID)?.classList.toggle('bs-covered', this.visible());
     });
   }
 
@@ -448,5 +369,33 @@ export class UpdateSkeleton {
       if (!this.bootDone) this.slowBoot.set(true);
     }, SLOW_BOOT_MS);
     inject(DestroyRef).onDestroy(() => win.clearTimeout(timer));
+  }
+
+  /** Uma navegação nova dentro do app: se ela demorar, o esqueleto da tela de destino cobre a espera. */
+  private armRouteWait(url: string): void {
+    const win = this.win;
+    if (!win) return;
+    win.clearTimeout(this.routeTimer);
+    this.routeTimer = win.setTimeout(() => this.routeWait.set(url), ROUTE_WAIT_MS);
+  }
+
+  private clearRouteWait(): void {
+    this.win?.clearTimeout(this.routeTimer);
+    this.routeTimer = undefined;
+    this.routeWait.set(null);
+  }
+
+  /**
+   * Retira o esqueleto estático do `index.html`: a primeira tela está pronta. Sai com a mesma animação de saída do
+   * esqueleto do Angular (a classe `leaving`) e só depois é tirado do documento. Sem o elemento (já retirado, ou um teste),
+   * não faz nada.
+   */
+  private dismissBootSkeleton(): void {
+    const element = this.doc.getElementById(BOOT_SKELETON_ID);
+    if (!element) return;
+    element.classList.add('leaving');
+    const win = this.win;
+    if (win) win.setTimeout(() => element.remove(), BOOT_LEAVE_MS);
+    else element.remove();
   }
 }

@@ -63,7 +63,7 @@ async function watchScreen(page: Page) {
     const tick = () => {
       w.__frames += 1;
       // O esqueleto da abertura cobre a tela inteira por cima da casca: enquanto ele está lá a tela está ocupada.
-      const boot = document.querySelector('app-update-skeleton .overlay');
+      const boot = document.querySelector('app-update-skeleton .bs-root');
       if (boot) {
         armed = true;
       } else {
@@ -330,10 +330,10 @@ test.describe('esqueleto de espera: Início', () => {
     const release = await hold(page, '**/api/v1/tv/state');
     try {
       await page.goto('/');
-      await expect(page.locator('app-update-skeleton .overlay')).toBeVisible();
+      await expect(page.locator('app-update-skeleton .bs-root')).toBeVisible();
       // A Início entra no lugar do esqueleto da abertura e, com o agente ainda sem responder, espera com a forma do topo.
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-      await expect(page.locator('app-update-skeleton .overlay')).toHaveCount(0);
+      await expect(page.locator('app-update-skeleton .bs-root')).toHaveCount(0);
       await expect.poll(async () => (await watched(page)).seen, { timeout: 10_000 }).toBe(true);
       await expect(page.locator('.hero .ui-skeleton').first()).toBeVisible();
     } finally {

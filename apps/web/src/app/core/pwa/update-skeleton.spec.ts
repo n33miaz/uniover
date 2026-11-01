@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { Component, inject } from '@angular/core';
 import { PwaUpdateService } from './pwa-update.service';
-import { SLOW_BOOT_MS, UpdateSkeleton } from './update-skeleton';
+import { BOOT_SKELETON_ID, ROUTE_WAIT_MS, SLOW_BOOT_MS, UpdateSkeleton } from './update-skeleton';
 
 @Component({ template: '' })
 class Blank {}
@@ -36,19 +36,19 @@ describe('UpdateSkeleton', () => {
   it('stays out of the way until an update starts', async () => {
     const { fixture, el } = setup();
     await fixture.whenStable();
-    expect(el.querySelector('.overlay')).toBeNull();
+    expect(el.querySelector('.bs-root')).toBeNull();
   });
 
   it('covers the page as soon as the update starts, with an accessible label', async () => {
     const { service, fixture, el } = setup();
     service.applyingUpdate.set(true);
     await fixture.whenStable();
-    const overlay = el.querySelector('.overlay');
+    const overlay = el.querySelector('.bs-root');
     expect(overlay).not.toBeNull();
     expect(overlay!.getAttribute('role')).toBe('status');
     expect(overlay!.textContent).toContain('Atualizando…');
     // O desenho todo é decoração para leitores de tela: só o texto escondido fala.
-    expect(overlay!.querySelector('.page')!.getAttribute('aria-hidden')).toBe('true');
+    expect(overlay!.querySelector('.bs-draw')!.getAttribute('aria-hidden')).toBe('true');
     expect(overlay!.querySelectorAll('.bone').length).toBeGreaterThan(10);
   });
 
@@ -67,11 +67,11 @@ describe('UpdateSkeleton', () => {
     fixture.detectChanges();
     vi.advanceTimersByTime(SLOW_BOOT_MS - 1);
     fixture.detectChanges();
-    expect(el.querySelector('.overlay')).toBeNull();
+    expect(el.querySelector('.bs-root')).toBeNull();
 
     vi.advanceTimersByTime(1);
     fixture.detectChanges();
-    const overlay = el.querySelector('.overlay');
+    const overlay = el.querySelector('.bs-root');
     expect(overlay).not.toBeNull();
     expect(overlay!.textContent).toContain('Carregando…');
     expect(overlay!.textContent).not.toContain('Atualizando…');
@@ -82,7 +82,7 @@ describe('UpdateSkeleton', () => {
     await fixture.whenStable();
     // Sai pela animação de saída (ou já saiu): nunca fica coberto depois da primeira tela.
     await vi.waitFor(() => {
-      const current = el.querySelector('.overlay');
+      const current = el.querySelector('.bs-root');
       expect(current === null || current.classList.contains('leaving')).toBe(true);
     });
   });
@@ -95,7 +95,7 @@ describe('UpdateSkeleton', () => {
     await TestBed.inject(Router).navigateByUrl('/ok');
     vi.advanceTimersByTime(SLOW_BOOT_MS * 3);
     fixture.detectChanges();
-    expect(el.querySelector('.overlay')).toBeNull();
+    expect(el.querySelector('.bs-root')).toBeNull();
   });
 
   it('draws the home page (brand, hero with settings and status, module grid, no shortcuts, no tab bar) when it is the page being updated', async () => {
@@ -103,24 +103,65 @@ describe('UpdateSkeleton', () => {
     const { service, fixture, el } = setup();
     service.applyingUpdate.set(true);
     await fixture.whenStable();
-    expect(el.querySelector('.page.home')).not.toBeNull();
-    expect(el.querySelector('.page.home > .brand')).not.toBeNull();
+    expect(el.querySelector('.bs-home')).not.toBeNull();
+    expect(el.querySelector('.bs-home > .bs-brand')).not.toBeNull();
     // Engrenagem e ponto de estado no cartão de cima, mais as duas linhas de texto e a hora.
-    expect(el.querySelectorAll('.home-hero .hero-actions .bone').length).toBe(2);
-    expect(el.querySelectorAll('.home-hero .bone').length).toBe(5);
-    expect(el.querySelector('.shortcuts, .shortcut')).toBeNull();
-    expect(el.querySelectorAll('.module').length).toBe(8);
-    expect(el.querySelector('.tabs')).toBeNull();
+    expect(el.querySelectorAll('.bs-home-hero .bs-hero-actions .bone').length).toBe(2);
+    expect(el.querySelectorAll('.bs-home-hero .bone').length).toBe(5);
+    expect(el.querySelector('.bs-tv-shortcuts')).toBeNull();
+    expect(el.querySelectorAll('.bs-module').length).toBe(8);
+    expect(el.querySelector('.bs-tabs')).toBeNull();
   });
 
-  it('keeps the generic page drawing (header, cards, list, tab bar) for any other route', async () => {
-    history.pushState({}, '', '/tv');
+  it('draws the TV remote exactly (header with back and menu, title, status dot and power; shortcut tiles; ring; page dots; volume, keys and channel)', async () => {
+    history.pushState({}, '', '/tv/');
     const { service, fixture, el } = setup();
     service.applyingUpdate.set(true);
     await fixture.whenStable();
-    expect(el.querySelector('.page.home')).toBeNull();
-    expect(el.querySelector('.tabs')).not.toBeNull();
-    expect(el.querySelector('.top')).not.toBeNull();
+    expect(el.querySelector('.bs-tv')).not.toBeNull();
+    expect(el.querySelectorAll('.bs-tv-head .bs-tv-lead .bs-circle').length).toBe(2);
+    expect(el.querySelectorAll('.bs-tv-head > .bs-tv-title').length).toBe(1);
+    expect(el.querySelector('.bs-tv-head .bs-tv-actions .bs-state-dot')).not.toBeNull();
+    expect(el.querySelectorAll('.bs-tv-head .bs-tv-actions > .bs-circle').length).toBe(1);
+    expect(el.querySelectorAll('.bs-tv-shortcuts .bs-tile').length).toBe(4);
+    expect(el.querySelector('.bs-ring .bs-ok')).not.toBeNull();
+    expect(el.querySelectorAll('.bs-ring .bs-arrow').length).toBe(4);
+    expect(el.querySelectorAll('.bs-tv-dots .bs-pip').length).toBe(3);
+    expect(el.querySelectorAll('.bs-tv-bottom .bs-vpill').length).toBe(2);
+    expect(el.querySelectorAll('.bs-tv-bottom .bs-round-key').length).toBe(8);
+    // A TV não tem barra de abas nem o desenho genérico por baixo.
+    expect(el.querySelector('.bs-tabs, .bs-generic')).toBeNull();
+  });
+
+  it('draws the training home (single top bar, today cards, three tabs) and the settings list (top bar, appearance control, two groups)', async () => {
+    history.pushState({}, '', '/treino/');
+    const first = setup();
+    first.service.applyingUpdate.set(true);
+    await first.fixture.whenStable();
+    expect(first.el.querySelectorAll('.bs-training .bs-topbar').length).toBe(1);
+    expect(first.el.querySelectorAll('.bs-training .bs-topbar .bs-back').length).toBe(1);
+    expect(first.el.querySelectorAll('.bs-training .bs-days .bs-day').length).toBe(7);
+    expect(first.el.querySelectorAll('.bs-training .bs-tabs .bs-tab').length).toBe(3);
+    TestBed.resetTestingModule();
+
+    history.pushState({}, '', '/ajustes');
+    const second = setup();
+    second.service.applyingUpdate.set(true);
+    await second.fixture.whenStable();
+    expect(second.el.querySelectorAll('.bs-settings .bs-topbar').length).toBe(1);
+    expect(second.el.querySelectorAll('.bs-settings .bs-segments .bs-segment').length).toBe(3);
+    expect(second.el.querySelectorAll('.bs-settings .bs-group').length).toBe(2);
+    expect(second.el.querySelector('.bs-tabs')).toBeNull();
+  });
+
+  it('keeps the generic page drawing (header, cards, list, tab bar) only as the last resort', async () => {
+    history.pushState({}, '', '/qualquer-coisa');
+    const { service, fixture, el } = setup();
+    service.applyingUpdate.set(true);
+    await fixture.whenStable();
+    expect(el.querySelector('.bs-home, .bs-tv, .bs-training, .bs-settings')).toBeNull();
+    expect(el.querySelector('.bs-generic .bs-tabs')).not.toBeNull();
+    expect(el.querySelector('.bs-generic .bs-flat-top')).not.toBeNull();
   });
 
   it('keeps the skeleton after the reload until the first navigation ends', async () => {
@@ -128,7 +169,7 @@ describe('UpdateSkeleton', () => {
     const { service, fixture, el } = setup();
     await fixture.whenStable();
     expect(service.showSkeleton()).toBe(true);
-    expect(el.querySelector('.overlay')).not.toBeNull();
+    expect(el.querySelector('.bs-root')).not.toBeNull();
 
     await TestBed.inject(Router).navigateByUrl('/ok');
     await fixture.whenStable();
@@ -183,5 +224,68 @@ describe('UpdateSkeleton', () => {
         .catch(() => undefined);
       expect(service.showSkeleton()).toBe(false);
     }
+  });
+
+  it('removes the static boot skeleton from the document when the first screen is ready', async () => {
+    vi.useFakeTimers();
+    const boot = document.createElement('div');
+    boot.id = BOOT_SKELETON_ID;
+    document.body.appendChild(boot);
+    const { fixture } = setup();
+    fixture.detectChanges();
+    expect(document.getElementById(BOOT_SKELETON_ID)).not.toBeNull();
+    vi.useRealTimers();
+    await TestBed.inject(Router).navigateByUrl('/ok');
+    expect(boot.classList.contains('leaving')).toBe(true);
+    await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
+  });
+
+  it('hides the static skeleton from painting while the Angular one is drawn over it', async () => {
+    vi.useFakeTimers();
+    const boot = document.createElement('div');
+    boot.id = BOOT_SKELETON_ID;
+    document.body.appendChild(boot);
+    const { fixture } = setup();
+    fixture.detectChanges();
+    expect(boot.classList.contains('bs-covered')).toBe(false);
+    vi.advanceTimersByTime(SLOW_BOOT_MS);
+    fixture.detectChanges();
+    expect(boot.classList.contains('bs-covered')).toBe(true);
+    boot.remove();
+  });
+
+  it('covers a slow in-app navigation with the destination drawing, and only after the delay', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: '', component: Blank },
+          { path: 'tv', component: Blank, canActivate: [() => gate.then(() => true)] },
+        ]),
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const fixture = TestBed.createComponent(UpdateSkeleton);
+    const el = fixture.nativeElement as HTMLElement;
+    vi.useRealTimers();
+    await router.navigateByUrl('/');
+    vi.useFakeTimers();
+    const pending = router.navigateByUrl('/tv');
+    vi.advanceTimersByTime(ROUTE_WAIT_MS - 1);
+    fixture.detectChanges();
+    expect(el.querySelector('.bs-root')).toBeNull();
+    vi.advanceTimersByTime(1);
+    fixture.detectChanges();
+    expect(el.querySelector('.bs-root .bs-tv')).not.toBeNull();
+    vi.useRealTimers();
+    release();
+    await pending;
+    await fixture.whenStable();
+    await vi.waitFor(() => {
+      const current = el.querySelector('.bs-root');
+      expect(current === null || current.classList.contains('leaving')).toBe(true);
+    });
   });
 });
