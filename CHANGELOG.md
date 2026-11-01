@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-11-01)
+
+
+### Features
+
+* **contracts:** add agent diagnostics message
+* **agent:** queue diagnostics safely
+* **agent:** record why the agent stopped
+* **agent:** verify updates before swapping
+* **agent:** guard the supervisor
+* **agent:** check and repair itself
+* **agent:** simple installer, pick the folder
+* **api:** keep agent diagnostics for 7 days
+* **web:** show agent errors in system
+* **api:** name a new tv TV by default
+* **api:** keep the tv history for the admin only
+* **api:** list the tvs each person sees
+* **contracts:** add the focus catalog field
+* **api:** edit the focus catalog per tv
+* **agent:** use the focus catalog from the api
+* **web:** ask a short nickname when pairing a tv
+* **web:** show the tvs each person sees
+* **web:** show the tv history to the admin
+* **web:** edit the focus catalog per tv
+* **identity:** record device and installed app
+* **identity:** sync home preferences per account
+* **web:** sync the home with the account
+* **web:** report device and installed app
+* **web:** show each person's home to the owner
+
+
+### Bug Fixes
+
+* **agent:** install the crash hooks once
+* **agent:** sync with the frozen lock on the pc
+* **agent:** keep background tasks alive
+* **web:** hide the legacy history permission
+* **api:** tolerate a racing legacy tv import
+* **web:** remove settings button from modules
+* **training:** back and full shapes while loading
+* **training:** free workout button over the dock
+* **training:** shorter suggestion and skip hints
+* **training:** title case on assessments text
+* **training:** shorter body and summary labels
+* **training:** shorter routine and goal hints
+* **web:** read the version from the health route
+
 ## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
 
 
