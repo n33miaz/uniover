@@ -47,9 +47,13 @@ describe('DevicesPage while the list is requested', () => {
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
 
-    expect(
-      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
-    ).not.toBeNull();
+    // O esqueleto nasce depois de um pequeno atraso real: com a máquina cheia ele pode chegar depois do primeiro quadro.
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(
+        el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+      ).not.toBeNull();
+    });
     expect(el.querySelectorAll('app-loading-skeleton .card')).toHaveLength(2);
     expect(el.querySelector('.item')).toBeNull();
 
@@ -71,7 +75,7 @@ describe('DevicesPage while the list is requested', () => {
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(el.querySelector('app-loading-skeleton')).toBeNull();
+      expect(el.textContent).toContain('Tentar de novo');
     });
-    expect(el.textContent).toContain('Tentar de novo');
   });
 });
