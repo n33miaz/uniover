@@ -10,6 +10,7 @@ trocam por um falso: nenhum teste lê nem escreve o registro real.
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Final
@@ -87,21 +88,53 @@ class FilePromotionMarker:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or installation_base() / "runtime" / MARKER_FILE
 
-    def _read(self) -> list[str]:
+    def _read(self) -> list[str] | None:
+        """Os executáveis marcados; `[]` sem marca nenhuma; `None` se há um arquivo que não dá para
+        entender (queda no meio da gravação, edição à mão): o chamador trata como "na dúvida"."""
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        except OSError, ValueError:
+            text = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return []
+        except OSError:
+            return None
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return None
         done = data.get("executables") if isinstance(data, dict) else None
-        return [item for item in done if isinstance(item, str)] if isinstance(done, list) else []
+        if not isinstance(done, list) or not all(isinstance(item, str) for item in done):
+            return None
+        return done
 
     def done(self, executable: str) -> bool:
-        return executable.lower() in (item.lower() for item in self._read())
+        marked = self._read()
+        if marked is None:
+            # Marca ilegível: o ícone pode ter sido promovido e escondido depois. Não promove.
+            _log.warning("a marca de promoção do ícone está ilegível; não vou promovê-lo")
+            return True
+        return executable.lower() in (item.lower() for item in marked)
 
-    def mark(self, executable: str) -> None:
+    def _write(self, executables: list[str]) -> bool:
+        """Grava por arquivo temporário e troca: uma queda nunca deixa meia marca."""
+        temporary = self._path.with_name(self._path.name + ".tmp")
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"executables": [*self._read(), executable]}
-            self._path.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.write_text(json.dumps({"executables": executables}), encoding="utf-8")
+            os.replace(temporary, self._path)
         except OSError:
+            temporary.unlink(missing_ok=True)
             _log.warning("não consegui gravar a marca de promoção do ícone")
+            return False
+        return True
+
+    def mark(self, executable: str) -> bool:
+        marked = self._read()
+        if marked is None:
+            return False
+        return self._write([*marked, executable])
+
+    def forget(self, executable: str) -> None:
+        marked = self._read()
+        if marked is None:
+            return
+        self._write([item for item in marked if item.lower() != executable.lower()])
