@@ -22,6 +22,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.refresh-succeeded:Sessão renovada`;
     case 'refresh_reuse_detected':
       return $localize`:@@settings.audit.action.refresh-reuse:Sessão antiga reutilizada`;
+    case 'refresh_recovered':
+      return $localize`:@@settings.audit.action.refresh-recovered:Sessão recuperada depois de uma resposta perdida`;
     case 'logout':
       return $localize`:@@settings.audit.action.logout:Saiu da conta`;
     case 'owner_created':
@@ -102,6 +104,10 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-cleanup:Limpeza da TV`;
     case 'tv.cleanup.setting':
       return $localize`:@@settings.audit.action.tv-cleanup-setting:Fechar apps em segundo plano alterado`;
+    case 'tv.permission.request':
+      return $localize`:@@settings.audit.action.tv-permission-request:Permissão da TV pedida`;
+    case 'tv.discover':
+      return $localize`:@@settings.audit.action.tv-discover:TVs da rede procuradas`;
     case 'tv.apps.refresh':
       return $localize`:@@settings.audit.action.tv-apps-refresh:Lista de apps atualizada`;
     case 'tv.shortcuts.reorder':

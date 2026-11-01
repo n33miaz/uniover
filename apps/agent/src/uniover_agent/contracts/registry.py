@@ -8,6 +8,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from .envelope import Envelope
+from .agent_diagnostics_v1 import AgentDiagnosticsV1Message
 from .agent_hello_v1 import AgentHelloV1Message
 from .agent_keepalive_v1 import AgentKeepaliveV1Message
 from .agent_logs_request_v1 import AgentLogsRequestV1Message
@@ -23,12 +24,13 @@ from .tv_apps_v2 import TvAppsV2Message
 from .tv_cleanup_config_v1 import TvCleanupConfigV1Message
 from .tv_cleanup_result_v1 import TvCleanupResultV1Message
 from .tv_cleanup_v1 import TvCleanupV1Message
+from .tv_discover_v1 import TvDiscoverV1Message
+from .tv_discovery_v1 import TvDiscoveryV1Message
 from .tv_key_v1 import TvKeyV1Message
 from .tv_key_v2 import TvKeyV2Message
 from .tv_key_v3 import TvKeyV3Message
-from .tv_livre_photo_v1 import TvLivrePhotoV1Message
-from .tv_livre_state_v1 import TvLivreStateV1Message
-from .tv_livre_v1 import TvLivreV1Message
+from .tv_permission_request_v1 import TvPermissionRequestV1Message
+from .tv_permission_v1 import TvPermissionV1Message
 from .tv_power_off_v1 import TvPowerOffV1Message
 from .tv_state_v1 import TvStateV1Message
 from .tv_text_v1 import TvTextV1Message
@@ -38,6 +40,7 @@ from .tv_watchdog_v1 import TvWatchdogV1Message
 ENVELOPE_MODEL: type[BaseModel] = Envelope
 
 MESSAGE_MODELS: dict[str, type[BaseModel]] = {
+    "agent.diagnostics.v1": AgentDiagnosticsV1Message,
     "agent.hello.v1": AgentHelloV1Message,
     "agent.keepalive.v1": AgentKeepaliveV1Message,
     "agent.logs.request.v1": AgentLogsRequestV1Message,
@@ -53,12 +56,13 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "tv.cleanup.config.v1": TvCleanupConfigV1Message,
     "tv.cleanup.result.v1": TvCleanupResultV1Message,
     "tv.cleanup.v1": TvCleanupV1Message,
+    "tv.discover.v1": TvDiscoverV1Message,
+    "tv.discovery.v1": TvDiscoveryV1Message,
     "tv.key.v1": TvKeyV1Message,
     "tv.key.v2": TvKeyV2Message,
     "tv.key.v3": TvKeyV3Message,
-    "tv.livre.photo.v1": TvLivrePhotoV1Message,
-    "tv.livre.state.v1": TvLivreStateV1Message,
-    "tv.livre.v1": TvLivreV1Message,
+    "tv.permission.request.v1": TvPermissionRequestV1Message,
+    "tv.permission.v1": TvPermissionV1Message,
     "tv.power.off.v1": TvPowerOffV1Message,
     "tv.state.v1": TvStateV1Message,
     "tv.text.v1": TvTextV1Message,

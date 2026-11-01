@@ -1,6 +1,7 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
 export * from './envelope';
+export * from './agent_diagnostics_v1';
 export * from './agent_hello_v1';
 export * from './agent_keepalive_v1';
 export * from './agent_logs_request_v1';
@@ -16,12 +17,13 @@ export * from './tv_apps_v2';
 export * from './tv_cleanup_config_v1';
 export * from './tv_cleanup_result_v1';
 export * from './tv_cleanup_v1';
+export * from './tv_discover_v1';
+export * from './tv_discovery_v1';
 export * from './tv_key_v1';
 export * from './tv_key_v2';
 export * from './tv_key_v3';
-export * from './tv_livre_photo_v1';
-export * from './tv_livre_state_v1';
-export * from './tv_livre_v1';
+export * from './tv_permission_request_v1';
+export * from './tv_permission_v1';
 export * from './tv_power_off_v1';
 export * from './tv_state_v1';
 export * from './tv_text_v1';

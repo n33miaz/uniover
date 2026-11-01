@@ -28,6 +28,16 @@ public sealed class IdentityModuleOptions
 
     public int ReuseGraceSeconds { get; set; } = 3;
 
+    /// <summary>
+    /// Janela (padrão 10 min, no máximo 1 h) depois da rotação em que o mesmo aparelho, provando a chave da sessão sobre
+    /// um desafio de uso único, reapresenta o token acabado de girar (cujo sucessor ninguém usou) e recebe um sucessor
+    /// novo em vez de derrubar a sessão. Cobre o iPhone suspendendo a página no meio do refresh. 0 desliga a recuperação.
+    /// </summary>
+    public int RefreshRecoverySeconds { get; set; } = 600;
+
+    /// <summary>Validade (padrão 2 min) do desafio que o servidor emite para a prova de recuperação.</summary>
+    public int RefreshChallengeSeconds { get; set; } = 120;
+
     public int LockoutThreshold { get; set; } = 5;
 
     public int LockoutBaseSeconds { get; set; } = 60;
@@ -80,7 +90,8 @@ public sealed class IdentityModuleOptions
         LockoutThreshold, TimeSpan.FromSeconds(LockoutBaseSeconds), TimeSpan.FromMinutes(LockoutMaxMinutes));
 
     public RefreshPolicy Refresh => new(
-        TimeSpan.FromDays(RefreshSlidingDays), TimeSpan.FromDays(RefreshAbsoluteDays), TimeSpan.FromSeconds(ReuseGraceSeconds));
+        TimeSpan.FromDays(RefreshSlidingDays), TimeSpan.FromDays(RefreshAbsoluteDays), TimeSpan.FromSeconds(ReuseGraceSeconds),
+        TimeSpan.FromSeconds(RefreshRecoverySeconds), TimeSpan.FromSeconds(RefreshChallengeSeconds));
 
     /// <summary>Valores que quebrariam a regra (zero ou negativo); o módulo prefere cair na partida a se comportar mal.</summary>
     internal static bool IsValid(IdentityModuleOptions o) =>
@@ -88,6 +99,8 @@ public sealed class IdentityModuleOptions
         && o.RefreshSlidingDays >= 1
         && o.RefreshAbsoluteDays >= o.RefreshSlidingDays
         && o.ReuseGraceSeconds >= 0
+        && o.RefreshRecoverySeconds is >= 0 and <= 3600
+        && o.RefreshChallengeSeconds is >= 10 and <= 600
         && o.LockoutThreshold >= 1
         && o.LockoutBaseSeconds >= 1
         && o.LockoutMaxMinutes >= 1

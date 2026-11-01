@@ -72,6 +72,7 @@ public static class IdentityModule
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
+        services.AddScoped<FailedLoginCounter>();
         services.AddSingleton<SystemSettingsService>();
         services.AddSingleton<UniOver.Modules.Identity.Contracts.ISystemSettings>(sp => sp.GetRequiredService<SystemSettingsService>());
 
@@ -82,8 +83,13 @@ public static class IdentityModule
         services.AddAuditPurge<IdentityDbContext>(
             configuration, IdentityDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
+        // Limpeza das famílias de refresh mortas, no mesmo despertar diário da retenção da auditoria (sem relógio novo).
+        services.AddRefreshFamilyCleanup();
+
         services.AddScoped<LoginHandler>();
+        services.AddScoped<RefreshRecoveryService>();
         services.AddScoped<RefreshHandler>();
+        services.AddScoped<RefreshChallengeHandler>();
         services.AddScoped<LogoutHandler>();
         services.AddScoped<StartQrLoginHandler>();
         services.AddScoped<PollQrLoginHandler>();
@@ -136,6 +142,7 @@ public static class IdentityModule
         group.MapGetModuleInfo();
         group.MapLogin();
         group.MapRefresh();
+        group.MapRefreshChallenge();
         group.MapLogout();
         group.MapStartQrLogin();
         group.MapPollQrLogin();

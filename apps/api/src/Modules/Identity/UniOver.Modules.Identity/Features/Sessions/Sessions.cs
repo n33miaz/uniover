@@ -89,10 +89,8 @@ internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audi
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    // Mesma trava transacional da rotação do refresh: revogar e girar a mesma família nunca correm juntos.
-    private async Task LockFamilyAsync(Guid familyId, CancellationToken cancellationToken) =>
-        await db.Database.ExecuteSqlAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({familyId.ToString("N")}, 0))", cancellationToken);
+    private Task LockFamilyAsync(Guid familyId, CancellationToken cancellationToken) =>
+        FamilyLock.AcquireAsync(db, familyId, cancellationToken);
 
     private static string? MaskIp(string? value)
     {

@@ -98,13 +98,14 @@ def test_the_cleanup_is_a_background_command_registered_only_with_the_adb(
     setup = make_tv(Settings(tv_host=TV_HOST))
     assert setup is not None
     assert "tv.cleanup.v1" not in setup.handlers
-    assert setup.background_commands == set()
+    # Só a procura de TVs na rede roda em segundo plano (a limpeza exige o ADB).
+    assert setup.background_commands == {"tv.discover.v1"}
 
     enable_adb(monkeypatch, tmp_path, running_tv())
     with_adb = make_tv(Settings(tv_host=TV_HOST))
     assert with_adb is not None
     assert "tv.cleanup.v1" in with_adb.handlers
-    assert with_adb.background_commands == {"tv.cleanup.v1", "tv.livre.v1"}
+    assert with_adb.background_commands == {"tv.cleanup.v1", "tv.discover.v1", "tv.livre.v1"}
 
 
 async def test_the_owner_keep_list_reaches_the_cleanup(

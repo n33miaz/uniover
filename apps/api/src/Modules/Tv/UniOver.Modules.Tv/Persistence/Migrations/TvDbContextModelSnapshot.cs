@@ -257,6 +257,9 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.HasIndex("TvId", "OccurredAt")
                         .HasDatabaseName("ix_command_audit_tv_id_occurred_at");
 
+                    b.HasIndex("UserId", "OccurredAt")
+                        .HasDatabaseName("ix_command_audit_user_id_occurred_at");
+
                     b.ToTable("command_audit", "tv");
                 });
 
@@ -303,6 +306,16 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)")
                         .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("PermissionChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("permission_changed_at");
+
+                    b.Property<bool>("PermissionNeeded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("permission_needed");
 
                     b.Property<string>("RestrictedBackgroundPackages")
                         .IsRequired()

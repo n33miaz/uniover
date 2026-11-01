@@ -31,6 +31,7 @@ internal sealed class LoginHandler(
     PasswordService passwords,
     AccessTokenIssuer tokens,
     LoginAuditWriter audit,
+    FailedLoginCounter failures,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -60,7 +61,11 @@ internal sealed class LoginHandler(
         var check = passwords.Verify(user, command.Password);
         if (user is null || check == PasswordCheck.Failed)
         {
-            user?.RegisterFailure(now, settings.Lockout);
+            if (user is not null)
+            {
+                await failures.RegisterAsync(user.Id, now, settings.Lockout, cancellationToken);
+            }
+
             audit.Add(null, AuditEvents.LoginFailed, command.Client, user is null ? null : AuditAboutAccount.Detail(user.Id));
             await db.SaveChangesAsync(cancellationToken);
             return new LoginResult(LoginStatus.InvalidCredentials);
@@ -93,6 +98,7 @@ internal sealed class LoginHandler(
         var expiresAt = settings.Refresh.ExpiryFor(now, now);
         db.RefreshTokens.Add(RefreshToken.Create(
             user.Id, familyId, hash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
+        DeviceKeyRegistration.Add(db, familyId, user.Id, command.Client, now);
 
         var access = tokens.Issue(user.Id, familyId, user.Role, UniOverAuth.ApiAudience, settings.AccessLifetime, now);
         audit.Add(user.Id, AuditEvents.LoginSucceeded, command.Client);

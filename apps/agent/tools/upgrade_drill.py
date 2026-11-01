@@ -114,6 +114,8 @@ def zip_bytes(files: dict[str, bytes], sha: str) -> bytes:
     """Zip no formato do GitHub: tudo dentro de `uniover-<sha>/`."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
+        # O GitHub grava o commit no comentario do zip, e a atualizacao confere.
+        bundle.comment = sha.encode("ascii")
         for name in sorted(files):
             bundle.writestr(f"uniover-{sha}/{name}", files[name])
     return buffer.getvalue()

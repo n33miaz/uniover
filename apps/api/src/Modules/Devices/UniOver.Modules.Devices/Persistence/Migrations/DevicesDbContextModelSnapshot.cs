@@ -252,6 +252,68 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                     b.ToTable("agents", "devices");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentDiagnosticEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("Component")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("component");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("integer")
+                        .HasColumnName("count");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("detail");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("severity");
+
+                    b.HasKey("Id")
+                        .HasName("pk_agent_diagnostic_events");
+
+                    b.HasIndex("AgentId", "At")
+                        .HasDatabaseName("ix_agent_diagnostic_events_agent_id_at");
+
+                    b.HasIndex("AgentId", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_agent_diagnostic_events_agent_id_event_id");
+
+                    b.ToTable("agent_diagnostic_events", "devices");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentOutage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -519,6 +581,16 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                         .HasDatabaseName("ix_pairings_user_code");
 
                     b.ToTable("pairings", "devices");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentDiagnosticEvent", b =>
+                {
+                    b.HasOne("UniOver.Modules.Devices.Domain.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_diagnostic_events_agents_agent_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentOutage", b =>

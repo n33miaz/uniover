@@ -100,6 +100,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/agent.maintenance.v1.schema.json'
+      tvPermissionRequest:
+        name: tv.permission.request.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.permission.request.v1.schema.json'
+      tvDiscover:
+        name: tv.discover.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.discover.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -161,6 +171,21 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/agent.update.status.v1.schema.json'
+      tvPermission:
+        name: tv.permission.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.permission.v1.schema.json'
+      tvDiscovery:
+        name: tv.discovery.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.discovery.v1.schema.json'
+      agentDiagnostics:
+        name: agent.diagnostics.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.diagnostics.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -342,3 +367,38 @@ operations:
     summary: A API recebe o estado da auto-atualização do agente (versão instalada, a mais nova vista, resultado da última checagem).
     messages:
       - $ref: '#/channels/agentEvents/messages/agentUpdateStatus'
+  sendTvPermissionRequest:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede à TV Samsung a permissão do UniOver (o aviso Permitir na tela da TV); só acontece por este pedido.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvPermissionRequest'
+  receiveTvPermission:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o estado da permissão do UniOver na TV Samsung (precisa ou concedida).
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvPermission'
+  sendTvDiscover:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: O administrador pede ao agente que procure as TVs compatíveis na rede dele.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvDiscover'
+  receiveTvDiscovery:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe as TVs compatíveis que o agente achou na rede dele (sem endereço).
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvDiscovery'
+  receiveAgentDiagnostics:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe erros e ocorrências do próprio agente (sem dados pessoais) para o administrador ver em Sistema.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/agentDiagnostics'

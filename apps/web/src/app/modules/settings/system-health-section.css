@@ -54,3 +54,39 @@
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
+
+/* O quinto cartão ocupa a largura toda: a grade é de duas colunas e ele ficaria sozinho numa linha, torto. */
+.metric.wide {
+  grid-column: 1 / -1;
+}
+
+.dead {
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  padding: var(--space-3);
+}
+
+.dead summary {
+  cursor: pointer;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+}
+
+.dead ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dead li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

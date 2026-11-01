@@ -36,6 +36,10 @@ existe, a API não envia o batimento novo para preservar a compatibilidade duran
 | `tv.watchdog.v1` | agente para API | `kind`, `severity` (`info`, `warn`, `error`), `detail` (até 200), `attempts`, `at`. |
 | `tv.cleanup.v1` | API para agente | `requestId` (UUID gerado pela API): fecha os apps abertos na TV e libera memória pelo ADB, sem derrubar o controle remoto. |
 | `tv.cleanup.result.v1` | agente para API | O que a limpeza fez: `requestId` (o do pedido), `closedApps`, `memoryBeforeMb`, `memoryAfterMb` e `freedMb` (inteiros, ou `null` quando a memória não pôde ser lida; `freedMb` nunca é negativo), `failedSteps` (etapas que não deram certo, como `force-stop:com.exemplo.app`) e `at`. |
+| `tv.permission.request.v1` | API para agente | `{}`: pede à TV Samsung a permissão do UniOver (o aviso "Permitir" na tela da TV). É o único jeito de o agente fazer esse pedido: ele nunca o repete sozinho. Responde logo com `command.result.v1` (`ok: true` é "o aviso foi pedido"; erros `unsupported`, `tv_unreachable`, `permission_in_progress`) e depois manda `tv.permission.v1`. A API só a usa quando o agente declara a capacidade `tv.permission.v1`. |
+| `tv.permission.v1` | agente para API | `state` (`needed`: a TV não reconhece mais o UniOver e o agente parou de tentar sem pedir de novo em silêncio; `granted`: a TV aceitou) e `at`. Sai quando o estado muda e outra vez depois de cada `hello`. |
+| `tv.discover.v1` | API para agente | `requestId` (UUID gerado pela API): procura as TVs compatíveis na rede local do computador (só leitura de identificação). Responde com `tv.discovery.v1` e depois `command.result.v1`. A API só a usa quando o agente declara a capacidade `tv.discovery.v1`. |
+| `tv.discovery.v1` | agente para API | `requestId` (o do pedido), `tvs` (até 50 de `{ id, kind, name | null, controlled }`; `id` é opaco e estável, nunca o IP nem o MAC, e `controlled` diz se é a TV que o agente já controla) e `at`. Sai antes do `command.result.v1` do mesmo comando (`correlationId` = id do comando). |
 
 ## TV Livre
 
@@ -68,6 +72,14 @@ da TV que ele controla) e `update` (o estado da auto-atualização, abaixo), tod
 | `agent.logs.v1` | agente para API | `requestId` (o do pedido), `text` (até 49152 caracteres, já sem tokens, `Authorization`, códigos de pareamento e senhas), `lines`, `truncated` (o agente tirou linhas antigas para caber) e `at`. |
 | `agent.maintenance.v1` | API para agente | `action`: `update` (o supervisor roda a auto-atualização agora; o agente só reinicia se houver versão nova) `restart` (o supervisor reinicia o agente) ou `rollback` (o supervisor volta para a versão anterior guardada em `app.previous`, bloqueia a que sai e reinicia; o agente recusa com `no_previous_version` se não houver). |
 | `agent.update.status.v1` | agente para API | O estado da auto-atualização, o mesmo objeto de `update` no `hello`: `outcome` (`not_checked`, `updating`, `updated`, `up_to_date`, `failed`, `blocked` ou `rolled_back`), `installedSha` e `installedAt` (a versão instalada), `latestSha` (o commit mais novo que a última checagem viu), `checkedAt`, `nextCheckAt`, `reason` (curto, já sem segredos, até 200 caracteres), `blockedSha` (versão que caiu repetidamente) e `rolledBack` (houve volta à versão anterior). Só `outcome` é obrigatório. O agente manda quando a checagem roda; agente antigo não manda nada e a tela diz "versão desconhecida". |
+
+## Diagnóstico do agente
+
+O agente guarda num arquivo local (limitado, sem duplicar) os erros e as ocorrências dele mesmo (queda do processo, tarefa de fundo que falhou, reparo feito, atualização recusada) e os envia depois do `hello`. A capacidade `agent.diagnostics.v1` diz que ele sabe. O texto já chega sem caminhos, endereços, nomes de usuário e segredos; a API guarda por pouco tempo e só o administrador vê, em Sistema.
+
+| `type` | Direção | Corpo |
+|---|---|---|
+| `agent.diagnostics.v1` | agente para API | `events` (1 a 20, na ordem em que aconteceram): `id` (UUID, a API ignora repetidos), `at`, `kind` (`a-z`, `0-9`, `_` e `.`, até 48), `severity` (`info`, `warn`, `error`), `component` opcional (até 32), `detail` (1 a 300 caracteres, já sem dados pessoais) e `count` opcional (quantas vezes a mesma ocorrência se repetiu antes do envio). Sem resposta: o agente apaga o que enviou. |
 
 Como na limpeza da TV, `agent.logs.v1` sai **antes** do `command.result.v1` do mesmo comando. `agent.maintenance.v1` só é
 respondido com `command.result.v1`, assim que o pedido foi entregue ao supervisor do Windows (o mesmo mecanismo do menu da

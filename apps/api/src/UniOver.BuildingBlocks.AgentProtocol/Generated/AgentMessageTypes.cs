@@ -7,6 +7,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated;
 /// <summary>Valores do campo <c>type</c> das mensagens entre a API e o agente.</summary>
 public static class AgentMessageTypes
 {
+    /// <summary>Tipo de mensagem <c>agent.diagnostics.v1</c>.</summary>
+    public const string AgentDiagnosticsV1 = "agent.diagnostics.v1";
+
     /// <summary>Tipo de mensagem <c>agent.hello.v1</c>.</summary>
     public const string AgentHelloV1 = "agent.hello.v1";
 
@@ -52,6 +55,12 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>tv.cleanup.v1</c>.</summary>
     public const string TvCleanupV1 = "tv.cleanup.v1";
 
+    /// <summary>Tipo de mensagem <c>tv.discover.v1</c>.</summary>
+    public const string TvDiscoverV1 = "tv.discover.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.discovery.v1</c>.</summary>
+    public const string TvDiscoveryV1 = "tv.discovery.v1";
+
     /// <summary>Tipo de mensagem <c>tv.key.v1</c>.</summary>
     public const string TvKeyV1 = "tv.key.v1";
 
@@ -61,14 +70,11 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>tv.key.v3</c>.</summary>
     public const string TvKeyV3 = "tv.key.v3";
 
-    /// <summary>Tipo de mensagem <c>tv.livre.photo.v1</c>.</summary>
-    public const string TvLivrePhotoV1 = "tv.livre.photo.v1";
+    /// <summary>Tipo de mensagem <c>tv.permission.request.v1</c>.</summary>
+    public const string TvPermissionRequestV1 = "tv.permission.request.v1";
 
-    /// <summary>Tipo de mensagem <c>tv.livre.state.v1</c>.</summary>
-    public const string TvLivreStateV1 = "tv.livre.state.v1";
-
-    /// <summary>Tipo de mensagem <c>tv.livre.v1</c>.</summary>
-    public const string TvLivreV1 = "tv.livre.v1";
+    /// <summary>Tipo de mensagem <c>tv.permission.v1</c>.</summary>
+    public const string TvPermissionV1 = "tv.permission.v1";
 
     /// <summary>Tipo de mensagem <c>tv.power.off.v1</c>.</summary>
     public const string TvPowerOffV1 = "tv.power.off.v1";
@@ -88,6 +94,7 @@ public static class AgentMessageTypes
     /// <summary>Todos os tipos conhecidos, em ordem alfabética.</summary>
     public static readonly IReadOnlyList<string> All =
     [
+        AgentDiagnosticsV1,
         AgentHelloV1,
         AgentKeepaliveV1,
         AgentLogsRequestV1,
@@ -103,12 +110,13 @@ public static class AgentMessageTypes
         TvCleanupConfigV1,
         TvCleanupResultV1,
         TvCleanupV1,
+        TvDiscoverV1,
+        TvDiscoveryV1,
         TvKeyV1,
         TvKeyV2,
         TvKeyV3,
-        TvLivrePhotoV1,
-        TvLivreStateV1,
-        TvLivreV1,
+        TvPermissionRequestV1,
+        TvPermissionV1,
         TvPowerOffV1,
         TvStateV1,
         TvTextV1,

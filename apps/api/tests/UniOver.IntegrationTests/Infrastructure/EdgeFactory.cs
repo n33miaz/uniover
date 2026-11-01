@@ -66,6 +66,11 @@ public sealed class EdgeFactory(
             routes.MapGet("/api/test/validation", () => ProblemDetailsExtensions.ValidationProblem(
                 new Dictionary<string, string[]> { ["email"] = ["Informe um e-mail válido."] })).AllowAnonymous();
             routes.MapGet("/api/test/boom", Boom).AllowAnonymous();
+            routes.MapGet("/api/test/slow", async () =>
+            {
+                await Task.Delay(250);
+                return Results.Ok("ok");
+            }).AllowAnonymous();
             routes.MapPost("/api/test/optional-body", (TestBody? body) => Results.Ok(new { received = body is not null })).AllowAnonymous();
             routes.MapPost("/api/test/required-body", (TestBody body) => Results.Ok(new { received = body.Name })).AllowAnonymous();
         };

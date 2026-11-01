@@ -311,11 +311,38 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      # O SDK do Android já vem na imagem do runner. O release sai assinado com a chave de depuração, sem segredo.
+      # O SDK do Android já vem na imagem do runner.
       - name: Testes de unidade e de tela
         run: ./gradlew --no-daemon testDebugUnitTest
+      # Com os segredos do repositório o release sai assinado com a chave fixa do projeto (a mesma do build local,
+      # para a TV aceitar a atualização). Sem eles (PR de fora ou de robô, que não recebem segredos) cai na chave de
+      # depuração do runner. O keystore é decodificado num arquivo temporário e apagado ao sair do passo.
       - name: Montar o APK de release
-        run: ./gradlew --no-daemon assembleRelease
+        env:
+          TV_KEYSTORE_BASE64: ${{ secrets.UNIOVER_TV_KEYSTORE_BASE64 }}
+          TV_KEYSTORE_PASSWORD: ${{ secrets.UNIOVER_TV_KEYSTORE_PASSWORD }}
+          TV_KEY_ALIAS: ${{ secrets.UNIOVER_TV_KEY_ALIAS }}
+          TV_KEY_PASSWORD: ${{ secrets.UNIOVER_TV_KEY_PASSWORD }}
+        run: |
+          signed=false
+          if [ -n "$TV_KEYSTORE_BASE64" ]; then
+            keystore="$RUNNER_TEMP/uniover-tv.p12"
+            trap 'rm -f "$keystore"' EXIT
+            printf '%s' "$TV_KEYSTORE_BASE64" | base64 -d > "$keystore"
+            export UNIOVER_TV_STORE_FILE="$keystore" UNIOVER_TV_STORE_PASSWORD="$TV_KEYSTORE_PASSWORD"
+            export UNIOVER_TV_KEY_ALIAS="$TV_KEY_ALIAS" UNIOVER_TV_KEY_PASSWORD="$TV_KEY_PASSWORD"
+            signed=true
+          else
+            echo "::notice::Sem segredos de assinatura neste evento: release assinado com a chave de depuração."
+          fi
+          ./gradlew --no-daemon assembleRelease
+          if [ "$signed" = true ]; then
+            apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+            got="$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1)"
+            want="$(tr -d "[:space:]" < signing-cert.sha256)"
+            echo "Certificado do APK: $got"
+            test "$got" = "$want" || { echo "::error::o certificado do APK não é o da chave do projeto (signing-cert.sha256)."; exit 1; }
+          fi
 
   image:
     name: image

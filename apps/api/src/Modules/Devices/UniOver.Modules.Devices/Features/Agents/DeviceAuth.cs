@@ -28,6 +28,8 @@ public static class DeviceAuth
 
     internal const string FailureItem = "uniover.device.failure";
     internal const string RevokedFailure = "revoked";
+    internal const string ThrottledFailure = "throttled";
+    internal const string RetryAfterItem = "uniover.device.retry-after";
 }
 
 /// <summary>
@@ -52,7 +54,9 @@ internal sealed class DeviceTokenAuthentication(
             return AuthenticateResult.NoResult();
         }
 
-        var result = await validator.ValidateAsync(token, Context.RequestAborted);
+        // A origem entra para o limite de tokens inválidos: depois do teto, a consulta ao banco por token novo é cortada (429).
+        var client = Context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var result = await validator.ValidateAsync(token, client, Context.RequestAborted);
         switch (result.Check)
         {
             case TokenCheck.Valid:
@@ -69,6 +73,11 @@ internal sealed class DeviceTokenAuthentication(
                 Context.Items[DeviceAuth.FailureItem] = DeviceAuth.RevokedFailure;
                 return AuthenticateResult.Fail("revoked");
 
+            case TokenCheck.Throttled:
+                Context.Items[DeviceAuth.FailureItem] = DeviceAuth.ThrottledFailure;
+                Context.Items[DeviceAuth.RetryAfterItem] = result.RetryAfter;
+                return AuthenticateResult.Fail("throttled");
+
             default:
                 return AuthenticateResult.Fail("unknown");
         }
@@ -76,11 +85,20 @@ internal sealed class DeviceTokenAuthentication(
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
-        // Revogado é 403 (o agente para de tentar); o resto (sem token, token que não existe) é 401.
-        Response.StatusCode = Context.Items.TryGetValue(DeviceAuth.FailureItem, out var failure)
-            && failure is DeviceAuth.RevokedFailure
-                ? StatusCodes.Status403Forbidden
-                : StatusCodes.Status401Unauthorized;
+        // Revogado é 403 (o agente para de tentar); o resto (sem token, token que não existe) é 401. Origem que estourou o
+        // teto de tokens inválidos recebe 429 com Retry-After: não é "o token morreu", então o agente tenta de novo depois.
+        Context.Items.TryGetValue(DeviceAuth.FailureItem, out var failure);
+        if (failure is DeviceAuth.ThrottledFailure)
+        {
+            var retry = Context.Items.TryGetValue(DeviceAuth.RetryAfterItem, out var value) && value is TimeSpan span ? span : TimeSpan.FromSeconds(60);
+            Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = failure is DeviceAuth.RevokedFailure
+            ? StatusCodes.Status403Forbidden
+            : StatusCodes.Status401Unauthorized;
         return Task.CompletedTask;
     }
 }

@@ -65,6 +65,19 @@ internal static class TvMessages
                 },
             }.ToJson()));
 
+    /// <summary>
+    /// Pede à TV Samsung o aviso "Permitir" do UniOver. É o único caminho que faz o agente falar com a TV quando a
+    /// permissão foi perdida: ele nunca repete o pedido sozinho. A API só a manda a agente com <c>tv.permission.v1</c>.
+    /// </summary>
+    public static TvMessage PermissionRequest() =>
+        new(AgentMessageTypes.TvPermissionRequestV1, BodyOf(
+            new TvPermissionRequestV1Message { Body = new TvPermissionRequestV1Body() }.ToJson()));
+
+    /// <summary>Pede ao agente que procure TVs compatíveis na rede local dele. O <paramref name="requestId"/> volta na lista.</summary>
+    public static TvMessage Discover(Guid requestId) =>
+        new(AgentMessageTypes.TvDiscoverV1, BodyOf(
+            new TvDiscoverV1Message { Body = new TvDiscoverV1Body { RequestId = requestId } }.ToJson()));
+
     public static TvMessage Wake() =>
         new(AgentMessageTypes.TvWakeV1, BodyOf(new TvWakeV1Message { Body = new TvWakeV1Body() }.ToJson()));
 

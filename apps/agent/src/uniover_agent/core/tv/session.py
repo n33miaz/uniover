@@ -30,7 +30,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Final, NoReturn
+from typing import Any, Final, NoReturn, TypeVar
 
 from uniover_agent.core.domain import Connection, Power, TvState
 from uniover_agent.ports import (
@@ -39,14 +39,19 @@ from uniover_agent.ports import (
     TvChannelError,
     TvDriver,
     TvNotPaired,
+    TvPermissionNeeded,
     TvPortClosed,
     TvUnreachable,
 )
 
 _log = logging.getLogger(__name__)
 
+_T = TypeVar("_T")
+
 TV_UNREACHABLE: Final = "tv_unreachable"
 TV_NOT_PAIRED: Final = "tv_not_paired"
+# A TV não reconhece mais o UniOver (permissão revogada): o agente não insiste, a pessoa a pede.
+TV_PERMISSION_NEEDED: Final = "tv_permission_needed"
 
 DEFAULT_HIBERNATE_SECONDS: Final = 300.0
 # Espera entre as tentativas de abrir a sessão (1, 2 e 4 s) e depois desiste: sem laço infinito.
@@ -339,7 +344,8 @@ class TvSessionManager:
         try:
             await self._ensure_hot()
         except TvSessionError as exc:
-            return PowerOffResult.FAILED if exc.code == TV_NOT_PAIRED else PowerOffResult.OFFLINE
+            blocked = exc.code in {TV_NOT_PAIRED, TV_PERMISSION_NEEDED}
+            return PowerOffResult.FAILED if blocked else PowerOffResult.OFFLINE
         return None
 
     async def _press_power_once(self, generation: int) -> PowerOffResult:
@@ -529,6 +535,19 @@ class TvSessionManager:
         self._reopened_unattended = False
         await self._ensure_hot(interactive=False)
 
+    async def while_closed(self, action: Callable[[], Awaitable[_T]]) -> _T:
+        """Roda `action` com a sessão fechada e sem que outro comando a reabra enquanto isso.
+
+        O gerenciador é o único dono do canal da TV: quem precisa falar com ela fora da sessão (o
+        pedido de permissão) passa por aqui. A sessão fica dormindo; o próximo comando a reabre.
+        """
+        async with self._lock:
+            await self._close_channels()
+            if self._state is not SessionState.REPAIRING:
+                self._state = SessionState.HIBERNATING
+                self._set_connection("hibernating")
+            return await action()
+
     async def hibernate_if_idle(self) -> bool:
         """Fecha os canais se passou o tempo sem comando; devolve se hibernou."""
         if self._state is not SessionState.HOT or not self._is_idle() or self._keep_hot:
@@ -551,7 +570,11 @@ class TvSessionManager:
         """Laço de fundo: confere a inatividade até ser cancelado."""
         while True:
             await self._clock.sleep(self._poll_seconds)
-            await self.hibernate_if_idle()
+            try:
+                await self.hibernate_if_idle()
+            except Exception:
+                # Sem este `try`, a falha matava o laço em silêncio e a TV nunca mais hibernava.
+                _log.exception("falha ao conferir a hibernação da sessão com a TV; sigo vigiando")
 
     async def aclose(self) -> None:
         """Encerramento do agente: cancela o que estiver em segundo plano e fecha os canais."""
@@ -676,6 +699,8 @@ class TvSessionManager:
         for attempt, delay in enumerate(delays, start=1):
             try:
                 await self._attempt()
+            except TvPermissionNeeded as exc:
+                await self._give_up(TV_PERMISSION_NEEDED, str(exc))
             except TvNotPaired as exc:
                 await self._give_up(TV_NOT_PAIRED, str(exc))
             except TvUnreachable as exc:
@@ -783,11 +808,11 @@ class TvSessionManager:
             self._note_unreachable(message)
         else:
             _log.warning("sessão da TV não abriu (%s): %s", code, message)
-        hint = (
-            "a TV ainda não foi pareada; rode `uniover-agent tv-pair`"
-            if code == TV_NOT_PAIRED
-            else "a TV não respondeu ao controle remoto"
-        )
+        hints = {
+            TV_NOT_PAIRED: "a TV ainda não foi pareada; rode `uniover-agent tv-pair`",
+            TV_PERMISSION_NEEDED: "a TV pediu a permissão do UniOver de novo; peça-a pelo app",
+        }
+        hint = hints.get(code, "a TV não respondeu ao controle remoto")
         raise TvSessionError(code, hint)
 
     async def _close_channels(self) -> None:

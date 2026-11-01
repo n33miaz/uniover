@@ -23,6 +23,12 @@ public static class TvCommandNames
     public const string PowerSchedule = "tv.power-schedule";
     public const string Cleanup = "tv.cleanup";
 
+    /// <summary>Alguém pediu que a TV Samsung mostre de novo o aviso "Permitir" do UniOver (o agente nunca o faz sozinho).</summary>
+    public const string PermissionRequest = "tv.permission.request";
+
+    /// <summary>O administrador pediu ao agente que procure TVs compatíveis na rede dele (ao adicionar uma TV).</summary>
+    public const string Discover = "tv.discover";
+
     // TV Livre: cada passo é um comando próprio (e isolado) para a TV, e a trilha guarda quem o mandou. O detalhe é a
     // revisão aplicada ou a contagem de apps, nunca o conteúdo da configuração. Os pedaços da foto não entram: um
     // pedido de aplicar com foto são até 16 mensagens, e só o apply (ou a falha de um pedaço) deixa linha.
