@@ -1380,6 +1380,296 @@
         ],
         "type": "object"
       },
+      "CapacityAlertItem": {
+        "properties": {
+          "detectedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "percent": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "metric",
+          "percent",
+          "detectedAt"
+        ],
+        "type": "object"
+      },
+      "CapacityDatabase": {
+        "properties": {
+          "band": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "limitBytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "percent": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityTable"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "bytes",
+          "limitBytes",
+          "percent",
+          "band",
+          "tables"
+        ],
+        "type": "object"
+      },
+      "CapacityGrowth": {
+        "properties": {
+          "bytesPerDay": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "daysToAmber": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "daysToRed": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityPoint"
+            },
+            "type": "array"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "points",
+          "bytesPerDay",
+          "daysToAmber",
+          "daysToRed",
+          "state"
+        ],
+        "type": "object"
+      },
+      "CapacityPoint": {
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "CapacityResponse": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityAlertItem"
+            },
+            "type": "array"
+          },
+          "database": {
+            "$ref": "#/components/schemas/CapacityDatabase"
+          },
+          "growth": {
+            "$ref": "#/components/schemas/CapacityGrowth"
+          },
+          "measuredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "server": {
+            "$ref": "#/components/schemas/CapacityServer"
+          }
+        },
+        "required": [
+          "database",
+          "server",
+          "growth",
+          "alerts",
+          "measuredAt"
+        ],
+        "type": "object"
+      },
+      "CapacityServer": {
+        "properties": {
+          "heapBytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "hoursBand": {
+            "type": "string"
+          },
+          "hoursLimit": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "hoursPercent": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "memoryBand": {
+            "type": "string"
+          },
+          "memoryLimitBytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "memoryPercent": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "monthHours": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "uptimeSeconds": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "workingSetBytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "workingSetBytes",
+          "heapBytes",
+          "memoryLimitBytes",
+          "memoryPercent",
+          "memoryBand",
+          "startedAt",
+          "uptimeSeconds",
+          "monthHours",
+          "hoursLimit",
+          "hoursPercent",
+          "hoursBand"
+        ],
+        "type": "object"
+      },
+      "CapacityTable": {
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "name",
+          "bytes"
+        ],
+        "type": "object"
+      },
       "CatalogCreditsResponse": {
         "properties": {
           "sources": {
@@ -7773,6 +8063,77 @@
         },
         "tags": [
           "StreamTicketEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/capacity": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/identity/capacity/alerts/seen": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
         ]
       }
     },
