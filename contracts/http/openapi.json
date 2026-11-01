@@ -9324,6 +9324,16 @@
     },
     "/api/v1/shortcuts/tv": {
       "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Atalho-Token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

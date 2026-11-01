@@ -3680,7 +3680,9 @@ export interface paths {
     post: {
       parameters: {
         query?: never;
-        header?: never;
+        header: {
+          'X-Atalho-Token': string;
+        };
         path?: never;
         cookie?: never;
       };

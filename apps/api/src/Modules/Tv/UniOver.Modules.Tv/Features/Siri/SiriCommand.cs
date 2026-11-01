@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
@@ -231,10 +232,14 @@ internal static class SiriCommandEndpoint
             .ProducesProblem(StatusCodes.Status504GatewayTimeout);
 
     private static async Task<IResult> HandleAsync(
-        HttpContext http, SiriCommandHandler handler, CancellationToken cancellationToken, SiriCommandRequest? request = null)
+        HttpContext http,
+        SiriCommandHandler handler,
+        CancellationToken cancellationToken,
+        // Obrigatório para documentar no contrato que a credencial do Atalho vai no cabeçalho, não no corpo.
+        [FromHeader(Name = SiriHeaders.Token)] string token,
+        SiriCommandRequest? request = null)
     {
-        var result = await handler.HandleAsync(
-            http.Request.Headers[SiriHeaders.Token].ToString(), request, TvHttp.ClientOf(http), cancellationToken);
+        var result = await handler.HandleAsync(token, request, TvHttp.ClientOf(http), cancellationToken);
 
         return result.Status switch
         {
