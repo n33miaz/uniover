@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
@@ -21,6 +22,8 @@ internal static class TvLivreEndpoint
         group.MapPut("/livre/config", SaveConfigAsync).Owner().RateLimited().Produces<TvLivreView>()
             .ProducesProblem(StatusCodes.Status400BadRequest);
         group.MapPut("/livre/photo", SavePhotoAsync).Owner().RateLimited()
+            // Acima do teto geral de corpo da API (256 KiB): o da foto mais uma folga, para o 413 com a mensagem desta rota valer.
+            .WithMetadata(new RequestSizeLimitAttribute(LivrePhoto.MaxBytes + 16 * 1024))
             .Accepts<byte[]>(LivrePhoto.ContentType).Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status413PayloadTooLarge)
             .ProducesProblem(StatusCodes.Status415UnsupportedMediaType);
