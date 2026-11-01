@@ -909,7 +909,6 @@ if ($LASTEXITCODE -ne 0) {
     throw 'A TV nao foi ligada ao UniOver.'
 }
 
-Remove-EnvironmentBackup
 $answer = Read-Host 'Fazer o UniOver iniciar sozinho quando voce entrar no Windows? (s/N)'
 if ($answer -match '^[sS]') {
     Write-AgentLauncher
@@ -920,5 +919,6 @@ if ($answer -match '^[sS]') {
     Write-Host 'Pronto: o UniOver ja esta funcionando e vai iniciar sozinho.'
 }
 else {
+    Remove-EnvironmentBackup
     Write-Host 'Ele nao vai iniciar sozinho. Para iniciar agora: uv run uniover-agent run'
 }
