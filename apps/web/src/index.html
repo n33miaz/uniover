@@ -40,7 +40,9 @@
         setTimeout(function () {
           var el = document.getElementById('boot-skeleton');
           var notice = document.getElementById('boot-timeout');
-          if (el) el.setAttribute('data-boot-timeout', 'true');
+          // O esqueleto já saiu (a tela chegou): não há o que avisar.
+          if (!el) return;
+          el.setAttribute('data-boot-timeout', 'true');
           if (notice) notice.hidden = false;
         }, 20000);
         document.addEventListener('click', function (event) {

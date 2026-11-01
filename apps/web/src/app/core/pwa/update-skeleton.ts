@@ -571,6 +571,7 @@ export class UpdateSkeleton {
     const element = this.doc.getElementById(BOOT_SKELETON_ID);
     if (!element) return;
     element.classList.add('leaving');
+    this.doc.getElementById('boot-timeout')?.remove();
     const win = this.win;
     if (win) win.setTimeout(() => element.remove(), BOOT_LEAVE_MS);
     else element.remove();

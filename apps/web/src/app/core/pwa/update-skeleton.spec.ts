@@ -297,6 +297,9 @@ describe('UpdateSkeleton', () => {
     const boot = document.createElement('div');
     boot.id = BOOT_SKELETON_ID;
     document.body.appendChild(boot);
+    const notice = document.createElement('div');
+    notice.id = 'boot-timeout';
+    document.body.appendChild(notice);
     const { fixture } = setup();
     fixture.detectChanges();
     expect(document.getElementById(BOOT_SKELETON_ID)).not.toBeNull();
@@ -306,6 +309,8 @@ describe('UpdateSkeleton', () => {
     await pending;
     expect(boot.classList.contains('leaving')).toBe(true);
     await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
+    // O aviso estático dos 20 s sai junto: sem o esqueleto não há o que avisar.
+    expect(document.getElementById('boot-timeout')).toBeNull();
   });
 
   it('hides the static skeleton from painting while the Angular one is drawn over it', async () => {
