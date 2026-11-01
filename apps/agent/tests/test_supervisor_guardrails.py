@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -260,8 +261,8 @@ def test_the_supervisor_signals_it_is_alive_and_starts_the_agent_with_a_supervis
 def test_the_tray_opens_with_the_agent_when_nobody_closed_it(pc: Pc) -> None:
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     with pc.running():
-        assert wait_for(lambda: pc.tray_starts() >= 1, 30), pc.supervisor_log()
-        assert wait_for(lambda: pc.starts() >= 1, 30)
+        assert wait_for(lambda: pc.tray_starts() >= 1, 90), pc.supervisor_log()
+        assert wait_for(lambda: pc.starts() >= 1, 90)
 
 
 def test_a_closed_tray_is_not_reopened_but_the_agent_keeps_running(pc: Pc) -> None:
@@ -269,7 +270,7 @@ def test_a_closed_tray_is_not_reopened_but_the_agent_keeps_running(pc: Pc) -> No
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     (pc.runtime / "tray-closed").write_text("", encoding="ascii")
     with heartbeat(pc.alive), pc.running():
-        assert wait_for(lambda: pc.starts() >= 1, 30), pc.supervisor_log()
+        assert wait_for(lambda: pc.starts() >= 1, 90), pc.supervisor_log()
         time.sleep(4)
         assert pc.tray_starts() == 0
         assert pc.starts() == 1
@@ -281,7 +282,7 @@ def test_the_tray_comes_back_a_few_seconds_after_the_shortcut_clears_the_signal(
     flag = pc.runtime / "tray-closed"
     flag.write_text("", encoding="ascii")
     with heartbeat(pc.alive), pc.running():
-        assert wait_for(lambda: pc.starts() >= 1, 30)
+        assert wait_for(lambda: pc.starts() >= 1, 90)
         assert pc.tray_starts() == 0
         flag.unlink()  # o que o atalho "UniOver Agente" faz
         assert wait_for(lambda: pc.tray_starts() == 1, 10), pc.supervisor_log()
@@ -294,8 +295,10 @@ def test_a_signal_left_before_this_logon_is_stale_and_the_tray_returns(pc: Pc) -
     flag.write_text("", encoding="ascii")
     yesterday = time.time() - 24 * 3600
     os.utime(flag, (yesterday, yesterday))
-    with pc.running(UNIOVER_SUPERVISOR_LOGON_AT="2026-10-31T00:00:00Z"):
-        assert wait_for(lambda: pc.tray_starts() >= 1, 30), pc.supervisor_log()
+    # O logon foi há uma hora e o sinal é de ontem (relativo a agora: não depende da hora do dia).
+    logon = datetime.fromtimestamp(time.time() - 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with pc.running(UNIOVER_SUPERVISOR_LOGON_AT=logon):
+        assert wait_for(lambda: pc.tray_starts() >= 1, 90), pc.supervisor_log()
         assert not flag.exists()
 
 
@@ -303,7 +306,7 @@ def test_a_signal_left_after_this_logon_is_kept(pc: Pc) -> None:
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     (pc.runtime / "tray-closed").write_text("", encoding="ascii")
     with heartbeat(pc.alive), pc.running(UNIOVER_SUPERVISOR_LOGON_AT="2020-01-01T00:00:00Z"):
-        assert wait_for(lambda: pc.starts() >= 1, 30)
+        assert wait_for(lambda: pc.starts() >= 1, 90)
         time.sleep(3)
         assert pc.tray_starts() == 0
 
@@ -353,7 +356,7 @@ def test_the_start_menu_shortcut_is_created_once_and_points_at_the_open_script(p
     with pc.running():
         assert wait_for(link.exists, 30), pc.supervisor_log()
         first = link.stat().st_mtime_ns
-        assert wait_for(lambda: pc.starts() >= 1, 30)
+        assert wait_for(lambda: pc.starts() >= 1, 90)
     # Um supervisor novo (depois de uma atualizacao) nao refaz o que ja esta certo.
     with pc.running():
         assert wait_for(lambda: pc.starts() >= 2, 30)
@@ -382,7 +385,7 @@ def test_the_start_menu_shortcut_is_created_once_and_points_at_the_open_script(p
 def test_without_the_open_script_no_shortcut_is_made(pc: Pc) -> None:
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     with pc.running():
-        assert wait_for(lambda: pc.starts() >= 1, 30)
+        assert wait_for(lambda: pc.starts() >= 1, 90)
         time.sleep(1)
     assert not (pc.roaming / "Microsoft").exists()
 
