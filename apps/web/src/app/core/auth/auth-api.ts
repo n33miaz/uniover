@@ -218,7 +218,7 @@ export class AuthApi {
   async deploymentVersion(): Promise<DeploymentVersion> {
     let response: Response;
     try {
-      response = await this.doFetch(`${APP_CONFIG.apiBase}/health/version`, {
+      response = await this.doFetch(`${APP_CONFIG.healthPath}/version`, {
         headers: { Accept: 'application/json, application/problem+json' },
         cache: 'no-store',
         credentials: 'same-origin',

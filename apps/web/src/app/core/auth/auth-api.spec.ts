@@ -362,15 +362,18 @@ describe('AuthApi', () => {
     it.each([
       ['login', () => api().login('a@b.c', 'senha')],
       ['invite accept', () => api().acceptInvite('segredo', 'a@b.c', 'senha-longa-1')],
-    ])('%s sends the public key of a fresh pair and keeps the pair only after it worked', async (_n, call) => {
-      create.mockResolvedValue(pending('chave-publica-1'));
-      fetchFn.mockResolvedValue(reply(200, tokens));
+    ])(
+      '%s sends the public key of a fresh pair and keeps the pair only after it worked',
+      async (_n, call) => {
+        create.mockResolvedValue(pending('chave-publica-1'));
+        fetchFn.mockResolvedValue(reply(200, tokens));
 
-      await call();
+        await call();
 
-      expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-1');
-      expect(commit).toHaveBeenCalledTimes(1);
-    });
+        expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-1');
+        expect(commit).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it('a failed sign-in does not store the pair, and the next attempt reuses the same one', async () => {
       create.mockResolvedValue(pending('chave-publica-1'));
@@ -449,7 +452,9 @@ describe('AuthApi', () => {
     });
 
     it('asks for the challenge with a POST that has the client header and no body', async () => {
-      fetchFn.mockResolvedValue(reply(200, { challenge: 'id.nonce', familyId: 'f', expiresIn: 120 }));
+      fetchFn.mockResolvedValue(
+        reply(200, { challenge: 'id.nonce', familyId: 'f', expiresIn: 120 }),
+      );
 
       await expect(api().refreshChallenge()).resolves.toEqual({
         challenge: 'id.nonce',
@@ -463,5 +468,15 @@ describe('AuthApi', () => {
       expect(init.body).toBeUndefined();
       expect(headers['X-UniOver-Client']).toBe('web');
     });
+  });
+
+  it('reads the deployed version from the public health route at the server root, never under /api', async () => {
+    fetchFn.mockResolvedValue(reply(200, { commit: 'abc', version: '0.32.0' }));
+    await expect(api().deploymentVersion()).resolves.toEqual({ commit: 'abc', version: '0.32.0' });
+    const { url, init } = lastCall();
+    // A API só publica /health/version: /api/health/version responde 404 (a linha de Sobre ficava "indisponível").
+    expect(url).toBe('/health/version');
+    expect(init.method).toBeUndefined();
+    expect((init.headers as Record<string, string>)['Authorization']).toBeUndefined();
   });
 });

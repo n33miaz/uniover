@@ -36,6 +36,14 @@ describe('SystemApi', () => {
 
   afterEach(() => http.verify());
 
+  it('reads the deployed version from /health/version at the server root, not under /api', async () => {
+    const result = api.deploymentVersion();
+    const request = http.expectOne('/health/version');
+    expect(request.request.method).toBe('GET');
+    request.flush({ commit: 'abc1234', version: '0.32.0' });
+    await expect(result).resolves.toEqual({ commit: 'abc1234', version: '0.32.0' });
+  });
+
   it('reads the TV configuration', async () => {
     const read = api.tvConfig();
     const request = http.expectOne('/api/v1/tv/config');
