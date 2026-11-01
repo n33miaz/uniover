@@ -113,9 +113,9 @@ internal sealed class PollQrLoginHandler(
         var userId = request.ApprovedBy!.Value;
         var account = await db.Users
             .Where(u => u.Id == userId)
-            .Select(u => new { u.Role, u.DisabledAt })
+            .Select(u => new { u.Role, u.DisabledAt, u.PausedAt })
             .SingleOrDefaultAsync(cancellationToken);
-        if (account is null || account.DisabledAt is not null)
+        if (account is null || account.DisabledAt is not null || account.PausedAt is not null)
         {
             return Of(QrLoginStatuses.Denied);
         }
@@ -138,6 +138,7 @@ internal sealed class PollQrLoginHandler(
         var expiresAt = settings.Refresh.ExpiryFor(now, now);
         db.RefreshTokens.Add(RefreshToken.Create(
             userId, familyId, secretHash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
+        DeviceKeyRegistration.Add(db, familyId, userId, command.Client, now);
         audit.Add(userId, AuditEvents.QrLoginSucceeded, command.Client, request.Id.ToString("N"));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

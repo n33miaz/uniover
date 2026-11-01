@@ -113,6 +113,10 @@
                   <span class="revoked ui-chip bad" i18n="@@settings.guests.revoked"
                     >Acesso revogado</span
                   >
+                } @else if (guest.pausedAt) {
+                  <span class="paused ui-chip warn" i18n="@@settings.guests.paused-chip"
+                    >Pausado</span
+                  >
                 }
               </div>
               @if (!guest.disabledAt) {
@@ -177,6 +181,21 @@
                       i18n="@@settings.guests.permissions"
                     >
                       Permissões
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary ui-btn"
+                      [attr.aria-label]="
+                        guest.pausedAt ? resumeGuestLabel(guest) : pauseGuestLabel(guest)
+                      "
+                      [disabled]="busy()"
+                      (click)="togglePause(guest)"
+                    >
+                      @if (guest.pausedAt) {
+                        <span i18n="@@settings.guests.resume">Retomar</span>
+                      } @else {
+                        <span i18n="@@settings.guests.pause">Pausar</span>
+                      }
                     </button>
                     <button
                       type="button"

@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, PcControlV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPowerOffV1, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPermissionV1, TvPowerOffV1, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -189,18 +189,20 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "agent.diagnostics.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.AgentDiagnosticsV1;
                 case "agent.logs.v1":
                     return AgentHelloV1BodyCapabilitiesItem.AgentLogsV1;
                 case "agent.maintenance.v1":
                     return AgentHelloV1BodyCapabilitiesItem.AgentMaintenanceV1;
-                case "pc.control.v1":
-                    return AgentHelloV1BodyCapabilitiesItem.PcControlV1;
                 case "transport.keepalive.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1;
                 case "tv.adb":
                     return AgentHelloV1BodyCapabilitiesItem.TvAdb;
                 case "tv.cleanup.automatic.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvCleanupAutomaticV1;
+                case "tv.discovery.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvDiscoveryV1;
                 case "tv.focus-closes-background.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvFocusClosesBackgroundV1;
                 case "tv.key.ASPECT":
@@ -251,6 +253,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvKindSamsung;
                 case "tv.light-settings.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1;
+                case "tv.permission.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvPermissionV1;
                 case "tv.power.off.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvPowerOffV1;
                 case "tv.remote":
@@ -263,14 +267,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case AgentHelloV1BodyCapabilitiesItem.AgentDiagnosticsV1:
+                    JsonSerializer.Serialize(writer, "agent.diagnostics.v1", options);
+                    return;
                 case AgentHelloV1BodyCapabilitiesItem.AgentLogsV1:
                     JsonSerializer.Serialize(writer, "agent.logs.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.AgentMaintenanceV1:
                     JsonSerializer.Serialize(writer, "agent.maintenance.v1", options);
-                    return;
-                case AgentHelloV1BodyCapabilitiesItem.PcControlV1:
-                    JsonSerializer.Serialize(writer, "pc.control.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1:
                     JsonSerializer.Serialize(writer, "transport.keepalive.v1", options);
@@ -280,6 +284,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvCleanupAutomaticV1:
                     JsonSerializer.Serialize(writer, "tv.cleanup.automatic.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvDiscoveryV1:
+                    JsonSerializer.Serialize(writer, "tv.discovery.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvFocusClosesBackgroundV1:
                     JsonSerializer.Serialize(writer, "tv.focus-closes-background.v1", options);
@@ -355,6 +362,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1:
                     JsonSerializer.Serialize(writer, "tv.light-settings.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvPermissionV1:
+                    JsonSerializer.Serialize(writer, "tv.permission.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvPowerOffV1:
                     JsonSerializer.Serialize(writer, "tv.power.off.v1", options);

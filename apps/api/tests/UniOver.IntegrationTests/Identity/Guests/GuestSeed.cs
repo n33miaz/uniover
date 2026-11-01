@@ -39,7 +39,7 @@ internal static class GuestSeed
     }
 
     public static async Task<HttpResponseMessage> AcceptAsync(
-        HttpClient client, string? token, string? email, string? password, bool clientHeader = true, string? forwardedFor = null)
+        HttpClient client, string? token, string? email, string? password, bool clientHeader = true, string? forwardedFor = null, TestDevice? device = null)
     {
         ArgumentNullException.ThrowIfNull(client);
 
@@ -55,6 +55,11 @@ internal static class GuestSeed
         if (forwardedFor is not null)
         {
             request.Headers.Add("X-Forwarded-For", forwardedFor);
+        }
+
+        foreach (var (name, value) in device?.KeyHeaders() ?? new Dictionary<string, string>())
+        {
+            request.Headers.Add(name, value);
         }
 
         return await client.SendAsync(request, TestContext.Current.CancellationToken);

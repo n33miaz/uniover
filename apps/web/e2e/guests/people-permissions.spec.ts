@@ -8,7 +8,7 @@ import {
   TV_CONTROL_ONLY,
   mockIdentityApi,
 } from '../auth/identity-mock';
-import { expect, expectNoHorizontalScroll, test } from '../fixtures';
+import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -109,6 +109,30 @@ test.describe('Pessoas: a lista', () => {
     await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
     await expect(page.locator('form.invite')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
+  });
+
+  test('pausar é um toque, sem confirmação, e retomar desfaz; revogada não tem pausa', async ({
+    page,
+  }, info) => {
+    seed();
+    await open(page);
+    const bruno = page.locator('.person', { hasText: 'Bruno' });
+
+    await page.getByRole('button', { name: 'Pausar o acesso de Bruno' }).click();
+    await expect(bruno.locator('.paused')).toHaveText('Pausado');
+    await expect(page.getByText('Acesso pausado.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Pausar o acesso de Bruno' })).toHaveCount(0);
+    expect(mock.guests.find((g) => g.id === BRUNO.id)?.pausedAt).toBeTruthy();
+    // A pausa não revoga: as permissões seguem aparecendo, e a pessoa revogada não ganha botão de pausa.
+    await expect(bruno.locator('.abilities')).toHaveText(TV_SUMMARY);
+    await expect(page.getByRole('button', { name: 'Pausar o acesso de Carla' })).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+    await screenshot(page, `test-results/pessoas-pausado-${info.project.name}.png`);
+
+    await page.getByRole('button', { name: 'Retomar o acesso de Bruno' }).click();
+    await expect(bruno.locator('.paused')).toHaveCount(0);
+    await expect(page.getByText('Acesso retomado.')).toBeVisible();
+    expect(mock.guests.find((g) => g.id === BRUNO.id)?.pausedAt ?? null).toBeNull();
   });
 
   test('sem ninguém, uma linha só e nenhum título de convites', async ({ page }) => {

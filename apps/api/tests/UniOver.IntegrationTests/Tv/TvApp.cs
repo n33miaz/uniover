@@ -105,12 +105,10 @@ internal sealed class TvApp : IAsyncDisposable
         Logs = logs;
         OwnerEmail = ownerEmail;
         OwnerPassword = ownerPassword;
-        Client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("https://localhost"),
-            HandleCookies = false,
-            AllowAutoRedirect = false,
-        });
+        // A trilha dos comandos é gravada por uma fila, depois da resposta: o cliente de teste espera a fila esvaziar antes de
+        // devolver a resposta, para os testes lerem a tabela logo em seguida sem esperas soltas (AuditDrain.Enabled = false a desliga).
+        AuditDrain = new DrainAuditHandler(factory.Services);
+        Client = factory.CreateDefaultClient(new Uri("https://localhost"), AuditDrain);
         Server = (TestServer)factory.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>();
     }
 
@@ -125,6 +123,8 @@ internal sealed class TvApp : IAsyncDisposable
     public string OwnerPassword { get; }
 
     public HttpClient Client { get; }
+
+    internal DrainAuditHandler AuditDrain { get; }
 
     public TestServer Server { get; }
 
@@ -185,6 +185,8 @@ internal sealed class TvApp : IAsyncDisposable
             ["Modules:Identity:Passkeys:RpId"] = "localhost",
             ["Modules:Identity:Passkeys:Origins:0"] = "https://localhost",
             ["Modules:Devices:Pairing:RequireStepUp"] = "false",
+            // Sem graça de presença: estes testes conferem a queda na hora.
+            ["Modules:Devices:Transport:PresenceGraceSeconds"] = "0",
             ["Modules:Tv:AgentId"] = options.AgentId,
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",
@@ -197,6 +199,9 @@ internal sealed class TvApp : IAsyncDisposable
             ["UNIOVER_OWNER_EMAIL"] = ownerEmail,
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
+
+        // As varreduras de permissão do convidado olham o Treino inteiro, fotos de progresso incluídas.
+        Training.TrainingApp.EnablePhotoStorage(settings);
 
         var root = new EdgeFactory("Development", settings);
         var factory = root.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -602,5 +607,22 @@ internal sealed class TvApp : IAsyncDisposable
 
         // Cada teste tem o seu banco e, portanto, os seus pools: fechá-los evita esgotar o max_connections do contêiner.
         NpgsqlConnection.ClearAllPools();
+    }
+}
+
+/// <summary>Espera a fila da trilha de comandos esvaziar antes de devolver a resposta ao teste.</summary>
+internal sealed class DrainAuditHandler(IServiceProvider services) : DelegatingHandler
+{
+    public bool Enabled { get; set; } = true;
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var response = await base.SendAsync(request, cancellationToken);
+        if (Enabled)
+        {
+            await services.GetRequiredService<UniOver.Modules.Tv.Adapters.TvAuditQueue>().DrainAsync(TimeSpan.FromSeconds(30), cancellationToken);
+        }
+
+        return response;
     }
 }

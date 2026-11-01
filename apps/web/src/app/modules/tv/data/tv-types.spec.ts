@@ -1,5 +1,6 @@
 import {
   clockText,
+  dayClockText,
   normalizeShortcut,
   parseShortcuts,
   parseState,
@@ -43,7 +44,18 @@ describe('parseState', () => {
       connection: 'hot',
       agentOnline: true,
       updatedAt: '2026-10-19T14:02:00Z',
+      offlineSince: null,
     });
+  });
+
+  it('carries the offline instant only while the agent is off', () => {
+    const since = '2026-10-28T22:24:00Z';
+    expect(parseState({ ...base, agentOnline: false, offlineSince: since })?.offlineSince).toBe(
+      since,
+    );
+    expect(
+      parseState({ ...base, agentOnline: true, offlineSince: since })?.offlineSince,
+    ).toBeNull();
   });
 
   it('keeps "hibernating" as the connection: a sleeping session is not a switched-off TV', () => {
@@ -181,6 +193,14 @@ describe('parseWatchdog', () => {
     expect(parseWatchdog({ kind: 'repaired' })).toBeNull();
     expect(parseWatchdog({ at: 'x' })).toBeNull();
     expect(parseWatchdog(null)).toBeNull();
+  });
+});
+
+describe('dayClockText', () => {
+  it('shows day, month and local time, and nothing for a bad value', () => {
+    expect(dayClockText('2026-10-28T22:24:00Z')).toMatch(/^28\/10 \d{2}:\d{2}$/);
+    expect(dayClockText(null)).toBe('');
+    expect(dayClockText('nada')).toBe('');
   });
 });
 

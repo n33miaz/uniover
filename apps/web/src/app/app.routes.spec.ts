@@ -223,12 +223,12 @@ describe('app routes for a guest', () => {
     });
 
     it.each([
-      ['/treino', 'app-training-page'],
-      ['/ajustes/creditos', 'app-credits-page'],
-    ])('lets the guest open %s (%s)', async (url, selector) => {
+      ['/treino', '/treino', 'app-training-page'],
+      ['/ajustes/creditos', '/ajustes/sobre/creditos', 'app-credits-page'],
+    ])('lets the guest open %s, which ends at %s (%s)', async (url, final, selector) => {
       signInAs(TRAINING);
       const { url: landed, root } = await go(url);
-      expect(landed).toBe(url);
+      expect(landed).toBe(final);
       expect(root.matches('app-shell')).toBe(true);
       expect(root.querySelector(selector)).not.toBeNull();
     });
@@ -297,13 +297,12 @@ describe('app routes for a guest', () => {
     expect(root.querySelector(selector)).not.toBeNull();
   });
 
-  it('has the Início arrow and Configurações in the control header (no tabs)', async () => {
+  it('has the Início arrow and no settings gear in the control header (no tabs)', async () => {
     const { root } = await go('/tv');
     expect(root.querySelector('a[href="/"]')?.getAttribute('aria-label')).toBe('Voltar ao Início');
     expect(root.querySelector('app-tab-bar')).toBeNull();
-    const settings = root.querySelector('header.head a.settings');
-    expect(settings?.getAttribute('href')).toBe('/ajustes');
-    expect(settings?.getAttribute('aria-label')).toBe('Configurações');
+    // Configurações é só pela Início: o topo da TV não tem mais a engrenagem.
+    expect(root.querySelector('header.head a.settings, header.head a[href="/ajustes"]')).toBeNull();
   });
 });
 

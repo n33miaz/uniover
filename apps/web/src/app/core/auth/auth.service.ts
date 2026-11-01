@@ -4,12 +4,15 @@ import { Router, UrlTree } from '@angular/router';
 import { SessionState } from '../session/session-state';
 import {
   ApiProblem,
+  isGuestPaused,
   isPermissionDenied,
   isStepUpRequired,
   networkProblem,
   problemOf,
 } from './api-problem';
 import { AuthApi, MeResponse, TokenResponse } from './auth-api';
+import { DEVICE_KEYS, recoveryMessage } from './device-keys';
+import { REFRESH_MARKER } from './refresh-marker';
 import { safeNextUrl } from './next-url';
 import { StepUpService } from './step-up/step-up.service';
 
@@ -22,6 +25,12 @@ export interface AuthConfig {
   readonly initTimeoutMs: number;
   /** Espera antes de repetir o refresh que deu 409 (a outra aba acabou de girar o cookie). */
   readonly conflictRetryMs: number;
+  /**
+   * Espera até a repetição rápida quando a resposta do refresh não chegou (rede, página suspensa). Precisa passar da
+   * tolerância de giro simultâneo da API (3 s): antes disso o token antigo ainda é tratado como giro de outra aba (409)
+   * e a repetição não adianta. A repetição é a recuperação (desafio, prova, refresh), nunca o mesmo cookie de novo.
+   */
+  readonly lostResponseRetryMs: number;
   /** Intervalo entre tentativas de confirmar a sessão enquanto ela está pendente. */
   readonly pendingRetryMs: number;
   /** Fração da validade do token em que o refresh é agendado. */
@@ -42,6 +51,7 @@ export const AUTH_CONFIG = new InjectionToken<AuthConfig>('AUTH_CONFIG', {
   factory: () => ({
     initTimeoutMs: 3_000,
     conflictRetryMs: 250,
+    lostResponseRetryMs: 6_000,
     pendingRetryMs: 30_000,
     renewAtRatio: 0.8,
     minLeadMs: 60_000,
@@ -83,6 +93,8 @@ export class AuthService {
   private readonly injector = inject(Injector);
   private readonly config = inject(AUTH_CONFIG);
   private readonly doc = inject(DOCUMENT);
+  private readonly deviceKeys = inject(DEVICE_KEYS);
+  private readonly marker = inject(REFRESH_MARKER);
   private readonly win = this.doc.defaultView;
 
   readonly status = this.session.status;
@@ -92,6 +104,8 @@ export class AuthService {
   private renewing: Promise<RenewOutcome> | null = null;
   private renewTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingTimer: ReturnType<typeof setInterval> | undefined;
+  /** A única repetição rápida depois de um refresh sem resposta (o intervalo de `pendingTimer` segue depois). */
+  private lostResponseTimer: ReturnType<typeof setTimeout> | undefined;
   /** A leitura de `/me` em voo (todo gatilho a divide) e o instante em que a última começou (falha também conta). */
   private userRead: Promise<void> | null = null;
   private lastUserReadAt = Number.NEGATIVE_INFINITY;
@@ -150,6 +164,8 @@ export class AuthService {
    * token de acesso fica em memória, a renovação é agendada e a conta é lida. O cookie de refresh já veio na resposta.
    */
   async signInWithTokens(tokens: TokenResponse): Promise<void> {
+    // Sessão nova (família nova): a incerteza de uma renovação da sessão anterior não vale mais.
+    this.marker.clear();
     this.session.setToken(tokens.accessToken, tokens.expiresIn);
     this.scheduleRenewal(tokens.expiresIn);
     this.stopPendingRetry();
@@ -175,6 +191,7 @@ export class AuthService {
     }
     this.stopTimers();
     this.sessionEpoch++;
+    this.marker.clear();
     this.session.clear('anonymous');
     await this.router.navigate(['/entrar'], { replaceUrl: true });
     return confirmed;
@@ -373,6 +390,8 @@ export class AuthService {
     // A renovação demora a voltar; se a sessão foi encerrada nesse meio-tempo (Sair), o resultado é de uma sessão que
     // não existe mais e não pode recriá-la nem apagar o que veio depois.
     const epoch = this.sessionEpoch;
+    // Só a primeira falha sem resposta ganha a repetição rápida; depois dela, só o intervalo do estado "a confirmar".
+    const firstAttempt = !this.marker.isSet();
     try {
       const tokens = await this.refreshOnce();
       if (epoch !== this.sessionEpoch) return 'unauthenticated';
@@ -390,29 +409,74 @@ export class AuthService {
         this.stopTimers();
         this.sessionEpoch++;
         this.session.clear('anonymous');
+        if (isGuestPaused(error)) this.session.markPaused();
         if (wasKnown) this.redirectToLogin();
         return 'unauthenticated';
       }
       // Rede, 404, 5xx, 429, 409 repetido: não dá para confirmar, mas nada se apaga.
       this.session.setPending();
       this.startPendingRetry();
+      // Sem resposta, o servidor pode ter girado o token (a página foi suspensa no meio): volta logo depois da
+      // tolerância de giro, pela recuperação, em vez de esperar o intervalo inteiro do estado "a confirmar".
+      if (firstAttempt && error instanceof ApiProblem && error.status === 0)
+        this.scheduleLostResponseRetry();
       return 'unavailable';
     }
   }
 
-  /** Um refresh; se duas abas giraram o cookie juntas (409), espera um instante e tenta mais uma vez. */
-  private async refreshOnce() {
+  /**
+   * Um refresh. Há dois caminhos, escolhidos pela marca de "renovação sem fim conhecido":
+   * - comum: gira o cookie. Sem resposta (rede, página suspensa), o servidor pode ter girado e o cookie novo se perdeu:
+   *   a marca fica de pé e nenhuma repetição usa mais o mesmo cookie como um refresh comum;
+   * - recuperação (marca de pé: nesta página, em outra aba ou antes de a página ser descartada): em vez de apresentar um
+   *   cookie que talvez já tenha girado, pede um desafio à API, assina com a chave do aparelho e só então renova.
+   * Sem chave no aparelho a recuperação cai no refresh comum (a API revoga um token já girado, a regra estrita).
+   * Nada aqui repete em laço: o 409 tem uma repetição curta, e o resto fica com a repetição agendada do `doRenew`.
+   */
+  private refreshOnce(): Promise<TokenResponse> {
+    return this.marker.isSet() ? this.recover() : this.plainRefresh();
+  }
+
+  private async plainRefresh(): Promise<TokenResponse> {
+    this.marker.set();
     try {
-      return await this.api.refresh();
+      return await this.settled(this.api.refresh(), true);
     } catch (error) {
-      if (
-        error instanceof ApiProblem &&
-        error.status === 409 &&
-        error.kind === 'refresh-conflict'
-      ) {
-        await sleep(this.config.conflictRetryMs);
-        return this.api.refresh();
-      }
+      if (!(error instanceof ApiProblem && error.status === 409 && error.kind === 'refresh-conflict'))
+        throw error;
+      // Duas abas giraram o cookie juntas: o cookie novo já está no navegador.
+      await sleep(this.config.conflictRetryMs);
+      return this.settled(this.api.refresh(), true);
+    }
+  }
+
+  private async recover(): Promise<TokenResponse> {
+    if (!(await this.deviceKeys.hasKey())) return this.settled(this.api.refresh(), true);
+
+    const challenge = await this.settled(this.api.refreshChallenge(), false);
+    if (!challenge.challenge || !challenge.familyId) {
+      // O token não girou (o pedido nem chegou ao servidor): um refresh comum basta.
+      return this.settled(this.api.refresh(), true);
+    }
+    const message = recoveryMessage(challenge.familyId, challenge.challenge);
+    const proof = message ? await this.deviceKeys.sign(message) : null;
+    return this.settled(
+      this.api.refresh(proof ? { challenge: challenge.challenge, proof } : undefined),
+      true,
+    );
+  }
+
+  /**
+   * Só uma resposta definitiva do servidor apaga a marca: 200 do refresh (`clearOnSuccess`) ou 401 (a sessão acabou).
+   * Rede, 409, 429 e 5xx deixam a marca: a próxima tentativa continua pela recuperação.
+   */
+  private async settled<T>(call: Promise<T>, clearOnSuccess: boolean): Promise<T> {
+    try {
+      const result = await call;
+      if (clearOnSuccess) this.marker.clear();
+      return result;
+    } catch (error) {
+      if (error instanceof ApiProblem && error.status === 401) this.marker.clear();
       throw error;
     }
   }
@@ -474,9 +538,19 @@ export class AuthService {
     }, this.config.pendingRetryMs);
   }
 
+  private scheduleLostResponseRetry(): void {
+    clearTimeout(this.lostResponseTimer);
+    this.lostResponseTimer = setTimeout(() => {
+      this.lostResponseTimer = undefined;
+      if (this.session.status() === 'pending') void this.renew();
+    }, this.config.lostResponseRetryMs);
+  }
+
   private stopPendingRetry(): void {
     if (this.pendingTimer !== undefined) clearInterval(this.pendingTimer);
     this.pendingTimer = undefined;
+    clearTimeout(this.lostResponseTimer);
+    this.lostResponseTimer = undefined;
   }
 
   private stopTimers(): void {

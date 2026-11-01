@@ -40,6 +40,17 @@ public sealed class User
     public bool IsDisabled => DisabledAt is not null;
 
     /// <summary>
+    /// Quando o dono pausou a conta (só convidado). Diferente da revogação, a pausa é reversível: a conta e as
+    /// permissões ficam como estão, mas ela não entra, não renova a sessão e não age enquanto durar.
+    /// </summary>
+    public DateTimeOffset? PausedAt { get; private set; }
+
+    public bool IsPaused => PausedAt is not null;
+
+    /// <summary>Conta que não pode entrar nem agir agora: revogada ou pausada.</summary>
+    public bool IsBlocked => DisabledAt is not null || PausedAt is not null;
+
+    /// <summary>
     /// Quando a própria pessoa escolheu o nome (<see cref="DisplayNameRules"/>). Nulo = nunca escolheu: o nome é o que veio
     /// do seed ou do convite, e o app pergunta no próximo acesso.
     /// </summary>
@@ -82,6 +93,25 @@ public sealed class User
         DisabledAt ??= now;
     }
 
+    /// <summary>Pausa o acesso, sem apagar nada. Só convidado, e conta já revogada não se pausa.</summary>
+    public void Pause(DateTimeOffset now)
+    {
+        if (Role != AccountRoles.Guest)
+        {
+            throw new InvalidOperationException("Só a conta de convidado pode ser pausada.");
+        }
+
+        if (IsDisabled)
+        {
+            throw new InvalidOperationException("Conta revogada não se pausa.");
+        }
+
+        PausedAt ??= now;
+    }
+
+    /// <summary>Retoma uma conta pausada; sem pausa, não faz nada.</summary>
+    public void Resume() => PausedAt = null;
+
     /// <summary>
     /// A pessoa escolheu o nome. Confere de novo as regras (o endpoint já conferiu e mostra o erro; aqui é a trava do
     /// domínio) e grava o texto normalizado.
@@ -105,20 +135,8 @@ public sealed class User
     public TimeSpan RemainingLockout(DateTimeOffset now) =>
         LockoutUntil is { } until && until > now ? until - now : TimeSpan.Zero;
 
-    /// <summary>Conta a falha e, se passou do limite, define até quando a conta fica bloqueada.</summary>
-    public void RegisterFailure(DateTimeOffset now, LockoutPolicy policy)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-
-        FailedLoginCount++;
-        LastFailedAt = now;
-
-        var delay = policy.DelayFor(FailedLoginCount);
-        if (delay > TimeSpan.Zero)
-        {
-            LockoutUntil = now + delay;
-        }
-    }
+    // A falha NÃO é contada aqui: somar em memória e gravar de volta perdia tentativas paralelas. O contador e o bloqueio
+    // progressivo vivem em FailedLoginCounter (um UPDATE atômico no banco).
 
     /// <summary>O sucesso zera o contador e o bloqueio.</summary>
     public void RegisterSuccess()

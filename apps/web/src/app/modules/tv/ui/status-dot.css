@@ -25,6 +25,10 @@
   height: 100%;
   overflow: visible;
 }
+/* O monitor é um componente à parte: ocupa o mesmo quadrado do ponto. */
+.monitor {
+  display: block;
+}
 
 .fill {
   fill: currentColor;
@@ -54,10 +58,15 @@
 [data-phase='sleeping'] {
   color: var(--dot-sleep);
 }
+/* Ainda sem certeza (reconectando) é verde: a falha só aparece depois de confirmada. */
 [data-phase='connecting'] {
+  color: var(--a-ok);
+}
+[data-phase='no-reply'] {
   color: var(--a-warn);
 }
-[data-phase='agent-off'] {
+[data-phase='agent-off'],
+[data-phase='pc-off'] {
   color: var(--a-ink3);
 }
 [data-phase='offline'],

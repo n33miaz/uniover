@@ -2,6 +2,7 @@ import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { AuthApi, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
+import { TvPermissionService } from '../../core/tv-permission/tv-permission.service';
 import { SystemApi, TvComputer, TvItem } from './system-api';
 import { TvEditSheet } from './tv-edit-sheet';
 
@@ -64,6 +65,7 @@ const guest = (
   email: `${id}@exemplo.com`,
   createdAt: '2026-10-19T15:00:00Z',
   disabledAt,
+  pausedAt: null,
   permissions: ['module:tv'],
 });
 
@@ -76,7 +78,10 @@ describe('TvEditSheet', () => {
     tvCleanupReports: vi.fn(),
     tvApps: vi.fn(),
     setTvMembers: vi.fn(),
+    nearbyTvs: vi.fn(),
+    tvs: vi.fn(),
   };
+  const permission = { ask: vi.fn(), waitForGrant: vi.fn(), stillPending: vi.fn() };
   const authApi = { guests: vi.fn() };
 
   beforeEach(() => {
@@ -95,6 +100,11 @@ describe('TvEditSheet', () => {
     api.tvMembers.mockReset().mockResolvedValue(['g1']);
     api.tvCleanupReports.mockReset().mockResolvedValue([]);
     api.tvApps.mockReset().mockResolvedValue([]);
+    api.nearbyTvs.mockReset().mockResolvedValue({ status: 'ok', items: [] });
+    api.tvs.mockReset().mockResolvedValue([]);
+    permission.ask.mockReset().mockResolvedValue('asked');
+    permission.waitForGrant.mockReset().mockResolvedValue(true);
+    permission.stillPending.mockReset().mockResolvedValue(true);
     api.setTvMembers
       .mockReset()
       .mockImplementation(async (_id: string, ids: readonly string[]) => [...ids]);
@@ -109,6 +119,7 @@ describe('TvEditSheet', () => {
       providers: [
         { provide: SystemApi, useValue: api },
         { provide: AuthApi, useValue: authApi },
+        { provide: TvPermissionService, useValue: permission },
         {
           provide: AuthService,
           useValue: { authorized: (call: (t: string) => unknown) => call('token') },
@@ -729,6 +740,114 @@ describe('TvEditSheet', () => {
       await settle();
       expect(error()).toBe('A TV padrão não pode ser removida.');
       expect(closed).toEqual([]);
+    });
+  });
+  describe('TVs na rede ao criar', () => {
+    const SALA = {
+      id: 'a1b2c3d4e5f60718',
+      kind: 'samsung',
+      name: 'Samsung Sala',
+      controlled: true,
+    };
+
+    it('lists the TVs the online computers found first, marked Na Sua Rede, and the other computers after', async () => {
+      api.nearbyTvs.mockImplementation(async (slug: string) =>
+        slug === 'pc-livre' ? { status: 'ok', items: [SALA] } : { status: 'ok', items: [] },
+      );
+      const { el } = await render(null, [FREE, OTHER]);
+      const legends = Array.from(el.querySelectorAll('legend')).map((l) => l.textContent?.trim());
+      expect(legends.indexOf('TVs Encontradas')).toBeGreaterThanOrEqual(0);
+      expect(legends.indexOf('TVs Encontradas')).toBeLessThan(
+        legends.indexOf('Outros Computadores'),
+      );
+      const rows = Array.from(el.querySelectorAll<HTMLElement>('label.choice'));
+      expect(rows[0].querySelector('.ui-row-title')?.textContent?.trim()).toBe('Samsung Sala');
+      expect(rows[0].querySelector('.ui-chip')?.textContent?.trim()).toBe('Na Sua Rede');
+      // O computador que achou a TV não se repete na lista de baixo.
+      const titles = rows.map((row) => row.querySelector('.ui-row-title')?.textContent?.trim());
+      expect(titles).toEqual(['Samsung Sala', 'PC do quarto']);
+      // Só computador ligado é perguntado.
+      expect(api.nearbyTvs).toHaveBeenCalledTimes(1);
+      expect(api.nearbyTvs).toHaveBeenCalledWith('pc-livre');
+    });
+
+    it('choosing a found TV picks its computer and uses its name when the name is empty', async () => {
+      api.nearbyTvs.mockResolvedValue({ status: 'ok', items: [SALA] });
+      const { pick, name, save } = await render(null, [FREE]);
+      await pick('Samsung Sala');
+      expect(name().value).toBe('Samsung Sala');
+      await save();
+      expect(api.createTv).toHaveBeenCalledWith('pc-livre', 'Samsung Sala');
+    });
+
+    it('keeps the name the person already typed', async () => {
+      api.nearbyTvs.mockResolvedValue({ status: 'ok', items: [SALA] });
+      const { pick, type, name } = await render(null, [FREE]);
+      await type('Quarto');
+      await pick('Samsung Sala');
+      expect(name().value).toBe('Quarto');
+    });
+
+    it('shows no Na Sua Rede block, and keeps the plain list, when nothing was found', async () => {
+      const { el } = await render(null, [FREE]);
+      const legends = Array.from(el.querySelectorAll('legend')).map((l) => l.textContent?.trim());
+      expect(legends).not.toContain('TVs Encontradas');
+      expect(legends).toContain('Computador');
+    });
+
+    it('does not search when editing a TV', async () => {
+      await render(TV, [OWN]);
+      expect(api.nearbyTvs).not.toHaveBeenCalled();
+    });
+
+    it('a search that fails leaves the computer in the normal list', async () => {
+      api.nearbyTvs.mockRejectedValue(problem(500));
+      const { el } = await render(null, [FREE]);
+      expect(el.textContent).not.toContain('TVs Encontradas');
+      expect(el.textContent).toContain('Notebook');
+    });
+  });
+
+  describe('permissão da TV', () => {
+    const NEEDED: TvItem = { ...TV, permissionNeeded: true };
+
+    it('is offered on a Samsung TV and says when the TV asked again', async () => {
+      const { el } = await render(NEEDED, [OWN]);
+      expect(el.textContent).toContain('Permissão da TV');
+      expect(el.textContent).toContain('A TV pediu a permissão do UniOver de novo.');
+    });
+
+    it('is not offered on an Android TV', async () => {
+      const { el } = await render(DEFAULT_TV, []);
+      expect(el.textContent).not.toContain('Permissão da TV');
+    });
+
+    it('is not offered when creating', async () => {
+      const { el } = await render(null, [FREE]);
+      expect(el.textContent).not.toContain('Permissão da TV');
+    });
+
+    it('asking again opens the short sheet and, once granted, the list is read again', async () => {
+      const { el, button, settle, closed, fixture } = await render(NEEDED, [OWN]);
+      button('Pedir Agora').click();
+      await settle();
+      const sheet = el.querySelector('app-tv-permission-sheet')!;
+      expect(sheet).not.toBeNull();
+      expect(sheet.textContent).toContain('Na próxima vez que a TV mostrar um pedido do UniOver');
+      sheet.querySelectorAll<HTMLButtonElement>('button')[1].click();
+      await settle();
+      expect(permission.ask).toHaveBeenCalledWith('tv-2');
+      await settle();
+      expect(sheet.textContent).toContain('A TV já reconhece o UniOver.');
+      sheet.querySelectorAll<HTMLButtonElement>('button')[0].click();
+      await settle();
+      expect(el.querySelector('app-tv-permission-sheet')).toBeNull();
+      expect(el.textContent).toContain('A TV reconhece o UniOver.');
+      // Algo mudou no servidor: ao sair, a página relê a lista.
+      el.querySelector<HTMLButtonElement>('button')?.focus();
+      fixture.componentInstance['cancel']();
+      await settle();
+      expect(closed).toEqual([true]);
     });
   });
 });

@@ -27,6 +27,7 @@ using UniOver.Modules.Identity.Features.Logout;
 using UniOver.Modules.Identity.Features.QrLogin;
 using UniOver.Modules.Identity.Features.Refresh;
 using UniOver.Modules.Identity.Features.RemovePasskey;
+using UniOver.Modules.Identity.Features.PauseGuest;
 using UniOver.Modules.Identity.Features.RevokeGuest;
 using UniOver.Modules.Identity.Features.RevokeGuestInvite;
 using UniOver.Modules.Identity.Features.Sessions;
@@ -71,6 +72,7 @@ public static class IdentityModule
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
+        services.AddScoped<FailedLoginCounter>();
         services.AddSingleton<SystemSettingsService>();
         services.AddSingleton<UniOver.Modules.Identity.Contracts.ISystemSettings>(sp => sp.GetRequiredService<SystemSettingsService>());
 
@@ -81,8 +83,13 @@ public static class IdentityModule
         services.AddAuditPurge<IdentityDbContext>(
             configuration, IdentityDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
+        // Limpeza das famílias de refresh mortas, no mesmo despertar diário da retenção da auditoria (sem relógio novo).
+        services.AddRefreshFamilyCleanup();
+
         services.AddScoped<LoginHandler>();
+        services.AddScoped<RefreshRecoveryService>();
         services.AddScoped<RefreshHandler>();
+        services.AddScoped<RefreshChallengeHandler>();
         services.AddScoped<LogoutHandler>();
         services.AddScoped<StartQrLoginHandler>();
         services.AddScoped<PollQrLoginHandler>();
@@ -96,6 +103,7 @@ public static class IdentityModule
         services.AddScoped<ListGuestsHandler>();
         services.AddScoped<PeopleUsageHandler>();
         services.AddScoped<RevokeGuestHandler>();
+        services.AddScoped<PauseGuestHandler>();
         services.AddScoped<SetGuestPermissionsHandler>();
         services.AddScoped<UpdateProfileHandler>();
         services.AddScoped<SessionHandler>();
@@ -134,6 +142,7 @@ public static class IdentityModule
         group.MapGetModuleInfo();
         group.MapLogin();
         group.MapRefresh();
+        group.MapRefreshChallenge();
         group.MapLogout();
         group.MapStartQrLogin();
         group.MapPollQrLogin();
@@ -149,6 +158,7 @@ public static class IdentityModule
         group.MapListGuests();
         group.MapPeopleUsage();
         group.MapRevokeGuest();
+        group.MapPauseGuest();
         group.MapSetGuestPermissions();
         group.MapSystemSettings();
         group.MapSessions();

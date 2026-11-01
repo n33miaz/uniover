@@ -13,7 +13,8 @@ uv run uniover-agent status    # diz se há token no cofre e se a API responde
 uv run uniover-agent tv-pair --host <ip-da-tv>   # pareia uma Android TV (código mostrado na tela)
 uv run uniover-agent tv-pair --kind samsung --host <ip-da-tv>   # pareia uma Samsung (aviso na TV)
 uv run uniover-agent tv-find   # acha a TV na rede e grava tipo, endereço e identificador no agent.toml
-uv run uniover-agent self-update   # troca o agente instalado pela versão atual da main (se mudou)
+uv run uniover-agent self-update   # troca o agente instalado pela versão atual do canal (develop; se mudou)
+uv run uniover-agent diagnose      # confere a saúde deste PC (pasta, início automático, API, TV); --repair aplica os reparos seguros
 ```
 
 Verificação do projeto:
@@ -74,6 +75,9 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
+| `UNIOVER_UPDATE_CHANNEL` | ramo de que o agente se atualiza: `develop` (padrão, a `develop` é a produção) ou `main`; no `agent.toml`, `update_channel`. O instalador grava o do `-Ref` |
+| `UNIOVER_SELF_CARE` | `0` desliga o auto-diagnóstico periódico, o auto-reparo e o envio das ocorrências à API (padrão ligado; ver "Auto-diagnóstico") |
+| `UNIOVER_HOME` | pasta de instalação (caminho absoluto); sem ela vale a escolhida na instalação (ver "Pasta de instalação") ou `%LOCALAPPDATA%\UniOver` |
 | `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
 | `UNIOVER_PC_CONTROL` | `1` liga o controle deste PC pelo app (mouse, teclado, mídia, energia, favoritos). **Desligado por padrão**: sem isto o agente nem declara a capacidade `pc.control.v1` e recusa todo `pc.*`. Mais fácil: `uv run uniover-agent pc-control on` (grava no `agent.toml`; `off` desliga, `status` mostra) e reiniciar o agente |
 | `UNIOVER_PC_APPS` | favoritos que o app pode abrir, `Nome=destino` (programa, documento ou endereço), separados por `;`. No `agent.toml`, `pc_apps` como lista (`["Navegador=C:\...\chrome.exe", "Notas=notepad"]`). O app só recebe o nome e um identificador; o destino nunca sai do PC |
@@ -81,6 +85,49 @@ Variáveis de ambiente (vencem o arquivo):
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
+
+## Pasta de instalação
+
+Na primeira instalação uma janela do Windows pergunta onde guardar o UniOver (`-InstallDir` pula a pergunta; cancelar
+usa a pasta padrão). A escolha vira uma subpasta `UniOver` (nunca arquivos soltos numa pasta de uso geral) e é recusada
+com uma frase simples se for de rede, de disco removível, protegida pelo Windows, longa demais, sem 1 GB livre ou sem
+escrita. Uma reinstalação mantém a pasta que já existe.
+
+`%LOCALAPPDATA%\UniOver` é a pasta **fixa**: guarda só o que o Windows precisa achar sempre no mesmo lugar (`launcher.vbs`
+e `launcher.ps1`, que a tarefa agendada abre) e o ponteiro `location.txt` (UTF-8) para a pasta escolhida. O resto vive
+na pasta de instalação (a própria pasta fixa, por padrão, então quem já tinha o UniOver instalado não migra nada):
+
+| Pasta | O que guarda |
+|---|---|
+| `app`, `app.previous` | o código atual e a versão anterior (para voltar atrás); a candidata de uma atualização aparece como `app.new` por instantes |
+| `runtime` | ambiente Python (`venv`), estado das atualizações, fila de diagnóstico, sinais do supervisor, versões recusadas |
+| `config` | `agent.toml` |
+| `logs` | `agent.log` (agente), `supervisor.log` (supervisor e lançador), `crash.log` (falha fatal do interpretador), `instalacao.log` |
+| `web`, `tv`, `icons` | página de conexão, certificado da TV, ícones dos apps |
+
+Ao subir, o agente arruma a pasta sozinho (`adapters/housekeeping.py`): refaz as pastas que faltam, guarda só as duas
+versões recusadas mais novas e apaga restos de atualização com mais de um dia. Nunca toca em `app`, `app.previous`,
+configuração, certificado nem registros.
+
+## Auto-diagnóstico, auto-reparo e ocorrências
+
+- **Tarefas de fundo supervisionadas** (`core/supervision.py`): erro numa tarefa é registrado com a pilha, vira ocorrência
+  e a tarefa recomeça com espera crescente. O vigia do endereço da TV não confunde um erro dele com "a TV mudou".
+- **Rastro de queda** (`adapters/run_state.py`, `adapters/crash_trace.py`): exceção sem tratamento (thread principal,
+  threads, tarefas soltas) vai para o registro; falha fatal do interpretador deixa a pilha em `logs\crash.log`. Ao subir,
+  o agente diz como a execução anterior terminou: de forma ordenada, de propósito (o supervisor deixa o motivo em
+  `runtime\stop-reason.txt`), com o PC reiniciado ou sem se despedir (queda).
+- **Pulso**: o agente regrava `runtime\last-alive` a cada minuto de dentro do laço de eventos. O supervisor reinicia um
+  agente vivo que ficou mudo por cerca de 5 minutos (e conta como queda para a versão em prova).
+- **Auto-diagnóstico** a cada 10 minutos (`core/self_care.py`, `adapters/self_care_checks.py`): pasta de instalação,
+  tarefa de início automático, supervisor, conexão (a API responde por HTTP; nunca abre um segundo canal), TV (só a
+  porta, nunca tecla) e tarefas de fundo. Reparo seguro por verificação, com 30 min de espera e no máximo 4 por dia:
+  refazer pastas, registrar de novo a tarefa (pela rotina que confere e desfaz), iniciar o lançador pelo Agendador,
+  pedir ao supervisor que reinicie (no máximo um a cada 3 h). `uniover-agent diagnose` roda o mesmo exame à mão.
+- **Ocorrências para a API** (`agent.diagnostics.v1`): erros e reparos vão para uma fila local limitada
+  (`runtime\diagnostics.jsonl`, o supervisor também escreve nela) e são enviados depois do `hello` e a cada 5 minutos.
+  Antes de gravar, o texto perde segredos, caminhos, IPs, MAC, e-mails e o nome do usuário e do PC; de uma exceção
+  só vão o tipo e o ponto do código, nunca a mensagem. A API guarda por 7 dias e só o administrador vê, em Sistema.
 
 ## Controle do PC
 
@@ -110,6 +157,26 @@ Use uma Samsung recente na mesma rede do PC, com o controle por rede liberado:
    `samsung:<nome-da-tv>`; ele não é gravado em arquivo nem mostrado no log.
 3. Se o aviso não aparecer, na TV procure **Gerenciador de Conexão do Dispositivo** ou **Notificação de acesso**,
    permita o PC e tente o pareamento outra vez.
+
+### Permissão da TV: um aviso só
+
+A TV liga o "Permitir" ao **nome do cliente** (sempre `UniOver`) e ao token. O nome fica gravado no cofre, em
+`samsung-name:<nome-da-tv>`, junto do token: atualizar ou reinstalar o agente não o muda, e a configuração
+(`tv_client_name`) deixa de valer para a Samsung. Token guardado antes desta regra mantém o nome com que foi pareado.
+
+Se a TV esquecer o UniOver (permissão revogada ou vencida), o agente **não insiste**: cada tentativa faria o aviso
+aparecer na tela sem ninguém ter pedido. Ele grava a marca `samsung-permission:<nome-da-tv>` no cofre (sobrevive a
+reiniciar), para de abrir conexões, avisa a API (`tv.permission.v1` com `needed`) e responde `tv_permission_needed` aos
+comandos. A pessoa que usa a TV recebe, ao entrar no app, uma folha curta com **Pedir Agora**; só esse pedido
+(`tv.permission.request.v1`) volta a falar com a TV, uma vez, com o token guardado: uma TV que ainda o reconhece conecta
+sem aviso nenhum. Aceito o aviso, o token novo vai para o cofre, a marca some e a API é avisada (`granted`).
+
+### Procura de TVs na rede
+
+O agente também responde a `tv.discover.v1` com as TVs compatíveis que acha na rede dele (a mesma varredura do
+`tv-find`: só leitura de identificação). A lista nunca leva endereço IP nem MAC: cada TV vai com um `id` opaco e estável e
+a marca `controlled` (é a que o agente já controla). O app a usa ao adicionar uma TV, mostrando primeiro as achadas
+(**Na Sua Rede**).
 
 O agente mantém o WebSocket Samsung aberto enquanto há uso e o hiberna como faz com Android. Lê a energia pelo
 REST da TV (`on`, `standby` ou `off`; sem resposta fica `unknown`) e não repete `POWER` em menos de dez segundos.
@@ -452,6 +519,14 @@ Só o administrador, pela tela de Aparelhos do app, sem a pessoa do PC fazer nad
   (`update`), relê o arquivo a cada 30 s e avisa a API com `agent.update.status.v1` quando muda, além de repetir o
   `hello` a cada 5 minutos. Tudo isso é informativo: arquivo ausente, corrompido ou recusado pelo contrato nunca
   impede o agente de subir, conectar nem de se atualizar.
+
+## Atualização
+
+O canal é o ramo de que o agente se atualiza (`develop` por padrão). Antes de trocar a pasta, a candidata passa por:
+zip inteiro e do commit pedido, arquivos conferidos contra a árvore do commit no GitHub, `uv sync --frozen` (as versões do `uv.lock`, sem reescrevê-lo) num ambiente
+descartável e o auto-diagnóstico dela (`python -m uniover_agent.selfcheck`, que lê o `agent.toml` real com as regras
+novas). Versão em prova (menos de 10 minutos estável) não é substituída; atualização que falha tenta de novo em 30 min,
+1 h, 2 h... até 6 h. Detalhes e limites em `adr/0016-atualizacao-do-agente.md`.
 
 ## Conexão
 

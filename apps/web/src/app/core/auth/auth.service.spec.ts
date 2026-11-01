@@ -7,6 +7,8 @@ import { SessionState } from '../session/session-state';
 import { ApiProblem, networkProblem } from './api-problem';
 import { AuthApi, TokenResponse } from './auth-api';
 import { AuthService } from './auth.service';
+import { DEVICE_KEYS } from './device-keys';
+import { REFRESH_MARKER } from './refresh-marker';
 import { StepUpService } from './step-up/step-up.service';
 
 @Component({ template: '' })
@@ -55,8 +57,17 @@ describe('AuthService', () => {
     logout: vi.fn(),
     me: vi.fn(),
     updateMe: vi.fn(),
+    refreshChallenge: vi.fn(),
   };
   const stepUp = { confirm: vi.fn() };
+  const deviceKeys = { create: vi.fn(), hasKey: vi.fn(), sign: vi.fn() };
+  // A marca vive fora do TestBed: recriar o módulo equivale a recarregar a página, e a marca (no localStorage) sobrevive.
+  let marked = false;
+  const marker = {
+    isSet: () => marked,
+    set: () => void (marked = true),
+    clear: () => void (marked = false),
+  };
 
   beforeEach(() => {
     vi.useFakeTimers({
@@ -64,7 +75,10 @@ describe('AuthService', () => {
     });
     localStorage.clear();
     sessionStorage.clear();
-    for (const fn of [...Object.values(api), stepUp.confirm]) fn.mockReset();
+    for (const fn of [...Object.values(api), ...Object.values(deviceKeys), stepUp.confirm])
+      fn.mockReset();
+    marked = false;
+    deviceKeys.hasKey.mockResolvedValue(false);
     api.me.mockResolvedValue(ME);
     api.logout.mockResolvedValue(undefined);
     TestBed.configureTestingModule({
@@ -76,6 +90,8 @@ describe('AuthService', () => {
         ]),
         { provide: AuthApi, useValue: api },
         { provide: StepUpService, useValue: stepUp },
+        { provide: DEVICE_KEYS, useValue: deviceKeys },
+        { provide: REFRESH_MARKER, useValue: marker },
       ],
     });
   });
@@ -155,6 +171,220 @@ describe('AuthService', () => {
       api.refresh.mockResolvedValue(tokens('jwt'));
       window.dispatchEvent(new Event('online'));
       await vi.advanceTimersByTimeAsync(0);
+      expect(service().status()).toBe('authenticated');
+    });
+  });
+
+  describe('a refresh whose response was lost (the iPhone suspends the page mid-renewal)', () => {
+    const CHALLENGE = { challenge: 'id1.nonce1', familyId: 'f'.repeat(32), expiresIn: 120 };
+    const MESSAGE = `uniover-refresh-recovery|v1|${'f'.repeat(32)}|id1|nonce1`;
+
+    beforeEach(() => {
+      deviceKeys.hasKey.mockResolvedValue(true);
+      deviceKeys.sign.mockResolvedValue('assinatura');
+    });
+
+    /** O refresh que se perde: o servidor girou, a resposta não voltou. */
+    async function loseTheResponse(): Promise<void> {
+      api.refresh.mockRejectedValueOnce(networkProblem());
+      await service().init();
+      expect(service().status()).toBe('pending');
+      expect(marked).toBe(true);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+    }
+
+    it('does not touch the server again before the 3 s tolerance, then recovers once: challenge, signature, refresh with the proof', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockResolvedValue(CHALLENGE);
+      api.refresh.mockResolvedValue(tokens('jwt-recovered'));
+
+      await vi.advanceTimersByTimeAsync(5_999);
+      expect(api.refreshChallenge).not.toHaveBeenCalled();
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+      expect(deviceKeys.sign).toHaveBeenCalledWith(MESSAGE);
+      expect(api.refresh).toHaveBeenCalledTimes(2);
+      expect(api.refresh).toHaveBeenLastCalledWith({ challenge: 'id1.nonce1', proof: 'assinatura' });
+      expect(service().status()).toBe('authenticated');
+      expect(marked).toBe(false);
+    });
+
+    it('never sends the old cookie as a plain refresh again: later attempts also go through the challenge', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockRejectedValue(networkProblem());
+
+      // A repetição rápida (6 s) e depois o intervalo do estado "a confirmar" (30 s): ambas só pedem o desafio.
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(api.refreshChallenge.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+      expect(marked).toBe(true);
+      expect(service().status()).toBe('pending');
+    });
+
+    it('does not loop: a failing recovery makes one attempt per scheduled retry', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockRejectedValue(networkProblem());
+
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(23_999);
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(2);
+    });
+
+    it('a page the browser discarded and reloaded still recovers: the mark survives the reload', async () => {
+      await loseTheResponse();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([{ path: 'entrar', component: Blank }]),
+          { provide: AuthApi, useValue: api },
+          { provide: StepUpService, useValue: stepUp },
+          { provide: DEVICE_KEYS, useValue: deviceKeys },
+          { provide: REFRESH_MARKER, useValue: marker },
+        ],
+      });
+      api.refresh.mockClear();
+      api.refreshChallenge.mockResolvedValue(CHALLENGE);
+      api.refresh.mockResolvedValue(tokens('jwt-recovered'));
+
+      await service().init();
+
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+      expect(api.refresh).toHaveBeenCalledWith({ challenge: 'id1.nonce1', proof: 'assinatura' });
+      expect(service().status()).toBe('authenticated');
+    });
+
+    it('when the server says the token never rotated, a plain refresh is enough', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockResolvedValue({ challenge: null, familyId: null, expiresIn: 0 });
+      api.refresh.mockResolvedValue(tokens('jwt-1'));
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(deviceKeys.sign).not.toHaveBeenCalled();
+      expect(api.refresh).toHaveBeenCalledTimes(2);
+      expect(api.refresh).toHaveBeenLastCalledWith();
+      expect(service().status()).toBe('authenticated');
+      expect(marked).toBe(false);
+    });
+
+    it('a 401 on the challenge ends the session and clears the mark', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockRejectedValue(problem(401));
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(service().status()).toBe('anonymous');
+      expect(marked).toBe(false);
+    });
+
+    it('a 401 on the proof ends the session and clears the mark (no retry)', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockResolvedValue(CHALLENGE);
+      api.refresh.mockRejectedValue(problem(401));
+
+      await vi.advanceTimersByTimeAsync(6_000);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(service().status()).toBe('anonymous');
+      expect(marked).toBe(false);
+      expect(api.refresh).toHaveBeenCalledTimes(2);
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+    });
+
+    it('a 409 on the recovery keeps the mark and leaves the retry to the pending schedule', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockRejectedValue(problem(409, 'refresh-conflict'));
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+      expect(marked).toBe(true);
+      expect(service().status()).toBe('pending');
+    });
+
+    it('without a key on the device there is no recovery: the strict plain refresh is the only way', async () => {
+      deviceKeys.hasKey.mockResolvedValue(false);
+      await loseTheResponse();
+      api.refresh.mockResolvedValue(tokens('jwt-1'));
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(api.refreshChallenge).not.toHaveBeenCalled();
+      expect(api.refresh).toHaveBeenCalledTimes(2);
+      expect(service().status()).toBe('authenticated');
+      expect(marked).toBe(false);
+    });
+
+    it('when it cannot sign, it asks for a plain refresh instead of sending a proof it does not have', async () => {
+      await loseTheResponse();
+      deviceKeys.sign.mockResolvedValue(null);
+      api.refreshChallenge.mockResolvedValue(CHALLENGE);
+      api.refresh.mockRejectedValue(problem(401));
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      expect(api.refresh).toHaveBeenLastCalledWith(undefined);
+    });
+
+    it('concurrent renewals during the recovery share one challenge', async () => {
+      await loseTheResponse();
+      api.refreshChallenge.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return CHALLENGE;
+      });
+      api.refresh.mockResolvedValue(tokens('jwt-recovered'));
+
+      const a = service().renew();
+      const b = service().renew();
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(await a).toBe('renewed');
+      expect(await b).toBe('renewed');
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
+    });
+
+    it('a plain refresh that works leaves no mark behind, and sign-in and sign-out clear a stale one', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt-1'));
+      await service().init();
+      expect(marked).toBe(false);
+
+      marked = true;
+      await service().signInWithTokens(tokens('jwt-2'));
+      expect(marked).toBe(false);
+
+      marked = true;
+      await service().logout();
+      expect(marked).toBe(false);
+    });
+
+    it('a server error (5xx) also keeps the mark: the rotation may have happened before the failure', async () => {
+      api.refresh.mockRejectedValueOnce(problem(503));
+      await service().init();
+
+      expect(marked).toBe(true);
+      expect(service().status()).toBe('pending');
+    });
+
+    it('a rate limit (429) keeps the mark too, and the next attempt asks for a challenge, not a replay of the cookie', async () => {
+      api.refresh.mockRejectedValueOnce(problem(429, 'rate-limited'));
+      await service().init();
+      api.refreshChallenge.mockResolvedValue({ challenge: null, familyId: null, expiresIn: 0 });
+      api.refresh.mockResolvedValue(tokens('jwt-1'));
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(api.refreshChallenge).toHaveBeenCalledTimes(1);
       expect(service().status()).toBe('authenticated');
     });
   });
@@ -250,6 +480,27 @@ describe('AuthService', () => {
       expect(service().status()).toBe('anonymous');
       expect(session().bearer()).toBeNull();
       expect(router.url).toBe('/entrar?next=%2Ftv');
+    });
+  });
+
+  describe('paused guest', () => {
+    it('marks the session as paused when the refresh is refused for that reason, and clears it on the next sign-in', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      await service().init();
+      api.refresh.mockRejectedValue(problem(401, 'guest-paused'));
+      expect(await service().renew()).toBe('unauthenticated');
+      expect(service().status()).toBe('anonymous');
+      expect(session().paused()).toBe(true);
+
+      api.login.mockResolvedValue(tokens('jwt-2'));
+      await service().login('bia@exemplo.com', 'senha');
+      expect(session().paused()).toBe(false);
+    });
+
+    it('does not mark a plain 401 as paused', async () => {
+      api.refresh.mockRejectedValue(problem(401));
+      await service().init();
+      expect(session().paused()).toBe(false);
     });
   });
 

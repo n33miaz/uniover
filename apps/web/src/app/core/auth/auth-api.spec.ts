@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../connectivity/connectivity.service';
 import { ApiProblem } from './api-problem';
 import { AuthApi, FETCH_FN } from './auth-api';
+import { DEVICE_KEYS, DeviceKeys, PendingDeviceKey } from './device-keys';
 
 function reply(status: number, body?: unknown, headers: Record<string, string> = {}): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -336,6 +337,131 @@ describe('AuthApi', () => {
         .updateMe('jwt', 'Bia')
         .catch(() => undefined);
       expect(keyOfLastCall()).not.toBe(ana);
+    });
+  });
+
+  describe('device key and recovery', () => {
+    const commit = vi.fn();
+    const create = vi.fn();
+    const keys: DeviceKeys = { create, hasKey: vi.fn(), sign: vi.fn() };
+    const pending = (publicKey: string): PendingDeviceKey => ({ publicKey, commit });
+    const tokens = { accessToken: 't', expiresIn: 600 };
+
+    beforeEach(() => {
+      commit.mockReset().mockResolvedValue(undefined);
+      create.mockReset();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: FETCH_FN, useValue: fetchFn },
+          { provide: DEVICE_KEYS, useValue: keys },
+        ],
+      });
+    });
+
+    it.each([
+      ['login', () => api().login('a@b.c', 'senha')],
+      ['invite accept', () => api().acceptInvite('segredo', 'a@b.c', 'senha-longa-1')],
+    ])('%s sends the public key of a fresh pair and keeps the pair only after it worked', async (_n, call) => {
+      create.mockResolvedValue(pending('chave-publica-1'));
+      fetchFn.mockResolvedValue(reply(200, tokens));
+
+      await call();
+
+      expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-1');
+      expect(commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('a failed sign-in does not store the pair, and the next attempt reuses the same one', async () => {
+      create.mockResolvedValue(pending('chave-publica-1'));
+      fetchFn.mockResolvedValueOnce(reply(401, { title: 'x' }));
+      await api()
+        .login('a@b.c', 'errada')
+        .catch(() => undefined);
+      expect(commit).not.toHaveBeenCalled();
+
+      fetchFn.mockResolvedValueOnce(reply(200, tokens));
+      await api().login('a@b.c', 'certa');
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-1');
+      expect(commit).toHaveBeenCalledTimes(1);
+
+      // A entrada seguinte é outra sessão: outro par.
+      create.mockResolvedValue(pending('chave-publica-2'));
+      fetchFn.mockResolvedValueOnce(reply(200, tokens));
+      await api().login('a@b.c', 'certa');
+      expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-2');
+    });
+
+    it('the QR poll keeps the pair only when the poll came back approved with a token', async () => {
+      create.mockResolvedValue(pending('chave-qr'));
+      fetchFn.mockResolvedValueOnce(reply(200, { status: 'pending', accessToken: null }));
+      await api().qrPoll('segredo');
+      expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-qr');
+      expect(commit).not.toHaveBeenCalled();
+
+      fetchFn.mockResolvedValueOnce(reply(200, { status: 'approved', ...tokens }));
+      await api().qrPoll('segredo');
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('signs in with no key header when the browser cannot make one, and does not fail', async () => {
+      create.mockResolvedValue(null);
+      fetchFn.mockResolvedValue(reply(200, tokens));
+
+      await expect(api().login('a@b.c', 'senha')).resolves.toEqual(tokens);
+
+      expect(lastCall().headers['X-UniOver-Device-Key']).toBeUndefined();
+    });
+
+    it('a storage failure after a good sign-in does not undo the sign-in', async () => {
+      create.mockResolvedValue(pending('chave'));
+      commit.mockRejectedValue(new Error('quota'));
+      fetchFn.mockResolvedValue(reply(200, tokens));
+
+      await expect(api().login('a@b.c', 'senha')).resolves.toEqual(tokens);
+    });
+
+    it('the plain refresh carries no key and no proof', async () => {
+      fetchFn.mockResolvedValue(reply(200, tokens));
+
+      await api().refresh();
+
+      const { headers } = lastCall();
+      expect(headers['X-UniOver-Device-Key']).toBeUndefined();
+      expect(headers['X-UniOver-Recovery-Challenge']).toBeUndefined();
+      expect(headers['X-UniOver-Recovery-Proof']).toBeUndefined();
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('the recovering refresh carries the challenge and the proof', async () => {
+      fetchFn.mockResolvedValue(reply(200, tokens));
+
+      await api().refresh({ challenge: 'id.nonce', proof: 'assinatura' });
+
+      const { url, headers } = lastCall();
+      expect(url).toBe('/api/v1/identity/auth/refresh');
+      expect(headers['X-UniOver-Recovery-Challenge']).toBe('id.nonce');
+      expect(headers['X-UniOver-Recovery-Proof']).toBe('assinatura');
+      expect(headers['X-UniOver-Client']).toBe('web');
+    });
+
+    it('asks for the challenge with a POST that has the client header and no body', async () => {
+      fetchFn.mockResolvedValue(reply(200, { challenge: 'id.nonce', familyId: 'f', expiresIn: 120 }));
+
+      await expect(api().refreshChallenge()).resolves.toEqual({
+        challenge: 'id.nonce',
+        familyId: 'f',
+        expiresIn: 120,
+      });
+
+      const { url, init, headers } = lastCall();
+      expect(url).toBe('/api/v1/identity/auth/refresh/challenge');
+      expect(init.method).toBe('POST');
+      expect(init.body).toBeUndefined();
+      expect(headers['X-UniOver-Client']).toBe('web');
     });
   });
 });

@@ -41,11 +41,23 @@ public sealed class DevicesModuleOptions
 
     public TimeSpan TokenCacheLifetime => TimeSpan.FromSeconds(TokenCacheSeconds);
 
+    /// <summary>
+    /// Falhas de token (inexistente ou revogado) toleradas por IP na janela antes de a API parar de consultar o banco por
+    /// aquela origem. Um agente com token certo e em cache não conta; um com token velho para de tentar sozinho.
+    /// </summary>
+    public int TokenFailureLimit { get; set; } = 10;
+
+    public int TokenFailureWindowSeconds { get; set; } = 60;
+
+    public TimeSpan TokenFailureWindow => TimeSpan.FromSeconds(TokenFailureWindowSeconds);
+
     /// <summary>Valores que quebrariam a regra (zero ou negativo); o módulo prefere cair na partida a se comportar mal.</summary>
     internal static bool IsValid(DevicesModuleOptions o) =>
         o.Pairing.ExpiresMinutes is >= 1 and <= 60
         && o.Pairing.MinPollIntervalSeconds is >= 1 and <= 600
         && o.Pairing.MaxActive >= 1
         && o.Pairing.MaxPerGuest >= 1
-        && o.TokenCacheSeconds >= 0;
+        && o.TokenCacheSeconds >= 0
+        && o.TokenFailureLimit >= 1
+        && o.TokenFailureWindowSeconds is >= 1 and <= 3600;
 }

@@ -188,6 +188,7 @@ internal sealed class QrLoginDecisionHandler(
     IdentityDbContext db,
     PasswordService passwords,
     LoginAuditWriter audit,
+    FailedLoginCounter failures,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -225,7 +226,7 @@ internal sealed class QrLoginDecisionHandler(
         // O JWT de acesso sobrevive ao logout por alguns minutos; a confirmação não.
         var sessionAlive = await SessionIsAliveAsync(userId, sessionId, cancellationToken);
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken);
-        if (!sessionAlive || user is null || user.IsDisabled)
+        if (!sessionAlive || user is null || user.IsBlocked)
         {
             return new ApproveQrLoginResult(ApproveQrLoginStatus.Unauthenticated);
         }
@@ -266,7 +267,7 @@ internal sealed class QrLoginDecisionHandler(
 
                 if (passwords.Verify(user, command.Password) == PasswordCheck.Failed)
                 {
-                    user.RegisterFailure(now, options.Value.Lockout);
+                    await failures.RegisterAsync(user.Id, now, options.Value.Lockout, cancellationToken);
                     audit.Add(user.Id, AuditEvents.LoginFailed, command.Client, "qr-login");
                     await db.SaveChangesAsync(cancellationToken);
                     return new ApproveQrLoginResult(ApproveQrLoginStatus.InvalidPassword);

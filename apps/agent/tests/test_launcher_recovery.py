@@ -84,7 +84,7 @@ def state(base: Path) -> dict[str, object]:
 
 
 def log(base: Path) -> str:
-    path = base / "logs" / "agent.log"
+    path = base / "logs" / "supervisor.log"
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
@@ -184,3 +184,69 @@ def test_with_nothing_to_restore_the_launcher_goes_on_to_the_fallback_and_says_s
     assert not (base / "app").exists()
     assert log(base).count("nao ha app.new nem app.previous") == 1
     assert state(base)["outcome"] == "failed"
+
+
+def _anchor_with_pointer(tmp_path: Path, pointer: str | bytes | None) -> Path:
+    anchor = tmp_path / "UniOver"
+    anchor.mkdir()
+    if isinstance(pointer, str):
+        (anchor / "location.txt").write_text(pointer, encoding="utf-8")
+    elif isinstance(pointer, bytes):
+        (anchor / "location.txt").write_bytes(pointer)
+    return anchor
+
+
+def test_the_launcher_follows_the_pointer_to_the_folder_chosen_at_the_install(
+    tmp_path: Path,
+) -> None:
+    """A tarefa abre o lançador da pasta fixa; ele sobe o supervisor da pasta escolhida."""
+    chosen = tmp_path / "Programas Ação" / "UniOver"
+    chosen.mkdir(parents=True)
+    anchor = _anchor_with_pointer(tmp_path, str(chosen))
+    folder(anchor, "app", "da-pasta-fixa", OLD)
+    folder(chosen, "app", "da-pasta-escolhida", NEW)
+
+    assert run_launcher(tmp_path) == "da-pasta-escolhida"
+
+
+def test_the_pointer_may_be_written_with_a_bom_and_extra_lines(tmp_path: Path) -> None:
+    chosen = tmp_path / "Outro Lugar" / "UniOver"
+    chosen.mkdir(parents=True)
+    _anchor_with_pointer(tmp_path, b"\xef\xbb\xbf" + str(chosen).encode("utf-8") + b"\r\nlixo\r\n")
+    folder(chosen, "app", "da-pasta-escolhida", NEW)
+
+    assert run_launcher(tmp_path) == "da-pasta-escolhida"
+
+
+@pytest.mark.parametrize("pointer", ["", r"pasta\relativa", r"ZZ:\nao\existe\UniOver", "   "])
+def test_an_invalid_pointer_is_ignored_and_the_fixed_folder_is_used(
+    tmp_path: Path, pointer: str
+) -> None:
+    anchor = _anchor_with_pointer(tmp_path, pointer)
+    folder(anchor, "app", "da-pasta-fixa", OLD)
+
+    assert run_launcher(tmp_path) == "da-pasta-fixa"
+
+
+def test_a_pointer_to_a_folder_that_no_longer_exists_falls_back_to_the_fixed_one(
+    tmp_path: Path,
+) -> None:
+    anchor = _anchor_with_pointer(tmp_path, str(tmp_path / "disco-que-sumiu" / "UniOver"))
+    folder(anchor, "app", "da-pasta-fixa", OLD)
+
+    assert run_launcher(tmp_path) == "da-pasta-fixa"
+
+
+def test_the_launcher_records_what_it_did_in_the_supervisor_log_and_the_diagnostic_queue(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "UniOver"
+    folder(base, "app.previous", "anterior", OLD)
+    assert run_launcher(tmp_path) == "anterior"
+
+    assert "restaurei app.previous" in log(base)
+    assert not (base / "logs" / "agent.log").exists()
+    lines = (base / "runtime" / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines()
+    entry = json.loads(lines[0])
+    assert (entry["kind"], entry["component"]) == ("installation.restored", "launcher")
+    assert entry["detail"].isascii()

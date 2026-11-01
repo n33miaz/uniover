@@ -82,6 +82,20 @@ Tudo isto vive em `UniOver.BuildingBlocks.Web`; o Host só compõe.
   aplicam a política com `.RequireRateLimiting(...)`.
 - **IP real atrás de proxy**: `ForwardedHeaders:Enabled` vem **desligado**; ligue só onde há proxy confiável
   (o limite por IP depende disso).
+- **Teto de corpo**: toda rota aceita no máximo `RequestLimits:MaxBodyBytes` (256 KiB por padrão; o Kestrel aceitaria 28,6 MB).
+  Passou, 413 `payload-too-large` sem ler o corpo (declarado no `Content-Length`) ou ao ler (chunked). A rota que precisa de mais
+  declara o próprio teto com `RequestSizeLimitAttribute` (a foto de progresso e a importação da TACO).
+- **Saúde**: `/health/live` nunca toca no banco (o predicado vazio garante: nenhuma verificação roda) e é a sonda do monitor de
+  5 em 5 min e do Render; `/health/version` devolve o commit publicado; `/health/ready` faz `SELECT 1` (resultado guardado por 30 s,
+  falha por 5 s, limite de 12 por minuto por IP) e responde só 200 ou 503. **Não aponte um monitor de 5 min para `/health/ready`**:
+  manteria o Neon gratuito acordado e estouraria as horas de compute. O passo a passo está no planejamento ("manter no ar").
+- **Logs**: formato JSON em produção (`Logging:Console`), com `TraceId` em toda linha escrita durante um pedido. O
+  `RequestLoggingMiddleware` escreve uma linha por requisição (método, **rota** e não a URL, status, duração; aviso acima de
+  `RequestLogging:SlowMilliseconds`) e devolve o `X-Trace-Id`. Falhas de tarefa de fundo gravam tipo e pilha, nunca a mensagem
+  (`ErrorDetail.Stack`), e nenhum `[LoggerMessage]` recebe a exceção inteira (regra em `LoggingRulesTests`).
+- **Eventos mortos**: `GET /api/v1/system/dead-letters` (só o dono) junta as `dead_letters` de todos os módulos com outbox (os 50
+  mais recentes de cada um e o total), sem o conteúdo do evento; a Saúde do Sistema o mostra. Ir para a fila de mortos também
+  grava um log de erro.
 - **Cabeçalhos de segurança**: CSP estrita sem `unsafe-inline` e com nonce por requisição (veja
   [`adr/0014`](../../adr/0014-csp-com-nonce.md)), HSTS fora de Development, `nosniff`, Referrer-Policy,
   Permissions-Policy, COOP e `Cache-Control: no-store` em `/api/*`.

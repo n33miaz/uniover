@@ -23,6 +23,12 @@ public static class TvCommandNames
     public const string PowerSchedule = "tv.power-schedule";
     public const string Cleanup = "tv.cleanup";
 
+    /// <summary>Alguém pediu que a TV Samsung mostre de novo o aviso "Permitir" do UniOver (o agente nunca o faz sozinho).</summary>
+    public const string PermissionRequest = "tv.permission.request";
+
+    /// <summary>O administrador pediu ao agente que procure TVs compatíveis na rede dele (ao adicionar uma TV).</summary>
+    public const string Discover = "tv.discover";
+
     /// <summary>O administrador ligou ou desligou, numa TV, o fechamento de apps em segundo plano da limpeza: não vai à TV, mas muda o que o agente pode fazer. O detalhe é o novo valor.</summary>
     public const string CleanupSetting = "tv.cleanup.setting";
 

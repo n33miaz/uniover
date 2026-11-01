@@ -156,6 +156,21 @@ describe('AppIcon', () => {
       expect(host.style.backgroundColor).toBe('rgb(18, 18, 18)');
     });
 
+    it('never leaves an empty tile: an image with no ink at all gives way to the initial of the app', () => {
+      const reader = vi.fn<IconPixelReader>(() => ({
+        data: new Uint8ClampedArray(64 * 64 * 4),
+        width: 64,
+        height: 64,
+      }));
+      withReader(reader);
+      show(makeShortcut(1, { customLabel: 'Sala', iconDataUri: pngIcon(96, 96) }));
+      expect(image()).not.toBeNull();
+      loaded();
+      expect(image()).toBeNull();
+      expect(fallback()!.textContent?.trim()).toBe('S');
+      expect(fallback()!.className).toMatch(/\bhue-[0-5]\b/);
+    });
+
     it('measures an icon once: the same icon in another tile comes already trimmed, with no new reading', () => {
       const reader = vi.fn<IconPixelReader>(() => plate());
       withReader(reader);

@@ -40,7 +40,15 @@ internal sealed record DevicesAppOptions
 
     public int? TokenCacheSeconds { get; init; }
 
+    public int? TokenFailureLimit { get; init; }
+
     public DbCommandInterceptor? CommandInterceptor { get; init; }
+
+    /// <summary>
+    /// Graça de presença (segundos). Zero por padrão nos testes: a queda aparece na hora, que é o que quase todos
+    /// conferem; os testes da graça pedem o valor que querem.
+    /// </summary>
+    public int PresenceGraceSeconds { get; init; }
 }
 
 internal sealed record Started(Guid PairingId, string DeviceCode, string UserCode, JsonElement Body);
@@ -129,6 +137,7 @@ internal sealed class DevicesApp : IAsyncDisposable
             ["RateLimiting:refresh:Permitted"] = "100000",
             ["RateLimiting:pairing:Permitted"] = (options.PairingPermitted ?? 100000).ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Logging:LogLevel:Default"] = "Debug",
+            ["Modules:Devices:Transport:PresenceGraceSeconds"] = options.PresenceGraceSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["ForwardedHeaders:Enabled"] = options.ForwardedHeaders ? "true" : "false",
             ["UNIOVER_OWNER_EMAIL"] = ownerEmail,
             ["UNIOVER_OWNER_PASSWORD"] = password,
@@ -146,6 +155,11 @@ internal sealed class DevicesApp : IAsyncDisposable
         if (options.ExpiresMinutes is { } minutes)
         {
             settings["Modules:Devices:Pairing:ExpiresMinutes"] = minutes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (options.TokenFailureLimit is { } failureLimit)
+        {
+            settings["Modules:Devices:TokenFailureLimit"] = failureLimit.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         if (options.TokenCacheSeconds is { } cache)

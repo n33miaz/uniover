@@ -5,7 +5,12 @@ using UniOver.Modules.Identity.Persistence;
 namespace UniOver.Modules.Identity.Security;
 
 /// <summary>IP e User-Agent da requisição, entregues aos handlers pelo endpoint (o handler não toca no HttpContext).</summary>
-internal sealed record ClientInfo(string? Ip, string? UserAgent)
+internal sealed record ClientInfo(
+    string? Ip,
+    string? UserAgent,
+    string? DeviceKey = null,
+    string? RecoveryChallenge = null,
+    string? RecoveryProof = null)
 {
     public static ClientInfo From(HttpContext http)
     {
@@ -14,8 +19,14 @@ internal sealed record ClientInfo(string? Ip, string? UserAgent)
         // O IP já vem corrigido pelos forwarded headers quando ligados; o User-Agent é texto do cliente e é truncado na gravação.
         return new ClientInfo(
             http.Connection.RemoteIpAddress?.ToString(),
-            http.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent ? agent : null);
+            http.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent ? agent : null,
+            Header(http, DeviceProof.KeyHeader),
+            Header(http, DeviceProof.ChallengeHeader),
+            Header(http, DeviceProof.ProofHeader));
     }
+
+    private static string? Header(HttpContext http, string name) =>
+        http.Request.Headers[name].ToString() is { Length: > 0 } value ? value : null;
 }
 
 /// <summary>Acrescenta linhas à trilha de auditoria; quem chama confirma com o <c>SaveChanges</c> da própria operação.</summary>

@@ -1,0 +1,3 @@
+{ "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8eb9", "type": "agent.diagnostics.v1", "source": "agent:pc-casa", "target": "api",
+  "ts": "2026-10-31T14:00:02Z", "correlationId": null,
+  "body": { "events": [ { "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8eba", "at": "2026-10-31T13:41:10Z", "kind": "Bad Kind/../x", "severity": "error", "detail": "x" } ] } }

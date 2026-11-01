@@ -160,6 +160,8 @@ public class IdentityOptionsTests
         options.Refresh.SlidingWindow.Should().Be(TimeSpan.FromDays(14));
         options.Refresh.AbsoluteLifetime.Should().Be(TimeSpan.FromDays(90));
         options.Refresh.ReuseGrace.Should().Be(TimeSpan.FromSeconds(3));
+        options.Refresh.RecoveryWindow.Should().Be(TimeSpan.FromMinutes(10));
+        options.Refresh.ChallengeLifetime.Should().Be(TimeSpan.FromMinutes(2));
         options.Lockout.Threshold.Should().Be(5);
         options.Lockout.MaxDelay.Should().Be(TimeSpan.FromMinutes(15));
         options.MinPasswordLength.Should().Be(10);
@@ -205,5 +207,23 @@ public class IdentityOptionsTests
     public void IsValid_RejectsAGuestStatusCacheOutsideOneSecondToTenMinutes(int seconds)
     {
         IdentityModuleOptions.IsValid(new IdentityModuleOptions { GuestStatusCacheSeconds = seconds }).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(-1, 120)]
+    [InlineData(3601, 120)]
+    [InlineData(600, 9)]
+    [InlineData(600, 601)]
+    public void IsValid_RejectsARecoveryWindowOrChallengeOutsideTheirBounds(int recoverySeconds, int challengeSeconds)
+    {
+        var options = new IdentityModuleOptions { RefreshRecoverySeconds = recoverySeconds, RefreshChallengeSeconds = challengeSeconds };
+
+        IdentityModuleOptions.IsValid(options).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsValid_AcceptsTurningTheRecoveryOff()
+    {
+        IdentityModuleOptions.IsValid(new IdentityModuleOptions { RefreshRecoverySeconds = 0 }).Should().BeTrue();
     }
 }

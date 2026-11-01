@@ -1,20 +1,71 @@
 # Changelog
 
+## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
+
+
+### Features
+
+* **api:** pause and resume guest accounts
+* **contracts:** guest pause field and routes
+* **web:** pause and resume people
+* **web:** show paused access on sign in
+* **web:** open credits as a collapsible sheet
+* **api:** add readiness health endpoint
+* **api:** structured logs with a request trace
+* **api:** list dead letters for the owner
+* **web:** show failed events in system health
+* **contracts:** permission and discovery messages
+* **agent:** ask the TV for permission once
+* **api:** permission state per Samsung TV
+* **web:** tv permission sheet on entry
+* **web:** nearby tvs and permission in settings
+* **identity:** recover a lost refresh with proof
+* **web:** recover a lost refresh with a key
+
+
+### Bug Fixes
+
+* **api:** throttle invalid agent tokens
+* **api:** cap request body size
+* **api:** purge dead refresh families
+* **api:** count login failures atomically
+* **identity:** lock the family on every revocation
+
+
+### Performance Improvements
+
+* **tv:** audit commands off the request path
+
+## [0.31.0](https://github.com/n33miaz/uniover/compare/v0.30.0...v0.31.0) (2026-10-31)
+
+
+### Features
+
+* **web:** keep the tv green until it is sure
+* **web:** redo the tv top bar and pc off seal
+* **web:** add quick chips to the power sheet
+* **web:** add tv shaped skeletons
+* **web:** show a sleeping remote as green
+
+
+### Bug Fixes
+
+* **web:** show the initial on blank app icons
+
 ## [0.30.0](https://github.com/n33miaz/uniover/compare/v0.29.0...v0.30.0) (2026-10-31)
 
 
 ### Features
 
-* **contracts:** add pc control messages
-* **agent:** add gated pc control
-* **api:** add pc control routes and permission
-* **web:** grant and audit the pc module
-* **web:** add the pc control module
+* **agent:** log why it was away
+* **web:** show since when the pc is off
 
 
 ### Bug Fixes
 
-* **api:** drive the caller's own pc first
+* **agent:** reconnect fast, never die on errors
+* **agent:** task repeats and restarts
+* **api:** keep agent green while reconnecting
 
 ## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
 

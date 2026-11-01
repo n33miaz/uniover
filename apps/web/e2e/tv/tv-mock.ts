@@ -26,6 +26,8 @@ export interface MockTv {
   /** Modo Foco e o fechamento dos outros apps nele; ausentes valem desligado, como na API. */
   focusModeEnabled?: boolean;
   focusClosesBackground?: boolean;
+  /** A TV Samsung esqueceu o UniOver e espera alguém escolher "Permitir" nela; ausente vale que não. */
+  permissionNeeded?: boolean;
   /** As últimas limpezas, como `GET /tvs/{id}/cleanup-reports` devolve. */
   cleanupReports?: Record<string, unknown>[];
   state?: MockTvState;
@@ -66,6 +68,8 @@ export interface MockTvState {
   /** A TV da conta tem agente vinculado (ausente vale sim, como na API antiga). */
   agentLinked?: boolean;
   updatedAt: string | null;
+  /** Desde quando o agente está fora (a API só manda com ele fora): é o que confirma o "PC Desligado". */
+  offlineSince?: string | null;
 }
 
 /** Falha que a próxima chamada de comando devolve (e que se repete até o teste limpar). */
@@ -115,6 +119,17 @@ export interface TvMock {
    * confirmado ou a TV que já estava desligada. O pedido sem corpo, de antes, responde `sent`.
    */
   powerOffOutcome: 'off' | 'already_off';
+  /** As TVs que cada computador achou na rede dele, como `GET /tvs/nearby?agent=` devolve (sem entrada: lista vazia). */
+  nearby: Record<string, { status: string; items: Record<string, unknown>[] }>;
+  /** Enquanto houver uma promessa aqui, `GET /tvs/nearby` espera por ela (para ver o "Procurando TVs…"). */
+  nearbyGate: Promise<void> | null;
+  /**
+   * O que `POST /permission/request` responde: `asked` (o aviso foi para a TV e, com `grantOnAsk`, o aceite já vale),
+   * `unreachable` (a TV não respondeu), `unsupported` (computador antigo) ou `busy` (o aviso já está na TV).
+   */
+  permissionAnswer: 'asked' | 'unreachable' | 'unsupported' | 'busy';
+  /** Com `asked`, a TV passa a reconhecer o UniOver na hora (a pessoa aceitou). */
+  grantOnAsk: boolean;
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
   count(path: string): number;
   /** O `mode` de cada `POST /power/off` recebido (`null` é o pedido de antes, sem corpo). */
@@ -135,6 +150,8 @@ function requiredPermission(method: string, path: string): string | null {
   ) {
     return 'module:tv';
   }
+  if (method === 'GET' && path === '/permission') return 'module:tv';
+  if (method === 'POST' && path === '/permission/request') return 'tv:control';
   if (method === 'GET' && path === '/commands/recent') return 'tv:history';
   if (method === 'GET' && path === '/cleanup/latest') return 'tv:control';
   if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
@@ -254,6 +271,10 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     },
     cleanupGate: null,
     powerOffOutcome: 'off',
+    nearby: {},
+    nearbyGate: null,
+    permissionAnswer: 'asked',
+    grantOnAsk: true,
     powerOffModes: () =>
       mock.requests
         .filter((r) => r.method === 'POST' && r.path === '/power/off')
@@ -321,6 +342,42 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
         mock.layouts[chosen.id] = body ?? {};
         return json(route, 200, body);
       }
+    }
+
+    // As TVs da conta que esperam o aceite: o administrador só as que usa (a padrão); as demais, as de que são membros.
+    if (method === 'GET' && path === '/permission' && mock.tvs) {
+      const me = accountOf(identity);
+      const items = visibleTvs(mock, identity)
+        .filter(
+          (tv) =>
+            tv.permissionNeeded === true &&
+            (identity.role === 'owner'
+              ? tv.isDefault
+              : (mock.members[tv.id] ?? []).includes(me ?? '')),
+        )
+        .map((tv) => ({ tvId: tv.id, name: tv.name }));
+      return json(route, 200, { items });
+    }
+    if (method === 'POST' && path === '/permission/request' && chosen) {
+      if (mock.permissionAnswer === 'unsupported') {
+        return problem(route, { status: 409, kind: 'permission-unsupported' });
+      }
+      if (mock.permissionAnswer === 'unreachable') {
+        return problem(route, {
+          status: 502,
+          kind: 'command-failed',
+          extra: { agentError: 'tv_unreachable' },
+        });
+      }
+      if (mock.permissionAnswer === 'busy') {
+        return problem(route, {
+          status: 502,
+          kind: 'command-failed',
+          extra: { agentError: 'permission_in_progress' },
+        });
+      }
+      if (mock.grantOnAsk) chosen.permissionNeeded = false;
+      return json(route, 200, { ok: true, latencyMs: 40 });
     }
 
     if (method === 'GET' && path === '/state') {
@@ -464,8 +521,21 @@ async function handleTvs(
       online: tv.online,
       capabilities: tv.capabilities,
       allowBackgroundAppClosing: tv.allowBackgroundAppClosing ?? false,
+      permissionNeeded: tv.permissionNeeded ?? false,
     }));
     await json(route, 200, { items });
+    return true;
+  }
+
+  // As TVs que o computador achou na rede dele (só o administrador; leva uns segundos de verdade).
+  if (method === 'GET' && path === '/tvs/nearby') {
+    if (!owner) {
+      await problem(route, { status: 403, kind: 'forbidden' });
+      return true;
+    }
+    if (mock.nearbyGate) await mock.nearbyGate;
+    const agent = new URL(route.request().url()).searchParams.get('agent') ?? '';
+    await json(route, 200, mock.nearby[agent] ?? { status: 'ok', items: [] });
     return true;
   }
 
@@ -495,6 +565,7 @@ async function handleTvs(
     allowBackgroundAppClosing: tv.allowBackgroundAppClosing ?? false,
     focusModeEnabled: tv.focusModeEnabled ?? false,
     focusClosesBackground: tv.focusClosesBackground ?? false,
+    permissionNeeded: tv.permissionNeeded ?? false,
   });
   const found = target[1] ? tvs.find((tv) => tv.id === target[1]) : undefined;
 

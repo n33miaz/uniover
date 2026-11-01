@@ -414,7 +414,7 @@ def test_the_command_records_updating_and_then_the_result(
 ) -> None:
     seen: list[str] = []
 
-    def fake(source: Path, *, sync: bool) -> UpdateResult:
+    def fake(source: Path, *, sync: bool, channel: str) -> UpdateResult:
         seen.append(json.loads(default_status_path().read_text(encoding="utf-8"))["outcome"])
         return UpdateResult(False, "ok", "up_to_date", latest=LATEST)
 
@@ -428,7 +428,7 @@ def test_the_command_records_updating_and_then_the_result(
 def test_an_unexpected_crash_in_the_update_is_recorded_and_still_exits_zero(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def boom(source: Path, *, sync: bool) -> UpdateResult:
+    def boom(source: Path, *, sync: bool, channel: str) -> UpdateResult:
         raise RuntimeError("segredo uo_dev_XYZ")
 
     monkeypatch.setattr(main_module, "self_update", boom)
@@ -448,7 +448,9 @@ def test_a_broken_state_folder_never_stops_the_update_itself(
     monkeypatch.setattr(main_module, "record_updating", explode)
     monkeypatch.setattr(main_module, "record_result", explode)
     monkeypatch.setattr(
-        main_module, "self_update", lambda source, *, sync: UpdateResult(True, "agente atualizado")
+        main_module,
+        "self_update",
+        lambda source, *, sync, channel: UpdateResult(True, "agente atualizado"),
     )
     assert update_agent(sync=True) == EXIT_OK
     assert "agente atualizado" in capsys.readouterr().out
@@ -464,6 +466,8 @@ SKIPPED_DIRS = {".venv", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_c
 def zip_of_this_agent(destination: Path, sha: str, override: dict[str, str] | None = None) -> None:
     """O zip que o GitHub serviria para o commit: `<repo>-<sha>/apps/agent/...` com esta árvore."""
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as bundle:
+        # O commit vem gravado no comentário do zip, como no do GitHub (a atualização o confere).
+        bundle.comment = sha.encode("ascii")
         for root, dirs, files in os.walk(AGENT_ROOT):
             dirs[:] = [d for d in dirs if d not in SKIPPED_DIRS]
             for name in files:

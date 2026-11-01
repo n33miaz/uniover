@@ -44,7 +44,37 @@
           >API publicada</span
         >
       </article>
+      <article class="metric wide">
+        <span class="metric-label" i18n="@@settings.system.health.metric-dead">Eventos</span>
+        <strong [class.ok]="deadTone() === 'ok'" [class.bad]="deadTone() === 'bad'">
+          {{ deadMetric() }}
+        </strong>
+        @if (deadLettersFailed()) {
+          <span class="metric-detail" i18n="@@settings.system.health.dead-failed"
+            >Leitura indisponível</span
+          >
+        } @else {
+          <span class="metric-detail" i18n="@@settings.system.health.dead-detail"
+            >Entregas internas</span
+          >
+        }
+      </article>
     </div>
+    @if (deadLetters(); as dead) {
+      @if (dead.total > 0) {
+        <details class="dead">
+          <summary i18n="@@settings.system.health.dead-list">Ver Eventos Falhos</summary>
+          <ul>
+            @for (item of dead.items; track item.id) {
+              <li>
+                <strong>{{ item.type }}</strong>
+                <span class="metric-detail">{{ deadItemDetail(item) }}</span>
+              </li>
+            }
+          </ul>
+        </details>
+      }
+    }
   } @else if (failed()) {
     <p class="error" role="alert" i18n="@@settings.system.health.failed">
       Não foi possível carregar a saúde do sistema.

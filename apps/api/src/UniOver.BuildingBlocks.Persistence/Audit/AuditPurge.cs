@@ -119,10 +119,10 @@ public sealed partial class AuditPurgeService(
         return results;
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Retenção da auditoria ({Job}): {Removed} linha(s) vencida(s) apagada(s).")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Limpeza periódica ({Job}): {Removed} linha(s) vencida(s) apagada(s).")]
     private partial void LogPurged(string job, long removed);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Retenção da auditoria ({Job}) não executada ({ErrorType}). Nova tentativa no próximo intervalo.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Limpeza periódica ({Job}) não executada ({ErrorType}). Nova tentativa no próximo intervalo.")]
     private partial void LogFailed(string job, string errorType);
 }
 

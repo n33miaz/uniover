@@ -16,17 +16,20 @@ export function statusLabel(status: TvStatus): string {
       return $localize`:@@tv.status.unconfigured:sem agente configurado`;
     case 'offline':
       return $localize`:@@tv.status.offline:sem rede`;
-    case 'waking':
-      return $localize`:@@tv.status.waking:servidor acordando`;
+    case 'pc-off':
+      return $localize`:@@tv.status.pc-off:PC desligado`;
+    case 'unresponsive':
+      return $localize`:@@tv.status.unresponsive:sem resposta`;
     default:
-      return $localize`:@@tv.status.loading:conectando…`;
+      return $localize`:@@tv.status.loading:reconectando…`;
   }
 }
 
 /**
  * O que o indicador do cabeçalho conta, com mais detalhe do que o `TvStatus` do store:
- * - `connected` · `sleeping` · `connecting` (buscando o estado) · `server-waking` (o servidor, e não a TV, está
- *   acordando) · `agent-off` · `offline` (o aparelho está sem rede);
+ * - `connected` · `sleeping` · `connecting` (ainda sem certeza, inclusive com o servidor acordando: sai verde) ·
+ *   `agent-off` · `pc-off` (o computador do agente, confirmado desligado) · `unresponsive` (a leitura passou do prazo
+ *   sem resposta) · `offline` (o aparelho está sem rede);
  * - `not-configured` e `repair-failed` são os casos de **atenção**: pedem uma providência de quem cuida da casa.
  *   O store não tem uma fase de erro própria, então ela é derivada destes dois fatos concretos: nenhum agente foi
  *   configurado, ou o último aviso do vigia diz que o reparo do controle falhou.
@@ -35,15 +38,23 @@ export type TvIndicator =
   | 'connected'
   | 'sleeping'
   | 'connecting'
-  | 'server-waking'
+  | 'unresponsive'
   | 'agent-off'
+  | 'pc-off'
   | 'not-configured'
   | 'offline'
   | 'repair-failed';
 
 /** Fase visual do ponto: cor e forma. Cada fase tem uma forma própria, para a cor não ser a única pista. */
 export type TvPhase =
-  'connected' | 'sleeping' | 'connecting' | 'agent-off' | 'offline' | 'attention';
+  | 'connected'
+  | 'sleeping'
+  | 'connecting'
+  | 'no-reply'
+  | 'agent-off'
+  | 'pc-off'
+  | 'offline'
+  | 'attention';
 
 /** Aviso do vigia que marca atenção: o reparo automático do controle não deu certo. */
 export const WATCHDOG_REPAIR_FAILED = 'repair_failed';
@@ -57,8 +68,10 @@ export function deriveIndicator(status: TvStatus, watchdogKind: string | null): 
   switch (status) {
     case 'offline':
       return 'offline';
-    case 'waking':
-      return 'server-waking';
+    case 'unresponsive':
+      return 'unresponsive';
+    case 'pc-off':
+      return 'pc-off';
     case 'unconfigured':
       return 'not-configured';
     case 'agent-off':
@@ -79,10 +92,13 @@ export function indicatorPhase(indicator: TvIndicator): TvPhase {
     case 'sleeping':
       return 'sleeping';
     case 'connecting':
-    case 'server-waking':
       return 'connecting';
+    case 'unresponsive':
+      return 'no-reply';
     case 'agent-off':
       return 'agent-off';
+    case 'pc-off':
+      return 'pc-off';
     case 'offline':
       return 'offline';
     default:
@@ -141,8 +157,9 @@ export function indicatorText(
   indicator: TvIndicator,
   hibernateMinutes: number,
   canControl = true,
+  agentOffText: string | null = null,
 ): TvIndicatorText {
-  const retry = $localize`:@@tv.indicator.retry:Tentar de novo`;
+  const retry = $localize`:@@tv.indicator.retry:Tentar de Novo`;
   switch (indicator) {
     case 'connected':
       return {
@@ -166,20 +183,28 @@ export function indicatorText(
       };
     case 'connecting':
       return {
-        title: $localize`:@@tv.indicator.connecting.title:Conectando`,
-        meaning: $localize`:@@tv.indicator.connecting.meaning:Buscando o estado da TV. Se demorar, tente de novo.`,
+        title: $localize`:@@tv.indicator.connecting.title:Reconectando…`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.connecting.meaning:Buscando o estado da TV. Os botões já funcionam e esperam a conexão voltar.`
+          : $localize`:@@tv.indicator.connecting.meaning-view:Buscando o estado da TV.`,
+        action: null,
+        actionLabel: NO_ACTION,
+        hints: NO_HINTS,
+      };
+    case 'unresponsive':
+      return {
+        title: $localize`:@@tv.indicator.unresponsive.title:Sem Resposta`,
+        meaning: $localize`:@@tv.indicator.unresponsive.meaning:O controle não recebeu resposta a tempo. Tente de novo.`,
         action: 'retry',
         actionLabel: retry,
         hints: NO_HINTS,
       };
-    case 'server-waking':
+    case 'pc-off':
       return {
-        title: $localize`:@@tv.indicator.server-waking.title:Servidor acordando`,
-        meaning: canControl
-          ? $localize`:@@tv.indicator.server-waking.meaning:O servidor estava descansando e está voltando. Os botões voltam em instantes.`
-          : $localize`:@@tv.indicator.server-waking.meaning-view:O servidor estava descansando e está voltando.`,
-        action: null,
-        actionLabel: NO_ACTION,
+        title: agentOffText ?? $localize`:@@tv.indicator.pc-off.title:PC Desligado`,
+        meaning: $localize`:@@tv.indicator.pc-off.meaning:O computador que fala com a TV está desligado. Ligue-o e o controle volta.`,
+        action: 'retry',
+        actionLabel: retry,
         hints: NO_HINTS,
       };
     case 'agent-off':

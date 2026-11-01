@@ -46,6 +46,7 @@ internal sealed class ConfirmStepUpWithPasswordHandler(
     IdentityDbContext db,
     PasswordService passwords,
     LoginAuditWriter audit,
+    FailedLoginCounter failures,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options,
     IOptions<StepUpOptions> stepUp)
@@ -57,7 +58,7 @@ internal sealed class ConfirmStepUpWithPasswordHandler(
 
         var now = time.GetUtcNow();
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == command.UserId, cancellationToken);
-        if (user is null || user.IsDisabled)
+        if (user is null || user.IsBlocked)
         {
             return new ConfirmStepUpWithPasswordResult(ConfirmStepUpWithPasswordStatus.Unauthenticated);
         }
@@ -80,7 +81,7 @@ internal sealed class ConfirmStepUpWithPasswordHandler(
         var check = passwords.Verify(user, command.Password);
         if (check == PasswordCheck.Failed)
         {
-            user.RegisterFailure(now, options.Value.Lockout);
+            await failures.RegisterAsync(user.Id, now, options.Value.Lockout, cancellationToken);
             audit.Add(user.Id, AuditEvents.StepUpFailed, command.Client, detail);
             await db.SaveChangesAsync(cancellationToken);
             return new ConfirmStepUpWithPasswordResult(ConfirmStepUpWithPasswordStatus.InvalidPassword);

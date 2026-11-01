@@ -16,6 +16,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<RefreshDeviceKey> RefreshDeviceKeys => Set<RefreshDeviceKey>();
+
+    public DbSet<RefreshRecoveryChallenge> RefreshRecoveryChallenges => Set<RefreshRecoveryChallenge>();
+
     public DbSet<LoginAuditEntry> LoginAudit => Set<LoginAuditEntry>();
 
     public DbSet<Passkey> Passkeys => Set<Passkey>();
@@ -71,12 +75,38 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.Property(x => x.TokenHash).HasColumnType("bytea").IsRequired();
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => x.FamilyId);
+
+            // O início da família (MIN(created_at)) é lido a cada renovação e a limpeza agrupa por família: sem este índice
+            // composto as duas viram varredura da tabela inteira, que cresce uma linha por rotação.
+            e.HasIndex(x => new { x.FamilyId, x.CreatedAt });
             e.Property(x => x.RevokedReason).HasMaxLength(40);
             e.Property(x => x.Ip).HasMaxLength(AuditText.IpMax);
             e.Property(x => x.UserAgent).HasMaxLength(AuditText.UserAgentMax);
 
             // Apagar a conta (caminho manual de recuperação) leva as sessões junto, dentro do mesmo schema.
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RefreshDeviceKey>(e =>
+        {
+            e.ToTable("refresh_device_keys");
+            e.HasKey(x => x.FamilyId);
+            e.Property(x => x.FamilyId).ValueGeneratedNever();
+            e.Property(x => x.PublicKey).HasMaxLength(Security.DeviceProof.KeyMaxLength).IsRequired();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RefreshRecoveryChallenge>(e =>
+        {
+            e.ToTable("refresh_recovery_challenges");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.NonceHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.FamilyId);
+            e.HasIndex(x => x.ExpiresAt);
+
+            // O desafio some junto com o token a que pertence (limpeza de sessões antigas, conta apagada).
+            e.HasOne<RefreshToken>().WithMany().HasForeignKey(x => x.TokenId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<LoginAuditEntry>(e =>

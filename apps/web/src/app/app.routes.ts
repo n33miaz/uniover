@@ -145,18 +145,25 @@ export const routes: Routes = [
             redirectTo: 'dispositivos',
           },
           {
+            // Créditos abre como folha por cima de Sobre: é filha desta rota, e a tela de Sobre fica atrás.
             path: 'sobre',
             data: { title: SETTINGS_TITLES.about, back: SETTINGS_BACK },
             loadComponent: () => import('./modules/settings/about.page').then((m) => m.AboutPage),
+            children: [
+              {
+                path: 'creditos',
+                canMatch: [moduleGuard('training')],
+                loadComponent: () =>
+                  import('./modules/training/credits/credits.page').then((m) => m.CreditsPage),
+              },
+            ],
           },
           {
-            // As telas do Treino (a ficha do exercício, a linha de crédito da ilustração) levam a esta: quem usa o Treino
-            // tem de poder abrir.
+            // As telas do Treino (a ficha do exercício, a linha de crédito da ilustração) levam a este endereço, que
+            // abre a folha de Créditos sobre Sobre.
             path: 'creditos',
-            canMatch: [moduleGuard('training')],
-            data: { title: $localize`:@@credits.route.title:Créditos`, back: SETTINGS_BACK },
-            loadComponent: () =>
-              import('./modules/training/credits/credits.page').then((m) => m.CreditsPage),
+            pathMatch: 'full',
+            redirectTo: 'sobre/creditos',
           },
         ],
       },

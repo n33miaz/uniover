@@ -67,7 +67,7 @@ async function openTvAs(page: Page, permissions: readonly string[] | 'owner') {
   await showTv(page);
 }
 
-const header = (page: Page) => page.locator('header.head');
+const header = (page: Page) => page.locator('.tv > header.head');
 const power = (page: Page) => header(page).getByRole('button', { name: 'Desligar a TV' });
 /** Os três pontos do cabeçalho: o menu com as linhas que a conta pode usar (ele nem existe para quem só vê). */
 const menuButton = (page: Page) =>
@@ -358,19 +358,19 @@ test.describe('(c) só ver', () => {
     expect(tv.denied).toEqual([]);
   });
 
-  test('o ponto de estado explica o estado, mas não oferece acordar o controle', async ({
+  test('o ponto de estado explica o estado (dormindo sai verde), mas não oferece acordar o controle', async ({
     page,
   }) => {
     await openTvAs(page, VIEW_ONLY);
     await emitSse(page, 'tv.state', { ...HOT_STATE, connection: 'hibernating' });
-    const dot = page.getByRole('button', { name: 'Estado do controle: Dormindo' });
+    const dot = page.getByRole('button', { name: 'Estado do controle: Conectada' });
     await expect(dot).toBeVisible();
     await dot.click();
-    const panel = page.getByRole('dialog').filter({ hasText: 'Dormindo' });
+    const panel = page.getByRole('dialog').filter({ hasText: 'Conectada' });
     await expect(panel).toBeVisible();
     await expect(panel.getByRole('button')).toHaveCount(0);
     // Só conta o estado: nada de "toque" nem de acordar, que quem só vê não pode fazer.
-    await expect(panel).toContainText('Só o controle está dormindo para poupar a TV');
+    await expect(panel).toContainText('Depois de 5 min sem uso ele dorme sozinho');
     await expect(panel).not.toContainText('toque');
     await expect(panel).not.toContainText('acorda');
     expect(writes()).toEqual([]);
@@ -462,6 +462,8 @@ test.describe('mudança de permissão', () => {
     await showTv(page);
     await expect(power(page)).toHaveCount(0);
     await menuButton(page).click();
+    // Espera o menu abrir de verdade: sem isso a linha ausente passa na hora e o Esc cairia antes de a folha existir.
+    await expect(menuDialog(page)).toBeVisible();
     await expect(menuRow(page, 'Apps da TV')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menuDialog(page)).toHaveCount(0);

@@ -1,0 +1,148 @@
+<dialog
+  #dialog
+  class="sheet ui-dialog"
+  aria-labelledby="tv-permission-title"
+  aria-describedby="tv-permission-text"
+  (cancel)="postpone($event)"
+>
+  <span class="grabber" aria-hidden="true"></span>
+
+  <div class="content">
+    <span class="glyph" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        width="26"
+        height="26"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        @for (d of tvIcon; track d) {
+          <path [attr.d]="d" />
+        }
+      </svg>
+    </span>
+
+    @switch (phase()) {
+      @case ('granted') {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.granted.title">Pronto</h2>
+        <p id="tv-permission-text" class="text" i18n="@@tv.permission.granted.text">
+          A TV já reconhece o UniOver.
+        </p>
+      }
+      @case ('unreachable') {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.unreachable.title">
+          A TV Não Respondeu
+        </h2>
+        <p
+          id="tv-permission-text"
+          class="text"
+          role="alert"
+          i18n="@@tv.permission.unreachable.text"
+        >
+          Ligue a TV e tente de novo.
+        </p>
+      }
+      @case ('unsupported') {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.unsupported.title">
+          Computador Desatualizado
+        </h2>
+        <p
+          id="tv-permission-text"
+          class="text"
+          role="alert"
+          i18n="@@tv.permission.unsupported.text"
+        >
+          Atualize o computador da TV para pedir a permissão.
+        </p>
+      }
+      @case ('timeout') {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.timeout.title">Sem Resposta</h2>
+        <p id="tv-permission-text" class="text" role="alert" i18n="@@tv.permission.timeout.text">
+          Ninguém aceitou na TV. Tente de novo quando puder.
+        </p>
+      }
+      @case ('failed') {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.failed.title">Não Deu Certo</h2>
+        <p id="tv-permission-text" class="text" role="alert" i18n="@@tv.permission.failed.text">
+          Não foi possível pedir agora. Tente de novo em instantes.
+        </p>
+      }
+      @case ('waiting') {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.waiting.title">Olhe a TV</h2>
+        <p id="tv-permission-text" class="text" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@tv.permission.waiting.text">Escolha Permitir no pedido que apareceu.</span>
+        </p>
+      }
+      @default {
+        <h2 id="tv-permission-title" i18n="@@tv.permission.intro.title">Permissão da TV</h2>
+        @if (showName()) {
+          <p class="tv-name">{{ tvName() }}</p>
+        }
+        <p id="tv-permission-text" class="text" i18n="@@tv.permission.intro.text">
+          Na próxima vez que a TV mostrar um pedido do UniOver, escolha Permitir. É uma vez só.
+        </p>
+      }
+    }
+  </div>
+
+  <div class="footer">
+    @switch (phase()) {
+      @case ('granted') {
+        <button
+          type="button"
+          class="primary ui-btn"
+          (click)="postpone()"
+          i18n="@@tv.permission.close"
+        >
+          Fechar
+        </button>
+      }
+      @case ('unsupported') {
+        <button
+          type="button"
+          class="primary ui-btn"
+          (click)="postpone()"
+          i18n="@@tv.permission.close"
+        >
+          Fechar
+        </button>
+      }
+      @default {
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="leaving()"
+          (click)="postpone()"
+          i18n="@@tv.permission.later"
+        >
+          Depois
+        </button>
+        @if (canRetry()) {
+          <button
+            type="button"
+            class="primary ui-btn"
+            [disabled]="leaving()"
+            (click)="ask()"
+            i18n="@@tv.permission.retry"
+          >
+            Tentar de Novo
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="primary ui-btn"
+            [disabled]="busy() || leaving()"
+            (click)="ask()"
+            i18n="@@tv.permission.ask"
+          >
+            Pedir Agora
+          </button>
+        }
+      }
+    }
+  </div>
+</dialog>

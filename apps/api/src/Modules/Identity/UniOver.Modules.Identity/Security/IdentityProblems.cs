@@ -37,6 +37,18 @@ internal static class IdentityProblems
     public static IResult Unauthenticated() =>
         Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Sessão inválida ou expirada.");
 
+    public const string GuestPausedType = "guest-paused";
+
+    /// <summary>
+    /// Conta de convidado pausada pelo dono. Segue 401 (o app encerra a sessão como em qualquer outra), mas com tipo próprio
+    /// para a tela dizer só "Acesso pausado". Só sai a quem apresentou a senha certa ou o cookie da própria sessão.
+    /// </summary>
+    public static IResult GuestPausedUnauthenticated() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status401Unauthorized,
+            title: "Acesso pausado.",
+            type: ProblemDetailsExtensions.TypeBase + GuestPausedType);
+
     public static IResult Locked(HttpResponse response, TimeSpan retryAfter)
     {
         ArgumentNullException.ThrowIfNull(response);

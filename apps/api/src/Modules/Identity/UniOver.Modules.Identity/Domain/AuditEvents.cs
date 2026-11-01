@@ -8,6 +8,12 @@ public static class AuditEvents
     public const string LoginLocked = "login_locked";
     public const string RefreshSucceeded = "refresh_succeeded";
     public const string RefreshReuseDetected = "refresh_reuse_detected";
+
+    /// <summary>
+    /// O mesmo aparelho recuperou, provando a chave da sessão, um refresh cuja resposta se perdeu. O detalhe é o tempo
+    /// desde a rotação (<c>after-412s</c>). Uma por token girado: a segunda tentativa revoga a sessão.
+    /// </summary>
+    public const string RefreshRecovered = "refresh_recovered";
     public const string Logout = "logout";
     public const string OwnerCreated = "owner_created";
     public const string PasskeyRegistered = "passkey_registered";
@@ -18,6 +24,8 @@ public static class AuditEvents
     public const string GuestInviteAccepted = "guest_invite_accepted";
     public const string GuestInviteRevoked = "guest_invite_revoked";
     public const string GuestRevoked = "guest_revoked";
+    public const string GuestPaused = "guest_paused";
+    public const string GuestResumed = "guest_resumed";
     public const string SessionRevoked = "session_revoked";
 
     /// <summary>O dono mudou as permissões de um convidado. O detalhe leva o id da conta e o que entrou e saiu (nunca nome nem e-mail).</summary>
@@ -53,6 +61,7 @@ public static class AuditEvents
         LoginLocked,
         RefreshSucceeded,
         RefreshReuseDetected,
+        RefreshRecovered,
         Logout,
         OwnerCreated,
         PasskeyRegistered,
@@ -64,6 +73,8 @@ public static class AuditEvents
         GuestInviteAccepted,
         GuestInviteRevoked,
         GuestRevoked,
+        GuestPaused,
+        GuestResumed,
         SessionRevoked,
         PermissionsChanged,
         SystemSettingChanged,

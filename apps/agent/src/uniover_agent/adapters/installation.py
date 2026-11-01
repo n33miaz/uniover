@@ -10,7 +10,7 @@ from pathlib import Path
 from uniover_agent.adapters.process import popen_hidden, run_hidden
 
 # Versão do lançador sem console que a tarefa usa; subir o número reaponta as tarefas já instaladas.
-LAUNCHER_TASK_VERSION = "wscript-1"
+LAUNCHER_TASK_VERSION = "wscript-2-resilient"
 # Versão do ajuste de energia sem administrador; subir o número aplica de novo.
 POWER_SETTINGS_VERSION = "ac-never-sleep-1"
 # Depois de uma tentativa que falhou, espera isto antes de tentar de novo (custa segundos).
@@ -43,9 +43,42 @@ def _powershell() -> str:
     )
 
 
-def installation_base() -> Path:
+LOCATION_FILE = "location.txt"
+HOME_ENV = "UNIOVER_HOME"
+
+
+def anchor_dir() -> Path:
+    r"""A pasta fixa `%LOCALAPPDATA%\UniOver`: o lançador, a tarefa e o ponteiro da pasta escolhida.
+
+    Fica sempre no mesmo lugar para a tarefa agendada e o lançador nunca dependerem de uma
+    escolha que o dono pode ter feito: o Windows só precisa achar `launcher.vbs` aqui.
+    """
     local = os.environ.get("LOCALAPPDATA")
     return (Path(local) if local else Path.home() / ".config") / "UniOver"
+
+
+def chosen_location(anchor: Path | None = None) -> Path | None:
+    """A pasta que o dono escolheu na instalação (`location.txt` na pasta fixa), se ainda existe.
+
+    O caminho vem de um arquivo de texto (UTF-8) e não do registro nem do `.vbs`: o Script Host lê
+    em página de código ANSI e estragaria um caminho com acento, e os testes isolam a instalação só
+    por variável de ambiente.
+    """
+    pointer = (anchor if anchor is not None else anchor_dir()) / LOCATION_FILE
+    try:
+        text = pointer.read_text(encoding="utf-8-sig").strip().splitlines()[0].strip()
+    except OSError, IndexError:
+        return None
+    chosen = Path(text)
+    return chosen if chosen.is_absolute() and chosen.is_dir() else None
+
+
+def installation_base() -> Path:
+    """Onde ficam `app`, `runtime`, `config`, `logs` e `web`: a pasta escolhida ou a padrão."""
+    override = os.environ.get(HOME_ENV)
+    if override and Path(override).is_absolute():
+        return Path(override)
+    return chosen_location() or anchor_dir()
 
 
 def _is_real_installation(root: Path) -> bool:
@@ -126,6 +159,7 @@ def migrate_layout(base: Path | None = None) -> Path:
         root,
         start_now=took_over_legacy_wrapper and can_take_over and base is None,
         real=base is None,
+        anchor=anchor_dir() if base is None else root,
     )
     _write_readme(root)
     return root
@@ -163,12 +197,33 @@ def _write_launcher_vbs(root: Path) -> bool:
     return True
 
 
-def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
-    """Script (PowerShell 5.1, sem administrador) que passa a tarefa ao lançador sem console.
+# Gatilhos e limites que o instalador e a atualização aplicam igual. Logon: sobe na hora. Repetição:
+# a cada 10 min por dez anos, sobe de novo se o agente ou o lançador morreram (instância única do
+# mutex do lançador). Sem `-WakeToRun`: acordar o PC a cada 10 min gastaria energia sem ganho, pois
+# o agente já pede ao Windows que não suspenda por ociosidade.
+TASK_TRIGGERS_AND_SETTINGS = (
+    "$t=@((New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),"
+    "(New-ScheduledTaskTrigger -Once -At (Get-Date).Date"
+    " -RepetitionInterval (New-TimeSpan -Minutes 10)"
+    " -RepetitionDuration (New-TimeSpan -Days 3650)));"
+    "$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)"
+    " -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries"
+    " -MultipleInstances IgnoreNew -StartWhenAvailable"
+    " -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)"
+)
 
-    Tarefa existente: troca só a AÇÃO (gatilho, conta e limites ficam como estão), confere pela
-    leitura e, se algo falhar, devolve as ações antigas: a tarefa antiga nunca fica sem ação. Sem
-    tarefa: registra uma completa. A saída diz o que houve (0 feito, 3 revertido, 4 erro).
+
+def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
+    """Script (PowerShell 5.1, sem administrador) que deixa a tarefa do agente robusta.
+
+    Tarefa existente: troca a AÇÃO (lançador sem console), os GATILHOS (logon e uma repetição a
+    cada 10 min: se o agente caiu, sobe de novo; o mutex do lançador garante uma instância só) e as
+    CONFIGURAÇÕES (reinício automático por falha, 999 vezes a cada 1 min). A conta fica como está:
+    a tarefa roda interativa, com o token no Cofre de Credenciais do usuário, que uma tarefa sem
+    logon (S4U) não consegue abrir; por isso também não há gatilho de inicialização do sistema, que
+    exigiria administrador. Confere pela leitura e, se algo falhar, devolve ação, gatilhos e
+    configurações antigos: a tarefa antiga nunca fica pela metade. Sem tarefa: registra uma
+    completa. A saída diz o que houve (0 feito, 3 revertido, 4 erro).
     """
     vbs = str(root / "launcher.vbs").replace("'", "''")
     wscript = _wscript().replace("'", "''")
@@ -179,26 +234,29 @@ def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
         f"$name='{name}'",
         "try {",
         "$a=New-ScheduledTaskAction -Execute $exe -Argument $arg",
+        TASK_TRIGGERS_AND_SETTINGS,
         "$task=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue",
         "if ($task) {",
         "$old=@($task.Actions)",
+        "$oldT=@($task.Triggers)",
+        "$oldS=$task.Settings",
         "try {",
-        "Set-ScheduledTask -TaskName $name -Action $a|Out-Null",
-        "$now=@((Get-ScheduledTask -TaskName $name).Actions)",
+        "Set-ScheduledTask -TaskName $name -Action $a -Trigger $t -Settings $s|Out-Null",
+        "$read=Get-ScheduledTask -TaskName $name",
+        "$now=@($read.Actions)",
         "if ($now.Count -ne 1 -or $now[0].Execute -ne $exe -or $now[0].Arguments -ne $arg)"
         " { throw 'conferencia' }",
+        "if (@($read.Triggers).Count -ne 2 -or $read.Settings.RestartCount -ne 999)"
+        " { throw 'conferencia' }",
         "} catch {",
-        "try { Set-ScheduledTask -TaskName $name -Action $old|Out-Null } catch { }",
+        "try { Set-ScheduledTask -TaskName $name -Action $old -Trigger $oldT"
+        " -Settings $oldS|Out-Null } catch { }",
         "exit 3",
         "}",
         "exit 0",
         "}",
-        "$t=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME",
         "$p=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive"
         " -RunLevel Limited",
-        "$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)"
-        " -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries"
-        " -MultipleInstances IgnoreNew -StartWhenAvailable",
         "Register-ScheduledTask -TaskName $name -Action $a -Trigger $t -Principal $p"
         " -Settings $s -Force|Out-Null",
         "exit 0",
@@ -258,13 +316,16 @@ def _windows_script_host_works(root: Path) -> bool:
         mark.unlink(missing_ok=True)
 
 
-def _register_launcher_task(root: Path) -> bool:
+def _register_launcher_task(
+    anchor: Path, root: Path | None = None, *, name: str = TASK_NAME
+) -> bool:
     """Reaponta a tarefa do usuário para o lançador sem console, sem precisar de administrador.
 
     À prova de falha: só troca depois de provar que o Script Host funciona, confere a tarefa depois
     da troca e a devolve ao que era se a conferência falhar. `False` deixa tudo como estava.
     """
-    if not os.path.exists(_wscript()) or not _write_launcher_vbs(root):
+    root = root if root is not None else anchor
+    if not os.path.exists(_wscript()) or not _write_launcher_vbs(anchor):
         return False
     if not _windows_script_host_works(root):
         _note(root, "tarefa mantida: o Windows Script Host não executou o script de prova")
@@ -279,7 +340,7 @@ def _register_launcher_task(root: Path) -> bool:
                 "-WindowStyle",
                 "Hidden",
                 "-Command",
-                launcher_task_script(root),
+                launcher_task_script(anchor, name),
             ],
             check=False,
             capture_output=True,
@@ -293,7 +354,7 @@ def _register_launcher_task(root: Path) -> bool:
     return result.returncode == 0
 
 
-def _ensure_hidden_launcher_task(root: Path) -> None:
+def _ensure_hidden_launcher_task(root: Path, anchor: Path | None = None) -> None:
     """Instalações antigas passam a abrir o lançador sem console na primeira execução nova."""
     marker = root / "runtime" / "launcher-task"
     failed = root / "runtime" / "launcher-task.failed"
@@ -305,7 +366,13 @@ def _ensure_hidden_launcher_task(root: Path) -> None:
     if _recently_failed(failed):
         return
     try:
-        if _register_launcher_task(root):
+        # Pasta padrão: lançador e dados no mesmo lugar. Pasta escolhida: o lançador fica na fixa.
+        registered = (
+            _register_launcher_task(root)
+            if anchor is None or anchor == root
+            else _register_launcher_task(anchor, root)
+        )
+        if registered:
             marker.write_text(LAUNCHER_TASK_VERSION, encoding="ascii")
             failed.unlink(missing_ok=True)
             _note(root, "tarefa agendada passou a abrir o lançador sem console")
@@ -367,20 +434,28 @@ def _prepare_legacy_takeover(root: Path, legacy_source: Path, *, register_task: 
     return not register_task or _register_launcher_task(root)
 
 
-def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> None:
-    """Finaliza a promoção depois que `app` já existe."""
+def _install_launcher(
+    root: Path, *, start_now: bool, real: bool = False, anchor: Path | None = None
+) -> None:
+    """Finaliza a promoção depois que `app` já existe.
+
+    O lançador e o `launcher.vbs` ficam na pasta fixa (`anchor`, a subpasta UniOver de
+    `%LOCALAPPDATA%`): é onde a tarefa agendada os procura, mesmo que o dono tenha escolhido
+    outra pasta para o resto.
+    """
+    anchor = anchor if anchor is not None else root
     launcher = root / "app" / "tools" / "launcher.ps1"
     runner = root / "app" / "tools" / "run-agent.ps1"
     if not launcher.is_file() or not runner.is_file():
         return
     try:
-        if not _copy_launcher(launcher, root / "launcher.ps1"):
+        if not _copy_launcher(launcher, anchor / "launcher.ps1"):
             return
         fallback = root / "run-agent.fallback.ps1"
         if not fallback.exists() and not _copy_launcher(runner, fallback):
             return
-        if os.name == "nt" and real and _is_real_installation(root):
-            _ensure_hidden_launcher_task(root)
+        if os.name == "nt" and real and _is_real_installation(anchor):
+            _ensure_hidden_launcher_task(root, anchor)
             _apply_power_settings(root)
         if os.name == "nt" and start_now:
             # A tarefa antiga ainda está executando `agent-src`. Sobe o lançador novo fora
@@ -388,8 +463,8 @@ def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> Non
             # `app\tools\run-agent.ps1` e não depende de novo logon. O WScript é um programa de
             # janela (sem console): ele cria o PowerShell oculto, então nada pisca na tela. Se o
             # Script Host não funcionar neste PC, o PowerShell oculto sobe o mesmo lançador.
-            if _write_launcher_vbs(root) and _windows_script_host_works(root):
-                command = [_wscript(), "//B", "//Nologo", str(root / "launcher.vbs")]
+            if _write_launcher_vbs(anchor) and _windows_script_host_works(root):
+                command = [_wscript(), "//B", "//Nologo", str(anchor / "launcher.vbs")]
             else:
                 command = [
                     _powershell(),
@@ -399,7 +474,7 @@ def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> Non
                     "-WindowStyle",
                     "Hidden",
                     "-File",
-                    str(root / "launcher.ps1"),
+                    str(anchor / "launcher.ps1"),
                 ]
             popen_hidden(command, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
             os.environ["UNIOVER_LEGACY_TAKEOVER"] = "1"
@@ -411,10 +486,21 @@ def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> Non
 def _write_readme(root: Path) -> None:
     text = (
         "UniOver\n\n"
-        "Esta pasta guarda o agente que conecta este computador ao UniOver e a TV.\n"
-        "Ele inicia sozinho e se atualiza automaticamente.\n\n"
-        "Se algo nao funcionar, rode de novo o conectar-uniover.cmd.\n"
-        "Para remover, execute o instalador com -Uninstall e depois apague esta pasta se quiser.\n"
+        "Esta pasta guarda o UniOver deste computador: o programa que liga o PC ao app e a TV.\n"
+        "Ele inicia sozinho quando voce entra no Windows, fica perto do relogio e se atualiza e\n"
+        "se arruma sozinho.\n\n"
+        "O que tem aqui (voce nao precisa mexer em nada):\n"
+        "  app       o programa em si (troca sozinho a cada atualizacao; a versao anterior fica\n"
+        "            guardada ao lado)\n"
+        "  config    suas configuracoes\n"
+        "  logs      o que o UniOver fez e o que deu errado (agent.log, supervisor.log,\n"
+        "            instalacao.log)\n"
+        "  runtime   o que ele precisa para funcionar e o estado das atualizacoes\n"
+        "  web       a pagina de conexao\n"
+        "  tv        a chave de acesso a sua TV\n"
+        "  icons     as figuras dos apps da TV\n\n"
+        "Se algo nao funcionar, rode de novo o arquivo conectar-uniover.cmd.\n"
+        "Para remover, execute o instalador com -Uninstall e, se quiser, apague esta pasta.\n"
     )
     try:
         (root / "LEIA-ME.txt").write_text(text, encoding="utf-8")

@@ -14,7 +14,12 @@ from uniover_agent.core import (
     ProcessMessage,
 )
 from uniover_agent.main import build_handler
-from uniover_agent.ports import ConnectionReplaced, CredentialRejected, TransportError
+from uniover_agent.ports import (
+    ConnectionReplaced,
+    CredentialRejected,
+    ServerRestarting,
+    TransportError,
+)
 
 from .support import AGENT_ID, TOKEN, FakeApi, dump, tv_key
 
@@ -116,7 +121,9 @@ async def test_receives_raw_text_frames() -> None:
         (4403, "revoked", CredentialRejected),
         (1008, "revoked", CredentialRejected),
         (4403, "", CredentialRejected),
-        (1012, "reinicio", None),
+        (1012, "reinicio", ServerRestarting),
+        (1001, "going away", ServerRestarting),
+        (1011, "erro", None),
     ],
 )
 async def test_close_reasons_are_mapped(
@@ -197,7 +204,8 @@ async def test_reconnects_after_the_server_drops_the_connection() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
     assert api.connections >= 2
-    assert clock.sleeps[0] == 1
+    # O 1012 é aviso de reinício: volta logo (0,5 s com o acaso do teste), sem a espera crescente.
+    assert clock.sleeps[0] == 0.5
     # A primeira conexão consumiu o hello no roteiro; a segunda também anunciou o agente.
     assert [m["type"] for m in api.received] == ["agent.hello.v1"]
 
@@ -270,3 +278,16 @@ async def test_replaced_by_the_server_waits_longer() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
     assert clock.sleeps[0] == 60
+
+
+async def test_connection_lost_without_close_frame_is_not_reported_as_server_close() -> None:
+    async def script(connection: ServerConnection) -> None:
+        connection.transport.abort()
+
+    async with FakeApi(script) as api:
+        transport = transport_for(api)
+        await transport.connect()
+        with pytest.raises(TransportError, match="sem aviso do servidor") as caught:
+            await drain(transport)
+        await transport.close()
+    assert not isinstance(caught.value, ServerRestarting)

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
@@ -23,6 +24,8 @@ using UniOver.Modules.Tv.Features.GetState;
 using UniOver.Modules.Tv.Features.LaunchShortcut;
 using UniOver.Modules.Tv.Features.ListShortcuts;
 using UniOver.Modules.Tv.Features.Layout;
+using UniOver.Modules.Tv.Features.Nearby;
+using UniOver.Modules.Tv.Features.Permission;
 using UniOver.Modules.Tv.Features.PowerOff;
 using UniOver.Modules.Tv.Features.PowerSchedule;
 using UniOver.Modules.Tv.Features.RecentCommands;
@@ -87,6 +90,7 @@ public static class TvModule
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupSettingsPublisher, CleanupSettingsPublisher>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
+        services.AddSingleton<ITvDiscoveryReports, InMemoryTvDiscoveryReports>();
         services.AddSingleton<TvStatePersister>();
         services.AddScoped<TvStateProvider>();
         services.AddSingleton<TvStreamPublisher>();
@@ -101,7 +105,13 @@ public static class TvModule
         services.AddScoped<IPersonUsageSource, TvUsageSource>();
         services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.CommandDays);
         services.AddScoped<ITvShortcutReader, EfShortcutReader>();
-        services.AddScoped<TvCommandRunner>();
+        // A trilha dos comandos entra numa fila e é gravada depois (o comando não espera o banco). A troca do computador e a
+        // edição de atalhos seguem no ITvCommandAudit síncrono acima: gravam os próprios dados no mesmo SaveChanges.
+        services.AddSingleton<TvAuditQueue>();
+        services.AddSingleton<QueuedCommandAudit>();
+        services.AddSingleton<TvAuditWriter>();
+        services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<TvAuditWriter>());
+        services.AddScoped(sp => ActivatorUtilities.CreateInstance<TvCommandRunner>(sp, sp.GetRequiredService<QueuedCommandAudit>()));
         services.AddScoped<IAgentMessageHandler, TvAgentMessageHandler>();
 
         services.AddSingleton(new GetModuleInfoHandler(version));
@@ -126,6 +136,8 @@ public static class TvModule
         services.AddScoped<GetConfigHandler>();
         services.AddScoped<BindAgentHandler>();
         services.AddScoped<ManageTvsHandler>();
+        services.AddScoped<PermissionHandler>();
+        services.AddScoped<NearbyTvsHandler>();
         services.AddScoped<IPairedTvRegistrar, PairedTvRegistrar>();
         return services;
     }
@@ -156,6 +168,8 @@ public static class TvModule
         group.MapGetConfig();
         group.MapBindAgent();
         group.MapTvs();
+        group.MapPermission();
+        group.MapNearbyTvs();
         return endpoints;
     }
 }

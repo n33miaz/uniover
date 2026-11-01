@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../core/api/generated/schema';
 import { APP_CONFIG } from '../../core/config/app-config';
+import { AgentDiagnostics, readAgentDiagnostics } from './agent-diagnostics';
 
 /** A configuração da TV padrão, como a API a entrega (tipo gerado do OpenAPI). */
 export type TvConfig = components['schemas']['TvConfigResponse'];
@@ -37,6 +38,25 @@ export interface TvItem {
   readonly focusClosesBackground?: boolean;
   readonly shortAnimationsEnabled?: boolean;
   readonly restrictedBackgroundPackages?: readonly string[];
+  /** A TV Samsung esqueceu o UniOver: falta alguém escolher "Permitir" na tela dela (o agente não pede sozinho). */
+  readonly permissionNeeded?: boolean;
+}
+
+/** Uma TV compatível que o computador achou na rede dele. O `id` é opaco: nunca há endereço nem MAC. */
+export interface NearbyTv {
+  readonly id: string;
+  readonly kind: 'android' | 'samsung';
+  readonly name: string | null;
+  /** É a TV que este computador já controla. */
+  readonly controlled: boolean;
+}
+
+/** Como terminou a procura: `ok` (lista, talvez vazia), computador sem sinal, agente antigo, procura em andamento ou falha. */
+export type NearbyStatus = 'ok' | 'offline' | 'unsupported' | 'busy' | 'failed';
+
+export interface NearbyResult {
+  readonly status: NearbyStatus;
+  readonly items: readonly NearbyTv[];
 }
 
 export interface TvAppOption {
@@ -86,6 +106,26 @@ export interface HealthAgent {
   readonly lastSeenAt: string | null;
 }
 
+/**
+ * Um evento interno que esgotou as tentativas de entrega e saiu da fila (dead letter). Sem o conteúdo: `module` é quem o
+ * gerou, `lastError` só o tipo da falha. Local enquanto os tipos HTTP gerados não incluem esta rota.
+ */
+export interface DeadLetterEntry {
+  readonly module: string;
+  readonly id: string;
+  readonly type: string;
+  readonly failedAt: string;
+  readonly attempts: number;
+  readonly lastError: string | null;
+}
+
+/** Os eventos mortos de todos os módulos: o total real, os mais recentes e os módulos que não puderam ser lidos. */
+export interface DeadLetterReport {
+  readonly total: number;
+  readonly items: readonly DeadLetterEntry[];
+  readonly unavailableModules: readonly string[];
+}
+
 /** Identificação pública da versão da API em execução. */
 export interface DeploymentVersion {
   readonly commit: string | null;
@@ -106,6 +146,7 @@ function readTv(value: unknown): TvItem | null {
     ...(dto['focusModeEnabled'] === true ? { focusModeEnabled: true } : {}),
     ...(dto['focusClosesBackground'] === true ? { focusClosesBackground: true } : {}),
     ...(dto['shortAnimationsEnabled'] === true ? { shortAnimationsEnabled: true } : {}),
+    ...(dto['permissionNeeded'] === true ? { permissionNeeded: true } : {}),
     ...(Array.isArray(dto['restrictedBackgroundPackages'])
       ? {
           restrictedBackgroundPackages: dto['restrictedBackgroundPackages'].filter(
@@ -152,6 +193,30 @@ export class SystemApi {
     }));
   }
 
+  /** Os eventos que viraram dead letter (só o administrador). */
+  async deadLetters(): Promise<DeadLetterReport> {
+    const dto = await firstValueFrom(
+      this.http.get<Partial<DeadLetterReport>>(`${APP_CONFIG.apiBase}/v1/system/dead-letters`),
+    );
+    return {
+      total: typeof dto?.total === 'number' ? dto.total : 0,
+      items: Array.isArray(dto?.items) ? dto.items : [],
+      unavailableModules: Array.isArray(dto?.unavailableModules) ? dto.unavailableModules : [],
+    };
+  }
+
+  /** O que os próprios computadores contaram sobre si nos últimos dias, do mais novo ao mais velho (só o administrador). */
+  async agentDiagnostics(limit = 50): Promise<AgentDiagnostics> {
+    const dto = await firstValueFrom(
+      this.http.get<components['schemas']['AgentDiagnosticsResponse']>(
+        `${APP_CONFIG.apiBase}/v1/devices/agents/diagnostics`,
+        { params: { limit } },
+      ),
+    );
+    if (!dto || !Array.isArray(dto.items)) throw new Error('Lista de erros em formato inesperado.');
+    return readAgentDiagnostics(dto);
+  }
+
   /** O endpoint de saúde é público e não lê dados da conta. */
   deploymentVersion(): Promise<DeploymentVersion> {
     return firstValueFrom(this.http.get<DeploymentVersion>(`${APP_CONFIG.apiBase}/health/version`));
@@ -187,6 +252,38 @@ export class SystemApi {
     const dto = await firstValueFrom(this.http.get<{ items?: unknown }>(`${BASE}/tvs`));
     if (!Array.isArray(dto?.items)) throw new Error('Lista de TVs em formato inesperado.');
     return dto.items.map(readTv).filter((tv): tv is TvItem => tv !== null);
+  }
+
+  /**
+   * As TVs compatíveis que o computador achou na rede dele (só o administrador). Leva alguns segundos: o agente varre a
+   * rede. Nunca lança por causa do estado do computador; o `status` conta o que houve.
+   */
+  async nearbyTvs(agentSlug: string): Promise<NearbyResult> {
+    const dto = await firstValueFrom(
+      this.http.get<{ status?: unknown; items?: unknown }>(`${BASE}/tvs/nearby`, {
+        params: { agent: agentSlug },
+      }),
+    );
+    const status = (['ok', 'offline', 'unsupported', 'busy'] as const).find(
+      (value) => value === dto?.status,
+    );
+    const items = Array.isArray(dto?.items) ? dto.items : [];
+    return {
+      status: status ?? 'failed',
+      items: items.flatMap((item): NearbyTv[] => {
+        const tv = item as Record<string, unknown> | null;
+        if (!tv || typeof tv['id'] !== 'string') return [];
+        if (tv['kind'] !== 'android' && tv['kind'] !== 'samsung') return [];
+        return [
+          {
+            id: tv['id'],
+            kind: tv['kind'],
+            name: typeof tv['name'] === 'string' ? tv['name'] : null,
+            controlled: tv['controlled'] === true,
+          },
+        ];
+      }),
+    };
   }
 
   /** Cria uma TV ligada a um computador pareado que ainda não tem TV (409 se já tiver). Exige a passkey. */

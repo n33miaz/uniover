@@ -19,6 +19,9 @@ internal static class PublicRoutes
         new("*", "/health/live", "sonda de vida usada pelo monitor externo"),
         new("GET", "/health/version", "versão pública conferida pela esteira após o deploy"),
 
+        // Consulta o banco (resultado guardado por 30 s) e devolve só 200 ou 503; limite por IP próprio. Para diagnóstico, não para monitor.
+        new("*", "/health/ready", "prontidão: confirma que o banco responde, só o status"),
+
         // Só existe em Development; documenta a API para quem desenvolve.
         new("*", "/openapi/{documentName}.json", "documento OpenAPI, mapeado apenas em Development"),
 
@@ -38,6 +41,9 @@ internal static class PublicRoutes
 
         // O refresh se autentica pelo cookie HttpOnly próprio, não pelo JWT de acesso (que já expirou).
         new("POST", "/api/v1/identity/auth/refresh", "renovação por cookie de refresh rotativo"),
+
+        // O desafio da recuperação também se autentica pelo cookie de refresh: nunca gira nem revela segredo, só emite um nonce de uso único.
+        new("POST", "/api/v1/identity/auth/refresh/challenge", "desafio de uso único para recuperar um refresh cuja resposta se perdeu"),
 
         // Quem recebeu o link do dono ainda não tem conta nem sessão. A credencial é o segredo do convite (32 bytes aleatórios,
         // uso único, validade curta, só o hash no banco), no corpo e nunca na URL; o limite por IP é próprio (balde separado do login).

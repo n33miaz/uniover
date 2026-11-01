@@ -297,6 +297,11 @@ class TvLightSettings:
             # no escuro.
             self._set_focus(False)
             return
+        except Exception:
+            # Falha que ninguém previu: registra a causa e termina a trégua pelo mesmo motivo.
+            _log.exception("falha inesperada ao ler o app em foco da TV; a trégua termina")
+            self._set_focus(False)
+            return
         now = self._clock.monotonic()
         front = self._foreground()
         # Só vale o vídeo que está na frente **e** é dono da sessão que toca: com o Netflix

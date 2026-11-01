@@ -11,6 +11,7 @@
 
 /* A largura é limitada e centralizada: em tablet e computador o controle não estica. */
 .tv {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -29,23 +30,20 @@
 }
 
 /*
- * Cabeçalho numa linha só: à esquerda a volta, as configurações (só do convidado) e os três pontos do painel Apps, o nome no meio e, à
- * direita, o desligar. O nome fica no meio da TELA: as duas colunas dos lados são iguais (o mesmo mínimo, e o que sobra
- * dividido por igual), então nada que mude dentro de um lado nem um nome mais comprido desloca o centro. O mínimo é o do
- * lado maior, o grupo da esquerda (dois botões, três para o convidado); o lado direito reserva, além do desligar, a folga do ponto de estado,
- * que mora à direita do texto do nome, e cabe nessa mesma largura. Sem essa folga um nome comprido empurraria o ponto
- * para cima do desligar. O que não cabe no nome vira reticências.
+ * Cabeçalho numa linha só: à esquerda a volta e, se há opções da TV para esta conta, os três pontos; o nome no meio e, à
+ * direita, o ponto de estado (colado ao desligar) e o desligar. O nome fica no meio da TELA: as duas colunas dos lados
+ * são iguais (o mesmo mínimo, e o que sobra dividido por igual), então nada que mude dentro de um lado, nem um nome mais
+ * comprido, nem a seta do seletor, desloca o centro. O mínimo é a largura do lado mais cheio (`--items` diz quantos
+ * botões ele tem: a página conta os que existem para a conta). Com os três pontos também à direita o nome ficaria com
+ * só 70 px no 390, e os nomes curtos já não caberiam inteiros em duas linhas. O que não cabe no nome vira reticências.
  * A largura do texto depende da fonte do sistema (a do Linux é bem mais larga que a do Windows): o pior caso é um nome
  * de 20 letras, que então usa as duas linhas inteiras e, passando delas, termina em reticências; nunca passa da
  * coluna nem dos 44 px, e o nome completo continua no nome acessível do botão e na folha Personalizar.
  */
 .head {
-  /* Os dois botões da esquerda (a volta e o menu) e o espaço entre eles. */
-  --gap: 6px;
-  /* O alvo de 44 px do ponto começa 8 px antes do fim do nome: sobram 36 px à direita do texto. */
-  --dot-room: 36px;
-  /* A coluna de cada lado: a do grupo da esquerda ou a do desligar com a folga do ponto, a que for maior. */
-  --side: max(calc(2 * var(--tap) + var(--gap)), calc(var(--tap) + var(--dot-room)));
+  --gap: 4px;
+  --items: 2;
+  --side: calc(var(--items) * var(--tap) + (var(--items) - 1) * var(--gap));
   display: grid;
   grid-template-columns: minmax(var(--side), 1fr) minmax(0, auto) minmax(var(--side), 1fr);
   /* Um respiro entre o nome e os botões dos lados (igual nos dois: o centro não se mexe). */
@@ -53,13 +51,9 @@
   align-items: center;
 }
 
-/* A pessoa convidada tem um botão a mais à esquerda (as configurações): as duas colunas crescem juntas e o nome segue no meio. */
-.head.guest {
-  --side: max(calc(3 * var(--tap) + 2 * var(--gap)), calc(var(--tap) + var(--dot-room)));
-}
-
-/* Os botões do cabeçalho (voltar, configurações do convidado, Apps e energia) têm o mesmo visual: um círculo de 44 px. */
+/* Os botões do cabeçalho (voltar, energia e os três pontos) têm o mesmo visual: um círculo de 44 px. */
 .circle {
+  position: relative;
   display: grid;
   place-items: center;
   width: var(--tap);
@@ -91,14 +85,33 @@
 .power {
   color: var(--a-bad);
 }
+/* O relógio miúdo do desligamento agendado: um selo no canto do botão de energia, sem tirar o botão do lugar. */
+.scheduled {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--a-accent);
+  border-radius: 50%;
+  background: var(--a-surface);
+  color: var(--a-accent);
+}
+.scheduled app-tv-icon {
+  width: 12px;
+  height: 12px;
+}
 .actions {
   display: flex;
+  gap: var(--gap);
+  align-items: center;
   justify-self: end;
 }
 
-/* O ponto de estado é posicionado em relação ao texto do nome (esta caixa envolve só ele). */
+/* A coluna do meio: só o nome (o ponto de estado mora à direita, junto do desligar). */
 .name {
-  position: relative;
   display: grid;
   min-width: 0;
   max-width: 100%;
@@ -126,17 +139,25 @@ h1 {
   -webkit-tap-highlight-color: transparent;
 }
 /*
- * Com várias TVs o nome ganha uma seta ao lado (discreta: é só a pista de que ali se escolhe). O texto continua centrado
- * na coluna do meio e a seta fica ao lado dele, dentro dos mesmos 44 px de alvo.
+ * Com várias TVs o nome ganha uma seta ao lado (discreta: é só a pista de que ali se escolhe). Ela é posicionada solta
+ * (`position: absolute`) a partir do fim do texto: não conta na largura do nome, então o texto fica exatamente no centro
+ * da coluna, com ou sem seta.
  */
-.title.switcher {
-  gap: 2px;
+.label {
+  position: relative;
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
 }
 .chevron {
-  flex: none;
-  width: 1.1rem;
-  height: 1.1rem;
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 1px);
+  width: 0.95rem;
+  height: 0.95rem;
   color: var(--a-ink2);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 /* Sem o controle o nome é só texto: a mesma caixa do botão (altura do alvo, centralizado), sem a mão do cursor. */
 .title.plain {
@@ -175,16 +196,6 @@ h1 {
   }
 }
 /*
- * Sem `transform` nem `translate` aqui: eles criariam um contexto de empilhamento e o painelzinho do ponto (z-index 4)
- * ficaria por baixo do anel e dos botões, que vêm depois no documento. A caixa do nome tem a altura do alvo (44 px).
- */
-.name app-status-indicator {
-  position: absolute;
-  top: 0;
-  left: calc(100% - 8px);
-}
-
-/*
  * A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. É um aviso de estado (cartão com a
  * faixa de atenção à esquerda) e, com o agente fora do ar, leva a única ação possível ao lado do texto.
  */
@@ -210,6 +221,60 @@ h1 {
 .retry {
   flex: none;
   min-height: var(--tap);
+}
+
+/*
+ * PC desligado: os controles ficam esmaecidos (e inertes, ver o `inert` da página) e o selo fica no centro da tela, por
+ * cima deles. É um estado a mais, só para o PC confirmado desligado; nos outros casos nada disto aparece.
+ */
+.tv.pc-off app-tv-control,
+.tv.pc-off app-tv-view-only {
+  opacity: 0.32;
+  filter: grayscale(1);
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.seal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(17rem, calc(100% - 2 * var(--gutter)));
+  padding: 18px 20px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-2);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+.seal-icon {
+  width: 2.6rem;
+  height: 2.6rem;
+  color: var(--a-ink3);
+}
+.seal h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.seal-since {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
+.seal-retry {
+  width: 100%;
+  margin-top: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv.pc-off app-tv-control,
+  .tv.pc-off app-tv-view-only {
+    transition: none;
+  }
 }
 
 /* Sem TV configurada: o estado vazio ocupa o lugar do controle, no meio do que sobra da altura, com uma ação só. */

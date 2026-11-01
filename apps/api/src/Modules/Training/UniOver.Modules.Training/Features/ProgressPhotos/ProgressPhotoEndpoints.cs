@@ -20,6 +20,9 @@ internal static class ProgressPhotoEndpoints
         // O corpo é o JPEG cru (sem Accepts: uma rota com tipo de corpo declarado devolve a recusa de tipo sem a política
         // da rota, e quem não é administrador veria 403 em vez de 415); o tipo é conferido à mão, como na importação da TACO.
         group.MapPut("/progress-photos/{id:guid}", PutAsync).RequireAuthorization(TrainingAuth.Module)
+            // Teto de corpo da rota: o do JPEG mais uma folga, para a própria resposta de 413 desta rota (com a mensagem da foto) valer
+            // antes do teto geral da API (256 KiB).
+            .WithMetadata(new RequestSizeLimitAttribute(JpegPhotoValidator.MaxBytes + 16 * 1024))
             .RequireRateLimiting(RateLimitPolicies.Commands).DisableAntiforgery()
             .Produces<ProgressPhotoResponse>().ProducesProblem(400)
             .ProducesProblem(401).ProducesProblem(403).ProducesProblem(404).ProducesProblem(409).ProducesProblem(413)

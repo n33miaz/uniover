@@ -145,6 +145,20 @@ button {
   margin-inline-end: auto;
 }
 
+/* Esqueleto da fileira: mesmo tamanho e mesmo espaçamento dos azulejos, centralizado como eles. */
+.waiting {
+  display: flex;
+  gap: 8px;
+  margin-inline: auto;
+}
+.waiting .tile {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: var(--tv-top);
+  height: var(--tv-top);
+  border-radius: 16px;
+}
+
 /* Sem atalho ativo: só uma dica, discreta, que não é um botão. Tem a altura de um azulejo. */
 .hint {
   display: flex;

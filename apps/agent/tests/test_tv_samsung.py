@@ -857,9 +857,11 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
         secrets,
     )
     assert setup is not None
-    expected = ["tv.remote", "tv.kind.samsung", "tv.power.off.v1", "tv.key.v3"] + [
-        f"tv.key.{key}" for key in SAMSUNG_OPTIONAL_KEYS
-    ]
+    expected = (
+        ["tv.remote", "tv.kind.samsung", "tv.power.off.v1", "tv.permission.v1", "tv.key.v3"]
+        + [f"tv.key.{key}" for key in SAMSUNG_OPTIONAL_KEYS]
+        + ["tv.discovery.v1"]
+    )
     assert setup.capabilities == expected
     assert envelopes.hello("0.1.0", tuple(setup.capabilities))["body"]["capabilities"] == expected
     assert "tv.key.v3" in setup.handlers

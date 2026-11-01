@@ -191,9 +191,18 @@ describe('TvStore', () => {
     });
 
     it('"hibernating" is "controle dormindo" and the buttons still work (the first command reconnects)', async () => {
+      api.state.mockResolvedValue({ ...hot, connection: 'hibernating' });
       await started();
+      // O dono pediu verde "mesmo quando estiver dormindo": a sessão dormindo sai verde (hot), logo na leitura...
+      expect(store.state()?.connection).toBe('hibernating');
+      expect(store.lastKnownStatus()).toBe('hibernating');
+      expect(store.status()).toBe('hot');
+      // ...depois do prazo do acordar, e também quando o evento "dormindo" chega depois de uma leitura "ligada".
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(store.status()).toBe('hot');
+      emit('tv.state', hot);
       emit('tv.state', { ...hot, connection: 'hibernating' });
-      expect(store.status()).toBe('hibernating');
+      expect(store.status()).toBe('hot');
       expect(store.canSend()).toBe(true);
       expect(store.disabledReason()).toBeNull();
     });
@@ -307,12 +316,14 @@ describe('TvStore', () => {
       expect(api.sendKey).not.toHaveBeenCalled();
     });
 
-    it('says the server is waking up when there is network but no answer', async () => {
+    it('keeps the remote green and usable while the server is waking up: the tap goes out and waits', async () => {
       await started();
       serverState.set('waking');
-      expect(store.status()).toBe('waking');
-      expect(store.disabledReason()).toContain('servidor está acordando');
-      await expect(store.sendKey('OK')).resolves.toBe(false);
+      expect(store.status()).toBe('loading');
+      expect(store.canSend()).toBe(true);
+      expect(store.disabledReason()).toBeNull();
+      await expect(store.sendKey('OK')).resolves.toBe(true);
+      expect(api.sendKey).toHaveBeenCalledTimes(1);
     });
 
     it('504 shows "a TV não respondeu" once and does not retry', async () => {
@@ -1824,6 +1835,237 @@ describe('TvStore', () => {
           s1: icon,
         });
         expect(localStorage.getItem(tvStateCacheKey('conta-b'))).not.toBeNull();
+      });
+    });
+  });
+
+  describe('green first and last: only a confirmed failure changes the state', () => {
+    /** Uma promessa que o teste resolve quando quiser (a resposta que demora). */
+    const deferred = <T>() => {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((ok) => {
+        resolve = ok;
+      });
+      return { promise, resolve };
+    };
+    const offlineSince = '2026-10-28T22:24:00Z';
+    const pcOff = {
+      ...hot,
+      agentOnline: false,
+      connection: 'disconnected',
+      volume: null,
+      offlineSince,
+    };
+
+    it('before any reading the state is "loading" (green) and the remote is usable', async () => {
+      const gate = deferred<unknown>();
+      api.state.mockReturnValue(gate.promise);
+      await started();
+      expect(store.state()).toBeNull();
+      expect(store.status()).toBe('loading');
+      expect(store.canSend()).toBe(true);
+      expect(store.disabledReason()).toBeNull();
+      expect(store.pcOff()).toBe(false);
+    });
+
+    it('is "PC Desligado" only when the API says the agent is out AND since when', async () => {
+      await started();
+      emit('tv.state', pcOff);
+      expect(store.status()).toBe('pc-off');
+      expect(store.pcOff()).toBe(true);
+      expect(store.canSend()).toBe(false);
+      expect(store.agentOffText()).toMatch(/^PC Desligado desde \d{2}\/\d{2} \d{2}:\d{2}$/);
+      expect(store.pcOffSince()).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
+    });
+
+    it('an agent out without the "since" keeps the behavior of before (agent off, no seal)', async () => {
+      await started();
+      emit('tv.state', { ...pcOff, offlineSince: undefined });
+      expect(store.status()).toBe('agent-off');
+      expect(store.pcOff()).toBe(false);
+      expect(store.pcOffSince()).toBeNull();
+      expect(store.disabledReason()).toContain('agente da TV está desligado');
+    });
+
+    it('an agent that is online never shows the seal, even with a stale "since"', async () => {
+      await started();
+      emit('tv.state', { ...hot, offlineSince });
+      expect(store.status()).toBe('hot');
+      expect(store.pcOff()).toBe(false);
+    });
+
+    it('the PC going off and coming back follows the state events', async () => {
+      await started();
+      emit('tv.state', pcOff);
+      expect(store.pcOff()).toBe(true);
+      emit('tv.state', hot);
+      expect(store.pcOff()).toBe(false);
+      expect(store.status()).toBe('hot');
+      expect(store.canSend()).toBe(true);
+    });
+
+    it('no network wins over the seal: with no connection nobody knows if the PC is off', async () => {
+      await started();
+      emit('tv.state', pcOff);
+      online.set(false);
+      expect(store.status()).toBe('offline');
+      expect(store.pcOff()).toBe(false);
+    });
+
+    it('a 503 "reconnecting" is not a failure: stays green, the buttons stay on, and no seal shows', async () => {
+      await started();
+      api.sendKey.mockRejectedValueOnce(
+        new HttpErrorResponse({
+          status: 503,
+          error: { type: PROBLEM + 'agent-offline', status: 503, reconnecting: true },
+        }),
+      );
+      await expect(store.sendKey('OK')).resolves.toBe(false);
+      expect(store.notice()?.text).toBe('Reconectando ao PC… Tente de novo em instantes.');
+      expect(store.status()).toBe('hot');
+      expect(store.canSend()).toBe(true);
+      expect(store.pcOff()).toBe(false);
+    });
+
+    it('a 503 "agent off" with no state yet is a confirmed failure, with no waiting for the deadline', async () => {
+      api.state.mockRejectedValue(problem(503, 'agent-offline'));
+      await started();
+      expect(store.status()).toBe('agent-off');
+      expect(store.canSend()).toBe(false);
+    });
+
+    it('a state read that fails with something that is not confirmed stays green until the deadline', async () => {
+      api.state.mockRejectedValue(problem(500, 'internal'));
+      await started();
+      expect(store.status()).toBe('loading');
+      expect(store.canSend()).toBe(true);
+    });
+
+    it('returning from the background reconnects at once and keeps the known state green meanwhile', async () => {
+      await started();
+      const gate = deferred<unknown>();
+      api.state.mockReturnValue(gate.promise);
+      setVisibility('hidden');
+      api.state.mockClear();
+      api.wake.mockClear();
+      setVisibility('visible');
+      await flush();
+      expect(api.state).toHaveBeenCalledTimes(1);
+      expect(api.wake).toHaveBeenCalledTimes(1);
+      expect(store.status()).toBe('hot');
+      expect(store.canSend()).toBe(true);
+      gate.resolve({ ...hot, volume: 40 });
+      await flush();
+      expect(store.state()?.volume).toBe(40);
+    });
+
+    it('a page restored from the browser cache reads the state again, like coming back from the background', async () => {
+      await started();
+      api.state.mockClear();
+      const restored = new Event('pageshow');
+      Object.defineProperty(restored, 'persisted', { value: true });
+      window.dispatchEvent(restored);
+      await flush();
+      expect(api.state).toHaveBeenCalledTimes(1);
+      api.state.mockClear();
+      const ordinary = new Event('pageshow');
+      Object.defineProperty(ordinary, 'persisted', { value: false });
+      window.dispatchEvent(ordinary);
+      await flush();
+      expect(api.state).not.toHaveBeenCalled();
+    });
+
+    it('reads the power schedule with the rest, so the button of the header can show it', async () => {
+      await started();
+      expect(api.powerSchedule).toHaveBeenCalled();
+    });
+
+    describe('shimmer and its deadline', () => {
+      it('shows no skeleton for a fast read, and only after the short wait for a slow one', async () => {
+        const gate = deferred<unknown>();
+        api.state.mockReturnValue(gate.promise);
+        const shortcuts = deferred<TvShortcut[]>();
+        api.shortcuts.mockReturnValue(shortcuts.promise);
+        await started();
+        expect(store.stateLoading()).toBe(false);
+        expect(store.shortcutsLoading()).toBe(false);
+        await vi.advanceTimersByTimeAsync(199);
+        expect(store.stateLoading()).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(store.stateLoading()).toBe(true);
+        expect(store.shortcutsLoading()).toBe(true);
+        expect(store.loading()).toBe(true);
+        // Chegou o estado: só o esqueleto dele sai.
+        gate.resolve(hot);
+        await flush();
+        expect(store.stateLoading()).toBe(false);
+        expect(store.shortcutsLoading()).toBe(true);
+        shortcuts.resolve([shortcut(1)]);
+        await flush();
+        expect(store.loading()).toBe(false);
+      });
+
+      it('never shimmers in a loop: past the deadline the skeleton goes and the failure shows', async () => {
+        api.state.mockReturnValue(new Promise(() => undefined));
+        api.shortcuts.mockReturnValue(new Promise(() => undefined));
+        await started();
+        await vi.advanceTimersByTimeAsync(7_000);
+        expect(store.stateLoading()).toBe(true);
+        expect(store.status()).toBe('loading');
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(store.stateLoading()).toBe(false);
+        expect(store.shortcutsLoading()).toBe(false);
+        expect(store.shortcutsFailed()).toBe(true);
+        expect(store.status()).toBe('unresponsive');
+        // Sem estado o motivo oferece tentar de novo, mas os botões seguem ativos.
+        expect(store.canSend()).toBe(true);
+        expect(store.disabledReason()).toBe('O controle não recebeu resposta. Tente de novo.');
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(store.stateLoading()).toBe(false);
+      });
+
+      it('"Tentar de Novo" starts a new wait and clears the failure when the answer comes', async () => {
+        api.state.mockReturnValue(new Promise(() => undefined));
+        api.shortcuts.mockReturnValue(new Promise(() => undefined));
+        await started();
+        await vi.advanceTimersByTimeAsync(8_000);
+        expect(store.status()).toBe('unresponsive');
+        api.state.mockResolvedValue(hot);
+        api.shortcuts.mockResolvedValue([shortcut(1)]);
+        void store.refresh();
+        await flush();
+        expect(store.status()).toBe('hot');
+        expect(store.shortcutsFailed()).toBe(false);
+        expect(store.shortcuts()).toHaveLength(1);
+      });
+
+      it('does not count the deadline while the server is waking up (a cold start alone is not a failure)', async () => {
+        serverState.set('waking');
+        api.state.mockReturnValue(new Promise(() => undefined));
+        await started();
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(store.status()).toBe('loading');
+        serverState.set('ok');
+        await vi.advanceTimersByTimeAsync(8_000);
+        expect(store.status()).toBe('unresponsive');
+      });
+
+      it('has no skeleton when the state is already known: a later read only renews it', async () => {
+        await started();
+        api.state.mockReturnValue(new Promise(() => undefined));
+        void store.refresh();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(store.stateLoading()).toBe(false);
+        expect(store.status()).toBe('hot');
+      });
+
+      it('applies the state and the shortcuts as they come, even with the TV list still pending', async () => {
+        const list = deferred<TvSummary[]>();
+        api.tvs.mockReturnValue(list.promise);
+        await started();
+        expect(store.state()?.volume).toBe(22);
+        expect(store.shortcuts()).toHaveLength(2);
+        expect(store.stateLoading()).toBe(false);
       });
     });
   });

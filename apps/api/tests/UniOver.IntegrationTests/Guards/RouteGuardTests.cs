@@ -28,6 +28,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
     [
         ("POST", "/api/v1/identity/auth/login", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/auth/refresh", RateLimitPolicies.Refresh),
+        ("POST", "/api/v1/identity/auth/refresh/challenge", RateLimitPolicies.Refresh),
         ("POST", "/api/v1/identity/passkeys/registration/options", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/passkeys/registration/complete", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/step-up/options", RateLimitPolicies.Login),

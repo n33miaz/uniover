@@ -12,6 +12,16 @@ public sealed class StreamTests(PostgresFixture postgres)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>Próximo evento de verdade: pula os comentários de manutenção (": keepalive") que não trazem tipo nem dado.</summary>
+    private static async Task<SseFrame> NextEventAsync(SseReader reader)
+    {
+        while (true)
+        {
+            var frame = (await reader.NextAsync())!;
+            if (frame.EventType is not null || frame.Data is not null) return frame;
+        }
+    }
+
     [Fact]
     public async Task Events_WithTheStreamCookie_SendASnapshotAndThenTheChanges()
     {
@@ -149,7 +159,8 @@ public sealed class StreamTests(PostgresFixture postgres)
         app.PassReconnectGrace();
         (await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" })).Dispose();
 
-        var offline = (await reader.NextAsync())!;
+        // Andar o relógio além do intervalo do fluxo faz o servidor soltar o comentário de manutenção antes do evento.
+        var offline = await NextEventAsync(reader);
         offline.EventType.Should().Be("tv.state");
         offline.Data!.Value.GetProperty("connection").GetString().Should().Be("disconnected");
         offline.Data!.Value.GetProperty("agentOnline").GetBoolean().Should().BeFalse();

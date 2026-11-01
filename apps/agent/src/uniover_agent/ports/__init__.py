@@ -31,6 +31,7 @@ from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
+    ServerRestarting,
     Transport,
     TransportError,
 )
@@ -50,6 +51,7 @@ from uniover_agent.ports.tv_channel import (
     TvChannel,
     TvChannelError,
     TvNotPaired,
+    TvPermissionNeeded,
     TvPortClosed,
     TvUnreachable,
 )
@@ -115,6 +117,7 @@ __all__ = [
     "PollResult",
     "PollSlowDown",
     "SecretStore",
+    "ServerRestarting",
     "TextFieldStatus",
     "Transport",
     "TransportError",
@@ -124,6 +127,7 @@ __all__ = [
     "TvChannelError",
     "TvDriver",
     "TvNotPaired",
+    "TvPermissionNeeded",
     "TvPortClosed",
     "TvRemote",
     "TvUnreachable",

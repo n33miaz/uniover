@@ -57,3 +57,46 @@ def redact_line(line: str, secrets: Iterable[str] = ()) -> str:
 def redact(lines: Iterable[str], secrets: Iterable[str] = ()) -> list[str]:
     known = [secret for secret in secrets if secret]
     return [redact_line(line, known) for line in lines]
+
+
+# --- Dados pessoais: do diagnóstico sai só o necessário para entender a falha ------------------
+
+PATH_MARK: Final = "<caminho>"
+IP_MARK: Final = "<ip>"
+MAC_MARK: Final = "<mac>"
+EMAIL_MARK: Final = "<email>"
+NAME_MARK: Final = "<nome>"
+_MIN_NAME_LENGTH: Final = 3
+
+# Caminho do Windows (`C:\Users\fulano\...`), de rede (`\\servidor\pasta`) e de usuário em Unix. O
+# caminho inteiro some: ele quase sempre leva o nome do usuário ou do PC.
+_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s\"'<>|*?]*")
+_NETWORK_PATH = re.compile(r"\\\\[^\s\"'<>|*?\\]+(?:\\[^\s\"'<>|*?]*)*")
+_UNIX_HOME = re.compile(r"(?<![A-Za-z0-9_.-])/(?:home|Users|root)/[^\s\"'<>|*?]*")
+_IPV4 = re.compile(
+    r"(?<![0-9.])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![0-9])"
+)
+_IPV6 = re.compile(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Fa-f:])")
+_MAC = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}(?![0-9A-Fa-f])")
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def scrub_personal(text: str, names: Iterable[str] = ()) -> str:
+    """Tira de `text` segredos, caminhos, endereços de rede, e-mails e os `names` conhecidos.
+
+    `names` são o nome do usuário do Windows e o do computador, que o agente conhece e que podem
+    aparecer soltos em mensagens de erro de bibliotecas. Serve ao que vai para a API: o registro
+    local continua inteiro.
+    """
+    text = redact_line(text)
+    text = _WINDOWS_PATH.sub(PATH_MARK, text)
+    text = _NETWORK_PATH.sub(PATH_MARK, text)
+    text = _UNIX_HOME.sub(PATH_MARK, text)
+    text = _EMAIL.sub(EMAIL_MARK, text)
+    text = _MAC.sub(MAC_MARK, text)
+    text = _IPV4.sub(IP_MARK, text)
+    text = _IPV6.sub(IP_MARK, text)
+    for name in names:
+        if len(name) >= _MIN_NAME_LENGTH:
+            text = re.sub(rf"(?i)(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", NAME_MARK, text)
+    return text

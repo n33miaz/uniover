@@ -262,6 +262,16 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task TacoImport_AcceptsAFileAboveTheGlobalBodyCap_BecauseTheRouteDeclaresItsOwn()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        // 900 KB: acima dos 256 KiB que valem para as outras rotas e abaixo do 1 MiB desta.
+        using var response = await TacoImportAsync(app, owner.AccessToken, Guid.NewGuid(), new string('a', 900_000));
+        response.StatusCode.Should().NotBe(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [Fact]
     public async Task TacoImport_RefusesFilesOverOneMiB()
     {
         await using var app = await TrainingApp.StartAsync(postgres);

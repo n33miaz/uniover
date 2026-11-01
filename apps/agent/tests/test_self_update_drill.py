@@ -32,14 +32,14 @@ def drill(monkeypatch: pytest.MonkeyPatch) -> str:
 
 def test_the_drill_is_off_by_default_and_the_urls_stay_on_github() -> None:
     assert drill_origin() is None
-    assert commit_url() == module.COMMIT_URL
+    assert commit_url() == module.COMMIT_URL.format(channel="develop")
     assert archive_url(NEW) == f"https://github.com/n33miaz/uniover/archive/{NEW}.zip"
 
 
 def test_the_origin_is_ignored_without_the_mode_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, ORIGIN)
     assert drill_origin() is None
-    assert commit_url() == module.COMMIT_URL
+    assert commit_url() == module.COMMIT_URL.format(channel="develop")
 
 
 @pytest.mark.parametrize("mode", ["", "0", "true", "yes"])
@@ -120,7 +120,7 @@ def test_outside_the_drill_the_requests_still_go_to_github(monkeypatch: pytest.M
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, ORIGIN)
     requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
     assert latest_commit() == NEW
-    assert [str(r.url) for r in requests] == [module.COMMIT_URL]
+    assert [str(r.url) for r in requests] == [module.COMMIT_URL.format(channel="develop")]
 
 
 def test_a_full_update_runs_through_the_local_server_in_drill_mode(
