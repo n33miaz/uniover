@@ -133,3 +133,13 @@ def test_a_malformed_pin_is_a_configuration_error(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(ValueError, match="SHA-256"):
         Settings()  # type: ignore[call-arg]
+
+
+def test_the_default_pin_is_the_projects_published_signing_certificate() -> None:
+    published = Path(__file__).resolve().parents[3] / "apps" / "tv-launcher" / "signing-cert.sha256"
+    if not published.is_file():
+        pytest.skip("pasta apps/tv-launcher fora do alcance (app testado sozinho)")
+
+    assert Settings().tv_livre_signer_sha256 == [
+        published.read_text(encoding="utf-8").strip().lower()
+    ]  # type: ignore[call-arg]

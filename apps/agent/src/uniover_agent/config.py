@@ -63,6 +63,9 @@ def config_path() -> Path:
     return Path(override) if override else default_config_path()
 
 
+PROJECT_SIGNER_SHA256 = "f782151a18e6bc3ff22a201ff558fd833feb2120182034a3dec6aeab41b12bfc"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="UNIOVER_", extra="ignore")
 
@@ -125,10 +128,14 @@ class Settings(BaseSettings):
     # decide se o agente oferece o módulo. O APK vem da publicação, conferido pelo hash.
     tv_livre: bool = True
     tv_livre_apk_url: str = "https://github.com/n33miaz/uniover/releases/latest/download"
-    # Certificado(s) de assinatura do APK, SHA-256 (hex, com ou sem `:`), separados por vírgula.
-    # Sem ele nada é instalado: o hash da publicação não prova quem assinou. `apksigner` vem do
-    # `build-tools` do Android SDK (ou do caminho configurado).
-    tv_livre_signer_sha256: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Certificado(s) de assinatura do APK, SHA-256 (hex, com ou sem `:`), separados por
+    # vírgula. O padrão é o certificado público da chave fixa do projeto
+    # (`apps/tv-launcher/signing-cert.sha256`). Lista vazia: nada é instalado, porque o hash
+    # da publicação não prova quem assinou. O `apksigner` vem do `build-tools` do Android SDK
+    # (ou do caminho configurado).
+    tv_livre_signer_sha256: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [PROJECT_SIGNER_SHA256]
+    )
     tv_livre_apksigner_path: str | None = None
 
     @field_validator("tv_livre_signer_sha256", mode="before")

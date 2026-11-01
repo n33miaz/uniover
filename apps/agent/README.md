@@ -81,7 +81,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
 | `UNIOVER_TV_LIVRE` | `0` desliga o módulo TV Livre neste PC (padrão: ligado, sempre opt-in por comando do dono; ver "TV Livre") |
 | `UNIOVER_TV_LIVRE_APK_URL` | pasta HTTPS da publicação com `uniover-launcher.apk` e `uniover-launcher.apk.sha256` (padrão: a última publicação do repositório) |
-| `UNIOVER_TV_LIVRE_SIGNER_SHA256` | SHA-256 do certificado de assinatura do APK do TV Livre (hexadecimal, com ou sem `:`; vários separados por vírgula). **Sem ele nada é instalado**: o hash da publicação não prova quem assinou. Conferido com o `apksigner` do Android SDK (`UNIOVER_TV_LIVRE_APKSIGNER_PATH` para indicar outro caminho) |
+| `UNIOVER_TV_LIVRE_SIGNER_SHA256` | SHA-256 do certificado de assinatura do APK do TV Livre (hexadecimal, com ou sem `:`; vários separados por vírgula). O padrão é o certificado público da chave fixa do projeto; lista vazia = **nada é instalado**, porque o hash da publicação não prova quem assinou. Conferido com o `apksigner` do Android SDK (`UNIOVER_TV_LIVRE_APKSIGNER_PATH` para indicar outro caminho) |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
@@ -462,7 +462,7 @@ tela da web, e todos são reversíveis. A sequência é a do README de `apps/tv-
    (`set-home-activity` do original precisa responder `Success`); sem esse ensaio nada é instalado. Baixa o APK da
    publicação (`UNIOVER_TV_LIVRE_APK_URL`, padrão a última publicação do repositório, só HTTPS), confere o sha256
    publicado ao lado (`uniover-launcher.apk.sha256`, integridade do download) e **a assinatura** contra o
-   certificado fixado em `UNIOVER_TV_LIVRE_SIGNER_SHA256`; só então instala e abre o app, conferindo que ele de
+   certificado fixado em `UNIOVER_TV_LIVRE_SIGNER_SHA256` (padrão: a chave do projeto, com o `apksigner` do Android SDK); só então instala e abre o app, conferindo que ele de
    fato iniciou. O launcher de fábrica segue como padrão.
 2. **Aplicar a configuração**: envia `config.json` (e `wallpaper.jpg`) como `.tmp` e renomeia, ou, se a pasta do app
    não existir, pelo broadcast (sem foto). A configuração é conferida pelo agente contra o contrato.
