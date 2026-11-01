@@ -181,7 +181,9 @@ def run_update(monkeypatch: pytest.MonkeyPatch, result: UpdateResult) -> list[tu
     kit = build_diagnostics(FakeClock())
     assert update_agent(sync=False, kit=kit) == EXIT_OK
     kit.recorder.flush_pending()
-    return [(event.kind, event.severity) for event in kit.store.take(20)]
+    events = kit.store.take(20)
+    kit.store.confirm(events)
+    return [(event.kind, event.severity) for event in events]
 
 
 def test_a_rejected_package_is_recorded_as_an_error(monkeypatch: pytest.MonkeyPatch) -> None:

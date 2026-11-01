@@ -44,6 +44,9 @@ class MemoryStore:
         taken, self.events = self.events[:limit], self.events[limit:]
         return taken
 
+    def confirm(self, events: list[DiagnosticEvent]) -> None:
+        """Em memória o `take` já tirou o lote; não há o que confirmar."""
+
     def put_back(self, events: list[DiagnosticEvent]) -> None:
         self.events = events + self.events
 
