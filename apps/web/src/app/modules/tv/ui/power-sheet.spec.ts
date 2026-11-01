@@ -175,6 +175,9 @@ describe('PowerSheet', () => {
     });
 
     it('with a schedule shows "Desliga às HH:MM" and the time left, and cancels it without sending POWER', async () => {
+      // Relógio fixo ao meio-dia (UTC): rodando perto da meia-noite o horário cairia no dia seguinte e o texto traria a data.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-15T12:00:00Z'));
       store.powerSchedule.set({
         id: 'schedule',
         dueAtUtc: new Date(Date.now() + 65 * 60_000).toISOString(),
