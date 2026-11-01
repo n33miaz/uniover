@@ -25,10 +25,12 @@ function report(overrides: Partial<CapacityReport> = {}): CapacityReport {
       memoryBand: 'green',
       startedAt: '2026-10-30T10:00:00Z',
       uptimeSeconds: 3 * 86400 + 4 * 3600,
-      monthHours: 612,
+      monthHours: 684,
       hoursLimit: 750,
-      hoursPercent: 81.6,
-      hoursBand: 'red',
+      hoursPercent: 91.2,
+      hoursBand: 'neutral',
+      hoursProjected: 744,
+      servicesInWorkspace: 1,
     },
     growth: {
       points: [
@@ -84,9 +86,31 @@ describe('SystemCapacitySection', () => {
     expect(meters[0].textContent).toContain('1,4% · Folga');
     expect(meters[0].dataset['band']).toBe('green');
     expect(meters[1].textContent).toContain('180 MB de 512 MB');
-    expect(meters[2].textContent).toContain('612 h de 750 h');
-    expect(meters[2].textContent).toContain('82% · Crítico');
-    expect(meters[2].dataset['band']).toBe('red');
+    expect(meters[2].textContent).toContain('684 h de 750 h');
+    // Um serviço sempre ligado usa quase todas as horas todo mês: é informação, não alarme.
+    expect(meters[2].textContent).toContain('91% · Informativo');
+    expect(meters[2].dataset['band']).toBe('neutral');
+  });
+
+  it('turns the month hours red, and says why, when more services push the projection past the limit', async () => {
+    system.capacity.mockResolvedValue(
+      report({
+        server: {
+          ...report().server,
+          monthHours: 1000,
+          hoursPercent: 133,
+          hoursBand: 'red',
+          hoursProjected: 1488,
+          servicesInWorkspace: 2,
+        },
+      }),
+    );
+    const root = await render();
+    const hours = root.querySelectorAll<HTMLElement>('.meter')[2];
+    expect(hours.dataset['band']).toBe('red');
+    expect(hours.textContent).toContain('133% · Crítico');
+    expect(hours.textContent).toContain('× 2 serviços');
+    expect(hours.textContent).toContain('Projeção do mês: 1488 h');
   });
 
   it('labels the estimated readings and says plainly what the app does not measure', async () => {
@@ -176,7 +200,7 @@ describe('SystemCapacitySection', () => {
     const fixture = await renderFixture();
     const root = fixture.nativeElement as HTMLElement;
     const alert = root.querySelector('.alert');
-    expect(alert?.textContent).toContain('Passou de 80%');
+    expect(alert?.textContent).toContain('Capacidade em Risco');
     expect(alert?.textContent).toContain('Horas do Mês, Banco');
 
     root.querySelector<HTMLButtonElement>('.alert button')?.click();

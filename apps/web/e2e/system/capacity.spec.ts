@@ -59,9 +59,9 @@ test.describe('Configurações > Sistema > Capacidade', () => {
       await expect(meters(page).nth(0)).toContainText('1,4% · Folga');
       await expect(meters(page).nth(0)).toHaveAttribute('data-band', 'green');
       await expect(meters(page).nth(1)).toContainText('180 MB de 512 MB');
-      await expect(meters(page).nth(2)).toContainText('612 h de 750 h');
-      await expect(meters(page).nth(2)).toContainText('Crítico');
-      await expect(meters(page).nth(2)).toHaveAttribute('data-band', 'red');
+      await expect(meters(page).nth(2)).toContainText('684 h de 750 h');
+      await expect(meters(page).nth(2)).toContainText('Informativo');
+      await expect(meters(page).nth(2)).toHaveAttribute('data-band', 'neutral');
       // Todas as três leituras do cartão são estimativas ou limites de nota: cada uma diz isso.
       await expect(card(page).locator('.meter .tag')).toHaveText([
         'Estimado',
@@ -73,6 +73,28 @@ test.describe('Configurações > Sistema > Capacidade', () => {
       await check(page, info, 'capacity', scheme);
     });
   }
+
+  test('com mais de um serviço no workspace as horas ficam vermelhas e dizem a projeção', async ({
+    page,
+  }) => {
+    const base = defaultCapacity();
+    system.capacity = {
+      ...base,
+      server: {
+        ...base.server,
+        monthHours: 1000,
+        hoursPercent: 133,
+        hoursBand: 'red',
+        hoursProjected: 1488,
+        servicesInWorkspace: 2,
+      },
+    };
+    await open(page);
+
+    await expect(meters(page).nth(2)).toHaveAttribute('data-band', 'red');
+    await expect(meters(page).nth(2)).toContainText('Crítico');
+    await expect(meters(page).nth(2)).toContainText('Projeção do mês: 1488 h');
+  });
 
   test('mostra a tendência e quando o banco chega a 50% e 80%', async ({ page }) => {
     await open(page);
@@ -111,7 +133,7 @@ test.describe('Configurações > Sistema > Capacidade', () => {
     await open(page);
 
     const alert = card(page).locator('.alert');
-    await expect(alert).toContainText('Passou de 80%');
+    await expect(alert).toContainText('Capacidade em Risco');
     await expect(alert).toContainText('Horas do Mês, Banco');
     await check(page, info, 'capacity-alert', 'light');
 
