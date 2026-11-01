@@ -11,7 +11,8 @@ using UniOver.Modules.Identity.Security;
 namespace UniOver.Modules.Identity.Features.Sessions;
 
 internal sealed record SessionSummary(
-    Guid Id, string? UserAgent, string? Ip, DateTimeOffset CreatedAt, DateTimeOffset LastUsedAt, bool IsCurrent);
+    Guid Id, string? UserAgent, string? Ip, DateTimeOffset CreatedAt, DateTimeOffset LastUsedAt, bool IsCurrent,
+    string? Platform = null, bool? Installed = null);
 
 internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audit, TimeProvider time)
 {
@@ -24,16 +25,20 @@ internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audi
             .Select(t => t.FamilyId);
         var tokens = await db.RefreshTokens.AsNoTracking()
             .Where(t => t.UserId == userId && activeFamilies.Contains(t.FamilyId))
-            .Select(t => new { t.FamilyId, t.CreatedAt, t.UsedAt, t.Ip, t.UserAgent })
+            .Select(t => new { t.FamilyId, t.CreatedAt, t.UsedAt, t.Ip, t.UserAgent, t.ClientPlatform, t.ClientInstalled })
             .ToListAsync(cancellationToken);
 
         return [.. tokens.GroupBy(t => t.FamilyId).Select(family =>
         {
             var agent = family.Where(t => t.UserAgent is not null).MaxBy(t => t.CreatedAt);
             var location = family.Where(t => t.Ip is not null).MaxBy(t => t.CreatedAt);
+
+            // O que o app informou mais recentemente; um refresh de app antigo (sem cabeçalho) não apaga o que já se sabia.
+            var env = family.Where(t => t.ClientPlatform is not null).MaxBy(t => t.CreatedAt);
             return new SessionSummary(
                 family.Key, agent?.UserAgent, MaskIp(location?.Ip), family.Min(t => t.CreatedAt),
-                family.Max(t => t.UsedAt ?? t.CreatedAt), family.Key == currentId);
+                family.Max(t => t.UsedAt ?? t.CreatedAt), family.Key == currentId,
+                env?.ClientPlatform, env?.ClientInstalled);
         }).OrderByDescending(s => s.LastUsedAt)];
     }
 
