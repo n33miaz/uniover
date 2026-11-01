@@ -31,8 +31,6 @@ export class TvAccess {
   readonly launch = this.action('tv:launch');
   /** Renomear, fixar e reordenar os atalhos (`tv:edit-shortcuts`). */
   readonly editShortcuts = this.action('tv:edit-shortcuts');
-  /** Histórico de comandos (`tv:history`). A tela ainda não tem histórico; a leitura só nasce atrás desta permissão. */
-  readonly history = this.action('tv:history');
 
   /**
    * A grade de apps do painel tem o que fazer: abrir os apps ou editar os atalhos. Sem nenhum dos dois ela só mostraria

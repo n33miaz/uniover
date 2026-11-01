@@ -62,7 +62,6 @@ describe('PeoplePermissionPicker', () => {
       'Desligar a TV',
       'Abrir apps e atualizar a lista',
       'Editar e reordenar atalhos',
-      'Ver o histórico',
       'Usar o Treino',
     ]);
   });
@@ -71,7 +70,7 @@ describe('PeoplePermissionPicker', () => {
     const { el } = await render();
     expect(el.querySelectorAll('fieldset')).toHaveLength(3);
     const switches = el.querySelectorAll<HTMLInputElement>('input[role="switch"]');
-    expect(switches).toHaveLength(7);
+    expect(switches).toHaveLength(6);
     for (const input of Array.from(switches)) {
       expect(input.type).toBe('checkbox');
       expect(input.closest('label')?.textContent?.trim().length).toBeGreaterThan(0);
@@ -100,12 +99,7 @@ describe('PeoplePermissionPicker', () => {
   it('turning off "see the TV" turns off every TV action and keeps the Training', async () => {
     const { flip, option, list } = await render([...TV_CONTROL_ONLY, 'module:training']);
     await flip('Ver a TV');
-    for (const text of [
-      'Ver a TV',
-      'Usar o controle e o teclado',
-      'Desligar a TV',
-      'Ver o histórico',
-    ]) {
+    for (const text of ['Ver a TV', 'Usar o controle e o teclado', 'Desligar a TV']) {
       expect(option(text).checked).toBe(false);
     }
     expect(option('Usar o Treino').checked).toBe(true);
@@ -159,9 +153,9 @@ describe('PeoplePermissionPicker', () => {
 
   it('always shows a one-line summary of what the person will be able to do', async () => {
     const { flip, summary } = await render();
-    expect(summary()).toBe('Poderá: Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico');
+    expect(summary()).toBe('Poderá: Controlar a TV · Desligar a TV · Abrir apps');
     await flip('Desligar a TV');
-    expect(summary()).toBe('Poderá: Controlar a TV · Abrir apps · Ver o histórico');
+    expect(summary()).toBe('Poderá: Controlar a TV · Abrir apps');
   });
 
   it('leaves the summary to the host when told to, so a long sheet can pin it in its footer', async () => {
