@@ -2,7 +2,7 @@
 # As bases são fixadas por digest; o Dependabot (ecossistema docker) propõe as atualizações.
 
 # --- Etapa 1: build do PWA ---
-FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS web
+FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS web
 WORKDIR /src/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci
