@@ -30,9 +30,30 @@ export interface MockTv {
   permissionNeeded?: boolean;
   /** As últimas limpezas, como `GET /tvs/{id}/cleanup-reports` devolve. */
   cleanupReports?: Record<string, unknown>[];
+  /** O catálogo do Modo Foco guardado; ausente vale a lista de fábrica, como na API. */
+  focusPackages?: string[];
+  /** O histórico de comandos (o mais novo primeiro), como `GET /commands/recent?tvId=` devolve ao administrador. */
+  history?: MockHistoryRow[];
   state?: MockTvState;
   shortcuts?: MockShortcut[];
 }
+
+export interface MockHistoryRow {
+  id: string;
+  userId: string;
+  command: string;
+  detail: string | null;
+  ok: boolean;
+  errorCode: string | null;
+  occurredAt: string;
+}
+
+/** A lista de fábrica do Modo Foco que a API devolve em `defaults` (a mesma do agente). */
+export const FOCUS_DEFAULTS = [
+  'com.google.android.youtube.tv',
+  'com.netflix.ninja',
+  'com.amazon.amazonvideo.livingroom',
+];
 
 export interface MockShortcut {
   id: string;
@@ -152,7 +173,6 @@ function requiredPermission(method: string, path: string): string | null {
   }
   if (method === 'GET' && path === '/permission') return 'module:tv';
   if (method === 'POST' && path === '/permission/request') return 'tv:control';
-  if (method === 'GET' && path === '/commands/recent') return 'tv:history';
   if (method === 'GET' && path === '/cleanup/latest') return 'tv:control';
   if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
     return 'tv:control';
@@ -313,6 +333,21 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
         mock.denied.push({ method, path, body, tvId });
         return problem(route, { status: 403, kind: 'forbidden' });
       }
+    }
+
+    // O histórico é só do administrador: as demais contas recebem 403 e a recusa fica registrada.
+    if (method === 'GET' && path === '/commands/recent') {
+      if (identity.role !== 'owner') {
+        mock.denied.push({ method, path, body, tvId });
+        return problem(route, { status: 403, kind: 'forbidden' });
+      }
+      const found = mock.tvs?.find((tv) => tv.id === tvId);
+      if (mock.tvs && !found) return problem(route, { status: 404, kind: 'not-found' });
+      return json(
+        route,
+        200,
+        (found?.history ?? []).map((row) => ({ ...row, byMe: false })),
+      );
     }
 
     // Várias TVs: a lista, a administração (só do dono, com a passkey) e a escolha de qual TV responde cada pedido.
@@ -539,10 +574,24 @@ async function handleTvs(
     return true;
   }
 
-  const target = /^\/tvs(?:\/([^/]+)(\/members|\/cleanup-reports|\/apps)?)?$/.exec(path);
+  const target = /^\/tvs(?:\/([^/]+)(\/members|\/cleanup-reports|\/apps|\/focus-catalog)?)?$/.exec(
+    path,
+  );
   if (!target) return false;
   if (!owner) {
     await problem(route, { status: 403, kind: 'forbidden' });
+    return true;
+  }
+
+  // As TVs que cada conta pedida vê (a mesma regra de `visibleTvs`, aqui por conta e não pela sessão aberta).
+  if (method === 'GET' && target[1] === 'access') {
+    const asked = new URL(route.request().url()).searchParams.getAll('userId');
+    const items = asked.map((userId) => {
+      const own = tvs.filter((tv) => (mock.members[tv.id] ?? []).includes(userId));
+      const visible = own.length > 0 ? own : tvs.filter((tv) => tv.isDefault);
+      return { userId, tvIds: visible.map((tv) => tv.id) };
+    });
+    await json(route, 200, { items });
     return true;
   }
   const writes = method !== 'GET';
@@ -616,6 +665,11 @@ async function handleTvs(
     if (typeof body?.['focusClosesBackground'] === 'boolean') {
       found.focusClosesBackground = body['focusClosesBackground'];
     }
+    if (Array.isArray(body?.['focusPackages'])) {
+      const list = (body['focusPackages'] as string[]).slice().sort();
+      const same = JSON.stringify(list) === JSON.stringify([...FOCUS_DEFAULTS].sort());
+      found.focusPackages = same ? undefined : list;
+    }
     await json(route, 200, summary(found));
     return true;
   }
@@ -639,6 +693,15 @@ async function handleTvs(
         label: shortcut.customLabel ?? shortcut.tvLabel ?? shortcut.package,
       }));
     await json(route, 200, { items });
+    return true;
+  }
+
+  if (target[2] === '/focus-catalog' && method === 'GET') {
+    await json(route, 200, {
+      packages: found.focusPackages ?? FOCUS_DEFAULTS,
+      defaults: FOCUS_DEFAULTS,
+      isCustom: found.focusPackages !== undefined,
+    });
     return true;
   }
 
