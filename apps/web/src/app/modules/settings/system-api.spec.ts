@@ -232,6 +232,20 @@ describe('SystemApi', () => {
     expect((await change).focusClosesBackground).toBe(true);
   });
 
+  it('sends the maintenance switch and reads it back, on unless the API says off', async () => {
+    const change = api.updateTv('tv-2', { autoMaintenanceEnabled: false });
+    const request = http.expectOne('/api/v1/tv/tvs/tv-2');
+    expect(request.request.body).toEqual({ autoMaintenanceEnabled: false });
+    request.flush({ ...TV, id: 'tv-2', autoMaintenanceEnabled: false });
+    expect((await change).autoMaintenanceEnabled).toBe(false);
+
+    const read = api.tvs();
+    http
+      .expectOne('/api/v1/tv/tvs')
+      .flush({ items: [{ ...TV, id: 'tv-3', autoMaintenanceEnabled: true }] });
+    expect((await read)[0]?.autoMaintenanceEnabled).toBeUndefined();
+  });
+
   it('lists the apps from the inventory of the TV being edited', async () => {
     const read = api.tvApps('tv-2');
     const request = http.expectOne('/api/v1/tv/tvs/tv-2/apps');
