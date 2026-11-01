@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Persistence;
@@ -192,6 +195,16 @@ internal sealed partial class AgentDiagnosticsStore(DevicesDbContext db, TimePro
         }
     }
 
+    /// <summary>
+    /// A retenção de tempo vale para todos os agentes, não só para quem ainda envia: um agente que parou de reportar não pode
+    /// deixar diagnósticos no banco além dos 7 dias. Devolve quantas linhas saíram.
+    /// </summary>
+    public async Task<int> PurgeExpiredAsync(CancellationToken cancellationToken)
+    {
+        var floor = time.GetUtcNow() - DiagnosticsLimits.Retention;
+        return await db.AgentDiagnosticEvents.Where(e => e.At < floor).ExecuteDeleteAsync(cancellationToken);
+    }
+
     [GeneratedRegex("^[a-z0-9][a-z0-9_.]{1,47}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
     private static partial Regex KindPattern();
 
@@ -250,4 +263,42 @@ internal static class AgentDiagnosticsEndpoint
         http.Response.Headers.CacheControl = "no-store";
         return TypedResults.Ok(await handler.ListAsync(wanted, cancellationToken));
     }
+}
+
+/// <summary>Apaga de hora em hora o que passou da retenção, de todos os agentes (ver <see cref="AgentDiagnosticsStore.PurgeExpiredAsync"/>).</summary>
+internal sealed partial class AgentDiagnosticsPurgeWorker(IServiceScopeFactory scopes, TimeProvider time, ILogger<AgentDiagnosticsPurgeWorker> logger)
+    : BackgroundService
+{
+    public static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(Interval, time);
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await using var scope = scopes.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<AgentDiagnosticsStore>().PurgeExpiredAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+#pragma warning disable CA1031 // A limpeza tenta de novo na próxima hora; nunca derruba o host.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                LogFailure(logger, ex.GetType().Name);
+            }
+
+            if (!await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                break;
+            }
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao apagar os diagnósticos vencidos dos agentes ({Error}).")]
+    private static partial void LogFailure(ILogger logger, string error);
 }

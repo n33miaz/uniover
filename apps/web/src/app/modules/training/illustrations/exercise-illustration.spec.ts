@@ -55,6 +55,29 @@ describe('ExerciseIllustration', () => {
     expect(states).toEqual(['ready']);
   });
 
+  it('shows a single-pose figure still: one image, no button and no flipping, even after a tap or time', () => {
+    create('prancha', 'Prancha');
+    expect(images().map((img) => img.getAttribute('src'))).toEqual([
+      '/exercise-art/oea-plank.webp',
+    ]);
+    expect(button()).toBeNull();
+    const card = el().querySelector<HTMLElement>('[role="img"]')!;
+    expect(card.getAttribute('aria-label')).toBe('Prancha, ilustração');
+    expect(visible()).toHaveLength(1);
+    el().querySelector<HTMLElement>('.card')!.click();
+    vi.advanceTimersByTime(FRAME_INTERVAL_MS * 3);
+    fixture.detectChanges();
+    expect(visible()).toEqual(images());
+    expect(states).toEqual(['ready']);
+  });
+
+  it('keeps a single-pose figure still with reduced motion too', () => {
+    reduced.set(true);
+    create('prancha', 'Prancha');
+    expect(button()).toBeNull();
+    expect(visible()).toHaveLength(1);
+  });
+
   it('alternates the light WebP poses in movement order', () => {
     create('puxada-aberta-na-polia', 'Puxada aberta na polia');
     expect(images().map((img) => img.getAttribute('src'))).toEqual([
@@ -170,8 +193,8 @@ describe('ExerciseIllustration', () => {
   });
 
   it('never shows the figure of another exercise for an unknown slug', () => {
-    create('abdominal-na-polia');
-    expect(illustrationFor('abdominal-na-polia')).toBeUndefined();
+    create('abdominal-completo');
+    expect(illustrationFor('abdominal-completo')).toBeUndefined();
     expect(el().querySelector('img')).toBeNull();
   });
 

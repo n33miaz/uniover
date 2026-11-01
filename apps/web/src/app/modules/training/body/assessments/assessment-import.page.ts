@@ -71,15 +71,15 @@ const ALLOWED_IMAGE_TYPES = new Set([
   template: `
     <div class="page" aria-labelledby="title">
       <header>
-        <p class="eyebrow" i18n="@@training.assessments.import-eyebrow">Prévia antes de gravar</p>
+        <p class="eyebrow" i18n="@@training.assessments.import-eyebrow">Prévia Antes de Gravar</p>
         <h1 id="title" i18n="@@training.assessments.import-title">Importar Avaliação</h1>
       </header>
       <p class="explanation" i18n="@@training.assessments.import-help">
-        Escolha um JSON exportado por uma avaliação do UniOver. Confira a procedência e marque cada
-        campo que deseja guardar. Nada é importado sem sua confirmação.
+        Escolha o arquivo exportado pelo UniOver e marque o que deseja guardar. Nada é importado sem
+        a sua confirmação.
       </p>
       <label class="file-label" for="assessment-file" i18n="@@training.assessments.choose-json"
-        >Escolher arquivo JSON</label
+        >Escolher Arquivo JSON</label
       >
       <input
         id="assessment-file"
@@ -304,6 +304,19 @@ const ALLOWED_IMAGE_TYPES = new Set([
     input[type='file'] {
       width: 100%;
       min-height: 44px;
+      color: var(--a-ink2);
+      font: inherit;
+    }
+    input[type='file']::file-selector-button {
+      min-height: 44px;
+      margin-right: var(--space-3);
+      padding: 0 var(--space-4);
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius);
+      background: var(--a-surface);
+      color: var(--a-ink);
+      font: inherit;
+      font-weight: 700;
     }
     .preview-card,
     fieldset {

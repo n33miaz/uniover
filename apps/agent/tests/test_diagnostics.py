@@ -44,6 +44,9 @@ class MemoryStore:
         taken, self.events = self.events[:limit], self.events[limit:]
         return taken
 
+    def confirm(self, events: list[DiagnosticEvent]) -> None:
+        """Em memória o `take` já tirou o lote; não há o que confirmar."""
+
     def put_back(self, events: list[DiagnosticEvent]) -> None:
         self.events = events + self.events
 
@@ -394,4 +397,4 @@ def test_scrub_personal_keeps_ordinary_text_and_removes_known_names_case_insensi
     # Nome curto demais não vira regra (apagaria pedaços de palavras comuns).
     assert scrub_personal("ele abriu", ["el"]) == "ele abriu"
     assert scrub_personal("rede fe80::1ff:fe23:4567:890a") == "rede <ip>"
-    assert scrub_personal("/home/fulano/x e /Users/ciclano/y") == "<caminho> e <caminho>"
+    assert scrub_personal("/home/fulano/x, /Users/ciclano/y") == "<caminho>, <caminho>"

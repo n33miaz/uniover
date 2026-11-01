@@ -380,7 +380,7 @@ export class LiveSession {
         this.sheet.set(null);
         await this.live.skipCurrent();
         this.live.say(
-          $localize`:@@training.live.skipped-say:Exercício pulado. Para voltar a ele, abra Exercícios do treino.`,
+          $localize`:@@training.live.skipped-say:Exercício pulado. Volte a ele em Exercícios do Treino.`,
           'info',
         );
         break;

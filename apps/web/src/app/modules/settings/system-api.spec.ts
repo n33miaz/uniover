@@ -391,4 +391,12 @@ describe('SystemApi', () => {
       { userId: 'u2', tvIds: [] },
     ]);
   });
+
+  it('reads the deployed version from the health route, outside the versioned API prefix', async () => {
+    const read = api.deploymentVersion();
+    const request = http.expectOne('/health/version');
+    expect(request.request.method).toBe('GET');
+    request.flush({ commit: 'abc', version: '0.33.0' });
+    expect(await read).toEqual({ commit: 'abc', version: '0.33.0' });
+  });
 });

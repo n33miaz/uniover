@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from .launcher_isolation import isolated_launcher
+from .support import powershell_write_atomic, read_text_retrying
 
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
@@ -28,8 +29,8 @@ BAD = "d" * 40
 
 def stub(tag: str) -> str:
     """Supervisor de mentira: anota quem foi iniciado e fica vivo até o teste o encerrar."""
-    write = f"Set-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value '{tag}'"
-    return write + "\nStart-Sleep -Seconds 120\n"
+    write = powershell_write_atomic("$env:UNIOVER_TEST_MARKER", f"'{tag}'")
+    return write + "Start-Sleep -Seconds 120\n"
 
 
 def folder(base: Path, name: str, tag: str, sha: str | None, *, complete: bool = True) -> Path:
@@ -65,7 +66,7 @@ def run_launcher(tmp_path: Path, *, until: Callable[[], bool] | None = None) -> 
                 break
             time.sleep(0.1)
         assert base.is_dir()
-        return marker.read_text(encoding="utf-8-sig").strip() if marker.exists() else ""
+        return read_text_retrying(marker, encoding="utf-8-sig").strip() if marker.exists() else ""
     finally:
         subprocess.run(  # noqa: S603 - taskkill do sistema, só para encerrar o que o teste abriu
             [str(TASKKILL), "/PID", str(launcher.pid), "/T", "/F"],

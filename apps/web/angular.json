@@ -25,13 +25,13 @@
                 "input": "public"
               },
               {
-                "glob": "**/*.svg",
-                "input": "assets-third-party/everkinetic/svg",
+                "glob": "**/*.webp",
+                "input": "assets-derived/everkinetic",
                 "output": "/exercise-art"
               },
               {
                 "glob": "**/*.webp",
-                "input": "assets-derived/everkinetic",
+                "input": "assets-derived/open-exercise-art",
                 "output": "/exercise-art"
               }
             ],

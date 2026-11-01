@@ -140,7 +140,8 @@ internal sealed class RefreshHandler(
         var (secret, newHash) = SecretTokens.Generate();
         var expiresAt = policy.ExpiryFor(now, familyStartedAt);
         var next = RefreshToken.Create(
-            token.UserId, token.FamilyId, newHash, now, expiresAt, command.Client.Ip, command.Client.UserAgent);
+            token.UserId, token.FamilyId, newHash, now, expiresAt, command.Client.Ip, command.Client.UserAgent,
+            command.Client.Platform, command.Client.Installed);
 
         // O UPDATE condicional é o que garante UM vencedor quando duas requisições giram o mesmo token ao
         // mesmo tempo: só quem encontra used_at e revoked_at vazios consegue marcar.

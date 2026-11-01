@@ -29,6 +29,40 @@
         ],
         "type": "object"
       },
+      "AccountPreferencesResponse": {
+        "properties": {
+          "home": {
+            "items": {
+              "$ref": "#/components/schemas/HomeEntryDto"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "version": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "updatedAt",
+          "home"
+        ],
+        "type": "object"
+      },
       "AgentAlert": {
         "properties": {
           "agentId": {
@@ -38,12 +72,21 @@
           "agentName": {
             "type": "string"
           },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "detectedAt": {
             "format": "date-time",
             "type": "string"
           },
           "id": {
             "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
             "type": "string"
           },
           "lastSeenAt": {
@@ -67,7 +110,9 @@
           "agentName",
           "detectedAt",
           "lastSeenAt",
-          "recoveredAt"
+          "recoveredAt",
+          "kind",
+          "detail"
         ],
         "type": "object"
       },
@@ -1818,6 +1863,12 @@
       },
       "DevicesModuleInfo": {
         "properties": {
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "module": {
             "type": "string"
           },
@@ -1827,7 +1878,8 @@
         },
         "required": [
           "module",
-          "version"
+          "version",
+          "features"
         ],
         "type": "object"
       },
@@ -2216,6 +2268,39 @@
           "disabledAt",
           "pausedAt",
           "permissions"
+        ],
+        "type": "object"
+      },
+      "HomeEntry": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "HomeEntryDto": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "enabled"
         ],
         "type": "object"
       },
@@ -2631,6 +2716,24 @@
         ],
         "type": "object"
       },
+      "PersonHome": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/HomeEntry"
+            },
+            "type": "array"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "entries"
+        ],
+        "type": "object"
+      },
       "PersonUsage": {
         "properties": {
           "activeSessions": {
@@ -2650,6 +2753,9 @@
           },
           "displayName": {
             "type": "string"
+          },
+          "home": {
+            "$ref": "#/components/schemas/PersonHome"
           },
           "id": {
             "format": "uuid",
@@ -2680,7 +2786,8 @@
           "lastAccessAt",
           "activeSessions",
           "tvCommands",
-          "workouts"
+          "workouts",
+          "home"
         ],
         "type": "object"
       },
@@ -3707,6 +3814,33 @@
         ],
         "type": "object"
       },
+      "SavePreferencesRequest": {
+        "properties": {
+          "baseVersion": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "home": {
+            "items": {
+              "$ref": "#/components/schemas/HomeEntryDto"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "baseVersion",
+          "home"
+        ],
+        "type": "object"
+      },
       "SaveSystemSettingRequest": {
         "properties": {
           "value": {
@@ -3853,6 +3987,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "installed": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
           "ip": {
             "type": [
               "null",
@@ -3865,6 +4005,12 @@
           "lastUsedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "platform": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "userAgent": {
             "type": [
@@ -8787,6 +8933,118 @@
         },
         "tags": [
           "UpdateProfileEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/me/preferences": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountPreferencesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "PreferencesEndpoint"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavePreferencesRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountPreferencesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountPreferencesResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "PreferencesEndpoint"
         ]
       }
     },
@@ -14460,6 +14718,9 @@
     },
     {
       "name": "UpdateProfileEndpoint"
+    },
+    {
+      "name": "PreferencesEndpoint"
     },
     {
       "name": "AuditEndpoints"

@@ -175,6 +175,7 @@ describe('PowerSheet', () => {
     });
 
     it('with a schedule shows "Desliga às HH:MM" and the time left, and cancels it without sending POWER', async () => {
+      // Perto da meia-noite o horário cai no dia seguinte e o texto traz a data antes da hora.
       store.powerSchedule.set({
         id: 'schedule',
         dueAtUtc: new Date(Date.now() + 65 * 60_000).toISOString(),
@@ -186,7 +187,7 @@ describe('PowerSheet', () => {
       });
       fixture.detectChanges();
       const active = row().querySelector('.schedule-active')!;
-      expect(active.textContent).toMatch(/Desliga às \d{2}:\d{2}/);
+      expect(active.textContent).toMatch(/Desliga às (\d{2}\/\d{2}\/\d{2,4},? )?\d{2}:\d{2}/);
       expect(active.querySelector('.left')?.textContent).toMatch(/^em 1 h [56] min$/);
       named('Cancelar Agendamento').click();
       await fixture.whenStable();

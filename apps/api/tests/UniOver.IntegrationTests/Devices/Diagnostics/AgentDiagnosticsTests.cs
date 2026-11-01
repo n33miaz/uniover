@@ -149,6 +149,20 @@ public sealed class AgentDiagnosticsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task RetentionByTimeAlsoAppliesToAnAgentThatStoppedReporting()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+        await agent.SendTextAsync(agent.Envelope("agent.diagnostics.v1", Batch(Event(Guid.NewGuid(), app.App.Time.GetUtcNow(), detail: "abandonado"))));
+        await WaitForCountAsync(app, 1);
+
+        // Nenhum lote novo: só o tempo passa, e a limpeza periódica do servidor apaga o vencido.
+        app.App.Time.Advance(TimeSpan.FromDays(8));
+
+        await TransportApp.WaitUntilAsync(async () => await CountAsync(app) == 0, "a limpeza periódica apagar o vencido sem novo envio");
+    }
+
+    [Fact]
     public async Task RetentionByCountKeepsOnlyTheNewestThreeHundredPerAgent()
     {
         await using var app = await TransportApp.StartAsync(postgres);

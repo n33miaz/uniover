@@ -116,6 +116,9 @@ def test_installer_migrates_the_old_layout_and_creates_the_user_facing_files() -
         assert old in installer and new in installer
     assert "LEIA-ME.txt" in installer
     assert "UniOver.lnk" in installer
+    # Desinstalar tira o atalho que traz o ícone da bandeja de volta (o supervisor o cria).
+    uninstall = installer.split("if ($Uninstall) {", 1)[1].split("exit 0", 1)[0]
+    assert "UniOver Agente.lnk" in uninstall
 
 
 def test_powershell_scripts_are_ascii_and_parse_in_windows_powershell() -> None:
@@ -157,7 +160,7 @@ def test_the_tray_never_holds_the_executable_that_the_sync_replaces() -> None:
     sync_body = runner.split("function Sync-Agent", 1)[1].split("function ", 1)[0]
     assert sync_body.lstrip().split("\n", 1)[1].strip().startswith("Stop-VenvUsers")
     loop = runner.split("while ($true) {", 1)[1]
-    assert loop.index("Sync-Agent $uv") < loop.index("Start-Tray $uv")
+    assert loop.index("Sync-Agent $uv") < loop.index("Update-Tray $uv")
     startup_update = loop.split("$updated = Invoke-Update $uv", 1)[1].split("exit 42", 1)[0]
     assert "taskkill.exe /PID $tray.Id /T /F" in startup_update
 

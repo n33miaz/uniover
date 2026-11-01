@@ -10,19 +10,24 @@ internal sealed record ClientInfo(
     string? UserAgent,
     string? DeviceKey = null,
     string? RecoveryChallenge = null,
-    string? RecoveryProof = null)
+    string? RecoveryProof = null,
+    string? Platform = null,
+    bool? Installed = null)
 {
     public static ClientInfo From(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
 
         // O IP já vem corrigido pelos forwarded headers quando ligados; o User-Agent é texto do cliente e é truncado na gravação.
+        var env = ClientEnv.Parse(Header(http, ClientEnv.Header));
         return new ClientInfo(
             http.Connection.RemoteIpAddress?.ToString(),
             http.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent ? agent : null,
             Header(http, DeviceProof.KeyHeader),
             Header(http, DeviceProof.ChallengeHeader),
-            Header(http, DeviceProof.ProofHeader));
+            Header(http, DeviceProof.ProofHeader),
+            env?.Platform,
+            env?.Installed);
     }
 
     private static string? Header(HttpContext http, string name) =>

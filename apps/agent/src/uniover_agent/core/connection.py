@@ -71,7 +71,7 @@ class ConnectionSupervisor:
         random: Callable[[], float],
         *,
         agent_version: str,
-        capabilities: Sequence[str],
+        capabilities: Sequence[str] | Callable[[], Sequence[str]],
         policy: BackoffPolicy | None = None,
         on_connected: Callable[[], Awaitable[None]] | None = None,
         on_disconnected: Callable[[], None] | None = None,
@@ -86,7 +86,9 @@ class ConnectionSupervisor:
         self._envelopes = envelopes
         self._clock = clock
         self._agent_version = agent_version
-        self._capabilities = tuple(capabilities)
+        # Pode ser uma função: o `hello` (repetido a cada 5 minutos) passa a declarar uma capacidade
+        # nova assim que a API disser que a aceita, sem reiniciar o agente.
+        self._capabilities = capabilities
         self._policy = policy or BackoffPolicy()
         self._random = random
         self._backoff = Backoff(self._policy, random)
@@ -101,6 +103,10 @@ class ConnectionSupervisor:
         # Lido a cada `hello`: o estado da auto-atualização muda com o tempo.
         self._update_status = update_status
 
+    def _declared(self) -> tuple[str, ...]:
+        source = self._capabilities
+        return tuple(source() if callable(source) else source)
+
     def _hello(self) -> dict[str, Any]:
         update: dict[str, Any] | None = None
         if self._update_status is not None:
@@ -111,7 +117,7 @@ class ConnectionSupervisor:
         try:
             return self._envelopes.hello(
                 self._agent_version,
-                self._capabilities,
+                self._declared(),
                 os_description=self._os_description,
                 tv=self._tv,
                 update=update,
@@ -123,7 +129,7 @@ class ConnectionSupervisor:
             _log.warning("estado da atualização fora do contrato; o hello segue sem ele")
             return self._envelopes.hello(
                 self._agent_version,
-                self._capabilities,
+                self._declared(),
                 os_description=self._os_description,
                 tv=self._tv,
             )

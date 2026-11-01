@@ -1,5 +1,11 @@
 <p class="credit">
-  <span i18n="@@training.art.credit">Ilustração: Everkinetic (Greg Priday),</span>&ngsp;<a
+  @if (openArt()) {
+    <span i18n="@@training.art.credit-open">Ilustração: Open Exercise Art (Alex Mollard),</span
+    >&ngsp;
+  } @else {
+    <span i18n="@@training.art.credit">Ilustração: Everkinetic (Greg Priday),</span>&ngsp;
+  }
+  <a
     class="link"
     [href]="licenseUrl"
     target="_blank"

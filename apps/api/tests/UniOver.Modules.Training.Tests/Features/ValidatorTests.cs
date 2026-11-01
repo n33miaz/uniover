@@ -94,7 +94,7 @@ public class UpsertCustomExerciseValidatorTests
     [Fact]
     public void Equipment_AndRecordType_MustBeFromTheClosedSets()
     {
-        Run(Valid() with { Equipment = "kettlebell" }, out _).Should().ContainKey("equipment");
+        Run(Valid() with { Equipment = "trampolim" }, out _).Should().ContainKey("equipment");
         Run(Valid() with { Equipment = null }, out _).Should().ContainKey("equipment");
         Run(Valid() with { RecordType = "distance" }, out _).Should().ContainKey("recordType");
         Run(Valid() with { RecordType = null }, out _).Should().ContainKey("recordType");

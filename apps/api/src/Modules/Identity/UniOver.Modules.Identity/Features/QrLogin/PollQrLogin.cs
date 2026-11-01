@@ -137,7 +137,8 @@ internal sealed class PollQrLoginHandler(
         var (secret, secretHash) = SecretTokens.Generate();
         var expiresAt = settings.Refresh.ExpiryFor(now, now);
         db.RefreshTokens.Add(RefreshToken.Create(
-            userId, familyId, secretHash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
+            userId, familyId, secretHash, now, expiresAt, command.Client.Ip, command.Client.UserAgent,
+            command.Client.Platform, command.Client.Installed));
         DeviceKeyRegistration.Add(db, familyId, userId, command.Client, now);
         audit.Add(userId, AuditEvents.QrLoginSucceeded, command.Client, request.Id.ToString("N"));
         await db.SaveChangesAsync(cancellationToken);

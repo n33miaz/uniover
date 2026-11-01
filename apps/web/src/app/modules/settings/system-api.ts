@@ -243,7 +243,7 @@ export class SystemApi {
 
   /** O endpoint de saúde é público e não lê dados da conta. */
   deploymentVersion(): Promise<DeploymentVersion> {
-    return firstValueFrom(this.http.get<DeploymentVersion>(`${APP_CONFIG.healthPath}/version`));
+    return firstValueFrom(this.http.get<DeploymentVersion>('/health/version'));
   }
 
   saveSystemSetting(

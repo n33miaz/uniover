@@ -1,38 +1,68 @@
 /**
- * Ilustrações dos exercícios (Everkinetic, CC BY-SA 4.0). Os originais (SVG e PNG) ficam sem modificação em
- * `assets-third-party/everkinetic/`; os PNG são publicados na versão adaptada (WebP leve, em `assets-derived/everkinetic/`,
- * com aviso próprio das mudanças). Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
- * e mesmo equipamento) aponta para o par de poses; o que não está aqui não mostra imagem nenhuma. Na dúvida, fica
- * de fora: nunca se usa a figura de outro exercício.
+ * Ilustrações dos exercícios, de duas origens, ambas CC BY-SA 4.0:
+ * - Everkinetic: pares de duas poses (início e fim). Os originais (SVG e PNG) ficam sem modificação em
+ *   `assets-third-party/everkinetic/`; o app publica a versão adaptada (WebP leve de 536x550, mesmo recorte nas duas
+ *   poses, em `assets-derived/everkinetic/`, com aviso próprio das mudanças).
+ * - Open Exercise Art: uma pose só por exercício. Os SVG originais ficam em `assets-third-party/open-exercise-art/`; o app
+ *   publica a adaptação (WebP de 536x550 com o mesmo enquadramento, em `assets-derived/open-exercise-art/`).
+ *
+ * Cada exercício do catálogo que tem uma figura aponta para ela; o que não está aqui não mostra imagem nenhuma. A regra é
+ * a figura do MESMO movimento e do mesmo equipamento. Uma figura de exercício equivalente (outro implemento, mesma
+ * pegada ou mesmo gesto) só entra por escolha explícita, marcada com `variation`, e pode repetir o par de outro exercício.
  */
 
-/** Uma ilustração de dois quadros: a pose do início e a do fim do movimento. */
+/** De onde vem a figura (cada origem tem seu crédito). */
+export type ArtSource = 'everkinetic' | 'open-exercise-art';
+
+/** Uma ilustração: a pose do início e a do fim do movimento, ou uma pose só quando a origem tem uma única. */
 export interface ExerciseIllustrationEntry {
   /** Título do exercício na origem (em inglês), para o crédito. */
   readonly title: string;
-  /** Nomes de arquivo (em `/exercise-art/`) da pose inicial e da final. */
-  readonly frames: readonly [string, string];
-  /** Onde o arquivo da primeira pose está na origem, no commit fixado. */
+  /** Nomes de arquivo (em `/exercise-art/`), sempre WebP: duas poses, ou uma só (`poses: 1`). */
+  readonly frames: readonly [string] | readonly [string, string];
+  /** Onde o arquivo original da primeira pose está na origem, no commit fixado. */
   readonly sourceUrl: string;
+  /** Origem da figura. */
+  readonly source: ArtSource;
+  /** Verdadeiro quando a figura é de um exercício equivalente, não do mesmo exercício. */
+  readonly variation?: true;
 }
 
-/** Commit do repositório de origem de onde os arquivos foram obtidos (o mesmo do NOTICE). */
+/** Commit do repositório do Everkinetic de onde os arquivos foram obtidos (o mesmo do NOTICE). */
 export const EVERKINETIC_COMMIT = '446bb9a3d0c3beb6b84f7c9d77dfc8af707a2ab6';
+
+/** Commit do repositório do Open Exercise Art de onde os arquivos foram obtidos (o mesmo do NOTICE). */
+export const OPEN_ART_COMMIT = '0f11ea4680746970e58b83448cdcdb64e4fc2793';
 
 /** Pasta pública (mesma origem) de onde o app serve os arquivos. */
 export const EXERCISE_ART_BASE = '/exercise-art/';
 
-function art(title: string, id: string): ExerciseIllustrationEntry {
+/** Prefixo dos arquivos do Open Exercise Art (separa os nomes dos do Everkinetic na pasta pública). */
+export const OPEN_ART_PREFIX = 'oea-';
+
+function art(title: string, id: string, variation = false): ExerciseIllustrationEntry {
   return {
     title,
-    frames: [`${id}-relaxation.svg`, `${id}-tension.svg`],
+    frames: [`${id}-relaxation.webp`, `${id}-tension.webp`],
     sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/dist/svg/${id}-relaxation.svg`,
+    source: 'everkinetic',
+    ...(variation ? { variation: true as const } : {}),
+  };
+}
+
+/** Figura do Open Exercise Art: `slug` é o do repositório de origem; sai uma pose só. */
+function openArt(title: string, slug: string): ExerciseIllustrationEntry {
+  return {
+    title,
+    frames: [`${OPEN_ART_PREFIX}${slug}.webp`],
+    sourceUrl: `https://github.com/AlexMollard/Open-Exercise-Art/blob/${OPEN_ART_COMMIT}/svg/${slug}.svg`,
+    source: 'open-exercise-art',
   };
 }
 
 /**
- * Alguns exercícios só têm o par original em PNG no repositório da origem. O app publica a adaptação leve em WebP (mesmo
- * nome, recorte único do par, proporção dos SVG); o crédito aponta para o PNG original.
+ * Alguns exercícios só têm o par original em PNG no repositório da origem. A adaptação leve em WebP tem o nome do PNG
+ * (recorte único do par, mesma proporção de todas as figuras); o crédito aponta para o PNG original.
  */
 function pngArt(
   title: string,
@@ -44,10 +74,11 @@ function pngArt(
     title,
     frames,
     sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/src/images-web/${name}-${order[0]}.png`,
+    source: 'everkinetic',
   };
 }
 
-/** `slug` do catálogo -> ilustração. Um par de arquivos por exercício, nunca repetido. */
+/** `slug` do catálogo -> ilustração. Só as variações (`variation`) repetem a figura de outro exercício. */
 export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustrationEntry>> = {
   'abdominal-com-pernas-na-bola': art('Crunches with Legs on Stability Ball', '0290'),
   'abdominal-crunch': art('Crunches', '0291'),
@@ -233,6 +264,114 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
     'standing-one-arm-triceps-extension-with-dumbbell',
   ),
   'elevacao-de-perna-para-tras-em-pe': art('Body Leg Lifts', '0111'),
+  // Na origem a figura é a da rosca em banco inclinado, palmas para cima (o texto da origem pede exatamente isso).
+  'rosca-inclinada-com-halteres': art('Flexor Incline Curls with Dumbbell', '0228'),
+  // Mesma posição no banco, mas com as palmas voltadas para o corpo, sem girar o punho: a rosca martelo.
+  'rosca-martelo-inclinada-com-halteres': art('Incline Inner Biceps Curl with Dumbbell', '0231'),
+  // Remada com um joelho e a mão no banco, halter puxado até o tronco; o título de origem destaca o ombro posterior.
+  'remada-unilateral-com-halter': art('Rear Deltoid Row Dumbbell', '0024', true),
+  // Figuras do Everkinetic escolhidas para exercícios equivalentes (`true`): mesma pegada ou mesmo gesto, outro implemento ou posição.
+  'barra-fixa-com-pegada-neutra': art('Narrow Parallel Grip Chin-ups', '0090', true),
+  'afundo-com-halteres': art('Walking Lunges', '0121', true),
+  'abdominal-na-polia': art('Seated Ab Crunch with Cable', '0288', true),
+  'rosca-inversa-com-barra': art('Biceps Curl Reverse with Dumbbells', '0257', true),
+  'stiff-com-halteres': art('Dumbbell Dead Lifts', '0107', true),
+  'crucifixo-inverso-na-polia': art('Seated Rear Lateral Cable Raise', '0035', true),
+  'stiff-com-barra': art('Romanian Dead Lift', '0118', true),
+  'supino-articulado-na-maquina': art('Machine Bench Press', '0066', true),
+  'remada-curvada-com-barra': art('Reverse Grips Bent Over Barbell Rows', '0026', true),
+  'stiff-no-smith': art('Smith Machine Dead Lifts', '0100', true),
+  'superman-lombar-no-solo': art('Supermans', '0105'),
+  'rosca-com-elastico': art('Quick Alternating Biceps Curls with Band', '0261'),
+  // Open Exercise Art: uma pose só por figura.
+  'abdominal-com-rolo': openArt('Ab Wheel Rollout', 'ab-wheel-rollout'),
+  'passada-com-barra': openArt('Barbell Lunge', 'barbell-lunge'),
+  'passada-com-peso-do-corpo': openArt('Forward Lunge', 'forward-lunge'),
+  'abdominal-infra-no-chao': openArt('Reverse Crunch', 'reverse-crunch'),
+  'dead-bug-inseto-morto': openArt('Dead Bug', 'dead-bug'),
+  'lenhador-na-polia': openArt('Woodchop', 'woodchop'),
+  'pallof-na-polia': openArt('Pallof Press', 'pallof-press'),
+  prancha: openArt('Plank', 'plank'),
+  'calf-press-na-maquina': openArt('Leg Press Calf Raise', 'leg-press-calf-raise'),
+  'flexao-de-bracos-com-maos-elevadas': openArt('Incline Push-up', 'incline-push-up'),
+  'flexao-de-bracos-pegada-aberta': openArt('Wide Push-up', 'wide-push-up'),
+  'rosca-de-punho-com-barra': openArt('Wrist Curl', 'wrist-curl'),
+  'rosca-de-punho-inversa-com-halteres': openArt('Wrist Extension', 'wrist-extension'),
+  'coice-de-gluteo-no-solo': openArt('Donkey Kick', 'donkey-kick'),
+  'elevacao-pelvica-com-barra': openArt('Hip Thrust', 'hip-thrust'),
+  'ponte-de-gluteos-com-barra': openArt('Barbell Glute Bridge', 'barbell-glute-bridge'),
+  'ponte-de-gluteos-unilateral': openArt('Single-Leg Glute Bridge', 'single-leg-glute-bridge'),
+  'pull-through-na-polia': openArt('Cable Pull-Through', 'cable-pull-through'),
+  'hiperextensao-reversa-na-maquina': openArt('Reverse Hyperextension', 'reverse-hyperextension'),
+  'levantamento-terra-sumo-com-barra': openArt('Sumo Deadlift', 'sumo-deadlift'),
+  'barra-fixa-com-peso': openArt('Weighted Pull-up', 'weighted-pull-up'),
+  'puxada-fechada-na-polia': openArt('Close-Grip Lat Pulldown', 'close-grip-lat-pulldown'),
+  'levantamento-terra-no-rack': openArt('Rack Pull', 'rack-pull'),
+  'remada-apoiada-no-banco-inclinado-com-halteres': openArt(
+    'Chest-Supported Row',
+    'chest-supported-row',
+  ),
+  'remada-curvada-com-halteres': openArt('Dumbbell Bent-Over Row', 'dumbbell-bent-over-row'),
+  'remada-curvada-no-smith': openArt('Smith Machine Row', 'smith-machine-row'),
+  'remada-invertida-com-fitas': openArt('Ring Row', 'ring-row'),
+  'afundo-no-smith': openArt('Smith Machine Split Squat', 'smith-machine-split-squat'),
+  'agachamento-livre-com-peso-do-corpo': openArt('Bodyweight Squat', 'bodyweight-squat'),
+  'agachamento-profundo-com-barra': openArt('Back Squat', 'back-squat'),
+  'crucifixo-inverso-com-halteres': openArt('Reverse Fly', 'reverse-fly'),
+  'crucifixo-inverso-na-maquina': openArt('Reverse Pec Deck', 'reverse-pec-deck'),
+  'desenvolvimento-militar-em-pe-com-barra': openArt('Overhead Press', 'overhead-press'),
+  'desenvolvimento-no-smith': openArt(
+    'Smith Machine Overhead Press',
+    'smith-machine-overhead-press',
+  ),
+  'elevacao-frontal-com-anilha': openArt('Plate Front Raise', 'plate-front-raise'),
+  'elevacao-lateral-unilateral-na-polia-baixa': openArt(
+    'Cable Lateral Raise',
+    'cable-lateral-raise',
+  ),
+  'face-pull-na-polia': openArt('Face Pull', 'face-pull'),
+  'rotacao-externa-com-halter': openArt('Dumbbell External Rotation', 'dumbbell-external-rotation'),
+  'elevacao-escapular-na-barra-fixa': openArt('Scapular Pull', 'scapular-pull'),
+  'triceps-frances-na-polia-com-corda': openArt(
+    'Overhead Cable Extension',
+    'overhead-cable-extension',
+  ),
+  'agachamento-bulgaro-com-halteres': openArt('Bulgarian Split Squat', 'bulgarian-split-squat'),
+  'agachamento-goblet': openArt('Goblet Squat', 'goblet-squat'),
+  'coice-de-gluteo-na-maquina': openArt('Machine Glute Kickback', 'machine-glute-kickback'),
+  'abducao-de-quadril-na-polia': openArt(
+    'Cable Standing Hip Abduction',
+    'cable-standing-hip-abduction',
+  ),
+  'stiff-unilateral-com-halter': openArt(
+    'Single-Leg Romanian Deadlift',
+    'single-leg-romanian-deadlift',
+  ),
+  'afundo-lateral': openArt('Lateral Lunge', 'lateral-lunge'),
+  'panturrilha-unilateral-no-degrau': openArt('Single-Leg Calf Raise', 'single-leg-calf-raise'),
+  'terra-com-barra-hexagonal': openArt('Trap Bar Deadlift', 'trap-bar-deadlift'),
+  'flexao-nordica': openArt('Nordic Curl', 'nordic-curl'),
+  'agachamento-na-parede': openArt('Wall Sit', 'wall-sit'),
+  'puxada-assistida-graviton': openArt('Assisted Pull-up', 'assisted-pull-up'),
+  'flexao-com-apoio-nos-joelhos': openArt('Knee Push-up', 'knee-push-up'),
+  'flexao-pike': openArt('Pike Push-up', 'pike-push-up'),
+  'elevacao-de-pernas-na-barra-fixa': openArt('Hanging Leg Raise', 'hanging-leg-raise'),
+  'escalador-mountain-climber': openArt('Mountain Climber', 'mountain-climber'),
+  'bird-dog': openArt('Bird Dog', 'bird-dog'),
+  'balanco-com-kettlebell-swing': openArt('Kettlebell Swing', 'kettlebell-swing'),
+  'pull-apart-com-elastico': openArt('Band Pull-Apart', 'band-pull-apart'),
+  'remada-sentada-com-elastico': openArt('Banded Row', 'banded-row'),
+  'agachamento-com-elastico': openArt('Banded Squat', 'banded-squat'),
+  'monster-walk-com-mini-band': openArt('Banded Monster Walk', 'banded-monster-walk'),
+  'clamshell-com-elastico': openArt('Banded Clamshell', 'banded-clamshell'),
+  burpee: openArt('Burpee', 'burpee'),
+  polichinelo: openArt('Jumping Jack', 'jumping-jack'),
+  'agachamento-com-salto': openArt('Jump Squat', 'jump-squat'),
+  'pular-corda': openArt('Skipping', 'skipping'),
+  esteira: openArt('Treadmill Incline Walk', 'treadmill-incline-walk'),
+  'bicicleta-ergometrica': openArt('Cycling', 'cycling'),
+  'eliptico-transport': openArt('Elliptical', 'elliptical'),
+  'remo-ergometrico': openArt('Rowing', 'rowing'),
 };
 
 /** A ilustração do exercício, ou `undefined` quando não há uma segura. */

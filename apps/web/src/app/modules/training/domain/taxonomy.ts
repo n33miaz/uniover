@@ -34,6 +34,9 @@ export const EQUIPMENT_IDS = [
   'machine',
   'cable',
   'bodyweight',
+  'kettlebell',
+  'band',
+  'cardio',
   'other',
 ] as const;
 export type EquipmentId = (typeof EQUIPMENT_IDS)[number];
@@ -72,6 +75,9 @@ export const DEFAULT_STEP_KG: Readonly<Record<EquipmentId, number>> = {
   machine: 5,
   cable: 5,
   bodyweight: 0,
+  kettlebell: 4,
+  band: 0,
+  cardio: 0,
   other: 0,
 };
 
@@ -140,6 +146,9 @@ const EQUIPMENT_LABELS: Readonly<Record<EquipmentId, () => string>> = {
   machine: () => $localize`:@@training.equipment.machine:Máquina`,
   cable: () => $localize`:@@training.equipment.cable:Polia`,
   bodyweight: () => $localize`:@@training.equipment.bodyweight:Peso do corpo`,
+  kettlebell: () => $localize`:@@training.equipment.kettlebell:Kettlebell`,
+  band: () => $localize`:@@training.equipment.band:Elástico`,
+  cardio: () => $localize`:@@training.equipment.cardio:Cardio`,
   other: () => $localize`:@@training.equipment.other:Outro`,
 };
 

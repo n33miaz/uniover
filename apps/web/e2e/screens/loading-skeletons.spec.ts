@@ -444,6 +444,12 @@ test.describe('esqueleto de espera: Treino', () => {
       await expect.poll(async () => (await watched(page)).seen, { timeout: 5000 }).toBe(true);
       await expect(page.locator(BUSY).first()).toBeAttached();
       await expectNoHorizontalScroll(page);
+      // O topo já é o da tela de verdade enquanto o banco abre: o título e a seta de voltar, no lugar de sempre.
+      const top = page.locator('app-page-top-bar');
+      await expect(top.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
+      await expect(top.getByRole('button', { name: 'Voltar' })).toBeVisible();
+      const arrow = await top.getByRole('button', { name: 'Voltar' }).boundingBox();
+      expect(arrow?.width ?? 0).toBeGreaterThanOrEqual(44);
 
       await expect(screen.done(page)).toBeVisible({ timeout: 25_000 });
       await expectNoWaitLeft(page);
@@ -456,6 +462,40 @@ test.describe('esqueleto de espera: Treino', () => {
           screen.maxShift ?? 0.1,
         );
       }
+    });
+  }
+
+  // A seta do esqueleto não é enfeite: com o banco ainda fechado ela já leva ao pai lógico da tela, no acesso direto.
+  const CHILD_BACK: readonly { name: string; path: string; parent: string }[] = [
+    {
+      name: 'ficha do exercício',
+      path: `/treino/exercicios/${SEED_EXERCISE_IDS.plank}`,
+      parent: '/treino/exercicios',
+    },
+    {
+      name: 'editor de rotina',
+      path: `/treino/rotinas/${SEED_ROUTINE_IDS.a}`,
+      parent: '/treino/rotinas',
+    },
+  ];
+  for (const child of CHILD_BACK) {
+    test(`${child.name}: com o banco fechado, tocar em Voltar leva ao pai também no acesso direto`, async ({
+      context,
+      page,
+    }) => {
+      const server = await mockTrainingApi(context);
+      seedTraining(server, {});
+
+      await slowTrainingDb(page, 4000);
+      await page.goto(child.path);
+
+      // Ainda em espera: o esqueleto está na tela e o banco local não abriu.
+      await expect(page.locator(BUSY).first()).toBeAttached();
+      const back = page.locator('app-page-top-bar').getByRole('button', { name: 'Voltar' });
+      await expect(back).toBeVisible();
+      await back.click();
+
+      await expect(page).toHaveURL(new RegExp(`${child.parent}$`));
     });
   }
 

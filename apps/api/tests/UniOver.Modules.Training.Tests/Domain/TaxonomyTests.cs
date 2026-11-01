@@ -56,6 +56,9 @@ public class TaxonomyTests
     [InlineData(Equipment.Machine, 5)]
     [InlineData(Equipment.Cable, 5)]
     [InlineData(Equipment.Bodyweight, 0)]
+    [InlineData(Equipment.Kettlebell, 4)]
+    [InlineData(Equipment.Band, 0)]
+    [InlineData(Equipment.Cardio, 0)]
     [InlineData(Equipment.Other, 0)]
     public void DefaultStep_FollowsTheOwnersChoice(string equipment, double expected)
     {
@@ -76,9 +79,9 @@ public class TaxonomyTests
     [Fact]
     public void DefaultStep_RejectsEquipmentOutsideTheClosedSet()
     {
-        var act = () => Equipment.DefaultStepKg("kettlebell");
+        var act = () => Equipment.DefaultStepKg("trampolim");
 
         act.Should().Throw<ArgumentOutOfRangeException>();
-        Equipment.IsValid("kettlebell").Should().BeFalse();
+        Equipment.IsValid("trampolim").Should().BeFalse();
     }
 }

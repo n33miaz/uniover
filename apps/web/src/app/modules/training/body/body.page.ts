@@ -21,12 +21,7 @@ import { BodyMapPanel } from './body-map-panel';
 import { BodyRegionHistorySheet } from './region-history-sheet';
 import type { BodyMapRegion } from '../domain/body/body-map-signals';
 import { WEIGHT_CHART_PROVIDER } from './weight/weight-chart-engine';
-import {
-  type WeightPeriod,
-  buildWeightChart,
-  formatWeightDateRange,
-  rowsInPeriod,
-} from './weight/weight-model';
+import { type WeightPeriod, buildWeightChart, rowsInPeriod } from './weight/weight-model';
 import { WeightSheet } from './weight/weight-sheet';
 import { BodySkeleton } from './body-skeleton';
 
@@ -120,11 +115,6 @@ type BodyView = 'summary' | 'records' | 'photos';
                 <p class="chart-caption" i18n="@@training.body.chart.caption">
                   Pontos: pesagens · linha: tendência
                 </p>
-                @if (spec.dataRange; as range) {
-                  <p class="chart-caption" i18n="@@training.body.chart.data-range">
-                    Intervalo exibido: {{ formatWeightDateRange(range[0], range[1]) }}
-                  </p>
-                }
                 <details class="chart-table">
                   <summary i18n="@@training.body.chart.table">Ver Dados do Período</summary>
                   @for (row of chartRows(); track row.id) {
@@ -147,9 +137,7 @@ type BodyView = 'summary' | 'records' | 'photos';
                 }
               }
             } @else {
-              <p class="muted" i18n="@@training.body.weight.empty">
-                Registre seu primeiro peso para acompanhar como ele muda ao longo do tempo.
-              </p>
+              <p class="muted" i18n="@@training.body.weight.empty">Registre seu primeiro peso.</p>
             }
           </section>
 
@@ -243,9 +231,7 @@ type BodyView = 'summary' | 'records' | 'photos';
                 }
               </div>
             } @else {
-              <p class="muted" i18n="@@training.body.weight.empty">
-                Registre seu primeiro peso para acompanhar como ele muda ao longo do tempo.
-              </p>
+              <p class="muted" i18n="@@training.body.weight.empty">Registre seu primeiro peso.</p>
             }
             <button type="button" class="primary ui-btn block" (click)="editing.set('new')">
               <span i18n="@@training.body.weight.add">Registrar Peso</span>
@@ -777,7 +763,6 @@ export class BodyPage {
   protected readonly formatPercent = formatPercent;
   protected readonly formatCm = formatCm;
   protected readonly formatDate = formatFullDate;
-  protected readonly formatWeightDateRange = formatWeightDateRange;
   protected readonly signedWeight = signedWeight;
 
   protected selectView(next: BodyView): void {

@@ -1,9 +1,11 @@
 """Apoio dos testes: envelopes válidos e um servidor WebSocket falso local (sem rede externa)."""
 
 import json
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
@@ -107,3 +109,28 @@ class FakeApi:
     @property
     def http_url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
+
+
+def powershell_write_atomic(path_expr: str, value_expr: str) -> str:
+    """Trecho de PowerShell que grava `value_expr` em `path_expr` de uma vez só.
+
+    Grava num temporário e renomeia: quem espera o arquivo aparecer nunca o encontra aberto para
+    escrita (no Windows, a leitura concorrente é negada) nem pela metade.
+    """
+    return (
+        f"$__marker = {path_expr}\n"
+        f"Set-Content -LiteralPath ($__marker + '.tmp') -Value {value_expr} -Encoding UTF8\n"
+        "Move-Item -LiteralPath ($__marker + '.tmp') -Destination $__marker -Force\n"
+    )
+
+
+def read_text_retrying(path: Path, *, encoding: str = "utf-8", seconds: float = 10.0) -> str:
+    """Lê o arquivo; se o Windows negar por ele estar aberto por quem escreve, tenta de novo."""
+    end = time.monotonic() + seconds
+    while True:
+        try:
+            return path.read_text(encoding=encoding)
+        except PermissionError:
+            if time.monotonic() >= end:
+                raise
+            time.sleep(0.05)

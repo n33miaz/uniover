@@ -108,7 +108,7 @@ export class ProgressFrequency {
   protected readonly weekdays = WEEKDAYS;
   protected readonly previousLabel = $localize`:@@training.progress.frequency.previous:Mês anterior`;
   protected readonly nextLabel = $localize`:@@training.progress.frequency.next:Próximo mês`;
-  protected readonly noGoal = $localize`:@@training.progress.frequency.no-goal:Sem meta de treinos por semana: você define na seção Semana.`;
+  protected readonly noGoal = $localize`:@@training.progress.frequency.no-goal:Sem meta semanal definida.`;
 
   /** O mês que se vê; `null` até saber que mês é hoje. */
   private readonly viewing = signal<YearMonth | null>(null);

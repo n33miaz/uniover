@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" shape-rendering="crispEdges">
+<!-- Versão de 16 px (bandeja a 100%, o tamanho que mais aparece): ponto de 4 px e uma onda de 1 px por lado, em degraus
+     sobre a grade; o selo tem 5 px com anel de 1 px e centro em pixel. -->
+  <circle cx="8" cy="8" r="8" fill="#1F8A4C" shape-rendering="geometricPrecision"/>
+  <circle cx="8" cy="8" r="2" fill="#FFFFFF" shape-rendering="geometricPrecision"/>
+  <g fill="#FFFFFF">
+    <rect x="12" y="6" width="1" height="4"/>
+    <rect x="11" y="5" width="1" height="1"/>
+    <rect x="11" y="10" width="1" height="1"/>
+    <rect x="3" y="6" width="1" height="4"/>
+    <rect x="4" y="5" width="1" height="1"/>
+    <rect x="4" y="10" width="1" height="1"/>
+  </g>
+<!-- O anel do selo tem a cor do disco e é cortado pelo disco (clipPath): sobre a marca abre um vão, como um recorte, em vez de
+     um anel branco que se juntaria à onda e viraria um gancho; fora do disco não há anel. -->
+  <clipPath id="disc"><circle cx="8" cy="8" r="8"/></clipPath>
+  <g id="attention">
+    <circle cx="12.5" cy="12.5" r="3.5" fill="#1F8A4C" clip-path="url(#disc)" shape-rendering="geometricPrecision"/>
+    <circle cx="12.5" cy="12.5" r="2.5" fill="#FF5C45" shape-rendering="geometricPrecision"/>
+  </g>
+</svg>

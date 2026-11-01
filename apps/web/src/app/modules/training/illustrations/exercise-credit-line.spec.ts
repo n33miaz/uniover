@@ -3,9 +3,10 @@ import { provideRouter } from '@angular/router';
 import { ART_LICENSE_URL, ExerciseCreditLine } from './exercise-credit-line';
 
 describe('ExerciseCreditLine', () => {
-  async function render() {
+  async function render(slug: string | null = null) {
     TestBed.configureTestingModule({ providers: [provideRouter([])] });
     const fixture = TestBed.createComponent(ExerciseCreditLine);
+    if (slug !== null) fixture.componentRef.setInput('slug', slug);
     await fixture.whenStable();
     return fixture.nativeElement as HTMLElement;
   }
@@ -13,6 +14,19 @@ describe('ExerciseCreditLine', () => {
   it('credits the source, the author and the license in one line', async () => {
     const el = await render();
     expect(el.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+      'Ilustração: Everkinetic (Greg Priday), CC BY-SA 4.0',
+    );
+  });
+
+  it('credits Open Exercise Art for the figures that come from there, and Everkinetic for the rest', async () => {
+    const text = async (slug: string) =>
+      (await render(slug)).textContent?.replace(/\s+/g, ' ').trim();
+    TestBed.resetTestingModule();
+    expect(await text('prancha')).toContain(
+      'Ilustração: Open Exercise Art (Alex Mollard), CC BY-SA 4.0',
+    );
+    TestBed.resetTestingModule();
+    expect(await text('supino-reto-com-barra')).toContain(
       'Ilustração: Everkinetic (Greg Priday), CC BY-SA 4.0',
     );
   });

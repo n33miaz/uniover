@@ -120,6 +120,10 @@ describe('action labels', () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
+  it('names an old wake entry as a prepared connection', () => {
+    expect(knownActionLabel('tv.wake')).toBe('Conexão Preparada');
+  });
+
   it('never shows a code it does not know: a new action reads as a generic one', () => {
     expect(knownActionLabel('algo_novo')).toBeNull();
     expect(auditActionLabel('algo_novo')).toBe('Outra ação');

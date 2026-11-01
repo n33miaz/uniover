@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.Preferences;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.SharedKernel.Usage;
 
@@ -11,9 +13,17 @@ namespace UniOver.Modules.Identity.Features.PeopleUsage;
 /// <summary>Quantas vezes algo aconteceu nos últimos 7 e 30 dias.</summary>
 internal sealed record PersonUsageCounts(int Last7Days, int Last30Days);
 
+/// <summary>Como a pessoa deixou a Início, para o dono saber o que ela vê ao abrir o app.</summary>
+/// <param name="State">
+/// <c>custom</c>: personalizou (a lista vem em <paramref name="Entries"/>) · <c>default</c>: já abriu
+/// uma versão que sincroniza, mas nunca personalizou · <c>unknown</c>: nunca abriu depois da sincronização existir.
+/// </param>
+/// <param name="Entries">A lista guardada (módulo e se aparece), na ordem escolhida; vazia fora de <c>custom</c>.</param>
+internal sealed record PersonHome(string State, IReadOnlyList<HomeEntry> Entries);
+
 /// <summary>
 /// O uso de uma conta como o dono o vê: o último acesso e as sessões ativas (do próprio Identity) e as contagens que os
-/// outros módulos entregam pelas portas. Nunca leva e-mail, IP, tecla nem conteúdo de treino.
+/// outros módulos entregam pelas portas, mais a disposição da Início. Nunca leva e-mail, IP, tecla nem conteúdo de treino.
 /// </summary>
 /// <param name="LastAccessAt">Último uso de uma sessão (renovação do acesso); nulo se a conta nunca entrou.</param>
 /// <param name="ActiveSessions">Sessões que ainda valem (famílias de refresh sem uso, revogação ou vencimento).</param>
@@ -27,7 +37,8 @@ internal sealed record PersonUsage(
     DateTimeOffset? LastAccessAt,
     int ActiveSessions,
     PersonUsageCounts TvCommands,
-    PersonUsageCounts Workouts);
+    PersonUsageCounts Workouts,
+    PersonHome Home);
 
 /// <summary>
 /// Junta o uso por pessoa. Mora no Identity porque as contas e as sessões são dele; os outros módulos entram só pela
@@ -60,6 +71,17 @@ internal sealed class PeopleUsageHandler(
             .Select(g => new { UserId = g.Key, Count = g.Select(t => t.FamilyId).Distinct().Count() })
             .ToDictionaryAsync(r => r.UserId, r => r.Count, cancellationToken);
 
+        var homes = await db.AccountPreferences.AsNoTracking()
+            .Where(p => ids.Contains(p.UserId))
+            .Select(p => new { p.UserId, p.HomeJson })
+            .ToDictionaryAsync(p => p.UserId, p => p.HomeJson, cancellationToken);
+
+        // O app que sincroniza também informa o aparelho a cada entrada e renovação: quem tem esse dado já abriu a versão nova.
+        var seen = (await db.RefreshTokens.AsNoTracking()
+            .Where(t => ids.Contains(t.UserId) && t.ClientPlatform != null)
+            .Select(t => t.UserId).Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+
         var counts = new Dictionary<string, IReadOnlyDictionary<Guid, UsageCount>>(StringComparer.Ordinal);
         foreach (var source in sources)
         {
@@ -74,7 +96,18 @@ internal sealed class PeopleUsageHandler(
             lastAccess.TryGetValue(p.Id, out var at) ? at : null,
             sessions.GetValueOrDefault(p.Id),
             Of(counts, UsageKeys.TvCommands, p.Id),
-            Of(counts, UsageKeys.Workouts, p.Id)))];
+            Of(counts, UsageKeys.Workouts, p.Id),
+            HomeOf(p.Id, homes, seen)))];
+    }
+
+    private static PersonHome HomeOf(Guid id, Dictionary<Guid, string?> homes, HashSet<Guid> seen)
+    {
+        if (homes.TryGetValue(id, out var json) && PreferencesHandler.ReadHome(json) is { } entries)
+        {
+            return new PersonHome("custom", [.. entries]);
+        }
+
+        return new PersonHome(homes.ContainsKey(id) || seen.Contains(id) ? "default" : "unknown", []);
     }
 
     private static PersonUsageCounts Of(Dictionary<string, IReadOnlyDictionary<Guid, UsageCount>> counts, string key, Guid id) =>

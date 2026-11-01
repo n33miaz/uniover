@@ -345,9 +345,7 @@ describe('RoutinesListPage', () => {
       );
       expect(el.querySelector('.template-chevron.expanded')).not.toBeNull();
       expect(text(el)).toContain('Sem dia definido');
-      expect(text(el)).toContain(
-        'O modelo é o ponto de partida; o Programa Semanal organiza as rotinas da semana.',
-      );
+      expect(text(el)).toContain('O modelo é só o ponto de partida.');
       button(el, 'Usar Este Modelo').click();
       await eventually(fixture, () => expect(el.querySelector('.next-card')).not.toBeNull());
       await eventually(fixture, () =>

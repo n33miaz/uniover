@@ -8,8 +8,8 @@ namespace UniOver.Modules.Training.Catalog;
 
 /// <summary>
 /// Carga <b>preguiçosa e versionada</b> do catálogo. Na primeira leitura do catálogo (e do pull), com a tabela vazia ou com
-/// <c>seed_version</c> menor que a embutida, grava ou atualiza as linhas <c>free_exercise_db</c> por (<c>source</c>,
-/// <c>source_ref</c>) numa transação. Nunca toca linha <c>own</c> nem <c>wger</c>. Não há leitura de banco na partida: o
+/// <c>seed_version</c> menor que a embutida, grava ou atualiza as linhas <c>free_exercise_db</c> e <c>uniover</c> por
+/// (<c>source</c>, <c>source_ref</c>) numa transação. Nunca toca linha <c>own</c> nem <c>wger</c>. Não há leitura de banco na partida: o
 /// Neon só acorda quando alguém usa o app, e não por causa do módulo.
 /// </summary>
 internal sealed class CatalogSeeder(TrainingDbContext db, CatalogSeedSource source, TimeProvider time)
@@ -67,14 +67,14 @@ internal sealed class CatalogSeeder(TrainingDbContext db, CatalogSeedSource sour
 
         var now = TimeStamps.ToStorage(time.GetUtcNow());
         var existing = await db.Exercises
-            .Where(e => e.Source == ExerciseSources.FreeExerciseDb)
-            .ToDictionaryAsync(e => e.SourceRef!, StringComparer.Ordinal, cancellationToken);
+            .Where(e => e.Source == ExerciseSources.FreeExerciseDb || e.Source == ExerciseSources.Uniover)
+            .ToDictionaryAsync(e => Key(e.Source, e.SourceRef!), StringComparer.Ordinal, cancellationToken);
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in seed.Exercises)
         {
-            seen.Add(item.SourceRef);
-            if (existing.TryGetValue(item.SourceRef, out var row))
+            seen.Add(Key(item.Source, item.SourceRef));
+            if (existing.TryGetValue(Key(item.Source, item.SourceRef), out var row))
             {
                 if (Differs(row, item))
                 {
@@ -87,8 +87,8 @@ internal sealed class CatalogSeeder(TrainingDbContext db, CatalogSeedSource sour
             {
                 var created = new Exercise
                 {
-                    Id = ExerciseIds.ForCatalog(ExerciseSources.FreeExerciseDb, item.SourceRef),
-                    Source = ExerciseSources.FreeExerciseDb,
+                    Id = ExerciseIds.ForCatalog(item.Source, item.SourceRef),
+                    Source = item.Source,
                     SourceRef = item.SourceRef,
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -100,9 +100,9 @@ internal sealed class CatalogSeeder(TrainingDbContext db, CatalogSeedSource sour
         }
 
         // Exercício que saiu da semente vira lápide (não é apagado): rotina e histórico antigos ainda o referenciam.
-        foreach (var (sourceRef, row) in existing)
+        foreach (var (key, row) in existing)
         {
-            if (!seen.Contains(sourceRef) && row.DeletedAt is null)
+            if (!seen.Contains(key) && row.DeletedAt is null)
             {
                 row.DeletedAt = now;
                 row.UpdatedAt = now;
@@ -124,6 +124,9 @@ internal sealed class CatalogSeeder(TrainingDbContext db, CatalogSeedSource sour
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
+
+    // A mesma referência pode existir em fontes diferentes: a chave inclui a fonte.
+    private static string Key(string source, string sourceRef) => $"{source}:{sourceRef}";
 
     private static bool Differs(Exercise row, SeedExercise item) =>
         row.DeletedAt is not null
@@ -151,8 +154,10 @@ internal sealed class CatalogSeeder(TrainingDbContext db, CatalogSeedSource sour
         row.Category = item.Category;
         row.Mechanic = item.Mechanic;
         row.Reviewed = item.Reviewed;
-        row.License = "Unlicense";
-        row.LicenseUrl = "https://unlicense.org/";
+        // O texto reescrito a partir da free-exercise-db herda a licença dela; o que o UniOver escreveu não tem licença de terceiros.
+        var fromFreeExerciseDb = item.Source == ExerciseSources.FreeExerciseDb;
+        row.License = fromFreeExerciseDb ? "Unlicense" : null;
+        row.LicenseUrl = fromFreeExerciseDb ? "https://unlicense.org/" : null;
         row.LicenseAuthor = null;
         row.StepKg = null;
         row.OwnerUserId = null;

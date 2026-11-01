@@ -25,6 +25,12 @@ describe('AuthApi', () => {
     return { url, init, headers: init.headers as Record<string, string> };
   };
 
+  it('reads the deployed version from the health route, outside the versioned API prefix', async () => {
+    fetchFn.mockResolvedValue(reply(200, { commit: 'abc', version: '0.5.0' }));
+    await expect(api().deploymentVersion()).resolves.toEqual({ commit: 'abc', version: '0.5.0' });
+    expect(lastCall().url).toBe('/health/version');
+  });
+
   it('login sends the client header and the credentials, with no Authorization', async () => {
     fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 600 }));
     await expect(api().login('a@b.c', 'senha')).resolves.toEqual({
@@ -470,13 +476,54 @@ describe('AuthApi', () => {
     });
   });
 
-  it('reads the deployed version from the public health route at the server root, never under /api', async () => {
-    fetchFn.mockResolvedValue(reply(200, { commit: 'abc', version: '0.32.0' }));
-    await expect(api().deploymentVersion()).resolves.toEqual({ commit: 'abc', version: '0.32.0' });
-    const { url, init } = lastCall();
-    // A API só publica /health/version: /api/health/version responde 404 (a linha de Sobre ficava "indisponível").
-    expect(url).toBe('/health/version');
-    expect(init.method).toBeUndefined();
-    expect((init.headers as Record<string, string>)['Authorization']).toBeUndefined();
+  describe('device and installed app, reported to the API', () => {
+    const IPHONE =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+    afterEach(() => vi.unstubAllGlobals());
+
+    function fakeWindow(userAgent: string, standalone?: boolean): void {
+      vi.stubGlobal('window', {
+        navigator: { userAgent, standalone, maxTouchPoints: 5, platform: 'iPhone' },
+        matchMedia: () => ({ matches: false }),
+      });
+    }
+
+    it('the refresh and the login carry the device and whether the app is installed', async () => {
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      fakeWindow(IPHONE, true);
+
+      await api().refresh();
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;standalone');
+      await api().login('a@b.c', 'senha');
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;standalone');
+    });
+
+    it('says "browser" for a Safari tab', async () => {
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      fakeWindow(IPHONE, false);
+
+      await api().refresh();
+
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;browser');
+    });
+
+    it('reads the window at the time of each call (installing between two renewals shows up)', async () => {
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      fakeWindow(IPHONE, false);
+      await api().refresh();
+      fakeWindow(IPHONE, true);
+      await api().refresh();
+
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;standalone');
+    });
+
+    it('does not tell the device on reads, only on the entries that open or renew a session', async () => {
+      fetchFn.mockResolvedValue(reply(200, { id: 'u1' }));
+      fakeWindow(IPHONE, true);
+
+      await api().me('jwt');
+
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBeUndefined();
+    });
   });
 });

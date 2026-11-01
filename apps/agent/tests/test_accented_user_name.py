@@ -14,6 +14,8 @@ import pytest
 
 from uniover_agent.adapters import installation
 
+from .support import powershell_write_atomic, read_text_retrying
+
 TOOLS = Path(__file__).parents[1] / "tools"
 SOURCE = Path(__file__).parents[1] / "src" / "uniover_agent"
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
@@ -89,7 +91,7 @@ def test_the_shipped_launcher_vbs_starts_the_launcher_under_an_accented_local_ap
     shutil.copyfile(TOOLS / "launcher.vbs", base / "launcher.vbs")
     marker = tmp_path / "started.txt"
     (base / "launcher.ps1").write_text(
-        "Set-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value $PSCommandPath -Encoding UTF8\n",
+        powershell_write_atomic("$env:UNIOVER_TEST_MARKER", "$PSCommandPath"),
         encoding="ascii",
     )
     subprocess.run(  # noqa: S603 - Windows Script Host do sistema e o .vbs do repositório
@@ -103,4 +105,4 @@ def test_the_shipped_launcher_vbs_starts_the_launcher_under_an_accented_local_ap
         if marker.exists():
             break
         time.sleep(0.1)
-    assert marker.read_text(encoding="utf-8-sig").strip() == str(base / "launcher.ps1")
+    assert read_text_retrying(marker, encoding="utf-8-sig").strip() == str(base / "launcher.ps1")

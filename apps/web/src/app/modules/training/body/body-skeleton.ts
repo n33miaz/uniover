@@ -15,6 +15,13 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
   imports: [LoadingFrame, Skeleton],
   template: `
     <app-loading-frame [label]="label">
+      @if (withHead()) {
+        <!-- O título e as abas da tela, quando ela inteira ainda não existe (o banco abre). -->
+        <div class="sk-head">
+          <span appSkeleton class="sk-title"></span>
+          <span appSkeleton class="sk-tabs"></span>
+        </div>
+      }
       @if (view() === 'summary') {
         <div class="sk-stack">
           <div class="sk-weight ui-card">
@@ -58,6 +65,22 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
   styles: `
     :host {
       display: block;
+    }
+    .sk-head {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      margin-bottom: var(--space-3);
+    }
+    .sk-title {
+      display: block;
+      width: 28%;
+      height: 32px;
+    }
+    .sk-tabs {
+      display: block;
+      height: 52px;
+      border-radius: var(--radius);
     }
     .sk-stack {
       display: flex;
@@ -180,6 +203,8 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 })
 export class BodySkeleton {
   readonly view = input<'summary' | 'records'>('summary');
+  /** Com o título e as abas: a tela inteira ainda não existe. */
+  readonly withHead = input(false);
 
   protected readonly label = $localize`:@@training.body.loading:Carregando seus registros…`;
   protected readonly sections = [1, 2, 3];
@@ -206,12 +231,12 @@ export class BodySkeleton {
       display: block;
     }
     .sk-grid {
-      display: .sk-grid;
+      display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: var(--space-2);
     }
     .sk-card {
-      display: .sk-grid;
+      display: grid;
       gap: var(--space-1);
       padding: var(--space-2);
       border: 1px solid var(--a-line);

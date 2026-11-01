@@ -5,7 +5,7 @@ import { normalizeText } from '../../domain/text-search';
 export type ExerciseDto = components['schemas']['ExerciseResponse'];
 
 /** De onde veio o exercício: as duas fontes do catálogo ou o próprio dono. */
-export const EXERCISE_SOURCES = ['free_exercise_db', 'wger', 'own'] as const;
+export const EXERCISE_SOURCES = ['free_exercise_db', 'uniover', 'wger', 'own'] as const;
 
 /**
  * Linha do banco local. Os instantes ficam em milissegundos (comparação direta, sem texto) e os números anuláveis

@@ -535,9 +535,9 @@ test.describe('treino ao vivo', () => {
     await expect(hint).toContainText('Última vez');
     await expect(hint).toContainText('40 kg × 10');
     await expect(hint).toContainText('42,5 kg × 6–8');
-    await expect(page.getByText('Você fechou o topo da faixa')).toBeHidden();
+    await expect(page.getByText('Fechou o topo da faixa')).toBeHidden();
     await page.getByRole('button', { name: 'Por que esta sugestão?' }).click();
-    await expect(page.getByText('Você fechou o topo da faixa na última vez')).toBeVisible();
+    await expect(page.getByText('Fechou o topo da faixa')).toBeVisible();
     // O esforço (RPE) é opcional e nasce recolhido; a tela acesa nasce desligada.
     await expect(page.getByRole('button', { name: '8', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: /Esforço \(RPE\)/ }).click();
@@ -1010,7 +1010,13 @@ test.describe('treino ao vivo', () => {
     await page.getByRole('button', { name: 'Treino Livre' }).click();
     await skipProgramChoice(page);
     await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino Livre');
-    await page.getByRole('button', { name: 'Escolher Exercício' }).click();
+    // Sem exercício nenhum, o botão de escolher fica logo abaixo do nome: nunca por baixo do botão fixo de concluir.
+    const choose = page.getByRole('button', { name: 'Escolher Exercício' });
+    await expect(choose).toBeInViewport({ ratio: 1 });
+    const chooseBox = await choose.boundingBox();
+    const dockBox = await page.locator('app-workout-day .dock').boundingBox();
+    expect((chooseBox?.y ?? 0) + (chooseBox?.height ?? 0)).toBeLessThanOrEqual(dockBox?.y ?? 0);
+    await choose.click();
     const chooser = page.getByRole('dialog', { name: 'Adicionar Exercício' });
     await chooser.getByRole('button', { name: /Agachamento livre com barra/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();

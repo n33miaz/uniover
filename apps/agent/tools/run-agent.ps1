@@ -97,6 +97,8 @@ function Stop-VenvUsers {
             ($_.CommandLine -and $_.CommandLine -like "*uniover-agent*" -and $_.CommandLine -like "*$source*")
         )
     } | ForEach-Object { & taskkill.exe /PID $_.ProcessId /T /F *> $null }
+    # O icone tambem saiu, de proposito: nao e queda dele (o proximo Update-Tray o abre de novo).
+    $script:tray = $null
 }
 
 function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
@@ -108,12 +110,16 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     Write-SupLog 'WARNING' ('uv sync falhou (codigo ' + $LASTEXITCODE + '): ' + (Get-Tail $output))
     # Com uma versao em prova e a anterior guardada para onde voltar, o ambiente nao e apagado: se a segunda tentativa
     # tambem falhasse, nenhuma das duas versoes teria como rodar. Quem chama conta a falha e reverte ao chegar a tres.
-    if ($KeepEnvironment) { return $false }
+    if ($KeepEnvironment) {
+        Add-Diagnostic 'update.sync_failed' 'error' 'nao consegui preparar o ambiente Python da versao em prova'
+        return $false
+    }
     $venv = Join-Path $runtime 'venv'
     if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue }
     $output = & $Uv sync --frozen --project $source --quiet 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         Write-SupLog 'WARNING' ('uv sync falhou de novo depois de refazer o ambiente (codigo ' + $LASTEXITCODE + '): ' + (Get-Tail $output))
+        Add-Diagnostic 'update.sync_failed' 'error' 'nao consegui preparar o ambiente Python da versao instalada (a segunda tentativa tambem falhou)'
         return $false
     }
     Write-SupLog 'INFO' 'o ambiente Python foi refeito'
@@ -153,6 +159,7 @@ function Invoke-Update([string]$Uv) {
     if ($exitCode -ne 0 -and $before -eq $after) {
         Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('o processo de atualizacao terminou com erro (codigo ' + $exitCode + ')') } | Out-Null
         Write-SupLog 'WARNING' ('self-update terminou com erro (codigo ' + $exitCode + '): ' + (Get-Tail $output))
+        Add-Diagnostic 'update.failed' 'error' ('o processo de atualizacao terminou com erro (codigo ' + $exitCode + ')')
     }
     elseif ($before -and $after -and $before -ne $after) {
         Write-SupLog 'INFO' ('versao nova instalada, em prova: ' + $after.Substring(0, [Math]::Min(12, $after.Length)))
@@ -213,6 +220,109 @@ function Start-Hidden([string]$File, [string]$Arguments) {
 function Start-Tray([string]$Uv) {
     $arguments = 'run --project "' + $source + '" uniover-agent tray'
     return Start-Hidden $Uv $arguments
+}
+
+function Get-LogonTime {
+    # Quando esta sessao do Windows comecou (o explorer.exe mais antigo dela). O teste pode fixar o instante por
+    # UNIOVER_SUPERVISOR_LOGON_AT (UTC, ISO 8601); sem explorer (sessao sem area de trabalho) devolve nulo.
+    try {
+        $forced = [Environment]::GetEnvironmentVariable('UNIOVER_SUPERVISOR_LOGON_AT')
+        if ($forced) { return [DateTime]::Parse($forced, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToLocalTime() }
+        $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+        $first = Get-Process -Name explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session } | Sort-Object StartTime | Select-Object -First 1
+        if ($first) { return $first.StartTime }
+    } catch { }
+    return $null
+}
+
+function Test-TrayClosed {
+    # O "Sair" do icone deixa runtime\tray-closed e o icone nao deve voltar sozinho. O sinal vale ate o proximo logon:
+    # se foi deixado antes de a sessao atual do Windows comecar, esta velho e e apagado. Uma atualizacao (que reinicia
+    # este supervisor) nao apaga nada, entao quem fechou o icone nao o ve reaparecer a cada versao nova.
+    $flag = Join-Path $runtime 'tray-closed'
+    if (-not (Test-Path -LiteralPath $flag)) { return $false }
+    try {
+        $logon = Get-LogonTime
+        if ($null -ne $logon -and (Get-Item -LiteralPath $flag).LastWriteTime -lt $logon) {
+            Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+    } catch { }
+    return $true
+}
+
+$script:trayStarted = $null
+$script:trayFalls = 0
+$script:trayRetryAt = [DateTime]::MinValue
+function Update-Tray([string]$Uv) {
+    # Mantem o icone de pe, menos quando a pessoa o fechou pelo "Sair". Um icone que cai logo ao abrir nao entra em laco:
+    # a espera dobra (de 15 s ate 30 min) e a queda vira diagnostico para o dono.
+    $current = $script:tray
+    if ($null -ne $current -and -not $current.HasExited) { return }
+    $now = Get-Date
+    if ($null -ne $current) {
+        $script:tray = $null
+        $code = $null
+        try { $code = $current.ExitCode } catch { }
+        $lived = 9999
+        if ($null -ne $script:trayStarted) { $lived = ($now - $script:trayStarted).TotalSeconds }
+        if ($lived -ge 120) { $script:trayFalls = 0 }
+        elseif (-not (Test-Path -LiteralPath (Join-Path $runtime 'tray-closed'))) {
+            $script:trayFalls++
+            $seconds = [Math]::Min(15 * [Math]::Pow(2, [Math]::Min($script:trayFalls, 7)), 1800)
+            $script:trayRetryAt = $now.AddSeconds($seconds)
+            if ($null -ne $code -and $code -ne 0) {
+                Write-SupLog 'WARNING' ('o icone da bandeja caiu logo ao abrir (codigo ' + $code + ')')
+                Add-Diagnostic 'tray.exited' 'error' ('o icone da bandeja caiu logo ao abrir (codigo ' + $code + ')')
+            }
+        }
+    }
+    if (Test-TrayClosed) { return }
+    if ($now -lt $script:trayRetryAt) { return }
+    $script:trayStarted = $now
+    $script:tray = Start-Tray $Uv
+}
+
+function Wait-Lap([double]$Seconds, [string]$Uv) {
+    # A espera de uma volta, em fatias curtas: quem pede o icone de volta pelo atalho do menu Iniciar (que apaga o
+    # tray-closed) nao espera os 15 s da volta.
+    $end = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $end) {
+        $left = ($end - (Get-Date)).TotalMilliseconds
+        Start-Sleep -Milliseconds ([int][Math]::Min(1000, [Math]::Max(50, $left)))
+        if ($null -eq $script:tray -or $script:tray.HasExited) { Update-Tray $Uv }
+    }
+}
+
+function Ensure-TrayShortcut {
+    # O atalho "UniOver Agente" (menu Iniciar) traz o icone de volta depois do "Sair". Criado aqui, e nao so no
+    # instalador: a atualizacao troca esta pasta mas nao roda o instalador, entao so assim ele chega a quem ja tem o
+    # UniOver instalado. Refeito se faltar ou apontar para outro lugar.
+    try {
+        $script = Join-Path $source 'tools\tray-open.vbs'
+        if (-not (Test-Path -LiteralPath $script)) { return }
+        $folder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        $path = Join-Path $folder 'UniOver Agente.lnk'
+        $wanted = '"' + $script + '"'
+        $shell = New-Object -ComObject WScript.Shell
+        if (Test-Path -LiteralPath $path) {
+            $existing = $shell.CreateShortcut($path)
+            if ($existing.Arguments -eq $wanted -and $existing.TargetPath -like '*wscript.exe') { return }
+        }
+        $link = $shell.CreateShortcut($path)
+        $link.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+        $link.Arguments = $wanted
+        $link.WorkingDirectory = $base
+        $link.Description = 'Mostrar o icone do UniOver na bandeja'
+        $icon = Join-Path $source 'assets\tray\connected.ico'
+        if (Test-Path -LiteralPath $icon) { $link.IconLocation = $icon + ',0' }
+        $link.Save()
+        Write-SupLog 'INFO' 'atalho do icone da bandeja criado no menu Iniciar'
+    } catch {
+        Write-SupLog 'WARNING' 'nao consegui criar o atalho do icone da bandeja'
+        Add-Diagnostic 'tray.shortcut_failed' 'warn' 'nao consegui criar o atalho do icone da bandeja no menu Iniciar'
+    }
 }
 
 # Estado da atualizacao (runtime/update-status.json) e volta a versao anterior. Tudo isto e
@@ -299,6 +409,7 @@ function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedi
     } catch {
         Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'nao consegui voltar para a versao anterior' } | Out-Null
         Write-SupLog 'ERROR' 'nao consegui voltar para a versao anterior'
+        Add-Diagnostic 'update.rollback_failed' 'error' 'nao consegui voltar para a versao anterior'
         return $false
     }
 }
@@ -318,6 +429,7 @@ $slowLapSeconds = [Math]::Max(60, $lapSeconds * 4)
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
 Write-SupLog 'INFO' 'supervisor iniciado'
+Ensure-TrayShortcut
 $wait = 5
 $syncFalls = 0
 $updateFailures = 0
@@ -361,7 +473,7 @@ while ($true) {
     }
     $syncFalls = 0
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
-    if ($null -eq $tray -or $tray.HasExited) { $tray = Start-Tray $uv }
+    Update-Tray $uv
     $arguments = 'run --project "' + $source + '" uniover-agent run'
     $process = Start-Hidden $uv $arguments
     $started = Get-Date
@@ -376,7 +488,7 @@ while ($true) {
     $silent = 0
     $previousLap = Get-Date
     while (-not $process.HasExited) {
-        Start-Sleep -Milliseconds ([int]($lapSeconds * 1000))
+        Wait-Lap $lapSeconds $uv
         Touch-Alive
         $lap = Get-Date
         $slow = (($lap - $previousLap).TotalSeconds -gt $slowLapSeconds)
@@ -427,7 +539,7 @@ while ($true) {
             $updateFailures = if ((Get-UpdateOutcome) -eq 'failed') { $updateFailures + 1 } else { 0 }
             $nextUpdate = Schedule-NextUpdate $updateFailures
         }
-        if ($null -ne $tray -and $tray.HasExited) { $tray = Start-Tray $uv }
+        Update-Tray $uv
     }
     $seconds = ((Get-Date) - $started).TotalSeconds
     $code = $null

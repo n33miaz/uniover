@@ -97,7 +97,8 @@ internal sealed class LoginHandler(
         var (secret, hash) = SecretTokens.Generate();
         var expiresAt = settings.Refresh.ExpiryFor(now, now);
         db.RefreshTokens.Add(RefreshToken.Create(
-            user.Id, familyId, hash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
+            user.Id, familyId, hash, now, expiresAt, command.Client.Ip, command.Client.UserAgent,
+            command.Client.Platform, command.Client.Installed));
         DeviceKeyRegistration.Add(db, familyId, user.Id, command.Client, now);
 
         var access = tokens.Issue(user.Id, familyId, user.Role, UniOverAuth.ApiAudience, settings.AccessLifetime, now);

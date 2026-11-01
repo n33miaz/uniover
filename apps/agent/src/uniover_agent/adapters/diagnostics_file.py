@@ -15,7 +15,9 @@ import logging
 import os
 import re
 import threading
+import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -34,6 +36,10 @@ _log = logging.getLogger(__name__)
 
 PENDING_FILE: Final = "diagnostics.jsonl"
 SENDING_FILE: Final = "diagnostics.sending.jsonl"
+# O que saiu de `diagnostics.jsonl` e ainda não entrou em `.sending` (só existe no meio da troca).
+INCOMING_FILE: Final = "diagnostics.incoming.jsonl"
+# Lote emprestado e nunca confirmado (envio cancelado, processo vivo) volta à fila depois disto.
+LEASE_SECONDS: Final = 120.0
 # A fila nunca passa disto: o mais antigo cai primeiro (o PC pode ficar dias sem API).
 MAX_EVENTS: Final = 200
 _COMPACT_BYTES: Final = 160 * 1024
@@ -93,10 +99,28 @@ def _line(event: DiagnosticEvent) -> str:
 
 
 class FileDiagnosticStore:
-    def __init__(self, runtime: Path, *, max_events: int = MAX_EVENTS) -> None:
+    """Fila em arquivo com empréstimo: `take` não tira nada do disco, só marca o lote em envio.
+
+    O lote só sai de `diagnostics.sending.jsonl` em `confirm`. Uma queda (ou um cancelamento)
+    entre `take` e `confirm` deixa tudo no arquivo e o próximo processo reenvia; como cada
+    ocorrência tem `id` fixo (gravado no arquivo na primeira leitura) e a API ignora repetidos, o
+    reenvio é seguro."""
+
+    def __init__(
+        self,
+        runtime: Path,
+        *,
+        max_events: int = MAX_EVENTS,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._pending = runtime / PENDING_FILE
         self._sending = runtime / SENDING_FILE
+        self._incoming = runtime / INCOMING_FILE
         self._max = max_events
+        self._monotonic = monotonic
+        # id -> quando foi emprestado (só nesta execução: ao reiniciar, tudo volta a estar
+        # disponível).
+        self._leased: dict[str, float] = {}
         self._lock = threading.Lock()
 
     def append(self, event: DiagnosticEvent) -> None:
@@ -141,26 +165,73 @@ class FileDiagnosticStore:
         temporary.write_text("".join(_line(event) + "\n" for event in events), encoding="utf-8")
         os.replace(temporary, path)
 
+    def _free(self, events: list[DiagnosticEvent]) -> list[DiagnosticEvent]:
+        """As ocorrências que não estão emprestadas agora (empréstimo velho demais não vale)."""
+        now = self._monotonic()
+        self._leased = {k: t for k, t in self._leased.items() if now - t < LEASE_SECONDS}
+        return [event for event in events if event.id not in self._leased]
+
+    def _absorb(self, events: list[DiagnosticEvent]) -> list[DiagnosticEvent]:
+        """Traz para a fila de envio o que entrou em `diagnostics.jsonl` (agente e supervisor).
+
+        A renomeação é atômica: o que for escrito depois dela cai num arquivo novo e não se perde. O
+        arquivo de envio é regravado antes de o intermediário sumir, então uma queda no meio só
+        repete ocorrências (que a API ignora), nunca perde."""
+        if not self._incoming.exists():
+            try:
+                os.replace(self._pending, self._incoming)
+            except FileNotFoundError:
+                return events
+        merged = (events + self._read(self._incoming))[-self._max :]
+        self._write(self._sending, merged)
+        self._incoming.unlink(missing_ok=True)
+        return merged
+
     def take(self, limit: int) -> list[DiagnosticEvent]:
         try:
             with self._lock:
-                if not self._sending.exists():
-                    try:
-                        os.replace(self._pending, self._sending)
-                    except FileNotFoundError:
-                        return []
                 events = self._read(self._sending)[-self._max :]
-                taken, rest = events[:limit], events[limit:]
-                self._write(self._sending, rest)
+                free = self._free(events)
+                if not free:
+                    events = self._absorb(events)
+                    free = self._free(events)
+                taken = free[:limit]
+                if taken:
+                    # Regrava o arquivo normalizado: linhas do supervisor sem `id` ganham um agora,
+                    # e ele
+                    # fica o mesmo nas leituras seguintes (é com ele que o lote é confirmado e
+                    # deduplicado).
+                    self._write(self._sending, events)
+                    now = self._monotonic()
+                    self._leased.update({event.id: now for event in taken})
                 return taken
         except OSError:
             _log.warning("não consegui ler a fila do diagnóstico", exc_info=True)
             return []
 
+    def confirm(self, events: list[DiagnosticEvent]) -> None:
+        done = {event.id for event in events}
+        try:
+            with self._lock:
+                self._write(
+                    self._sending, [e for e in self._read(self._sending) if e.id not in done]
+                )
+                for key in done:
+                    self._leased.pop(key, None)
+        except OSError:
+            # O lote fica no arquivo e será reenviado (repetido, a API o ignora).
+            _log.warning("não consegui confirmar o envio do diagnóstico", exc_info=True)
+
     def put_back(self, events: list[DiagnosticEvent]) -> None:
         try:
             with self._lock:
-                self._write(self._sending, (events + self._read(self._sending))[: self._max])
+                for event in events:
+                    self._leased.pop(event.id, None)
+                present = self._read(self._sending)
+                known = {event.id for event in present}
+                missing = [event for event in events if event.id not in known]
+                if missing:
+                    self._write(self._sending, (missing + present)[: self._max])
         except OSError:
             _log.warning("não consegui devolver o diagnóstico à fila", exc_info=True)
 

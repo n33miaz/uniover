@@ -226,7 +226,10 @@ public sealed class WgerImportTests(PostgresFixture postgres)
         credits.StatusCode.Should().Be(HttpStatusCode.OK);
         var sources = body.GetProperty("sources").EnumerateArray().ToDictionary(s => s.GetProperty("source").GetString()!, s => s.Clone());
         sources[ExerciseSources.Wger].GetProperty("count").GetInt32().Should().Be(2);
-        sources[ExerciseSources.FreeExerciseDb].GetProperty("count").GetInt32().Should().Be(CatalogSeedSource.Read().Exercises.Count);
+        var seed = CatalogSeedSource.Read().Exercises;
+        sources[ExerciseSources.FreeExerciseDb].GetProperty("count").GetInt32().Should().Be(seed.Count(e => e.Source == ExerciseSources.FreeExerciseDb));
+        sources[ExerciseSources.Uniover].GetProperty("count").GetInt32().Should().Be(seed.Count(e => e.Source == ExerciseSources.Uniover));
+        sources[ExerciseSources.Uniover].GetProperty("license").ValueKind.Should().Be(JsonValueKind.Null);
         sources[ExerciseSources.FreeExerciseDb].GetProperty("license").GetString().Should().Be("Unlicense");
         var authors = body.GetProperty("wgerAuthors").EnumerateArray().ToList();
         authors.Should().ContainSingle();
@@ -349,7 +352,8 @@ public sealed class WgerImportTests(PostgresFixture postgres)
         using var response = await app.SendAsync(HttpMethod.Get, "/api/v1/training/catalog/credits", bearer: login.AccessToken);
         var body = await TrainingApp.JsonAsync(response);
 
-        body.GetProperty("sources").GetArrayLength().Should().Be(1);
+        var sources = body.GetProperty("sources").EnumerateArray().Select(s => s.GetProperty("source").GetString()).ToList();
+        sources.Should().Equal(ExerciseSources.FreeExerciseDb, ExerciseSources.Uniover);
         body.GetProperty("wgerAuthors").GetArrayLength().Should().Be(0);
     }
 

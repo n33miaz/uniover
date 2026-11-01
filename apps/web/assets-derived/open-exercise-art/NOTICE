@@ -1,0 +1,27 @@
+Open Exercise Art (ilustrações de exercícios), versão adaptada para o app
+
+Esta pasta guarda ADAPTAÇÕES de ilustrações do Open Exercise Art, feitas pelo UniOver. Os originais, sem modificação, ficam
+em ../../assets-third-party/open-exercise-art/ (ver o NOTICE de lá para origem, autor, commit e proveniência).
+
+Origem:     https://github.com/AlexMollard/Open-Exercise-Art, commit 0f11ea4680746970e58b83448cdcdb64e4fc2793
+Autor:      Alex Mollard (Open Exercise Art) e colaboradores creditados no repositório
+Licença:    Creative Commons Atribuição-CompartilhaIgual 4.0 Internacional (CC BY-SA 4.0).
+            Texto em https://creativecommons.org/licenses/by-sa/4.0/ (o arquivo LICENSE desta pasta é o
+            LICENSES/CC-BY-SA-4.0.txt do repositório de origem, sem alteração). Estas adaptações são distribuídas sob a
+            mesma licença, CC BY-SA 4.0.
+
+O que foi alterado (indicação exigida pela licença):
+- Cada figura (um SVG de ../../assets-third-party/open-exercise-art/svg/) foi rasterizada pelo Chromium com a tinta fixada
+  em preto (o original usa `currentColor`), sobre fundo branco, e convertida para WebP com perda leve (qualidade 85,
+  reduzida só se o arquivo passar de 20 KB), recortada pela caixa do desenho, centralizada com margem de 6% na proporção
+  268:275 e reduzida para 536x550 pixels, o mesmo enquadramento das figuras do Everkinetic do app.
+- O desenho em si não foi redesenhado nem retocado: o traço, o corpo e os equipamentos são os do original. O enquadramento
+  uniforme (mesma área útil e margem) é a única correção de escala feita.
+- Cada figura tem uma pose só: não há segunda pose, e o app não inventa uma.
+- Os arquivos são gerados por apps/web/scripts/render-open-art.mjs e apps/web/scripts/optimize-open-art.py a partir dos
+  originais; rodar os dois de novo reproduz estes arquivos (a rasterização pode variar alguns pixels entre versões do
+  navegador).
+- Nomes: oea-<nome do exercício na origem>.webp, do SVG de mesmo nome.
+
+Os arquivos são publicados em /exercise-art/ e recebem o mesmo crédito dos originais. A licença do UniOver não se aplica a
+eles.
