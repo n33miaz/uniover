@@ -428,9 +428,10 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     expect(sent.filter((request) => /passkeys|guests|guest-invites|step-up/.test(request))).toEqual(
       [],
     );
-    // Só a leitura pública da versão, o renovar da sessão, a própria conta, o salvar do nome e a lista das próprias sessões.
-    expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH) /, '')))).toEqual(
-      new Set(['/health/version', '/auth/refresh', '/me', '/sessions']),
+    // Só a leitura pública da versão, o renovar da sessão, a própria conta, o salvar do nome, as próprias preferências da
+    // Início e a lista das próprias sessões.
+    expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH|PUT) /, '')))).toEqual(
+      new Set(['/health/version', '/auth/refresh', '/me', '/me/preferences', '/sessions']),
     );
 
     // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o
