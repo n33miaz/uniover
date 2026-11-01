@@ -42,6 +42,9 @@ describe('training taxonomy', () => {
       machine: 5,
       cable: 5,
       bodyweight: 0,
+      kettlebell: 4,
+      band: 0,
+      cardio: 0,
       other: 0,
     });
   });
@@ -50,7 +53,8 @@ describe('training taxonomy', () => {
     expect(effectiveStepKg({ stepKg: 1.25, equipment: 'barbell' })).toBe(1.25);
     expect(effectiveStepKg({ stepKg: 0, equipment: 'barbell' })).toBe(0);
     expect(effectiveStepKg({ stepKg: null, equipment: 'barbell' })).toBe(2.5);
-    expect(effectiveStepKg({ stepKg: null, equipment: 'kettlebell' })).toBe(0);
+    expect(effectiveStepKg({ stepKg: null, equipment: 'kettlebell' })).toBe(4);
+    expect(effectiveStepKg({ stepKg: null, equipment: 'unknown' })).toBe(0);
   });
 
   it('gives every id a non-empty Portuguese label and echoes ids it does not know', () => {

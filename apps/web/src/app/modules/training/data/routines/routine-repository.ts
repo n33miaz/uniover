@@ -482,9 +482,7 @@ export class RoutineRepository {
     // O catálogo de origem vale mais que o importado quando os dois têm o mesmo slug; exercício próprio nunca entra.
     const rows = (await this.db.exercises.where('slug').anyOf(slugs).toArray())
       .filter((row) => row.source !== 'own' && row.deletedAt === null)
-      .sort(
-        (a, b) => Number(b.source === 'free_exercise_db') - Number(a.source === 'free_exercise_db'),
-      );
+      .sort((a, b) => Number(isSeedSource(b.source)) - Number(isSeedSource(a.source)));
     const idBySlug = new Map<string, string>();
     for (const row of rows) if (!idBySlug.has(row.slug)) idBySlug.set(row.slug, row.id);
     const missing = slugs.filter((slug) => !idBySlug.has(slug));
@@ -668,4 +666,9 @@ function assertValid(model: RoutineModel): void {
       `Rotina inválida: ${issues.map((issue) => `${issue.path} (${issue.code})`).join(', ')}.`,
     );
   }
+}
+
+/** Fontes da semente embutida (a do banco de exercícios e a escrita pelo próprio app): valem mais que a importada. */
+function isSeedSource(source: string): boolean {
+  return source === 'free_exercise_db' || source === 'uniover';
 }

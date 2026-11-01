@@ -97,10 +97,16 @@ describe('ExerciseFormPage', () => {
         'Máquina',
         'Polia',
         'Peso do corpo',
+        'Kettlebell',
+        'Elástico',
+        'Cardio',
         'Outro',
       ]);
       expect(chips.map((chip) => chip.getAttribute('aria-pressed'))).toEqual([
         'true',
+        'false',
+        'false',
+        'false',
         'false',
         'false',
         'false',
