@@ -473,3 +473,98 @@ def test_a_candidate_that_fails_its_self_check_is_refused_with_a_simple_sentence
     done, _, _ = _rehearse(tmp_path, sync_code=0, check_code=1)
     assert done.returncode != 0
     assert "nao funciona neste computador" in done.stderr
+
+
+_ENVIRONMENT_FUNCTIONS = (
+    "Get-AgentSource",
+    "Get-MoveFailureReason",
+    "Move-Folder",
+    "Get-ZipComment",
+    "Write-InstallLog",
+    "Backup-Environment",
+    "Remove-EnvironmentBackup",
+    "Restore-PreviousVersion",
+)
+
+
+def _with_environment(tmp_path: Path) -> tuple[Path, Path]:
+    app = installed(tmp_path)
+    venv = tmp_path / "UniOver" / "runtime" / "venv"
+    venv.mkdir(parents=True)
+    (venv / "marca-do-ambiente.txt").write_text("o ambiente que funcionava", encoding="utf-8")
+    return app, venv
+
+
+def test_a_failure_after_the_swap_puts_back_the_python_environment_with_the_code(
+    tmp_path: Path,
+) -> None:
+    app, venv = _with_environment(tmp_path)
+    body = (
+        f"$base = '{tmp_path / 'UniOver'}'\n"
+        "Backup-Environment\n"
+        "Get-AgentSource $source\n"
+        # O preparo do ambiente definitivo mexe no ambiente: aqui ele é recriado com outro conteúdo.
+        f"New-Item -ItemType Directory -Path '{venv}' -Force | Out-Null\n"
+        f"Set-Content -LiteralPath '{venv / 'marca-nova.txt'}' -Value 'ambiente da candidata'\n"
+        "Restore-PreviousVersion\n"
+    )
+    done = run(tmp_path, body, package(GOOD), *_ENVIRONMENT_FUNCTIONS)
+    assert done.returncode == 0, done.stderr
+    assert (venv / "marca-do-ambiente.txt").read_text(
+        encoding="utf-8"
+    ) == "o ambiente que funcionava"
+    assert not (venv / "marca-nova.txt").exists()
+    assert not (venv.parent / "venv.previous").exists()
+    assert (app / "marca.txt").read_text(encoding="utf-8") == "a que funciona"
+
+
+def test_a_failure_before_the_swap_also_puts_the_environment_back(tmp_path: Path) -> None:
+    app, venv = _with_environment(tmp_path)
+    body = (
+        f"$base = '{tmp_path / 'UniOver'}'\n"
+        "Backup-Environment\n"
+        "try { Get-AgentSource $source { param($Candidate) throw 'ensaio falhou' } } catch { }\n"
+        "Restore-PreviousVersion\n"
+    )
+    done = run(tmp_path, body, package(GOOD), *_ENVIRONMENT_FUNCTIONS)
+    assert done.returncode == 0, done.stderr
+    assert (venv / "marca-do-ambiente.txt").is_file()
+    assert (app / "marca.txt").is_file()
+    assert sorted(path.name for path in venv.parent.iterdir()) == ["venv"]
+
+
+def test_the_backup_is_a_rename_and_it_is_dropped_when_the_install_succeeds(tmp_path: Path) -> None:
+    _, venv = _with_environment(tmp_path)
+    body = (
+        f"$base = '{tmp_path / 'UniOver'}'\n"
+        "Backup-Environment\n"
+        f"Write-Output ('guardado: ' + (Test-Path -LiteralPath '{venv.parent / 'venv.previous' / 'marca-do-ambiente.txt'}'))\n"
+        f"Write-Output ('venv no lugar: ' + (Test-Path -LiteralPath '{venv}'))\n"
+        "Remove-EnvironmentBackup\n"
+        f"Write-Output ('depois: ' + (Test-Path -LiteralPath '{venv.parent / 'venv.previous'}'))\n"
+    )
+    done = run(tmp_path, body, b"", *_ENVIRONMENT_FUNCTIONS)
+    assert done.returncode == 0, done.stderr
+    assert "guardado: True" in done.stdout
+    assert "venv no lugar: False" in done.stdout
+    assert "depois: False" in done.stdout
+
+
+def test_a_first_install_has_no_environment_to_back_up(tmp_path: Path) -> None:
+    (tmp_path / "UniOver" / "runtime").mkdir(parents=True)
+    body = f"$base = '{tmp_path / 'UniOver'}'\nBackup-Environment\nRestore-PreviousVersion\n"
+    done = run(tmp_path, body, b"", *_ENVIRONMENT_FUNCTIONS)
+    assert done.returncode == 0, done.stderr
+    assert sorted(path.name for path in (tmp_path / "UniOver" / "runtime").iterdir()) == []
+
+
+def test_both_install_modes_back_up_the_environment_before_the_swap_and_drop_it_on_success() -> (
+    None
+):
+    installer = INSTALLER.read_text(encoding="utf-8")
+    assert installer.count("Backup-Environment\n") + installer.count("Backup-Environment\r\n") == 2
+    for marker in ("    Backup-Environment", "\nBackup-Environment"):
+        assert installer.index(marker) < installer.index(
+            "Get-AgentSource $source {", installer.index(marker)
+        )
+    assert installer.count("Remove-EnvironmentBackup") >= 3

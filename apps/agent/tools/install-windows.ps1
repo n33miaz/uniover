@@ -131,9 +131,49 @@ function Stop-Agent {
     Start-Sleep -Seconds 1
 }
 
+function Backup-Environment {
+    # O ambiente Python (runtime\venv) fica de lado ANTES da troca e do preparo do ambiente definitivo: o uv sync altera o
+    # ambiente no lugar, e uma falha depois dele nao pode deixar o codigo antigo sem o ambiente que ele conhece. So renomeia
+    # (nao copia). Se nao der para guardar, a instalacao para aqui, antes de mexer em qualquer coisa.
+    $venv = Join-Path $base 'runtime\venv'
+    $backup = Join-Path $base 'runtime\venv.previous'
+    if (-not (Test-Path -LiteralPath $venv)) { return }
+    try {
+        Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $backup) { throw 'a copia antiga do ambiente nao saiu do lugar' }
+        Move-Folder $venv $backup
+        $script:environmentBackup = $backup
+    }
+    catch {
+        Write-InstallLog ('Nao consegui guardar o ambiente anterior: ' + $_.Exception.Message)
+        throw 'O UniOver esta aberto por outro programa agora. Feche-o e tente de novo; a instalacao atual ficou como estava.'
+    }
+}
+
+function Remove-EnvironmentBackup {
+    # A instalacao deu certo: o ambiente guardado nao serve mais e libera o espaco.
+    if ($script:environmentBackup) {
+        Remove-Item -LiteralPath $script:environmentBackup -Recurse -Force -ErrorAction SilentlyContinue
+        $script:environmentBackup = $null
+    }
+}
+
 function Restore-PreviousVersion {
     # Falha DEPOIS da troca (preparar o ambiente definitivo, examinar a versao instalada): a versao que funcionava esta em
     # app.previous e volta ao lugar antes de o agente ser religado; sem isto o instalador religaria a candidata quebrada.
+    # O ambiente Python guardado (Backup-Environment) volta junto: codigo antigo com ambiente novo pode nem iniciar.
+    try {
+        if ($script:environmentBackup -and (Test-Path -LiteralPath $script:environmentBackup)) {
+            $venv = Join-Path $base 'runtime\venv'
+            Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue
+            Move-Folder $script:environmentBackup $venv
+            Write-InstallLog 'O ambiente Python anterior voltou ao lugar.'
+            $script:environmentBackup = $null
+        }
+    }
+    catch {
+        Write-InstallLog ('Nao consegui devolver o ambiente anterior: ' + $_.Exception.Message)
+    }
     try {
         if ($script:swappedOut -and (Test-Path -LiteralPath $script:swappedOut) -and (Test-Path -LiteralPath $source)) {
             Remove-Item -LiteralPath $source -Recurse -Force
@@ -740,6 +780,7 @@ function Invoke-AutomaticInstall {
 
     # A instalacao que existia, se havia, fica em app.previous (a troca e feita dentro de Get-AgentSource, so depois de o
     # pacote novo estar inteiro): se este processo cair, ainda ha para onde voltar.
+    Backup-Environment
     Get-AgentSource $source { param($Candidate) Test-Candidate $uv $Candidate }
     Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
@@ -781,6 +822,8 @@ function Invoke-AutomaticInstall {
     Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
 
+    # Chegou aqui: versao nova instalada, ambiente preparado, pareamento feito. O ambiente guardado pode sair.
+    Remove-EnvironmentBackup
     # Um exame final da instalacao fica no registro, para quem for ajudar saber como ela ficou.
     Write-InstallDiagnosis $uv
 
@@ -835,6 +878,7 @@ $env:UNIOVER_CONFIG_FILE = $config
 $env:UNIOVER_HOME = $base
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
+Backup-Environment
 Get-AgentSource $source { param($Candidate) Test-Candidate $uv $Candidate }
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
@@ -865,11 +909,13 @@ if ($LASTEXITCODE -ne 0) {
     throw 'A TV nao foi ligada ao UniOver.'
 }
 
+Remove-EnvironmentBackup
 $answer = Read-Host 'Fazer o UniOver iniciar sozinho quando voce entrar no Windows? (s/N)'
 if ($answer -match '^[sS]') {
     Write-AgentLauncher
     Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
+    Remove-EnvironmentBackup
     Write-InstallDiagnosis $uv
     Write-Host 'Pronto: o UniOver ja esta funcionando e vai iniciar sozinho.'
 }
