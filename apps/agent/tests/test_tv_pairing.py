@@ -1,3 +1,4 @@
+import getpass
 import logging
 import subprocess
 import sys
@@ -146,10 +147,29 @@ def test_folder_is_restricted_to_the_current_user_on_windows(tmp_path: Path) -> 
     ).stdout
     entries = [line for line in listing.splitlines() if ":(" in line]
     assert entries, listing
+    principals = [
+        entry.rpartition(":")[0].strip().removeprefix(str(secret)).strip() for entry in entries
+    ]
     for forbidden in ("Everyone", "BUILTIN\\Users", "Authenticated Users"):
         assert forbidden not in listing
-    # Só o próprio usuário aparece (nenhuma herança de outros grupos).
-    assert len(entries) == 1, listing
+    current_user = getpass.getuser().casefold()
+    current_entries = [
+        entry
+        for entry, principal in zip(entries, principals, strict=True)
+        if principal.rsplit("\\", maxsplit=1)[-1].casefold() == current_user
+    ]
+    assert len(current_entries) == 1, listing
+    assert "(F)" in current_entries[0], listing
+    # Sistema, administradores e os direitos do dono já conseguem tomar posse do arquivo; os
+    # demais usuários não.
+    allowed = {"nt authority\\system", "builtin\\administrators", "owner rights"}
+    unexpected = [
+        principal
+        for principal in principals
+        if principal.casefold() not in allowed
+        and principal.rsplit("\\", maxsplit=1)[-1].casefold() != current_user
+    ]
+    assert unexpected == [], listing
     assert secret.read_text(encoding="utf-8") == "segredo"
 
 

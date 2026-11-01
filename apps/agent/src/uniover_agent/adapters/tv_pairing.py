@@ -52,10 +52,12 @@ def _default_factory(client_name: str, certfile: str, keyfile: str, host: str) -
 
 
 def restrict_to_current_user(directory: Path) -> None:
-    """Deixa a pasta (e o que for criado dentro dela) legível só pelo usuário atual.
+    """Deixa a pasta (e o que for criado dentro dela) legível ao usuário atual.
 
     Windows: `icacls` remove a herança e concede acesso total só ao usuário, com herança para os
-    arquivos novos (por isso roda **antes** de a chave ser gerada). Outros sistemas: modo 0700.
+    arquivos novos (por isso roda **antes** de a chave ser gerada). O Windows também pode manter
+    `SYSTEM`, `Administrators` e `OWNER RIGHTS`: são identidades privilegiadas que já podem tomar
+    posse de arquivos; não dão acesso a outro usuário comum. Outros sistemas: modo 0700.
     """
     if sys.platform != "win32":
         directory.chmod(_PRIVATE_DIR_MODE)
