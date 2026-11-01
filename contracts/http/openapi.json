@@ -1583,6 +1583,14 @@
               "string"
             ]
           },
+          "hoursProjected": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
           "memoryBand": {
             "type": "string"
           },
@@ -1607,6 +1615,14 @@
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
             "type": [
               "number",
+              "string"
+            ]
+          },
+          "servicesInWorkspace": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
               "string"
             ]
           },
@@ -1642,7 +1658,9 @@
           "monthHours",
           "hoursLimit",
           "hoursPercent",
-          "hoursBand"
+          "hoursBand",
+          "hoursProjected",
+          "servicesInWorkspace"
         ],
         "type": "object"
       },

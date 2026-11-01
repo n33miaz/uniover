@@ -8837,6 +8837,8 @@ export interface components {
       hoursLimit: number | string;
       /** Format: double */
       hoursPercent: number | string;
+      /** Format: double */
+      hoursProjected: number | string;
       memoryBand: string;
       /** Format: int64 */
       memoryLimitBytes: number | string;
@@ -8844,6 +8846,8 @@ export interface components {
       memoryPercent: number | string;
       /** Format: double */
       monthHours: number | string;
+      /** Format: int32 */
+      servicesInWorkspace: number | string;
       /** Format: date-time */
       startedAt: string;
       /** Format: int64 */
