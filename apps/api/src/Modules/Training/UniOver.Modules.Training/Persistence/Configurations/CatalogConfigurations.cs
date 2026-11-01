@@ -12,7 +12,7 @@ internal sealed class ExerciseConfiguration : IEntityTypeConfiguration<Exercise>
 
         e.ToTable("exercises", t =>
         {
-            t.HasCheckConstraint("ck_exercises_source", "source IN ('free_exercise_db', 'wger', 'own')");
+            t.HasCheckConstraint("ck_exercises_source", "source IN ('free_exercise_db', 'uniover', 'wger', 'own')");
             t.HasCheckConstraint("ck_exercises_record_type", "record_type IN ('weight_reps', 'reps_only', 'time')");
         });
         e.HasKey(x => x.Id);

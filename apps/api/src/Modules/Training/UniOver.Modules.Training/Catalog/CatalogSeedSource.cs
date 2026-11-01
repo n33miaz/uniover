@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using UniOver.Modules.Training.Contracts;
 
 namespace UniOver.Modules.Training.Catalog;
 
@@ -17,7 +18,8 @@ internal sealed record SeedExercise(
     string? Category,
     string? Mechanic,
     bool Reviewed,
-    string SourceCommit);
+    string SourceCommit,
+    string Source = ExerciseSources.FreeExerciseDb);
 
 /// <summary>O arquivo inteiro: a versão sobe sempre que o conteúdo muda, e é ela que dispara a recarga preguiçosa.</summary>
 internal sealed record SeedDocument(int SeedVersion, string SourceCommit, IReadOnlyList<SeedExercise> Exercises);
