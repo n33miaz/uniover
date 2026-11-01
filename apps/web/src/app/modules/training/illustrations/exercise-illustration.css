@@ -39,3 +39,8 @@
     transition: opacity 450ms ease-in-out;
   }
 }
+
+/* Figura de uma pose só: não é botão, não há o que alternar. */
+.still {
+  cursor: default;
+}

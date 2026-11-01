@@ -55,3 +55,17 @@ A tela de créditos diz o que foi feito. Os scripts `apps/web/scripts/render-exe
 
 Depois, as figuras de origem SVG passaram pela mesma adaptação (rasterizadas e padronizadas em 536x550, até 20 KB cada),
 para que todas as ilustrações tenham o mesmo tamanho e enquadramento. Os SVG originais seguem intactos e sem publicação.
+
+## Atualização (31/10/2026): segunda fonte de figuras, Open Exercise Art
+
+Para os exercícios do catálogo sem figura do Everkinetic entraram as figuras do Open Exercise Art (CC BY-SA 4.0, declarada
+pelo autor em `LICENSE-ARTWORK.md`, `ATTRIBUTION.md` e `.reuse/dep5`), com a mesma estrutura: os SVG usados, sem modificação,
+em `apps/web/assets-third-party/open-exercise-art/` (com `LICENSE` e `NOTICE`, commit fixado e SHA-256 conferido contra o
+`catalogue.json` da origem); a adaptação (WebP de 536x550, mesmo enquadramento, prefixo `oea-`) em
+`apps/web/assets-derived/open-exercise-art/`, publicada na mesma pasta `/exercise-art/`. Os scripts
+`render-open-art.mjs` e `optimize-open-art.py` reproduzem os arquivos.
+
+Duas ressalvas ficam registradas no `NOTICE` e na tela de Créditos: as imagens foram geradas por IA e revisadas pelo autor
+(segundo a própria origem, que não afirma que sejam domínio público), e cada figura tem uma pose só, que o app mostra parada.
+O mapa de ilustrações passou a aceitar uma figura de exercício equivalente (outro implemento, mesma pegada ou gesto), sempre
+marcada como variação e escolhida uma a uma pelo dono; fora isso, a regra segue: o mesmo movimento e o mesmo equipamento.

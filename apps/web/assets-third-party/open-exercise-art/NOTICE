@@ -1,0 +1,32 @@
+Open Exercise Art (ilustrações de exercícios)
+
+Origem:     https://github.com/AlexMollard/Open-Exercise-Art
+Autor:      Alex Mollard (Open Exercise Art) e colaboradores creditados no repositório
+Licença:    Creative Commons Atribuição-CompartilhaIgual 4.0 Internacional (CC BY-SA 4.0), declarada pelo autor para as
+            ilustrações (LICENSE-ARTWORK.md, ATTRIBUTION.md e .reuse/dep5 do repositório: "png/* svg/* catalogue.json:
+            CC-BY-SA-4.0"). Texto em https://creativecommons.org/licenses/by-sa/4.0/. O arquivo LICENSE desta pasta é o
+            LICENSES/CC-BY-SA-4.0.txt do repositório de origem, sem alteração. As ferramentas e a galeria do repositório
+            são GPL-3.0-or-later e NÃO foram obtidas.
+Commit:     0f11ea4680746970e58b83448cdcdb64e4fc2793 (ponta da branch main em 31/10/2026)
+Obtido em:  31/10/2026
+
+Proveniência declarada pelo autor (PROVENANCE.md e README do repositório), que o UniOver repassa sem endossar:
+- As imagens foram GERADAS POR IA (uma ferramenta de geração de imagens, citada no PROVENANCE.md da origem e que o
+  UniOver não nomeia aqui), para o app Ironvellum, em outubro de 2026, e revisadas e aprovadas uma a uma pelo autor. O
+  modelo e os comandos usados não são publicados.
+- O autor diz que o estilo foi inspirado no Everkinetic (Greg Priday) e no Workout Guide (Bryl Lim), cujas poses foram usadas
+  como referência, e que nenhum arquivo de desenho deles está no repositório.
+- O repositório não afirma que a coleção seja de domínio público, e o próprio autor avisa que alguns erros de anatomia ou de
+  equipamento podem ter escapado da revisão. O direito autoral sobre imagens geradas por IA é incerto em vários países.
+
+Cada arquivo foi baixado individualmente do raw desse commit (https://raw.githubusercontent.com/AlexMollard/Open-Exercise-Art/
+0f11ea4680746970e58b83448cdcdb64e4fc2793/svg/<nome>.svg) e o SHA-256 conferiu com o registrado em catalogue.json do mesmo
+commit.
+
+Conteúdo desta pasta:
+- LICENSE: a licença CC BY-SA 4.0 original.
+- svg/: SOMENTE o subconjunto que o catálogo do app usa (os SVG, sem nenhuma modificação: nem recorte, nem recolorização,
+  nem otimização). O restante do repositório (PNG, catálogo, ferramentas, galeria) NÃO foi obtido.
+
+Nenhum original é publicado como está: o app publica em /exercise-art/ a adaptação leve em WebP, de tamanho único (ver
+../../assets-derived/open-exercise-art/NOTICE), com o mesmo crédito.

@@ -28,6 +28,11 @@
                 "glob": "**/*.webp",
                 "input": "assets-derived/everkinetic",
                 "output": "/exercise-art"
+              },
+              {
+                "glob": "**/*.webp",
+                "input": "assets-derived/open-exercise-art",
+                "output": "/exercise-art"
               }
             ],
             "styles": ["src/styles.css"],
