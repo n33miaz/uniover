@@ -32,6 +32,7 @@ public partial class SecurityHeadersAndPwaTests
         var csp = response.Headers.GetValues("Content-Security-Policy").Single();
         csp.Should().NotContain("unsafe-inline");
         csp.Should().Contain("default-src 'self'").And.Contain("frame-ancestors 'none'").And.Contain("object-src 'none'");
+        csp.Should().Contain($"script-src 'self' 'nonce-{CspNonceOf(response)}'");
         response.Headers.GetValues("X-Content-Type-Options").Single().Should().Be("nosniff");
         response.Headers.GetValues("Referrer-Policy").Single().Should().Be("no-referrer");
         response.Headers.GetValues("Permissions-Policy").Single().Should().Contain("camera=()");
@@ -84,6 +85,7 @@ public partial class SecurityHeadersAndPwaTests
         nonce.Should().NotBeNullOrEmpty();
         var html = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         html.Should().Contain($"content=\"{nonce}\"");
+        html.Should().Contain($"<script nonce=\"{nonce}\">");
         html.Should().NotContain("__CSP_NONCE__").And.NotContain("<!--uniover:manifest-->");
         response.Headers.CacheControl!.NoCache.Should().BeTrue();
     }

@@ -26,9 +26,9 @@ public sealed class SecurityHeadersOptions
 {
     public const string NoncePlaceholder = "{nonce}";
 
-    /// <summary>Sem <c>unsafe-inline</c> em nenhuma diretiva; estilos só por nonce.</summary>
+    /// <summary>Sem <c>unsafe-inline</c> em nenhuma diretiva; estilos e o seletor inicial da tela só por nonce.</summary>
     public string ContentSecurityPolicy { get; set; } =
-        "default-src 'self'; script-src 'self'; style-src 'self' 'nonce-{nonce}'; img-src 'self' data:; "
+        "default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'nonce-{nonce}'; img-src 'self' data:; "
         + "font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; "
         + "base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
