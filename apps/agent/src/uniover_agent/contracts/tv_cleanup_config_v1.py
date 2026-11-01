@@ -10,6 +10,16 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 
 
+class FocusPackage(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            max_length=255,
+            pattern='^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$',
+        ),
+    ]
+
+
 class RestrictedPackage(RootModel[str]):
     root: Annotated[
         str,
@@ -31,6 +41,7 @@ class TvCleanupConfigV1Body(BaseModel):
     focusEnabled: bool | None = None
     focusClosesBackground: bool | None = None
     shortAnimationsEnabled: bool | None = None
+    focusPackages: Annotated[list[FocusPackage] | None, Field(max_length=50)] = None
     restrictedPackages: Annotated[
         list[RestrictedPackage] | None, Field(max_length=100)
     ] = None
