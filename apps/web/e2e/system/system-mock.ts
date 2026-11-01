@@ -28,6 +28,75 @@ export interface MockDiagnostic {
   count: number;
 }
 
+/** O que `GET /identity/capacity` devolve; os testes trocam partes para provar faixas, tendência e avisos. */
+export interface CapacityMockReport {
+  database: {
+    bytes: number;
+    limitBytes: number;
+    percent: number;
+    band: string;
+    tables: { schema: string; name: string; bytes: number }[];
+  };
+  server: Record<string, number | string>;
+  growth: {
+    points: { day: string; bytes: number }[];
+    bytesPerDay: number | null;
+    daysToAmber: number | null;
+    daysToRed: number | null;
+    state: string;
+  };
+  alerts: { id: string; metric: string; percent: number; detectedAt: string }[];
+  measuredAt: string;
+}
+
+const MIB = 1024 * 1024;
+
+/** Um servidor saudável, banco pequeno e uma semana de amostras; só as horas do mês passam do vermelho. */
+export function defaultCapacity(): CapacityMockReport {
+  return {
+    database: {
+      bytes: Math.round(14.7 * MIB),
+      limitBytes: 1024 * MIB,
+      percent: 1.43,
+      band: 'green',
+      tables: [
+        { schema: 'tv', name: 'command_audit', bytes: Math.round(2.6 * MIB) },
+        { schema: 'identity', name: 'login_audit', bytes: 336 * 1024 },
+        { schema: 'training', name: 'exercises', bytes: 280 * 1024 },
+      ],
+    },
+    server: {
+      workingSetBytes: 180 * MIB,
+      heapBytes: 60 * MIB,
+      memoryLimitBytes: 512 * MIB,
+      memoryPercent: 35.2,
+      memoryBand: 'green',
+      startedAt: '2026-10-28T08:00:00Z',
+      uptimeSeconds: 3 * 86400 + 4 * 3600,
+      monthHours: 612,
+      hoursLimit: 750,
+      hoursPercent: 81.6,
+      hoursBand: 'red',
+    },
+    growth: {
+      points: [
+        { day: '2026-10-25', bytes: Math.round(13.6 * MIB) },
+        { day: '2026-10-26', bytes: Math.round(13.9 * MIB) },
+        { day: '2026-10-27', bytes: Math.round(14.0 * MIB) },
+        { day: '2026-10-28', bytes: Math.round(14.3 * MIB) },
+        { day: '2026-10-29', bytes: Math.round(14.5 * MIB) },
+        { day: '2026-10-30', bytes: Math.round(14.7 * MIB) },
+      ],
+      bytesPerDay: Math.round(0.22 * MIB),
+      daysToAmber: 2200,
+      daysToRed: 3600,
+      state: 'growing',
+    },
+    alerts: [],
+    measuredAt: '2026-10-31T12:00:00Z',
+  };
+}
+
 export interface SystemMock {
   readonly requests: SystemRequest[];
   readonly computers: MockComputer[];
@@ -36,6 +105,10 @@ export interface SystemMock {
   source: 'saved' | 'environment' | 'none';
   /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
   failReads: number;
+  /** A leitura de capacidade; `null` faz a rota responder 500. */
+  capacity: CapacityMockReport | null;
+  /** Quantas vezes o dono dispensou os avisos de capacidade. */
+  capacityDismissals: number;
   settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];
   /** Os erros dos agentes (lista vazia por padrão) e quantas leituras seguintes dessa lista respondem 500. */
   diagnostics: MockDiagnostic[];
@@ -97,6 +170,8 @@ export async function mockSystemApi(
     current: null,
     source: 'none',
     failReads: 0,
+    capacity: defaultCapacity(),
+    capacityDismissals: 0,
     diagnostics: [],
     failDiagnostics: 0,
     settings: [
@@ -198,6 +273,27 @@ export async function mockSystemApi(
       contentType: 'application/json',
       headers: { 'cache-control': 'no-store' },
       body: JSON.stringify({ retentionDays: 7, items: mock.diagnostics }),
+    });
+  });
+
+  // A Capacidade: leitura só do dono; dispensar os avisos zera a lista, como a API real.
+  await context.route('**/api/v1/identity/capacity**', async (route) => {
+    const request = route.request();
+    if (identity.offline) return route.abort('internetdisconnected');
+    const bearer = request.headers()['authorization']?.replace(/^Bearer /, '');
+    if (!bearer || !identity.issuedTokens.includes(bearer))
+      return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+    if (identity.role !== 'owner') return route.fulfill({ status: 403 });
+    if (request.method() === 'POST') {
+      mock.capacityDismissals += 1;
+      if (mock.capacity) mock.capacity.alerts = [];
+      return route.fulfill({ status: 204 });
+    }
+    if (!mock.capacity) return problem(route, 500, 'internal-error', 'Erro.');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mock.capacity),
     });
   });
 
