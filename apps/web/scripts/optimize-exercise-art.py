@@ -31,6 +31,10 @@ MIN_QUALITY = 50
 MAX_BYTES = 20_000
 INK_THRESHOLD = 24
 
+# Figuras em que a barra é bem mais larga que o corpo (a figura ficaria pequena no quadro): corta a largura da caixa do
+# par para esta faixa (frações da largura, da esquerda para a direita), mantendo o corpo inteiro e um trecho da barra.
+CROP_X = {"0090": (0.2, 0.92)}
+
 
 def ink_box(image: Image.Image) -> tuple[int, int, int, int]:
     """Caixa do desenho (tudo que não é o branco do fundo)."""
@@ -74,6 +78,11 @@ def convert_pair(sources: tuple[Path, Path], outputs: tuple[Path, Path]) -> None
         max(b[2] for b in boxes),
         max(b[3] for b in boxes),
     )
+    stem = outputs[0].name[:4]
+    if stem in CROP_X:
+        left, right = CROP_X[stem]
+        span = union[2] - union[0]
+        union = (union[0] + round(span * left), union[1], union[0] + round(span * right), union[3])
     width, height = union[2] - union[0], union[3] - union[1]
     inner = (CANVAS[0] * (1 - 2 * MARGIN), CANVAS[1] * (1 - 2 * MARGIN))
     scale = min(inner[0] / width, inner[1] / height)
