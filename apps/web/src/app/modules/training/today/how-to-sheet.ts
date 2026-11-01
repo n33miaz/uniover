@@ -17,7 +17,7 @@ import { TrainingSheet } from '../shell/training-sheet';
       @if (hasArt()) {
         <div class="art">
           <app-exercise-illustration [slug]="exercise().slug" [name]="exercise().name" />
-          <app-exercise-credit-line />
+          <app-exercise-credit-line [slug]="exercise().slug" />
         </div>
       }
       @if (exercise().instructions.length > 0) {
