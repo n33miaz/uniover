@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from .support import read_text_retrying
+
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 TASKKILL = SYSTEM32 / "taskkill.exe"
@@ -245,14 +247,18 @@ def test_the_supervisor_signals_it_is_alive_and_starts_the_agent_with_a_supervis
     pc: Pc,
 ) -> None:
     pc.uv(
-        ['echo %UNIOVER_SUPERVISED% > "%UNIOVER_TEST_AGENTS%.env"', "ping -n 300 127.0.0.1 > nul"]
+        [
+            'echo %UNIOVER_SUPERVISED% > "%UNIOVER_TEST_AGENTS%.env.tmp"',
+            'move /y "%UNIOVER_TEST_AGENTS%.env.tmp" "%UNIOVER_TEST_AGENTS%.env" > nul',
+            "ping -n 300 127.0.0.1 > nul",
+        ]
     )
     with pc.running():
         assert wait_for((pc.runtime / "supervisor-alive").exists, 30)
         assert wait_for(lambda: pc.starts() >= 1, 30)
         marker = Path(str(pc.agents) + ".env")
         assert wait_for(marker.exists, 10)
-        assert marker.read_text(encoding="ascii").strip() == "1"
+        assert read_text_retrying(marker, encoding="ascii").strip() == "1"
 
 
 # --- icone da bandeja: "Sair" so fecha o icone, e ele nao entra em laco ------------------------
@@ -356,7 +362,7 @@ def test_the_start_menu_shortcut_is_created_once_and_points_at_the_open_script(p
     with pc.running():
         assert wait_for(link.exists, 30), pc.supervisor_log()
         assert wait_for(lambda: pc.starts() >= 1, 90)
-        # O atalho aparece antes de terminar de ser gravado: o horario so vale depois do agente subir.
+        # O atalho aparece antes de ser gravado: o horario so vale depois do agente subir.
         first = link.stat().st_mtime_ns
     # Um supervisor novo (depois de uma atualizacao) nao refaz o que ja esta certo.
     with pc.running():
