@@ -35,6 +35,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<QrLoginRequest> QrLoginRequests => Set<QrLoginRequest>();
 
+    public DbSet<AccountPreferences> AccountPreferences => Set<AccountPreferences>();
+
     /// <summary>
     /// A lista do catálogo como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
     /// constantes do código entram aqui (nenhum dado de usuário). Quando o catálogo muda, o modelo muda e o EF exige uma
@@ -80,6 +82,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             // composto as duas viram varredura da tabela inteira, que cresce uma linha por rotação.
             e.HasIndex(x => new { x.FamilyId, x.CreatedAt });
             e.Property(x => x.RevokedReason).HasMaxLength(40);
+            e.Property(x => x.ClientPlatform).HasMaxLength(10);
             e.Property(x => x.Ip).HasMaxLength(AuditText.IpMax);
             e.Property(x => x.UserAgent).HasMaxLength(AuditText.UserAgentMax);
 
@@ -217,6 +220,17 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
             // `granted_by` é só o id de quem concedeu: sem FK (a trilha sobrevive à exclusão manual da conta do dono).
             // Apagar a conta (recuperação manual) leva as concessões junto, dentro do mesmo schema.
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AccountPreferences>(e =>
+        {
+            e.ToTable("account_preferences");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).ValueGeneratedNever();
+            e.Property(x => x.HomeJson).HasColumnType("jsonb");
+
+            // Apagar a conta (recuperação manual) leva as preferências junto, dentro do mesmo schema.
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
