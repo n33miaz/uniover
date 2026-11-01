@@ -7,6 +7,7 @@ import { expect, test, waitForServiceWorkerControl } from '../fixtures';
 const ART_DIR = join(__dirname, '..', '..', 'assets-third-party', 'everkinetic', 'svg');
 // Os originais (SVG e PNG) não são publicados: o app serve a adaptação leve em WebP desta pasta.
 const DERIVED_DIR = join(__dirname, '..', '..', 'assets-derived', 'everkinetic');
+const OPEN_ART_DIR = join(__dirname, '..', '..', 'assets-derived', 'open-exercise-art');
 const FIRST_POSE = '0042-relaxation.webp';
 const SECOND_POSE = '0042-tension.webp';
 const NOT_WARMED = '0043-relaxation.webp';
@@ -42,6 +43,25 @@ test.describe('ilustrações dos exercícios', () => {
     // Os SVG originais ficam só no repositório: o app publica a adaptação.
     const original = readdirSync(ART_DIR)[0];
     const absent = await request.get(`/exercise-art/${original}`);
+    expect(absent.headers()['content-type'] ?? '').not.toContain('image/svg+xml');
+  });
+
+  test('as figuras do Open Exercise Art são publicadas em /exercise-art/ idênticas às guardadas', async ({
+    request,
+  }) => {
+    const files = readdirSync(OPEN_ART_DIR).filter((file) => file.endsWith('.webp'));
+    expect(files.length).toBeGreaterThan(50);
+    for (const file of files) {
+      const response = await request.get(`/exercise-art/${file}`);
+      expect(response.status(), file).toBe(200);
+      expect(response.headers()['content-type']).toBe('image/webp');
+      expect(
+        Buffer.compare(await response.body(), readFileSync(join(OPEN_ART_DIR, file))),
+        file,
+      ).toBe(0);
+    }
+    // Os SVG originais não vão junto.
+    const absent = await request.get('/exercise-art/plank.svg');
     expect(absent.headers()['content-type'] ?? '').not.toContain('image/svg+xml');
   });
 
@@ -90,6 +110,8 @@ test.describe('ilustrações dos exercícios', () => {
         'standing-one-arm-triceps-extension-with-dumbbell-1.webp',
         '0113-relaxation.webp',
         '0123-tension.webp',
+        'oea-plank.webp',
+        'oea-leg-press-calf-raise.webp',
       ],
     );
     for (const size of sizes) {
