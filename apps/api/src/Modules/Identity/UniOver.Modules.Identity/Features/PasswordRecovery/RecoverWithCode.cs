@@ -94,9 +94,7 @@ internal static class RecoverWithCodeEndpoint
         {
             RecoverWithCodeStatus.Changed => TypedResults.NoContent(),
             RecoverWithCodeStatus.Unauthenticated => IdentityProblems.Unauthenticated(),
-            RecoverWithCodeStatus.StepUpRequired => Results.Problem(statusCode: 403,
-                title: "Confirme esta ação com a passkey.",
-                type: ProblemDetailsExtensions.TypeBase + "factor-step-up-required"),
+            RecoverWithCodeStatus.StepUpRequired => IdentityProblems.StepUpRequired(StepUpActions.PasswordRecovery),
             RecoverWithCodeStatus.Locked => Results.Problem(statusCode: 429,
                 title: "Conta temporariamente bloqueada."),
             _ => Results.Problem(statusCode: 403, title: "Código de recuperação inválido."),

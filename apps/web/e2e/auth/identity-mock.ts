@@ -436,6 +436,10 @@ export async function mockIdentityApi(
       return json(route, 200, { module: 'identity', version: '0.9.0-teste', dependsOn: [] });
     }
 
+    if (method === 'GET' && path === '/auth/password/recovery/availability') {
+      return json(route, 200, { enabled: true });
+    }
+
     if (
       method === 'POST' &&
       ['/auth/login', '/auth/qr/poll', '/guest-invites/accept'].includes(path)

@@ -1579,6 +1579,39 @@
         ],
         "type": "object"
       },
+      "CompletePasswordRecoveryRequest": {
+        "properties": {
+          "newPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoveryCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "token": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "totpCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "token",
+          "newPassword"
+        ],
+        "type": "object"
+      },
       "ConfirmStepUpRequest": {
         "properties": {
           "challengeId": {
@@ -1639,6 +1672,34 @@
         "required": [
           "action",
           "password"
+        ],
+        "type": "object"
+      },
+      "ConfirmTotpRequest": {
+        "properties": {
+          "code": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "ConfirmTotpResponse": {
+        "properties": {
+          "recoveryCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recoveryCodes"
         ],
         "type": "object"
       },
@@ -2453,6 +2514,18 @@
               "null",
               "string"
             ]
+          },
+          "recoveryCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "totpCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         },
         "required": [
@@ -2704,6 +2777,17 @@
           "name",
           "createdAt",
           "lastUsedAt"
+        ],
+        "type": "object"
+      },
+      "PasswordRecoveryAvailabilityResponse": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
         ],
         "type": "object"
       },
@@ -3387,6 +3471,27 @@
         ],
         "type": "object"
       },
+      "RecoverWithCodeRequest": {
+        "properties": {
+          "newPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoveryCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "recoveryCode",
+          "newPassword"
+        ],
+        "type": "object"
+      },
       "RefreshChallengeResponse": {
         "properties": {
           "challenge": {
@@ -3458,6 +3563,20 @@
         },
         "required": [
           "ids"
+        ],
+        "type": "object"
+      },
+      "RequestPasswordRecoveryRequest": {
+        "properties": {
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "email"
         ],
         "type": "object"
       },
@@ -4286,6 +4405,36 @@
         ],
         "type": "object"
       },
+      "StartTotpRequest": {
+        "properties": {
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "StartTotpResponse": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "provisioningUri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provisioningUri",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
       "StreamTicketResponse": {
         "properties": {
           "expiresIn": {
@@ -4342,6 +4491,30 @@
         "required": [
           "imported",
           "invalidRows"
+        ],
+        "type": "object"
+      },
+      "TotpStatusResponse": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "recoveryCodesRemaining": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "available",
+          "active",
+          "recoveryCodesRemaining"
         ],
         "type": "object"
       },
@@ -7554,6 +7727,81 @@
         ]
       }
     },
+    "/api/v1/identity/auth/password/recovery": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RequestPasswordRecoveryRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        },
+        "tags": [
+          "RequestPasswordRecoveryEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/password/recovery/availability": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryAvailabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/password/reset": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CompletePasswordRecoveryRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "CompletePasswordRecoveryEndpoint"
+        ]
+      }
+    },
     "/api/v1/identity/auth/qr/approve": {
       "post": {
         "requestBody": {
@@ -9025,6 +9273,34 @@
         ]
       }
     },
+    "/api/v1/identity/me/password/recover-with-code": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RecoverWithCodeRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "RecoverWithCodeEndpoint"
+        ]
+      }
+    },
     "/api/v1/identity/me/preferences": {
       "get": {
         "responses": {
@@ -9134,6 +9410,95 @@
         },
         "tags": [
           "PreferencesEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/me/totp": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "TotpEnrollmentEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/me/totp/confirm": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ConfirmTotpRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmTotpResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "TotpEnrollmentEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/me/totp/start": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StartTotpRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartTotpResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "TotpEnrollmentEndpoint"
         ]
       }
     },
@@ -14783,6 +15148,18 @@
     },
     {
       "name": "ChangePasswordEndpoint"
+    },
+    {
+      "name": "RequestPasswordRecoveryEndpoint"
+    },
+    {
+      "name": "CompletePasswordRecoveryEndpoint"
+    },
+    {
+      "name": "RecoverWithCodeEndpoint"
+    },
+    {
+      "name": "TotpEnrollmentEndpoint"
     },
     {
       "name": "RefreshEndpoint"

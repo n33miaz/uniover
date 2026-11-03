@@ -46,7 +46,7 @@ interface PasswordAnnouncement {
  * Tela de aceite do convite do dono. O link traz o segredo no fragmento (`/convite#...`), que o navegador nunca
  * envia ao servidor nem a outro site; a tela o guarda só em memória, tira o fragmento do endereço e o manda no
  * corpo do pedido. A pessoa escolhe o próprio e-mail e a própria senha (o dono nunca a conhece) e, ao terminar, já
- * está dentro. Não existe recuperação de senha, e a tela avisa.
+ * está dentro. A senha pode ser recuperada por e-mail depois.
  *
  * A tela tem cinco estados: o formulário; o endereço sem convite (`missing`) ou com convite fora do padrão
  * (`incomplete`); o convite que a API não aceita mais (`gone`); e o "tudo pronto" (`welcome`), que segue sozinho.

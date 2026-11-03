@@ -105,6 +105,7 @@ public static class IdentityModule
         services.AddScoped<ChangePasswordHandler>();
         services.AddScoped<RequestPasswordRecoveryHandler>();
         services.AddScoped<CompletePasswordRecoveryHandler>();
+        services.AddScoped<RecoverWithCodeHandler>();
         services.AddScoped<TotpEnrollmentHandler>();
         services.AddScoped<RefreshRecoveryService>();
         services.AddScoped<RefreshHandler>();
@@ -164,6 +165,7 @@ public static class IdentityModule
         group.MapChangePassword();
         group.MapRequestPasswordRecovery();
         group.MapCompletePasswordRecovery();
+        group.MapRecoverWithCode();
         group.MapTotpEnrollment();
         group.MapRefresh();
         group.MapRefreshChallenge();

@@ -11,6 +11,7 @@ using UniOver.Modules.Identity.Security;
 namespace UniOver.Modules.Identity.Features.PasswordRecovery;
 
 internal sealed record RequestPasswordRecoveryRequest(string? Email);
+internal sealed record PasswordRecoveryAvailabilityResponse(bool Enabled);
 
 internal sealed class RequestPasswordRecoveryHandler(
     IdentityDbContext db, IRecoveryEmailSender sender, RecoveryEmailQueue queue,
@@ -49,11 +50,18 @@ internal sealed class RequestPasswordRecoveryHandler(
 
 internal static class RequestPasswordRecoveryEndpoint
 {
-    public static void MapRequestPasswordRecovery(this IEndpointRouteBuilder group) =>
+    public static void MapRequestPasswordRecovery(this IEndpointRouteBuilder group)
+    {
+        group.MapGet("/auth/password/recovery/availability", (IRecoveryEmailSender sender) =>
+                TypedResults.Ok(new PasswordRecoveryAvailabilityResponse(sender.Available)))
+            .AllowAnonymous()
+            .Produces<PasswordRecoveryAvailabilityResponse>();
+
         group.MapPost("/auth/password/recovery", HandleAsync)
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Login)
             .Produces(StatusCodes.Status202Accepted);
+    }
 
     private static async Task<IResult> HandleAsync(
         HttpContext http, RequestPasswordRecoveryRequest? request,

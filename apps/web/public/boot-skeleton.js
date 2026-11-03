@@ -39,6 +39,8 @@
   else if (p === '/ajustes/sobre') v = 'settings-about';
   else if (p === '/entrar/qr') v = 'auth-qr';
   else if (p === '/entrar') v = 'auth-login';
+  else if (p === '/recuperar-senha') v = 'auth-recovery';
+  else if (p === '/redefinir-senha') v = 'auth-reset';
   else if (p === '/convite') v = 'auth-invite';
   else if (p === '/boas-vindas') v = 'auth-welcome';
   else if (p === '/conectar') v = 'devices-connect';

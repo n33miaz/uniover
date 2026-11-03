@@ -1516,6 +1516,115 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/identity/auth/password/recovery': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['RequestPasswordRecoveryRequest'];
+        };
+      };
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/auth/password/recovery/availability': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PasswordRecoveryAvailabilityResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/auth/password/reset': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['CompletePasswordRecoveryRequest'];
+        };
+      };
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/auth/qr/approve': {
     parameters: {
       query?: never;
@@ -3056,6 +3165,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/identity/me/password/recover-with-code': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['RecoverWithCodeRequest'];
+        };
+      };
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/me/preferences': {
     parameters: {
       query?: never;
@@ -3162,6 +3308,119 @@ export interface paths {
       };
     };
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/me/totp': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TotpStatusResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/me/totp/confirm': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['ConfirmTotpRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ConfirmTotpResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/me/totp/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['StartTotpRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['StartTotpResponse'];
+          };
+        };
+      };
+    };
     delete?: never;
     options?: never;
     head?: never;
@@ -9010,6 +9269,12 @@ export interface components {
       credential: null | components['schemas']['AuthenticatorAttestationRawResponse'];
       name: null | string;
     };
+    CompletePasswordRecoveryRequest: {
+      newPassword: null | string;
+      recoveryCode?: null | string;
+      token: null | string;
+      totpCode?: null | string;
+    };
     ConfirmStepUpRequest: {
       /** Format: uuid */
       challengeId: null | string;
@@ -9023,6 +9288,12 @@ export interface components {
     ConfirmStepUpWithPasswordRequest: {
       action: null | string;
       password: null | string;
+    };
+    ConfirmTotpRequest: {
+      code: null | string;
+    };
+    ConfirmTotpResponse: {
+      recoveryCodes: string[];
     };
     CreateGuestInviteRequest: {
       displayName: null | string;
@@ -9222,6 +9493,8 @@ export interface components {
     LoginRequest: {
       email: null | string;
       password: null | string;
+      recoveryCode?: null | string;
+      totpCode?: null | string;
     };
     LoginResponse: {
       accessToken: string;
@@ -9287,6 +9560,9 @@ export interface components {
       /** Format: date-time */
       lastUsedAt: null | string;
       name: string;
+    };
+    PasswordRecoveryAvailabilityResponse: {
+      enabled: boolean;
     };
     PermissionPending: {
       name: string;
@@ -9439,6 +9715,10 @@ export interface components {
       /** Format: uuid */
       userId: string;
     };
+    RecoverWithCodeRequest: {
+      newPassword: null | string;
+      recoveryCode: null | string;
+    };
     RefreshChallengeResponse: {
       challenge: null | string;
       /** Format: int32 */
@@ -9455,6 +9735,9 @@ export interface components {
     };
     ReorderShortcutsRequest: {
       ids: null | string[];
+    };
+    RequestPasswordRecoveryRequest: {
+      email: null | string;
     };
     RequestStepUpRequest: {
       action: null | string;
@@ -9655,6 +9938,14 @@ export interface components {
       expiresIn: number;
       pollSecret: string;
     };
+    StartTotpRequest: {
+      password: null | string;
+    };
+    StartTotpResponse: {
+      /** Format: date-time */
+      expiresAt: string;
+      provisioningUri: string;
+    };
     StreamTicketResponse: {
       /** Format: int32 */
       expiresIn: number;
@@ -9668,6 +9959,12 @@ export interface components {
       /** Format: int32 */
       imported: number | string;
       invalidRows: (number | string)[];
+    };
+    TotpStatusResponse: {
+      active: boolean;
+      available: boolean;
+      /** Format: int32 */
+      recoveryCodesRemaining: number | string;
     };
     TrainingProgramResponse: {
       /** Format: date-time */

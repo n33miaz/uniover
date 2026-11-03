@@ -23,7 +23,8 @@ import { SessionState } from '../session/session-state';
 import { safeNextUrl } from './next-url';
 
 type LoginError =
-  'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 'rate-limited' | 'paused';
+  'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 'rate-limited' | 'paused' |
+  'factor-required' | 'factor-invalid';
 
 /**
  * Tela de entrada. A mensagem de erro é a mesma para e-mail inexistente e senha errada (a API também não
@@ -53,6 +54,8 @@ export class LoginPage {
 
   protected readonly email = signal('');
   protected readonly password = signal('');
+  protected readonly factor = signal('');
+  protected readonly factorRequired = signal(false);
   protected readonly emailTouched = signal(false);
   protected readonly passwordTouched = signal(false);
   protected readonly submitted = signal(false);
@@ -103,6 +106,10 @@ export class LoginPage {
           $localize`:@@auth.login.error.invalid:E-mail ou senha incorretos.`,
           $localize`:@@auth.login.error.invalid-detail:Confira os dados e tente de novo.`,
         );
+      case 'factor-required':
+        return this.plain('warn', 'lock', $localize`:@@auth.login.factor-required:Informe o código do autenticador ou um código de recuperação.`);
+      case 'factor-invalid':
+        return this.plain('bad', 'alert-circle', $localize`:@@auth.login.factor-invalid:Código inválido. Confira e tente novamente.`);
       case 'bad-request':
         return this.plain(
           'bad',
@@ -162,8 +169,11 @@ export class LoginPage {
 
     this.busy.set(true);
     try {
-      await this.auth.login(this.email().trim(), this.password());
+      if (this.factorRequired())
+        await this.auth.login(this.email().trim(), this.password(), this.factor().trim());
+      else await this.auth.login(this.email().trim(), this.password());
       this.password.set('');
+      this.factor.set('');
       this.leaving.set(true);
       await this.leave();
       this.leaving.set(false);
@@ -183,6 +193,12 @@ export class LoginPage {
       this.wait.start(this.waitTotal());
     } else if (problem && isGuestPaused(problem)) {
       this.error.set('paused');
+    } else if (problem?.kind === 'second-factor-required') {
+      this.factorRequired.set(true);
+      this.error.set('factor-required');
+    } else if (problem?.kind === 'second-factor-invalid') {
+      this.factorRequired.set(true);
+      this.error.set('factor-invalid');
     } else if (problem?.status === 401) {
       this.error.set('invalid');
     } else if (problem?.status === 400) {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.JsonWebTokens;
 using UniOver.IntegrationTests.Infrastructure;
@@ -18,6 +19,16 @@ public sealed class AccountRecoveryTests(PostgresFixture postgres)
     public async Task RequestKeepsAccountsIndistinguishableWhenDeliveryIsOff()
     {
         await using var app = await IdentityApp.StartAsync(postgres);
+        using var availability = await app.SendAsync(HttpMethod.Get,
+            "/api/v1/identity/auth/password/recovery/availability");
+        Assert.Equal(HttpStatusCode.OK, availability.StatusCode);
+        using var status = JsonDocument.Parse(await availability.Content.ReadAsStringAsync(Ct));
+        Assert.False(status.RootElement.GetProperty("enabled").GetBoolean());
+        var login = await app.LoginAsync();
+        using var totp = await app.SendAsync(HttpMethod.Get, "/api/v1/identity/me/totp",
+            bearer: login.AccessToken);
+        var factor = await totp.Content.ReadFromJsonAsync<TotpStatusResponse>(Ct);
+        Assert.False(factor!.Available);
         using var known = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/password/recovery",
             new { email = app.OwnerEmail });
         using var unknown = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/password/recovery",
@@ -97,6 +108,13 @@ public sealed class AccountRecoveryTests(PostgresFixture postgres)
             Extra = new Dictionary<string, string?> { ["Modules:Identity:TotpKey"] = key },
         });
         var login = await app.LoginAsync();
+        using var before = await app.SendAsync(HttpMethod.Get, "/api/v1/identity/me/totp",
+            bearer: login.AccessToken);
+        Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+        var initial = await before.Content.ReadFromJsonAsync<TotpStatusResponse>(Ct);
+        Assert.True(initial!.Available);
+        Assert.False(initial!.Active);
+        Assert.Equal(0, initial.RecoveryCodesRemaining);
         using var denied = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/me/totp/start",
             new { password = app.OwnerPassword }, bearer: login.AccessToken);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
@@ -129,11 +147,64 @@ public sealed class AccountRecoveryTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
         var codes = await activated.Content.ReadFromJsonAsync<ConfirmTotpResponse>(Ct);
         Assert.Equal(10, codes!.RecoveryCodes.Distinct().Count());
+        using var after = await app.SendAsync(HttpMethod.Get, "/api/v1/identity/me/totp",
+            bearer: login.AccessToken);
+        var status = await after.Content.ReadFromJsonAsync<TotpStatusResponse>(Ct);
+        Assert.True(status!.Active);
+        Assert.Equal(10, status.RecoveryCodesRemaining);
         using var repeated = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/me/totp/confirm",
             new { code }, bearer: login.AccessToken);
         Assert.Equal(HttpStatusCode.BadRequest, repeated.StatusCode);
         using var passwordOnly = await app.LoginRawAsync(app.OwnerEmail, app.OwnerPassword);
         Assert.Equal(HttpStatusCode.PreconditionRequired, passwordOnly.StatusCode);
+    }
+
+    [Fact]
+    public async Task RecoveryCodeRequiresStepUpAndRevokesTheSessionAfterUse()
+    {
+        var key = IdentityApp.NewKey();
+        await using var app = await IdentityApp.StartAsync(postgres, new IdentityAppOptions
+        {
+            Extra = new Dictionary<string, string?> { ["Modules:Identity:TotpKey"] = key },
+        });
+        var login = await app.LoginAsync();
+        var session = Guid.Parse(new JsonWebTokenHandler().ReadJsonWebToken(login.AccessToken).GetClaim("sid").Value);
+        var (code, hash) = RecoveryCodes.Generate();
+        await using (var db = app.Db())
+        {
+            var user = await db.Users.SingleAsync(Ct);
+            var secret = TotpCodes.NewSecret();
+            var factor = TotpFactor.Pending(user.Id,
+                new TotpSecretProtector(Convert.FromBase64String(key)).Protect(user.Id, secret), app.Time.GetUtcNow());
+            factor.Activate(-1, app.Time.GetUtcNow());
+            db.TotpFactors.Add(factor);
+            db.AccountRecoveryCodes.Add(AccountRecoveryCode.Create(user.Id, hash, app.Time.GetUtcNow()));
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var password = IdentityApp.NewPassword();
+        using var denied = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/me/password/recover-with-code",
+            new { recoveryCode = code, newPassword = password }, bearer: login.AccessToken);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using (var details = JsonDocument.Parse(await denied.Content.ReadAsStringAsync(Ct)))
+            Assert.Equal(StepUpActions.PasswordRecovery, details.RootElement.GetProperty("action").GetString());
+
+        await using (var db = app.Db())
+        {
+            var user = await db.Users.SingleAsync(Ct);
+            db.StepUpConfirmations.Add(StepUpConfirmation.Create(user.Id, session,
+                StepUpActions.PasswordRecovery, app.Time.GetUtcNow(), TimeSpan.FromMinutes(5)));
+            await db.SaveChangesAsync(Ct);
+        }
+        using var changed = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/me/password/recover-with-code",
+            new { recoveryCode = code, newPassword = password }, bearer: login.AccessToken);
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+        using var old = await app.LoginRawAsync(app.OwnerEmail, app.OwnerPassword);
+        Assert.Equal(HttpStatusCode.Unauthorized, old.StatusCode);
+        using var fresh = await app.LoginRawAsync(app.OwnerEmail, password);
+        Assert.Equal(HttpStatusCode.PreconditionRequired, fresh.StatusCode);
+        await using var check = app.Db();
+        Assert.NotNull((await check.AccountRecoveryCodes.SingleAsync(Ct)).UsedAt);
     }
 
     [Fact]

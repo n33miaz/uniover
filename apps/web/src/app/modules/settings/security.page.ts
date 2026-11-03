@@ -3,15 +3,19 @@ import { SessionState } from '../../core/session/session-state';
 import { PasswordSection } from './password-section';
 import { SecuritySection } from './security-section';
 import { SessionsSection } from './sessions-section';
+import { TotpSection } from './totp-section';
+import { RecoveryCodeSection } from './recovery-code-section';
 
 /**
  * Segurança pessoal. Toda conta pode trocar a senha e cuidar das próprias sessões; o dono também gerencia passkeys.
  */
 @Component({
   selector: 'app-security-page',
-  imports: [PasswordSection, SecuritySection, SessionsSection],
+  imports: [PasswordSection, SecuritySection, SessionsSection, TotpSection, RecoveryCodeSection],
   template: `
     <app-password-section class="ui-rise" />
+    <app-recovery-code-section class="ui-rise" />
+    <app-totp-section class="ui-rise" />
     <app-sessions-section class="ui-rise" />
     @if (isOwner()) {
       <app-security-section class="ui-rise" />

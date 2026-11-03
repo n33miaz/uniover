@@ -150,8 +150,11 @@ export class AuthService {
     return this.initPromise;
   }
 
-  async login(email: string, password: string): Promise<void> {
-    await this.signInWithTokens(await this.api.login(email, password));
+  async login(email: string, password: string, factor?: string): Promise<void> {
+    const tokens = factor === undefined
+      ? await this.api.login(email, password)
+      : await this.api.login(email, password, factor);
+    await this.signInWithTokens(tokens);
   }
 
   /** Aceita o convite do dono e já abre a sessão do convidado (mesmo caminho do login depois da resposta). */
