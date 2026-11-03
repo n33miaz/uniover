@@ -20,4 +20,6 @@ public static class StepUpActions
 
     /// <summary>Reservada para a confirmação forte da troca quando houver segundo fator cadastrado.</summary>
     public const string PasswordChange = "identity.password-change";
+    public const string FactorManage = "identity.factor-manage";
+    public const string PasswordRecovery = "identity.password-recovery";
 }

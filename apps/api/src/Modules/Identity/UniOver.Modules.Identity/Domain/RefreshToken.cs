@@ -205,4 +205,5 @@ public static class RevokeReasons
     public const string GuestPaused = "guest-paused";
     public const string SessionRevoked = "session-revoked";
     public const string PasswordChanged = "password-changed";
+    public const string PasswordReset = "password-reset";
 }

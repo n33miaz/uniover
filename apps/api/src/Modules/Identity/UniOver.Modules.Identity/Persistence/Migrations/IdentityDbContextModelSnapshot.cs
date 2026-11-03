@@ -124,6 +124,42 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("account_preferences", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.AccountRecoveryCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_account_recovery_codes");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_account_recovery_codes_code_hash");
+
+                    b.HasIndex("UserId", "UsedAt")
+                        .HasDatabaseName("ix_account_recovery_codes_user_id_used_at");
+
+                    b.ToTable("account_recovery_codes", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.GuestInvite", b =>
                 {
                     b.Property<Guid>("Id")
@@ -297,6 +333,49 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasDatabaseName("ix_passkeys_user_id");
 
                     b.ToTable("passkeys", "identity");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_password_reset_tokens");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_password_reset_tokens_expires_at");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_password_reset_tokens_token_hash");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_password_reset_tokens_user_id_created_at");
+
+                    b.ToTable("password_reset_tokens", "identity");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.QrLoginRequest", b =>
@@ -606,6 +685,42 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("system_settings", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.TotpFactor", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("activated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<byte[]>("EncryptedSecret")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("encrypted_secret");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<long?>("LastAcceptedStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_accepted_step");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_totp_factors");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_totp_factors_expires_at");
+
+                    b.ToTable("totp_factors", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -759,6 +874,16 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasConstraintName("fk_account_preferences_users_user_id");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.AccountRecoveryCode", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_account_recovery_codes_users_user_id");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.Passkey", b =>
                 {
                     b.HasOne("UniOver.Modules.Identity.Domain.User", null)
@@ -767,6 +892,16 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_passkeys_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.PasswordResetToken", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_password_reset_tokens_users_user_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshDeviceKey", b =>
@@ -807,6 +942,16 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_step_up_confirmations_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.TotpFactor", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_totp_factors_users_user_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.UserGrant", b =>

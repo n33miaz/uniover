@@ -16,6 +16,9 @@ internal enum LoginStatus
 
     /// <summary>Senha certa, mas o dono pausou a conta: o app mostra só "Acesso pausado".</summary>
     Paused,
+    SecondFactorRequired,
+    SecondFactorInvalid,
+    SecondFactorUnavailable,
 }
 
 internal sealed record LoginResult(
@@ -32,6 +35,7 @@ internal sealed class LoginHandler(
     AccessTokenIssuer tokens,
     LoginAuditWriter audit,
     FailedLoginCounter failures,
+    SecondFactorVerifier secondFactor,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -87,6 +91,22 @@ internal sealed class LoginHandler(
             return new LoginResult(LoginStatus.Paused);
         }
 
+        // O código de recuperação ou o passo TOTP e a nova sessão entram na mesma transação.
+        // Se salvar a sessão falhar, o código não é consumido.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var factor = await secondFactor.VerifyAsync(
+            user.Id, command.TotpCode, command.RecoveryCode, now, cancellationToken);
+        if (factor == SecondFactorStatus.Required) return new LoginResult(LoginStatus.SecondFactorRequired);
+        if (factor == SecondFactorStatus.Unavailable) return new LoginResult(LoginStatus.SecondFactorUnavailable);
+        if (factor == SecondFactorStatus.Invalid)
+        {
+            await failures.RegisterAsync(user.Id, now, settings.Lockout, cancellationToken);
+            audit.Add(null, AuditEvents.LoginFailed, command.Client, AuditAboutAccount.Detail(user.Id, "second-factor"));
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new LoginResult(LoginStatus.SecondFactorInvalid);
+        }
+
         user.RegisterSuccess();
         if (check == PasswordCheck.SuccessRehashNeeded)
         {
@@ -104,6 +124,7 @@ internal sealed class LoginHandler(
         var access = tokens.Issue(user.Id, familyId, user.Role, UniOverAuth.ApiAudience, settings.AccessLifetime, now);
         audit.Add(user.Id, AuditEvents.LoginSucceeded, command.Client);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return new LoginResult(
             LoginStatus.Succeeded,

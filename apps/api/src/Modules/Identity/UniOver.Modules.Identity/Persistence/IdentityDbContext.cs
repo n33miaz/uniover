@@ -37,6 +37,12 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<AccountPreferences> AccountPreferences => Set<AccountPreferences>();
 
+    public DbSet<TotpFactor> TotpFactors => Set<TotpFactor>();
+
+    public DbSet<AccountRecoveryCode> AccountRecoveryCodes => Set<AccountRecoveryCode>();
+
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+
     /// <summary>
     /// A lista do catálogo como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
     /// constantes do código entram aqui (nenhum dado de usuário). Quando o catálogo muda, o modelo muda e o EF exige uma
@@ -164,6 +170,39 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
             // A consulta do requisito filtra por sessão e ação; a limpeza oportunista, por vencimento.
             e.HasIndex(x => new { x.SessionFamilyId, x.Action });
+            e.HasIndex(x => x.ExpiresAt);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TotpFactor>(e =>
+        {
+            e.ToTable("totp_factors");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).ValueGeneratedNever();
+            e.Property(x => x.EncryptedSecret).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.ExpiresAt);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AccountRecoveryCode>(e =>
+        {
+            e.ToTable("account_recovery_codes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.CodeHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.CodeHash).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.UsedAt });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PasswordResetToken>(e =>
+        {
+            e.ToTable("password_reset_tokens");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TokenHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
             e.HasIndex(x => x.ExpiresAt);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });

@@ -22,6 +22,7 @@ using UniOver.Modules.Identity.Features.ListAudit;
 using UniOver.Modules.Identity.Features.ListGuestInvites;
 using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Features.PeopleUsage;
+using UniOver.Modules.Identity.Features.PasswordRecovery;
 using UniOver.Modules.Identity.Features.Preferences;
 using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.Login;
@@ -39,6 +40,7 @@ using UniOver.Modules.Identity.Features.SetGuestPermissions;
 using UniOver.Modules.Identity.Features.StreamTicket;
 using UniOver.Modules.Identity.Features.SystemSettings;
 using UniOver.Modules.Identity.Features.UpdateProfile;
+using UniOver.Modules.Identity.Features.Totp;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 using UniOver.Modules.Tv.Contracts;
@@ -62,6 +64,15 @@ public static class IdentityModule
             .Validate(IdentityModuleOptions.IsValid, "Modules:Identity tem valor fora do permitido (tempos e limites devem ser positivos).")
             .ValidateOnStart();
 
+        services.AddOptions<PasswordRecoveryEmailOptions>()
+            .Bind(configuration.GetSection(IdentityModuleOptions.SectionName + ":RecoveryEmail"))
+            .Validate(o => o.IsValid(), "RecoveryEmail exige chave, remetente e URL HTTPS quando habilitado.")
+            .ValidateOnStart();
+        services.AddHttpClient<IRecoveryEmailSender, ResendRecoveryEmailSender>(client =>
+            client.Timeout = TimeSpan.FromSeconds(8));
+        services.AddSingleton<RecoveryEmailQueue>();
+        services.AddSingleton<IHostedService, RecoveryEmailWorker>();
+
         services.TryAddSingleton(TimeProvider.System);
         services.AddModuleDbContext<IdentityDbContext>(
             configuration, IdentityDbContext.SchemaName, typeof(IdentityDbContext).Assembly);
@@ -71,10 +82,12 @@ public static class IdentityModule
         services.AddScoped<IIdempotencyGateway<IdentityDbContext>, IdentityIdempotencyGateway>();
 
         services.AddSingleton<PasswordService>();
+        services.AddSingleton<TotpKeyProvider>();
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
         services.AddScoped<FailedLoginCounter>();
+        services.AddScoped<SecondFactorVerifier>();
         services.AddSingleton<SystemSettingsService>();
         services.AddSingleton<UniOver.Modules.Identity.Contracts.ISystemSettings>(sp => sp.GetRequiredService<SystemSettingsService>());
 
@@ -90,6 +103,9 @@ public static class IdentityModule
 
         services.AddScoped<LoginHandler>();
         services.AddScoped<ChangePasswordHandler>();
+        services.AddScoped<RequestPasswordRecoveryHandler>();
+        services.AddScoped<CompletePasswordRecoveryHandler>();
+        services.AddScoped<TotpEnrollmentHandler>();
         services.AddScoped<RefreshRecoveryService>();
         services.AddScoped<RefreshHandler>();
         services.AddScoped<RefreshChallengeHandler>();
@@ -146,6 +162,9 @@ public static class IdentityModule
         group.MapGetModuleInfo();
         group.MapLogin();
         group.MapChangePassword();
+        group.MapRequestPasswordRecovery();
+        group.MapCompletePasswordRecovery();
+        group.MapTotpEnrollment();
         group.MapRefresh();
         group.MapRefreshChallenge();
         group.MapLogout();
