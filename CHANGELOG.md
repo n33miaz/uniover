@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.12](https://github.com/n33miaz/uniover/compare/v0.36.11...v0.36.12) (2026-11-03)
+
+
+### Features
+
+* **pc:** add remote computer control
+
 ## [0.36.11](https://github.com/n33miaz/uniover/compare/v0.36.10...v0.36.11) (2026-11-03)
 
 
