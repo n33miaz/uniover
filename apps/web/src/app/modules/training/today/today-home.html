@@ -31,14 +31,6 @@
     </section>
   }
 
-  @if (store.suggestProgram()) {
-    <!-- Sem programa da semana, escolher é o primeiro passo e fica no topo. Quem já tem fichas livres pode dispensar. -->
-    <app-program-suggestion
-      [dismissible]="store.entries().length > 0"
-      (dismissed)="store.dismissSuggestion()"
-    />
-  }
-
   @if (!store.ready() || !store.homeReady()) {
     <!-- A forma do cartão do dia: a tela não pula quando a leitura local termina. A semana embaixo já aparece com as datas. -->
     <app-today-skeleton />
@@ -288,6 +280,13 @@
   }
 
   <app-week-calendar (routineChosen)="store.chooseRoutine($event)" />
+
+  @if (store.suggestProgram()) {
+    <app-program-suggestion
+      [dismissible]="store.entries().length > 0"
+      (dismissed)="store.dismissSuggestion()"
+    />
+  }
 
   @if (showLinks()) {
     <!-- Atalhos de uma linha: o programa ativo (e a troca por outro modelo) e o resumo do treino anterior. -->
