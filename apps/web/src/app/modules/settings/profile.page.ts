@@ -23,6 +23,7 @@ import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph } from './settings-glyph';
 import { SessionsSection } from './sessions-section';
 import { permissionLabels, roleLabel } from './settings-titles';
+import { SettingsPageSkeleton } from './settings-page-skeleton';
 
 /**
  * Perfil: quem a pessoa é para o app. O nome pode ser trocado a qualquer hora (campo, "Salvar" e o resultado ali mesmo,
@@ -33,7 +34,7 @@ import { permissionLabels, roleLabel } from './settings-titles';
  */
 @Component({
   selector: 'app-profile-page',
-  imports: [SettingsGlyph, SessionsSection],
+  imports: [SettingsGlyph, SessionsSection, SettingsPageSkeleton],
   templateUrl: './profile.page.html',
   styleUrl: './profile.page.css',
 })

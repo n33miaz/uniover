@@ -1,4 +1,10 @@
-<section class="section" aria-label="TVs por Pessoa" i18n-aria-label="@@settings.tv-people.title">
+<section
+  class="section"
+  aria-label="TVs por Pessoa"
+  i18n-aria-label="@@settings.tv-people.title"
+  [attr.data-screen-skeleton]="rows() === null ? 'settings-tv-people' : null"
+  [attr.data-screen-ready]="rows() !== null || failed() ? 'settings-tv-people' : null"
+>
   @if (rows(); as list) {
     @if (empty()) {
       <div class="empty ui-rise">

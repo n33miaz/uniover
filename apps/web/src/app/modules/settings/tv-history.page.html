@@ -1,4 +1,10 @@
-<section class="section" aria-label="Histórico da TV" i18n-aria-label="@@settings.tv-history.title">
+<section
+  class="section"
+  aria-label="Histórico da TV"
+  i18n-aria-label="@@settings.tv-history.title"
+  [attr.data-screen-skeleton]="rows() === null ? 'settings-tv-history' : null"
+  [attr.data-screen-ready]="rows() !== null || failed() ? 'settings-tv-history' : null"
+>
   @if (rows(); as list) {
     @if (tvName(); as name) {
       <p class="tv-name ui-section-label">{{ name }}</p>
