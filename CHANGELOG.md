@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.8](https://github.com/n33miaz/uniover/compare/v0.36.7...v0.36.8) (2026-11-03)
+
+
+### Bug Fixes
+
+* **training:** stabilize loading transition
+
 ## [0.36.7](https://github.com/n33miaz/uniover/compare/v0.36.6...v0.36.7) (2026-11-03)
 
 
