@@ -1,6 +1,6 @@
 r"""Auto-atualização do agente instalado em `%LOCALAPPDATA%\UniOver\app`.
 
-O fluxo é: perguntar ao GitHub qual é o commit atual da `main`, comparar com o gravado em
+O fluxo é: perguntar ao GitHub qual é o commit atual da `develop`, comparar com o gravado em
 `app\.version` e, se mudou, baixar **o zip daquele commit** (e não o da branch, que poderia
 andar entre uma chamada e outra), montar a pasta nova ao lado, validá-la e trocar por renomeação,
 guardando a anterior para o wrapper do Windows voltar atrás.
@@ -14,6 +14,7 @@ isso, deixa o ambiente virtual **fora** dela (`UV_PROJECT_ENVIRONMENT`) e roda o
 `--project` (sem mudar o diretório corrente): o próprio processo que atualiza não a trava.
 """
 
+import json
 import logging
 import os
 import re
@@ -34,7 +35,22 @@ from uniover_agent.adapters.process import run_hidden
 _log = logging.getLogger(__name__)
 
 REPOSITORY = "n33miaz/uniover"
-COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/main"
+
+
+def _production_ref() -> str:
+    """Uma configuração distribuída com o agente escolhe a branch de produção."""
+    path = Path(__file__).resolve().parents[3] / "tools" / "update-channel.json"
+    try:
+        ref = json.loads(path.read_text(encoding="utf-8"))["production_ref"]
+        if ref in {"main", "develop", "homolog"}:
+            return ref
+    except OSError, ValueError, KeyError, TypeError:
+        pass
+    return "develop"
+
+
+PRODUCTION_REF = _production_ref()
+COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/{PRODUCTION_REF}"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
 # Ensaio de atualização (`tools/upgrade-drill.ps1`): com `UNIOVER_UPDATE_DRILL=1`, as duas
 # consultas deste módulo vão para um servidor local em vez do GitHub. Sem a variável de modo
@@ -88,7 +104,7 @@ def archive_url(sha: str) -> str:
 
 
 def latest_commit() -> str:
-    """Commit atual da `main` (40 hexadecimais)."""
+    """Commit atual da branch de produção configurada (40 hexadecimais)."""
     url = commit_url()
     try:
         response = httpx.get(
