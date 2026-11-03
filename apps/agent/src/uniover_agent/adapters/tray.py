@@ -36,6 +36,7 @@ from uniover_agent.adapters.tray_controller import (
     TrayEnv,
     promote_in_background,
 )
+from uniover_agent.adapters.tray_host import run_host
 from uniover_agent.adapters.tray_registry import FilePromotionMarker, WindowsNotifyIconSettings
 from uniover_agent.adapters.tray_status import read_tray_inputs
 from uniover_agent.adapters.tray_win32 import (
@@ -129,13 +130,16 @@ def run_tray() -> int:
         return 1
 
 
-def _run(base: Path, recorder: _Recorder) -> int:
+def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra dois hosts de bandeja
     settings = Settings()
     assets = assets_dir()
-    holder: dict[str, SharpIcon] = {}
+    holder: dict[str, Any] = {}
 
     def notify(message: str, title: str) -> bool:
         """Só há balão com o ícone já visível; devolve se foi mostrado."""
+        native_notify = holder.get("native_notify")
+        if native_notify is not None:
+            return bool(native_notify(message, title))
         icon = holder.get("icon")
         if icon is None or not icon.visible:
             return False
@@ -143,7 +147,9 @@ def _run(base: Path, recorder: _Recorder) -> int:
         return True
 
     def stop() -> None:
-        holder["icon"].stop()
+        callback = holder.get("stop")
+        if callback is not None:
+            callback()
 
     env = TrayEnv(
         base=base,
@@ -159,6 +165,23 @@ def _run(base: Path, recorder: _Recorder) -> int:
     controller = TrayController(env)
     # Primeira leitura só para escolher o ícone: o balão espera o ícone aparecer (ver `refresh`).
     first = controller.refresh(announce=False)
+
+    if sys.platform == "win32" and os.environ.get("UNIOVER_TRAY_NATIVE") != "0":
+        try:
+            if run_host(
+                base,
+                assets,
+                first,
+                controller,
+                lambda callback: holder.__setitem__("stop", callback),
+                lambda callback: holder.__setitem__("native_notify", callback),
+                recorder,
+            ):
+                return 0
+        except Exception as exc:
+            _log.warning("o host visual da bandeja falhou", exc_info=True)
+            recorder("tray.host_failed", "warn", describe_exception(exc))
+        holder.clear()
 
     def item(entry: MenuEntry | None) -> Any:
         if entry is None:
@@ -177,6 +200,7 @@ def _run(base: Path, recorder: _Recorder) -> int:
     icon.ico_file = assets / first.icon_file
     icon.icon_size = size
     holder["icon"] = icon
+    holder["stop"] = icon.stop
 
     def apply(view: TrayView) -> None:
         current = small_icon_size(getattr(icon, "_hwnd", None))

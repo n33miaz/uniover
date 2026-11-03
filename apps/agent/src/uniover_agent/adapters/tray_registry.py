@@ -80,6 +80,19 @@ class WindowsNotifyIconSettings:
             return False
         return True
 
+    def promoted(self, key: str) -> bool | None:
+        """Escolha atual da pessoa; None quando o Windows nao permite conferi-la."""
+        if sys.platform != "win32":
+            return None
+        import winreg  # noqa: PLC0415
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, f"{SETTINGS_KEY}\\{key}") as handle:
+                value, _ = winreg.QueryValueEx(handle, "IsPromoted")
+        except OSError:
+            return None
+        return bool(value) if isinstance(value, int) else None
+
 
 class FilePromotionMarker:
     r"""`runtime\tray-promoted.json`: os executáveis que já foram promovidos (nunca de novo, nem se
