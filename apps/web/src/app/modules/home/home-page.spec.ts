@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { ModuleRegistry } from '../../core/modules/module-registry';
+import { PcAvailability } from '../../core/modules/pc-availability';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -50,6 +51,9 @@ describe('HomePage', () => {
     agentLinked: null,
   });
   const loading = signal(false);
+  /** O estado do PC é o da API: aqui um dublê, para o cartão do Controle do PC ser provado nos dois estados. */
+  const pcAvailable = signal(false);
+  const pcRefresh = vi.fn(() => Promise.resolve(true));
   const release = vi.fn();
   const watch = vi.fn(() => release);
   /** A escolha da Início é guardada por conta: a do dono que usa a tela nestes testes. */
@@ -71,12 +75,15 @@ describe('HomePage', () => {
       agentLinked: null,
     });
     loading.set(false);
+    pcAvailable.set(false);
+    pcRefresh.mockClear();
     release.mockClear();
     watch.mockClear();
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: HomeStatusPort, useValue: { status, loading, watch } },
+        { provide: PcAvailability, useValue: { available: pcAvailable, refresh: pcRefresh } },
       ],
     });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T09:30:00'));
@@ -483,5 +490,79 @@ describe('HomePage', () => {
     await press('.done'); // Concluir
     expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
     expect(JSON.parse(localStorage.getItem(KEY)!)[0].id).toBe('training');
+  });
+
+  describe('the PC control card', () => {
+    const card = (el: HTMLElement) => el.querySelector<HTMLElement>('article[data-module="pc"]')!;
+    const refresh = pcRefresh;
+
+    it('asks the API whether the house has a PC with the control on when the owner opens the Início', async () => {
+      await render();
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays as a planned card until a PC with the control is known', async () => {
+      const { el } = await render();
+      expect(card(el).classList.contains('planned')).toBe(true);
+      expect(card(el).querySelector('app-home-soon-badge')?.textContent?.trim()).toBe('Em Breve');
+      expect(card(el).querySelector('a')).toBeNull();
+    });
+
+    it('stops being "Em Breve" and opens the module once a PC with the control is known', async () => {
+      pcAvailable.set(true);
+      const { el } = await render();
+      expect(card(el).classList.contains('planned')).toBe(false);
+      expect(card(el).querySelector('app-home-soon-badge')).toBeNull();
+      const link = card(el).querySelector('a.card-link')!;
+      expect(link.getAttribute('href')).toBe('/pc');
+      expect(link.getAttribute('aria-label')).toBe('Controle do PC: Abrir controle');
+    });
+
+    it('follows the PC as it appears while the screen is open', async () => {
+      const { fixture, el } = await render();
+      expect(card(el).querySelector('a.card-link')).toBeNull();
+      pcAvailable.set(true);
+      await fixture.whenStable();
+      expect(card(el).querySelector('a.card-link')?.getAttribute('href')).toBe('/pc');
+    });
+
+    it('does not ask a guest who cannot use the module, and keeps the planned card for them', async () => {
+      TestBed.inject(SessionState).setUser({
+        id: 'guest',
+        email: 'g@exemplo.com',
+        displayName: 'Raphael',
+        role: 'guest',
+        permissions: ['module:training'],
+      });
+      const { el } = await render();
+      expect(refresh).not.toHaveBeenCalled();
+      expect(card(el).classList.contains('planned')).toBe(true);
+    });
+
+    it('lets a guest who was granted the module use it, and hides the open module from one who was not', async () => {
+      pcAvailable.set(true);
+      TestBed.inject(SessionState).setUser({
+        id: 'guest',
+        email: 'g@exemplo.com',
+        displayName: 'Raphael',
+        role: 'guest',
+        permissions: ['module:pc'],
+      });
+      const granted = await render();
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(card(granted.el).querySelector('a.card-link')?.getAttribute('href')).toBe('/pc');
+      granted.fixture.destroy();
+
+      TestBed.inject(SessionState).setUser({
+        id: 'guest',
+        email: 'g@exemplo.com',
+        displayName: 'Raphael',
+        role: 'guest',
+        permissions: ['module:training'],
+      });
+      const refused = await render();
+      // Mesmo que o estado diga "disponível", o módulo aberto só aparece a quem tem a permissão.
+      expect(card(refused.el)).toBeNull();
+    });
   });
 });

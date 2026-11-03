@@ -67,6 +67,7 @@
 }
 html[data-boot='home'] .bs-boot .bs-home,
 html[data-boot='tv'] .bs-boot .bs-tv,
+html[data-boot='pc'] .bs-boot .bs-detail,
 html[data-boot^='training-'] .bs-boot .bs-training,
 html[data-boot='settings'] .bs-boot .bs-settings,
 html[data-boot^='settings-'] .bs-boot .bs-detail,
@@ -86,6 +87,34 @@ html[data-boot='devices-connect'] .bs-boot .bs-plain {
 .bs-variant .bs-settings-profile-content,
 .bs-variant .bs-settings-appearance-content {
   display: none;
+}
+
+/* O controle do PC reserva o estado, a área grande do touchpad e a faixa dos botões. */
+html[data-boot='pc'] .bs-detail-cards,
+.bs-root[data-boot-variant='pc'] .bs-detail-cards {
+  display: none;
+}
+html[data-boot='pc'] .bs-route-content,
+.bs-root[data-boot-variant='pc'] .bs-route-content {
+  display: flex;
+  --route-art-height: min(52dvh, 480px);
+}
+html[data-boot='pc'] .bs-route-hero,
+.bs-root[data-boot-variant='pc'] .bs-route-hero,
+html[data-boot='pc'] .bs-route-strip,
+.bs-root[data-boot-variant='pc'] .bs-route-strip {
+  display: flex;
+}
+html[data-boot='pc'] .bs-route-hero > :not(.bs-route-art),
+.bs-root[data-boot-variant='pc'] .bs-route-hero > :not(.bs-route-art),
+html[data-boot='pc'] .bs-route-list,
+.bs-root[data-boot-variant='pc'] .bs-route-list {
+  display: none;
+}
+html[data-boot='pc'] .bs-route-art,
+.bs-root[data-boot-variant='pc'] .bs-route-art {
+  width: 100%;
+  border-radius: 24px;
 }
 .bs-chart {
   min-height: 180px;

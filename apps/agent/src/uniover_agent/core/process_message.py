@@ -22,7 +22,8 @@ class ProcessMessage:
 
     As mensagens comuns são atendidas uma a uma. Comandos em `background_types` e teclas cujo
     handler confere a idade rodam em tarefa própria: a recepção não espera a TV abrir a sessão.
-    Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos.
+    Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos. Comandos em
+    `silent_types` são executados mas não respondidos.
     """
 
     def __init__(  # noqa: PLR0913 - dependências injetadas, todas necessárias
@@ -34,6 +35,7 @@ class ProcessMessage:
         transport: Transport,
         *,
         background_types: Collection[str] = (),
+        silent_types: Collection[str] = (),
         monotonic: Callable[[], float] = time.monotonic,
         on_command: Callable[[Command], None] | None = None,
     ) -> None:
@@ -43,6 +45,7 @@ class ProcessMessage:
         self._envelopes = envelopes
         self._transport = transport
         self._background_types = frozenset(background_types)
+        self._silent_types = frozenset(silent_types)
         self._monotonic = monotonic
         self._on_command = on_command
         self._tasks: set[asyncio.Task[None]] = set()
@@ -123,6 +126,10 @@ class ProcessMessage:
 
     async def _execute(self, command: Command) -> None:
         result = await self._handle_command(command)
+        if command.type in self._silent_types:
+            # Fluxo de alta taxa (o movimento do mouse): a API o manda sem esperar resposta, e uma
+            # resposta por movimento só encheria o canal e o registro dela.
+            return
         # A API manda o comando com `correlationId` nulo e espera o resultado apontando o `id` dele.
         ok = result.status.value == "ok"
         await self._transport.send(

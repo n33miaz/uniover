@@ -27,6 +27,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
     private static readonly (string Method, string Pattern, string Policy)[] RateLimited =
     [
         ("POST", "/api/v1/identity/auth/login", RateLimitPolicies.Login),
+        ("POST", "/api/v1/identity/auth/password/recovery", RateLimitPolicies.Login),
+        ("POST", "/api/v1/identity/auth/password/reset", RateLimitPolicies.Login),
+        ("POST", "/api/v1/identity/me/password/recover-with-code", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/auth/refresh", RateLimitPolicies.Refresh),
         ("POST", "/api/v1/identity/auth/refresh/challenge", RateLimitPolicies.Refresh),
         ("POST", "/api/v1/identity/passkeys/registration/options", RateLimitPolicies.Login),
@@ -69,6 +72,15 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         // Ordem de um atalho do iPhone: rota anônima, a chave do atalho é a credencial; o limite é por IP.
         ("POST", "/api/v1/shortcuts/tv", RateLimitPolicies.Siri),
+        // Controle do PC: o movimento do mouse tem balde próprio e largo (dezenas por segundo); energia e favoritos, um baixo; o resto, o dos comandos.
+        ("POST", "/api/v1/pc/pointer", RateLimitPolicies.PcPointer),
+        ("POST", "/api/v1/pc/click", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/key", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/text", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/media", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/power", RateLimitPolicies.PcPower),
+        ("POST", "/api/v1/pc/apps/{appId}/launch", RateLimitPolicies.PcPower),
+        ("GET", "/api/v1/pc/status", RateLimitPolicies.Commands),
 
         // Trocar o computador que controla a TV: ação rara de administrador, com o mesmo limite baixo das outras que pedem passkey.
         ("PUT", "/api/v1/tv/config/agent", RateLimitPolicies.Login),

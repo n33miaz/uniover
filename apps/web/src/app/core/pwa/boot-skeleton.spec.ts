@@ -25,6 +25,8 @@ const CASES: readonly (readonly [string, BootVariant])[] = [
   ['/tv/', 'tv'],
   ['/tv/apps', 'tv'],
   ['/tv?painel=apps', 'tv'],
+  ['/pc', 'pc'],
+  ['/pc/teclado', 'pc'],
   ['/treino', 'training-today'],
   ['/treino/', 'training-today'],
   ['/treino/rotinas', 'training-routines'],
@@ -127,6 +129,7 @@ describe('boot skeleton', () => {
   const VARIANTS: readonly (readonly [BootVariant, string, string?])[] = [
     ['home', '/'],
     ['tv', '/tv/'],
+    ['pc', '/pc', 'detail'],
     ['training-today', '/treino/', 'training'],
     ['training-session', '/treino/sessao', 'training'],
     ['training-session-exercise', '/treino/sessao/exercicio', 'training'],

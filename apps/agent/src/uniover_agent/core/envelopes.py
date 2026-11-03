@@ -211,6 +211,14 @@ class EnvelopeFactory:
         body: dict[str, Any] = {"requestId": request_id, "tvs": list(tvs), "at": self._utc_now()}
         return self._build("tv.discovery.v1", body, correlation_id)
 
+    def pc_apps(self, apps: Sequence[tuple[str, str]]) -> dict[str, Any]:
+        """`pc.apps.v1`: pares (identificador, nome) dos favoritos que este PC deixa abrir."""
+        body: dict[str, Any] = {
+            "apps": [{"id": app_id, "label": label} for app_id, label in apps],
+            "at": self._utc_now(),
+        }
+        return self._build("pc.apps.v1", body, None)
+
     def tv_apps_v2(
         self,
         apps: Sequence[tuple[str, str, AppIcon | None]],

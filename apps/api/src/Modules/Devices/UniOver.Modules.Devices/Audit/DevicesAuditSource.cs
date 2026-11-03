@@ -28,6 +28,11 @@ internal static class DevicesAuditActions
         (PairingEvents.AgentRollbackRequested, "agent_rollback_requested"),
         (PairingEvents.AgentOffline, "agent_offline"),
         (PairingEvents.AgentOnline, "agent_online"),
+        (PairingEvents.PcLock, "pc_lock"),
+        (PairingEvents.PcSleep, "pc_sleep"),
+        (PairingEvents.PcShutdown, "pc_shutdown"),
+        (PairingEvents.PcShutdownCancelled, "pc_shutdown_cancelled"),
+        (PairingEvents.PcAppLaunch, "pc_app_launch"),
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. Map.Select(m => m.Action)];

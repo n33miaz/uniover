@@ -66,7 +66,8 @@ export class HomeEditSheet implements OnInit {
 
   /** Módulo sem tela ainda: o ícone fica no cinza discreto, como no cartão "Em Breve". */
   protected isPlanned(id: string): boolean {
-    return this.registry.find(id)?.status === 'soon';
+    const module = this.registry.find(id);
+    return module ? this.registry.statusOf(module) === 'soon' : false;
   }
 
   protected showLabel(id: string): string {
