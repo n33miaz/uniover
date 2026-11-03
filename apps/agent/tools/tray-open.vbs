@@ -1,4 +1,4 @@
-' Traz o icone do UniOver de volta a bandeja depois do "Sair" (atalho "UniOver Agente" do menu Iniciar). Somente ASCII.
+' Traz o icone do UniOver de volta a bandeja depois do "Sair" (atalho "UniOver" do menu Iniciar). Somente ASCII.
 ' Apaga o sinal runtime\tray-closed (o supervisor abre o icone em poucos segundos) e chama o lancador estavel, que sobe
 ' o agente se ele nao estiver rodando e sai na hora se estiver. Fica em app\tools: a atualizacao o renova junto com o resto.
 Option Explicit
