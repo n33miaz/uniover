@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.6](https://github.com/n33miaz/uniover/compare/v0.36.5...v0.36.6) (2026-11-03)
+
+
+### Bug Fixes
+
+* **agent:** isolate supervisor test records
+
 ## [0.36.5](https://github.com/n33miaz/uniover/compare/v0.36.4...v0.36.5) (2026-11-03)
 
 
