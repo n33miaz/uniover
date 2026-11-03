@@ -8,6 +8,11 @@ public static class AuditEvents
     public const string LoginLocked = "login_locked";
     public const string PasswordChanged = "password_changed";
     public const string PasswordChangeFailed = "password_change_failed";
+    public const string PasswordRecoveryRequested = "password_recovery_requested";
+    public const string PasswordRecovered = "password_recovered";
+    public const string PasswordRecoveryFailed = "password_recovery_failed";
+    public const string TotpActivated = "totp_activated";
+    public const string TotpDisabled = "totp_disabled";
     public const string RefreshSucceeded = "refresh_succeeded";
     public const string RefreshReuseDetected = "refresh_reuse_detected";
 
@@ -63,6 +68,11 @@ public static class AuditEvents
         LoginLocked,
         PasswordChanged,
         PasswordChangeFailed,
+        PasswordRecoveryRequested,
+        PasswordRecovered,
+        PasswordRecoveryFailed,
+        TotpActivated,
+        TotpDisabled,
         RefreshSucceeded,
         RefreshReuseDetected,
         RefreshRecovered,

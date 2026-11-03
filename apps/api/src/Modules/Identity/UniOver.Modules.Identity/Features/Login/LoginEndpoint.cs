@@ -36,7 +36,7 @@ internal static class LoginEndpoint
         }
 
         var result = await handler.HandleAsync(
-            new LoginCommand(request!.Email!, request.Password!, ClientInfo.From(http)), cancellationToken);
+            new LoginCommand(request!.Email!, request.Password!, ClientInfo.From(http), request.TotpCode, request.RecoveryCode), cancellationToken);
 
         switch (result.Status)
         {
@@ -47,6 +47,17 @@ internal static class LoginEndpoint
                 return IdentityProblems.Locked(http.Response, result.RetryAfter);
             case LoginStatus.Paused:
                 return IdentityProblems.GuestPausedUnauthenticated();
+            case LoginStatus.SecondFactorRequired:
+                return Results.Problem(statusCode: StatusCodes.Status428PreconditionRequired,
+                    title: "Informe o código do autenticador ou um código de recuperação.",
+                    type: ProblemDetailsExtensions.TypeBase + "second-factor-required");
+            case LoginStatus.SecondFactorInvalid:
+                return Results.Problem(statusCode: StatusCodes.Status401Unauthorized,
+                    title: "Código de confirmação inválido.",
+                    type: ProblemDetailsExtensions.TypeBase + "second-factor-invalid");
+            case LoginStatus.SecondFactorUnavailable:
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                    title: "Não foi possível conferir o segundo fator agora.");
             default:
                 return IdentityProblems.InvalidCredentials();
         }
