@@ -542,6 +542,12 @@ html[data-boot='settings-security'] .bs-route-content,
   --route-row-height: 56px;
   --route-input-height: 54px;
 }
+html[data-boot='settings-siri'] .bs-route-content,
+.bs-root[data-boot-variant='settings-siri'] .bs-route-content {
+  --route-art-height: 164px;
+  --route-row-height: 78px;
+  --route-input-height: 54px;
+}
 html[data-boot='settings-tv-people'] .bs-route-content,
 .bs-root[data-boot-variant='settings-tv-people'] .bs-route-content {
   --route-row-height: 92px;

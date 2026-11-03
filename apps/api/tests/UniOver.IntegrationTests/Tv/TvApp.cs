@@ -47,6 +47,12 @@ internal sealed record TvAppOptions
     /// <summary>A variável de ambiente antiga da TV (<c>Modules:Tv:AgentId</c>), que só a passagem de partida ainda lê.</summary>
     public string? LegacyAgentSlug { get; init; }
 
+    /// <summary>Limite da política dos Atalhos do iPhone (por IP); o padrão alto só cai nos testes que falam de limite.</summary>
+    public int SiriPermitted { get; init; } = 100000;
+
+    /// <summary>Slug do agente que controla a TV. O pareamento de "PC Casa" produz exatamente <c>pc-casa</c>.</summary>
+    public string AgentId { get; init; } = TvApp.AgentSlug;
+
     /// <summary>
     /// Quando informado, o banco do Identity é migrado só até a versão anterior às permissões, este gancho grava os dados
     /// "de antes" (convidados que já existiam) e só então as demais migrations rodam: o backfill é exercitado de verdade.
@@ -196,6 +202,7 @@ internal sealed class TvApp : IAsyncDisposable
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",
             ["RateLimiting:pairing:Permitted"] = "100000",
+            ["RateLimiting:siri:Permitted"] = options.SiriPermitted.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["RateLimiting:commands:Permitted"] = options.CommandsPermitted.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Logging:LogLevel:Default"] = "Debug",
 

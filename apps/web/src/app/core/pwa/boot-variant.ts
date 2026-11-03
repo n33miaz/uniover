@@ -23,6 +23,7 @@ export type BootVariant =
   | 'settings-profile'
   | 'settings-appearance'
   | 'settings-security'
+  | 'settings-siri'
   | 'settings-people'
   | 'settings-tv-people'
   | 'settings-tv-history'
@@ -73,6 +74,7 @@ export function bootVariantFor(path: string): BootVariant {
   if (pathname === '/ajustes/perfil') return 'settings-profile';
   if (pathname === '/ajustes/aparencia') return 'settings-appearance';
   if (pathname === '/ajustes/seguranca') return 'settings-security';
+  if (pathname === '/ajustes/seguranca/siri') return 'settings-siri';
   if (pathname === '/ajustes/pessoas') return 'settings-people';
   if (pathname === '/ajustes/tvs-por-pessoa') return 'settings-tv-people';
   if (/^\/ajustes\/tv\/[^/]+\/historico$/.test(pathname)) return 'settings-tv-history';

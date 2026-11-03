@@ -489,7 +489,7 @@ public sealed class CommandTests(PostgresFixture postgres)
         tvRoutes.SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
             .Where(a => a.Policy != null && a.Policy.StartsWith(StepUp.PolicyPrefix, StringComparison.Ordinal))
             .Select(a => a.Policy)
-            .Should().OnlyContain(policy => policy == StepUp.Policy(TvAuth.BindAgentAction));
+            .Should().OnlyContain(policy => policy == StepUp.Policy(TvAuth.BindAgentAction) || policy == StepUp.Policy(TvAuth.SiriTokenAction));
         RouteInspector.Violations(tvRoutes).Should().BeEmpty();
     }
 

@@ -29,6 +29,7 @@
   else if (p === '/ajustes/perfil') v = 'settings-profile';
   else if (p === '/ajustes/aparencia') v = 'settings-appearance';
   else if (p === '/ajustes/seguranca') v = 'settings-security';
+  else if (p === '/ajustes/seguranca/siri') v = 'settings-siri';
   else if (p === '/ajustes/pessoas') v = 'settings-people';
   else if (p === '/ajustes/tvs-por-pessoa') v = 'settings-tv-people';
   else if (/^\/ajustes\/tv\/[^/]+\/historico$/.test(p)) v = 'settings-tv-history';

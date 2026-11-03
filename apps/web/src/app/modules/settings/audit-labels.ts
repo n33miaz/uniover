@@ -116,6 +116,12 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-shortcut-update:Atalho editado`;
     case 'tv.config.bind':
       return $localize`:@@settings.audit.action.tv-config-bind:Computador da TV trocado`;
+    case 'tv.siri.create':
+      return $localize`:@@settings.audit.action.tv-siri-create:Chave dos Atalhos criada`;
+    case 'tv.siri.revoke':
+      return $localize`:@@settings.audit.action.tv-siri-revoke:Chave dos Atalhos revogada`;
+    case 'tv.siri.denied':
+      return $localize`:@@settings.audit.action.tv-siri-denied:Atalho recusado`;
     default:
       return null;
   }
@@ -229,7 +235,19 @@ export function describeTarget(
   const target = item.target?.trim();
   if (!target) return null;
 
-  switch (item.action) {
+  // A ordem que veio de um atalho do iPhone leva `via=siri` no fim do alvo: o alvo de sempre, mais a porta por onde chegou.
+  if (target.endsWith(SIRI_SUFFIX)) {
+    const base = describeBaseTarget(item.action, target.slice(0, -SIRI_SUFFIX.length));
+    const via = $localize`:@@settings.audit.target.via-siri:Atalho da Siri`;
+    return base ? `${base} · ${via}` : via;
+  }
+  return describeBaseTarget(item.action, target);
+}
+
+const SIRI_SUFFIX = ' via=siri';
+
+function describeBaseTarget(action: string, target: string): string | null {
+  switch (action) {
     case 'tv.key': {
       const key = target.split('/')[0].replaceAll('_', ' ').toLowerCase();
       return $localize`:@@settings.audit.target.key:Tecla ${key}:key:`;
@@ -258,6 +276,10 @@ export function describeTarget(
           : null;
     case 'tv.config.bind':
       return $localize`:@@settings.audit.target.computer:Computador ${target}:computer:`;
+    case 'tv.siri.create':
+    case 'tv.siri.revoke':
+      // O alvo é o nome que o administrador deu à chave.
+      return target;
     case 'step_up_succeeded':
     case 'step_up_failed':
       return capitalize(stepUpActionLabel(target));

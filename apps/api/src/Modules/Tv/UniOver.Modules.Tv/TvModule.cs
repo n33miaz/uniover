@@ -33,6 +33,7 @@ using UniOver.Modules.Tv.Features.RecentCommands;
 using UniOver.Modules.Tv.Features.RefreshShortcuts;
 using UniOver.Modules.Tv.Features.ReorderShortcuts;
 using UniOver.Modules.Tv.Features.SendKey;
+using UniOver.Modules.Tv.Features.Siri;
 using UniOver.Modules.Tv.Features.SendText;
 using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Features.UpdateShortcut;
@@ -131,6 +132,8 @@ public static class TvModule
         services.AddScoped<ReorderShortcutsHandler>();
         services.AddScoped<RefreshShortcutsHandler>();
         services.AddScoped<WakeHandler>();
+        services.AddScoped<SiriTokensHandler>();
+        services.AddScoped<SiriCommandHandler>();
         services.AddScoped<CleanupHandler>();
         services.AddScoped<RecentCommandsHandler>();
         services.AddScoped<TvAccessHandler>();
@@ -174,6 +177,10 @@ public static class TvModule
         group.MapTvs();
         group.MapPermission();
         group.MapNearbyTvs();
+        group.MapSiriTokens();
+
+        // A ordem dos Atalhos do iPhone fica fora do grupo da TV: o filtro dele exige uma sessão, e aqui a credencial é a chave.
+        endpoints.MapSiriCommand();
         return endpoints;
     }
 }

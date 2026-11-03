@@ -1,0 +1,116 @@
+:host {
+  display: block;
+}
+
+.steps,
+.cards,
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note:empty {
+  display: none;
+}
+
+.card {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  cursor: pointer;
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+summary::after {
+  content: '›';
+  margin-left: auto;
+  color: var(--a-ink2);
+  font-size: 1.3rem;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+details[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.phrase {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.body {
+  padding-block: var(--space-2) var(--space-1);
+}
+
+.hint,
+.subtitle {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.subtitle {
+  font-weight: 650;
+}
+
+.values {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rótulo em cima, valor embaixo e o botão de copiar ao lado: o valor quebra em qualquer ponto (URL e id são longos). */
+.value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name copy'
+    'text copy';
+  column-gap: var(--space-2);
+  align-items: center;
+}
+
+.label {
+  grid-area: name;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.text {
+  grid-area: text;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.copy {
+  grid-area: copy;
+  min-width: var(--tap);
+  padding-inline: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  summary::after {
+    transition: none;
+  }
+}

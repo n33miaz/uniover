@@ -785,6 +785,7 @@ export class UpdateSkeleton {
       return 'settings-data';
     if (
       variant === 'settings-security' ||
+      variant === 'settings-siri' ||
       variant === 'settings-about' ||
       variant === 'settings-credits'
     )
