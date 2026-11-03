@@ -9,7 +9,7 @@ import {
   untracked,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
 import { ModulePrefs } from '../modules/module-prefs';
@@ -36,7 +36,7 @@ const HOME_BACK: ShellBack = {
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, TvPermissionHost, PageTopBar],
+  imports: [RouterOutlet, TabBar, InstallHint, TvPermissionHost, PageTopBar],
   template: `
     @if (data().shellStyle !== 'training' && data().title; as title) {
       <app-page-top-bar [title]="title" [backLabel]="lead().label" (back)="goBack()" />

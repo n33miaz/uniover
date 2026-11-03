@@ -1,0 +1,122 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-6) 0 var(--space-2);
+}
+
+.round,
+.vol {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.round {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+}
+.round.big {
+  width: 92px;
+  height: 92px;
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  box-shadow: var(--shadow-1);
+}
+.round:active:not(:disabled),
+.vol:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.round:disabled,
+.vol:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.round:focus-visible,
+.vol:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.big svg {
+  width: 40px;
+  height: 40px;
+}
+svg .solid {
+  fill: currentColor;
+}
+
+.volume {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.vol {
+  min-height: 64px;
+  border-radius: var(--radius);
+}
+
+.section {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-body);
+}
+.apps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.app {
+  width: 100%;
+  min-height: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error {
+  margin: 0;
+  color: var(--a-bad);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

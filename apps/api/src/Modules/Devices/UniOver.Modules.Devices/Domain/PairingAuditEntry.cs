@@ -31,6 +31,14 @@ public static class PairingEvents
     // Presença do computador: o monitor registra a queda (sem sinal além do limite) e a volta. Sem conta, sem IP.
     public const string AgentOffline = "agent_offline";
     public const string AgentOnline = "agent_online";
+
+    // Controle do PC pelo app: só o que age na energia ou abre programas (movimento e teclas não entram). O nome cabe nos 40
+    // caracteres da coluna.
+    public const string PcLock = "pc_lock";
+    public const string PcSleep = "pc_sleep";
+    public const string PcShutdown = "pc_shutdown";
+    public const string PcShutdownCancelled = "pc_shutdown_cancelled";
+    public const string PcAppLaunch = "pc_app_launch";
 }
 
 /// <summary>

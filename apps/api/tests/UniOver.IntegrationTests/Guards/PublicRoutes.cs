@@ -39,6 +39,11 @@ internal static class PublicRoutes
         // Quem faz login ainda não tem credencial; o limite por IP e o bloqueio por conta protegem a rota.
         new("POST", "/api/v1/identity/auth/login", "entrada por senha: ainda não existe sessão"),
 
+        // Recuperação por e-mail: a disponibilidade informa só se a opção está ligada; solicitar e concluir dispensam sessão.
+        new("GET", "/api/v1/identity/auth/password/recovery/availability", "disponibilidade da recuperação por e-mail, sem dados de conta"),
+        new("POST", "/api/v1/identity/auth/password/recovery", "solicitação de recuperação com resposta neutra"),
+        new("POST", "/api/v1/identity/auth/password/reset", "troca da senha autenticada pelo código de uso único"),
+
         // O refresh se autentica pelo cookie HttpOnly próprio, não pelo JWT de acesso (que já expirou).
         new("POST", "/api/v1/identity/auth/refresh", "renovação por cookie de refresh rotativo"),
 

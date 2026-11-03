@@ -24,6 +24,11 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.AgentUpdateRequested, "agent_update_requested", AuditOutcome.Success)]
     [InlineData(PairingEvents.AgentRestartRequested, "agent_restart_requested", AuditOutcome.Success)]
     [InlineData(PairingEvents.AgentRollbackRequested, "agent_rollback_requested", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcLock, "pc_lock", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcSleep, "pc_sleep", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcShutdown, "pc_shutdown", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcShutdownCancelled, "pc_shutdown_cancelled", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcAppLaunch, "pc_app_launch", AuditOutcome.Success)]
     public void EachStoredEvent_BecomesAnUnambiguousActionWithAnOutcome(string stored, string action, AuditOutcome outcome)
     {
         var record = DevicesAuditNormalizer.Normalize(

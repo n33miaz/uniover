@@ -2,6 +2,7 @@
 export type BootVariant =
   | 'home'
   | 'tv'
+  | 'pc'
   | 'training-today'
   | 'training-session'
   | 'training-session-exercise'
@@ -45,6 +46,7 @@ export function bootVariantFor(path: string): BootVariant {
   const pathname = path.split(/[?#]/, 1)[0]?.replace(/\/+$/, '') || '/';
   if (pathname === '/' || pathname === '/index.html') return 'home';
   if (pathname === '/tv' || pathname.startsWith('/tv/')) return 'tv';
+  if (pathname === '/pc' || pathname.startsWith('/pc/')) return 'pc';
   if (pathname === '/treino/sessao/exercicio') return 'training-session-exercise';
   if (pathname === '/treino/sessao') return 'training-session';
   if (pathname === '/treino/glossario') return 'training-glossary';

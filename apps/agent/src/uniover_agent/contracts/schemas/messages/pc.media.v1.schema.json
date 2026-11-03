@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.media.v1.schema.json",
+  "title": "pc.media.v1",
+  "description": "API para agente: tecla de mídia do Windows (tocar/pausar, faixa, volume, mudo). `steps` repete o volume (1 a 10, padrão 1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.media.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "PLAY_PAUSE",
+            "NEXT",
+            "PREVIOUS",
+            "STOP",
+            "VOLUME_UP",
+            "VOLUME_DOWN",
+            "MUTE"
+          ]
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 1
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@
   var v = 'home';
   if (p === '/' || p === '/index.html') v = 'home';
   else if (p === '/tv' || p.indexOf('/tv/') === 0) v = 'tv';
+  else if (p === '/pc' || p.indexOf('/pc/') === 0) v = 'pc';
   else if (p === '/treino/sessao/exercicio') v = 'training-session-exercise';
   else if (p === '/treino/sessao') v = 'training-session';
   else if (p === '/treino/glossario') v = 'training-glossary';
