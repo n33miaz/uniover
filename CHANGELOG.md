@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.10](https://github.com/n33miaz/uniover/compare/v0.36.9...v0.36.10) (2026-11-03)
+
+
+### Features
+
+* **tv:** add automatic Samsung maintenance
+
 ## [0.36.9](https://github.com/n33miaz/uniover/compare/v0.36.8...v0.36.9) (2026-11-03)
 
 
