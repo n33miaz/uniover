@@ -1,0 +1,1361 @@
+/*
+ * Esqueletos de tela inteira, um por tipo de tela. Ficam num estilo GLOBAL (no mesmo pacote do `styles.css`, que é uma
+ * folha bloqueante no `<head>`) porque dois desenhos idênticos os usam: o estático do `index.html`, que cobre a tela antes
+ * de qualquer JavaScript do Angular rodar, e o `UpdateSkeleton`, que cobre atualização, abertura lenta e a espera de uma
+ * rota preguiçosa. Um só CSS garante que a troca de um pelo outro não dê salto. O brilho vem da classe única de espera
+ * (`ui-skeleton`, em styles.css): aqui só a forma de cada osso, com as medidas e os raios da tela real.
+ */
+
+.bs-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--a-bg);
+  color: var(--a-ink);
+}
+/* O desenho estático fica logo abaixo do que o Angular desenha: o de cima assume sem que nada pule. */
+.bs-root.bs-boot {
+  z-index: 999;
+}
+.bs-root.leaving {
+  animation: bs-fade-out var(--dur-exit) var(--ease-out) forwards;
+  pointer-events: none;
+}
+@keyframes bs-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bs-root.leaving {
+    animation: none;
+  }
+  .bs-root.bs-boot.leaving {
+    display: none;
+  }
+}
+/* O esqueleto do Angular já está por cima (mesmo desenho): o estático sai da pintura sem sair do documento. */
+.bs-root.bs-boot.bs-covered {
+  visibility: hidden;
+}
+/* Passou muito tempo sem o app subir (falha de carga): o brilho eterno mentiria, então o desenho sai de cena. */
+.bs-boot-timeout {
+  position: fixed;
+  inset-inline: var(--gutter);
+  bottom: calc(var(--gutter) + var(--safe-bottom));
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  max-width: 42rem;
+  margin-inline: auto;
+}
+.bs-boot-timeout[hidden] {
+  display: none;
+}
+.bs-boot-timeout p {
+  margin: 0;
+}
+
+/* O desenho estático só mostra o tipo que o seletor inicial escolheu pelo endereço. */
+.bs-boot .bs-variant {
+  display: none;
+}
+html[data-boot='home'] .bs-boot .bs-home,
+html[data-boot='tv'] .bs-boot .bs-tv,
+html[data-boot^='training-'] .bs-boot .bs-training,
+html[data-boot='settings'] .bs-boot .bs-settings,
+html[data-boot^='settings-'] .bs-boot .bs-detail,
+html[data-boot^='auth-'] .bs-boot .bs-plain,
+html[data-boot='devices-connect'] .bs-boot .bs-plain {
+  display: flex;
+}
+
+/* O mesmo invólucro mantém as medidas estáveis, mas cada aba do Treino mostra a composição dela. */
+/* Com o prefixo, ganha de `.bs-body` e `.bs-list`, que vêm depois e também definem o `display`. */
+.bs-variant .bs-training-list-content,
+.bs-variant .bs-training-progress-content,
+.bs-variant .bs-training-body-content,
+.bs-variant .bs-route-content,
+.bs-variant .bs-settings-data-content,
+.bs-variant .bs-settings-system-content,
+.bs-variant .bs-settings-profile-content,
+.bs-variant .bs-settings-appearance-content {
+  display: none;
+}
+.bs-chart {
+  min-height: 180px;
+}
+.bs-chart-line {
+  flex: 1;
+  min-height: 116px;
+  border-radius: var(--radius-sm);
+}
+.bs-form {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bs-detail-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bs-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: 130px;
+  box-sizing: border-box;
+  padding: var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-identity-who {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-3);
+}
+.bs-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+.bs-theme-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-theme-choice {
+  height: 92px;
+  border-radius: var(--radius-sm);
+}
+.bs-input {
+  width: 100%;
+  height: var(--tap);
+  border-radius: var(--radius-sm);
+}
+html[data-boot='training-today'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-today'] .bs-training-today-content,
+html[data-boot='training-list'] .bs-training-list-content,
+.bs-root[data-boot-variant='training-list'] .bs-training-list-content,
+html[data-boot='training-progress'] .bs-training-progress-content,
+.bs-root[data-boot-variant='training-progress'] .bs-training-progress-content,
+html[data-boot='training-body'] .bs-training-body-content,
+.bs-root[data-boot-variant='training-body'] .bs-training-body-content,
+html[data-boot='settings-people'] .bs-settings-data-content,
+html[data-boot='settings-audit'] .bs-settings-data-content,
+html[data-boot='settings-devices'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-people'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-audit'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-devices'] .bs-settings-data-content,
+html[data-boot='settings-profile'] .bs-settings-profile-content,
+.bs-root[data-boot-variant='settings-profile'] .bs-settings-profile-content,
+html[data-boot='settings-appearance'] .bs-settings-appearance-content,
+.bs-root[data-boot-variant='settings-appearance'] .bs-settings-appearance-content {
+  display: flex;
+}
+
+/* Todas as rotas têm uma composição nomeada. As quatro telas com desenho próprio acima conservam o desenho antigo;
+ * as demais usam uma moldura de peças que muda de tamanho e disposição conforme a tela real. */
+html[data-boot^='training-'] .bs-training-today-content,
+.bs-root[data-boot-variant^='training-'] .bs-training-today-content {
+  display: none;
+}
+html[data-boot='training-today'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-today'] .bs-training-today-content {
+  display: flex;
+}
+html[data-boot^='training-'] .bs-route-content,
+.bs-root[data-boot-variant^='training-'] .bs-route-content,
+html[data-boot^='settings-'] .bs-route-content,
+.bs-root[data-boot-variant^='settings-'] .bs-route-content,
+html[data-boot^='auth-'] .bs-route-content,
+.bs-root[data-boot-variant^='auth-'] .bs-route-content,
+html[data-boot='devices-connect'] .bs-route-content,
+.bs-root[data-boot-variant='devices-connect'] .bs-route-content {
+  display: flex;
+}
+html[data-boot='training-today'] .bs-route-content,
+.bs-root[data-boot-variant='training-today'] .bs-route-content,
+html[data-boot='training-progress'] .bs-route-content,
+.bs-root[data-boot-variant='training-progress'] .bs-route-content,
+html[data-boot='training-body'] .bs-route-content,
+.bs-root[data-boot-variant='training-body'] .bs-route-content,
+html[data-boot='settings-profile'] .bs-route-content,
+.bs-root[data-boot-variant='settings-profile'] .bs-route-content,
+html[data-boot='settings-appearance'] .bs-route-content,
+.bs-root[data-boot-variant='settings-appearance'] .bs-route-content,
+html[data-boot='settings-system'] .bs-route-content,
+.bs-root[data-boot-variant='settings-system'] .bs-route-content,
+html[data-boot='settings-people'] .bs-route-content,
+.bs-root[data-boot-variant='settings-people'] .bs-route-content,
+html[data-boot='settings-audit'] .bs-route-content,
+.bs-root[data-boot-variant='settings-audit'] .bs-route-content,
+html[data-boot='settings-devices'] .bs-route-content,
+.bs-root[data-boot-variant='settings-devices'] .bs-route-content {
+  display: none;
+}
+html[data-boot^='settings-'] .bs-detail-cards,
+.bs-root[data-boot-variant^='settings-'] .bs-detail-cards,
+html[data-boot^='auth-'] .bs-plain > .bs-card,
+.bs-root[data-boot-variant^='auth-'] .bs-plain > .bs-card,
+html[data-boot='devices-connect'] .bs-plain > .bs-card,
+.bs-root[data-boot-variant='devices-connect'] .bs-plain > .bs-card {
+  display: none;
+}
+html[data-boot='settings-system'] .bs-settings-system-content,
+.bs-root[data-boot-variant='settings-system'] .bs-settings-system-content {
+  display: flex;
+}
+html[data-boot='training-list'] .bs-training-today-content,
+html[data-boot='training-progress'] .bs-training-today-content,
+html[data-boot='training-body'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-list'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-progress'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-body'] .bs-training-today-content {
+  display: none;
+}
+html[data-boot='settings-system'] .bs-detail-cards,
+html[data-boot='settings-people'] .bs-detail-cards,
+html[data-boot='settings-audit'] .bs-detail-cards,
+html[data-boot='settings-devices'] .bs-detail-cards,
+html[data-boot='settings-profile'] .bs-detail-cards,
+html[data-boot='settings-appearance'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-system'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-people'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-audit'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-devices'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-profile'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-appearance'] .bs-detail-cards {
+  display: none;
+}
+
+.bs-variant {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.bs-route-content {
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow: hidden;
+  --route-art-height: 118px;
+  --route-row-height: 64px;
+  --route-grid-columns: repeat(2, minmax(0, 1fr));
+}
+.bs-route-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+.bs-route-head .bs-chip {
+  min-width: 64px;
+}
+.bs-route-hero,
+.bs-route-panel {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-route-art {
+  display: block;
+  height: var(--route-art-height);
+  border-radius: var(--radius-sm);
+}
+.bs-route-panel .bs-input {
+  height: var(--route-input-height, var(--tap));
+}
+.bs-route-strip,
+.bs-route-grid {
+  display: none;
+  grid-template-columns: var(--route-grid-columns);
+  gap: var(--space-2);
+}
+.bs-route-card {
+  display: block;
+  height: var(--route-art-height);
+  border-radius: var(--radius-sm);
+}
+.bs-route-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-route-row {
+  display: block;
+  height: var(--route-row-height);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+
+/* Sessão e detalhes começam pelo painel principal; o cabeçalho e os controles permanecem no lugar. */
+:is(
+    html[data-boot='training-session'] .bs-boot,
+    .bs-root[data-boot-variant='training-session'],
+    html[data-boot='training-session-exercise'] .bs-boot,
+    .bs-root[data-boot-variant='training-session-exercise'],
+    html[data-boot='training-exercise-detail'] .bs-boot,
+    .bs-root[data-boot-variant='training-exercise-detail'],
+    html[data-boot='training-assessment-detail'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-detail']
+  )
+  .bs-route-hero {
+  display: flex;
+}
+:is(
+    html[data-boot='training-session'] .bs-boot,
+    .bs-root[data-boot-variant='training-session'],
+    html[data-boot='training-session-exercise'] .bs-boot,
+    .bs-root[data-boot-variant='training-session-exercise']
+  )
+  .bs-route-strip {
+  display: grid;
+}
+
+/* Bibliotecas e coleções mostram filtros e linhas; os formulários reservam campos e botão. */
+:is(
+    html[data-boot='training-glossary'] .bs-boot,
+    .bs-root[data-boot-variant='training-glossary'],
+    html[data-boot='training-library'] .bs-boot,
+    .bs-root[data-boot-variant='training-library'],
+    html[data-boot='training-routines'] .bs-boot,
+    .bs-root[data-boot-variant='training-routines'],
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments'],
+    html[data-boot='settings-tv-people'] .bs-boot,
+    .bs-root[data-boot-variant='settings-tv-people'],
+    html[data-boot='settings-tv-history'] .bs-boot,
+    .bs-root[data-boot-variant='settings-tv-history']
+  )
+  .bs-route-strip {
+  display: grid;
+}
+:is(
+    html[data-boot='training-exercise-form'] .bs-boot,
+    .bs-root[data-boot-variant='training-exercise-form'],
+    html[data-boot='training-routine-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-routine-editor'],
+    html[data-boot='training-assessment-import'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-import'],
+    html[data-boot='training-assessment-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-editor'],
+    html[data-boot='settings-security'] .bs-boot,
+    .bs-root[data-boot-variant='settings-security'],
+    html[data-boot='auth-login'] .bs-boot,
+    .bs-root[data-boot-variant='auth-login'],
+    html[data-boot='auth-invite'] .bs-boot,
+    .bs-root[data-boot-variant='auth-invite'],
+    html[data-boot='devices-connect'] .bs-boot,
+    .bs-root[data-boot-variant='devices-connect']
+  )
+  .bs-route-panel {
+  display: flex;
+}
+:is(
+    html[data-boot='training-exercise-form'] .bs-boot,
+    .bs-root[data-boot-variant='training-exercise-form'],
+    html[data-boot='training-routine-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-routine-editor'],
+    html[data-boot='training-assessment-import'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-import'],
+    html[data-boot='training-assessment-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-editor'],
+    html[data-boot='settings-security'] .bs-boot,
+    .bs-root[data-boot-variant='settings-security'],
+    html[data-boot='auth-login'] .bs-boot,
+    .bs-root[data-boot-variant='auth-login'],
+    html[data-boot='auth-invite'] .bs-boot,
+    .bs-root[data-boot-variant='auth-invite'],
+    html[data-boot='devices-connect'] .bs-boot,
+    .bs-root[data-boot-variant='devices-connect']
+  )
+  .bs-route-list {
+  display: none;
+}
+:is(
+    html[data-boot='training-routine-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-routine-editor'],
+    html[data-boot='settings-security'] .bs-boot,
+    .bs-root[data-boot-variant='settings-security'],
+    html[data-boot='devices-connect'] .bs-boot,
+    .bs-root[data-boot-variant='devices-connect']
+  )
+  .bs-route-list {
+  display: flex;
+}
+:is(
+    html[data-boot='training-map'] .bs-boot,
+    .bs-root[data-boot-variant='training-map'],
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='auth-qr'] .bs-boot,
+    .bs-root[data-boot-variant='auth-qr']
+  )
+  .bs-route-card:nth-child(n + 2) {
+  display: none;
+}
+
+/* As proporções são da página de destino: duas rotas da mesma família não usam a mesma silhueta. */
+html[data-boot='training-session'] .bs-route-content,
+.bs-root[data-boot-variant='training-session'] .bs-route-content {
+  --route-art-height: 210px;
+  --route-row-height: 72px;
+}
+html[data-boot='training-session-exercise'] .bs-route-content,
+.bs-root[data-boot-variant='training-session-exercise'] .bs-route-content {
+  --route-art-height: 142px;
+  --route-row-height: 54px;
+}
+html[data-boot='training-glossary'] .bs-route-content,
+.bs-root[data-boot-variant='training-glossary'] .bs-route-content {
+  --route-row-height: 76px;
+  --route-grid-columns: repeat(3, minmax(0, 1fr));
+}
+html[data-boot='training-glossary'] .bs-route-hero,
+.bs-root[data-boot-variant='training-glossary'] .bs-route-hero {
+  display: flex;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+html[data-boot='training-glossary'] .bs-route-art,
+.bs-root[data-boot-variant='training-glossary'] .bs-route-art,
+html[data-boot='training-glossary'] .bs-route-strip,
+.bs-root[data-boot-variant='training-glossary'] .bs-route-strip {
+  display: none;
+}
+html[data-boot='training-library'] .bs-route-content,
+.bs-root[data-boot-variant='training-library'] .bs-route-content {
+  --route-row-height: 98px;
+  --route-grid-columns: repeat(2, minmax(0, 1fr));
+}
+html[data-boot='training-library'] .bs-route-panel,
+.bs-root[data-boot-variant='training-library'] .bs-route-panel {
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+html[data-boot='training-library'] .bs-route-panel > :not(.bs-input),
+.bs-root[data-boot-variant='training-library'] .bs-route-panel > :not(.bs-input),
+html[data-boot='training-library'] .bs-route-panel .bs-input:nth-child(3),
+.bs-root[data-boot-variant='training-library'] .bs-route-panel .bs-input:nth-child(3) {
+  display: none;
+}
+html[data-boot='training-exercise-form'] .bs-route-content,
+.bs-root[data-boot-variant='training-exercise-form'] .bs-route-content {
+  --route-art-height: 170px;
+  --route-row-height: 58px;
+  --route-input-height: 76px;
+}
+html[data-boot='training-map'] .bs-route-content,
+.bs-root[data-boot-variant='training-map'] .bs-route-content {
+  --route-art-height: 340px;
+  --route-grid-columns: 1fr;
+}
+html[data-boot='training-map'] .bs-route-hero,
+.bs-root[data-boot-variant='training-map'] .bs-route-hero,
+html[data-boot='settings-about'] .bs-route-hero,
+.bs-root[data-boot-variant='settings-about'] .bs-route-hero,
+html[data-boot='auth-qr'] .bs-route-hero,
+.bs-root[data-boot-variant='auth-qr'] .bs-route-hero {
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+html[data-boot='training-map'] .bs-route-art,
+.bs-root[data-boot-variant='training-map'] .bs-route-art,
+html[data-boot='settings-about'] .bs-route-art,
+.bs-root[data-boot-variant='settings-about'] .bs-route-art,
+html[data-boot='auth-qr'] .bs-route-art,
+.bs-root[data-boot-variant='auth-qr'] .bs-route-art {
+  display: none;
+}
+html[data-boot='training-exercise-detail'] .bs-route-content,
+.bs-root[data-boot-variant='training-exercise-detail'] .bs-route-content {
+  --route-art-height: 225px;
+  --route-row-height: 84px;
+}
+html[data-boot='training-routines'] .bs-route-content,
+.bs-root[data-boot-variant='training-routines'] .bs-route-content {
+  --route-row-height: 112px;
+  --route-grid-columns: repeat(2, minmax(0, 1fr));
+}
+html[data-boot='training-routine-editor'] .bs-route-content,
+.bs-root[data-boot-variant='training-routine-editor'] .bs-route-content {
+  --route-art-height: 130px;
+  --route-row-height: 62px;
+  --route-input-height: 58px;
+}
+html[data-boot='training-food'] .bs-route-content,
+.bs-root[data-boot-variant='training-food'] .bs-route-content {
+  --route-art-height: 150px;
+  --route-row-height: 78px;
+}
+html[data-boot='training-assessments'] .bs-route-content,
+.bs-root[data-boot-variant='training-assessments'] .bs-route-content {
+  --route-row-height: 104px;
+  --route-grid-columns: repeat(3, minmax(0, 1fr));
+}
+html[data-boot='training-assessment-import'] .bs-route-content,
+.bs-root[data-boot-variant='training-assessment-import'] .bs-route-content {
+  --route-art-height: 195px;
+  --route-row-height: 64px;
+  --route-input-height: 112px;
+}
+html[data-boot='training-assessment-editor'] .bs-route-content,
+.bs-root[data-boot-variant='training-assessment-editor'] .bs-route-content {
+  --route-art-height: 124px;
+  --route-row-height: 64px;
+  --route-input-height: 68px;
+}
+html[data-boot='training-assessment-detail'] .bs-route-content,
+.bs-root[data-boot-variant='training-assessment-detail'] .bs-route-content {
+  --route-art-height: 186px;
+  --route-row-height: 94px;
+}
+html[data-boot='settings-security'] .bs-route-content,
+.bs-root[data-boot-variant='settings-security'] .bs-route-content {
+  --route-art-height: 112px;
+  --route-row-height: 56px;
+  --route-input-height: 54px;
+}
+html[data-boot='settings-tv-people'] .bs-route-content,
+.bs-root[data-boot-variant='settings-tv-people'] .bs-route-content {
+  --route-row-height: 92px;
+  --route-grid-columns: repeat(2, minmax(0, 1fr));
+}
+html[data-boot='settings-tv-history'] .bs-route-content,
+.bs-root[data-boot-variant='settings-tv-history'] .bs-route-content {
+  --route-row-height: 72px;
+  --route-grid-columns: repeat(3, minmax(0, 1fr));
+}
+html[data-boot='settings-about'] .bs-route-content,
+.bs-root[data-boot-variant='settings-about'] .bs-route-content {
+  --route-art-height: 140px;
+  --route-grid-columns: 1fr;
+}
+html[data-boot='settings-credits'] .bs-route-content,
+.bs-root[data-boot-variant='settings-credits'] .bs-route-content {
+  --route-art-height: 82px;
+  --route-grid-columns: repeat(2, minmax(0, 1fr));
+}
+html[data-boot='auth-login'] .bs-route-content,
+.bs-root[data-boot-variant='auth-login'] .bs-route-content {
+  --route-art-height: 110px;
+  --route-row-height: 52px;
+  --route-input-height: 52px;
+}
+html[data-boot='auth-qr'] .bs-route-content,
+.bs-root[data-boot-variant='auth-qr'] .bs-route-content {
+  --route-art-height: 240px;
+  --route-grid-columns: 1fr;
+}
+html[data-boot='auth-qr'] .bs-route-card:first-child,
+.bs-root[data-boot-variant='auth-qr'] .bs-route-card:first-child {
+  width: min(62vw, 240px);
+  height: auto;
+  aspect-ratio: 1;
+  margin-inline: auto;
+}
+html[data-boot='auth-invite'] .bs-route-content,
+.bs-root[data-boot-variant='auth-invite'] .bs-route-content {
+  --route-art-height: 95px;
+  --route-row-height: 54px;
+  --route-input-height: 44px;
+}
+html[data-boot='auth-welcome'] .bs-route-content,
+.bs-root[data-boot-variant='auth-welcome'] .bs-route-content {
+  --route-art-height: 120px;
+  --route-grid-columns: repeat(2, minmax(0, 1fr));
+}
+html[data-boot='devices-connect'] .bs-route-content,
+.bs-root[data-boot-variant='devices-connect'] .bs-route-content {
+  --route-art-height: 154px;
+  --route-row-height: 66px;
+  --route-input-height: 60px;
+}
+html[data-boot='settings-people'] .bs-settings-data-content .bs-row,
+.bs-root[data-boot-variant='settings-people'] .bs-settings-data-content .bs-row {
+  min-height: 92px;
+}
+html[data-boot='settings-people'] .bs-settings-data-content .bs-icon,
+.bs-root[data-boot-variant='settings-people'] .bs-settings-data-content .bs-icon {
+  border-radius: 50%;
+}
+html[data-boot='settings-audit'] .bs-settings-data-content .bs-row,
+.bs-root[data-boot-variant='settings-audit'] .bs-settings-data-content .bs-row {
+  min-height: 58px;
+}
+html[data-boot='settings-audit'] .bs-settings-data-content .bs-icon,
+.bs-root[data-boot-variant='settings-audit'] .bs-settings-data-content .bs-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+html[data-boot='settings-devices'] .bs-settings-data-content .bs-row,
+.bs-root[data-boot-variant='settings-devices'] .bs-settings-data-content .bs-row {
+  min-height: 110px;
+}
+html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
+.bs-root[data-boot-variant='settings-devices'] .bs-settings-data-content .bs-chip {
+  width: 72px;
+}
+:is(
+    html[data-boot='training-session'] .bs-boot,
+    .bs-root[data-boot-variant='training-session'],
+    html[data-boot='training-session-exercise'] .bs-boot,
+    .bs-root[data-boot-variant='training-session-exercise'],
+    html[data-boot='training-glossary'] .bs-boot,
+    .bs-root[data-boot-variant='training-glossary'],
+    html[data-boot='training-exercise-form'] .bs-boot,
+    .bs-root[data-boot-variant='training-exercise-form'],
+    html[data-boot='training-routine-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-routine-editor'],
+    html[data-boot='training-assessment-import'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-import'],
+    html[data-boot='training-assessment-editor'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessment-editor']
+  )
+  .bs-tabs {
+  display: none;
+}
+
+/* Mapa, alimentação, resumo e boas-vindas têm blocos largos em vez de linhas de catálogo. */
+:is(
+    html[data-boot='training-map'] .bs-boot,
+    .bs-root[data-boot-variant='training-map'],
+    html[data-boot='training-food'] .bs-boot,
+    .bs-root[data-boot-variant='training-food'],
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='settings-credits'] .bs-boot,
+    .bs-root[data-boot-variant='settings-credits'],
+    html[data-boot='auth-qr'] .bs-boot,
+    .bs-root[data-boot-variant='auth-qr'],
+    html[data-boot='auth-welcome'] .bs-boot,
+    .bs-root[data-boot-variant='auth-welcome']
+  )
+  .bs-route-grid {
+  display: grid;
+}
+:is(
+    html[data-boot='training-map'] .bs-boot,
+    .bs-root[data-boot-variant='training-map'],
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='settings-credits'] .bs-boot,
+    .bs-root[data-boot-variant='settings-credits'],
+    html[data-boot='auth-qr'] .bs-boot,
+    .bs-root[data-boot-variant='auth-qr'],
+    html[data-boot='auth-welcome'] .bs-boot,
+    .bs-root[data-boot-variant='auth-welcome']
+  )
+  .bs-route-list {
+  display: none;
+}
+
+.bs-root .bone {
+  display: block;
+  min-height: 0;
+}
+.bs-root .bs-line {
+  height: 14px;
+}
+.bs-root .bs-line.bs-big {
+  height: 28px;
+}
+.bs-root .bs-w20 {
+  width: 20%;
+}
+.bs-root .bs-w30 {
+  width: 30%;
+}
+.bs-root .bs-w40 {
+  width: 40%;
+}
+.bs-root .bs-w60 {
+  width: 60%;
+}
+.bs-root .bs-w70 {
+  width: 70%;
+}
+.bs-root .bs-w80 {
+  width: 80%;
+}
+
+/* Colunas de página e cartões: as mesmas medidas do app (coluna, respiros, raios). */
+.bs-page {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--gutter) var(--space-4);
+  box-sizing: border-box;
+}
+.bs-card,
+.bs-row {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+.bs-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+}
+.bs-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+}
+.bs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.bs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+}
+.bs-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-pill {
+  width: 120px;
+  height: var(--tap);
+  border-radius: var(--radius);
+  margin-top: var(--space-2);
+}
+.bs-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-xs);
+}
+.bs-icon.bs-round {
+  border-radius: var(--radius-pill);
+}
+.bs-chip {
+  width: 44px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+}
+
+/* Barra de abas de baixo (some em tela larga, como a real). */
+.bs-tabs {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + var(--safe-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+/* A barra de abas de verdade tem 65 px (ícone e rótulo): o desenho guarda a mesma altura para a troca não pular. */
+.bs-tabs {
+  min-height: calc(65px + var(--safe-bottom));
+  box-sizing: border-box;
+}
+.bs-tab {
+  width: 40px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+}
+
+/* Topo único dos módulos (voltar, título no centro de verdade): a mesma grade da barra de topo da casca. */
+.bs-topbar {
+  display: grid;
+  grid-template-columns: minmax(var(--tap), 1fr) minmax(0, auto) minmax(var(--tap), 1fr);
+  column-gap: 4px;
+  align-items: center;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: calc(var(--space-3) + env(safe-area-inset-top, 0px))
+    max(var(--gutter), env(safe-area-inset-right)) var(--space-1)
+    max(var(--gutter), env(safe-area-inset-left));
+}
+/* Telas de Configurações e outras com a casca padrão: o respiro a mais que a casca põe acima da barra. */
+.bs-topbar.bs-shell {
+  padding-top: calc(var(--gutter) + var(--space-3) + env(safe-area-inset-top, 0px));
+}
+.bs-topbar .bs-back {
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 50%;
+}
+.bs-topbar .bs-title {
+  width: 8.5rem;
+  height: 24px;
+  justify-self: center;
+}
+.bs-topbar .bs-end {
+  justify-self: end;
+}
+/* O Treino tem o indicador de sincronização à direita: o círculo dele já ocupa o lugar no desenho. */
+.bs-training .bs-topbar .bs-end {
+  width: var(--tap);
+  height: var(--tap);
+  box-sizing: border-box;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+}
+.bs-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--gutter) var(--space-4);
+  box-sizing: border-box;
+}
+
+/* ---- Início ---- */
+.bs-page.bs-home {
+  max-width: calc(46rem + 2 * var(--gutter));
+  padding-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--gutter) + var(--safe-bottom));
+}
+.bs-home-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  min-height: clamp(136px, 21vw, 172px);
+  padding: clamp(var(--space-5), 3vw, var(--space-6));
+  border: 1px solid color-mix(in srgb, var(--a-accent) 22%, var(--a-line));
+  border-radius: var(--radius-xl);
+  background: var(--a-hero);
+  box-shadow: var(--shadow-2);
+}
+.bs-home-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-time {
+  width: clamp(76px, 18vw, 104px);
+  height: clamp(28px, 7vw, 36px);
+  border-radius: var(--radius-sm);
+}
+/* Uma linha de 44 px como a do cabeçalho de verdade; sem `flex-shrink: 0` o contêiner, cheio, a esmagava a zero. */
+.bs-brand {
+  flex-shrink: 0;
+  align-self: center;
+  width: 4.75rem;
+  height: 17px;
+  margin: 13.5px var(--space-1);
+}
+.bs-hero-actions {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.bs-gear {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+}
+.bs-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+}
+.bs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  margin-top: var(--space-1);
+  padding-inline: var(--space-1);
+}
+.bs-section-head .bs-big {
+  width: 7rem;
+  height: 22px;
+}
+.bs-section-head .bs-w20 {
+  width: 3.5rem;
+}
+.bs-modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.bs-module {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: clamp(160px, 42vw, 176px);
+  padding: var(--space-4) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+}
+.bs-module .bs-line {
+  width: 60%;
+}
+.bs-app {
+  width: clamp(72px, 19vw, 80px);
+  height: clamp(72px, 19vw, 80px);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Controle da TV ---- */
+.bs-tv {
+  --tv-top: 60px;
+  --tv-pill: 52px;
+  --tv-round: clamp(60px, 8.2dvh, 84px);
+  align-items: stretch;
+}
+/* Mesma caixa do `main` + `.tv` do controle: a coluna de 36 rem, o respiro e a altura útil da tela. */
+.bs-tv-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  max-width: calc(36rem + 2 * var(--gutter));
+  margin-inline: auto;
+  box-sizing: border-box;
+  padding: calc(var(--gutter) + env(safe-area-inset-top, 0px)) var(--gutter)
+    calc(var(--gutter) + var(--safe-bottom));
+}
+/* Cabeçalho: voltar e três pontos à esquerda, título no meio, ponto de estado e desligar à direita. */
+.bs-tv-head {
+  --gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(calc(2 * var(--tap) + var(--gap)), 1fr) minmax(0, auto) minmax(
+      calc(2 * var(--tap) + var(--gap)),
+      1fr
+    );
+  column-gap: 4px;
+  align-items: center;
+}
+.bs-tv-lead,
+.bs-tv-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bs-tv-actions {
+  justify-self: end;
+}
+.bs-circle {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 50%;
+}
+.bs-tv-title {
+  width: 3.5rem;
+  height: 24px;
+  border-radius: var(--radius-xs);
+}
+/* O ponto de estado mora na ponta do alvo de 44 px, colado ao desligar. */
+.bs-tv-state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: var(--tap);
+  height: var(--tap);
+}
+.bs-tv-state .bs-state-dot {
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 4px;
+  border-radius: 50%;
+}
+/* Fileira de atalhos: quatro azulejos quadrados, centralizados, na altura da fileira real. */
+.bs-tv-shortcuts {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tv-top);
+}
+.bs-tile {
+  flex: 0 0 auto;
+  width: var(--tv-top);
+  height: var(--tv-top);
+  border-radius: 16px;
+}
+/* Palco: o que sobra de altura; o anel é o maior círculo que cabe na janela dele. */
+.bs-tv-stage {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+.bs-tv-viewport {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 176px;
+  container-type: size;
+  --bs-ring: clamp(150px, 38dvh, 300px);
+}
+@supports (width: 1cqi) {
+  .bs-tv-viewport {
+    --bs-ring: min(100cqi - 4px, 100cqb, 480px);
+  }
+}
+/* O anel é um círculo com a borda que brilha; por dentro, o disco claro, as quatro setas e o OK no meio. */
+.bs-ring {
+  position: relative;
+  flex: none;
+  width: var(--bs-ring);
+  height: var(--bs-ring);
+  border-radius: 50%;
+}
+.bs-disk {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--a-surface);
+}
+.bs-ok {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 37%;
+  height: 37%;
+  border-radius: 50%;
+  translate: -50% -50%;
+}
+.bs-arrow {
+  position: absolute;
+  width: 18px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+}
+.bs-arrow.bs-up {
+  top: 14%;
+  left: calc(50% - 9px);
+}
+.bs-arrow.bs-down {
+  bottom: 14%;
+  left: calc(50% - 9px);
+}
+.bs-arrow.bs-left {
+  top: calc(50% - 5px);
+  left: 14%;
+}
+.bs-arrow.bs-right {
+  top: calc(50% - 5px);
+  right: 14%;
+}
+/* Bolinhas de página: três alvos de 44 px com a bolinha de 8 px no meio. */
+.bs-tv-dots {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: var(--tap);
+}
+.bs-pip-cell {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+}
+.bs-pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+/* Embaixo: pílula de volume, oito botões redondos (4x2) e pílula de canal. */
+.bs-tv-bottom {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: var(--tv-pill) minmax(0, 1fr) var(--tv-pill);
+  gap: 4px;
+  align-items: stretch;
+}
+.bs-vpill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border: 1px solid var(--a-line);
+  border-radius: calc(var(--tv-pill) / 2);
+  background: var(--a-surface);
+}
+.bs-vpill .bs-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+}
+.bs-vpill .bs-level {
+  width: 26px;
+  height: 14px;
+  border-radius: 6px;
+}
+.bs-rounds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 3px;
+  align-content: center;
+  justify-items: center;
+}
+.bs-round-key {
+  width: min(100%, var(--tv-round));
+  min-width: 48px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+/* ---- Treino (topo único + Hoje + abas) ---- */
+.bs-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-segment {
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+.bs-training-today-content .bs-hero {
+  min-height: 250px;
+  box-sizing: border-box;
+}
+.bs-exercises-switch,
+.bs-progress-nav {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.bs-body-title {
+  width: 6rem;
+  height: 28px;
+  margin-block: var(--space-2) 0;
+}
+.bs-body-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.bs-weight-card {
+  min-height: 176px;
+  box-sizing: border-box;
+}
+.bs-weight-copy {
+  display: block;
+  flex: 1;
+  min-height: 72px;
+  border-radius: var(--radius-sm);
+}
+.bs-body-signals,
+.bs-system-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.bs-signal-card {
+  min-height: 128px;
+  box-sizing: border-box;
+}
+.bs-map-panel {
+  min-height: 360px;
+  box-sizing: border-box;
+}
+.bs-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.bs-map-switch {
+  width: 8rem;
+  height: var(--tap);
+  border-radius: var(--radius-pill);
+}
+.bs-map-placeholder {
+  display: block;
+  flex: 1;
+  min-height: 240px;
+  border-radius: var(--radius-sm);
+}
+.bs-week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.bs-week-head .bs-big {
+  width: 8rem;
+  height: 22px;
+}
+.bs-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+.bs-day {
+  height: 52px;
+  border-radius: var(--radius-sm);
+}
+.bs-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--a-line);
+}
+.bs-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-stat .bs-big {
+  height: 22px;
+}
+.bs-cta {
+  height: var(--tap);
+  border-radius: var(--radius);
+}
+
+/* ---- Configurações (lista) e telas de dentro ---- */
+.bs-section-label {
+  width: 5rem;
+  height: 12px;
+  margin: var(--space-2) var(--space-1) 0;
+}
+.bs-group {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-group > .bs-setting + .bs-setting {
+  border-top: 1px solid var(--a-line);
+}
+.bs-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+}
+.bs-setting .bs-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+.bs-setting .bs-line {
+  width: 40%;
+}
+.bs-setting .bs-chevron {
+  width: 10px;
+  height: 14px;
+  margin-inline-start: auto;
+  border-radius: var(--radius-pill);
+}
+.bs-settings-system-content {
+  gap: var(--space-3);
+}
+.bs-system-metrics .bs-card {
+  min-height: 112px;
+  box-sizing: border-box;
+  padding: var(--space-3);
+}
+
+/* ---- Telas de entrada (sem casca): um cartão no meio ---- */
+.bs-plain {
+  align-items: center;
+  justify-content: center;
+  padding: var(--gutter);
+  box-sizing: border-box;
+}
+.bs-plain .bs-card {
+  width: 100%;
+  max-width: 24rem;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+.bs-plain .bs-cta {
+  width: 100%;
+}
+.bs-plain .bs-route-content {
+  width: 100%;
+  max-width: 24rem;
+  box-sizing: border-box;
+}
+
+@media (min-width: 600px) {
+  .bs-modules {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 640px) {
+  .bs-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .bs-tabs {
+    display: none;
+  }
+}

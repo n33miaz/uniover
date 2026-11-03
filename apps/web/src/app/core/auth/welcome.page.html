@@ -1,4 +1,4 @@
-<app-auth-layout>
+<app-auth-layout [attr.data-screen-ready]="'auth-welcome'">
   <h1 i18n="@@auth.welcome.title">Como devemos te chamar?</h1>
 
   <form (submit)="submit($event)" novalidate>

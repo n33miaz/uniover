@@ -1,27 +1,36 @@
-<div class="appearance ui-stagger">
-  <section class="section ui-rise" aria-labelledby="theme-title">
-    <h2 id="theme-title" class="ui-section-label" i18n="@@settings.appearance.title">Tema</h2>
-    <fieldset class="themes ui-card">
-      <legend class="ui-visually-hidden" i18n="@@settings.appearance.legend">
-        Como o app aparece
-      </legend>
-      <div class="choices">
-        @for (choice of themeChoices; track choice.value) {
-          <label class="theme">
-            <input
-              type="radio"
-              name="theme"
-              [value]="choice.value"
-              [checked]="themePreference() === choice.value"
-              (change)="chooseTheme(choice.value)"
-            />
-            <span [class]="'preview ' + choice.value" aria-hidden="true"></span>
-            <span class="theme-label">{{ choice.label }}</span>
-          </label>
-        }
-      </div>
-    </fieldset>
-  </section>
+@if (loading()) {
+  <app-settings-page-skeleton
+    [kind]="'appearance'"
+    [marker]="'settings-appearance'"
+    label="Carregando aparência…"
+    i18n-label="@@settings.appearance.loading"
+  />
+} @else {
+  <div class="appearance ui-stagger" [attr.data-screen-ready]="'settings-appearance'">
+    <section class="section ui-rise" aria-labelledby="theme-title">
+      <h2 id="theme-title" class="ui-section-label" i18n="@@settings.appearance.title">Tema</h2>
+      <fieldset class="themes ui-card">
+        <legend class="ui-visually-hidden" i18n="@@settings.appearance.legend">
+          Como o app aparece
+        </legend>
+        <div class="choices">
+          @for (choice of themeChoices; track choice.value) {
+            <label class="theme">
+              <input
+                type="radio"
+                name="theme"
+                [value]="choice.value"
+                [checked]="themePreference() === choice.value"
+                (change)="chooseTheme(choice.value)"
+              />
+              <span [class]="'preview ' + choice.value" aria-hidden="true"></span>
+              <span class="theme-label">{{ choice.label }}</span>
+            </label>
+          }
+        </div>
+      </fieldset>
+    </section>
 
-  <app-install-hint-row class="ui-rise" [tile]="true" />
-</div>
+    <app-install-hint-row class="ui-rise" [tile]="true" />
+  </div>
+}

@@ -13,6 +13,7 @@ import { SystemHealthSection } from './system-health-section';
  */
 @Component({
   selector: 'app-system-page',
+  host: { 'data-screen-ready': 'settings-data' },
   imports: [LoadingSkeleton, SystemAgentErrorsSection, SystemHealthSection, SystemTvSection],
   templateUrl: './system.page.html',
   styleUrl: './system.page.css',

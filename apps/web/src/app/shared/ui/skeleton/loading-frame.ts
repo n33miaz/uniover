@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import {
+  afterNextRender,
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
@@ -86,12 +87,16 @@ export class LoadingFrame {
 
   private readonly timing = inject(LOADING_TIMING);
   private readonly doReload = inject(LOADING_RELOAD);
+  private readonly doc = inject(DOCUMENT);
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   protected readonly gaveUp = signal(false);
 
   constructor() {
     this.startClock();
+    // A cobertura de abertura espera a primeira forma da página. Assim, quando uma leitura demorar,
+    // a troca entre os dois esqueletos não expõe o fundo vazio por um quadro.
+    afterNextRender(() => this.doc.dispatchEvent(new Event('uniover:page-ready')));
     inject(DestroyRef).onDestroy(() => clearTimeout(this.timer));
   }
 

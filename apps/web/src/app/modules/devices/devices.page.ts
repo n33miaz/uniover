@@ -39,6 +39,7 @@ const outdatedText = () =>
  */
 @Component({
   selector: 'app-devices-page',
+  host: { 'data-screen-ready': 'settings-data' },
   imports: [PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet, LoadingSkeleton],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',

@@ -7,6 +7,7 @@ import { GuestsSection } from './guests-section';
  */
 @Component({
   selector: 'app-people-page',
+  host: { 'data-screen-ready': 'settings-data' },
   imports: [GuestsSection],
   template: `<app-guests-section class="ui-rise" />`,
   styles: `

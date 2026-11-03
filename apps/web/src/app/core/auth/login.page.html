@@ -1,4 +1,4 @@
-<app-auth-layout>
+<app-auth-layout [attr.data-screen-ready]="'auth-login'">
   <h1 i18n="@@auth.login.title">Entrar</h1>
 
   <form (submit)="submit($event)" novalidate>

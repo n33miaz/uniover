@@ -667,6 +667,12 @@ button.ui-row:active {
   animation: ui-rise var(--dur-slow) var(--ease-out) backwards;
 }
 
+/* Na primeira abertura o brilho já ocupa o lugar da tela. O conteúdo entra no mesmo lugar, sem subir 10 px
+   depois que o esqueleto sai; as próximas navegações conservam a animação normal. */
+html.boot-first-page .ui-rise {
+  animation: none;
+}
+
 .ui-stagger > :nth-child(2) {
   animation-delay: 50ms;
 }
@@ -728,6 +734,11 @@ button.ui-row:active {
    atraso. Vale num contêiner de formas ou direto numa forma (`ui-skeleton`), que soma o atraso ao brilho. */
 .ui-wait {
   animation: ui-wait-in 1ms linear var(--wait-delay, 200ms) backwards;
+}
+
+/* O desenho que cobre a abertura já evita o pisca; a página abaixo precisa mostrar a própria forma no primeiro quadro. */
+html.has-boot-skeleton {
+  --wait-delay: 0ms;
 }
 
 .ui-skeleton.ui-wait {

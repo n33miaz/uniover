@@ -42,6 +42,7 @@ function isWithin(path: string, section: string): boolean {
  */
 @Component({
   selector: 'app-training-page',
+  host: { '[attr.data-screen-ready]': "routeMounted() ? 'training' : null" },
   imports: [
     PageTopBar,
     RouterLink,
@@ -102,7 +103,7 @@ function isWithin(path: string, section: string): boolean {
           >
         </nav>
       }
-      <router-outlet (activate)="animateRoute()" />
+      <router-outlet (activate)="routeMounted.set(true); animateRoute()" />
     </div>
     @if (syncRing.sheetOpen()) {
       <app-training-sync-sheet
@@ -203,6 +204,7 @@ function isWithin(path: string, section: string): boolean {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TrainingPage {
+  protected readonly routeMounted = signal(false);
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly sync = inject(TrainingSync);

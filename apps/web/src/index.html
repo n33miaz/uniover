@@ -12,8 +12,578 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
     <!--uniover:manifest-->
+    <!--
+      Escolhe o desenho antes de baixar o app. O arquivo próprio é permitido pela CSP sem exceção para código em linha.
+    -->
+    <script src="boot-skeleton.js"></script>
   </head>
   <body>
+    <!--
+      Esqueleto estático: cobre a tela desde o primeiro quadro, antes de qualquer JavaScript do Angular. Fica ao lado do
+      <app-root> (o Angular apaga o que está dentro dele ao subir) e o UpdateSkeleton o retira quando a primeira tela fica
+      pronta. As formas e o CSS são os mesmos do esqueleto do Angular (boot-skeleton.css).
+    -->
+    <div class="bs-root bs-boot" id="boot-skeleton" aria-hidden="true">
+      <div class="bs-variant bs-page bs-home bs-draw">
+        <span class="bone ui-skeleton bs-brand"></span>
+        <div class="bs-home-hero">
+          <span class="bs-hero-actions"
+            ><span class="bone ui-skeleton bs-gear"></span
+            ><span class="bone ui-skeleton bs-dot"></span></span
+          ><span class="bs-home-hero-text"
+            ><span class="bone ui-skeleton bs-line bs-w40"></span
+            ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span></span
+          ><span class="bone ui-skeleton bs-time"></span>
+        </div>
+        <div class="bs-section-head">
+          <span class="bone ui-skeleton bs-line bs-big bs-w30"></span
+          ><span class="bone ui-skeleton bs-line bs-w20"></span>
+        </div>
+        <div class="bs-modules">
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+          <div class="bs-module">
+            <span class="bone ui-skeleton bs-app"></span
+            ><span class="bone ui-skeleton bs-line bs-w60"></span>
+          </div>
+        </div>
+      </div>
+      <div class="bs-variant bs-tv bs-draw">
+        <div class="bs-tv-col">
+          <div class="bs-tv-head">
+            <span class="bs-tv-lead"
+              ><span class="bone ui-skeleton bs-circle"></span
+              ><span class="bone ui-skeleton bs-circle"></span></span
+            ><span class="bone ui-skeleton bs-tv-title"></span
+            ><span class="bs-tv-actions"
+              ><span class="bs-tv-state"><span class="bone ui-skeleton bs-state-dot"></span></span
+              ><span class="bone ui-skeleton bs-circle"></span
+            ></span>
+          </div>
+          <div class="bs-tv-shortcuts">
+            <span class="bone ui-skeleton bs-tile"></span
+            ><span class="bone ui-skeleton bs-tile"></span
+            ><span class="bone ui-skeleton bs-tile"></span>
+          </div>
+          <div class="bs-tv-stage">
+            <div class="bs-tv-viewport">
+              <span class="bone ui-skeleton bs-ring"
+                ><span class="bs-disk"
+                  ><span class="bone ui-skeleton bs-arrow bs-up"></span
+                  ><span class="bone ui-skeleton bs-arrow bs-right"></span
+                  ><span class="bone ui-skeleton bs-arrow bs-down"></span
+                  ><span class="bone ui-skeleton bs-arrow bs-left"></span
+                  ><span class="bone ui-skeleton bs-ok"></span></span
+              ></span>
+            </div>
+            <div class="bs-tv-dots">
+              <span class="bs-pip-cell"><span class="bone ui-skeleton bs-pip"></span></span
+              ><span class="bs-pip-cell"><span class="bone ui-skeleton bs-pip"></span></span
+              ><span class="bs-pip-cell"><span class="bone ui-skeleton bs-pip"></span></span>
+            </div>
+          </div>
+          <div class="bs-tv-bottom">
+            <span class="bs-vpill"
+              ><span class="bone ui-skeleton bs-mark"></span
+              ><span class="bone ui-skeleton bs-level"></span
+              ><span class="bone ui-skeleton bs-mark"></span
+            ></span>
+            <div class="bs-rounds">
+              <span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span
+              ><span class="bone ui-skeleton bs-round-key"></span>
+            </div>
+            <span class="bs-vpill"
+              ><span class="bone ui-skeleton bs-mark"></span
+              ><span class="bone ui-skeleton bs-level"></span
+              ><span class="bone ui-skeleton bs-mark"></span
+            ></span>
+          </div>
+        </div>
+      </div>
+      <div class="bs-variant bs-training bs-draw">
+        <div class="bs-topbar">
+          <span class="bone ui-skeleton bs-back"></span
+          ><span class="bone ui-skeleton bs-title"></span><span class="bs-end"></span>
+        </div>
+        <div class="bs-body bs-training-today-content">
+          <div class="bs-hero">
+            <span class="bone ui-skeleton bs-line bs-w40"></span
+            ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
+            ><span class="bone ui-skeleton bs-cta"></span>
+          </div>
+          <div class="bs-card">
+            <div class="bs-week-head">
+              <span class="bone ui-skeleton bs-line bs-big"></span
+              ><span class="bone ui-skeleton bs-line bs-w20"></span>
+            </div>
+            <div class="bs-days">
+              <span class="bone ui-skeleton bs-day"></span
+              ><span class="bone ui-skeleton bs-day"></span
+              ><span class="bone ui-skeleton bs-day"></span
+              ><span class="bone ui-skeleton bs-day"></span
+              ><span class="bone ui-skeleton bs-day"></span
+              ><span class="bone ui-skeleton bs-day"></span
+              ><span class="bone ui-skeleton bs-day"></span>
+            </div>
+            <div class="bs-stats">
+              <span class="bs-stat"
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bs-stat"
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bs-stat"
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span
+              ></span>
+            </div>
+          </div>
+        </div>
+        <div class="bs-body bs-training-list-content">
+          <div class="bs-segments bs-exercises-switch">
+            <span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span>
+          </div>
+          <div class="bs-list">
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+          </div>
+        </div>
+        <div class="bs-body bs-training-progress-content">
+          <div class="bs-segments bs-progress-nav">
+            <span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span>
+          </div>
+          <div class="bs-card bs-chart">
+            <span class="bone ui-skeleton bs-line bs-w40"></span
+            ><span class="bone ui-skeleton bs-chart-line"></span>
+          </div>
+          <div class="bs-stats">
+            <span class="bs-stat"
+              ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+              ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+            ><span class="bs-stat"
+              ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+              ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+            ><span class="bs-stat"
+              ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+              ><span class="bone ui-skeleton bs-line bs-w40"></span
+            ></span>
+          </div>
+        </div>
+        <div class="bs-body bs-training-body-content">
+          <span class="bone ui-skeleton bs-body-title"></span>
+          <div class="bs-segments bs-body-tabs">
+            <span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span>
+          </div>
+          <div class="bs-card bs-weight-card">
+            <span class="bone ui-skeleton bs-line bs-w30"></span
+            ><span class="bone ui-skeleton bs-weight-copy"></span>
+          </div>
+          <div class="bs-body-signals">
+            <div class="bs-card bs-signal-card">
+              <span class="bone ui-skeleton bs-line bs-w60"></span
+              ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
+              ><span class="bone ui-skeleton bs-line bs-w60"></span>
+            </div>
+            <div class="bs-card bs-signal-card">
+              <span class="bone ui-skeleton bs-line bs-w60"></span
+              ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
+              ><span class="bone ui-skeleton bs-line bs-w60"></span>
+            </div>
+          </div>
+          <div class="bs-card bs-map-panel">
+            <div class="bs-map-head">
+              <span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+              ><span class="bone ui-skeleton bs-map-switch"></span>
+            </div>
+            <span class="bone ui-skeleton bs-map-placeholder"></span>
+          </div>
+        </div>
+        <div class="bs-body bs-route-content">
+          <div class="bs-route-head">
+            <span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+            ><span class="bone ui-skeleton bs-chip"></span>
+          </div>
+          <div class="bs-route-hero">
+            <span class="bone ui-skeleton bs-line bs-w40"></span
+            ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
+            ><span class="bone ui-skeleton bs-route-art"></span>
+          </div>
+          <div class="bs-route-strip">
+            <span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span>
+          </div>
+          <div class="bs-route-panel">
+            <span class="bone ui-skeleton bs-line bs-w60"></span
+            ><span class="bone ui-skeleton bs-input"></span
+            ><span class="bone ui-skeleton bs-input"></span
+            ><span class="bone ui-skeleton bs-cta"></span>
+          </div>
+          <div class="bs-route-grid">
+            <span class="bone ui-skeleton bs-route-card"></span
+            ><span class="bone ui-skeleton bs-route-card"></span
+            ><span class="bone ui-skeleton bs-route-card"></span
+            ><span class="bone ui-skeleton bs-route-card"></span>
+          </div>
+          <div class="bs-route-list">
+            <span class="bone ui-skeleton bs-route-row"></span
+            ><span class="bone ui-skeleton bs-route-row"></span
+            ><span class="bone ui-skeleton bs-route-row"></span
+            ><span class="bone ui-skeleton bs-route-row"></span>
+          </div>
+        </div>
+        <div class="bs-tabs">
+          <span class="bone ui-skeleton bs-tab"></span><span class="bone ui-skeleton bs-tab"></span
+          ><span class="bone ui-skeleton bs-tab"></span>
+        </div>
+      </div>
+      <div class="bs-variant bs-settings bs-draw">
+        <div class="bs-topbar bs-shell">
+          <span class="bone ui-skeleton bs-back"></span
+          ><span class="bone ui-skeleton bs-title"></span><span class="bs-end"></span>
+        </div>
+        <div class="bs-body">
+          <div class="bs-segments">
+            <span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span>
+          </div>
+          <span class="bone ui-skeleton bs-section-label"></span>
+          <div class="bs-group">
+            <div class="bs-setting">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bone ui-skeleton bs-line"></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-setting">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bone ui-skeleton bs-line"></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-setting">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bone ui-skeleton bs-line"></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+          </div>
+          <span class="bone ui-skeleton bs-section-label"></span>
+          <div class="bs-group">
+            <div class="bs-setting">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bone ui-skeleton bs-line"></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-setting">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bone ui-skeleton bs-line"></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+            <div class="bs-setting">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bone ui-skeleton bs-line"></span
+              ><span class="bone ui-skeleton bs-chevron"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bs-variant bs-detail bs-draw">
+        <div class="bs-topbar bs-shell">
+          <span class="bone ui-skeleton bs-back"></span
+          ><span class="bone ui-skeleton bs-title"></span><span class="bs-end"></span>
+        </div>
+        <div class="bs-body">
+          <div class="bs-detail-cards">
+            <div class="bs-card">
+              <span class="bone ui-skeleton bs-line bs-w40"></span
+              ><span class="bone ui-skeleton bs-line bs-w80"></span
+              ><span class="bone ui-skeleton bs-line bs-w60"></span>
+            </div>
+            <div class="bs-card">
+              <span class="bone ui-skeleton bs-line bs-w40"></span
+              ><span class="bone ui-skeleton bs-line bs-w80"></span
+              ><span class="bone ui-skeleton bs-line bs-w60"></span>
+            </div>
+            <div class="bs-card">
+              <span class="bone ui-skeleton bs-line bs-w40"></span
+              ><span class="bone ui-skeleton bs-line bs-w80"></span
+              ><span class="bone ui-skeleton bs-line bs-w60"></span>
+            </div>
+            <div class="bs-card">
+              <span class="bone ui-skeleton bs-line bs-w40"></span
+              ><span class="bone ui-skeleton bs-line bs-w80"></span
+              ><span class="bone ui-skeleton bs-line bs-w60"></span>
+            </div>
+          </div>
+          <div class="bs-settings-data-content bs-list">
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chip"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chip"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chip"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+              ><span class="bone ui-skeleton bs-chip"></span>
+            </div>
+          </div>
+          <div class="bs-settings-system-content bs-form">
+            <span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-group">
+              <div class="bs-setting">
+                <span class="bone ui-skeleton bs-icon"></span
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-chip"></span>
+              </div>
+            </div>
+            <span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-system-metrics">
+              <div class="bs-card">
+                <span class="bone ui-skeleton bs-line bs-w40"></span
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w80"></span>
+              </div>
+              <div class="bs-card">
+                <span class="bone ui-skeleton bs-line bs-w40"></span
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w80"></span>
+              </div>
+              <div class="bs-card">
+                <span class="bone ui-skeleton bs-line bs-w40"></span
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w80"></span>
+              </div>
+              <div class="bs-card">
+                <span class="bone ui-skeleton bs-line bs-w40"></span
+                ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w80"></span>
+              </div>
+            </div>
+            <span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-group">
+              <div class="bs-setting">
+                <span class="bone ui-skeleton bs-icon"></span
+                ><span class="bone ui-skeleton bs-line bs-w60"></span>
+              </div>
+            </div>
+            <span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-group">
+              <div class="bs-setting">
+                <span class="bone ui-skeleton bs-icon"></span
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-chevron"></span>
+              </div>
+              <div class="bs-setting">
+                <span class="bone ui-skeleton bs-icon"></span
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-chevron"></span>
+              </div>
+            </div>
+          </div>
+          <div class="bs-settings-profile-content bs-form">
+            <span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-identity">
+              <div class="bs-identity-who">
+                <span class="bone ui-skeleton bs-avatar"></span
+                ><span class="bs-lines"
+                  ><span class="bone ui-skeleton bs-line bs-w60"></span
+                  ><span class="bone ui-skeleton bs-line bs-w40"></span
+                ></span>
+              </div>
+              <span class="bone ui-skeleton bs-chip"></span>
+            </div>
+            <span class="bone ui-skeleton bs-section-label"></span
+            ><span class="bone ui-skeleton bs-input"></span
+            ><span class="bone ui-skeleton bs-cta"></span
+            ><span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-card">
+              <span class="bone ui-skeleton bs-line bs-w60"></span
+              ><span class="bone ui-skeleton bs-line bs-w40"></span>
+            </div>
+            <span class="bone ui-skeleton bs-section-label"></span>
+            <div class="bs-card">
+              <span class="bone ui-skeleton bs-line bs-w60"></span
+              ><span class="bone ui-skeleton bs-cta"></span>
+            </div>
+          </div>
+          <div class="bs-settings-appearance-content bs-form">
+            <span class="bone ui-skeleton bs-line bs-w30"></span>
+            <div class="bs-theme-choices">
+              <span class="bone ui-skeleton bs-theme-choice"></span
+              ><span class="bone ui-skeleton bs-theme-choice"></span
+              ><span class="bone ui-skeleton bs-theme-choice"></span>
+            </div>
+            <div class="bs-row">
+              <span class="bone ui-skeleton bs-icon"></span
+              ><span class="bs-lines"
+                ><span class="bone ui-skeleton bs-line bs-w60"></span
+                ><span class="bone ui-skeleton bs-line bs-w40"></span
+              ></span>
+            </div>
+          </div>
+          <div class="bs-route-content">
+            <div class="bs-route-head">
+              <span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+              ><span class="bone ui-skeleton bs-chip"></span>
+            </div>
+            <div class="bs-route-hero">
+              <span class="bone ui-skeleton bs-line bs-w40"></span
+              ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
+              ><span class="bone ui-skeleton bs-route-art"></span>
+            </div>
+            <div class="bs-route-strip">
+              <span class="bone ui-skeleton bs-segment"></span
+              ><span class="bone ui-skeleton bs-segment"></span
+              ><span class="bone ui-skeleton bs-segment"></span>
+            </div>
+            <div class="bs-route-panel">
+              <span class="bone ui-skeleton bs-line bs-w60"></span
+              ><span class="bone ui-skeleton bs-input"></span
+              ><span class="bone ui-skeleton bs-input"></span
+              ><span class="bone ui-skeleton bs-cta"></span>
+            </div>
+            <div class="bs-route-grid">
+              <span class="bone ui-skeleton bs-route-card"></span
+              ><span class="bone ui-skeleton bs-route-card"></span
+              ><span class="bone ui-skeleton bs-route-card"></span
+              ><span class="bone ui-skeleton bs-route-card"></span>
+            </div>
+            <div class="bs-route-list">
+              <span class="bone ui-skeleton bs-route-row"></span
+              ><span class="bone ui-skeleton bs-route-row"></span
+              ><span class="bone ui-skeleton bs-route-row"></span
+              ><span class="bone ui-skeleton bs-route-row"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bs-variant bs-plain bs-draw">
+        <div class="bs-card">
+          <span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+          ><span class="bone ui-skeleton bs-line bs-w80"></span
+          ><span class="bone ui-skeleton bs-cta"></span>
+        </div>
+        <div class="bs-route-content">
+          <div class="bs-route-head">
+            <span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+            ><span class="bone ui-skeleton bs-chip"></span>
+          </div>
+          <div class="bs-route-hero">
+            <span class="bone ui-skeleton bs-line bs-w40"></span
+            ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
+            ><span class="bone ui-skeleton bs-route-art"></span>
+          </div>
+          <div class="bs-route-strip">
+            <span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span
+            ><span class="bone ui-skeleton bs-segment"></span>
+          </div>
+          <div class="bs-route-panel">
+            <span class="bone ui-skeleton bs-line bs-w60"></span
+            ><span class="bone ui-skeleton bs-input"></span
+            ><span class="bone ui-skeleton bs-input"></span
+            ><span class="bone ui-skeleton bs-cta"></span>
+          </div>
+          <div class="bs-route-grid">
+            <span class="bone ui-skeleton bs-route-card"></span
+            ><span class="bone ui-skeleton bs-route-card"></span
+            ><span class="bone ui-skeleton bs-route-card"></span
+            ><span class="bone ui-skeleton bs-route-card"></span>
+          </div>
+          <div class="bs-route-list">
+            <span class="bone ui-skeleton bs-route-row"></span
+            ><span class="bone ui-skeleton bs-route-row"></span
+            ><span class="bone ui-skeleton bs-route-row"></span
+            ><span class="bone ui-skeleton bs-route-row"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bs-boot-timeout ui-notice warn" id="boot-timeout" role="alert" hidden>
+      <p i18n="@@boot.timeout">Ainda estamos preparando esta tela.</p>
+      <button id="boot-timeout-retry" type="button" class="secondary ui-btn" i18n="@@boot.retry">
+        Tentar de Novo
+      </button>
+    </div>
     <!-- O servidor troca o marcador pelo nonce da CSP; o Angular o usa nos estilos que injeta. -->
     <app-root ngCspNonce="__CSP_NONCE__"></app-root>
   </body>
