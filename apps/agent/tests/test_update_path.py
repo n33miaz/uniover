@@ -367,6 +367,10 @@ def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
         "LOCALAPPDATA": str(tmp_path / "Pasta com espaco"),
         "PATH": f"{bin_dir};{os.environ['PATH']}",
         "UNIOVER_TEST_RECORD": str(record),
+        # O runner de CI pode não ter explorer.exe: fixa um logon anterior ao pedido da bandeja.
+        "UNIOVER_SUPERVISOR_LOGON_AT": time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 60)
+        ),
     }
     process = subprocess.Popen(  # noqa: S603 - executáveis do sistema; scripts do repositório
         [
