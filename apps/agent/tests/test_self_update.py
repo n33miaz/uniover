@@ -321,6 +321,8 @@ def patch_http(monkeypatch: pytest.MonkeyPatch, handler: Handler) -> list[httpx.
 def test_latest_commit_reads_the_sha_from_the_github_api(monkeypatch: pytest.MonkeyPatch) -> None:
     requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
     assert latest_commit() == NEW
+    assert module.PRODUCTION_REF == "develop"
+    assert module.COMMIT_URL.endswith("/commits/develop")
     assert [str(r.url) for r in requests] == [module.COMMIT_URL]
 
 

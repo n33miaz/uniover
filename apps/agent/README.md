@@ -153,8 +153,10 @@ TV (mesmo `duid`/MAC) em outro endereço, grava o `tv_host` novo no `agent.toml`
 endereço nem identificador.
 
 **Auto-atualização com retorno.** A cada início e depois a cada 6 h (com até 45 min de variação), o wrapper
-consulta o commit da `main`. A candidata é baixada para `app.new`, passa por `uv sync` e por um import rápido
+consulta o commit da `develop`. A candidata é baixada para `app.new`, passa por `uv sync` e por um import rápido
 do agente e do contrato `agent.hello.v1`; só então entra no lugar. A pasta anterior fica em `app.previous`.
+O ramo de produção é lido de `tools/update-channel.json` (`production_ref`); a `main` serve como
+ponte para agentes antigos alcançarem a branch ativa sem ação no computador.
 Se a versão recém-instalada cair três vezes antes de completar 10 min, o wrapper restaura a anterior e anota o SHA
 em `.blocked-versions`, para não tentar o mesmo commit ruim de novo. Falha de rede, limite do GitHub, teste ou pasta
 em uso só preserva a versão que está rodando. Para a renomeação funcionar no Windows, o ambiente Python fica fora da

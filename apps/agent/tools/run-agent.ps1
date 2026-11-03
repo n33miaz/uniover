@@ -106,6 +106,21 @@ function Note-Run([double]$Seconds) {
     } catch { }
 }
 
+function Confirm-StableTrial([datetime]$Started) {
+    # Uma versão viva por dez minutos e com pulso recente já se provou. Sem esta confirmação,
+    # ela só sairia de prova quando o processo terminasse e não poderia seguir o canal novo.
+    if (-not (Test-Path -LiteralPath $trial)) { return $false }
+    if (((Get-Date) - $Started).TotalSeconds -lt $confirmAfterSeconds) { return $false }
+    try {
+        $parts = (Get-Content -LiteralPath $trial -ErrorAction Stop) -split '\|', 2
+        $alive = Get-Item -LiteralPath (Join-Path $runtime 'last-alive') -ErrorAction Stop
+        if ($parts.Count -ne 2 -or $parts[0] -ne (Get-Version) -or
+            ((Get-Date) - $alive.LastWriteTime).TotalSeconds -gt 120) { return $false }
+        Remove-Item -LiteralPath $trial -Force -ErrorAction Stop
+        return $true
+    } catch { return $false }
+}
+
 # Nenhum processo novo pode abrir (nem piscar) uma janela. Este script ja roda num console oculto, e os filhos
 # chamados direto (`& $Uv ...`, `& taskkill.exe ...`) herdam esse console. Para o que precisa ficar vivo em paralelo
 # usamos a classe Process com CreateNoWindow: o Start-Process cria um console novo e so depois o esconde (pisca).
@@ -198,6 +213,10 @@ New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
 $wait = 5
 $syncFalls = 0
+$confirmAfterSeconds = 600
+if ($env:UNIOVER_SUPERVISOR_CONFIRM_SECONDS -match '^[1-9][0-9]{0,3}$') {
+    $confirmAfterSeconds = [int]$env:UNIOVER_SUPERVISOR_CONFIRM_SECONDS
+}
 $nextUpdate = [DateTime]::MinValue
 $tray = $null
 while ($true) {
@@ -238,6 +257,7 @@ while ($true) {
     $restartForUpdate = $false
     while (-not $process.HasExited) {
         Start-Sleep -Seconds 15
+        if (Confirm-StableTrial $started) { $nextUpdate = [DateTime]::MinValue }
         if (Test-Path (Join-Path $runtime 'restart-now')) {
             Remove-Item -LiteralPath (Join-Path $runtime 'restart-now') -Force -ErrorAction SilentlyContinue
             & taskkill.exe /PID $process.Id /T /F *> $null
