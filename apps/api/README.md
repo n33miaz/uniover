@@ -39,18 +39,25 @@ suíte não roda.
 - `Modules__Identity__TotpKey`: chave aleatória de **32 bytes em base64**, guardada como segredo no ambiente da API.
   Sem ela, o cadastro do autenticador fica indisponível. Preserve a mesma chave entre deploys; perdê-la impede
   validar os autenticadores já cadastrados.
-- `Modules__Identity__RecoveryEmail__Enabled=true` ativa o envio de links de redefinição pelo Resend. Deixe
-  desligado até verificar o domínio do remetente e configurar os três valores abaixo. A página de recuperação
-  consulta a disponibilidade e não oferece envio enquanto o recurso estiver desligado.
-- `Modules__Identity__RecoveryEmail__ApiKey`: chave da API do Resend, como segredo.
-- `Modules__Identity__RecoveryEmail__From`: remetente pertencente ao domínio verificado, por exemplo
-  `UniOver <conta@dominio.example>`.
+- `Modules__Identity__RecoveryEmail__Enabled=true` ativa o envio de links de redefinição. Deixe desligado até
+  configurar e testar o provedor. A página de recuperação consulta a disponibilidade e não oferece envio enquanto
+  o recurso estiver desligado.
+- `Modules__Identity__RecoveryEmail__Provider`: `Gmail` para envio direto pela Gmail API por HTTPS, ou `Resend`
+  (padrão) para a API do Resend. SMTP não funciona no Render Free.
+- Para `Gmail`, configure `Modules__Identity__RecoveryEmail__GmailClientId`,
+  `Modules__Identity__RecoveryEmail__GmailClientSecret` e
+  `Modules__Identity__RecoveryEmail__GmailRefreshToken` como segredos. O projeto OAuth deve estar **Em produção**
+  com acesso `gmail.send`; no estado **Teste**, a autorização expira em sete dias. O remetente é a conta Google que
+  concedeu acesso. Não associe faturamento ao projeto se a instalação precisa permanecer gratuita.
+- Para `Resend`, configure `Modules__Identity__RecoveryEmail__ApiKey` como segredo e verifique o domínio do remetente.
+- `Modules__Identity__RecoveryEmail__From`: no Gmail, o endereço exato da conta autorizada, por exemplo
+  `uniover@gmail.com`; no Resend, um remetente do domínio verificado, por exemplo `UniOver <conta@dominio.example>`.
 - `Modules__Identity__RecoveryEmail__AppBaseUrl`: origem HTTPS pública do aplicativo, sem caminho, consulta ou
   fragmento; o link acrescenta `/redefinir-senha#token=...`.
 
 A resposta ao pedido de recuperação é sempre neutra, inclusive para endereço desconhecido. O link vence em
-20 minutos e só pode ser usado uma vez. O Resend precisa permanecer no plano gratuito para esta instalação;
-confira o limite do plano antes de habilitar o envio.
+20 minutos e só pode ser usado uma vez. O uso padrão da Gmail API é gratuito dentro da cota documentada;
+o Resend também precisa permanecer no plano gratuito para esta instalação.
 
 ## Persistência por módulo
 
