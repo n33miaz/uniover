@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.13](https://github.com/n33miaz/uniover/compare/v0.36.12...v0.36.13) (2026-11-03)
+
+
+### Bug Fixes
+
+* **agent:** clear stale update alert
+
 ## [0.36.12](https://github.com/n33miaz/uniover/compare/v0.36.11...v0.36.12) (2026-11-03)
 
 
