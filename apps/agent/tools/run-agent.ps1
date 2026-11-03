@@ -169,6 +169,11 @@ function Get-UpdateOutcome {
 
 function Invoke-Update([string]$Uv) {
     $before = Get-Version
+    # O supervisor reabre logo apos a troca; uma versao em prova ainda nao deve iniciar outra checagem.
+    if (Test-Path -LiteralPath $trial) {
+        $trialParts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
+        if ($trialParts.Count -eq 2 -and $trialParts[0] -eq $before) { return $false }
+    }
     $env:UV = $Uv
     Set-UpdateState @{ outcome = 'updating'; checkedAt = (Get-UtcStamp (Get-Date)); reason = $null } | Out-Null
     # Uma pipeline mantinha o supervisor esperando se o agente/icone novos herdassem a ponta de
@@ -488,6 +493,7 @@ function Confirm-Trial {
         $parts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
         if ($parts.Count -ne 2 -or $parts[0] -ne (Get-Version)) { return }
         Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
+        Set-UpdateState @{ outcome = 'updated'; checkedAt = (Get-UtcStamp (Get-Date)); reason = $null; rolledBack = $null; blockedSha = $null } | Out-Null
         Write-SupLog 'INFO' ('a versao nova se confirmou: 10 minutos estavel (' + $parts[0].Substring(0, [Math]::Min(12, $parts[0].Length)) + ')')
         Add-Diagnostic 'update.confirmed' 'info' 'a versao nova se confirmou depois de 10 minutos estavel'
     } catch { }

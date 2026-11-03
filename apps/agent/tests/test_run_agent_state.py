@@ -241,6 +241,17 @@ def test_an_update_that_installs_a_new_version_returns_true_and_keeps_the_agents
     assert pc.state()["outcome"] == "updated"
 
 
+def test_an_update_does_not_replace_the_result_while_the_new_version_is_in_trial(pc: Pc) -> None:
+    pc.version(pc.source, BAD)
+    (pc.runtime / "update-trial.txt").write_text(BAD + "|0", encoding="ascii")
+    pc.run("Set-UpdateState @{ outcome = 'updated'; latestSha = '" + BAD + "' } | Out-Null")
+    uv = fake_uv(pc, "exit /b 3")
+    done = pc.run(f"Invoke-Update '{uv}'")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split() == ["False"]
+    assert pc.state()["outcome"] == "updated"
+
+
 def test_scheduling_the_next_check_writes_it_down_and_still_returns_one_date(pc: Pc) -> None:
     done = pc.run("$when = Schedule-NextUpdate; $when.GetType().Name")
     assert done.returncode == 0, done.stderr
@@ -375,9 +386,11 @@ def test_confirming_the_trial_removes_it_and_reports_it_only_for_the_running_ver
     assert pc.run("Confirm-Trial").returncode == 0
     assert trial.exists()
     trial.write_text(BAD + "|1", encoding="ascii")
+    pc.run("Set-UpdateState @{ outcome = 'updating'; latestSha = '" + BAD + "' } | Out-Null")
     done = pc.run("Confirm-Trial")
     assert done.returncode == 0, done.stderr
     assert not trial.exists()
+    assert pc.state()["outcome"] == "updated"
     kinds = [
         json.loads(line)["kind"]
         for line in (pc.runtime / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines()

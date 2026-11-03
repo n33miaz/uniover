@@ -11,6 +11,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -32,6 +33,7 @@ _STATE_TEXT = {
 }
 _READY_TIMEOUT = 8.0
 _REFRESH_SECONDS = 2.0
+_REPLACE_ATTEMPTS = 5
 Record = Callable[[str, Severity, str], None]
 
 
@@ -95,7 +97,15 @@ def _write_state(
     }
     temporary = path.with_suffix(".json.new")
     temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    os.replace(temporary, path)
+    # O host WinForms pode estar lendo o destino; no Windows essa leitura breve impede a troca.
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(temporary, path)
+            break
+        except PermissionError:
+            if attempt == _REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.02)
 
 
 def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e comandos

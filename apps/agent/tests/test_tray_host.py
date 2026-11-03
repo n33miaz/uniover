@@ -34,6 +34,26 @@ def test_host_state_keeps_the_menu_model_and_attention(tmp_path: Path) -> None:
     assert data["balloon"]["message"] == "Veja o registro"
 
 
+def test_host_state_recovers_when_windows_briefly_locks_the_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    state = tmp_path / "state.json"
+    replace = tray_host.os.replace
+    attempts = 0
+
+    def busy_once(source: Path, target: Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("arquivo aberto pelo host")
+        replace(source, target)
+
+    monkeypatch.setattr(tray_host.os, "replace", busy_once)
+    tray_host._write_state(state, TrayView("connected", False, "UniOver: conectado"), tmp_path)
+    assert attempts == 2
+    assert json.loads(state.read_text(encoding="utf-8"))["status"] == "Conectado"
+
+
 def test_missing_host_uses_pystray_without_starting_a_process(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(tray_host, "host_script", lambda: tmp_path / "missing.ps1")
     called: list[str] = []
