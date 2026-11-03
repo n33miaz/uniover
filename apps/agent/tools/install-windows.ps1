@@ -4,9 +4,8 @@ param(
     [string]$TvKind = 'android',
     [string]$TvHost,
     [string]$ApiUrl = 'https://uniover.onrender.com',
-    # Branch do repositorio de onde vem o codigo do agente; rode de novo com o padrao para atualizar. Hoje e a develop
-    # (a develop e a producao); o agente instalado segue o mesmo ramo (update_channel no agent.toml). Para voltar a
-    # publicar pela main, troque aqui, o DEFAULT_CHANNEL do agente e o endereco do conectar-uniover.cmd (um teste confere).
+    # Branch de bootstrap de onde se baixa a primeira copia. O agente instalado segue a branch
+    # indicada por tools/update-channel.json quando update_channel e main ou develop (valores legados de producao).
     [string]$Ref = 'develop',
     # Pasta onde o UniOver fica guardado (sem isto, uma janela pergunta na primeira instalacao; numa reinstalacao a
     # pasta que ja existe e mantida).
@@ -40,6 +39,23 @@ catch { }
 $env:PYTHONUTF8 = '1'
 
 $taskName = 'UniOver agente'
+$startupAppName = 'UniOver agente'
+
+function Read-WindowsStartupNames {
+    # O supervisor le este arquivo a cada atualizacao: mudar os rotulos nao exige reinstalacao nem UAC.
+    $names = @{ scheduled_task_name = 'UniOver agente'; startup_app_name = 'UniOver agente' }
+    try {
+        $path = Join-Path $source 'tools\windows-startup.json'
+        $chosen = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+        foreach ($key in @('scheduled_task_name', 'startup_app_name')) {
+            $value = [string]$chosen.$key
+            if ($value -and $value.Length -le 80 -and $value -notmatch '[\\/:*?"<>|\[\]''\x00-\x1F]' -and $value.Trim() -eq $value) {
+                $names[$key] = $value
+            }
+        }
+    } catch { }
+    return $names
+}
 # A pasta fixa guarda so o que o Windows precisa achar sempre no mesmo lugar: o lancador (a tarefa o abre), o launcher.vbs
 # e o ponteiro (location.txt) da pasta que a pessoa escolheu. Tudo o mais (app, runtime, config, logs, web) fica na pasta
 # de instalacao, que por padrao e a propria pasta fixa: quem ja tinha o UniOver instalado nao muda nada.
@@ -60,6 +76,12 @@ function Set-Layout([string]$Root) {
     $script:pageFile = Join-Path $Root 'web\conectar.html'
 }
 
+function Set-StartupNames {
+    $names = Read-WindowsStartupNames
+    $script:taskName = [string]$names.scheduled_task_name
+    $script:startupAppName = [string]$names.startup_app_name
+}
+
 function Get-ExistingBase {
     # A pasta de uma instalacao que ja existe: a do ponteiro (lido como UTF-8, o caminho pode ter acento) ou a fixa.
     # Sem nenhuma das duas e uma primeira instalacao: devolve $null.
@@ -75,6 +97,8 @@ function Get-ExistingBase {
 Set-Layout $anchor
 $existingBase = Get-ExistingBase
 if ($existingBase) { Set-Layout $existingBase }
+Set-StartupNames
+$previousTaskName = $taskName
 
 function Write-Page([string]$Html, [bool]$Reload = $true) {
     # Pagina de andamento (modo automatico). $Html ja vem com as entidades HTML (o arquivo e so ASCII). Troca por
@@ -113,7 +137,9 @@ function Open-Page {
 
 function Stop-Agent {
     # Parar a tarefa e os processos que ela deixou: pasta em uso nao pode ser trocada.
-    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    foreach ($name in @($taskName, 'UniOver agente') | Select-Object -Unique) {
+        Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    }
     $mine = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $_.CommandLine -and ($_.ProcessId -ne $PID) -and (
             $_.CommandLine -like "*$base\launcher.ps1*" -or
@@ -203,13 +229,25 @@ function Restore-RunningAgent {
 }
 
 if ($Uninstall) {
+    Set-StartupNames
     Stop-Agent
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    foreach ($name in @($taskName, 'UniOver agente') | Select-Object -Unique) {
+        Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+    }
     Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $launcherVbs -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fallback -Force -ErrorAction SilentlyContinue
     # O atalho que traz o icone da bandeja de volta (criado pelo supervisor) nao deve sobrar apontando para o nada.
-    Remove-Item -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\UniOver Agente.lnk') -Force -ErrorAction SilentlyContinue
+    $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    $oldStartup = Join-Path $base 'runtime\startup-label.txt'
+    $labels = @($startupAppName, 'UniOver Agente')
+    try { $labels += [System.IO.File]::ReadAllText($oldStartup, [System.Text.Encoding]::UTF8).Trim() } catch { }
+    foreach ($label in $labels | Select-Object -Unique) {
+        if ($label -and $label -notmatch '[\\/:*?"<>|\[\]]') {
+            Remove-Item -LiteralPath (Join-Path $programs ($label + '.lnk')) -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path (Join-Path $programs 'Startup') ($label + '.lnk')) -Force -ErrorAction SilentlyContinue
+        }
+    }
     Write-Host 'O UniOver foi desligado: ele nao inicia mais com o Windows e parou de funcionar neste computador.'
     Write-Host "Suas configuracoes e o pareamento ficaram em $base; apague essa pasta se quiser tirar tudo."
     exit 0
@@ -474,6 +512,14 @@ function Register-AgentTask {
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
+    $registered = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+    if (@($registered.Actions).Count -ne 1 -or $registered.Actions[0].Execute -ne $action.Execute -or
+        @($registered.Triggers).Count -ne 2 -or $registered.Settings.RestartCount -ne 999) {
+        throw 'A tarefa de inicializacao nao passou na conferencia.'
+    }
+    if ($previousTaskName -ine $taskName -and (Get-ScheduledTask -TaskName $previousTaskName -ErrorAction SilentlyContinue)) {
+        Unregister-ScheduledTask -TaskName $previousTaskName -Confirm:$false -ErrorAction Stop
+    }
 }
 
 function Move-LegacyLayout {
@@ -700,7 +746,7 @@ function Get-BaseConfig {
     # O que o instalador grava no agent.toml: o endereco da API e o ramo de que o UniOver se atualiza (so main ou develop;
     # outro valor deixa o padrao do programa).
     $values = @{ api_url = $ApiUrl }
-    if ($Ref -eq 'main' -or $Ref -eq 'develop') { $values['update_channel'] = $Ref }
+    if ($Ref -in @('main', 'develop', 'homolog')) { $values['update_channel'] = $Ref }
     return $values
 }
 
@@ -784,6 +830,7 @@ function Invoke-AutomaticInstall {
     # pacote novo estar inteiro): se este processo cair, ainda ha para onde voltar.
     Backup-Environment
     Get-AgentSource $source { param($Candidate) Test-Candidate $uv $Candidate }
+    Set-StartupNames
     Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
     Set-ConfigValues $config (Get-BaseConfig)
@@ -882,6 +929,7 @@ $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
 Backup-Environment
 Get-AgentSource $source { param($Candidate) Test-Candidate $uv $Candidate }
+Set-StartupNames
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path (Split-Path $config -Parent) -Force | Out-Null

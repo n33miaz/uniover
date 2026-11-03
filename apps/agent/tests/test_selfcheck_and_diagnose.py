@@ -22,6 +22,7 @@ def test_the_channel_defaults_to_develop_and_accepts_main() -> None:
     assert Settings().update_channel == "develop"
     assert Settings(update_channel="main").update_channel == "main"
     assert Settings(update_channel=" Main ").update_channel == "main"
+    assert Settings(update_channel="homolog").update_channel == "homolog"
 
 
 def test_any_other_channel_is_refused() -> None:

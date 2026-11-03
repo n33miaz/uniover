@@ -1,6 +1,6 @@
 r"""Auto-atualização do agente instalado em `%LOCALAPPDATA%\UniOver\app`.
 
-O fluxo é: perguntar ao GitHub qual é o commit atual da `main`, comparar com o gravado em
+O fluxo é: consultar o ramo de produção e seu commit atual no GitHub, comparar com o gravado em
 `app\.version` e, se mudou, baixar **o zip daquele commit** (e não o da branch, que poderia
 andar entre uma chamada e outra), montar a pasta nova ao lado, validá-la e trocar por renomeação,
 guardando a anterior para o wrapper do Windows voltar atrás.
@@ -15,6 +15,7 @@ isso, deixa o ambiente virtual **fora** dela (`UV_PROJECT_ENVIRONMENT`) e roda o
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -35,11 +36,28 @@ from uniover_agent.adapters.process import run_hidden
 _log = logging.getLogger(__name__)
 
 REPOSITORY = "n33miaz/uniover"
-# De que ramo o agente se atualiza. Hoje é a `develop` (decisão do dono: a `develop` é a produção);
-# quando a publicação voltar a sair pela `main`, basta trocar este padrão (ou o `update_channel` do
-# `agent.toml`, por PC) para `main`.
-CHANNELS = ("main", "develop")
+# `main` e `develop` em agent.toml são valores legados do canal de produção. A branch ativa
+# fica em um arquivo, sem precisar alterar cada PC ao migrar para main ou homolog.
+CHANNELS = ("main", "develop", "homolog")
 DEFAULT_CHANNEL = "develop"
+PRODUCTION_ALIASES = ("main", "develop")
+
+
+def _production_ref() -> str:
+    path = Path(__file__).resolve().parents[3] / "tools" / "update-channel.json"
+    try:
+        ref = json.loads(path.read_text(encoding="utf-8"))["production_ref"]
+        if ref in CHANNELS:
+            return ref
+    except OSError, ValueError, KeyError, TypeError:
+        pass
+    return "develop"
+
+
+PRODUCTION_REF = _production_ref()
+PRODUCTION_REF_URL = (
+    f"https://raw.githubusercontent.com/{REPOSITORY}/main/apps/agent/tools/update-channel.json"
+)
 COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/{{channel}}"
 TREE_URL = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{{sha}}?recursive=1"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
@@ -88,9 +106,29 @@ def drill_origin() -> str | None:
     return value
 
 
-def commit_url(channel: str = DEFAULT_CHANNEL) -> str:
+def active_production_ref() -> str:
+    """Lê o canal publicado na main; usa a cópia instalada se a consulta falhar."""
+    if drill_origin() is not None:
+        return PRODUCTION_REF
+    try:
+        response = httpx.get(
+            PRODUCTION_REF_URL,
+            headers={"Accept": "application/json", "User-Agent": "uniover-agent"},
+            timeout=_TIMEOUT,
+        )
+        response.raise_for_status()
+        ref = response.json()["production_ref"]
+        if ref in CHANNELS:
+            return ref
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        pass
+    return PRODUCTION_REF
+
+
+def commit_url(channel: str = DEFAULT_CHANNEL, *, production_ref: str = PRODUCTION_REF) -> str:
     origin = drill_origin()
-    return COMMIT_URL.format(channel=channel) if origin is None else f"{origin}/commit"
+    branch = production_ref if channel in PRODUCTION_ALIASES else channel
+    return COMMIT_URL.format(channel=branch) if origin is None else f"{origin}/commit"
 
 
 def tree_url(sha: str) -> str:
@@ -105,7 +143,8 @@ def archive_url(sha: str) -> str:
 
 def latest_commit(channel: str = DEFAULT_CHANNEL) -> str:
     """Commit atual do ramo do canal (40 hexadecimais)."""
-    url = commit_url(channel)
+    ref = active_production_ref() if channel in PRODUCTION_ALIASES else PRODUCTION_REF
+    url = commit_url(channel, production_ref=ref)
     try:
         response = httpx.get(
             url,

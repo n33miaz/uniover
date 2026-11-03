@@ -90,6 +90,14 @@ uv --directory apps/agent run pytest
 cd apps/tv-launcher && ./gradlew testDebugUnitTest assembleRelease
 ```
 
+## Canal de produção
+
+O valor `production_ref` em [apps/agent/tools/update-channel.json](apps/agent/tools/update-channel.json),
+publicado na `main`, escolhe entre `develop`, `main` e `homolog`. O deploy, o instalador do Windows e a
+auto-atualização dos agentes leem essa escolha. O destino de deploy no GitHub continua sendo o ambiente
+`production`; prepare e valide a branch de destino antes de mudar o valor. Veja os detalhes em
+[apps/agent/README.md](apps/agent/README.md).
+
 ## Segurança
 
 Para reportar uma vulnerabilidade, leia a [política de segurança](SECURITY.md). Não abra issue pública.

@@ -490,6 +490,7 @@ def build_env(  # noqa: PLR0913 - cada argumento é um caminho do ambiente isola
         UV_PYTHON_INSTALL_DIR=uv_python,
         PYTHONPATH=str(support),
         PYTHON_KEYRING_BACKEND="drill_keyring.DrillKeyring",
+        UNIOVER_SUPERVISOR_CONFIRM_SECONDS="75",
         UNIOVER_UPDATE_DRILL="1",
         UNIOVER_UPDATE_SOURCE_URL=f"http://127.0.0.1:{port}",
         NO_PROXY="127.0.0.1,localhost",
@@ -591,7 +592,10 @@ def sync_failure_wrapper() -> str:
         (
             "@echo off",
             'if /I not "%~1"=="sync" goto real_uv',
-            'if /I not "%~3"=="%UNIOVER_DRILL_APP%" goto real_uv',
+            'if /I "%~3"=="%UNIOVER_DRILL_APP%" goto fail_sync',
+            'if /I "%~4"=="%UNIOVER_DRILL_APP%" goto fail_sync',
+            'goto real_uv',
+            ':fail_sync',
             "set count=0",
             'if exist "%UNIOVER_DRILL_SYNC_COUNT%" set /p count=<"%UNIOVER_DRILL_SYNC_COUNT%"',
             "set /a count=%count%+1",
@@ -915,6 +919,7 @@ class Drill:
     def refused_without_the_index(self, files: dict[str, bytes], sha: str) -> bool:
         """Reinicia o supervisor sem acesso ao índice, oferece a candidata e confere a recusa."""
         normal = self.env
+        base_sha = self.version()
         stopped = self.stop_everything()
         self.env = {**normal, **offline_index_env(self.root)}
         try:
@@ -928,6 +933,9 @@ class Drill:
                 refusal="a sincronização das dependências",
             )
         finally:
+            # A recusa não bloqueia o SHA. Ao voltar ao ambiente normal, uma leitura automática
+            # poderia promover a candidata desta fase antes de a próxima oferta começar.
+            self.feed.offer(base_sha, None)
             self.env = normal
         # Volta ao ambiente normal para as fases seguintes (as mesmas que a base tinha).
         back = self.stop_everything() and self.wait_ready()
@@ -985,7 +993,13 @@ class Drill:
                 refused and refusal in (reason[-1] if reason else ""),
                 reason[-1][-200:] if reason else "sem aviso no log",
             )
-            time.sleep(20)
+            settled = wait_until(
+                lambda: not self.leftovers() and not self.roles(self.tree(), "update"),
+                timeout,
+            )
+            ok &= self.verdict.check(
+                "a candidata recusada terminou e limpou os temporarios", settled
+            )
             ok &= self.after_refusal(before_keys, old_version, trial_before)
         say(f"  ({time.monotonic() - phase_start:.0f} s)")
         return ok
@@ -1048,8 +1062,9 @@ class Drill:
             self.verdict.check(
                 # O estado (update-status.json) nao entra: o supervisor que sobe em seguida faz a
                 # propria checagem e o reescreve; o teste de unidade do lancador o cobre.
-                "a recuperacao registra o ocorrido no log do agente",
-                "promovi app.new" in self.log_text(),
+                "a recuperacao registra o ocorrido no log",
+                "promovi app.new"
+                in (read_text(self.base / "logs" / "supervisor.log") + self.log_text()),
             ),
         ]
         return all(results)
@@ -1307,7 +1322,12 @@ class Drill:
     def keep_evidence(self) -> None:
         folder = Path(tempfile.gettempdir()) / f"upgrade-drill-{time.strftime('%Y%m%d-%H%M%S')}"
         folder.mkdir(parents=True, exist_ok=True)
-        for name in ("logs/agent.log", "runtime/update-trial.txt", "runtime/.blocked-versions"):
+        for name in (
+            "logs/agent.log",
+            "logs/supervisor.log",
+            "runtime/update-trial.txt",
+            "runtime/.blocked-versions",
+        ):
             with contextlib.suppress(OSError):
                 shutil.copyfile(self.base / name, folder / Path(name).name)
         with contextlib.suppress(Exception):
@@ -1324,7 +1344,7 @@ def resolve_base(requested: str | None) -> str:
     return git("rev-parse", "--verify", "origin/main^{commit}").decode().strip()
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915 - roteiro linear do ensaio
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - roteiro linear do ensaio
     parser = argparse.ArgumentParser(description="Ensaio automatico de atualizacao do agente.")
     parser.add_argument("--base-sha", help="commit da versao base (padrao: origin/main)")
     parser.add_argument("--candidate-ref", help="commit da candidata (padrao: arvore local)")
@@ -1385,8 +1405,24 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915 - roteiro linea
             if not proceed:
                 break
             proceed = drill.offer(
-                label, tree, sha, expect_swap=expect_swap, source=f"codigo da {code}"
+                label,
+                tree,
+                sha,
+                expect_swap=expect_swap,
+                source=f"codigo da {code}",
+                refusal="RuntimeError"
+                if code == "candidata" and not expect_swap
+                else "verificação rápida",
             )
+            if proceed and expect_swap:
+                confirmed = wait_until(
+                    lambda: not (drill.base / "runtime" / "update-trial.txt").exists(),
+                    args.timeout,
+                )
+                proceed = drill.verdict.check(
+                    "a candidata terminou a prova antes de receber outra versao",
+                    confirmed,
+                )
         if proceed:
             proceed = drill.recover_interrupted_swap(next_sha)
         if proceed:
