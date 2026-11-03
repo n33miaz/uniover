@@ -3,8 +3,11 @@
   "name": "UniOver Treino",
   "short_name": "UniOver Treino",
   "description": "Seu treino do dia no UniOver.",
-  "start_url": "/treino/",
+  "start_url": "/treino/?uniover_app=treino",
   "scope": "/treino/",
+  "related_applications": [
+    { "platform": "webapp", "url": "/treino/manifest.webmanifest", "id": "/treino/" }
+  ],
   "display": "standalone",
   "lang": "pt-BR",
   "dir": "ltr",

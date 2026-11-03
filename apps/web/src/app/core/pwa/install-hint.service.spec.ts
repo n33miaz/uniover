@@ -4,6 +4,7 @@ import { Subject } from 'rxjs';
 import { InstallEnvInput } from './install-env';
 import {
   INSTALL_ENV,
+  APP_LAUNCH_PARAM,
   INSTALL_HINT_KEY,
   INSTALL_HINT_SNOOZE_MS,
   INSTALL_INTENT_KEY,
@@ -204,15 +205,17 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.safari }).autoOpenAllowed()).toBe(false);
     });
 
-    it('rodando como app instalado, salva a confirmação para evitar nova dica automática', () => {
+    it('janela antiga sem identidade não marca o módulo atual como instalado', () => {
       localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ never: true, dismissedAt: 5 }));
       create({ userAgent: UA.safari, standalone: true });
-      expect(stored()).toEqual({ installed: true });
+      expect(stored()).toEqual({ never: true, dismissedAt: 5 });
     });
 
-    it('no iOS, a inicialização standalone confirma instalação sem depender de appinstalled', () => {
+    it('no iOS, o marcador do atalho confirma apenas o app que abriu a janela', () => {
+      history.replaceState(null, '', `/?${APP_LAUNCH_PARAM}=root`);
       create({ userAgent: UA.safari, standalone: true });
       expect(stored()).toEqual({ installed: true });
+      history.replaceState(null, '', '/');
 
       TestBed.resetTestingModule();
       const browser = create({ userAgent: UA.safari });
@@ -373,6 +376,7 @@ describe('InstallHintService', () => {
     afterEach(() => {
       history.replaceState(null, '', '/');
       sessionStorage.removeItem(INSTALL_INTENT_KEY);
+      sessionStorage.removeItem('uniover.app-window');
     });
 
     it('a raiz instalada não suprime a dica do Treino', () => {
@@ -408,6 +412,39 @@ describe('InstallHintService', () => {
       expect(service.mode()).toBe('none');
       expect(service.autoEligible()).toBe(false);
       expect(service.autoOpenAllowed()).toBe(false);
+    });
+
+    it('janela da raiz não confunde Treino com o app instalado no Android', () => {
+      localStorage.setItem(`${INSTALL_HINT_KEY}.treino`, JSON.stringify({ installed: true }));
+      const service = createAt(`/?${APP_LAUNCH_PARAM}=root`, {
+        userAgent: UA.android,
+        standalone: true,
+      });
+      goTo('/treino/hoje');
+      expect(service.foreignAppWindow()).toBe(true);
+      expect(service.mode()).toBe('android-manual');
+      expect(service.autoOpenAllowed()).toBe(true);
+    });
+
+    it('janela antiga da raiz ainda oferece Treino após navegação interna', () => {
+      const service = createAt('/', { userAgent: UA.android, standalone: true });
+      goTo('/treino/hoje');
+      expect(service.mode()).toBe('android-manual');
+    });
+
+    it('Chrome corrige memória antiga quando informa que Treino não está instalado', async () => {
+      Object.defineProperty(window.navigator, 'getInstalledRelatedApps', {
+        configurable: true,
+        value: async () => [],
+      });
+      try {
+        localStorage.setItem(`${INSTALL_HINT_KEY}.treino`, JSON.stringify({ installed: true }));
+        const service = createAt('/treino/', { userAgent: UA.android, standalone: true });
+        await vi.waitFor(() => expect(service.mode()).toBe('android-manual'));
+        expect(JSON.parse(localStorage.getItem(`${INSTALL_HINT_KEY}.treino`)!)).toEqual({});
+      } finally {
+        Reflect.deleteProperty(window.navigator, 'getInstalledRelatedApps');
+      }
     });
 
     it('o pedido guardado no documento da raiz não instala o Treino: faz carga completa em /treino/', async () => {

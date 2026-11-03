@@ -40,6 +40,9 @@ export type InstallScope = 'root' | ScopedModuleSlug;
  * `?instalar=...` não bate com nada e não abre a folha.
  */
 export const INSTALL_MARKER_PARAM = 'instalar';
+/** Identifica o atalho que iniciou a janela; o escopo da URL pode mudar dentro do PWA da raiz. */
+export const APP_LAUNCH_PARAM = 'uniover_app';
+const APP_WINDOW_KEY = 'uniover.app-window';
 
 /** Chave da sessão (some ao fechar a aba) com o código da recarga pedida pelo botão. */
 export const INSTALL_INTENT_KEY = 'uniover.install-intent';
@@ -156,6 +159,8 @@ export class InstallHintService {
    * navegação interna já tenha levado a outro módulo.
    */
   private readonly loadScope: InstallScope = scopeOfPath(this.win?.location.pathname ?? '/');
+  /** Identidade desta janela, gravada somente quando ela abre pelo start_url do manifest. */
+  private readonly windowScope: InstallScope | null = this.readWindowScope();
   /** O escopo da tela aberta agora (muda com a navegação interna sem recarregar). */
   private readonly scope = signal<InstallScope>(this.loadScope);
   /** Escopos em que a pessoa confirmou, nesta página, que o app já está instalado. */
@@ -166,6 +171,8 @@ export class InstallHintService {
 
   private readonly promptEvent = signal<InstallPromptEvent | null>(null);
   private readonly standalone = signal(isStandalone(this.env));
+  /** Resultado verificável do Chrome Android para o manifest deste documento. */
+  private readonly installedRelated = signal<boolean | null>(null);
   private readonly memories = signal<Readonly<Partial<Record<InstallScope, HintMemory>>>>({});
   /** A memória do escopo aberto; lê o armazenamento só na primeira vez de cada escopo. */
   private readonly memory = computed(
@@ -184,9 +191,34 @@ export class InstallHintService {
 
   /** Celular ou tablet: só neles a folha abre sozinha; nas linhas de Ajustes e Personalizar vale em qualquer um. */
   readonly mobile = isMobileDevice(this.env);
+  /** A tela de outro módulo abriu na janela instalada do UniOver geral. */
+  readonly foreignAppWindow = computed(
+    () =>
+      this.standalone() &&
+      (this.crossScope() || (this.windowScope !== null && this.windowScope !== this.scope())),
+  );
 
   readonly mode = computed<InstallMode>(() => {
-    if (this.standalone() || this.ackedScopes().has(this.scope())) return 'none';
+    if (
+      this.ackedScopes().has(this.scope()) ||
+      (this.installedRelated() === true && !this.crossScope())
+    )
+      return 'none';
+    // `display-mode` descreve a janela, não o manifest da tela: o PWA geral pode abrir /treino/.
+    // Em janelas antigas sem marcador, só a consulta ao Chrome pode resolver a identidade com segurança.
+    if (this.standalone() && this.windowScope !== null && this.windowScope === this.scope())
+      return 'none';
+    if (
+      this.standalone() &&
+      this.windowScope === null &&
+      !this.crossScope() &&
+      this.installedRelated() !== false
+    )
+      return 'none';
+    if (this.foreignAppWindow()) {
+      if (isAndroid(this.env)) return 'android-manual';
+      if (isIos(this.env)) return 'ios-in-app';
+    }
     if (this.crossScope()) {
       // Fora do iOS (que instala pelo Compartilhar e lê o manifest na hora), o botão "Instalar" faz a carga completa
       // no escopo certo. Sem pedido guardado e fora do Android (computador com o app geral já instalado, por
@@ -231,15 +263,14 @@ export class InstallHintService {
       this.mobile &&
       this.mode() !== 'none' &&
       !this.memory().never &&
-      !this.memory().installed &&
+      (!this.memory().installed || this.foreignAppWindow()) &&
       !this.autoShown().has(this.scope()) &&
       !this.autoHeld(),
   );
 
   constructor() {
-    // O iOS não dispara `appinstalled`; abrir como app é a confirmação durável de que a instalação deu certo. Vale
-    // para o app deste documento (`loadScope`), nunca para os outros: o armazenamento é por origem, a instalação não.
-    if (this.standalone()) this.acknowledgeInstalled(this.loadScope);
+    // Só o marcador de lançamento comprova qual atalho abriu esta janela. A URL atual não comprova isso.
+    if (this.standalone() && this.windowScope !== null) this.acknowledgeInstalled(this.windowScope);
     inject(DestroyRef).onDestroy(() => this.stop());
   }
 
@@ -248,6 +279,7 @@ export class InstallHintService {
     const win = this.win;
     if (this.started || !win) return;
     this.started = true;
+    void this.checkInstalledRelated();
 
     // Tem de vir antes de o roteador ler o endereço (este método roda no inicializador do app).
     this.offerOnLoad = this.consumeMarker(win);
@@ -316,7 +348,7 @@ export class InstallHintService {
       const mql = this.win?.matchMedia?.('(display-mode: standalone)');
       if (!mql?.addEventListener) return null;
       const onChange = () => {
-        if (mql.matches) this.acknowledgeInstalled(this.loadScope);
+        if (mql.matches && this.windowScope !== null) this.acknowledgeInstalled(this.windowScope);
       };
       mql.addEventListener('change', onChange);
       return () => mql.removeEventListener('change', onChange);
@@ -445,5 +477,43 @@ export class InstallHintService {
   private remember(scope: InstallScope, memory: HintMemory): void {
     this.memories.update((all) => ({ ...all, [scope]: memory }));
     writeMemory(scope, memory);
+  }
+
+  private readWindowScope(): InstallScope | null {
+    const win = this.win;
+    if (!win || !isStandalone(this.env)) return null;
+    try {
+      const launched = new URL(win.location.href).searchParams.get(APP_LAUNCH_PARAM);
+      if (launched === this.loadScope) win.sessionStorage.setItem(APP_WINDOW_KEY, launched);
+      const saved = win.sessionStorage.getItem(APP_WINDOW_KEY);
+      return saved === 'root' || saved === 'tv' || saved === 'treino' ? saved : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** No Chrome Android, consulta o ID instalado deste manifest, sem confundir com o PWA geral. */
+  private async checkInstalledRelated(): Promise<void> {
+    if (!isAndroid(this.env)) return;
+    const nav = this.win?.navigator as Navigator & {
+      getInstalledRelatedApps?: () => Promise<readonly { platform: string; id?: string }[]>;
+    };
+    if (typeof nav?.getInstalledRelatedApps !== 'function') return;
+    try {
+      const apps = await nav.getInstalledRelatedApps();
+      const id = new URL(
+        this.loadScope === 'root' ? '/' : `/${this.loadScope}/`,
+        this.win!.location.origin,
+      ).href;
+      const installed = apps.some((app) => app.platform === 'webapp' && app.id === id);
+      this.installedRelated.set(installed);
+      // Corrige memórias antigas gravadas ao abrir Treino dentro do PWA da raiz.
+      if (!installed && !this.ackedScopes().has(this.loadScope)) {
+        const old = readMemory(this.loadScope);
+        if (old.installed) this.remember(this.loadScope, { ...old, installed: undefined });
+      }
+    } catch {
+      // Safari, Firefox e navegadores que recusam a consulta conservam a identidade da janela.
+    }
   }
 }

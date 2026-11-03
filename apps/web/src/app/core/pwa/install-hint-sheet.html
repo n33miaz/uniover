@@ -31,6 +31,29 @@
         </p>
       }
     } @else if (mode() === 'android-manual') {
+      @if (foreignAppWindow()) {
+        <p class="ui-notice" i18n="@@install.android.other-window">
+          Você está na janela de outro app UniOver. Abra o endereço do Treino no navegador para
+          instalar o atalho próprio.
+        </p>
+        <button #copyButton type="button" class="copy secondary ui-btn" (click)="copyAddress()">
+          <span i18n="@@install.copy.action">Copiar endereço</span>
+        </button>
+        <p class="copy-status" role="status">{{ copyMessage() }}</p>
+        <input
+          #ghost
+          class="address"
+          [class.ghost]="copy() !== 'failed'"
+          type="text"
+          readonly
+          spellcheck="false"
+          aria-label="Endereço do app"
+          i18n-aria-label="@@install.copy.field-label"
+          [attr.aria-hidden]="copy() === 'failed' ? null : 'true'"
+          [attr.tabindex]="copy() === 'failed' ? 0 : -1"
+          [value]="address"
+        />
+      }
       <ol class="steps" role="list">
         <li class="step">
           <span class="num" aria-hidden="true">1</span>
@@ -84,9 +107,8 @@
                 Abra este endereço no <strong>Safari</strong>
               </p>
               <p class="step-sub" i18n="@@install.step.open-safari.sub">
-                Este app abriu dentro de outro (como o Instagram ou o Facebook), que não deixa
-                adicionar à tela de início. Copie o endereço, abra o Safari e cole na barra de
-                endereço.
+              Esta janela não instala o atalho próprio desta tela. Copie o endereço, abra o Safari
+              e cole na barra de endereço.
               </p>
               <button
                 #copyButton
