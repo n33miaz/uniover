@@ -211,6 +211,13 @@ export class AuthApi {
     return this.send('POST', '/sessions/others/revoke', { token });
   }
 
+  changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    return this.send('POST', '/me/password', {
+      token,
+      body: { currentPassword, newPassword },
+    });
+  }
+
   info(): Promise<ModuleInfo> {
     return this.send('GET', '/info');
   }
