@@ -31,7 +31,8 @@ internal sealed partial class TvPresenceListener(
         ArgumentNullException.ThrowIfNull(info);
 
         if (info.Connected && scopes is not null
-            && info.Capabilities.Contains(CleanupSettingsPublisher.Capability, StringComparer.Ordinal))
+            && (info.Capabilities.Contains(CleanupSettingsPublisher.Capability, StringComparer.Ordinal)
+                || info.Capabilities.Contains(CleanupSettingsPublisher.MaintenanceCapability, StringComparer.Ordinal)))
         {
             _ = PublishCleanupSettingsAsync(info.AgentId);
         }

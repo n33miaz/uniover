@@ -18,12 +18,13 @@ internal sealed record TvSummary(
     Guid Id, string Name, bool IsDefault, string? AgentSlug, string? Kind, bool Online, IReadOnlyList<string> Capabilities,
     bool AllowBackgroundAppClosing = false, bool FocusModeEnabled = false, bool ShortAnimationsEnabled = false,
     IReadOnlyList<string>? RestrictedBackgroundPackages = null, bool FocusClosesBackground = false,
-    bool PermissionNeeded = false);
+    bool PermissionNeeded = false, bool AutoMaintenanceEnabled = true);
 internal sealed record TvListResponse(IReadOnlyList<TvSummary> Items);
 internal sealed record CreateTvRequest(string? AgentSlug, string? Name);
 internal sealed record UpdateTvRequest(string? AgentSlug, string? Name, bool? AllowBackgroundAppClosing = null,
     bool? FocusModeEnabled = null, bool? ShortAnimationsEnabled = null, IReadOnlyList<string?>? RestrictedBackgroundPackages = null,
-    bool? FocusClosesBackground = null, IReadOnlyList<string?>? FocusPackages = null);
+    bool? FocusClosesBackground = null, IReadOnlyList<string?>? FocusPackages = null,
+    bool? AutoMaintenanceEnabled = null);
 internal sealed record TvMembersResponse(IReadOnlyList<Guid> UserIds);
 internal sealed record UpdateTvMembersRequest(IReadOnlyList<Guid>? UserIds);
 
@@ -98,7 +99,8 @@ internal sealed class ManageTvsHandler(
 
         if (errors.Count > 0 || (request.AgentSlug is null && name is null && request.AllowBackgroundAppClosing is null
             && request.FocusModeEnabled is null && request.ShortAnimationsEnabled is null && request.RestrictedBackgroundPackages is null
-            && request.FocusClosesBackground is null && request.FocusPackages is null))
+            && request.FocusClosesBackground is null && request.FocusPackages is null
+            && request.AutoMaintenanceEnabled is null))
         {
             return (null, "invalid");
         }
@@ -145,24 +147,30 @@ internal sealed class ManageTvsHandler(
         }
 
         var now = time.GetUtcNow();
+        var previousSlug = tv.AgentSlug;
         tv.Rebind(agentSlug, name, userId, now);
+        var agentChanged = !string.Equals(previousSlug, agentSlug, StringComparison.Ordinal);
         var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
+        var maintenanceChanged = request.AutoMaintenanceEnabled is { } maintenance
+            && tv.SetAutoMaintenance(maintenance, userId, now);
         var lightChanged = tv.SetLightSettings(request.FocusModeEnabled, request.ShortAnimationsEnabled,
             request.RestrictedBackgroundPackages?.OfType<string>().ToArray(), userId, now, request.FocusClosesBackground);
         var catalogChanged = request.FocusPackages is { } focusPackages && tv.SetFocusCatalog([.. focusPackages.OfType<string>()], userId, now);
         lightChanged |= catalogChanged;
-        if (closingChanged || lightChanged)
+        if (closingChanged || lightChanged || maintenanceChanged)
         {
             // O EfCommandAudit usa este mesmo TvDbContext: um SaveChanges grava a TV e a trilha juntas.
             await audit.RecordAsync(
                 CommandAuditEntry.Create(
                     userId, tv.AgentSlug, TvCommandNames.CleanupSetting,
                     // A trilha guarda só o que mudou, nunca a lista de pacotes: o texto é curto e estável.
-                    (closingChanged, lightChanged) switch
+                    (closingChanged, lightChanged, maintenanceChanged) switch
                     {
-                        (true, true) => "background-app-closing+light-settings",
-                        (true, false) => tv.AllowBackgroundAppClosing ? "background-app-closing=on" : "background-app-closing=off",
-                        _ => "light-settings",
+                        (false, false, true) => tv.AutoMaintenanceEnabled ? "auto-maintenance=on" : "auto-maintenance=off",
+                        (true, false, false) => tv.AllowBackgroundAppClosing ? "background-app-closing=on" : "background-app-closing=off",
+                        (true, true, false) => "background-app-closing+light-settings",
+                        (false, true, false) => "light-settings",
+                        _ => "cleanup-settings",
                     },
                     ok: true, errorCode: null, latencyMs: null, origin.Client, now, tv.Id),
                 cancellationToken);
@@ -172,7 +180,13 @@ internal sealed class ManageTvsHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        if (closingChanged || lightChanged)
+        if (agentChanged)
+        {
+            // O computador antigo para o que tinha agendado nesta TV; o novo recebe as preferências dela.
+            await PublishUnboundAsync(previousSlug, cancellationToken);
+        }
+
+        if (closingChanged || lightChanged || maintenanceChanged || agentChanged)
         {
             await PublishCleanupSettingsAsync(tv.AgentSlug, cancellationToken);
         }
@@ -204,6 +218,7 @@ internal sealed class ManageTvsHandler(
         await TvMembershipLedger.ReconcileAsync(db, id, [.. members.Select(m => m.UserId)], [], time.GetUtcNow(), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await PublishUnboundAsync(tv.AgentSlug, cancellationToken);
         return true;
     }
 
@@ -328,6 +343,18 @@ internal sealed class ManageTvsHandler(
         }
     }
 
+    /// <summary>Mesma regra de <see cref="PublishCleanupSettingsAsync"/>: a mudança já está gravada e a entrega é melhor esforço.</summary>
+    private async Task PublishUnboundAsync(string agentSlug, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await cleanupPublisher.PublishUnboundAsync(agentSlug, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+        }
+    }
+
     private TvSummary ToSummary(ConfiguredTv tv)
     {
         var info = presence.Get(tv.AgentSlug);
@@ -337,7 +364,7 @@ internal sealed class ManageTvsHandler(
             : null;
         return new TvSummary(tv.Id, tv.Name, tv.IsDefault, tv.AgentSlug, kind, info?.Connected == true, capabilities,
             tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.BackgroundPackages(), tv.FocusClosesBackground,
-            tv.PermissionNeeded);
+            tv.PermissionNeeded, tv.AutoMaintenanceEnabled);
     }
 
     private static Dictionary<string, string[]> Validate(string? agentSlug, string? name, bool requireAgent, out string? normalizedName)

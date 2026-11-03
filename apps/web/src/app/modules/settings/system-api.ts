@@ -96,6 +96,11 @@ export interface TvItem {
   readonly restrictedBackgroundPackages?: readonly string[];
   /** A TV Samsung esqueceu o UniOver: falta alguém escolher "Permitir" na tela dela (o agente não pede sozinho). */
   readonly permissionNeeded?: boolean;
+  /**
+   * Manutenção automática desta TV (a Samsung a oferece: anuncia `tv.maintenance.v1`). A API a entrega ligada por padrão;
+   * o campo só aparece quando está desligada.
+   */
+  readonly autoMaintenanceEnabled?: boolean;
 }
 
 /** Uma TV compatível que o computador achou na rede dele. O `id` é opaco: nunca há endereço nem MAC. */
@@ -227,6 +232,7 @@ function readTv(value: unknown): TvItem | null {
     ...(dto['focusClosesBackground'] === true ? { focusClosesBackground: true } : {}),
     ...(dto['shortAnimationsEnabled'] === true ? { shortAnimationsEnabled: true } : {}),
     ...(dto['permissionNeeded'] === true ? { permissionNeeded: true } : {}),
+    ...(dto['autoMaintenanceEnabled'] === false ? { autoMaintenanceEnabled: false } : {}),
     ...(Array.isArray(dto['restrictedBackgroundPackages'])
       ? {
           restrictedBackgroundPackages: dto['restrictedBackgroundPackages'].filter(
@@ -394,6 +400,7 @@ export class SystemApi {
       allowBackgroundAppClosing?: boolean;
       focusModeEnabled?: boolean;
       focusClosesBackground?: boolean;
+      autoMaintenanceEnabled?: boolean;
       shortAnimationsEnabled?: boolean;
       restrictedBackgroundPackages?: readonly string[];
       focusPackages?: readonly string[];
@@ -407,6 +414,8 @@ export class SystemApi {
     if (change.focusModeEnabled !== undefined) body['focusModeEnabled'] = change.focusModeEnabled;
     if (change.focusClosesBackground !== undefined)
       body['focusClosesBackground'] = change.focusClosesBackground;
+    if (change.autoMaintenanceEnabled !== undefined)
+      body['autoMaintenanceEnabled'] = change.autoMaintenanceEnabled;
     if (change.shortAnimationsEnabled !== undefined)
       body['shortAnimationsEnabled'] = change.shortAnimationsEnabled;
     if (change.restrictedBackgroundPackages !== undefined)

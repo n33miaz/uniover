@@ -17,6 +17,12 @@ export function cleanupReasonText(reason: string | null | undefined): string {
     case 'memory-unavailable':
     case 'state-unavailable':
       return $localize`:@@shared.tv-cleanup.reason.unreadable:a TV não respondeu`;
+    case 'automatic-only':
+      return $localize`:@@shared.tv-cleanup.reason.automatic:a Samsung faz a manutenção sozinha`;
+    case 'permission-required':
+      return $localize`:@@shared.tv-cleanup.reason.permission:falta permitir o UniOver na TV`;
+    case 'foreground-unverifiable':
+      return $localize`:@@shared.tv-cleanup.reason.foreground:sem certeza do app em uso`;
     case 'cleanup_in_progress':
       return $localize`:@@shared.tv-cleanup.reason.busy:outra limpeza em andamento`;
     default:

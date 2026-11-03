@@ -25,6 +25,8 @@ from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
 from uniover_agent.adapters.tv_adb_parsing import is_valid_package
 
 CONFIG_FILE_ENV = "UNIOVER_CONFIG_FILE"
+# Quantos IDs Tizen extras a lista `tv_samsung_apps` aceita.
+MAX_SAMSUNG_EXTRA_APPS = 32
 
 _log = logging.getLogger(__name__)
 
@@ -89,6 +91,9 @@ class Settings(BaseSettings):
     tv_name: str = "tv"
     # Apps Tizen extras a consultar no endpoint REST da Samsung; a TV só publica os instalados.
     tv_samsung_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Depois do uso pelo UniOver, quanto a Samsung deve ficar ociosa antes da manutenção automática.
+    # Cada agente controla uma TV, então este ajuste é naturalmente por TV.
+    tv_samsung_maintenance_idle_seconds: int = Field(default=15 * 60, ge=60, le=60 * 60)
     # Sem comando e sem aviso de "app aberto" por este tempo, a sessão com a TV hiberna.
     tv_hibernate_seconds: int = Field(default=300, ge=1)
     # Desligar com leitura (`tv.power.off.v1`): quanto esperar a leitura de energia antes da tecla e
@@ -153,7 +158,12 @@ class Settings(BaseSettings):
     def _validate_samsung_apps(cls, value: list[str]) -> list[str]:
         if any(not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", app_id) for app_id in value):
             raise ValueError("tv_samsung_apps precisa conter IDs Tizen separados por vírgula")
-        return list(dict.fromkeys(value))
+        unique = list(dict.fromkeys(value))
+        # A manutenção da Samsung lê cada ID a cada passada: um teto evita uma lista enorme esticar
+        # a passada e a carga na TV. O catálogo de fábrica já cobre os apps comuns.
+        if len(unique) > MAX_SAMSUNG_EXTRA_APPS:
+            raise ValueError(f"tv_samsung_apps aceita no máximo {MAX_SAMSUNG_EXTRA_APPS} IDs")
+        return unique
 
     @classmethod
     def settings_customise_sources(

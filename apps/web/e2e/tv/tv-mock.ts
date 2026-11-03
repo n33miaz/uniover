@@ -26,6 +26,8 @@ export interface MockTv {
   /** Modo Foco e o fechamento dos outros apps nele; ausentes valem desligado, como na API. */
   focusModeEnabled?: boolean;
   focusClosesBackground?: boolean;
+  /** Manutenção automática (Samsung); ausente vale ligada, como na API. */
+  autoMaintenanceEnabled?: boolean;
   /** A TV Samsung esqueceu o UniOver e espera alguém escolher "Permitir" nela; ausente vale que não. */
   permissionNeeded?: boolean;
   /** As últimas limpezas, como `GET /tvs/{id}/cleanup-reports` devolve. */
@@ -614,6 +616,7 @@ async function handleTvs(
     allowBackgroundAppClosing: tv.allowBackgroundAppClosing ?? false,
     focusModeEnabled: tv.focusModeEnabled ?? false,
     focusClosesBackground: tv.focusClosesBackground ?? false,
+    autoMaintenanceEnabled: tv.autoMaintenanceEnabled ?? true,
     permissionNeeded: tv.permissionNeeded ?? false,
   });
   const found = target[1] ? tvs.find((tv) => tv.id === target[1]) : undefined;
@@ -669,6 +672,9 @@ async function handleTvs(
       const list = (body['focusPackages'] as string[]).slice().sort();
       const same = JSON.stringify(list) === JSON.stringify([...FOCUS_DEFAULTS].sort());
       found.focusPackages = same ? undefined : list;
+    }
+    if (typeof body?.['autoMaintenanceEnabled'] === 'boolean') {
+      found.autoMaintenanceEnabled = body['autoMaintenanceEnabled'];
     }
     await json(route, 200, summary(found));
     return true;
