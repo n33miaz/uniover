@@ -38,12 +38,12 @@ try {
 catch { }
 $env:PYTHONUTF8 = '1'
 
-$taskName = 'UniOver agente'
-$startupAppName = 'UniOver agente'
+$taskName = 'UniOver'
+$startupAppName = 'UniOver'
 
 function Read-WindowsStartupNames {
     # O supervisor le este arquivo a cada atualizacao: mudar os rotulos nao exige reinstalacao nem UAC.
-    $names = @{ scheduled_task_name = 'UniOver agente'; startup_app_name = 'UniOver agente' }
+    $names = @{ scheduled_task_name = 'UniOver'; startup_app_name = 'UniOver' }
     try {
         $path = Join-Path $source 'tools\windows-startup.json'
         $chosen = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
@@ -98,7 +98,13 @@ Set-Layout $anchor
 $existingBase = Get-ExistingBase
 if ($existingBase) { Set-Layout $existingBase }
 Set-StartupNames
-$previousTaskName = $taskName
+$previousTaskName = 'UniOver agente'
+try {
+    $registeredName = ([System.IO.File]::ReadAllText((Join-Path $base 'runtime\launcher-task'), [System.Text.Encoding]::UTF8).Trim() -split '\|', 2)[1]
+    if ($registeredName -and $registeredName.Length -le 80 -and $registeredName -notmatch '[\\/:*?"<>|\[\]''\x00-\x1F]') {
+        $previousTaskName = $registeredName
+    }
+} catch { }
 
 function Write-Page([string]$Html, [bool]$Reload = $true) {
     # Pagina de andamento (modo automatico). $Html ja vem com as entidades HTML (o arquivo e so ASCII). Troca por
@@ -137,7 +143,7 @@ function Open-Page {
 
 function Stop-Agent {
     # Parar a tarefa e os processos que ela deixou: pasta em uso nao pode ser trocada.
-    foreach ($name in @($taskName, 'UniOver agente') | Select-Object -Unique) {
+    foreach ($name in @($taskName, $previousTaskName, 'UniOver agente') | Select-Object -Unique) {
         Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     }
     $mine = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
@@ -220,10 +226,12 @@ function Restore-RunningAgent {
         if (-not (Test-Path -LiteralPath (Join-Path $source 'tools\run-agent.ps1'))) {
             return
         }
-        if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
-            return
+        foreach ($name in @($taskName, $previousTaskName) | Select-Object -Unique) {
+            if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+                Start-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+                return
+            }
         }
-        Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     }
     catch { }
 }
@@ -231,7 +239,7 @@ function Restore-RunningAgent {
 if ($Uninstall) {
     Set-StartupNames
     Stop-Agent
-    foreach ($name in @($taskName, 'UniOver agente') | Select-Object -Unique) {
+    foreach ($name in @($taskName, $previousTaskName, 'UniOver agente') | Select-Object -Unique) {
         Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
     }
     Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
@@ -570,7 +578,7 @@ Para remover, execute o instalador com -Uninstall e, se quiser, apague esta past
 function Write-StartMenuShortcut {
     try {
         $start = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-        $shortcut = Join-Path $start 'UniOver.lnk'
+        $shortcut = Join-Path $start ($startupAppName + '.lnk')
         $shell = New-Object -ComObject WScript.Shell
         $link = $shell.CreateShortcut($shortcut)
         $link.TargetPath = ($ApiUrl.TrimEnd('/') + '/')

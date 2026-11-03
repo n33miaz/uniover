@@ -17,6 +17,7 @@ POWER_SETTINGS_VERSION = "ac-never-sleep-1"
 # Depois de uma tentativa que falhou, espera isto antes de tentar de novo (custa segundos).
 RETRY_AFTER_SECONDS = 24 * 3600
 LEGACY_TASK_NAME = "UniOver agente"
+DEFAULT_WINDOWS_NAME = "UniOver"
 MAX_WINDOWS_NAME_LENGTH = 80
 
 
@@ -41,7 +42,7 @@ def _startup_names() -> tuple[str, str]:
             return names
     except OSError, ValueError, KeyError, TypeError:
         pass
-    return LEGACY_TASK_NAME, LEGACY_TASK_NAME
+    return DEFAULT_WINDOWS_NAME, DEFAULT_WINDOWS_NAME
 
 
 STARTUP_APP_NAME, TASK_NAME = _startup_names()

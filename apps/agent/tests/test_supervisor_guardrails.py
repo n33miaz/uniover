@@ -292,7 +292,7 @@ def test_the_tray_comes_back_a_few_seconds_after_the_shortcut_clears_the_signal(
     with heartbeat(pc.alive), pc.running():
         assert wait_for(lambda: pc.starts() >= 1, 90)
         assert pc.tray_starts() == 0
-        flag.unlink()  # o que o atalho "UniOver Agente" faz
+        flag.unlink()  # o que o atalho "UniOver" faz
         assert wait_for(lambda: pc.tray_starts() == 1, 10), pc.supervisor_log()
         assert pc.starts() == 1  # o agente nem piscou
 
@@ -383,7 +383,7 @@ def test_the_start_menu_shortcut_is_created_once_and_points_at_the_open_script(p
     tools.mkdir(parents=True)
     script = tools / "tray-open.vbs"
     script.write_bytes((RUNNER.parent / "tray-open.vbs").read_bytes())
-    link = pc.roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "UniOver Agente.lnk"
+    link = pc.roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "UniOver.lnk"
     with pc.running():
         assert wait_for(link.exists, 30), pc.supervisor_log()
         assert wait_for(lambda: pc.starts() >= 1, 90)

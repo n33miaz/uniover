@@ -197,7 +197,7 @@ sem parâmetros (modo automático), que:
 3. **pareia o agente**: mostra o código e o QR para escanear com o celular onde a pessoa usa o UniOver
    (já pareado, não repete);
 4. **pareia a TV** (na Samsung, aceitar o aviso na tela; já pareada, não repete);
-5. cria a tarefa **UniOver agente** (ao entrar no Windows, sem janela, sem perguntar) que roda o
+5. cria a tarefa **UniOver** (ao entrar no Windows, sem janela, sem perguntar) que roda o
    lançador estável `%LOCALAPPDATA%\UniOver\launcher.ps1`. O instalador também deixa um atalho **UniOver** no
    Menu Iniciar. Os rótulos da tarefa e de **Aplicativos de inicialização** ficam em
    `tools/windows-startup.json`; a atualização do agente os aplica na conta do usuário, sem novo UAC.
@@ -213,13 +213,13 @@ janela, faz `uv sync` e `run`; se o agente cair, volta com espera crescente (5 s
 atualização que falhou) um selo vermelho-alaranjado aparece no canto inferior direito, recortando o disco, sem mudar a cor dele. A dica traz o
 estado e o nome da TV. O menu tem Abrir UniOver, Status, Ver Registro, Atualizar Agora, Reiniciar e Sair.
 O supervisor abre a bandeja em toda instalação Windows, com TV Samsung, Android ou sem TV configurada. O atalho
-**UniOver agente** na pasta Inicializar faz a entrada aparecer no Gerenciador de Tarefas e pede o ícone no logon.
+**UniOver** na pasta Inicializar faz a entrada aparecer no Gerenciador de Tarefas e pede o ícone no logon.
 Desabilitar essa entrada impede o ícone no próximo logon; a tarefa do Agendador ainda inicia o supervisor e o
 agente para manter o controle disponível. Para interromper o início do agente, use a desinstalação.
 
 - **Sair só fecha o ícone.** O agente e o supervisor continuam rodando. O ícone deixa `runtime\tray-closed`, e o
   supervisor não o reabre enquanto o sinal valer: até o próximo logon (o sinal é velho se foi deixado antes de a sessão
-  do Windows atual começar) ou até a pessoa abrir o atalho **UniOver agente** do menu Iniciar (`tools\tray-open.vbs`,
+  do Windows atual começar) ou até a pessoa abrir o atalho **UniOver** do menu Iniciar (`tools\tray-open.vbs`,
   que apaga o sinal e chama o lançador; o ícone volta em poucos segundos). O supervisor cria esse atalho ao subir, se
   faltar, para ele chegar também a quem já tinha o UniOver instalado. Uma atualização não traz o ícone de volta.
 - **Balão do Windows só em falha de atualização**, uma vez por resultado (`runtime\tray-notified.json`). Atualizar,
@@ -307,7 +307,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 Com `-TvHost` o instalador segue o fluxo manual (sem descoberta e com a pergunta abaixo). Ele instala o `uv` pelo `winget` se necessário, baixa somente `apps/agent` da branch pública `main` em
 `%LOCALAPPDATA%\UniOver\app`, prepara as dependências, mostra o código para aprovar o PC no app, pareia a
-TV e pergunta explicitamente antes de criar a tarefa **UniOver agente** para iniciar sem janela ao entrar no Windows.
+TV e pergunta explicitamente antes de criar a tarefa **UniOver** para iniciar sem janela ao entrar no Windows.
 Para remover só a tarefa: `.\install-windows.ps1 -Uninstall`.
 
 ## TV (Android TV Remote v2)

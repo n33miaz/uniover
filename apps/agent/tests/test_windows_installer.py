@@ -43,6 +43,7 @@ def test_the_generated_wrapper_is_ascii_and_recovers_the_uv_and_venv() -> None:
 
 def test_windows_startup_names_have_one_source_for_install_and_update() -> None:
     names = json.loads(STARTUP_NAMES.read_text(encoding="utf-8"))
+    assert names == {"startup_app_name": "UniOver", "scheduled_task_name": "UniOver"}
     assert names["startup_app_name"] == names["scheduled_task_name"]
     assert names["startup_app_name"]
     assert (installation.STARTUP_APP_NAME, installation.TASK_NAME) == (
@@ -52,6 +53,8 @@ def test_windows_startup_names_have_one_source_for_install_and_update() -> None:
     for script in (INSTALLER, RUNNER):
         assert "tools\\windows-startup.json" in script.read_text(encoding="utf-8")
     assert "'Startup'" in RUNNER.read_text(encoding="utf-8")
+    assert "Move-StartupApproval" in RUNNER.read_text(encoding="utf-8")
+    assert "@($taskName, $previousTaskName)" in INSTALLER.read_text(encoding="utf-8")
 
 
 def test_startup_shortcut_script_requests_the_tray_without_touching_the_agent(
@@ -158,7 +161,7 @@ def test_installer_migrates_the_old_layout_and_creates_the_user_facing_files() -
     ):
         assert old in installer and new in installer
     assert "LEIA-ME.txt" in installer
-    assert "UniOver.lnk" in installer
+    assert "$startupAppName + '.lnk'" in installer
     # Desinstalar tira o atalho que traz o ícone da bandeja de volta (o supervisor o cria).
     uninstall = installer.split("if ($Uninstall) {", 1)[1].split("exit 0", 1)[0]
     assert "startupAppName" in uninstall

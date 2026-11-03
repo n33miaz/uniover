@@ -516,14 +516,14 @@ $tokens = $null
 $errors = $null
 $parser = [System.Management.Automation.Language.Parser]
 $ast = $parser::ParseFile($Installer, [ref]$tokens, [ref]$errors)
-$names = @('Write-Config', 'Set-ConfigValues', 'Move-Folder', 'Get-MoveFailureReason')
+$names = @('Write-Config', 'Set-ConfigValues', 'Move-Folder', 'Get-MoveFailureReason', 'Get-ZipComment')
 $names += @('Get-AgentSource', 'Write-AgentLauncher')
 foreach ($name in $names) {
     $wanted = $name
     $kind = [System.Management.Automation.Language.FunctionDefinitionAst]
     $found = $ast.Find({ param($node) ($node -is $kind) -and ($node.Name -eq $wanted) }, $true)
     # Instaladores anteriores a este diagnostico nao tem essa funcao; as demais sao indispensaveis.
-    if (-not $found -and $wanted -eq 'Get-MoveFailureReason') { continue }
+    if (-not $found -and $wanted -in @('Get-MoveFailureReason', 'Get-ZipComment')) { continue }
     if (-not $found) { throw "funcao $wanted nao encontrada no instalador da base" }
     Invoke-Expression $found.Extent.Text
 }
@@ -1410,9 +1410,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
                 sha,
                 expect_swap=expect_swap,
                 source=f"codigo da {code}",
-                refusal="RuntimeError"
-                if code == "candidata" and not expect_swap
-                else "verificação rápida",
+                refusal="RuntimeError" if not expect_swap else "verificação rápida",
             )
             if proceed and expect_swap:
                 confirmed = wait_until(

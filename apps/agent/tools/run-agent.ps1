@@ -24,7 +24,7 @@ $env:UNIOVER_SUPERVISED = '1'
 
 function Get-WindowsStartupNames {
     # Os dois rotulos vivem no mesmo arquivo que o instalador e o agente Python leem.
-    $names = @{ startup_app_name = 'UniOver agente'; scheduled_task_name = 'UniOver agente' }
+    $names = @{ startup_app_name = 'UniOver'; scheduled_task_name = 'UniOver' }
     try {
         $file = Join-Path $source 'tools\windows-startup.json'
         $chosen = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
@@ -331,6 +331,29 @@ function Wait-Lap([double]$Seconds, [string]$Uv) {
     }
 }
 
+function Move-StartupApproval([string]$OldFile, [string]$NewFile) {
+    # O Windows guarda a escolha de desabilitar a inicializacao pelo nome do .lnk. Renomear
+    # sem levar esse valor junto religaria o icone contra a escolha da pessoa.
+    $key = $null
+    try {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+            'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder', $true)
+        if ($null -eq $key) { return $true }
+        $old = $key.GetValue($OldFile, $null)
+        if ($old -is [byte[]]) {
+            $current = $key.GetValue($NewFile, $null)
+            if ($current -isnot [byte[]] -or ($old.Length -gt 0 -and $old[0] -eq 3)) {
+                $key.SetValue($NewFile, $old, [Microsoft.Win32.RegistryValueKind]::Binary)
+            }
+            $key.DeleteValue($OldFile, $false)
+        }
+        return $true
+    } catch {
+        Write-SupLog 'WARNING' 'nao consegui preservar a escolha de inicializacao ao renomear o atalho'
+        return $false
+    } finally { if ($null -ne $key) { $key.Dispose() } }
+}
+
 function Ensure-TrayShortcut {
     # O menu Iniciar traz o icone de volta depois do "Sair". A pasta Inicializar torna o mesmo
     # icone visivel em Aplicativos de inicializacao; a tarefa continua vigiando o agente. Os dois
@@ -379,14 +402,23 @@ function Ensure-TrayShortcut {
         $oldName = ''
         try { $oldName = [System.IO.File]::ReadAllText($marker, [System.Text.Encoding]::UTF8).Trim() } catch { }
         if (-not $oldName) { $oldName = 'UniOver Agente' }
-        if ($oldName -ine $name -and $oldName -notmatch '[\\/:*?"<>|]') {
+        # Limpa todos os nomes anteriores conhecidos, inclusive uma primeira atualizacao sem marcador.
+        # So um atalho para o NOSSO tray-open.vbs pode ser removido. No Startup, a preferencia
+        # habilitado/desabilitado acompanha o nome novo antes de apagar o antigo.
+        $oldNames = @($oldName, 'UniOver Agente', 'UniOver agente') | Select-Object -Unique
+        foreach ($old in $oldNames) {
+            if (-not $old -or $old -ieq $name -or $old -match '[\\/:*?"<>|]') { continue }
             foreach ($folder in @($programs, $startup)) {
-                $oldPath = Join-Path $folder ($oldName + '.lnk')
-                if (Test-Path -LiteralPath $oldPath) {
-                    $oldLink = $shell.CreateShortcut($oldPath)
-                    if ($oldLink.TargetPath -like '*wscript.exe' -and $oldLink.Arguments -like '*tray-open.vbs*') {
-                        Remove-Item -LiteralPath $oldPath -Force
-                    }
+                $oldPath = Join-Path $folder ($old + '.lnk')
+                if (-not (Test-Path -LiteralPath $oldPath)) {
+                    # Uma entrada antiga pode sobreviver no registro mesmo depois de o .lnk sumir.
+                    if ($folder -eq $startup) { [void](Move-StartupApproval ($old + '.lnk') ($name + '.lnk')) }
+                    continue
+                }
+                $oldLink = $shell.CreateShortcut($oldPath)
+                if ($oldLink.TargetPath -like '*wscript.exe' -and $oldLink.Arguments -eq $wanted) {
+                    if ($folder -eq $startup -and -not (Move-StartupApproval ($old + '.lnk') ($name + '.lnk'))) { continue }
+                    Remove-Item -LiteralPath $oldPath -Force
                 }
             }
         }
