@@ -3,8 +3,11 @@
   "name": "UniOver TV",
   "short_name": "UniOver TV",
   "description": "Controle da TV de casa pelo UniOver.",
-  "start_url": "/tv/",
+  "start_url": "/tv/?uniover_app=tv",
   "scope": "/tv/",
+  "related_applications": [
+    { "platform": "webapp", "url": "/tv/manifest.webmanifest", "id": "/tv/" }
+  ],
   "display": "standalone",
   "lang": "pt-BR",
   "dir": "ltr",

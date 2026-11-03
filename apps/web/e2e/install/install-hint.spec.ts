@@ -462,13 +462,14 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
   });
 
-  test('no app já instalado (standalone) a folha nunca abre e as linhas somem', async ({
+  test('janela instalada confirma a raiz e ainda oferece o atalho próprio da TV', async ({
     page,
   }, info) => {
     await projectDefaultEnvironment(page, info.project.name);
     await simulateStandalone(page);
     await signInAsOwner();
-    await showHome(page);
+    await page.goto('/?uniover_app=root');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
     await page.waitForTimeout(AFTER_DELAY_MS);
     await expectSheetClosed(page);
 
@@ -485,7 +486,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expect(customize).toBeVisible();
     await expect(
       customize.getByRole('button', { name: /^Adicionar à tela de início/ }),
-    ).toHaveCount(0);
+    ).toBeVisible();
   });
 
   test('no PWA iOS que o WebKit reporta como fullscreen, a dica não reaparece', async ({
@@ -691,6 +692,21 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     expect(await storedMemory(page)).toEqual({ installed: true, never: true });
   });
 
+  test('Treino aberto dentro do app geral no Android oferece o próprio atalho', async ({ page }) => {
+    await simulateStandalone(page);
+    await page.addInitScript(() => {
+      localStorage.setItem('uniover.install-hint.v1.treino', JSON.stringify({ installed: true }));
+    });
+    await signInAsOwner();
+    await page.goto('/?uniover_app=root');
+    await page.getByRole('link', { name: 'Ver treino' }).click();
+    await expect(trainingHeading(page)).toBeVisible();
+    const sheet = sheetOf(page);
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet).toContainText('Abra o endereço do Treino no navegador');
+    await expect(sheet.getByRole('button', { name: 'Copiar endereço' })).toBeVisible();
+  });
+
   test('pedir para instalar o Treino num documento carregado na raiz faz carga completa em /treino/ e usa o pedido do Treino', async ({
     page,
   }) => {
@@ -741,7 +757,7 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
   }) => {
     await simulateStandalone(page);
     await signInAsOwner();
-    await page.goto('/treino');
+    await page.goto('/treino/?uniover_app=treino');
     await expect(trainingHeading(page)).toBeVisible();
     await page.waitForTimeout(AFTER_DELAY_MS);
     await expectSheetClosed(page);

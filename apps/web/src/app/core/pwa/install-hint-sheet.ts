@@ -78,6 +78,7 @@ export class InstallHintSheet {
   protected readonly confirmIcon = CONFIRM_ICON;
   protected readonly safariIcon = SAFARI_ICON;
   protected readonly copyIcon = COPY_ICON;
+  protected readonly foreignAppWindow = this.hint.foreignAppWindow;
 
   /** A folha já está descendo: nada mais vale (nem instalar, nem fechar de novo). */
   protected readonly leaving = signal(false);
@@ -89,7 +90,9 @@ export class InstallHintSheet {
   protected readonly copyMessage = computed(() => {
     switch (this.copy()) {
       case 'copied':
-        return $localize`:@@install.copy.done:Endereço copiado. Abra o Safari e cole na barra de endereço.`;
+        return this.mode() === 'android-manual'
+          ? $localize`:@@install.copy.done-android:Endereço copiado. Abra o navegador e cole na barra de endereço.`
+          : $localize`:@@install.copy.done:Endereço copiado. Abra o Safari e cole na barra de endereço.`;
       case 'failed':
         return $localize`:@@install.copy.failed:Não deu para copiar sozinho. Toque e segure no endereço abaixo para copiar.`;
       default:
