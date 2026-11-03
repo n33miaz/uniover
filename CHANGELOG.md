@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.2](https://github.com/n33miaz/uniover/compare/v0.36.1...v0.36.2) (2026-11-03)
+
+
+### Features
+
+* **identity:** allow password changes
+* **web:** add password change form
+
 ## [0.36.1](https://github.com/n33miaz/uniover/compare/v0.36.0...v0.36.1) (2026-11-02)
 
 
