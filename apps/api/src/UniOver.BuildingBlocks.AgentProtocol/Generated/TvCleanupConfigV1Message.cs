@@ -74,6 +74,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool LightEnabled { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("maintenanceEnabled")]
+        public bool? MaintenanceEnabled { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("restrictedPackages")]
         [JsonConverter(typeof(TvCleanupConfigV1MessageFluffyDecodeArrayConverter))]
         public string[]? RestrictedPackages { get; set; }

@@ -12,6 +12,9 @@ describe('tv cleanup text', () => {
     expect(cleanupReasonText('model-unconfirmed')).toBe('modelo não confirmado');
     expect(cleanupReasonText('memory-unavailable')).toBe('a TV não respondeu');
     expect(cleanupReasonText('cleanup_in_progress')).toBe('outra limpeza em andamento');
+    expect(cleanupReasonText('automatic-only')).toContain('sozinha');
+    expect(cleanupReasonText('permission-required')).toContain('permitir');
+    expect(cleanupReasonText('foreground-unverifiable')).toContain('sem certeza');
     expect(cleanupReasonText('algo-novo')).not.toContain('algo-novo');
     expect(cleanupReasonText(null)).not.toBe('');
   });

@@ -217,6 +217,33 @@ test.describe('Configurações > Sistema > TVs', () => {
     ]);
   });
 
+  test('a manutenção automática da Samsung vem ligada e se desliga por TV', async ({
+    page,
+  }, info) => {
+    seed();
+    tv.tvs![0]!.kind = 'samsung';
+    tv.tvs![0]!.capabilities = ['tv.remote', 'tv.kind.samsung', 'tv.maintenance.v1'];
+    await open(page);
+    await row(page, 'Casa').click();
+    const dialog = sheet(page);
+    await expect(dialog).toBeVisible();
+    const maintenance = dialog.getByRole('switch', { name: 'Manutenção Automática' });
+    await expect(maintenance).toBeChecked();
+    // O interruptor do Android não faz nada na Samsung: não aparece.
+    await expect(dialog.getByRole('switch', { name: 'Fechar Apps em Segundo Plano' })).toHaveCount(
+      0,
+    );
+    await maintenance.uncheck();
+    await maintenance.scrollIntoViewIfNeeded();
+    await check(page, info, 'tvs-manutencao-samsung', 'light');
+
+    await dialog.getByRole('button', { name: 'Salvar' }).click();
+    await expect(dialog).toBeHidden();
+    expect(writes('PATCH').map((r) => r.body)).toEqual([
+      expect.objectContaining({ autoMaintenanceEnabled: false }),
+    ]);
+  });
+
   test('adiciona uma TV com o computador livre e as pessoas marcadas', async ({ page }) => {
     seed();
     await open(page);
