@@ -1,0 +1,93 @@
+<div class="steps">
+  <div class="note" [attr.aria-live]="'polite'">
+    @if (note(); as current) {
+      <p class="ui-notice" [class.ok]="!current.error" [class.bad]="current.error">
+        <span>{{ current.text }}</span>
+      </p>
+    }
+  </div>
+
+  <ul class="cards">
+    @for (card of cards(); track card.action.code) {
+      <li class="card ui-card">
+        <details>
+          <summary>
+            <span class="phrase">{{ card.action.phrase }}</span>
+          </summary>
+          <div class="body">
+            <p class="hint" i18n="@@settings.siri.how">
+              No app Atalhos, toque em + e adicione “Obter Conteúdo de URL”. O nome do atalho é o
+              que você diz à Siri.
+            </p>
+            <ul class="values">
+              <li class="value">
+                <span class="label" i18n="@@settings.siri.field.url">URL</span>
+                <span class="text ui-selectable">{{ url() }}</span>
+                <button
+                  type="button"
+                  class="secondary ui-btn copy"
+                  [attr.aria-label]="copyLabel('URL')"
+                  (click)="copy(url())"
+                >
+                  <app-settings-glyph name="copy" />
+                </button>
+              </li>
+              <li class="value">
+                <span class="label" i18n="@@settings.siri.field.method">Método</span>
+                <span class="text">{{ method }}</span>
+              </li>
+              <li class="value">
+                <span class="label" i18n="@@settings.siri.field.header">Cabeçalho</span>
+                <span class="text ui-selectable">{{ header }}</span>
+                <button
+                  type="button"
+                  class="secondary ui-btn copy"
+                  [attr.aria-label]="copyLabel(header)"
+                  (click)="copy(header)"
+                >
+                  <app-settings-glyph name="copy" />
+                </button>
+              </li>
+              <li class="value">
+                <span class="label" i18n="@@settings.siri.field.token">Valor do cabeçalho</span>
+                <span class="text ui-selectable">{{ tokenText() }}</span>
+                @if (token()) {
+                  <button
+                    type="button"
+                    class="secondary ui-btn copy"
+                    aria-label="Copiar a chave"
+                    i18n-aria-label="@@settings.siri.copy-token"
+                    (click)="copy(tokenText())"
+                  >
+                    <app-settings-glyph name="copy" />
+                  </button>
+                }
+              </li>
+            </ul>
+            <p class="subtitle" i18n="@@settings.siri.json">Corpo da requisição: JSON</p>
+            <ul class="values">
+              @for (field of card.fields; track field.name) {
+                <li class="value">
+                  <span class="label">{{ field.name }}</span>
+                  <span class="text ui-selectable">{{ field.value }}</span>
+                  <button
+                    type="button"
+                    class="secondary ui-btn copy"
+                    [attr.aria-label]="copyLabel(field.name)"
+                    (click)="copy(field.value)"
+                  >
+                    <app-settings-glyph name="copy" />
+                  </button>
+                </li>
+              }
+            </ul>
+            <button type="button" class="primary ui-btn block" (click)="copyAll(card)">
+              <app-settings-glyph name="copy" />
+              <span i18n="@@settings.siri.copy-all">Copiar tudo</span>
+            </button>
+          </div>
+        </details>
+      </li>
+    }
+  </ul>
+</div>

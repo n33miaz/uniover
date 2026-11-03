@@ -8,6 +8,7 @@ export const SETTINGS_TITLES = {
   profile: $localize`:@@settings.route.profile:Perfil`,
   appearance: $localize`:@@settings.route.appearance:Aparência`,
   security: $localize`:@@settings.route.security:Segurança`,
+  siri: $localize`:@@settings.route.siri:Atalhos da Siri`,
   people: $localize`:@@settings.route.people:Pessoas e Permissões`,
   audit: $localize`:@@settings.route.audit:Auditoria`,
   system: $localize`:@@settings.route.system:Sistema`,
