@@ -357,7 +357,9 @@ def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
     record = tmp_path / "uv-calls.txt"
     (bin_dir / "uv.cmd").write_text(
         "@echo off\r\n"
-        'echo %*>>"%UNIOVER_TEST_RECORD%"\r\n'
+        'if "%~1"=="sync" echo %*>"%UNIOVER_TEST_RECORD%.sync"\r\n'
+        'if "%~5"=="run" echo %*>"%UNIOVER_TEST_RECORD%.run"\r\n'
+        'if "%~5"=="tray" echo %*>"%UNIOVER_TEST_RECORD%.tray"\r\n'
         'if "%~5"=="run" ping -n 120 127.0.0.1 >nul\r\n'
         'if "%~5"=="tray" ping -n 120 127.0.0.1 >nul\r\n'
         "exit /b 0\r\n",
@@ -386,15 +388,18 @@ def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
     )
     try:
         for _ in range(300):
-            text = record.read_text(encoding="utf-8") if record.exists() else ""
-            if "uniover-agent run" in text and "uniover-agent tray" in text:
+            if (Path(str(record) + ".run").exists()
+                    and Path(str(record) + ".tray").exists()):
                 break
             time.sleep(0.1)
-        text = record.read_text(encoding="utf-8") if record.exists() else ""
         app = base / "app"
-        assert f'run --project "{app}" uniover-agent run' in text
-        assert f'run --project "{app}" uniover-agent tray' in text
-        assert "sync" in text
+        assert f'run --project "{app}" uniover-agent run' in Path(
+            str(record) + ".run"
+        ).read_text(encoding="utf-8")
+        assert f'run --project "{app}" uniover-agent tray' in Path(
+            str(record) + ".tray"
+        ).read_text(encoding="utf-8")
+        assert "sync" in Path(str(record) + ".sync").read_text(encoding="utf-8")
     finally:
         subprocess.run(  # noqa: S603 - taskkill do sistema, só para encerrar o que o teste abriu
             [
