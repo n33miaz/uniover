@@ -6,6 +6,8 @@ public static class AuditEvents
     public const string LoginSucceeded = "login_succeeded";
     public const string LoginFailed = "login_failed";
     public const string LoginLocked = "login_locked";
+    public const string PasswordChanged = "password_changed";
+    public const string PasswordChangeFailed = "password_change_failed";
     public const string RefreshSucceeded = "refresh_succeeded";
     public const string RefreshReuseDetected = "refresh_reuse_detected";
 
@@ -59,6 +61,8 @@ public static class AuditEvents
         LoginSucceeded,
         LoginFailed,
         LoginLocked,
+        PasswordChanged,
+        PasswordChangeFailed,
         RefreshSucceeded,
         RefreshReuseDetected,
         RefreshRecovered,
