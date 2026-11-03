@@ -216,6 +216,8 @@ def test_the_real_launcher_swap_works_in_task_scheduler_and_rolls_back_on_failur
 ) -> None:
     """Contra o Agendador de verdade, com uma tarefa de teste de nome único (a real fica)."""
     name = f"UniOver-teste-{uuid.uuid4().hex[:12]}"
+    # Uma tarefa de teste nunca deve mirar a tarefa real como nome anterior.
+    assert f"$oldName='{name}'" in launcher_task_script(tmp_path, name)
     old_script = tmp_path / "launcher.ps1"
     old_script.write_text("# antigo\n", encoding="ascii")
     new_root = tmp_path / "UniOver"
@@ -287,6 +289,60 @@ def test_the_real_launcher_swap_works_in_task_scheduler_and_rolls_back_on_failur
         )
 
 
+def test_task_rename_keeps_the_old_task_until_the_new_one_is_verified(tmp_path: Path) -> None:
+    """A mudança de rótulo usa a conta atual; falha não deixa o PC sem tarefa."""
+    suffix = uuid.uuid4().hex[:12]
+    old_name = f"UniOver-old-{suffix}"
+    new_name = f"UniOver-new-{suffix}"
+    root = tmp_path / "UniOver"
+    root.mkdir()
+
+    def powershell(command: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(  # noqa: S603 - tarefas temporárias do próprio teste
+            [POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            creationflags=0x08000000,
+        )
+
+    def present(name: str) -> bool:
+        return (
+            powershell(
+                f"if (Get-ScheduledTask -TaskName '{name}' -ErrorAction SilentlyContinue) "
+                "{ 'yes' }"
+            ).stdout.strip()
+            == "yes"
+        )
+
+    created = powershell(
+        "$a=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit 0';"
+        "$t=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME;"
+        f"Register-ScheduledTask -TaskName '{old_name}' -Action $a -Trigger $t -Force | Out-Null"
+    )
+    if created.returncode != 0:
+        pytest.skip("o Agendador não aceitou registrar a tarefa temporária")
+    try:
+        assert present(old_name)
+        broken = root / "x\x01y"
+        failed = powershell(launcher_task_script(broken, new_name, old_name))
+        assert failed.returncode != 0
+        assert present(old_name)
+        assert not present(new_name)
+
+        migrated = powershell(launcher_task_script(root, new_name, old_name))
+        assert migrated.returncode == 0, migrated.stderr or migrated.stdout
+        assert present(new_name)
+        assert not present(old_name)
+    finally:
+        for name in (old_name, new_name):
+            powershell(
+                f"Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false "
+                "-ErrorAction SilentlyContinue"
+            )
+
+
 def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
     tmp_path: Path,
 ) -> None:
@@ -294,6 +350,7 @@ def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
     base = tmp_path / "Pasta com espaco" / "UniOver"
     (base / "app" / "tools").mkdir(parents=True)
     (base / "runtime").mkdir()
+    (base / "runtime" / "tray-start-request").write_text("", encoding="ascii")
     (base / "app" / ".version").write_text("a" * 40, encoding="ascii")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

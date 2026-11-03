@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     def _validate_update_channel(cls, value: str) -> str:
         channel = value.strip().lower()
         if channel not in CHANNELS:
-            raise ValueError("update_channel precisa ser main ou develop")
+            raise ValueError("update_channel precisa ser main, develop ou homolog")
         return channel
 
     @field_validator("tv_cleanup_keep", mode="before")

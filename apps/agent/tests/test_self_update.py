@@ -323,14 +323,45 @@ def patch_http(monkeypatch: pytest.MonkeyPatch, handler: Handler) -> list[httpx.
 def test_latest_commit_reads_the_sha_from_the_github_api(monkeypatch: pytest.MonkeyPatch) -> None:
     requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
     assert latest_commit() == NEW
-    assert [str(r.url) for r in requests] == [module.COMMIT_URL.format(channel="develop")]
+    assert [str(r.url) for r in requests] == [
+        module.PRODUCTION_REF_URL,
+        module.COMMIT_URL.format(channel="develop"),
+    ]
 
 
 def test_latest_commit_asks_for_the_branch_of_the_channel(monkeypatch: pytest.MonkeyPatch) -> None:
     requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
     assert latest_commit("main") == NEW
-    assert str(requests[0].url).endswith("/commits/main")
+    assert str(requests[0].url) == module.PRODUCTION_REF_URL
+    assert str(requests[1].url).endswith("/commits/develop")
     assert module.DEFAULT_CHANNEL == "develop"
+
+
+def test_homolog_stays_an_explicit_test_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
+    assert latest_commit("homolog") == NEW
+    assert len(requests) == 1
+    assert str(requests[0].url).endswith("/commits/homolog")
+
+
+def test_legacy_production_channel_follows_the_configured_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "PRODUCTION_REF", "homolog")
+    requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
+    assert latest_commit("develop") == NEW
+    assert str(requests[1].url).endswith("/commits/homolog")
+
+
+def test_production_channel_uses_the_published_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    def answer(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == module.PRODUCTION_REF_URL:
+            return httpx.Response(200, json={"production_ref": "main"})
+        return httpx.Response(200, json={"sha": NEW})
+
+    requests = patch_http(monkeypatch, answer)
+    assert latest_commit("develop") == NEW
+    assert str(requests[1].url).endswith("/commits/main")
 
 
 @pytest.mark.parametrize(

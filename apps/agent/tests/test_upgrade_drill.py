@@ -1,5 +1,6 @@
 """O ensaio de atualização: pacote da candidata, isolamento e apoio no processo filho."""
 
+import argparse
 import importlib.util
 import json
 import os
@@ -39,6 +40,28 @@ FILES = {
     "apps/agent/tools/launcher.ps1": b"# lancador\n",
     drill.MAIN_REL: b"print('oi')\n",
 }
+
+
+def test_offline_trial_restores_the_base_offer_before_normal_network_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rehearsal = drill.Drill(argparse.Namespace())
+    rehearsal.root = tmp_path
+    rehearsal.env = {"UNIOVER_UPDATE_SOURCE_URL": "local-test"}
+    base_sha, offline_sha = "a" * 40, "b" * 40
+    rehearsal.feed.offer(base_sha, None)
+    monkeypatch.setattr(rehearsal, "version", lambda: base_sha)
+    monkeypatch.setattr(rehearsal, "stop_everything", lambda: True)
+    monkeypatch.setattr(rehearsal, "wait_ready", lambda: True)
+
+    def offer(_label: str, _files: dict[str, bytes], sha: str, **_kwargs: object) -> bool:
+        rehearsal.feed.offer(sha, b"candidate")
+        return True
+
+    monkeypatch.setattr(rehearsal, "offer", offer)
+    assert rehearsal.refused_without_the_index(FILES, offline_sha)
+    assert rehearsal.feed.sha == base_sha
+    assert rehearsal.env == {"UNIOVER_UPDATE_SOURCE_URL": "local-test"}
 
 
 def test_the_candidate_zip_is_shaped_like_the_github_zip(tmp_path: Path) -> None:
@@ -108,13 +131,52 @@ def test_the_variants_have_other_contents_and_other_shas() -> None:
     }
 
 
-def test_the_sync_failure_wrapper_fails_only_the_first_three_syncs() -> None:
+def test_the_sync_failure_wrapper_fails_only_the_first_three_syncs(tmp_path: Path) -> None:
     wrapper = drill.sync_failure_wrapper()
     assert wrapper.isascii()
     assert 'if /I not "%~1"=="sync" goto real_uv' in wrapper
-    assert 'if /I not "%~3"=="%UNIOVER_DRILL_APP%" goto real_uv' in wrapper
+    assert 'if /I "%~3"=="%UNIOVER_DRILL_APP%" goto fail_sync' in wrapper
+    assert 'if /I "%~4"=="%UNIOVER_DRILL_APP%" goto fail_sync' in wrapper
     assert "if %count% LEQ 3 exit /b 1" in wrapper
     assert '"%UNIOVER_DRILL_REAL_UV%" %*' in wrapper
+    fake = tmp_path / "uv.cmd"
+    fake.write_text(wrapper, encoding="ascii")
+    real = tmp_path / "real-uv.cmd"
+    real.write_text("@echo off\r\nexit /b 0\r\n", encoding="ascii")
+    app = tmp_path / "app"
+    counter = tmp_path / "sync-count.txt"
+    env = {
+        **os.environ,
+        "UNIOVER_DRILL_APP": str(app),
+        "UNIOVER_DRILL_SYNC_COUNT": str(counter),
+        "UNIOVER_DRILL_REAL_UV": str(real),
+    }
+
+    def call(project: Path, frozen: bool = True) -> int:
+        arguments = ["sync", "--frozen", "--project", str(project)] if frozen else [
+            "sync", "--project", str(project), "--quiet"
+        ]
+        done = subprocess.run(  # noqa: S603 - wrapper isolado na pasta temporaria do teste
+            [
+                os.environ["ComSpec"],
+                "/d",
+                "/c",
+                str(fake),
+                *arguments,
+            ],
+            env=env,
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+        return done.returncode
+
+    assert call(tmp_path / "another-app") == 0
+    assert not counter.exists()
+    assert [call(app) for _ in range(4)] == [1, 1, 1, 0]
+    assert counter.read_text(encoding="ascii").strip() == "4"
+    counter.unlink()
+    assert [call(app, frozen=False) for _ in range(4)] == [1, 1, 1, 0]
 
 
 def test_the_offline_index_environment_forbids_downloads_and_hides_the_cache(

@@ -50,6 +50,9 @@ class Pc:
         (self.source / ".version").write_text(BAD + "\n", encoding="ascii")
         self.marker.parent.mkdir(parents=True)
         self.marker.write_text("ambiente que funcionava", encoding="utf-8")
+        # A entrada de inicialização do Windows pede o ícone; esta instalação isolada não
+        # executa o atalho real, então o ensaio deixa o mesmo sinal que ele deixaria.
+        (self.runtime / "tray-start-request").write_text("", encoding="ascii")
 
     def previous_version(self) -> None:
         (self.previous / "tools").mkdir(parents=True)

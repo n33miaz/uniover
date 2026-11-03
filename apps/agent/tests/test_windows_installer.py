@@ -1,6 +1,7 @@
 """Guardas estáticas do instalador Windows e do wrapper que ele gera."""
 
 import ast
+import json
 import os
 import re
 import subprocess
@@ -11,13 +12,15 @@ import pytest
 
 from uniover_agent.adapters import installation
 from uniover_agent.adapters.process import NO_WINDOW
-from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
+from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL, PRODUCTION_REF
 
 from .launcher_isolation import isolated_launcher
 
 INSTALLER = Path(__file__).parents[1] / "tools" / "install-windows.ps1"
 LAUNCHER = Path(__file__).parents[1] / "tools" / "launcher.ps1"
 RUNNER = Path(__file__).parents[1] / "tools" / "run-agent.ps1"
+STARTUP_NAMES = Path(__file__).parents[1] / "tools" / "windows-startup.json"
+UPDATE_CHANNEL = Path(__file__).parents[1] / "tools" / "update-channel.json"
 LAUNCHER_VBS = Path(__file__).parents[1] / "tools" / "launcher.vbs"
 CMD_COPIES = (
     Path(__file__).parents[1] / "tools" / "conectar-uniover.cmd",
@@ -36,6 +39,46 @@ def test_the_generated_wrapper_is_ascii_and_recovers_the_uv_and_venv() -> None:
     assert "Microsoft\\WindowsApps\\uv.exe" in wrapper
     assert ".local\\bin\\uv.exe" in wrapper
     assert "Remove-Item -LiteralPath $venv -Recurse -Force" in wrapper
+
+
+def test_windows_startup_names_have_one_source_for_install_and_update() -> None:
+    names = json.loads(STARTUP_NAMES.read_text(encoding="utf-8"))
+    assert names["startup_app_name"] == names["scheduled_task_name"]
+    assert names["startup_app_name"]
+    assert (installation.STARTUP_APP_NAME, installation.TASK_NAME) == (
+        names["startup_app_name"],
+        names["scheduled_task_name"],
+    )
+    for script in (INSTALLER, RUNNER):
+        assert "tools\\windows-startup.json" in script.read_text(encoding="utf-8")
+    assert "'Startup'" in RUNNER.read_text(encoding="utf-8")
+
+
+def test_startup_shortcut_script_requests_the_tray_without_touching_the_agent(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "local" / "UniOver"
+    tools = base / "app" / "tools"
+    runtime = base / "runtime"
+    tools.mkdir(parents=True)
+    runtime.mkdir()
+    script = tools / "tray-open.vbs"
+    script.write_bytes((INSTALLER.parent / "tray-open.vbs").read_bytes())
+    closed = runtime / "tray-closed"
+    closed.touch()
+    wscript = Path(os.environ["SystemRoot"]) / "System32" / "wscript.exe"
+
+    done = subprocess.run(  # noqa: S603 - WScript do sistema em pasta isolada
+        [str(wscript), "//B", "//Nologo", str(script)],
+        env=os.environ | {"LOCALAPPDATA": str(tmp_path / "local")},
+        capture_output=True,
+        check=False,
+        timeout=15,
+        creationflags=0x08000000,
+    )
+    assert done.returncode == 0
+    assert (runtime / "tray-start-request").exists()
+    assert not closed.exists()
 
 
 def test_the_wrapper_checks_for_updates_while_the_agent_is_alive_and_rolls_back_bad_ones() -> None:
@@ -118,7 +161,8 @@ def test_installer_migrates_the_old_layout_and_creates_the_user_facing_files() -
     assert "UniOver.lnk" in installer
     # Desinstalar tira o atalho que traz o ícone da bandeja de volta (o supervisor o cria).
     uninstall = installer.split("if ($Uninstall) {", 1)[1].split("exit 0", 1)[0]
-    assert "UniOver Agente.lnk" in uninstall
+    assert "startupAppName" in uninstall
+    assert "'Startup'" in uninstall
 
 
 def test_powershell_scripts_are_ascii_and_parse_in_windows_powershell() -> None:
@@ -281,7 +325,7 @@ def test_an_old_installation_is_pointed_to_the_hidden_launcher_once(
     (tmp_path / "runtime").mkdir()
     calls: list[Path] = []
 
-    def register(root: Path) -> bool:
+    def register(root: Path, **_kwargs: str) -> bool:
         calls.append(root)
         return True
 
@@ -292,7 +336,9 @@ def test_an_old_installation_is_pointed_to_the_hidden_launcher_once(
 
     assert calls == [tmp_path]
     marker = tmp_path / "runtime" / "launcher-task"
-    assert marker.read_text(encoding="ascii") == installation.LAUNCHER_TASK_VERSION
+    assert marker.read_text(encoding="utf-8") == (
+        f"{installation.LAUNCHER_TASK_VERSION}|{installation.TASK_NAME}"
+    )
 
 
 def test_a_failed_registration_is_tried_again_next_time(
@@ -300,7 +346,9 @@ def test_a_failed_registration_is_tried_again_next_time(
 ) -> None:
     (tmp_path / "runtime").mkdir()
     results = iter([False, True])
-    monkeypatch.setattr(installation, "_register_launcher_task", lambda _root: next(results))
+    monkeypatch.setattr(
+        installation, "_register_launcher_task", lambda _root, **_kwargs: next(results)
+    )
 
     installation._ensure_hidden_launcher_task(tmp_path)
     assert not (tmp_path / "runtime" / "launcher-task").exists()
@@ -326,7 +374,7 @@ def test_the_real_install_reregisters_the_task_and_the_takeover_starts_wscript_n
     registered: list[Path] = []
     started: list[tuple[list[str], int]] = []
 
-    def register(root: Path) -> bool:
+    def register(root: Path, **_kwargs: str) -> bool:
         registered.append(root)
         return True
 
@@ -469,22 +517,24 @@ def test_the_cmd_writes_a_vbs_that_runs_the_installer_hidden(tmp_path: Path) -> 
     assert command.startswith(
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command"
     )
-    assert (
-        f"irm https://raw.githubusercontent.com/n33miaz/uniover/{DEFAULT_CHANNEL}"
-        "/apps/agent/tools/install-windows.ps1" in command
-    )
+    assert "/main/apps/agent/tools/update-channel.json" in command
+    assert "/'+$r+'/apps/agent/tools/install-windows.ps1" in command
     assert "^" not in command
 
 
-def test_the_channel_is_switched_in_one_place_the_cmd_the_installer_and_the_agent_agree() -> None:
-    """Voltar a publicar pela main é trocar três valores; este teste falha se um ficar para trás."""
+def test_bootstrap_follows_the_production_ref_configured_once() -> None:
+    """O instalador e os agentes instalados seguem o mesmo JSON."""
     installer = INSTALLER.read_text(encoding="utf-8")
     default_ref = re.search(r"\[string\]\$Ref = '([a-z]+)'", installer)
     assert default_ref is not None
     assert default_ref.group(1) == DEFAULT_CHANNEL
     for copy in CMD_COPIES:
         text = copy.read_text(encoding="ascii")
-        assert f"/n33miaz/uniover/{DEFAULT_CHANNEL}/apps/agent/tools/install-windows.ps1" in text
-    # O instalador grava o ramo no agent.toml, e o agente só aceita um dos canais conhecidos.
+        assert "/main/apps/agent/tools/update-channel.json" in text
+        assert "/'+$r+'/apps/agent/tools/install-windows.ps1" in text
+    # O valor antigo develop no agent.toml segue a branch ativa do canal de produção.
     assert "update_channel" in installer
-    assert set(CHANNELS) == {"main", "develop"}
+    assert set(CHANNELS) == {"main", "develop", "homolog"}
+    assert (
+        json.loads(UPDATE_CHANNEL.read_text(encoding="utf-8"))["production_ref"] == PRODUCTION_REF
+    )

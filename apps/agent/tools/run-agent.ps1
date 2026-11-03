@@ -22,6 +22,24 @@ $env:PYTHONUTF8 = '1'
 # O agente sabe que tem um supervisor (o auto-reparo so pede reinicio a quem o atende).
 $env:UNIOVER_SUPERVISED = '1'
 
+function Get-WindowsStartupNames {
+    # Os dois rotulos vivem no mesmo arquivo que o instalador e o agente Python leem.
+    $names = @{ startup_app_name = 'UniOver agente'; scheduled_task_name = 'UniOver agente' }
+    try {
+        $file = Join-Path $source 'tools\windows-startup.json'
+        $chosen = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+        foreach ($key in @('startup_app_name', 'scheduled_task_name')) {
+            $value = [string]$chosen.$key
+            if ($value -and $value.Length -le 80 -and $value -notmatch '[\\/:*?"<>|\[\]''\x00-\x1F]' -and $value.Trim() -eq $value) {
+                $names[$key] = $value
+            }
+        }
+    } catch { }
+    return $names
+}
+
+$startupNames = Get-WindowsStartupNames
+
 function Find-Uv {
     $found = Get-Command uv -ErrorAction SilentlyContinue
     if ($found) { return $found.Source }
@@ -153,8 +171,15 @@ function Invoke-Update([string]$Uv) {
     $before = Get-Version
     $env:UV = $Uv
     Set-UpdateState @{ outcome = 'updating'; checkedAt = (Get-UtcStamp (Get-Date)); reason = $null } | Out-Null
-    $output = & $Uv run --project $source uniover-agent self-update 2>&1 | Out-String
-    $exitCode = $LASTEXITCODE
+    # Uma pipeline mantinha o supervisor esperando se o agente/icone novos herdassem a ponta de
+    # escrita do pipe depois da troca. Um arquivo captura a saida sem depender do fim dos filhos.
+    $capture = Join-Path $runtime ('update-output-' + [guid]::NewGuid().ToString('N') + '.txt')
+    try {
+        & $Uv run --project $source uniover-agent self-update *> $capture
+        $exitCode = $LASTEXITCODE
+        $output = [System.IO.File]::ReadAllText($capture)
+    }
+    finally { Remove-Item -LiteralPath $capture -Force -ErrorAction SilentlyContinue }
     $after = Get-Version
     if ($exitCode -ne 0 -and $before -eq $after) {
         Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('o processo de atualizacao terminou com erro (codigo ' + $exitCode + ')') } | Out-Null
@@ -251,6 +276,18 @@ function Test-TrayClosed {
     return $true
 }
 
+function Test-TrayRequested {
+    # A entrada de Aplicativos de inicializacao pede somente o icone. Se a pessoa a desabilitou,
+    # a tarefa ainda protege o agente, mas nao abre o icone no proximo logon.
+    $request = Join-Path $runtime 'tray-start-request'
+    if (-not (Test-Path -LiteralPath $request)) { return $false }
+    try {
+        $logon = Get-LogonTime
+        if ($null -eq $logon -or (Get-Item -LiteralPath $request).LastWriteTime -lt $logon) { return $false }
+    } catch { return $false }
+    return $true
+}
+
 $script:trayStarted = $null
 $script:trayFalls = 0
 $script:trayRetryAt = [DateTime]::MinValue
@@ -277,7 +314,7 @@ function Update-Tray([string]$Uv) {
             }
         }
     }
-    if (Test-TrayClosed) { return }
+    if ((Test-TrayClosed) -or -not (Test-TrayRequested)) { return }
     if ($now -lt $script:trayRetryAt) { return }
     $script:trayStarted = $now
     $script:tray = Start-Tray $Uv
@@ -295,30 +332,71 @@ function Wait-Lap([double]$Seconds, [string]$Uv) {
 }
 
 function Ensure-TrayShortcut {
-    # O atalho "UniOver Agente" (menu Iniciar) traz o icone de volta depois do "Sair". Criado aqui, e nao so no
-    # instalador: a atualizacao troca esta pasta mas nao roda o instalador, entao so assim ele chega a quem ja tem o
-    # UniOver instalado. Refeito se faltar ou apontar para outro lugar.
+    # O menu Iniciar traz o icone de volta depois do "Sair". A pasta Inicializar torna o mesmo
+    # icone visivel em Aplicativos de inicializacao; a tarefa continua vigiando o agente. Os dois
+    # caminhos passam pelo mutex do lancador. A atualizacao refaz os atalhos sem instalador/UAC.
     try {
         $script = Join-Path $source 'tools\tray-open.vbs'
         if (-not (Test-Path -LiteralPath $script)) { return }
-        $folder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-        New-Item -ItemType Directory -Path $folder -Force | Out-Null
-        $path = Join-Path $folder 'UniOver Agente.lnk'
+        $name = [string]$startupNames.startup_app_name
+        $taskName = [string]$startupNames.scheduled_task_name
+        $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        $startup = Join-Path $programs 'Startup'
         $wanted = '"' + $script + '"'
         $shell = New-Object -ComObject WScript.Shell
-        if (Test-Path -LiteralPath $path) {
-            $existing = $shell.CreateShortcut($path)
-            if ($existing.Arguments -eq $wanted -and $existing.TargetPath -like '*wscript.exe') { return }
-        }
-        $link = $shell.CreateShortcut($path)
-        $link.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
-        $link.Arguments = $wanted
-        $link.WorkingDirectory = $base
-        $link.Description = 'Mostrar o icone do UniOver na bandeja'
         $icon = Join-Path $source 'assets\tray\connected.ico'
-        if (Test-Path -LiteralPath $icon) { $link.IconLocation = $icon + ',0' }
-        $link.Save()
-        Write-SupLog 'INFO' 'atalho do icone da bandeja criado no menu Iniciar'
+        $startupReady = $false
+        $startupCreated = $false
+        foreach ($folder in @($programs, $startup)) {
+            # Sem tarefa nao houve opcao de inicio automatico na instalacao manual.
+            if ($folder -eq $startup -and -not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) -and
+                -not (Get-ScheduledTask -TaskName 'UniOver agente' -ErrorAction SilentlyContinue)) { continue }
+            New-Item -ItemType Directory -Path $folder -Force | Out-Null
+            $path = Join-Path $folder ($name + '.lnk')
+            if (Test-Path -LiteralPath $path) {
+                $existing = $shell.CreateShortcut($path)
+                if ($existing.Arguments -eq $wanted -and $existing.TargetPath -like '*wscript.exe') {
+                    if ($folder -eq $startup) { $startupReady = $true }
+                    continue
+                }
+            }
+            $link = $shell.CreateShortcut($path)
+            $link.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+            $link.Arguments = $wanted
+            $link.WorkingDirectory = $base
+            $link.Description = 'Mostrar o icone do UniOver na bandeja'
+            if (Test-Path -LiteralPath $icon) { $link.IconLocation = $icon + ',0' }
+            $link.Save()
+            if ($folder -eq $startup) { $startupReady = $true; $startupCreated = $true }
+        }
+        $marker = Join-Path $runtime 'startup-label.txt'
+        if (-not $startupReady) {
+            Add-Diagnostic 'tray.startup_entry_missing' 'warn' 'nao consegui confirmar a entrada da bandeja em Aplicativos de inicializacao'
+            # A bandeja continua nesta sessao e a proxima partida tenta criar o atalho de novo.
+            [System.IO.File]::WriteAllText((Join-Path $runtime 'tray-start-request'), '', [System.Text.Encoding]::ASCII)
+            return
+        }
+        $oldName = ''
+        try { $oldName = [System.IO.File]::ReadAllText($marker, [System.Text.Encoding]::UTF8).Trim() } catch { }
+        if (-not $oldName) { $oldName = 'UniOver Agente' }
+        if ($oldName -ine $name -and $oldName -notmatch '[\\/:*?"<>|]') {
+            foreach ($folder in @($programs, $startup)) {
+                $oldPath = Join-Path $folder ($oldName + '.lnk')
+                if (Test-Path -LiteralPath $oldPath) {
+                    $oldLink = $shell.CreateShortcut($oldPath)
+                    if ($oldLink.TargetPath -like '*wscript.exe' -and $oldLink.Arguments -like '*tray-open.vbs*') {
+                        Remove-Item -LiteralPath $oldPath -Force
+                    }
+                }
+            }
+        }
+        if ($startupCreated -or -not (Test-Path -LiteralPath $marker)) {
+            # Primeiro upgrade: o agente instalado ja tinha bandeja sem entrada Startup. Mostra o
+            # icone agora; no proximo logon so o atalho habilitado fara o pedido da sessao.
+            [System.IO.File]::WriteAllText((Join-Path $runtime 'tray-start-request'), '', [System.Text.Encoding]::ASCII)
+        }
+        [System.IO.File]::WriteAllText($marker, $name, [System.Text.Encoding]::UTF8)
+        Write-SupLog 'INFO' 'atalhos da bandeja conferidos no menu Iniciar e em Aplicativos de inicializacao'
     } catch {
         Write-SupLog 'WARNING' 'nao consegui criar o atalho do icone da bandeja'
         Add-Diagnostic 'tray.shortcut_failed' 'warn' 'nao consegui criar o atalho do icone da bandeja no menu Iniciar'

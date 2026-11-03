@@ -10,11 +10,11 @@ name: Deploy
 # - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
 #   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL, as migrations rodam e o deploy é pulado com aviso.
 
-# Por enquanto a develop é a produção (pedido do dono em 27/10): cada merge na develop publica. Para voltar a
-# publicar pela main, troque a branch abaixo.
+# A branch de produção fica em apps/agent/tools/update-channel.json na main. A lista abaixo
+# permite receber eventos dos ramos elegíveis; o job channel decide qual deles pode publicar.
 on:
   push:
-    branches: [develop]
+    branches: [develop, main, homolog]
   workflow_dispatch:
 
 permissions:
@@ -29,12 +29,31 @@ env:
   APP_URL: ${{ vars.APP_URL || 'https://uniover.onrender.com' }}
 
 jobs:
+  channel:
+    name: channel
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Ler o ramo de produção
+        id: ref
+        run: |
+          ref=$(node -p "require('./apps/agent/tools/update-channel.json').production_ref")
+          case "$ref" in main|develop|homolog) ;; *) echo "::error::ramo de produção inválido"; exit 1 ;; esac
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
   # Trava a publicação sem versão nova: VERSION precisa ser SemVer, maior que a maior tag v* (ou igual a ela, se a tag
   # aponta para este mesmo commit: redeploy) e igual ao que o package.json, o lock, o agente e a API repetem. Roda antes
   # das migrations: um deploy barrado aqui não mexe no banco. A versão é preparada no PR com
   # `node scripts/release-version.mjs --prepare patch|minor|major`.
   version:
     name: version
+    needs: channel
+    if: needs.channel.outputs.ref == github.ref_name
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

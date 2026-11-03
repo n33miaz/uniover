@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -50,6 +50,7 @@ class Pc:
         (self.base / "app").mkdir(parents=True)
         (self.base / "app" / ".version").write_text(CURRENT + "\n", encoding="ascii")
         self.runtime.mkdir()
+        (self.runtime / "tray-start-request").write_text("", encoding="ascii")
         self.alive = self.runtime / "last-alive"
 
     def uv(
@@ -110,6 +111,7 @@ class Pc:
                 "UNIOVER_TEST_AGENTS": str(self.agents),
                 "UNIOVER_TEST_TRAYS": str(self.trays),
                 "APPDATA": str(self.roaming),
+                "UNIOVER_SUPERVISOR_LOGON_AT": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
             }
             | extra
         )
@@ -314,6 +316,29 @@ def test_a_signal_left_after_this_logon_is_kept(pc: Pc) -> None:
     with heartbeat(pc.alive), pc.running(UNIOVER_SUPERVISOR_LOGON_AT="2020-01-01T00:00:00Z"):
         assert wait_for(lambda: pc.starts() >= 1, 90)
         time.sleep(3)
+        assert pc.tray_starts() == 0
+
+
+def test_startup_shortcut_can_request_the_tray_after_the_supervisor_starts(pc: Pc) -> None:
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    request = pc.runtime / "tray-start-request"
+    request.unlink()
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: pc.starts() == 1, 30), pc.supervisor_log()
+        time.sleep(2)
+        assert pc.tray_starts() == 0
+        request.write_text("", encoding="ascii")
+        assert wait_for(lambda: pc.tray_starts() == 1, 10), pc.supervisor_log()
+
+
+def test_previous_logons_tray_request_does_not_open_the_icon(pc: Pc) -> None:
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    request = pc.runtime / "tray-start-request"
+    yesterday = time.time() - 24 * 3600
+    os.utime(request, (yesterday, yesterday))
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: pc.starts() == 1, 30), pc.supervisor_log()
+        time.sleep(2)
         assert pc.tray_starts() == 0
 
 

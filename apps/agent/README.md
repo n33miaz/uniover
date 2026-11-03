@@ -75,7 +75,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
-| `UNIOVER_UPDATE_CHANNEL` | ramo de que o agente se atualiza: `develop` (padrão, a `develop` é a produção) ou `main`; no `agent.toml`, `update_channel`. O instalador grava o do `-Ref` |
+| `UNIOVER_UPDATE_CHANNEL` | `main` e `develop` são valores legados de produção e seguem `production_ref` publicado em `tools/update-channel.json` na `main`; `homolog` fixa a branch de homologação para um PC. O instalador grava o valor de `-Ref` em `agent.toml` |
 | `UNIOVER_SELF_CARE` | `0` desliga o auto-diagnóstico periódico, o auto-reparo e o envio das ocorrências à API (padrão ligado; ver "Auto-diagnóstico") |
 | `UNIOVER_HOME` | pasta de instalação (caminho absoluto); sem ela vale a escolhida na instalação (ver "Pasta de instalação") ou `%LOCALAPPDATA%\UniOver` |
 | `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
@@ -199,7 +199,8 @@ sem parâmetros (modo automático), que:
 4. **pareia a TV** (na Samsung, aceitar o aviso na tela; já pareada, não repete);
 5. cria a tarefa **UniOver agente** (ao entrar no Windows, sem janela, sem perguntar) que roda o
    lançador estável `%LOCALAPPDATA%\UniOver\launcher.ps1`. O instalador também deixa um atalho **UniOver** no
-   Menu Iniciar.
+   Menu Iniciar. Os rótulos da tarefa e de **Aplicativos de inicialização** ficam em
+   `tools/windows-startup.json`; a atualização do agente os aplica na conta do usuário, sem novo UAC.
 
 O lançador chama o `app\tools\run-agent.ps1` que veio com a versão atual e mantém uma cópia conhecida para
 recuperação. Assim o supervisor, o ícone e futuras correções também chegam pela atualização. O supervisor fica sem
@@ -211,10 +212,14 @@ janela, faz `uv sync` e `run`; se o agente cair, volta com espera crescente (5 s
 (verde conectado, laranja reconectando, vermelho sem conexão, azul atualizando). Quando algo pede atenção (hoje, uma
 atualização que falhou) um selo vermelho-alaranjado aparece no canto inferior direito, recortando o disco, sem mudar a cor dele. A dica traz o
 estado e o nome da TV. O menu tem Abrir UniOver, Status, Ver Registro, Atualizar Agora, Reiniciar e Sair.
+O supervisor abre a bandeja em toda instalação Windows, com TV Samsung, Android ou sem TV configurada. O atalho
+**UniOver agente** na pasta Inicializar faz a entrada aparecer no Gerenciador de Tarefas e pede o ícone no logon.
+Desabilitar essa entrada impede o ícone no próximo logon; a tarefa do Agendador ainda inicia o supervisor e o
+agente para manter o controle disponível. Para interromper o início do agente, use a desinstalação.
 
 - **Sair só fecha o ícone.** O agente e o supervisor continuam rodando. O ícone deixa `runtime\tray-closed`, e o
   supervisor não o reabre enquanto o sinal valer: até o próximo logon (o sinal é velho se foi deixado antes de a sessão
-  do Windows atual começar) ou até a pessoa abrir o atalho **UniOver Agente** do menu Iniciar (`tools\tray-open.vbs`,
+  do Windows atual começar) ou até a pessoa abrir o atalho **UniOver agente** do menu Iniciar (`tools\tray-open.vbs`,
   que apaga o sinal e chama o lançador; o ícone volta em poucos segundos). O supervisor cria esse atalho ao subir, se
   faltar, para ele chegar também a quem já tinha o UniOver instalado. Uma atualização não traz o ícone de volta.
 - **Balão do Windows só em falha de atualização**, uma vez por resultado (`runtime\tray-notified.json`). Atualizar,
@@ -248,12 +253,20 @@ TV (mesmo `duid`/MAC) em outro endereço, grava o `tv_host` novo no `agent.toml`
 endereço nem identificador.
 
 **Auto-atualização com retorno.** A cada início e depois a cada 6 h (com até 45 min de variação), o wrapper
-consulta o commit da `main`. A candidata é baixada para `app.new`, passa por `uv sync` e por um import rápido
+consulta `tools/update-channel.json` na `main` para saber qual branch publica em produção (hoje `develop`), depois consulta o commit dela. O mesmo valor seleciona a branch autorizada no `deploy.yml`. Se a consulta ao arquivo falhar, o agente usa a cópia instalada. A candidata é baixada para `app.new`, passa por `uv sync` e por um import rápido
 do agente e do contrato `agent.hello.v1`; só então entra no lugar. A pasta anterior fica em `app.previous`.
 Se a versão recém-instalada cair três vezes antes de completar 10 min, o wrapper restaura a anterior e anota o SHA
 em `.blocked-versions`, para não tentar o mesmo commit ruim de novo. Falha de rede, limite do GitHub, teste ou pasta
 em uso só preserva a versão que está rodando. Para a renomeação funcionar no Windows, o ambiente Python fica fora da
 pasta (`UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\UniOver\runtime\venv`) e o `uv` roda com `--project`.
+
+**Troca do ramo de produção.** A fonte de verdade é `apps/agent/tools/update-channel.json` na branch `main`:
+`production_ref` aceita `develop`, `main` ou `homolog`. O workflow de deploy lê esse valor da `main` e só
+publica commits do ramo escolhido; o conectador baixa o instalador desse ramo; os agentes de produção
+consultam a mesma escolha ao iniciar e nas verificações periódicas. Antes de trocar o valor, deixe o ramo
+de destino com o workflow de deploy, uma versão válida e o código que deve entrar em produção. A mudança
+não exige reinstalar os PCs nem pedir administrador outra vez. `homolog` em `agent.toml` permanece um canal
+de teste fixo para aquele PC; o ambiente GitHub `production` continua sendo o destino de publicação.
 
 **Início com o PC.** A tarefa usa `AtLogOn`, usuário atual, sem janela, sem parar na bateria e sem limite de 72 h.
 É o caminho confiável sem administrador porque a credencial do agente fica no cofre do usuário. Antes de haver
@@ -530,7 +543,7 @@ Só o administrador, pela tela de Aparelhos do app, sem a pessoa do PC fazer nad
 
 ## Atualização
 
-O canal é o ramo de que o agente se atualiza (`develop` por padrão). Antes de trocar a pasta, a candidata passa por:
+O canal de produção segue o ramo em `tools/update-channel.json` na `main`; `main` e `develop` no arquivo local são valores legados desse canal. Antes de trocar a pasta, a candidata passa por:
 zip inteiro e do commit pedido, arquivos conferidos contra a árvore do commit no GitHub, `uv sync --frozen` (as versões do `uv.lock`, sem reescrevê-lo) num ambiente
 descartável e o auto-diagnóstico dela (`python -m uniover_agent.selfcheck`, que lê o `agent.toml` real com as regras
 novas). Versão em prova (menos de 10 minutos estável) não é substituída; atualização que falha tenta de novo em 30 min,

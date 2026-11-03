@@ -120,7 +120,10 @@ def test_outside_the_drill_the_requests_still_go_to_github(monkeypatch: pytest.M
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, ORIGIN)
     requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
     assert latest_commit() == NEW
-    assert [str(r.url) for r in requests] == [module.COMMIT_URL.format(channel="develop")]
+    assert [str(r.url) for r in requests] == [
+        module.PRODUCTION_REF_URL,
+        module.COMMIT_URL.format(channel="develop"),
+    ]
 
 
 def test_a_full_update_runs_through_the_local_server_in_drill_mode(

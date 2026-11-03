@@ -1,5 +1,6 @@
 """Layout persistente do agente instalado e migração sem perder o pareamento."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -10,12 +11,40 @@ from pathlib import Path
 from uniover_agent.adapters.process import popen_hidden, run_hidden
 
 # Versão do lançador sem console que a tarefa usa; subir o número reaponta as tarefas já instaladas.
-LAUNCHER_TASK_VERSION = "wscript-2-resilient"
+LAUNCHER_TASK_VERSION = "wscript-3-startup-names"
 # Versão do ajuste de energia sem administrador; subir o número aplica de novo.
 POWER_SETTINGS_VERSION = "ac-never-sleep-1"
 # Depois de uma tentativa que falhou, espera isto antes de tentar de novo (custa segundos).
 RETRY_AFTER_SECONDS = 24 * 3600
-TASK_NAME = "UniOver agente"
+LEGACY_TASK_NAME = "UniOver agente"
+MAX_WINDOWS_NAME_LENGTH = 80
+
+
+def _valid_windows_name(name: object) -> bool:
+    return (
+        isinstance(name, str)
+        and bool(name)
+        and name == name.strip()
+        and name.isprintable()
+        and len(name) <= MAX_WINDOWS_NAME_LENGTH
+        and not any(char in name for char in "\\/:*?\"<>|'[]")
+    )
+
+
+def _startup_names() -> tuple[str, str]:
+    """Rótulos do Windows, lidos do mesmo arquivo que o instalador e o supervisor usam."""
+    path = Path(__file__).resolve().parents[3] / "tools" / "windows-startup.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        names = (data["startup_app_name"], data["scheduled_task_name"])
+        if all(_valid_windows_name(name) for name in names):
+            return names
+    except OSError, ValueError, KeyError, TypeError:
+        pass
+    return LEGACY_TASK_NAME, LEGACY_TASK_NAME
+
+
+STARTUP_APP_NAME, TASK_NAME = _startup_names()
 
 # Mesmo texto de `tools/launcher.vbs` (um teste confere): o WScript não tem console e `Run(..., 0)`
 # cria o PowerShell já oculto, então nada pisca no logon. Escrito daqui para não depender de a
@@ -213,7 +242,9 @@ TASK_TRIGGERS_AND_SETTINGS = (
 )
 
 
-def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
+def launcher_task_script(
+    root: Path, name: str = TASK_NAME, previous_name: str | None = None
+) -> str:
     """Script (PowerShell 5.1, sem administrador) que deixa a tarefa do agente robusta.
 
     Tarefa existente: troca a AÇÃO (lançador sem console), os GATILHOS (logon e uma repetição a
@@ -225,13 +256,20 @@ def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
     configurações antigos: a tarefa antiga nunca fica pela metade. Sem tarefa: registra uma
     completa. A saída diz o que houve (0 feito, 3 revertido, 4 erro).
     """
+    if previous_name is None:
+        previous_name = name
+    if not _valid_windows_name(name) or not _valid_windows_name(previous_name):
+        raise ValueError("nome invalido para a tarefa do Windows")
+
     vbs = str(root / "launcher.vbs").replace("'", "''")
     wscript = _wscript().replace("'", "''")
+    old_name = previous_name.replace("'", "''")
     lines = (
         "$ErrorActionPreference='Stop'",
         f"$exe='{wscript}'",
         f"$arg='//B //Nologo \"{vbs}\"'",
         f"$name='{name}'",
+        f"$oldName='{old_name}'",
         "try {",
         "$a=New-ScheduledTaskAction -Execute $exe -Argument $arg",
         TASK_TRIGGERS_AND_SETTINGS,
@@ -253,12 +291,22 @@ def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
         " -Settings $oldS|Out-Null } catch { }",
         "exit 3",
         "}",
-        "exit 0",
-        "}",
+        "} else {",
         "$p=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive"
         " -RunLevel Limited",
         "Register-ScheduledTask -TaskName $name -Action $a -Trigger $t -Principal $p"
         " -Settings $s -Force|Out-Null",
+        "}",
+        "$read=Get-ScheduledTask -TaskName $name",
+        "$now=@($read.Actions)",
+        "if ($now.Count -ne 1 -or $now[0].Execute -ne $exe -or $now[0].Arguments -ne $arg)"
+        " { throw 'conferencia' }",
+        "if (@($read.Triggers).Count -ne 2 -or $read.Settings.RestartCount -ne 999)"
+        " { throw 'conferencia' }",
+        "if ($oldName -ine $name -and",
+        " (Get-ScheduledTask -TaskName $oldName -ErrorAction SilentlyContinue)) {",
+        "Unregister-ScheduledTask -TaskName $oldName -Confirm:$false -ErrorAction Stop",
+        "}",
         "exit 0",
         "} catch { exit 4 }",
     )
@@ -317,7 +365,11 @@ def _windows_script_host_works(root: Path) -> bool:
 
 
 def _register_launcher_task(
-    anchor: Path, root: Path | None = None, *, name: str = TASK_NAME
+    anchor: Path,
+    root: Path | None = None,
+    *,
+    name: str = TASK_NAME,
+    previous_name: str | None = None,
 ) -> bool:
     """Reaponta a tarefa do usuário para o lançador sem console, sem precisar de administrador.
 
@@ -340,7 +392,7 @@ def _register_launcher_task(
                 "-WindowStyle",
                 "Hidden",
                 "-Command",
-                launcher_task_script(anchor, name),
+                launcher_task_script(anchor, name, previous_name),
             ],
             check=False,
             capture_output=True,
@@ -359,21 +411,25 @@ def _ensure_hidden_launcher_task(root: Path, anchor: Path | None = None) -> None
     marker = root / "runtime" / "launcher-task"
     failed = root / "runtime" / "launcher-task.failed"
     try:
-        if marker.read_text(encoding="ascii").strip() == LAUNCHER_TASK_VERSION:
+        old_marker = marker.read_text(encoding="utf-8").strip()
+        if old_marker == f"{LAUNCHER_TASK_VERSION}|{TASK_NAME}":
             return
     except OSError:
-        pass
+        old_marker = ""
+    previous_name = old_marker.split("|", 1)[1] if "|" in old_marker else LEGACY_TASK_NAME
+    if not _valid_windows_name(previous_name):
+        previous_name = LEGACY_TASK_NAME
     if _recently_failed(failed):
         return
     try:
         # Pasta padrão: lançador e dados no mesmo lugar. Pasta escolhida: o lançador fica na fixa.
         registered = (
-            _register_launcher_task(root)
+            _register_launcher_task(root, previous_name=previous_name)
             if anchor is None or anchor == root
-            else _register_launcher_task(anchor, root)
+            else _register_launcher_task(anchor, root, previous_name=previous_name)
         )
         if registered:
-            marker.write_text(LAUNCHER_TASK_VERSION, encoding="ascii")
+            marker.write_text(f"{LAUNCHER_TASK_VERSION}|{TASK_NAME}", encoding="utf-8")
             failed.unlink(missing_ok=True)
             _note(root, "tarefa agendada passou a abrir o lançador sem console")
         else:
