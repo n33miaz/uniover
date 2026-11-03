@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.5](https://github.com/n33miaz/uniover/compare/v0.36.4...v0.36.5) (2026-11-03)
+
+
+### Bug Fixes
+
+* **web:** fit qr approval on small screens
+
 ## [0.36.4](https://github.com/n33miaz/uniover/compare/v0.36.3...v0.36.4) (2026-11-03)
 
 
