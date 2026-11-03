@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.11](https://github.com/n33miaz/uniover/compare/v0.36.10...v0.36.11) (2026-11-03)
+
+
+### Features
+
+* **tv:** add Siri shortcut keys
+
 ## [0.36.10](https://github.com/n33miaz/uniover/compare/v0.36.9...v0.36.10) (2026-11-03)
 
 
