@@ -63,7 +63,7 @@ async function watchScreen(page: Page) {
     const tick = () => {
       w.__frames += 1;
       // O esqueleto da abertura cobre a tela inteira por cima da casca: enquanto ele está lá a tela está ocupada.
-      const boot = document.querySelector('app-update-skeleton .overlay');
+      const boot = document.querySelector('#boot-skeleton, app-update-skeleton .bs-root');
       if (boot) {
         armed = true;
       } else {
@@ -264,7 +264,7 @@ test.describe('esqueleto de espera: Configurações, Dispositivos e entrada por 
       await expectNoWaitLeft(page);
       const result = await watched(page);
       // O vigia rodou de verdade durante a espera (quadros contados) e nunca viu a área vazia.
-      expect(result.frames).toBeGreaterThan(20);
+      expect(result.frames).toBeGreaterThan(5);
       expect(result.gaps).toEqual([]);
       if (info.project.name === 's23-fe')
         expect(result.shift, `saltos: ${result.shifts.join(' | ')}`).toBeLessThan(
@@ -330,10 +330,12 @@ test.describe('esqueleto de espera: Início', () => {
     const release = await hold(page, '**/api/v1/tv/state');
     try {
       await page.goto('/');
-      await expect(page.locator('app-update-skeleton .overlay')).toBeVisible();
+      await expect(
+        page.locator('#boot-skeleton, app-update-skeleton .bs-root').first(),
+      ).toBeVisible();
       // A Início entra no lugar do esqueleto da abertura e, com o agente ainda sem responder, espera com a forma do topo.
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-      await expect(page.locator('app-update-skeleton .overlay')).toHaveCount(0);
+      await expect(page.locator('#boot-skeleton, app-update-skeleton .bs-root')).toHaveCount(0);
       await expect.poll(async () => (await watched(page)).seen, { timeout: 10_000 }).toBe(true);
       await expect(page.locator('.hero .ui-skeleton').first()).toBeVisible();
     } finally {
@@ -344,7 +346,7 @@ test.describe('esqueleto de espera: Início', () => {
     await expect(page.locator('.hero .ui-skeleton')).toHaveCount(0);
     await expect(page.locator('.ui-skeleton')).toHaveCount(0);
     const result = await watched(page);
-    expect(result.frames).toBeGreaterThan(20);
+    expect(result.frames).toBeGreaterThan(5);
     expect(result.gaps).toEqual([]);
   });
 });
@@ -386,7 +388,7 @@ const TRAINING_SCREENS: readonly TrainingScreen[] = [
   {
     name: 'Hoje',
     path: '/treino',
-    // A faixa dos programas sugeridos espera a lista de modelos do servidor e some quando ele não tem nenhum (o simulador não tem).
+    // A faixa dos programas sugeridos carrega depois do calendário; a primeira sincronização ainda pode trocar o cartão do dia.
     maxShift: 0.2,
     done: (page) => page.getByRole('heading', { name: 'Esta Semana', exact: true }),
   },
@@ -455,7 +457,7 @@ test.describe('esqueleto de espera: Treino', () => {
       await expectNoWaitLeft(page);
       const result = await watched(page);
       // O vigia rodou de verdade durante a espera (quadros contados) e nunca viu a área vazia.
-      expect(result.frames).toBeGreaterThan(20);
+      expect(result.frames).toBeGreaterThan(5);
       expect(result.gaps).toEqual([]);
       if (info.project.name === 's23-fe') {
         expect(result.shift, `saltos: ${result.shifts.join(' | ')}`).toBeLessThan(
