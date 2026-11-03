@@ -74,6 +74,9 @@ public sealed class IdentityModuleOptions
 
     public IdentityCookieOptions Cookies { get; set; } = new();
 
+    /// <summary>Limites do plano gratuito contra os quais o cartão de capacidade mede (<c>Modules:Identity:Capacity</c>).</summary>
+    public Features.Capacity.CapacityOptions Capacity { get; set; } = new();
+
     public TimeSpan AccessLifetime => TimeSpan.FromMinutes(AccessMinutes);
 
     public TimeSpan StreamTicketLifetime => TimeSpan.FromSeconds(StreamTicketSeconds);
@@ -111,5 +114,6 @@ public sealed class IdentityModuleOptions
         && o.GuestStatusCacheSeconds is >= 1 and <= 600
         && o.QrLoginSeconds is >= 10 and <= 600
         && o.QrRecentLoginMinutes is >= 0 and <= 60
-        && o.QrMaxPending >= 1;
+        && o.QrMaxPending >= 1
+        && o.Capacity.IsValid();
 }
