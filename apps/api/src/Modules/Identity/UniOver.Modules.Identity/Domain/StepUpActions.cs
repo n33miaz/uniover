@@ -18,6 +18,6 @@ public static class StepUpActions
     /// <summary>Confirmar, no celular, a entrada de um computador pelo QR: dá uma sessão inteira a quem estiver na tela, então pede a passkey.</summary>
     public const string QrLoginApprove = "identity.qr-login-approve";
 
-    /// <summary>Reservada: o endpoint de trocar a senha ainda não existe, mas o nome já fica separado.</summary>
+    /// <summary>Reservada para a confirmação forte da troca quando houver segundo fator cadastrado.</summary>
     public const string PasswordChange = "identity.password-change";
 }

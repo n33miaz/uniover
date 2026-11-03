@@ -14,6 +14,7 @@ using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
 using UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
 using UniOver.Modules.Identity.Features.ConfirmStepUp;
 using UniOver.Modules.Identity.Features.ConfirmStepUpWithPassword;
+using UniOver.Modules.Identity.Features.ChangePassword;
 using UniOver.Modules.Identity.Features.CreateGuestInvite;
 using UniOver.Modules.Identity.Features.GetMe;
 using UniOver.Modules.Identity.Features.GetModuleInfo;
@@ -88,6 +89,7 @@ public static class IdentityModule
         services.AddRefreshFamilyCleanup();
 
         services.AddScoped<LoginHandler>();
+        services.AddScoped<ChangePasswordHandler>();
         services.AddScoped<RefreshRecoveryService>();
         services.AddScoped<RefreshHandler>();
         services.AddScoped<RefreshChallengeHandler>();
@@ -143,6 +145,7 @@ public static class IdentityModule
         var group = endpoints.MapGroup($"/api/v1/{Name}");
         group.MapGetModuleInfo();
         group.MapLogin();
+        group.MapChangePassword();
         group.MapRefresh();
         group.MapRefreshChallenge();
         group.MapLogout();

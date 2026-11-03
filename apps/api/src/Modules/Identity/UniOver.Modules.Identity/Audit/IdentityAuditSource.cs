@@ -18,7 +18,8 @@ internal static class IdentityAuditNormalizer
     public const string Module = "identity";
 
     /// <summary>Eventos em que a ação não se completou.</summary>
-    public static IReadOnlyList<string> FailureEvents { get; } = [AuditEvents.LoginFailed, AuditEvents.StepUpFailed];
+    public static IReadOnlyList<string> FailureEvents { get; } =
+        [AuditEvents.LoginFailed, AuditEvents.StepUpFailed, AuditEvents.PasswordChangeFailed];
 
     /// <summary>Eventos em que o sistema recusou por regra (conta bloqueada, refresh reutilizado).</summary>
     public static IReadOnlyList<string> DeniedEvents { get; } = [AuditEvents.LoginLocked, AuditEvents.RefreshReuseDetected];
