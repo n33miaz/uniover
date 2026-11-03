@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.4](https://github.com/n33miaz/uniover/compare/v0.36.3...v0.36.4) (2026-11-03)
+
+
+### Features
+
+* **agent:** add branded windows tray menu
+
+
 ## [0.36.3](https://github.com/n33miaz/uniover/compare/v0.36.2...v0.36.3) (2026-11-03)
 
 
