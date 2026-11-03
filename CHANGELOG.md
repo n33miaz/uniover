@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.9](https://github.com/n33miaz/uniover/compare/v0.36.8...v0.36.9) (2026-11-03)
+
+
+### Features
+
+* **identity:** show system capacity
+
 ## [0.36.8](https://github.com/n33miaz/uniover/compare/v0.36.7...v0.36.8) (2026-11-03)
 
 
