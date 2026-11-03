@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.7](https://github.com/n33miaz/uniover/compare/v0.36.6...v0.36.7) (2026-11-03)
+
+
+### Features
+
+* **identity:** add recovery and totp
+* **identity:** complete recovery flows
+
 ## [0.36.6](https://github.com/n33miaz/uniover/compare/v0.36.5...v0.36.6) (2026-11-03)
 
 
