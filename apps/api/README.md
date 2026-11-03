@@ -34,6 +34,24 @@ Os testes de integração precisam do **Docker** em execução: a fixture sobe u
 com os papéis reais (dono das migrations e papel da aplicação) e um banco isolado por teste. Sem Docker, essa
 suíte não roda.
 
+## Recuperação de conta e autenticador
+
+- `Modules__Identity__TotpKey`: chave aleatória de **32 bytes em base64**, guardada como segredo no ambiente da API.
+  Sem ela, o cadastro do autenticador fica indisponível. Preserve a mesma chave entre deploys; perdê-la impede
+  validar os autenticadores já cadastrados.
+- `Modules__Identity__RecoveryEmail__Enabled=true` ativa o envio de links de redefinição pelo Resend. Deixe
+  desligado até verificar o domínio do remetente e configurar os três valores abaixo. A página de recuperação
+  consulta a disponibilidade e não oferece envio enquanto o recurso estiver desligado.
+- `Modules__Identity__RecoveryEmail__ApiKey`: chave da API do Resend, como segredo.
+- `Modules__Identity__RecoveryEmail__From`: remetente pertencente ao domínio verificado, por exemplo
+  `UniOver <conta@dominio.example>`.
+- `Modules__Identity__RecoveryEmail__AppBaseUrl`: origem HTTPS pública do aplicativo, sem caminho, consulta ou
+  fragmento; o link acrescenta `/redefinir-senha#token=...`.
+
+A resposta ao pedido de recuperação é sempre neutra, inclusive para endereço desconhecido. O link vence em
+20 minutos e só pode ser usado uma vez. O Resend precisa permanecer no plano gratuito para esta instalação;
+confira o limite do plano antes de habilitar o envio.
+
 ## Persistência por módulo
 
 - Cada módulo tem o **seu schema** e o **seu `DbContext`** (herda `ModuleDbContext`). Não há `search_path` nem

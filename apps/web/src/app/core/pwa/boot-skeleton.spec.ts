@@ -42,6 +42,8 @@ const CASES: readonly (readonly [string, BootVariant])[] = [
   ['/ajustes/sobre', 'settings-about'],
   ['/ajustes/sobre/creditos', 'settings-credits'],
   ['/entrar', 'auth-login'],
+  ['/recuperar-senha', 'auth-recovery'],
+  ['/redefinir-senha', 'auth-reset'],
   ['/entrar/qr', 'auth-qr'],
   ['/convite', 'auth-invite'],
   ['/boas-vindas', 'auth-welcome'],
@@ -155,6 +157,8 @@ describe('boot skeleton', () => {
     ['settings-about', '/ajustes/sobre', 'detail'],
     ['settings-credits', '/ajustes/sobre/creditos', 'detail'],
     ['auth-login', '/entrar', 'plain'],
+    ['auth-recovery', '/recuperar-senha', 'plain'],
+    ['auth-reset', '/redefinir-senha', 'plain'],
     ['auth-qr', '/entrar/qr', 'plain'],
     ['auth-invite', '/convite', 'plain'],
     ['auth-welcome', '/boas-vindas', 'plain'],
@@ -238,6 +242,13 @@ describe('boot skeleton', () => {
     for (const [file, variant] of pages) {
       const html = readFileSync(resolve(process.cwd(), 'src/app', file), 'utf8');
       expect(html, file).toContain(`[attr.data-screen-ready]="'${variant}'"`);
+    }
+    for (const [file, variant] of [
+      ['core/auth/request-recovery.page.ts', 'auth-recovery'],
+      ['core/auth/reset-password.page.ts', 'auth-reset'],
+    ] as const) {
+      const source = readFileSync(resolve(process.cwd(), 'src/app', file), 'utf8');
+      expect(source, file).toContain(`[attr.data-screen-ready]="'${variant}'"`);
     }
   });
 

@@ -15,6 +15,7 @@ internal sealed record StartTotpRequest(string? Password);
 internal sealed record StartTotpResponse(string ProvisioningUri, DateTimeOffset ExpiresAt);
 internal sealed record ConfirmTotpRequest(string? Code);
 internal sealed record ConfirmTotpResponse(IReadOnlyList<string> RecoveryCodes);
+internal sealed record TotpStatusResponse(bool Available, bool Active, int RecoveryCodesRemaining);
 
 internal enum TotpEnrollmentStatus { Succeeded, Unauthenticated, InvalidPassword, Locked, StepUpRequired, AlreadyActive, InvalidCode, Unavailable }
 
@@ -99,6 +100,9 @@ internal static class TotpEnrollmentEndpoint
 {
     public static void MapTotpEnrollment(this IEndpointRouteBuilder group)
     {
+        group.MapGet("/me/totp", StatusAsync)
+            .RequireAuthorization(IdentityAuth.ActiveAccountSessionPolicy)
+            .Produces<TotpStatusResponse>();
         group.MapPost("/me/totp/start", StartAsync)
             .RequireAuthorization(IdentityAuth.ActiveAccountSessionPolicy)
             .RequireRateLimiting(RateLimitPolicies.Login)
@@ -107,6 +111,17 @@ internal static class TotpEnrollmentEndpoint
             .RequireAuthorization(IdentityAuth.ActiveAccountSessionPolicy)
             .RequireRateLimiting(RateLimitPolicies.Login)
             .Produces<ConfirmTotpResponse>();
+    }
+
+    private static async Task<IResult> StatusAsync(
+        ICurrentUser current, IdentityDbContext db, TotpKeyProvider key, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId) return IdentityProblems.Unauthenticated();
+        var active = await db.TotpFactors.AnyAsync(
+            f => f.UserId == userId && f.ActivatedAt != null, cancellationToken);
+        var remaining = active ? await db.AccountRecoveryCodes.CountAsync(
+            c => c.UserId == userId && c.UsedAt == null, cancellationToken) : 0;
+        return TypedResults.Ok(new TotpStatusResponse(key.Available, active, remaining));
     }
 
     private static async Task<IResult> StartAsync(
@@ -126,8 +141,7 @@ internal static class TotpEnrollmentEndpoint
             TotpEnrollmentStatus.Unauthenticated => IdentityProblems.Unauthenticated(),
             TotpEnrollmentStatus.InvalidPassword => IdentityProblems.InvalidPassword(),
             TotpEnrollmentStatus.Locked => Results.Problem(statusCode: 429, title: "Conta temporariamente bloqueada."),
-            TotpEnrollmentStatus.StepUpRequired => Results.Problem(statusCode: 403, title: "Confirme esta ação com a passkey.",
-                type: ProblemDetailsExtensions.TypeBase + "factor-step-up-required"),
+            TotpEnrollmentStatus.StepUpRequired => IdentityProblems.StepUpRequired(StepUpActions.FactorManage),
             TotpEnrollmentStatus.AlreadyActive => Results.Problem(statusCode: 409, title: "Autenticador já ativo."),
             _ => Results.Problem(statusCode: 503, title: "Cadastro do autenticador indisponível."),
         };

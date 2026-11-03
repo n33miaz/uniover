@@ -45,6 +45,43 @@ describe('AuthApi', () => {
     expect(JSON.parse(init.body as string)).toEqual({ email: 'a@b.c', password: 'senha' });
   });
 
+  it('sends authenticator and recovery codes in the login body', async () => {
+    fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 600 }));
+    await api().login('a@b.c', 'senha', '123456');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      email: 'a@b.c', password: 'senha', totpCode: '123456',
+    });
+    await api().login('a@b.c', 'senha', 'abc_DEF');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      email: 'a@b.c', password: 'senha', recoveryCode: 'abc_DEF',
+    });
+  });
+
+  it('keeps reset secrets out of the URL and uses the public client header', async () => {
+    fetchFn.mockResolvedValueOnce(reply(202));
+    await api().requestPasswordRecovery('a@b.c');
+    expect(lastCall().url).toBe('/api/v1/identity/auth/password/recovery');
+    expect(lastCall().headers['X-UniOver-Client']).toBe('web');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({ email: 'a@b.c' });
+
+    fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
+    await api().resetPassword('secret-reset', 'senha-nova', '123456');
+    expect(lastCall().url).toBe('/api/v1/identity/auth/password/reset');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      token: 'secret-reset', newPassword: 'senha-nova', totpCode: '123456',
+    });
+    await api().recoverPasswordWithCode('jwt', 'code-secret', 'senha-nova');
+    expect(lastCall().url).toBe('/api/v1/identity/me/password/recover-with-code');
+    expect(lastCall().headers['Authorization']).toBe('Bearer jwt');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      recoveryCode: 'code-secret', newPassword: 'senha-nova',
+    });
+    for (const [url] of fetchFn.mock.calls) {
+      expect(url).not.toContain('secret-reset');
+      expect(url).not.toContain('code-secret');
+    }
+  });
+
   it.each([
     ['refresh', () => api().refresh(), '/api/v1/identity/auth/refresh'],
     ['logout', () => api().logout('t'), '/api/v1/identity/auth/logout'],

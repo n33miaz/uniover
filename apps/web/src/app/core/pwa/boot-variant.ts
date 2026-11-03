@@ -32,6 +32,8 @@ export type BootVariant =
   | 'settings-about'
   | 'settings-credits'
   | 'auth-login'
+  | 'auth-recovery'
+  | 'auth-reset'
   | 'auth-qr'
   | 'auth-invite'
   | 'auth-welcome'
@@ -83,6 +85,8 @@ export function bootVariantFor(path: string): BootVariant {
   if (pathname === '/ajustes/sobre') return 'settings-about';
   if (pathname === '/entrar/qr') return 'auth-qr';
   if (pathname === '/entrar') return 'auth-login';
+  if (pathname === '/recuperar-senha') return 'auth-recovery';
+  if (pathname === '/redefinir-senha') return 'auth-reset';
   if (pathname === '/convite') return 'auth-invite';
   if (pathname === '/boas-vindas') return 'auth-welcome';
   if (pathname === '/conectar') return 'devices-connect';

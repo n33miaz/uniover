@@ -50,6 +50,9 @@ export type QrLoginPoll = Readonly<Schemas['PollQrLoginResponse']>;
 export type QrLoginInfo = Readonly<Schemas['QrLoginInfoResponse']>;
 /** Desafio de uso único da recuperação; `challenge` nulo quando o token ainda não girou (basta um refresh comum). */
 export type RefreshChallenge = Readonly<Schemas['RefreshChallengeResponse']>;
+export type TotpEnrollment = Readonly<Schemas['StartTotpResponse']>;
+export type TotpCodes = Readonly<Schemas['ConfirmTotpResponse']>;
+export type TotpStatus = Readonly<Schemas['TotpStatusResponse']>;
 
 /** Prova da recuperação: o desafio que a API emitiu e a assinatura dele com a chave do aparelho. */
 export interface RefreshRecovery {
@@ -77,9 +80,36 @@ export class AuthApi {
   /** Par gerado para a entrada em andamento; sobrevive a tentativas que falham e some quando uma delas dá certo. */
   private opening: Promise<PendingDeviceKey | null> | null = null;
 
-  login(email: string, password: string): Promise<TokenResponse> {
-    const body: Schemas['LoginRequest'] = { email, password };
+  login(email: string, password: string, factor?: string): Promise<TokenResponse> {
+    const body: Schemas['LoginRequest'] = {
+      email,
+      password,
+      ...(factor ? /^\d{6}$/.test(factor) ? { totpCode: factor } : { recoveryCode: factor } : {}),
+    };
     return this.openSession('/auth/login', body);
+  }
+
+  requestPasswordRecovery(email: string): Promise<void> {
+    const body: Schemas['RequestPasswordRecoveryRequest'] = { email };
+    return this.send('POST', '/auth/password/recovery', { body });
+  }
+
+  passwordRecoveryAvailability(): Promise<Readonly<Schemas['PasswordRecoveryAvailabilityResponse']>> {
+    return this.send('GET', '/auth/password/recovery/availability');
+  }
+
+  resetPassword(token: string, newPassword: string, factor?: string): Promise<void> {
+    const body: Schemas['CompletePasswordRecoveryRequest'] = {
+      token,
+      newPassword,
+      ...(factor ? /^\d{6}$/.test(factor) ? { totpCode: factor } : { recoveryCode: factor } : {}),
+    };
+    return this.send('POST', '/auth/password/reset', { body });
+  }
+
+  recoverPasswordWithCode(token: string, recoveryCode: string, newPassword: string): Promise<void> {
+    const body: Schemas['RecoverWithCodeRequest'] = { recoveryCode, newPassword };
+    return this.send('POST', '/me/password/recover-with-code', { token, body });
   }
 
   /**
@@ -216,6 +246,18 @@ export class AuthApi {
       token,
       body: { currentPassword, newPassword },
     });
+  }
+
+  startTotp(token: string, password: string): Promise<TotpEnrollment> {
+    return this.send('POST', '/me/totp/start', { token, body: { password } });
+  }
+
+  totpStatus(token: string): Promise<TotpStatus> {
+    return this.send('GET', '/me/totp', { token });
+  }
+
+  confirmTotp(token: string, code: string): Promise<TotpCodes> {
+    return this.send('POST', '/me/totp/confirm', { token, body: { code } });
   }
 
   info(): Promise<ModuleInfo> {

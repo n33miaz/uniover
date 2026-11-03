@@ -103,7 +103,7 @@ describe('AcceptInvitePage', () => {
     expect(el.querySelector('.lead')).toBeNull();
   });
 
-  it('has labeled fields, autofill hints that pair with the login, and says there is no recovery', async () => {
+  it('has labeled fields, autofill hints that pair with the login, and explains recovery', async () => {
     const el = await render();
     expect(el.querySelector('label[for="invite-email"]')?.textContent).toBe('E-mail');
     expect(el.querySelector('label[for="invite-password"]')?.textContent).toBe('Senha');
@@ -116,7 +116,7 @@ describe('AcceptInvitePage', () => {
     expect(field(el, 'invite-confirmation').autocomplete).toBe('new-password');
     expect(field(el, 'invite-password').type).toBe('password');
     expect(field(el, 'invite-confirmation').getAttribute('enterkeyhint')).toBe('go');
-    expect(text(el, '#invite-password-hint')).toContain('Não existe recuperação de senha');
+    expect(text(el, '#invite-password-hint')).toContain('recuperar a senha pelo e-mail');
     // Nenhum campo ganha foco sozinho: a pessoa lê o que está acontecendo antes de digitar.
     expect(document.activeElement?.tagName).not.toBe('INPUT');
   });
@@ -171,7 +171,7 @@ describe('AcceptInvitePage', () => {
       expect(rule.querySelector('.ui-visually-hidden')).not.toBeNull();
     });
 
-    it('links the field to the requirements and to the no-recovery hint', async () => {
+    it('links the field to the requirements and to the recovery hint', async () => {
       const el = await render();
       expect(field(el, 'invite-password').getAttribute('aria-describedby')).toBe(
         'invite-password-rules invite-password-hint',

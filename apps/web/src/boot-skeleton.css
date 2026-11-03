@@ -568,6 +568,18 @@ html[data-boot='auth-login'] .bs-route-content,
   --route-row-height: 52px;
   --route-input-height: 52px;
 }
+html[data-boot='auth-recovery'] .bs-route-content,
+.bs-root[data-boot-variant='auth-recovery'] .bs-route-content {
+  --route-art-height: 70px;
+  --route-row-height: 48px;
+  --route-input-height: 52px;
+}
+html[data-boot='auth-reset'] .bs-route-content,
+.bs-root[data-boot-variant='auth-reset'] .bs-route-content {
+  --route-art-height: 70px;
+  --route-row-height: 54px;
+  --route-input-height: 48px;
+}
 html[data-boot='auth-qr'] .bs-route-content,
 .bs-root[data-boot-variant='auth-qr'] .bs-route-content {
   --route-art-height: 240px;

@@ -89,8 +89,8 @@ describe('LoginPage', () => {
     expect(password.autocomplete).toBe('current-password');
     expect(password.type).toBe('password');
     expect(password.getAttribute('enterkeyhint')).toBe('go');
-    // Nada de "esqueci a senha" nem de "lembrar de mim": não existem neste sistema.
-    expect(el.textContent).not.toMatch(/esqueci|recuper|lembrar/i);
+    expect(el.querySelector('a[href="/recuperar-senha"]')?.textContent).toContain('Esqueci minha senha');
+    expect(el.textContent).not.toMatch(/lembrar de mim/i);
   });
 
   it('focuses the e-mail field on a mouse device', async () => {
@@ -218,6 +218,18 @@ describe('LoginPage', () => {
   });
 
   describe('errors', () => {
+    it('asks for the second factor after a correct password and sends it on retry', async () => {
+      api.login.mockRejectedValueOnce(new ApiProblem(428, 'second-factor-required', 'x'));
+      api.login.mockResolvedValueOnce({ accessToken: 't', expiresIn: 600 });
+      const el = await render();
+      await fillAndSubmit(el);
+      expect(text(el)).toContain('Informe o código do autenticador');
+      expect(field(el, 'login-factor').autocomplete).toBe('one-time-code');
+      type(el, 'login-factor', '123456');
+      await submitForm(el);
+      expect(api.login).toHaveBeenLastCalledWith('dono@exemplo.com', 'senha-boa', '123456');
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/'));
+    });
     it('shows one generic message for a wrong e-mail or password, in an alert that takes focus', async () => {
       api.login.mockRejectedValue(new ApiProblem(401, '', 'x'));
       const el = await render();

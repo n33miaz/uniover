@@ -32,6 +32,19 @@
       (blurred)="passwordTouched.set(true)"
     />
 
+    @if (factorRequired()) {
+      <app-auth-field
+        [fieldId]="'login-factor'"
+        [name]="'one-time-code'"
+        label="Código do autenticador ou recuperação"
+        i18n-label="@@auth.login.factor"
+        [kind]="'text'"
+        [autocomplete]="'one-time-code'"
+        [enterKeyHint]="'go'"
+        [(value)]="factor"
+      />
+    }
+
     <div class="messages" [attr.aria-live]="'polite'">
       @if (banner(); as notice) {
         <!-- Um elemento novo a cada troca de papel: o "pronto" que fecha uma espera também é anunciado. -->
@@ -73,6 +86,8 @@
       }
     </button>
   </form>
+
+  <p class="alt"><a routerLink="/recuperar-senha" i18n="@@auth.login.forgot-password">Esqueci minha senha</a></p>
 
   <!-- No computador, a outra forma de entrar: o QR que o celular confirma (o bloco some sozinho em celular). -->
   <app-qr-login (signedIn)="onQrSignedIn()" />

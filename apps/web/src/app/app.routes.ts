@@ -37,6 +37,14 @@ export const routes: Routes = [
     loadComponent: () => import('./core/auth/login.page').then((m) => m.LoginPage),
   },
   {
+    path: 'recuperar-senha',
+    loadComponent: () => import('./core/auth/request-recovery.page').then((m) => m.RequestRecoveryPage),
+  },
+  {
+    path: 'redefinir-senha',
+    loadComponent: () => import('./core/auth/reset-password.page').then((m) => m.ResetPasswordPage),
+  },
+  {
     // Quem está no PC baixa o conector sem conta: fica fora da casca e sem guarda de login. O arquivo em si
     // (`/conectar/conectar-uniover.cmd`) é estático; só a rota sem arquivo cai neste app.
     path: 'conectar',
