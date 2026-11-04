@@ -1,0 +1,86 @@
+:host {
+  display: block;
+}
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--space-2) max(var(--gutter), env(safe-area-inset-right)) var(--space-6)
+    max(var(--gutter), env(safe-area-inset-left));
+}
+
+.intro h2,
+.step h3,
+.intro p,
+.step p {
+  margin: 0;
+}
+
+.intro,
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.intro p,
+.note {
+  color: var(--a-ink2);
+}
+
+.progress {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.step {
+  padding: var(--space-4);
+}
+
+.alternative,
+.diagnostics {
+  width: 100%;
+}
+
+.alternative,
+.diagnostics details {
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+}
+
+.diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+summary {
+  min-height: var(--tap);
+  align-content: center;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+details p {
+  padding-top: var(--space-2);
+}
+
+.steps {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.steps .ui-btn {
+  flex: 1;
+}

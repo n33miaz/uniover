@@ -62,12 +62,20 @@
         <span class="ui-chip warn" i18n="@@tv.menu.affects-all">Afeta todos</span>
       </a>
     }
-    <a class="ui-row" [routerLink]="bindingRoute">
+    <a class="ui-row" [routerLink]="bindingRoute()">
       <span class="ui-tile"><app-tv-icon name="tv" /></span>
       <span class="ui-row-text">
         <span class="ui-row-title">{{ bindingLabel() }}</span>
       </span>
       <span class="ui-chip warn" i18n="@@tv.menu.affects-all">Afeta todos</span>
     </a>
+    @if (bindingRoute() !== '/tv/configurar') {
+      <a class="ui-row" routerLink="/tv/configurar">
+        <span class="ui-tile"><app-tv-icon name="tv" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@tv.menu.setup-help">Ajuda para Configurar</span>
+        </span>
+      </a>
+    }
   </div>
 }

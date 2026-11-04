@@ -1,0 +1,119 @@
+<div class="guide" aria-labelledby="guide-title">
+  <header class="intro ui-rise">
+    <h2 id="guide-title" i18n="@@tv.setup.title">Vamos conectar sua TV</h2>
+    <p i18n="@@tv.setup.intro">
+      Siga os passos no computador que fica perto da TV. Você pode voltar a qualquer momento.
+    </p>
+  </header>
+
+  <div aria-live="polite" i18n-aria-live="@@common.aria.polite">
+    <p class="progress" i18n="@@tv.setup.progress">Etapa {{ step() + 1 }} de 4</p>
+  </div>
+
+  <section class="step ui-card ui-rise" aria-labelledby="guide-step-title">
+    @switch (step()) {
+      @case (0) {
+        <h3 #stepHeading id="guide-step-title" tabindex="-1" i18n="@@tv.setup.computer.title">
+          Prepare o computador
+        </h3>
+        <p i18n="@@tv.setup.computer.body">
+          O UniOver precisa do aplicativo do computador Windows ligado na mesma rede da TV. Deixe o
+          computador e a TV ligados durante a configuração.
+        </p>
+        <a
+          class="ui-btn secondary"
+          routerLink="/ajustes/dispositivos"
+          i18n="@@tv.setup.computer.link"
+          >Ver computadores</a
+        >
+        <details class="alternative">
+          <summary i18n="@@tv.setup.no-computer.title">
+            Não tenho computador para deixar ligado
+          </summary>
+          <p i18n="@@tv.setup.no-computer.body">
+            O controle pelo UniOver ainda precisa de um computador na casa da TV. Estar no mesmo
+            Wi-Fi pelo celular, sozinho, não conecta este controle à TV. Por enquanto, use o
+            controle da própria TV.
+          </p>
+        </details>
+      }
+      @case (1) {
+        <h3 #stepHeading id="guide-step-title" tabindex="-1" i18n="@@tv.setup.pair.title">
+          Conecte o computador
+        </h3>
+        <p i18n="@@tv.setup.pair.body">
+          No computador Windows, abra a página Conectar e baixe o conector. Na janela que abrir,
+          aprove este computador ou escaneie o QR com o celular de quem administra. Depois, toque em
+          Permitir na TV.
+        </p>
+        <a class="ui-btn secondary" routerLink="/conectar" i18n="@@tv.setup.pair.link"
+          >Abrir Conectar</a
+        >
+        <p class="note" i18n="@@tv.setup.pair.note">
+          Se o computador já aparece como conectado, siga para a próxima etapa.
+        </p>
+      }
+      @case (2) {
+        <h3 #stepHeading id="guide-step-title" tabindex="-1" i18n="@@tv.setup.add.title">
+          Adicione a TV
+        </h3>
+        <p i18n="@@tv.setup.add.body">
+          Ao aprovar o computador, dê um nome à TV. Ela deve aparecer no controle. Se você já tem um
+          computador pareado sem TV, abra Sistema e toque em Adicionar TV.
+        </p>
+        <a class="ui-btn secondary" routerLink="/ajustes/sistema" i18n="@@tv.setup.add.link"
+          >Abrir TVs em Sistema</a
+        >
+        <p class="note" i18n="@@tv.setup.add.note">
+          Se o computador não aparecer na lista, confira se ele está conectado em Dispositivos e se
+          está na mesma rede da TV.
+        </p>
+      }
+      @default {
+        <h3 #stepHeading id="guide-step-title" tabindex="-1" i18n="@@tv.setup.check.title">
+          Confira o controle
+        </h3>
+        <p i18n="@@tv.setup.check.body">
+          Volte ao controle e tente uma tecla que não desligue a TV. Se o controle de uma Android TV
+          ou Google TV mostrar Atenção, confira estes três casos:
+        </p>
+        <ul class="diagnostics">
+          @for (hint of hints; track hint.title) {
+            <li>
+              <details>
+                <summary>{{ hint.title }}</summary>
+                <p>{{ hint.body }}</p>
+              </details>
+            </li>
+          }
+        </ul>
+        <p class="note" i18n="@@tv.setup.check.note">
+          Essas são verificações para fazer na própria TV. O UniOver não consegue determinar sozinho
+          qual dos três casos ocorreu.
+        </p>
+        <a class="ui-btn secondary" routerLink="/tv" i18n="@@tv.setup.check.link"
+          >Voltar ao Controle</a
+        >
+      }
+    }
+  </section>
+
+  <nav class="steps" aria-label="Etapas da configuração" i18n-aria-label="@@tv.setup.navigation">
+    <button
+      type="button"
+      class="ui-btn secondary"
+      [disabled]="step() === 0"
+      (click)="previous()"
+      i18n="@@tv.setup.previous"
+    >
+      Voltar
+    </button>
+    @if (step() < 3) {
+      <button type="button" class="ui-btn primary" (click)="next()" i18n="@@tv.setup.next">
+        Próximo
+      </button>
+    } @else {
+      <a class="ui-btn primary" routerLink="/tv" i18n="@@tv.setup.done">Concluir</a>
+    }
+  </nav>
+</div>

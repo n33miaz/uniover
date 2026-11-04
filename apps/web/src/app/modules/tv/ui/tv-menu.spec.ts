@@ -48,11 +48,18 @@ describe('TvMenu', () => {
 
   it('gathers apps and customization for the person, and, apart, the one thing that affects everybody', () => {
     mount();
-    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Gerenciar TVs']);
+    expect(rows()).toEqual([
+      'Apps da TV',
+      'Mais botões',
+      'Personalizar',
+      'Gerenciar TVs',
+      'Ajuda para Configurar',
+    ]);
     expect(root.querySelectorAll('.ui-group')).toHaveLength(2);
     const bind = root.querySelector<HTMLAnchorElement>('a.ui-row')!;
     expect(bind.getAttribute('href')).toBe('/ajustes/sistema');
     expect(bind.querySelector('.ui-chip')?.textContent?.trim()).toBe('Afeta todos');
+    expect(root.querySelector('a[href="/tv/configurar"]')).not.toBeNull();
   });
 
   it('asks the screen to open Apps, More buttons or Customize, and leaves the closing to the screen', () => {
@@ -94,6 +101,7 @@ describe('TvMenu', () => {
     store.status.set('unconfigured');
     fixture.detectChanges();
     expect(rows().at(-1)).toBe('Configurar TV');
+    expect(root.querySelectorAll('a[href="/tv/configurar"]')).toHaveLength(1);
   });
 
   it('never shows the guest what changes the TV for everybody', () => {

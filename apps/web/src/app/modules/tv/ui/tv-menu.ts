@@ -14,6 +14,7 @@ export type TvMenuChoice = 'apps' | 'keys' | 'customize';
 
 /** Onde o administrador gerencia as TVs: quais existem, qual computador controla cada uma e quem usa (ajustes do sistema). */
 export const TV_BINDING_ROUTE = '/ajustes/sistema';
+export const TV_SETUP_ROUTE = '/tv/configurar';
 
 /**
  * Conteúdo do menu de três pontos do cabeçalho (vai dentro de um `TvPanel`). Reúne num lugar só o que antes ficava
@@ -45,7 +46,9 @@ export class TvMenu {
   protected readonly canOpenLivre = computed(
     () => !this.isGuest() && tvHasLivre(this.selection.selected()),
   );
-  protected readonly bindingRoute = TV_BINDING_ROUTE;
+  protected readonly bindingRoute = computed(() =>
+    this.store.status() === 'unconfigured' ? TV_SETUP_ROUTE : TV_BINDING_ROUTE,
+  );
   protected readonly bindingLabel = computed(() =>
     this.store.status() === 'unconfigured'
       ? $localize`:@@tv.menu.configure:Configurar TV`

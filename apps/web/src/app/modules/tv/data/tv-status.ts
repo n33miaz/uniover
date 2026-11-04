@@ -131,7 +131,7 @@ const NO_HINTS: readonly TvIndicatorHint[] = [];
  * Os três jeitos de o serviço do controle remoto da própria TV (o Android TV Remote Service, que o agente usa) falhar
  * sem culpa do UniOver. Quando o reparo automático desiste, é por um deles que se começa a procurar.
  */
-function remoteServiceHints(): readonly TvIndicatorHint[] {
+export function remoteServiceHints(): readonly TvIndicatorHint[] {
   return [
     {
       title: $localize`:@@tv.indicator.hint.outdated.title:Serviço Desatualizado`,
