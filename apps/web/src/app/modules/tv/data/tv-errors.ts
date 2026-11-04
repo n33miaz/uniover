@@ -52,6 +52,8 @@ const ADB_UNREACHABLE_CODES = new Set(['adb_unreachable', 'adb_unavailable', 'ad
  */
 function powerOffFailedMessage(code: string | null): string | null {
   switch (code) {
+    case 'power_off_unsafe':
+      return $localize`:@@tv.error.power-off-unsafe:O agente não oferece mais o desligamento com confirmação. Nenhum comando foi enviado. Atualize a TV no app antes de tentar novamente.`;
     case 'uncertain':
       return $localize`:@@tv.error.power-off-uncertain:Não deu para confirmar se a TV desligou, e a tecla não foi repetida. Olhe a TV antes de tentar de novo.`;
     case 'offline':

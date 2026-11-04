@@ -16,8 +16,8 @@ namespace UniOver.Modules.Tv.Features.PowerOff;
 
 /// <summary>
 /// Corpo opcional do pedido de desligar. <paramref name="Mode"/> <c>safe</c> pede o desligamento com leitura (o agente só
-/// aperta <c>POWER</c> com a TV lida como ligada e confirma o resultado); sem o corpo vale o comportamento de antes, que
-/// manda a tecla <c>POWER</c>.
+/// aperta <c>POWER</c> com a TV lida como ligada e confirma o resultado). Se a capacidade sumiu, nada é enviado. Sem o
+/// corpo vale o comportamento de antes, que manda a tecla <c>POWER</c>.
 /// </summary>
 internal sealed record PowerOffRequest(string? Mode);
 
@@ -141,7 +141,7 @@ internal static class PowerOffEndpoint
                 new Dictionary<string, string[]> { ["mode"] = ["O modo deve ser omitido ou ser safe."] });
         }
 
-        var (send, outcome) = await handler.HandleAsync(new PowerOffCommand(origin, safe), cancellationToken);
+        var (send, outcome) = await handler.HandleAsync(new PowerOffCommand(origin, safe, RequireSafe: safe), cancellationToken);
         return send.IsDelivered || outcome == PowerOffOutcomes.AlreadyOff
             ? TypedResults.Ok(new TvPowerOffOk(true, (int)send.Latency.TotalMilliseconds, outcome))
             : TvProblems.Fail(send);

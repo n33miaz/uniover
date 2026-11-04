@@ -46,6 +46,10 @@ describe('describeFailure', () => {
   });
 
   it('gives the codes of the safe power off their own message, and only for that request', () => {
+    const unsafe = http(502, 'command-failed', { agentError: 'power_off_unsafe' });
+    expect(describeFailure(unsafe, 'power-off').message).toBe(
+      'O agente não oferece mais o desligamento com confirmação. Nenhum comando foi enviado. Atualize a TV no app antes de tentar novamente.',
+    );
     const uncertain = http(502, 'command-failed', { agentError: 'uncertain' });
     expect(describeFailure(uncertain, 'power-off').message).toBe(
       'Não deu para confirmar se a TV desligou, e a tecla não foi repetida. Olhe a TV antes de tentar de novo.',
