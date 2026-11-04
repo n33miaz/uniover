@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.18](https://github.com/n33miaz/uniover/compare/v0.36.17...v0.36.18) (2026-11-04)
+
+
+### Bug Fixes
+
+* **agent:** check updates more often
+
 ## [0.36.17](https://github.com/n33miaz/uniover/compare/v0.36.16...v0.36.17) (2026-11-04)
 
 
