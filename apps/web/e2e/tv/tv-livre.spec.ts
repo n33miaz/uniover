@@ -73,8 +73,9 @@ async function openLivre(page: Page, tabName = 'Home da TV') {
   await page.goto('/tv/livre');
   await expect(page.getByRole('heading', { level: 1, name: 'TV Livre' })).toBeVisible();
   await expect(tabs(page)).toBeVisible();
-  if (tabName !== 'Home da TV') await tab(page, tabName).click();
-  await expect(tab(page, tabName)).toHaveAttribute('aria-selected', 'true');
+  const expected = livre.view.installed ? tabName : 'Instalação';
+  if (expected !== 'Home da TV' && livre.view.installed) await tab(page, expected).click();
+  await expect(tab(page, expected)).toHaveAttribute('aria-selected', 'true');
   await settle(page);
 }
 
@@ -99,26 +100,24 @@ async function box(locator: Locator) {
   return found!;
 }
 
-test.describe('o cartão na Início', () => {
-  test('aparece para o dono quando a TV declara o TV Livre e leva à tela', async ({ page }) => {
+test.describe('a entrada no menu da TV', () => {
+  test('aparece para o dono com TV compatível e leva à tela', async ({ page }) => {
     await page.goto('/');
-    const card = page.locator('article[data-module="tv-livre"]');
-    await expect(card).toBeVisible();
-    await expect(card.getByRole('heading', { name: 'TV Livre' })).toBeVisible();
+    await expect(page.locator('article[data-module="tv-livre"]')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
-    await card.getByRole('link', { name: 'TV Livre: Configurar' }).click();
+    await page.goto('/tv');
+    await page.getByRole('button', { name: 'Mais opções' }).click();
+    await page.getByRole('link', { name: /TV Livre/ }).click();
     await expect(page).toHaveURL(/\/tv\/livre$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV Livre' })).toBeVisible();
   });
 
-  test('não aparece para uma TV que não declara o TV Livre (a Samsung)', async ({ page }) => {
+  test('não aparece no menu da Samsung', async ({ page }) => {
     tv.tvs = [{ ...SAMSUNG }];
-    const listed = page.waitForResponse((response) => response.url().includes('/api/v1/tv/tvs'));
-    await page.goto('/');
-    await listed;
-    await expect(page.locator('article[data-module="tv"]')).toBeVisible();
+    await page.goto('/tv');
     await settle(page);
-    await expect(page.locator('article[data-module="tv-livre"]')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Mais opções' }).click();
+    await expect(page.getByRole('link', { name: /TV Livre/ })).toHaveCount(0);
     expect(livre.requests).toEqual([]);
   });
 
@@ -129,11 +128,13 @@ test.describe('o cartão na Início', () => {
     await page.goto('/');
     await expect(page.locator('article[data-module="tv"]')).toBeVisible();
     await expect(page.locator('article[data-module="tv-livre"]')).toHaveCount(0);
+    await page.goto('/tv');
+    await page.getByRole('button', { name: 'Mais opções' }).click();
+    await expect(page.getByRole('link', { name: /TV Livre/ })).toHaveCount(0);
     await page.goto('/tv/livre');
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('article[data-module="tv"]')).toBeVisible();
     expect(livre.requests).toEqual([]);
-    expect(tv.requests.some((r) => r.path === '/tvs')).toBe(false);
   });
 });
 
@@ -364,6 +365,7 @@ test.describe('Fundo', () => {
       'base64',
     );
     livre.view = livreView({
+      installed: true,
       hasPhoto: true,
       config: {
         ...(livreView()['config'] as object),
@@ -400,11 +402,11 @@ test.describe('Dormir', () => {
 });
 
 test.describe('Instalação', () => {
-  test('quando falta instalar, a ação principal abre o passo de instalação', async ({ page }) => {
+  test('quando falta instalar, abre somente o passo de instalação', async ({ page }) => {
     livre.view = livreView({ installed: false });
     await openLivre(page);
     await expect(button(applyBar(page), 'Aplicar na TV')).toHaveCount(0);
-    await button(applyBar(page), 'Instalar TV Livre primeiro').click();
+    await expect(tabs(page).getByRole('tab')).toHaveCount(1);
     await expect(tab(page, 'Instalação')).toHaveAttribute('aria-selected', 'true');
     await expect(button(page, 'Instalar')).toBeVisible();
     expect(livre.to('POST', '/apply')).toHaveLength(0);
@@ -435,6 +437,7 @@ test.describe('Instalação', () => {
 
     await button(page, 'Instalar').click();
     await expect(page.getByRole('status').filter({ hasText: 'TV Livre instalado.' })).toBeVisible();
+    await tab(page, 'Instalação').click();
     await expect(page.locator('.status')).toContainText('Versão 0.1.0');
     await expect(button(page, 'Definir Como Padrão')).toBeEnabled();
 
@@ -552,7 +555,7 @@ test.describe('erros', () => {
     livre.view = livreView({ supported: true, installed: false });
     await page.clock.fastForward(15_000);
     await expect(page.getByText('Esta TV não é compatível com o TV Livre.')).toHaveCount(0);
-    await expect(button(applyBar(page), 'Instalar TV Livre primeiro')).toBeVisible();
+    await expect(tab(page, 'Instalação')).toBeVisible();
     expect(livre.to('POST', '/refresh')).toHaveLength(1);
   });
 

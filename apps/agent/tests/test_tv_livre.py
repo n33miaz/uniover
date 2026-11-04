@@ -342,11 +342,71 @@ async def test_set_home_that_does_not_stick_goes_back_to_the_original(tmp_path: 
 
     await expect_error(livre, {"action": "set-home", "disableFactory": True}, "verify_failed")
 
-    # Sem verificação não se desativa nada, e a TV volta ao launcher de fábrica.
-    assert not any(c.startswith("pm disable") for c in android.log)
+    # A TV aceita o papel HOME mas não o aplica nem após desativar a Home de fábrica.
+    # O agente reativa o original antes de encerrar a tentativa.
+    assert f"pm disable-user --user 0 {FACTORY_PACKAGE}" in android.log
+    assert f"pm enable --user 0 {FACTORY_PACKAGE}" in android.log
     assert android.home == FACTORY
     assert f"am start -n {FACTORY}" in android.log
     assert android.black_screen is False
+
+
+async def test_factory_priority_requires_explicit_disable(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.factory_takes_priority = True
+
+    await expect_error(livre, {"action": "set-home"}, "factory_priority")
+
+    assert android.home == FACTORY
+    assert state.load()["disabled"] == []
+    assert not any(c.startswith("pm disable") for c in android.log)
+
+
+async def test_factory_priority_switches_after_verified_disable(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.factory_takes_priority = True
+
+    await livre.run({"action": "set-home", "disableFactory": True})
+
+    set_home = android.index(f"cmd package set-home-activity {HOME_COMPONENT}")
+    role = android.index("dumpsys role", set_home)
+    disable = android.index(f"pm disable-user --user 0 {FACTORY_PACKAGE}")
+    verify = android.index("cmd package resolve-activity", disable)
+    assert set_home < role < disable < verify
+    assert state.load()["disabled"] == [FACTORY_PACKAGE]
+    assert android._current_home() == HOME_COMPONENT
+    assert android.black_screen is False
+
+
+async def test_factory_priority_does_not_disable_when_home_role_did_not_change(
+    tmp_path: Path,
+) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.factory_takes_priority = True
+    android.role_sticks = False
+
+    await expect_error(livre, {"action": "set-home", "disableFactory": True}, "verify_failed")
+
+    assert not any(c.startswith("pm disable") for c in android.log)
+    assert state.load()["disabled"] == []
+    assert android.home == FACTORY
+
+
+async def test_state_read_repairs_an_interrupted_home_change(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    saved = state.load()
+    saved["disabled"] = [FACTORY_PACKAGE]
+    state.save(saved)
+    android.disabled.add(FACTORY_PACKAGE)
+    android.log.clear()
+
+    current = await livre.read_state()
+
+    assert current.is_home is False
+    assert FACTORY_PACKAGE not in android.disabled
+    assert state.load()["disabled"] == []
+    assert f"pm enable --user 0 {FACTORY_PACKAGE}" in android.log
+    assert android.home == FACTORY
 
 
 async def test_set_home_rejected_by_the_system_changes_nothing(tmp_path: Path) -> None:
