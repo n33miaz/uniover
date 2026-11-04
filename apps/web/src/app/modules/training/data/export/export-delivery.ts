@@ -1,6 +1,6 @@
-import { DOCUMENT } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
-import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
+import { DOCUMENT } from '@angular/common';
+import { BrowserFileDownload } from '../../../../core/download/browser-file-download';
 
 /**
  * O que aconteceu ao compartilhar. `shared`: a folha de compartilhar do sistema recebeu. `copied`: não há compartilhar
@@ -15,9 +15,6 @@ export interface SharePayload {
   readonly file?: File;
 }
 
-/** Quanto tempo o endereço do arquivo baixado fica vivo: alguns navegadores só terminam o download depois do clique. */
-const OBJECT_URL_LIFETIME_MS = 60_000;
-
 /**
  * Entrega ao usuário: baixar um arquivo e compartilhar texto ou arquivo pelo sistema. Tudo é melhor esforço: o navegador
  * decide o que existe (o compartilhar de **arquivo** em PWA instalada no iPhone e o download dela **não foram medidos**).
@@ -25,22 +22,11 @@ const OBJECT_URL_LIFETIME_MS = 60_000;
 @Injectable()
 export class ExportDelivery {
   private readonly doc = inject(DOCUMENT);
-  private readonly runtime = inject(QUEUE_RUNTIME);
+  private readonly downloadFile = inject(BrowserFileDownload);
 
   /** Baixa o arquivo por uma âncora com `download`. */
   download(blob: Blob, filename: string): void {
-    const win = this.doc.defaultView;
-    if (!win) return;
-    const url = win.URL.createObjectURL(blob);
-    const anchor = this.doc.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.rel = 'noopener';
-    anchor.style.display = 'none';
-    this.doc.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    this.runtime.setTimeout(() => win.URL.revokeObjectURL(url), OBJECT_URL_LIFETIME_MS);
+    this.downloadFile.save(blob, filename);
   }
 
   /**
