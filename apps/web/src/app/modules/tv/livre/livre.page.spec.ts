@@ -540,6 +540,19 @@ describe('LivrePage', () => {
       expect(api.setHome).toHaveBeenLastCalledWith(true);
     });
 
+    it('shows the applied factory state after setting the Home', async () => {
+      await openInstall({
+        installed: true,
+        isHome: true,
+        factoryLauncher: 'com.exemplo.home/.MainActivity',
+        disabledPackages: ['com.exemplo.home'],
+      });
+      const option = q<HTMLInputElement>('.option input');
+      expect(option.checked).toBe(true);
+      expect(option.disabled).toBe(true);
+      expect(q('.option .hint').textContent).toContain('Já desativado');
+    });
+
     it('always shows "Voltar ao Original" for a compatible TV, even before installing', async () => {
       await openInstall({ installed: false });
       expect(button('Voltar ao Original')).toBeDefined();
