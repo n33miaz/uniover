@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.17](https://github.com/n33miaz/uniover/compare/v0.36.16...v0.36.17) (2026-11-04)
+
+
+### Bug Fixes
+
+* **tv:** guide launcher setup and home switch
+
 ## [0.36.16](https://github.com/n33miaz/uniover/compare/v0.36.15...v0.36.16) (2026-11-04)
 
 
