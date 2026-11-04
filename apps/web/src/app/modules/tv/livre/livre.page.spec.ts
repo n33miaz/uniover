@@ -185,7 +185,19 @@ describe('LivrePage', () => {
   });
 
   describe('Aplicar na TV', () => {
+    it('guides installation before sending any configuration to the TV', async () => {
+      await render();
+      expect(button('Aplicar na TV')).toBeUndefined();
+      button('Instalar TV Livre primeiro')!.click();
+      await change();
+      expect(tab('Instalação').getAttribute('aria-selected')).toBe('true');
+      expect(button('Instalar')).toBeDefined();
+      expect(api.saveConfig).not.toHaveBeenCalled();
+      expect(api.apply).not.toHaveBeenCalled();
+    });
+
     it('is on the screens that edit the configuration, not on Instalação', async () => {
+      api.get.mockResolvedValue(view({ installed: true }));
       await render();
       for (const label of ['Home da TV', 'Fundo', 'Dormir']) {
         await open(label);
@@ -196,10 +208,11 @@ describe('LivrePage', () => {
     });
 
     it('saves and applies, showing the busy state and then the result', async () => {
+      api.get.mockResolvedValue(view({ installed: true }));
       await render();
       let release!: (value: TvLivreView) => void;
       api.saveConfig.mockReturnValue(new Promise<TvLivreView>((resolve) => (release = resolve)));
-      api.apply.mockResolvedValue(view({ revision: 1 }));
+      api.apply.mockResolvedValue(view({ installed: true, revision: 1 }));
       button('Aplicar na TV')!.click();
       await change();
       expect(button('Aplicando…')!.getAttribute('aria-busy')).toBe('true');
@@ -214,8 +227,9 @@ describe('LivrePage', () => {
     });
 
     it('shows a failure as an alert, translated, and keeps the button for another try', async () => {
+      api.get.mockResolvedValue(view({ installed: true }));
       await render();
-      api.saveConfig.mockResolvedValue(view());
+      api.saveConfig.mockResolvedValue(view({ installed: true }));
       api.apply.mockRejectedValue(new Error('x'));
       button('Aplicar na TV')!.click();
       await change();
@@ -233,6 +247,7 @@ describe('LivrePage', () => {
       await render();
       expect(q('.ui-notice.warn').textContent).toContain('Esta TV não é compatível');
       expect(button('Aplicar na TV')).toBeUndefined();
+      expect(button('Verificar novamente')).toBeDefined();
       await open('Instalação');
       expect(button('Voltar ao Original')).toBeUndefined();
       expect(button('Instalar')).toBeUndefined();
@@ -325,6 +340,7 @@ describe('LivrePage', () => {
     });
 
     it('sends the chosen apps in order when applying', async () => {
+      api.get.mockResolvedValue(view({ installed: true }));
       await render();
       q<HTMLInputElement>('input[aria-label="Mostrar Beta na Home"]').click();
       await change();
@@ -427,6 +443,7 @@ describe('LivrePage', () => {
 
   describe('Dormir', () => {
     beforeEach(async () => {
+      api.get.mockResolvedValue(view({ installed: true }));
       await render();
       await open('Dormir');
     });

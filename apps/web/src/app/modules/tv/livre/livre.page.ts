@@ -53,6 +53,7 @@ export class LivrePage {
 
   /** A barra "Aplicar na TV" existe nas telas que editam a configuração, e só com a TV ao alcance. */
   protected readonly showApply = computed(() => this.store.canUse() && this.active() !== 'install');
+  protected readonly needsInstall = computed(() => this.store.view()?.installed === false);
   protected readonly applying = computed(() => this.store.busy() === 'apply');
 
   constructor() {

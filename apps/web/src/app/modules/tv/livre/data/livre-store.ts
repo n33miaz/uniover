@@ -81,6 +81,8 @@ export class TvLivreStore {
   private readonly _loadFailure = signal<string | null>(null);
   private readonly _busy = signal<LivreAction | null>(null);
   private readonly _notice = signal<LivreNotice | null>(null);
+  private supportRetry: ReturnType<typeof setTimeout> | null = null;
+  private supportAttempts = 0;
 
   readonly view = this._view.asReadonly();
   readonly draft = this._draft.asReadonly();
@@ -160,11 +162,13 @@ export class TvLivreStore {
     this.started = true;
     // O aviso é do pedido de antes de sair da tela; o estado e o rascunho ficam (a tela abre já com eles e renova por baixo).
     this._notice.set(null);
+    this.supportAttempts = 0;
     void this.load();
   }
 
   stop(): void {
     this.started = false;
+    this.clearSupportRetry();
   }
 
   /** Lê o estado e os atalhos da TV (para nome e ícone dos apps). Sem estado ainda, mostra a espera; com ele, atualiza por baixo. */
@@ -373,6 +377,8 @@ export class TvLivreStore {
   private adopt(view: TvLivreView, epoch: number, resync = false): void {
     if (epoch !== this.epoch) throw new StaleRequest();
     this._view.set(view);
+    if (view.supported === false && view.available) this.scheduleSupportRetry();
+    else this.clearSupportRetry();
     if (this._draft() === null || resync) this._draft.set(normalizeApps(view.config));
     if (!view.hasPhoto) this._photoUrl.set(null);
     else if (this._photoUrl() === null) void this.loadPhoto(epoch);
@@ -415,6 +421,8 @@ export class TvLivreStore {
   }
 
   private reset(): void {
+    this.clearSupportRetry();
+    this.supportAttempts = 0;
     this.epoch++;
     this._view.set(null);
     this._shortcuts.set([]);
@@ -424,5 +432,39 @@ export class TvLivreStore {
     this._loadFailure.set(null);
     this._busy.set(null);
     this._notice.set(null);
+  }
+
+  private scheduleSupportRetry(): void {
+    if (!this.started || this.supportRetry !== null || this.supportAttempts >= 8) return;
+    this.supportRetry = setTimeout(() => {
+      this.supportRetry = null;
+      void this.recheckSupport();
+    }, 15_000);
+  }
+
+  private async recheckSupport(): Promise<void> {
+    if (!this.started || this._view()?.supported !== false) return;
+    if (this._busy() !== null) {
+      this.scheduleSupportRetry();
+      return;
+    }
+    this.supportAttempts++;
+    const epoch = this.epoch;
+    try {
+      const view = await this.api.refresh();
+      if (this.started && epoch === this.epoch) this.adopt(view, epoch);
+    } catch {
+      // A TV pode ainda estar inicializando; a próxima tentativa usa o mesmo estado na tela.
+    } finally {
+      if (this.started && epoch === this.epoch && this._view()?.supported === false) {
+        this.scheduleSupportRetry();
+      }
+    }
+  }
+
+  private clearSupportRetry(): void {
+    if (this.supportRetry === null) return;
+    clearTimeout(this.supportRetry);
+    this.supportRetry = null;
   }
 }

@@ -37,6 +37,7 @@ test.beforeEach(async ({ context, page }) => {
   tv = await mockTvApi(context, identity);
   // Depois do mock da TV: o Playwright atende primeiro a rota registrada por último.
   livre = await mockLivreApi(context, identity);
+  livre.view = livreView({ installed: true, version: '0.1.0' });
   await installFakeEventSource(page);
   identity.loggedIn = true;
   tv.tvs = [{ ...SALA }];
@@ -399,6 +400,16 @@ test.describe('Dormir', () => {
 });
 
 test.describe('Instalação', () => {
+  test('quando falta instalar, a ação principal abre o passo de instalação', async ({ page }) => {
+    livre.view = livreView({ installed: false });
+    await openLivre(page);
+    await expect(button(applyBar(page), 'Aplicar na TV')).toHaveCount(0);
+    await button(applyBar(page), 'Instalar TV Livre primeiro').click();
+    await expect(tab(page, 'Instalação')).toHaveAttribute('aria-selected', 'true');
+    await expect(button(page, 'Instalar')).toBeVisible();
+    expect(livre.to('POST', '/apply')).toHaveLength(0);
+  });
+
   test('"Voltar ao Original" fica sempre à vista numa TV compatível, em qualquer estado', async ({
     page,
   }) => {
@@ -417,6 +428,7 @@ test.describe('Instalação', () => {
   test('segue a ordem segura: instalar, depois definir como padrão (com a fábrica ligada por padrão)', async ({
     page,
   }) => {
+    livre.view = livreView({ installed: false });
     await openLivre(page, 'Instalação');
     await expect(page.locator('.status')).toContainText('Não');
     await expect(button(page, 'Definir Como Padrão')).toBeDisabled();
@@ -528,6 +540,20 @@ test.describe('erros', () => {
     await tab(page, 'Instalação').click();
     await expect(button(page, 'Voltar ao Original')).toHaveCount(0);
     await expect(button(page, 'Instalar')).toHaveCount(0);
+  });
+
+  test('reconfere sozinha uma incompatibilidade temporária e libera a instalação', async ({
+    page,
+  }) => {
+    await page.clock.install();
+    livre.view = livreView({ supported: false, installed: false });
+    await openLivre(page);
+    await expect(page.getByText('Esta TV não é compatível com o TV Livre.')).toBeVisible();
+    livre.view = livreView({ supported: true, installed: false });
+    await page.clock.fastForward(15_000);
+    await expect(page.getByText('Esta TV não é compatível com o TV Livre.')).toHaveCount(0);
+    await expect(button(applyBar(page), 'Instalar TV Livre primeiro')).toBeVisible();
+    expect(livre.to('POST', '/refresh')).toHaveLength(1);
   });
 
   test('o agente fora do ar desliga as ações, mas "Voltar ao Original" segue à vista', async ({

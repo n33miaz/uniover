@@ -33,6 +33,14 @@
       <div class="ui-notice warn block" role="status">
         @if (block === 'unsupported') {
           <p i18n="@@tv-livre.block.unsupported">Esta TV não é compatível com o TV Livre.</p>
+          <button
+            type="button"
+            class="ui-btn secondary"
+            [disabled]="store.busy() !== null"
+            (click)="store.refresh()"
+          >
+            <span i18n="@@tv-livre.recheck">Verificar novamente</span>
+          </button>
         } @else {
           <p i18n="@@tv-livre.block.offline">O agente da TV está fora do ar.</p>
           <button type="button" class="ui-btn secondary" (click)="store.load()">
@@ -68,20 +76,26 @@
       <div class="ui-action-bar">
         <div class="ui-action-bar-inner">
           <ng-container *ngTemplateOutlet="noticeTemplate" />
-          <button
-            type="button"
-            class="ui-btn primary block"
-            [disabled]="store.busy() !== null"
-            [attr.aria-busy]="applying()"
-            (click)="store.apply()"
-          >
-            @if (applying()) {
-              <span class="ui-spinner" aria-hidden="true"></span>
-              <span i18n="@@tv-livre.apply.busy">Aplicando…</span>
-            } @else {
-              <span i18n="@@tv-livre.apply">Aplicar na TV</span>
-            }
-          </button>
+          @if (needsInstall()) {
+            <button type="button" class="ui-btn primary block" (click)="select('install')">
+              <span i18n="@@tv-livre.go-to-install">Instalar TV Livre primeiro</span>
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="ui-btn primary block"
+              [disabled]="store.busy() !== null"
+              [attr.aria-busy]="applying()"
+              (click)="store.apply()"
+            >
+              @if (applying()) {
+                <span class="ui-spinner" aria-hidden="true"></span>
+                <span i18n="@@tv-livre.apply.busy">Aplicando…</span>
+              } @else {
+                <span i18n="@@tv-livre.apply">Aplicar na TV</span>
+              }
+            </button>
+          }
         </div>
       </div>
     } @else {
