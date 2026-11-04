@@ -36,8 +36,9 @@ const UA = {
 
 let identity: IdentityMock;
 
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, page }) => {
   test.setTimeout(75_000);
+  await page.clock.install();
   identity = await mockIdentityApi(context);
   await mockTvApi(context, identity);
 });
@@ -297,7 +298,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     // Recarregar não mostra de novo (a conferência espera mais que o prazo da folha).
     await page.reload();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
   });
 
@@ -323,7 +324,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     expect(await storedMemory(page)).toEqual({ never: true });
 
     await page.reload();
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
 
     // A linha permanente continua lá e abre a folha (sem "Não mostrar de novo": a pessoa pediu para ver).
@@ -370,14 +371,14 @@ test.describe('no ambiente de fábrica do projeto', () => {
     // Recarregar o controle não traz a folha de volta (a conferência espera mais que o prazo dela).
     await page.reload();
     await settleTv(page);
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
     expect(await permanentControls(page)).toBe(withHint);
 
     const installed = await context.newPage();
     await simulateStandalone(installed);
     await showTv(installed);
-    await installed.waitForTimeout(AFTER_DELAY_MS);
+    await installed.clock.fastForward(AFTER_DELAY_MS);
     await expect(sheetOf(installed)).toHaveCount(0);
     expect(withHint).toBe(await permanentControls(installed));
     await installed.close();
@@ -453,7 +454,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     const customize = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(customize).toBeVisible();
 
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
     await expect(customize).toBeVisible();
 
@@ -470,7 +471,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await signInAsOwner();
     await page.goto('/?uniover_app=root');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
 
     await page.goto('/ajustes/aparencia');
@@ -506,7 +507,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
           ] as const,
       ),
     ).toEqual([false, true]);
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
   });
 });
@@ -692,7 +693,9 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     expect(await storedMemory(page)).toEqual({ installed: true, never: true });
   });
 
-  test('Treino aberto dentro do app geral no Android oferece o próprio atalho', async ({ page }) => {
+  test('Treino aberto dentro do app geral no Android oferece o próprio atalho', async ({
+    page,
+  }) => {
     await simulateStandalone(page);
     await page.addInitScript(() => {
       localStorage.setItem('uniover.install-hint.v1.treino', JSON.stringify({ installed: true }));
@@ -759,7 +762,7 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     await signInAsOwner();
     await page.goto('/treino/?uniover_app=treino');
     await expect(trainingHeading(page)).toBeVisible();
-    await page.waitForTimeout(AFTER_DELAY_MS);
+    await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
   });
 });
