@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.27](https://github.com/n33miaz/uniover/compare/v0.36.26...v0.36.27) (2026-11-04)
+
+
+### Bug Fixes
+
+* **training:** count catalog via indexes
+
 ## [0.36.26](https://github.com/n33miaz/uniover/compare/v0.36.25...v0.36.26) (2026-11-04)
 
 
