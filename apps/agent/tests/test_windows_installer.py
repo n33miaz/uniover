@@ -86,8 +86,8 @@ def test_startup_shortcut_script_requests_the_tray_without_touching_the_agent(
 
 def test_the_wrapper_checks_for_updates_while_the_agent_is_alive_and_rolls_back_bad_ones() -> None:
     wrapper = RUNNER.read_text(encoding="utf-8")
-    assert "AddHours(6)" in wrapper
-    assert "Get-Random -Minimum 0 -Maximum 46" in wrapper
+    assert "AddMinutes(10)" in wrapper
+    assert "Get-Random -Minimum 0 -Maximum 120" in wrapper
     assert "app.previous" in wrapper
     assert ".blocked-versions" in wrapper
     assert "$falls -lt 3" in wrapper
