@@ -749,7 +749,8 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         monotonic=clock.monotonic,
     )
     manager = setup.manager
-    manager.add_channel(adb)
+    # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
+    manager.add_channel(adb, connect_on_warm=False)
 
     focus_closer, light_settings = compose_light_settings(
         setup, adb, clock, keep, lambda: cleanup.running

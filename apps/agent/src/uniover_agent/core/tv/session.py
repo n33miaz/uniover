@@ -128,6 +128,7 @@ class TvSessionError(Exception):
 class _Registered:
     channel: TvChannel
     required: bool
+    connect_on_warm: bool = True
 
 
 class TvSessionManager:
@@ -260,15 +261,20 @@ class TvSessionManager:
         """
         self._repair_callbacks.append(callback)
 
-    def add_channel(self, channel: TvChannel, *, required: bool = False) -> None:
-        """Registra outro canal (ADB) para abrir e fechar junto com a sessão.
+    def add_channel(
+        self, channel: TvChannel, *, required: bool = False, connect_on_warm: bool = True
+    ) -> None:
+        """Registra outro canal (ADB) para acompanhar a sessão.
 
-        Canal opcional que falha ao abrir só vai para o log: o controle por teclas segue.
+        Canal opcional que falha ao abrir só vai para o log: o controle por teclas segue. Um canal
+        adiado é fechado junto com a sessão, mas sua própria operação o abre quando precisar.
         """
-        self._channels.append(_Registered(channel, required))
+        if required and not connect_on_warm:
+            raise ValueError("canal obrigatório precisa abrir junto com a sessão")
+        self._channels.append(_Registered(channel, required, connect_on_warm))
 
     def set_volume_reader(self, reader: Callable[[], Awaitable[int | None]] | None) -> None:
-        """Liga a leitura de volume depois da criação (a Android a recebe junto com o canal ADB)."""
+        """Liga a leitura de volume depois da criação (a Android a lê pelo ADB em segundo plano)."""
         self._volume_reader = reader
 
     def touch(self) -> None:
@@ -787,6 +793,8 @@ class TvSessionManager:
         self._remote_volume_seen = False
         opened: list[TvChannel] = []
         for reg in self._channels:
+            if not reg.connect_on_warm:
+                continue
             try:
                 await reg.channel.connect()
             except TvChannelError as exc:
