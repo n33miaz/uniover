@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.28](https://github.com/n33miaz/uniover/compare/v0.36.27...v0.36.28) (2026-11-04)
+
+
+### Bug Fixes
+
+* **tv:** show factory launcher state
+
 ## [0.36.27](https://github.com/n33miaz/uniover/compare/v0.36.26...v0.36.27) (2026-11-04)
 
 
