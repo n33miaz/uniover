@@ -23,7 +23,7 @@ from uniover_agent.core.tv.livre import (
     TvLivre,
     is_protected_for_disable,
 )
-from uniover_agent.ports import AdbNotReady
+from uniover_agent.ports import AdbNotReady, AdbTimeout
 from uniover_agent.ports.tv_livre import LauncherApkError, ShellResult
 
 from .support_livre import (
@@ -376,6 +376,46 @@ async def test_factory_priority_switches_after_verified_disable(tmp_path: Path) 
     assert state.load()["disabled"] == [FACTORY_PACKAGE]
     assert android._current_home() == HOME_COMPONENT
     assert android.black_screen is False
+
+
+async def test_timeout_after_setting_home_restores_the_factory(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.factory_takes_priority = True
+    android.timeout_after_set_home_once = True
+
+    with pytest.raises(AdbTimeout):
+        await livre.run({"action": "set-home", "disableFactory": True})
+
+    assert android.home == FACTORY
+    assert FACTORY_PACKAGE not in android.disabled
+    assert state.load()["disabled"] == []
+    assert android.black_screen is False
+
+
+async def test_timeout_after_factory_disable_reenables_it(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.factory_takes_priority = True
+    android.timeout_during_disable_once = True
+
+    with pytest.raises(AdbTimeout):
+        await livre.run({"action": "set-home", "disableFactory": True})
+
+    assert android.home == FACTORY
+    assert FACTORY_PACKAGE not in android.disabled
+    assert state.load()["disabled"] == []
+    assert android.black_screen is False
+
+
+async def test_next_state_read_repairs_a_partial_home_role(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.factory_takes_priority = True
+    android.home = HOME_COMPONENT
+
+    current = await livre.read_state()
+
+    assert current.is_home is False
+    assert android.home == FACTORY
+    assert state.load()["disabled"] == []
 
 
 async def test_factory_priority_does_not_disable_when_home_role_did_not_change(

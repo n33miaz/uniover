@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image
 
 from uniover_agent.core.tv.livre import FILES_DIR, HOME_COMPONENT, PACKAGE
-from uniover_agent.ports import LaunchableApp
+from uniover_agent.ports import AdbTimeout, LaunchableApp
 from uniover_agent.ports.tv_livre import LauncherApk, LauncherApkError, ShellResult
 
 FACTORY = "com.google.android.apps.tv.launcherx/.home.HomeActivity"
@@ -55,6 +55,8 @@ class FakeAndroid:
         self.ours_resolves = True  # falso: o sistema ignora a escolha da nossa home
         self.factory_takes_priority = False
         self.role_sticks = True
+        self.timeout_after_set_home_once = False
+        self.timeout_during_disable_once = False
         self.install_text = "Performing Streamed Install\nSuccess\n"
         self.packages: dict[str, str] = {  # pacote -> pasta do APK (de fábrica ou atualizado)
             FACTORY_PACKAGE: "/system_ext/priv-app/Launcher/Launcher.apk",
@@ -112,7 +114,9 @@ class FakeAndroid:
         # A TCL real imprime linhas de ruído antes de toda resposta.
         return ShellResult(result.ok, NOISE + result.text) if self.noise else result
 
-    async def _answer(self, command: str) -> ShellResult:  # noqa: PLR0911, PLR0912 - tabela de comandos
+    async def _answer(  # noqa: PLR0911, PLR0912, PLR0915 - tabela de comandos
+        self, command: str
+    ) -> ShellResult:
         self.log.append(command)
         if any(trecho in command for trecho in self.fail):
             return ShellResult(False, "Error: falha simulada")
@@ -135,6 +139,9 @@ class FakeAndroid:
         if command == f"dumpsys package {PACKAGE}":
             return ShellResult(True, "    versionName=0.30.0\n")
         if command.startswith("cmd package resolve-activity"):
+            if self.home == HOME_COMPONENT and self.timeout_after_set_home_once:
+                self.timeout_after_set_home_once = False
+                raise AdbTimeout("a TV demorou demais para responder ao ADB")
             current = self._current_home()
             return ShellResult(
                 True,
@@ -157,6 +164,9 @@ class FakeAndroid:
             if self.die_after_disable:
                 self.dead.add(PACKAGE)
             self._check_black_screen()
+            if self.timeout_during_disable_once:
+                self.timeout_during_disable_once = False
+                raise AdbTimeout("a TV demorou demais para responder ao ADB")
             return ShellResult(True, f"Package {package} new state: disabled-user\n")
         if command.startswith("pm enable"):
             package = command.rsplit(maxsplit=1)[-1]

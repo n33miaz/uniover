@@ -67,6 +67,9 @@ _log = logging.getLogger(__name__)
 
 DEFAULT_PORT: Final = 5555
 DEFAULT_TIMEOUT_SECONDS: Final = 5.0
+# Passos administrativos do TV Livre podem fazer o Android reorganizar a Home e demorar mais
+# que uma tecla. O limite curto continua valendo para os comandos do controle.
+LIVRE_SHELL_TIMEOUT_SECONDS: Final = 15.0
 # Depois de uma falha de conexão, o caminho preguiçoso (comando sem canal aberto) espera isto
 # antes de tentar de novo; a abertura explícita da sessão sempre tenta.
 DEFAULT_RETRY_AFTER_SECONDS: Final = 30.0
@@ -542,7 +545,7 @@ class AdbTv:
     async def shell(self, command: str) -> ShellResult:
         async with self._lock:
             await self._ensure_connected_locked()
-            output = await self._shell(command)
+            output = await self._shell(command, timeout=LIVRE_SHELL_TIMEOUT_SECONDS)
         return ShellResult(output.returncode == 0, output.text)
 
     async def push(self, local: Path, remote: str) -> None:
@@ -593,9 +596,18 @@ class AdbTv:
         if not command_succeeded(output):
             raise AdbCommandFailed(message)
 
-    async def _shell(self, command: str) -> AdbOutput:
+    async def _shell(
+        self,
+        command: str,
+        *,
+        timeout: float | None = None,  # noqa: ASYNC109
+    ) -> AdbOutput:
         """Um comando fixo no shell da TV. Se o canal caiu, marca e avisa (o próximo reconecta)."""
-        output = await self._exec("-s", self._serial, "shell", command)
+        try:
+            output = await self._exec("-s", self._serial, "shell", command, timeout=timeout)
+        except AdbTimeout:
+            self._connected = False
+            raise
         state = parse_device_state(output.text) if output.returncode != 0 else DeviceState.DEVICE
         if state is DeviceState.UNAUTHORIZED:
             self._connected = False

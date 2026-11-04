@@ -287,15 +287,21 @@ class TvLivre:
             isinstance(factory, str)
             and _COMPONENT.fullmatch(factory)
             and isinstance(disabled, list)
-            and _package_of(factory) in disabled
             and not is_home
         ):
-            # A TV ou o agente pode cair entre desativar a Home antiga e confirmar a nova.
-            # Na próxima leitura, devolve o caminho conhecido antes de anunciar o estado ao celular.
-            await self._restore_home(factory, enable=True)
-            if await self._resolved_home_package() == _package_of(factory):
-                await self._forget_disabled(stored, _package_of(factory))
-                stored = self._state.load()
+            package = _package_of(factory)
+            factory_may_be_disabled = package in disabled
+            role_is_ours = await self._home_role_holder() == PACKAGE
+            if factory_may_be_disabled or role_is_ours:
+                # Uma queda pode ocorrer depois de mudar o papel HOME e antes de desativar a
+                # fábrica, ou depois de desativá-la. Em ambos os casos a próxima leitura repara.
+                await self._restore_home(factory, enable=factory_may_be_disabled)
+                if (
+                    await self._resolved_home_package() == package
+                    and await self._home_role_holder() == package
+                ):
+                    await self._forget_disabled(stored, package)
+                    stored = self._state.load()
         ours: list[str] = [p for p in stored.get("disabled", []) if is_valid_package_name(p)]
         return LivreState(
             True,
@@ -411,7 +417,8 @@ class TvLivre:
             return stored
         current = await self._resolved_home()
         candidates = [
-            c for c in _components((await self._adb.shell(_QUERY_HOME)).text)
+            c
+            for c in _components((await self._adb.shell(_QUERY_HOME)).text)
             if _package_of(c) != PACKAGE
         ]
         candidates = list(dict.fromkeys(candidates))
@@ -531,60 +538,99 @@ class TvLivre:
         if "result=1" not in result.text:
             raise LivreError("push_failed", "A TV não aceitou a configuração.")
 
-    async def _set_home(self, disable_factory: bool) -> None:
+    async def _set_home(  # noqa: PLR0912 - cada ramo é uma verificação ou volta da troca
+        self, disable_factory: bool
+    ) -> None:
         await self._require_installed()
         stored = await self._capture_original()
         factory = str(stored["factory"])
+        package = _package_of(factory)
         # Antes de tocar na tela inicial: a home nova precisa abrir e ficar de pé.
         await self._require_launcher_runs()
-        if not await self._set_home_activity(HOME_COMPONENT):
-            raise LivreError("set_home_failed", "A TV não aceitou a nova tela inicial; nada mudou.")
-        resolved = await self._resolved_home_package()
-        if resolved != PACKAGE and not await self._holds_home_role():
-            await self._restore_home(factory)
-            raise LivreError(
-                "verify_failed", "A nova tela inicial não ficou como padrão; voltei à original."
+        phase = "definir o papel HOME"
+        try:
+            # Mesmo um timeout aqui pode ter mudado o papel no Android: a volta cobre o comando.
+            if not await self._set_home_activity(HOME_COMPONENT):
+                raise LivreError(
+                    "set_home_failed", "A TV não aceitou a nova tela inicial; nada mudou."
+                )
+            phase = "conferir a prioridade da Home"
+            resolved = await self._resolved_home_package()
+            if resolved != PACKAGE and not await self._holds_home_role():
+                raise LivreError(
+                    "verify_failed", "A nova tela inicial não ficou como padrão; voltei à original."
+                )
+            if resolved != PACKAGE and not disable_factory:
+                raise LivreError(
+                    "factory_priority",
+                    "Esta TV mantém a tela de fábrica em primeiro lugar. Para usar o TV Livre, "
+                    "ative Desativar o Launcher de Fábrica e tente novamente.",
+                )
+            phase = "abrir a Home antes de desativar a fábrica"
+            if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
+                raise LivreError(
+                    "launcher_not_running", "A nova tela inicial não abriu; voltei à original."
+                )
+            if disable_factory:
+                phase = "conferir o papel HOME antes de desativar a fábrica"
+                if not await self._holds_home_role():
+                    raise LivreError(
+                        "verify_failed",
+                        "A TV não confirmou o TV Livre como Home; voltei à original.",
+                    )
+                disabled = list(stored.get("disabled", []))
+                if package not in disabled:
+                    disabled.append(package)
+                    stored["disabled"] = disabled
+                    # Persistir antes: uma queda ainda deixa a volta possível.
+                    self._state.save(stored)
+                phase = "desativar a Home de fábrica"
+                result = await self._adb.shell(f"pm disable-user --user 0 {package}")
+                if not result.ok or "disabled" not in result.text:
+                    raise LivreError(
+                        "disable_failed",
+                        "A TV não deixou desativar o launcher de fábrica.",
+                    )
+                phase = "conferir a Home após desativar a fábrica"
+                if await self._resolved_home_package() != PACKAGE:
+                    raise LivreError(
+                        "verify_failed",
+                        "A tela inicial não mudou; reativei a fábrica e voltei.",
+                    )
+                phase = "abrir a Home após desativar a fábrica"
+                if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
+                    raise LivreError(
+                        "verify_failed",
+                        "A Home nova caiu depois da troca; reativei a fábrica e voltei.",
+                    )
+        except (AdbError, LivreError, OSError) as exc:
+            _log.warning(
+                "TV Livre: falha ao definir Home na etapa %s (%s)",
+                phase,
+                type(exc).__name__,
             )
-        if resolved != PACKAGE and not disable_factory:
-            await self._restore_home(factory)
-            raise LivreError(
-                "factory_priority",
-                "Esta TV mantém a tela de fábrica em primeiro lugar. Para usar o TV Livre, "
-                "ative Desativar o Launcher de Fábrica e tente novamente.",
-            )
-        if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
-            await self._restore_home(factory)
-            raise LivreError(
-                "launcher_not_running",
-                "A nova tela inicial não abriu como padrão; voltei à original.",
-            )
-        if not disable_factory:
-            return
-        package = _package_of(factory)
-        disabled = list(stored.get("disabled", []))
-        if package not in disabled:
-            disabled.append(package)
-            stored["disabled"] = disabled
-            self._state.save(stored)  # antes de desativar: uma queda ainda deixa a volta possível
-        result = await self._adb.shell(f"pm disable-user --user 0 {package}")
-        if not result.ok or "disabled" not in result.text:
-            await self._restore_home(factory, enable=True)
-            await self._forget_disabled(stored, package)
-            raise LivreError("disable_failed", "A TV não deixou desativar o launcher de fábrica.")
-        if await self._resolved_home_package() != PACKAGE or not await self._runs(
-            _OPEN_LAUNCHER, PACKAGE
-        ):
-            await self._restore_home(factory, enable=True)
-            await self._forget_disabled(stored, package)
-            raise LivreError(
-                "verify_failed", "A tela inicial mudou ao desativar o original; reativei e voltei."
-            )
+            try:
+                await self._restore_home(factory, enable=disable_factory)
+                if (
+                    await self._resolved_home_package() == package
+                    and await self._home_role_holder() == package
+                ):
+                    if disable_factory:
+                        await self._forget_disabled(stored, package)
+                else:
+                    _log.error("TV Livre: a Home de fábrica ainda não foi confirmada após a volta")
+            except AdbError, OSError:
+                _log.exception("TV Livre: a volta automática da Home ficou pendente")
+            raise
 
     async def _holds_home_role(self) -> bool:
         """Confere o papel HOME antes de desativar uma Home de fábrica com prioridade maior."""
+        return await self._home_role_holder() == PACKAGE
+
+    async def _home_role_holder(self) -> str | None:
         result = await self._adb.shell("dumpsys role")
         holder = _HOME_ROLE_HOLDER.search(result.text) if result.ok else None
-        return holder is not None and holder.group(1) == PACKAGE
+        return holder.group(1) if holder is not None else None
 
     async def _resolved_home_package(self) -> str | None:
         component = await self._resolved_home()
