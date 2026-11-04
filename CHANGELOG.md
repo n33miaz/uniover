@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.16](https://github.com/n33miaz/uniover/compare/v0.36.15...v0.36.16) (2026-11-04)
+
+
+### Bug Fixes
+
+* **tv:** guard launcher install and recovery
+
 ## [0.36.15](https://github.com/n33miaz/uniover/compare/v0.36.14...v0.36.15) (2026-11-04)
 
 
