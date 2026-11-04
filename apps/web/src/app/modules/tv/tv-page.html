@@ -3,6 +3,7 @@
   [attr.data-pills]="prefs.pillLayout()"
   [attr.data-screen-skeleton]="store.loading() ? 'tv' : null"
   [attr.data-screen-ready]="store.loading() ? null : 'tv'"
+  [attr.inert]="panel() === 'keyboard' ? '' : null"
   [class.pc-off]="store.pcOff()"
 >
   <!-- Quem usa leitor de tela ouve uma frase só enquanto o esqueleto está na tela. -->

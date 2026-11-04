@@ -2078,6 +2078,16 @@ test.describe('painel Apps', () => {
 test.describe('painel Teclado', () => {
   const texts = () => tv.requests.filter((r) => r.path === '/text').map((r) => r.body?.['text']);
 
+  test('toques sobre o controle atrás do teclado não enviam comandos à TV', async ({ page }) => {
+    await openTv(page);
+    const ok = await button(page, 'OK').boundingBox();
+    expect(ok).not.toBeNull();
+    await openKeyboard(page);
+    await expect(page.locator('.tv')).toHaveAttribute('inert', '');
+    await page.mouse.click(ok!.x + ok!.width / 2, ok!.y + ok!.height / 2);
+    expect(tv.keysSent()).toEqual([]);
+  });
+
   test('sem o agente o painel já diz o motivo, antes de digitar, e nada é enviado', async ({
     page,
   }, info) => {
