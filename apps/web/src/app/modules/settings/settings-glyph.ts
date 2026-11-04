@@ -273,6 +273,8 @@ export type SettingsGlyphName = keyof typeof GLYPHS;
 const MODULE_GLYPHS: Record<ModuleIconName, SettingsGlyphName> = {
   tv: 'tv',
   activity: 'dumbbell',
+  // Os Ajustes não listam o TV Livre; o desenho da TV basta para o mapa ficar completo.
+  launcher: 'tv',
   health: 'health',
   monitor: 'monitor',
   network: 'network',

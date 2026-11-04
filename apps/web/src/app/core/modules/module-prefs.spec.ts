@@ -62,6 +62,7 @@ describe('ModulePrefs', () => {
     expect(prefs.widgets()).toEqual([
       { id: 'tv', size: 'small', enabled: true },
       { id: 'training', size: 'small', enabled: true },
+      { id: 'tv-livre', size: 'small', enabled: true },
       { id: 'health', size: 'small', enabled: true },
       { id: 'monitor', size: 'small', enabled: true },
       { id: 'network', size: 'small', enabled: true },

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.livre.v1.schema.json",
+  "title": "tv.livre.v1",
+  "description": "API para agente: o módulo TV Livre (launcher próprio da TV Android). Cada `action` é um passo isolado e reversível; nada roda sozinho. O agente responde com command.result.v1 e, antes dele, com tv.livre.state.v1 (o estado depois da ação).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "tv.livre.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "../envelope.schema.json#/$defs/uuid",
+          "description": "Gerado pela API; o agente o repete no tv.livre.state.v1 (a API não conhece o id do envelope que ela mesma monta)."
+        },
+        "action": {
+          "enum": [
+            "status",
+            "install",
+            "set-home",
+            "restore",
+            "apply",
+            "set-apps",
+            "sleep"
+          ],
+          "description": "status: lê o estado. install: instala ou atualiza o launcher (não o define como padrão). set-home: define-o como padrão na ordem segura. restore: Voltar ao Original. apply: grava a configuração (configJson). set-apps: desativa ou reativa apps (reversível). sleep: abre o Modo Dormir."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "apply: o número que só cresce (campo revision da configuração do launcher)."
+        },
+        "configJson": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16384,
+          "description": "apply: a configuração do launcher (contracts/tv-launcher/config.v1.schema.json) sem `schema`, `revision` nem o nome da foto, que o agente acrescenta."
+        },
+        "photoId": {
+          "$ref": "../envelope.schema.json#/$defs/uuid",
+          "description": "apply: a foto enviada antes em tv.livre.photo.v1 com este identificador."
+        },
+        "disableFactory": {
+          "type": "boolean",
+          "description": "set-home: depois de verificar a home nova, desativa o launcher de fábrica (reversível). Padrão: não."
+        },
+        "uninstall": {
+          "type": "boolean",
+          "description": "restore: depois de voltar e verificar, desinstala o launcher. Padrão: sim."
+        },
+        "disable": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$"
+          },
+          "description": "set-apps: pacotes a desativar (pm disable-user). Pacotes protegidos são recusados."
+        },
+        "enable": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$"
+          },
+          "description": "set-apps: pacotes a reativar."
+        }
+      }
+    }
+  }
+}

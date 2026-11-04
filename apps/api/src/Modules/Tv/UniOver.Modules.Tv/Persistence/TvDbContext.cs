@@ -34,6 +34,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<SiriToken> SiriTokens => Set<SiriToken>();
 
+    public DbSet<TvLivreEntry> TvLivre => Set<TvLivreEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -194,6 +196,18 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             // O hash é o que a chave apresentada procura: único e indexado, sem varrer a tabela.
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => x.UserId);
+        });
+
+        modelBuilder.Entity<TvLivreEntry>(e =>
+        {
+            e.ToTable("tv_livre");
+            e.HasKey(x => x.TvId);
+            e.Property(x => x.TvId).ValueGeneratedNever();
+            e.Property(x => x.ConfigJson).HasColumnType("jsonb");
+            e.Property(x => x.PhotoData).HasColumnType("bytea");
+            e.Property(x => x.PhotoSha256).HasMaxLength(TvLivreEntry.PhotoSha256Length);
+            e.Property(x => x.Revision).HasDefaultValue(0);
+            e.Property(x => x.StateJson).HasColumnType("jsonb");
         });
 
         modelBuilder.AddOutbox().AddDeadLetters();

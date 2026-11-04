@@ -1,0 +1,107 @@
+:host {
+  display: block;
+}
+
+.livre {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--space-2) max(var(--gutter), env(safe-area-inset-right)) var(--space-6)
+    max(var(--gutter), env(safe-area-inset-left));
+}
+
+/*
+ * Com a barra fixa "Aplicar na TV" embaixo, o fim da tela sobe acima dela (o padding de `.livre` ganharia do global
+ * `ui-has-action-bar`, por isso o valor está aqui). O aviso do resultado mora dentro da barra e a alarga: quando existe, o
+ * espaço cresce junto.
+ */
+.livre.ui-has-action-bar {
+  padding-bottom: calc(var(--tap) + 3 * var(--space-3) + var(--safe-bottom) + var(--kb-inset, 0px));
+}
+
+.livre.ui-has-action-bar.has-notice {
+  padding-bottom: calc(
+    var(--tap) + 3 * var(--space-3) + var(--safe-bottom) + var(--kb-inset, 0px) + 4rem
+  );
+}
+
+/* O seletor de telas: uma pílula só com quatro opções iguais, a marcada em destaque (o mesmo desenho das abas de Pessoas). */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+}
+
+.tab {
+  /* Cada opção cresce a partir do próprio texto: "Home da TV" é maior que "Fundo" e precisa de folga dentro da pílula. */
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: calc(var(--radius) - 3px);
+  background: transparent;
+  color: var(--a-ink2);
+  font: inherit;
+  /* Quatro rótulos em ~350 px: a letra acompanha a largura e cada um fica numa linha só. */
+  font-size: clamp(0.75rem, 3.3vw, 0.9375rem);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+}
+
+.tab:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 1px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Aviso com um botão ao lado do texto (ou embaixo, quando falta largura). */
+.ui-notice.block {
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ui-notice.block p {
+  flex: 1 1 12rem;
+  margin: 0;
+}
+
+.skeleton-tabs {
+  display: block;
+  height: calc(var(--tap) + 8px);
+  border-radius: var(--radius);
+}
+
+.skeleton-preview {
+  display: block;
+  aspect-ratio: 16 / 9;
+  margin-top: var(--space-4);
+  border-radius: var(--radius);
+}
+
+.skeleton-row {
+  display: block;
+  height: 60px;
+  margin-top: var(--space-3);
+  border-radius: var(--radius);
+}
