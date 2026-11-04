@@ -312,9 +312,9 @@ def test_the_real_supervisor_loop_goes_back_when_the_owner_asks_and_restarts_its
 
 
 @pytest.mark.parametrize(
-    ("failures", "minutes"), [(1, 30), (2, 60), (3, 120), (4, 240), (5, 360), (9, 360)]
+    ("failures", "minutes"), [(1, 3), (2, 6), (3, 12), (4, 24), (5, 30), (9, 30)]
 )
-def test_a_failed_update_is_tried_again_sooner_with_a_growing_wait_capped_at_six_hours(
+def test_a_failed_update_is_tried_again_with_a_bounded_growing_wait(
     pc: Pc, failures: int, minutes: int
 ) -> None:
     done = pc.run(
@@ -325,10 +325,10 @@ def test_a_failed_update_is_tried_again_sooner_with_a_growing_wait_capped_at_six
     assert minutes - 1 <= int(done.stdout.split()[0]) <= minutes + 2
 
 
-def test_without_failures_the_next_check_keeps_the_normal_six_hour_window(pc: Pc) -> None:
+def test_without_failures_the_next_check_happens_within_twelve_minutes(pc: Pc) -> None:
     done = pc.run("$when = Schedule-NextUpdate 0; [int](($when - (Get-Date)).TotalMinutes)")
     assert done.returncode == 0, done.stderr
-    assert 6 * 60 - 1 <= int(done.stdout.split()[0]) <= 6 * 60 + 46
+    assert 9 <= int(done.stdout.split()[0]) <= 12
 
 
 def test_the_same_warning_is_not_written_twice_within_ten_minutes(pc: Pc) -> None:

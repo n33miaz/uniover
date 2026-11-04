@@ -145,14 +145,14 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
 }
 
 function Schedule-NextUpdate([int]$Failures = 0) {
-    # Normal: de 6 a 6h45 depois. Depois de uma atualizacao que falhou, tenta de novo bem antes (30 min, 1 h, 2 h...,
-    # no maximo as 6 h normais): uma queda de rede de um minuto nao pode custar 6 h sem atualizacao.
+    # Normal: 10 a 12 minutos. O agente encontra novas versoes sozinho, sem depender do botao da bandeja.
+    # Apos falhas, tenta em 3, 6, 12, 24 e no maximo 30 minutos; evita uma consulta em laco sem atrasar horas.
     if ($Failures -gt 0) {
-        $minutes = [Math]::Min(30 * [Math]::Pow(2, [Math]::Min($Failures - 1, 4)), 360)
+        $minutes = [Math]::Min(3 * [Math]::Pow(2, [Math]::Min($Failures - 1, 4)), 30)
         $when = (Get-Date).AddMinutes($minutes).AddSeconds((Get-Random -Minimum 0 -Maximum 120))
     }
     else {
-        $when = (Get-Date).AddHours(6).AddMinutes((Get-Random -Minimum 0 -Maximum 46))
+        $when = (Get-Date).AddMinutes(10).AddSeconds((Get-Random -Minimum 0 -Maximum 120))
     }
     Set-UpdateState @{ nextCheckAt = (Get-UtcStamp $when) } | Out-Null
     return $when
