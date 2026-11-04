@@ -88,7 +88,21 @@ public static class UniOverMenuGlyph {
 
 [void][UniOverTrayNative]::SetProcessDpiAwarenessContext([IntPtr](-4))
 [System.Windows.Forms.Application]::EnableVisualStyles()
-$initial = [System.IO.File]::ReadAllText($StatePath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+function Read-StateText([string]$Path) {
+    # A leitura curta nao pode bloquear a troca atomica do arquivo feita pelo agente.
+    $sharing = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $sharing)
+    $reader = $null
+    try {
+        $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
+        return $reader.ReadToEnd()
+    } finally {
+        if ($null -ne $reader) { $reader.Dispose() }
+        else { $stream.Dispose() }
+    }
+}
+
+$initial = Read-StateText $StatePath | ConvertFrom-Json
 if (-not $initial.icon -or -not (Test-Path -LiteralPath $initial.icon)) { throw 'icone inicial ausente' }
 
 $context = New-Object System.Windows.Forms.ApplicationContext
@@ -290,7 +304,7 @@ $timer.add_Tick({
         $theme = "{0}|{1}" -f [System.Windows.Forms.SystemInformation]::HighContrast, (Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name AppsUseLightTheme -ErrorAction SilentlyContinue).AppsUseLightTheme
         if ($theme -ne $lastTheme) { Apply-Theme; $script:lastTheme = $theme }
         Apply-Dpi
-        $raw = [System.IO.File]::ReadAllText($StatePath, [System.Text.Encoding]::UTF8)
+        $raw = Read-StateText $StatePath
         if ($raw -eq $lastState) { return }
         $script:lastState = $raw
         $view = $raw | ConvertFrom-Json
