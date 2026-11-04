@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.29](https://github.com/n33miaz/uniover/compare/v0.36.28...v0.36.29) (2026-11-04)
+
+
+### Bug Fixes
+
+* **tv:** defer optional adb connection
+
 ## [0.36.28](https://github.com/n33miaz/uniover/compare/v0.36.27...v0.36.28) (2026-11-04)
 
 
