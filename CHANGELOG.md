@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.15](https://github.com/n33miaz/uniover/compare/v0.36.14...v0.36.15) (2026-11-04)
+
+
+### Features
+
+* **tv:** add tv livre controls
+
+
+### Bug Fixes
+
+* **agent:** restore static checks
+
 ## [0.36.14](https://github.com/n33miaz/uniover/compare/v0.36.13...v0.36.14) (2026-11-04)
 
 
