@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.33](https://github.com/n33miaz/uniover/compare/v0.36.32...v0.36.33) (2026-11-04)
+
+
+### Bug Fixes
+
+* **agent:** allow tray state replacement
+
 ## [0.36.32](https://github.com/n33miaz/uniover/compare/v0.36.31...v0.36.32) (2026-11-04)
 
 
