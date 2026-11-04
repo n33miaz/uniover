@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.31](https://github.com/n33miaz/uniover/compare/v0.36.30...v0.36.31) (2026-11-04)
+
+
+### Bug Fixes
+
+* **tv:** keep safe power requests safe
+
 ## [0.36.30](https://github.com/n33miaz/uniover/compare/v0.36.29...v0.36.30) (2026-11-04)
 
 
