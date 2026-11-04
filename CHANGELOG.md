@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.24](https://github.com/n33miaz/uniover/compare/v0.36.23...v0.36.24) (2026-11-04)
+
+
+### Maintenance
+
+* no user-facing changes
+
 ## [0.36.23](https://github.com/n33miaz/uniover/compare/v0.36.22...v0.36.23) (2026-11-04)
 
 
