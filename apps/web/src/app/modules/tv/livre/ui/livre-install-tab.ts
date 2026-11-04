@@ -36,6 +36,11 @@ export class LivreInstallTab {
   protected readonly idle = computed(() => this.store.canUse() && this.store.busy() === null);
   protected readonly installed = computed(() => this.store.view()?.installed === true);
   protected readonly isHome = computed(() => this.store.view()?.isHome === true);
+  protected readonly factoryDisabled = computed(() => {
+    const view = this.store.view();
+    const factory = view?.factoryLauncher?.split('/')[0];
+    return factory !== undefined && view?.disabledPackages.includes(factory) === true;
+  });
   protected readonly version = computed(() => this.store.view()?.version ?? null);
   protected readonly stateTime = computed(() => clockText(this.store.view()?.stateAt ?? null));
 
