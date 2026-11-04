@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.26](https://github.com/n33miaz/uniover/compare/v0.36.25...v0.36.26) (2026-11-04)
+
+
+### Bug Fixes
+
+* **tv:** recover launcher switch after timeout
+
 ## [0.36.25](https://github.com/n33miaz/uniover/compare/v0.36.24...v0.36.25) (2026-11-04)
 
 
