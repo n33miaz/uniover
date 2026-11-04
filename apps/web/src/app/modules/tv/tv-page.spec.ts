@@ -567,6 +567,7 @@ describe('TvPage', () => {
       expect(dialogs()[0].getAttribute('data-placement')).toBe('top');
       expect(root.querySelector('app-tv-panel .x')).toBeNull();
       expect(root.querySelector('app-tv-keyboard input')).not.toBeNull();
+      expect(root.querySelector('.tv')?.hasAttribute('inert')).toBe(true);
 
       const close = [...root.querySelectorAll<HTMLButtonElement>('app-tv-keyboard button')].find(
         (b) => b.textContent?.trim() === 'Fechar',
@@ -574,6 +575,7 @@ describe('TvPage', () => {
       close.click();
       await render();
       expect(dialogs()).toHaveLength(0);
+      expect(root.querySelector('.tv')?.hasAttribute('inert')).toBe(false);
       expect(document.activeElement).toBe(button);
     });
 

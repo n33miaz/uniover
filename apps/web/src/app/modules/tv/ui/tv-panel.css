@@ -32,10 +32,7 @@
   background-color: rgb(0 0 0 / 0.45);
   transition: background-color var(--dur-base) var(--ease-out);
 }
-/* Saindo: o fundo esmaece e o painel deixa de receber toque até o fim da saída. */
-.panel.leaving {
-  pointer-events: none;
-}
+/* O diálogo cobre os controles até sair do DOM, inclusive durante a animação de fechamento. */
 .panel.leaving::backdrop {
   background-color: rgb(0 0 0 / 0);
 }
