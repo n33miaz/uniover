@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters.tv_adb import AdbTv
+from uniover_agent.adapters.tv_adb import LIVRE_SHELL_TIMEOUT_SECONDS, AdbTv
 from uniover_agent.ports import AdbCommandFailed, AdbUnreachable
 
 from .support_adb import ADB, CONNECT, HOST, SERIAL, FakeAdbRunner, ok, shell
@@ -29,6 +29,7 @@ async def test_shell_runs_the_fixed_command_and_reports_success() -> None:
     assert result.ok is True
     assert "package:" in result.text
     assert runner.calls[-1] == ("-s", SERIAL, "shell", "pm path br.uniover.launcher")
+    assert runner.timeouts[-1] == LIVRE_SHELL_TIMEOUT_SECONDS
 
 
 async def test_shell_reports_a_non_zero_exit_as_not_ok() -> None:

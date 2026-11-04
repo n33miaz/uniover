@@ -77,6 +77,7 @@ class FakeAdbRunner:
     def __init__(self, script: dict[tuple[str, ...], Reply | list[Reply]] | None = None) -> None:
         self.script = dict(script or {})
         self.calls: list[tuple[str, ...]] = []
+        self.timeouts: list[float] = []
         self.executables: set[str] = set()
         self.running = 0
         self.max_running = 0
@@ -92,6 +93,7 @@ class FakeAdbRunner:
         self.executables.add(argv[0])
         key = tuple(argv[1:])
         self.calls.append(key)
+        self.timeouts.append(seconds)
         self.running += 1
         self.max_running = max(self.max_running, self.running)
         try:
