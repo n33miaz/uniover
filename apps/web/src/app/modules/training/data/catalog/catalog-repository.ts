@@ -49,6 +49,15 @@ export class CatalogRepository {
 
   /** Quantos passam no filtro. */
   async count(query: CatalogQuery = {}): Promise<number> {
+    if (!query.text?.trim() && !query.group && !query.muscle && !query.equipment) {
+      // Linhas vivas têm deletedAt=null e não entram nesse índice do IndexedDB.
+      // Contar as duas coleções evita ler e montar o catálogo inteiro só para mostrar o total.
+      const [all, deleted] = await Promise.all([
+        this.db.exercises.count(),
+        this.db.exercises.orderBy('deletedAt').count(),
+      ]);
+      return all - deleted;
+    }
     return (await this.matching(query)).length;
   }
 

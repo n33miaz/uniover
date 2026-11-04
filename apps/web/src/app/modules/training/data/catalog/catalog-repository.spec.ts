@@ -80,10 +80,12 @@ describe('CatalogRepository', () => {
       const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll');
 
       expect(await repository.count()).toBe(total - 1);
-      expect(getAll.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(await repository.count({ sort: 'recent' })).toBe(total - 1);
+      expect(getAll).not.toHaveBeenCalled();
       expect(names(await repository.search({ text: 'especial' }))).toHaveLength(
         Math.ceil(total / 100),
       );
+      expect(getAll.mock.calls.length).toBeGreaterThanOrEqual(3);
       expect(await repository.count({ group: 'chest' })).toBe(Math.ceil(total / 2));
       expect(await repository.count({ muscle: 'biceps', text: 'enchimento' })).toBe(
         Math.floor(total / 2) - 1,
