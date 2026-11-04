@@ -365,22 +365,21 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task PowerOff_Safe_ToAnAgentWithoutTheCapability_StillSendsThePowerKey()
+    public async Task PowerOff_Safe_WhenTheCapabilityDisappears_SendsNoPowerKey()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, agent);
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.kind.android");
-        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Capabilities.Contains("tv.remote") == true, "capacidades do agente");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(TvApp.AgentSlug)?.Capabilities.Contains("tv.power.off.v1") == false,
+            "retirada da capacidade de desligar com leitura");
 
-        var request = app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" });
-        var command = await TvApp.NextCommandAsync(agent);
-        command.GetProperty("type").GetString().Should().Be("tv.key.v2");
-        command.GetProperty("body").GetProperty("key").GetString().Should().Be("POWER");
-        await TvApp.ReplyAsync(agent, command);
-
-        using var response = await Within(request);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await TvApp.JsonAsync(response)).GetProperty("outcome").GetString().Should().Be("sent");
+        using var response = await Within(app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" }));
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        (await TvApp.JsonAsync(response)).GetProperty("agentError").GetString().Should().Be("power_off_unsafe");
+        await using var db = app.Db();
+        (await db.CommandAudit.CountAsync(Ct)).Should().Be(0, "nenhum comando foi enviado ao agente");
     }
 
     [Fact]
