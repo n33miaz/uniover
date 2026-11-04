@@ -22,6 +22,15 @@ export const TV_ROUTES: Routes = [
     data: { title: '' },
   },
   {
+    path: 'configurar',
+    canMatch: [ownerOnlyGuard],
+    data: {
+      title: $localize`:@@tv.setup.route.title:Configurar TV`,
+      back: { link: '/tv', label: $localize`:@@tv.setup.back-label:Voltar ao Controle` },
+    },
+    loadComponent: () => import('./pages/setup-guide.page').then((m) => m.SetupGuidePage),
+  },
+  {
     // O TV Livre (launcher próprio da TV) é só do dono nesta entrega: o guarda leva o convidado à Início, e a API recusa
     // com 403 de qualquer jeito. O título e a seta de volta ao controle são os do shell, pelos dados da rota (como Ajustes).
     path: 'livre',
