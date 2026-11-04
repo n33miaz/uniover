@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.32](https://github.com/n33miaz/uniover/compare/v0.36.31...v0.36.32) (2026-11-04)
+
+
+### Features
+
+* **tv:** guide initial tv setup
+
 ## [0.36.31](https://github.com/n33miaz/uniover/compare/v0.36.30...v0.36.31) (2026-11-04)
 
 
