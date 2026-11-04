@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.19](https://github.com/n33miaz/uniover/compare/v0.36.18...v0.36.19) (2026-11-04)
+
+
+### Features
+
+* **agent:** polish tray menu visuals
+
 ## [0.36.18](https://github.com/n33miaz/uniover/compare/v0.36.17...v0.36.18) (2026-11-04)
 
 
