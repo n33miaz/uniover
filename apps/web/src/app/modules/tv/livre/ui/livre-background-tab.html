@@ -1,0 +1,120 @@
+@if (store.draft(); as draft) {
+  <app-livre-preview [config]="draft" [apps]="store.preview()" [photoUrl]="store.photoUrl()" />
+
+  <div
+    class="kinds"
+    role="radiogroup"
+    aria-label="Tipo de fundo"
+    i18n-aria-label="@@tv-livre.background.kind-label"
+  >
+    <label class="kind" [class.on]="!isPhoto()">
+      <input
+        type="radio"
+        name="livre-wallpaper"
+        class="ui-visually-hidden"
+        [checked]="!isPhoto()"
+        [disabled]="!enabled()"
+        (change)="store.setWallpaperType('gradient')"
+      />
+      <span i18n="@@tv-livre.background.gradient">Degradê</span>
+    </label>
+    <label class="kind" [class.on]="isPhoto()">
+      <input
+        type="radio"
+        name="livre-wallpaper"
+        class="ui-visually-hidden"
+        [checked]="isPhoto()"
+        [disabled]="!enabled()"
+        (change)="store.setWallpaperType('photo')"
+      />
+      <span i18n="@@tv-livre.background.photo">Foto</span>
+    </label>
+  </div>
+
+  @if (!isPhoto()) {
+    <section class="group">
+      <div class="colors">
+        <label class="color">
+          <span i18n="@@tv-livre.background.color-start">Cor Inicial</span>
+          <input
+            type="color"
+            [value]="colors()[0]"
+            [disabled]="!enabled()"
+            (input)="setColor(0, $event)"
+          />
+        </label>
+        <label class="color">
+          <span i18n="@@tv-livre.background.color-end">Cor Final</span>
+          <input
+            type="color"
+            [value]="colors()[1] ?? colors()[0]"
+            [disabled]="!enabled()"
+            (input)="setColor(1, $event)"
+          />
+        </label>
+      </div>
+
+      <ul class="presets ui-plain">
+        @for (preset of presets; track preset.id) {
+          <li>
+            <button
+              type="button"
+              class="preset"
+              [attr.aria-label]="presetLabel(preset)"
+              [attr.aria-pressed]="activePreset() === preset.id"
+              [style.background]="swatch(preset)"
+              [disabled]="!enabled()"
+              (click)="store.setColors(preset.colors[0], preset.colors[1])"
+            ></button>
+          </li>
+        }
+      </ul>
+    </section>
+  } @else {
+    <section class="group">
+      <div class="photo-actions">
+        <label class="ui-btn secondary pick" [class.off]="!enabled()">
+          <input
+            type="file"
+            [attr.accept]="'image/*'"
+            class="ui-visually-hidden"
+            [disabled]="!enabled()"
+            (change)="pickPhoto($event)"
+          />
+          <span i18n="@@tv-livre.background.pick-photo">Escolher Foto</span>
+        </label>
+        @if (store.view()?.hasPhoto) {
+          <button
+            type="button"
+            class="ui-btn secondary"
+            [disabled]="!enabled()"
+            (click)="store.removePhoto()"
+          >
+            <span i18n="@@tv-livre.background.remove-photo">Remover Foto</span>
+          </button>
+        }
+      </div>
+
+      @if (store.view()?.hasPhoto) {
+        <div class="dim ui-field">
+          <label for="livre-dim">
+            <span i18n="@@tv-livre.background.dim">Escurecer</span>
+            <output for="livre-dim">{{ dimPercent() }}%</output>
+          </label>
+          <input
+            id="livre-dim"
+            type="range"
+            min="0"
+            [max]="dimMax"
+            step="5"
+            [value]="dimPercent()"
+            [disabled]="!enabled()"
+            (input)="setDim($event)"
+          />
+        </div>
+      } @else {
+        <p class="hint" i18n="@@tv-livre.background.no-photo">Sem foto, o fundo fica em degradê.</p>
+      }
+    </section>
+  }
+}

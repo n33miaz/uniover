@@ -80,6 +80,13 @@ const TV_ACTIONS = [
   'tv.siri.create',
   'tv.siri.revoke',
   'tv.siri.denied',
+  'tv.livre.refresh',
+  'tv.livre.install',
+  'tv.livre.apply',
+  'tv.livre.set-home',
+  'tv.livre.restore',
+  'tv.livre.set-apps',
+  'tv.livre.sleep',
 ];
 
 function item(overrides: Partial<AuditItem> = {}): AuditItem {

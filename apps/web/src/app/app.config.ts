@@ -16,12 +16,14 @@ import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
 import { watchKeyboardInset } from './core/layout/keyboard-inset';
+import { TV_LIVRE_ENTRY } from './core/modules/tv-livre-entry.port';
 import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
 import { HomeStatusPort } from './core/status/home-status.port';
 import { LiveHomeStatus } from './core/status/live-home-status';
+import { TvLivreEntry } from './modules/tv/livre/data/livre-entry';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -34,6 +36,8 @@ export const appConfig: ApplicationConfig = {
     { provide: ErrorHandler, useClass: ChunkAwareErrorHandler },
     // A Início lê o estado da casa pela porta; o adaptador real fala com a API e com o fluxo em tempo real.
     { provide: HomeStatusPort, useExisting: LiveHomeStatus },
+    // O cartão do TV Livre na Início depende da TV atual (módulo da TV, que a Início não importa): o adaptador entra aqui.
+    { provide: TV_LIVRE_ENTRY, useExisting: TvLivreEntry },
     provideHttpClient(
       withFetch(),
       // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.

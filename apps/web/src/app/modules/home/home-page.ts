@@ -12,6 +12,7 @@ import { canUseModule } from '../../core/auth/guest-home';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
 import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
 import { PcAvailability } from '../../core/modules/pc-availability';
+import { TV_LIVRE_ENTRY } from '../../core/modules/tv-livre-entry.port';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -77,6 +78,7 @@ export class HomePage {
   private readonly session = inject(SessionState);
   private readonly pcAvailability = inject(PcAvailability);
   protected readonly registry = inject(ModuleRegistry);
+  private readonly livreEntry = inject(TV_LIVRE_ENTRY);
 
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
 
@@ -86,6 +88,8 @@ export class HomePage {
     // O cartão do Controle do PC só deixa de ser "Em Breve" quando a casa tem um computador com o controle ligado. Só quem
     // pode usar o módulo pergunta: para as outras contas a API recusaria, e o cartão segue como planejado.
     if (this.canUsePc()) void this.pcAvailability.refresh();
+    // O cartão do TV Livre depende de a TV atual declarar a capacidade: a lista de TVs é renovada ao abrir a Início.
+    this.livreEntry.refresh();
   }
 
   protected readonly editing = signal(false);
@@ -187,6 +191,9 @@ export class HomePage {
   }
 
   private canSeeModule(id: string): boolean {
+    // O TV Livre é só do dono e só existe para a TV que o suporta: some para o convidado e para a TV sem a capacidade
+    // (a Samsung, por exemplo), na grade e na folha de edição.
+    if (id === 'tv-livre') return !this.session.isGuest() && this.livreEntry.available();
     if (!this.session.isGuest()) return true;
     const module = this.registry.find(id);
     if (module && this.registry.statusOf(module) === 'soon') {

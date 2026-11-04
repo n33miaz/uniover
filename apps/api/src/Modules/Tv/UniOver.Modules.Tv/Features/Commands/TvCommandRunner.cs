@@ -49,8 +49,8 @@ internal sealed partial class TvCommandRunner(
     /// sessão com a TV estar dormindo ou não.
     /// </param>
     /// <param name="auditCommand">
-    /// <c>false</c> somente para avisos técnicos que não alteram a TV. O pré-aquecimento mantém a sessão pronta, mas registrá-lo
-    /// como comando enche a trilha sem representar uma ação da pessoa.
+    /// <c>false</c> omite avisos técnicos e partes do transporte da foto do TV Livre. A ação concluída pode ser registrada
+    /// com <see cref="RecordAsync(TvCommandOrigin, string, string?, TvSendOutcome)"/>.
     /// </param>
     public async Task<TvSendOutcome> RunAsync(
         TvCommandOrigin origin,
@@ -107,6 +107,19 @@ internal sealed partial class TvCommandRunner(
         }
 
         return outcome;
+    }
+
+    /// <summary>
+    /// Deixa a linha de um comando que foi enviado com <c>auditCommand: false</c> (ou que falhou no meio de uma sequência de
+    /// mensagens), apontando para a TV e o agente desta requisição.
+    /// </summary>
+    internal async Task RecordAsync(TvCommandOrigin origin, string command, string? detail, TvSendOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        ArgumentNullException.ThrowIfNull(outcome);
+
+        var target = await ResolveTargetAsync(CancellationToken.None);
+        await RecordAsync(origin, target.Id, target.AgentSlug, command, detail, outcome);
     }
 
     /// <summary>A TV (e o agente) a que o comando desta requisição se destina: a escolhida, ou a de reserva.</summary>

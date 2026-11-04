@@ -1,0 +1,143 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Degradê ou Foto: duas opções iguais numa pílula, o mesmo desenho das abas (são rádios de verdade, com as setas do teclado). */
+.kinds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+}
+
+.kind {
+  display: grid;
+  place-items: center;
+  min-height: var(--tap);
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--a-ink2);
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kind.on {
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+}
+
+.kind:has(input:focus-visible),
+.pick:has(input:focus-visible) {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 1px;
+}
+
+.colors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.color {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+/* O seletor de cor do aparelho, com a cor escolhida enchendo o botão. */
+.color input {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  min-height: 48px;
+  padding: 3px;
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  cursor: pointer;
+}
+
+.color input:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.preset {
+  display: block;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 2px solid var(--a-line);
+  border-radius: 50%;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.preset[aria-pressed='true'] {
+  border-color: var(--a-accent);
+  box-shadow:
+    0 0 0 2px var(--a-surface),
+    0 0 0 4px var(--a-accent);
+}
+
+.preset:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+
+.preset:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.photo-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+.pick.off {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.dim label {
+  display: flex;
+  justify-content: space-between;
+}
+
+.dim input[type='range'] {
+  width: 100%;
+  min-height: var(--tap);
+  accent-color: var(--a-accent);
+}
+
+.hint {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}

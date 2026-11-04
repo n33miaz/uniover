@@ -83,6 +83,9 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_PC_CONTROL` | `1` liga o controle deste PC pelo app (mouse, teclado, mídia, energia, favoritos). **Desligado por padrão**: sem isto o agente nem declara a capacidade `pc.control.v1` e recusa todo `pc.*`. Mais fácil: `uv run uniover-agent pc-control on` (grava no `agent.toml`; `off` desliga, `status` mostra) e reiniciar o agente |
 | `UNIOVER_PC_APPS` | favoritos que o app pode abrir, `Nome=destino` (programa, documento ou endereço), separados por `;`. No `agent.toml`, `pc_apps` como lista (`["Navegador=C:\...\chrome.exe", "Notas=notepad"]`). O app só recebe o nome e um identificador; o destino nunca sai do PC |
 | `UNIOVER_PC_SHUTDOWN_DELAY_SECONDS` | contagem do desligamento pedido pelo app, de 10 a 300 (padrão `30`); o Windows avisa na tela durante ela e o app pode cancelar antes do fim |
+| `UNIOVER_TV_LIVRE` | `0` desliga o módulo TV Livre neste PC (padrão: ligado, sempre opt-in por comando do dono; ver "TV Livre") |
+| `UNIOVER_TV_LIVRE_APK_URL` | pasta HTTPS da publicação com `uniover-launcher.apk` e `uniover-launcher.apk.sha256` (padrão: a última publicação do repositório) |
+| `UNIOVER_TV_LIVRE_SIGNER_SHA256` | SHA-256 do certificado de assinatura do APK do TV Livre (hexadecimal, com ou sem `:`; vários separados por vírgula). O padrão é o certificado público da chave fixa do projeto; lista vazia = **nada é instalado**, porque o hash da publicação não prova quem assinou. Conferido com o `apksigner` do Android SDK (`UNIOVER_TV_LIVRE_APKSIGNER_PATH` para indicar outro caminho) |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
@@ -531,6 +534,35 @@ volta em dois quadros, nesta ordem: `tv.cleanup.result.v1` (apps fechados, memó
 falharam, com o `requestId` do pedido) e `command.result.v1`. O registro (`INFO`) leva só contagens e MB.
 
 A primeira execução deve ser feita com a TV ligada, sabendo que **o app que estiver passando vai fechar**.
+
+## TV Livre (launcher próprio da Android TV)
+
+Só para Android TV e Google TV com Android 9 ou mais, e só com o `adb` neste PC. O agente anuncia a capacidade
+`tv.livre.v1`; a TV Samsung nunca a recebe. **Nada acontece sozinho**: cada passo é um comando do dono, feito pela
+tela da web, e todos são reversíveis. A sequência é a do README de `apps/tv-launcher`:
+
+1. **Instalar**: lê a versão do Android, captura o launcher de fábrica e **ensaia a volta**
+   (`set-home-activity` do original precisa responder `Success`); sem esse ensaio nada é instalado. Baixa o APK da
+   publicação (`UNIOVER_TV_LIVRE_APK_URL`, padrão a última publicação do repositório, só HTTPS), confere o sha256
+   publicado ao lado (`uniover-launcher.apk.sha256`, integridade do download) e **a assinatura** contra o
+   certificado fixado em `UNIOVER_TV_LIVRE_SIGNER_SHA256` (padrão: a chave do projeto, com o `apksigner` do Android SDK); só então instala e abre o app, conferindo que ele de
+   fato iniciou. O launcher de fábrica segue como padrão.
+2. **Aplicar a configuração**: envia `config.json` (e `wallpaper.jpg`) como `.tmp` e renomeia, ou, se a pasta do app
+   não existir, pelo broadcast (sem foto). A configuração é conferida pelo agente contra o contrato.
+3. **Definir como padrão**: antes de tocar na tela inicial confere que a home nova abre e fica de pé; só vale depois
+   de verificar com `resolve-activity` e de a Home abrir de verdade (`am start` sem erro e o processo vivo); se
+   alguma conferência falha, devolve o original.
+   O launcher de fábrica só é desativado se o dono pedir, e depois dessa verificação.
+4. **Voltar ao Original**: reabilita, define o original, verifica e **só então** desinstala.
+   Se não der para confirmar a tela inicial original, nada é desinstalado.
+
+O que foi desativado e o launcher de fábrica ficam em `tv-livre-<endereço da TV>.json` na pasta de instalação,
+gravados antes de cada passo; o mesmo arquivo guarda as últimas 50 ações (auditoria local). Desativar app usa
+`pm disable-user` (reversível) com lista de proteção própria: o launcher de fábrica e o novo, o teclado e os serviços de
+acessibilidade em uso, o serviço do controle remoto, as Configurações e as peças do sistema.
+
+`UNIOVER_TV_LIVRE=0` desliga o módulo neste PC. Limite honesto: o hash vem do mesmo endereço do APK, então a conferência
+protege de download corrompido; a autenticidade vem do certificado fixado (sem ele o agente não instala).
 
 ## Ícones dos apps da TV
 
