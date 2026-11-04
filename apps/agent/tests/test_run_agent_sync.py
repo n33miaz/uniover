@@ -180,8 +180,8 @@ def test_three_failed_syncs_of_a_version_in_proof_go_back_without_touching_the_e
     # O ambiente que funcionava ficou: exatamente três tentativas, nenhuma segunda com apagamento.
     assert pc.marker.read_text(encoding="utf-8") == "ambiente que funcionava"
     assert pc.sync_calls() == 3
-    # Nem o agente nem o ícone chegaram a subir com o ambiente quebrado.
-    assert pc.started("self-update")
+    # O supervisor pede ao lancador que reinicie com a versao anterior.
+    assert not pc.started("self-update")
     assert not pc.started("tray")
     assert not pc.started("run")
     state = pc.state()

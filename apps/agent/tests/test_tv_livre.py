@@ -1,6 +1,6 @@
 """TV Livre (núcleo): a ordem segura dos passos, com uma TV Android simulada.
 
-O que importa aqui é a SEQUÊNCIA: o original é capturado e ensaiado antes de instalar, a home nova
+O que importa aqui é a SEQUÊNCIA: o original é identificado sem troca antes de instalar, a home nova
 só vale depois de verificada, o launcher de fábrica só é desativado depois disso, e nada é
 desinstalado sem a volta confirmada. Cada falha injetada tem de terminar sem tela preta.
 """
@@ -23,6 +23,7 @@ from uniover_agent.core.tv.livre import (
     TvLivre,
     is_protected_for_disable,
 )
+from uniover_agent.ports import AdbNotReady
 from uniover_agent.ports.tv_livre import LauncherApkError, ShellResult
 
 from .support_livre import (
@@ -80,6 +81,19 @@ async def test_unsupported_tv_reports_it_and_refuses_every_action(
     assert apk.fetches == 0
 
 
+async def test_booting_tv_is_not_recorded_as_incompatible(tmp_path: Path) -> None:
+    livre, android, _, apk = make(tmp_path)
+    android.fail.add("pm list features")
+
+    with pytest.raises(AdbNotReady):
+        await livre.read_state()
+    with pytest.raises(AdbNotReady):
+        await livre.run({"action": "install"})
+
+    assert android.mutating() == []
+    assert apk.fetches == 0
+
+
 async def test_status_reads_state_and_changes_nothing(tmp_path: Path) -> None:
     livre, android, _, _ = make(tmp_path)
 
@@ -103,17 +117,19 @@ async def test_status_reads_state_and_changes_nothing(tmp_path: Path) -> None:
 # --- instalar --------------------------------------------------------------------------------
 
 
-async def test_install_captures_and_rehearses_the_factory_launcher_before_installing(
+async def test_install_captures_the_current_home_without_changing_it(
     tmp_path: Path,
 ) -> None:
     livre, android, state, _ = make(tmp_path)
 
     await livre.run({"action": "install"})
 
-    rehearsal = android.index(f"cmd package set-home-activity {FACTORY}")
+    resolved = android.index("cmd package resolve-activity")
+    queried = android.index("cmd package query-activities")
     install = android.index("install")
     opened = android.index(f"am start -n {HOME_COMPONENT}")
-    assert rehearsal < install < opened
+    assert resolved < queried < install < opened
+    assert not any(command.startswith("cmd package set-home-activity") for command in android.log)
     # O original ficou em disco, para a volta sobreviver a uma queda do agente.
     assert state.load()["factory"] == FACTORY
     # Instalar não torna a home nova o padrão.
@@ -122,10 +138,11 @@ async def test_install_captures_and_rehearses_the_factory_launcher_before_instal
     assert (await livre.read_state()).is_home is False
 
 
-async def test_install_without_a_launcher_that_passes_the_rehearsal_changes_nothing(
+async def test_install_without_a_current_home_changes_nothing(
     tmp_path: Path,
 ) -> None:
-    android = FakeAndroid(reject_set_home=frozenset({FACTORY}))
+    android = FakeAndroid()
+    android.homes.clear()
     livre, android, _, apk = make(tmp_path, android)
 
     await expect_error(livre, {"action": "install"}, "no_factory_launcher")
@@ -134,7 +151,7 @@ async def test_install_without_a_launcher_that_passes_the_rehearsal_changes_noth
     assert apk.fetches == 0
 
 
-async def test_install_tries_the_next_home_handler_when_the_first_fails_the_rehearsal(
+async def test_install_does_not_switch_to_another_home_candidate(
     tmp_path: Path,
 ) -> None:
     other = "com.tcl.launcher/.Main"
@@ -143,7 +160,8 @@ async def test_install_tries_the_next_home_handler_when_the_first_fails_the_rehe
 
     await livre.run({"action": "install"})
 
-    assert state.load()["factory"] == other
+    assert state.load()["factory"] == FACTORY
+    assert android.home == FACTORY
 
 
 async def test_install_with_a_bad_download_installs_nothing(tmp_path: Path) -> None:

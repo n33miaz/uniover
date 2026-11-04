@@ -115,7 +115,15 @@ class FakeAndroid:
         if command == "getprop ro.build.version.sdk":
             return ShellResult(True, f"{self.sdk}\n")
         if command == "pm list features":
-            return ShellResult(True, "feature:android.software.leanback\n" if self.leanback else "")
+            features = (
+                "feature:android.software.leanback\n"
+                if self.leanback
+                else "feature:android.hardware.wifi\n"
+            )
+            return ShellResult(
+                True,
+                features,
+            )
         if command == f"pm path {PACKAGE}":
             return ShellResult(
                 self.installed, f"package:/data/app/{PACKAGE}/base.apk\n" if self.installed else ""

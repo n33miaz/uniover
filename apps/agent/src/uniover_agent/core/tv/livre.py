@@ -3,8 +3,8 @@
 Tudo é opt-in e reversível, e a ordem dos passos é o que impede a TV de ficar sem tela inicial
 (`apps/tv-launcher/README.md` tem a mesma sequência, com os comandos):
 
-- **Instalar** captura o launcher de fábrica e ensaia a volta (`set-home-activity` precisa
-  responder `Success`) ANTES de tocar em qualquer coisa; só então instala e abre o app uma vez.
+- **Instalar** identifica e guarda o launcher de fábrica por leitura, sem trocar a Home; só então
+  instala e abre o app uma vez.
 - **Definir como padrão** só vale depois de verificar que a home nova virou o padrão; qualquer
   falha devolve o original. O launcher de fábrica só é desativado (opcional) depois da conferência.
 - **Voltar ao original** é o caminho inverso: reabilita, define o original, verifica, e só então
@@ -38,7 +38,7 @@ from uniover_agent.core.tv.livre_config import (
     build_launcher_config,
     is_valid_package_name,
 )
-from uniover_agent.ports import AdbError, Clock, Transport, TransportError
+from uniover_agent.ports import AdbError, AdbNotReady, Clock, Transport, TransportError
 from uniover_agent.ports.tv_livre import LauncherApkError, LauncherApkSource, TvLivreAdb
 
 _log = logging.getLogger(__name__)
@@ -266,8 +266,9 @@ class TvLivre:
 
     async def _read_state(self) -> LivreState:
         sdk = await self._sdk()
-        leanback = "android.software.leanback" in (await self._adb.shell("pm list features")).text
-        if sdk is None or sdk < MIN_SDK or not leanback:
+        if sdk is None:
+            raise AdbNotReady("a TV ainda está inicializando")
+        if sdk < MIN_SDK or not await self._has_leanback():
             return LivreState(False, sdk, False, None, False, None, (), ())
         stored = self._state.load()
         installed = "package:" in (await self._adb.shell(f"pm path {PACKAGE}")).text
@@ -323,7 +324,7 @@ class TvLivre:
         async with self._lock:
             if action == "status":
                 # Só confirma que a TV responde; o estado sai da leitura que o handler faz depois.
-                await self._sdk()
+                await self._read_support()
                 return
             await self._require_supported()
             if action == "install":
@@ -352,9 +353,17 @@ class TvLivre:
 
     async def _read_support(self) -> bool:
         sdk = await self._sdk()
-        if sdk is None or sdk < MIN_SDK:
+        if sdk is None:
+            raise AdbNotReady("a TV ainda está inicializando")
+        if sdk < MIN_SDK:
             return False
-        return "android.software.leanback" in (await self._adb.shell("pm list features")).text
+        return await self._has_leanback()
+
+    async def _has_leanback(self) -> bool:
+        result = await self._adb.shell("pm list features")
+        if not result.ok or not result.text.strip():
+            raise AdbNotReady("a TV ainda está inicializando")
+        return "android.software.leanback" in result.text
 
     async def _require_installed(self) -> None:
         if "package:" not in (await self._adb.shell(f"pm path {PACKAGE}")).text:
@@ -378,29 +387,24 @@ class TvLivre:
         return False
 
     async def _capture_original(self) -> dict[str, Any]:
-        """Guarda o launcher de fábrica depois de ensaiar a volta; sem isso nada avança."""
+        """Guarda a Home atual após confirmar que ela consta entre as atividades HOME."""
         stored = self._state.load()
         if isinstance(stored.get("factory"), str) and stored["factory"]:
             return stored
+        current = await self._resolved_home()
         candidates = [
-            c
-            for c in [
-                *_components((await self._adb.shell(_RESOLVE_HOME)).text),
-                *_components((await self._adb.shell(_QUERY_HOME)).text),
-            ]
+            c for c in _components((await self._adb.shell(_QUERY_HOME)).text)
             if _package_of(c) != PACKAGE
         ]
         candidates = list(dict.fromkeys(candidates))
-        for component in candidates:
-            # Ensaio: reaplica o que já é o padrão e prova que o componente é um launcher.
-            if await self._set_home_activity(component):
-                stored.update({"factory": component, "candidates": candidates})
-                stored.setdefault("disabled", [])
-                self._state.save(stored)
-                return stored
+        if current is not None and current in candidates:
+            stored.update({"factory": current, "candidates": candidates})
+            stored.setdefault("disabled", [])
+            self._state.save(stored)
+            return stored
         raise LivreError(
             "no_factory_launcher",
-            "Não achei o launcher de fábrica da TV para garantir a volta; nada foi alterado.",
+            "Não achei a tela inicial atual da TV para garantir a volta; nada foi instalado.",
             rejected=True,
         )
 
