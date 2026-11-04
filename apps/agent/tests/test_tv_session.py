@@ -389,6 +389,27 @@ async def test_extra_channels_open_and_close_with_the_session() -> None:
     assert not adb.connected
 
 
+async def test_deferred_optional_channel_never_delays_remote_keys() -> None:
+    rig = Rig()
+    adb = FakeTvChannel()
+    rig.manager.add_channel(adb, connect_on_warm=False)
+
+    await rig.manager.send_key("HOME")
+    assert rig.remote.keys == ["HOME"]
+    assert adb.connects == 0
+
+    await adb.connect()
+    rig.clock.advance(300)
+    await rig.manager.hibernate_if_idle()
+    assert adb.disconnects == 1
+
+
+def test_required_channel_cannot_be_deferred() -> None:
+    rig = Rig()
+    with pytest.raises(ValueError, match="canal obrigatório"):
+        rig.manager.add_channel(FakeTvChannel(), required=True, connect_on_warm=False)
+
+
 async def test_optional_channel_failure_does_not_block_the_remote() -> None:
     rig = Rig()
     adb = FakeTvChannel()
