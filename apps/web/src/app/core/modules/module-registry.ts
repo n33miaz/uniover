@@ -62,16 +62,6 @@ export class ModuleRegistry {
       defaultSize: 'small',
     },
     {
-      id: 'tv-livre',
-      route: '/tv/livre',
-      title: $localize`:@@module.tv-livre.title:TV Livre`,
-      description: $localize`:@@home.module.tv-livre-hint:A tela inicial da sua TV`,
-      actionLabel: $localize`:@@module.tv-livre.action:Configurar`,
-      icon: 'launcher',
-      status: 'available',
-      defaultSize: 'small',
-    },
-    {
       id: 'health',
       title: $localize`:@@module.health.title:Saúde e Eventos`,
       description: $localize`:@@module.health.hint:Aparelhos e linha do tempo`,

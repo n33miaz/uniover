@@ -50,10 +50,18 @@ export class LivrePage {
     { id: 'install', label: $localize`:@@tv-livre.tab.install:Instalação` },
   ];
   protected readonly active = signal<LivreTab>('home');
+  protected readonly needsInstall = computed(() => this.store.view()?.installed === false);
+  protected readonly visibleTabs = computed(() =>
+    this.needsInstall() ? this.tabs.filter((tab) => tab.id === 'install') : this.tabs,
+  );
+  protected readonly currentTab = computed<LivreTab>(() =>
+    this.needsInstall() ? 'install' : this.active(),
+  );
 
   /** A barra "Aplicar na TV" existe nas telas que editam a configuração, e só com a TV ao alcance. */
-  protected readonly showApply = computed(() => this.store.canUse() && this.active() !== 'install');
-  protected readonly needsInstall = computed(() => this.store.view()?.installed === false);
+  protected readonly showApply = computed(
+    () => this.store.canUse() && this.currentTab() !== 'install',
+  );
   protected readonly applying = computed(() => this.store.busy() === 'apply');
 
   constructor() {
@@ -62,7 +70,7 @@ export class LivrePage {
   }
 
   protected select(tab: LivreTab): void {
-    if (tab === this.active()) return;
+    if (tab === this.currentTab()) return;
     this.active.set(tab);
     // O aviso era do pedido da tela anterior.
     this.store.clearNotice();
@@ -70,8 +78,9 @@ export class LivrePage {
 
   /** Setas, Início e Fim passam de aba em aba (só a aba marcada entra na ordem do Tab, como pede o padrão de abas). */
   protected onTabKey(event: KeyboardEvent): void {
-    const count = this.tabs.length;
-    const index = this.tabs.findIndex((tab) => tab.id === this.active());
+    const tabs = this.visibleTabs();
+    const count = tabs.length;
+    const index = tabs.findIndex((tab) => tab.id === this.currentTab());
     let target = -1;
     if (event.key === 'ArrowRight') target = (index + 1) % count;
     else if (event.key === 'ArrowLeft') target = (index - 1 + count) % count;
@@ -79,7 +88,7 @@ export class LivrePage {
     else if (event.key === 'End') target = count - 1;
     if (target < 0) return;
     event.preventDefault();
-    const id = this.tabs[target].id;
+    const id = tabs[target].id;
     this.select(id);
     this.host.nativeElement.querySelector<HTMLElement>(`#livre-tab-${id}`)?.focus();
   }

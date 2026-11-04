@@ -1,7 +1,6 @@
-import { TV_LIVRE_CAPABILITY } from '../../../../core/modules/tv-livre-entry.port';
 import type { TvSummary } from '../../data/tv-types';
 
-export { TV_LIVRE_CAPABILITY };
+export const TV_LIVRE_CAPABILITY = 'tv.livre.v1';
 
 /**
  * Tipos escritos à mão das rotas `/v1/tv/livre`: o contrato gerado do OpenAPI ainda não as traz, e a leitura abaixo é

@@ -53,6 +53,8 @@ class FakeAndroid:
         self.black_screen = False
         self.fail: set[str] = set()  # trechos de comando que respondem com falha
         self.ours_resolves = True  # falso: o sistema ignora a escolha da nossa home
+        self.factory_takes_priority = False
+        self.role_sticks = True
         self.install_text = "Performing Streamed Install\nSuccess\n"
         self.packages: dict[str, str] = {  # pacote -> pasta do APK (de fábrica ou atualizado)
             FACTORY_PACKAGE: "/system_ext/priv-app/Launcher/Launcher.apk",
@@ -74,6 +76,8 @@ class FakeAndroid:
 
     def _current_home(self) -> str | None:
         enabled = self._enabled_homes()
+        if self.factory_takes_priority and self.home == HOME_COMPONENT and self.homes[0] in enabled:
+            return self.homes[0]
         if self.home in enabled and not (self.home == HOME_COMPONENT and not self.ours_resolves):
             return self.home
         others = [h for h in enabled if h != HOME_COMPONENT]
@@ -141,6 +145,12 @@ class FakeAndroid:
             return ShellResult(True, f"{len(self._enabled_homes())} activities found:\n{lines}\n")
         if command.startswith("cmd package set-home-activity"):
             return self._set_home(command)
+        if command == "dumpsys role":
+            holder = self.home.split("/")[0]
+            return ShellResult(
+                True,
+                f"name=android.app.role.HOME\n        holders={holder}\n",
+            )
         if command.startswith("pm disable-user"):
             package = command.rsplit(maxsplit=1)[-1]
             self.disabled.add(package)
@@ -204,7 +214,8 @@ class FakeAndroid:
             return ShellResult(False, "Error: Failed to set default home for user\n")
         if component in self.reject_set_home or component not in self._enabled_homes():
             return ShellResult(False, "Error: Failed to set default home\n")
-        self.home = component
+        if self.role_sticks:
+            self.home = component
         return ShellResult(True, "Success\n")
 
     # --- consultas dos testes -----------------------------------------------------------------

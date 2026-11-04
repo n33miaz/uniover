@@ -64,6 +64,9 @@ _VERSION_NAME: Final = re.compile(r"versionName=(\S{1,40})")
 _DIGITS: Final = re.compile(r"\d{1,3}")
 _PID: Final = re.compile(r"\d+")
 _OWNER_OF_COMPONENT: Final = re.compile(r"([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)/")
+_HOME_ROLE_HOLDER: Final = re.compile(
+    r"name=android\.app\.role\.HOME\s+holders=([A-Za-z][A-Za-z0-9_.]+)"
+)
 _MAIN: Final = "-a android.intent.action.MAIN"
 _HOME_CATEGORY: Final = "-c android.intent.category.HOME"
 _RESOLVE_HOME: Final = f"cmd package resolve-activity --brief {_MAIN} {_HOME_CATEGORY}"
@@ -278,6 +281,21 @@ class TvLivre:
             version = match.group(1) if match else None
         resolved = _components((await self._adb.shell(_RESOLVE_HOME)).text)
         is_home = bool(resolved) and _package_of(resolved[-1]) == PACKAGE
+        factory = stored.get("factory")
+        disabled = stored.get("disabled", [])
+        if (
+            isinstance(factory, str)
+            and _COMPONENT.fullmatch(factory)
+            and isinstance(disabled, list)
+            and _package_of(factory) in disabled
+            and not is_home
+        ):
+            # A TV ou o agente pode cair entre desativar a Home antiga e confirmar a nova.
+            # Na próxima leitura, devolve o caminho conhecido antes de anunciar o estado ao celular.
+            await self._restore_home(factory, enable=True)
+            if await self._resolved_home_package() == _package_of(factory):
+                await self._forget_disabled(stored, _package_of(factory))
+                stored = self._state.load()
         ours: list[str] = [p for p in stored.get("disabled", []) if is_valid_package_name(p)]
         return LivreState(
             True,
@@ -521,10 +539,18 @@ class TvLivre:
         await self._require_launcher_runs()
         if not await self._set_home_activity(HOME_COMPONENT):
             raise LivreError("set_home_failed", "A TV não aceitou a nova tela inicial; nada mudou.")
-        if await self._resolved_home_package() != PACKAGE:
+        resolved = await self._resolved_home_package()
+        if resolved != PACKAGE and not await self._holds_home_role():
             await self._restore_home(factory)
             raise LivreError(
                 "verify_failed", "A nova tela inicial não ficou como padrão; voltei à original."
+            )
+        if resolved != PACKAGE and not disable_factory:
+            await self._restore_home(factory)
+            raise LivreError(
+                "factory_priority",
+                "Esta TV mantém a tela de fábrica em primeiro lugar. Para usar o TV Livre, "
+                "ative Desativar o Launcher de Fábrica e tente novamente.",
             )
         if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
             await self._restore_home(factory)
@@ -553,6 +579,12 @@ class TvLivre:
             raise LivreError(
                 "verify_failed", "A tela inicial mudou ao desativar o original; reativei e voltei."
             )
+
+    async def _holds_home_role(self) -> bool:
+        """Confere o papel HOME antes de desativar uma Home de fábrica com prioridade maior."""
+        result = await self._adb.shell("dumpsys role")
+        holder = _HOME_ROLE_HOLDER.search(result.text) if result.ok else None
+        return holder is not None and holder.group(1) == PACKAGE
 
     async def _resolved_home_package(self) -> str | None:
         component = await self._resolved_home()

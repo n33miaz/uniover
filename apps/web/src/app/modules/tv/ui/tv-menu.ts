@@ -5,6 +5,8 @@ import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvRoundKeys } from '../data/tv-round-keys';
 import { TvStore } from '../data/tv-store';
+import { TvSelection } from '../data/tv-selection';
+import { tvHasLivre } from '../livre/data/livre-types';
 import { TvIcon } from './tv-icon';
 
 /** O que o menu pede à tela: abrir o painel Apps, o Mais botões ou a folha Personalizar (o menu fecha antes). */
@@ -31,6 +33,7 @@ export class TvMenu {
   protected readonly prefs = inject(TvPrefs);
   protected readonly roundKeys = inject(TvRoundKeys);
   private readonly store = inject(TvStore);
+  private readonly selection = inject(TvSelection);
   private readonly isGuest = inject(SessionState).isGuest;
 
   /** O nome da linha dos apps: "Apps da TV", ou "Opções da TV" para quem só controla (é o título do painel que ela abre). */
@@ -39,6 +42,9 @@ export class TvMenu {
 
   /** Só o administrador (a conta dona) escolhe o computador da TV; a rota também é só dele. */
   protected readonly canBind = computed(() => !this.isGuest());
+  protected readonly canOpenLivre = computed(
+    () => !this.isGuest() && tvHasLivre(this.selection.selected()),
+  );
   protected readonly bindingRoute = TV_BINDING_ROUTE;
   protected readonly bindingLabel = computed(() =>
     this.store.status() === 'unconfigured'

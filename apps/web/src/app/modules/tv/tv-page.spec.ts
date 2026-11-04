@@ -702,6 +702,20 @@ describe('TvPage', () => {
       await render();
     };
 
+    it('offers TV Livre only to the owner when the selected TV declares the capability', async () => {
+      const selection = TestBed.inject(TvSelection);
+      selection.setTvs([
+        makeTv('tcl', { isDefault: true, capabilities: ['tv.remote', 'tv.livre.v1'] }),
+      ]);
+      await openMenu();
+      expect(root.querySelector('app-tv-menu a[href="/tv/livre"]')?.textContent).toContain(
+        'TV Livre',
+      );
+      selection.setTvs([makeTv('outra', { isDefault: true })]);
+      await render();
+      expect(root.querySelector('app-tv-menu a[href="/tv/livre"]')).toBeNull();
+    });
+
     it('starts closed and opens as a panel named "Mais opções", with the same gestures as the other panels', async () => {
       expect(root.querySelector('app-tv-menu')).toBeNull();
       await openMenu();

@@ -21,7 +21,7 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
   return {
     available: true,
     supported: true,
-    installed: false,
+    installed: true,
     version: null,
     isHome: false,
     factoryLauncher: null,
@@ -142,6 +142,15 @@ describe('LivrePage', () => {
   });
 
   describe('tabs', () => {
+    it('starts with installation alone until the launcher is installed', async () => {
+      api.get.mockResolvedValue(view({ installed: false }));
+      await render();
+      expect(qa('[role="tab"]').map((t) => t.textContent?.trim())).toEqual(['Instalação']);
+      expect(el.querySelector('app-livre-install-tab')).not.toBeNull();
+      expect(el.querySelector('app-livre-home-tab')).toBeNull();
+      expect(button('Aplicar na TV')).toBeUndefined();
+    });
+
     it('has the four screens, in order, with the first selected', async () => {
       await render();
       expect(qa('[role="tab"]').map((t) => t.textContent?.trim())).toEqual([
@@ -186,10 +195,9 @@ describe('LivrePage', () => {
 
   describe('Aplicar na TV', () => {
     it('guides installation before sending any configuration to the TV', async () => {
+      api.get.mockResolvedValue(view({ installed: false }));
       await render();
       expect(button('Aplicar na TV')).toBeUndefined();
-      button('Instalar TV Livre primeiro')!.click();
-      await change();
       expect(tab('Instalação').getAttribute('aria-selected')).toBe('true');
       expect(button('Instalar')).toBeDefined();
       expect(api.saveConfig).not.toHaveBeenCalled();
@@ -504,6 +512,8 @@ describe('LivrePage', () => {
       await change();
       await change();
       expect(api.install).toHaveBeenCalledTimes(1);
+      expect(el.querySelector('app-livre-home-tab')).not.toBeNull();
+      await open('Instalação');
       expect(button('Definir Como Padrão')!.disabled).toBe(false);
       expect(button('Definir Como Padrão')!.classList.contains('primary')).toBe(true);
     });
