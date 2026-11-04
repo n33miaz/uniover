@@ -47,7 +47,7 @@ def _production_ref() -> str:
     path = Path(__file__).resolve().parents[3] / "tools" / "update-channel.json"
     try:
         ref = json.loads(path.read_text(encoding="utf-8"))["production_ref"]
-        if ref in CHANNELS:
+        if isinstance(ref, str) and ref in CHANNELS:
             return ref
     except OSError, ValueError, KeyError, TypeError:
         pass
@@ -118,9 +118,9 @@ def active_production_ref() -> str:
         )
         response.raise_for_status()
         ref = response.json()["production_ref"]
-        if ref in CHANNELS:
+        if isinstance(ref, str) and ref in CHANNELS:
             return ref
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+    except httpx.HTTPError, ValueError, KeyError, TypeError:
         pass
     return PRODUCTION_REF
 

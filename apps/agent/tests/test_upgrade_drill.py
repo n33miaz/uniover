@@ -153,9 +153,11 @@ def test_the_sync_failure_wrapper_fails_only_the_first_three_syncs(tmp_path: Pat
     }
 
     def call(project: Path, frozen: bool = True) -> int:
-        arguments = ["sync", "--frozen", "--project", str(project)] if frozen else [
-            "sync", "--project", str(project), "--quiet"
-        ]
+        arguments = (
+            ["sync", "--frozen", "--project", str(project)]
+            if frozen
+            else ["sync", "--project", str(project), "--quiet"]
+        )
         done = subprocess.run(  # noqa: S603 - wrapper isolado na pasta temporaria do teste
             [
                 os.environ["ComSpec"],

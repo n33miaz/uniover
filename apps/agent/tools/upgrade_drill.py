@@ -516,7 +516,8 @@ $tokens = $null
 $errors = $null
 $parser = [System.Management.Automation.Language.Parser]
 $ast = $parser::ParseFile($Installer, [ref]$tokens, [ref]$errors)
-$names = @('Write-Config', 'Set-ConfigValues', 'Move-Folder', 'Get-MoveFailureReason', 'Get-ZipComment')
+$names = @('Write-Config', 'Set-ConfigValues', 'Move-Folder')
+$names += @('Get-MoveFailureReason', 'Get-ZipComment')
 $names += @('Get-AgentSource', 'Write-AgentLauncher')
 foreach ($name in $names) {
     $wanted = $name
@@ -594,8 +595,8 @@ def sync_failure_wrapper() -> str:
             'if /I not "%~1"=="sync" goto real_uv',
             'if /I "%~3"=="%UNIOVER_DRILL_APP%" goto fail_sync',
             'if /I "%~4"=="%UNIOVER_DRILL_APP%" goto fail_sync',
-            'goto real_uv',
-            ':fail_sync',
+            "goto real_uv",
+            ":fail_sync",
             "set count=0",
             'if exist "%UNIOVER_DRILL_SYNC_COUNT%" set /p count=<"%UNIOVER_DRILL_SYNC_COUNT%"',
             "set /a count=%count%+1",
