@@ -597,7 +597,9 @@ export class UpdateSkeleton {
         if (this.bootDone) {
           const path = (url: string) => url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
           if (path(event.url) !== path(router.url)) this.firstPageNavigation = true;
-          if (this.changesTopModule(event.url)) this.armRouteWait(event.url);
+          // Uma aba e uma tela filha também podem baixar um pedaço preguiçoso ou esperar uma guarda. Enquanto isso,
+          // a página anterior não pode parecer travada; só mudança de query preserva a mesma composição.
+          if (path(event.url) !== path(router.url)) this.armRouteWait(event.url);
         }
         return;
       }
@@ -674,17 +676,6 @@ export class UpdateSkeleton {
     if (!win) return;
     win.clearTimeout(this.routeTimer);
     this.routeTimer = win.setTimeout(() => this.routeWait.set(url), ROUTE_WAIT_MS);
-  }
-
-  /** Só uma troca entre módulos troca a casca inteira; abas, telas filhas e consulta preservam o cabeçalho visível. */
-  private changesTopModule(target: string): boolean {
-    const moduleOf = (url: string): string => {
-      const path = url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
-      if (path === '/') return '/';
-      const [segment] = path.slice(1).split('/');
-      return `/${segment}`;
-    };
-    return moduleOf(target) !== moduleOf(this.router.url);
   }
 
   private clearRouteWait(): void {

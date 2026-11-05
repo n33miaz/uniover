@@ -387,6 +387,45 @@ describe('UpdateSkeleton', () => {
     });
   });
 
+  it('covers a slow navigation between training pages with the destination drawing', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: 'treino', component: Blank },
+          {
+            path: 'treino/rotinas',
+            component: Blank,
+            canActivate: [() => gate.then(() => true)],
+          },
+        ]),
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const fixture = TestBed.createComponent(UpdateSkeleton);
+    const el = fixture.nativeElement as HTMLElement;
+    vi.useRealTimers();
+    addReadyMarker('training');
+    history.pushState({}, '', '/treino');
+    await router.navigateByUrl('/treino');
+    vi.useFakeTimers();
+
+    const pending = router.navigateByUrl('/treino/rotinas');
+    vi.advanceTimersByTime(ROUTE_WAIT_MS);
+    fixture.detectChanges();
+
+    const cover = el.querySelector('.bs-root');
+    expect(cover).not.toBeNull();
+    expect(cover?.getAttribute('data-boot-variant')).toBe('training-routines');
+    vi.useRealTimers();
+    history.pushState({}, '', '/treino/rotinas');
+    release();
+    await pending;
+    addReadyMarker('training');
+  });
+
   it('does not cover a slow query-only navigation inside the same module', async () => {
     vi.useFakeTimers();
     let release!: () => void;
