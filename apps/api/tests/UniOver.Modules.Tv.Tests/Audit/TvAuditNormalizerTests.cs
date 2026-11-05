@@ -55,6 +55,20 @@ public class TvAuditNormalizerTests
     }
 
     [Fact]
+    public void RemovedTv_UsesThePermanentRecordAsTheAuditSource()
+    {
+        var entry = TvRemovalAuditEntry.Create(Guid.NewGuid(), User, "pc-sala", "samsung", Client, At);
+
+        var record = TvAuditNormalizer.Normalize(entry);
+
+        record.Action.Should().Be(TvCommandNames.Remove);
+        record.Target.Should().Be("kind=samsung agent=pc-sala");
+        record.ActorId.Should().Be(User);
+        record.Ip.Should().Be(Client.Ip);
+        record.UserAgent.Should().Be(Client.UserAgent);
+    }
+
+    [Fact]
     public void EveryCommandName_IsListedOnce()
     {
         var declared = typeof(TvCommandNames)

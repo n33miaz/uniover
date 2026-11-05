@@ -106,6 +106,13 @@ internal static class AuditKit
         await db.SaveChangesAsync(Ct);
     }
 
+    public static async Task AddAsync(TestDatabase database, params TvRemovalAuditEntry[] entries)
+    {
+        await using var db = TvApp.CreateContext(database.OwnerConnection);
+        db.TvRemovalAudit.AddRange(entries);
+        await db.SaveChangesAsync(Ct);
+    }
+
     public static async Task AddAgentAsync(TestDatabase database, Agent agent)
     {
         await using var db = DevicesApp.CreateContext(database.OwnerConnection);

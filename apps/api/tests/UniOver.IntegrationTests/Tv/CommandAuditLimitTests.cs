@@ -147,6 +147,23 @@ public sealed class CommandAuditLimitTests(PostgresFixture postgres)
         NpgsqlConnection.ClearAllPools();
     }
 
+    [Theory]
+    [InlineData(TvCommandNames.Add)]
+    [InlineData(TvCommandNames.Remove)]
+    public async Task TvConfigurationLifecycleEvents_AreNeverCutByTheLimit(string command)
+    {
+        await using var db = await StartAsync();
+        var audit = new EfCommandAudit(db);
+        var user = Guid.NewGuid();
+        await SeedAsync(db, user, Day, Limit);
+
+        await audit.RecordAsync(Command(user, command, "kind=unknown agent=pc-sala", true, Noon), Ct);
+
+        (await RowsOfAsync(db, user, command)).Should().Be(1);
+        (await RowsOfAsync(db, user, TvCommandNames.AuditLimit)).Should().Be(0, "um evento administrativo raro não pode ser escondido por inundação");
+        NpgsqlConnection.ClearAllPools();
+    }
+
     [Fact]
     public async Task OverTheHttpRoute_TheCommandsKeepWorking_WhileTheTrailStopsGrowing()
     {

@@ -11,6 +11,7 @@ using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Tv.Domain;
 using UniOver.SharedKernel.Audit;
 using static UniOver.IntegrationTests.Audit.AuditKit;
 
@@ -81,6 +82,24 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
         var body = await raw.Content.ReadAsStringAsync(Ct);
         body.Should().NotContain(app.OwnerEmail, "o e-mail nunca sai por esta rota");
         body.Should().NotContain("passwordHash");
+    }
+
+    [Fact]
+    public async Task Owner_ReadsAPermanentTvRemoval()
+    {
+        var (app, owner, ownerId) = await StartAsync();
+        await using var lifetime = app;
+        var tvId = Guid.NewGuid();
+        await AddAsync(app.Database, TvRemovalAuditEntry.Create(
+            tvId, ownerId, "pc-sala", "samsung", new ClientInfo("203.0.113.31", "navegador/1.0"), T0));
+
+        var page = await GetJsonAsync(app, owner.AccessToken, "?" + Window);
+        var removal = Items(page).Should().ContainSingle().Subject;
+        removal.GetProperty("module").GetString().Should().Be("tv");
+        removal.GetProperty("action").GetString().Should().Be("tv.remove");
+        removal.GetProperty("target").GetString().Should().Be("kind=samsung agent=pc-sala");
+        removal.GetProperty("actor").GetProperty("id").GetGuid().Should().Be(ownerId);
+        removal.GetProperty("ip").GetString().Should().Be("203.0.113.31");
     }
 
     [Fact]
