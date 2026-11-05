@@ -179,7 +179,7 @@ async def test_ime_batches_use_the_echo_counters_and_the_configured_cursor(
 ) -> None:
     fields: list[TextFieldStatus] = []
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port, text_cursor=cursor_mode)
+        adapter = make_adapter(tmp_path, server.port, text_cursor=cursor_mode, text_counters="echo")
         adapter.on_text_field(fields.append)
         await adapter.connect()
         try:
@@ -208,6 +208,35 @@ async def test_ime_batches_use_the_echo_counters_and_the_configured_cursor(
         for batch in (first, second)
         for edit in batch.edit_info
     )
+
+
+async def test_library_counters_mode_keeps_the_librarys_own_counters_despite_the_echo(
+    tmp_path: Path,
+) -> None:
+    fields: list[TextFieldStatus] = []
+    library = FakeLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    adapter.on_text_field(fields.append)
+    await adapter.connect()
+    protocol = library._remote_message_protocol
+    protocol.ime_counter = 3
+    protocol.ime_field_counter = 5
+    try:
+        echo = RemoteMessage()
+        echo.remote_ime_key_inject.app_info.counter = 29
+        echo.remote_ime_key_inject.text_field_status.counter_field = 17
+        protocol._handle_message(echo.SerializeToString())
+        tv_batch = RemoteMessage()
+        tv_batch.remote_ime_batch_edit.ime_counter = 31
+        tv_batch.remote_ime_batch_edit.field_counter = 19
+        protocol._handle_message(tv_batch.SerializeToString())
+        assert len(fields) == 1
+        await adapter.send_text("abc")
+        assert (protocol.ime_counter, protocol.ime_field_counter) == (3, 5)
+    finally:
+        await adapter.disconnect()
+    batch = protocol.messages[-1].remote_ime_batch_edit
+    assert (batch.ime_counter, batch.field_counter) == (3, 5)
 
 
 async def test_ime_batch_without_an_echo_uses_the_library_counters_and_hides_text_in_the_log(
@@ -289,7 +318,7 @@ async def test_a_new_echo_between_batches_supplies_the_second_batches_counters(
 ) -> None:
     fields: list[TextFieldStatus] = []
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port)
+        adapter = make_adapter(tmp_path, server.port, text_counters="echo")
         adapter.on_text_field(fields.append)
         await adapter.connect()
         try:
@@ -312,7 +341,7 @@ async def test_ime_batch_from_the_tv_is_inherited_by_a_field_echo_without_app_in
 ) -> None:
     fields: list[TextFieldStatus] = []
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port, text_trace=True)
+        adapter = make_adapter(tmp_path, server.port, text_trace=True, text_counters="echo")
         adapter.on_text_field(fields.append)
         await adapter.connect()
         try:

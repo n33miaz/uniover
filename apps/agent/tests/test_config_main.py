@@ -59,11 +59,18 @@ def test_ime_text_options_keep_the_library_cursor_and_protect_echo_values(
     settings = Settings()
     assert (settings.tv_text_cursor, settings.tv_text_debug_values) == ("library", False)
     assert settings.tv_text_trace is False
+    assert settings.tv_text_counters == "library"
     monkeypatch.setenv("UNIOVER_TV_TEXT_CURSOR", "field_end")
     monkeypatch.setenv("UNIOVER_TV_TEXT_DEBUG_VALUES", "true")
     monkeypatch.setenv("UNIOVER_TV_TEXT_TRACE", "true")
     settings = Settings()
     assert settings.tv_text_trace is True
+    monkeypatch.setenv("UNIOVER_TV_TEXT_COUNTERS", "echo")
+    assert Settings().tv_text_counters == "echo"
+    monkeypatch.setenv("UNIOVER_TV_TEXT_COUNTERS", "invalid")
+    with pytest.raises(ValueError, match="tv_text_counters"):
+        Settings()
+    monkeypatch.delenv("UNIOVER_TV_TEXT_COUNTERS")
     assert (settings.tv_text_cursor, settings.tv_text_debug_values) == ("field_end", True)
     monkeypatch.setenv("UNIOVER_TV_TEXT_CURSOR", "invalid")
     with pytest.raises(ValueError, match="tv_text_cursor"):

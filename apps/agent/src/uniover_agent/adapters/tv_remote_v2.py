@@ -48,6 +48,7 @@ REMOTE_PORT: Final = 6466
 # 1 + 2 + 4 s; um teto baixo limita esse pior caso (~27 s). A confirmar na medição de religação.
 CONNECT_TIMEOUT_SECONDS: Final = 5.0
 TextCursor = Literal["library", "chunk_end", "field_end"]
+TextCounters = Literal["library", "echo"]
 
 DIRECTIONS: Final = frozenset({"SHORT", "START_LONG", "END_LONG"})
 
@@ -253,6 +254,7 @@ class AndroidTvRemoteV2:
         text_cursor: TextCursor = "library",
         text_debug_values: bool = False,
         text_trace: bool = False,
+        text_counters: TextCounters = "library",
     ) -> None:
         self._host = host
         self._client_name = client_name
@@ -263,6 +265,9 @@ class AndroidTvRemoteV2:
         self._on_connected = on_connected
         self._text_cursor = text_cursor
         self._text_debug_values = text_debug_values
+        # `library`: o lote usa os contadores que a própria biblioteca guarda (comportamento
+        # anterior, o seguro). `echo`: usa os do último eco/lote que a TV mandou.
+        self._text_counters = text_counters
         # As linhas por eco/lote enchem o registro rotativo durante a digitação e mostram o
         # tamanho do texto: só vão para INFO no teste acompanhado (o valor também as liga).
         self._trace_level = logging.INFO if text_trace or text_debug_values else logging.DEBUG
@@ -403,10 +408,12 @@ class AndroidTvRemoteV2:
             raise TvUnreachable("a conexão com a TV não está aberta")
         library_ime_counter = protocol.ime_counter
         library_field_counter = protocol.ime_field_counter
-        ime_counter = self._ime_counter if self._ime_counter is not None else library_ime_counter
-        field_counter = (
-            self._field_counter if self._field_counter is not None else library_field_counter
-        )
+        ime_counter, field_counter = library_ime_counter, library_field_counter
+        if self._text_counters == "echo":
+            if self._ime_counter is not None:
+                ime_counter = self._ime_counter
+            if self._field_counter is not None:
+                field_counter = self._field_counter
         cursor = self._cursor_for(text)
         blind = not self._field_echo_seen
         _log.log(
@@ -490,9 +497,10 @@ class AndroidTvRemoteV2:
         self._last_echo_field_counter = field.counter
         if field.ime_counter is not None:
             self._ime_counter = field.ime_counter
-        protocol.ime_field_counter = field.counter
-        if field.ime_counter is not None:
-            protocol.ime_counter = field.ime_counter
+        if self._text_counters == "echo":
+            protocol.ime_field_counter = field.counter
+            if field.ime_counter is not None:
+                protocol.ime_counter = field.ime_counter
         ime_origin = (
             " ime_origem=herdado"
             if field.ime_counter is None
@@ -520,8 +528,9 @@ class AndroidTvRemoteV2:
             return
         self._ime_counter = batch.ime_counter
         self._field_counter = batch.field_counter
-        protocol.ime_counter = batch.ime_counter
-        protocol.ime_field_counter = batch.field_counter
+        if self._text_counters == "echo":
+            protocol.ime_counter = batch.ime_counter
+            protocol.ime_field_counter = batch.field_counter
         _log.log(
             self._trace_level,
             "tv ime lote da TV ime=%s campo=%s",
