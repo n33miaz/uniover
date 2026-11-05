@@ -100,6 +100,10 @@ export function knownActionLabel(code: string): string | null {
     case 'pc_app_launch':
       return $localize`:@@settings.audit.action.pc-app-launch:App aberto no PC`;
     // TV
+    case 'tv.add':
+      return $localize`:@@settings.audit.action.tv-add:TV criada`;
+    case 'tv.remove':
+      return $localize`:@@settings.audit.action.tv-remove:TV removida`;
     case 'tv.key':
       return $localize`:@@settings.audit.action.tv-key:Tecla enviada à TV`;
     case 'tv.text':
@@ -300,6 +304,9 @@ function describeBaseTarget(action: string, target: string): string | null {
           : null;
     case 'tv.config.bind':
       return $localize`:@@settings.audit.target.computer:Computador ${target}:computer:`;
+    case 'tv.add':
+    case 'tv.remove':
+      return tvConfigurationTarget(target);
     case 'tv.siri.create':
     case 'tv.siri.revoke':
       // O alvo é o nome que o administrador deu à chave.
@@ -329,6 +336,19 @@ function describeBaseTarget(action: string, target: string): string | null {
     default:
       return null;
   }
+}
+
+function tvConfigurationTarget(target: string): string | null {
+  const match = /^kind=(android|samsung|unknown) agent=([a-z0-9-]{1,40})$/.exec(target);
+  if (!match) return null;
+
+  const kind =
+    match[1] === 'android'
+      ? $localize`:@@settings.audit.target.tv-kind-android:Android TV`
+      : match[1] === 'samsung'
+        ? $localize`:@@settings.audit.target.tv-kind-samsung:Samsung TV`
+        : $localize`:@@settings.audit.target.tv-kind-unknown:Tipo de TV não identificado`;
+  return $localize`:@@settings.audit.target.tv-configuration:${kind}:kind: · Computador ${match[2]}:computer:`;
 }
 
 /** Separa `"+a,b|-c"` (o que entrou e o que saiu numa mudança de permissões) em duas listas. */
