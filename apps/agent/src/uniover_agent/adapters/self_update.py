@@ -85,6 +85,26 @@ DOWNLOAD_DEADLINE_SECONDS = 300.0
 # descartável dela somam centenas de MB, e uma atualização que enche o disco no meio piora o que
 # já estava ruim.
 MIN_FREE_BYTES = 600 * 1024 * 1024
+# Limites de cada passo (usados por quem os executa e somados em `WORST_CASE_SECONDS`).
+FETCH_TIMEOUT_SECONDS = (
+    120.0  # a consulta do commit mais recente (várias leituras, cada uma com prazo)
+)
+EXTRACT_SECONDS = 120.0  # extrair e conferir o pacote, com o disco no limite
+SYNC_TIMEOUT_SECONDS = 600
+SYNC_ATTEMPTS = 2
+SYNC_PAUSE_SECONDS = 3.0
+CHECK_TIMEOUT_SECONDS = 120
+# O pior caso de uma atualização que ainda anda: tudo isto, em série. O teto de quem a executa por
+# fora (o supervisor, em `run-agent.ps1`) tem de passar disto, senão mata uma atualização lenta
+# mas legítima, e a próxima tentativa recomeça do zero.
+WORST_CASE_SECONDS = (
+    FETCH_TIMEOUT_SECONDS
+    + DOWNLOAD_DEADLINE_SECONDS
+    + EXTRACT_SECONDS
+    + SYNC_ATTEMPTS * SYNC_TIMEOUT_SECONDS
+    + (SYNC_ATTEMPTS - 1) * SYNC_PAUSE_SECONDS
+    + CHECK_TIMEOUT_SECONDS
+)
 
 
 class SelfUpdateError(Exception):
@@ -500,7 +520,7 @@ def _run_uv(  # noqa: PLR0913 - cada argumento é um limite ou um caminho, todos
     raise SelfUpdateError(f"{what} falhou ({reason})")
 
 
-def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
+def run_uv_sync(source: Path, *, pause: float = SYNC_PAUSE_SECONDS) -> None:
     """Sincroniza a candidata, num ambiente só dela, antes de ela substituir a instalação.
 
     Tenta de novo uma vez (arquivo preso por antivírus, cache do `uv` em uso, rede) e, se ainda
@@ -510,11 +530,11 @@ def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
     _run_uv(
         ["sync", "--frozen", "--project", str(source), "--quiet"],
         what="a sincronização das dependências",
-        timeout=600,
+        timeout=SYNC_TIMEOUT_SECONDS,
         cwd=source.parent,
         environment=environment,
         pause=pause,
-        attempts=2,
+        attempts=SYNC_ATTEMPTS,
     )
 
 
@@ -537,7 +557,7 @@ def run_uv_check(source: Path) -> None:
             "uniover_agent.selfcheck",
         ],
         what="o auto-diagnóstico da versão nova",
-        timeout=120,
+        timeout=CHECK_TIMEOUT_SECONDS,
         cwd=source.parent,
         environment=candidate_env(source),
         pause=0.0,

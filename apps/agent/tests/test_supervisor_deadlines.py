@@ -19,7 +19,7 @@ import pytest
 
 from .launcher_isolation import isolated_launcher
 from .test_launcher_recovery import POWERSHELL, TASKKILL, folder
-from .test_supervisor_guardrails import CURRENT, Pc, wait_for
+from .test_supervisor_guardrails import CURRENT, RUNNER, Pc, wait_for
 
 pytestmark = pytest.mark.skipif(not POWERSHELL.is_file(), reason="precisa do Windows")
 
@@ -183,7 +183,9 @@ def test_the_supervisor_brings_the_launcher_in_the_fixed_folder_up_to_date(pc: P
 # --- Lançador: vigia o supervisor ---------------------------------------------------------------
 
 
-def run_launcher(tmp_path: Path, stale: str) -> subprocess.Popen[bytes]:
+def run_launcher(
+    tmp_path: Path, stale: str, extra: dict[str, str] | None = None
+) -> subprocess.Popen[bytes]:
     return subprocess.Popen(  # noqa: S603 - Windows PowerShell do sistema; script do repositório
         [
             str(POWERSHELL),
@@ -198,7 +200,8 @@ def run_launcher(tmp_path: Path, stale: str) -> subprocess.Popen[bytes]:
             "LOCALAPPDATA": str(tmp_path),
             "UNIOVER_TEST_MARKER": str(tmp_path / "started.txt"),
             "UNIOVER_LAUNCHER_STALE_SECONDS": stale,
-        },
+        }
+        | (extra or {}),
         creationflags=0x08000000,
     )
 
@@ -259,10 +262,70 @@ def test_a_supervisor_that_keeps_its_pulse_is_never_restarted_by_the_launcher(
     (app / "tools" / "run-agent.ps1").write_text(
         counting_supervisor(touches=True), encoding="ascii"
     )
-    launcher = run_launcher(tmp_path, stale="4")
+    launcher = run_launcher(tmp_path, stale="10")
     try:
         assert wait_for(lambda: starts(tmp_path) >= 1, 60)
-        time.sleep(16)
+        time.sleep(24)
         assert starts(tmp_path) == 1
     finally:
         stop(launcher)
+
+
+def test_a_pc_that_slept_does_not_get_its_healthy_supervisor_killed(tmp_path: Path) -> None:
+    # O relógio salta 100 s de uma vez (suspensão); o sinal do supervisor, que dormiu junto, parece
+    # velho de 100 s contra um prazo de 4. Depois do salto o prazo recomeça: ninguém é reiniciado.
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (base / "runtime").mkdir()
+    (app / "tools" / "run-agent.ps1").write_text(
+        counting_supervisor(touches=True), encoding="ascii"
+    )
+    launcher = run_launcher(
+        tmp_path, stale="4", extra={"UNIOVER_LAUNCHER_TEST_CLOCK_JUMP": "6:100"}
+    )
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        log = base / "logs" / "supervisor.log"
+        assert wait_for(lambda: log.exists() and "o relogio saltou" in log.read_text("utf-8"), 40)
+        time.sleep(12)
+        assert starts(tmp_path) == 1, "a suspensão do PC não é um supervisor travado"
+    finally:
+        stop(launcher)
+
+
+def test_after_a_suspension_a_supervisor_that_stays_silent_is_still_restarted(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(
+        counting_supervisor(touches=False), encoding="ascii"
+    )
+    launcher = run_launcher(
+        tmp_path, stale="4", extra={"UNIOVER_LAUNCHER_TEST_CLOCK_JUMP": "1:100"}
+    )
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 2, 90)
+        assert "o relogio saltou" in (base / "logs" / "supervisor.log").read_text("utf-8")
+    finally:
+        stop(launcher)
+
+
+def test_the_outer_update_ceiling_is_above_every_inner_limit_and_below_the_stale_mark() -> None:
+    # O teto externo (supervisor) nunca pode ser menor que a soma dos limites internos do
+    # `self-update`, senão uma atualização lenta mas legítima é morta e recomeça do zero.
+    import re  # noqa: PLC0415
+
+    from uniover_agent.adapters import self_update as update  # noqa: PLC0415
+    from uniover_agent.core.update_report import UPDATING_STALE_AFTER  # noqa: PLC0415
+
+    script = RUNNER.read_text(encoding="utf-8")
+    found = re.search(r"UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS'\s+(\d+)", script)
+    assert found is not None
+    ceiling = float(found.group(1))
+    margin = 300.0
+    assert ceiling >= update.WORST_CASE_SECONDS + margin
+    assert ceiling < UPDATING_STALE_AFTER.total_seconds()
+    # Os limites internos são os que quem executa de fato usa.
+    assert update.run_uv_sync.__kwdefaults__ is not None
+    assert update.run_uv_sync.__kwdefaults__["pause"] == update.SYNC_PAUSE_SECONDS
