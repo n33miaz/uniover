@@ -433,15 +433,12 @@ class AdbTv:
             stale = "already connected" in joined.text
             # `offline` pede refazer a conexão. Com `unauthorized`, uma conexão nova faria a TV
             # mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido. A exceção é o
-            # pedido da pessoa sobre uma permissão ainda não provada: um transporte que já estava
-            # `device` pode ser um "Permitir" de uma vez só, e só uma conexão nova mostra isso.
-            if stale and (
-                state is DeviceState.OFFLINE
-                or (
-                    state is DeviceState.DEVICE
-                    and is_user_initiated()
-                    and await self._needs_proof()
-                )
+            # pedido da pessoa sobre uma permissão ainda não provada: `device` logo depois de uma
+            # conexão (nova ou não) pode ser um "Permitir" de uma vez só aceito durante ela, e só
+            # uma segunda conexão, ainda dentro do mesmo pedido, mostra se ficou gravado. A pessoa
+            # está diante da TV: se o aviso voltar, é a hora de ela marcar "Sempre permitir".
+            if (stale and state is DeviceState.OFFLINE) or (
+                state is DeviceState.DEVICE and is_user_initiated() and await self._needs_proof()
             ):
                 await self._exec("disconnect", self._serial)
                 joined, state = await self._handshake_locked()
@@ -487,22 +484,28 @@ class AdbTv:
             self._pairing_task = asyncio.create_task(self._acceptance_watch(snapshot))
 
     async def _acceptance_watch(self, snapshot: str | None) -> None:
-        """Vê o aceite da pessoa e aproveita o transporte vivo; **nunca** conecta nem desconecta.
+        """Continuação do toque da pessoa: espera o aceite por até `pairing_watch_seconds` (90 s).
 
-        Só `get-state`. Quando a TV diz `device`, registra a permissão como `granted` (ainda não
-        provada), desliga o vencimento de 7 dias e anota o serial, tudo por comandos fixos sobre o
-        transporte já autorizado. A prova (uma conexão nova) só acontece num pedido seguinte da
-        pessoa: se o "Sempre permitir" não foi marcado, o aviso volta quando ela tocar de novo, e
-        não sozinho. Esta tarefa não leva a marca de pedido da pessoa.
+        **Nunca conecta nem desconecta** e não leva a marca de pedido da pessoa. Enquanto espera só
+        lê `get-state`. Quando a TV diz `device`, registra a permissão como `granted` (ainda não
+        provada) e, como continuação do mesmo toque, roda sobre o transporte já autorizado dois
+        comandos fixos de shell: desliga o vencimento de 7 dias (`settings put`/`get`) e anota o
+        serial (`getprop`). A prova (uma conexão nova) só acontece num pedido seguinte da pessoa.
+
+        É limitada no tempo (contagem e relógio, conferido de novo depois de esperar a trava) e só
+        existe na memória: nada a retoma depois dos 90 s nem depois de reiniciar o agente.
         """
         authorization = self._authorization
         poll = max(self._pairing_poll_seconds, 0.001)
+        deadline = self._monotonic() + self._pairing_watch_seconds
         waited = 0.0
-        while waited < self._pairing_watch_seconds:
+        while waited < self._pairing_watch_seconds and self._monotonic() <= deadline:
             await self._sleep(poll)
             waited += poll
             try:
                 async with self._lock:
+                    if self._monotonic() > deadline:
+                        return  # esperou a trava além da janela: a continuação do toque acabou
                     output = await self._exec("-s", self._serial, "get-state")
                     if parse_device_state(output.text) is not DeviceState.DEVICE:
                         continue
