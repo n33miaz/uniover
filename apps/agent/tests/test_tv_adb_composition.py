@@ -81,9 +81,9 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert {"tv.apps.refresh.v1", "tv.app.launch.v1"} <= set(setup.handlers)
     assert len(setup.prepare) == 2  # o ADB e o TV Livre
     assert len(setup.after_hello) == 1
-    # O anunciante da lista e o temporizador da limpeza automática.
-    # anunciante da lista, temporizador da limpeza, laço do modo foco e reavaliação do ADB
-    assert len(setup.background) == 4
+    # Anunciante da lista, temporizador da limpeza, laço do modo foco, contato periódico com a TV
+    # (mantém a permissão viva) e reavaliação da permissão do ADB.
+    assert len(setup.background) == 5
     # A capacidade só vem depois do teste de conexão (passo de preparação).
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
 
@@ -161,7 +161,7 @@ async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
         for step in setup.prepare:
             await step()
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
-    assert "não autorizou" in caplog.text
+    assert "Nenhum aviso é aberto sozinho" in caplog.text
     # Os comandos continuam registrados: respondem `adb_unauthorized` em vez de "desconhecido".
     assert "tv.apps.refresh.v1" in setup.handlers
 

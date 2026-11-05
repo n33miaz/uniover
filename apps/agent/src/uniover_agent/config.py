@@ -55,6 +55,15 @@ def tv_cert_dir(tv_name: str) -> Path:
     return installation_base() / "tv" / safe
 
 
+def adb_key_backup_dir() -> Path:
+    """Cópia da chave do `adb` do usuário: fica na pasta de instalação, que atualização não toca.
+
+    O nome começa com ponto, que `tv_cert_dir` nunca produz (ele tira os pontos das pontas): não
+    colide com a pasta de nenhuma TV.
+    """
+    return installation_base() / "tv" / ".adb-key"
+
+
 def agent_source_dir() -> Path:
     """Onde o instalador põe o código do agente (e onde a auto-atualização o troca)."""
     return installation_base() / "app"
@@ -151,6 +160,9 @@ class Settings(BaseSettings):
     # Espaço mínimo entre dois `kill-server`; 0 desliga o descanso.
     adb_kill_server_cooldown_seconds: float = Field(default=600.0, ge=0, le=3600)
     tv_adb_recheck_seconds: float = Field(default=300.0, gt=0, le=3600)
+    # De quanto em quanto tempo o agente confirma a permissão do ADB com a TV (só se a TV atende e
+    # a permissão já está registrada), para o vencimento de 7 dias do Android nunca chegar.
+    tv_adb_keepalive_seconds: float = Field(default=43200.0, ge=60, le=259200)
     # Tempo para copiar um APK da TV (bem maior que o de um comando curto).
     adb_pull_timeout_seconds: float = Field(default=120.0, gt=0)
     # Ícones dos apps: `aapt2` do Android SDK (padrão: o mais novo em `build-tools`; sem ele, sem

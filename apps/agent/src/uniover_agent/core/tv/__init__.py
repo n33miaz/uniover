@@ -1,6 +1,11 @@
 """Sessão e comandos da TV (sem rede nem biblioteca de TV)."""
 
-from uniover_agent.core.tv.adb_commands import AppsAnnouncer, TvApps, tv_apps_refresh_handler
+from uniover_agent.core.tv.adb_commands import (
+    AppsAnnouncer,
+    TvApps,
+    tv_apps_refresh_handler,
+    user_initiated,
+)
 from uniover_agent.core.tv.apps import AppEntry, describe_apps
 from uniover_agent.core.tv.cleanup import (
     CLEANUP_FAILED,
@@ -106,4 +111,5 @@ __all__ = [
     "tv_text_handler",
     "tv_wake_handler",
     "unsupported_handler",
+    "user_initiated",
 ]

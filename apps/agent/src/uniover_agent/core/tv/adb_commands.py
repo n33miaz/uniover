@@ -17,7 +17,7 @@ from uniover_agent.core.tv.apps import AppEntry, describe_apps
 from uniover_agent.core.tv.handlers import failed_result
 from uniover_agent.core.tv.icons import IconRequests
 from uniover_agent.core.tv.session import TvSessionError
-from uniover_agent.ports import AdbError, Transport, TransportError, TvAdb
+from uniover_agent.ports import AdbError, Transport, TransportError, TvAdb, user_initiated_adb
 
 _log = logging.getLogger(__name__)
 
@@ -103,6 +103,25 @@ class TvApps:
             await self._adb.launch_package(package)
         except AdbError as exc:
             raise TvSessionError(exc.code, exc.message) from None
+
+
+def user_initiated(
+    handler: Handler, *, when: Callable[[Command], bool] = lambda _command: True
+) -> Handler:
+    """Marca o comando como pedido da pessoa: só então o ADB pode pedir a permissão à TV.
+
+    Um comando chega do app quando alguém o aciona (um botão). O que o agente faz sozinho não passa
+    por aqui e, se a TV ainda não deu a permissão, nem tenta conectar (cada conexão faria o aviso
+    "Permitir depuração USB" aparecer de novo).
+    """
+
+    async def handle(command: Command) -> CommandResult:
+        if not when(command):
+            return await handler(command)
+        with user_initiated_adb():
+            return await handler(command)
+
+    return handle
 
 
 def tv_apps_refresh_handler(apps: AppsProvider) -> Handler:

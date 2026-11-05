@@ -83,6 +83,7 @@ from uniover_agent.core.tv import (
     tv_text_handler,
     tv_wake_handler,
     unsupported_handler,
+    user_initiated,
 )
 from uniover_agent.core.update_report import UpdateStatusWatcher, update_body
 
@@ -175,4 +176,5 @@ __all__ = [
     "tv_wake_handler",
     "unsupported_handler",
     "update_body",
+    "user_initiated",
 ]
