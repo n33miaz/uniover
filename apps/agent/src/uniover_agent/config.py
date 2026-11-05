@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     # Só para o roteiro acompanhado pelo dono: registra o valor que a TV ecoa. Pode expor texto
     # digitado, por isso fica desligado e não deve ser usado fora de um teste controlado.
     tv_text_debug_values: bool = False
+    # Linhas por eco/lote do texto da TV (contadores, tamanho, cursor). Desligado, vão para DEBUG:
+    # no INFO encheriam o registro durante a digitação e revelariam o tamanho de uma senha.
+    # Ligar para a medição acompanhada pelo dono; `tv_text_debug_values` também as liga.
+    tv_text_trace: bool = False
     # Vigia do serviço do controle da Android TV: religa por ADB quando as portas 6466/6467 fecham.
     # Só age com `adb` neste PC; desligue se outra coisa (o vigia antigo do PC) já faz isso.
     tv_watchdog: bool = True

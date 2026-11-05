@@ -214,7 +214,7 @@ async def test_ime_batch_without_an_echo_uses_the_library_counters_and_hides_tex
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port)
+        adapter = make_adapter(tmp_path, server.port, text_trace=True)
         await adapter.connect()
         try:
             protocol = adapter._client._remote_message_protocol
@@ -312,7 +312,7 @@ async def test_ime_batch_from_the_tv_is_inherited_by_a_field_echo_without_app_in
 ) -> None:
     fields: list[TextFieldStatus] = []
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port)
+        adapter = make_adapter(tmp_path, server.port, text_trace=True)
         adapter.on_text_field(fields.append)
         await adapter.connect()
         try:
@@ -864,7 +864,7 @@ async def test_text_echo_logs_only_metadata_unless_value_debugging_is_enabled(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port)
+        adapter = make_adapter(tmp_path, server.port, text_trace=True)
         await adapter.connect()
         try:
             with caplog.at_level("INFO"):
@@ -908,22 +908,57 @@ async def test_the_real_library_still_exposes_the_private_ime_api_the_adapter_us
             await adapter.disconnect()
 
 
-def test_the_hook_logs_a_batch_the_tv_sends_without_exposing_edit_values(
-    caplog: pytest.LogCaptureFixture,
+async def test_a_batch_from_the_tv_is_logged_without_exposing_edit_values(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    handled: list[bytes] = []
-    protocol = types.SimpleNamespace(_handle_message=handled.append)
-    client = types.SimpleNamespace(_remote_message_protocol=protocol)
-    message = RemoteMessage()
-    message.remote_ime_batch_edit.ime_counter = 7
-    message.remote_ime_batch_edit.field_counter = 11
-    message.remote_ime_batch_edit.edit_info.add().text_field_status.value = "segredo de teste"
-    assert _install_text_field_hook(client, lambda field: None) is True
-    with caplog.at_level("INFO"):
-        protocol._handle_message(message.SerializeToString())
-    assert handled == [message.SerializeToString()]
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port, text_trace=True)
+        await adapter.connect()
+        try:
+            with caplog.at_level("INFO"):
+                server.push_ime_batch(7, 11)
+                await eventually(lambda: "tv ime lote da TV" in caplog.text)
+        finally:
+            await adapter.disconnect()
     assert "tv ime lote da TV ime=7 campo=11" in caplog.text
-    assert "segredo de teste" not in caplog.text
+
+
+async def test_trace_lines_are_debug_unless_the_trace_is_enabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    fields: list[TextFieldStatus] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        adapter.on_text_field(fields.append)
+        await adapter.connect()
+        try:
+            with caplog.at_level("INFO"):
+                server.push_text_field("segredo", counter=4, start=7, end=7, app_counter=9)
+                await eventually(lambda: bool(fields))
+                server.push_ime_batch(9, 4)
+                await adapter.send_text("segredo")
+                await eventually(lambda: len(server.ime_batches) == 1)
+                await eventually(lambda: (adapter._ime_counter, adapter._field_counter) == (9, 4))
+        finally:
+            await adapter.disconnect()
+    assert "tam=" not in caplog.text
+    assert "tv ime" not in caplog.text
+
+
+async def test_trace_lines_reach_debug_when_the_trace_is_disabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            with caplog.at_level("DEBUG"):
+                await adapter.send_text("segredo")
+                await eventually(lambda: len(server.ime_batches) == 1)
+        finally:
+            await adapter.disconnect()
+    assert "tv ime envio" in caplog.text
+    assert "segredo" not in caplog.text
 
 
 async def test_a_failing_listener_does_not_break_the_librarys_own_handling(tmp_path: Path) -> None:

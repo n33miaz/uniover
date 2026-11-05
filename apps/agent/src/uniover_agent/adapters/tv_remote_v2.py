@@ -199,11 +199,6 @@ def _install_text_field_hook(
             if batch is not None:
                 if on_ime_batch is not None:
                     on_ime_batch(batch)
-                _log.info(
-                    "tv ime lote da TV ime=%s campo=%s",
-                    batch.ime_counter,
-                    batch.field_counter,
-                )
 
     try:
         protocol._handle_message = on_message
@@ -257,6 +252,7 @@ class AndroidTvRemoteV2:
         on_connected: Callable[[], Awaitable[None]] | None = None,
         text_cursor: TextCursor = "library",
         text_debug_values: bool = False,
+        text_trace: bool = False,
     ) -> None:
         self._host = host
         self._client_name = client_name
@@ -267,6 +263,9 @@ class AndroidTvRemoteV2:
         self._on_connected = on_connected
         self._text_cursor = text_cursor
         self._text_debug_values = text_debug_values
+        # As linhas por eco/lote enchem o registro rotativo durante a digitação e mostram o
+        # tamanho do texto: só vão para INFO no teste acompanhado (o valor também as liga).
+        self._trace_level = logging.INFO if text_trace or text_debug_values else logging.DEBUG
         self._client: RemoteClient | None = None
         self._connected = False
         self._watcher: asyncio.Task[None] | None = None
@@ -410,7 +409,8 @@ class AndroidTvRemoteV2:
         )
         cursor = self._cursor_for(text)
         blind = not self._field_echo_seen
-        _log.info(
+        _log.log(
+            self._trace_level,
             "tv ime envio ime=%s campo=%s tam=%s cursor=%s-%s canal=remote "
             "biblioteca_ime=%s biblioteca_campo=%s cego=%s",
             ime_counter,
@@ -501,7 +501,8 @@ class AndroidTvRemoteV2:
             else ""
         )
         suffix = f" valor={field.value!r}" if self._text_debug_values else ""
-        _log.info(
+        _log.log(
+            self._trace_level,
             "tv ime eco app=%s campo=%s tam=%s cursor=%s-%s%s%s",
             field.ime_counter if field.ime_counter is not None else "-",
             field.counter,
@@ -521,6 +522,12 @@ class AndroidTvRemoteV2:
         self._field_counter = batch.field_counter
         protocol.ime_counter = batch.ime_counter
         protocol.ime_field_counter = batch.field_counter
+        _log.log(
+            self._trace_level,
+            "tv ime lote da TV ime=%s campo=%s",
+            batch.ime_counter,
+            batch.field_counter,
+        )
 
     @staticmethod
     def _fan_out[T](callbacks: list[Callable[[T], None]], value: T) -> None:
