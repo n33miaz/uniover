@@ -24,7 +24,7 @@ test.beforeEach(async ({ context }) => {
   mock.stepUpValid = true;
 });
 
-const TV_SUMMARY = 'Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico';
+const TV_SUMMARY = 'Controlar a TV · Desligar a TV · Abrir apps';
 
 const BRUNO: MockGuest = {
   id: '00000000-0000-4000-8000-0000000000a1',
@@ -169,7 +169,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       pick: 'Personalizado',
       expected: [...ALL_PERMISSIONS],
       summary:
-        'Controlar a TV · Desligar a TV · Abrir apps · Editar atalhos · Ver o histórico · Usar o Treino · Controlar o PC',
+        'Controlar a TV · Desligar a TV · Abrir apps · Editar atalhos · Usar o Treino · Controlar o PC',
     },
   ] as const;
 
@@ -225,17 +225,15 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
 
     const view = page.getByRole('switch', { name: 'Ver a TV' });
     const edit = page.getByRole('switch', { name: 'Editar e reordenar atalhos' });
-    const history = page.getByRole('switch', { name: 'Ver o histórico' });
+    // A permissão legada do histórico não é mais oferecida: o histórico das TVs é só do administrador.
+    await expect(page.getByRole('switch', { name: 'Ver o histórico' })).toHaveCount(0);
     await expect(view).not.toBeChecked();
 
     await edit.check();
     await expect(view).toBeChecked();
-    await history.check();
-    await expect(history).toBeChecked();
 
     await view.uncheck();
     await expect(edit).not.toBeChecked();
-    await expect(history).not.toBeChecked();
     await expect(page.getByRole('switch', { name: 'Usar o Treino' })).toBeChecked();
     // O que sobrou (só o Treino) bate com um modelo pronto, e é ele que aparece marcado.
     await expect(model(page, 'Só o Treino')).toHaveClass(/on/);

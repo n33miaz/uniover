@@ -189,7 +189,9 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     // O segredo sai do endereço assim que a tela o lê, e nunca aparece na tela.
     await expect(page).toHaveURL(/\/convite$/);
     expect(await page.evaluate(() => document.body.innerText)).not.toContain(invite.token);
-    await expect(page.getByText('Não existe recuperação de senha')).toBeVisible();
+    await expect(
+      page.getByText('Você pode recuperar a senha pelo e-mail depois de criar a conta.'),
+    ).toBeVisible();
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/guests-accept-${info.project.name}.png`);
     for (const scheme of ['light', 'dark'] as const) {
@@ -430,9 +432,16 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       [],
     );
     // Só a leitura pública da versão, o renovar da sessão, a própria conta, o salvar do nome, as próprias preferências da
-    // Início e a lista das próprias sessões.
+    // Início, a consulta do próprio autenticador (a Segurança dela o mostra) e a lista das próprias sessões.
     expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH|PUT) /, '')))).toEqual(
-      new Set(['/health/version', '/auth/refresh', '/me', '/me/preferences', '/sessions']),
+      new Set([
+        '/health/version',
+        '/auth/refresh',
+        '/me',
+        '/me/preferences',
+        '/me/totp',
+        '/sessions',
+      ]),
     );
 
     // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o
@@ -465,7 +474,6 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       'Controlar a TV',
       'Desligar a TV',
       'Abrir apps',
-      'Ver o histórico',
     ]);
     await expect(page.getByText('Editar atalhos')).toHaveCount(0);
   });
