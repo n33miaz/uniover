@@ -71,7 +71,10 @@
 
   <div class="meta">
     <div class="count">
-      <p class="number" role="status">{{ countText() }}</p>
+      <!-- Sem catálogo no aparelho (a primeira abertura baixando) "0 exercícios" seria falso: sem contagem até ele chegar. -->
+      @if (!catalogEmpty()) {
+        <p class="number" role="status">{{ countText() }}</p>
+      }
     </div>
     <div class="actions">
       <a

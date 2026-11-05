@@ -211,6 +211,8 @@ describe('ExerciseLibraryPage', () => {
     await eventually(fixture, () =>
       expect(el.textContent).toContain('O Catálogo Ainda Não Chegou'),
     );
+    // "0 exercícios" seria falso: o catálogo só não chegou.
+    expect(count(el)).toBeUndefined();
     const pull = vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockResolvedValue();
     const retry = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
       button.textContent?.includes('Tentar Baixar'),
