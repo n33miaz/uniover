@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.40.0](https://github.com/n33miaz/uniover/compare/v0.39.0...v0.40.0) (2026-11-05)
+
+
+### Features
+
+* **agent:** send TV text with echo counters
+* **agent:** gate TV text trace logs
+* **agent:** add TV text counters switch
+
+
+### Bug Fixes
+
+* **agent:** report a closed TV text channel
+* **agent:** bind TV echo to its own connection
+* **tv:** repair the remote service and reopen
+* **tv:** add time limits to session and commands
+* **tv:** make the adb channel self-heal
+* **tv:** confirm refused certificates first
+* **tv:** arm the watchdog around TV Livre
+* **tv:** reopen and find the TV when it returns
+* **tv:** make adb kill-server opt-in
+* **tv:** never reconnect an unauthorized adb
+* **tv:** keep deferred adb disconnect safe
+* **tv:** only commands may cut the repair rest
+* **tv:** reopen the session quietly after repair
+* **tv:** count overlapping TV Livre operations
+* **tv:** align warm and command time limits
+* **tv:** treat a refusing usual IP as the TV
+* **web:** keep the repair note for the full budget
+
 ## [0.39.0](https://github.com/n33miaz/uniover/compare/v0.38.0...v0.39.0) (2026-11-05)
 
 
