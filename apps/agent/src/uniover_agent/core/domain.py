@@ -29,7 +29,7 @@ class CommandResult:
 
 
 Power = Literal["on", "off", "unknown"]
-Connection = Literal["hot", "hibernating", "disconnected"]
+Connection = Literal["hot", "hibernating", "disconnected", "not_paired"]
 
 
 @dataclass(frozen=True, slots=True)

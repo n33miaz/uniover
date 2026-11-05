@@ -229,10 +229,12 @@ async def test_refused_certificate_only_means_not_paired_after_three_spaced_refu
         with pytest.raises(TvSessionError) as caught:
             await rig.manager.wake()
         assert caught.value.code == TV_UNREACHABLE  # recusa passageira não pede pareamento
+        assert rig.manager.snapshot().connection == "disconnected"
         rig.clock.advance(30)
     with pytest.raises(TvSessionError) as caught:
         await rig.manager.wake()
     assert caught.value.code == TV_NOT_PAIRED
+    assert rig.manager.snapshot().connection == "not_paired"
 
 
 async def test_certificate_refusals_close_together_count_only_once() -> None:

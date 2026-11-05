@@ -900,7 +900,7 @@ class TvSessionManager:
         await self._close_channels()
         if self._state is not SessionState.REPAIRING:
             self._state = SessionState.HIBERNATING
-            self._set_connection("disconnected")
+            self._set_connection("not_paired" if code == TV_NOT_PAIRED else "disconnected")
         self._raise_if_repairing()
         if code == TV_UNREACHABLE:
             self._note_unreachable(message)
