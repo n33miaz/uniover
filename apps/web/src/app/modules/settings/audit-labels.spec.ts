@@ -64,6 +64,8 @@ const DEVICES_ACTIONS = [
   'pc_app_launch',
 ];
 const TV_ACTIONS = [
+  'tv.add',
+  'tv.remove',
   'tv.key',
   'tv.text',
   'tv.app.launch',
@@ -235,6 +237,9 @@ describe('describeTarget', () => {
     expect(describeTarget(item({ action: 'tv.config.bind', target: 'pc-casa' }))).toBe(
       'Computador pc-casa',
     );
+    expect(
+      describeTarget(item({ action: 'tv.remove', target: 'kind=samsung agent=pc-sala' })),
+    ).toBe('Samsung TV · Computador pc-sala');
     expect(
       describeTarget(item({ action: 'tv.cleanup.setting', target: 'background-app-closing=on' })),
     ).toBe('Ligado');
