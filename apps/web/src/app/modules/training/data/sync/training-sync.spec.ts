@@ -264,6 +264,9 @@ describe('TrainingSync', () => {
       expect(t.pull.calls).toHaveLength(0);
       expect(t.sync().pulling()).toBe(false);
       expect(t.sync().error()).toBeNull();
+      // A tela não fica esperando um puxar que não vem: o banco local vale.
+      expect(t.sync().lastPullAt()).toBeNull();
+      expect(t.sync().firstPassSettled()).toBe(true);
     });
 
     it('waits for the queue to be loaded from the device before the first check', async () => {
@@ -420,6 +423,8 @@ describe('TrainingSync', () => {
 
       expect(t.pull.calls).toHaveLength(0);
       expect(t.merged).toEqual([]);
+      // O `/me` respondeu e a conta é outra: esta passada nunca vai puxar, então a espera acaba.
+      expect(t.sync().firstPassSettled()).toBe(true);
 
       t.account.sessionAccount.set(TEST_ACCOUNT);
       TestBed.tick();
@@ -436,6 +441,25 @@ describe('TrainingSync', () => {
       await Promise.resolve();
 
       expect(t.pull.calls).toHaveLength(0);
+      // Sem a resposta do `/me` a passada ainda vai acontecer: a espera continua.
+      expect(t.sync().firstPassSettled()).toBe(false);
+    });
+  });
+
+  describe('first pass settling', () => {
+    it('settles after a pull, and after a failure', async () => {
+      const ok = setup();
+      ok.pull.script = [page(['a'], 'c1')];
+      expect(ok.sync().firstPassSettled()).toBe(false);
+      await ok.sync().start();
+      expect(ok.sync().firstPassSettled()).toBe(true);
+    });
+
+    it('does not settle offline, because the connection returning is what runs the pass', async () => {
+      const t = setup();
+      setOnline(false);
+      await t.sync().start();
+      expect(t.sync().firstPassSettled()).toBe(false);
     });
   });
 });

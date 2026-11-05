@@ -13,7 +13,7 @@
     </p>
   }
 
-  @if (!ready()) {
+  @if (loading()) {
     <app-routines-list-skeleton />
   } @else if (entries().length === 0) {
     <section class="empty ui-card" aria-labelledby="routines-empty-title">

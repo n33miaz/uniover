@@ -11,7 +11,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
+import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { TrainingSync } from '../data/sync/training-sync';
 import { formatDayMonth } from '../shell/format';
+import { awaitingFirstPull } from '../shell/first-pull';
 import { type ChipOption } from '../shell/training-chips';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { OTHER_EXERCISE, ProgressEvolution } from './evolution/evolution-card';
@@ -56,6 +59,8 @@ export class ProgressPage {
   private readonly route = inject(ActivatedRoute);
   private readonly catalog = inject(CatalogRepository);
   private readonly history = inject(ProgressHistory);
+  private readonly connectivity = inject(ConnectivityService);
+  private readonly sync = inject(TrainingSync);
 
   private readonly requested = toSignal(
     this.route.queryParamMap.pipe(map((params) => params.get('exercise'))),
@@ -69,7 +74,13 @@ export class ProgressPage {
   private readonly names = signal<ReadonlyMap<string, string> | null>(null);
   private ticket = 0;
 
-  protected readonly ready = computed(() => this.history.data() !== null && this.names() !== null);
+  /** O vazio só é conclusivo depois da primeira passada ou de uma falha dela. */
+  protected readonly ready = computed(
+    () =>
+      !awaitingFirstPull(this.sync, this.connectivity) &&
+      this.history.data() !== null &&
+      this.names() !== null,
+  );
 
   /** Os exercícios com histórico que o catálogo conhece, do treinado mais recentemente ao mais antigo. */
   private readonly options = computed(() => {

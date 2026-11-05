@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { ProgressLineChart } from '../progress/charts/line-chart';
 import { BodyMeasurementsSheet } from './measurements-sheet';
 import { BodyProfileSheet } from './profile-sheet';
@@ -24,6 +25,8 @@ import { WEIGHT_CHART_PROVIDER } from './weight/weight-chart-engine';
 import { type WeightPeriod, buildWeightChart, rowsInPeriod } from './weight/weight-model';
 import { WeightSheet } from './weight/weight-sheet';
 import { BodySkeleton } from './body-skeleton';
+import { TrainingSync } from '../data/sync/training-sync';
+import { awaitingFirstPull } from '../shell/first-pull';
 
 type BodyView = 'summary' | 'records' | 'photos';
 
@@ -79,7 +82,7 @@ type BodyView = 'summary' | 'records' | 'photos';
         [class.backward]="viewDirection() === 'backward'"
         (animationend)="clearViewDirection($event)"
       >
-        @if (!store.ready() && view() !== 'photos') {
+        @if (loading() && view() !== 'photos') {
           <app-body-skeleton [view]="view() === 'summary' ? 'summary' : 'records'" />
         } @else if (view() === 'summary') {
           <section class="weight-card ui-card" aria-labelledby="weight-panel-title">
@@ -345,6 +348,12 @@ type BodyView = 'summary' | 'records' | 'photos';
 })
 export class BodyPage {
   protected readonly store = inject(BodyStore);
+  private readonly connectivity = inject(ConnectivityService);
+  private readonly sync = inject(TrainingSync);
+  /** Não antecipa os vazios do Corpo enquanto a primeira passada ainda pode trazer registros. */
+  protected readonly loading = computed(
+    () => !this.store.ready() || awaitingFirstPull(this.sync, this.connectivity),
+  );
   protected readonly view = signal<BodyView>('summary');
   protected readonly viewDirection = signal<'forward' | 'backward' | null>(null);
   protected readonly period = signal<WeightPeriod>('6m');

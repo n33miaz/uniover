@@ -28,9 +28,18 @@ describe('format', () => {
 });
 
 describe('awaitingFirstPull', () => {
-  const state = (online: boolean, error: string | null, lastPullAt: number | null) =>
+  const state = (
+    online: boolean,
+    error: string | null,
+    lastPullAt: number | null,
+    settled = false,
+  ) =>
     awaitingFirstPull(
-      { error: () => error, lastPullAt: () => lastPullAt } as unknown as TrainingSync,
+      {
+        error: () => error,
+        lastPullAt: () => lastPullAt,
+        firstPassSettled: () => settled,
+      } as unknown as TrainingSync,
       { online: () => online } as unknown as ConnectivityService,
     );
 
@@ -39,6 +48,10 @@ describe('awaitingFirstPull', () => {
     expect(state(false, null, null)).toBe(false);
     expect(state(true, 'network', null)).toBe(false);
     expect(state(true, null, 1_760_000_000_000)).toBe(false);
+  });
+
+  it('stops waiting once the first pass decided it will not pull, so the skeleton never lasts forever', () => {
+    expect(state(true, null, null, true)).toBe(false);
   });
 });
 

@@ -13,8 +13,10 @@ import { RoutineRepository } from '../data/routines/routine-repository';
 import type { LocalSession } from '../data/sessions/session';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { ExercisesSwitch } from '../shell/exercises-switch';
+import { awaitingFirstPull } from '../shell/first-pull';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { SwapStore } from '../today/swap-store';
+import { TrainingSync } from '../data/sync/training-sync';
 import { RoutineEntry, buildRoutineEntries } from './routine-stats';
 import { TemplateCreated, TemplatesSheet } from './templates-sheet';
 import { RoutinesListSkeleton } from './routines-list-skeleton';
@@ -34,11 +36,16 @@ export class RoutinesListPage {
   private readonly routines = inject(RoutineRepository);
   private readonly sessions = inject(SessionRepository);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly sync = inject(TrainingSync);
   private readonly router = inject(Router);
   private readonly swaps = inject(SwapStore);
 
   protected readonly entries = signal<readonly RoutineEntry[]>([]);
   protected readonly ready = signal(false);
+  /** Antes da primeira passada, uma lista local vazia ainda não prova que não há rotinas nesta conta. */
+  protected readonly loading = computed(
+    () => !this.ready() || awaitingFirstPull(this.sync, this.connectivity),
+  );
   protected readonly templatesOpen = signal(false);
   protected readonly starting = signal(false);
   /** O treino aberto neste aparelho: o botão da próxima rotina vira "Continuar" quando ele é dela. */

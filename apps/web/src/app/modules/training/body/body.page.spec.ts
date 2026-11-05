@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import { eventually, setupScreen } from '../shell/screen-test-kit';
+import { setupTraining } from '../data/sync/training-test-kit';
 import { BodyPage } from './body.page';
 
 describe('BodyPage painel de sinais', () => {
@@ -15,6 +17,23 @@ describe('BodyPage painel de sinais', () => {
     await eventually(fixture, () => expect(el.querySelector('app-body-skeleton')).toBeNull());
     return { fixture, el };
   }
+
+  it('keeps the body skeleton after the empty local read until the first pull settles', async () => {
+    setupTraining();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([])],
+    });
+    const fixture = TestBed.createComponent(BodyPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const page = fixture.componentInstance as unknown as { store: { ready: () => boolean } };
+
+    await eventually(fixture, () => {
+      expect(page.store.ready()).toBe(true);
+      expect(el.querySelector('app-body-skeleton')).not.toBeNull();
+      expect(el.querySelector('.weight-card')).toBeNull();
+    });
+  });
 
   it('mostra os sinais na ordem de consulta e mantém o peso como ação principal', async () => {
     const { el } = await open();
