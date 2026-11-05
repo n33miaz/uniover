@@ -2,7 +2,7 @@ import { Page } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import { dropConnection, expectNoA11yViolations, failWith, gateScripts } from './entry-helpers';
 import { GUEST, IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
-import { afterFrames } from '../screens/screen-helpers';
+import { afterFrames, settle } from '../screens/screen-helpers';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -426,6 +426,8 @@ test.describe('convite: acessibilidade (axe, qualquer gravidade)', () => {
       await submit(page).click();
       await expect(page.getByRole('alert')).toContainText('Sem conexão com o servidor');
       await expect(page.locator('app-connectivity-banner .banner')).toBeVisible();
+      // A faixa abre e aparece com transição (`ui-collapse`): o axe mede o contraste das cores finais, não as do meio dela.
+      await settle(page);
       await expectNoA11yViolations(page);
     });
 
