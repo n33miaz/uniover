@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/n33miaz/uniover/compare/v0.36.34...v0.37.0) (2026-11-05)
+
+
+### Features
+
+* **training:** add four exercise figures
+
 ## [0.36.34](https://github.com/n33miaz/uniover/compare/v0.36.33...v0.36.34) (2026-11-04)
 
 
