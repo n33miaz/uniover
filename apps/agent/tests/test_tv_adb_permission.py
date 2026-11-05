@@ -492,7 +492,11 @@ async def test_the_next_tap_proves_the_grant_with_a_fresh_connection(home: Home)
     before = len(runner.calls)
     with user_initiated_adb():
         await adb.list_apps()  # o toque seguinte, com o transporte ainda vivo
-    assert runner.calls[before : before + 4] == [
+    # Reconectou e, ainda no mesmo toque, reconectou de novo: a segunda conexão é a prova.
+    assert runner.calls[before : before + 7] == [
+        DISCONNECT,
+        CONNECT,
+        GET_STATE,
         DISCONNECT,
         CONNECT,
         GET_STATE,
@@ -501,7 +505,7 @@ async def test_the_next_tap_proves_the_grant_with_a_fresh_connection(home: Home)
     assert home.authorization().record.state == VERIFIED
     await adb.disconnect()
     await adb.list_apps()  # provada: o agente reconecta sozinho
-    assert runner.calls.count(CONNECT) == 3
+    assert runner.calls.count(CONNECT) == 4  # a primeira, as duas do toque e a automática
     await adb.aclose()
 
 
@@ -744,3 +748,81 @@ def test_a_grant_without_a_mac_is_recorded_but_never_allows_automatic_connects(
     assert "MAC" in caplog.text
     assert not authorization.verified_for("")
     assert not authorization.verified_for(MAC)
+
+
+# --- a prova dentro do mesmo toque; a espera do aceite acaba com a janela ----------------
+
+
+async def test_a_one_time_accept_during_the_first_connect_is_not_recorded_as_proven(
+    home: Home,
+) -> None:
+    # A primeira conexão volta `device` porque a pessoa aceitou o aviso durante ela, sem marcar
+    # "Sempre permitir"; a segunda, ainda no mesmo pedido, mostra que a TV não guardou nada.
+    runner = runner_with(connect=[FRESH, FRESH], state=[DEVICE, UNAUTHORIZED])
+    adb = home.adb(runner)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    assert runner.calls[:5] == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
+    assert home.authorization().record.state == NEEDS_USER
+    assert PUT_TIMEOUT not in runner.calls  # nada foi dado como provado
+    connects = runner.calls.count(CONNECT)
+    for _ in range(3):
+        with pytest.raises(AdbUnauthorized):
+            await adb.list_apps()
+    assert runner.calls.count(CONNECT) == connects  # e nenhum aviso novo sem toque
+
+
+async def test_two_connections_that_reach_device_inside_one_request_prove_the_grant(
+    home: Home,
+) -> None:
+    runner = runner_with()
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert runner.calls[:5] == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
+    assert home.authorization().record.state == VERIFIED
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+
+
+async def test_a_proven_grant_is_not_reproven_by_the_next_request(home: Home) -> None:
+    home.verify()
+    runner = runner_with()
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert DISCONNECT not in runner.calls  # só uma conexão: já estava provada
+    assert runner.calls.count(CONNECT) == 1
+
+
+async def test_the_accept_watch_ends_with_its_window_and_never_runs_after_it(home: Home) -> None:
+    clock = Clock()
+
+    async def slow(seconds: float) -> None:
+        del seconds
+        clock.now += 100  # cada espera passa da janela de 90 s
+        await asyncio.sleep(0)
+
+    runner = runner_with(state=[UNAUTHORIZED, DEVICE])  # o aceite só chegaria depois da janela
+    adb = home.adb(runner, clock, sleep=slow, pairing_watch_seconds=90.0, pairing_poll_seconds=3.0)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    await watched(adb)
+    assert runner.calls == [CONNECT, GET_STATE]  # nem `get-state` nem shell depois da janela
+    assert home.authorization().record.state == NEEDS_USER
+
+
+async def test_the_accept_watch_lives_only_in_memory(home: Home) -> None:
+    forever = asyncio.Event()
+
+    async def never(seconds: float) -> None:
+        del seconds
+        await forever.wait()
+
+    runner = runner_with(state=UNAUTHORIZED)
+    adb = home.adb(runner, sleep=never, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    task = adb._pairing_task
+    assert task is not None and not task.done()
+    await adb.aclose()  # o encerramento do agente cancela a espera
+    assert task.cancelled()
+    restarted = home.adb(runner_with(), **PAIRING)  # o reinício não a retoma
+    assert restarted._pairing_task is None

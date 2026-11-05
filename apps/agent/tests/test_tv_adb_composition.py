@@ -23,8 +23,16 @@ from uniover_agent.composition import tv as tv_module
 from uniover_agent.composition.connection import run
 from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
 from uniover_agent.config import Settings, tv_cert_dir
-from uniover_agent.core import Command, tv_text_handler
-from uniover_agent.ports import AdbUnauthorized, AdbUnreachable, LaunchableApp, is_user_initiated
+from uniover_agent.core import Command, ResultStatus, tv_text_handler
+from uniover_agent.ports import (
+    AdbUnauthorized,
+    AdbUnreachable,
+    LaunchableApp,
+    TvCertificateRefused,
+    TvNotPaired,
+    TvUnreachable,
+    is_user_initiated,
+)
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
 from .support_adb import LAUNCHER_QUERY, LEANBACK_QUERY, NO_ACTIVITIES, FakeAdbRunner, ok
@@ -216,7 +224,8 @@ async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
     assert not setup.activity.recent()  # o `wake` também vem do servidor: não prova ninguém na TV
     handler = setup.handlers["tv.apps.refresh.v1"]
     await handler(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.apps.refresh.v1", {}))
-    assert runner.calls.count(("connect", serial)) == 1  # o toque conecta (e prova a permissão)
+    # O toque conecta e, ainda no mesmo pedido, reconecta para provar que a permissão ficou gravada.
+    assert runner.calls.count(("connect", serial)) == 2
     assert setup.activity.recent()  # o toque conta como uso da TV pelo app
     state = json.loads((tv_cert_dir("tv") / "adb-authorization.json").read_text(encoding="utf-8"))
     assert state["state"] == "verified"
@@ -320,3 +329,32 @@ async def test_the_volume_diagnostic_runs_with_the_gate_and_as_a_users_request(
     assert kind == "android"
     assert isinstance(adb, AdbTv)  # com a trava: nunca um `AdbTv` solto
     assert marked  # o comando é um pedido de quem o roda
+
+
+@pytest.mark.parametrize(
+    "error",
+    [TvNotPaired("sem par"), TvCertificateRefused("recusado"), TvUnreachable("fora")],
+)
+async def test_a_scheduled_power_off_without_valid_credentials_only_fails_and_reports(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: Exception
+) -> None:
+    """O desligamento agendado pelo servidor nunca pareia nem conecta o ADB: falha e avisa."""
+    remote = FakeTvRemote()
+    remote.connect_errors = [error] * 40
+    adb = FakeTvAdb()
+    pair_fake_tv(monkeypatch, remote)
+    enable_adb(monkeypatch, tmp_path, adb)
+
+    async def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("o desligamento agendado tentou parear a TV")
+
+    monkeypatch.setattr(tv_module, "pair_tv", forbidden)
+    setup = make_tv(Settings(tv_host=TV_HOST, tv_watchdog=False))
+    assert setup is not None
+    result = await setup.handlers["tv.power.off.v1"](
+        Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.power.off.v1", {})
+    )
+    assert result.status is ResultStatus.FAILED  # falha e responde, sem tecla nenhuma
+    assert result.code in {"failed", "offline"}
+    assert adb.connects == 0  # nenhum `adb connect` (e, logo, nenhum aviso de depuração)
+    assert remote.events == []  # nenhuma tecla de energia
