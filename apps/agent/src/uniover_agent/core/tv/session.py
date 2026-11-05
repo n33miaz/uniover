@@ -35,6 +35,7 @@ from typing import Any, Final, NoReturn, TypeVar
 from uniover_agent.core.domain import Connection, Power, TvState
 from uniover_agent.ports import (
     Clock,
+    TvCertificateRefused,
     TvChannel,
     TvChannelError,
     TvDriver,
@@ -94,6 +95,11 @@ POWER_OFF_READER_POLL_SECONDS: Final = 1.0
 # A sessão caiu logo depois da tecla: a TV só conta como desligada se a rede também não a atende.
 POWER_OFF_GONE_CHECKS: Final = 2
 POWER_OFF_GONE_PAUSE_SECONDS: Final = 1.0
+# Recusa de certificado só vale como "não pareada" depois de se repetir, com este intervalo mínimo.
+DEFAULT_CERTIFICATE_REFUSALS_NEEDED: Final = 3
+DEFAULT_CERTIFICATE_REFUSAL_GAP_SECONDS: Final = 30.0
+DEFAULT_WARM_TIMEOUT_SECONDS: Final = 30.0
+DEFAULT_DISCONNECT_TIMEOUT_SECONDS: Final = 5.0
 
 
 class SessionState(StrEnum):
@@ -152,6 +158,10 @@ class TvSessionManager:
         power_off_confirmation_timeout_seconds: float = (
             DEFAULT_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS
         ),
+        warm_timeout_seconds: float = DEFAULT_WARM_TIMEOUT_SECONDS,
+        disconnect_timeout_seconds: float = DEFAULT_DISCONNECT_TIMEOUT_SECONDS,
+        certificate_refusals_needed: int = DEFAULT_CERTIFICATE_REFUSALS_NEEDED,
+        certificate_refusal_gap_seconds: float = DEFAULT_CERTIFICATE_REFUSAL_GAP_SECONDS,
     ) -> None:
         self._clock = clock
         self._remote = remote
@@ -170,6 +180,13 @@ class TvSessionManager:
         self._power_reader = power_reader
         self._power_off_read_timeout_seconds = power_off_read_timeout_seconds
         self._power_off_confirmation_timeout_seconds = power_off_confirmation_timeout_seconds
+        self._certificate_refusals_needed = certificate_refusals_needed
+        self._certificate_refusal_gap_seconds = certificate_refusal_gap_seconds
+        self._remote_drop_expected = False
+        self._certificate_refusals = 0
+        self._last_certificate_refusal_at: float | None = None
+        self._warm_timeout_seconds = warm_timeout_seconds
+        self._disconnect_timeout_seconds = disconnect_timeout_seconds
         # O aviso de energia só vale na conexão que o recebeu: o contador sobe a cada abertura e
         # um aviso de sessão antiga nunca autoriza uma tecla que pode religar a TV.
         self._connection_generation = 0
@@ -541,6 +558,28 @@ class TvSessionManager:
         self._reopened_unattended = False
         await self._ensure_hot(interactive=False)
 
+    async def wake_when_reachable(self) -> None:
+        """A porta voltou depois de uma falha: remove a espera crescente e reabre sem tecla."""
+        self._reset_backoff()
+        await self.wake()
+
+    def expect_remote_drop(self) -> None:
+        """Uma operação pesada pelo ADB vai começar e pode derrubar o serviço do controle."""
+        self._remote_drop_expected = True
+
+    def settle_remote_drop(self) -> None:
+        """A operação acabou: se o controle não está de pé, arma o vigia sem esperar um comando.
+
+        Só avisa; quem confere as portas e religa é o vigia (sem tecla), e ele não age se o serviço
+        está de pé ou a TV nem está na rede.
+        """
+        if not self._remote_drop_expected:
+            return
+        self._remote_drop_expected = False
+        if self._state is SessionState.HOT and self._remote.connected:
+            return
+        self._signal_needs_repair()
+
     async def while_closed(self, action: Callable[[], Awaitable[_T]]) -> _T:
         """Roda `action` com a sessão fechada e sem que outro comando a reabra enquanto isso.
 
@@ -670,7 +709,13 @@ class TvSessionManager:
                 return
             self._raise_if_cooling_down(interactive=interactive)
             try:
-                await self._warm()
+                try:
+                    async with asyncio.timeout(self._warm_timeout_seconds):
+                        await self._warm()
+                except TimeoutError:
+                    raise TvSessionError(
+                        TV_UNREACHABLE, "a TV demorou para responder ao controle"
+                    ) from None
             except BaseException:
                 # Cancelamento ou erro inesperado no meio do aquecimento: não deixa `WARMING` preso.
                 if self._state is SessionState.WARMING:
@@ -746,7 +791,28 @@ class TvSessionManager:
         self._last_attempt_at = self._clock.monotonic()
         if self._liveness is not None and not await self._liveness():
             raise TvUnreachable("a TV não atende na rede")
-        await self._open_channels()
+        try:
+            await self._open_channels()
+        except TvCertificateRefused as exc:
+            if self._certificate_refusal_confirmed():
+                raise
+            # Ainda pode ser passageiro: segue como TV sem resposta, com a espera crescente.
+            raise TvUnreachable(
+                "a TV recusou o certificado; confirmo antes de pedir pareamento"
+            ) from exc
+        except TvUnreachable:
+            self._certificate_refusals = 0
+            raise
+        self._certificate_refusals = 0
+
+    def _certificate_refusal_confirmed(self) -> bool:
+        """Conta a recusa (se passou o intervalo da anterior); diz se já se repetiu o bastante."""
+        now = self._clock.monotonic()
+        last = self._last_certificate_refusal_at
+        if last is None or now - last >= self._certificate_refusal_gap_seconds:
+            self._certificate_refusals += 1
+            self._last_certificate_refusal_at = now
+        return self._certificate_refusals >= self._certificate_refusals_needed
 
     # --- TV offline: espera crescente e registro sem barulho -----------------------------------
 
@@ -827,10 +893,11 @@ class TvSessionManager:
         for reg in self._channels:
             await self._safe_disconnect(reg.channel)
 
-    @staticmethod
-    async def _safe_disconnect(channel: TvChannel) -> None:
+    async def _safe_disconnect(self, channel: TvChannel) -> None:
         try:
-            await channel.disconnect()
+            await asyncio.wait_for(channel.disconnect(), self._disconnect_timeout_seconds)
+        except TimeoutError:
+            _log.warning("fechar canal da TV passou do tempo maximo")
         except TvChannelError as exc:
             _log.warning("falha ao fechar canal da TV: %s", exc)
 

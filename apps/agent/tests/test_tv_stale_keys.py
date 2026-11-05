@@ -53,7 +53,9 @@ class SlowRemote(FakeTvRemote):
         await super().send_key(key, direction)
 
 
-def build() -> tuple[ProcessMessage, FakeTransport, SlowRemote, AdvancingClock]:
+def build(
+    command_timeout: float | None = None,
+) -> tuple[ProcessMessage, FakeTransport, SlowRemote, AdvancingClock]:
     clock = AdvancingClock()
     remote = SlowRemote()
     session = TvSessionManager(clock, remote)
@@ -75,6 +77,7 @@ def build() -> tuple[ProcessMessage, FakeTransport, SlowRemote, AdvancingClock]:
         EnvelopeFactory(AGENT_ID, gate, clock),
         transport,
         monotonic=clock.monotonic,
+        command_timeout_seconds=command_timeout,
     )
     return process, transport, remote, clock
 
@@ -226,3 +229,22 @@ async def test_text_and_power_keep_their_existing_behavior() -> None:
     assert remote.texts == ["oi"]
     assert remote.sent == [("POWER", "SHORT")]
     assert [reply["body"] for reply in transport.sent] == [{"ok": True}, {"ok": True}]
+
+
+async def test_a_key_stuck_opening_the_session_is_cut_and_does_not_block_the_next_text() -> None:
+    process, transport, remote, clock = build(command_timeout=0.05)
+    key = message("tv.key.v3", {"key": "RIGHT"}, clock)
+    await process(dump(key))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    # O texto espera as teclas anteriores: sem o teto, ficaria preso junto com a tecla.
+    text = asyncio.create_task(process(dump(message("tv.text.v1", {"text": "oi"}, clock))))
+    for _ in range(100):
+        if transport.sent:
+            break
+        await asyncio.sleep(0.01)
+    assert transport.sent[0]["correlationId"] == key["id"]
+    assert transport.sent[0]["body"]["error"]["code"] == "tv_unreachable"
+    remote.release.set()
+    await asyncio.wait_for(text, timeout=1)
+    assert remote.sent == []
+    assert remote.texts == ["oi"]

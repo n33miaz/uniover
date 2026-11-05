@@ -10,6 +10,7 @@ from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand
 from uniover_agent.core.tv.handlers import TimedKeyCommand
+from uniover_agent.core.tv.session import TV_UNREACHABLE
 from uniover_agent.ports import Transport, TransportError
 
 _log = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ class ProcessMessage:
         silent_types: Collection[str] = (),
         monotonic: Callable[[], float] = time.monotonic,
         on_command: Callable[[Command], None] | None = None,
+        command_timeout_seconds: float | None = None,
+        uncapped_types: Collection[str] = (),
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -48,6 +51,10 @@ class ProcessMessage:
         self._silent_types = frozenset(silent_types)
         self._monotonic = monotonic
         self._on_command = on_command
+        # Teto de um comando em tarefa própria: uma tecla presa não pode segurar para sempre o
+        # texto e o POWER que esperam por ela. Os tipos longos por natureza ficam de fora.
+        self._command_timeout = command_timeout_seconds
+        self._uncapped_types = frozenset(uncapped_types)
         self._tasks: set[asyncio.Task[None]] = set()
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
@@ -144,11 +151,36 @@ class ProcessMessage:
     async def _execute_detached(self, command: Command) -> None:
         # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
         try:
-            await self._execute(command)
+            if self._command_timeout is None or command.type in self._uncapped_types:
+                await self._execute(command)
+            else:
+                await self._execute_capped(command, self._command_timeout)
         except TransportError as exc:
             _log.debug("resultado de %s não enviado (%s)", command.type, exc)
         except Exception:
             _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
+
+    async def _execute_capped(self, command: Command, limit: float) -> None:
+        # O corte só vale se foi o prazo que o causou: um `TimeoutError` do próprio comando passa.
+        try:
+            async with asyncio.timeout(limit) as deadline:
+                await self._execute(command)
+        except TimeoutError:
+            if not deadline.expired():
+                raise
+        else:
+            return
+        _log.warning("comando %s passou do tempo máximo (id=%s)", command.type, command.id)
+        if command.type in self._silent_types:
+            return
+        await self._transport.send(
+            self._envelopes.result(
+                command.id,
+                ok=False,
+                code=TV_UNREACHABLE,
+                message="a TV demorou demais para responder",
+            )
+        )
 
     async def _reject(self, rejected: Rejected) -> None:
         # Nunca o corpo recebido: só quem enviou o quê (tipo) e por quê.
