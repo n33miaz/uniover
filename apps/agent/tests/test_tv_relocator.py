@@ -227,6 +227,10 @@ class Lan:
         self.contacted.append(host)
         return self.open.get((host, port), False)
 
+    async def tcp_probe(self, host: str, port: int, wait: float = 1.0) -> PortState:
+        opened = await self.tcp_open(host, port, wait)
+        return PortState.OPEN if opened else PortState.SILENT
+
     async def http_json(self, url: str) -> dict[str, Any] | None:
         host = url.split("//")[1].split(":", maxsplit=1)[0]
         self.contacted.append(host)
@@ -242,6 +246,7 @@ class Lan:
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(tv_locate, "tcp_open", self.tcp_open)
+        monkeypatch.setattr(tv_locate, "tcp_probe", self.tcp_probe)
         monkeypatch.setattr(tv_locate, "http_json", self.http_json)
         monkeypatch.setattr(tv_locate, "arp_table", self.arp_table)
         monkeypatch.setattr(tv_locate, "ssdp_search", self.ssdp_search)

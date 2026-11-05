@@ -23,6 +23,7 @@ class World:
         self.arp: dict[str, list[str]] = {}
         self.ssdp: list[str] = []
         self.mdns: list[str] = []
+        self.refusing: set[str] = set()
         self.identities: dict[str, TvIdentity] = {}
         self.open_hosts: set[str] = set()
         self.hosts = [f"192.168.0.{number}" for number in range(1, 255) if number != 12]
@@ -39,6 +40,9 @@ class World:
     async def ssdp_search(self) -> list[str]:
         self.calls.append("ssdp")
         return self.ssdp
+
+    async def answers(self, host: str) -> bool:
+        return host in self.open_hosts or host in self.refusing
 
     async def mdns_search(self) -> list[str]:
         self.calls.append("mdns")
@@ -74,6 +78,7 @@ class World:
             identify=self.identify,
             authenticate=authenticate,
             mdns=self.mdns_search,
+            answers=self.answers if self.refusing else None,
             **limits,  # type: ignore[arg-type]
         )
 
@@ -291,6 +296,14 @@ async def test_arp_showing_the_tv_at_the_old_address_ends_the_search_without_a_s
     lan.open_hosts = {"192.168.0.11"}  # a porta do controle atende no endereço de sempre
     assert await lan.locator().find("192.168.0.11") is None
     assert lan.stages() == ["arp"]
+
+
+async def test_a_refused_connection_at_the_old_address_still_means_the_tv_is_there() -> None:
+    lan = world()
+    lan.arp = {MAC: ["192.168.0.11"]}
+    lan.refusing = {"192.168.0.11"}  # a TV responde, mas o serviço do controle caiu
+    assert await lan.locator().find("192.168.0.11") is None
+    assert lan.stages() == ["arp"]  # nada de SSDP, mDNS ou varredura
 
 
 async def test_a_stale_arp_entry_at_the_old_address_does_not_stop_the_search() -> None:
