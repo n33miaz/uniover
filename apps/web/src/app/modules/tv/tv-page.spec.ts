@@ -249,6 +249,38 @@ describe('TvPage', () => {
       expect(root.querySelector('app-tv-control')).not.toBeNull();
     });
 
+    it('shows the owner an unpaired-TV state and routes re-pairing to setup', async () => {
+      store.status.set('not-paired');
+      store.canSend.set(false);
+      store.disabledReason.set('A TV não está pareada.');
+      await render();
+
+      const pairing = root.querySelector('.pairing')!;
+      expect(pairing.querySelector('h2')?.textContent?.trim()).toBe('TV não pareada');
+      expect(pairing.textContent).toContain('O pareamento não foi aceito.');
+      const action = pairing.querySelector<HTMLAnchorElement>('a')!;
+      expect(action.textContent?.trim()).toBe('Parear de novo');
+      expect(action.getAttribute('href')).toBe('/tv/configurar');
+      expect(root.querySelector('.reason-row')).toBeNull();
+    });
+
+    it('does not offer re-pairing to a guest', async () => {
+      TestBed.inject(SessionState).setUser({
+        id: 'g',
+        email: 'g@example.com',
+        displayName: 'Gi',
+        role: 'guest',
+        permissions: ['module:tv', 'tv:control'],
+      });
+      store.status.set('not-paired');
+      store.canSend.set(false);
+      await render();
+
+      const pairing = root.querySelector('.pairing')!;
+      expect(pairing.querySelector('a, button')).toBeNull();
+      expect(pairing.textContent).toContain('Peça a quem administra o app para parear a TV.');
+    });
+
     it('with the agent off the control stays, dimmed, and the one action is to try again', async () => {
       store.status.set('agent-off');
       store.canSend.set(false);

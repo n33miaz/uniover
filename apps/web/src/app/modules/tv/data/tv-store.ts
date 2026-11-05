@@ -38,6 +38,7 @@ import {
  */
 export type TvStatus =
   | 'unconfigured'
+  | 'not-paired'
   | 'offline'
   | 'loading'
   | 'unresponsive'
@@ -280,6 +281,7 @@ export class TvStore {
     const state = this._state();
     if (!state) return null;
     if (!state.agentOnline || state.connection === 'disconnected') return 'agent-off';
+    if (state.connection === 'not_paired') return 'not-paired';
     return state.connection === 'hibernating' ? 'hibernating' : 'hot';
   });
 
@@ -323,6 +325,7 @@ export class TvStore {
       this.link() !== 'offline' &&
       !this._notConfigured() &&
       !this._agentUnavailable() &&
+      this._state()?.connection !== 'not_paired' &&
       this._state()?.agentOnline !== false,
   );
 
@@ -341,6 +344,9 @@ export class TvStore {
       return seen
         ? $localize`:@@tv.reason.offline-seen:Sem rede: o controle precisa de internet. Estado visto às ${seen}:time:.`
         : $localize`:@@tv.reason.offline:Sem rede: o controle precisa de internet.`;
+    }
+    if (this.lastKnownStatus() === 'not-paired') {
+      return $localize`:@@tv.reason.not-paired:A TV não está pareada.`;
     }
     return this.currentAccount() && this._notConfigured()
       ? $localize`:@@tv.reason.not-configured:Nenhum agente foi configurado para controlar a TV.`

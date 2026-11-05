@@ -14,6 +14,7 @@ const ALL: TvStatus[] = [
   'hibernating',
   'agent-off',
   'unconfigured',
+  'not-paired',
   'offline',
   'loading',
   'unresponsive',
@@ -28,6 +29,7 @@ const INDICATORS: TvIndicator[] = [
   'agent-off',
   'pc-off',
   'not-configured',
+  'not-paired',
   'offline',
   'repair-failed',
 ];
@@ -46,6 +48,7 @@ describe('statusLabel', () => {
     expect(statusLabel('hot')).toBe('conectada');
     expect(statusLabel('offline')).toBe('sem rede');
     expect(statusLabel('unconfigured')).toBe('sem agente configurado');
+    expect(statusLabel('not-paired')).toBe('TV não pareada');
     expect(statusLabel('loading')).toBe('reconectando…');
     expect(statusLabel('pc-off')).toBe('PC desligado');
     expect(statusLabel('unresponsive')).toBe('sem resposta');
@@ -65,6 +68,7 @@ describe('deriveIndicator', () => {
     ['pc-off', 'pc-off'],
     ['agent-off', 'agent-off'],
     ['unconfigured', 'not-configured'],
+    ['not-paired', 'not-paired'],
     ['offline', 'offline'],
   ])('%s becomes %s when the watchdog has nothing to say', (status, expected) => {
     expect(deriveIndicator(status, null)).toBe(expected);
@@ -101,6 +105,7 @@ describe('indicatorPhase', () => {
       'agent-off': 'agent-off',
       'pc-off': 'pc-off',
       'not-configured': 'attention',
+      'not-paired': 'attention',
       offline: 'offline',
       'repair-failed': 'attention',
     });
@@ -140,7 +145,7 @@ describe('indicatorText', () => {
   });
 
   it('has no action when nothing can be done from here (connected, still connecting, no network)', () => {
-    for (const indicator of ['connected', 'connecting', 'offline'] as const) {
+    for (const indicator of ['connected', 'connecting', 'offline', 'not-paired'] as const) {
       expect(indicatorText(indicator, 5).action, indicator).toBeNull();
     }
   });

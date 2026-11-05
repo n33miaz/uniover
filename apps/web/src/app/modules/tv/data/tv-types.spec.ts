@@ -69,6 +69,11 @@ describe('parseState', () => {
     expect(state).toMatchObject({ connection: 'disconnected', volume: null, agentOnline: false });
   });
 
+  it('keeps a confirmed unpaired TV distinct from an offline agent', () => {
+    const state = parseState({ ...base, connection: 'not_paired' });
+    expect(state).toMatchObject({ connection: 'not_paired', agentOnline: true });
+  });
+
   it('accepts the volume as text (the generated type allows number or string)', () => {
     expect(parseState({ ...base, volume: '30' })?.volume).toBe(30);
     expect(parseState({ ...base, volume: null })?.volume).toBeNull();

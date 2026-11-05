@@ -51,6 +51,7 @@ describe('StatusIndicator', () => {
       ['agent-off', 'agent-off', 'Agente desligado'],
       ['offline', 'offline', 'Sem rede'],
       ['unconfigured', 'attention', 'Sem agente configurado'],
+      ['not-paired', 'attention', 'TV não pareada'],
     ])('%s -> %s ("%s")', async (status, expectedPhase, title) => {
       await setStatus(status);
       expect(phase()).toBe(expectedPhase);

@@ -6,6 +6,8 @@ import type { TvStatus } from './tv-store';
  */
 export function statusLabel(status: TvStatus): string {
   switch (status) {
+    case 'not-paired':
+      return $localize`:@@tv.status.not-paired:TV não pareada`;
     case 'hot':
       return $localize`:@@tv.status.hot:conectada`;
     case 'hibernating':
@@ -42,6 +44,7 @@ export type TvIndicator =
   | 'agent-off'
   | 'pc-off'
   | 'not-configured'
+  | 'not-paired'
   | 'offline'
   | 'repair-failed';
 
@@ -74,6 +77,8 @@ export function deriveIndicator(status: TvStatus, watchdogKind: string | null): 
       return 'pc-off';
     case 'unconfigured':
       return 'not-configured';
+    case 'not-paired':
+      return 'not-paired';
     case 'agent-off':
       return 'agent-off';
     case 'hibernating':
@@ -221,6 +226,14 @@ export function indicatorText(
         meaning: $localize`:@@tv.indicator.not-configured.meaning:Nenhum agente foi configurado para controlar a TV. Pareie o agente para usar o controle.`,
         action: 'retry',
         actionLabel: retry,
+        hints: NO_HINTS,
+      };
+    case 'not-paired':
+      return {
+        title: $localize`:@@tv.indicator.not-paired.title:TV não pareada`,
+        meaning: $localize`:@@tv.indicator.not-paired.meaning:O pareamento desta TV não vale mais. Pareie de novo para usar o controle.`,
+        action: null,
+        actionLabel: NO_ACTION,
         hints: NO_HINTS,
       };
     case 'offline':

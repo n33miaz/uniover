@@ -134,6 +134,8 @@ export class TvPage {
   );
   /** Sem computador escolhido para a TV: nada de botões que não chegariam a lugar nenhum. */
   protected readonly unconfigured = computed(() => this.store.status() === 'unconfigured');
+  /** A TV não tem pareamento válido (recusa confirmada ou nunca pareada); só o dono pode recomeçar o pareamento. */
+  protected readonly notPaired = computed(() => this.store.status() === 'not-paired');
   /**
    * "Tentar de Novo" para o agente fora do ar e para a leitura sem resposta: sem rede ou com o servidor acordando a tela já
    * volta sozinha.
