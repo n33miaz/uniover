@@ -337,17 +337,19 @@ test.describe('ajustes', () => {
       'Aparência',
       'Segurança',
       'Pessoas e Permissões',
+      'TVs por Pessoa',
       'Dispositivos',
       'Sistema',
       'Auditoria',
       'Sobre',
     ]);
-    await expect(rows).toHaveCount(8);
+    await expect(rows).toHaveCount(9);
     for (const [name, href] of [
       ['Perfil', '/ajustes/perfil'],
       ['Aparência', '/ajustes/aparencia'],
       ['Segurança', '/ajustes/seguranca'],
       ['Pessoas', '/ajustes/pessoas'],
+      ['TVs por Pessoa', '/ajustes/tvs-por-pessoa'],
       ['Dispositivos', '/ajustes/dispositivos'],
       ['Auditoria', '/ajustes/auditoria'],
       ['Sistema', '/ajustes/sistema'],
