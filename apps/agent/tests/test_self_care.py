@@ -323,6 +323,7 @@ async def test_a_silent_supervisor_is_fixable_by_starting_the_task_again(tmp_pat
         name="teste",
         now=lambda: now,
         start_task=starter(started),
+        recheck=0.0,
     )
     result = await check.run()
     assert not result.ok and result.fixable and "mudo" in result.detail
@@ -583,3 +584,29 @@ async def test_the_repair_says_so_when_the_scheduler_refuses(
     check = task_check(anchor, tmp_path, TaskState(False), accepts=False)
     assert check.repair is not None
     assert "não aceitou" in str(await check.repair())
+
+
+async def test_a_supervisor_that_wakes_up_and_signals_during_the_recheck_is_not_taken_for_mute(
+    tmp_path: Path,
+) -> None:
+    # O PC acordou de uma suspensão longa: o sinal parece velho de horas até o supervisor renová-lo.
+    alive = tmp_path / "supervisor-alive"
+    alive.write_text("x", encoding="ascii")
+    stamp = alive.stat().st_mtime
+    readings = iter([stamp + SUPERVISOR_SILENCE_SECONDS + 3600, stamp + 30])
+    killed: list[str] = []
+
+    def kill() -> bool:
+        killed.append("kill")
+        return True
+
+    check = supervisor_check(
+        tmp_path,
+        name="teste",
+        now=lambda: next(readings),
+        start_task=lambda name: True,
+        kill_supervisor=kill,
+        recheck=0.0,
+    )
+    assert (await check.run()).ok
+    assert killed == []

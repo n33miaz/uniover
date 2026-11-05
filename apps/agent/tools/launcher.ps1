@@ -196,6 +196,25 @@ $staleSeconds = 900.0
 $forced = 0.0
 if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_STALE_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $staleSeconds = $forced }
 $staleCode = -9999
+# Suspensao/hibernacao: o relogio de parede salta de uma volta da vigia para a outra (que deveria levar $pollMs). O
+# supervisor dormiu junto e o sinal dele parece velho de horas: depois de um salto assim o prazo recomeca do despertar.
+$pollMs = 5000
+$resumeGapSeconds = 60.0
+$forcedGap = 0.0
+if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_RESUME_GAP_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedGap) -and $forcedGap -gt 0) { $resumeGapSeconds = $forcedGap }
+# Gancho de teste: "<apos s>:<salto s>" faz o relogio da vigia saltar uma vez, como uma suspensao.
+$clockSkew = 0.0
+$jumpAfter = -1.0
+$jumpBy = 0.0
+$jumpSpec = [Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_TEST_CLOCK_JUMP')
+if ($jumpSpec -and $jumpSpec -match '^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$') {
+    $jumpAfter = [double]::Parse($Matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
+    $jumpBy = [double]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-WatchNow {
+    return (Get-Date).AddSeconds($script:clockSkew)
+}
 
 function Invoke-Supervisor([string]$Script) {
     # Roda o supervisor e o VIGIA, em vez de so esperar por ele: um supervisor vivo mas travado (preso numa atualizacao, com
@@ -208,12 +227,25 @@ function Invoke-Supervisor([string]$Script) {
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $process = [System.Diagnostics.Process]::Start($info)
-    $startedAt = Get-Date
+    $startedAt = Get-WatchNow
     $alive = Join-Path $runtimeDir 'supervisor-alive'
-    while (-not $process.WaitForExit(5000)) {
-        $last = $startedAt
+    $previous = $startedAt
+    $resumedAt = $startedAt
+    while (-not $process.WaitForExit($pollMs)) {
+        $now = Get-WatchNow
+        if ($jumpAfter -ge 0 -and ($now - $startedAt).TotalSeconds -ge $jumpAfter) {
+            $script:clockSkew += $jumpBy
+            $jumpAfter = -1.0
+            $now = Get-WatchNow
+        }
+        if (($now - $previous).TotalSeconds -gt $resumeGapSeconds) {
+            $resumedAt = $now
+            Write-LauncherLog ('o relogio saltou ' + [int](($now - $previous).TotalSeconds) + ' s (suspensao do PC); o prazo do supervisor recomeca agora') 'INFO'
+        }
+        $previous = $now
+        $last = $resumedAt
         try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTime; if ($stamp -gt $last) { $last = $stamp } } catch { }
-        $silent = ((Get-Date) - $last).TotalSeconds
+        $silent = ($now - $last).TotalSeconds
         if ($silent -gt $staleSeconds) {
             Write-LauncherLog ('o supervisor esta vivo (pid ' + $process.Id + ') mas sem sinal ha ' + [int]$silent + ' s; vou reinicia-lo') 'ERROR'
             Add-LauncherDiagnostic 'supervisor.unresponsive' 'error' 'o supervisor travou (sem sinal de vida) e foi reiniciado pelo lancador'
