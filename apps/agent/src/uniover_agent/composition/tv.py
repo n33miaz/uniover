@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys
+from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys, resolve_tv_mac
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
     FileIconCache,
@@ -621,8 +621,11 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         # Lembra, por TV, se ela já deu a permissão do ADB a esta chave: enquanto não deu, o agente
         # nunca conecta sozinho (cada conexão faria a TV mostrar o aviso de novo).
         authorization=AdbAuthorization(
-            tv_cert_dir(settings.tv_name), AdbKeys(adb_key_backup_dir())
+            tv_cert_dir(settings.tv_name),
+            AdbKeys(adb_key_backup_dir()),
+            f"{host}:{settings.tv_adb_port}",
         ),
+        mac_resolver=lambda: resolve_tv_mac(host, settings.tv_adb_port),
     )
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
