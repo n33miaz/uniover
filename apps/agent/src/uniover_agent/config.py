@@ -123,10 +123,31 @@ class Settings(BaseSettings):
     # Vigia do serviço do controle da Android TV: religa por ADB quando as portas 6466/6467 fecham.
     # Só age com `adb` neste PC; desligue se outra coisa (o vigia antigo do PC) já faz isso.
     tv_watchdog: bool = True
+    # Prazos do reparo do controle. Permanecem no arquivo local para permitir ajuste sem publicar
+    # outro agente se uma TV demorar mais para subir o serviço remoto.
+    tv_watchdog_probe_seconds: float = Field(default=3.0, gt=0, le=30)
+    tv_watchdog_restart_seconds: float = Field(default=15.0, gt=0, le=120)
+    tv_watchdog_budget_seconds: float = Field(default=240.0, gt=0, le=900)
+    tv_watchdog_cooldown_first_seconds: float = Field(default=60.0, gt=0, le=600)
+    tv_watchdog_cooldown_second_seconds: float = Field(default=120.0, gt=0, le=600)
+    tv_watchdog_cooldown_third_seconds: float = Field(default=300.0, gt=0, le=600)
+    tv_watchdog_cooldown_max_seconds: float = Field(default=600.0, gt=0, le=600)
+    tv_watchdog_adb_cooldown_seconds: float = Field(default=3600.0, gt=0, le=7200)
+    tv_session_warm_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    tv_session_disconnect_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    tv_command_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
+    # Recusa de certificado da TV: só vira "não pareada" depois de se repetir, com este intervalo.
+    # Reencontro da TV: depois de tantas buscas caras seguidas sem achá-la, só uma por intervalo.
+    tv_locator_empty_searches: int = Field(default=6, ge=1, le=100)
+    tv_locator_slow_search_seconds: float = Field(default=1800.0, ge=60, le=86400)
+    tv_certificate_refusals_needed: int = Field(default=3, ge=1, le=10)
+    tv_certificate_refusal_gap_seconds: float = Field(default=30.0, ge=0, le=600)
     # ADB: caminho do `adb` (padrão: procura no PATH e no Android SDK), porta e tempo por comando.
     adb_path: str | None = None
     tv_adb_port: int = Field(default=5555, ge=1, le=65535)
     adb_timeout_seconds: float = Field(default=5.0, gt=0)
+    adb_kill_server_cooldown_seconds: float = Field(default=600.0, gt=0, le=3600)
+    tv_adb_recheck_seconds: float = Field(default=300.0, gt=0, le=3600)
     # Tempo para copiar um APK da TV (bem maior que o de um comando curto).
     adb_pull_timeout_seconds: float = Field(default=120.0, gt=0)
     # Ícones dos apps: `aapt2` do Android SDK (padrão: o mais novo em `build-tools`; sem ele, sem

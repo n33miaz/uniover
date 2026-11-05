@@ -194,6 +194,7 @@ from uniover_agent.core.tv.livre import (
     tv_livre_photo_handler,
 )
 from uniover_agent.ports import (
+    AdbError,
     AdbUnauthorized,
     Clock,
     PairingDenied,
@@ -322,6 +323,8 @@ class TvSetup:
     watchdog: TvWatchdog | None = None
     cleanup_scheduler: TvCleanupScheduler | SamsungMaintenanceScheduler | None = None
     light_settings: TvLightSettings | None = None
+    # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
+    adb_declared: list[Callable[[], None]] = field(default_factory=list)
 
 
 def build_tv(
@@ -397,6 +400,10 @@ def build_driver_setup(
         liveness=build_liveness("android", host),
         power_off_read_timeout_seconds=settings.tv_power_off_read_timeout_seconds,
         power_off_confirmation_timeout_seconds=settings.tv_power_off_confirmation_timeout_seconds,
+        warm_timeout_seconds=settings.tv_session_warm_timeout_seconds,
+        disconnect_timeout_seconds=settings.tv_session_disconnect_timeout_seconds,
+        certificate_refusals_needed=settings.tv_certificate_refusals_needed,
+        certificate_refusal_gap_seconds=settings.tv_certificate_refusal_gap_seconds,
     )
     # `POWER` passa como as outras teclas (agente antigo ou app antigo): o app só o manda depois da
     # folha de confirmação e a API só o aceita pela rota própria de desligar. O desligamento com
@@ -573,6 +580,8 @@ def build_samsung_tv(
         power_reader=remote.read_power,
         power_off_read_timeout_seconds=settings.tv_power_off_read_timeout_seconds,
         power_off_confirmation_timeout_seconds=settings.tv_power_off_confirmation_timeout_seconds,
+        warm_timeout_seconds=settings.tv_session_warm_timeout_seconds,
+        disconnect_timeout_seconds=settings.tv_session_disconnect_timeout_seconds,
     )
     keys = tv_key_handler(manager)
     apps = SamsungTvApps(manager, remote, transport, envelopes)
@@ -752,6 +761,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         host,
         settings.tv_adb_port,
         timeout=settings.adb_timeout_seconds,
+        kill_server_cooldown=settings.adb_kill_server_cooldown_seconds,
         pull_timeout=settings.adb_pull_timeout_seconds,
         monotonic=clock.monotonic,
     )
@@ -824,20 +834,12 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     setup.after_hello.append(announcer.after_hello)
     setup.background.append(announcer.run)
 
-    async def declare_when_usable() -> None:
-        # `tv.adb` só vai ao `hello` se o ADB não está sabidamente quebrado. TV desligada agora
-        # (sem resposta) não conta: é o normal de manhã e o ADB serve quando ela ligar. Já "a TV
-        # não autorizou este PC" não se resolve sozinho: não anuncia e avisa o dono.
-        try:
-            await adb.connect()
-        except AdbUnauthorized:
-            _log.warning(
-                "a TV não autorizou este PC no ADB: aceite o aviso na tela da TV "
-                "e reinicie o agente. Lista de apps desligada até lá"
-            )
+    # Preenchido quando o ADB não autoriza este PC na partida: acorda a reavaliação periódica.
+    awaiting_authorization = asyncio.Event()
+
+    def declare_adb_capabilities() -> None:
+        if "tv.adb" in setup.capabilities:
             return
-        except Exception as exc:
-            _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
         setup.capabilities.append("tv.adb")
         # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
         setup.capabilities.append("tv.cleanup.automatic.v1")
@@ -846,8 +848,52 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         setup.capabilities.extend(
             ("tv.light-settings.v1", "tv.focus-closes-background.v1", "tv.focus-catalog.v1")
         )
+        for hook in setup.adb_declared:
+            hook()
+
+    async def declare_when_usable() -> None:
+        # `tv.adb` só vai ao `hello` se o ADB não está sabidamente quebrado. TV desligada agora
+        # (sem resposta) não conta: é o normal de manhã e o ADB serve quando ela ligar. Já "a TV
+        # não autorizou este PC" não se resolve sozinho na partida: não anuncia, avisa o dono e
+        # reavalia de tempos em tempos, para o aceite na tela da TV valer sem reiniciar o agente.
+        try:
+            await adb.connect()
+        except AdbUnauthorized:
+            _log.warning(
+                "a TV não autorizou este PC no ADB: aceite o aviso na tela da TV. "
+                "Lista de apps desligada até lá (o agente confere de novo sozinho)"
+            )
+            awaiting_authorization.set()
+            return
+        except Exception as exc:
+            _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
+        declare_adb_capabilities()
+
+    async def recheck_authorization() -> None:
+        # Laço de vida longa (não termina): dorme até a partida ver o ADB sem autorização, e então
+        # tenta de novo a cada `tv_adb_recheck_seconds`, só se o controle da TV está de pé (TV
+        # ligada), para não acordar uma TV em standby à toa. Sem endereço no registro.
+        while True:
+            await awaiting_authorization.wait()
+            await clock.sleep(settings.tv_adb_recheck_seconds)
+            if "tv.adb" in setup.capabilities:
+                awaiting_authorization.clear()
+                continue
+            if await tcp_probe(host, ANDROID_REMOTE_PORT, wait=REFUSAL_WAIT_SECONDS) is not (
+                PortState.OPEN
+            ):
+                continue
+            try:
+                await adb.connect()
+            except AdbError as exc:
+                _log.debug("ADB ainda não autorizado ou sem resposta (%s)", exc.code)
+                continue
+            declare_adb_capabilities()
+            awaiting_authorization.clear()
+            _log.info("a TV autorizou este PC no ADB: funções avançadas liberadas")
 
     setup.prepare.append(declare_when_usable)
+    setup.background.append(recheck_authorization)
     compose_livre(setup, settings, adb, host, clock)
     return adb
 
@@ -874,17 +920,24 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
         LivreStateFile(base / f"tv-livre-{safe_host}.json"),
         photos,
         clock,
+        remote_guard=setup.manager,
     )
     setup.handlers["tv.livre.v1"] = tv_livre_handler(livre, setup.transport, setup.envelopes)
     setup.handlers["tv.livre.photo.v1"] = tv_livre_photo_handler(photos)
     setup.background_commands.add("tv.livre.v1")
 
-    async def declare_when_usable() -> None:
-        # Depois da declaração do ADB (hook anterior): sem ADB utilizável não há módulo.
-        if "tv.adb" in setup.capabilities:
+    def declare() -> None:
+        # Sem ADB utilizável não há módulo; o gancho cobre o ADB autorizado só depois da partida.
+        if LIVRE_CAPABILITY not in setup.capabilities:
             setup.capabilities.append(LIVRE_CAPABILITY)
 
+    async def declare_when_usable() -> None:
+        # Depois da declaração do ADB (passo anterior).
+        if "tv.adb" in setup.capabilities:
+            declare()
+
     setup.prepare.append(declare_when_usable)
+    setup.adb_declared.append(declare)
 
 
 def compose_watchdog(
@@ -908,7 +961,23 @@ def compose_watchdog(
         return True
 
     events = WatchdogEvents(setup.transport, setup.envelopes, clock)
-    watchdog = TvWatchdog(clock, setup.manager, ports_open, adb.restart_remote_service, events)
+    watchdog = TvWatchdog(
+        clock,
+        setup.manager,
+        ports_open,
+        adb.restart_remote_service,
+        events,
+        cooldowns=(
+            settings.tv_watchdog_cooldown_first_seconds,
+            settings.tv_watchdog_cooldown_second_seconds,
+            settings.tv_watchdog_cooldown_third_seconds,
+            settings.tv_watchdog_cooldown_max_seconds,
+        ),
+        adb_cooldown_seconds=settings.tv_watchdog_adb_cooldown_seconds,
+        probe_seconds=settings.tv_watchdog_probe_seconds,
+        restart_seconds=settings.tv_watchdog_restart_seconds,
+        budget_seconds=settings.tv_watchdog_budget_seconds,
+    )
     setup.watchdog = watchdog
     setup.background.append(watchdog.run)
     setup.after_hello.append(events.flush)
@@ -1168,6 +1237,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     known: TvKnown | None = None,
     on_refused: Callable[[], None] | None = None,
     is_paused: Callable[[], bool] = lambda: False,
+    on_recovered: Callable[[], Awaitable[None]] | None = None,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -1202,6 +1272,8 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         identity,
         clock,
         authenticate=authenticate if settings.tv_kind == "android" else None,
+        empty_searches_limit=settings.tv_locator_empty_searches,
+        slow_search_seconds=settings.tv_locator_slow_search_seconds,
     )
 
     async def reachable() -> bool:
@@ -1249,6 +1321,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         reachable=reachable,
         rescan=rescan,
         on_alive=learn_arp_mac,
+        on_recovered=on_recovered,
         is_paused=is_paused,
     )
 
@@ -1337,6 +1410,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         transport,
         background_types=tv.background_commands if tv is not None else (),
         silent_types=PC_SILENT_TYPES if pc is not None else (),
+        # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
+        command_timeout_seconds=settings.tv_command_timeout_seconds if tv is not None else None,
+        uncapped_types=tv.background_commands if tv is not None else (),
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
@@ -1457,6 +1533,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             tv.known,
             tv.watchdog.request if tv.watchdog is not None else None,
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
+            tv.manager.wake_when_reachable,
         )
         if tv is not None
         else None

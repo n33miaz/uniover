@@ -24,6 +24,7 @@ from uniover_agent.ports import (
     AdbCommandFailed,
     AdbTimeout,
     AdbUnauthorized,
+    AdbUnavailable,
     AdbUnreachable,
     TvPortClosed,
 )
@@ -90,10 +91,29 @@ async def test_a_dead_service_is_restarted_at_once_and_the_session_is_released()
     await rig.watchdog.handle()
     assert rig.restarts == 1
     assert seen == [SessionState.REPAIRING]  # durante o reparo os comandos são recusados
-    assert state_of(rig.manager) is SessionState.HIBERNATING
+    assert state_of(rig.manager) is SessionState.HOT
+    assert rig.remote.keys == []
     assert rig.clock.sleeps == [3.0]  # só a espera de o serviço subir: a 1ª tentativa é imediata
     assert await rig.sent_kinds() == ["repair_started", "repaired"]
     assert rig.transport.sent[-1]["body"]["attempts"] == 1
+
+
+async def test_repair_reopens_the_session_without_sending_a_key() -> None:
+    rig = Rig()
+    rig.ports = [False] * 6 + [True]
+    await rig.watchdog.handle()
+    assert rig.restarts == 2
+    assert rig.clock.monotonic() < 25
+    assert state_of(rig.manager) is SessionState.HOT
+    assert rig.remote.keys == []
+
+
+async def test_a_service_that_returns_on_its_own_does_not_restart_twice() -> None:
+    rig = Rig()
+    rig.ports = [False, False, True]
+    await rig.watchdog.handle()
+    assert rig.restarts == 1
+    assert rig.clock.monotonic() == 6
 
 
 async def test_ports_that_answer_mean_nothing_is_done() -> None:
@@ -130,18 +150,18 @@ async def test_a_hot_session_is_left_alone() -> None:
     assert state_of(rig.manager) is SessionState.HOT
 
 
-async def test_no_more_than_three_attempts_then_a_ten_minute_rest() -> None:
-    rig = Rig()
+async def test_failed_repairs_have_a_short_growing_rest() -> None:
+    rig = Rig(budget_seconds=31)
     rig.ports = [False]
     await rig.watchdog.handle()
     assert rig.restarts == 3
-    assert rig.clock.sleeps == [3.0, 15.0, 3.0, 45.0, 3.0]
+    assert rig.clock.sleeps == [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
     assert await rig.sent_kinds() == ["repair_started", "repair_failed"]
     failed = rig.transport.sent[-1]["body"]
     assert (failed["severity"], failed["attempts"]) == ("error", 3)
     assert state_of(rig.manager) is SessionState.HIBERNATING
 
-    rig.clock.advance(599)
+    rig.clock.advance(59)
     checks = rig.checks
     await rig.watchdog.handle()  # ainda descansando: nem as portas são conferidas
     assert (rig.restarts, rig.checks) == (3, checks)
@@ -151,9 +171,19 @@ async def test_no_more_than_three_attempts_then_a_ten_minute_rest() -> None:
     assert rig.restarts == 6
 
 
+async def test_the_repair_rest_grows_to_ten_minutes_after_repeated_failures() -> None:
+    rig = Rig(budget_seconds=0.1)
+    rests: list[float] = []
+    for _ in range(4):
+        await rig.watchdog.handle()
+        rests.append(rig.watchdog._rest_until - rig.clock.monotonic())
+        rig.clock.advance(rests[-1])
+    assert rests == [60.0, 120.0, 300.0, 600.0]
+
+
 async def test_an_attempt_that_raises_counts_and_the_next_one_can_work() -> None:
-    rig = Rig()
-    rig.ports = [False, True]
+    rig = Rig(budget_seconds=31)
+    rig.ports = [False] * 6 + [True]  # o serviço só volta depois do 2º restart (aos 15 s)
     rig.restart_script = [AdbCommandFailed("x"), None]
     await rig.watchdog.handle()
     assert rig.restarts == 2
@@ -162,7 +192,7 @@ async def test_an_attempt_that_raises_counts_and_the_next_one_can_work() -> None
 
 
 async def test_an_unexpected_error_in_the_restart_is_an_ordinary_failed_attempt() -> None:
-    rig = Rig()
+    rig = Rig(budget_seconds=31)
     rig.restart_script = [AdbTimeout("y"), RuntimeError("inesperado"), ValueError("z")]
     await rig.watchdog.handle()
     assert rig.restarts == 3
@@ -188,15 +218,25 @@ async def test_an_unauthorized_adb_stops_at_once_and_rests_for_an_hour() -> None
     assert rig.restarts == 2
 
 
+async def test_a_temporary_adb_execution_failure_uses_the_short_repair_rest() -> None:
+    rig = Rig(budget_seconds=31)
+    rig.restart_script = [AdbUnavailable("adb ocupado", transient=True)]
+    await rig.watchdog.handle()
+    assert rig.restarts == 3
+    rig.clock.advance(60)
+    await rig.watchdog.handle()
+    assert rig.restarts == 6
+
+
 async def test_an_adb_that_never_answers_ends_as_adb_unreachable_after_three_tries() -> None:
     # A TV pode estar subindo depois de uma queda de energia: o ADB demora mais que o serviço.
-    rig = Rig()
+    rig = Rig(budget_seconds=31)
     rig.restart_script = [AdbUnreachable("a")]
     await rig.watchdog.handle()
     assert rig.restarts == 3
     assert await rig.sent_kinds() == ["repair_started", "adb_unreachable"]
     assert rig.transport.sent[-1]["body"]["attempts"] == 3
-    rig.clock.advance(600)
+    rig.clock.advance(60)
     await rig.watchdog.handle()
     assert rig.restarts == 6  # descanso curto: o ADB pode estar de volta
 
@@ -298,10 +338,10 @@ async def test_a_refused_port_while_opening_the_session_triggers_the_repair() ->
     assert "religando" in caught.value.message  # a sessão parou de insistir enquanto se repara
     await asyncio.sleep(0.01)
     assert rig.restarts == 1
-    assert state_of(rig.manager) is SessionState.HIBERNATING
+    # Reparado, a sessão é reaberta sozinha (sem tecla) e o próximo comando já a encontra pronta.
+    assert state_of(rig.manager) is SessionState.HOT
+    assert rig.remote.keys == []
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
-    # Reparado: o próximo comando abre a sessão do zero.
-    rig.remote.connect_errors = []
     await rig.manager.send_key("HOME")
     assert state_of(rig.manager) is SessionState.HOT
