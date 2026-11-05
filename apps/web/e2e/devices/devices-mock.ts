@@ -120,8 +120,26 @@ export interface StoredAlert {
   detail?: string | null;
 }
 
+/** A última baliza de partida e a última conexão recusada de um computador, como `GET /devices/agents/beacons` as devolve. */
+export interface StoredBeacon {
+  agentId: string;
+  stage: string | null;
+  code: string | null;
+  detail: string | null;
+  at: string | null;
+  firstFailAt: string | null;
+  count: number;
+  verified: boolean;
+  version: string | null;
+  os: string | null;
+  rejectReason: string | null;
+  rejectedAt: string | null;
+}
+
 export interface DevicesMock {
   readonly requests: DevicesRequest[];
+  /** As pistas de partida por computador; vazio por padrão (nenhum computador deixou pista). */
+  readonly beacons: StoredBeacon[];
   /** Avisos de queda ainda não vistos; "Dispensar" tira um por vez. */
   readonly alerts: StoredAlert[];
   readonly agents: StoredAgent[];
@@ -167,6 +185,7 @@ export async function mockDevicesApi(
 ): Promise<DevicesMock> {
   const mock: DevicesMock = {
     requests: [],
+    beacons: [],
     alerts: [],
     agents: [],
     tvs: [],
@@ -222,6 +241,14 @@ export async function mockDevicesApi(
       const index = mock.alerts.findIndex((alert) => alert.id === oneSeen[1]);
       if (index >= 0) mock.alerts.splice(index, 1);
       return route.fulfill({ status: 204 });
+    }
+
+    if (method === 'GET' && path === '/agents/beacons') {
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        body: JSON.stringify({ items: mock.beacons }),
+      });
     }
 
     if (method === 'GET' && path === '/agents') {

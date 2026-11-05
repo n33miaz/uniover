@@ -63,6 +63,7 @@ describe('DevicesPage', () => {
     alerts: vi.fn(),
     markAlertSeen: vi.fn(),
     tvs: vi.fn(),
+    beacons: vi.fn(),
   };
 
   beforeEach(() => {
@@ -73,6 +74,7 @@ describe('DevicesPage', () => {
     api.alerts.mockReset().mockResolvedValue([]);
     api.markAlertSeen.mockReset().mockResolvedValue(undefined);
     api.tvs.mockReset().mockResolvedValue([]);
+    api.beacons.mockReset().mockResolvedValue([]);
     api.list.mockReset().mockResolvedValue([PC]);
     api.approve.mockReset().mockResolvedValue(undefined);
     api.deny.mockReset().mockResolvedValue(undefined);
@@ -124,6 +126,89 @@ describe('DevicesPage', () => {
     api.list.mockResolvedValue([{ ...PC, lastSeenAt: null }]);
     const { el } = await render();
     expect(el.querySelector('.last-seen')?.textContent).toContain('Sem contato registrado');
+  });
+
+  describe('startup line', () => {
+    const OFF: DeviceAgent = { ...PC, connected: false, lastSeenAt: '2026-10-19T09:00:00Z' };
+    const NO_REJECTION = { rejectReason: null, rejectedAt: null };
+
+    it('says why a disconnected computer could not start', async () => {
+      api.list.mockResolvedValue([OFF]);
+      api.beacons.mockResolvedValue([
+        {
+          agentId: 'a1',
+          stage: 'child_spawn',
+          code: 'blocked_av',
+          at: '2026-10-20T09:00:00Z',
+          ...NO_REJECTION,
+        },
+      ]);
+      const { el } = await render();
+      const line = el.querySelector('.startup')!;
+      expect(line.textContent).toContain('Não conseguiu iniciar: o antivírus bloqueou');
+      expect(line.classList.contains('bad')).toBe(true);
+      expect(line.querySelector('.startup-mark')?.textContent).toBe('!');
+    });
+
+    it('says "Credencial recusada" when the server refused the connection', async () => {
+      api.list.mockResolvedValue([OFF]);
+      api.beacons.mockResolvedValue([
+        {
+          agentId: 'a1',
+          stage: null,
+          code: null,
+          at: null,
+          rejectReason: 'invalid_token',
+          rejectedAt: '2026-10-20T09:00:00Z',
+        },
+      ]);
+      const { el } = await render();
+      expect(el.querySelector('.startup')?.textContent).toContain('Credencial recusada');
+      expect(el.querySelector('.connection')?.textContent).toContain('Desligado desde');
+    });
+
+    it('stays quiet for a connected computer and for one without clues', async () => {
+      api.beacons.mockResolvedValue([
+        {
+          agentId: 'a1',
+          stage: 'child_spawn',
+          code: 'crash_loop',
+          at: '2026-10-20T09:00:00Z',
+          ...NO_REJECTION,
+        },
+      ]);
+      const connected = await render();
+      expect(connected.el.querySelector('.startup')).toBeNull();
+      connected.fixture.destroy();
+
+      api.list.mockResolvedValue([OFF]);
+      api.beacons.mockResolvedValue([]);
+      const quiet = await render();
+      expect(quiet.el.querySelector('.startup')).toBeNull();
+    });
+
+    it('keeps the list when the clues cannot be read', async () => {
+      api.list.mockResolvedValue([OFF]);
+      api.beacons.mockRejectedValue(new Error('403'));
+      const { el } = await render();
+      expect(el.querySelector('.name')?.textContent).toBe('PC de casa');
+      expect(el.querySelector('.startup')).toBeNull();
+    });
+
+    it('ignores a clue older than the last contact', async () => {
+      api.list.mockResolvedValue([OFF]);
+      api.beacons.mockResolvedValue([
+        {
+          agentId: 'a1',
+          stage: 'child_spawn',
+          code: 'crash_loop',
+          at: '2026-10-10T09:00:00Z',
+          ...NO_REJECTION,
+        },
+      ]);
+      const { el } = await render();
+      expect(el.querySelector('.startup')).toBeNull();
+    });
   });
 
   it('shows what the agent told about the computer: version, system, TV and connection', async () => {
@@ -178,7 +263,15 @@ describe('DevicesPage', () => {
     expect(item.textContent).toContain('Sistema: windows');
     expect(item.querySelector('.version')).toBeNull();
     expect(item.querySelector('.tv')?.textContent).toBe('Sem TV vinculada');
-    expect(item.querySelector('.connection')?.textContent).toContain('Desconectado');
+    expect(item.querySelector('.connection')?.textContent?.trim()).toMatch(
+      /^Desligado desde \d{2}\/\d{2}, \d{2}:\d{2}$/,
+    );
+  });
+
+  it('says "Desconectado" for a computer that never made contact', async () => {
+    api.list.mockResolvedValue([{ ...PC, connected: false, lastSeenAt: null }]);
+    const { el } = await render();
+    expect(el.querySelector('.connection')?.textContent).toContain('Desconectado');
   });
 
   it('writes a Samsung TV and a version without a commit in plain words', async () => {
