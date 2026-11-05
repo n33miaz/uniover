@@ -482,6 +482,13 @@ nunca abre uma conexão ADB nova com uma TV que ainda não deu a permissão**. S
   permissão vale e se o vencimento já foi desligado. Sem registro, ou com a permissão negada, **nenhuma** rota
   automática conecta (partida, lista diária, limpeza, ícones, vigia, canal opcional da sessão): só leem o estado com
   `get-state`, que não abre conexão. Uma recusa nova (reset de fábrica, permissão revogada) vale uma vez e para tudo.
+- **Prova de que ficou gravado.** Um "Permitir" sem a marca "Sempre permitir" vale só para aquela conexão, e um
+  transporte `device` que já estava aberto pode ser exatamente isso. Por isso `device` visto fora de um pedido da
+  pessoa **não** é registrado. Quando o pedido deixa o aviso na tela, o agente espera o aceite (até 90 s, só
+  `get-state`), faz uma vez `disconnect` e `connect`, e só registra a permissão se a TV atender sem novo aviso;
+  se o aviso voltar, a marca não foi dada, nada é registrado e o aviso novo aparece com a pessoa ainda na TV (no
+  máximo 2 confirmações). A marca do pedido pertence à tarefa que o recebeu: o que ele deixa rodando em segundo
+  plano não a herda.
 - **Uma vez só.** No fim de um pedido da pessoa em que a TV atende, o agente roda `settings put global
   adb_allowed_connection_time 0` e confere com `settings get`. O Android 11+ revoga a permissão do ADB que ficou 7
   dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`). Vale só para a TV e para aquela chave;
