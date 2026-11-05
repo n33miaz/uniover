@@ -458,6 +458,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     # A API passou a listar uma capacidade nova (ex.: depois de um deploy dela): declara já, sem
     # esperar o `hello` de 5 minutos.
     features.on_added = supervisor.hello_now
+    # O sinal de vida do agente reflete o laço de conexão: preso, ele deixa de ser dado.
+    diary.require_healthy(lambda: not supervisor.is_stalled())
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [
         UpdateStatusWatcher(update_source, transport, envelopes, clock).run,

@@ -130,6 +130,124 @@ async def test_an_announcement_after_the_hello_that_hangs_does_not_stop_the_loop
     assert calls >= 2
 
 
+class DeadChannel(FakeTransport):
+    """Canal meio morto: o batimento não sai, o fechamento não volta e a leitura não acaba."""
+
+    def __init__(self) -> None:
+        super().__init__([[], []])
+        self.close_calls = 0
+
+    async def send(self, message: dict[str, Any]) -> None:
+        if message["type"] == "agent.keepalive.v1":
+            await never()
+        await super().send(message)
+
+    async def incoming(self):  # type: ignore[no-untyped-def]
+        await never()
+        yield ""
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        await never()
+
+
+async def test_a_dead_channel_whose_close_also_hangs_still_reconnects() -> None:
+    # O batimento estoura o prazo e o fechamento do canal também nunca volta: antes, a tarefa do
+    # batimento ficava presa nesse fechamento e a leitura esperava para sempre.
+    transport = DeadChannel()
+    supervisor = build(transport, keepalive_interval=0.01)
+    await run_until(supervisor, lambda: transport.connects >= 2)
+    assert transport.connects >= 2, "o laço ficou preso num canal que não fecha"
+    assert transport.close_calls >= 1
+
+
+class RealClock:
+    """Relógio de verdade (os prazos do teste são de milissegundos)."""
+
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def monotonic(self) -> float:
+        return time.monotonic()
+
+    async def sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+
+class DefiantClose(FakeTransport):
+    """Fechamento que ignora o cancelamento (um bug de biblioteca) até o teste soltá-lo."""
+
+    def __init__(self) -> None:
+        super().__init__([[], []])
+        self.release = asyncio.Event()
+
+    async def close(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(0.01)
+            except asyncio.CancelledError:
+                if self.release.is_set():
+                    raise
+
+
+async def test_a_connection_loop_that_ignores_its_deadlines_is_reported_as_stalled() -> None:
+    transport = DefiantClose()
+    clock = RealClock()
+    supervisor = ConnectionSupervisor(
+        transport,
+        _ignore,
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        lambda: 0.5,
+        agent_version="0.1.0",
+        capabilities=[],
+        policy=BackoffPolicy(
+            connect_timeout=0.05, send_timeout=0.05, close_timeout=0.05, stall_grace=0.1
+        ),
+        keepalive_interval=60.0,
+    )
+    task = asyncio.create_task(supervisor.run())
+    try:
+        # A sessão abre, a leitura acaba e o fechamento (que desobedece ao prazo) prende o laço.
+        await asyncio.sleep(0.05)
+        assert not supervisor.is_stalled(), "um laço que anda não pode ser dado por parado"
+        end = time.monotonic() + 3
+        while not supervisor.is_stalled() and time.monotonic() < end:  # noqa: ASYNC110
+            await asyncio.sleep(0.02)
+        assert supervisor.is_stalled()
+    finally:
+        transport.release.set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+def test_the_pulse_stops_while_the_connection_is_stalled_and_resumes_after(tmp_path: Path) -> None:
+    clock = FakeClock(datetime(2026, 11, 5, 12, 0, tzinfo=UTC))
+    path = tmp_path / "runtime" / "last-alive"
+    diary = AbsenceDiary(path, clock)
+    healthy = True
+    diary.require_healthy(lambda: healthy)
+
+    async def beats(count: int) -> None:
+        task = asyncio.create_task(diary.run())
+        for _ in range(count * 3):
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(beats(2))
+    assert path.exists()
+    path.unlink()
+    healthy = False
+    asyncio.run(beats(2))
+    assert not path.exists(), "a conexão presa não pode manter o agente com cara de saudável"
+    healthy = True
+    asyncio.run(beats(2))
+    assert path.exists()
+
+
 # --- Auto-diagnóstico: uma verificação presa não prende as outras ------------------------------
 
 
@@ -186,7 +304,12 @@ async def test_a_wedged_supervisor_is_taken_out_before_the_task_is_started(tmp_p
         return True
 
     check = supervisor_check(
-        tmp_path, name="teste", now=lambda: now, start_task=start, kill_supervisor=kill
+        tmp_path,
+        name="teste",
+        now=lambda: now,
+        start_task=start,
+        kill_supervisor=kill,
+        recheck=0.0,
     )
     assert check.repair is not None and await check.repair() is None
     assert order == ["kill", "start teste"]

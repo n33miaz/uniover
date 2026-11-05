@@ -59,7 +59,16 @@ class AbsenceDiary:
         self._clock = clock
         self._uptime = uptime
         self._lost_at: float | None = None
+        self._healthy: Callable[[], bool] = lambda: True
+        self._withheld = False
         self.reasons: list[str] = []
+
+    def require_healthy(self, healthy: Callable[[], bool]) -> None:
+        """A marca de vida só é regravada enquanto `healthy()` for verdadeiro.
+
+        Sem isto, o laço de conexão podia ficar preso enquanto outras tarefas mantinham a marca
+        fresca: o agente parecia saudável, nunca era reiniciado e ficava fora do ar."""
+        self._healthy = healthy
 
     def start(self) -> None:
         """Lê a última marca da execução anterior e explica o intervalo, se foi longo."""
@@ -101,7 +110,16 @@ class AbsenceDiary:
         """Marca de vida a cada minuto, para a próxima execução saber quando esta parou."""
         while True:
             await self._clock.sleep(BEAT_SECONDS)
-            self.beat()
+            if self._healthy():
+                if self._withheld:
+                    self._withheld = False
+                    _log.info("a conexão voltou a andar; retomo a marca de vida")
+                self.beat()
+            elif not self._withheld:
+                self._withheld = True
+                _log.error(
+                    "a conexão está parada; sem sinal de vida, o supervisor reinicia o agente"
+                )
 
     def _report(self, reason: str) -> None:
         self.reasons.append(reason)
