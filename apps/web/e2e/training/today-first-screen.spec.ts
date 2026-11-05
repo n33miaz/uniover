@@ -80,6 +80,9 @@ test.describe('Hoje: a primeira tela', () => {
     // Escolher o programa grava na fila: com o aparelho em dia a faixa de sincronização some e a tela fica no repouso.
     await expectSynced(page, { timeout: 20_000 });
     await settle(page);
+    // Escolher o programa rolou a tela até o botão se ele estava abaixo da dobra (Hoje agora mostra a lista assim que o que ela lê
+    // chegou, antes do resto da passada): a medida é da primeira tela, com a página no topo.
+    await page.evaluate(() => window.scrollTo(0, 0));
 
     const view = page.viewportSize()!;
     // A barra de baixo cobre o pé da tela: o conteúdo precisa terminar antes dela.
