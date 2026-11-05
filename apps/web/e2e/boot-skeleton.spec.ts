@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { mockIdentityApi } from './auth/identity-mock';
+import { expect, test } from './fixtures';
 
 const html = readFileSync(resolve(process.cwd(), 'src/index.html'), 'utf8').replace(
   '<script src="boot-skeleton.js" defer></script>',
@@ -164,4 +165,119 @@ test('cada endereço mostra um desenho próprio e formas visíveis desde o prime
       silhouettes.set(variant, silhouette);
     }
   }
+});
+
+test.describe('abertura da página de verdade', () => {
+  // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
+  test.use({ serviceWorkers: 'block' });
+
+  const MAIN_STYLES = /\/styles-[\w-]+\.css$/;
+
+  test('o HTML entregue pinta o esqueleto sem esperar a folha de estilos e a CSP segue sem código em linha', async ({
+    request,
+  }) => {
+    const response = await request.get('/');
+    const csp = response.headers()['content-security-policy'];
+    const served = await response.text();
+    expect(csp).toContain("script-src 'self';");
+    expect(served).toMatch(
+      /<link rel="stylesheet" href="styles-[\w-]+\.css" media="print" data-boot-styles/,
+    );
+    expect(served).toContain('data-boot-critical');
+    // Nenhum atributo de evento nem script em linha: a troca do media é feita pelo boot-skeleton.js.
+    expect(served).not.toMatch(/\sonload=/);
+    expect(served).not.toMatch(/<script(?![^>]*\ssrc=)[^>]*>/);
+  });
+
+  test('com a folha de estilos presa, o esqueleto aparece pintado e cobre o app até a folha chegar', async ({
+    context,
+    page,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    await page.route(MAIN_STYLES, async (route) => {
+      await gate;
+      await route.fallback();
+    });
+
+    await page.goto('/', { waitUntil: 'commit' });
+    // O primeiro quadro com a folha ainda na rede: a forma dos ossos vem do próprio HTML.
+    await page.locator('#boot-skeleton .bs-home .bone').first().waitFor({ state: 'visible' });
+    const painted = await page.evaluate(() => {
+      const bones = [...document.querySelectorAll<HTMLElement>('#boot-skeleton .bs-home .bone')];
+      const sized = bones.filter((bone) => {
+        const box = bone.getBoundingClientRect();
+        return (
+          box.width > 4 &&
+          box.height > 4 &&
+          getComputedStyle(bone).backgroundColor !== 'rgba(0, 0, 0, 0)'
+        );
+      });
+      const root = document.getElementById('boot-skeleton')!;
+      return {
+        sized: sized.length,
+        position: getComputedStyle(root).position,
+        covering:
+          document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('#boot-skeleton') !==
+          null,
+        styles: document.documentElement.getAttribute('data-styles'),
+        media: document.querySelector<HTMLLinkElement>('link[data-boot-styles]')?.media,
+      };
+    });
+    expect(painted.sized).toBeGreaterThan(4);
+    expect(painted.position).toBe('fixed');
+    expect(painted.covering).toBe(true);
+
+    // O app sobe e chega ao conteúdo antes da folha: ele existe, mas a tela sem estilo nunca pode aparecer.
+    await page.locator('app-root [data-screen-ready]').first().waitFor({ state: 'attached' });
+    for (let frame = 0; frame < 5; frame++) {
+      const covered = await page.evaluate(
+        () =>
+          new Promise<boolean[]>((resolve) =>
+            requestAnimationFrame(() =>
+              resolve(
+                [0.1, 0.3, 0.5, 0.7, 0.9].flatMap((x) =>
+                  [0.1, 0.4, 0.7, 0.95].map(
+                    (y) =>
+                      document
+                        .elementFromPoint(innerWidth * x, innerHeight * y)
+                        ?.closest('#boot-skeleton') !== null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      );
+      expect(covered.every(Boolean)).toBe(true);
+    }
+    expect(await page.locator('#boot-skeleton.leaving').count()).toBe(0);
+    expect(await page.locator('app-update-skeleton .bs-root').count()).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-styles'))).toBe(
+      'pending',
+    );
+
+    release();
+    await expect(page.locator('html')).toHaveAttribute('data-styles', 'ready');
+    await expect(page.locator('link[data-boot-styles]')).toHaveJSProperty('media', 'all');
+    // Com a folha aplicada o esqueleto sai e a tela de verdade aparece estilizada (fundo e fonte do app).
+    await expect(page.locator('#boot-skeleton')).toHaveCount(0);
+    await expect(page.locator('app-root [data-screen-ready]').first()).toBeVisible();
+    const body = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
+    expect(body).toContain('system-ui');
+  });
+
+  test('com a folha rápida, o esqueleto sai assim que a tela fica pronta e a folha vale desde o início', async ({
+    context,
+    page,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    await page.goto('/');
+    await expect(page.locator('#boot-skeleton')).toHaveCount(0);
+    await expect(page.locator('html')).toHaveAttribute('data-styles', 'ready');
+    await expect(page.locator('link[data-boot-styles]')).toHaveJSProperty('media', 'all');
+    await expect(page.locator('app-root [data-screen-ready]').first()).toBeVisible();
+  });
 });

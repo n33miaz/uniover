@@ -47,6 +47,25 @@
   else if (p === '/boas-vindas') v = 'auth-welcome';
   else if (p === '/conectar') v = 'devices-connect';
   document.documentElement.setAttribute('data-boot', v);
+  // A folha principal chega com media="print" (scripts/defer-styles.mjs) para não bloquear a primeira pintura do
+  // esqueleto. Ao carregar (ou falhar, para não prender o app) ela é ligada e o app é avisado: até lá o esqueleto estático
+  // continua cobrindo a tela. Sem o link marcado (servidor de desenvolvimento) não há o que esperar.
+  var sheet = document.querySelector('link[data-boot-styles]');
+  if (sheet) {
+    var root = document.documentElement;
+    root.setAttribute('data-styles', 'pending');
+    var settle = function () {
+      if (root.getAttribute('data-styles') === 'ready') return;
+      sheet.media = 'all';
+      root.setAttribute('data-styles', 'ready');
+      document.dispatchEvent(new Event('uniover:styles-ready'));
+    };
+    if (sheet.sheet) settle();
+    else {
+      sheet.addEventListener('load', settle);
+      sheet.addEventListener('error', settle);
+    }
+  }
   setTimeout(function () {
     var el = document.getElementById('boot-skeleton');
     var notice = document.getElementById('boot-timeout');

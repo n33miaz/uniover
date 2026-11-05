@@ -66,6 +66,7 @@ function runBootSelector(pathname: string): string | null {
     },
     getElementById: () => null,
     addEventListener: () => undefined,
+    querySelector: () => null,
   };
   new Function('location', 'document', 'setTimeout', BOOT_SELECTOR)(
     { pathname, reload: () => undefined },
@@ -73,6 +74,35 @@ function runBootSelector(pathname: string): string | null {
     () => 0,
   );
   return marked;
+}
+
+/** Uma folha de estilos marcada, como o passo de build a deixa: com media="print" até o script ligá-la. */
+function runBootStyles(loaded: boolean) {
+  const listeners: Record<string, () => void> = {};
+  const attributes: Record<string, string> = {};
+  const events: string[] = [];
+  const sheet = {
+    media: 'print',
+    sheet: loaded ? {} : null,
+    addEventListener: (name: string, listener: () => void) => (listeners[name] = listener),
+  };
+  const document = {
+    documentElement: {
+      setAttribute: (name: string, value: string) => (attributes[name] = value),
+      getAttribute: (name: string) => attributes[name] ?? null,
+    },
+    getElementById: () => null,
+    addEventListener: () => undefined,
+    querySelector: (selector: string) => (selector === 'link[data-boot-styles]' ? sheet : null),
+    dispatchEvent: (event: Event) => events.push(event.type),
+  };
+  new Function('location', 'document', 'setTimeout', 'Event', BOOT_SELECTOR)(
+    { pathname: '/', reload: () => undefined },
+    document,
+    () => 0,
+    Event,
+  );
+  return { sheet, listeners, attributes, events };
 }
 
 /** A forma de uma árvore: tag e classes (ordenadas), sem texto, comentários nem atributos do Angular. */
@@ -117,6 +147,31 @@ describe('boot skeleton', () => {
     expect(critical!.textContent).toContain('.bs-root');
     expect(critical!.textContent).toContain('html:not([data-boot]) .bs-home');
     expect(boot!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('turns the deferred stylesheet on and tells the app when it loads, or fails', () => {
+    for (const outcome of ['load', 'error'] as const) {
+      const run = runBootStyles(false);
+      expect(run.attributes['data-styles']).toBe('pending');
+      expect(run.sheet.media).toBe('print');
+      expect(run.events).toEqual([]);
+      run.listeners[outcome]();
+      expect(run.sheet.media).toBe('all');
+      expect(run.attributes['data-styles']).toBe('ready');
+      expect(run.events).toEqual(['uniover:styles-ready']);
+      // Os dois eventos podem chegar: só o primeiro vale.
+      run.listeners['load']();
+      expect(run.events).toHaveLength(1);
+    }
+  });
+
+  it('turns the stylesheet on at once when it was already loaded, and leaves no mark without a deferred one', () => {
+    const run = runBootStyles(true);
+    expect(run.sheet.media).toBe('all');
+    expect(run.attributes['data-styles']).toBe('ready');
+    expect(run.events).toEqual(['uniover:styles-ready']);
+    expect(Object.keys(run.listeners)).toEqual([]);
+    expect(runBootSelector('/')).toBe('home');
   });
 
   it('keeps the static drawing visible and offers a retry when the app does not start', () => {
