@@ -6,6 +6,7 @@ que só uma TV real responde (TGuard, Netflix, tempo de religação) está nas m
 
 import asyncio
 import socket
+import ssl
 import types
 import typing
 import unicodedata
@@ -36,7 +37,13 @@ from uniover_agent.adapters.tv_remote_v2 import (
 from uniover_agent.contracts.tv_key_v1 import TvKeyV1BodyKey
 from uniover_agent.contracts.tv_key_v2 import TvKeyV2BodyKey
 from uniover_agent.core import SessionState, TvSessionManager
-from uniover_agent.ports import TextFieldStatus, TvNotPaired, TvPortClosed, TvUnreachable
+from uniover_agent.ports import (
+    TextFieldStatus,
+    TvCertificateRefused,
+    TvNotPaired,
+    TvPortClosed,
+    TvUnreachable,
+)
 
 from .support_tv import FakeTvServer, write_certificate
 
@@ -664,6 +671,32 @@ async def test_rejected_certificate_means_not_paired_and_closes_the_library(
         await adapter.connect()
     assert library.disconnects >= 1
     assert not adapter.connected
+
+
+def invalid_auth(cause: BaseException | None) -> InvalidAuth:
+    error = InvalidAuth("Need to pair")
+    error.__cause__ = cause
+    return error
+
+
+@pytest.mark.parametrize(
+    "cause", [ssl.SSLEOFError(), ConnectionResetError(), ssl.SSLZeroReturnError()]
+)
+async def test_a_tls_connection_cut_is_unreachable_not_a_refused_certificate(
+    tmp_path: Path, cause: BaseException
+) -> None:
+    adapter = duplo_adapter(tmp_path, FakeLibrary(invalid_auth(cause)))
+    with pytest.raises(TvUnreachable) as caught:
+        await adapter.connect()
+    assert not isinstance(caught.value, TvNotPaired)
+
+
+async def test_a_certificate_verification_failure_is_a_refused_certificate(
+    tmp_path: Path,
+) -> None:
+    adapter = duplo_adapter(tmp_path, FakeLibrary(invalid_auth(ssl.SSLError("bad certificate"))))
+    with pytest.raises(TvCertificateRefused):
+        await adapter.connect()
 
 
 def cannot_connect(cause: BaseException | None) -> CannotConnect:

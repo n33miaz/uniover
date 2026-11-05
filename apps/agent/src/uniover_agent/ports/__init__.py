@@ -48,6 +48,7 @@ from uniover_agent.ports.tv_adb import (
     is_adb_typable,
 )
 from uniover_agent.ports.tv_channel import (
+    TvCertificateRefused,
     TvChannel,
     TvChannelError,
     TvNotPaired,
@@ -123,6 +124,7 @@ __all__ = [
     "TransportError",
     "TvAdb",
     "TvAdbCleanup",
+    "TvCertificateRefused",
     "TvChannel",
     "TvChannelError",
     "TvDriver",
