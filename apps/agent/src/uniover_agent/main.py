@@ -6,6 +6,8 @@ import os
 import sys
 from collections.abc import Sequence
 
+from pydantic import ValidationError
+
 from uniover_agent.adapters.installation import migrate_layout
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.startup_trace import record_startup_failure
@@ -77,6 +79,19 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_settings() -> Settings:
+    """`Settings()`, com a recusa do pydantic vista como erro de configuração.
+
+    A mensagem do pydantic traz os valores recebidos, e eles podem ser segredos: só os nomes dos
+    campos seguem adiante.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        fields = ", ".join(sorted({".".join(str(part) for part in e["loc"]) for e in exc.errors()}))
+        raise ConfigError(f"configuração inválida ({fields})") from None
+
+
 def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None
 ) -> int:
@@ -85,7 +100,7 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     try:
         # Também roda quando um wrapper antigo inicia o código novo pela primeira vez.
         migrate_layout()
-        settings = Settings()
+        settings = _load_settings()
         system.configure_logging(settings.log_level, settings.log_file)
         kit: DiagnosticsKit | None = None
         if command in {"run", "self-update"} and settings.self_care:
@@ -152,7 +167,7 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             if code != system.EXIT_TV_MOVED:
                 return code
             # O endereço novo da TV já está no arquivo: recomeça lendo a configuração de novo.
-            settings = Settings()
+            settings = _load_settings()
     except (ConfigError, SecretStoreError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)
         if command == "run":
