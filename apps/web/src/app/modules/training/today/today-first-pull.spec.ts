@@ -3,9 +3,12 @@ import { AccountScope } from '../../../core/session/account-scope';
 import type { FakeAccountScope } from '../../../core/offline-queue/queue-test-kit';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { routineDto } from '../data/routines/routine-data-test-kit';
 import { RoutineRepository } from '../data/routines/routine-repository';
+import { isoWeekday } from '../domain/routines/week-plan';
 import { FIRST_PULL_WAIT_MS, TrainingSync } from '../data/sync/training-sync';
 import { exerciseDto, localExercise, setupTraining } from '../data/sync/training-test-kit';
+import { FIRST_PULL_NEEDS } from '../shell/first-pull';
 import { eventually, item, saveRoutine } from '../shell/screen-test-kit';
 import { TodayPage } from './today.page';
 
@@ -74,48 +77,103 @@ describe('Today on a device that has never pulled', () => {
     };
   }
 
-  it('keeps waiting from the catalog arriving until the routines it brought are read, and never says there are none', async () => {
+  it('waits for the routines, the program, the workouts, the sets and the catalog, and never shows the empty state or the wrong day while they arrive', async () => {
     const { kit, harness, el, sawEmpty, stop } = await open();
     const fixture = harness.fixture;
+    // Duas fichas de um programa: a de hoje é a "Treino B"; a "Treino A" é de outro dia da semana.
+    const today = isoWeekday(Date.now());
+    const other = (today % 7) + 1;
+    const routinesPage = step(() => ({
+      items: [
+        routineDto('r-a', { name: 'Treino A', position: 0, programId: 'p1', weekdays: [other] }),
+        routineDto('r-b', { name: 'Treino B', position: 1, programId: 'p1', weekdays: [today] }),
+      ],
+      nextCursor: 'c1',
+    }));
+    const programPage = step(() => ({
+      items: [
+        {
+          programId: 'p1',
+          updatedAt: '2026-10-01T10:00:00Z',
+          clientUpdatedAt: '2026-10-01T10:00:00Z',
+        },
+      ],
+      nextCursor: 'c1',
+    }));
+    const sessionsPage = step(() => ({ items: [], nextCursor: null }));
+    const setsPage = step(() => ({ items: [], nextCursor: null }));
     const catalogPage = step(() => ({
       items: [exerciseDto('supino-reto', { name: 'Supino reto' })],
       nextCursor: 'c1',
     }));
-    const routinesPage = step(async () => {
-      // O servidor trouxe uma rotina: ela chega ao banco local no meio da passada.
-      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
-      return { items: [], nextCursor: null };
+    // A meta da semana vem depois do que Hoje decide: a tela não espera por ela.
+    const goalsPage = step(() => ({ items: [], nextCursor: null }));
+    kit.pull.script = [
+      routinesPage.run,
+      programPage.run,
+      sessionsPage.run,
+      setsPage.run,
+      catalogPage.run,
+      goalsPage.run,
+    ];
+    // O cartão do dia (a faixa da semana embaixo mostra as fichas do programa e se atualiza sozinha).
+    const card = () => el.querySelector('section.routine')?.textContent ?? '';
+    // Todo quadro em que a tela mostrou uma ficha antes de a ficha de hoje estar decidida.
+    let sawWrongDay = false;
+    const wrongDay = new MutationObserver(() => {
+      if (card().includes('Treino A')) sawWrongDay = true;
     });
-    // O que vem depois das rotinas (o programa da semana) ainda decide qual ficha é a de hoje.
-    const laterPage = step(() => ({ items: [], nextCursor: null }));
-    kit.pull.script = [catalogPage.run, routinesPage.run, laterPage.run];
+    wrongDay.observe(el, { childList: true, subtree: true, characterData: true });
     const sync = TestBed.inject(TrainingSync);
     const pass = sync.start();
-
-    await eventually(fixture, () => expect(el.textContent).toContain('Baixando o catálogo…'));
-    catalogPage.release();
-    await vi.waitFor(async () => expect(await kit.trainingDb.exercises.count()).toBe(1));
-    // O catálogo já está no aparelho, as rotinas ainda não: a espera continua.
-    await eventually(fixture, () => {
+    const waiting = () => {
       expect(el.textContent).toContain('Baixando o catálogo…');
       expect(el.textContent).not.toContain(EMPTY);
-    });
+      expect(card()).not.toContain('Treino A');
+      expect(card()).not.toContain('Treino B');
+    };
 
+    await eventually(fixture, waiting);
+    expect(kit.pull.calls.map((call) => call.path)).toEqual(['/api/v1/training/routines']);
+
+    // As rotinas já estão no aparelho, o programa que diz qual é a de hoje ainda não.
     routinesPage.release();
-    await vi.waitFor(() => expect(kit.pull.calls.length).toBeGreaterThanOrEqual(3));
-    // A rotina já está no aparelho, mas a passada não acabou: a ficha de hoje ainda pode mudar, então ela não aparece.
-    await eventually(fixture, () => {
-      expect(el.textContent).toContain('Baixando o catálogo…');
-      expect(el.textContent).not.toContain('Treino A');
-    });
+    await vi.waitFor(async () => expect(await kit.trainingDb.routines.count()).toBe(2));
+    await eventually(fixture, waiting);
 
-    laterPage.release();
-    await pass;
+    programPage.release();
+    await vi.waitFor(async () => expect(await kit.trainingDb.program.count()).toBe(1));
+    await eventually(fixture, waiting);
+
+    sessionsPage.release();
+    setsPage.release();
+    await vi.waitFor(() => expect(kit.pull.calls).toHaveLength(5));
+    // Só falta o catálogo (os nomes dos exercícios do cartão): a espera segue.
+    await eventually(fixture, waiting);
+    expect(kit.pull.calls.map((call) => call.path.replace('/api/v1/training/', ''))).toEqual([
+      'routines',
+      'program',
+      'sessions',
+      'sets',
+      'exercises',
+    ]);
+
+    catalogPage.release();
+    await vi.waitFor(() => expect(kit.pull.calls.length).toBeGreaterThanOrEqual(6));
+    // A passada ainda não acabou (a meta da semana pende), mas Hoje já decidiu: a ficha de hoje, e só ela.
     await eventually(fixture, () => {
-      expect(el.textContent).toContain('Treino A');
+      expect(card()).toContain('Treino B');
       expect(el.textContent).not.toContain('Baixando o catálogo…');
     });
+    expect(sync.firstPassSettled()).toBe(false);
+    expect(card()).not.toContain('Treino A');
+
+    goalsPage.release();
+    await pass;
+    await eventually(fixture, () => expect(card()).toContain('Treino B'));
     expect(sawEmpty()).toBe(false);
+    expect(sawWrongDay).toBe(false);
+    wrongDay.disconnect();
     stop();
   });
 
@@ -127,8 +185,8 @@ describe('Today on a device that has never pulled', () => {
     vi.spyOn(RoutineRepository.prototype, 'all').mockImplementation(async function (
       this: RoutineRepository,
     ) {
-      // As leituras anteriores ao fim da passada seguem normais; a primeira depois dele fica presa.
-      if (TestBed.inject(TrainingSync).firstPassSettled()) {
+      // As leituras anteriores ao fim da espera (o que Hoje lê já puxado) seguem normais; a primeira depois dele fica presa.
+      if (TestBed.inject(TrainingSync).resourcesPulled(FIRST_PULL_NEEDS.today)) {
         settledReads++;
         await gate;
       }

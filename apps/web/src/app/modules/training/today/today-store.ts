@@ -23,7 +23,7 @@ import {
 } from '../domain/progress/calendar';
 import { type DayPlan, planForDay } from '../domain/routines/week-plan';
 import { type RoutineEntry, buildRoutineEntries } from '../routines/routine-stats';
-import { awaitingFirstPull } from '../shell/first-pull';
+import { FIRST_PULL_NEEDS, awaitingFirstPull } from '../shell/first-pull';
 import { coalesced, quiet } from './coalesce';
 import { SwapStore } from './swap-store';
 
@@ -172,6 +172,15 @@ export class TodayStore {
   /** Dia (ano-mês-dia local) da última leitura: ao virar, a escolha manual do dia anterior é esquecida. */
   private lastDay = '';
 
+  /**
+   * O aparelho ainda espera o que Hoje lê para decidir (`FIRST_PULL_NEEDS.today`), não a passada inteira:
+   * com os recursos dela puxados (ou a passada decidida, a falha, o prazo, o aparelho que já puxou antes), o banco local vale. Lê
+   * sinais: serve em `computed` e `effect`.
+   */
+  private awaitingNeeds(): boolean {
+    return awaitingFirstPull(this.sync, this.connectivity, FIRST_PULL_NEEDS.today);
+  }
+
   /** Uma leitura das rotinas que começou depois de a primeira passada do servidor acabar já terminou. */
   private readonly readAfterFirstPull = signal(false);
   /** Este aparelho nunca puxou (decidido quando o banco respondeu): `null` enquanto não se sabe. */
@@ -191,7 +200,7 @@ export class TodayStore {
     () =>
       !this.waitExpired() &&
       this.freshDevice() === true &&
-      (awaitingFirstPull(this.sync, this.connectivity) || !this.readAfterFirstPull()) &&
+      (this.awaitingNeeds() || !this.readAfterFirstPull()) &&
       (this.account.sessionAccount() !== null || this.catalogCount() === 0),
   );
 
@@ -223,7 +232,7 @@ export class TodayStore {
     });
     // Acabada a primeira passada, relê as rotinas; só a leitura que começa depois disso encerra a espera (ver readHome).
     effect(() => {
-      const waiting = awaitingFirstPull(this.sync, this.connectivity);
+      const waiting = this.awaitingNeeds();
       untracked(() => {
         if (waiting) this.readAfterFirstPull.set(false);
         else void this.loadHome();
@@ -306,7 +315,7 @@ export class TodayStore {
 
   private async readHome(): Promise<void> {
     // Decidido antes de ler: uma leitura que já corria quando a passada acabou pode ter visto o banco pela metade.
-    const afterFirstPull = !untracked(() => awaitingFirstPull(this.sync, this.connectivity));
+    const afterFirstPull = !untracked(() => this.awaitingNeeds());
     const [all, active, sessions, week, programId] = await Promise.all([
       this.routines.all(),
       this.routines.list(),

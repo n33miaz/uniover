@@ -12,7 +12,10 @@ import {
 } from '@angular/core';
 import { Location } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
+import { RESOURCE_NAMES } from '../data/sync/resource-names';
+import { TrainingSync } from '../data/sync/training-sync';
 import { BackNavigation } from '../shell/back-navigation';
+import { FIRST_PULL_NEEDS } from '../shell/first-pull';
 import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { ExerciseHistory } from './exercise-history';
 import { LiveStore } from './live-store';
@@ -79,6 +82,7 @@ export class TodayPage {
   private readonly back = inject(BackNavigation);
   private readonly location = inject(Location);
   private readonly headerActions = inject(TrainingHeaderActions);
+  private readonly sync = inject(TrainingSync);
 
   private readonly params = toSignal(this.route.queryParamMap, { requireSync: true });
 
@@ -93,6 +97,12 @@ export class TodayPage {
   /** O calendário abre o histórico já com as séries visíveis; ao concluir agora, elas continuam atrás do botão de edição. */
   protected readonly historyOpen = computed(() => this.params().get(HISTORY_PARAM) === '1');
   constructor() {
+    // A passada começa pelo que Hoje lê para decidir; a meta da semana e a agenda vêm logo depois, antes do resto.
+    this.sync.prioritize([
+      ...FIRST_PULL_NEEDS.today,
+      RESOURCE_NAMES.goals,
+      RESOURCE_NAMES.calendarEntries,
+    ]);
     const timer = setTimeout(() => {
       if (!this.settled()) this.waited.set(true);
     }, SKELETON_DELAY_MS);

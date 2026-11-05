@@ -114,20 +114,31 @@ describe('the first pull waits only for what the screen reads', () => {
     expect(hasSkeleton('app-progress-skeleton')(el)).toBe(false);
   });
 
-  it('Hoje does not ask for anything and keeps waiting for the whole pass, catalog first', async () => {
-    const { kit, fixture, sync, catalogGate, el } = openWithSlowCatalog(TodayPage, 1);
+  it('Hoje pulls what it reads to decide, the catalog last, and keeps its skeleton until the catalog arrived', async () => {
+    const { kit, fixture, sync, catalogGate, el } = openWithSlowCatalog(TodayPage, 5);
 
-    await vi.waitFor(() => expect(kit.pull.calls).toHaveLength(1));
+    await vi.waitFor(() => expect(kit.pull.calls).toHaveLength(5));
     await settle(fixture, 6);
 
-    expect(kit.pull.calls[0].path).toBe(api('exercises'));
+    expect(kit.pull.calls.map((call) => call.path)).toEqual([
+      api('routines'),
+      api('program'),
+      api('sessions'),
+      api('sets'),
+      api('exercises'),
+    ]);
     expect(sync.firstPassSettled()).toBe(false);
+    expect(sync.resourcesPulled(['routines', 'program', 'sessions', 'sets'])).toBe(true);
+    expect(sync.resourcesPulled(['exercises'])).toBe(false);
     expect(
       el.querySelector('app-today-skeleton') !== null ||
         (el.textContent ?? '').includes('Baixando o catálogo…'),
     ).toBe(true);
+    expect(el.textContent).not.toContain('Sem Rotinas Ainda');
 
     catalogGate.open();
-    await vi.waitFor(() => expect(sync.firstPassSettled()).toBe(true));
+    await vi.waitFor(() => expect(sync.resourcesPulled(['exercises'])).toBe(true));
+    await settle(fixture);
+    expect(el.textContent).not.toContain('Baixando o catálogo…');
   });
 });
