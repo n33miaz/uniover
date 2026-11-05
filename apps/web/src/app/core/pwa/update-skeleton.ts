@@ -289,6 +289,91 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                   ><span class="bone ui-skeleton bs-route-row"></span
                   ><span class="bone ui-skeleton bs-route-row"></span>
                 </div>
+                <div class="bs-route-about">
+                  <span class="bone ui-skeleton bs-section-label"></span>
+                  <div class="bs-pane">
+                    <div class="bs-pane-row">
+                      <span class="bone ui-skeleton bs-line bs-w40"></span
+                      ><span class="bone ui-skeleton bs-line bs-w20"></span>
+                    </div>
+                    <div class="bs-pane-row">
+                      <span class="bone ui-skeleton bs-line bs-w40"></span
+                      ><span class="bone ui-skeleton bs-line bs-w20"></span>
+                    </div>
+                  </div>
+                  <span class="bone ui-skeleton bs-section-label bs-w60"></span>
+                  <div class="bs-pane bs-pane-link">
+                    <span class="bone ui-skeleton bs-icon"></span
+                    ><span class="bone ui-skeleton bs-line bs-w30"></span>
+                  </div>
+                </div>
+                <div class="bs-route-scrim"></div>
+                <div class="bs-route-sheet">
+                  <span class="bone ui-skeleton bs-line bs-big bs-w40 bs-sheet-title"></span>
+                  <span class="bs-sheet-text"
+                    ><span class="bone ui-skeleton bs-line bs-w80"></span
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                  ></span>
+                  <div class="bs-row">
+                    <span class="bs-lines"
+                      ><span class="bone ui-skeleton bs-line bs-w80"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                    ><span class="bone ui-skeleton bs-chip"></span>
+                  </div>
+                  <div class="bs-row">
+                    <span class="bs-lines"
+                      ><span class="bone ui-skeleton bs-line bs-w80"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                    ><span class="bone ui-skeleton bs-chip"></span>
+                  </div>
+                  <div class="bs-row">
+                    <span class="bs-lines"
+                      ><span class="bone ui-skeleton bs-line bs-w80"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                    ><span class="bone ui-skeleton bs-chip"></span>
+                  </div>
+                  <span class="bone ui-skeleton bs-cta"></span>
+                </div>
+                <div class="bs-route-assess">
+                  <span class="bs-assess-head"
+                    ><span class="bone ui-skeleton bs-line bs-w30"></span
+                    ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                  ></span>
+                  <div class="bs-pane">
+                    <span class="bone ui-skeleton bs-line bs-w40"></span>
+                    <span class="bone ui-skeleton bs-line bs-w80"></span>
+                    <span class="bone ui-skeleton bs-line bs-w60"></span>
+                  </div>
+                  <div class="bs-pane-actions">
+                    <span class="bone ui-skeleton bs-cta"></span
+                    ><span class="bone ui-skeleton bs-cta"></span>
+                  </div>
+                  <div class="bs-pane bs-pane-history">
+                    <span class="bone ui-skeleton bs-line bs-big bs-w60"></span>
+                    <span class="bone ui-skeleton bs-line bs-w80"></span>
+                    <span class="bone ui-skeleton bs-line bs-w40"></span>
+                  </div>
+                </div>
+                <div class="bs-route-routines">
+                  <div class="bs-pane">
+                    <div class="bs-pane-row">
+                      <span class="bone ui-skeleton bs-icon"></span
+                      ><span class="bs-lines"
+                        ><span class="bone ui-skeleton bs-line bs-w60"></span
+                        ><span class="bone ui-skeleton bs-line bs-w80"></span
+                      ></span>
+                    </div>
+                    <span class="bone ui-skeleton bs-input"></span>
+                  </div>
+                  <span class="bone ui-skeleton bs-input bs-routines-more"></span>
+                  <div class="bs-pane-actions">
+                    <span class="bone ui-skeleton bs-cta"></span
+                    ><span class="bone ui-skeleton bs-cta"></span>
+                  </div>
+                  <span class="bs-route-link"
+                    ><span class="bone ui-skeleton bs-line bs-w30"></span
+                  ></span>
+                </div>
               </div>
               <div class="bs-tabs">
                 @for (tab of threeTabs; track tab) {
@@ -466,6 +551,91 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                     ><span class="bone ui-skeleton bs-route-row"></span
                     ><span class="bone ui-skeleton bs-route-row"></span
                     ><span class="bone ui-skeleton bs-route-row"></span>
+                  </div>
+                  <div class="bs-route-about">
+                    <span class="bone ui-skeleton bs-section-label"></span>
+                    <div class="bs-pane">
+                      <div class="bs-pane-row">
+                        <span class="bone ui-skeleton bs-line bs-w40"></span
+                        ><span class="bone ui-skeleton bs-line bs-w20"></span>
+                      </div>
+                      <div class="bs-pane-row">
+                        <span class="bone ui-skeleton bs-line bs-w40"></span
+                        ><span class="bone ui-skeleton bs-line bs-w20"></span>
+                      </div>
+                    </div>
+                    <span class="bone ui-skeleton bs-section-label bs-w60"></span>
+                    <div class="bs-pane bs-pane-link">
+                      <span class="bone ui-skeleton bs-icon"></span
+                      ><span class="bone ui-skeleton bs-line bs-w30"></span>
+                    </div>
+                  </div>
+                  <div class="bs-route-scrim"></div>
+                  <div class="bs-route-sheet">
+                    <span class="bone ui-skeleton bs-line bs-big bs-w40 bs-sheet-title"></span>
+                    <span class="bs-sheet-text"
+                      ><span class="bone ui-skeleton bs-line bs-w80"></span
+                      ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ></span>
+                    <div class="bs-row">
+                      <span class="bs-lines"
+                        ><span class="bone ui-skeleton bs-line bs-w80"></span
+                        ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                      ><span class="bone ui-skeleton bs-chip"></span>
+                    </div>
+                    <div class="bs-row">
+                      <span class="bs-lines"
+                        ><span class="bone ui-skeleton bs-line bs-w80"></span
+                        ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                      ><span class="bone ui-skeleton bs-chip"></span>
+                    </div>
+                    <div class="bs-row">
+                      <span class="bs-lines"
+                        ><span class="bone ui-skeleton bs-line bs-w80"></span
+                        ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                      ><span class="bone ui-skeleton bs-chip"></span>
+                    </div>
+                    <span class="bone ui-skeleton bs-cta"></span>
+                  </div>
+                  <div class="bs-route-assess">
+                    <span class="bs-assess-head"
+                      ><span class="bone ui-skeleton bs-line bs-w30"></span
+                      ><span class="bone ui-skeleton bs-line bs-big bs-w60"></span
+                    ></span>
+                    <div class="bs-pane">
+                      <span class="bone ui-skeleton bs-line bs-w40"></span>
+                      <span class="bone ui-skeleton bs-line bs-w80"></span>
+                      <span class="bone ui-skeleton bs-line bs-w60"></span>
+                    </div>
+                    <div class="bs-pane-actions">
+                      <span class="bone ui-skeleton bs-cta"></span
+                      ><span class="bone ui-skeleton bs-cta"></span>
+                    </div>
+                    <div class="bs-pane bs-pane-history">
+                      <span class="bone ui-skeleton bs-line bs-big bs-w60"></span>
+                      <span class="bone ui-skeleton bs-line bs-w80"></span>
+                      <span class="bone ui-skeleton bs-line bs-w40"></span>
+                    </div>
+                  </div>
+                  <div class="bs-route-routines">
+                    <div class="bs-pane">
+                      <div class="bs-pane-row">
+                        <span class="bone ui-skeleton bs-icon"></span
+                        ><span class="bs-lines"
+                          ><span class="bone ui-skeleton bs-line bs-w60"></span
+                          ><span class="bone ui-skeleton bs-line bs-w80"></span
+                        ></span>
+                      </div>
+                      <span class="bone ui-skeleton bs-input"></span>
+                    </div>
+                    <span class="bone ui-skeleton bs-input bs-routines-more"></span>
+                    <div class="bs-pane-actions">
+                      <span class="bone ui-skeleton bs-cta"></span
+                      ><span class="bone ui-skeleton bs-cta"></span>
+                    </div>
+                    <span class="bs-route-link"
+                      ><span class="bone ui-skeleton bs-line bs-w30"></span
+                    ></span>
                   </div>
                 </div>
               </div>

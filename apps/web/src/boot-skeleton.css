@@ -639,7 +639,7 @@ html[data-boot='settings-credits'] .bs-route-content,
   height: 58px;
 }
 
-/* Glossário e avaliações são listas sem abas; Sobre é só as duas versões e a linha de créditos. */
+/* Glossário e avaliações são listas sem abas; Sobre é só as duas versões e a linha de créditos (composições próprias, mais abaixo). */
 :is(
     html[data-boot='training-glossary'] .bs-boot,
     .bs-root[data-boot-variant='training-glossary'],
@@ -651,23 +651,12 @@ html[data-boot='settings-credits'] .bs-route-content,
   .bs-route-strip {
   display: none;
 }
-:is(
-    html[data-boot='training-glossary'] .bs-boot,
-    .bs-root[data-boot-variant='training-glossary'],
-    html[data-boot='training-assessments'] .bs-boot,
-    .bs-root[data-boot-variant='training-assessments'],
-    html[data-boot='settings-about'] .bs-boot,
-    .bs-root[data-boot-variant='settings-about']
-  )
+:is(html[data-boot='training-glossary'] .bs-boot, .bs-root[data-boot-variant='training-glossary'])
   .bs-route-list {
   display: flex;
 }
 :is(html[data-boot='settings-about'] .bs-boot, .bs-root[data-boot-variant='settings-about'])
   .bs-route-hero {
-  display: none;
-}
-:is(html[data-boot='settings-about'] .bs-boot, .bs-root[data-boot-variant='settings-about'])
-  .bs-route-row:nth-child(n + 4) {
   display: none;
 }
 
@@ -700,34 +689,6 @@ html[data-boot='settings-credits'] .bs-route-content,
   display: none;
 }
 
-/* Créditos abre como uma folha sobre Sobre, por isso a composição fica ancorada no rodapé e sem grade. */
-:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
-  .bs-route-content {
-  align-self: stretch;
-  margin-top: auto;
-  padding: var(--space-4);
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--a-surface);
-}
-:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
-  .bs-route-hero {
-  display: flex;
-  min-height: 48px;
-}
-:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
-  .bs-route-art,
-:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
-  .bs-route-strip,
-:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
-  .bs-route-panel {
-  display: none;
-}
-:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
-  .bs-route-list {
-  display: flex;
-}
-
 /* Rotinas conserva o seletor de duas opções e o cartão da próxima rotina, sem parecer uma grade de atalhos. */
 :is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
   .bs-route-strip {
@@ -741,17 +702,181 @@ html[data-boot='settings-credits'] .bs-route-content,
 :is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
   .bs-route-grid,
 :is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
-  .bs-route-panel {
-  display: none;
-}
+  .bs-route-panel,
 :is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
   .bs-route-list {
-  display: flex;
-}
-:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
-  .bs-route-row:nth-child(n + 2) {
   display: none;
 }
+/*
+ * Sobre, Créditos, Avaliações e Rotinas têm composição própria: cada cartão leva os ossos do que a tela real mostra dentro
+ * dele (rótulo e valor, texto e botões), em vez de uma caixa branca. Créditos é a folha de baixo sobre o Sobre, com o fundo
+ * escurecido, como na tela real.
+ */
+.bs-route-about,
+.bs-route-assess,
+.bs-route-routines,
+.bs-route-scrim,
+.bs-route-sheet {
+  display: none;
+}
+:is(
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='settings-credits'] .bs-boot,
+    .bs-root[data-boot-variant='settings-credits']
+  )
+  .bs-route-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+:is(
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments']
+  )
+  .bs-route-assess {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-routines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-scrim {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.32);
+}
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 560px;
+  margin-inline: auto;
+  padding: var(--space-6) var(--gutter) calc(var(--space-4) + var(--safe-bottom));
+  box-sizing: border-box;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--a-surface);
+}
+/* O cabeçalho genérico (título e chip) não existe nestas telas: o topo da página já é o da casca. */
+:is(
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='settings-credits'] .bs-boot,
+    .bs-root[data-boot-variant='settings-credits'],
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments'],
+    html[data-boot='training-routines'] .bs-boot,
+    .bs-root[data-boot-variant='training-routines']
+  )
+  .bs-route-head,
+:is(
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='settings-credits'] .bs-boot,
+    .bs-root[data-boot-variant='settings-credits'],
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments']
+  )
+  .bs-route-list {
+  display: none;
+}
+.bs-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-pane-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 36px;
+}
+.bs-pane-row .bs-line:first-child {
+  flex: none;
+}
+.bs-pane-row .bs-lines {
+  flex: 1;
+}
+.bs-route-about .bs-pane {
+  padding-block: var(--space-2);
+}
+.bs-route-about .bs-pane-row + .bs-pane-row {
+  border-top: 1px solid var(--a-line);
+}
+.bs-route-about .bs-pane-link {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 64px;
+}
+.bs-pane-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.bs-assess-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) 0;
+}
+.bs-assess-head .bs-line.bs-big {
+  height: 24px;
+}
+.bs-pane-history {
+  padding: var(--space-5) var(--space-4);
+}
+.bs-pane-history .bs-line.bs-big {
+  height: 24px;
+  margin-bottom: var(--space-1);
+}
+.bs-route-routines .bs-pane > .bs-input {
+  height: 68px;
+}
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-segment {
+  height: 46px;
+}
+.bs-routines-more {
+  height: 44px;
+}
+.bs-route-link {
+  display: flex;
+  justify-content: center;
+}
+.bs-sheet-title {
+  align-self: center;
+  height: 22px;
+}
+.bs-sheet-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bs-route-sheet .bs-row {
+  min-height: 62px;
+}
+.bs-route-sheet .bs-chip {
+  width: 20px;
+  height: 20px;
+}
+
 html[data-boot='auth-login'] .bs-route-content,
 .bs-root[data-boot-variant='auth-login'] .bs-route-content {
   --route-art-height: 110px;
