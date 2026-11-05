@@ -4,8 +4,10 @@ Nenhum teste roda o `adb`, abre o cofre do Windows nem toca a pasta `.android` r
 pasta de instalação são de `tmp_path`, e o processo é o `FakeAdbRunner`.
 """
 
+import asyncio
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,6 +26,7 @@ from uniover_agent.ports import (
     AdbUnauthorized,
     TvNotPaired,
     TvPermissionNeeded,
+    is_user_initiated,
     user_initiated_adb,
 )
 
@@ -76,7 +79,10 @@ class Home:
         runner: FakeAdbRunner,
         clock: Clock | None = None,
         authorization: AdbAuthorization | None = None,
+        **extra: Any,
     ) -> AdbTv:
+        # Sem a espera do aceite (`pairing_watch_seconds=0`), salvo nos testes dela.
+        extra.setdefault("pairing_watch_seconds", 0.0)
         return AdbTv(
             ADB,
             HOST,
@@ -86,6 +92,7 @@ class Home:
             monotonic=clock or Clock(),
             retry_after=30.0,
             authorization=authorization or self.authorization(),
+            **extra,
         )
 
 
@@ -197,7 +204,10 @@ async def test_accepting_the_prompt_late_is_noticed_without_connecting(home: Hom
     runner.script[shell(LAUNCHER_QUERY)] = ok(NO_ACTIVITIES)
     assert await adb.list_apps() == []
     assert runner.calls.count(CONNECT) == 1
-    assert home.authorization().allows_automatic_connect()
+    # Um transporte `device` visto fora do pedido serve ao canal, mas não prova que a TV guardou a
+    # permissão (pode ser um "Permitir" de uma vez só): nada é registrado, e o agente só conectará
+    # sozinho depois de um pedido da pessoa que prove.
+    assert not home.authorization().allows_automatic_connect()
 
 
 async def test_a_registered_permission_lets_the_agent_reconnect_by_itself(home: Home) -> None:
@@ -295,6 +305,90 @@ async def test_a_new_key_does_not_inherit_the_timeout_done_for_the_old_one(home:
     assert PUT_TIMEOUT in runner.calls
 
 
+# --- o fluxo real do aviso: tocar, aceitar na TV, confirmar que ficou gravado --------------------
+
+PAIRING_STATES: dict[str, Any] = {"pairing_watch_seconds": 9.0, "pairing_poll_seconds": 3.0}
+
+
+async def instant(seconds: float) -> None:
+    del seconds
+    await asyncio.sleep(0)
+
+
+async def test_the_real_prompt_flow_ends_with_the_permission_saved_and_the_timeout_off(
+    home: Home,
+) -> None:
+    runner = FakeAdbRunner(
+        {
+            CONNECT: SERIAL_CONNECTED,
+            # depois do connect (aviso na tela), uma leitura da espera, o aceite, a confirmação
+            GET_STATE: [UNAUTHORIZED, UNAUTHORIZED, DEVICE, DEVICE],
+            DISCONNECT: ok(""),
+            PUT_TIMEOUT: ok(""),
+            GET_TIMEOUT: ok("0\r\n"),
+        }
+    )
+    adb = home.adb(runner, sleep=instant, **PAIRING_STATES)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()  # o toque em "Atualizar lista": o aviso aparece na TV
+    assert runner.calls == [CONNECT, GET_STATE]
+    await asyncio.wait_for(adb._pairing_task, 5)  # type: ignore[arg-type]
+    record = home.authorization().record
+    assert record.authorized
+    assert record.timeout_disabled
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+    assert runner.calls.count(CONNECT) == 2  # o do toque e a confirmação, nenhum a mais
+    assert adb.connected
+    await adb.aclose()
+
+
+async def test_a_one_time_allow_is_not_recorded_and_nothing_connects_afterwards(
+    home: Home,
+) -> None:
+    runner = FakeAdbRunner(
+        {
+            CONNECT: SERIAL_CONNECTED,
+            # o aceite sem "Sempre permitir": a confirmação volta a pedir o aviso
+            GET_STATE: [UNAUTHORIZED, DEVICE, UNAUTHORIZED],
+            DISCONNECT: ok(""),
+        }
+    )
+    adb = home.adb(runner, sleep=instant, **PAIRING_STATES)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    await asyncio.wait_for(adb._pairing_task, 5)  # type: ignore[arg-type]
+    assert not home.authorization().record.authorized
+    assert PUT_TIMEOUT not in runner.calls
+    connects = runner.calls.count(CONNECT)
+    assert connects == 2
+    for _ in range(3):  # nada do que o agente faz sozinho conecta de novo
+        with pytest.raises(AdbUnauthorized):
+            await adb.list_apps()
+        with pytest.raises(AdbUnauthorized):
+            await home.adb(runner).connect()
+    assert runner.calls.count(CONNECT) == connects
+    await adb.aclose()
+
+
+async def test_a_live_transport_is_proven_by_the_users_request_before_it_is_recorded(
+    home: Home,
+) -> None:
+    runner = FakeAdbRunner(
+        {
+            CONNECT: [ok(f"already connected to {HOST}:5555\r\n"), SERIAL_CONNECTED],
+            GET_STATE: DEVICE,
+            DISCONNECT: ok(""),
+            PUT_TIMEOUT: ok(""),
+            GET_TIMEOUT: ok("0\r\n"),
+        }
+    )
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert runner.calls[:5] == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
+    assert home.authorization().record.authorized
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+
+
 # --- o contato periódico mantém a permissão viva sem mandar nada à TV -----------------------------
 
 
@@ -328,14 +422,24 @@ async def test_only_marked_commands_may_open_the_prompt() -> None:
     seen: list[bool] = []
 
     async def inner(command: Command) -> CommandResult:
-        seen.append(ADB_USER_INITIATED.get())
+        seen.append(is_user_initiated())
         return CommandResult(command.id, ResultStatus.OK)
 
     command = Command("1", "tv.livre.v1", {"action": "status"})
     await user_initiated(inner)(command)
     await user_initiated(inner, when=lambda c: c.body.get("action") != "status")(command)
     assert seen == [True, False]
-    assert ADB_USER_INITIATED.get() is False  # a marca não vaza para o que vem depois
+    assert ADB_USER_INITIATED.get() is None  # a marca não vaza para o que vem depois
+
+
+async def test_a_task_spawned_by_a_user_request_does_not_inherit_the_right_to_prompt() -> None:
+    async def child() -> bool:
+        return is_user_initiated()
+
+    with user_initiated_adb():
+        assert is_user_initiated()
+        assert await asyncio.create_task(child()) is False
+    assert not is_user_initiated()
 
 
 # --- Samsung e Remote v2: token e certificado são reaproveitados, nunca pedidos de novo -----------
