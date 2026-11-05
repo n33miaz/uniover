@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.10](https://github.com/n33miaz/uniover/compare/v0.42.9...v0.42.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **web:** guard the catalog output folder
+
 ## [0.42.9](https://github.com/n33miaz/uniover/compare/v0.42.8...v0.42.9) (2026-11-05)
 
 
