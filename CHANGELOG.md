@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.7](https://github.com/n33miaz/uniover/compare/v0.42.6...v0.42.7) (2026-11-05)
+
+
+### Performance Improvements
+
+* **web:** scope home status to home route
+* **web:** lazy-load shell and settings routes
+
 ## [0.42.6](https://github.com/n33miaz/uniover/compare/v0.42.5...v0.42.6) (2026-11-05)
 
 
