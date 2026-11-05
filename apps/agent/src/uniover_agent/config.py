@@ -8,10 +8,10 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     NoDecode,
@@ -133,7 +133,7 @@ class Settings(BaseSettings):
     tv_watchdog_cooldown_third_seconds: float = Field(default=300.0, gt=0, le=600)
     tv_watchdog_cooldown_max_seconds: float = Field(default=600.0, gt=0, le=600)
     tv_watchdog_adb_cooldown_seconds: float = Field(default=3600.0, gt=0, le=7200)
-    tv_session_warm_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    tv_session_warm_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     tv_session_disconnect_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     tv_command_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
     # Recusa de certificado da TV: só vira "não pareada" depois de se repetir, com este intervalo.
@@ -180,6 +180,19 @@ class Settings(BaseSettings):
     pc_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Contagem do desligamento (o Windows avisa na tela durante ela); o app pode cancelar antes.
     pc_shutdown_delay_seconds: int = Field(default=30, ge=10, le=300)
+
+    @model_validator(mode="after")
+    def _command_timeout_covers_two_openings(self) -> Self:
+        # Um comando pode abrir a sessão, perder o canal e abrir de novo: o teto do comando tem de
+        # caber nas duas aberturas (mais uma folga para o envio), senão cortaria uma recuperação
+        # que ainda estava dentro do prazo.
+        needed = 2 * self.tv_session_warm_timeout_seconds + 5
+        if self.tv_command_timeout_seconds < needed:
+            raise ValueError(
+                "tv_command_timeout_seconds precisa ser pelo menos "
+                f"2 x tv_session_warm_timeout_seconds + 5 ({needed:g} s)"
+            )
+        return self
 
     @field_validator("pc_apps", mode="before")
     @classmethod
