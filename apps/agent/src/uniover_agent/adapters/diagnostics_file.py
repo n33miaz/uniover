@@ -124,21 +124,37 @@ class FileDiagnosticStore:
         self._lock = threading.Lock()
 
     def append(self, event: DiagnosticEvent) -> None:
+        self.append_confirmed(event)
+
+    def append_confirmed(self, event: DiagnosticEvent) -> bool:
+        """Como `append`, e diz se a linha chegou ao arquivo (quem decide repetir precisa saber)."""
         try:
             with self._lock:
                 self._pending.parent.mkdir(parents=True, exist_ok=True)
                 with self._pending.open("a", encoding="utf-8", newline="\n") as handle:
                     handle.write(_line(event) + "\n")
-                if self._pending.stat().st_size > _COMPACT_BYTES:
-                    self._compact()
+                self._compact_if_large()
         except OSError:
-            # O arquivo pode estar aberto por outro processo por um instante: a ocorrência fica só
-            # no registro.
+            # O arquivo pode estar aberto por outro processo por um instante (ou o disco estar
+            # cheio): a ocorrência fica só no registro.
             _log.warning("não consegui gravar a fila do diagnóstico", exc_info=True)
+            return False
+        return True
+
+    def _compact_if_large(self) -> None:
+        # A linha já está gravada: falhar ao compactar não pode fazê-la parecer perdida.
+        try:
+            if self._pending.stat().st_size > _COMPACT_BYTES:
+                self._compact()
+        except OSError:
+            _log.warning("não consegui compactar a fila do diagnóstico", exc_info=True)
 
     def _compact(self) -> None:
-        events = self._read(self._pending)
-        self._write(self._pending, events[-self._max :])
+        # Nunca regrava `diagnostics.jsonl` no lugar: o supervisor e outro processo acrescentam a
+        # ele sem lock, e uma regravação perderia o que entrasse entre a leitura e a troca. A
+        # renomeação atômica leva tudo para o arquivo de envio (limitado a `max_events`); o que for
+        # escrito depois dela cai num arquivo novo.
+        self._absorb(self._read(self._sending)[-self._max :])
 
     def _read(self, path: Path) -> list[DiagnosticEvent]:
         try:
