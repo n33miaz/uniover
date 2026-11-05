@@ -8,7 +8,7 @@ type Page = import('@playwright/test').Page;
 
 const rows = (page: Page) => page.locator('.list .ui-row .name');
 
-// 16 do catálogo-semente + 300 de enchimento: passam de uma página do pull (200 linhas) e do tamanho em que o WebKit
+// 16 do catálogo-semente + 300 de enchimento: passam do tamanho em que o WebKit
 // travava a leitura por cursor. O catálogo de verdade tem perto de 270.
 const EXTRA = 300;
 const TOTAL = 316;
@@ -23,13 +23,13 @@ test.describe('catálogo grande', () => {
     const server = await startTraining(context, page, { extra: EXTRA });
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
-    // As duas páginas do pull chegaram e a lista inteira foi relida (o total é o do catálogo todo, não o da 1ª página).
+    // O catálogo chegou numa página só do pull (limite 500) e a lista inteira foi lida (o total é o do catálogo todo).
     await expect(countLabel(page)).toHaveText(`${TOTAL} exercícios`, {
       timeout: 25_000,
     });
     expect(
       server.hits.filter((hit) => hit.method === 'GET' && hit.path.includes('exercises')).length,
-    ).toBeGreaterThanOrEqual(2);
+    ).toBe(1);
     await expect(rows(page)).toHaveCount(50);
     await screenshot(page, `test-results/catalog-scroll/list-${info.project.name}.png`);
 
