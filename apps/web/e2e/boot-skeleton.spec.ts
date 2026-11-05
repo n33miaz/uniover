@@ -204,6 +204,33 @@ test.describe('abertura da página de verdade', () => {
     expect(served).not.toMatch(/<script(?![^>]*\ssrc=)[^>]*>/);
   });
 
+  test('o servidor já grava o desenho do endereço: o primeiro quadro de /tv e de /treino não passa pela Início', async ({
+    page,
+    request,
+  }) => {
+    expect(await (await request.get('/tv')).text()).toMatch(/<html[^>]* data-boot="tv"/);
+    // Sem o script deferido (nem o app), só o que o HTML entregou pode ter escolhido o desenho.
+    await page.route(/\/boot-skeleton\.js$/, (route) => route.abort());
+    const expected = {
+      '/tv': { variant: 'tv', shown: '.bs-tv' },
+      '/tv/apps': { variant: 'tv', shown: '.bs-tv' },
+      '/treino': { variant: 'training-today', shown: '.bs-training' },
+      '/treino/rotinas': { variant: 'training-routines', shown: '.bs-training' },
+      '/': { variant: 'home', shown: '.bs-home' },
+    } as const;
+    for (const [path, { variant, shown }] of Object.entries(expected)) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator('html')).toHaveAttribute('data-boot', variant);
+      const visible = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('#boot-skeleton > .bs-variant')]
+          .filter((el) => getComputedStyle(el).display !== 'none')
+          .map((el) => el.className),
+      );
+      expect(visible, path).toHaveLength(1);
+      expect(visible[0], path).toContain(shown.slice(1));
+    }
+  });
+
   test('com a folha de estilos presa, o esqueleto aparece pintado e cobre o app até a folha chegar', async ({
     context,
     page,

@@ -18,41 +18,15 @@ const INDEX = readFileSync(resolve(process.cwd(), 'src/index.html'), 'utf8');
 const BOOT_CSS = readFileSync(resolve(process.cwd(), 'src/boot-skeleton.css'), 'utf8');
 const BOOT_SELECTOR = readFileSync(resolve(process.cwd(), 'public/boot-skeleton.js'), 'utf8');
 
+// A tabela é de todos os que escolhem o desenho (este script, bootVariantFor e o BootVariants.cs da API).
+const TABLE: { cases: { path: string; variant: BootVariant }[] } = JSON.parse(
+  readFileSync(resolve(process.cwd(), '../../contracts/boot-variants.json'), 'utf8'),
+);
+// O roteador do Angular também passa a query e o hash a bootVariantFor.
 const CASES: readonly (readonly [string, BootVariant])[] = [
-  ['/', 'home'],
-  ['/index.html', 'home'],
-  ['/tv', 'tv'],
-  ['/tv/', 'tv'],
-  ['/tv/apps', 'tv'],
+  ...TABLE.cases.map((entry) => [entry.path, entry.variant] as const),
   ['/tv?painel=apps', 'tv'],
-  ['/pc', 'pc'],
-  ['/pc/teclado', 'pc'],
-  ['/treino', 'training-today'],
-  ['/treino/', 'training-today'],
-  ['/treino/rotinas', 'training-routines'],
-  ['/treino/exercicios', 'training-library'],
-  ['/treino/progresso', 'training-progress'],
-  ['/treino/corpo', 'training-body'],
-  ['/ajustes', 'settings'],
-  ['/ajustes/', 'settings'],
-  ['/ajustes/sistema', 'settings-system'],
-  ['/ajustes/pessoas', 'settings-people'],
-  ['/ajustes/auditoria', 'settings-audit'],
-  ['/ajustes/dispositivos', 'settings-devices'],
-  ['/ajustes/perfil', 'settings-profile'],
-  ['/ajustes/aparencia', 'settings-appearance'],
-  ['/ajustes/sobre', 'settings-about'],
-  ['/ajustes/sobre/creditos', 'settings-credits'],
-  ['/entrar', 'auth-login'],
-  ['/recuperar-senha', 'auth-recovery'],
-  ['/redefinir-senha', 'auth-reset'],
-  ['/entrar/qr', 'auth-qr'],
-  ['/convite', 'auth-invite'],
-  ['/boas-vindas', 'auth-welcome'],
-  ['/conectar', 'devices-connect'],
-  ['/televisao', 'home'],
-  ['/treinoextra', 'home'],
-  ['/qualquer-coisa', 'home'],
+  ['/tv#topo', 'tv'],
 ];
 
 /** O que o seletor inicial marca na raiz para um endereço (ele roda sem Angular, então aqui é executado à parte). */
@@ -171,6 +145,31 @@ describe('boot skeleton', () => {
       const pathname = path.split(/[?#]/, 1)[0];
       expect(runBootSelector(pathname), path).toBe(variant);
     }
+  });
+
+  it('covers in the shared table every drawing the pre-Angular script can choose', () => {
+    const chosen = new Set([...BOOT_SELECTOR.matchAll(/\bv = '([\w-]+)'/g)].map((m) => m[1]));
+    const listed = new Set(TABLE.cases.map((entry) => entry.variant));
+    expect(chosen.size).toBeGreaterThan(30);
+    for (const variant of chosen) expect(listed.has(variant as BootVariant), variant).toBe(true);
+  });
+
+  it('overwrites the drawing the server already wrote (the service worker serves the "/" page everywhere)', () => {
+    const attributes: Record<string, string> = { 'data-boot': 'home' };
+    const document = {
+      documentElement: {
+        setAttribute: (name: string, value: string) => (attributes[name] = value),
+      },
+      getElementById: () => null,
+      addEventListener: () => undefined,
+      querySelector: () => null,
+    };
+    new Function('location', 'document', 'setTimeout', BOOT_SELECTOR)(
+      { pathname: '/tv', reload: () => undefined },
+      document,
+      () => 0,
+    );
+    expect(attributes['data-boot']).toBe('tv');
   });
 
   it('sits beside app-root with the nonce-protected first-paint styles', () => {
