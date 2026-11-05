@@ -5,6 +5,8 @@ const PORT = Number(process.env['E2E_PORT'] ?? 4300);
 export default defineConfig({
   testDir: './e2e',
   outputDir: './test-results',
+  // O catálogo de telas tem configuração própria (`playwright.catalog.config.ts`, `npm run catalog`): fica fora desta execução.
+  testIgnore: '**/e2e/catalog/**',
   reporter: [['list'], ['html', { open: 'never' }]],
   // Na CI uma segunda tentativa absorve o tropeço de tempo do executor (o teste que só passa na segunda vira "flaky" no
   // relatório, não some). Refazer a esteira inteira por um teste custava mais de 10 minutos.

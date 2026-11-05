@@ -13,6 +13,8 @@
     "test": "ng test --no-watch",
     "test:coverage": "ng test --no-watch --coverage",
     "e2e": "playwright test",
+    "catalog": "playwright test -c playwright.catalog.config.ts",
+    "catalog:html": "node e2e/catalog/build-catalog.mjs",
     "format:check": "prettier --check ."
   },
   "private": true,
