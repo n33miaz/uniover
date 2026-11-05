@@ -188,6 +188,7 @@ class FakeTvAdb:
         # Leitura de autorização sem conexão nova: um item por chamada (o último se repete).
         self.authorizations: list[str] = ["authorized"]
         self.authorization_reads = 0
+        self.closed = False
         # Vigia do serviço do controle: quantas vezes foi religado e o que falha (um por chamada).
         self.restarts = 0
         self.restart_errors: list[Exception] = []
@@ -224,6 +225,9 @@ class FakeTvAdb:
         self._connected = False
         self._fail_if_scripted()
         self._connected = True
+
+    async def aclose(self) -> None:
+        self.closed = True
 
     async def read_authorization(self) -> str:
         self.authorization_reads += 1

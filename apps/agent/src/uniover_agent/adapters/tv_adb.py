@@ -228,7 +228,18 @@ class AdbTv:
 
     async def _disconnect_when_available(self) -> None:
         async with self._lock:
+            if self._connected:
+                # Outra abertura aconteceu enquanto isto esperava a trava: não a derruba.
+                return
             await self._disconnect_locked()
+            self._connected = False
+
+    async def aclose(self) -> None:
+        """Encerramento do agente: cancela o `disconnect` adiado que ainda espere a trava."""
+        task, self._disconnect_task = self._disconnect_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     async def _disconnect_locked(self) -> None:
         try:

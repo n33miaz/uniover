@@ -328,6 +328,8 @@ class TvSetup:
     light_settings: TvLightSettings | None = None
     # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
+    # Rodam ao encerrar o agente (cancelam o que ficou agendado).
+    closers: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
 
 
 def build_tv(
@@ -772,6 +774,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
     manager.add_channel(adb, connect_on_warm=False)
+    setup.closers.append(adb.aclose)
 
     focus_closer, light_settings = compose_light_settings(
         setup, adb, clock, keep, lambda: cleanup.running
@@ -1563,6 +1566,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         await process.aclose()
         if tv is not None:
             await tv.manager.aclose()
+            for close in tv.closers:
+                await close()
         if publisher is not None:
             await publisher.aclose()
         kit.recorder.flush_pending()
