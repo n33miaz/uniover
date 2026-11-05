@@ -466,7 +466,7 @@ test.describe('sem TV configurada', () => {
     ).toBeVisible();
     const action = empty.getByRole('link', { name: 'Configurar TV' });
     await expect(action).toBeVisible();
-    await expect(action).toHaveAttribute('href', '/ajustes/sistema');
+    await expect(action).toHaveAttribute('href', '/tv/configurar');
     await expect(empty.getByRole('button')).toHaveCount(0);
 
     // Nenhum botão de comando: o controle inteiro deu lugar ao estado vazio.
@@ -484,7 +484,7 @@ test.describe('sem TV configurada', () => {
     await shoot(page, 'sem-tv', info.project.name);
     await expectSound(page);
     await action.click();
-    await expect(page).toHaveURL(/\/ajustes\/sistema$/);
+    await expect(page).toHaveURL(/\/tv\/configurar$/);
   });
 
   test('quem não administra lê uma frase e não recebe botão nenhum', async ({ page }, info) => {
