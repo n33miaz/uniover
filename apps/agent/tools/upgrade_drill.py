@@ -282,7 +282,7 @@ def snapshot() -> list[Proc]:
         check=True,
         capture_output=True,
         creationflags=CREATE_NO_WINDOW,
-        timeout=60,
+        timeout=180,  # o PC pode estar muito carregado: listar processos chega a passar de 1 min
     )
     rows = json.loads(done.stdout.decode("utf-8-sig") or "[]")
     if isinstance(rows, dict):
