@@ -9,7 +9,8 @@ import { AuthApi } from './core/auth/auth-api';
 import { OFFLINE_DB_FACTORY, OfflineDb } from './core/offline-queue/offline-db';
 import { FakeAccountScope } from './core/offline-queue/queue-test-kit';
 import { AccountScope } from './core/session/account-scope';
-import { HomeStatus, HomeStatusPort } from './core/status/home-status.port';
+import { LiveHomeStatus } from './core/status/live-home-status';
+import { HomeStatus } from './core/status/home-status.port';
 import { TRAINING_DB_FACTORY, TrainingDb } from './modules/training/data/training-db';
 
 /**
@@ -39,7 +40,7 @@ describe('app routes', () => {
         ...inMemoryDatabases(),
         // A Início lê o estado da casa pela porta; aqui só interessa que a rota a desenha.
         {
-          provide: HomeStatusPort,
+          provide: LiveHomeStatus,
           useValue: {
             status: signal<HomeStatus>({
               userName: null,
@@ -188,7 +189,7 @@ describe('app routes for a guest', () => {
         { provide: AccountScope, useValue: new FakeAccountScope() },
         ...inMemoryDatabases(),
         {
-          provide: HomeStatusPort,
+          provide: LiveHomeStatus,
           useValue: {
             status: signal<HomeStatus>({
               userName: null,

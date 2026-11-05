@@ -20,8 +20,6 @@ import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
-import { HomeStatusPort } from './core/status/home-status.port';
-import { LiveHomeStatus } from './core/status/live-home-status';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -32,8 +30,6 @@ export const appConfig: ApplicationConfig = {
     // Um pedaço de código que sumiu (a casca aberta é de antes do deploy) atualiza o app sozinho em vez de deixar a tela vazia.
     provideRouter(routes, withNavigationErrorHandler(recoverFromChunkNavigationError)),
     { provide: ErrorHandler, useClass: ChunkAwareErrorHandler },
-    // A Início lê o estado da casa pela porta; o adaptador real fala com a API e com o fluxo em tempo real.
-    { provide: HomeStatusPort, useExisting: LiveHomeStatus },
     provideHttpClient(
       withFetch(),
       // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.
