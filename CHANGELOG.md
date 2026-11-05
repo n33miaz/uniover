@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.42.2](https://github.com/n33miaz/uniover/compare/v0.42.1...v0.42.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **api:** serve index.html with its boot variant
+* **web:** mirror server boot variant in e2e
+* **web:** match Rotinas skeleton to real page
+
 ## [0.42.1](https://github.com/n33miaz/uniover/compare/v0.42.0...v0.42.1) (2026-11-05)
 
 
