@@ -71,21 +71,39 @@ class TvWatchdog:
         self._budget = budget_seconds
         self._requested = asyncio.Event()
         self._rest_until = 0.0
+        # O descanso em vigor é o longo do ADB (sem autorização ou ausente)?
+        self._rest_is_adb = False
         self._attempts = 0
         self._failed_repairs = 0
         self._last_attempt_at: float | None = None
         self._only_adb_down = True
-        manager.on_needs_repair(self.request)
+        # O descanso em vigor é o longo do ADB (sem autorização ou ausente)?
+        self._rest_is_adb = False
+        manager.on_needs_repair(self.request, on_command=self.request_after_command)
 
     def request(self) -> None:
-        """Avisa que uma porta do controle foi recusada. Síncrono, barato e sem falha possível."""
+        """Avisa que uma porta do controle foi recusada. Síncrono, barato e sem falha possível.
+
+        É o aviso automático (a conferência de um minuto do relocador, o fim de uma operação do
+        TV Livre): nunca mexe no descanso, senão ele se repetiria a cada minuto sem fim.
+        """
+        self._requested.set()
+
+    def request_after_command(self) -> None:
+        """Como `request`, para uma abertura pedida por um comando do dono.
+
+        Só este caminho encurta o descanso curto (passado o primeiro degrau desde a última
+        tentativa): quem está tentando usar o controle não espera dez minutos. O descanso do ADB
+        sem autorização ou ausente (uma hora) nunca é encurtado.
+        """
         last = self._last_attempt_at
+        now = self._clock.monotonic()
         if (
-            self._clock.monotonic() < self._rest_until
+            now < self._rest_until
+            and not self._rest_is_adb
             and last is not None
-            and self._clock.monotonic() - last >= self._cooldowns[0]
+            and now - last >= self._cooldowns[0]
         ):
-            # Um novo comando, depois de um minuto, não deve ficar preso no descanso anterior.
             self._rest_until = 0.0
         self._requested.set()
 
@@ -150,6 +168,7 @@ class TvWatchdog:
         cooldown = self._cooldowns[min(self._failed_repairs, len(self._cooldowns) - 1)]
         self._failed_repairs += 1
         self._rest_until = self._clock.monotonic() + cooldown
+        self._rest_is_adb = False
         if self._only_adb_down:
             self._events.emit(
                 "adb_unreachable",
@@ -194,6 +213,7 @@ class TvWatchdog:
                     next_restart = elapsed + self._restart_seconds
                     continue
                 self._rest_until = self._clock.monotonic() + self._adb_cooldown
+                self._rest_is_adb = True
                 self._events.emit(
                     "adb_unreachable",
                     "warn",

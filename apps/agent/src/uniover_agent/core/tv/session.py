@@ -225,7 +225,7 @@ class TvSessionManager:
         self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
         self._session_opened: list[Callable[[float], None]] = []
-        self._repair_callbacks: list[Callable[[], None]] = []
+        self._repair_callbacks: list[tuple[Callable[[], None], Callable[[], None]]] = []
         self._last_emitted: TvState | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self.warmups: deque[float] = deque(maxlen=_WARMUP_HISTORY)
@@ -270,13 +270,17 @@ class TvSessionManager:
         """Avisa quando a TV acabou de responder e a sessão Remote v2 ficou pronta."""
         self._session_opened.append(callback)
 
-    def on_needs_repair(self, callback: Callable[[], None]) -> None:
+    def on_needs_repair(
+        self, callback: Callable[[], None], *, on_command: Callable[[], None] | None = None
+    ) -> None:
         """Sinal para o vigia: a TV recusou a conexão (o serviço do controle pode ter morrido).
 
         Dispara uma vez por aquecimento, já na primeira recusa; o vigia confere as portas. Uma TV
-        que simplesmente não responde (standby, sem rede) não dispara o sinal.
+        que simplesmente não responde (standby, sem rede) não dispara o sinal. Quando o aquecimento
+        foi pedido por um comando do dono, `on_command` (se houver) é chamado no lugar de
+        `callback`: só ele pode encurtar o descanso do vigia.
         """
-        self._repair_callbacks.append(callback)
+        self._repair_callbacks.append((callback, on_command or callback))
 
     def add_channel(
         self, channel: TvChannel, *, required: bool = False, connect_on_warm: bool = True
@@ -711,7 +715,7 @@ class TvSessionManager:
             try:
                 try:
                     async with asyncio.timeout(self._warm_timeout_seconds):
-                        await self._warm()
+                        await self._warm(interactive=interactive)
                 except TimeoutError:
                     raise TvSessionError(
                         TV_UNREACHABLE, "a TV demorou para responder ao controle"
@@ -736,7 +740,7 @@ class TvSessionManager:
             return
         raise TvSessionError(TV_UNREACHABLE, "a TV está offline; tento de novo em instantes")
 
-    async def _warm(self) -> None:
+    async def _warm(self, *, interactive: bool = False) -> None:
         """Abre os canais; chamada com o lock.
 
         Com a TV até agora bem, tenta algumas vezes com espera curta (1, 2 e 4 s): ela pode estar só
@@ -759,7 +763,7 @@ class TvSessionManager:
                     # Porta recusada (serviço morto) já na primeira falha: o vigia ganha a janela
                     # das esperas para agir. Sem resposta nenhuma é a TV em standby: não é reparo.
                     signaled = True
-                    self._signal_needs_repair()
+                    self._signal_needs_repair(from_command=interactive)
                 if delay is None:
                     await self._give_up(TV_UNREACHABLE, str(exc))
                 _log.debug("TV não respondeu (tentativa %d): %s", attempt, exc)
@@ -901,10 +905,10 @@ class TvSessionManager:
         except TvChannelError as exc:
             _log.warning("falha ao fechar canal da TV: %s", exc)
 
-    def _signal_needs_repair(self) -> None:
-        for callback in self._repair_callbacks:
+    def _signal_needs_repair(self, *, from_command: bool = False) -> None:
+        for automatic, command in self._repair_callbacks:
             try:
-                callback()
+                (command if from_command else automatic)()
             except Exception:
                 _log.exception("falha no aviso de reparo da TV")
 
