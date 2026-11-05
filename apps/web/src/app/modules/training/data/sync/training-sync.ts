@@ -15,8 +15,13 @@ import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
 import { AccountScope } from '../../../../core/session/account-scope';
 import { TRAINING_DB } from '../training-db';
 import { CURSOR_REWIND_MS, rewindCursor } from './cursor';
-import { PullApi } from './pull-api';
-import { DEFAULT_PULL_PAGE_SIZE, ResourceSync, TRAINING_RESOURCE_SYNCS } from './resource-sync';
+import { PullApi, PullTimeoutError } from './pull-api';
+import {
+  DEFAULT_PULL_PAGE_SIZE,
+  PullPage,
+  ResourceSync,
+  TRAINING_RESOURCE_SYNCS,
+} from './resource-sync';
 
 /**
  * Por que o último puxar falhou, sem texto: a tela escolhe a mensagem ("usando o que está no aparelho desde
@@ -29,8 +34,9 @@ export type TrainingSyncError = 'network' | 'server' | 'unexpected';
  * Quanto quem espera a primeira passada do servidor (Hoje, Rotinas, Progresso, Corpo...) espera no máximo **sem notícia da
  * rede**: o prazo corre da hora em que a passada pode começar (banco lido, fila hidratada, com rede) e volta a zero a cada
  * resposta recebida; passado o prazo em silêncio, o que o banco local tem vale, mesmo com a requisição pendurada (portal
- * cativo, TCP sem resposta). Enquanto o aparelho grava o que chegou (a escrita local) o prazo não corre: uma gravação
- * lenta não é silêncio da rede (o teto `FIRST_PULL_MAX_MS` cobre o banco que não responde). É o único lugar deste número.
+ * cativo, TCP sem resposta). Enquanto o aparelho grava o que chegou (a escrita local) o prazo de silêncio não corre: uma
+ * gravação lenta não é silêncio da rede (o que a limita é `FIRST_PULL_WRITE_STALL_MS`). Não há teto no tempo total: uma
+ * passada lenta mas viva nunca é cortada. É o único lugar deste número.
  */
 export const FIRST_PULL_WAIT_MS = new InjectionToken<number>('FIRST_PULL_WAIT_MS', {
   providedIn: 'root',
@@ -38,13 +44,24 @@ export const FIRST_PULL_WAIT_MS = new InjectionToken<number>('FIRST_PULL_WAIT_MS
 });
 
 /**
- * Teto absoluto da espera, contado da hora em que a passada pode começar e que nenhuma resposta renova: uma passada lenta
- * mas viva (servidor acordando, aparelho lento gravando o catálogo) não mostra um vazio falso, e uma que nunca acaba (banco
- * pendurado numa gravação, servidor que goteja uma resposta por vez) também não deixa o esqueleto para sempre.
+ * Quanto a gravação local pode ficar **sem andar** antes de a espera acabar: o prazo de silêncio não corre enquanto o
+ * aparelho grava o que chegou, mas um banco pendurado numa gravação não pode deixar o esqueleto para sempre. Conta da
+ * última prova de vida (página gravada, cursor guardado), então uma passada lenta que segue gravando nunca o atinge.
  */
-export const FIRST_PULL_MAX_MS = new InjectionToken<number>('FIRST_PULL_MAX_MS', {
+export const FIRST_PULL_WRITE_STALL_MS = new InjectionToken<number>('FIRST_PULL_WRITE_STALL_MS', {
   providedIn: 'root',
   factory: () => 45_000,
+});
+
+/**
+ * Quanto um pedido de página ao servidor pode ficar sem resposta antes de ser abandonado (e cancelado): portal cativo ou TCP
+ * sem resposta não podem manter `pulling()` ligado para sempre (Hoje, Biblioteca e Mapa mostram "Baixando o catálogo…" enquanto
+ * ele vale). Abandonado, a passada falha como erro de rede, o aparelho segue com o que tem e o próximo gatilho tenta de novo
+ * a partir do cursor guardado.
+ */
+export const PULL_REQUEST_TIMEOUT_MS = new InjectionToken<number>('PULL_REQUEST_TIMEOUT_MS', {
+  providedIn: 'root',
+  factory: () => 20_000,
 });
 
 /**
@@ -58,6 +75,7 @@ export const FIRST_PULL_BOOT_MAX_MS = new InjectionToken<number>('FIRST_PULL_BOO
 });
 
 function classify(error: unknown): TrainingSyncError {
+  if (error instanceof PullTimeoutError) return 'network';
   if (error instanceof HttpErrorResponse) {
     if (error.status === 0) return 'network';
     if (error.status >= 500 || error.status === 408 || error.status === 429) return 'server';
@@ -136,9 +154,9 @@ export class TrainingSync {
   private requested = false;
   private seenSyncAt: number | null = null;
   private readonly waitMs = inject(FIRST_PULL_WAIT_MS);
-  private readonly maxMs = inject(FIRST_PULL_MAX_MS);
+  private readonly stallMs = inject(FIRST_PULL_WRITE_STALL_MS);
+  private readonly requestMs = inject(PULL_REQUEST_TIMEOUT_MS);
   private waitTimer: ReturnType<typeof setTimeout> | null = null;
-  private maxTimer: ReturnType<typeof setTimeout> | null = null;
   private waitArmed = false;
   private priority: readonly string[] = [];
 
@@ -147,10 +165,7 @@ export class TrainingSync {
       () => this._firstPullWaitExpired.set(true),
       inject(FIRST_PULL_BOOT_MAX_MS),
     );
-    inject(DestroyRef).onDestroy(() => {
-      this.clearWaitTimer();
-      this.clearMaxTimer();
-    });
+    inject(DestroyRef).onDestroy(() => this.clearWaitTimer());
     const win = this.doc.defaultView;
     const onOnline = () => void this.request();
     const onVisibility = () => {
@@ -246,34 +261,26 @@ export class TrainingSync {
     this.waitTimer = null;
   }
 
-  private clearMaxTimer(): void {
-    if (this.maxTimer !== null) clearTimeout(this.maxTimer);
-    this.maxTimer = null;
-  }
-
   /** A primeira passada decidiu: nenhum prazo da espera é mais necessário. */
   private settle(): void {
     this._firstPassSettled.set(true);
     this.clearWaitTimer();
-    this.clearMaxTimer();
   }
 
   private expireWait(): void {
     this._firstPullWaitExpired.set(true);
     this.clearWaitTimer();
-    this.clearMaxTimer();
   }
 
   /**
-   * Troca o teto de partida pelos prazos da passada, uma vez, quando ela pode de fato começar (rede, banco e fila prontos): o
-   * prazo de silêncio (`FIRST_PULL_WAIT_MS`, renovado a cada notícia da rede) e o teto absoluto (`FIRST_PULL_MAX_MS`).
+   * Troca o teto de partida pelo prazo da passada, uma vez, quando ela pode de fato começar (rede, banco e fila prontos): o
+   * prazo de silêncio (`FIRST_PULL_WAIT_MS`, renovado a cada prova de vida). Não há teto no tempo total.
    */
   private armWaitDeadline(): void {
     if (this.waitArmed || this._firstPassSettled()) return;
     this.waitArmed = true;
     this.clearWaitTimer();
     this.waitTimer = setTimeout(() => this.expireWait(), this.waitMs);
-    this.maxTimer = setTimeout(() => this.expireWait(), this.maxMs);
   }
 
   /**
@@ -287,11 +294,43 @@ export class TrainingSync {
   }
 
   /**
-   * A rede respondeu e o resto é trabalho do aparelho (gravar a página no banco): o prazo de silêncio para, e quem limita
-   * uma gravação que nunca termina é o teto absoluto. Uma gravação lenta (o catálogo, num aparelho lento) não é rede muda.
+   * A rede respondeu e o resto é trabalho do aparelho (gravar a página no banco): o prazo de silêncio da rede para, e a
+   * gravação ganha o seu, bem mais largo (`FIRST_PULL_WRITE_STALL_MS`), que volta a zero a cada passo que andou. Uma
+   * gravação lenta (o catálogo, num aparelho lento) não é rede muda e nunca é cortada enquanto avança; só um banco parado.
    */
   private workLocally(): void {
+    if (!this.waitArmed || this._firstPassSettled() || this._firstPullWaitExpired()) return;
     this.clearWaitTimer();
+    this.waitTimer = setTimeout(() => this.expireWait(), this.stallMs);
+  }
+
+  /**
+   * Um pedido de página com prazo de silêncio: se o servidor não responde em `PULL_REQUEST_TIMEOUT_MS` (portal cativo, TCP
+   * sem resposta), o pedido é cancelado e abandonado, a passada falha como erro de rede e `pulling()` desliga. A corrida
+   * vale mesmo que o cancelamento não chegue ao que estiver pendurado (a renovação do token, por exemplo).
+   */
+  private async fetchWithTimeout(
+    resource: ResourceSync,
+    after: string | null,
+    limit: number,
+    accountId: string,
+  ): Promise<PullPage<unknown>> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const silent = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new PullTimeoutError());
+      }, this.requestMs);
+    });
+    try {
+      return await Promise.race([
+        this.api.fetchPage<unknown>(resource.path, after, limit, accountId, controller.signal),
+        silent,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Pede uma passada. Pedidos seguidos viram uma passada extra só; antes de `start()` não faz nada. */
@@ -373,12 +412,13 @@ export class TrainingSync {
 
     for (;;) {
       this.awaitNetwork();
-      const page = await this.api.fetchPage<unknown>(resource.path, after, limit, accountId);
+      const page = await this.fetchWithTimeout(resource, after, limit, accountId);
       this.workLocally();
 
       // Página vazia devolve o cursor que recebeu (recuado): guardá-lo faria o cursor andar para trás a cada puxar.
       if (page.items.length > 0) {
         await resource.merge(page.items);
+        this.workLocally();
         if (page.nextCursor !== null) {
           stored = page.nextCursor;
           // Guardado a cada página: um puxar interrompido continua de onde parou.
@@ -387,6 +427,7 @@ export class TrainingSync {
             cursor: stored,
             lastPullAt: previous?.lastPullAt ?? null,
           });
+          this.workLocally();
         }
       }
 
@@ -397,6 +438,7 @@ export class TrainingSync {
     }
 
     await this.db.syncState.put({ resource: name, cursor: stored, lastPullAt: this.runtime.now() });
+    this.workLocally();
     this._pulledResources.update((pulled) => new Set(pulled).add(name));
   }
 }

@@ -4,7 +4,13 @@ import { provideRouter } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BodyPage } from '../body/body.page';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
-import { FIRST_PULL_MAX_MS, FIRST_PULL_WAIT_MS, TrainingSync } from '../data/sync/training-sync';
+import {
+  FIRST_PULL_WAIT_MS,
+  FIRST_PULL_WRITE_STALL_MS,
+  PULL_REQUEST_TIMEOUT_MS,
+  TrainingSync,
+} from '../data/sync/training-sync';
+import { routineDto } from '../data/routines/routine-data-test-kit';
 import { exerciseDto, localExercise, setupTraining } from '../data/sync/training-test-kit';
 import { ProgressPage } from '../progress/progress.page';
 import { RoutinesListPage } from '../routines/routines-list.page';
@@ -18,8 +24,8 @@ import { TodayPage } from '../today/today.page';
 const WAIT = 8_000;
 /** O teto de partida padrão (ver `FIRST_PULL_BOOT_MAX_MS`). */
 const FIRST_PULL_BOOT_MAX_MS_DEFAULT = 30_000;
-/** O teto absoluto padrão da passada (ver `FIRST_PULL_MAX_MS`). */
-const FIRST_PULL_MAX_MS_DEFAULT = 45_000;
+/** O prazo padrão de um pedido de página sem resposta (ver `PULL_REQUEST_TIMEOUT_MS`). */
+const REQUEST_TIMEOUT = 20_000;
 
 // Os relógios do navegador de teste ficam falsos só para `setTimeout`/`clearTimeout`: o IndexedDB falso e as leituras
 // seguem no relógio real. O relógio real é guardado antes, para o teste poder esperar I/O sem mover o falso.
@@ -305,45 +311,166 @@ describe(
       expect(sync.firstPullWaitExpired()).toBe(true);
     });
 
-    it('still has an absolute ceiling for a pass that keeps answering but never ends', async () => {
+    it('has no ceiling on the total time: a pass that keeps answering for far longer than any old cap is never cut', async () => {
       const kit = setupTraining();
       kit.pause();
-      kit.pull.script = Array.from({ length: 12 }, () => after(WAIT - 1_000));
+      kit.pull.script = Array.from({ length: 30 }, () => after(WAIT - 1_000));
       const sync = TestBed.inject(TrainingSync);
       void sync.start();
       await until(() => kit.pull.calls.length === 1);
 
+      // Uma resposta de 7 s por recurso: a passada inteira passa muito dos 45 s do teto antigo, e a cada resposta o prazo recomeça.
       let elapsed = 0;
-      for (let answered = 1; elapsed + (WAIT - 1_000) < FIRST_PULL_MAX_MS_DEFAULT; answered++) {
+      while (!sync.firstPassSettled()) {
         await advance(WAIT - 1_000);
         elapsed += WAIT - 1_000;
-        await until(() => kit.pull.calls.length === answered + 1);
         expect(sync.firstPullWaitExpired()).toBe(false);
+        expect(elapsed).toBeLessThan(300_000);
       }
-      await advance(FIRST_PULL_MAX_MS_DEFAULT - elapsed);
-      expect(sync.firstPullWaitExpired()).toBe(true);
+      expect(elapsed).toBeGreaterThan(45_000);
+      expect(sync.firstPullWaitExpired()).toBe(false);
     });
 
-    it('uses the configured ceiling, counted from when the pass starts', async () => {
+    it('keeps Hoje waiting while pages arrive every 7 s for 35 s, then shows the right routine (no partial data)', async () => {
       const kit = setupTraining();
-      TestBed.configureTestingModule({
-        providers: [
-          { provide: FIRST_PULL_WAIT_MS, useValue: 500 },
-          { provide: FIRST_PULL_MAX_MS, useValue: 1_200 },
+      TestBed.configureTestingModule({ providers: [provideRouter([])] });
+      kit.pause();
+      const routine = routineDto('r1', {
+        name: 'Treino A',
+        items: [
+          {
+            id: 'i1',
+            exerciseId: 'supino',
+            position: 0,
+            targetSets: 3,
+            repMin: 8,
+            repMax: 12,
+            restSeconds: 90,
+            supersetGroup: null,
+            note: null,
+          },
         ],
       });
-      kit.pause();
-      kit.pull.script = Array.from({ length: 12 }, () => after(400));
+      // A ordem de Hoje: rotinas, programa, treinos, séries e, por último, o catálogo; cada resposta demora 7 s.
+      kit.pull.script = [
+        after(WAIT - 1_000, { items: [routine], nextCursor: null }),
+        after(WAIT - 1_000),
+        after(WAIT - 1_000),
+        after(WAIT - 1_000),
+        after(WAIT - 1_000, {
+          items: [exerciseDto('supino', { name: 'Supino reto' })],
+          nextCursor: null,
+        }),
+      ];
+      const fixture = TestBed.createComponent(TodayPage);
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
       const sync = TestBed.inject(TrainingSync);
       void sync.start();
       await until(() => kit.pull.calls.length === 1);
 
-      await advance(400);
-      await advance(400);
-      await advance(399);
+      for (let answered = 1; answered <= 4; answered++) {
+        await advance(WAIT - 1_000);
+        await until(() => kit.pull.calls.length >= answered + 1);
+        await settleIo(fixture, 3);
+        expect(sync.firstPullWaitExpired()).toBe(false);
+        expect(el.textContent ?? '').not.toContain('Sem Rotinas Ainda');
+        expect(el.textContent ?? '').not.toContain('Treino A');
+      }
+      await advance(WAIT - 1_000);
+      await until(() => sync.resourcesPulled(['exercises']));
+      await settleIo(fixture);
+      expect(sync.firstPullWaitExpired()).toBe(false);
+      expect(el.textContent ?? '').toContain('Treino A');
+      expect(el.textContent ?? '').not.toContain('Sem Rotinas Ainda');
+    });
+
+    it('still releases when the device stops making progress writing (a database that hangs)', async () => {
+      const kit = setupTraining();
+      TestBed.configureTestingModule({
+        providers: [{ provide: FIRST_PULL_WRITE_STALL_MS, useValue: 1_200 }],
+      });
+      kit.pause();
+      vi.spyOn(CatalogRepository.prototype, 'applyRemote').mockImplementation(
+        () => new Promise<void>(() => undefined),
+      );
+      kit.pull.script = [{ items: [exerciseDto('a')], nextCursor: 'c1' }];
+      const sync = TestBed.inject(TrainingSync);
+      void sync.start();
+      await until(() => kit.pull.calls.length === 1);
+      await advance(0);
+
+      await advance(1_199);
       expect(sync.firstPullWaitExpired()).toBe(false);
       await advance(1);
       expect(sync.firstPullWaitExpired()).toBe(true);
+    });
+
+    describe('a request that hangs forever (captive portal, TCP with no answer)', () => {
+      const hung = () => new Promise<never>(() => undefined);
+
+      it('is abandoned after the request timeout on a device with an empty database: pulling turns off and the next trigger retries', async () => {
+        const kit = setupTraining();
+        kit.pause();
+        kit.pull.script = [hung];
+        const sync = TestBed.inject(TrainingSync);
+        void sync.start();
+        await until(() => kit.pull.calls.length === 1);
+        expect(sync.pulling()).toBe(true);
+
+        await advance(REQUEST_TIMEOUT - 1);
+        expect(sync.pulling()).toBe(true);
+        await advance(1);
+        await until(() => !sync.pulling());
+        expect(sync.error()).toBe('network');
+        // O pedido pendurado foi cancelado, não só esquecido.
+        expect(kit.pull.signals[0]?.aborted).toBe(true);
+        expect(sync.firstPassSettled()).toBe(true);
+        expect(sync.lastPullAt()).toBeNull();
+
+        // O próximo gatilho tenta de novo (agora o servidor responde).
+        void sync.pullNow();
+        await until(() => kit.pull.calls.length >= 2);
+        await until(() => sync.lastPullAt() !== null);
+        expect(sync.error()).toBeNull();
+      });
+
+      it('uses the configured request timeout', async () => {
+        const kit = setupTraining();
+        TestBed.configureTestingModule({
+          providers: [{ provide: PULL_REQUEST_TIMEOUT_MS, useValue: 700 }],
+        });
+        kit.pause();
+        kit.pull.script = [hung];
+        const sync = TestBed.inject(TrainingSync);
+        void sync.start();
+        await until(() => kit.pull.calls.length === 1);
+        await advance(699);
+        expect(sync.pulling()).toBe(true);
+        await advance(1);
+        await until(() => !sync.pulling());
+      });
+
+      it('lets Hoje leave "Baixando o catálogo…" on an empty database', async () => {
+        const kit = setupTraining();
+        TestBed.configureTestingModule({ providers: [provideRouter([])] });
+        kit.pause();
+        kit.pull.script = [hung];
+        const fixture = TestBed.createComponent(TodayPage);
+        fixture.detectChanges();
+        const el = fixture.nativeElement as HTMLElement;
+        const sync = TestBed.inject(TrainingSync);
+        void sync.start();
+        await until(() => kit.pull.calls.length === 1);
+        await settleIo(fixture);
+        expect(el.textContent ?? '').toContain('Baixando o catálogo…');
+
+        await advance(REQUEST_TIMEOUT);
+        await until(() => !sync.pulling());
+        await settleIo(fixture);
+        expect(el.textContent ?? '').not.toContain('Baixando o catálogo…');
+        expect(el.querySelector('app-today-skeleton')).toBeNull();
+      });
     });
   },
 );

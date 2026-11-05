@@ -396,7 +396,12 @@ describe('TrainingSync', () => {
         .map(([, delay]) => Number(delay ?? 0))
         // Os prazos da espera da primeira passada só liberam o esqueleto da tela; nenhum deles pede passada.
         .filter(
-          (delay) => delay >= 1000 && delay !== 30_000 && delay !== 8_000 && delay !== 45_000,
+          (delay) =>
+            delay >= 1000 &&
+            delay !== 30_000 &&
+            delay !== 8_000 &&
+            delay !== 45_000 &&
+            delay !== 20_000,
         );
       expect(longDelays).toEqual([]);
       expect(t.runtime.activeTimers).toBe(0);
