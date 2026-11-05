@@ -264,10 +264,11 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await showHome(page);
 
     // Nunca durante o carregamento: logo depois da tela pronta ainda não há folha.
-    await page.waitForTimeout(1000);
+    await page.clock.fastForward(1000);
     await expectSheetClosed(page);
 
     const sheet = sheetOf(page);
+    await page.clock.fastForward(AFTER_DELAY_MS - 1000);
     await expect(sheet).toBeVisible({ timeout: 10_000 });
     await expect(sheet.getByRole('heading', { level: 2 })).toHaveText('Atalho na tela de início');
     await expect(sheet).toContainText('Não ocupa espaço no aparelho: é só um atalho');

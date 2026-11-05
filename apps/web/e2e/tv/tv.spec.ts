@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { Locator, Page } from '@playwright/test';
 import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
+import { afterFrames } from '../screens/screen-helpers';
 import {
   HOT_STATE,
   MockShortcut,
@@ -185,6 +186,15 @@ async function settlePage(page: Page, index: number) {
     .toBeLessThanOrEqual(1);
 }
 
+/**
+ * Espera os pedidos que a página já disparou chegarem ao mock. A rota registra cada pedido assim que ele chega, na ordem
+ * em que a página os fez, então a volta de um pedido novo garante que os anteriores já estão registrados. É o que
+ * permite afirmar que algo NÃO foi enviado depois de avançar o relógio, sem esperar tempo de verdade.
+ */
+async function flushRequests(page: Page) {
+  await page.evaluate(() => fetch('/api/v1/tv/fence').then(() => undefined));
+}
+
 /** Deslize de dedo de verdade (só o Chromium tem o toque sintético do CDP). */
 async function swipe(page: Page, from: { x: number; y: number }, dx: number) {
   const cdp = await page.context().newCDPSession(page);
@@ -198,7 +208,9 @@ async function swipe(page: Page, from: { x: number; y: number }, dx: number) {
       type: 'touchMove',
       touchPoints: [{ x: from.x + (dx * step) / steps, y: from.y }],
     });
-    await page.waitForTimeout(16);
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
@@ -386,6 +398,8 @@ test.describe('controle: tela única, sem abas', () => {
   test('um toque de dedo manda a tecla uma vez, nos botões e no setor do anel', async ({
     page,
   }) => {
+    // O relógio falso entra antes da navegação: o intervalo de repetição da tecla segurada é do navegador.
+    await page.clock.install();
     await openTv(page);
     const menu = (await button(page, 'Menu').boundingBox())!;
     await page.touchscreen.tap(menu.x + menu.width / 2, menu.y + menu.height / 2);
@@ -394,25 +408,30 @@ test.describe('controle: tela única, sem abas', () => {
     const up = (await button(page, 'Para cima').boundingBox())!;
     await page.touchscreen.tap(up.x + up.width / 2, up.y + up.height * 0.14);
     await expect.poll(() => tv.keysSent()).toEqual(['MENU', 'UP']);
-    await page.waitForTimeout(700);
+    // Se o toque tivesse virado "segurar", a repetição já teria começado dentro deste tempo.
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(tv.keysSent()).toEqual(['MENU', 'UP']);
   });
 
   test('segurar volume e setas repete cerca de 4 por segundo e para ao soltar', async ({
     page,
   }) => {
+    await page.clock.install();
     await openTv(page);
     const target = button(page, 'Aumentar o volume');
     const box = (await target.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
-    await page.waitForTimeout(1500);
+    await page.clock.runFor(1500);
     await page.mouse.up();
+    await flushRequests(page);
     // Espera de 400 ms e depois uma a cada 250 ms: em 1,5 s cabem de 3 a 5, e o clique do fim não soma uma a mais.
     const held = tv.keysSent().filter((key) => key === 'VOLUME_UP').length;
     expect(held).toBeGreaterThanOrEqual(3);
     expect(held).toBeLessThanOrEqual(6);
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(tv.keysSent().filter((key) => key === 'VOLUME_UP').length).toBe(held);
   });
 
@@ -721,7 +740,9 @@ test.describe('controle: as três páginas do palco central', () => {
     await openTv(page);
     const menu = (await button(page, 'Menu').boundingBox())!;
     await swipe(page, { x: menu.x + menu.width / 2, y: menu.y + menu.height / 2 }, -200);
-    await page.waitForTimeout(400);
+    // O encaixe do carrossel acaba na página 1 (nada a virar) e a tela termina de pintar antes de conferir.
+    await settlePage(page, 0);
+    await afterFrames(page, 3);
     await expect(dot(page, 1)).toHaveAttribute('aria-current', 'true');
     expect(tv.keysSent()).toEqual([]);
   });
@@ -746,6 +767,7 @@ test.describe('controle: as três páginas do palco central', () => {
   test('touchpad: deslizar manda setas, toque curto manda OK, toque longo não manda nada', async ({
     page,
   }) => {
+    await page.clock.install();
     await openTv(page);
     await dot(page, 3).click();
     await settlePage(page, 2);
@@ -776,9 +798,10 @@ test.describe('controle: as três páginas do palco central', () => {
     // Toque longo (acima de 200 ms) não aperta OK sem querer.
     const afterTap = tv.keysSent().length;
     await page.mouse.down();
-    await page.waitForTimeout(450);
+    await page.clock.runFor(450);
     await page.mouse.up();
-    await page.waitForTimeout(300);
+    await page.clock.runFor(300);
+    await flushRequests(page);
     expect(tv.keysSent().length).toBe(afterTap);
 
     // Voltar, início e volume continuam à mão, e o anel volta pelo ponto 1.
@@ -1069,11 +1092,14 @@ test.describe('estado ao vivo', () => {
 
 test.describe('erros de comando', () => {
   test('504 diz que a TV não respondeu, sem repetir o pedido', async ({ page }) => {
+    await page.clock.install();
     await openTv(page);
     tv.commandFailure = { status: 504, kind: 'agent-timeout' };
     await button(page, 'OK').click();
     await expect(page.getByRole('alert')).toHaveText('A TV não respondeu a tempo. Tente de novo.');
-    await page.waitForTimeout(600);
+    // Uma nova tentativa automática viria de um temporizador do app: o tempo avança e nada sai.
+    await page.clock.runFor(600);
+    await flushRequests(page);
     expect(tv.keysSent()).toEqual(['OK']);
   });
 
@@ -1132,7 +1158,7 @@ test.describe('desligar', () => {
     ).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
     await expect(sheet.getByRole('button')).toHaveText(['Desligar', 'Cancelar']);
-    await page.waitForTimeout(300); // fim da animação de subida
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-power-sheet-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
 
@@ -1208,7 +1234,7 @@ test.describe('desligar com leitura', () => {
     await openTv(page);
     await button(page, 'Desligar a TV').click();
     await expect(sheetOf(page)).toContainText('O agente só desliga se a TV estiver ligada');
-    await page.waitForTimeout(300); // fim da animação de subida
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-power-checked-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
     await sheetOf(page).getByRole('button', { name: 'Desligar', exact: true }).click();
@@ -1311,7 +1337,7 @@ test.describe('limpar a TV', () => {
     ).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
     await expect(sheet.getByRole('button')).toHaveText(['Cancelar', 'Limpar']);
-    await page.waitForTimeout(300); // fim da animação de subida
+    await settleMotion(page);
     await expectNoHorizontalScroll(page);
     await expectNoSeriousViolations(page);
     await screenshot(page, `test-results/tv-cleanup-sheet-${info.project.name}.png`);
@@ -2078,6 +2104,11 @@ test.describe('painel Apps', () => {
 test.describe('painel Teclado', () => {
   const texts = () => tv.requests.filter((r) => r.path === '/text').map((r) => r.body?.['text']);
 
+  // O envio do texto junta as letras por tempo: o relógio falso entra antes da navegação e o teste o avança.
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install();
+  });
+
   test('toques sobre o controle atrás do teclado não enviam comandos à TV', async ({ page }) => {
     await openTv(page);
     const ok = await button(page, 'OK').boundingBox();
@@ -2099,7 +2130,7 @@ test.describe('painel Teclado', () => {
     await expect(note).toHaveText(
       'O agente da TV está desligado, então os botões não funcionam agora.',
     );
-    await page.waitForTimeout(250);
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-keyboard-agent-off-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
     expect(texts()).toEqual([]);
@@ -2129,7 +2160,7 @@ test.describe('painel Teclado', () => {
     expect(card.y).toBeLessThan(80);
     expect(field.y).toBeLessThan(card.y + card.height / 2);
     await expectNoHorizontalScroll(page);
-    await page.waitForTimeout(250);
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-keyboard-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
   });
@@ -2151,10 +2182,11 @@ test.describe('painel Teclado', () => {
       expect('batman'.startsWith(text)).toBe(true);
       if (index > 0) expect(text.length).toBeGreaterThan(sent[index - 1].length);
     });
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(texts()).toEqual(sent);
     await expect(field).toHaveValue('batman');
-    await page.waitForTimeout(250);
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-keyboard-typed-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
   });
@@ -2164,9 +2196,11 @@ test.describe('painel Teclado', () => {
   }) => {
     await openTv(page);
     await openKeyboard(page);
-    for (const letter of ['b', 'a', 't']) {
+    for (const [index, letter] of ['b', 'a', 't'].entries()) {
       await page.keyboard.type(letter);
-      await page.waitForTimeout(450);
+      // A pausa entre as letras: o relógio passa do prazo de junção e o envio dessa letra chega ao mock.
+      await page.clock.runFor(450);
+      await expect.poll(() => texts().length).toBe(index + 1);
     }
     expect(texts()).toEqual(['b', 'ba', 'bat']);
     // Apagar uma letra também sincroniza (o texto da TV passa a ser o do campo).
@@ -2189,7 +2223,8 @@ test.describe('painel Teclado', () => {
     await expect(page.getByText('Campo da TV limpo.')).toBeVisible();
     const sent = texts() as string[];
     sent.forEach((text) => expect('bat'.startsWith(text)).toBe(true));
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(texts()).toEqual(sent);
   });
 
@@ -2201,7 +2236,8 @@ test.describe('painel Teclado', () => {
     await expect.poll(() => texts()).toEqual(['bat']);
     await field.fill('');
     await expect.poll(() => texts()).toEqual(['bat', '']);
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(texts()).toEqual(['bat', '']);
   });
 
@@ -2221,7 +2257,8 @@ test.describe('painel Teclado', () => {
     await expect.poll(() => texts().at(-1)).toBe('abcdef');
     // A primeira letra foi na hora; as outras cinco viraram uma requisição só (uma em voo por vez).
     expect(texts()).toEqual(['a', 'abcdef']);
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(texts()).toEqual(['a', 'abcdef']);
   });
 
@@ -2237,7 +2274,8 @@ test.describe('painel Teclado', () => {
     await expect(field).toHaveValue('');
     await expect.poll(() => texts()).toEqual(['bat', '']);
     await expect(page.getByText('Campo da TV limpo.')).toBeVisible();
-    await page.waitForTimeout(600);
+    await page.clock.runFor(600);
+    await flushRequests(page);
     expect(texts()).toEqual(['bat', '']);
 
     // Duas mudanças seguidas e o painel fecha: o que ainda esperava a cauda não se perde.
@@ -2260,7 +2298,8 @@ test.describe('painel Teclado', () => {
     await openKeyboard(page);
     await page.keyboard.press('Escape');
     await expect(keyboardDialog(page)).toHaveCount(0);
-    await page.waitForTimeout(400);
+    await page.clock.runFor(400);
+    await flushRequests(page);
     expect(texts()).toEqual([]);
   });
 
@@ -2290,7 +2329,8 @@ test.describe('painel Teclado', () => {
     await expect(
       page.getByText('A TV recebe no máximo 200 caracteres', { exact: false }),
     ).toBeVisible();
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(texts()).toEqual([]);
     await field.fill('a'.repeat(200));
     await expect.poll(() => texts()).toEqual(['a'.repeat(200)]);
@@ -2308,7 +2348,8 @@ test.describe('painel Teclado', () => {
     await expect(page.getByText('Continue digitando para tentar de novo.')).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(field).toHaveValue('bat');
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
+    await flushRequests(page);
     expect(texts()).toEqual(['bat']);
 
     tv.commandFailure = null;
@@ -2581,7 +2622,8 @@ test.describe('carrossel do palco: o indicador e a posição não perdem o fio',
     });
     await dot(page, 3).click();
     await settlePage(page, 2);
-    await page.waitForTimeout(300);
+    // Alguns quadros depois do encaixe: qualquer volta tardia do indicador já teria aparecido na sequência.
+    await afterFrames(page, 5);
     const seen = await page.evaluate(() => (window as unknown as { __seq: number[] }).__seq);
     expect(seen, 'o indicador só pode ir ao destino, sem voltar nem parar no meio').toEqual([2]);
   });
@@ -2634,7 +2676,11 @@ test.describe('carrossel do palco: o indicador e a posição não perdem o fio',
   });
 });
 
-/** Gesto de toque com ritmo: `steps` passos de `stepMs` cada, sem soltar se `release` for falso. */
+/**
+ * Gesto de toque com ritmo: `steps` passos de `stepMs` cada, sem soltar se `release` for falso. O ritmo vai no carimbo
+ * de tempo de cada evento (é por ele que o navegador mede a velocidade do dedo), e os eventos saem em seguida, sem
+ * esperar tempo de verdade entre eles.
+ */
 async function drag(
   page: Page,
   from: { x: number; y: number },
@@ -2642,7 +2688,14 @@ async function drag(
   opts: { steps: number; stepMs: number; release?: boolean },
 ) {
   const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
+  // O último evento fica no instante de agora e os anteriores no passado, na cadência pedida.
+  const start = Date.now() / 1000 - (opts.steps * opts.stepMs) / 1000;
+  const at = (step: number) => start + (step * opts.stepMs) / 1000;
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [from],
+    timestamp: at(0),
+  });
   for (let step = 1; step <= opts.steps; step++) {
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchMove',
@@ -2652,11 +2705,15 @@ async function drag(
           y: from.y + ((to.y - from.y) * step) / opts.steps,
         },
       ],
+      timestamp: at(step),
     });
-    await page.waitForTimeout(opts.stepMs);
   }
   if (opts.release !== false) {
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [],
+      timestamp: at(opts.steps + 1),
+    });
   }
   return cdp;
 }
@@ -2727,10 +2784,11 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
         stepMs: 6,
       },
     );
-    await page.waitForTimeout(500);
+    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
+    // Encaixado na página 3 (índice 2): se o deslize tivesse passado de uma página, o carrossel iria além dela.
+    await settlePage(page, 2);
     const left = await page.locator('.pager').evaluate((el) => el.scrollLeft / el.clientWidth);
     expect(left, 'um deslize só passa uma página').toBeLessThanOrEqual(2.01);
-    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
   });
 
   test('o dedo para a meio caminho: o indicador acompanha o arrasto e solta junto com a página', async ({
@@ -2773,7 +2831,10 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
   }) => {
     await openTv(page);
     await dot(page, 3).click();
-    await page.waitForTimeout(60);
+    // O arrasto começa com a rolagem já em andamento (saiu do zero e ainda não chegou ao fim).
+    await expect
+      .poll(() => page.locator('.pager').evaluate((el) => el.scrollLeft))
+      .toBeGreaterThan(0);
     const box = (await stageBox(page))!;
     const y = box.y + box.height / 2;
     await drag(
@@ -2804,14 +2865,17 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
   });
 
   test('segurar uma seta e arrastar vira a página e para de repetir a tecla', async ({ page }) => {
+    await page.clock.install();
     await openTv(page);
     const right = (await button(page, 'Para a direita').boundingBox())!;
     const box = (await stageBox(page))!;
     const from = { x: right.x + right.width * 0.86, y: right.y + right.height * 0.5 };
     await drag(page, from, { x: box.x + 4, y: from.y }, { steps: 12, stepMs: 20 });
     await settlePage(page, 1);
+    await flushRequests(page);
     const before = tv.keysSent().length;
-    await page.waitForTimeout(900);
+    await page.clock.runFor(900);
+    await flushRequests(page);
     expect(tv.keysSent().length, 'a repetição continuou depois do gesto').toBe(before);
     expect(tv.keysSent()).toEqual([]);
   });
@@ -3022,7 +3086,8 @@ test.describe('ícones dos apps', () => {
     await chip.focus();
     await expect(chip).toBeFocused();
     await chip.click({ force: true });
-    await page.waitForTimeout(150);
+    await afterFrames(page);
+    await flushRequests(page);
     expect(tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(0);
   });
 
@@ -3380,7 +3445,13 @@ test.describe('ícones dos apps', () => {
       await print('row');
       await expectNoSeriousViolations(page);
       await page.locator('.shortcuts').evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
-      await page.waitForTimeout(200);
+      await expect
+        .poll(() =>
+          page
+            .locator('.shortcuts')
+            .evaluate((el) => el.scrollWidth - el.clientWidth - Math.round(el.scrollLeft)),
+        )
+        .toBeLessThanOrEqual(1);
       await print('row-end');
 
       const ratios = await fallbackContrasts(page);

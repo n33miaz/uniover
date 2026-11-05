@@ -284,6 +284,9 @@ test.describe('exercícios: lista, busca e ficha', () => {
     page,
     context,
   }, info) => {
+    // O relógio falso entra antes da primeira navegação: a figura de uma pose tem de ficar parada ao longo de um
+    // intervalo de alternância inteiro, e o teste avança esse tempo em vez de esperá-lo.
+    await page.clock.install();
     const server = await startTraining(context, page);
     const extra = [
       ['esteira', 'Esteira', 'quadriceps', 'cardio', 'time'],
@@ -354,7 +357,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
       .poll(() => still.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
       .toBeGreaterThan(0);
     await still.locator('.card').click();
-    await page.waitForTimeout(1800);
+    await page.clock.runFor(1800);
     await expect(still.locator('img.on')).toHaveCount(1);
     if (process.env['TRAINING_SHOTS_DIR']) {
       await settle(page);

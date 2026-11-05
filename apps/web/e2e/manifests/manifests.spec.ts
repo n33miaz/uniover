@@ -139,8 +139,7 @@ test.describe('manifest por módulo', () => {
       const session = await page.context().newCDPSession(page);
       await session.send('Page.enable');
       const errors = async (url: string) => {
-        await page.goto(url);
-        await page.waitForTimeout(1500);
+        await page.goto(url, { waitUntil: 'networkidle' });
         const result = (await session.send('Page.getInstallabilityErrors')) as {
           installabilityErrors: { errorId: string }[];
         };

@@ -52,6 +52,8 @@ describe('browserQueueLocks', () => {
 });
 
 describe('queue ports defaults', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('provides a runtime backed by the real clock and a lock port', () => {
     const runtime = TestBed.inject(QUEUE_RUNTIME);
     const before = Date.now();
@@ -62,6 +64,7 @@ describe('queue ports defaults', () => {
   });
 
   it('timers of the default runtime fire and can be cancelled', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const runtime = TestBed.inject(QUEUE_RUNTIME);
     const fired = vi.fn();
     runtime.setTimeout(fired, 5);
@@ -69,7 +72,7 @@ describe('queue ports defaults', () => {
     runtime.clearTimeout(runtime.setTimeout(cancelled, 5));
     let ticks = 0;
     const interval = runtime.setInterval(() => ticks++, 5);
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await vi.advanceTimersByTimeAsync(40);
     runtime.clearInterval(interval);
     expect(fired).toHaveBeenCalledTimes(1);
     expect(cancelled).not.toHaveBeenCalled();

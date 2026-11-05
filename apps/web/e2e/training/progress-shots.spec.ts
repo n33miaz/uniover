@@ -29,7 +29,7 @@ const slug = (name: string) =>
 async function steady(page: Page): Promise<void> {
   await expect(page.locator('app-page-top-bar .ring[data-state="busy"]')).toHaveCount(0);
   await expect(page.locator('.ui-skeleton')).toHaveCount(0);
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 400)));
+  await settle(page);
 }
 
 async function shot(page: Page, info: TestInfo, name: string, scheme: string): Promise<void> {
