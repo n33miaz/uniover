@@ -25,6 +25,12 @@ export const FIRST_PULL_NEEDS = {
     RESOURCE_NAMES.sets,
     RESOURCE_NAMES.exercises,
   ],
+  /**
+   * O editor de uma rotina existente decide só entre abri-la e dizer que ela não existe mais: basta a rotina. Os nomes das
+   * linhas vêm do catálogo, que a passada puxa logo depois (`ROUTINE_EDITOR_PRIORITY`); até ele chegar a linha não
+   * acusa um exercício que não existe.
+   */
+  routineEditor: [RESOURCE_NAMES.routines],
   /** Treinos, séries, metas e os nomes do catálogo. */
   progress: [
     RESOURCE_NAMES.sessions,
@@ -35,6 +41,12 @@ export const FIRST_PULL_NEEDS = {
   /** Medidas, perfil e a meta de calorias do resumo. */
   body: [RESOURCE_NAMES.bodyEntries, RESOURCE_NAMES.bodyProfile, RESOURCE_NAMES.goals],
 } as const satisfies Record<string, readonly string[]>;
+
+/** A ordem da passada para o editor de rotina: a rotina e, logo depois, o catálogo que dá nome às linhas. */
+export const ROUTINE_EDITOR_PRIORITY = [
+  ...FIRST_PULL_NEEDS.routineEditor,
+  RESOURCE_NAMES.exercises,
+];
 
 /**
  * O aparelho ainda espera a primeira passada do servidor? Com rede, sem falha e sem nunca ter puxado, o que "não existe"
