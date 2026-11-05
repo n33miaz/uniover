@@ -1545,7 +1545,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             tv.known,
             tv.watchdog.request if tv.watchdog is not None else None,
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
-            tv.manager.wake_when_reachable,
+            tv.manager.reopen_unattended,
         )
         if tv is not None
         else None

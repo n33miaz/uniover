@@ -518,3 +518,42 @@ async def test_unexpected_error_while_opening_does_not_leave_the_session_warming
     assert state_of(rig.manager) is SessionState.HIBERNATING
     await rig.manager.wake()  # a próxima tentativa segue normalmente
     assert state_of(rig.manager) is SessionState.HOT
+
+
+async def test_an_unattended_reopening_is_not_use_and_does_not_look_like_an_opening() -> None:
+    rig = Rig()
+    opened: list[float] = []
+    rig.manager.on_session_opened(opened.append)
+    reads: list[int] = []
+
+    async def read_volume() -> int | None:
+        reads.append(1)
+        return 10
+
+    rig.manager.set_volume_reader(read_volume)
+    await rig.manager.wake()
+    await rig.manager.settle()
+    assert (len(opened), len(reads)) == (1, 1)
+    rig.clock.advance(400)
+    assert await rig.manager.hibernate_if_idle() is True
+
+    await rig.manager.reopen_unattended()
+    await rig.manager.settle()
+    assert state_of(rig.manager) is SessionState.HOT
+    assert rig.remote.keys == []
+    assert (len(opened), len(reads)) == (1, 1)  # nem limpeza, nem leitura de volume
+    # Não renovou a hibernação: no primeiro conferir já volta a dormir.
+    assert await rig.manager.hibernate_if_idle() is True
+
+
+async def test_an_unattended_reopening_does_not_retry_after_the_tv_dropped_it() -> None:
+    rig = Rig()
+    await rig.manager.reopen_unattended()
+    assert rig.remote.connects == 1
+    rig.remote.drop()
+    await rig.manager.settle()
+    connects = rig.remote.connects
+    await rig.manager.reopen_unattended()
+    assert rig.remote.connects == connects  # a TV a derrubou sozinha: espera o próximo uso
+    await rig.manager.wake()  # um uso de verdade volta a abrir
+    assert state_of(rig.manager) is SessionState.HOT

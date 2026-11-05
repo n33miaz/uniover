@@ -15,7 +15,7 @@ from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTvRemot
 from uniover_agent.adapters.local_config import update_config
 from uniover_agent.adapters.tv_discovery import PortState
 from uniover_agent.config import Settings
-from uniover_agent.core import TvKnown, TvRelocator
+from uniover_agent.core import TvKnown, TvRelocator, TvSessionError
 from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, EXIT_TV_MOVED, build_relocator, main, run
 from uniover_agent.ports import TvNotPaired
 
@@ -74,6 +74,23 @@ async def test_a_tv_that_answers_resets_the_count() -> None:
     await relocator.step()
     await relocator.step()
     assert scene.rescans == 0
+
+
+async def test_a_session_that_does_not_reopen_is_logged_without_a_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scene = Scene()
+
+    async def reopen() -> None:
+        raise TvSessionError("tv_unreachable", "a TV está offline")
+
+    relocator = scene.relocator(on_recovered=reopen)
+    await relocator.step()
+    scene.reachable = True
+    with caplog.at_level(logging.INFO):
+        assert await relocator.step() is None
+    assert "a sessão não abriu" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 async def test_a_tv_that_returns_after_a_failure_reopens_its_session() -> None:

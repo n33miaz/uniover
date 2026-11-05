@@ -134,8 +134,8 @@ class TvWatchdog:
             await self._events.flush()
         if repaired:
             try:
-                # `wake` só reabre o canal; nunca envia tecla, POWER ou navegação.
-                await self._manager.wake()
+                # Só reabre o canal para mostrar o estado: nunca envia tecla, POWER ou navegação.
+                await self._manager.reopen_unattended()
             except Exception as exc:
                 _log.info(
                     "controle religado, mas a sessão ainda não abriu (%s)", type(exc).__name__

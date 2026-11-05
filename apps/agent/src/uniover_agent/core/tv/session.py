@@ -562,10 +562,20 @@ class TvSessionManager:
         self._reopened_unattended = False
         await self._ensure_hot(interactive=False)
 
-    async def wake_when_reachable(self) -> None:
-        """A porta voltou depois de uma falha: remove a espera crescente e reabre sem tecla."""
+    async def reopen_unattended(self) -> None:
+        """A TV voltou (porta atendendo, controle religado): reabre a sessão para mostrar o estado.
+
+        Nunca envia tecla e não conta como uso: não renova a hibernação, não zera a guarda de
+        reabertura sozinha nem dispara a limpeza e a leitura de volume de uma abertura de verdade.
+        Se a TV já derrubou uma sessão reaberta sozinha sem ninguém usá-la, não insiste.
+        """
+        if self._reopened_unattended:
+            return
         self._reset_backoff()
-        await self.wake()
+        was_hot = self._is_hot()
+        await self._ensure_hot(interactive=False, unattended=True)
+        if not was_hot:
+            self._reopened_unattended = True
 
     def expect_remote_drop(self) -> None:
         """Uma operação pesada pelo ADB vai começar e pode derrubar o serviço do controle."""
@@ -697,7 +707,7 @@ class TvSessionManager:
 
     # --- abertura e fechamento ---------------------------------------------------------------
 
-    async def _ensure_hot(self, *, interactive: bool = True) -> None:
+    async def _ensure_hot(self, *, interactive: bool = True, unattended: bool = False) -> None:
         """Garante a sessão aberta.
 
         `interactive`: há alguém esperando (uma tecla, não o pré-aquecimento nem a recuperação em
@@ -715,7 +725,7 @@ class TvSessionManager:
             try:
                 try:
                     async with asyncio.timeout(self._warm_timeout_seconds):
-                        await self._warm(interactive=interactive)
+                        await self._warm(interactive=interactive, unattended=unattended)
                 except TimeoutError:
                     raise TvSessionError(
                         TV_UNREACHABLE, "a TV demorou para responder ao controle"
@@ -740,7 +750,7 @@ class TvSessionManager:
             return
         raise TvSessionError(TV_UNREACHABLE, "a TV está offline; tento de novo em instantes")
 
-    async def _warm(self, *, interactive: bool = False) -> None:
+    async def _warm(self, *, interactive: bool = False, unattended: bool = False) -> None:
         """Abre os canais; chamada com o lock.
 
         Com a TV até agora bem, tenta algumas vezes com espera curta (1, 2 e 4 s): ela pode estar só
@@ -780,8 +790,12 @@ class TvSessionManager:
         _log.info("sessão da TV aberta em %.2f s", elapsed)
         self._note_online()
         self._state = SessionState.HOT
-        self.touch()
         self._set_connection("hot")
+        if unattended:
+            # Reabertura sem ninguém ter pedido: só mostra o estado. Não conta como uso (a sessão
+            # hiberna no prazo de sempre), nem como abertura para a limpeza e a leitura de volume.
+            return
+        self.touch()
         for callback in self._session_opened:
             try:
                 callback(elapsed)
