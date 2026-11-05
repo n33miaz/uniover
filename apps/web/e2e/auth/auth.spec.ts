@@ -82,7 +82,8 @@ test.describe('entrada e sessão', () => {
     // Varredura de armazenamento: nenhum JWT em localStorage, sessionStorage nem IndexedDB.
     expect(mock.issuedTokens.length).toBeGreaterThan(0);
     const stored = await storageDump(page);
-    expect(stored).not.toMatch(/eyJ/);
+    // Forma de JWT (três partes), não só "eyJ": a chave pública do aparelho, em base64, também o contém de vez em quando.
+    expect(stored).not.toMatch(/eyJ[\w-]+\.[\w-]+\.[\w-]+/);
     for (const token of mock.issuedTokens) expect(stored).not.toContain(token);
   });
 
