@@ -4,6 +4,7 @@ import { Page, TestInfo } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { dropConnection, failWith, gateScripts, pressKeyWithCapsLock } from './entry-helpers';
 import { GUEST, IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
+import { settle } from '../screens/screen-helpers';
 
 // Prints de todas as telas e estados de entrada e convite, para conferir o visual. Só rodam quando a pasta de
 // saída é informada (`AUTH_SHOTS_DIR`): na esteira não geram nada. Cada combinação de tema e orientação é um
@@ -38,7 +39,7 @@ async function shoot(
   mkdirSync(dir, { recursive: true });
   await expectNoHorizontalScroll(page);
   // As transições curtas dos campos (borda, contorno) terminam antes do print.
-  await page.waitForTimeout(300);
+  await settle(page);
   await screenshot(page, join(dir, `${state}-${scheme}-${orient}.png`), { fullPage: true });
 }
 

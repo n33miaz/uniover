@@ -7,6 +7,7 @@ import {
   pressKeyWithCapsLock,
 } from './entry-helpers';
 import { IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
+import { afterFrames } from '../screens/screen-helpers';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -150,8 +151,9 @@ test.describe('tela de entrada: campos', () => {
     // Perto da borda de baixo: se o aviso sumisse e o botão subisse, o ponteiro ficaria fora dele.
     await page.mouse.move(box.x + box.width / 2, box.y + box.height - 2);
     await page.mouse.down();
-    // O tempo de um toque de verdade: se o campo perdesse o foco aqui, o aviso sumiria e o botão subiria.
-    await page.waitForTimeout(300);
+    // Com o mouse ainda pressionado e a tela redesenhada: se o campo perdesse o foco aqui, o aviso sumiria e o botão
+    // subiria.
+    await afterFrames(page);
     await page.mouse.up();
     await expect(page.getByRole('alert')).toContainText('E-mail ou senha incorretos.');
   });

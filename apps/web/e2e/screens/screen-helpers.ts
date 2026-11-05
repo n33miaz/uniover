@@ -14,6 +14,18 @@ export async function settle(page: Page) {
   );
 }
 
+/**
+ * Deixa passar `frames` quadros de pintura: o que o navegador ia redesenhar por causa do último evento (um foco que
+ * se perde, um aviso que some e empurra o botão) já aconteceu. Espera por evento, não por tempo.
+ */
+export async function afterFrames(page: Page, frames = 2) {
+  await page.evaluate(async (count) => {
+    for (let frame = 0; frame < count; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+  }, frames);
+}
+
 /** Falha com qualquer violação do axe (inclusive leve e moderada), não só as graves. */
 export async function expectNoA11yViolations(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();

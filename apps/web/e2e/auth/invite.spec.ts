@@ -2,6 +2,7 @@ import { Page } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import { dropConnection, expectNoA11yViolations, failWith, gateScripts } from './entry-helpers';
 import { GUEST, IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
+import { afterFrames } from '../screens/screen-helpers';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -245,8 +246,9 @@ test.describe('convite: aceite', () => {
     const box = (await submit(page).boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
-    // O tempo de um toque de verdade: se o campo perdesse o foco aqui, o aviso de divergência empurraria o botão.
-    await page.waitForTimeout(300);
+    // Com o mouse ainda pressionado e a tela redesenhada: se o campo perdesse o foco aqui, o aviso de divergência
+    // empurraria o botão para fora do ponteiro.
+    await afterFrames(page);
     await page.mouse.up();
     await expect(page.locator('#invite-confirmation-status')).toHaveText(
       'As senhas ainda não são iguais.',
