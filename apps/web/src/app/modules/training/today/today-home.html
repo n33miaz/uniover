@@ -108,8 +108,8 @@
         </p>
       }
     </section>
-  } @else if (catalogMissing() && entry() === undefined) {
-    <!-- Sem catálogo no aparelho não há o que registrar: a primeira abertura precisa de rede uma vez. Com rotina no aparelho, o cartão do dia aparece e só o início espera o catálogo. -->
+  } @else if (store.firstPullPending() || (catalogMissing() && entry() === undefined)) {
+    <!-- Sem catálogo no aparelho não há o que registrar: a primeira abertura precisa de rede uma vez. Com rotina no aparelho, o cartão do dia aparece e só o início espera o catálogo. Enquanto a primeira passada do servidor não acabou (e as rotinas que ela trouxe não foram lidas), o que há no banco está pela metade: a espera segue em vez de um vazio falso ou de uma ficha que muda quando o programa chega. -->
     <section class="routine ui-card calm" aria-labelledby="catalog-title">
       <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
       @if (store.downloading()) {

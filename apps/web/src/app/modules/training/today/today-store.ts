@@ -172,10 +172,19 @@ export class TodayStore {
   /** Dia (ano-mês-dia local) da última leitura: ao virar, a escolha manual do dia anterior é esquecida. */
   private lastDay = '';
 
-  /** Sem rede ainda trouxe nada: a lista vazia pode ser só falta de primeira passada. */
-  readonly downloading = computed(
-    () => this.sync.pulling() || awaitingFirstPull(this.sync, this.connectivity),
+  /** Uma leitura das rotinas que começou depois de a primeira passada do servidor acabar já terminou. */
+  private readonly readAfterFirstPull = signal(false);
+  /**
+   * A primeira passada do servidor ainda corre, ou acabou mas as rotinas que ela trouxe ainda não foram lidas: o banco
+   * está pela metade (o catálogo chega antes das rotinas, e as rotinas antes do programa da semana). Mostrar o que há
+   * agora seria um vazio falso ("Sem Rotinas Ainda") e depois uma rotina que muda quando o programa chega.
+   */
+  readonly firstPullPending = computed(
+    () => awaitingFirstPull(this.sync, this.connectivity) || !this.readAfterFirstPull(),
   );
+
+  /** Sem rede ainda trouxe nada: a lista vazia pode ser só falta de primeira passada. */
+  readonly downloading = computed(() => this.sync.pulling() || this.firstPullPending());
 
   /** O treino aberto deste aparelho tem quantas séries aguardando envio. */
   readonly awaitingSets = computed(() => {
@@ -193,6 +202,14 @@ export class TodayStore {
     effect(() => {
       this.catalog.revision();
       untracked(() => void this.loadCatalogCount());
+    });
+    // Acabada a primeira passada, relê as rotinas; só a leitura que começa depois disso encerra a espera (ver readHome).
+    effect(() => {
+      const waiting = awaitingFirstPull(this.sync, this.connectivity);
+      untracked(() => {
+        if (waiting) this.readAfterFirstPull.set(false);
+        else void this.loadHome();
+      });
     });
     effect(() => {
       this.queue.pendingCount();
@@ -222,7 +239,11 @@ export class TodayStore {
   readonly loadHome = coalesced(
     quiet(
       () => this.readHome(),
-      () => this.homeReady.set(true),
+      () => {
+        // Sem banco local não há o que esperar: a tela segue com o vazio, que é um estado normal dela.
+        this.homeReady.set(true);
+        this.readAfterFirstPull.set(true);
+      },
     ),
   );
 
@@ -266,6 +287,8 @@ export class TodayStore {
   );
 
   private async readHome(): Promise<void> {
+    // Decidido antes de ler: uma leitura que já corria quando a passada acabou pode ter visto o banco pela metade.
+    const afterFirstPull = !untracked(() => awaitingFirstPull(this.sync, this.connectivity));
     const [all, active, sessions, week, programId] = await Promise.all([
       this.routines.all(),
       this.routines.list(),
@@ -290,6 +313,7 @@ export class TodayStore {
     this.week.set(week);
     this.previousWorkout.set(previous);
     this.homeReady.set(true);
+    if (afterFirstPull) this.readAfterFirstPull.set(true);
   }
 
   /**
