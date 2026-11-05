@@ -134,6 +134,11 @@ configuração, certificado nem registros.
   um que o ignora faz o agente calar e o supervisor o reinicia), e o fechamento do canal também tem prazo. Depois de uma
   suspensão do PC (o relógio salta) o lançador e o auto-diagnóstico dão ao supervisor um novo prazo antes de agir.
   O teto externo do `self-update` (2400 s) passa da soma dos limites internos (`self_update.WORST_CASE_SECONDS`).
+  A abertura do canal espera 105 s (o laço desiste aos 120 s: a API dormindo acorda em até ~1 min). Só um supervisor roda
+  por instalação (mutex `Local\UniOver-Supervisor-<hash>`; o lançador só sobe outro depois de confirmar que o antigo morreu),
+  ele cria o `last-alive` antes de subir o agente (com disco cheio só dá para mudar a data de um arquivo que existe) e dá o
+  agente por mudo também se o arquivo nunca aparecer. A prova de uma versão nova é gravada ANTES da troca das pastas: sem
+  conseguir gravá-la, a troca não acontece.
 - **Auto-diagnóstico** a cada 10 minutos (`core/self_care.py`, `adapters/self_care_checks.py`): pasta de instalação,
   tarefa de início automático, supervisor, conexão (a API responde por HTTP; nunca abre um segundo canal), TV (só a
   porta, nunca tecla) e tarefas de fundo. Reparo seguro por verificação, com 30 min de espera e no máximo 4 por dia:
