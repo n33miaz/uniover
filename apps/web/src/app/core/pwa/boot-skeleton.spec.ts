@@ -100,7 +100,7 @@ describe('boot skeleton', () => {
     }
   });
 
-  it('sits beside app-root in index.html and loads the first-paint selector from our origin', () => {
+  it('sits beside app-root with the nonce-protected first-paint styles', () => {
     const doc = new DOMParser().parseFromString(INDEX, 'text/html');
     const boot = doc.getElementById('boot-skeleton');
     expect(boot).not.toBeNull();
@@ -109,11 +109,13 @@ describe('boot skeleton', () => {
     const scripts = Array.from(doc.querySelectorAll('script'));
     expect(scripts).toHaveLength(1);
     expect(scripts[0].getAttribute('src')).toBe('boot-skeleton.js');
-    expect(scripts[0].getAttribute('nonce')).toBeNull();
+    expect(scripts[0].hasAttribute('defer')).toBe(true);
     expect(BOOT_SELECTOR).toContain("document.documentElement.setAttribute('data-boot', v)");
     expect(doc.head.contains(scripts[0])).toBe(true);
-    expect(doc.querySelectorAll('[style]').length).toBe(0);
-    expect(doc.querySelectorAll('style').length).toBe(0);
+    const critical = doc.querySelector('style[nonce="__CSP_NONCE__"]');
+    expect(critical).not.toBeNull();
+    expect(critical!.textContent).toContain('.bs-root');
+    expect(critical!.textContent).toContain('html:not([data-boot]) .bs-home');
     expect(boot!.getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -292,5 +294,40 @@ describe('boot skeleton', () => {
       detail.querySelectorAll('.bs-settings-appearance-content .bs-theme-choice'),
     ).toHaveLength(3);
     expect(detail.querySelector('.bs-route-content .bs-route-list')).not.toBeNull();
+  });
+
+  it('uses the real list, sheet and form structures for the destinations that do not have tabs or card grids', () => {
+    // O formatador quebra as listas de seletores em várias linhas: compara sem depender das quebras.
+    const css = BOOT_CSS.replace(/\s+/g, ' ');
+    // Alguma regra cujo seletor cita a variante e termina no alvo, sem atravessar o corpo de outra regra.
+    const targets = (variant: string, tail: string): boolean =>
+      css.split('}').some((rule) => {
+        const selector = rule.slice(0, rule.indexOf('{'));
+        return selector.includes("data-boot='" + variant + "'") && selector.trim().endsWith(tail);
+      });
+    expect(targets('training-food', '.bs-route-list')).toBe(true);
+    expect(targets('training-glossary', '.bs-route-strip')).toBe(true);
+    expect(targets('training-assessments', '.bs-route-strip')).toBe(true);
+    expect(targets('training-routines', '.bs-route-strip > :nth-child(3)')).toBe(true);
+    expect(targets('settings-about', '.bs-route-row:nth-child(n + 4)')).toBe(true);
+    expect(targets('settings-security', '.bs-route-hero')).toBe(true);
+    expect(targets('settings-siri', '.bs-route-panel > :not(.bs-cta)')).toBe(true);
+    expect(targets('settings-credits', '.bs-route-content')).toBe(true);
+    expect(css).toContain('margin-top: auto;');
+  });
+
+  it('keeps the hand-off to the Angular drawing when the selector script has not run yet', () => {
+    expect(BOOT_CSS).toContain('html:not([data-boot]) .bs-boot .bs-home');
+  });
+
+  it('keeps every rule of the inline first-paint sheet at zero specificity, so the external sheets always win', () => {
+    const critical = new DOMParser()
+      .parseFromString(INDEX, 'text/html')
+      .querySelector('style[nonce="__CSP_NONCE__"]')!.textContent!;
+    const body = critical.replace(/@media[^{]*{/g, '');
+    const selectors = body.match(/[^{}]+(?={)/g) ?? [];
+    expect(selectors.length).toBeGreaterThan(3);
+    for (const selector of selectors) expect(selector.trim().startsWith(':where(')).toBe(true);
+    expect(critical).not.toMatch(/(^|[\s;{])color-scheme:/);
   });
 });
