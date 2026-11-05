@@ -284,10 +284,19 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                   ><span class="bone ui-skeleton bs-route-card"></span>
                 </div>
                 <div class="bs-route-list">
-                  <span class="bone ui-skeleton bs-route-row"></span
-                  ><span class="bone ui-skeleton bs-route-row"></span
-                  ><span class="bone ui-skeleton bs-route-row"></span
-                  ><span class="bone ui-skeleton bs-route-row"></span>
+                  <span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                  ><span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                  ><span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                  ><span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span
+                  ></span>
                 </div>
                 <div class="bs-route-about">
                   <span class="bone ui-skeleton bs-section-label"></span>
@@ -547,10 +556,19 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                     ><span class="bone ui-skeleton bs-route-card"></span>
                   </div>
                   <div class="bs-route-list">
-                    <span class="bone ui-skeleton bs-route-row"></span
-                    ><span class="bone ui-skeleton bs-route-row"></span
-                    ><span class="bone ui-skeleton bs-route-row"></span
-                    ><span class="bone ui-skeleton bs-route-row"></span>
+                    <span class="bs-route-row"
+                      ><span class="bone ui-skeleton bs-line bs-w60"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                    ><span class="bs-route-row"
+                      ><span class="bone ui-skeleton bs-line bs-w60"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                    ><span class="bs-route-row"
+                      ><span class="bone ui-skeleton bs-line bs-w60"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                    ><span class="bs-route-row"
+                      ><span class="bone ui-skeleton bs-line bs-w60"></span
+                      ><span class="bone ui-skeleton bs-line bs-w40"></span
+                    ></span>
                   </div>
                   <div class="bs-route-about">
                     <span class="bone ui-skeleton bs-section-label"></span>
@@ -676,10 +694,19 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                   ><span class="bone ui-skeleton bs-route-card"></span>
                 </div>
                 <div class="bs-route-list">
-                  <span class="bone ui-skeleton bs-route-row"></span
-                  ><span class="bone ui-skeleton bs-route-row"></span
-                  ><span class="bone ui-skeleton bs-route-row"></span
-                  ><span class="bone ui-skeleton bs-route-row"></span>
+                  <span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                  ><span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                  ><span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span></span
+                  ><span class="bs-route-row"
+                    ><span class="bone ui-skeleton bs-line bs-w60"></span
+                    ><span class="bone ui-skeleton bs-line bs-w40"></span
+                  ></span>
                 </div>
               </div>
             </div>

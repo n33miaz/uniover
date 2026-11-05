@@ -331,17 +331,15 @@ html[data-boot='settings-appearance'] .bs-detail-cards,
   gap: var(--space-2);
 }
 .bs-route-row {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
   height: var(--route-row-height);
+  padding-inline: var(--space-4);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
-  /* O cartão da lista leva o título e o apoio da linha (dois ossos desenhados no próprio fundo), não uma caixa vazia. */
-  background:
-    linear-gradient(var(--a-elev), var(--a-elev)) left var(--space-4) top var(--space-3) / 55% 14px
-      no-repeat,
-    linear-gradient(var(--a-elev), var(--a-elev)) left var(--space-4) top 34px / 35% 12px no-repeat,
-    var(--a-surface);
-  animation: none;
+  background: var(--a-surface);
 }
 
 /* Sessão e detalhes começam pelo painel principal; o cabeçalho e os controles permanecem no lugar. */
