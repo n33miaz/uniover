@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -398,10 +399,11 @@ async def test_the_watcher_loop_survives_a_broken_poll_and_starts_from_the_curre
 
     watcher = UpdateStatusWatcher(Flaky(), transport, factory(), clock, interval=1.0)
     task = asyncio.create_task(watcher.run())
-    for _ in range(100):
-        if transport.sent:
-            break
-        await asyncio.sleep(0)
+    # A leitura roda numa thread: espera por tempo (não por voltas do laço), senão um PC carregado
+    # derruba o teste sem defeito nenhum.
+    end = time.monotonic() + 10
+    while not transport.sent and time.monotonic() < end:  # noqa: ASYNC110
+        await asyncio.sleep(0.01)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     # A primeira leitura é o ponto de partida (o `hello` já a levou): só a mudança sai.
