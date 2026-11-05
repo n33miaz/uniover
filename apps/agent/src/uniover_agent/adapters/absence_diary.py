@@ -7,6 +7,7 @@ contrato novo); a linha entra no `agent.log`, que o dono já consulta pelo envio
 """
 
 import logging
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -78,7 +79,12 @@ class AbsenceDiary:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(f"{self._clock.now().timestamp():.0f}", encoding="ascii")
         except OSError:
-            return
+            # Disco cheio: regravar o texto falha, mas só a data do arquivo basta para o supervisor
+            # (que olha o `mtime`) e não aloca espaço. Sem isto um agente saudável parecia mudo.
+            try:
+                os.utime(self._path)
+            except OSError:
+                return
 
     def disconnected(self) -> None:
         self._lost_at = self._clock.monotonic()

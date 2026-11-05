@@ -37,7 +37,7 @@ if ($anchor -ieq $realBase) {
 # Este lancador e o unico dono do agente. Qualquer agente que sobrou (layout antigo com
 # agent-src/venv/run-agent.ps1 na raiz, ou um supervisor orfao) sai antes: dois agentes com a
 # mesma identidade disputariam a conexao com o servidor.
-$leftovers = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+$leftovers = Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction SilentlyContinue | Where-Object {
     $_.CommandLine -and ($_.ProcessId -ne $PID) -and (
         $_.CommandLine -like "*$base\run-agent.ps1*" -or
         $_.CommandLine -like "*$base\agent-src*" -or
@@ -189,13 +189,51 @@ function Restore-AppFolder {
     }
 }
 
+# Quanto tempo o supervisor pode ficar sem dar sinal de vida (runtime\supervisor-alive, que ele renova a cada poucos
+# segundos, ate quando espera um filho) antes de o lancador o dar por travado. Nenhum supervisor sadio passa disto: toda
+# espera dele tem prazo e da sinal enquanto espera. Os testes encurtam pela variavel; sem ela vale o de producao.
+$staleSeconds = 900.0
+$forced = 0.0
+if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_STALE_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $staleSeconds = $forced }
+$staleCode = -9999
+
+function Invoke-Supervisor([string]$Script) {
+    # Roda o supervisor e o VIGIA, em vez de so esperar por ele: um supervisor vivo mas travado (preso numa atualizacao, com
+    # o disco cheio) deixava o lancador esperando para sempre e ninguem reiniciava o agente. Se o sinal de vida para por
+    # mais de $staleSeconds, a arvore dele morre e devolve $staleCode. Um supervisor que acabou de subir tem o prazo
+    # contado a partir da partida (o sinal velho de antes nao vale).
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = 'powershell.exe'
+    $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $Script + '"'
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $process = [System.Diagnostics.Process]::Start($info)
+    $startedAt = Get-Date
+    $alive = Join-Path $runtimeDir 'supervisor-alive'
+    while (-not $process.WaitForExit(5000)) {
+        $last = $startedAt
+        try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTime; if ($stamp -gt $last) { $last = $stamp } } catch { }
+        $silent = ((Get-Date) - $last).TotalSeconds
+        if ($silent -gt $staleSeconds) {
+            Write-LauncherLog ('o supervisor esta vivo (pid ' + $process.Id + ') mas sem sinal ha ' + [int]$silent + ' s; vou reinicia-lo') 'ERROR'
+            Add-LauncherDiagnostic 'supervisor.unresponsive' 'error' 'o supervisor travou (sem sinal de vida) e foi reiniciado pelo lancador'
+            & taskkill.exe /PID $process.Id /T /F *> $null
+            [void]$process.WaitForExit(15000)
+            return $staleCode
+        }
+    }
+    return $process.ExitCode
+}
+
 while ($true) {
     Restore-AppFolder
     if (Test-Path -LiteralPath $current) {
         $started = Get-Date
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $current
-        $code = $LASTEXITCODE
+        $code = $null
+        try { $code = Invoke-Supervisor $current }
+        catch { Write-LauncherLog ('nao consegui iniciar ou vigiar o supervisor (' + $_.Exception.GetType().Name + ')') }
         if ($code -eq 42) { Write-LauncherLog 'o supervisor pediu para reiniciar (versao nova ou volta atras)' 'INFO'; continue }
+        if ($code -eq $staleCode) { Start-Sleep -Seconds 5; continue }
         Write-LauncherLog ('o supervisor terminou (codigo ' + $code + ') depois de ' + [int]((Get-Date) - $started).TotalSeconds + ' s')
         if (((Get-Date) - $started).TotalSeconds -ge 30) { Start-Sleep -Seconds 5; continue }
     }

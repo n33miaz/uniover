@@ -93,9 +93,111 @@ function Set-StopReason([string]$Reason) {
 }
 
 function Touch-Alive {
-    # Sinal de vida do supervisor: o auto-diagnostico do agente o confere (se o supervisor morrer, ninguem reinicia o
-    # agente). Escrever um arquivo pequeno a cada volta custa quase nada.
-    try { [System.IO.File]::WriteAllText((Join-Path $runtime 'supervisor-alive'), (Get-Date).ToString('o'), [System.Text.Encoding]::ASCII) } catch { }
+    # Sinal de vida do supervisor: o lancador e o auto-diagnostico do agente o conferem (se o supervisor travar, ninguem
+    # reinicia o agente). Com o arquivo ja existente so a data muda: nao aloca bloco nenhum, entao vale mesmo com o disco
+    # cheio (regravar o texto falharia justo quando o sinal mais importa).
+    $path = Join-Path $runtime 'supervisor-alive'
+    try {
+        if (Test-Path -LiteralPath $path) { [System.IO.File]::SetLastWriteTimeUtc($path, [DateTime]::UtcNow); return }
+    } catch { }
+    try { [System.IO.File]::WriteAllText($path, (Get-Date).ToString('o'), [System.Text.Encoding]::ASCII) } catch { }
+}
+
+function Sleep-Beating([double]$Seconds) {
+    # Nenhuma espera do supervisor passa de poucos segundos sem dar sinal de vida: quem o vigia (lancador e agente) nao
+    # distingue "dormindo 5 minutos" de "travado".
+    $end = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $end) {
+        Touch-Alive
+        $left = ($end - (Get-Date)).TotalMilliseconds
+        Start-Sleep -Milliseconds ([int][Math]::Min(5000, [Math]::Max(50, $left)))
+    }
+}
+
+function Get-FreeMegabytes {
+    # Espaco livre do disco da instalacao em MB; nulo se nao der para saber (o chamador segue como se houvesse espaco).
+    try {
+        $root = [System.IO.Path]::GetPathRoot($base)
+        if (-not $root) { return $null }
+        return [int64]((New-Object System.IO.DriveInfo($root)).AvailableFreeSpace / 1MB)
+    } catch { return $null }
+}
+
+function Test-LowDisk {
+    $free = Get-FreeMegabytes
+    return ($null -ne $free -and $free -lt $minFreeMb)
+}
+
+function Read-Shared([string]$Path) {
+    # Le um arquivo que um processo filho ainda pode ter aberto para escrita (nunca falha por isso).
+    try {
+        $stream = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+        try { return (New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)).ReadToEnd() } finally { $stream.Dispose() }
+    } catch { return '' }
+}
+
+function Invoke-Bounded([string]$File, [string]$Arguments, [double]$TimeoutSeconds) {
+    # Roda um filho e espera NO MAXIMO $TimeoutSeconds, dando sinal de vida enquanto espera. Passado o prazo o filho e
+    # toda a arvore dele morrem. A saida vai para arquivos (nunca pipe: um neto que herdasse a ponta do pipe prenderia a
+    # espera). Devolve TimedOut, ExitCode (nulo se estourou o prazo) e o fim da saida.
+    $stamp = [guid]::NewGuid().ToString('N')
+    $outFile = Join-Path $runtime ('child-' + $stamp + '.out')
+    $errFile = Join-Path $runtime ('child-' + $stamp + '.err')
+    $result = @{ TimedOut = $false; ExitCode = $null; Output = '' }
+    try {
+        # O cmd.exe faz o redirecionamento para os arquivos (ProcessStartInfo so redireciona para pipe) e devolve o codigo
+        # do filho; a arvore inteira (cmd e filho) morre junto no prazo.
+        $line = '/d /s /c ""' + $File + '" ' + $Arguments + ' > "' + $outFile + '" 2> "' + $errFile + '""'
+        $child = Start-Hidden ($env:ComSpec) $line
+        # Sem tocar no Handle logo apos iniciar, o Windows PowerShell 5.1 devolve ExitCode nulo.
+        $null = $child.Handle
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        while (-not $child.WaitForExit(2000)) {
+            Touch-Alive
+            if ((Get-Date) -ge $deadline) {
+                $result.TimedOut = $true
+                & taskkill.exe /PID $child.Id /T /F *> $null
+                [void]$child.WaitForExit(10000)
+                break
+            }
+        }
+        if (-not $result.TimedOut) { $result.ExitCode = $child.ExitCode }
+    } catch {
+        $result.ExitCode = -1
+        $result.Output = 'nao consegui iniciar o processo'
+    } finally {
+        $text = (Read-Shared $outFile) + "`n" + (Read-Shared $errFile)
+        if ($text.Trim()) { $result.Output = $text }
+        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
+    return $result
+}
+
+function Remove-StaleChildOutputs {
+    # Sobras de um filho que nao deu para apagar na hora (ou de um supervisor morto no meio): saem depois de uma hora.
+    try {
+        foreach ($filter in @('child-*', 'update-output-*')) {
+            Get-ChildItem -LiteralPath $runtime -Filter $filter -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-1) } | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+    } catch { }
+}
+
+function Update-AnchorLauncher {
+    # O lancador (pasta fixa) so era copiado na instalacao, entao uma correcao nele nunca chegava a quem ja tinha o UniOver.
+    # Agora cada supervisor que sobe confere se a copia da pasta fixa e a do app e a troca por renomeacao se diferir. O
+    # lancador em execucao nao e afetado (ja leu o arquivo); a copia nova vale na proxima vez que ele subir.
+    $installed = Join-Path $anchor 'launcher.ps1'
+    $temp = $installed + '.new'
+    try {
+        $fresh = Join-Path $source 'tools\launcher.ps1'
+        if (-not (Test-Path -LiteralPath $fresh) -or -not (Test-Path -LiteralPath $installed)) { return }
+        $wanted = [System.IO.File]::ReadAllBytes($fresh)
+        $current = [System.IO.File]::ReadAllBytes($installed)
+        if ([Convert]::ToBase64String($wanted) -eq [Convert]::ToBase64String($current)) { return }
+        [System.IO.File]::WriteAllBytes($temp, $wanted)
+        Move-Item -LiteralPath $temp -Destination $installed -Force
+        Write-SupLog 'INFO' 'o lancador da pasta fixa foi atualizado para o do app'
+    } catch { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
 }
 
 function Get-Tail([string]$Text) {
@@ -109,7 +211,7 @@ function Stop-VenvUsers {
     # Qualquer processo rodando do ambiente (icone da bandeja, agente que sobrou) prende o
     # uniover-agent.exe e faz o sync falhar para sempre. Antes de sincronizar, todos saem.
     $venvPath = Join-Path $runtime 'venv'
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction SilentlyContinue | Where-Object {
         ($_.ProcessId -ne $PID) -and (
             ($_.ExecutablePath -and $_.ExecutablePath -like "$venvPath\*") -or
             ($_.CommandLine -and $_.CommandLine -like "*uniover-agent*" -and $_.CommandLine -like "*$source*")
@@ -119,13 +221,19 @@ function Stop-VenvUsers {
     $script:tray = $null
 }
 
+function Get-RunDescription($Run, [double]$Seconds) {
+    if ($Run.TimedOut) { return ('passou de ' + [int]$Seconds + ' s e foi interrompido') }
+    return ('codigo ' + $Run.ExitCode)
+}
+
 function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     Stop-VenvUsers
     # --frozen: o uv.lock manda (dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha), sem que
-    # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC.
-    $output = & $Uv sync --frozen --project $source --quiet 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0) { return $true }
-    Write-SupLog 'WARNING' ('uv sync falhou (codigo ' + $LASTEXITCODE + '): ' + (Get-Tail $output))
+    # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC. Com prazo: um uv preso nao prende o supervisor.
+    $arguments = 'sync --frozen --project "' + $source + '" --quiet'
+    $run = Invoke-Bounded $Uv $arguments $syncTimeoutSeconds
+    if (-not $run.TimedOut -and $run.ExitCode -eq 0) { return $true }
+    Write-SupLog 'WARNING' ('uv sync falhou (' + (Get-RunDescription $run $syncTimeoutSeconds) + '): ' + (Get-Tail $run.Output))
     # Com uma versao em prova e a anterior guardada para onde voltar, o ambiente nao e apagado: se a segunda tentativa
     # tambem falhasse, nenhuma das duas versoes teria como rodar. Quem chama conta a falha e reverte ao chegar a tres.
     if ($KeepEnvironment) {
@@ -133,10 +241,21 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
         return $false
     }
     $venv = Join-Path $runtime 'venv'
+    # Disco quase cheio: refazer o ambiente (centenas de MB) so pioraria. O ambiente que existe e mantido e o agente sobe
+    # com ele; sem ambiente nenhum nao ha o que subir e a volta seguinte tenta de novo quando houver espaco.
+    if (Test-LowDisk) {
+        Add-Diagnostic 'update.low_disk' 'error' 'pouco espaco em disco: o ambiente Python nao foi refeito'
+        if (Test-Path -LiteralPath (Join-Path $venv 'Scripts\python.exe')) {
+            Write-SupLog 'WARNING' 'pouco espaco em disco; mantenho o ambiente Python e subo o agente com ele'
+            return $true
+        }
+        Write-SupLog 'WARNING' 'pouco espaco em disco e sem ambiente Python; espero haver espaco'
+        return $false
+    }
     if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue }
-    $output = & $Uv sync --frozen --project $source --quiet 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
-        Write-SupLog 'WARNING' ('uv sync falhou de novo depois de refazer o ambiente (codigo ' + $LASTEXITCODE + '): ' + (Get-Tail $output))
+    $run = Invoke-Bounded $Uv $arguments $syncTimeoutSeconds
+    if ($run.TimedOut -or $run.ExitCode -ne 0) {
+        Write-SupLog 'WARNING' ('uv sync falhou de novo depois de refazer o ambiente (' + (Get-RunDescription $run $syncTimeoutSeconds) + '): ' + (Get-Tail $run.Output))
         Add-Diagnostic 'update.sync_failed' 'error' 'nao consegui preparar o ambiente Python da versao instalada (a segunda tentativa tambem falhou)'
         return $false
     }
@@ -167,6 +286,7 @@ function Get-UpdateOutcome {
     } catch { return '' }
 }
 
+$script:lowDiskNotedAt = [DateTime]::MinValue
 function Invoke-Update([string]$Uv) {
     $before = Get-Version
     # O supervisor reabre logo apos a troca; uma versao em prova ainda nao deve iniciar outra checagem.
@@ -174,25 +294,60 @@ function Invoke-Update([string]$Uv) {
         $trialParts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
         if ($trialParts.Count -eq 2 -and $trialParts[0] -eq $before) { return $false }
     }
+    # Disco quase cheio: baixar e montar uma versao nova so piora (e nao ha espaco para o ambiente dela). Fica registrado
+    # como falha com o motivo; a checagem volta pelo recuo normal e atualiza sozinha quando houver espaco.
+    $free = Get-FreeMegabytes
+    if ($null -ne $free -and $free -lt $minFreeMb) {
+        Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('pouco espaco em disco (' + $free + ' MB livres); a atualizacao espera ter espaco') } | Out-Null
+        if ($null -eq $script:lowDiskNotedAt -or ((Get-Date) - $script:lowDiskNotedAt).TotalMinutes -ge 30) {
+            $script:lowDiskNotedAt = Get-Date
+            Write-SupLog 'WARNING' ('pouco espaco em disco (' + $free + ' MB livres); nao atualizo agora')
+        }
+        Add-Diagnostic 'update.low_disk' 'warn' ('pouco espaco em disco (' + $free + ' MB livres); a atualizacao foi adiada')
+        return $false
+    }
     $env:UV = $Uv
     Set-UpdateState @{ outcome = 'updating'; checkedAt = (Get-UtcStamp (Get-Date)); reason = $null } | Out-Null
-    # Uma pipeline mantinha o supervisor esperando se o agente/icone novos herdassem a ponta de
-    # escrita do pipe depois da troca. Um arquivo captura a saida sem depender do fim dos filhos.
-    $capture = Join-Path $runtime ('update-output-' + [guid]::NewGuid().ToString('N') + '.txt')
-    try {
-        & $Uv run --project $source uniover-agent self-update *> $capture
-        $exitCode = $LASTEXITCODE
-        $output = [System.IO.File]::ReadAllText($capture)
-    }
-    finally { Remove-Item -LiteralPath $capture -Force -ErrorAction SilentlyContinue }
+    # O filho roda com prazo e a saida vai para arquivos (Invoke-Bounded): nem um uv preso nem um agente novo que herdasse a
+    # ponta de um pipe prendem o supervisor. UV_NO_SYNC: o `uv run` nao re-sincroniza o ambiente do agente em execucao
+    # (o sync e passo proprio, com prazo, deste supervisor; foi ele, dentro do `uv run`, que ficou preso sem filhos).
+    $env:UV_NO_SYNC = '1'
+    try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" uniover-agent self-update') $updateTimeoutSeconds }
+    finally { Remove-Item -LiteralPath 'Env:UV_NO_SYNC' -ErrorAction SilentlyContinue }
+    $exitCode = $run.ExitCode
+    $output = $run.Output
     $after = Get-Version
-    if ($exitCode -ne 0 -and $before -eq $after) {
+    if ($run.TimedOut) {
+        Write-SupLog 'ERROR' ('self-update passou de ' + [int]$updateTimeoutSeconds + ' s e foi interrompido: ' + (Get-Tail $output))
+        Add-Diagnostic 'update.timed_out' 'error' ('o processo de atualizacao passou do prazo e foi interrompido')
+        # Morto no meio da troca de pastas (app -> app.previous, app.new -> app), pode ter ficado sem `app`: sair faz o
+        # lancador restaurar (aqui nao ha o que supervisionar).
+        if (-not (Test-Path -LiteralPath $source)) {
+            Write-SupLog 'ERROR' 'a pasta app sumiu no meio da troca; peco ao lancador que a restaure'
+            Set-StopReason 'update'
+            exit 42
+        }
+        if ($before -eq $after) {
+            Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a atualizacao passou do prazo e foi interrompida' } | Out-Null
+        }
+    }
+    elseif ($exitCode -ne 0 -and $before -eq $after) {
         Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('o processo de atualizacao terminou com erro (codigo ' + $exitCode + ')') } | Out-Null
         Write-SupLog 'WARNING' ('self-update terminou com erro (codigo ' + $exitCode + '): ' + (Get-Tail $output))
         Add-Diagnostic 'update.failed' 'error' ('o processo de atualizacao terminou com erro (codigo ' + $exitCode + ')')
     }
     elseif ($before -and $after -and $before -ne $after) {
         Write-SupLog 'INFO' ('versao nova instalada, em prova: ' + $after.Substring(0, [Math]::Min(12, $after.Length)))
+    }
+    # O estado nunca fica em "atualizando" depois que o filho acabou: o Python nao conseguiu gravar o resultado (disco
+    # cheio, morte no meio) e quem sabe o desfecho e este supervisor.
+    if ((Get-UpdateOutcome) -eq 'updating') {
+        if ($before -and $after -and $before -ne $after) {
+            Set-UpdateState @{ outcome = 'updated'; checkedAt = (Get-UtcStamp (Get-Date)); latestSha = $after; reason = $null } | Out-Null
+        }
+        else {
+            Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'o processo de atualizacao terminou sem registrar o resultado' } | Out-Null
+        }
     }
     if ($before -and $after -and $before -ne $after) {
         [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII)
@@ -557,11 +712,21 @@ $slowLapSeconds = [Math]::Max(60, $lapSeconds * 4)
 # Saida do agente que encontrou outro dono da instalacao (EXIT_ALREADY_RUNNING, em single_instance.py).
 $ownedElsewhereCode = 5
 $ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
+# Prazos de tudo que o supervisor espera: nada abaixo roda sem fim. O self-update tem de acabar antes de o agente dar a
+# atualizacao por interrompida (30 min); o sync cobre as duas tentativas do uv sync.
+$updateTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS' 1500
+$syncTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS' 900
+# Abaixo disto de espaco livre (MB) nenhuma atualizacao comeca e o ambiente Python nunca e apagado.
+$minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
 Write-SupLog 'INFO' 'supervisor iniciado'
+Touch-Alive
+Remove-StaleChildOutputs
+Update-AnchorLauncher
 Ensure-TrayShortcut
+Touch-Alive
 $wait = 5
 $syncFalls = 0
 $script:ownedElsewhere = $false
@@ -575,7 +740,7 @@ while ($true) {
     $uv = Find-Uv
     if (-not $uv -or -not (Test-Path -LiteralPath $source)) {
         Write-SupLog 'WARNING' 'sem uv ou sem a pasta do agente; espero 5 minutos'
-        Start-Sleep -Seconds 300; continue
+        Sleep-Beating 300; continue
     }
     $updated = $false
     if ((Get-Date) -ge $nextUpdate -or (Test-Path (Join-Path $runtime 'update-now'))) {
@@ -606,7 +771,7 @@ while ($true) {
             }
         }
         else { $syncFalls = 0 }
-        Start-Sleep -Seconds $wait; $wait = [Math]::Min($wait * 2, 300); continue
+        Sleep-Beating $wait; $wait = [Math]::Min($wait * 2, 300); continue
     }
     $syncFalls = 0
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
@@ -741,6 +906,6 @@ while ($true) {
         Note-Run $seconds
     }
     if ($seconds -gt 600 -or $restartForUpdate) { $wait = 5 }
-    Start-Sleep -Seconds $wait
+    Sleep-Beating $wait
     $wait = [Math]::Min($wait * 2, 300)
 }

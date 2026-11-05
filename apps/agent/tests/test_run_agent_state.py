@@ -43,6 +43,11 @@ FUNCTIONS = (
     "Get-Tail",
     "Get-UpdateOutcome",
     "Confirm-Trial",
+    "Touch-Alive",
+    "Get-FreeMegabytes",
+    "Read-Shared",
+    "Invoke-Bounded",
+    "Start-Hidden",
 )
 
 PRELUDE = r"""
@@ -54,6 +59,8 @@ $previous = Join-Path $base 'app.previous'
 $runtime = Join-Path $base 'runtime'
 $blocked = Join-Path $runtime '.blocked-versions'
 $trial = Join-Path $runtime 'update-trial.txt'
+$updateTimeoutSeconds = 60
+$minFreeMb = 0
 $script:lastDiagnostic = @{}
 $tokens = $null; $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:UNIOVER_TEST_RUNNER, [ref]$tokens, [ref]$errors)
