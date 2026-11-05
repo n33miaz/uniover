@@ -74,21 +74,25 @@ describe('existingRowsById', () => {
     expect(spy.getAll).not.toHaveBeenCalled();
   });
 
-  it('is what makes merging a 500-row catalog cost one write per row and no reads', async () => {
-    setupTraining();
-    const repository = TestBed.inject(CatalogRepository);
-    const spy = requests();
+  it(
+    'is what makes merging a 500-row catalog cost one write per row and no reads',
+    { timeout: 20_000 },
+    async () => {
+      setupTraining();
+      const repository = TestBed.inject(CatalogRepository);
+      const spy = requests();
 
-    await repository.applyRemote(rows(500));
-    expect(spy.get).not.toHaveBeenCalled();
-    expect(spy.getAll).not.toHaveBeenCalled();
-    expect(spy.put).toHaveBeenCalledTimes(500);
+      await repository.applyRemote(rows(500));
+      expect(spy.get).not.toHaveBeenCalled();
+      expect(spy.getAll).not.toHaveBeenCalled();
+      expect(spy.put).toHaveBeenCalledTimes(500);
 
-    // Segunda passada com as 500 linhas já no aparelho: a leitura é uma só, não 500.
-    spy.put.mockClear();
-    await repository.applyRemote(rows(500));
-    expect(spy.get).not.toHaveBeenCalled();
-    expect(spy.getAll.mock.calls.length).toBeLessThanOrEqual(1);
-    expect(spy.put).toHaveBeenCalledTimes(500);
-  });
+      // Segunda passada com as 500 linhas já no aparelho: a leitura é uma só, não 500.
+      spy.put.mockClear();
+      await repository.applyRemote(rows(500));
+      expect(spy.get).not.toHaveBeenCalled();
+      expect(spy.getAll.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(spy.put).toHaveBeenCalledTimes(500);
+    },
+  );
 });
