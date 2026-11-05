@@ -262,6 +262,35 @@ describe('TvStore', () => {
       });
       expect(store.watchdogNote()).toBeNull();
     });
+
+    it('shows a repair in progress and clears it when it ends or times out', async () => {
+      await started();
+      emit('tv.watchdog', {
+        kind: 'repair_started',
+        severity: 'info',
+        detail: '',
+        attempts: 1,
+        at: new Date(2026, 9, 19, 14, 2).toISOString(),
+      });
+      expect(store.watchdogNote()).toBe('Religando o controle da TV (cerca de 1 min)');
+      emit('tv.watchdog', {
+        kind: 'repaired',
+        severity: 'info',
+        detail: '',
+        attempts: 1,
+        at: new Date(2026, 9, 19, 14, 3).toISOString(),
+      });
+      expect(store.watchdogNote()).toBe('controle religado às 14:03');
+      emit('tv.watchdog', {
+        kind: 'repair_started',
+        severity: 'info',
+        detail: '',
+        attempts: 1,
+        at: new Date(2026, 9, 19, 14, 4).toISOString(),
+      });
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      expect(store.watchdogNote()).toBeNull();
+    });
   });
 
   describe('keys', () => {

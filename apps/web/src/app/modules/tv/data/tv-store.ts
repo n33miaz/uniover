@@ -358,6 +358,9 @@ export class TvStore {
     if (entry.kind === 'repair_failed') {
       return $localize`:@@tv.watchdog.failed:reparo do controle falhou às ${time}:time:`;
     }
+    if (entry.kind === 'repair_started') {
+      return $localize`:@@tv.watchdog.repairing:Religando o controle da TV (cerca de 1 min)`;
+    }
     return null;
   });
 
@@ -384,6 +387,7 @@ export class TvStore {
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  private watchdogTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly onVisibility = () => {
     if (this.visible()) {
@@ -451,6 +455,7 @@ export class TvStore {
     this.doc.defaultView?.removeEventListener('pageshow', this.onPageShow);
     clearTimeout(this.noticeTimer);
     clearTimeout(this.nudgeTimer);
+    clearTimeout(this.watchdogTimer);
     // Ao sair, o erro de uma leitura sem resposta não fica para a próxima vez que a tela abrir.
     this.stateWatch.done();
     this.shortcutsWatch.done();
@@ -971,6 +976,16 @@ export class TvStore {
     this.applyShortcuts(list);
   }
 
+  private updateWatchdogTimer(entry: TvWatchdog): void {
+    clearTimeout(this.watchdogTimer);
+    this.watchdogTimer = undefined;
+    if (entry.kind !== 'repair_started') return;
+    this.watchdogTimer = setTimeout(() => {
+      if (this._watchdog()?.kind === 'repair_started') this._watchdog.set(null);
+      this.watchdogTimer = undefined;
+    }, 3 * 60_000);
+  }
+
   private onEvent(event: StreamEvent): void {
     // Um evento do fluxo da conta anterior que ainda chegue depois da troca é dela, não da atual.
     if (this.syncAccount()) return;
@@ -994,7 +1009,10 @@ export class TvStore {
       }
       case TV_STREAM_EVENTS.watchdog: {
         const entry = parseWatchdog(parse(event.data));
-        if (entry) this._watchdog.set(entry);
+        if (entry) {
+          this._watchdog.set(entry);
+          this.updateWatchdogTimer(entry);
+        }
         return;
       }
     }
@@ -1092,6 +1110,8 @@ export class TvStore {
     this._seenAt.set(null);
     this._shortcuts.set(null);
     this._watchdog.set(null);
+    clearTimeout(this.watchdogTimer);
+    this.watchdogTimer = undefined;
     this._notConfigured.set(false);
     this._agentUnavailable.set(false);
     this.stateWatch.stop();

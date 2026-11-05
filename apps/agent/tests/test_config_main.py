@@ -96,6 +96,24 @@ def test_adb_settings_have_defaults_and_read_env(monkeypatch: pytest.MonkeyPatch
         Settings()
 
 
+def test_tv_repair_timeouts_have_safe_defaults_and_accept_an_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    assert (
+        settings.tv_watchdog_probe_seconds,
+        settings.tv_watchdog_restart_seconds,
+        settings.tv_watchdog_budget_seconds,
+    ) == (3.0, 15.0, 240.0)
+    monkeypatch.setenv("UNIOVER_TV_WATCHDOG_PROBE_SECONDS", "4")
+    monkeypatch.setenv("UNIOVER_TV_SESSION_WARM_TIMEOUT_SECONDS", "35")
+    settings = Settings()
+    assert (settings.tv_watchdog_probe_seconds, settings.tv_session_warm_timeout_seconds) == (
+        4.0,
+        35.0,
+    )
+
+
 def test_config_file_is_read_and_env_wins(
     monkeypatch: pytest.MonkeyPatch, isolated_env: Path
 ) -> None:

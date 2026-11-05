@@ -42,6 +42,10 @@ class AdbUnavailable(AdbNotReady):
 
     code = ADB_UNAVAILABLE
 
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
+
 
 class AdbUnauthorized(AdbNotReady):
     """A TV ainda não autorizou este PC (aparece um aviso na tela da TV)."""
