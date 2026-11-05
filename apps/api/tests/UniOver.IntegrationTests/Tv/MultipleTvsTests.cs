@@ -2,11 +2,14 @@ using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.IntegrationTests.Tv;
 
@@ -62,6 +65,173 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
     {
         using var response = await app.SendAsync(HttpMethod.Put, $"/api/v1/tv/tvs/{tvId}/members", new { userIds });
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private static async Task<Guid> OwnerIdAsync(TvApp app)
+    {
+        await using var identity = app.Identity();
+        return await identity.Users.Where(user => user.Email == app.OwnerEmail).Select(user => user.Id).SingleAsync(Ct);
+    }
+
+    [Fact]
+    public async Task CreatingATv_RecordsTheActorOriginAndConfiguredTv()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var agent = await app.PairAsync("PC Auditoria");
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(agent.Slug)?.Capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) == true,
+            "capacidades Samsung do agente");
+
+        using var response = await app.SendAsync(HttpMethod.Post, "/api/v1/tv/tvs", new { agentSlug = agent.Slug, name = "TV Auditoria" },
+            forwardedFor: "203.0.113.27", userAgent: "navegador-auditoria/1.0");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var tvId = (await TvApp.JsonAsync(response)).GetProperty("id").GetGuid();
+
+        await using var db = app.Db();
+        var audit = await db.CommandAudit.AsNoTracking().SingleAsync(a => a.Command == TvCommandNames.Add, Ct);
+        audit.UserId.Should().Be(await OwnerIdAsync(app));
+        audit.TvId.Should().Be(tvId);
+        audit.AgentId.Should().Be(agent.Slug);
+        audit.Detail.Should().Be($"kind=samsung agent={agent.Slug}");
+        audit.Ip.Should().Be("203.0.113.27");
+        audit.UserAgent.Should().Be("navegador-auditoria/1.0");
+    }
+
+    [Fact]
+    public async Task DeletingATv_RecordsTheOrigin_CleansOnlyItsDependentData_AndIsIdempotent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var targetAgent = await app.PairAsync("PC para remover");
+        var otherAgent = await app.PairAsync("PC para manter");
+        var targetTvId = await CreateTvAsync(app, targetAgent.Slug, "TV para remover");
+        var otherTvId = await CreateTvAsync(app, otherAgent.Slug, "TV para manter");
+        var now = app.Time.GetUtcNow();
+        var ownerId = await OwnerIdAsync(app);
+
+        await using (var db = app.Db())
+        {
+            foreach (var tvId in new[] { targetTvId, otherTvId })
+            {
+                db.Shortcuts.Add(Shortcut.Create(tvId, $"com.exemplo.{tvId:N}", "Exemplo", 1, now));
+                db.PowerSchedules.Add(PowerSchedule.Create(tvId, tvId == targetTvId ? targetAgent.Slug : otherAgent.Slug,
+                    ownerId, true, now.AddHours(1), "America/Sao_Paulo", now));
+                db.SiriTokens.Add(SiriToken.Create(ownerId, tvId, $"chave-{tvId:N}", Guid.NewGuid().ToByteArray(), ["power_off"], now, null));
+                db.TvLivre.Add(TvLivreEntry.Create(tvId, now));
+                db.CleanupReports.Add(CleanupReportEntry.Completed(tvId, "manual", "teste", now, 1, null, null, 0, "[]"));
+            }
+            await db.SaveChangesAsync(Ct);
+        }
+
+        using (var removed = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{targetTvId}",
+                   forwardedFor: "203.0.113.28", userAgent: "navegador-remocao/1.0"))
+        {
+            removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        using (var repeated = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{targetTvId}"))
+        {
+            repeated.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        await using var check = app.Db();
+        (await check.Tvs.AnyAsync(t => t.Id == targetTvId, Ct)).Should().BeFalse();
+        (await check.Shortcuts.AnyAsync(x => x.TvId == targetTvId, Ct)).Should().BeFalse();
+        (await check.PowerSchedules.AnyAsync(x => x.TvId == targetTvId, Ct)).Should().BeFalse();
+        (await check.SiriTokens.AnyAsync(x => x.TvId == targetTvId, Ct)).Should().BeFalse();
+        (await check.TvLivre.AnyAsync(x => x.TvId == targetTvId, Ct)).Should().BeFalse();
+        (await check.CleanupReports.AnyAsync(x => x.TvId == targetTvId, Ct)).Should().BeFalse();
+        (await check.Shortcuts.AnyAsync(x => x.TvId == otherTvId, Ct)).Should().BeTrue();
+        (await check.PowerSchedules.AnyAsync(x => x.TvId == otherTvId, Ct)).Should().BeTrue();
+        (await check.SiriTokens.AnyAsync(x => x.TvId == otherTvId, Ct)).Should().BeTrue();
+        (await check.TvLivre.AnyAsync(x => x.TvId == otherTvId, Ct)).Should().BeTrue();
+        (await check.CleanupReports.AnyAsync(x => x.TvId == otherTvId, Ct)).Should().BeTrue();
+
+        var audit = await check.CommandAudit.AsNoTracking().Where(a => a.Command == TvCommandNames.Remove).SingleAsync(Ct);
+        audit.UserId.Should().Be(ownerId);
+        audit.TvId.Should().Be(targetTvId);
+        audit.AgentId.Should().Be(targetAgent.Slug);
+        audit.Detail.Should().Be($"kind=android agent={targetAgent.Slug}", "sem o agente conectado, os atalhos de pacote comum indicam Android");
+        audit.Ip.Should().Be("203.0.113.28");
+        audit.UserAgent.Should().Be("navegador-remocao/1.0");
+
+        var permanent = await check.TvRemovalAudit.AsNoTracking().SingleAsync(Ct);
+        permanent.UserId.Should().Be(ownerId);
+        permanent.TvId.Should().Be(targetTvId);
+        permanent.AgentId.Should().Be(targetAgent.Slug);
+        permanent.Kind.Should().Be("android");
+        permanent.Ip.Should().Be("203.0.113.28");
+        permanent.UserAgent.Should().Be("navegador-remocao/1.0");
+    }
+
+    [Fact]
+    public async Task DeletingATv_WhenTheAuditCannotBeWritten_RollsBackTheRemoval()
+    {
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions
+        {
+            ConfigureServices = services =>
+            {
+                services.RemoveAll<ITvCommandAudit>();
+                services.AddScoped<ITvCommandAudit, ThrowingAudit>();
+            },
+        });
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var agent = await app.PairAsync("PC sem trilha", keepTv: true);
+        var now = app.Time.GetUtcNow();
+        var ownerId = await OwnerIdAsync(app);
+        await using var before = app.Db();
+        var tvId = await before.Tvs.Where(tv => tv.AgentSlug == agent.Slug).Select(tv => tv.Id).SingleAsync(Ct);
+        before.Shortcuts.Add(Shortcut.Create(tvId, "com.exemplo.preservado", "Exemplo", 1, now));
+        before.PowerSchedules.Add(PowerSchedule.Create(tvId, agent.Slug, ownerId, true, now.AddHours(1), "America/Sao_Paulo", now));
+        before.SiriTokens.Add(SiriToken.Create(ownerId, tvId, "chave-preservada", Guid.NewGuid().ToByteArray(), ["power_off"], now, null));
+        before.TvLivre.Add(TvLivreEntry.Create(tvId, now));
+        before.CleanupReports.Add(CleanupReportEntry.Completed(tvId, "manual", "teste", now, 1, null, null, 0, "[]"));
+        await before.SaveChangesAsync(Ct);
+
+        using var response = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{tvId}");
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        await using var after = app.Db();
+        (await after.Tvs.AnyAsync(tv => tv.Id == tvId, Ct)).Should().BeTrue("sem a trilha que identifica a remoção, a TV não pode sumir");
+        (await after.Shortcuts.AnyAsync(x => x.TvId == tvId, Ct)).Should().BeTrue("a remoção falha inteira, com os atalhos");
+        (await after.PowerSchedules.AnyAsync(x => x.TvId == tvId, Ct)).Should().BeTrue();
+        (await after.SiriTokens.AnyAsync(x => x.TvId == tvId, Ct)).Should().BeTrue();
+        (await after.TvLivre.AnyAsync(x => x.TvId == tvId, Ct)).Should().BeTrue();
+        (await after.CleanupReports.AnyAsync(x => x.TvId == tvId, Ct)).Should().BeTrue();
+        (await after.TvRemovalAudit.AnyAsync(Ct)).Should().BeFalse("a trilha permanente não pode existir sem a remoção");
+    }
+
+    [Fact]
+    public async Task DeletingATv_WithTheAgentOffline_UsesTheKindTheShortcutsIndicate_InsteadOfUnknown()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Samsung offline");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Samsung offline");
+        await using (var db = app.Db())
+        {
+            db.Shortcuts.Add(Shortcut.Create(tvId, "samsung.app.exemplo", "Exemplo", 1, app.Time.GetUtcNow()));
+            await db.SaveChangesAsync(Ct);
+        }
+
+        using var removed = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{tvId}");
+        removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var check = app.Db();
+        (await check.TvRemovalAudit.AsNoTracking().SingleAsync(Ct)).Kind.Should().Be("samsung");
+        (await check.CommandAudit.AsNoTracking().SingleAsync(a => a.Command == TvCommandNames.Remove, Ct))
+            .Detail.Should().Be($"kind=samsung agent={agent.Slug}");
+    }
+
+    private sealed class ThrowingAudit : ITvCommandAudit
+    {
+        public Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("banco fora do ar");
     }
 
     [Fact]
@@ -718,6 +888,8 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 
         using var deleteDefault = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{defaultTvId}");
         deleteDefault.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await using var db = app.Db();
+        (await db.CommandAudit.CountAsync(a => a.Command == TvCommandNames.Remove, Ct)).Should().Be(0);
     }
 
     [Fact]

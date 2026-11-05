@@ -311,7 +311,7 @@ public sealed class AppendOnlyTests(PostgresFixture postgres)
         AppendOnlyTables.All.Keys.Should().BeEquivalentTo("identity", "devices", "tv");
         AppendOnlyTables.Of("identity").Should().Equal("login_audit");
         AppendOnlyTables.Of("devices").Should().Equal("pairing_audit");
-        AppendOnlyTables.Of("tv").Should().Equal("command_audit");
+        AppendOnlyTables.Of("tv").Should().Equal("command_audit", "tv_removal_audit");
         AppendOnlyTables.Of("training").Should().BeEmpty();
     }
 }

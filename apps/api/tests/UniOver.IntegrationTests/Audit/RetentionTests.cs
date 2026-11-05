@@ -166,6 +166,59 @@ public sealed class RetentionTests(PostgresFixture postgres)
         (await PurgeAsync(database.RuntimeConnection, schema, schema.FloorDays)).Should().Be(1);
     }
 
+    private static Task InsertRemovalAsync(string connection, int ageDays, string mark) =>
+        ExecuteAsync(connection, string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "INSERT INTO tv.tv_removal_audit (id, tv_id, user_id, agent_id, kind, ip, user_agent, occurred_at) " +
+            "VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), '{1}', 'samsung', '203.0.113.9', 'navegador/1.0', now() - make_interval(days => {0}))",
+            ageDays, mark));
+
+    private static async Task<long> ScrubAsync(string connection, int? days)
+    {
+        await using var conn = new NpgsqlConnection(connection);
+        await conn.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand("SELECT tv.scrub_removal_audit(@days)", conn);
+        command.Parameters.AddWithValue("days", days is null ? DBNull.Value : (object)days.Value);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(Ct), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<(string Agent, bool HasIp, bool HasUserAgent)[]> RemovalRowsAsync(string connection)
+    {
+        await using var conn = new NpgsqlConnection(connection);
+        await conn.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand(
+            "SELECT agent_id, ip IS NOT NULL, user_agent IS NOT NULL FROM tv.tv_removal_audit ORDER BY agent_id", conn);
+        await using var reader = await command.ExecuteReaderAsync(Ct);
+        var rows = new List<(string, bool, bool)>();
+        while (await reader.ReadAsync(Ct))
+        {
+            rows.Add((reader.GetString(0), reader.GetBoolean(1), reader.GetBoolean(2)));
+        }
+
+        return [.. rows];
+    }
+
+    [Fact]
+    public async Task TheRemovalTrail_KeepsTheRowForever_ButScrubsIpAndDeviceAfterTheSecurityRetention()
+    {
+        var database = await MigratedDatabaseAsync(postgres);
+        await InsertRemovalAsync(database.OwnerConnection, AuditRetentionPolicy.SecurityDays + 20, "antiga");
+        await InsertRemovalAsync(database.OwnerConnection, AuditRetentionPolicy.SecurityDays - 20, "recente");
+
+        // O piso vale qualquer que seja o argumento: nada com menos de 180 dias perde o IP.
+        (await ScrubAsync(database.RuntimeConnection, 0)).Should().Be(1, "o piso é 180 dias, e a linha antiga passa dele");
+        (await ScrubAsync(database.RuntimeConnection, null)).Should().Be(0, "já limpa; a recente está abaixo do piso");
+        (await ScrubAsync(database.RuntimeConnection, int.MaxValue)).Should().Be(0);
+
+        (await RemovalRowsAsync(database.OwnerConnection)).Should().Equal(
+            [("antiga", false, false), ("recente", true, true)]);
+
+        var direct = async () => await ExecuteAsync(database.RuntimeConnection, "UPDATE tv.tv_removal_audit SET ip = NULL");
+        (await direct.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("42501");
+        var delete = async () => await ExecuteAsync(database.RuntimeConnection, "DELETE FROM tv.tv_removal_audit");
+        (await delete.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("42501");
+    }
+
     [Fact]
     public async Task ThePurgeService_CallsTheFunctionsThroughTheRealApplicationConnection()
     {
@@ -181,7 +234,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
         var results = await service.RunOnceAsync(Ct);
 
-        results.Select(r => r.Name).Should().BeEquivalentTo("identity.purge_audit", "devices.purge_audit", "tv.purge_audit", "identity.refresh_families");
+        results.Select(r => r.Name).Should().BeEquivalentTo("identity.purge_audit", "devices.purge_audit", "tv.purge_audit", "tv.scrub_removal_audit", "identity.refresh_families", "identity.capacity_samples");
         results.Should().OnlyContain(r => r.Succeeded);
         foreach (var schema in new[] { Identity, Devices, Tv })
         {
@@ -222,7 +275,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
         var results = await service.RunOnceAsync(Ct);
 
-        results.Should().HaveCount(4);
+        results.Should().HaveCount(6, "uma limpeza por trilha mais as rotinas de famílias e de capacidade");
         results.Should().OnlyContain(r => !r.Succeeded && r.Error != null && !r.Error.Contains(' ', StringComparison.Ordinal));
     }
 
