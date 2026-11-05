@@ -56,6 +56,8 @@ CMDKEY = str(SYSTEM32 / "cmdkey.exe")
 TASKKILL = str(SYSTEM32 / "taskkill.exe")
 # Supervisor, agente (uv e python) e icone: o minimo de processos que a base precisa ter de pe.
 MIN_PROCESSES = 3
+# Sinais de vida distintos do supervisor enquanto espera um filho preso.
+MIN_PULSES = 2
 CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_CONSOLE = 0x00000010
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -178,6 +180,8 @@ class Feed:
         self.sha = ""
         self.archives: dict[str, bytes] = {}
         self.hits: list[str] = []
+        # Quanto a consulta ao commit demora a responder (a rede "presa" da fase G).
+        self.stall_seconds = 0.0
 
     def offer(self, sha: str, archive: bytes | None) -> None:
         with self.lock:
@@ -205,11 +209,15 @@ def start_feed(feed: Feed) -> tuple[http.server.ThreadingHTTPServer, int]:
             if not kind:
                 self.send_error(404)
                 return
-            self.send_response(200)
-            self.send_header("Content-Type", kind)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            if self.path == "/commit" and feed.stall_seconds:
+                time.sleep(feed.stall_seconds)
+            # O cliente pode ter sido morto no prazo enquanto esperava: isso nao e erro do ensaio.
+            with contextlib.suppress(OSError):
+                self.send_response(200)
+                self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
         def log_message(self, format: str, *args: object) -> None:
             return None
@@ -1153,6 +1161,60 @@ class Drill:
         ]
         return all(results)
 
+    def stuck_update_is_interrupted(self) -> bool:
+        """Uma atualizacao presa (a rede nao responde) e interrompida no prazo, o supervisor nunca
+        fica mudo e o estado nunca fica em "atualizando"."""
+        say("\n== G. atualizacao presa e interrompida no prazo ==")
+        deadline = 20
+        stopped = self.stop_everything()
+        normal = dict(self.env)
+        self.env = {**self.env, "UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS": str(deadline)}
+        self.feed.stall_seconds = 120.0
+        alive = self.base / "runtime" / "supervisor-alive"
+        pulses: set[int] = set()
+        started = time.time()
+
+        def interrupted() -> bool:
+            state = self.update_state()
+            if state.get("outcome") == "updating":
+                with contextlib.suppress(OSError):
+                    pulses.add(alive.stat().st_mtime_ns)
+            return state.get("outcome") == "failed" and "prazo" in str(state.get("reason", ""))
+
+        # A primeira volta do supervisor ja checa a atualizacao: a consulta do commit trava.
+        self.start_supervisor()
+        failed = wait_until(interrupted, deadline + 120, 1.0)
+        waited = time.time() - started
+        left = self.roles(self.tree(), "update")
+        self.feed.stall_seconds = 0.0
+        self.env = normal
+        up = wait_until(
+            lambda: {role(p) for p in self.tree()} >= {"supervisor", "agent", "tray"}, 300
+        )
+        # A rede voltou: a checagem seguinte conclui sozinha e o estado sai de "atualizando".
+        self.feed.offer(self.version(), None)
+        (self.base / "runtime" / "update-now").touch()
+        recovered = wait_until(
+            lambda: self.update_state().get("outcome") in {"up_to_date", "updated"},
+            self.args.timeout,
+            1.0,
+        )
+        results = [
+            self.verdict.check("o supervisor anterior parou antes da fase presa", stopped),
+            self.verdict.check(
+                "a atualizacao presa e interrompida no prazo e fica como falha", failed
+            ),
+            self.verdict.check(
+                "o supervisor deu sinal de vida enquanto esperava o filho preso",
+                len(pulses) >= MIN_PULSES,
+                f"{len(pulses)} sinais distintos em {waited:.0f} s",
+            ),
+            self.verdict.check("nenhum processo de atualizacao sobrou", not left),
+            self.verdict.check("depois do prazo o agente e o icone sobem", up),
+            self.verdict.check("com a rede de volta o estado deixa de ser falha", recovered),
+        ]
+        return all(results)
+
     def leftovers(self) -> list[str]:
         names = sorted(p.name for p in self.base.iterdir())
         return [
@@ -1450,6 +1512,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
             proceed = drill.recover_interrupted_swap(next_sha)
         if proceed:
             proceed = drill.rollback_after_sync_failure(next_sha)
+        if proceed:
+            proceed = drill.stuck_update_is_interrupted()
         say("")
         drill.windows_check()
     except KeyboardInterrupt:

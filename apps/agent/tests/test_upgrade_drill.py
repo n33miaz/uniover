@@ -348,6 +348,10 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
         def rollback_after_sync_failure(self, _sha: str) -> bool:
             return True
 
+        def stuck_update_is_interrupted(self) -> bool:
+            events.append("atualizacao presa")
+            return True
+
         def windows_check(self) -> None:
             return None
 
