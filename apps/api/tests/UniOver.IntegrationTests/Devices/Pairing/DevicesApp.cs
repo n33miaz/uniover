@@ -42,6 +42,9 @@ internal sealed record DevicesAppOptions
 
     public int? TokenFailureLimit { get; init; }
 
+    /// <summary>Teto de balizas por minuto e por IP; alto por padrão para não atrapalhar os outros testes.</summary>
+    public int? BeaconPermitted { get; init; }
+
     public DbCommandInterceptor? CommandInterceptor { get; init; }
 
     /// <summary>
@@ -135,6 +138,7 @@ internal sealed class DevicesApp : IAsyncDisposable
             ["Modules:Identity:Passkeys:Origins:0"] = "https://localhost",
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",
+            ["RateLimiting:beacon:Permitted"] = (options.BeaconPermitted ?? 100000).ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["RateLimiting:pairing:Permitted"] = (options.PairingPermitted ?? 100000).ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Logging:LogLevel:Default"] = "Debug",
             ["Modules:Devices:Transport:PresenceGraceSeconds"] = options.PresenceGraceSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),

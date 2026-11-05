@@ -5,9 +5,11 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UniOver.Modules.Devices.Domain;
+using UniOver.Modules.Devices.Features.Beacons;
 using UniOver.Modules.Devices.Features.Tokens;
 
 namespace UniOver.Modules.Devices.Features.Agents;
@@ -29,6 +31,7 @@ public static class DeviceAuth
     internal const string FailureItem = "uniover.device.failure";
     internal const string RevokedFailure = "revoked";
     internal const string ThrottledFailure = "throttled";
+    internal const string UnknownFailure = "unknown";
     internal const string RetryAfterItem = "uniover.device.retry-after";
 }
 
@@ -79,11 +82,12 @@ internal sealed class DeviceTokenAuthentication(
                 return AuthenticateResult.Fail("throttled");
 
             default:
+                Context.Items[DeviceAuth.FailureItem] = DeviceAuth.UnknownFailure;
                 return AuthenticateResult.Fail("unknown");
         }
     }
 
-    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         // Revogado é 403 (o agente para de tentar); o resto (sem token, token que não existe) é 401. Origem que estourou o
         // teto de tokens inválidos recebe 429 com Retry-After: não é "o token morreu", então o agente tenta de novo depois.
@@ -93,13 +97,44 @@ internal sealed class DeviceTokenAuthentication(
             var retry = Context.Items.TryGetValue(DeviceAuth.RetryAfterItem, out var value) && value is TimeSpan span ? span : TimeSpan.FromSeconds(60);
             Response.StatusCode = StatusCodes.Status429TooManyRequests;
             Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
-            return Task.CompletedTask;
+            return;
         }
 
-        Response.StatusCode = failure is DeviceAuth.RevokedFailure
-            ? StatusCodes.Status403Forbidden
-            : StatusCodes.Status401Unauthorized;
-        return Task.CompletedTask;
+        var revoked = failure is DeviceAuth.RevokedFailure;
+        Response.StatusCode = revoked ? StatusCodes.Status403Forbidden : StatusCodes.Status401Unauthorized;
+
+        // O dono precisa saber por que o PC não conecta: anota o motivo (um código fixo) no agente do caminho. O token nunca entra.
+        // Só quando houve um token para recusar: a abertura sem cabeçalho nenhum não anota nada, porque a autorização roda antes do
+        // limitador de requisições e essa rota anônima faria uma consulta ao banco por tentativa. Token inexistente já passa pelo teto de
+        // tokens inválidos por origem (o 429 acima), e os outros motivos exigem um token verdadeiro.
+        if (revoked)
+        {
+            await RecordRejectionAsync(BeaconRejection.Revoked);
+        }
+        else if (failure is DeviceAuth.UnknownFailure)
+        {
+            await RecordRejectionAsync(BeaconRejection.InvalidToken);
+        }
+    }
+
+    /// <summary>Token válido, mas de outro agente (o <c>agentId</c> do caminho não é o dele): 403, e o motivo fica anotado no agente do caminho.</summary>
+    protected override async Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        await RecordRejectionAsync(BeaconRejection.WrongAgent);
+    }
+
+    private async Task RecordRejectionAsync(string reason)
+    {
+        try
+        {
+            var store = Context.RequestServices.GetRequiredService<AgentBeaconStore>();
+            await store.TryRecordRejectionAsync(Context.GetRouteValue("agentId") as string, reason, Context.RequestAborted);
+        }
+        catch (OperationCanceledException)
+        {
+            // O PC desistiu da abertura antes de a anotação terminar: não há resposta a proteger.
+        }
     }
 }
 

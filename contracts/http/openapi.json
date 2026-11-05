@@ -116,6 +116,173 @@
         ],
         "type": "object"
       },
+      "AgentBeaconBody": {
+        "properties": {
+          "code": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "n": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "os": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stage": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "v": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "ver": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "v",
+          "stage",
+          "code",
+          "ver",
+          "os",
+          "n",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "AgentBeaconItem": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "code": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "count": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "firstFailAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "os": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rejectReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rejectedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stage": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "stage",
+          "code",
+          "detail",
+          "at",
+          "firstFailAt",
+          "count",
+          "verified",
+          "version",
+          "os",
+          "rejectReason",
+          "rejectedAt"
+        ],
+        "type": "object"
+      },
+      "AgentBeaconsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentBeaconItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "AgentDiagnosticItem": {
         "properties": {
           "agentId": {
@@ -7435,6 +7602,45 @@
         ]
       }
     },
+    "/api/v1/devices/agents/beacons": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBeaconsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "AgentBeaconEndpoints"
+        ]
+      }
+    },
     "/api/v1/devices/agents/diagnostics": {
       "get": {
         "parameters": [
@@ -7891,6 +8097,48 @@
         },
         "tags": [
           "RevokeAgentEndpoint"
+        ]
+      }
+    },
+    "/api/v1/devices/agents/{slug}/beacon": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentBeaconBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "AgentBeaconEndpoints"
         ]
       }
     },
@@ -18324,6 +18572,9 @@
     },
     {
       "name": "AgentDiagnosticsEndpoint"
+    },
+    {
+      "name": "AgentBeaconEndpoints"
     },
     {
       "name": "AgentLogsEndpoint"

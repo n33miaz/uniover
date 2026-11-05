@@ -24,6 +24,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
     public DbSet<AgentDiagnosticEvent> AgentDiagnosticEvents => Set<AgentDiagnosticEvent>();
 
+    public DbSet<AgentBeacon> AgentBeacons => Set<AgentBeacon>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -120,6 +122,22 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             e.HasIndex(x => new { x.AgentId, x.EventId }).IsUnique();
             e.HasIndex(x => new { x.AgentId, x.At });
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AgentBeacon>(e =>
+        {
+            e.ToTable("agent_beacons");
+
+            // Uma linha por agente, sobrescrita a cada baliza: o volume do banco não depende de quanto o PC insiste.
+            e.HasKey(x => x.AgentId);
+            e.Property(x => x.AgentId).ValueGeneratedNever();
+            e.Property(x => x.LastStage).HasMaxLength(AgentBeacon.StageMax);
+            e.Property(x => x.LastCode).HasMaxLength(AgentBeacon.CodeMax);
+            e.Property(x => x.LastDetail).HasMaxLength(AgentBeacon.DetailMax);
+            e.Property(x => x.Version).HasMaxLength(AgentBeacon.VersionMax);
+            e.Property(x => x.Os).HasMaxLength(AgentBeacon.OsMax);
+            e.Property(x => x.LastRejectReason).HasMaxLength(AgentBeacon.ReasonMax);
+            e.HasOne<Agent>().WithOne().HasForeignKey<AgentBeacon>(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PairingAuditEntry>(e =>
