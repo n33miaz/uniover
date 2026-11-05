@@ -132,9 +132,14 @@ public static class AuditPurgeExtensions
     /// Registra a limpeza de um módulo: chama a função <c>schema.function(integer)</c> do banco com
     /// <paramref name="retainDays"/>. A função (criada por migration) é quem decide o que apagar e nunca apaga abaixo do
     /// próprio piso. O serviço em segundo plano é único e atende a todos os módulos.
+    /// <para>
+    /// <paramref name="checkAppendOnly"/>: a autoconferência olha todas as tabelas só-inclusão do schema; um schema com
+    /// duas funções passa <c>false</c> na segunda, para o aviso não sair em dobro.
+    /// </para>
     /// </summary>
     public static IServiceCollection AddAuditPurge<TContext>(
-        this IServiceCollection services, IConfiguration configuration, string schema, string function, int retainDays)
+        this IServiceCollection services, IConfiguration configuration, string schema, string function, int retainDays,
+        bool checkAppendOnly = true)
         where TContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -156,7 +161,11 @@ public static class AuditPurgeExtensions
             async (provider, cancellationToken) =>
             {
                 var db = provider.GetRequiredService<TContext>();
-                await WarnIfNotAppendOnlyAsync(db, schema, provider.GetRequiredService<ILoggerFactory>().CreateLogger("UniOver.Audit"), cancellationToken);
+                if (checkAppendOnly)
+                {
+                    await WarnIfNotAppendOnlyAsync(db, schema, provider.GetRequiredService<ILoggerFactory>().CreateLogger("UniOver.Audit"), cancellationToken);
+                }
+
 #pragma warning disable EF1002 // Só identificadores validados entram no texto; o valor segue como parâmetro.
                 return await db.Database.SqlQueryRaw<long>(sql, retainDays).SingleAsync(cancellationToken);
 #pragma warning restore EF1002

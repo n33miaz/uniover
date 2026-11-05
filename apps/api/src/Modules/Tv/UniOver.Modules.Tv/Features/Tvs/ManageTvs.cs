@@ -58,7 +58,7 @@ internal sealed class ManageTvsHandler(
         return new TvListResponse([.. tvs.Select(ToSummary).Select(tv => isOwner ? tv : tv with { AgentSlug = null })]);
     }
 
-    public async Task<(TvSummary? Tv, string? Error)> CreateAsync(CreateTvRequest request, Guid userId, CancellationToken cancellationToken)
+    public async Task<(TvSummary? Tv, string? Error)> CreateAsync(CreateTvRequest request, TvCommandOrigin origin, CancellationToken cancellationToken)
     {
         var errors = Validate(request.AgentSlug, request.Name, requireAgent: true, out var name);
         if (errors.Count > 0)
@@ -77,8 +77,14 @@ internal sealed class ManageTvsHandler(
             return (null, "agent-in-use");
         }
 
-        var tv = ConfiguredTv.Create(name, listing.Slug, isDefault: false, userId, time.GetUtcNow());
+        var now = time.GetUtcNow();
+        var tv = ConfiguredTv.Create(name, listing.Slug, isDefault: false, origin.UserId, now);
         db.Tvs.Add(tv);
+        // A TV e a trilha usam o mesmo contexto, portanto nenhum dos dois fica sem o outro se a gravação falhar.
+        await audit.RecordAsync(CommandAuditEntry.Create(
+            origin.UserId, tv.AgentSlug, TvCommandNames.Add, AuditDetail(KindFromPresence(tv.AgentSlug) ?? "unknown", tv.AgentSlug), ok: true, errorCode: null,
+            latencyMs: null, origin.Client, now, tv.Id), cancellationToken);
+        // O RecordAsync já grava; o salvamento explícito garante a TV mesmo que o adaptador de trilha mude.
         await db.SaveChangesAsync(cancellationToken);
         return (ToSummary(tv), null);
     }
@@ -194,7 +200,7 @@ internal sealed class ManageTvsHandler(
         return (ToSummary(tv), null);
     }
 
-    public async Task<bool?> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<bool?> DeleteAsync(Guid id, TvCommandOrigin origin, CancellationToken cancellationToken)
     {
         // Filiações e marcas mudam na mesma transação, sob o bloqueio que serializa quem mexe nelas.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -212,10 +218,24 @@ internal sealed class ManageTvsHandler(
         }
 
         var members = await db.TvMembers.Where(m => m.TvId == id).ToListAsync(cancellationToken);
+        // O tipo vem antes de os atalhos (a última pista com o agente fora do ar) serem apagados.
+        var kind = await ResolveKindAsync(tv, cancellationToken);
         await db.TvLayouts.Where(layout => layout.TvId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.Shortcuts.Where(shortcut => shortcut.TvId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.PowerSchedules.Where(schedule => schedule.TvId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.SiriTokens.Where(token => token.TvId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.TvLivre.Where(entry => entry.TvId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.CleanupReports.Where(report => report.TvId == id).ExecuteDeleteAsync(cancellationToken);
         db.TvMembers.RemoveRange(members);
         db.Tvs.Remove(tv);
         await TvMembershipLedger.ReconcileAsync(db, id, [.. members.Select(m => m.UserId)], [], time.GetUtcNow(), cancellationToken);
+        var now = time.GetUtcNow();
+        db.TvRemovalAudit.Add(TvRemovalAuditEntry.Create(id, origin.UserId, tv.AgentSlug, kind, origin.Client, now));
+        // A trilha não tem FK para a TV: fica como evidência mesmo depois de os dados operacionais serem removidos.
+        await audit.RecordAsync(CommandAuditEntry.Create(
+            origin.UserId, tv.AgentSlug, TvCommandNames.Remove, AuditDetail(kind, tv.AgentSlug), ok: true, errorCode: null,
+            latencyMs: null, origin.Client, now, tv.Id), cancellationToken);
+        // Explícito: a remoção, a trilha permanente e a limpeza dos dados da TV só valem juntas, no commit abaixo.
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await PublishUnboundAsync(tv.AgentSlug, cancellationToken);
@@ -367,6 +387,43 @@ internal sealed class ManageTvsHandler(
             tv.PermissionNeeded, tv.AutoMaintenanceEnabled);
     }
 
+    private static string AuditDetail(string kind, string agentSlug) => $"kind={kind} agent={agentSlug}";
+
+    private string? KindFromPresence(string agentSlug)
+    {
+        var info = presence.Get(agentSlug);
+        if (info?.Host?.TvKind is "android" or "samsung")
+        {
+            return info.Host.TvKind;
+        }
+
+        var capabilities = info?.Capabilities;
+        return capabilities?.Contains("tv.kind.android", StringComparer.Ordinal) == true ? "android"
+            : capabilities?.Contains("tv.kind.samsung", StringComparer.Ordinal) == true ? "samsung"
+            : null;
+    }
+
+    /// <summary>
+    /// O tipo da TV para a trilha: o que o agente declara; com o agente fora do ar, o que os atalhos da própria TV
+    /// indicam (pacote <c>samsung.app.*</c> só existe na Samsung); sem nenhuma pista, <c>unknown</c>.
+    /// </summary>
+    private async Task<string> ResolveKindAsync(ConfiguredTv tv, CancellationToken cancellationToken)
+    {
+        if (KindFromPresence(tv.AgentSlug) is { } declared)
+        {
+            return declared;
+        }
+
+        var packages = await db.Shortcuts.AsNoTracking().Where(s => s.TvId == tv.Id).Select(s => s.Package).Take(50).ToListAsync(cancellationToken);
+        if (packages.Count == 0)
+        {
+            return "unknown";
+        }
+
+        var samsung = packages.Count(p => p.StartsWith("samsung.app.", StringComparison.Ordinal));
+        return samsung == packages.Count ? "samsung" : samsung == 0 ? "android" : "unknown";
+    }
+
     private static Dictionary<string, string[]> Validate(string? agentSlug, string? name, bool requireAgent, out string? normalizedName)
     {
         var errors = BindAgentValidator.ValidateName(name, out normalizedName);
@@ -402,10 +459,10 @@ internal static class ManageTvsEndpoint
         return TypedResults.Ok(await handler.ListAsync(visible, isOwner, ct));
     }
 
-    private static async Task<IResult> CreateAsync(CreateTvRequest? request, ICurrentUser current, ManageTvsHandler handler, CancellationToken ct)
+    private static async Task<IResult> CreateAsync(CreateTvRequest? request, ICurrentUser current, HttpContext http, ManageTvsHandler handler, CancellationToken ct)
     {
-        if (current.UserId is not { } userId || request is null) return TvProblems.Unauthenticated();
-        var (tv, error) = await handler.CreateAsync(request, userId, ct);
+        if (request is null || TvHttp.OriginOf(current, http) is not { } origin) return TvProblems.Unauthenticated();
+        var (tv, error) = await handler.CreateAsync(request, origin, ct);
         return Result(tv, error);
     }
 
@@ -416,9 +473,10 @@ internal static class ManageTvsEndpoint
         return Result(tv, error);
     }
 
-    private static async Task<IResult> DeleteAsync(Guid id, ManageTvsHandler handler, CancellationToken ct)
+    private static async Task<IResult> DeleteAsync(Guid id, ICurrentUser current, HttpContext http, ManageTvsHandler handler, CancellationToken ct)
     {
-        var deleted = await handler.DeleteAsync(id, ct);
+        if (TvHttp.OriginOf(current, http) is not { } origin) return TvProblems.Unauthenticated();
+        var deleted = await handler.DeleteAsync(id, origin, ct);
         return deleted switch
         {
             null => TypedResults.NotFound(),

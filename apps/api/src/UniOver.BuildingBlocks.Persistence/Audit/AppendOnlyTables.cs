@@ -23,7 +23,7 @@ public static class AppendOnlyTables
         {
             ["identity"] = ["login_audit"],
             ["devices"] = ["pairing_audit"],
-            ["tv"] = ["command_audit"],
+            ["tv"] = ["command_audit", "tv_removal_audit"],
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>Todas as tabelas só-inclusão, por schema.</summary>

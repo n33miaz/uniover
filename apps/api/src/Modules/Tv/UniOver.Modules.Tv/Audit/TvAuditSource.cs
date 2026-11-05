@@ -10,9 +10,11 @@ internal static class TvAuditNormalizer
 {
     public const string Module = "tv";
 
-    /// <summary>Todo comando que a trilha de comandos registra, na ordem em que a tela os lista.</summary>
+    /// <summary>Toda ação da trilha da TV, na ordem em que a tela as lista.</summary>
     public static IReadOnlyList<string> Actions { get; } =
     [
+        TvCommandNames.Add,
+        TvCommandNames.Remove,
         TvCommandNames.Key,
         TvCommandNames.Text,
         TvCommandNames.AppLaunch,
@@ -61,9 +63,27 @@ internal static class TvAuditNormalizer
             entry.Ip,
             entry.UserAgent);
     }
+
+    public static AuditRecord Normalize(TvRemovalAuditEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return new AuditRecord(
+            entry.Id,
+            entry.OccurredAt,
+            Module,
+            TvCommandNames.Remove,
+            entry.UserId,
+            $"kind={entry.Kind} agent={entry.AgentId}",
+            null,
+            AuditOutcome.Success,
+            null,
+            entry.Ip,
+            entry.UserAgent);
+    }
 }
 
-/// <summary>Lê <c>command_audit</c> como uma fonte da trilha unificada: só leitura, com o papel da aplicação.</summary>
+/// <summary>Lê os comandos e as remoções permanentes como uma única fonte da trilha unificada, só com o papel da aplicação.</summary>
 internal sealed class TvAuditSource(TvDbContext db) : IAuditSource
 {
     public AuditSourceInfo Info { get; } = new(
@@ -73,58 +93,79 @@ internal sealed class TvAuditSource(TvDbContext db) : IAuditSource
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        IQueryable<CommandAuditEntry> rows = db.CommandAudit.AsNoTracking();
+        IQueryable<CommandAuditEntry> commandRows = db.CommandAudit.AsNoTracking()
+            .Where(r => r.Command != TvCommandNames.Remove);
+        IQueryable<TvRemovalAuditEntry> removalRows = db.TvRemovalAudit.AsNoTracking();
 
         if (query.From is { } from)
         {
-            rows = rows.Where(r => r.OccurredAt >= from);
+            commandRows = commandRows.Where(r => r.OccurredAt >= from);
+            removalRows = removalRows.Where(r => r.OccurredAt >= from);
         }
 
         if (query.To is { } to)
         {
-            rows = rows.Where(r => r.OccurredAt < to);
+            commandRows = commandRows.Where(r => r.OccurredAt < to);
+            removalRows = removalRows.Where(r => r.OccurredAt < to);
         }
 
         if (query.Actions is { Count: > 0 } actions)
         {
             var wanted = actions.ToArray();
-            rows = rows.Where(r => wanted.Contains(r.Command));
+            commandRows = commandRows.Where(r => wanted.Contains(r.Command));
+            removalRows = wanted.Contains(TvCommandNames.Remove)
+                ? removalRows
+                : removalRows.Where(_ => false);
         }
 
         // Comando só tem dois resultados: a TV executou ou não. "Recusado por regra" não existe nesta trilha.
         if (query.Outcome is { } outcome)
         {
-            rows = outcome switch
+            commandRows = outcome switch
             {
-                AuditOutcome.Success => rows.Where(r => r.Ok),
-                AuditOutcome.Failure => rows.Where(r => !r.Ok),
-                _ => rows.Where(r => false),
+                AuditOutcome.Success => commandRows.Where(r => r.Ok),
+                AuditOutcome.Failure => commandRows.Where(r => !r.Ok),
+                _ => commandRows.Where(r => false),
             };
+            removalRows = outcome == AuditOutcome.Success ? removalRows : removalRows.Where(_ => false);
         }
 
         if (query.PersonId is { } person)
         {
-            rows = rows.Where(r => r.UserId == person);
+            commandRows = commandRows.Where(r => r.UserId == person);
+            removalRows = removalRows.Where(r => r.UserId == person);
         }
 
         if (query.After is { } cursor)
         {
             var at = cursor.OccurredAt;
             var id = cursor.Id;
-            rows = cursor.TieFor(TvAuditNormalizer.Module) switch
+            commandRows = cursor.TieFor(TvAuditNormalizer.Module) switch
             {
-                AuditTie.SameSource => rows.Where(r => r.OccurredAt < at || (r.OccurredAt == at && r.Id.CompareTo(id) < 0)),
-                AuditTie.IncludeSameInstant => rows.Where(r => r.OccurredAt <= at),
-                _ => rows.Where(r => r.OccurredAt < at),
+                AuditTie.SameSource => commandRows.Where(r => r.OccurredAt < at || (r.OccurredAt == at && r.Id.CompareTo(id) < 0)),
+                AuditTie.IncludeSameInstant => commandRows.Where(r => r.OccurredAt <= at),
+                _ => commandRows.Where(r => r.OccurredAt < at),
+            };
+            removalRows = cursor.TieFor(TvAuditNormalizer.Module) switch
+            {
+                AuditTie.SameSource => removalRows.Where(r => r.OccurredAt < at || (r.OccurredAt == at && r.Id.CompareTo(id) < 0)),
+                AuditTie.IncludeSameInstant => removalRows.Where(r => r.OccurredAt <= at),
+                _ => removalRows.Where(r => r.OccurredAt < at),
             };
         }
 
-        var found = await rows
+        var commands = await commandRows
+            .OrderByDescending(r => r.OccurredAt)
+            .ThenByDescending(r => r.Id)
+            .Take(query.Limit)
+            .ToListAsync(cancellationToken);
+        var removals = await removalRows
             .OrderByDescending(r => r.OccurredAt)
             .ThenByDescending(r => r.Id)
             .Take(query.Limit)
             .ToListAsync(cancellationToken);
 
-        return [.. found.Select(TvAuditNormalizer.Normalize)];
+        return [.. commands.Select(TvAuditNormalizer.Normalize).Concat(removals.Select(TvAuditNormalizer.Normalize))
+            .OrderByDescending(r => r.OccurredAt).ThenByDescending(r => r.Id).Take(query.Limit)];
     }
 }
