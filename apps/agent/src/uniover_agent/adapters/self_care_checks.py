@@ -42,6 +42,8 @@ TIGHT_DISK_BYTES: Final = 1024 * 1024 * 1024
 # prazo), e o lançador reinicia o que passa de 15 min mudo. Este é o reforço, para o lançador
 # morto ou antigo: passados 20 min o supervisor é dado por travado aqui também.
 SUPERVISOR_SILENCE_SECONDS: Final = 20 * 60.0
+# Antes de dar o supervisor por mudo, confere de novo depois deste tempo (ver `supervisor_check`).
+RECHECK_SECONDS: Final = 20.0
 # Quanto tempo desconectado antes de olhar a API, e entre dois reinícios pedidos pelo auto-reparo.
 CONNECTION_GRACE_SECONDS: Final = 10 * 60.0
 RESTART_SPACING_SECONDS: Final = 3 * 3600.0
@@ -292,13 +294,14 @@ def kill_wedged_supervisor(runner: Path) -> bool:
     return "killed" in done.stdout
 
 
-def supervisor_check(
+def supervisor_check(  # noqa: PLR0913 - dependências injetadas deixam o teste sem relógio nem Agendador
     runtime: Path,
     *,
     name: str = TASK_NAME,
     now: Callable[[], float] = time.time,
     start_task: Callable[[str], bool] | None = None,
     kill_supervisor: Callable[[], bool] | None = None,
+    recheck: float = RECHECK_SECONDS,
 ) -> Check:
     """O supervisor (script do Windows) deu sinal de vida há pouco? Sem ele, ninguém reinicia."""
     alive = runtime / "supervisor-alive"
@@ -314,9 +317,17 @@ def supervisor_check(
     do_start = start_task or launch
     do_kill = kill_supervisor or (lambda: kill_wedged_supervisor(runner))
 
+    def age_of_signal() -> float:
+        return now() - alive.stat().st_mtime
+
     async def run() -> CheckResult:
         try:
-            age = now() - alive.stat().st_mtime
+            age = age_of_signal()
+            if age > SUPERVISOR_SILENCE_SECONDS:
+                # Logo depois de o PC acordar de uma suspensão longa o sinal parece velho de horas
+                # (o supervisor dormiu junto e ainda não renovou): dá-lhe um instante antes de agir.
+                await asyncio.sleep(recheck)
+                age = age_of_signal()
         except OSError:
             return CheckResult(False, "o supervisor nunca deu sinal de vida", fixable=True)
         if age > SUPERVISOR_SILENCE_SECONDS:
