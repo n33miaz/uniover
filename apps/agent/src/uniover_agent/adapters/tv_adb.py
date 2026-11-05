@@ -236,6 +236,23 @@ class AdbTv:
         except AdbError as exc:
             _log.debug("adb disconnect não confirmou: %s", exc.message)
 
+    async def read_authorization(self) -> str:
+        """Lê, na conexão que já existe, se a TV autorizou este PC (nunca abre conexão nova).
+
+        `authorized` (e o canal fica pronto), `unauthorized` (o aviso segue na tela da TV) ou
+        `unknown` (o servidor do `adb` já não conhece a TV: ler de novo exigiria reconectar, e uma
+        conexão nova faz a TV mostrar o aviso outra vez).
+        """
+        async with self._lock:
+            output = await self._exec("-s", self._serial, "get-state")
+            state = parse_device_state(output.text)
+            if state is DeviceState.DEVICE:
+                self._blocked_error = None
+                self._timeout_streak = 0
+                self._connected = True
+                return "authorized"
+            return "unauthorized" if state is DeviceState.UNAUTHORIZED else "unknown"
+
     async def _connect_locked(self) -> None:
         self._connected = False
         try:
@@ -245,10 +262,9 @@ class AdbTv:
             if not parse_connect(joined.text):
                 raise AdbUnreachable("a TV não respondeu pelo ADB")
             state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
-            if (
-                state in (DeviceState.OFFLINE, DeviceState.UNAUTHORIZED)
-                and "already connected" in joined.text
-            ):
+            # Só `offline` pede refazer a conexão. Com `unauthorized`, uma conexão nova faria a TV
+            # mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido.
+            if state is DeviceState.OFFLINE and "already connected" in joined.text:
                 await self._exec("disconnect", self._serial)
                 joined = await self._exec("connect", self._serial)
                 if connect_was_refused_for_auth(joined.text):
@@ -289,6 +305,13 @@ class AdbTv:
         if self._connected:
             return
         if self._blocked_error is not None and self._monotonic() < self._blocked_until:
+            if isinstance(self._blocked_error, AdbUnauthorized):
+                # O dono pode ter aceitado o aviso agora: conferir o estado não abre conexão.
+                state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+                if state is DeviceState.DEVICE:
+                    self._blocked_error = None
+                    self._connected = True
+                    return
             raise type(self._blocked_error)(self._blocked_error.message)
         await self._connect_locked()
 

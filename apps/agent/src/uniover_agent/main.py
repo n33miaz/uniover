@@ -3,6 +3,7 @@
 
 import argparse
 import asyncio
+import itertools
 import logging
 import os
 import platform
@@ -224,6 +225,8 @@ EXIT_TV_MOVED = 4
 ARP_LEARN_SECONDS = 600.0
 # Portas do serviço do controle remoto da Android TV: só se dá por de pé com as duas abertas.
 REMOTE_SERVICE_PORTS = (ANDROID_REMOTE_PORT, 6467)
+# Múltiplos da espera base para reler a autorização do ADB: 5, 10, 30 e 60 min (o último se repete).
+RECHECK_FACTORS = (1, 2, 6, 12)
 
 _NOT_PAIRED = "não pareado. Rode `uniover-agent pair` para parear este PC."
 
@@ -871,27 +874,32 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         declare_adb_capabilities()
 
     async def recheck_authorization() -> None:
-        # Laço de vida longa (não termina): dorme até a partida ver o ADB sem autorização, e então
-        # tenta de novo a cada `tv_adb_recheck_seconds`, só se o controle da TV está de pé (TV
-        # ligada), para não acordar uma TV em standby à toa. Sem endereço no registro.
+        # Laço de vida longa (não termina): dorme até a partida ver o ADB sem autorização. Então só
+        # relê o estado na conexão que já existe (nunca conecta de novo: uma conexão nova faz a TV
+        # mostrar o aviso "Permitir depuração USB" outra vez), com espera crescente (5, 10, 30 e
+        # 60 min, que se mantém). Para quando fica sabido: aceito (declara) ou a TV já nem consta
+        # no servidor do `adb` (recusado: só reiniciar o agente ou o ADB volta a perguntar).
         while True:
             await awaiting_authorization.wait()
-            await clock.sleep(settings.tv_adb_recheck_seconds)
-            if "tv.adb" in setup.capabilities:
-                awaiting_authorization.clear()
-                continue
-            if await tcp_probe(host, ANDROID_REMOTE_PORT, wait=REFUSAL_WAIT_SECONDS) is not (
-                PortState.OPEN
-            ):
-                continue
-            try:
-                await adb.connect()
-            except AdbError as exc:
-                _log.debug("ADB ainda não autorizado ou sem resposta (%s)", exc.code)
-                continue
-            declare_adb_capabilities()
+            for attempt in itertools.count():
+                await clock.sleep(
+                    settings.tv_adb_recheck_seconds * RECHECK_FACTORS[min(attempt, 3)]
+                )
+                if "tv.adb" in setup.capabilities:
+                    break
+                try:
+                    state = await adb.read_authorization()
+                except AdbError as exc:
+                    _log.debug("ADB sem leitura de autorização agora (%s)", exc.code)
+                    continue
+                if state == "authorized":
+                    declare_adb_capabilities()
+                    _log.info("a TV autorizou este PC no ADB: funções avançadas liberadas")
+                    break
+                if state == "unknown":
+                    _log.info("a TV não consta mais no ADB deste PC; reinicie o agente para tentar")
+                    break
             awaiting_authorization.clear()
-            _log.info("a TV autorizou este PC no ADB: funções avançadas liberadas")
 
     setup.prepare.append(declare_when_usable)
     setup.background.append(recheck_authorization)
