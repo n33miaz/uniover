@@ -52,7 +52,7 @@ describe('BodyPage painel de sinais', () => {
     // O mapa fica dentro do Corpo; não há atalho para uma tela só do mapa.
     expect(panel.querySelector('app-body-map-panel h2')?.textContent).toContain('Mapa do Corpo');
     expect(panel.querySelector('a[href="/treino/exercicios/mapa"]')).toBeNull();
-    expect(panel.querySelector('.primary-action')?.textContent).toContain('Registrar Peso');
+    expect(panel.querySelector('button.ui-btn.block')?.textContent).toContain('Registrar Peso');
   });
 
   it('deixa o texto visível como nome acessível dos cartões de sinal', async () => {
