@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.42.8](https://github.com/n33miaz/uniover/compare/v0.42.7...v0.42.8) (2026-11-05)
+
+
+### Performance Improvements
+
+* **training:** run one query for catalog pages
+* **web:** pull the catalog in a single page
+* **web:** wait per resource in the first pull
+
 ## [0.42.7](https://github.com/n33miaz/uniover/compare/v0.42.6...v0.42.7) (2026-11-05)
 
 
