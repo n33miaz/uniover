@@ -1,7 +1,6 @@
 """Montagem da TV (Android TV e Samsung), pareamento e varredura da rede."""
 
 import asyncio
-import itertools
 import logging
 import re
 import sys
@@ -107,7 +106,6 @@ from uniover_agent.core.tv.livre import (
 )
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY, TvPairing
 from uniover_agent.ports import (
-    AdbError,
     AdbUnauthorized,
     Clock,
     SecretStore,
@@ -119,7 +117,6 @@ _log = logging.getLogger("uniover_agent")
 # Portas do serviço do controle remoto da Android TV: só se dá por de pé com as duas abertas.
 REMOTE_SERVICE_PORTS = (ANDROID_REMOTE_PORT, 6467)
 # Múltiplos da espera base para reler a autorização do ADB: 5, 10, 30 e 60 min (o último se repete).
-RECHECK_FACTORS = (1, 2, 6, 12)
 
 
 @dataclass(slots=True)
@@ -699,9 +696,6 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     setup.after_hello.append(announcer.after_hello)
     setup.background.append(announcer.run)
 
-    # Preenchido quando o ADB não autoriza este PC na partida: acorda a reavaliação periódica.
-    awaiting_authorization = asyncio.Event()
-
     def declare_adb_capabilities() -> None:
         if "tv.adb" in setup.capabilities:
             return
@@ -717,10 +711,11 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             hook()
 
     async def declare_when_usable() -> None:
-        # `tv.adb` só vai ao `hello` se o ADB não está sabidamente quebrado. TV desligada agora
-        # (sem resposta) não conta: é o normal de manhã e o ADB serve quando ela ligar. Já "a TV
-        # não autorizou este PC" não se resolve sozinho na partida: não anuncia, avisa o dono e
-        # reavalia de tempos em tempos, para o aceite na tela da TV valer sem reiniciar o agente.
+        # `tv.adb` vai ao `hello` sempre que há `adb` neste PC, mesmo sem a permissão da TV: o app
+        # só mostra "Atualizar lista" (o único toque que pede a permissão) a quem tem a
+        # capacidade, e sem ela o dono nunca teria como dar o primeiro aceite. Nada fica exposto:
+        # toda rota automática por trás dela passa pela trava e só lê o estado. A partida apenas
+        # confere: com a permissão provada conecta; sem ela, nunca abre o aviso sozinha.
         try:
             await adb.connect()
         except AdbUnauthorized:
@@ -729,42 +724,9 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
                 "app e aceite o aviso na TV, marcando Sempre permitir neste computador. Nenhum "
                 "aviso é aberto sozinho; a lista de apps fica desligada até lá"
             )
-            awaiting_authorization.set()
-            return
         except Exception as exc:
             _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
         declare_adb_capabilities()
-
-    async def recheck_authorization() -> None:
-        # Laço de vida longa (não termina): dorme até a partida ver o ADB sem autorização. Então só
-        # relê o estado na conexão que já existe (nunca conecta de novo: uma conexão nova faz a TV
-        # mostrar o aviso "Permitir depuração USB" outra vez), com espera crescente (5, 10, 30 e
-        # 60 min, que se mantém). Para quando fica sabido: aceito (declara) ou a TV já nem consta
-        # no servidor do `adb` (recusado: só reiniciar o agente ou o ADB volta a perguntar).
-        while True:
-            await awaiting_authorization.wait()
-            for attempt in itertools.count():
-                await clock.sleep(
-                    settings.tv_adb_recheck_seconds * RECHECK_FACTORS[min(attempt, 3)]
-                )
-                if "tv.adb" in setup.capabilities:
-                    break
-                try:
-                    state = await adb.read_authorization()
-                except AdbError as exc:
-                    _log.debug("ADB sem leitura de autorização agora (%s)", exc.code)
-                    continue
-                if state == "authorized":
-                    declare_adb_capabilities()
-                    _log.info("a TV autorizou este PC no ADB: funções avançadas liberadas")
-                    break
-                if state == "unknown":
-                    _log.info(
-                        "a TV não consta no ADB deste PC; a permissão só é pedida pelo app "
-                        "(Atualizar lista), nunca sozinha"
-                    )
-                    break
-            awaiting_authorization.clear()
 
     async def keep_authorization_fresh() -> None:
         # O Android 11+ revoga a permissão do ADB sem uso por 7 dias. Um contato autorizado por dia
@@ -777,13 +739,8 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             outcome = await adb.keep_authorization_fresh()
             _log.debug("contato periódico com o ADB da TV: %s", outcome)
 
-    # Quem declara a capacidade também vale para a permissão dada por um pedido da pessoa (a partida
-    # pode ter ficado sem ela), e uma recusa nova põe a reavaliação em espera de novo.
-    adb.on_authorized(declare_adb_capabilities)
-    adb.on_unauthorized(awaiting_authorization.set)
     setup.prepare.append(declare_when_usable)
     setup.background.append(keep_authorization_fresh)
-    setup.background.append(recheck_authorization)
     compose_livre(setup, settings, adb, host, clock)
     return adb
 

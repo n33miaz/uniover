@@ -52,7 +52,6 @@ _NONE: Final = ""
 _STATES: Final = frozenset({_NONE, GRANTED, VERIFIED, NEEDS_USER})
 _PEM_BEGIN: Final = b"-----BEGIN"
 _PEM_END: Final = b"-----END"
-_MIN_KEY_BYTES: Final = 64
 MAC_PROBE_SECONDS: Final = 1.5
 
 
@@ -61,15 +60,29 @@ def default_android_dir() -> Path:
     return Path.home() / ".android"
 
 
-def is_valid_key(data: bytes) -> bool:
-    """O conteúdo parece uma chave privada inteira (PEM com começo e fim)? Truncada não vale."""
-    text = data.strip()
-    return len(text) >= _MIN_KEY_BYTES and text.startswith(_PEM_BEGIN) and _PEM_END in text
+KEY_VALID: Final = "valid"
+KEY_BROKEN: Final = "broken"
+KEY_UNKNOWN: Final = "unknown"
+_BOM: Final = b"\xef\xbb\xbf"
+
+
+def classify_key(data: bytes) -> str:
+    """`valid` (PEM inteiro), `broken` (vazia ou truncada: começa e não termina) ou `unknown`.
+
+    Só a `broken` pode ser posta de lado e substituída pela cópia. A `unknown` (outro formato, algo
+    que este código não reconhece) é do usuário: não se toca nela nem se registra nada em nome dela.
+    """
+    text = data.lstrip(_BOM + b" \t\r\n")
+    if not text.strip():
+        return KEY_BROKEN
+    if text.startswith(_PEM_BEGIN):
+        return KEY_VALID if _PEM_END in text else KEY_BROKEN
+    return KEY_UNKNOWN
 
 
 def key_fingerprint(data: bytes) -> str | None:
-    """Resumo curto de uma chave válida; `None` para vazia, truncada ou que não é chave."""
-    if not is_valid_key(data):
+    """Resumo curto de uma chave válida; `None` para vazia, truncada ou de formato desconhecido."""
+    if classify_key(data) != KEY_VALID:
         return None
     return hashlib.sha256(data).hexdigest()[:FINGERPRINT_LENGTH]
 
@@ -141,8 +154,12 @@ class AdbKeys:
         Prefere a cópia da chave registrada. Uma chave **válida** nunca é tocada; uma inválida
         (truncada) é posta de lado (`adbkey.invalido`) antes de a cópia voltar.
         """
-        if self.fingerprint() is not None:
+        try:
+            current = self.key_path.read_bytes() if self.key_path.exists() else b""
+        except OSError:
             return False
+        if classify_key(current) != KEY_BROKEN:
+            return False  # válida, ou de um formato que não é nosso: não se toca
         candidates = self.backups()
         if not candidates:
             return False
@@ -288,6 +305,10 @@ class AdbAuthorization:
             # deu a permissão, e a cópia guardada seria a chave errada.
             _log.info("a chave do ADB mudou durante o pedido; a permissão não foi registrada")
             return False
+        if not mac:
+            _log.warning(
+                "a TV não tem MAC na tabela ARP agora; a permissão não vai liberar conexão sozinha"
+            )
         record = self._record
         same_tv = (
             record.fingerprint == snapshot
