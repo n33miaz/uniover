@@ -74,7 +74,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.Ip).HasMaxLength(CommandAuditEntry.IpMax);
             e.Property(x => x.UserAgent).HasMaxLength(CommandAuditEntry.UserAgentMax);
             e.HasIndex(x => x.OccurredAt);
-            e.HasIndex(x => x.UserId);
+            // O histórico por pessoa filtra por quem removeu e ordena por data; o índice só de usuário ficou redundante.
+            e.HasIndex(x => new { x.UserId, x.OccurredAt });
         });
 
         modelBuilder.Entity<Shortcut>(e =>

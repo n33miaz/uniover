@@ -309,8 +309,8 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.HasIndex("OccurredAt")
                         .HasDatabaseName("ix_tv_removal_audit_occurred_at");
 
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("ix_tv_removal_audit_user_id");
+                    b.HasIndex("UserId", "OccurredAt")
+                        .HasDatabaseName("ix_tv_removal_audit_user_id_occurred_at");
 
                     b.ToTable("tv_removal_audit", "tv");
                 });
