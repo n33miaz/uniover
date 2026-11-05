@@ -71,6 +71,8 @@ export const TV_TEXT_MAX = 200;
  */
 /** Quanto tempo o "+1 / -1" do volume sem leitura fica na pílula depois do último toque. */
 const VOLUME_NUDGE_MS = 2500;
+// O vigia do agente tem 4 min para religar o controle; o aviso dura um pouco mais que isso.
+const REPAIR_NOTE_MAX_MS = 5 * 60_000;
 const CACHE_KEY = 'uniover.tv.last-state';
 /**
  * Os ícones dos apps ficam numa chave só deles (também por conta, `tvIconsCacheKey`; a de antes só se descarta): cada um
@@ -359,7 +361,7 @@ export class TvStore {
       return $localize`:@@tv.watchdog.failed:reparo do controle falhou às ${time}:time:`;
     }
     if (entry.kind === 'repair_started') {
-      return $localize`:@@tv.watchdog.repairing:Religando o controle da TV (cerca de 1 min)`;
+      return $localize`:@@tv.watchdog.repairing:Religando o controle da TV (pode levar alguns minutos)`;
     }
     return null;
   });
@@ -983,7 +985,7 @@ export class TvStore {
     this.watchdogTimer = setTimeout(() => {
       if (this._watchdog()?.kind === 'repair_started') this._watchdog.set(null);
       this.watchdogTimer = undefined;
-    }, 3 * 60_000);
+    }, REPAIR_NOTE_MAX_MS);
   }
 
   private onEvent(event: StreamEvent): void {
