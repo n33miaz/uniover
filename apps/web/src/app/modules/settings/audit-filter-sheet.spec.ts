@@ -5,13 +5,24 @@ import { AuditFilter, AuditPerson, AuditSources, EMPTY_FILTER } from './audit-mo
 const SOURCES: AuditSources = {
   outcomes: ['success', 'failure', 'denied'],
   sources: [
-    { module: 'devices', retentionDays: 180, actions: ['pairing_approved', 'agent_revoked'] },
+    {
+      module: 'devices',
+      retentionDays: 180,
+      actions: ['pairing_approved', 'agent_revoked'],
+      permanentActions: [],
+    },
     {
       module: 'identity',
       retentionDays: 180,
       actions: ['login_succeeded', 'login_failed', 'novo'],
+      permanentActions: [],
     },
-    { module: 'tv', retentionDays: 30, actions: ['tv.key', 'tv.power-off'] },
+    {
+      module: 'tv',
+      retentionDays: 30,
+      actions: ['tv.key', 'tv.power-off'],
+      permanentActions: ['tv.remove'],
+    },
   ],
 };
 const PEOPLE: readonly AuditPerson[] = [

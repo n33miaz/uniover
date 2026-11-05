@@ -42,8 +42,11 @@ internal sealed record AuditItem(
 /// <param name="NextCursor">Passe em <c>cursor</c> para a página seguinte; nulo na última.</param>
 internal sealed record AuditPage(IReadOnlyList<AuditItem> Items, string? NextCursor);
 
-/// <summary>Uma fonte da trilha: o módulo, quantos dias guarda e os códigos de ação que pode registrar.</summary>
-internal sealed record AuditSourceSummary(string Module, int RetentionDays, IReadOnlyList<string> Actions);
+/// <summary>
+/// Uma fonte da trilha: o módulo, quantos dias guarda, os códigos de ação que pode registrar e quais deles ficam sem prazo.
+/// </summary>
+internal sealed record AuditSourceSummary(
+    string Module, int RetentionDays, IReadOnlyList<string> Actions, IReadOnlyList<string> PermanentActions);
 
 /// <summary>As fontes e os resultados possíveis: o que a tela precisa para montar os filtros sem repetir listas.</summary>
 internal sealed record AuditSourcesResponse(IReadOnlyList<AuditSourceSummary> Sources, IReadOnlyList<string> Outcomes);
@@ -66,7 +69,7 @@ internal sealed class AuditReader(IEnumerable<IAuditSource> sources, IdentityDbC
         [.. sources
             .Select(s => s.Info)
             .OrderBy(i => i.Module, StringComparer.Ordinal)
-            .Select(i => new AuditSourceSummary(i.Module, i.RetentionDays, i.Actions))],
+            .Select(i => new AuditSourceSummary(i.Module, i.RetentionDays, i.Actions, i.PermanentActions ?? []))],
         AuditOutcomes.All);
 
     /// <summary>Os nomes de fonte aceitos no filtro <c>module</c>.</summary>

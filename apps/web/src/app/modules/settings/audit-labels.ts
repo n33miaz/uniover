@@ -455,8 +455,9 @@ function daysText(days: number): string {
 
 /**
  * "Guardamos por N dias", numa frase só quando todas as trilhas em vista guardam o mesmo tempo; quando diferem (os
- * comandos da TV duram menos), a exceção vem entre parênteses. `modules` vazio = todas as trilhas. `null` se não há prazo
- * a dizer.
+ * comandos da TV duram menos), a exceção vem entre parênteses. O que a trilha guarda sem prazo (a remoção de uma TV)
+ * também vem como exceção, para a frase nunca prometer menos do que acontece. `modules` vazio = todas as trilhas.
+ * `null` se não há prazo a dizer.
  */
 export function retentionText(
   sources: AuditSources | null,
@@ -475,16 +476,18 @@ export function retentionText(
     byDays.set(days, [...(byDays.get(days) ?? []), moduleLabel(source.module)]);
   }
   if (byDays.size === 0) return null;
-  if (byDays.size === 1) {
-    const [days] = [...byDays.keys()];
-    return $localize`:@@settings.audit.retention.one:Guardamos por ${daysText(days)}:days:`;
-  }
 
   // O prazo mais longo é o geral; o que guarda menos (os comandos da TV) vem entre parênteses, com o nome da trilha.
   const [[longest], ...shorter] = [...byDays.entries()].sort(([a], [b]) => b - a);
-  const exceptions = shorter
-    .map(([days, labels]) => `${labels.join(', ')}: ${daysText(days)}`)
-    .join('; ');
+  const forever = $localize`:@@settings.audit.retention.forever:sem prazo`;
+  const permanent = new Set(visible.flatMap((source) => source.permanentActions ?? []));
+  const exceptions = [
+    ...shorter.map(([days, labels]) => `${labels.join(', ')}: ${daysText(days)}`),
+    ...[...permanent].map((code) => `${auditActionLabel(code)}: ${forever}`),
+  ].join('; ');
+  if (exceptions === '') {
+    return $localize`:@@settings.audit.retention.one:Guardamos por ${daysText(longest)}:days:`;
+  }
   return $localize`:@@settings.audit.retention.many:Guardamos por ${daysText(longest)}:days: (${exceptions}:exceptions:)`;
 }
 

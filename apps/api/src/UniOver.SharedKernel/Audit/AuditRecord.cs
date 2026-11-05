@@ -83,7 +83,12 @@ public sealed record AuditRecord(
 /// <summary>O que um módulo diz de si para o agregador: o nome, por quanto tempo guarda e quais ações pode registrar.</summary>
 /// <param name="RetentionDays">O prazo de retenção em dias (a tela e o aviso de privacidade o mostram).</param>
 /// <param name="Actions">Todos os códigos de ação que a fonte pode devolver, em ordem.</param>
-public sealed record AuditSourceInfo(string Module, int RetentionDays, IReadOnlyList<string> Actions);
+/// <param name="PermanentActions">
+/// As ações que a fonte guarda sem prazo (quem, quando e o quê), mesmo que o resto dure <paramref name="RetentionDays"/>.
+/// Vazio quando tudo segue o prazo. O IP e o aparelho dessas linhas seguem o prazo das trilhas de segurança, não este.
+/// </param>
+public sealed record AuditSourceInfo(
+    string Module, int RetentionDays, IReadOnlyList<string> Actions, IReadOnlyList<string>? PermanentActions = null);
 
 /// <summary>
 /// Um filtro de leitura. Todos os campos são opcionais e se combinam com E. O intervalo é semiaberto: <c>From</c> inclui,

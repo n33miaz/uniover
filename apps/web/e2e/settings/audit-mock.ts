@@ -43,6 +43,7 @@ const SOURCES = {
       module: 'devices',
       retentionDays: 180,
       actions: ['pairing_started', 'pairing_approved', 'pairing_denied', 'agent_revoked'],
+      permanentActions: [],
     },
     {
       module: 'identity',
@@ -56,11 +57,13 @@ const SOURCES = {
         'guest_invite_created',
         'audit_exported',
       ],
+      permanentActions: [],
     },
     {
       module: 'tv',
       retentionDays: 30,
       actions: ['tv.key', 'tv.text', 'tv.app.launch', 'tv.power-off', 'tv.wake'],
+      permanentActions: ['tv.remove'],
     },
   ],
 };
