@@ -4,11 +4,10 @@ import type { FakeAccountScope } from '../../../core/offline-queue/queue-test-ki
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { RoutineRepository } from '../data/routines/routine-repository';
-import { TrainingSync } from '../data/sync/training-sync';
+import { FIRST_PULL_WAIT_MS, TrainingSync } from '../data/sync/training-sync';
 import { exerciseDto, localExercise, setupTraining } from '../data/sync/training-test-kit';
 import { eventually, item, saveRoutine } from '../shell/screen-test-kit';
 import { TodayPage } from './today.page';
-import { FIRST_PULL_WAIT_MS } from './today-store';
 
 const EMPTY = 'Sem Rotinas Ainda';
 
