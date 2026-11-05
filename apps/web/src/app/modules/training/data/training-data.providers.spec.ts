@@ -101,8 +101,8 @@ describe('provideTrainingData', () => {
 });
 
 describe('catalog pull, end to end', () => {
-  // 200 é o tamanho de página padrão: duas páginas de verdade, a segunda incompleta.
-  const firstPage = Array.from({ length: 200 }, (_, i) =>
+  // 500 é o tamanho de página do catálogo (o máximo do servidor): duas páginas de verdade, a segunda incompleta.
+  const firstPage = Array.from({ length: 500 }, (_, i) =>
     exerciseDto(`ex-${String(i).padStart(3, '0')}`, {
       name: `Exercício ${i}`,
       updatedAt: `2026-10-01T10:00:${String(i % 60).padStart(2, '0')}Z`,
@@ -125,12 +125,12 @@ describe('catalog pull, end to end', () => {
     await TestBed.inject(TrainingSync).start();
 
     expect(t.pull.calls).toEqual([
-      { accountId: 'conta-teste', path: '/api/v1/training/exercises', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/exercises', after: null, limit: 500 },
       {
         accountId: 'conta-teste',
         path: '/api/v1/training/exercises',
         after: 'cursor-1',
-        limit: 200,
+        limit: 500,
       },
       // Depois do catálogo os recursos restantes vêm vazios, inclusive os lançamentos de alimentos.
       { accountId: 'conta-teste', path: '/api/v1/training/routines', after: null, limit: 200 },
@@ -149,7 +149,7 @@ describe('catalog pull, end to end', () => {
         limit: 200,
       },
     ]);
-    expect(await t.trainingDb.exercises.count()).toBe(203);
+    expect(await t.trainingDb.exercises.count()).toBe(503);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });
 
     // Já sem rede: a busca lê só do aparelho, e a lápide não aparece.
@@ -158,7 +158,7 @@ describe('catalog pull, end to end', () => {
     ]);
     expect((await repository.get('supino'))?.stepKg).toBe(2.5);
     expect(await repository.get('apagado')).toBeUndefined();
-    expect(await repository.count()).toBe(202);
+    expect(await repository.count()).toBe(502);
   });
 
   it('a later pull reapplies the window without duplicating, and never deletes by absence', async () => {
