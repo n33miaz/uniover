@@ -10,7 +10,16 @@ from pydantic import ValidationError
 
 from uniover_agent.adapters.installation import migrate_layout
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
-from uniover_agent.adapters.startup_trace import describe_exception, record_startup_failure
+from uniover_agent.adapters.single_instance import (
+    ALREADY_RUNNING_MESSAGE,
+    EXIT_ALREADY_RUNNING,
+    acquire,
+)
+from uniover_agent.adapters.startup_trace import (
+    describe_exception,
+    log_only,
+    record_startup_failure,
+)
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_locate import identify_tv
 from uniover_agent.adapters.tv_pairing import ask_code_in_window
@@ -98,6 +107,12 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     args = _parser().parse_args(argv)
     command = args.command or "run"
     try:
+        # Antes de qualquer acesso a arquivo do agente (a fila de diagnóstico é de um dono só): dois
+        # agentes com a mesma identidade se derrubam no servidor.
+        if command == "run" and not acquire():
+            print(f"Erro: {ALREADY_RUNNING_MESSAGE}", file=sys.stderr)
+            log_only(ALREADY_RUNNING_MESSAGE)
+            return EXIT_ALREADY_RUNNING
         # Também roda quando um wrapper antigo inicia o código novo pela primeira vez.
         migrate_layout()
         settings = _load_settings()

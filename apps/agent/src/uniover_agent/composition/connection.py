@@ -423,6 +423,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         os_description=describe_os(),
         tv=(settings.tv_kind, settings.tv_host) if tv is not None and settings.tv_host else None,
         update_status=lambda: update_body(update_source.read()),
+        on_startup_failure=delivery.connection_failed,
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [

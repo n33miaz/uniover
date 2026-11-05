@@ -80,6 +80,7 @@ class ConnectionSupervisor:
         os_description: str | None = None,
         tv: tuple[str, str] | None = None,
         update_status: Callable[[], dict[str, Any] | None] | None = None,
+        on_startup_failure: Callable[[BaseException, bool, int], Awaitable[None]] | None = None,
     ) -> None:
         self._transport = transport
         self._process = process_message
@@ -102,6 +103,12 @@ class ConnectionSupervisor:
         self._tv = tv
         # Lido a cada `hello`: o estado da auto-atualização muda com o tempo.
         self._update_status = update_status
+        # Falhas de conexão antes do primeiro `hello` deste processo: a API ainda não ouviu o agente
+        # e o laço abaixo as engole. Quem recebe (exceção, se foi inesperada, quantas já houve) pode
+        # deixar um rastro para o dono. Nunca é chamado depois do primeiro `hello`.
+        self._on_startup_failure = on_startup_failure
+        self._hello_done = False
+        self._failures_before_hello = 0
 
     def _declared(self) -> tuple[str, ...]:
         source = self._capabilities
@@ -161,15 +168,26 @@ class ConnectionSupervisor:
                 continue
             except TransportError as exc:
                 _log.warning("conexão perdida (%s)", exc)
-            except Exception:
+                await self._note_failure(exc, unexpected=False)
+            except Exception as exc:
                 # Nada que o laço não preveja pode matar o agente: PC ligado há horas e agente fora
                 # do ar era exatamente isso. Registra a causa e reconecta com a espera normal.
                 _log.exception("falha inesperada na conexão; reconectando")
+                await self._note_failure(exc, unexpected=True)
             else:
                 _log.info("conexão encerrada pelo servidor")
             delay = self._backoff.next_delay()
             _log.info("reconectando em %.1f s", delay)
             await self._clock.sleep(delay)
+
+    async def _note_failure(self, exc: BaseException, *, unexpected: bool) -> None:
+        if self._hello_done or self._on_startup_failure is None:
+            return
+        self._failures_before_hello += 1
+        try:
+            await self._on_startup_failure(exc, unexpected, self._failures_before_hello)
+        except Exception:
+            _log.warning("não consegui deixar o rastro da falha de conexão", exc_info=True)
 
     async def _session(self) -> None:
         started: float | None = None
@@ -179,6 +197,7 @@ class ConnectionSupervisor:
             started = self._clock.monotonic()
             _log.info("conectado")
             await self._transport.send(self._hello())
+            self._hello_done = True
             if self._on_connected is not None:
                 await self._on_connected()
             keepalive = asyncio.create_task(self._keepalive_guard())

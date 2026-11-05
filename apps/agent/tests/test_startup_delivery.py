@@ -35,7 +35,7 @@ from uniover_agent.core.diagnostics import (
     DiagnosticsShipper,
 )
 
-from .support import AGENT_ID
+from .support import AGENT_ID, kill_tree
 from .test_diagnostics import make_event
 from .test_startup_trace import queue
 
@@ -102,8 +102,7 @@ def test_the_current_process_is_alive_and_a_finished_one_is_not() -> None:
     assert process_alive(os.getpid())
     child = sleeper()
     assert process_alive(child.pid)
-    child.kill()
-    child.wait(timeout=30)
+    kill_tree(child)
     assert not process_alive(child.pid)
     assert not process_alive(0)
 
@@ -124,8 +123,7 @@ def test_a_claim_of_a_live_process_is_respected_however_old_and_taken_back_when_
         assert record_startup_failure("cofre", "x", base=tmp_path) is False
         assert queue(tmp_path) == []
     finally:
-        holder.kill()
-        holder.wait(timeout=30)
+        kill_tree(holder)
 
     assert record_startup_failure("cofre", "x", base=tmp_path) is True
     assert len(queue(tmp_path)) == 1
@@ -222,16 +220,18 @@ def test_a_stale_incoming_file_from_a_crash_is_recovered(tmp_path: Path) -> None
 class Delivery:
     """O fluxo de verdade: `ConnectionSupervisor` + `hello` + consulta de recursos + envio."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - cenário de teste, todos por nome
         self,
         runtime: Path,
         *,
         self_care: bool,
         api_features: frozenset[str] | None,
         fetch_delay: int = 0,
+        transport: FakeTransport | None = None,
+        base: Path | None = None,
     ) -> None:
         self.clock = FakeClock()
-        self.transport = FakeTransport([[]])
+        self.transport = transport or FakeTransport([[]])
         self.store = FileDiagnosticStore(runtime)
         self.fetches = 0
         gate = EnvelopeGate(AGENT_ID)
@@ -252,7 +252,13 @@ class Delivery:
             self.clock,
             enabled=lambda: self.features.supports(DIAGNOSTICS_CAPABILITY),
         )
-        self.delivery = DiagnosticsDelivery(self.store, self.features, shipper, self_care=self_care)
+        self.delivery = DiagnosticsDelivery(
+            self.store,
+            self.features,
+            shipper,
+            self_care=self_care,
+            record=lambda reason, detail: record_startup_failure(reason, detail, base=base),
+        )
 
         async def ignore(raw: str | bytes) -> None:
             return None
@@ -266,15 +272,16 @@ class Delivery:
             agent_version="0.1.0",
             capabilities=lambda: ("tv.remote", *self.delivery.capabilities()),
             on_connected=self.delivery.after_hello,
+            on_startup_failure=self.delivery.connection_failed,
         )
 
     async def first_connection(self) -> None:
         await self.delivery.prepare()
         task = asyncio.create_task(self.supervisor.run())
-        for _ in range(2000):
-            if self.transport.connects >= 2 or task.done():
-                break
-            await asyncio.sleep(0)
+        # Prazo em tempo real: o envio passa por threads, e numa máquina ocupada elas demoram.
+        deadline = time.monotonic() + 60
+        while self.transport.connects < 2 and not task.done() and time.monotonic() < deadline:  # noqa: ASYNC110 - espera por condição de fora
+            await asyncio.sleep(0.005)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task

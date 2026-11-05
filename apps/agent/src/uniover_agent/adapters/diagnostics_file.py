@@ -174,11 +174,14 @@ class FileDiagnosticStore:
         except OSError:
             return 0
 
-    def has_kind(self, kind: str) -> bool:
-        """Há na fila (viva, em envio ou em troca) alguma ocorrência deste tipo? Só lê."""
+    def has_kind(self, kind: str, detail_prefix: str = "") -> bool:
+        """Há na fila (viva, em envio ou em troca) uma ocorrência deste tipo? Só lê.
+
+        Com `detail_prefix`, só conta a que começa com ele (quem grava com um código no começo do
+        texto usa isto para não repetir o que ainda espera na fila)."""
         with self._lock:
             return any(
-                event.kind == kind
+                event.kind == kind and event.detail.startswith(detail_prefix)
                 for path in (self._sending, self._incoming, self._pending)
                 for event in self._read(path)
             )
