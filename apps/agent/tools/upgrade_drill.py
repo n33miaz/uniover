@@ -1018,7 +1018,21 @@ class Drill:
             self.kill(self.launcher.pid)
         for proc in self.roles(self.tree(), "update"):
             self.kill(proc.pid)
-        return wait_until(lambda: not self.tree(), 30, 0.5)
+        if wait_until(lambda: not self.tree(), 30, 0.5):
+            return True
+        # Como num reinicio do PC, nada do ensaio sobrevive: o que escapou da arvore do lancador
+        # (uma atualizacao que nasceu depois da foto, um filho orfao) cai aqui, um por um.
+        for _ in range(3):
+            left = self.tree()
+            if not left:
+                return True
+            names = ", ".join(f"{role(p)}:{p.name}:{p.pid}" for p in left)
+            say(f"  ainda vivos depois de parar: {names}")
+            for proc in left:
+                self.kill(proc.pid)
+            if wait_until(lambda: not self.tree(), 10, 0.5):
+                return True
+        return False
 
     def recover_interrupted_swap(self, sha: str) -> bool:
         """Deixa o estado entre as duas renomeacoes e espera o lancador conserta-lo.
