@@ -65,8 +65,15 @@ def test_the_same_reason_is_not_repeated_inside_the_window(tmp_path: Path) -> No
     # Outro motivo entra na hora; o mesmo, só depois da janela.
     assert record_startup_failure("nao_pareado", "c", base=tmp_path, clock=lambda: 1000.0 + 120)
     after = 1000.0 + REPEAT_SECONDS + 1
-    assert record_startup_failure("cofre", "d", base=tmp_path, clock=lambda: after)
-    assert len(queue(tmp_path)) == 3
+    # Passada a janela, mas a ocorrência igual ainda espera na fila: não se repete.
+    assert not record_startup_failure("cofre", "d", base=tmp_path, clock=lambda: after)
+    assert len(queue(tmp_path)) == 2
+    # Entregue a fila, o mesmo motivo volta a valer.
+    store = FileDiagnosticStore(tmp_path / "runtime")
+    while batch := store.take(10):
+        store.confirm(batch)
+    assert record_startup_failure("cofre", "e", base=tmp_path, clock=lambda: after + 1)
+    assert len(queue(tmp_path)) == 1
 
 
 def test_the_log_is_rotated_when_it_grows_too_much(tmp_path: Path) -> None:

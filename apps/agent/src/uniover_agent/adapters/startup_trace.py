@@ -182,22 +182,43 @@ def record_startup_failure(
         if not _claim(claim, now):
             claim = None
             return False
-        if _recently_recorded(marker, now):
-            return False
-        text = f"{reason}: {sanitize(detail)}"[:DETAIL_LIMIT].strip()
-        # Cada gravação por conta própria: uma falha numa não leva a outra junto.
-        with contextlib.suppress(Exception):
-            _write_log(root / "logs", now, text)
-        if not _enqueue(root / "runtime", now, text):
-            return False
-        _write_marker(marker, now)
+        return _record_claimed(root, marker, reason, detail, now)
     except Exception:  # rastro nunca pode derrubar a partida
         return False
     finally:
         if claim is not None:
             with contextlib.suppress(OSError):
                 claim.unlink(missing_ok=True)
+
+
+def _record_claimed(root: Path, marker: Path, reason: str, detail: str, now: float) -> bool:
+    if _recently_recorded(marker, now):
+        return False
+    text = f"{reason}: {sanitize(detail)}"[:DETAIL_LIMIT].strip()
+    # Sem o marcador (disco, permissão) a regra das 6 h não se sustenta sozinha: o que ainda espera
+    # na fila com o mesmo motivo basta para não repetir.
+    if _queued(root / "runtime", reason):
+        return False
+    # Cada gravação por conta própria: uma falha numa não leva a outra junto.
+    with contextlib.suppress(Exception):
+        _write_log(root / "logs", now, text)
+    if not _enqueue(root / "runtime", now, text):
+        return False
+    _write_marker(marker, now)
     return True
+
+
+def log_only(detail: str, *, base: Path | None = None) -> None:
+    """Só a linha em `startup.log`, sem tocar na fila (quem não é o dono dela não pode mexer)."""
+    with contextlib.suppress(Exception):
+        _write_log((base or installation_base()) / "logs", time.time(), sanitize(detail))
+
+
+def _queued(runtime: Path, reason: str) -> bool:
+    try:
+        return FileDiagnosticStore(runtime).has_kind(KIND, f"{reason}:")
+    except Exception:
+        return False
 
 
 def _enqueue(runtime: Path, now: float, text: str) -> bool:

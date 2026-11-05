@@ -12,13 +12,20 @@ antes do primeiro `hello`, declara a capacidade nele e envia a fila logo depois,
 
 import asyncio
 import logging
+from collections.abc import Callable
+from typing import Final
 
 from uniover_agent.adapters.diagnostics_file import FileDiagnosticStore
 from uniover_agent.adapters.startup_trace import KIND as STARTUP_FAILED
+from uniover_agent.adapters.startup_trace import describe_exception, record_startup_failure
 from uniover_agent.core.api_features import ApiFeatures
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
 
 _log = logging.getLogger(__name__)
+
+# Tentativas seguidas sem `hello` a partir das quais a demora já merece um rastro (a espera entre
+# elas cresce até 30 s: são uns dois minutos sem conseguir falar com a API).
+CONNECTION_FAILURES_BEFORE_TRACE: Final = 8
 
 
 class DiagnosticsDelivery:
@@ -29,7 +36,10 @@ class DiagnosticsDelivery:
         shipper: DiagnosticsShipper,
         *,
         self_care: bool,
+        record: Callable[[str, str], bool] = record_startup_failure,
     ) -> None:
+        self._record = record
+        self._reported = False
         self._store = store
         self._features = features
         self._shipper = shipper
@@ -66,3 +76,20 @@ class DiagnosticsDelivery:
                 )
             except Exception:
                 _log.warning("não consegui olhar a fila do diagnóstico", exc_info=True)
+
+    async def connection_failed(self, exc: BaseException, unexpected: bool, attempts: int) -> None:
+        """Falha de conexão antes do primeiro `hello`: deixa o rastro e prepara o envio dele.
+
+        Erro inesperado, ou muitas tentativas seguidas sem conseguir, vira uma ocorrência
+        `startup.failed` (só o tipo da exceção e o ponto do código, nunca a mensagem). Uma vez por
+        processo. Ela sai no primeiro `hello` que der: aqui já se sabe o que a API aceita, para o
+        `hello` declarar o diagnóstico.
+        """
+        if self._reported or not (unexpected or attempts >= CONNECTION_FAILURES_BEFORE_TRACE):
+            return
+        self._reported = True
+        detail = f"{describe_exception(exc)} ({attempts} tentativas antes do primeiro hello)"
+        recorded = await asyncio.to_thread(self._record, "conexao", detail)
+        if recorded:
+            self._pending_startup = True
+            await self._features.refresh()

@@ -1,6 +1,8 @@
 """Apoio dos testes: envelopes válidos e um servidor WebSocket falso local (sem rede externa)."""
 
 import json
+import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -134,3 +136,17 @@ def read_text_retrying(path: Path, *, encoding: str = "utf-8", seconds: float = 
             if time.monotonic() >= end:
                 raise
             time.sleep(0.05)
+
+
+def kill_tree(process: subprocess.Popen[Any]) -> None:
+    """Encerra o processo e os filhos: o `python.exe` do venv no Windows é um lançador que cria o
+    interpretador de verdade como filho, e matar só o lançador deixaria o filho vivo."""
+    if sys.platform == "win32":
+        subprocess.run(  # noqa: S603 - ferramenta do sistema, argumentos fixos
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],  # noqa: S607
+            capture_output=True,
+            check=False,
+        )
+    else:
+        process.kill()
+    process.wait(timeout=30)
