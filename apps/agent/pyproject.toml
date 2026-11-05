@@ -70,10 +70,11 @@ root_package = "uniover_agent"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Camadas: main > adapters > core > ports"
+name = "Camadas: main > composition > adapters > core > ports"
 type = "layers"
 layers = [
     "uniover_agent.main",
+    "uniover_agent.composition",
     "uniover_agent.adapters",
     "uniover_agent.core",
     "uniover_agent.ports",

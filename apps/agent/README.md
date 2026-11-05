@@ -655,7 +655,8 @@ nunca trazem token, `deviceCode`, cabeçalhos nem corpo completo (as bibliotecas
 - `adapters/`: `transport_ws`, `secret_store_keyring`, `pairing_http`, `system_clock`, `local_config`,
   `tv_remote_v2`, `tv_pairing` e dublês de teste.
 - `contracts/`: modelos e esquemas gerados, não editar.
-- `main.py`: composição e linha de comando.
+- `composition/`: a montagem dos adaptadores em `system`, `tv`, `pc`, `pairing`, `connection` e `maintenance`.
+- `main.py`: ponto de entrada e linha de comando.
 
 Trocar de transporte (MQTT, depois) é trocar o adaptador: o núcleo não sabe que existe WebSocket.
 
