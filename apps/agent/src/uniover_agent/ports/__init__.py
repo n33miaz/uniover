@@ -47,6 +47,7 @@ from uniover_agent.ports.tv_adb import (
     LaunchableApp,
     TvAdb,
     is_adb_typable,
+    is_user_initiated,
     user_initiated_adb,
 )
 from uniover_agent.ports.tv_channel import (
@@ -139,5 +140,6 @@ __all__ = [
     "TvRemote",
     "TvUnreachable",
     "is_adb_typable",
+    "is_user_initiated",
     "user_initiated_adb",
 ]

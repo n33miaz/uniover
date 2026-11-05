@@ -54,7 +54,6 @@ from uniover_agent.adapters.tv_adb_parsing import (
     quote_for_device_shell,
 )
 from uniover_agent.ports import (
-    ADB_USER_INITIATED,
     AdbCommandFailed,
     AdbError,
     AdbTimeout,
@@ -62,6 +61,8 @@ from uniover_agent.ports import (
     AdbUnavailable,
     AdbUnreachable,
     LaunchableApp,
+    is_user_initiated,
+    user_initiated_adb,
 )
 from uniover_agent.ports.tv_livre import ShellResult
 
@@ -117,6 +118,11 @@ _APP_BACKGROUND_MODES: Final = frozenset({"allow", "ignore", "default"})
 _AUTH_TIMEOUT_SETTING: Final = "adb_allowed_connection_time"
 _DISABLE_AUTH_TIMEOUT: Final = f"settings put global {_AUTH_TIMEOUT_SETTING} 0"
 _READ_AUTH_TIMEOUT: Final = f"settings get global {_AUTH_TIMEOUT_SETTING}"
+# Depois de um pedido da pessoa que deixou o aviso na tela da TV: quanto tempo (e de quanto em
+# quanto) o agente só lê o estado esperando o aceite, e quantas vezes confirma a permissão gravada.
+DEFAULT_PAIRING_WATCH_SECONDS: Final = 90.0
+DEFAULT_PAIRING_POLL_SECONDS: Final = 3.0
+MAX_PERSISTENCE_CHECKS: Final = 2
 _UNAUTHORIZED_MESSAGE: Final = "a TV ainda não autorizou este PC no ADB"
 _GATED_MESSAGE: Final = "a TV ainda não deu ao UniOver a permissão do ADB; peça pelo app"
 
@@ -193,6 +199,9 @@ class AdbTv:
         runner: Runner | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         authorization: AdbAuthorization | None = None,
+        pairing_watch_seconds: float = DEFAULT_PAIRING_WATCH_SECONDS,
+        pairing_poll_seconds: float = DEFAULT_PAIRING_POLL_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._adb = str(adb_path)
         self._serial = f"{host}:{port}"
@@ -215,6 +224,10 @@ class AdbTv:
         # Sem isto o adaptador é o de sempre (diagnósticos da linha de comando); com isto, o agente
         # só conecta sozinho a uma TV que já deu a permissão a esta chave (ver `adb_authorization`).
         self._authorization = authorization
+        self._pairing_watch_seconds = pairing_watch_seconds
+        self._pairing_poll_seconds = pairing_poll_seconds
+        self._sleep = sleep
+        self._pairing_task: asyncio.Task[None] | None = None
         self._authorized_callbacks: list[Callable[[], None]] = []
         self._unauthorized_callbacks: list[Callable[[], None]] = []
         self._timeout_streak = 0
@@ -262,11 +275,13 @@ class AdbTv:
             self._connected = False
 
     async def aclose(self) -> None:
-        """Encerramento do agente: cancela o `disconnect` adiado que ainda espere a trava."""
-        task, self._disconnect_task = self._disconnect_task, None
-        if task is not None and not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        """Encerramento do agente: cancela o `disconnect` adiado e a espera do aceite."""
+        pending = [self._disconnect_task, self._pairing_task]
+        self._disconnect_task = self._pairing_task = None
+        for task in pending:
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     async def _disconnect_locked(self) -> None:
         try:
@@ -289,7 +304,7 @@ class AdbTv:
                 self._authorization_pending = False
                 self._timeout_streak = 0
                 self._connected = True
-                self._note_authorized()
+                self._note_authorized(persist=False)
                 return "authorized"
             return "unauthorized" if state is DeviceState.UNAUTHORIZED else "unknown"
 
@@ -297,11 +312,11 @@ class AdbTv:
         """Pode abrir uma conexão nova agora? Nunca, sozinho, se a TV ainda não deu a permissão.
 
         Um `adb connect` a uma TV que não conhece a chave faz aparecer o aviso "Permitir depuração
-        USB". Só o pedido explícito da pessoa (`ADB_USER_INITIATED`) ou uma permissão já registrada
+        USB". Só o pedido explícito da pessoa (`is_user_initiated`) ou uma permissão já registrada
         para a chave de agora liberam a conexão. Sem registro de autorização (diagnósticos da
         linha de comando) o adaptador não impõe nada.
         """
-        if self._authorization is None or ADB_USER_INITIATED.get():
+        if self._authorization is None or is_user_initiated():
             return True
         return self._authorization.allows_automatic_connect()
 
@@ -316,13 +331,19 @@ class AdbTv:
             self._authorization_pending = False
             self._timeout_streak = 0
             self._connected = True
-            self._note_authorized()
+            self._note_authorized(persist=False)
             return
         self._authorization_pending = True
         raise AdbUnauthorized(_GATED_MESSAGE)
 
-    def _note_authorized(self) -> None:
-        if self._authorization is not None:
+    def _note_authorized(self, *, persist: bool) -> None:
+        """A TV atende agora. `persist` só quando há prova de que a permissão ficou gravada na TV.
+
+        Um transporte `device` que já existia pode ser um "Permitir" de uma vez só (sem a marca
+        "Sempre permitir"): vale para aquela conexão e some na próxima. Registrá-lo como permissão
+        faria o agente conectar sozinho depois do reinício e a TV perguntar de novo.
+        """
+        if persist and self._authorization is not None:
             self._authorization.mark_authorized()
         for callback in self._authorized_callbacks:
             try:
@@ -343,7 +364,11 @@ class AdbTv:
     async def _finish_pairing_locked(self) -> None:
         """Fim de um pedido da pessoa, com a TV atendendo: desliga o vencimento (uma vez)."""
         authorization = self._authorization
-        if authorization is None or not authorization.timeout_step_pending():
+        if (
+            authorization is None
+            or not authorization.allows_automatic_connect()
+            or not authorization.timeout_step_pending()
+        ):
             return
         try:
             await self._shell(_DISABLE_AUTH_TIMEOUT)
@@ -383,28 +408,38 @@ class AdbTv:
                 await self._disconnect_locked()
         return "fresh"
 
+    def _needs_proof(self) -> bool:
+        """Falta provar que a TV guardou a permissão (só o pedido da pessoa pode provar)."""
+        authorization = self._authorization
+        return authorization is not None and not authorization.allows_automatic_connect()
+
+    async def _handshake_locked(self) -> tuple[AdbOutput, DeviceState]:
+        joined = await self._exec("connect", self._serial)
+        if connect_was_refused_for_auth(joined.text):
+            raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
+        if not parse_connect(joined.text):
+            raise AdbUnreachable("a TV não respondeu pelo ADB")
+        state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+        return joined, state
+
     async def _connect_locked(self) -> None:
         self._connected = False
         if not self._may_connect():
             await self._refuse_connect_locked()
             return
         try:
-            joined = await self._exec("connect", self._serial)
-            if connect_was_refused_for_auth(joined.text):
-                raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
-            if not parse_connect(joined.text):
-                raise AdbUnreachable("a TV não respondeu pelo ADB")
-            state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
-            # Só `offline` pede refazer a conexão. Com `unauthorized`, uma conexão nova faria a TV
-            # mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido.
-            if state is DeviceState.OFFLINE and "already connected" in joined.text:
+            joined, state = await self._handshake_locked()
+            stale = "already connected" in joined.text
+            # `offline` pede refazer a conexão. Com `unauthorized`, uma conexão nova faria a TV
+            # mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido. A exceção é o
+            # pedido da pessoa sobre uma permissão ainda não provada: um transporte que já estava
+            # `device` pode ser um "Permitir" de uma vez só, e só uma conexão nova mostra isso.
+            if stale and (
+                state is DeviceState.OFFLINE
+                or (state is DeviceState.DEVICE and self._needs_proof())
+            ):
                 await self._exec("disconnect", self._serial)
-                joined = await self._exec("connect", self._serial)
-                if connect_was_refused_for_auth(joined.text):
-                    raise AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
-                if not parse_connect(joined.text):
-                    raise AdbUnreachable("a TV não respondeu pelo ADB")
-                state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+                joined, state = await self._handshake_locked()
         except AdbTimeout:
             # Na abertura, tempo esgotado é "a TV não respondeu": nenhum comando foi executado.
             error: AdbError = AdbUnreachable("a TV não respondeu pelo ADB")
@@ -412,14 +447,16 @@ class AdbTv:
             raise error from None
         except AdbError as exc:
             self._remember_failure(exc)
+            if isinstance(exc, AdbUnauthorized):
+                self._watch_for_acceptance()
             raise
         if state is DeviceState.DEVICE:
             self._blocked_error = None
             self._authorization_pending = False
             self._timeout_streak = 0
             self._connected = True
-            self._note_authorized()
-            if ADB_USER_INITIATED.get():
+            self._note_authorized(persist=True)
+            if is_user_initiated():
                 await self._finish_pairing_locked()
             return
         failure: AdbError = (
@@ -428,7 +465,62 @@ class AdbTv:
             else AdbUnreachable("a TV não respondeu pelo ADB")
         )
         self._remember_failure(failure)
+        if state in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
+            self._watch_for_acceptance()
         raise failure
+
+    def _watch_for_acceptance(self) -> None:
+        """Pedido da pessoa que deixou o aviso na tela: espera o aceite lendo só o estado (90 s)."""
+        if self._authorization is None or not is_user_initiated():
+            return
+        task = self._pairing_task
+        if task is None or task.done():
+            self._pairing_task = asyncio.create_task(self._acceptance_watch())
+
+    async def _acceptance_watch(self) -> None:
+        """Vê o aceite e confirma que ficou gravado, ainda como parte do pedido da pessoa.
+
+        Só `get-state` até a TV dizer `device`. Aí, uma vez, `disconnect` e `connect`: `device` de
+        novo prova que a TV guardou a permissão (registra, desliga o vencimento e libera o resto);
+        `unauthorized` de novo mostra que o "Sempre permitir" não foi marcado, e o novo aviso
+        aparece com a pessoa ainda diante da TV (no máximo `MAX_PERSISTENCE_CHECKS` confirmações).
+        """
+        authorization = self._authorization
+        if authorization is None:
+            return
+        poll = max(self._pairing_poll_seconds, 0.001)
+        checks = 0
+        waited = 0.0
+        with user_initiated_adb():
+            while waited < self._pairing_watch_seconds:
+                await self._sleep(poll)
+                waited += poll
+                try:
+                    async with self._lock:
+                        if authorization.allows_automatic_connect():
+                            return
+                        output = await self._exec("-s", self._serial, "get-state")
+                        if parse_device_state(output.text) is not DeviceState.DEVICE:
+                            continue
+                        if checks >= MAX_PERSISTENCE_CHECKS:
+                            # Sem prova: o canal vivo serve, mas nada é registrado como permissão.
+                            self._connected = True
+                            self._note_authorized(persist=False)
+                            return
+                        checks += 1
+                        self._connected = False
+                        await self._disconnect_locked()
+                        try:
+                            await self._connect_locked()
+                        except AdbUnauthorized:
+                            _log.info(
+                                "o ADB da TV não guardou a permissão (marque Sempre permitir)"
+                            )
+                            waited = 0.0  # o novo aviso ganha uma janela inteira
+                            continue
+                        return
+                except AdbError as exc:
+                    _log.debug("espera do aceite do ADB: %s", exc.code)
 
     def _remember_failure(self, error: AdbError) -> None:
         # Só "não abriu" pausa novas tentativas automáticas; tempo estourado não é diagnóstico.
@@ -442,8 +534,13 @@ class AdbTv:
 
     async def _ensure_connected_locked(self) -> None:
         if self._connected:
-            if ADB_USER_INITIATED.get():
-                await self._finish_pairing_locked()
+            if is_user_initiated():
+                if self._needs_proof():
+                    # Transporte vivo sem prova de permissão gravada: a pessoa pediu, então confere.
+                    await self._disconnect_locked()
+                    await self._connect_locked()
+                else:
+                    await self._finish_pairing_locked()
             return
         if self._blocked_error is not None and self._monotonic() < self._blocked_until:
             if isinstance(self._blocked_error, AdbUnauthorized):
@@ -453,7 +550,7 @@ class AdbTv:
                     self._blocked_error = None
                     self._authorization_pending = False
                     self._connected = True
-                    self._note_authorized()
+                    self._note_authorized(persist=False)
                     return
             raise type(self._blocked_error)(self._blocked_error.message)
         await self._connect_locked()
