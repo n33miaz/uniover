@@ -4,11 +4,12 @@ import asyncio
 import logging
 import re
 import sys
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys, resolve_tv_mac
 from uniover_agent.adapters.apk_tools import (
@@ -29,7 +30,6 @@ from uniover_agent.adapters.tv_discovery import (
     PortState,
     TvKindName,
     find_tvs,
-    tcp_open,
     tcp_probe,
 )
 from uniover_agent.adapters.tv_livre_apk import ReleaseApkSource
@@ -83,7 +83,9 @@ from uniover_agent.core import (
     TvPermission,
     TvSessionManager,
     TvWatchdog,
+    UserActivity,
     WatchdogEvents,
+    touching,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
@@ -111,12 +113,12 @@ from uniover_agent.ports import (
     SecretStore,
     Transport,
     TransportError,
+    user_initiated_adb,
 )
 
 _log = logging.getLogger("uniover_agent")
 # Portas do serviço do controle remoto da Android TV: só se dá por de pé com as duas abertas.
 REMOTE_SERVICE_PORTS = (ANDROID_REMOTE_PORT, 6467)
-# Múltiplos da espera base para reler a autorização do ADB: 5, 10, 30 e 60 min (o último se repete).
 
 
 @dataclass(slots=True)
@@ -149,10 +151,29 @@ class TvSetup:
     watchdog: TvWatchdog | None = None
     cleanup_scheduler: TvCleanupScheduler | SamsungMaintenanceScheduler | None = None
     light_settings: TvLightSettings | None = None
+    # Quando alguém usa a TV pelo app (preenchido pelo canal ADB, que é quem precisa saber).
+    activity: UserActivity | None = None
     # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
     # Rodam ao encerrar o agente (cancelam o que ficou agendado).
     closers: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+
+
+# Comandos que o app manda quando alguém usa a TV (tecla, texto, abrir app, lista, limpeza manual,
+# TV Livre). Ficam de fora os que o servidor também manda sozinho (energia agendada, configuração
+# da limpeza, `wake`): esses não provam ninguém diante da TV.
+USER_COMMANDS: Final = frozenset(
+    {
+        "tv.key.v1",
+        "tv.text.v1",
+        "tv.app.launch.v1",
+        "tv.apps.refresh.v1",
+        "tv.cleanup.v1",
+        "tv.livre.v1",
+        "tv.livre.photo.v1",
+        "tv.discover.v1",
+    }
+)
 
 
 def build_tv(
@@ -166,6 +187,10 @@ def build_tv(
     setup = build_driver_setup(settings, clock, transport, envelopes, secrets)
     if setup is not None:
         attach_discovery(setup, settings)
+        if setup.activity is None:
+            setup.activity = UserActivity(clock.monotonic)
+        for name in USER_COMMANDS & setup.handlers.keys():
+            setup.handlers[name] = touching(setup.handlers[name], setup.activity)
     return setup
 
 
@@ -588,6 +613,38 @@ def compose_light_settings(
     return closer, light_settings
 
 
+def build_adb(
+    path: Path,
+    host: str,
+    settings: Settings,
+    user_active: Callable[[], bool],
+    *,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> AdbTv:
+    """O único lugar que monta um `AdbTv`: sempre com a trava (registro da permissão por TV).
+
+    O registro lembra se a TV já deu e provou a permissão a esta chave; enquanto não, e fora do
+    uso da TV pelo app, o agente nunca conecta sozinho (cada conexão faria o aviso aparecer).
+    """
+    return AdbTv(
+        path,
+        host,
+        settings.tv_adb_port,
+        authorization=AdbAuthorization(
+            tv_cert_dir(settings.tv_name),
+            AdbKeys(adb_key_backup_dir()),
+            f"{host}:{settings.tv_adb_port}",
+        ),
+        mac_resolver=lambda: resolve_tv_mac(host, settings.tv_adb_port),
+        user_active=user_active,
+        timeout=settings.adb_timeout_seconds,
+        kill_server=settings.adb_kill_server,
+        kill_server_cooldown=settings.adb_kill_server_cooldown_seconds,
+        pull_timeout=settings.adb_pull_timeout_seconds,
+        monotonic=monotonic,
+    )
+
+
 def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     setup: TvSetup, settings: Settings, host: str, clock: Clock
 ) -> AdbTv | None:
@@ -606,24 +663,11 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             "lista de apps e abertura por pacote ficam desligadas"
         )
         return None
-    adb = AdbTv(
-        path,
-        host,
-        settings.tv_adb_port,
-        timeout=settings.adb_timeout_seconds,
-        kill_server=settings.adb_kill_server,
-        kill_server_cooldown=settings.adb_kill_server_cooldown_seconds,
-        pull_timeout=settings.adb_pull_timeout_seconds,
-        monotonic=clock.monotonic,
-        # Lembra, por TV, se ela já deu a permissão do ADB a esta chave: enquanto não deu, o agente
-        # nunca conecta sozinho (cada conexão faria a TV mostrar o aviso de novo).
-        authorization=AdbAuthorization(
-            tv_cert_dir(settings.tv_name),
-            AdbKeys(adb_key_backup_dir()),
-            f"{host}:{settings.tv_adb_port}",
-        ),
-        mac_resolver=lambda: resolve_tv_mac(host, settings.tv_adb_port),
-    )
+    # Quando alguém usa a TV pelo app: a única hora em que uma conexão ADB nova pode ser aberta
+    # por um caminho automático (ver `AdbTv._may_connect`).
+    if setup.activity is None:
+        setup.activity = UserActivity(clock.monotonic)
+    adb = build_adb(path, host, settings, setup.activity.recent, monotonic=clock.monotonic)
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
     manager.add_channel(adb, connect_on_warm=False)
@@ -728,19 +772,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
         declare_adb_capabilities()
 
-    async def keep_authorization_fresh() -> None:
-        # O Android 11+ revoga a permissão do ADB sem uso por 7 dias. Um contato autorizado por dia
-        # (nenhum comando de entrada) zera a contagem; só com a TV atendendo e a permissão
-        # registrada.
-        while True:
-            await clock.sleep(settings.tv_adb_keepalive_seconds)
-            if not await tcp_open(host, settings.tv_adb_port):
-                continue
-            outcome = await adb.keep_authorization_fresh()
-            _log.debug("contato periódico com o ADB da TV: %s", outcome)
-
     setup.prepare.append(declare_when_usable)
-    setup.background.append(keep_authorization_fresh)
     compose_livre(setup, settings, adb, host, clock)
     return adb
 
@@ -975,12 +1007,10 @@ async def tv_volume(settings: Settings) -> int:
     if settings.tv_kind == "samsung":
         return await check_volume("samsung", samsung=SamsungVolume(host))
     path = locate_adb(settings.adb_path)
-    adb = (
-        None
-        if path is None
-        else AdbTv(path, host, settings.tv_adb_port, timeout=settings.adb_timeout_seconds)
-    )
-    return await check_volume("android", adb=adb)
+    # Diagnóstico pedido por quem roda o comando: é um pedido da pessoa, então pode abrir o aviso.
+    adb = None if path is None else build_adb(path, host, settings, lambda: True)
+    with user_initiated_adb():
+        return await check_volume("android", adb=adb)
 
 
 async def tv_find(

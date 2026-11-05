@@ -231,10 +231,6 @@ class FakeTvAdb:
     async def aclose(self) -> None:
         self.closed = True
 
-    async def keep_authorization_fresh(self) -> str:
-        self.keepalives += 1
-        return "fresh"
-
     async def disconnect(self) -> None:
         self.disconnects += 1
         self._connected = False

@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import shutil
 import time
 from collections.abc import Callable
@@ -181,17 +182,19 @@ class AdbKeys:
     def back_up(self, expected: str) -> bool:
         """Guarda a chave de agora em `<resumo>/`, só se ainda é a `expected` (sem troca no meio).
 
-        Não sobrescreve cópia que já confere. Escreve numa pasta provisória, confere o resumo da
-        cópia e só então a põe no lugar. `True` se gravou.
+        Seguro com vários processos ao mesmo tempo: escreve numa pasta provisória **própria** (pid
+        e sufixo aleatório), confere o resumo da cópia e só a põe no lugar se o destino não existe
+        (`os.rename` não substitui pasta cheia). Cópia que confere nunca é apagada nem substituída;
+        uma que não confere (truncada) é posta de lado, não apagada. `True` se esta chamada gravou.
         """
         if self.fingerprint() != expected or expected in self.backups():
             return False
         target = self._backup / expected
-        scratch = self._backup / f".novo-{expected}"
+        unique = f"{os.getpid()}-{secrets.token_hex(4)}"
+        scratch = self._backup / f".novo-{expected}-{unique}"
         try:
             if not self._backup.is_dir():
                 prepare_private_dir(self._backup)
-            shutil.rmtree(scratch, ignore_errors=True)
             scratch.mkdir()
             for name in (KEY_FILE, PUBLIC_KEY_FILE):
                 source = self._android / name
@@ -200,13 +203,22 @@ class AdbKeys:
             if key_fingerprint((scratch / KEY_FILE).read_bytes()) != expected:
                 shutil.rmtree(scratch, ignore_errors=True)
                 return False  # a chave mudou durante a cópia
-            shutil.rmtree(target, ignore_errors=True)  # cópia antiga que não conferia
-            os.replace(scratch, target)
+            if target.exists():
+                if expected in self.backups():
+                    shutil.rmtree(scratch, ignore_errors=True)
+                    return False  # outro processo já guardou uma cópia que confere
+                os.replace(target, self._backup / f".ruim-{expected}-{unique}")
+            os.rename(scratch, target)
         except (OSError, TvPairingError) as exc:
             shutil.rmtree(scratch, ignore_errors=True)
-            _log.warning("não consegui guardar a chave do ADB (%s)", type(exc).__name__)
-            return False
+            # Perder a corrida para outro processo não é falha: a cópia dele já confere.
+            return False if expected in self.backups() else self._warn_backup(exc)
         return True
+
+    @staticmethod
+    def _warn_backup(exc: BaseException) -> bool:
+        _log.warning("não consegui guardar a chave do ADB (%s)", type(exc).__name__)
+        return False
 
 
 def _mtime(path: Path) -> float:
@@ -349,9 +361,6 @@ class AdbAuthorization:
     def note_serial(self, serial: str) -> None:
         if serial != self._record.serial:
             self._save(_replace(self._record, serial=serial))
-
-    def touch_handshake(self) -> None:
-        self._save(_replace(self._record, last_handshake_at=self._wall_clock()))
 
     def _load(self) -> AdbAuthRecord:
         try:

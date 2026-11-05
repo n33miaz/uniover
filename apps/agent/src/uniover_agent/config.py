@@ -159,9 +159,6 @@ class Settings(BaseSettings):
     adb_kill_server: bool = False
     # Espaço mínimo entre dois `kill-server`; 0 desliga o descanso.
     adb_kill_server_cooldown_seconds: float = Field(default=600.0, ge=0, le=3600)
-    # De quanto em quanto tempo o agente confirma a permissão do ADB com a TV (só se a TV atende e
-    # a permissão já está registrada), para o vencimento de 7 dias do Android nunca chegar.
-    tv_adb_keepalive_seconds: float = Field(default=43200.0, ge=60, le=259200)
     # Tempo para copiar um APK da TV (bem maior que o de um comando curto).
     adb_pull_timeout_seconds: float = Field(default=120.0, gt=0)
     # Ícones dos apps: `aapt2` do Android SDK (padrão: o mais novo em `build-tools`; sem ele, sem
