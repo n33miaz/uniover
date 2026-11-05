@@ -13,6 +13,7 @@ import copy
 import logging
 import queue
 import threading
+import time
 from typing import Final
 
 _log = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ _log = logging.getLogger(__name__)
 QUEUE_SIZE: Final = 5000
 # Ao encerrar, quanto esperar a fila esvaziar (o destino pode estar travado: não segura o
 # encerramento).
-DRAIN_SECONDS: Final = 2.0
+DRAIN_SECONDS: Final = 5.0
 
 
 class OffloadHandler(logging.Handler):
@@ -68,12 +69,20 @@ class OffloadHandler(logging.Handler):
         threading.Thread(target=wait, name="log-offload-drain", daemon=True).start()
         return done.wait(timeout)
 
+    def flush(self) -> None:
+        # `logging.shutdown()` chama `flush()` e depois `close()` em cada destino: o que está na
+        # fila é escrito antes de o processo sair, sem passar do prazo (destino travado não segura).
+        self.drain(self._drain)
+
     def close(self) -> None:
+        # O marcador de fim espera um lugar na fila (com prazo): descartá-lo deixaria a thread
+        # viva e a fila sem esvaziar.
+        deadline = time.monotonic() + self._drain
         try:
-            self._queue.put(None, timeout=0.5)
+            self._queue.put(None, timeout=max(0.05, deadline - time.monotonic()))
         except queue.Full:
             pass
-        self._thread.join(self._drain)
+        self._thread.join(max(0.05, deadline - time.monotonic()))
         if not self._thread.is_alive():
             self.target.close()
         super().close()
