@@ -21,7 +21,7 @@
         "power": { "enum": ["on", "off", "unknown"] },
         "volume": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
         "app": { "type": ["string", "null"] },
-        "connection": { "enum": ["hot", "hibernating", "disconnected"] }
+        "connection": { "enum": ["hot", "hibernating", "disconnected", "not_paired"] }
       }
     }
   }

@@ -1,7 +1,7 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
 export type TvStateV1BodyPower = 'on' | 'off' | 'unknown';
-export type TvStateV1BodyConnection = 'hot' | 'hibernating' | 'disconnected';
+export type TvStateV1BodyConnection = 'hot' | 'hibernating' | 'disconnected' | 'not_paired';
 
 /**
  * Agente para API: estado atual da TV.
