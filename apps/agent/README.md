@@ -470,36 +470,46 @@ Comportamentos que valem saber:
 ### Permissão do ADB: uma vez, por TV, e nunca mais sozinha
 
 O aviso "Permitir depuração USB" da TV é o único que o agente pode provocar sem querer, então a regra é: **o agente
-nunca abre uma conexão ADB nova com uma TV que ainda não deu a permissão**. Só um pedido da pessoa no app o faz
-(**Atualizar lista** e as ações do TV Livre; ler o estado do TV Livre não conta).
+nunca abre uma conexão ADB nova com uma TV que ainda não deu e provou a permissão**. Só um pedido da pessoa no app
+o faz (**Atualizar lista** e as ações do TV Livre; ler o estado do TV Livre não conta). A marca do pedido pertence à
+tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
 
 - **A chave.** O `adb` do PC assina com `adbkey`, da pasta `.android` do usuário (no Windows ela não muda por
-  variável de ambiente, e o aviso da TV sempre oferece essa chave). O agente guarda uma cópia em
-  `tv\.adb-key` (pasta restrita ao usuário, na instalação: atualização e reinstalação não a tocam). Se o `adbkey`
-  sumir, a cópia volta **antes** de qualquer chamada ao `adb` (senão ele gera outra e a TV pergunta de novo). Uma
-  chave existente e diferente nunca é sobrescrita: a TV é marcada como "sem permissão" para ela.
-- **O estado.** `tv\<tv>db-authorization.json` guarda, por TV, o resumo (SHA-256 curto) da chave autorizada, se a
-  permissão vale e se o vencimento já foi desligado. Sem registro, ou com a permissão negada, **nenhuma** rota
-  automática conecta (partida, lista diária, limpeza, ícones, vigia, canal opcional da sessão): só leem o estado com
-  `get-state`, que não abre conexão. Uma recusa nova (reset de fábrica, permissão revogada) vale uma vez e para tudo.
-- **Prova de que ficou gravado.** Um "Permitir" sem a marca "Sempre permitir" vale só para aquela conexão, e um
-  transporte `device` que já estava aberto pode ser exatamente isso. Por isso `device` visto fora de um pedido da
-  pessoa **não** é registrado. Quando o pedido deixa o aviso na tela, o agente espera o aceite (até 90 s, só
-  `get-state`), faz uma vez `disconnect` e `connect`, e só registra a permissão se a TV atender sem novo aviso;
-  se o aviso voltar, a marca não foi dada, nada é registrado e o aviso novo aparece com a pessoa ainda na TV (no
-  máximo 2 confirmações). A marca do pedido pertence à tarefa que o recebeu: o que ele deixa rodando em segundo
-  plano não a herda.
-- **Uma vez só.** No fim de um pedido da pessoa em que a TV atende, o agente roda `settings put global
-  adb_allowed_connection_time 0` e confere com `settings get`. O Android 11+ revoga a permissão do ADB que ficou 7
-  dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`). Vale só para a TV e para aquela chave;
-  são até 3 tentativas no total.
-- **Contato periódico.** A cada `UNIOVER_TV_ADB_KEEPALIVE_SECONDS` (padrão 12 h), se a TV atende na porta e a
-  permissão está registrada, o agente faz `connect` e `get-state` (nenhuma tecla, nenhum shell) e fecha: isso zera
-  a contagem de 7 dias mesmo em TV que não aceita o ajuste acima.
-- **O que o dono faz, uma vez por TV:** no aviso da TV, marcar **Sempre permitir neste computador** e aceitar. Sem a
-  marca o Android vale só aquela conexão e pergunta de novo na seguinte. Um reset de fábrica da TV exige repetir.
+  variável de ambiente, e o aviso da TV sempre oferece essa chave). Cada chave válida é copiada para
+  `tv/.adb-key/<resumo>/`, pasta restrita ao usuário, na instalação (atualização e reinstalação não a tocam).
+  Cópias de chaves diferentes convivem; cópia truncada ou adulterada (o resumo não confere com o nome) é ignorada.
+  Se o `adbkey` sumir ou estiver inválido, a cópia da chave registrada volta **antes** de qualquer chamada ao `adb`
+  (senão ele gera outra e a TV pergunta de novo); a chave inválida fica em `adbkey.invalido`. Uma chave válida e
+  diferente nunca é sobrescrita. O resumo da chave é tirado **antes** de conectar: se o `adbkey` mudar no meio
+  (o Android Studio mexe nele), nada é registrado nem guardado em nome da chave errada.
+- **O registro e a identidade da TV.** `tv/<tv>/adb-authorization.json` guarda, por TV, o estado (`granted`,
+  `verified` ou `needs_user`), o resumo da chave, o endereço e a porta, o **MAC** (tabela ARP, sem ADB: um TCP
+  aberto e fechado na porta 5555 popula a tabela e não inicia aperto de mão) e o serial do aparelho. O agente só
+  conecta sozinho com `verified` **e** a mesma chave, o mesmo endereço e o mesmo MAC. Outro `tv_host`, outro
+  aparelho no mesmo IP ou outra chave fecham a porta. TV que não atende na rede dá `adb_unreachable` sem chamar o
+  `adb`. Se uma conexão automática voltar `unauthorized` (reset de fábrica, permissão revogada), o registro vira
+  `needs_user` na hora, em disco: vale **uma** tentativa inevitável (o `adb` não confere autorização sem conectar) e
+  depois nenhuma, nem depois de reiniciar o agente, até um toque da pessoa.
+- **Sem registro, ou só `granted`:** nenhuma rota automática conecta (partida, lista diária, limpeza, ícones, vigia,
+  canal opcional da sessão): só leem o estado com `get-state`, que não abre conexão. Um transporte que já estava
+  aberto pode continuar em uso, mas nada é registrado a partir dele (pode ser um "Permitir" de uma vez só).
+- **Fluxo de um toque.** O toque conecta e deixa o aviso na TV (o app mostra `adb_unauthorized` e a dica). O agente
+  espera o aceite até 90 s **só lendo `get-state`**: nunca desconecta nem reconecta. Quando a TV diz `device`,
+  registra `granted`, roda `settings put global adb_allowed_connection_time 0` (confere com `settings get`) e anota o
+  serial (`getprop ro.serialno`), tudo sobre o transporte já autorizado. O Android 11+ revoga a permissão do ADB
+  que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); são até 3 tentativas.
+- **A prova.** Um "Permitir" sem "Sempre permitir" vale só para aquela conexão. Por isso `granted` ainda não deixa o
+  agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz `disconnect` e `connect` e, se a TV
+  atender sem aviso, o registro vira `verified`. Se o aviso voltar, é nesse toque, com a pessoa na TV, e nada é
+  registrado como provado.
+- **Contato periódico.** A cada `UNIOVER_TV_ADB_KEEPALIVE_SECONDS` (padrão 12 h), com a permissão `verified`, a TV
+  atendendo e a identidade conferida, o agente faz `connect` e `get-state` e fecha (e confere o serial anotado: se
+  for outro aparelho, a permissão é invalidada). Zera a contagem de 7 dias mesmo em TV que não aceita o ajuste.
+- **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
+  aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
+  repetir.
 - **Samsung e Remote v2 já seguiam a regra:** o token Samsung e a marca "permissão necessária" ficam no cofre e
-  nenhuma rota volta a pedir o "Permitir" sozinha; o par certificado/chave do Remote v2 fica em `tv\<tv>` e só o
+  nenhuma rota volta a pedir o "Permitir" sozinha; o par certificado/chave do Remote v2 fica em `tv/<tv>` e só o
   `tv-pair` explícito o cria.
 
 ### Vigia do serviço do controle
