@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { FakeRoutineApi, seedCatalog } from '../data/routines/routine-data-test-kit';
@@ -8,6 +8,7 @@ import { RoutineApi } from '../data/routines/routine-api';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { catalog, eventually, item, saveRoutine, setupScreen } from '../shell/screen-test-kit';
+import { setupTraining } from '../data/sync/training-test-kit';
 import { RoutinesListPage } from './routines-list.page';
 
 @Component({ template: '' })
@@ -50,6 +51,23 @@ describe('RoutinesListPage', () => {
     Array.from(el.querySelectorAll<HTMLElement>('.list .ui-row-title')).map((node) =>
       node.textContent?.trim(),
     );
+
+  it('keeps the skeleton after a local empty read while the first server pull is still pending', async () => {
+    setupTraining();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([])],
+    });
+    const fixture = TestBed.createComponent(RoutinesListPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const page = fixture.componentInstance as unknown as { ready: () => boolean };
+
+    await eventually(fixture, () => {
+      expect(page.ready()).toBe(true);
+      expect(el.querySelector('app-routines-list-skeleton')).not.toBeNull();
+      expect(el.querySelector('.empty')).toBeNull();
+    });
+  });
 
   it('says there is no routine yet, and offers to create the first', async () => {
     const { fixture, el } = await open();

@@ -55,6 +55,7 @@ export class TrainingSync {
   private readonly _pulling = signal(false);
   private readonly _lastPullAt = signal<number | null>(null);
   private readonly _error = signal<TrainingSyncError | null>(null);
+  private readonly _firstPassSettled = signal(false);
 
   /** Há um puxar em andamento. */
   readonly pulling = this._pulling.asReadonly();
@@ -62,6 +63,12 @@ export class TrainingSync {
   readonly lastPullAt = this._lastPullAt.asReadonly();
   /** Motivo da falha do último puxar; `null` quando deu certo (ou ainda não rodou). */
   readonly error = this._error.asReadonly();
+  /**
+   * A primeira passada já decidiu o que podia: puxou, falhou, ou concluiu que não vai puxar agora (fila com envio
+   * pendente, conta sem dono, nada a puxar). Quem espera "o primeiro puxar" para não mostrar um vazio falso para de
+   * esperar aqui, em vez de ficar num esqueleto que nunca acaba; o banco local passa a valer.
+   */
+  readonly firstPassSettled = this._firstPassSettled.asReadonly();
 
   private starting: Promise<void> | null = null;
   private started = false;
@@ -162,11 +169,22 @@ export class TrainingSync {
   private async pass(): Promise<void> {
     // Sem rede não há o que tentar (o evento `online` volta aqui) e isso não é erro. Com envio pendente, a fila
     // sobe primeiro; o fim do envio chama de novo.
-    if (this.resources.length === 0) return;
-    if (!this.connectivity.online() || this.queue.pendingCount() > 0) return;
+    if (this.resources.length === 0) {
+      this._firstPassSettled.set(true);
+      return;
+    }
+    if (!this.connectivity.online()) return;
+    if (this.queue.pendingCount() > 0) {
+      this._firstPassSettled.set(true);
+      return;
+    }
     // Só com a sessão da conta dona deste banco: o token de outra conta traria os dados dela para cá.
     const accountId = this.queue.accountId;
-    if (accountId === null || !this.account.isSessionOf(accountId)) return;
+    if (accountId === null || !this.account.isSessionOf(accountId)) {
+      // Sem a resposta do `/me` a passada ainda vai acontecer; com ela e sem ser a dona, nunca vai.
+      if (this.account.sessionAccount() !== null) this._firstPassSettled.set(true);
+      return;
+    }
 
     this._pulling.set(true);
     try {
@@ -176,6 +194,7 @@ export class TrainingSync {
     } catch (error) {
       this._error.set(classify(error));
     } finally {
+      this._firstPassSettled.set(true);
       this._pulling.set(false);
     }
   }

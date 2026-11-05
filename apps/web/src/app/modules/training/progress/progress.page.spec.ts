@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
+import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import type { LocalExercise } from '../data/catalog/exercise';
-import { localExercise } from '../data/sync/training-test-kit';
+import { localExercise, setupTraining } from '../data/sync/training-test-kit';
 import { eventually, seedHistory } from '../shell/screen-test-kit';
 import type { TrainingDb } from '../data/training-db';
 import { BENCH_HISTORY, setupProgress } from './progress-test-kit';
@@ -25,6 +27,23 @@ describe('ProgressPage', () => {
     const el = harness.routeNativeElement as HTMLElement;
     return { ...kit, fixture: harness.fixture, el };
   }
+
+  it('keeps the skeleton after reading an empty local history until the first pull settles', async () => {
+    setupTraining();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([])],
+    });
+    const fixture = TestBed.createComponent(ProgressPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const page = fixture.componentInstance as unknown as { history: { data: () => unknown } };
+
+    await eventually(fixture, () => {
+      expect(page.history.data()).not.toBeNull();
+      expect(el.querySelector('app-progress-skeleton')).not.toBeNull();
+      expect(el.querySelector('.empty')).toBeNull();
+    });
+  });
 
   const chips = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('app-training-chips button')).map((chip) => text(chip));
