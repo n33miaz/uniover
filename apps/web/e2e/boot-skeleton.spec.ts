@@ -132,6 +132,19 @@ test('cada endereço mostra um desenho próprio e formas visíveis desde o prime
           grid: blockDisplay('.bs-route-grid'),
           strip: blockDisplay('.bs-route-strip'),
         };
+        // Cartão visível sem nenhum osso por dentro é uma caixa branca, não um esqueleto.
+        const emptyCards = [
+          ...(visible[0]?.querySelectorAll<HTMLElement>(
+            '.bs-route-content .bs-pane, .bs-route-content .bs-route-sheet .bs-row',
+          ) ?? []),
+        ].filter((card) => {
+          const box = card.getBoundingClientRect();
+          if (box.width === 0 || box.height === 0) return false;
+          return ![...card.querySelectorAll<HTMLElement>('.bone')].some((bone) => {
+            const inner = bone.getBoundingClientRect();
+            return inner.width > 0 && inner.height > 0;
+          });
+        }).length;
         const overlay = document.createElement('div');
         overlay.className = 'bs-root';
         overlay.setAttribute('data-boot-variant', name);
@@ -144,6 +157,7 @@ test('cada endereço mostra um desenho próprio e formas visíveis desde o prime
         overlay.remove();
         return {
           visible: visible.length,
+          emptyCards,
           staticShape,
           angularShape,
           blocks,
@@ -152,6 +166,7 @@ test('cada endereço mostra um desenho próprio e formas visíveis desde o prime
       { name: variant, content: namedContent },
     );
     expect(result.visible, variant).toBe(1);
+    expect(result.emptyCards, `${variant}: cartão sem ossos`).toBe(0);
     // Blocos que a tela real não tem ficam escondidos: a folha crítica do index.html não pode reabri-los.
     for (const [block, shown] of Object.entries(hiddenBlocks[variant] ?? {})) {
       expect(result.blocks[block as keyof typeof result.blocks], `${variant} ${block}`).toBe(shown);

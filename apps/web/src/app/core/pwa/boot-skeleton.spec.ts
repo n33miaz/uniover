@@ -364,11 +364,43 @@ describe('boot skeleton', () => {
     expect(targets('training-glossary', '.bs-route-strip')).toBe(true);
     expect(targets('training-assessments', '.bs-route-strip')).toBe(true);
     expect(targets('training-routines', '.bs-route-strip > :nth-child(3)')).toBe(true);
-    expect(targets('settings-about', '.bs-route-row:nth-child(n + 4)')).toBe(true);
+    expect(targets('settings-about', '.bs-route-about')).toBe(true);
+    expect(targets('training-assessments', '.bs-route-assess')).toBe(true);
+    expect(targets('training-routines', '.bs-route-routines')).toBe(true);
     expect(targets('settings-security', '.bs-route-hero')).toBe(true);
     expect(targets('settings-siri', '.bs-route-panel > :not(.bs-cta)')).toBe(true);
-    expect(targets('settings-credits', '.bs-route-content')).toBe(true);
-    expect(css).toContain('margin-top: auto;');
+    expect(targets('settings-credits', '.bs-route-sheet')).toBe(true);
+    expect(targets('settings-credits', '.bs-route-scrim')).toBe(true);
+  });
+
+  it('puts bones inside every card of About, Credits, Assessments and Routines, never an empty white box', () => {
+    const doc = new DOMParser().parseFromString(INDEX, 'text/html');
+    const boot = doc.getElementById('boot-skeleton')!;
+    const cards = [
+      '.bs-route-about .bs-pane',
+      '.bs-route-assess .bs-pane',
+      '.bs-route-routines .bs-pane',
+      '.bs-route-sheet .bs-row',
+    ];
+    for (const selector of cards) {
+      // A tela de destino aparece nos dois desenhos que a usam (treino e detalhe), então a conta é por desenho.
+      const found = boot.querySelectorAll(selector);
+      expect(found.length, selector).toBeGreaterThan(0);
+      for (const card of Array.from(found))
+        expect(card.querySelectorAll('.bone').length, selector).toBeGreaterThan(0);
+    }
+    // Os dois desenhos que usam a composição (treino e detalhe) levam as mesmas peças.
+    const count = (selector: string) =>
+      Array.from(boot.querySelectorAll('.bs-variant')).map(
+        (variant) => variant.querySelectorAll(selector).length,
+      );
+    expect(count('.bs-route-about .bs-pane-row').filter((n) => n > 0)).toEqual([2, 2]);
+    expect(count('.bs-route-sheet .bs-row').filter((n) => n > 0)).toEqual([3, 3]);
+    expect(count('.bs-route-sheet .bs-cta').filter((n) => n > 0)).toEqual([1, 1]);
+    expect(count('.bs-route-assess .bs-pane-actions .bs-cta').filter((n) => n > 0)).toEqual([2, 2]);
+    expect(count('.bs-route-routines .bs-pane-actions .bs-cta').filter((n) => n > 0)).toEqual([
+      2, 2,
+    ]);
   });
 
   it('keeps the hand-off to the Angular drawing when the selector script has not run yet', () => {
