@@ -34,6 +34,40 @@ describe('DevicesApi', () => {
     expect((await list).map((a) => a.name)).toEqual(['PC']);
   });
 
+  it('reads the last beacon and the last refused handshake of each agent', async () => {
+    const read = api.beacons();
+    const request = http.expectOne('/api/v1/devices/agents/beacons');
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      items: [
+        {
+          agentId: 'a1',
+          stage: 'child_spawn',
+          code: 'crash_loop',
+          detail: null,
+          at: '2026-11-02T08:00:00Z',
+          firstFailAt: '2026-11-02T08:00:00Z',
+          count: 3,
+          verified: false,
+          version: '0.42.10',
+          os: 'windows',
+          rejectReason: 'invalid_token',
+          rejectedAt: '2026-11-02T09:00:00Z',
+        },
+      ],
+    });
+    expect(await read).toEqual([
+      {
+        agentId: 'a1',
+        stage: 'child_spawn',
+        code: 'crash_loop',
+        at: '2026-11-02T08:00:00Z',
+        rejectReason: 'invalid_token',
+        rejectedAt: '2026-11-02T09:00:00Z',
+      },
+    ]);
+  });
+
   it('approves with a JSON body carrying the code, the name and who the TV is for', async () => {
     const done = api.approve('BCDF2345', 'PC de casa', 'TV de Ana', ['g1']);
     const request = http.expectOne('/api/v1/devices/pairing/approve');

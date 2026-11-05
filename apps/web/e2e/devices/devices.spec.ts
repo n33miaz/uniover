@@ -359,6 +359,103 @@ test.describe('dispositivos', () => {
     ).toBe(true);
   });
 
+  test('explica por que um computador desligado não conseguiu iniciar ou foi recusado', async ({
+    page,
+    browserName,
+  }) => {
+    const refused = '00000000-0000-4000-8000-000000000002';
+    const quiet = '00000000-0000-4000-8000-000000000003';
+    devices.agents.push(
+      storedAgent({ connected: false, lastSeenAt: '2026-10-18T15:30:00Z' }),
+      storedAgent({
+        id: refused,
+        slug: 'agent:notebook-antigo',
+        name: 'Notebook antigo',
+        connected: false,
+        lastSeenAt: '2026-10-18T15:30:00Z',
+      }),
+      storedAgent({
+        id: quiet,
+        slug: 'agent:pc-do-quarto',
+        name: 'PC do quarto',
+        connected: false,
+        lastSeenAt: '2026-10-18T15:30:00Z',
+      }),
+      storedAgent({
+        id: '00000000-0000-4000-8000-000000000004',
+        slug: 'agent:pc-ligado',
+        name: 'PC ligado',
+        connected: true,
+      }),
+    );
+    const none = {
+      detail: null,
+      firstFailAt: null,
+      count: 1,
+      verified: false,
+      version: null,
+      os: null,
+    };
+    devices.beacons.push(
+      {
+        agentId: '00000000-0000-4000-8000-000000000001',
+        stage: 'child_spawn',
+        code: 'blocked_sac',
+        at: '2026-10-20T09:00:00Z',
+        rejectReason: null,
+        rejectedAt: null,
+        ...none,
+      },
+      {
+        agentId: refused,
+        stage: null,
+        code: null,
+        at: null,
+        rejectReason: 'invalid_token',
+        rejectedAt: '2026-10-20T09:00:00Z',
+        ...none,
+      },
+      // Pista antiga, de antes do último contato: não conta.
+      {
+        agentId: quiet,
+        stage: 'bootstrap',
+        code: 'crash_loop',
+        at: '2026-10-01T09:00:00Z',
+        rejectReason: null,
+        rejectedAt: null,
+        ...none,
+      },
+      // Computador conectado: a pista não aparece.
+      {
+        agentId: '00000000-0000-4000-8000-000000000004',
+        stage: 'bootstrap',
+        code: 'crash_loop',
+        at: '2026-10-20T09:00:00Z',
+        rejectReason: null,
+        rejectedAt: null,
+        ...none,
+      },
+    );
+    await openDevices(page, browserName, false);
+
+    await expect(page.locator('.item').first().locator('.startup')).toContainText(
+      'Não conseguiu iniciar: o Windows bloqueou o programa',
+    );
+    await expect(page.locator('.item').nth(1).locator('.startup')).toContainText(
+      'Credencial recusada',
+    );
+    // Estado nunca só por cor: a marca "!" acompanha o texto.
+    await expect(page.locator('.item').first().locator('.startup-mark')).toHaveText('!');
+    await expect(page.locator('.item').nth(2).locator('.startup')).toHaveCount(0);
+    await expect(page.locator('.item').nth(2).locator('.connection')).toContainText(
+      'Desligado desde',
+    );
+    await expect(page.locator('.item').nth(3).locator('.startup')).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+    const { violations } = await new AxeBuilder({ page }).analyze();
+    expect(seriousViolations(violations)).toEqual([]);
+  });
+
   test('mostra versão, sistema, TV e conexão de cada dispositivo', async ({
     page,
     browserName,
@@ -389,7 +486,9 @@ test.describe('dispositivos', () => {
     await expect(first.locator('.connection')).toHaveText('Conectado agora');
     await expect(first.locator('.last-seen')).toContainText(/Visto (agora|há)/);
     const second = page.locator('.item').nth(1);
-    await expect(second.locator('.connection')).toHaveText('Desconectado');
+    await expect(second.locator('.connection')).toHaveText(
+      /Desligado desde \d{2}\/\d{2}, \d{2}:\d{2}/,
+    );
     await expect(second.locator('.version')).toHaveCount(0);
     // Desconectado: não há a quem pedir registro, atualização ou reinício.
     await expect(second.locator('button.view-log')).toBeDisabled();
