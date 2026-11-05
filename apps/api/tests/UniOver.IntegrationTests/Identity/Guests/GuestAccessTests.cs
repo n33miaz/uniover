@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Routing;
@@ -12,6 +13,8 @@ using UniOver.IntegrationTests.Infrastructure;
 using UniOver.IntegrationTests.Training;
 using UniOver.IntegrationTests.Tv;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.Totp;
+using UniOver.Modules.Identity.Security;
 using UniOver.Modules.Tv;
 
 namespace UniOver.IntegrationTests.Identity.Guests;
@@ -329,6 +332,71 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             using var response = await app.GetAsync(url, bearer: token);
             response.StatusCode.Should().Be(HttpStatusCode.OK, url);
         }
+    }
+
+    [Fact]
+    public async Task Guest_WithThePcModule_ReachesThePcRoutesOverHttp_AndOnlyHisOwnPcCounts()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Raphael", ["module:pc"]);
+        var token = guest.Login.AccessToken;
+
+        using var status = await app.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: token);
+        using var media = await app.SendAsync(HttpMethod.Post, "/api/v1/pc/media", new { action = "PLAY_PAUSE" }, bearer: token);
+        using var withoutModule = await app.SendAsync(
+            HttpMethod.Get, "/api/v1/pc/status",
+            bearer: (await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Sem PC")).Login.AccessToken);
+
+        // Com a permissão a rota abre (200 e 409 "sem PC seu" não são 403); sem ela, a mesma rota é recusada.
+        status.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(status)).GetProperty("available").GetBoolean().Should().BeFalse("ele ainda não pareou um PC");
+        media.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        withoutModule.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Guest_EnrollsTheAuthenticatorAndRecoversThePasswordWithACode_OverHttp_WithoutAnyStepUp()
+    {
+        var key = IdentityApp.NewKey();
+        await using var app = await IdentityApp.StartAsync(postgres, new IdentityAppOptions
+        {
+            Extra = new Dictionary<string, string?> { ["Modules:Identity:TotpKey"] = key },
+        });
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
+        var token = guest.Login.AccessToken;
+
+        using var before = await app.SendAsync(HttpMethod.Get, "/api/v1/identity/me/totp", bearer: token);
+        before.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await before.Content.ReadFromJsonAsync<TotpStatusResponse>(Ct))!.Active.Should().BeFalse();
+
+        using var started = await app.SendAsync(
+            HttpMethod.Post, "/api/v1/identity/me/totp/start", new { password = guest.Password }, bearer: token);
+        started.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        string code;
+        await using (var db = app.Db())
+        {
+            var factor = await db.TotpFactors.SingleAsync(f => f.UserId == guest.UserId, Ct);
+            var secret = new TotpSecretProtector(Convert.FromBase64String(key)).Unprotect(guest.UserId, factor.EncryptedSecret);
+            code = TotpCodes.AtStep(secret, app.Time.GetUtcNow().ToUnixTimeSeconds() / 30);
+        }
+
+        using var confirmed = await app.SendAsync(HttpMethod.Post, "/api/v1/identity/me/totp/confirm", new { code }, bearer: token);
+        confirmed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var recoveryCodes = (await confirmed.Content.ReadFromJsonAsync<ConfirmTotpResponse>(Ct))!.RecoveryCodes;
+        recoveryCodes.Should().HaveCount(10);
+
+        var newPassword = IdentityApp.NewPassword();
+        using var recovered = await app.SendAsync(
+            HttpMethod.Post, "/api/v1/identity/me/password/recover-with-code",
+            new { recoveryCode = recoveryCodes[0], newPassword }, bearer: token);
+
+        // O convidado não tem passkey: só o dono passa pela reconfirmação; para ele a troca vale de primeira (204, não 403).
+        recovered.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using var oldPassword = await app.LoginRawAsync(guest.Email, guest.Password);
+        using var freshPassword = await app.LoginRawAsync(guest.Email, newPassword);
+        oldPassword.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        freshPassword.StatusCode.Should().Be(HttpStatusCode.PreconditionRequired, "a senha nova vale, mas agora falta o código do autenticador");
     }
 
     [Fact]
