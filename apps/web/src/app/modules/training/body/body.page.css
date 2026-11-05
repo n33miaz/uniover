@@ -17,16 +17,19 @@ p {
   margin: 0;
 }
 .intro h1 {
-  font-size: var(--fs-title, 1.5rem);
+  font-size: var(--fs-title);
+}
+.tabs,
+.periods {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--a-surface-2);
 }
 .tabs {
   position: relative;
   isolation: isolate;
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: var(--radius-pill, 999px);
-  background: var(--a-surface-2);
 }
 .tab-indicator {
   position: absolute;
@@ -65,30 +68,23 @@ p {
 .tabs button:focus-visible {
   outline-offset: -3px;
 }
+.periods button {
+  min-height: 36px;
+}
+.section-content.forward,
+.section-content.backward {
+  animation: section-enter 200ms var(--ease-out) both;
+}
 .section-content.forward {
-  animation: section-enter-forward 200ms var(--ease-out) both;
+  --from: 18px;
 }
 .section-content.backward {
-  animation: section-enter-backward 200ms var(--ease-out) both;
+  --from: -18px;
 }
-@keyframes section-enter-forward {
+@keyframes section-enter {
   from {
     opacity: 0.65;
-    transform: translateX(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes section-enter-backward {
-  from {
-    opacity: 0.65;
-    transform: translateX(-18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
+    transform: translateX(var(--from));
   }
 }
 .weight-card {
@@ -115,16 +111,22 @@ h2 {
 .chart-detail,
 .profile-line,
 .measure-row small,
-.fat-value span {
+.fat-value span,
+.signal-card small,
+.signal-row small {
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
-.weight-value,
-.value {
+.weight-value {
   margin: 0;
   font-size: clamp(2rem, 10vw, 2.75rem);
   font-weight: 750;
   letter-spacing: -0.04em;
+}
+.weight-value,
+.weight-meta strong,
+.stat strong,
+.entry strong {
   font-variant-numeric: tabular-nums;
 }
 .weight-meta {
@@ -133,7 +135,6 @@ h2 {
 .weight-meta strong,
 .stat strong {
   color: var(--a-ink);
-  font-variant-numeric: tabular-nums;
 }
 .chart-caption,
 .chart-detail {
@@ -150,6 +151,21 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
+.signal-card,
+.signal-row,
+.entry {
+  border: 0;
+  text-align: left;
+  font: inherit;
+}
+.signal-row,
+.entry {
+  background: transparent;
+}
+.signal-card,
+.signal-row {
+  color: var(--a-ink);
+}
 .signal-card {
   display: grid;
   min-width: 0;
@@ -157,12 +173,8 @@ h2 {
   align-content: start;
   gap: 5px;
   padding: var(--space-3);
-  border: 0;
   border-radius: var(--radius-sm);
-  color: var(--a-ink);
   background: var(--a-surface-2);
-  text-align: left;
-  font: inherit;
 }
 .signal-card strong {
   overflow: hidden;
@@ -177,10 +189,6 @@ h2 {
   letter-spacing: 0;
   color: var(--a-ink2);
 }
-.signal-card small {
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
 .signal-row {
   display: flex;
   width: 100%;
@@ -189,40 +197,11 @@ h2 {
   justify-content: space-between;
   gap: var(--space-2);
   padding: 0;
-  border: 0;
   border-top: 1px solid var(--a-line);
-  color: var(--a-ink);
-  background: transparent;
-  text-align: left;
   text-decoration: none;
-  font: inherit;
 }
 .signal-row:last-child {
   border-bottom: 1px solid var(--a-line);
-}
-.signal-row small {
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-.primary-action,
-.block {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: center;
-}
-.primary-action {
-  min-height: var(--tap);
-}
-.periods {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: var(--radius-pill, 999px);
-  background: var(--a-surface-2);
-}
-.periods button {
-  min-height: 36px;
 }
 .latest {
   align-items: start;
@@ -233,15 +212,17 @@ h2 {
   min-width: 0;
 }
 .stat strong {
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .stat.delta {
   text-align: right;
 }
-.entries {
+.entries,
+.measure-list {
   display: grid;
   gap: 1px;
+}
+.entries {
   border-top: 1px solid var(--a-line);
 }
 .entry {
@@ -250,25 +231,14 @@ h2 {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-2);
-  border: 0;
   border-bottom: 1px solid var(--a-line);
   color: inherit;
-  background: transparent;
-  text-align: left;
-  font: inherit;
-}
-.entry strong {
-  font-variant-numeric: tabular-nums;
 }
 .notice {
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--a-surface-2);
   font-size: var(--fs-small);
-}
-.measure-list {
-  display: grid;
-  gap: 1px;
 }
 .measure-row {
   display: grid;
