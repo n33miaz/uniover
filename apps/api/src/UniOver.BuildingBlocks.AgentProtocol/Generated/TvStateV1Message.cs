@@ -60,7 +60,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long? Volume { get; set; }
     }
 
-    public enum TvStateV1BodyConnection { Disconnected, Hibernating, Hot };
+    public enum TvStateV1BodyConnection { Disconnected, Hibernating, Hot, NotPaired };
 
     public enum TvStateV1BodyPower { Off, On, Unknown };
 
@@ -102,6 +102,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return TvStateV1BodyConnection.Hibernating;
                 case "hot":
                     return TvStateV1BodyConnection.Hot;
+                case "not_paired":
+                    return TvStateV1BodyConnection.NotPaired;
             }
             throw new Exception("Cannot unmarshal type TvStateV1BodyConnection");
         }
@@ -118,6 +120,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case TvStateV1BodyConnection.Hot:
                     JsonSerializer.Serialize(writer, "hot", options);
+                    return;
+                case TvStateV1BodyConnection.NotPaired:
+                    JsonSerializer.Serialize(writer, "not_paired", options);
                     return;
             }
             throw new Exception("Cannot marshal type TvStateV1BodyConnection");
