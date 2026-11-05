@@ -415,3 +415,33 @@ def test_the_tail_of_a_failure_output_is_short_and_on_one_line(pc: Pc) -> None:
     done = pc.run('Get-Tail ((1..10 | ForEach-Object { "linha $_" }) -join "`r`n")')
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "linha 8 | linha 9 | linha 10"
+
+
+def test_a_new_version_whose_trial_cannot_be_written_is_rolled_back_at_once(pc: Pc) -> None:
+    pc.version(pc.source, OLD)
+    pc.version(pc.previous, OLD)
+    # O destino da prova é uma pasta: gravar o arquivo falha, como num disco cheio.
+    (pc.runtime / "update-trial.txt").mkdir()
+    uv = fake_uv(pc, f'echo {BAD}> "{pc.source / ".version"}"', "exit /b 0")
+    done = pc.run(f"Invoke-Update '{uv}'")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-1] == "True"
+    # A versão nova nunca fica no ar sem prova: voltou para a anterior e foi bloqueada.
+    assert (pc.source / ".version").read_text(encoding="ascii").strip() == OLD
+    assert BAD in (pc.runtime / ".blocked-versions").read_text(encoding="ascii")
+    assert pc.state()["outcome"] == "rolled_back"
+
+
+def test_a_trial_the_python_side_already_wrote_is_not_overwritten(pc: Pc) -> None:
+    pc.version(pc.source, OLD)
+    marker = pc.runtime / "update-trial.txt"
+    uv = fake_uv(
+        pc,
+        f'echo {BAD}> "{pc.source / ".version"}"',
+        f'echo {BAD}^|0> "{marker}"',
+        "exit /b 0",
+    )
+    done = pc.run(f"Invoke-Update '{uv}'")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-1] == "True"
+    assert marker.read_text(encoding="ascii").strip() == f"{BAD}|0"

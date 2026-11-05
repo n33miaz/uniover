@@ -87,7 +87,7 @@ class Installation:
         )
 
     def leftovers(self) -> list[str]:
-        return sorted(p.name for p in self.base.iterdir() if p.name != "agent-src")
+        return sorted(p.name for p in self.base.iterdir() if p.name not in {"agent-src", "runtime"})
 
 
 @pytest.fixture
@@ -586,3 +586,50 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
     }
     assert main(["self-update"]) == EXIT_OK
     assert seen["sync"] is True
+
+
+def test_the_trial_marker_is_written_before_the_folders_are_swapped(
+    installed: Installation,
+) -> None:
+    order: list[str] = []
+
+    def record(source: Path, sha: str) -> None:
+        # Neste instante a versão nova ainda NÃO está no lugar.
+        order.append(f"prova {sha[:1]} com versão {read_version(source)[:1]}")  # type: ignore[index]
+
+    assert installed.update(NEW, record_trial=record).updated
+    assert order == [f"prova {NEW[:1]} com versão {OLD[:1]}"]
+    assert read_version(installed.source) == NEW
+
+
+def test_the_real_marker_has_the_format_the_supervisor_reads(installed: Installation) -> None:
+    assert installed.update(NEW).updated
+    marker = installed.base / "runtime" / "update-trial.txt"
+    assert marker.read_text(encoding="ascii") == f"{NEW}|0"
+
+
+def test_a_marker_that_cannot_be_written_aborts_the_swap_and_leaves_the_install_alone(
+    installed: Installation,
+) -> None:
+    def full_disk(_source: Path, _sha: str) -> None:
+        raise OSError(28, "No space left on device")
+
+    result = installed.update(NEW, record_trial=full_disk)
+    # A versão nova nunca fica no ar sem a prova: nada foi trocado.
+    assert not result.updated and result.outcome == "failed"
+    assert "prova" in result.message
+    assert read_version(installed.source) == OLD
+    assert installed.leftovers() == []
+
+
+def test_a_swap_that_fails_removes_the_marker_of_the_version_that_did_not_come_in(
+    installed: Installation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuses(*_args: object, **_kwargs: object) -> None:
+        raise SelfUpdateError("a pasta do agente está em uso; fica para a próxima vez")
+
+    monkeypatch.setattr("uniover_agent.adapters.self_update.swap_directories", refuses)
+    result = installed.update(NEW)
+    assert not result.updated
+    assert not (installed.base / "runtime" / "update-trial.txt").exists()
+    assert read_version(installed.source) == OLD
