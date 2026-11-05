@@ -109,6 +109,9 @@ public static class TvModule
         services.AddScoped<IAuditSource, TvAuditSource>();
         services.AddScoped<IPersonUsageSource, TvUsageSource>();
         services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.CommandDays);
+        // A remoção de uma TV fica para sempre, mas o IP e o aparelho dela seguem o prazo das trilhas de segurança.
+        services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "scrub_removal_audit", AuditRetentionPolicy.SecurityDays,
+            checkAppendOnly: false);
         services.AddScoped<ITvShortcutReader, EfShortcutReader>();
         // A trilha dos comandos entra numa fila e é gravada depois (o comando não espera o banco). A troca do computador e a
         // edição de atalhos seguem no ITvCommandAudit síncrono acima: gravam os próprios dados no mesmo SaveChanges.

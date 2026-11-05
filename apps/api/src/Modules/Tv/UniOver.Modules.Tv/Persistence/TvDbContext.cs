@@ -14,6 +14,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<CommandAuditEntry> CommandAudit => Set<CommandAuditEntry>();
 
+    public DbSet<TvRemovalAuditEntry> TvRemovalAudit => Set<TvRemovalAuditEntry>();
+
     public DbSet<Shortcut> Shortcuts => Set<Shortcut>();
 
     public DbSet<TvStateRecord> States => Set<TvStateRecord>();
@@ -60,6 +62,19 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             // O teto diário conta as linhas do usuário no dia a cada gravação, e o histórico por pessoa filtra por usuário: sem
             // este índice as duas viram varredura da trilha inteira (30 dias de teclas).
             e.HasIndex(x => new { x.UserId, x.OccurredAt });
+        });
+
+        modelBuilder.Entity<TvRemovalAuditEntry>(e =>
+        {
+            e.ToTable("tv_removal_audit");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.AgentId).HasMaxLength(CommandAuditEntry.AgentMax).IsRequired();
+            e.Property(x => x.Kind).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Ip).HasMaxLength(CommandAuditEntry.IpMax);
+            e.Property(x => x.UserAgent).HasMaxLength(CommandAuditEntry.UserAgentMax);
+            e.HasIndex(x => x.OccurredAt);
+            e.HasIndex(x => x.UserId);
         });
 
         modelBuilder.Entity<Shortcut>(e =>

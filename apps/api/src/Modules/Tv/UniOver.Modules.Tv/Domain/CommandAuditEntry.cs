@@ -13,6 +13,8 @@ public static class TvCommandNames
     public const string AppLaunch = "tv.app.launch";
     public const string Wake = "tv.wake";
     public const string AppsRefresh = "tv.apps.refresh";
+    public const string Add = "tv.add";
+    public const string Remove = "tv.remove";
 
     /// <summary>Alguém com a permissão de editar atalhos mudou a ordem deles: não vai à TV, mas é uma ação que a trilha guarda.</summary>
     public const string ShortcutsReorder = "tv.shortcuts.reorder";
