@@ -464,3 +464,109 @@ describe('TrainingSync', () => {
     });
   });
 });
+
+describe('TrainingSync, per resource', () => {
+  const paths = (calls: readonly { path: string }[]) => calls.map((call) => call.path);
+
+  function setupMany(names: readonly string[]) {
+    const kit = setupQueue();
+    const db = createTrainingTestDb();
+    const pull = new FakePullApi();
+    const resources: ResourceSync<string>[] = names.map((name) => ({
+      resource: name,
+      path: `/api/v1/training/${name}`,
+      merge: () => Promise.resolve(),
+    }));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: TRAINING_DB, useValue: db },
+        { provide: PullApi, useValue: pull },
+        ...resources.map((resource) => ({
+          provide: TRAINING_RESOURCE_SYNCS,
+          useValue: resource,
+          multi: true,
+        })),
+        TrainingSync,
+      ],
+    });
+    return { ...kit, db, pull, sync: () => TestBed.inject(TrainingSync) };
+  }
+
+  /** Uma página que só responde quando o teste manda: é o "catálogo lento". */
+  function slowPage(gate: { promise: Promise<void> }) {
+    return () => gate.promise.then(() => ({ items: ['x'], nextCursor: null }));
+  }
+
+  it('pulls in registration order when no screen asked for anything', async () => {
+    const t = setupMany(['big', 'small', 'tiny']);
+    await t.sync().start();
+    expect(paths(t.pull.calls)).toEqual([
+      '/api/v1/training/big',
+      '/api/v1/training/small',
+      '/api/v1/training/tiny',
+    ]);
+  });
+
+  it('pulls what the open screen asked for first, in the order asked, then the rest in registration order', async () => {
+    const t = setupMany(['big', 'small', 'tiny', 'other']);
+    t.sync().prioritize(['tiny', 'small']);
+    await t.sync().start();
+    expect(paths(t.pull.calls)).toEqual([
+      '/api/v1/training/tiny',
+      '/api/v1/training/small',
+      '/api/v1/training/big',
+      '/api/v1/training/other',
+    ]);
+  });
+
+  it('ignores names that are not registered, and a screen that asks in the middle of the pass changes the next pick', async () => {
+    const t = setupMany(['a', 'b', 'c']);
+    const gate = deferred();
+    t.pull.script = [slowPage(gate)];
+    t.sync().prioritize(['nao-existe']);
+    const started = t.sync().start();
+    await vi.waitFor(() => expect(t.pull.calls).toHaveLength(1));
+
+    t.sync().prioritize(['c']);
+    gate.open();
+    await started;
+
+    expect(paths(t.pull.calls)).toEqual([
+      '/api/v1/training/a',
+      '/api/v1/training/c',
+      '/api/v1/training/b',
+    ]);
+  });
+
+  it('marks a resource as pulled as soon as it finishes, while the pass is still going', async () => {
+    const t = setupMany(['small', 'big']);
+    const gate = deferred();
+    t.pull.script = [{ items: [], nextCursor: null }, slowPage(gate)];
+
+    const started = t.sync().start();
+    await vi.waitFor(() => expect(t.pull.calls).toHaveLength(2));
+    await vi.waitFor(() => expect(t.sync().resourcesPulled(['small'])).toBe(true));
+
+    expect(t.sync().resourcesPulled(['small', 'big'])).toBe(false);
+    expect(t.sync().resourcesPulled(['big'])).toBe(false);
+    expect(t.sync().firstPassSettled()).toBe(false);
+    expect(t.sync().lastPullAt()).toBeNull();
+
+    gate.open();
+    await started;
+    expect(t.sync().resourcesPulled(['small', 'big'])).toBe(true);
+    expect(t.sync().firstPassSettled()).toBe(true);
+  });
+
+  it('does not mark a resource whose pull failed, and the failure still settles the whole pass', async () => {
+    const t = setupMany(['small', 'big']);
+    t.pull.script = [{ items: [], nextCursor: null }, new HttpErrorResponse({ status: 0 })];
+
+    await t.sync().start();
+
+    expect(t.sync().resourcesPulled(['small'])).toBe(true);
+    expect(t.sync().resourcesPulled(['big'])).toBe(false);
+    expect(t.sync().error()).toBe('network');
+    expect(t.sync().firstPassSettled()).toBe(true);
+  });
+});

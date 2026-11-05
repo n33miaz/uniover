@@ -62,7 +62,7 @@ export function summarizeHistory(
 export class ProgressHistory {
   private readonly repository = inject(SessionRepository);
   private readonly _data = signal<TrainingHistory | null>(null);
-  private ticket = 0;
+  private chain: Promise<void> = Promise.resolve();
 
   /** `null` enquanto lê pela primeira vez. */
   readonly data = this._data.asReadonly();
@@ -74,8 +74,17 @@ export class ProgressHistory {
     });
   }
 
-  private async refresh(): Promise<void> {
-    const ticket = ++this.ticket;
+  /**
+   * Lê de novo o banco local. As leituras andam em fila: a última a começar é a última a gravar, e quem espera uma delas
+   * (a tela, ao fim da primeira passada) vê as anteriores prontas.
+   */
+  refresh(): Promise<void> {
+    const next = this.chain.then(() => this.read());
+    this.chain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async read(): Promise<void> {
     const sessions = await this.repository.sessionsBetween(0, Number.MAX_SAFE_INTEGER);
     const bySession = new Map<string, readonly LocalSet[]>();
     for (let start = 0; start < sessions.length; start += BATCH) {
@@ -84,7 +93,6 @@ export class ProgressHistory {
         batch.map((session) => this.repository.setsOfSession(session.id)),
       );
       batch.forEach((session, index) => bySession.set(session.id, sets[index]));
-      if (ticket !== this.ticket) return;
     }
     this._data.set(summarizeHistory(sessions, (id) => bySession.get(id) ?? []));
   }

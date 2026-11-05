@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 import type { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import type { TrainingSync } from '../data/sync/training-sync';
 import { ExercisesSwitch } from './exercises-switch';
-import { awaitingFirstPull } from './first-pull';
+import { awaitingFirstPull, settledAfterFirstPull } from './first-pull';
 import { formatDayMonth, formatDuration, formatKg } from './format';
 import { ChipOption, TrainingChips } from './training-chips';
 import { TrainingSheet } from './training-sheet';
@@ -58,6 +58,55 @@ describe('awaitingFirstPull', () => {
 
   it('stops waiting once the wait deadline passed with the request still pending', () => {
     expect(state(true, null, null, false, true)).toBe(false);
+  });
+
+  describe('with the resources the screen needs', () => {
+    const needs = ['routines', 'sessions'];
+    const withNeeds = (pulled: readonly string[], overrides: Record<string, unknown> = {}) =>
+      awaitingFirstPull(
+        {
+          error: () => null,
+          lastPullAt: () => null,
+          firstPassSettled: () => false,
+          firstPullWaitExpired: () => false,
+          resourcesPulled: (names: readonly string[]) => names.every((n) => pulled.includes(n)),
+          ...overrides,
+        } as unknown as TrainingSync,
+        { online: () => true } as unknown as ConnectivityService,
+        needs,
+      );
+
+    it('keeps waiting until every needed resource was pulled, however many others were', () => {
+      expect(withNeeds([])).toBe(true);
+      expect(withNeeds(['routines'])).toBe(true);
+      expect(withNeeds(['exercises', 'sets', 'goals'])).toBe(true);
+    });
+
+    it('stops waiting as soon as the needed resources were pulled, without the rest of the pass', () => {
+      expect(withNeeds(['sessions', 'routines'])).toBe(false);
+    });
+
+    it('keeps every other way out: offline, a failure, an earlier pull, the pass settling, the deadline', () => {
+      const wait = (overrides: Record<string, unknown>, online = true) =>
+        awaitingFirstPull(
+          {
+            error: () => null,
+            lastPullAt: () => null,
+            firstPassSettled: () => false,
+            firstPullWaitExpired: () => false,
+            resourcesPulled: () => false,
+            ...overrides,
+          } as unknown as TrainingSync,
+          { online: () => online } as unknown as ConnectivityService,
+          needs,
+        );
+      expect(wait({})).toBe(true);
+      expect(wait({}, false)).toBe(false);
+      expect(wait({ error: () => 'server' })).toBe(false);
+      expect(wait({ lastPullAt: () => 1 })).toBe(false);
+      expect(wait({ firstPassSettled: () => true })).toBe(false);
+      expect(wait({ firstPullWaitExpired: () => true })).toBe(false);
+    });
   });
 });
 
@@ -216,5 +265,78 @@ describe('TrainingSheet', () => {
     pointerDown(second.dialog, 0, 0);
     second.dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
     expect(second.fixture.componentInstance.closed()).toBe(1);
+  });
+});
+
+describe('settledAfterFirstPull', () => {
+  function setup(initiallyPulled: boolean) {
+    const pulled = signal(initiallyPulled);
+    const sync = {
+      error: () => null,
+      lastPullAt: () => null,
+      firstPassSettled: () => false,
+      firstPullWaitExpired: () => false,
+      resourcesPulled: () => pulled(),
+    } as unknown as TrainingSync;
+    const connectivity = { online: () => true } as unknown as ConnectivityService;
+    let finish!: () => void;
+    const reload = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const settled = TestBed.runInInjectionContext(() =>
+      settledAfterFirstPull(sync, connectivity, ['routines'], reload),
+    );
+    return { pulled, reload, settled, finish: () => finish() };
+  }
+
+  it('is true at once, with no extra read, for a screen that never had to wait', () => {
+    const { settled, reload } = setup(true);
+    TestBed.tick();
+    expect(settled()).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('after a wait, reads once more and only then settles, so a stale read cannot show a false empty state', async () => {
+    const { pulled, settled, reload, finish } = setup(false);
+    TestBed.tick();
+    expect(settled()).toBe(false);
+
+    pulled.set(true);
+    TestBed.tick();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(settled()).toBe(false);
+
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled()).toBe(true);
+  });
+
+  it('settles even when the extra read fails, so the skeleton never lasts forever', async () => {
+    const pulled = signal(false);
+    const sync = {
+      error: () => null,
+      lastPullAt: () => null,
+      firstPassSettled: () => false,
+      firstPullWaitExpired: () => false,
+      resourcesPulled: () => pulled(),
+    } as unknown as TrainingSync;
+    const settled = TestBed.runInInjectionContext(() =>
+      settledAfterFirstPull(
+        sync,
+        { online: () => true } as unknown as ConnectivityService,
+        ['routines'],
+        () => Promise.reject(new Error('idb')),
+      ),
+    );
+    TestBed.tick();
+    pulled.set(true);
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled()).toBe(true);
   });
 });

@@ -104,8 +104,20 @@ export class BodyStore {
       this.body.revision();
       this.profiles.revision();
       this.goals.revision();
-      untracked(() => void this.load());
+      untracked(() => void this.refresh());
     });
+  }
+
+  private chain: Promise<void> = Promise.resolve();
+
+  /**
+   * Lê de novo o banco local. As leituras andam em fila: a última a começar é a última a gravar, e quem espera uma delas
+   * (a tela, ao fim da primeira passada) vê as anteriores prontas.
+   */
+  refresh(): Promise<void> {
+    const next = this.chain.then(() => this.load());
+    this.chain = next.catch(() => undefined);
+    return next;
   }
 
   private async load(): Promise<void> {

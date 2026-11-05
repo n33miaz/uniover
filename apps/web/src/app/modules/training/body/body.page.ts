@@ -26,7 +26,7 @@ import { type WeightPeriod, buildWeightChart, rowsInPeriod } from './weight/weig
 import { WeightSheet } from './weight/weight-sheet';
 import { BodySkeleton } from './body-skeleton';
 import { TrainingSync } from '../data/sync/training-sync';
-import { awaitingFirstPull } from '../shell/first-pull';
+import { FIRST_PULL_NEEDS, awaitingFirstPull, settledAfterFirstPull } from '../shell/first-pull';
 
 type BodyView = 'summary' | 'records' | 'photos';
 
@@ -350,10 +350,27 @@ export class BodyPage {
   protected readonly store = inject(BodyStore);
   private readonly connectivity = inject(ConnectivityService);
   private readonly sync = inject(TrainingSync);
-  /** Não antecipa os vazios do Corpo enquanto a primeira passada ainda pode trazer registros. */
-  protected readonly loading = computed(
-    () => !this.store.ready() || awaitingFirstPull(this.sync, this.connectivity),
+  /**
+   * Não antecipa os vazios do Corpo enquanto a primeira passada ainda pode trazer registros. Espera só o que a tela lê
+   * (medidas, perfil e metas), não a passada inteira; `settled` cobre a leitura que ainda estava a caminho.
+   */
+  private readonly settled = settledAfterFirstPull(
+    this.sync,
+    this.connectivity,
+    FIRST_PULL_NEEDS.body,
+    () => this.store.refresh(),
   );
+  protected readonly loading = computed(
+    () =>
+      !this.store.ready() ||
+      !this.settled() ||
+      awaitingFirstPull(this.sync, this.connectivity, FIRST_PULL_NEEDS.body),
+  );
+
+  constructor() {
+    // A passada puxa primeiro o que esta tela lê.
+    this.sync.prioritize(FIRST_PULL_NEEDS.body);
+  }
   protected readonly view = signal<BodyView>('summary');
   protected readonly viewDirection = signal<'forward' | 'backward' | null>(null);
   protected readonly period = signal<WeightPeriod>('6m');
