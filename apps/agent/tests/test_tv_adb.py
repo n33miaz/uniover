@@ -158,18 +158,6 @@ async def test_an_unauthorized_tv_is_never_reconnected_to_avoid_a_new_prompt() -
     assert runner.calls == [CONNECT, GET_STATE]  # sem `disconnect` nem segundo `connect`
 
 
-async def test_reading_the_authorization_never_opens_a_connection() -> None:
-    runner = FakeAdbRunner({GET_STATE: [UNAUTHORIZED_STATE, ok("device\r\n")]})
-    adb = make(runner)
-    assert await adb.read_authorization() == "unauthorized"
-    assert not adb.connected
-    assert await adb.read_authorization() == "authorized"
-    assert adb.connected
-    assert runner.calls == [GET_STATE, GET_STATE]
-    gone = FakeAdbRunner({GET_STATE: ok(f"error: device '{SERIAL}' not found\r\n", returncode=1)})
-    assert await make(gone).read_authorization() == "unknown"
-
-
 async def test_a_blocked_unauthorized_tv_notices_the_acceptance_without_connecting() -> None:
     clock = Clock()
     runner = FakeAdbRunner(

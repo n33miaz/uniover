@@ -36,8 +36,8 @@ def test_without_aapt_there_is_no_icon_task_and_the_reason_is_logged(
     with caplog.at_level(logging.INFO):
         setup = make_tv(Settings(tv_host=TV_HOST, tv_watchdog=False))
     assert setup is not None
-    # anunciante, limpeza, laço do modo foco, contato periódico e reavaliação do ADB
-    assert len(setup.background) == 5
+    # anunciante, limpeza, laço do modo foco e contato periódico do ADB
+    assert len(setup.background) == 4
     assert "aapt2 não encontrado" in caplog.text
 
 
@@ -61,7 +61,7 @@ def test_with_aapt_the_icon_task_is_registered_and_listens_to_the_session(
     )
     assert setup is not None
     (publisher,) = created
-    assert len(setup.background) == 6
+    assert len(setup.background) == 5
     assert publisher.run in setup.background
     # Sessão que volta a ficar quente retoma o que ficou pela metade (e só isso).
     publisher.request([AppEntry("com.cnvs.apptv", "CineVS")])
