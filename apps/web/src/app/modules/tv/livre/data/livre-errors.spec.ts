@@ -31,6 +31,7 @@ describe('livreCodeMessage', () => {
     expect(livreCodeMessage('adb_unreachable')).toContain('ADB');
     expect(livreCodeMessage('adb_timeout')).toBe(livreCodeMessage('adb_unreachable'));
     expect(livreCodeMessage('adb_unauthorized')).toContain('Aceite');
+    expect(livreCodeMessage('adb_unauthorized')).toContain('Sempre permitir neste computador');
     expect(livreCodeMessage('adb_qualquer_outro')).toContain('ADB');
   });
 

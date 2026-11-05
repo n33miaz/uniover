@@ -82,7 +82,7 @@ export function livreCodeMessage(code: string): string | null {
     case 'livre_failed':
       return $localize`:@@tv-livre.error.livre-failed:O TV Livre não respondeu como esperado.`;
     case 'adb_unauthorized':
-      return $localize`:@@tv-livre.error.adb-unauthorized:Aceite o aviso do ADB na tela da TV e tente de novo.`;
+      return $localize`:@@tv-livre.error.adb-unauthorized:Aceite o aviso do ADB na tela da TV, marcando Sempre permitir neste computador, e tente de novo.`;
     case 'adb_unreachable':
     case 'adb_unavailable':
     case 'adb_timeout':
