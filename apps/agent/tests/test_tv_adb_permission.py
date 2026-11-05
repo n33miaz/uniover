@@ -577,3 +577,52 @@ async def test_a_keepalive_that_meets_the_prompt_stops_everything_after_it(home:
     assert await adb.keep_authorization_fresh() == "unauthorized"
     assert await adb.keep_authorization_fresh() == "skipped"
     assert runner.calls.count(CONNECT) == 1
+
+
+# --- formatos de chave: só a truncada se troca; o resto é do usuário -----------------------------
+
+
+def test_a_key_with_a_byte_order_mark_is_still_a_valid_key(home: Home) -> None:
+    home.write_key(bytes([0xEF, 0xBB, 0xBF]) + KEY)
+    assert home.keys().fingerprint() is not None
+    authorization = home.authorization()
+    authorization.prepare()
+    assert (home.android / "adbkey").read_bytes().startswith(bytes([0xEF, 0xBB, 0xBF]))
+    assert not (home.android / "adbkey.invalido").exists()
+
+
+def test_a_key_in_an_unknown_format_is_left_alone_and_nothing_is_recorded(home: Home) -> None:
+    home.verify()  # há cópia boa da chave antiga...
+    home.write_key(b"ssh-rsa AAAAB3NzaC1yc2E formato-que-nao-e-nosso")
+    authorization = home.authorization()
+    authorization.prepare()  # ...mas a do usuário, de formato estranho, não é trocada
+    assert (home.android / "adbkey").read_bytes().startswith(b"ssh-rsa")
+    assert not (home.android / "adbkey.invalido").exists()
+    assert authorization.snapshot_key() is None
+    assert not authorization.mark_verified(None, MAC)
+
+
+async def test_an_automatic_connect_never_redoes_the_connection_even_if_the_mac_flips(
+    home: Home,
+) -> None:
+    home.verify()
+    answers = iter([MAC, OTHER_MAC])  # a segunda consulta à ARP volta diferente (corrida)
+
+    async def flaky() -> str | None:
+        return next(answers, OTHER_MAC)
+
+    home.resolve = flaky  # type: ignore[method-assign]
+    runner = runner_with(connect=STALE)
+    await home.adb(runner).connect()
+    assert DISCONNECT not in runner.calls  # só um pedido da pessoa desconecta e reconecta
+    assert runner.calls.count(CONNECT) == 1
+
+
+def test_a_grant_without_a_mac_is_recorded_but_never_allows_automatic_connects(
+    home: Home, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING"):
+        authorization = home.verify(mac="")
+    assert "MAC" in caplog.text
+    assert not authorization.verified_for("")
+    assert not authorization.verified_for(MAC)

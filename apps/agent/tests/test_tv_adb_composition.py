@@ -4,6 +4,7 @@ O adaptador é o dublê (`FakeTvAdb`); a API é o servidor WebSocket falso de lo
 """
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -11,22 +12,21 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
+from uniover_agent.adapters import tv_adb as adb_module
 from uniover_agent.adapters.fakes import (
-    FakeClock,
     FakeSecretStore,
-    FakeTransport,
     FakeTvAdb,
     FakeTvRemote,
 )
 from uniover_agent.composition import tv as tv_module
 from uniover_agent.composition.connection import run
 from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
-from uniover_agent.composition.tv import build_tv
-from uniover_agent.config import Settings
-from uniover_agent.core import EnvelopeFactory, EnvelopeGate, tv_text_handler
+from uniover_agent.config import Settings, tv_cert_dir
+from uniover_agent.core import Command, tv_text_handler
 from uniover_agent.ports import AdbUnauthorized, AdbUnreachable, LaunchableApp
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
+from .support_adb import LAUNCHER_QUERY, LEANBACK_QUERY, NO_ACTIVITIES, FakeAdbRunner, ok
 from .test_tv_composition import TV_HOST, make_tv, pair_fake_tv
 
 
@@ -82,8 +82,8 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert len(setup.prepare) == 2  # o ADB e o TV Livre
     assert len(setup.after_hello) == 1
     # Anunciante da lista, temporizador da limpeza, laço do modo foco, contato periódico com a TV
-    # (mantém a permissão viva) e reavaliação da permissão do ADB.
-    assert len(setup.background) == 5
+    # (mantém a permissão viva).
+    assert len(setup.background) == 4
     # A capacidade só vem depois do teste de conexão (passo de preparação).
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
 
@@ -148,7 +148,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
     ]
 
 
-async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
+async def test_capability_is_declared_even_when_the_tv_has_not_given_the_permission(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     adb = FakeTvAdb()
@@ -160,67 +160,62 @@ async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
     with caplog.at_level(logging.WARNING):
         for step in setup.prepare:
             await step()
-    assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
+    # O app só mostra "Atualizar lista" (o toque que pede a permissão) a quem tem `tv.adb`: sem a
+    # capacidade o dono nunca teria como dar o primeiro aceite.
+    assert "tv.adb" in setup.capabilities
     assert "Nenhum aviso é aberto sozinho" in caplog.text
-    # Os comandos continuam registrados: respondem `adb_unauthorized` em vez de "desconhecido".
     assert "tv.apps.refresh.v1" in setup.handlers
 
 
-async def start_unauthorized(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, adb: FakeTvAdb
-) -> tuple[Any, FakeClock]:
-    adb.errors = [AdbUnauthorized("a")]
-    pair_fake_tv(monkeypatch, FakeTvRemote())
-    enable_adb(monkeypatch, tmp_path, adb)
-    clock = FakeClock()
-    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
-    setup = build_tv(
-        Settings(tv_host=TV_HOST, tv_watchdog=False), clock, FakeTransport(), envelopes
+async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ponta a ponta com o `AdbTv` de verdade: só o toque em "Atualizar lista" abre conexão."""
+    user_home = tmp_path / "usuario"
+    (user_home / ".android").mkdir(parents=True)
+    (user_home / ".android" / "adbkey").write_bytes(
+        b"-----BEGIN PRIVATE KEY-----\nchave-de-teste\n-----END PRIVATE KEY-----\n"
     )
+    monkeypatch.setattr(Path, "home", lambda: user_home)
+    fake_exe = tmp_path / "platform-tools" / "adb.exe"
+    fake_exe.parent.mkdir(parents=True)
+    fake_exe.write_text("x")
+    monkeypatch.setenv("UNIOVER_ADB_PATH", str(fake_exe))
+    serial = f"{TV_HOST}:5555"
+
+    def on_tv(command: str) -> tuple[str, ...]:
+        return ("-s", serial, "shell", command)
+
+    runner = FakeAdbRunner(
+        {
+            ("connect", serial): ok(f"connected to {serial}\r\n"),
+            ("-s", serial, "get-state"): ok("device\r\n"),
+            ("disconnect", serial): ok(""),
+            on_tv(LEANBACK_QUERY): ok(NO_ACTIVITIES),
+            on_tv(LAUNCHER_QUERY): ok(NO_ACTIVITIES),
+            on_tv("settings put global adb_allowed_connection_time 0"): ok(""),
+            on_tv("settings get global adb_allowed_connection_time"): ok("0\r\n"),
+            on_tv("getprop ro.serialno"): ok("SN123456\r\n"),
+        }
+    )
+
+    async def mac(host: str, port: int) -> str | None:
+        return "AA:BB:CC:00:11:22"
+
+    monkeypatch.setattr(adb_module, "run_process", runner)
+    monkeypatch.setattr(tv_module, "resolve_tv_mac", mac)
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    setup = make_tv(Settings(tv_host=TV_HOST, tv_watchdog=False))
     assert setup is not None
     for step in setup.prepare:
         await step()
-    assert "tv.adb" not in setup.capabilities
-    return setup, clock
-
-
-async def run_recheck(setup: Any, until: Any) -> None:
-    recheck = asyncio.create_task(setup.background[-1]())
-    for _ in range(200):
-        await asyncio.sleep(0)
-        if until():
-            break
-    recheck.cancel()
-
-
-async def test_an_adb_authorized_later_is_declared_without_new_connections(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    adb = FakeTvAdb()
-    adb.authorizations = ["unauthorized"] * 6 + ["authorized"]
-    setup, clock = await start_unauthorized(monkeypatch, tmp_path, adb)
-    await run_recheck(setup, lambda: "tv.adb" in setup.capabilities)
-    # Espera crescente (5, 10, 30 e 60 min, que se mantém) e nenhuma conexão além da partida:
-    # conectar de novo faria a TV mostrar o aviso "Permitir depuração USB" outra vez.
-    assert clock.sleeps == [300, 600, 1800, 3600, 3600, 3600, 3600]
-    assert adb.connects == 1
-    assert adb.authorization_reads == 7
-    assert "tv.adb" in setup.capabilities
-    assert "tv.livre.v1" in setup.capabilities
-    assert setup.capabilities.count("tv.adb") == 1
-
-
-async def test_the_recheck_stops_when_the_tv_is_no_longer_known_to_the_adb(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    adb = FakeTvAdb()
-    adb.authorizations = ["unauthorized", "unknown"]
-    setup, clock = await start_unauthorized(monkeypatch, tmp_path, adb)
-    await run_recheck(setup, lambda: False)
-    assert adb.authorization_reads == 2  # depois de "unknown" não lê mais nem conecta
-    assert adb.connects == 1
-    assert "tv.adb" not in setup.capabilities
-    assert clock.sleeps == [300, 600]
+    assert ("connect", serial) not in runner.calls  # a partida só lê: nenhum aviso na TV
+    handler = setup.handlers["tv.apps.refresh.v1"]
+    await handler(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.apps.refresh.v1", {}))
+    assert runner.calls.count(("connect", serial)) == 1  # o toque conecta (e prova a permissão)
+    state = json.loads((tv_cert_dir("tv") / "adb-authorization.json").read_text(encoding="utf-8"))
+    assert state["state"] == "verified"
+    assert state["mac"] == "AA:BB:CC:00:11:22"
 
 
 async def test_run_serves_apps_launch_and_typing_through_the_adb(
