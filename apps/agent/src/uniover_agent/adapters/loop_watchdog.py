@@ -89,10 +89,12 @@ class LoopWatchdog:
             return
         if self._dumped:
             return
-        self._dumped = True
-        self.dumps += 1
         # Sem `logging` aqui: se o travamento for dentro dele, esta thread travaria junto.
-        self._dump(self._logs, f"o laço de eventos está parado há {stalled:.0f} s")
+        # Só vale como feito se o arquivo foi gravado: disco cheio tenta de novo na próxima
+        # conferência (e a próxima parada ainda gera o seu).
+        if self._dump(self._logs, f"o laço de eventos está parado há {stalled:.0f} s"):
+            self._dumped = True
+            self.dumps += 1
 
     def _watch(self) -> None:
         while not self._stop.wait(self._check_every):

@@ -75,3 +75,28 @@ async def test_a_loop_blocked_in_a_synchronous_call_is_noticed_from_another_thre
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+def test_a_dump_that_could_not_be_written_is_tried_again_later(tmp_path: Path) -> None:
+    # Disco cheio: o registro da parada não foi gravado, então a próxima conferência tenta de novo
+    # (antes, a parada era dada por registrada e nada ficava no arquivo).
+    moment = Moment()
+    outcomes = iter([False, False, True])
+    headers: list[str] = []
+
+    def dump(logs: Path, header: str) -> bool:
+        headers.append(header)
+        return next(outcomes)
+
+    watchdog = LoopWatchdog(tmp_path, stall_after=60, monotonic=moment, dump=dump)
+    moment.now = 61
+    watchdog.check_now()
+    moment.now = 66
+    watchdog.check_now()
+    assert len(headers) == 2 and watchdog.dumps == 0
+    moment.now = 71
+    watchdog.check_now()
+    assert len(headers) == 3 and watchdog.dumps == 1
+    moment.now = 76
+    watchdog.check_now()
+    assert len(headers) == 3, "gravado uma vez, não repete enquanto o laço segue parado"
