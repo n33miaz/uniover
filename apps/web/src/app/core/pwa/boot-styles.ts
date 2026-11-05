@@ -43,18 +43,32 @@ export function adoptBootStyles(doc: Document): void {
     const notice = doc.getElementById('boot-timeout');
     if (notice) notice.hidden = false;
   };
+  let reported = false;
   const failed = (): void => {
-    if (root.getAttribute('data-styles') === 'ready') return;
+    if (reported || root.getAttribute('data-styles') === 'ready') return;
+    reported = true;
     const count = readFailures(win);
     writeFailures(win, count + 1);
     if (count >= 1) settle(true);
     else giveUp();
   };
 
-  if (link.sheet) {
+  // O WebKit dá uma folha vazia a um carregamento que falhou (e nega o acesso às regras): folha sem regras, ou cujas
+  // regras não se leem, não é folha carregada. A do app é do mesmo endereço, então a leitura sempre é permitida.
+  const hasRules = (): boolean => {
+    try {
+      return !!link.sheet && link.sheet.cssRules.length > 0;
+    } catch {
+      return false;
+    }
+  };
+  if (hasRules()) {
     settle(false);
+  } else if (link.sheet) {
+    // Já terminou, mas a folha veio vazia ou sem regras legíveis (carregamento que falhou antes de o app rodar).
+    failed();
   } else {
-    link.addEventListener('load', () => settle(false));
+    link.addEventListener('load', () => (hasRules() ? settle(false) : failed()));
     link.addEventListener('error', failed);
     win?.setTimeout(giveUp, STYLES_WAIT_MS);
   }

@@ -90,26 +90,41 @@
       if (!unstyled) writeFailures(0);
       document.dispatchEvent(new Event('uniover:styles-ready'));
     };
+    var reported = false;
     var failed = function () {
-      if (root.getAttribute('data-styles') === 'ready') return;
+      // A falha pode ser vista duas vezes (o evento e a conferência do registro de recursos): conta uma só.
+      if (reported || root.getAttribute('data-styles') === 'ready') return;
+      reported = true;
       var count = readFailures();
       writeFailures(count + 1);
       if (count >= 1) settle(true);
       else giveUp();
     };
-    // A folha que terminou sem virar folha (falhou antes de os ouvintes existirem) aparece no registro de recursos.
-    var finishedWithoutSheet = function () {
+    // O WebKit dá uma folha vazia a um carregamento que falhou (e negar o acesso às regras): folha sem regras, ou cujas
+    // regras não se leem, não é folha carregada. A do app é do mesmo endereço, então a leitura sempre é permitida.
+    var hasRules = function () {
       try {
-        var entries = performance.getEntriesByName(sheet.href);
-        return !sheet.sheet && entries.length > 0 && entries[entries.length - 1].responseEnd > 0;
+        return !!sheet.sheet && sheet.sheet.cssRules.length > 0;
       } catch (e) {
         return false;
       }
     };
-    if (sheet.sheet) settle();
+    // A folha que terminou sem virar folha (falhou antes de os ouvintes existirem) aparece no registro de recursos.
+    var finishedWithoutSheet = function () {
+      try {
+        var entries = performance.getEntriesByName(sheet.href);
+        return !hasRules() && entries.length > 0 && entries[entries.length - 1].responseEnd > 0;
+      } catch (e) {
+        return false;
+      }
+    };
+    if (hasRules()) settle();
+    // Já terminou, mas a folha veio vazia ou sem regras legíveis (carregamento que falhou antes deste script rodar).
+    else if (sheet.sheet) failed();
     else {
       sheet.addEventListener('load', function () {
-        settle();
+        if (hasRules()) settle();
+        else failed();
       });
       sheet.addEventListener('error', failed);
       setTimeout(function () {

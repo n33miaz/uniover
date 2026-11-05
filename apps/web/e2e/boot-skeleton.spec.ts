@@ -227,7 +227,8 @@ test.describe('abertura da página de verdade', () => {
         return (
           box.width > 4 &&
           box.height > 4 &&
-          getComputedStyle(bone).backgroundColor !== 'rgba(0, 0, 0, 0)'
+          (getComputedStyle(bone).backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+            getComputedStyle(bone).backgroundImage !== 'none')
         );
       });
       const root = document.getElementById('boot-skeleton')!;
@@ -313,9 +314,13 @@ test.describe('abertura da página de verdade', () => {
         ),
       )
       .toBe(true);
+    // O HTML já nasce com a folha pendente e ninguém a assumiu ainda: nem o script nem o app rodaram.
     expect(
-      await page.evaluate(() => document.documentElement.getAttribute('data-styles')),
-    ).toBeNull();
+      await page.evaluate(() => [
+        document.documentElement.getAttribute('data-styles'),
+        document.documentElement.getAttribute('data-styles-owner'),
+      ]),
+    ).toEqual(['pending', null]);
     releaseScript();
     await expect(page.locator('html')).toHaveAttribute('data-styles', 'ready');
     await expect(page.locator('link[data-boot-styles]')).toHaveJSProperty('media', 'all');
@@ -350,6 +355,72 @@ test.describe('abertura da página de verdade', () => {
           null,
       ),
     ).toBe(true);
+  });
+
+  test('com a folha que falhou antes de o script de abertura rodar, o aviso sai logo e não só aos 20 s', async ({
+    context,
+    page,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    await page.route(MAIN_STYLES, (route) => route.abort());
+    await page.goto('/', { waitUntil: 'commit' });
+    // Chromium: o registro de recursos mostra a falha; WebKit: a folha vem vazia e sem regras legíveis.
+    await expect(page.locator('#boot-timeout')).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('#boot-skeleton')).toHaveAttribute('data-boot-timeout', 'true');
+    expect(await page.locator('html').getAttribute('data-styles')).toBe('pending');
+  });
+
+  for (const [name, script] of [
+    ['o script de abertura não carrega', null],
+    [
+      'o script de abertura em cache é de uma versão antiga, sem o cuidado com a folha',
+      "document.documentElement.setAttribute('data-boot', 'home');",
+    ],
+  ] as const) {
+    test(`quando ${name}, o app liga a folha de estilos sozinho e o esqueleto sai`, async ({
+      context,
+      page,
+    }) => {
+      const identity = await mockIdentityApi(context);
+      identity.loggedIn = true;
+      await page.route(/\/boot-skeleton\.js$/, (route) =>
+        script === null
+          ? route.abort()
+          : route.fulfill({ contentType: 'text/javascript', body: script }),
+      );
+      await page.goto('/');
+      await expect(page.locator('html')).toHaveAttribute('data-styles', 'ready');
+      await expect(page.locator('html')).toHaveAttribute('data-styles-owner', 'app');
+      await expect(page.locator('link[data-boot-styles]')).toHaveJSProperty('media', 'all');
+      await expect(page.locator('#boot-skeleton')).toHaveCount(0);
+      await expect(page.locator('app-root [data-screen-ready]').first()).toBeVisible();
+      // O app aparece com o estilo dele, não cru.
+      expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain(
+        'system-ui',
+      );
+    });
+  }
+
+  test('na segunda abertura seguida sem a folha de estilos o app é liberado sem estilo, em vez de repetir o aviso', async ({
+    context,
+    page,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem('uniover.boot-styles-failures'))
+        sessionStorage.setItem('uniover.boot-styles-failures', '1');
+    });
+    await page.route(MAIN_STYLES, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.abort();
+    });
+    await page.goto('/', { waitUntil: 'commit' });
+    await expect(page.locator('html')).toHaveAttribute('data-styles', 'ready', { timeout: 8_000 });
+    await expect(page.locator('#boot-skeleton')).toHaveCount(0);
+    await expect(page.locator('#boot-timeout')).toHaveCount(0);
+    await expect(page.locator('app-root [data-screen-ready]').first()).toBeAttached();
   });
 
   test('com a folha rápida, o esqueleto sai assim que a tela fica pronta e a folha vale desde o início', async ({
