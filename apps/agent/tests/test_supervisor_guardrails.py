@@ -194,10 +194,34 @@ def test_an_agent_that_keeps_its_pulse_fresh_is_never_killed(pc: Pc) -> None:
         assert not (pc.runtime / "stop-reason.txt").exists()
 
 
-def test_an_agent_that_never_wrote_a_pulse_is_not_judged_by_it(pc: Pc) -> None:
-    # Sem `last-alive` o supervisor não tem como saber: melhor deixar vivo do que reiniciar em laço.
+def test_the_supervisor_creates_the_pulse_file_before_the_agent_and_judges_a_silent_agent(
+    pc: Pc,
+) -> None:
+    # O arquivo nasce no supervisor (com o disco cheio o agente só muda a data de um que já existe)
+    # e um agente que nunca o toca é dado por mudo depois da carência.
+    assert not pc.alive.exists()
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     with pc.running():
+        assert wait_for(pc.alive.exists, 30)
+        assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
+        assert any(i["kind"] == "process.unresponsive" for i in pc.diagnostics())
+
+
+def test_a_missing_pulse_file_for_longer_than_the_limit_is_silence_not_health(pc: Pc) -> None:
+    # Disco cheio ou sem permissão antes de o arquivo existir: o supervisor não consegue criá-lo e o
+    # agente também não. Antes, o contador zerava a cada volta e o travado nunca era reiniciado.
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with pc.running(UNIOVER_SUPERVISOR_TEST_NO_PULSE_FILE="1"):
+        assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
+        assert not pc.alive.exists()
+        assert any(i["kind"] == "process.unresponsive" for i in pc.diagnostics())
+
+
+def test_an_agent_that_has_only_just_started_is_not_judged_before_the_grace_ends(pc: Pc) -> None:
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with pc.running(
+        UNIOVER_SUPERVISOR_TEST_NO_PULSE_FILE="1", UNIOVER_SUPERVISOR_HANG_GRACE_SECONDS="30"
+    ):
         assert wait_for(lambda: pc.starts() >= 1, 30)
         time.sleep(6)
         assert pc.starts() == 1
@@ -445,3 +469,34 @@ def test_the_open_script_clears_the_closed_signal(tmp_path: Path) -> None:
     assert done.returncode == 0
     assert wait_for(lambda: not flag.exists(), 10)
     assert other.exists()
+
+
+def test_a_second_supervisor_of_the_same_installation_exits_and_leaves_the_first_alone(
+    pc: Pc,
+) -> None:
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: pc.starts() >= 1, 30)
+        second = subprocess.Popen(  # noqa: S603 - Windows PowerShell do sistema; script do repositório
+            [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(RUNNER)],
+            env=os.environ
+            | FAST
+            | {
+                "LOCALAPPDATA": str(pc.local),
+                "PATH": str(pc.bin) + os.pathsep + os.environ["PATH"],
+                "UNIOVER_TEST_AGENTS": str(pc.agents),
+                "UNIOVER_TEST_TRAYS": str(pc.trays),
+                "APPDATA": str(pc.roaming),
+            },
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=0x08000000,
+        )
+        try:
+            assert second.wait(timeout=60) == 0, "o segundo supervisor devia sair sozinho"
+        finally:
+            if second.poll() is None:
+                second.kill()
+        assert "ja existe um supervisor" in pc.supervisor_log()
+        time.sleep(3)
+        assert pc.starts() == 1, "o segundo supervisor não pode ter subido outro agente"

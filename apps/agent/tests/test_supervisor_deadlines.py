@@ -329,3 +329,28 @@ def test_the_outer_update_ceiling_is_above_every_inner_limit_and_below_the_stale
     # Os limites internos são os que quem executa de fato usa.
     assert update.run_uv_sync.__kwdefaults__ is not None
     assert update.run_uv_sync.__kwdefaults__["pause"] == update.SYNC_PAUSE_SECONDS
+
+
+def test_the_launcher_does_not_start_another_supervisor_while_the_old_one_will_not_die(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(
+        counting_supervisor(touches=False), encoding="ascii"
+    )
+    launcher = run_launcher(
+        tmp_path,
+        stale="3",
+        extra={"UNIOVER_LAUNCHER_TEST_KILL_FAILS": "1", "UNIOVER_LAUNCHER_KILL_WAIT_MS": "500"},
+    )
+    try:
+        log = base / "logs" / "supervisor.log"
+        assert wait_for(
+            lambda: log.exists() and "nao consegui encerrar o supervisor" in log.read_text("utf-8"),
+            90,
+        )
+        time.sleep(8)
+        assert starts(tmp_path) == 1, "outro supervisor subiu com o antigo ainda vivo"
+    finally:
+        stop(launcher)
