@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 from uniover_agent.adapters.installation import migrate_layout
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
+from uniover_agent.adapters.startup_trace import record_startup_failure
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_locate import identify_tv
 from uniover_agent.adapters.tv_pairing import ask_code_in_window
@@ -144,13 +145,26 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             return system.EXIT_OK
         while True:
             code = asyncio.run(connection.run(settings, open_store, kit))
+            if code == system.EXIT_NOT_PAIRED:
+                record_startup_failure("nao_pareado", "sem agent_id ou sem token no cofre")
+            elif code == system.EXIT_CREDENTIAL_REJECTED:
+                record_startup_failure("credencial_recusada", "o servidor recusou a credencial")
             if code != system.EXIT_TV_MOVED:
                 return code
             # O endereço novo da TV já está no arquivo: recomeça lendo a configuração de novo.
             settings = Settings()
     except (ConfigError, SecretStoreError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)
+        if command == "run":
+            reason = "configuracao" if isinstance(exc, ConfigError) else "cofre"
+            record_startup_failure(reason, str(exc))
         return system.EXIT_FAILURE
     except KeyboardInterrupt:
         print("Encerrado.")
         return system.EXIT_OK
+    except Exception as exc:
+        # O erro continua subindo (o Python o imprime e sai com 1); antes de subir, fica no disco:
+        # o processo não tem janela e o que ele imprime se perde.
+        if command == "run":
+            record_startup_failure("excecao", f"{type(exc).__name__}: {exc}")
+        raise
