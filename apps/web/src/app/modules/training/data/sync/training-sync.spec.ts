@@ -382,7 +382,7 @@ describe('TrainingSync', () => {
       expect(t.pull.maxInFlight).toBe(1);
     });
 
-    it('never starts a timer of its own', async () => {
+    it('never starts a timer that wakes the server (only the two one-shot UI deadlines of the first wait)', async () => {
       // O jsdom usa um intervalo de 16 ms para os quadros de animação: só interessam temporizadores de verdade.
       const intervalSpy = vi.spyOn(globalThis, 'setInterval');
       const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
@@ -394,7 +394,8 @@ describe('TrainingSync', () => {
 
       const longDelays = [...intervalSpy.mock.calls, ...timeoutSpy.mock.calls]
         .map(([, delay]) => Number(delay ?? 0))
-        .filter((delay) => delay >= 1000);
+        // Os prazos da espera da primeira passada só liberam o esqueleto da tela; nenhum deles pede passada.
+        .filter((delay) => delay >= 1000 && delay !== 30_000 && delay !== 8_000);
       expect(longDelays).toEqual([]);
       expect(t.runtime.activeTimers).toBe(0);
     });

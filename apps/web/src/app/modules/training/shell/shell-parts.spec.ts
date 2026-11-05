@@ -33,12 +33,14 @@ describe('awaitingFirstPull', () => {
     error: string | null,
     lastPullAt: number | null,
     settled = false,
+    expired = false,
   ) =>
     awaitingFirstPull(
       {
         error: () => error,
         lastPullAt: () => lastPullAt,
         firstPassSettled: () => settled,
+        firstPullWaitExpired: () => expired,
       } as unknown as TrainingSync,
       { online: () => online } as unknown as ConnectivityService,
     );
@@ -52,6 +54,10 @@ describe('awaitingFirstPull', () => {
 
   it('stops waiting once the first pass decided it will not pull, so the skeleton never lasts forever', () => {
     expect(state(true, null, null, true)).toBe(false);
+  });
+
+  it('stops waiting once the wait deadline passed with the request still pending', () => {
+    expect(state(true, null, null, false, true)).toBe(false);
   });
 });
 
