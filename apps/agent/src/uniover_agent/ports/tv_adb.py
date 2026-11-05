@@ -8,6 +8,7 @@ As mensagens dos erros são fixas e seguras para ir à tela do dono: nunca traze
 computador nem a saída crua do `adb`.
 """
 
+import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -25,13 +26,23 @@ ADB_FAILED: Final = "adb_failed"
 # Só um pedido explícito da pessoa (um botão do app) pode abrir uma conexão nova com uma TV que
 # ainda não deu a permissão do ADB: cada conexão assim faz a TV mostrar o aviso "Permitir depuração
 # USB". O que o agente faz sozinho (partida, lista diária, limpeza, ícones, vigia) nunca a ergue.
-ADB_USER_INITIATED: Final[ContextVar[bool]] = ContextVar("adb_user_initiated", default=False)
+# A marca guarda a **tarefa** que a ergueu: uma tarefa filha (`create_task` copia o contexto) não
+# herda o direito, então nada que o pedido deixe rodando em segundo plano abre o aviso depois.
+ADB_USER_INITIATED: Final[ContextVar[asyncio.Task[object] | None]] = ContextVar(
+    "adb_user_initiated", default=None
+)
+
+
+def is_user_initiated() -> bool:
+    """A tarefa de agora é a que o pedido da pessoa marcou?"""
+    marked = ADB_USER_INITIATED.get()
+    return marked is not None and marked is asyncio.current_task()
 
 
 @contextmanager
 def user_initiated_adb() -> Iterator[None]:
     """Dentro do bloco, o ADB pode pedir a permissão à TV (a pessoa pediu isto agora)."""
-    token = ADB_USER_INITIATED.set(True)
+    token = ADB_USER_INITIATED.set(asyncio.current_task())
     try:
         yield
     finally:
