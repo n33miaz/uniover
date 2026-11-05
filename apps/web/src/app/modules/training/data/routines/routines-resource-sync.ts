@@ -1,5 +1,6 @@
 import { Injectable, type Provider, inject } from '@angular/core';
 import { provideResourceSync, type ResourceSync } from '../sync/resource-sync';
+import { RESOURCE_NAMES } from '../sync/resource-names';
 import { type ProgramDto, toLocalProgram } from './program';
 import { RoutineDto, toLocalRoutine } from './routine';
 import { PROGRAM_PATH, ROUTINES_PATH } from './routine-api';
@@ -10,7 +11,7 @@ import { RoutineRepository } from './routine-repository';
 export class RoutinesResourceSync implements ResourceSync<RoutineDto> {
   private readonly repository = inject(RoutineRepository);
 
-  readonly resource = 'routines';
+  readonly resource = RESOURCE_NAMES.routines;
   readonly path = ROUTINES_PATH;
 
   merge(items: readonly RoutineDto[]): Promise<void> {
@@ -23,7 +24,7 @@ export class RoutinesResourceSync implements ResourceSync<RoutineDto> {
 export class ProgramResourceSync implements ResourceSync<ProgramDto> {
   private readonly repository = inject(RoutineRepository);
 
-  readonly resource = 'program';
+  readonly resource = RESOURCE_NAMES.program;
   readonly path = PROGRAM_PATH;
 
   merge(items: readonly ProgramDto[]): Promise<void> {

@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import type { ResourceSync } from '../sync/resource-sync';
+import { RESOURCE_NAMES } from '../sync/resource-names';
 import { EXERCISES_PATH } from './catalog-api';
 import { CatalogRepository } from './catalog-repository';
 import { ExerciseDto, toLocalExercise } from './exercise';
@@ -9,7 +10,7 @@ import { ExerciseDto, toLocalExercise } from './exercise';
 export class ExercisesResourceSync implements ResourceSync<ExerciseDto> {
   private readonly repository = inject(CatalogRepository);
 
-  readonly resource = 'exercises';
+  readonly resource = RESOURCE_NAMES.exercises;
   readonly path = EXERCISES_PATH;
 
   merge(items: readonly ExerciseDto[]): Promise<void> {

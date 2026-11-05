@@ -1,5 +1,6 @@
 import { Injectable, type Provider, inject } from '@angular/core';
 import { provideResourceSync, type ResourceSync } from '../sync/resource-sync';
+import { RESOURCE_NAMES } from '../sync/resource-names';
 import { type GoalDto, type LocalGoal, toLocalGoal } from './goal';
 import { GOALS_PATH } from './goal-api';
 import { GoalRepository } from './goal-repository';
@@ -9,7 +10,7 @@ import { GoalRepository } from './goal-repository';
 export class GoalsResourceSync implements ResourceSync<GoalDto> {
   private readonly repository = inject(GoalRepository);
 
-  readonly resource = 'goals';
+  readonly resource = RESOURCE_NAMES.goals;
   readonly path = GOALS_PATH;
 
   merge(items: readonly GoalDto[]): Promise<void> {

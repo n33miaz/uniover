@@ -3,6 +3,7 @@ import { RestAlert } from '../session-live/rest-alert';
 import { RestTimerService } from '../session-live/rest-timer.service';
 import { WakeLockService } from '../session-live/wake-lock.service';
 import { provideResourceSync, type ResourceSync } from '../sync/resource-sync';
+import { RESOURCE_NAMES } from '../sync/resource-names';
 import { type SessionDto, type SetDto, toLocalSession, toLocalSet } from './session';
 import { SESSIONS_PATH, SETS_PATH } from './session-api';
 import { SessionRepository } from './session-repository';
@@ -12,7 +13,7 @@ import { SessionRepository } from './session-repository';
 export class SessionsResourceSync implements ResourceSync<SessionDto> {
   private readonly repository = inject(SessionRepository);
 
-  readonly resource = 'sessions';
+  readonly resource = RESOURCE_NAMES.sessions;
   readonly path = SESSIONS_PATH;
 
   merge(items: readonly SessionDto[]): Promise<void> {
@@ -25,7 +26,7 @@ export class SessionsResourceSync implements ResourceSync<SessionDto> {
 export class SetsResourceSync implements ResourceSync<SetDto> {
   private readonly repository = inject(SessionRepository);
 
-  readonly resource = 'sets';
+  readonly resource = RESOURCE_NAMES.sets;
   readonly path = SETS_PATH;
 
   merge(items: readonly SetDto[]): Promise<void> {
