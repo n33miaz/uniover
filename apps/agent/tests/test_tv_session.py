@@ -569,3 +569,24 @@ async def test_the_remote_drop_check_waits_for_the_last_overlapping_operation() 
     assert rig.repairs == 1
     rig.manager.settle_remote_drop()  # sem pedido em aberto: nada
     assert rig.repairs == 1
+
+
+class HangingRemote(FakeTvRemote):
+    async def connect(self) -> None:
+        self.connects += 1
+        await asyncio.Event().wait()
+
+
+async def test_an_opening_that_never_returns_ends_as_offline_and_frees_the_lock() -> None:
+    clock = FakeClock()
+    remote = HangingRemote()
+    manager = TvSessionManager(clock, remote, warm_timeout_seconds=0.05)
+    with pytest.raises(TvSessionError) as caught:
+        await manager.wake()
+    assert caught.value.code == TV_UNREACHABLE
+    assert manager.offline  # entrou na espera crescente
+    assert not manager._lock.locked()  # type: ignore[attr-defined]
+    assert state_of(manager) is SessionState.HIBERNATING
+    with pytest.raises(TvSessionError):
+        await manager.wake()
+    assert remote.connects == 1  # a espera crescente evitou nova tentativa na hora

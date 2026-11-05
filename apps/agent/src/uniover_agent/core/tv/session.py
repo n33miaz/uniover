@@ -98,7 +98,7 @@ POWER_OFF_GONE_PAUSE_SECONDS: Final = 1.0
 # Recusa de certificado só vale como "não pareada" depois de se repetir, com este intervalo mínimo.
 DEFAULT_CERTIFICATE_REFUSALS_NEEDED: Final = 3
 DEFAULT_CERTIFICATE_REFUSAL_GAP_SECONDS: Final = 30.0
-DEFAULT_WARM_TIMEOUT_SECONDS: Final = 30.0
+DEFAULT_WARM_TIMEOUT_SECONDS: Final = 20.0
 DEFAULT_DISCONNECT_TIMEOUT_SECONDS: Final = 5.0
 
 
@@ -730,6 +730,9 @@ class TvSessionManager:
                     async with asyncio.timeout(self._warm_timeout_seconds):
                         await self._warm(interactive=interactive, unattended=unattended)
                 except TimeoutError:
+                    # Conta como TV sem resposta: entra na espera crescente em vez de a próxima
+                    # tentativa vir logo em seguida.
+                    self._note_unreachable("o controle da TV não respondeu a tempo")
                     raise TvSessionError(
                         TV_UNREACHABLE, "a TV demorou para responder ao controle"
                     ) from None

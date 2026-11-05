@@ -114,12 +114,24 @@ def test_tv_repair_timeouts_have_safe_defaults_and_accept_an_override(
         settings.tv_watchdog_budget_seconds,
     ) == (3.0, 15.0, 240.0)
     monkeypatch.setenv("UNIOVER_TV_WATCHDOG_PROBE_SECONDS", "4")
-    monkeypatch.setenv("UNIOVER_TV_SESSION_WARM_TIMEOUT_SECONDS", "35")
+    monkeypatch.setenv("UNIOVER_TV_SESSION_WARM_TIMEOUT_SECONDS", "15")
     settings = Settings()
     assert (settings.tv_watchdog_probe_seconds, settings.tv_session_warm_timeout_seconds) == (
         4.0,
-        35.0,
+        15.0,
     )
+
+
+def test_the_command_timeout_must_cover_two_session_openings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    assert settings.tv_command_timeout_seconds >= 2 * settings.tv_session_warm_timeout_seconds + 5
+    monkeypatch.setenv("UNIOVER_TV_SESSION_WARM_TIMEOUT_SECONDS", "30")
+    with pytest.raises(ValueError, match="tv_command_timeout_seconds"):
+        Settings()
+    monkeypatch.setenv("UNIOVER_TV_COMMAND_TIMEOUT_SECONDS", "65")
+    assert Settings().tv_session_warm_timeout_seconds == 30
 
 
 def test_config_file_is_read_and_env_wins(
