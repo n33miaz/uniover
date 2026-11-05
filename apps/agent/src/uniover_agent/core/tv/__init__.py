@@ -53,6 +53,7 @@ from uniover_agent.core.tv.session import (
 )
 from uniover_agent.core.tv.state_publisher import TvStatePublisher
 from uniover_agent.core.tv.text_edit import AdbTyping, TextReconciler
+from uniover_agent.core.tv.user_activity import UserActivity, touching
 from uniover_agent.core.tv.watchdog import TvWatchdog
 from uniover_agent.core.tv.watchdog_events import WatchdogEvents
 
@@ -97,10 +98,12 @@ __all__ = [
     "TvSessionManager",
     "TvStatePublisher",
     "TvWatchdog",
+    "UserActivity",
     "WatchdogEvents",
     "can_restrict_background",
     "describe_apps",
     "is_protected",
+    "touching",
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",
