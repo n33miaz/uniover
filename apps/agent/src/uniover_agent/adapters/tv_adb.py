@@ -198,6 +198,8 @@ class AdbTv:
         self._connected = False
         self._blocked_until = 0.0
         self._blocked_error: AdbError | None = None
+        # A TV já negou a autorização e o dono ainda não a deu (só uma leitura `device` apaga).
+        self._authorization_pending = False
         self._timeout_streak = 0
         self._last_kill_server_at: float | None = None
         self._disconnect_task: asyncio.Task[None] | None = None
@@ -259,6 +261,7 @@ class AdbTv:
             state = parse_device_state(output.text)
             if state is DeviceState.DEVICE:
                 self._blocked_error = None
+                self._authorization_pending = False
                 self._timeout_streak = 0
                 self._connected = True
                 return "authorized"
@@ -293,6 +296,7 @@ class AdbTv:
             raise
         if state is DeviceState.DEVICE:
             self._blocked_error = None
+            self._authorization_pending = False
             self._timeout_streak = 0
             self._connected = True
             return
@@ -306,6 +310,8 @@ class AdbTv:
 
     def _remember_failure(self, error: AdbError) -> None:
         # Só "não abriu" pausa novas tentativas automáticas; tempo estourado não é diagnóstico.
+        if isinstance(error, AdbUnauthorized):
+            self._authorization_pending = True
         if isinstance(error, AdbUnauthorized | AdbUnreachable | AdbUnavailable):
             self._blocked_error = error
             self._blocked_until = self._monotonic() + self._retry_after
@@ -321,6 +327,7 @@ class AdbTv:
                 state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
                 if state is DeviceState.DEVICE:
                     self._blocked_error = None
+                    self._authorization_pending = False
                     self._connected = True
                     return
             raise type(self._blocked_error)(self._blocked_error.message)
@@ -556,8 +563,18 @@ class AdbTv:
         Conecta de novo antes (o estado guardado pode ser de antes de a TV reiniciar) e roda, numa
         só vez da trava, a proteção e a partida. Só a partida decide o resultado: a proteção é
         melhor esforço, e quem chama confere as portas depois.
+
+        Se a TV já negou a autorização e o dono ainda não a deu, **não conecta**: uma conexão nova
+        faz a TV mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido. Só se lê
+        o estado (`get-state`); sem `device`, levanta `AdbUnauthorized`.
         """
         async with self._lock:
+            if self._authorization_pending:
+                state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+                if state is not DeviceState.DEVICE:
+                    failure = AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
+                    self._remember_failure(failure)
+                    raise failure
             await self._connect_locked()
             for command in _SHIELD_REMOTE_SERVICE:
                 await self._shell(command)
@@ -598,6 +615,7 @@ class AdbTv:
             state = parse_device_state(output.text)
             if state is DeviceState.UNAUTHORIZED:
                 self._connected = False
+                self._authorization_pending = True
                 raise AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
             if state in (DeviceState.OFFLINE, DeviceState.NOT_FOUND):
                 self._connected = False
