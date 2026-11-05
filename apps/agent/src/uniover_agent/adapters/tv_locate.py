@@ -17,8 +17,10 @@ from collections.abc import Awaitable, Callable
 from uniover_agent.adapters.arp import arp_mac, arp_table
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
+    REFUSAL_WAIT_SECONDS,
     SAMSUNG_REST_PORT,
     FetchJson,
+    PortState,
     TvKindName,
     discover_android_tvs,
     http_json,
@@ -27,6 +29,7 @@ from uniover_agent.adapters.tv_discovery import (
     samsung_identity,
     subnet_hosts,
     tcp_open,
+    tcp_probe,
 )
 from uniover_agent.core.tv.locator import (
     DEFAULT_EMPTY_SEARCHES_LIMIT,
@@ -154,6 +157,11 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         address = interface()
         return await ssdp_search(kind, address) if address else []
 
+    async def answers(host: str) -> bool:
+        # Recusar a conexão também é resposta: a TV está no endereço, só o serviço caiu.
+        state = await tcp_probe(host, port, wait=REFUSAL_WAIT_SECONDS)
+        return state is not PortState.SILENT
+
     async def mdns() -> list[str]:
         return [tv.host for tv in await discover_android_tvs()]
 
@@ -181,6 +189,7 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         identify=identify,
         authenticate=authenticate if kind == "android" else None,
         mdns=mdns if kind == "android" else None,
+        answers=answers,
         empty_searches_limit=empty_searches_limit,
         slow_search_seconds=slow_search_seconds,
     )

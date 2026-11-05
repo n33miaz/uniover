@@ -156,6 +156,7 @@ class TvLocator:
         identify: Identify,
         authenticate: Authenticate | None = None,
         mdns: SsdpSearch | None = None,
+        answers: Probe | None = None,
         ssdp_seconds: float = DEFAULT_SSDP_SECONDS,
         mdns_seconds: float = DEFAULT_MDNS_SECONDS,
         sweep_seconds: float = DEFAULT_SWEEP_SECONDS,
@@ -174,6 +175,8 @@ class TvLocator:
         self._identify = identify
         self._authenticate = authenticate
         self._mdns = mdns
+        # Algo responde na porta da TV (atende ou recusa)? Sem isto, só o atender conta.
+        self._answers = answers or probe
         self._ssdp_seconds = ssdp_seconds
         self._mdns_seconds = mdns_seconds
         self._empty_searches_limit = empty_searches_limit
@@ -243,9 +246,10 @@ class TvLocator:
         except OSError:
             return None
         addresses = [ip for mac in macs for ip in table.get(mac, [])]
-        if current_host in addresses and await self._probe(current_host):
-            # O Windows ainda a vê no endereço de sempre e a porta do controle atende: a TV só
-            # está dormindo ou com a rede engasgada. Varrer a rede não a faria aparecer. Entrada
+        if current_host in addresses and await self._answers(current_host):
+            # O Windows ainda a vê no endereço de sempre e a porta do controle atende (ou recusa:
+            # a TV está lá e só o serviço caiu, assunto do vigia): a TV só está dormindo ou com a
+            # rede engasgada. Varrer a rede não a faria aparecer. Entrada
             # velha do ARP, com a porta muda, não prova nada: a busca segue.
             self._at_same_place = True
             return None
