@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     # Cursor do lote IME do Remote v2. `library` repete o formato da biblioteca até a medição na
     # TV escolher outro; os demais modos existem para o roteiro de diagnóstico.
     tv_text_cursor: Literal["library", "chunk_end", "field_end"] = "library"
+    # Contadores do lote IME. `library` usa os que a biblioteca guarda (comportamento anterior, o
+    # padrão e o caminho de volta); `echo` usa os que a TV empurra no último eco ou lote.
+    tv_text_counters: Literal["library", "echo"] = "library"
     # Só para o roteiro acompanhado pelo dono: registra o valor que a TV ecoa. Pode expor texto
     # digitado, por isso fica desligado e não deve ser usado fora de um teste controlado.
     tv_text_debug_values: bool = False

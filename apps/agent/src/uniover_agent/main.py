@@ -388,6 +388,7 @@ def build_driver_setup(
         text_cursor=settings.tv_text_cursor,
         text_debug_values=settings.tv_text_debug_values,
         text_trace=settings.tv_text_trace,
+        text_counters=settings.tv_text_counters,
     )
     manager = TvSessionManager(
         clock,
