@@ -1,14 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import {
-  DestroyRef,
-  Injectable,
-  InjectionToken,
-  computed,
-  effect,
-  inject,
-  signal,
-  untracked,
-} from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { AccountScope } from '../../../core/session/account-scope';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
@@ -46,15 +37,6 @@ export function programDismissedKey(accountId: string): string {
 export function programStartDismissedKey(accountId: string, day: string): string {
   return `uniover.training.program-start-dismissed.${accountId}.${day}`;
 }
-
-/**
- * Quanto Hoje espera a primeira passada do servidor de um aparelho novo antes de mostrar o que há no banco local (conta
- * sem sessão válida, API fora do ar com o navegador online): passado o prazo, vale o conteúdo ou o vazio de verdade.
- */
-export const FIRST_PULL_WAIT_MS = new InjectionToken<number>('FIRST_PULL_WAIT_MS', {
-  providedIn: 'root',
-  factory: () => 8_000,
-});
 
 export const FORGOTTEN_AFTER_MS = 12 * 60 * 60 * 1000;
 
@@ -194,15 +176,15 @@ export class TodayStore {
   private readonly readAfterFirstPull = signal(false);
   /** Este aparelho nunca puxou (decidido quando o banco respondeu): `null` enquanto não se sabe. */
   private readonly freshDevice = signal<boolean | null>(null);
-  /** O prazo da espera acabou: o que o banco local tem vale, mesmo com a passada ainda pendente. */
-  private readonly waitExpired = signal(false);
+  /** O prazo da espera acabou (ver `TrainingSync.firstPullWaitExpired`): o banco local vale, mesmo com a passada pendente. */
+  private readonly waitExpired = this.sync.firstPullWaitExpired;
   /** Ainda não se sabe se o aparelho é novo: a tela espera com o esqueleto, e quem já tem dados não vê "Baixando". */
   readonly pullUnknown = computed(() => !this.waitExpired() && this.freshDevice() === null);
   /**
    * Um aparelho novo ainda corre a primeira passada do servidor, ou ela acabou mas as rotinas que trouxe ainda não foram
    * lidas: o banco está pela metade (o catálogo chega antes das rotinas, e as rotinas antes do programa da semana).
    * Mostrar o que há agora seria um vazio falso ("Sem Rotinas Ainda") e depois uma rotina que muda quando o programa chega.
-   * A espera é limitada: sem sessão válida só vale enquanto falta o catálogo, e passado `FIRST_PULL_WAIT_MS` acaba.
+   * A espera é limitada: sem sessão válida só vale enquanto falta o catálogo, e passado o prazo (`FIRST_PULL_WAIT_MS`, no puxador) acaba.
    * Quem já puxou alguma vez nunca espera: o conteúdo do aparelho vale desde o primeiro quadro.
    */
   readonly firstPullPending = computed(
@@ -225,9 +207,6 @@ export class TodayStore {
   private linesTicket = 0;
 
   constructor() {
-    const waitMs = inject(FIRST_PULL_WAIT_MS);
-    const timer = setTimeout(() => this.waitExpired.set(true), waitMs);
-    inject(DestroyRef).onDestroy(() => clearTimeout(timer));
     // Decide uma vez, quando o banco responde, se este aparelho é novo.
     effect(() => {
       if (!this.sync.lastPullKnown() || untracked(() => this.freshDevice()) !== null) return;
