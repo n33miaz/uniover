@@ -70,7 +70,8 @@ Paleta p2 (verde-sálvia), claro e escuro, em `src/styles.css`. `ThemeService` s
   Roda no `npm run e2e` e sozinho com `npx playwright test -c playwright.update.config.ts` (`UPDATE_E2E_DIST` aponta para
   outro build; com `UPDATE_E2E_LEGACY=1` não exige o esqueleto, para ver a falha num build anterior ao conserto).
 - **CSP.** `index.html` leva `ngCspNonce="__CSP_NONCE__"` e o marcador do manifest; o servidor troca os dois.
-  Nenhum `<script>` ou `<style>` em linha, e o critical CSS do Angular fica desligado (`inlineCritical: false`).
+  O único estilo em linha é a base mínima do esqueleto de abertura, sempre com esse nonce, para pintar antes da folha
+  externa; não há script em linha, e o critical CSS do Angular fica desligado (`inlineCritical: false`).
 - **Servidor de teste.** `e2e/server/static-server.mjs` serve o `dist` com fallback para o `index.html`, troca o
   nonce e o manifest e envia a mesma CSP da API. Cópia manual: pode divergir da API, então o teste contra o contêiner
   real repete a checagem. O e2e falha com qualquer violação de CSP, online ou offline.

@@ -65,6 +65,7 @@
 .bs-boot .bs-variant {
   display: none;
 }
+html:not([data-boot]) .bs-boot .bs-home,
 html[data-boot='home'] .bs-boot .bs-home,
 html[data-boot='tv'] .bs-boot .bs-tv,
 html[data-boot='pc'] .bs-boot .bs-detail,
@@ -597,6 +598,160 @@ html[data-boot='settings-credits'] .bs-route-content,
   --route-art-height: 82px;
   --route-grid-columns: repeat(2, minmax(0, 1fr));
 }
+
+/* Estas telas não usam a grade de cartões da composição-base: cada uma preserva a hierarquia que a pessoa verá. */
+:is(
+    html[data-boot='training-food'] .bs-boot,
+    .bs-root[data-boot-variant='training-food'],
+    html[data-boot='training-glossary'] .bs-boot,
+    .bs-root[data-boot-variant='training-glossary'],
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments'],
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about'],
+    html[data-boot='settings-security'] .bs-boot,
+    .bs-root[data-boot-variant='settings-security'],
+    html[data-boot='settings-siri'] .bs-boot,
+    .bs-root[data-boot-variant='settings-siri'],
+    html[data-boot='settings-credits'] .bs-boot,
+    .bs-root[data-boot-variant='settings-credits']
+  )
+  .bs-route-grid {
+  display: none;
+}
+
+/* O diário tem data e refeições empilhadas, não quatro cartões iguais. */
+:is(html[data-boot='training-food'] .bs-boot, .bs-root[data-boot-variant='training-food'])
+  .bs-route-hero {
+  display: flex;
+  min-height: 72px;
+}
+:is(html[data-boot='training-food'] .bs-boot, .bs-root[data-boot-variant='training-food'])
+  .bs-route-art {
+  display: none;
+}
+:is(html[data-boot='training-food'] .bs-boot, .bs-root[data-boot-variant='training-food'])
+  .bs-route-list {
+  display: flex;
+}
+:is(html[data-boot='training-food'] .bs-boot, .bs-root[data-boot-variant='training-food'])
+  .bs-route-row {
+  height: 58px;
+}
+
+/* Glossário e avaliações são listas sem abas; Sobre é só as duas versões e a linha de créditos. */
+:is(
+    html[data-boot='training-glossary'] .bs-boot,
+    .bs-root[data-boot-variant='training-glossary'],
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments'],
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about']
+  )
+  .bs-route-strip {
+  display: none;
+}
+:is(
+    html[data-boot='training-glossary'] .bs-boot,
+    .bs-root[data-boot-variant='training-glossary'],
+    html[data-boot='training-assessments'] .bs-boot,
+    .bs-root[data-boot-variant='training-assessments'],
+    html[data-boot='settings-about'] .bs-boot,
+    .bs-root[data-boot-variant='settings-about']
+  )
+  .bs-route-list {
+  display: flex;
+}
+:is(html[data-boot='settings-about'] .bs-boot, .bs-root[data-boot-variant='settings-about'])
+  .bs-route-hero {
+  display: none;
+}
+:is(html[data-boot='settings-about'] .bs-boot, .bs-root[data-boot-variant='settings-about'])
+  .bs-route-row:nth-child(n + 4) {
+  display: none;
+}
+
+/* Segurança é explicação, campos e confirmação; Siri começa num cartão e uma ação. */
+:is(html[data-boot='settings-security'] .bs-boot, .bs-root[data-boot-variant='settings-security'])
+  .bs-route-hero,
+:is(html[data-boot='settings-siri'] .bs-boot, .bs-root[data-boot-variant='settings-siri'])
+  .bs-route-hero {
+  display: flex;
+}
+:is(html[data-boot='settings-security'] .bs-boot, .bs-root[data-boot-variant='settings-security'])
+  .bs-route-art,
+:is(html[data-boot='settings-siri'] .bs-boot, .bs-root[data-boot-variant='settings-siri'])
+  .bs-route-art {
+  display: none;
+}
+:is(html[data-boot='settings-security'] .bs-boot, .bs-root[data-boot-variant='settings-security'])
+  .bs-route-list,
+:is(html[data-boot='settings-siri'] .bs-boot, .bs-root[data-boot-variant='settings-siri'])
+  .bs-route-list {
+  display: none;
+}
+:is(html[data-boot='settings-siri'] .bs-boot, .bs-root[data-boot-variant='settings-siri'])
+  .bs-route-panel {
+  display: flex;
+}
+:is(html[data-boot='settings-siri'] .bs-boot, .bs-root[data-boot-variant='settings-siri'])
+  .bs-route-panel
+  > :not(.bs-cta) {
+  display: none;
+}
+
+/* Créditos abre como uma folha sobre Sobre, por isso a composição fica ancorada no rodapé e sem grade. */
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-content {
+  align-self: stretch;
+  margin-top: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--a-surface);
+}
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-hero {
+  display: flex;
+  min-height: 48px;
+}
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-art,
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-strip,
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-panel {
+  display: none;
+}
+:is(html[data-boot='settings-credits'] .bs-boot, .bs-root[data-boot-variant='settings-credits'])
+  .bs-route-list {
+  display: flex;
+}
+
+/* Rotinas conserva o seletor de duas opções e o cartão da próxima rotina, sem parecer uma grade de atalhos. */
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-strip
+  > :nth-child(3) {
+  display: none;
+}
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-grid,
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-panel {
+  display: none;
+}
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-list {
+  display: flex;
+}
+:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
+  .bs-route-row:nth-child(n + 2) {
+  display: none;
+}
 html[data-boot='auth-login'] .bs-route-content,
 .bs-root[data-boot-variant='auth-login'] .bs-route-content {
   --route-art-height: 110px;
@@ -690,16 +845,10 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
   display: none;
 }
 
-/* Mapa, alimentação, resumo e boas-vindas têm blocos largos em vez de linhas de catálogo. */
+/* Mapa, QR e boas-vindas têm blocos largos em vez de linhas de catálogo. */
 :is(
     html[data-boot='training-map'] .bs-boot,
     .bs-root[data-boot-variant='training-map'],
-    html[data-boot='training-food'] .bs-boot,
-    .bs-root[data-boot-variant='training-food'],
-    html[data-boot='settings-about'] .bs-boot,
-    .bs-root[data-boot-variant='settings-about'],
-    html[data-boot='settings-credits'] .bs-boot,
-    .bs-root[data-boot-variant='settings-credits'],
     html[data-boot='auth-qr'] .bs-boot,
     .bs-root[data-boot-variant='auth-qr'],
     html[data-boot='auth-welcome'] .bs-boot,
@@ -711,10 +860,6 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
 :is(
     html[data-boot='training-map'] .bs-boot,
     .bs-root[data-boot-variant='training-map'],
-    html[data-boot='settings-about'] .bs-boot,
-    .bs-root[data-boot-variant='settings-about'],
-    html[data-boot='settings-credits'] .bs-boot,
-    .bs-root[data-boot-variant='settings-credits'],
     html[data-boot='auth-qr'] .bs-boot,
     .bs-root[data-boot-variant='auth-qr'],
     html[data-boot='auth-welcome'] .bs-boot,
