@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Beacons;
 using UniOver.Modules.Devices.Features.Diagnostics;
 using UniOver.Modules.Devices.Features.Presence;
 using UniOver.Modules.Devices.Features.RemoteCare;
@@ -302,6 +303,26 @@ internal sealed partial class AgentHub(
         }
     }
 
+    private async Task RecordHelloRefusedAsync(string agentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<AgentBeaconStore>();
+            await store.TryRecordRejectionAsync(agentId, BeaconRejection.Protocol, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Anotar a recusa é informativo: falha do banco não pode derrubar a conexão do agente.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogHelloRefusalNotRecorded(agentId, ex.GetType().Name);
+        }
+    }
+
     private void CompleteRequest(string agentId, ValidatedEnvelope envelope)
     {
         // O esquema exige correlationId neste tipo.
@@ -362,6 +383,13 @@ internal sealed partial class AgentHub(
 
         // Registra agente, tipo e motivo; nunca o corpo recebido.
         LogRefused(agentId, type ?? "(desconhecido)", reason);
+
+        // O hello é a primeira coisa que o agente diz: se foi recusado (versão do protocolo ou forma), o PC fica "ligado e mudo" e
+        // o dono precisa ver isso. Só o motivo fixo vai para o banco, nunca o corpo recebido.
+        if (string.Equals(type, AgentMessageTypes.AgentHelloV1, StringComparison.Ordinal))
+        {
+            await RecordHelloRefusedAsync(agentId, cancellationToken);
+        }
 
         if (correlationId is { } correlation)
         {
@@ -534,6 +562,9 @@ internal sealed partial class AgentHub(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível gravar os diagnósticos do agente {AgentId} ({ErrorType}).")]
     private partial void LogDiagnosticsFailed(string agentId, string errorType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível anotar a recusa do hello do agente {AgentId} ({ErrorType}).")]
+    private partial void LogHelloRefusalNotRecorded(string agentId, string errorType);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao conduzir a sessão do agente {AgentId} ({Error}).")]
     private partial void LogSessionFailed(string agentId, string error);

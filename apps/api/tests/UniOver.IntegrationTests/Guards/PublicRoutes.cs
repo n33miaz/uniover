@@ -36,6 +36,10 @@ internal static class PublicRoutes
         // A credencial desta consulta é o deviceCode (segredo de 32 bytes que só o agente conhece).
         new("POST", "/api/v1/devices/pairing/poll", "agente consulta o pareamento com o deviceCode para recolher o token"),
 
+        // O PC que não consegue partir ainda não tem (ou não consegue ler) o token. Corpo de até 512 bytes, sempre 204 (não revela se o slug
+        // existe), limite por IP próprio e por agente; grava uma linha por PC e nunca mexe em "conectado".
+        new("POST", "/api/v1/devices/agents/{slug}/beacon", "baliza de partida do agente: ainda não há conexão nem token usável"),
+
         // Quem faz login ainda não tem credencial; o limite por IP e o bloqueio por conta protegem a rota.
         new("POST", "/api/v1/identity/auth/login", "entrada por senha: ainda não existe sessão"),
 

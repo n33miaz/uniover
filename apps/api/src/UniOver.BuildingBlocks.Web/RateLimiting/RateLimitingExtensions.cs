@@ -55,7 +55,13 @@ public static class RateLimitPolicies
     /// <summary>Energia e favoritos do PC (bloquear, suspender, desligar, abrir programa): por conta e baixo, pois cada pedido age no PC de alguém.</summary>
     public const string PcPower = "pc-power";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcPower];
+    /// <summary>
+    /// Baliza de partida do agente (anônima, grava uma linha no banco): por IP. O teto cobre uma partida (umas cinco etapas) mais a fila
+    /// em disco que o agente descarrega depois, e dois PCs atrás do mesmo IP; o limite por agente fica no módulo.
+    /// </summary>
+    public const string Beacon = "beacon";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcPower, Beacon];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -90,6 +96,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.Siri] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.PcPointer] = new() { Permitted = 2400, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.Beacon] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
     };
 
     /// <summary>

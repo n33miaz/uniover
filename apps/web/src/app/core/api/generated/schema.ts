@@ -631,6 +631,107 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/devices/agents/{slug}/beacon': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['AgentBeaconBody'];
+        };
+      };
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/devices/agents/beacons': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentBeaconsResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/devices/agents/diagnostics': {
     parameters: {
       query?: never;
@@ -11093,6 +11194,39 @@ export interface components {
       lastSeenAt: null | string;
       /** Format: date-time */
       recoveredAt: null | string;
+    };
+    AgentBeaconBody: {
+      code: null | string;
+      detail: null | string;
+      /** Format: int32 */
+      n: null | number | string;
+      os: null | string;
+      stage: null | string;
+      /** Format: int32 */
+      v: null | number | string;
+      ver: null | string;
+    };
+    AgentBeaconItem: {
+      /** Format: uuid */
+      agentId: string;
+      /** Format: date-time */
+      at: null | string;
+      code: null | string;
+      /** Format: int32 */
+      count: number | string;
+      detail: null | string;
+      /** Format: date-time */
+      firstFailAt: null | string;
+      os: null | string;
+      /** Format: date-time */
+      rejectedAt: null | string;
+      rejectReason: null | string;
+      stage: null | string;
+      verified: boolean;
+      version: null | string;
+    };
+    AgentBeaconsResponse: {
+      items: components['schemas']['AgentBeaconItem'][];
     };
     AgentDiagnosticItem: {
       /** Format: uuid */

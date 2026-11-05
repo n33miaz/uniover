@@ -53,6 +53,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         // Pareamento de aparelhos: qualquer rota sob o prefixo (o '*' final significa "começa com").
         ("*", "/api/v1/devices/pairing/*", RateLimitPolicies.Pairing),
 
+        // Baliza de partida do agente (anônima, grava uma linha): limite por IP próprio e mais largo que o do pareamento.
+        ("POST", "/api/v1/devices/agents/{slug}/beacon", RateLimitPolicies.Beacon),
+
         // Canal do agente: cada abertura valida o token de dispositivo, então o limite segura tentativas em massa.
         ("GET", "/api/v1/devices/agents/{agentId}/ws", RateLimitPolicies.Pairing),
 

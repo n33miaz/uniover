@@ -11,6 +11,7 @@ using UniOver.Modules.Devices.Audit;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.ApprovePairing;
+using UniOver.Modules.Devices.Features.Beacons;
 using UniOver.Modules.Devices.Features.DenyPairing;
 using UniOver.Modules.Devices.Features.Diagnostics;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
@@ -81,6 +82,8 @@ public static class DevicesModule
         services.AddScoped<RevokeAgentHandler>();
         services.AddScoped<AgentOutageMonitor>();
         services.AddScoped<AgentAlertsHandler>();
+        services.AddSingleton<AgentBeaconGate>();
+        services.AddScoped<AgentBeaconStore>();
         services.AddScoped<AgentDiagnosticsStore>();
         services.AddScoped<AgentDiagnosticsHandler>();
         services.AddHostedService<AgentOutageWorker>();
@@ -117,6 +120,8 @@ public static class DevicesModule
         group.MapRevokeAgent();
         group.MapAgentAlerts();
         group.MapAgentDiagnostics();
+        group.MapAgentBeacons();
+        group.MapAgentBeacon();
         group.MapAgentLogs();
         group.MapAgentMaintenance();
         endpoints.MapPcControl();

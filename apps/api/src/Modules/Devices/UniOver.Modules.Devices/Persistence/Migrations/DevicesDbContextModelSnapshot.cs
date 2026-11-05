@@ -252,6 +252,68 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                     b.ToTable("agents", "devices");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentBeacon", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("integer")
+                        .HasColumnName("count");
+
+                    b.Property<DateTimeOffset?>("FirstFailAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_fail_at");
+
+                    b.Property<DateTimeOffset?>("LastAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_at");
+
+                    b.Property<string>("LastCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("last_code");
+
+                    b.Property<string>("LastDetail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("last_detail");
+
+                    b.Property<string>("LastRejectReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("last_reject_reason");
+
+                    b.Property<DateTimeOffset?>("LastRejectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_rejected_at");
+
+                    b.Property<string>("LastStage")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("last_stage");
+
+                    b.Property<string>("Os")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("os");
+
+                    b.Property<bool>("Verified")
+                        .HasColumnType("boolean")
+                        .HasColumnName("verified");
+
+                    b.Property<string>("Version")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("version");
+
+                    b.HasKey("AgentId")
+                        .HasName("pk_agent_beacons");
+
+                    b.ToTable("agent_beacons", "devices");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentDiagnosticEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -585,6 +647,16 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                         .HasDatabaseName("ix_pairings_user_code");
 
                     b.ToTable("pairings", "devices");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentBeacon", b =>
+                {
+                    b.HasOne("UniOver.Modules.Devices.Domain.Agent", null)
+                        .WithOne()
+                        .HasForeignKey("UniOver.Modules.Devices.Domain.AgentBeacon", "AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_beacons_agents_agent_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentDiagnosticEvent", b =>
