@@ -1,5 +1,6 @@
 import { Injectable, type Provider, inject } from '@angular/core';
 import { provideResourceSync, type ResourceSync } from '../sync/resource-sync';
+import { RESOURCE_NAMES } from '../sync/resource-names';
 import { BODY_ENTRIES_PATH, BODY_PROFILE_PATH } from './body-api';
 import { type BodyEntryDto, toLocalBodyEntry } from './body-entry';
 import { type BodyProfileDto, type LocalBodyProfile, toLocalBodyProfile } from './body-profile';
@@ -11,7 +12,7 @@ import { ProfileRepository } from './profile-repository';
 export class BodyEntriesResourceSync implements ResourceSync<BodyEntryDto> {
   private readonly repository = inject(BodyRepository);
 
-  readonly resource = 'bodyEntries';
+  readonly resource = RESOURCE_NAMES.bodyEntries;
   readonly path = BODY_ENTRIES_PATH;
 
   merge(items: readonly BodyEntryDto[]): Promise<void> {
@@ -24,7 +25,7 @@ export class BodyEntriesResourceSync implements ResourceSync<BodyEntryDto> {
 export class BodyProfileResourceSync implements ResourceSync<BodyProfileDto> {
   private readonly repository = inject(ProfileRepository);
 
-  readonly resource = 'bodyProfile';
+  readonly resource = RESOURCE_NAMES.bodyProfile;
   readonly path = BODY_PROFILE_PATH;
 
   merge(items: readonly BodyProfileDto[]): Promise<void> {
