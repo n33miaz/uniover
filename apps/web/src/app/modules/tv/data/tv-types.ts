@@ -13,7 +13,7 @@ export type TvCleanupResult = components['schemas']['TvCleanupOk'];
 type TvStateDto = components['schemas']['TvState'];
 
 /** `hot`: sessão aberta · `hibernating`: controle dormindo (não é "TV desligada") · `disconnected`: sem sessão. */
-export type TvConnection = 'hot' | 'hibernating' | 'disconnected';
+export type TvConnection = 'hot' | 'hibernating' | 'disconnected' | 'not_paired';
 export type TvPower = 'on' | 'off' | 'unknown';
 
 /** O estado já normalizado: o gerador tipa `volume` como número ou texto e `connection`/`power` como texto livre. */
@@ -145,7 +145,9 @@ function toPower(value: unknown): TvPower {
 function toConnection(value: unknown, agentOnline: boolean): TvConnection {
   // Sem agente conectado não há sessão com a TV, qualquer que seja a última leitura.
   if (!agentOnline) return 'disconnected';
-  return value === 'hot' || value === 'hibernating' ? value : 'disconnected';
+  return value === 'hot' || value === 'hibernating' || value === 'not_paired'
+    ? value
+    : 'disconnected';
 }
 
 /** Lê o estado vindo da API ou do SSE; `null` quando o corpo não tem a forma esperada. */

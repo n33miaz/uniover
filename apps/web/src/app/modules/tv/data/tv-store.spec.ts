@@ -207,6 +207,17 @@ describe('TvStore', () => {
       expect(store.disabledReason()).toBeNull();
     });
 
+    it('"not_paired" blocks the buttons and clears when the session opens again', async () => {
+      await started();
+      emit('tv.state', { ...hot, connection: 'not_paired' });
+      expect(store.status()).toBe('not-paired');
+      expect(store.canSend()).toBe(false);
+      expect(store.disabledReason()).toBe('A TV não está pareada.');
+      emit('tv.state', hot);
+      expect(store.status()).toBe('hot');
+      expect(store.canSend()).toBe(true);
+    });
+
     it('an offline agent is "agent-off" and disables the buttons with a reason', async () => {
       await started();
       emit('tv.state', { ...hot, agentOnline: false, connection: 'disconnected', volume: null });
