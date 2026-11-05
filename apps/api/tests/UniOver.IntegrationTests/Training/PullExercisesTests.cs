@@ -105,6 +105,24 @@ public sealed class PullExercisesTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task FirstAndNextPages_RunTheSameSql_SoTheSecondPageDoesNotCompileANewQueryShape()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { CaptureSql = true });
+        var login = await app.LoginAsync();
+
+        var pages = await app.PullAllPagesAsync(login, limit: 100);
+        pages.Count.Should().BeGreaterThan(2);
+
+        // O cabeçalho do log traz tempo e parâmetros; o que importa é o texto SQL depois dele.
+        var statements = app.Logs.Lines
+            .Where(l => l.Contains("LEFT JOIN (", StringComparison.Ordinal) && l.Contains("FROM training.exercises AS e", StringComparison.Ordinal))
+            .Select(l => l[(l.IndexOf('\n', StringComparison.Ordinal) + 1)..])
+            .ToList();
+        statements.Should().HaveCount(pages.Count);
+        statements.Distinct().Should().ContainSingle("com ou sem cursor, a leitura do catálogo é a mesma consulta");
+    }
+
+    [Fact]
     public async Task OwnExercises_AreOnlyVisibleToTheirOwner()
     {
         await using var app = await TrainingApp.StartAsync(postgres);

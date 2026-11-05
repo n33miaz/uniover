@@ -32,12 +32,12 @@ internal sealed class PullExercisesHandler(TrainingDbContext db, CatalogSeeder s
             from o in choices.DefaultIfEmpty()
             select new { Exercise = e, Choice = o, Stamp = o != null && o.UpdatedAt > e.UpdatedAt ? o.UpdatedAt : e.UpdatedAt };
 
-        if (query.After is { } after)
-        {
-            var stamp = after.UpdatedAt;
-            var id = after.Id;
-            rows = rows.Where(r => r.Stamp > stamp || (r.Stamp == stamp && r.Exercise.Id.CompareTo(id) > 0));
-        }
+        // Uma única forma de consulta, com ou sem cursor: sem cursor o ponto de partida é o menor instante e o menor id, que
+        // não exclui linha nenhuma. Com duas formas, a segunda página faz o EF traduzir e o JIT compilar a consulta de
+        // novo, e num processo recém-acordado em CPU parcial isso pesa na primeira passada do aparelho.
+        var stamp = query.After?.UpdatedAt ?? DateTimeOffset.MinValue;
+        var id = query.After?.Id ?? Guid.Empty;
+        rows = rows.Where(r => r.Stamp > stamp || (r.Stamp == stamp && r.Exercise.Id.CompareTo(id) > 0));
 
         var page = await rows
             .OrderBy(r => r.Stamp)
