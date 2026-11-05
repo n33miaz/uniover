@@ -11,7 +11,7 @@ from uniover_agent.core import (
     TvSessionManager,
     TvState,
 )
-from uniover_agent.ports import TvNotPaired, TvPortClosed, TvUnreachable
+from uniover_agent.ports import TvCertificateRefused, TvNotPaired, TvPortClosed, TvUnreachable
 
 
 def state_of(manager: TvSessionManager) -> SessionState:
@@ -220,6 +220,45 @@ async def test_pairing_problem_fails_at_once_with_its_own_code() -> None:
     assert rig.clock.sleeps == []
     assert rig.remote.connects == 1
     assert rig.repairs == 0
+
+
+async def test_refused_certificate_only_means_not_paired_after_three_spaced_refusals() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(6)]
+    for _ in range(2):
+        with pytest.raises(TvSessionError) as caught:
+            await rig.manager.wake()
+        assert caught.value.code == TV_UNREACHABLE  # recusa passageira não pede pareamento
+        rig.clock.advance(30)
+    with pytest.raises(TvSessionError) as caught:
+        await rig.manager.wake()
+    assert caught.value.code == TV_NOT_PAIRED
+
+
+async def test_certificate_refusals_close_together_count_only_once() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(8)]
+    for _ in range(2):
+        with pytest.raises(TvSessionError) as caught:
+            await rig.manager.wake()
+        assert caught.value.code == TV_UNREACHABLE
+        rig.clock.advance(10)
+
+
+async def test_a_successful_open_clears_the_certificate_refusal_count() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(4)]
+    with pytest.raises(TvSessionError):
+        await rig.manager.wake()
+    rig.clock.advance(30)
+    await rig.manager.wake()  # a TV aceitou: a contagem recomeça
+    await rig.manager.hibernate_if_idle()
+    rig.clock.advance(300)
+    await rig.manager.hibernate_if_idle()
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(4)]
+    with pytest.raises(TvSessionError) as caught:
+        await rig.manager.wake()
+    assert caught.value.code == TV_UNREACHABLE
 
 
 async def test_needs_repair_is_signaled_once_on_the_first_failed_attempt() -> None:

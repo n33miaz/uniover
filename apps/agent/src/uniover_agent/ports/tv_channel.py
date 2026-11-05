@@ -29,6 +29,15 @@ class TvNotPaired(TvChannelError):  # noqa: N818
     """Falta o par certificado/chave ou a TV o recusou: repetir não adianta, é preciso parear."""
 
 
+class TvCertificateRefused(TvNotPaired):
+    """A TV recusou o certificado do UniOver na conexão TLS.
+
+    Pode ser passageiro (a TV recusa por instantes ao subir), então o gerenciador só trata como
+    "não pareada" depois de a recusa se repetir com intervalo; antes disso é falha de rede comum.
+    Falta de arquivo de certificado continua sendo `TvNotPaired` simples: essa é definitiva.
+    """
+
+
 class TvPermissionNeeded(TvNotPaired):
     """A TV não reconhece mais o UniOver (permissão revogada ou vencida).
 

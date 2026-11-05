@@ -19,6 +19,7 @@ Certificado e chave nunca são lidos nem registrados aqui: a biblioteca recebe s
 
 import asyncio
 import logging
+import ssl
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol
@@ -37,7 +38,13 @@ from androidtvremote2.remotemessage_pb2 import (
     RemoteMessage,
 )
 
-from uniover_agent.ports import TextFieldStatus, TvNotPaired, TvPortClosed, TvUnreachable
+from uniover_agent.ports import (
+    TextFieldStatus,
+    TvCertificateRefused,
+    TvNotPaired,
+    TvPortClosed,
+    TvUnreachable,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -49,6 +56,13 @@ REMOTE_PORT: Final = 6466
 CONNECT_TIMEOUT_SECONDS: Final = 5.0
 TextCursor = Literal["library", "chunk_end", "field_end"]
 TextCounters = Literal["library", "echo"]
+# Causas de `InvalidAuth` que são a conexão caindo, não o certificado sendo recusado.
+_TRANSIENT_TLS_CAUSES: Final = (
+    ssl.SSLEOFError,
+    ssl.SSLZeroReturnError,
+    ConnectionError,
+    TimeoutError,
+)
 
 DIRECTIONS: Final = frozenset({"SHORT", "START_LONG", "END_LONG"})
 
@@ -302,9 +316,15 @@ class AndroidTvRemoteV2:
         client = self._client or self._new_client()
         try:
             await asyncio.wait_for(client.async_connect(), self._connect_timeout)
-        except InvalidAuth:
+        except InvalidAuth as exc:
             client.disconnect()
-            raise TvNotPaired("a TV recusou o certificado (pareamento inválido)") from None
+            # A biblioteca chama de `InvalidAuth` qualquer erro de TLS. Corte de conexão no meio do
+            # aperto de mão (EOF, reset) é a TV ocupada, não certificado recusado.
+            if isinstance(exc.__cause__, _TRANSIENT_TLS_CAUSES):
+                raise TvUnreachable(
+                    f"a TV cortou a conexão segura ({type(exc.__cause__).__name__})"
+                ) from None
+            raise TvCertificateRefused("a TV recusou o certificado (pareamento inválido)") from None
         except CannotConnect as exc:
             client.disconnect()
             if isinstance(exc.__cause__, ConnectionRefusedError):
