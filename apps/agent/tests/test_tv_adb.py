@@ -7,6 +7,7 @@ de processos, que roda o próprio Python para provar tempo esgotado e saída sem
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -195,7 +196,7 @@ DEVICES = ("devices",)
 KILL = ("kill-server",)
 
 
-def make_killing(runner: FakeAdbRunner, clock: Clock | None = None, **extra: float) -> AdbTv:
+def make_killing(runner: FakeAdbRunner, clock: Clock | None = None, **extra: Any) -> AdbTv:
     return AdbTv(
         ADB,
         HOST,

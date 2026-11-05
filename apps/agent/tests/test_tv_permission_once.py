@@ -379,7 +379,7 @@ async def test_the_remote_v2_certificate_is_reused_and_never_regenerated(tmp_pat
         paths.append((certfile, keyfile))
         return library
 
-    adapter = AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path, client_factory=factory)  # type: ignore[arg-type]
+    adapter = AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path, client_factory=factory)
     await adapter.connect()
     await adapter.connect()
     assert paths == [(str(tmp_path / "cert.pem"), str(tmp_path / "key.pem"))]
@@ -388,12 +388,12 @@ async def test_the_remote_v2_certificate_is_reused_and_never_regenerated(tmp_pat
 
 async def test_a_missing_remote_v2_pair_is_not_created_by_connecting(tmp_path: Path) -> None:
     called: list[str] = []
-    adapter = AndroidTvRemoteV2(
-        "10.0.0.4",
-        "UniOver",
-        tmp_path / "vazio",
-        client_factory=lambda *_args: called.append("fábrica"),  # type: ignore[arg-type,return-value]
-    )
+
+    def factory(*_args: str) -> FakeLibrary:
+        called.append("fábrica")
+        return FakeLibrary()
+
+    adapter = AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path / "vazio", client_factory=factory)
     with pytest.raises(TvNotPaired):
         await adapter.connect()
     assert called == []
