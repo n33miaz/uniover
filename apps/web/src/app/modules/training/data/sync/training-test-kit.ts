@@ -76,6 +76,8 @@ type Scripted = PullPage<unknown> | Error | HttpErrorResponse | (() => Promise<P
 /** Leitura incremental falsa: devolve o roteiro na ordem; depois dele, uma página vazia. */
 export class FakePullApi {
   readonly calls: PullCall[] = [];
+  /** O sinal de cancelamento de cada leitura, na ordem das chamadas. */
+  readonly signals: (AbortSignal | undefined)[] = [];
   script: Scripted[] = [];
   /** Enquanto definido, toda leitura espera por ele (mantém a passada em andamento). */
   gate: Promise<void> | null = null;
@@ -87,8 +89,10 @@ export class FakePullApi {
     after: string | null,
     limit: number,
     accountId: string,
+    signal?: AbortSignal,
   ): Promise<PullPage<T>> {
     this.calls.push({ path, after, limit, accountId });
+    this.signals.push(signal);
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {

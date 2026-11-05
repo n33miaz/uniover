@@ -1,6 +1,6 @@
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { NEVER, firstValueFrom, fromEvent, takeUntil } from 'rxjs';
 import { AUTH_CONFIG, AuthService } from '../../../../core/auth/auth.service';
 import { SessionState } from '../../../../core/session/session-state';
 import type { PullPage } from './resource-sync';
@@ -10,6 +10,14 @@ export class SessionMismatchError extends Error {
   constructor() {
     super('A sessão deste navegador não é a da conta deste banco.');
     this.name = 'SessionMismatchError';
+  }
+}
+
+/** O servidor não respondeu a um pedido de página dentro do prazo: o pedido foi abandonado (ver `PULL_REQUEST_TIMEOUT_MS`). */
+export class PullTimeoutError extends Error {
+  constructor() {
+    super('O servidor não respondeu a tempo.');
+    this.name = 'PullTimeoutError';
   }
 }
 
@@ -32,6 +40,7 @@ export class PullApi {
     after: string | null,
     limit: number,
     accountId: string,
+    signal?: AbortSignal,
   ): Promise<PullPage<T>> {
     let token = this.session.bearerOf(accountId, Date.now() + this.minLeadMs);
     if (token === null) {
@@ -45,10 +54,13 @@ export class PullApi {
     if (after) params = params.set('after', after);
     const read = (bearer: string) =>
       firstValueFrom(
-        this.http.get<PullPage<T>>(path, {
-          params,
-          headers: new HttpHeaders({ Authorization: `Bearer ${bearer}` }),
-        }),
+        this.http
+          .get<PullPage<T>>(path, {
+            params,
+            headers: new HttpHeaders({ Authorization: `Bearer ${bearer}` }),
+          })
+          // Cancelado (o prazo do pedido acabou): solta a requisição em vez de deixá-la pendurada.
+          .pipe(takeUntil(signal ? fromEvent(signal, 'abort') : NEVER)),
       );
 
     try {
