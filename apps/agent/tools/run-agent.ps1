@@ -103,6 +103,19 @@ function Touch-Alive {
     try { [System.IO.File]::WriteAllText($path, (Get-Date).ToString('o'), [System.Text.Encoding]::ASCII) } catch { }
 }
 
+function Ensure-AgentPulse {
+    # O agente so consegue manter o `last-alive` com disco cheio se o arquivo JA existe (so a data muda, sem alocar bloco). Por
+    # isso ele nasce aqui, antes de o agente subir: criado (com a hora atual) so quando falta; um que ja existe fica como esta.
+    # Gancho de teste: UNIOVER_SUPERVISOR_TEST_NO_PULSE_FILE=1 finge que o arquivo nao pode ser criado.
+    if ([Environment]::GetEnvironmentVariable('UNIOVER_SUPERVISOR_TEST_NO_PULSE_FILE') -eq '1') { return }
+    $path = Join-Path $runtime 'last-alive'
+    try {
+        if (-not (Test-Path -LiteralPath $path)) {
+            [System.IO.File]::WriteAllText($path, [string][DateTimeOffset]::UtcNow.ToUnixTimeSeconds(), [System.Text.Encoding]::ASCII)
+        }
+    } catch { }
+}
+
 function Sleep-Beating([double]$Seconds) {
     # Nenhuma espera do supervisor passa de poucos segundos sem dar sinal de vida: quem o vigia (lancador e agente) nao
     # distingue "dormindo 5 minutos" de "travado".
@@ -350,7 +363,18 @@ function Invoke-Update([string]$Uv) {
         }
     }
     if ($before -and $after -and $before -ne $after) {
-        [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII)
+        # A prova (e a volta atras que vem com ela) vale para a versao nova desde o primeiro segundo: a versao recem-instalada
+        # do Python ja a gravou ANTES da troca; aqui ela so e gravada se faltar. Sem conseguir grava-la (disco cheio), a versao
+        # nova nunca ficaria no ar sem prova: volta para a anterior agora.
+        $existing = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
+        if (-not ($existing.Count -eq 2 -and $existing[0] -eq $after)) {
+            try { [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII) }
+            catch {
+                Write-SupLog 'ERROR' 'nao consegui gravar a prova da versao nova (disco cheio?); volto para a anterior'
+                Add-Diagnostic 'update.trial_unwritable' 'error' 'nao consegui gravar a prova da versao nova; voltou para a anterior'
+                [void](Invoke-Rollback 'nao consegui gravar a prova da versao nova (disco cheio); voltei para a anterior')
+            }
+        }
         return $true
     }
     return $false
@@ -723,6 +747,17 @@ $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
+# Um unico supervisor por instalacao: dois (por exemplo, o lancador subindo outro enquanto o antigo nao morreu) disputariam o
+# agente e o icone. O nome vem do caminho da instalacao; um supervisor morto abandona o mutex e o seguinte o assume.
+$installHash = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA1]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($base.ToLowerInvariant()))) -replace '-', '').Substring(0, 12)
+$supervisorMutex = New-Object System.Threading.Mutex($false, ('Local\UniOver-Supervisor-' + $installHash))
+$ownsSupervisor = $false
+try { $ownsSupervisor = $supervisorMutex.WaitOne(0) }
+catch [System.Threading.AbandonedMutexException] { $ownsSupervisor = $true }
+if (-not $ownsSupervisor) {
+    Write-SupLog 'WARNING' 'ja existe um supervisor desta instalacao; este encerra'
+    exit 0
+}
 Write-SupLog 'INFO' 'supervisor iniciado'
 Touch-Alive
 Remove-StaleChildOutputs
@@ -778,6 +813,7 @@ while ($true) {
     $syncFalls = 0
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
     Update-Tray $uv
+    Ensure-AgentPulse
     $arguments = 'run --project "' + $source + '" uniover-agent run'
     $process = Start-Hidden $uv $arguments
     $started = Get-Date
@@ -799,7 +835,15 @@ while ($true) {
         $previousLap = $lap
         $write = $null
         try { $write = (Get-Item -LiteralPath $alivePath).LastWriteTimeUtc } catch { }
-        if ($slow -or $null -eq $write -or $write -ne $lastWrite) { $silent = 0; $lastWrite = $write } else { $silent++ }
+        # Sem o arquivo (disco cheio ou sem permissao antes de ele existir) o agente so e dado por mudo depois da carencia:
+        # o `$silent` zerado a cada volta escondia um agente travado para sempre.
+        if ($slow) { $silent = 0; $lastWrite = $write }
+        elseif ($null -eq $write) { if (($lap - $started).TotalSeconds -lt $hangGraceSeconds) { $silent = 0 } else { $silent++ } }
+        elseif ($write -ne $lastWrite) { $silent = 0; $lastWrite = $write }
+        else { $silent++ }
+        # So conta como pulso o que o agente gravou DEPOIS de subir (o arquivo que o supervisor criou, ou o da execucao
+        # anterior, nao prova que este agente esta bem).
+        $agentWrote = ($null -ne $write -and $write -gt $started.ToUniversalTime())
         if (($lap - $started).TotalSeconds -ge $hangGraceSeconds -and $silent -ge $hangLaps) {
             Write-SupLog 'ERROR' ('o agente esta vivo (pid ' + $process.Id + ') mas mudo ha cerca de 5 minutos; vou reinicia-lo')
             Add-Diagnostic 'process.unresponsive' 'error' 'o agente parou de dar sinal de vida por 5 minutos e foi reiniciado'
@@ -809,7 +853,7 @@ while ($true) {
             break
         }
         if (Test-Path -LiteralPath $trial) {
-            if (($lap - $started).TotalSeconds -ge $confirmAfterSeconds -and $silent -lt 6 -and $null -ne $write) { Confirm-Trial }
+            if (($lap - $started).TotalSeconds -ge $confirmAfterSeconds -and $silent -lt 6 -and $agentWrote) { Confirm-Trial }
         }
         if (Test-Path (Join-Path $runtime 'restart-now')) {
             Remove-Item -LiteralPath (Join-Path $runtime 'restart-now') -Force -ErrorAction SilentlyContinue

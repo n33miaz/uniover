@@ -199,6 +199,9 @@ $staleCode = -9999
 # Suspensao/hibernacao: o relogio de parede salta de uma volta da vigia para a outra (que deveria levar $pollMs). O
 # supervisor dormiu junto e o sinal dele parece velho de horas: depois de um salto assim o prazo recomeca do despertar.
 $pollMs = 5000
+$killWaitMs = 15000
+$forcedWait = 0
+if ([int]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_KILL_WAIT_MS'), [ref]$forcedWait) -and $forcedWait -gt 0) { $killWaitMs = $forcedWait }
 $resumeGapSeconds = 60.0
 $forcedGap = 0.0
 if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_RESUME_GAP_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedGap) -and $forcedGap -gt 0) { $resumeGapSeconds = $forcedGap }
@@ -214,6 +217,16 @@ if ($jumpSpec -and $jumpSpec -match '^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$') {
 
 function Get-WatchNow {
     return (Get-Date).AddSeconds($script:clockSkew)
+}
+
+function Stop-SupervisorTree($Process) {
+    # Encerra o supervisor e tudo que ele abriu e so diz que conseguiu se o processo saiu de fato (ate 3 tentativas).
+    # Gancho de teste: UNIOVER_LAUNCHER_TEST_KILL_FAILS=1 finge que o encerramento nao funciona.
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        if ([Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_TEST_KILL_FAILS') -ne '1') { & taskkill.exe /PID $Process.Id /T /F *> $null }
+        if ($Process.WaitForExit($killWaitMs)) { return $true }
+    }
+    return $false
 }
 
 function Invoke-Supervisor([string]$Script) {
@@ -249,9 +262,11 @@ function Invoke-Supervisor([string]$Script) {
         if ($silent -gt $staleSeconds) {
             Write-LauncherLog ('o supervisor esta vivo (pid ' + $process.Id + ') mas sem sinal ha ' + [int]$silent + ' s; vou reinicia-lo') 'ERROR'
             Add-LauncherDiagnostic 'supervisor.unresponsive' 'error' 'o supervisor travou (sem sinal de vida) e foi reiniciado pelo lancador'
-            & taskkill.exe /PID $process.Id /T /F *> $null
-            [void]$process.WaitForExit(15000)
-            return $staleCode
+            # So devolve (e o lancador so sobe outro supervisor) depois de CONFIRMAR que a arvore morreu: o supervisor novo
+            # tem o proprio mutex e se recusa a rodar junto com um vivo, mas nem se tenta enquanto o antigo existir.
+            if (Stop-SupervisorTree $process) { return $staleCode }
+            Write-LauncherLog ('nao consegui encerrar o supervisor (pid ' + $process.Id + '); nao inicio outro e tento de novo mais tarde') 'ERROR'
+            $resumedAt = Get-WatchNow
         }
     }
     return $process.ExitCode
