@@ -478,7 +478,8 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   variável de ambiente, e o aviso da TV sempre oferece essa chave). Cada chave válida é copiada para
   `tv/.adb-key/<resumo>/`, pasta restrita ao usuário, na instalação (atualização e reinstalação não a tocam).
   Cópias de chaves diferentes convivem; cópia truncada ou adulterada (o resumo não confere com o nome) é ignorada.
-  Se o `adbkey` sumir ou estiver inválido, a cópia da chave registrada volta **antes** de qualquer chamada ao `adb`
+  Só vale como inválida a chave vazia ou truncada (começa com `-----BEGIN` e não termina); a de formato desconhecido
+  é do usuário: não é tocada e nada é registrado em nome dela. Se o `adbkey` sumir ou estiver inválido, a cópia da chave registrada volta **antes** de qualquer chamada ao `adb`
   (senão ele gera outra e a TV pergunta de novo); a chave inválida fica em `adbkey.invalido`. Uma chave válida e
   diferente nunca é sobrescrita. O resumo da chave é tirado **antes** de conectar: se o `adbkey` mudar no meio
   (o Android Studio mexe nele), nada é registrado nem guardado em nome da chave errada.
@@ -490,13 +491,17 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   `adb`. Se uma conexão automática voltar `unauthorized` (reset de fábrica, permissão revogada), o registro vira
   `needs_user` na hora, em disco: vale **uma** tentativa inevitável (o `adb` não confere autorização sem conectar) e
   depois nenhuma, nem depois de reiniciar o agente, até um toque da pessoa.
+- **A capacidade `tv.adb` vai sempre ao `hello`** quando há `adb` neste PC, com ou sem permissão: o app só mostra
+  **Atualizar lista** (o único toque que pede a permissão) a quem a tem. Nada fica exposto: toda rota automática por
+  trás dela passa pela trava.
 - **Sem registro, ou só `granted`:** nenhuma rota automática conecta (partida, lista diária, limpeza, ícones, vigia,
   canal opcional da sessão): só leem o estado com `get-state`, que não abre conexão. Um transporte que já estava
   aberto pode continuar em uso, mas nada é registrado a partir dele (pode ser um "Permitir" de uma vez só).
 - **Fluxo de um toque.** O toque conecta e deixa o aviso na TV (o app mostra `adb_unauthorized` e a dica). O agente
   espera o aceite até 90 s **só lendo `get-state`**: nunca desconecta nem reconecta. Quando a TV diz `device`,
   registra `granted`, roda `settings put global adb_allowed_connection_time 0` (confere com `settings get`) e anota o
-  serial (`getprop ro.serialno`), tudo sobre o transporte já autorizado. O Android 11+ revoga a permissão do ADB
+  serial (`getprop ro.serialno`, uma leitura de shell: em transporte TCP o `adb get-serialno` devolve só `host:porta`;
+  não conferido na TV real), tudo sobre o transporte já autorizado. O Android 11+ revoga a permissão do ADB
   que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); são até 3 tentativas.
 - **A prova.** Um "Permitir" sem "Sempre permitir" vale só para aquela conexão. Por isso `granted` ainda não deixa o
   agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz `disconnect` e `connect` e, se a TV
