@@ -1,6 +1,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Injectable, effect, inject, signal, untracked } from '@angular/core';
+import {
+  DestroyRef,
+  Injectable,
+  InjectionToken,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { ConnectivityService } from '../../../../core/connectivity/connectivity.service';
 import { OfflineQueue } from '../../../../core/offline-queue/offline-queue';
 import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
@@ -16,6 +24,26 @@ import { DEFAULT_PULL_PAGE_SIZE, ResourceSync, TRAINING_RESOURCE_SYNCS } from '.
  * qualquer outra coisa.
  */
 export type TrainingSyncError = 'network' | 'server' | 'unexpected';
+
+/**
+ * Quanto quem espera a primeira passada do servidor (Hoje, Rotinas, Progresso, Corpo...) espera no máximo, contado da hora
+ * em que a passada pode começar (banco lido, fila hidratada, com rede): passado o prazo, o que o banco local tem vale, mesmo
+ * com a requisição pendurada (portal cativo, TCP sem resposta). É o único lugar deste número.
+ */
+export const FIRST_PULL_WAIT_MS = new InjectionToken<number>('FIRST_PULL_WAIT_MS', {
+  providedIn: 'root',
+  factory: () => 8_000,
+});
+
+/**
+ * Teto de segurança, contado da criação do puxador: vale quando a passada nem chega a poder começar (o banco ou a fila
+ * pendurados na hidratação). É maior que `FIRST_PULL_WAIT_MS` de propósito: uma hidratação lenta não gasta o prazo da
+ * passada, mas também não deixa o esqueleto durar para sempre.
+ */
+export const FIRST_PULL_BOOT_MAX_MS = new InjectionToken<number>('FIRST_PULL_BOOT_MAX_MS', {
+  providedIn: 'root',
+  factory: () => 30_000,
+});
 
 function classify(error: unknown): TrainingSyncError {
   if (error instanceof HttpErrorResponse) {
@@ -56,6 +84,7 @@ export class TrainingSync {
   private readonly _lastPullAt = signal<number | null>(null);
   private readonly _error = signal<TrainingSyncError | null>(null);
   private readonly _firstPassSettled = signal(false);
+  private readonly _firstPullWaitExpired = signal(false);
 
   /** Há um puxar em andamento. */
   readonly pulling = this._pulling.asReadonly();
@@ -69,6 +98,12 @@ export class TrainingSync {
    * esperar aqui, em vez de ficar num esqueleto que nunca acaba; o banco local passa a valer.
    */
   readonly firstPassSettled = this._firstPassSettled.asReadonly();
+  /**
+   * O prazo da espera acabou sem a primeira passada decidir (ver `FIRST_PULL_WAIT_MS`): quem espera deixa de esperar.
+   * O prazo corre da hora em que a passada pode começar, não da criação: hidratação lenta não o consome; se nem assim ela
+   * começa, vale o teto `FIRST_PULL_BOOT_MAX_MS`.
+   */
+  readonly firstPullWaitExpired = this._firstPullWaitExpired.asReadonly();
   private readonly _lastPullKnown = signal(false);
   /**
    * O instante do último puxar já foi lido do banco (mesmo que seja "nunca"). Antes disso `lastPullAt` vale `null` para
@@ -81,8 +116,16 @@ export class TrainingSync {
   private running: Promise<void> | null = null;
   private requested = false;
   private seenSyncAt: number | null = null;
+  private readonly waitMs = inject(FIRST_PULL_WAIT_MS);
+  private waitTimer: ReturnType<typeof setTimeout> | null = null;
+  private waitArmed = false;
 
   constructor() {
+    this.waitTimer = setTimeout(
+      () => this._firstPullWaitExpired.set(true),
+      inject(FIRST_PULL_BOOT_MAX_MS),
+    );
+    inject(DestroyRef).onDestroy(() => this.clearWaitTimer());
     const win = this.doc.defaultView;
     const onOnline = () => void this.request();
     const onVisibility = () => {
@@ -153,6 +196,25 @@ export class TrainingSync {
     return oldest;
   }
 
+  private clearWaitTimer(): void {
+    if (this.waitTimer !== null) clearTimeout(this.waitTimer);
+    this.waitTimer = null;
+  }
+
+  /** A primeira passada decidiu: o prazo da espera não é mais necessário. */
+  private settle(): void {
+    this._firstPassSettled.set(true);
+    this.clearWaitTimer();
+  }
+
+  /** Troca o teto de partida pelo prazo da passada, uma vez, quando ela pode de fato começar (rede, banco e fila prontos). */
+  private armWaitDeadline(): void {
+    if (this.waitArmed || this._firstPassSettled()) return;
+    this.waitArmed = true;
+    this.clearWaitTimer();
+    this.waitTimer = setTimeout(() => this._firstPullWaitExpired.set(true), this.waitMs);
+  }
+
   /** Pede uma passada. Pedidos seguidos viram uma passada extra só; antes de `start()` não faz nada. */
   private request(): Promise<void> {
     if (!this.started) return Promise.resolve();
@@ -177,19 +239,21 @@ export class TrainingSync {
     // Sem rede não há o que tentar (o evento `online` volta aqui) e isso não é erro. Com envio pendente, a fila
     // sobe primeiro; o fim do envio chama de novo.
     if (this.resources.length === 0) {
-      this._firstPassSettled.set(true);
+      this.settle();
       return;
     }
     if (!this.connectivity.online()) return;
+    // A partir daqui a passada pode começar: só agora o prazo da espera corre.
+    this.armWaitDeadline();
     if (this.queue.pendingCount() > 0) {
-      this._firstPassSettled.set(true);
+      this.settle();
       return;
     }
     // Só com a sessão da conta dona deste banco: o token de outra conta traria os dados dela para cá.
     const accountId = this.queue.accountId;
     if (accountId === null || !this.account.isSessionOf(accountId)) {
       // Sem a resposta do `/me` a passada ainda vai acontecer; com ela e sem ser a dona, nunca vai.
-      if (this.account.sessionAccount() !== null) this._firstPassSettled.set(true);
+      if (this.account.sessionAccount() !== null) this.settle();
       return;
     }
 
@@ -201,7 +265,7 @@ export class TrainingSync {
     } catch (error) {
       this._error.set(classify(error));
     } finally {
-      this._firstPassSettled.set(true);
+      this.settle();
       this._pulling.set(false);
     }
   }
