@@ -11248,6 +11248,7 @@ export interface components {
     AuditSourceSummary: {
       actions: string[];
       module: string;
+      permanentActions: string[];
       /** Format: int32 */
       retentionDays: number | string;
     };

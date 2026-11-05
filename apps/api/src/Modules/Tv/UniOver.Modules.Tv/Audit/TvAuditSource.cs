@@ -86,8 +86,10 @@ internal static class TvAuditNormalizer
 /// <summary>Lê os comandos e as remoções permanentes como uma única fonte da trilha unificada, só com o papel da aplicação.</summary>
 internal sealed class TvAuditSource(TvDbContext db) : IAuditSource
 {
+    // Os comandos duram CommandDays; a remoção de uma TV (quem, quando, qual computador) fica sem prazo, e só o IP e o
+    // aparelho dela seguem o prazo das trilhas de segurança (tv.scrub_removal_audit).
     public AuditSourceInfo Info { get; } = new(
-        TvAuditNormalizer.Module, AuditRetentionPolicy.CommandDays, TvAuditNormalizer.Actions);
+        TvAuditNormalizer.Module, AuditRetentionPolicy.CommandDays, TvAuditNormalizer.Actions, [TvCommandNames.Remove]);
 
     public async Task<IReadOnlyList<AuditRecord>> ReadAsync(AuditQuery query, CancellationToken cancellationToken)
     {

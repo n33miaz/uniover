@@ -67,7 +67,9 @@ describe('AuditApi', () => {
     expect(request.request.method).toBe('GET');
     request.flush({
       outcomes: ['success', 'failure', 'denied'],
-      sources: [{ module: 'tv', retentionDays: 30, actions: ['tv.key'] }],
+      sources: [
+        { module: 'tv', retentionDays: 30, actions: ['tv.key'], permanentActions: ['tv.remove'] },
+      ],
     });
     expect((await done).sources[0].retentionDays).toBe(30);
   });

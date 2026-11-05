@@ -108,13 +108,17 @@ function item(overrides: Partial<AuditItem> = {}): AuditItem {
   };
 }
 
-function sources(retention: Record<string, number | string>): AuditSources {
+function sources(
+  retention: Record<string, number | string>,
+  permanent: Record<string, string[]> = {},
+): AuditSources {
   return {
     outcomes: ['success', 'failure', 'denied'],
     sources: Object.entries(retention).map(([module, retentionDays]) => ({
       module,
       retentionDays,
       actions: [],
+      permanentActions: permanent[module] ?? [],
     })),
   };
 }
@@ -363,6 +367,18 @@ describe('retentionText', () => {
     expect(retentionText(sources({ identity: 180, devices: 90, tv: 30 }), [])).toBe(
       'Guardamos por 180 dias (Dispositivos: 90 dias; TV: 30 dias)',
     );
+  });
+
+  it('says what a trail keeps without a time limit, so the number never promises less than what happens', () => {
+    const all = sources({ identity: 180, devices: 180, tv: 30 }, { tv: ['tv.remove'] });
+    expect(retentionText(all, [])).toBe('Guardamos por 180 dias (TV: 30 dias; TV removida: sem prazo)');
+    expect(retentionText(all, ['tv'])).toBe('Guardamos por 30 dias (TV removida: sem prazo)');
+    expect(retentionText(all, ['identity', 'devices'])).toBe('Guardamos por 180 dias');
+  });
+
+  it('tolerates a source without the permanent list', () => {
+    const old = { outcomes: [], sources: [{ module: 'tv', retentionDays: 30, actions: [] }] };
+    expect(retentionText(old as unknown as AuditSources, [])).toBe('Guardamos por 30 dias');
   });
 
   it('counts only the trails in view when modules are filtered', () => {

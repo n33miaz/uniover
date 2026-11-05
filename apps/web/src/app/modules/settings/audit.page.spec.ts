@@ -16,9 +16,19 @@ class Blank {}
 const SOURCES: AuditSources = {
   outcomes: ['success', 'failure', 'denied'],
   sources: [
-    { module: 'devices', retentionDays: 180, actions: ['pairing_approved'] },
-    { module: 'identity', retentionDays: 180, actions: ['login_succeeded', 'login_failed'] },
-    { module: 'tv', retentionDays: 30, actions: ['tv.key', 'tv.power-off'] },
+    { module: 'devices', retentionDays: 180, actions: ['pairing_approved'], permanentActions: [] },
+    {
+      module: 'identity',
+      retentionDays: 180,
+      actions: ['login_succeeded', 'login_failed'],
+      permanentActions: [],
+    },
+    {
+      module: 'tv',
+      retentionDays: 30,
+      actions: ['tv.key', 'tv.power-off'],
+      permanentActions: ['tv.remove'],
+    },
   ],
 };
 
@@ -281,7 +291,7 @@ describe('AuditPage', () => {
       signIn();
       const { text } = await render();
       expect(text()).toContain('Cada ação guarda data, IP e aparelho.');
-      expect(text()).toContain('Guardamos por 180 dias (TV: 30 dias)');
+      expect(text()).toContain('Guardamos por 180 dias (TV: 30 dias; TV removida: sem prazo)');
     });
 
     it('lists even when the sources failed: only the retention line and the module options are missing', async () => {
