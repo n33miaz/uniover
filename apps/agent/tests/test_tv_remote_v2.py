@@ -736,6 +736,36 @@ async def test_text_on_a_closing_transport_means_unreachable_instead_of_being_dr
     assert library._remote_message_protocol.messages == []
 
 
+async def test_a_late_echo_from_an_old_connection_does_not_touch_the_new_connection(
+    tmp_path: Path,
+) -> None:
+    library = FakeLibrary()
+    fields: list[TextFieldStatus] = []
+    adapter = duplo_adapter(tmp_path, library)
+    adapter.on_text_field(fields.append)
+    await adapter.connect()
+    old_protocol = library._remote_message_protocol
+    old_handle = old_protocol._handle_message
+    library._remote_message_protocol = FakeProtocol(library)
+    await adapter.connect()
+    new_protocol = library._remote_message_protocol
+    try:
+        echo = RemoteMessage()
+        echo.remote_ime_key_inject.app_info.counter = 41
+        echo.remote_ime_key_inject.text_field_status.counter_field = 42
+        echo.remote_ime_key_inject.text_field_status.value = "velho"
+        old_handle(echo.SerializeToString())
+        batch = RemoteMessage()
+        batch.remote_ime_batch_edit.ime_counter = 43
+        batch.remote_ime_batch_edit.field_counter = 44
+        old_handle(batch.SerializeToString())
+        assert (new_protocol.ime_counter, new_protocol.ime_field_counter) == (0, 0)
+        assert (adapter._ime_counter, adapter._field_counter) == (None, None)
+        assert fields == []
+    finally:
+        await adapter.disconnect()
+
+
 async def test_a_broken_listener_does_not_silence_the_others(tmp_path: Path) -> None:
     library = FakeLibrary()
     adapter = duplo_adapter(tmp_path, library)

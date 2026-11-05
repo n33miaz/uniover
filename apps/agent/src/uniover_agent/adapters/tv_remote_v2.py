@@ -310,7 +310,14 @@ class AndroidTvRemoteV2:
         except (ConnectionClosed, TimeoutError, OSError) as exc:
             client.disconnect()
             raise TvUnreachable(f"sem resposta da TV ({type(exc).__name__})") from None
-        if not _install_text_field_hook(client, self._on_text_field, self._on_ime_batch):
+        # Cada callback leva o protocolo que recebeu a mensagem: um eco tardio de uma conexão
+        # antiga não pode mexer nos contadores da nova.
+        protocol: Any = getattr(client, "_remote_message_protocol", None)
+        if not _install_text_field_hook(
+            client,
+            lambda field: self._on_text_field(field, protocol),
+            lambda batch: self._on_ime_batch(batch, protocol),
+        ):
             _log.warning("não consegui ligar a leitura do campo de texto da TV; sigo sem ela")
         self._connected = True
         self._watcher = asyncio.get_running_loop().create_task(self._watch_loss(client))
@@ -467,7 +474,15 @@ class AndroidTvRemoteV2:
         if percent is not None:
             self._fan_out(self._volume, percent)
 
-    def _on_text_field(self, field: TextFieldStatus) -> None:
+    def _is_current_protocol(self, protocol: Any) -> bool:
+        return protocol is not None and (
+            getattr(self._client, "_remote_message_protocol", None) is protocol
+        )
+
+    def _on_text_field(self, field: TextFieldStatus, protocol: Any) -> None:
+        if not self._is_current_protocol(protocol):
+            _log.debug("tv ime eco de uma conexão antiga ignorado")
+            return
         previous_echo_field_counter = self._last_echo_field_counter
         self._field_echo_seen = True
         self._field_counter = field.counter
@@ -475,11 +490,9 @@ class AndroidTvRemoteV2:
         self._last_echo_field_counter = field.counter
         if field.ime_counter is not None:
             self._ime_counter = field.ime_counter
-        protocol: Any = getattr(self._client, "_remote_message_protocol", None)
-        if protocol is not None:
-            protocol.ime_field_counter = field.counter
-            if field.ime_counter is not None:
-                protocol.ime_counter = field.ime_counter
+        protocol.ime_field_counter = field.counter
+        if field.ime_counter is not None:
+            protocol.ime_counter = field.ime_counter
         ime_origin = (
             " ime_origem=herdado"
             if field.ime_counter is None
@@ -500,13 +513,14 @@ class AndroidTvRemoteV2:
         )
         self._fan_out(self._text_field, field)
 
-    def _on_ime_batch(self, batch: RemoteImeBatchEdit) -> None:
+    def _on_ime_batch(self, batch: RemoteImeBatchEdit, protocol: Any) -> None:
+        if not self._is_current_protocol(protocol):
+            _log.debug("tv ime lote de uma conexão antiga ignorado")
+            return
         self._ime_counter = batch.ime_counter
         self._field_counter = batch.field_counter
-        protocol: Any = getattr(self._client, "_remote_message_protocol", None)
-        if protocol is not None:
-            protocol.ime_counter = batch.ime_counter
-            protocol.ime_field_counter = batch.field_counter
+        protocol.ime_counter = batch.ime_counter
+        protocol.ime_field_counter = batch.field_counter
 
     @staticmethod
     def _fan_out[T](callbacks: list[Callable[[T], None]], value: T) -> None:
