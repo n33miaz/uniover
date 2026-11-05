@@ -527,7 +527,7 @@ class TvSessionManager:
         await self._run(lambda remote: remote.launch_link(link))
 
     async def send_text(self, text: str) -> None:
-        """Define o texto do campo em foco na TV (substitui o conteúdo; não acrescenta)."""
+        """Insere o trecho no campo em foco da TV; não substitui o conteúdo."""
         await self._run(lambda remote: remote.send_text(text))
 
     async def wake(self) -> None:
