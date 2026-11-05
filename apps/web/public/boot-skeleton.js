@@ -55,28 +55,88 @@
     el.setAttribute('data-boot-timeout', 'true');
     if (notice) notice.hidden = false;
   };
+  // Quantas aberturas seguidas ficaram sem a folha de estilos (a sessão do navegador guarda): na segunda o aviso não
+  // adianta mais (o HTML em cache pode apontar para uma folha que o servidor já não tem), então o app é liberado sem estilo.
+  var FAILURES_KEY = 'uniover.boot-styles-failures';
+  var readFailures = function () {
+    try {
+      return Number(sessionStorage.getItem(FAILURES_KEY)) || 0;
+    } catch (e) {
+      return 0;
+    }
+  };
+  var writeFailures = function (count) {
+    try {
+      if (count) sessionStorage.setItem(FAILURES_KEY, String(count));
+      else sessionStorage.removeItem(FAILURES_KEY);
+    } catch (e) {
+      // Sem armazenamento: cada falha vale como a primeira.
+    }
+  };
   // A folha principal chega com media="print" (scripts/defer-styles.mjs) para não bloquear a primeira pintura do
   // esqueleto. Ao carregar ela é ligada e o app é avisado: até lá o esqueleto estático continua cobrindo a tela (sem
   // estilo a página não pode aparecer). Se a folha falhar, o esqueleto fica e o aviso com a nova tentativa aparece na hora.
-  // Sem o link marcado (servidor de desenvolvimento) não há o que esperar.
+  // Sem o link marcado (servidor de desenvolvimento) não há o que esperar. O atributo data-styles-owner diz ao app que
+  // este script cuida da folha; sem ele (script antigo em cache, ou que não rodou) o próprio app assume.
   var sheet = document.querySelector('link[data-boot-styles]');
   if (sheet) {
     var root = document.documentElement;
     root.setAttribute('data-styles', 'pending');
-    var settle = function () {
+    root.setAttribute('data-styles-owner', 'boot');
+    var settle = function (unstyled) {
       if (root.getAttribute('data-styles') === 'ready') return;
       sheet.media = 'all';
       root.setAttribute('data-styles', 'ready');
+      if (!unstyled) writeFailures(0);
       document.dispatchEvent(new Event('uniover:styles-ready'));
+    };
+    var failed = function () {
+      if (root.getAttribute('data-styles') === 'ready') return;
+      var count = readFailures();
+      writeFailures(count + 1);
+      if (count >= 1) settle(true);
+      else giveUp();
+    };
+    // A folha que terminou sem virar folha (falhou antes de os ouvintes existirem) aparece no registro de recursos.
+    var finishedWithoutSheet = function () {
+      try {
+        var entries = performance.getEntriesByName(sheet.href);
+        return !sheet.sheet && entries.length > 0 && entries[entries.length - 1].responseEnd > 0;
+      } catch (e) {
+        return false;
+      }
     };
     if (sheet.sheet) settle();
     else {
-      sheet.addEventListener('load', settle);
-      sheet.addEventListener('error', giveUp);
+      sheet.addEventListener('load', function () {
+        settle();
+      });
+      sheet.addEventListener('error', failed);
+      setTimeout(function () {
+        if (finishedWithoutSheet()) failed();
+      }, 1500);
     }
   }
   setTimeout(giveUp, 20000);
+  // "Tentar de Novo": antes de recarregar pede ao service worker uma versão nova (o HTML em cache pode ser de uma versão
+  // que já saiu do ar); sem service worker, ou se ele demorar, recarrega do mesmo jeito.
+  var retry = function () {
+    var go = function () {
+      location.reload();
+    };
+    try {
+      navigator.serviceWorker
+        .getRegistration()
+        .then(function (registration) {
+          return registration && registration.update();
+        })
+        .then(go, go);
+      setTimeout(go, 3000);
+    } catch (e) {
+      go();
+    }
+  };
   document.addEventListener('click', function (event) {
-    if (event.target && event.target.id === 'boot-timeout-retry') location.reload();
+    if (event.target && event.target.id === 'boot-timeout-retry') retry();
   });
 })();

@@ -77,10 +77,19 @@ function runBootSelector(pathname: string): string | null {
 }
 
 /** Uma folha de estilos marcada, como o passo de build a deixa: com media="print" até o script ligá-la. */
-function runBootStyles(loaded: boolean) {
+function runBootStyles(
+  loaded: boolean,
+  options: {
+    entries?: { responseEnd: number }[];
+    registration?: { update(): Promise<void> } | null;
+  } = {},
+) {
   const listeners: Record<string, () => void> = {};
+  const clicks: ((event: { target: { id: string } }) => void)[] = [];
+  const timers: (() => void)[] = [];
   const attributes: Record<string, string> = {};
   const events: string[] = [];
+  const reloads: string[] = [];
   const skeleton = {
     marks: {} as Record<string, string>,
     setAttribute: (name: string, value: string) => (skeleton.marks[name] = value),
@@ -88,6 +97,7 @@ function runBootStyles(loaded: boolean) {
   const notice = { hidden: true };
   const sheet = {
     media: 'print',
+    href: 'http://x/styles-TESTE.css',
     sheet: loaded ? {} : null,
     addEventListener: (name: string, listener: () => void) => (listeners[name] = listener),
   };
@@ -98,17 +108,33 @@ function runBootStyles(loaded: boolean) {
     },
     getElementById: (id: string) =>
       id === 'boot-skeleton' ? skeleton : id === 'boot-timeout' ? notice : null,
-    addEventListener: () => undefined,
+    addEventListener: (name: string, handler: (event: { target: { id: string } }) => void) => {
+      if (name === 'click') clicks.push(handler);
+    },
     querySelector: (selector: string) => (selector === 'link[data-boot-styles]' ? sheet : null),
     dispatchEvent: (event: Event) => events.push(event.type),
   };
-  new Function('location', 'document', 'setTimeout', 'Event', BOOT_SELECTOR)(
-    { pathname: '/', reload: () => undefined },
+  const registration = options.registration === undefined ? null : options.registration;
+  const navigator = {
+    serviceWorker: { getRegistration: () => Promise.resolve(registration) },
+  };
+  new Function(
+    'location',
+    'document',
+    'setTimeout',
+    'Event',
+    'performance',
+    'navigator',
+    BOOT_SELECTOR,
+  )(
+    { pathname: '/', reload: () => reloads.push('reload') },
     document,
-    () => 0,
+    (callback: () => void) => timers.push(callback),
     Event,
+    { getEntriesByName: () => options.entries ?? [] },
+    navigator,
   );
-  return { sheet, listeners, attributes, events, skeleton, notice };
+  return { sheet, listeners, attributes, events, skeleton, notice, timers, clicks, reloads };
 }
 
 /** A forma de uma árvore: tag e classes (ordenadas), sem texto, comentários nem atributos do Angular. */
@@ -170,7 +196,9 @@ describe('boot skeleton', () => {
   });
 
   it('keeps the skeleton and offers a retry at once when the stylesheet fails, instead of showing the page unstyled', () => {
+    sessionStorage.removeItem('uniover.boot-styles-failures');
     const run = runBootStyles(false);
+    expect(run.attributes['data-styles-owner']).toBe('boot');
     expect(run.notice.hidden).toBe(true);
     run.listeners['error']();
     expect(run.attributes['data-styles']).toBe('pending');
@@ -178,6 +206,58 @@ describe('boot skeleton', () => {
     expect(run.events).toEqual([]);
     expect(run.skeleton.marks['data-boot-timeout']).toBe('true');
     expect(run.notice.hidden).toBe(false);
+    expect(sessionStorage.getItem('uniover.boot-styles-failures')).toBe('1');
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+  });
+
+  it('lets the app through unstyled on the second failure in a row, so the retry does not loop forever on a stale page', () => {
+    sessionStorage.setItem('uniover.boot-styles-failures', '1');
+    const run = runBootStyles(false);
+    run.listeners['error']();
+    expect(run.attributes['data-styles']).toBe('ready');
+    expect(run.sheet.media).toBe('all');
+    expect(run.events).toEqual(['uniover:styles-ready']);
+    expect(run.notice.hidden).toBe(true);
+    expect(sessionStorage.getItem('uniover.boot-styles-failures')).toBe('2');
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+  });
+
+  it('forgets the failures when the stylesheet loads', () => {
+    sessionStorage.setItem('uniover.boot-styles-failures', '1');
+    const run = runBootStyles(false);
+    run.listeners['load']();
+    expect(sessionStorage.getItem('uniover.boot-styles-failures')).toBeNull();
+  });
+
+  it('notices a stylesheet that had already failed before the listeners existed, without waiting for the 20 s cap', () => {
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+    const run = runBootStyles(false, { entries: [{ responseEnd: 120 }] });
+    expect(run.notice.hidden).toBe(true);
+    // O primeiro prazo curto confere o registro de recursos; o último (20 s) é o teto geral.
+    run.timers[0]();
+    expect(run.notice.hidden).toBe(false);
+    expect(run.attributes['data-styles']).toBe('pending');
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+  });
+
+  it('does not call a stylesheet that is still loading a failure', () => {
+    const run = runBootStyles(false, { entries: [] });
+    run.timers[0]();
+    expect(run.notice.hidden).toBe(true);
+  });
+
+  it('asks the service worker for a new version before reloading on retry', async () => {
+    const update = vi.fn(() => Promise.resolve());
+    const run = runBootStyles(false, { registration: { update } });
+    run.clicks[0]({ target: { id: 'boot-timeout-retry' } });
+    await vi.waitFor(() => expect(run.reloads).toEqual(['reload']));
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads straight away on retry when there is no service worker registration', async () => {
+    const run = runBootStyles(false, { registration: null });
+    run.clicks[0]({ target: { id: 'boot-timeout-retry' } });
+    await vi.waitFor(() => expect(run.reloads).toEqual(['reload']));
   });
 
   it('turns the stylesheet on at once when it was already loaded, and leaves no mark without a deferred one', () => {

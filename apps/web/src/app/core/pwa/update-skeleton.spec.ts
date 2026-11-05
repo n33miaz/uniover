@@ -357,6 +357,38 @@ describe('UpdateSkeleton', () => {
     await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
   });
 
+  it('takes over the deferred stylesheet when the boot script did not run, so the app is neither unstyled nor stuck behind the skeleton', async () => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'styles-SEM-SCRIPT.css';
+    link.media = 'print';
+    link.setAttribute('data-boot-styles', '');
+    document.head.append(link);
+    const boot = document.createElement('div');
+    boot.id = BOOT_SKELETON_ID;
+    document.body.appendChild(boot);
+    try {
+      const { fixture } = setup();
+      fixture.detectChanges();
+      expect(document.documentElement.getAttribute('data-styles')).toBe('pending');
+      expect(document.documentElement.getAttribute('data-styles-owner')).toBe('app');
+      const pending = TestBed.inject(Router).navigateByUrl('/ok');
+      addReadyMarker('home');
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(boot.classList.contains('leaving')).toBe(false);
+      expect(link.media).toBe('print');
+
+      link.dispatchEvent(new Event('load'));
+      expect(link.media).toBe('all');
+      expect(boot.classList.contains('leaving')).toBe(true);
+    } finally {
+      link.remove();
+      boot.remove();
+      document.documentElement.removeAttribute('data-styles-owner');
+    }
+  });
+
   it('takes the static skeleton away at once when the stylesheet arrived before the screen got ready', async () => {
     document.documentElement.setAttribute('data-styles', 'pending');
     const boot = document.createElement('div');
