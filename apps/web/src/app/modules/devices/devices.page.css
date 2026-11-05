@@ -69,6 +69,42 @@
   color: var(--a-bad-ink);
 }
 
+/* Por que o computador está fora: a marca tem forma própria (círculo com "!" ou com "i"), a cor só reforça. */
+.startup {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.startup-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.startup-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.startup.bad {
+  color: var(--a-bad-ink);
+}
+
+.startup .meta {
+  font-weight: 400;
+}
+
 .name {
   font-size: var(--fs-body);
   overflow-wrap: anywhere;

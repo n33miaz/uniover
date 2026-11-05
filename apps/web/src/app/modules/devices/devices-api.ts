@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../core/api/generated/schema';
 import { APP_CONFIG } from '../../core/config/app-config';
+import { AgentBeacon, readAgentBeacons } from './agent-beacon';
 
 /** Aparelho pareado, como a API lista (tipo gerado do OpenAPI). */
 export type DeviceAgent = components['schemas']['AgentSummary'];
@@ -62,6 +63,14 @@ export class DevicesApi {
 
   list(): Promise<readonly DeviceAgent[]> {
     return firstValueFrom(this.http.get<DeviceAgent[]>(`${BASE}/agents`));
+  }
+
+  /** A última baliza de partida e a última conexão recusada de cada computador (só o administrador). */
+  async beacons(): Promise<readonly AgentBeacon[]> {
+    const dto = await firstValueFrom(
+      this.http.get<components['schemas']['AgentBeaconsResponse']>(`${BASE}/agents/beacons`),
+    );
+    return readAgentBeacons(dto);
   }
 
   /** Avisos de queda ainda não vistos (só o administrador). */

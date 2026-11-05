@@ -8,6 +8,7 @@ import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { ConnectSheet } from './connect-sheet';
 import { AgentLogSheet } from './agent-log-sheet';
+import { AgentBeacon, StartupLine, agoText, startupLine } from './agent-beacon';
 import { AgentAlert, DeviceAgent, DeviceTv, DevicesApi, MaintenanceAction } from './devices-api';
 import { GuestPairSheet } from './guest-pair-sheet';
 import { PairOutcome, PairSheet } from './pair-sheet';
@@ -57,6 +58,8 @@ export class DevicesPage {
   /** Avisos de queda ainda não vistos; falhar em lê-los nunca atrapalha a lista. */
   protected readonly alerts = signal<readonly AgentAlert[]>([]);
   protected readonly dismissingAlertId = signal<string | null>(null);
+  /** A última baliza de partida e a última conexão recusada, por computador; falhar em lê-las nunca atrapalha a lista. */
+  protected readonly beacons = signal<readonly AgentBeacon[]>([]);
   /** As TVs e o computador de cada uma; sem elas a seção some. */
   protected readonly tvs = signal<readonly DeviceTv[]>([]);
   protected readonly pairing = signal(false);
@@ -89,6 +92,13 @@ export class DevicesPage {
   protected readonly message = signal<string | null>(null);
   protected readonly messageIsError = signal(false);
   protected readonly dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' });
+  /** Curto, para caber na metade da largura do resumo: "18/10, 15:30". */
+  protected readonly sinceFormat = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   protected readonly contactFormat = new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -293,10 +303,12 @@ export class DevicesPage {
     return value ? this.contactFormat.format(new Date(value)) : null;
   }
 
+  /** "Conectado agora", "Desligado desde 18/10, 15:30" (último contato) ou "Desconectado" quando nunca houve contato. */
   protected connection(agent: DeviceAgent): string {
-    return agent.connected
-      ? $localize`:@@devices.connected:Conectado agora`
-      : $localize`:@@devices.disconnected:Desconectado`;
+    if (agent.connected) return $localize`:@@devices.connected:Conectado agora`;
+    if (!agent.lastSeenAt) return $localize`:@@devices.disconnected:Desconectado`;
+    const since = this.sinceFormat.format(new Date(agent.lastSeenAt));
+    return $localize`:@@devices.off-since:Desligado desde ${since}:time:`;
   }
 
   protected viewLogLabel(agent: DeviceAgent): string {
@@ -420,12 +432,28 @@ export class DevicesPage {
   /** Avisos e TVs são acréscimos: se falharem, a lista de computadores segue como está. */
   private async loadExtras(): Promise<void> {
     // `then` captura também o erro síncrono de um cliente incompleto: ler o acréscimo nunca derruba a tela.
-    const [alerts, tvs] = await Promise.allSettled([
+    const [alerts, tvs, beacons] = await Promise.allSettled([
       Promise.resolve().then(() => this.api.alerts()),
       Promise.resolve().then(() => this.api.tvs()),
+      Promise.resolve().then(() => this.api.beacons()),
     ]);
     this.alerts.set(alerts.status === 'fulfilled' ? alerts.value : []);
     this.tvs.set(tvs.status === 'fulfilled' ? tvs.value : []);
+    this.beacons.set(beacons.status === 'fulfilled' ? beacons.value : []);
+  }
+
+  /**
+   * Por que um computador desconectado está fora, quando o próprio computador ou o servidor deixou pista disso depois do
+   * último contato: "Não conseguiu iniciar: ..." ou "Credencial recusada". Conectado, revogado ou sem pista: nada.
+   */
+  protected startup(agent: DeviceAgent): StartupLine | null {
+    if (agent.revoked) return null;
+    const beacon = this.beacons().find((item) => item.agentId === agent.id);
+    return startupLine(agent.connected, agent.lastSeenAt ?? null, beacon);
+  }
+
+  protected startupAgo(line: StartupLine): string {
+    return agoText(line.at, Date.now());
   }
 
   protected alertTitle(alert: AgentAlert): string {
