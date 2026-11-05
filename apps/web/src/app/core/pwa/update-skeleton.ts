@@ -9,6 +9,7 @@ import {
   NavigationStart,
   Router,
 } from '@angular/router';
+import { STYLES_READY_EVENT, adoptBootStyles } from './boot-styles';
 import { BootVariant, bootVariantFor } from './boot-variant';
 import { PwaUpdateService } from './pwa-update.service';
 
@@ -20,8 +21,7 @@ export const ROUTE_WAIT_MS = 200;
 export const BOOT_SKELETON_ID = 'boot-skeleton';
 /** Tempo da saída do esqueleto estático (a animação `leaving` dura `--dur-exit`); passado isso ele é tirado do documento. */
 const BOOT_LEAVE_MS = 260;
-/** Evento que o `boot-skeleton.js` dispara no documento quando a folha de estilos principal terminou de carregar. */
-export const STYLES_READY_EVENT = 'uniover:styles-ready';
+export { STYLES_READY_EVENT };
 /** Teto para registrar a demora sem expor a página incompleta por baixo da cobertura. */
 export const PAGE_READY_TIMEOUT_MS = 8_000;
 
@@ -746,9 +746,14 @@ export class UpdateSkeleton {
    * segue cobrindo a tela: a página sem estilo nunca aparece, e o desenho do Angular, que usa as formas dessa folha, espera.
    * Sem o atributo (servidor de desenvolvimento, testes) não há o que esperar.
    */
-  private readonly stylesPending = signal(
-    this.doc.documentElement.getAttribute('data-styles') === 'pending',
-  );
+  private readonly stylesPending = signal(this.readStylesPending());
+  /**
+   * Se o `boot-skeleton.js` não cuidou da folha (ver `adoptBootStyles`), o app cuida; depois lê o estado que ficou.
+   */
+  private readStylesPending(): boolean {
+    adoptBootStyles(this.doc);
+    return this.doc.documentElement.getAttribute('data-styles') === 'pending';
+  }
   /** O esqueleto estático ainda precisa sair, mas a folha de estilos não chegou: sai quando ela chegar. */
   private dismissAfterStyles = false;
   protected readonly visible = computed(
