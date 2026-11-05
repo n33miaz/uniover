@@ -471,6 +471,9 @@ def build_env(  # noqa: PLR0913 - cada argumento é um caminho do ambiente isola
             "PYTHONHOME",
             "PYTHONPATH",
             "PYTHON_KEYRING_BACKEND",
+            # A indisponibilidade do índice é cenário de uma fase do ensaio, nunca configuração
+            # que o supervisor normal possa herdar de quem chamou o ensaio.
+            "UV_OFFLINE",
         }:
             del env[name]
     virtual = base_env.get("VIRTUAL_ENV")
@@ -919,7 +922,7 @@ class Drill:
 
     def refused_without_the_index(self, files: dict[str, bytes], sha: str) -> bool:
         """Reinicia o supervisor sem acesso ao índice, oferece a candidata e confere a recusa."""
-        normal = self.env
+        normal = dict(self.env)
         base_sha = self.version()
         stopped = self.stop_everything()
         self.env = {**normal, **offline_index_env(self.root)}
@@ -1006,12 +1009,16 @@ class Drill:
         return ok
 
     def stop_everything(self) -> bool:
-        """Derruba o lancador (e com ele supervisor, agente e icone), como um reinicio do PC."""
+        """Derruba todos os processos do ensaio, como um reinício do PC.
+
+        A atualização roda num processo à parte do agente. Se ela sobreviver ao encerramento do
+        lançador, pode consumir o próximo `update-now` ainda com o ambiente da fase anterior.
+        """
         if self.launcher is not None:
             self.kill(self.launcher.pid)
-        return wait_until(
-            lambda: not self.roles(self.tree(), "launcher", "supervisor", "agent", "tray"), 30, 0.5
-        )
+        for proc in self.roles(self.tree(), "update"):
+            self.kill(proc.pid)
+        return wait_until(lambda: not self.tree(), 30, 0.5)
 
     def recover_interrupted_swap(self, sha: str) -> bool:
         """Deixa o estado entre as duas renomeacoes e espera o lancador conserta-lo.
@@ -1401,8 +1408,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
             new_packages = sorted(lock_packages(files.get(lock, b"")) - lock_packages(base_lock))
             say("")
             say(f"  pacotes que a candidata acrescenta ao lock da base: {new_packages or 'nenhum'}")
-            proceed = drill.refused_without_the_index(offline_files, offline_sha)
-        for label, tree, sha, expect_swap, code in phases:
+        for index, (label, tree, sha, expect_swap, code) in enumerate(phases):
             if not proceed:
                 break
             proceed = drill.offer(
@@ -1422,6 +1428,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
                     "a candidata terminou a prova antes de receber outra versao",
                     confirmed,
                 )
+            # A recusa por código quebrado precisa do ambiente normal. Só depois dela o ensaio
+            # troca o índice por um cache vazio para exercitar a recusa das dependências.
+            if proceed and index == 0:
+                proceed = drill.refused_without_the_index(offline_files, offline_sha)
         if proceed:
             proceed = drill.recover_interrupted_swap(next_sha)
         if proceed:
