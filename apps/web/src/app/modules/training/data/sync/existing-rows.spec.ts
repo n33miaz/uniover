@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { IDBObjectStore } from 'fake-indexeddb';
+import { IDBIndex, IDBObjectStore } from 'fake-indexeddb';
 import { CatalogRepository } from '../catalog/catalog-repository';
 import { TRAINING_DB } from '../training-db';
 import { RANGE_READ_MAX_ROWS, existingRowsById } from './existing-rows';
@@ -21,7 +21,33 @@ function requests() {
     getAll: vi.spyOn(IDBObjectStore.prototype, 'getAll'),
     put: vi.spyOn(IDBObjectStore.prototype, 'put'),
     count: vi.spyOn(IDBObjectStore.prototype, 'count'),
+    // Varredura de tabela: nenhum caminho de leitura do merge pode abrir cursor, nem no armazém nem em índice.
+    openCursor: vi.spyOn(IDBObjectStore.prototype, 'openCursor'),
+    openKeyCursor: vi.spyOn(IDBObjectStore.prototype, 'openKeyCursor'),
+    indexGetAll: vi.spyOn(IDBIndex.prototype, 'getAll'),
+    indexOpenCursor: vi.spyOn(IDBIndex.prototype, 'openCursor'),
   };
+}
+
+type Requests = ReturnType<typeof requests>;
+
+/** Nenhuma leitura do banco foi uma varredura: sem cursor, sem leitura de índice. */
+function expectNoScan(spy: Requests): void {
+  expect(spy.openCursor).not.toHaveBeenCalled();
+  expect(spy.openKeyCursor).not.toHaveBeenCalled();
+  expect(spy.indexGetAll).not.toHaveBeenCalled();
+  expect(spy.indexOpenCursor).not.toHaveBeenCalled();
+}
+
+/** A faixa de chaves pedida na leitura em lote: fechada nas duas pontas, do menor ao maior id da página. */
+function expectRange(spy: Requests, lower: string, upper: string): void {
+  expect(spy.getAll).toHaveBeenCalledTimes(1);
+  // O Dexie pede a leitura em lote com opções (`{ query, count?, direction }`), e a faixa vai em `query`.
+  const { query: range } = spy.getAll.mock.calls[0]![0] as unknown as { query: IDBKeyRange };
+  expect(range.lower).toBe(lower);
+  expect(range.upper).toBe(upper);
+  expect(range.lowerOpen).toBe(false);
+  expect(range.upperOpen).toBe(false);
 }
 
 describe('existingRowsById', () => {
@@ -38,6 +64,7 @@ describe('existingRowsById', () => {
     expect(spy.get).not.toHaveBeenCalled();
     expect(spy.getAll).not.toHaveBeenCalled();
     expect(spy.count).toHaveBeenCalledTimes(1);
+    expectNoScan(spy);
   });
 
   it('reads the key range of the page in one request, whatever the page size', async () => {
@@ -55,7 +82,10 @@ describe('existingRowsById', () => {
 
     expect([...found.keys()].sort()).toEqual(['row-00007', 'row-00123', 'row-00400']);
     expect(spy.get).not.toHaveBeenCalled();
-    expect(spy.getAll.mock.calls.length + spy.count.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(spy.count).toHaveBeenCalledTimes(1);
+    // O menor id da página é "not-there" (ordem das chaves), o maior "row-00400": a faixa é essa, fechada.
+    expectRange(spy, 'not-there', 'row-00400');
+    expectNoScan(spy);
   });
 
   it('falls back to a read by key when the table is too big to read a range from', async () => {
@@ -72,6 +102,7 @@ describe('existingRowsById', () => {
     expect([...found.keys()].sort()).toEqual(['row-00010', 'row-02000']);
     expect(spy.get).toHaveBeenCalledTimes(2);
     expect(spy.getAll).not.toHaveBeenCalled();
+    expectNoScan(spy);
   });
 
   it(
@@ -86,13 +117,16 @@ describe('existingRowsById', () => {
       expect(spy.get).not.toHaveBeenCalled();
       expect(spy.getAll).not.toHaveBeenCalled();
       expect(spy.put).toHaveBeenCalledTimes(500);
+      expectNoScan(spy);
 
       // Segunda passada com as 500 linhas já no aparelho: a leitura é uma só, não 500.
-      spy.put.mockClear();
+      for (const request of Object.values(spy)) request.mockClear();
       await repository.applyRemote(rows(500));
       expect(spy.get).not.toHaveBeenCalled();
-      expect(spy.getAll.mock.calls.length).toBeLessThanOrEqual(1);
+      expectRange(spy, 'row-00000', 'row-00499');
+      expect(spy.count).toHaveBeenCalledTimes(1);
       expect(spy.put).toHaveBeenCalledTimes(500);
+      expectNoScan(spy);
     },
   );
 });
