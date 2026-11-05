@@ -111,6 +111,9 @@ internal sealed class ManageTvsHandler(
             return (null, "invalid");
         }
 
+        // A troca de computador e a remoção disputam a mesma TV: a linha fica bloqueada até o commit, e só depois dela é lida.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await TvRowLock.LockAsync(db, id, cancellationToken);
         var tv = await db.Tvs.SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
         if (tv is null)
         {
@@ -186,6 +189,8 @@ internal sealed class ManageTvsHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        await transaction.CommitAsync(cancellationToken);
+
         if (agentChanged)
         {
             // O computador antigo para o que tinha agendado nesta TV; o novo recebe as preferências dela.
@@ -205,6 +210,8 @@ internal sealed class ManageTvsHandler(
         // Filiações e marcas mudam na mesma transação, sob o bloqueio que serializa quem mexe nelas.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await TvMembershipLedger.LockAsync(db, cancellationToken);
+        // Sem este bloqueio uma troca de computador confirmada entre a leitura e o DELETE deixaria a trilha com o computador antigo.
+        await TvRowLock.LockAsync(db, id, cancellationToken);
 
         var tv = await db.Tvs.SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
         if (tv is null)
