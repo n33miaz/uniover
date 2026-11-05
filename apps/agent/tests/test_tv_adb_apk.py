@@ -20,7 +20,7 @@ from uniover_agent.ports import (
     AdbUnreachable,
 )
 
-from .support_adb import ADB, HOST, SERIAL, FakeAdbRunner, ok, shell
+from .support_adb import ADB, HOST, SERIAL, FakeAdbRunner, ok, open_gate, shell
 
 # `pm path` medido na TCL: app com APKs divididos (Spotify) e app de sistema (Configurações).
 PM_PATH_SPLIT = (
@@ -105,7 +105,16 @@ class Clock:
 
 
 def make(runner: FakeAdbRunner) -> AdbTv:
-    return AdbTv(ADB, HOST, 5555, timeout=1.0, pull_timeout=77.0, runner=runner, monotonic=Clock())
+    return AdbTv(
+        ADB,
+        HOST,
+        5555,
+        **open_gate(),
+        timeout=1.0,
+        pull_timeout=77.0,
+        runner=runner,
+        monotonic=Clock(),
+    )
 
 
 def authorized() -> FakeAdbRunner:
@@ -151,7 +160,16 @@ async def test_pull_runs_without_a_shell_with_its_own_timeout_and_no_reconnect(
             return ok("1 file pulled, 0 skipped. 5.2 MB/s\r\n")
         return await runner(argv, seconds)
 
-    adb = AdbTv(ADB, HOST, 5555, timeout=1.0, pull_timeout=77.0, runner=run, monotonic=Clock())
+    adb = AdbTv(
+        ADB,
+        HOST,
+        5555,
+        **open_gate(),
+        timeout=1.0,
+        pull_timeout=77.0,
+        runner=run,
+        monotonic=Clock(),
+    )
     await adb.connect()
     seen.clear()
     await adb.pull_apk(BASE_PATH, local)
@@ -258,7 +276,7 @@ async def test_an_interactive_command_is_not_delayed_by_a_pull_in_progress(tmp_p
     inner = authorized()
     inner.script[shell("input text 'abc'")] = ok("")
     gate = PullGate(inner)
-    adb = AdbTv(ADB, HOST, 5555, timeout=1.0, runner=gate, monotonic=Clock())
+    adb = AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=gate, monotonic=Clock())
     await adb.connect()
     pulling = asyncio.create_task(adb.pull_apk(BASE_PATH, tmp_path / "a.apk"))
     await asyncio.wait_for(gate.started.wait(), 1.0)
@@ -281,7 +299,7 @@ async def test_short_commands_still_queue_behind_each_other_while_a_pull_runs(
     inner.script[shell("input text 'b'")] = ok("")
     inner.delay = 0.01
     gate = PullGate(inner)
-    adb = AdbTv(ADB, HOST, 5555, timeout=1.0, runner=gate, monotonic=Clock())
+    adb = AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=gate, monotonic=Clock())
     await adb.connect()
     pulling = asyncio.create_task(adb.pull_apk(BASE_PATH, tmp_path / "a.apk"))
     await asyncio.wait_for(gate.started.wait(), 1.0)

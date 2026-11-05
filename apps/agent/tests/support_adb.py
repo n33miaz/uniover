@@ -3,7 +3,9 @@
 import asyncio
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
+from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput
 
 HOST = "192.168.1.6"
@@ -111,3 +113,51 @@ class FakeAdbRunner:
 
     def shell_commands(self) -> list[str]:
         return [call[3] for call in self.calls if len(call) == 4 and call[2] == "shell"]
+
+
+class OpenAuthorization(AdbAuthorization):
+    """Trava aberta, só para os testes que não são sobre a permissão: nada é lido nem gravado.
+
+    Equivale ao comportamento de antes da trava (conecta sempre que preciso); os testes da trava
+    de verdade usam `AdbAuthorization` com pastas de `tmp_path`.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(Path("sem-estado"), AdbKeys(Path("sem-copia"), Path("sem-chave")), "x")
+
+    def prepare(self) -> None:
+        return None
+
+    def snapshot_key(self) -> str | None:
+        return "chave"
+
+    def verified_for(self, mac: str | None) -> bool:
+        return True
+
+    def key_and_endpoint_match(self) -> bool:
+        return True
+
+    def has_grant(self) -> bool:
+        return False
+
+    def mark_granted(self, snapshot: str | None, mac: str | None) -> bool:
+        return True
+
+    def mark_verified(self, snapshot: str | None, mac: str | None) -> bool:
+        return True
+
+    def mark_needs_permission(self) -> None:
+        return None
+
+
+async def _open_mac() -> str | None:
+    return "AA:BB:CC:00:11:22"
+
+
+def open_gate() -> dict[str, Any]:
+    """Os três argumentos obrigatórios de `AdbTv`, com a trava aberta."""
+    return {
+        "authorization": OpenAuthorization(),
+        "mac_resolver": _open_mac,
+        "user_active": lambda: True,
+    }

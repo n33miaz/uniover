@@ -39,6 +39,7 @@ from .support_adb import (
     THIRD_PARTY_SAMPLE,
     FakeAdbRunner,
     ok,
+    open_gate,
     shell,
 )
 
@@ -53,7 +54,14 @@ class Clock:
 
 def make(runner: FakeAdbRunner, clock: Clock | None = None) -> AdbTv:
     return AdbTv(
-        ADB, HOST, 5555, timeout=1.0, runner=runner, monotonic=clock or Clock(), retry_after=30.0
+        ADB,
+        HOST,
+        5555,
+        **open_gate(),
+        timeout=1.0,
+        runner=runner,
+        monotonic=clock or Clock(),
+        retry_after=30.0,
     )
 
 
@@ -189,6 +197,7 @@ def make_killing(runner: FakeAdbRunner, clock: Clock | None = None, **extra: Any
         ADB,
         HOST,
         5555,
+        **open_gate(),
         timeout=1.0,
         runner=runner,
         monotonic=clock or Clock(),

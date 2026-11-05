@@ -27,6 +27,7 @@ from .support_adb import (
     THIRD_PARTY_SAMPLE,
     FakeAdbRunner,
     ok,
+    open_gate,
     shell,
 )
 
@@ -66,7 +67,7 @@ def force_stop(package: str) -> str:
 
 
 def make(runner: FakeAdbRunner) -> AdbTv:
-    return AdbTv(ADB, HOST, 5555, timeout=1.0, runner=runner, monotonic=lambda: 0.0)
+    return AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=runner, monotonic=lambda: 0.0)
 
 
 def authorized() -> FakeAdbRunner:

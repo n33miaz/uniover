@@ -5,6 +5,7 @@ são de mentira, e o processo é o `FakeAdbRunner`.
 """
 
 import asyncio
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,8 @@ from uniover_agent.adapters.adb_authorization import (
 )
 from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput
+from uniover_agent.composition.tv import USER_COMMANDS
+from uniover_agent.core import Command, CommandResult, ResultStatus, UserActivity, touching
 from uniover_agent.ports import (
     AdbUnauthorized,
     AdbUnreachable,
@@ -75,6 +78,7 @@ class Home:
         self.backup = root / "tv" / ".adb-key"
         self.android.mkdir(parents=True)
         self.mac: str | None = MAC
+        self.active = True  # alguém usa a TV pelo app agora (a janela de 60 s)
 
     def write_key(self, data: bytes = KEY) -> None:
         (self.android / "adbkey").write_bytes(data)
@@ -108,6 +112,7 @@ class Home:
             retry_after=30.0,
             authorization=authorization or self.authorization(),
             mac_resolver=self.resolve,
+            user_active=lambda: self.active,
             **extra,
         )
 
@@ -322,13 +327,35 @@ async def test_a_proven_permission_for_this_tv_lets_the_agent_reconnect(home: Ho
     assert runner.calls == [CONNECT, GET_STATE]
 
 
-async def test_a_reset_tv_costs_one_attempt_and_then_none_even_after_restarts(home: Home) -> None:
+async def test_after_a_reset_nothing_connects_at_startup_or_while_idle(home: Home) -> None:
     home.verify()  # a TV foi restaurada de fábrica: o registro em disco já não vale
-    clock = Clock()
+    home.active = False  # partida, vigia, tarefas de fundo: ninguém usa a TV pelo app
     runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    clock = Clock()
     adb = home.adb(runner, clock)
+    for seconds in (0, 31, 600, 90000):
+        clock.now = seconds
+        with pytest.raises(AdbUnauthorized):
+            await adb.connect()
+        with pytest.raises(AdbUnauthorized):
+            await adb.list_apps()
+    restarted = home.adb(runner, clock)
     with pytest.raises(AdbUnauthorized):
-        await adb.connect()  # a única tentativa inevitável
+        await restarted.connect()  # a partida do agente
+    assert CONNECT not in runner.calls  # nenhum aviso na TV sem ninguém diante dela
+    assert home.authorization().record.state == VERIFIED  # ocioso não invalida nada
+
+
+async def test_after_a_reset_only_the_use_of_the_tv_costs_one_attempt_and_then_none(
+    home: Home,
+) -> None:
+    home.verify()
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    clock = Clock()
+    adb = home.adb(runner, clock)
+    home.active = True  # um comando do app acabou de chegar
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()  # a única tentativa: a pessoa está diante da TV e vê o aviso
     assert runner.calls.count(CONNECT) == 1
     assert home.authorization().record.state == NEEDS_USER  # gravado: sobrevive ao reinício
     for seconds in (5, 31, 600, 90000):
@@ -337,11 +364,55 @@ async def test_a_reset_tv_costs_one_attempt_and_then_none_even_after_restarts(ho
             await adb.list_apps()
         with pytest.raises(AdbUnauthorized):
             await adb.connect()
-    restarted = home.adb(runner, clock)
     with pytest.raises(AdbUnauthorized):
-        await restarted.connect()
-    assert await restarted.keep_authorization_fresh() == "skipped"
+        await home.adb(runner, clock).connect()  # reinício, ainda com o app em uso
     assert runner.calls.count(CONNECT) == 1
+
+
+async def test_an_idle_agent_still_uses_a_transport_that_is_already_open(home: Home) -> None:
+    home.verify()
+    home.active = False
+    runner = runner_with(state=DEVICE)
+    script_apps(runner)
+    adb = home.adb(runner)
+    assert await adb.list_apps() == []  # servido pelo transporte vivo, sem `adb connect`
+    assert CONNECT not in runner.calls
+
+
+async def test_idle_agent_gets_an_error_that_does_not_blame_the_tv(home: Home) -> None:
+    home.verify()
+    home.active = False
+    runner = runner_with(state=UNKNOWN)
+    with pytest.raises(AdbUnauthorized, match="alguém usa a TV pelo app"):
+        await home.adb(runner).connect()
+
+
+async def test_the_user_activity_window_decides_if_a_connection_may_open() -> None:
+    now = [0.0]
+    activity = UserActivity(lambda: now[0])
+    assert not activity.recent()  # ninguém usou ainda
+    activity.touch()
+    now[0] = 59.9
+    assert activity.recent()
+    now[0] = 60.1
+    assert not activity.recent()
+    activity.touch()
+    assert activity.recent()
+
+
+async def test_only_the_users_commands_count_as_use_of_the_tv() -> None:
+    now = [0.0]
+    activity = UserActivity(lambda: now[0])
+
+    async def inner(command: Command) -> CommandResult:
+        return CommandResult(command.id, ResultStatus.OK)
+
+    touched = touching(inner, activity)
+    await touched(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.key.v1", {}))
+    assert activity.recent()
+    for name in ("tv.cleanup.config.v1", "tv.power.off.v1", "tv.wake.v1"):
+        assert name not in USER_COMMANDS  # o servidor também manda estes sozinho
+    assert {"tv.key.v1", "tv.apps.refresh.v1", "tv.livre.v1"} <= USER_COMMANDS
 
 
 async def test_a_user_request_may_connect_but_a_failed_one_closes_the_door_again(
@@ -425,7 +496,7 @@ async def test_the_next_tap_proves_the_grant_with_a_fresh_connection(home: Home)
         DISCONNECT,
         CONNECT,
         GET_STATE,
-        shell(LEANBACK_QUERY),
+        GET_SERIAL,  # o serial anotado se confere dentro do pedido da pessoa
     ]
     assert home.authorization().record.state == VERIFIED
     await adb.disconnect()
@@ -536,47 +607,94 @@ async def test_a_new_key_does_not_inherit_the_timeout_done_for_the_old_one(home:
     assert home.authorization().record.timeout_disabled
 
 
-# --- o contato periódico: só aperto de mão, só com a identidade conferida -------------------------
+# --- o serial: só se lê dentro de um pedido da pessoa ------------------------------------------
 
 
-async def test_the_keepalive_is_only_a_handshake_and_only_with_a_proven_permission(
+async def test_an_automatic_connect_never_runs_a_shell_even_with_a_recorded_serial(
     home: Home,
 ) -> None:
+    authorization = home.verify()
+    authorization.note_serial(SERIAL)
     runner = runner_with()
-    assert await home.adb(runner).keep_authorization_fresh() == "skipped"
-    assert runner.calls == []
-    home.verify()
-    assert await home.adb(runner).keep_authorization_fresh() == "fresh"
-    assert runner.calls == [CONNECT, GET_STATE, DISCONNECT]  # nenhum shell, nenhuma tecla
-    assert home.authorization().record.last_handshake_at > 0
+    await home.adb(runner).connect()  # automático, com a TV em uso pelo app
+    assert runner.calls == [CONNECT, GET_STATE]
+    assert runner.shell_commands() == []  # nenhum shell em caminho automático
 
 
-async def test_the_keepalive_never_runs_for_another_device_at_the_address(home: Home) -> None:
-    home.verify()
-    home.mac = OTHER_MAC
-    runner = runner_with(state=UNKNOWN)
-    assert await home.adb(runner).keep_authorization_fresh() == "unauthorized"
-    assert CONNECT not in runner.calls
+async def test_a_users_request_checks_the_recorded_serial(home: Home) -> None:
+    authorization = home.verify()
+    authorization.note_serial(SERIAL)
+    runner = runner_with()
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert GET_SERIAL in runner.calls
+    assert home.authorization().record.state == VERIFIED
 
 
-async def test_the_keepalive_invalidates_the_permission_if_the_serial_is_another(
+async def test_a_users_request_that_meets_another_serial_invalidates_the_permission(
     home: Home,
 ) -> None:
     authorization = home.verify()
     authorization.note_serial("OUTRO-APARELHO")
     runner = runner_with()
-    assert await home.adb(runner).keep_authorization_fresh() == "unauthorized"
-    assert home.authorization().record.state == NEEDS_USER
-    assert await home.adb(runner).keep_authorization_fresh() == "skipped"
-
-
-async def test_a_keepalive_that_meets_the_prompt_stops_everything_after_it(home: Home) -> None:
-    home.verify()
-    runner = runner_with(connect=REFUSED, state=UNKNOWN)
     adb = home.adb(runner)
-    assert await adb.keep_authorization_fresh() == "unauthorized"
-    assert await adb.keep_authorization_fresh() == "skipped"
-    assert runner.calls.count(CONNECT) == 1
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    assert home.authorization().record.state == NEEDS_USER
+    assert not adb.connected
+    assert DISCONNECT in runner.calls
+
+
+# --- cópias da chave com vários processos ao mesmo tempo -----------------------------------------
+
+
+def test_two_processes_backing_up_the_same_key_never_corrupt_or_delete_the_copy(
+    home: Home,
+) -> None:
+    fingerprint = key_fingerprint(KEY)
+    assert fingerprint is not None
+    results: list[bool] = []
+    errors: list[BaseException] = []
+
+    def work() -> None:
+        try:
+            for _ in range(20):
+                results.append(home.keys().back_up(fingerprint))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert home.keys().backups() == [fingerprint]
+    assert (home.backup / fingerprint / "adbkey").read_bytes() == KEY
+    assert results.count(True) >= 1
+
+
+def test_an_existing_valid_backup_is_never_replaced_or_deleted(home: Home) -> None:
+    keys = home.keys()
+    fingerprint = keys.fingerprint()
+    assert fingerprint is not None and keys.back_up(fingerprint)
+    inode_before = (home.backup / fingerprint / "adbkey").stat().st_mtime_ns
+    assert keys.back_up(fingerprint) is False
+    assert (home.backup / fingerprint / "adbkey").stat().st_mtime_ns == inode_before
+    assert not [entry for entry in home.backup.iterdir() if entry.name.startswith(".novo")]
+
+
+def test_a_broken_backup_is_moved_aside_not_deleted_when_a_good_one_takes_its_place(
+    home: Home,
+) -> None:
+    fingerprint = key_fingerprint(KEY)
+    assert fingerprint is not None
+    broken = home.backup / fingerprint
+    broken.mkdir(parents=True)
+    (broken / "adbkey").write_bytes(KEY[:40])
+    assert home.keys().back_up(fingerprint)
+    assert home.keys().backups() == [fingerprint]
+    assert [entry for entry in home.backup.iterdir() if entry.name.startswith(".ruim")]
 
 
 # --- formatos de chave: só a truncada se troca; o resto é do usuário -----------------------------

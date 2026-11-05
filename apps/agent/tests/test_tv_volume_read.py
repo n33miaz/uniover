@@ -18,7 +18,7 @@ from uniover_agent.composition.tv import volume_reader_when_push_is_silent
 from uniover_agent.core import TvSessionManager
 from uniover_agent.core.domain import TvState
 
-from .support_adb import ADB, HOST, FakeAdbRunner, ok, shell
+from .support_adb import ADB, HOST, FakeAdbRunner, ok, open_gate, shell
 
 MEDIA_SESSION = shell("cmd media_session volume --stream 3 --get")
 DUMPSYS = shell("dumpsys audio")
@@ -51,7 +51,7 @@ def tv_with(script: dict[tuple[str, ...], object]) -> tuple[AdbTv, FakeAdbRunner
     runner = FakeAdbRunner()
     runner.connected()
     runner.script.update(script)  # type: ignore[arg-type]
-    return AdbTv(ADB, HOST, 5555, timeout=1.0, runner=runner), runner
+    return AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=runner), runner
 
 
 def test_the_media_session_answer_becomes_a_percentage() -> None:
@@ -203,7 +203,7 @@ async def test_the_check_for_android_uses_the_shell_and_survives_a_dead_adb() ->
     assert any("adb" in line for line in lines)
 
     broken = FakeAdbRunner()  # sem roteiro: a primeira chamada falha
-    dead = AdbTv(ADB, HOST, 5555, timeout=1.0, runner=broken)
+    dead = AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=broken)
     lines.clear()
     assert await check_volume("android", adb=dead, out=lines.append) == 1
 

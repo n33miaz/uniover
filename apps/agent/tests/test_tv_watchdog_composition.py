@@ -14,7 +14,7 @@ from uniover_agent.composition.connection import build_relocator
 from uniover_agent.config import Settings
 from uniover_agent.ports import AdbUnauthorized, TvPortClosed
 
-from .support_adb import ADB, CONNECT, GET_STATE, HOST, SERIAL, FakeAdbRunner, ok
+from .support_adb import ADB, CONNECT, GET_STATE, HOST, SERIAL, FakeAdbRunner, ok, open_gate
 from .test_tv_adb_composition import enable_adb
 from .test_tv_composition import TV_HOST, make_tv, pair_fake_tv
 
@@ -146,7 +146,7 @@ async def test_a_refusal_never_reopens_the_adb_prompt_while_the_adb_is_unauthori
     runner = FakeAdbRunner(
         {CONNECT: ok(f"failed to authenticate to {SERIAL}\r\n"), GET_STATE: ok("unauthorized")}
     )
-    adb = AdbTv(ADB, HOST, 5555, timeout=1.0, runner=runner, retry_after=30.0)
+    adb = AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=runner, retry_after=30.0)
     with pytest.raises(AdbUnauthorized):
         await adb.connect()  # a partida do agente: o dono vê o aviso e ainda não o aceitou
     runner.calls.clear()
