@@ -381,7 +381,12 @@ def build_driver_setup(
             _log.info("MAC da TV guardado a partir da tabela ARP")
 
     remote = AndroidTvRemoteV2(
-        host, settings.tv_client_name, cert_dir, on_connected=learn_android_mac
+        host,
+        settings.tv_client_name,
+        cert_dir,
+        on_connected=learn_android_mac,
+        text_cursor=settings.tv_text_cursor,
+        text_debug_values=settings.tv_text_debug_values,
     )
     manager = TvSessionManager(
         clock,

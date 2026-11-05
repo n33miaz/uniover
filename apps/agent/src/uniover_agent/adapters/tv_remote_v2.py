@@ -21,7 +21,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Final, Literal, Protocol
 
 from androidtvremote2 import (
     AndroidTVRemote,
@@ -30,7 +30,12 @@ from androidtvremote2 import (
     InvalidAuth,
     VolumeInfo,
 )
-from androidtvremote2.remotemessage_pb2 import RemoteMessage
+from androidtvremote2.remotemessage_pb2 import (
+    RemoteEditInfo,
+    RemoteImeBatchEdit,
+    RemoteImeObject,
+    RemoteMessage,
+)
 
 from uniover_agent.ports import TextFieldStatus, TvNotPaired, TvPortClosed, TvUnreachable
 
@@ -42,6 +47,7 @@ REMOTE_PORT: Final = 6466
 # Com a TV em standby (sem rede, não responde nada) cada comando espera 4 tentativas, mais
 # 1 + 2 + 4 s; um teto baixo limita esse pior caso (~27 s). A confirmar na medição de religação.
 CONNECT_TIMEOUT_SECONDS: Final = 5.0
+TextCursor = Literal["library", "chunk_end", "field_end"]
 
 DIRECTIONS: Final = frozenset({"SHORT", "START_LONG", "END_LONG"})
 
@@ -128,11 +134,14 @@ def _text_field_of(message: RemoteMessage) -> TextFieldStatus | None:
     `remote_ime_key_inject` também chega só com o app em foco (sem campo): sem o `HasField`, cada
     troca de app pareceria um campo vazio e apagaria o que o agente sabe do texto.
     """
+    ime_counter: int | None = None
     if message.HasField("remote_ime_key_inject"):
         inject = message.remote_ime_key_inject
         if not inject.HasField("text_field_status"):
             return None
         field = inject.text_field_status
+        if inject.HasField("app_info"):
+            ime_counter = inject.app_info.counter
     elif message.HasField("remote_ime_show_request"):
         request = message.remote_ime_show_request
         if not request.HasField("remote_text_field_status"):
@@ -140,10 +149,21 @@ def _text_field_of(message: RemoteMessage) -> TextFieldStatus | None:
         field = request.remote_text_field_status
     else:
         return None
-    return TextFieldStatus(field.value, field.start, field.end, field.label, field.counter_field)
+    return TextFieldStatus(
+        field.value,
+        field.start,
+        field.end,
+        field.label,
+        field.counter_field,
+        ime_counter,
+    )
 
 
-def _install_text_field_hook(client: object, callback: Callable[[TextFieldStatus], None]) -> bool:
+def _install_text_field_hook(
+    client: object,
+    callback: Callable[[TextFieldStatus], None],
+    on_ime_batch: Callable[[RemoteImeBatchEdit], None] | None = None,
+) -> bool:
     """Lê o estado do campo de texto que a biblioteca recebe da TV, mas não entrega ao chamador.
 
     Como `_lost_future`, isto depende de um detalhe interno da biblioteca (o tratador de mensagens
@@ -159,10 +179,13 @@ def _install_text_field_hook(client: object, callback: Callable[[TextFieldStatus
 
     def on_message(raw_message: bytes) -> None:
         field: TextFieldStatus | None = None
+        batch: RemoteImeBatchEdit | None = None
         try:
             message = RemoteMessage()
             message.ParseFromString(raw_message)
             field = _text_field_of(message)
+            if message.HasField("remote_ime_batch_edit"):
+                batch = message.remote_ime_batch_edit
         except Exception:
             # Mensagem malformada é problema do tratador original; aqui só não pode derrubá-lo.
             _log.debug("não consegui ler o estado do campo de texto da TV", exc_info=True)
@@ -173,6 +196,14 @@ def _install_text_field_hook(client: object, callback: Callable[[TextFieldStatus
             # avisada, e o estado do campo que chega junto é o do app novo.
             if field is not None:
                 callback(field)
+            if batch is not None:
+                if on_ime_batch is not None:
+                    on_ime_batch(batch)
+                _log.info(
+                    "tv ime lote da TV ime=%s campo=%s",
+                    batch.ime_counter,
+                    batch.field_counter,
+                )
 
     try:
         protocol._handle_message = on_message
@@ -180,6 +211,39 @@ def _install_text_field_hook(client: object, callback: Callable[[TextFieldStatus
         # Protocolo que não aceita a troca (somente leitura, `__slots__`): segue sem o estado.
         return False
     return True
+
+
+def _send_ime_batch(
+    protocol: Any, text: str, cursor: int, ime_counter: int, field_counter: int
+) -> None:
+    """Envia o único formato de lote IME que o adaptador usa, sem deixar o texto no DEBUG."""
+    message = RemoteMessage()
+    edit = RemoteEditInfo(
+        insert=1,
+        text_field_status=RemoteImeObject(start=cursor, end=cursor, value=text),
+    )
+    message.remote_ime_batch_edit.CopyFrom(
+        RemoteImeBatchEdit(
+            ime_counter=ime_counter,
+            field_counter=field_counter,
+            edit_info=[edit],
+        )
+    )
+    reset_idle = getattr(protocol, "_reset_idle_disconnect_task", None)
+    if callable(reset_idle):
+        reset_idle()
+    protocol._send_message(message, should_debug_log=False)
+
+
+def _limit_library_debug_logs() -> None:
+    """Impede que a biblioteca registre o valor do IME enquanto a depuração de valores está off."""
+    library_logger = logging.getLogger("androidtvremote2")
+    library_loggers = [library_logger]
+    for name, candidate in logging.Logger.manager.loggerDict.items():
+        if name.startswith("androidtvremote2.") and isinstance(candidate, logging.Logger):
+            library_loggers.append(candidate)
+    for logger in library_loggers:
+        logger.setLevel(max(logger.level, logging.INFO))
 
 
 def volume_percent(info: VolumeInfo) -> int | None:
@@ -202,6 +266,8 @@ class AndroidTvRemoteV2:
         connect_timeout: float = CONNECT_TIMEOUT_SECONDS,
         client_factory: ClientFactory | None = None,
         on_connected: Callable[[], Awaitable[None]] | None = None,
+        text_cursor: TextCursor = "library",
+        text_debug_values: bool = False,
     ) -> None:
         self._host = host
         self._client_name = client_name
@@ -210,6 +276,10 @@ class AndroidTvRemoteV2:
         self._connect_timeout = connect_timeout
         self._factory = client_factory or self._default_factory
         self._on_connected = on_connected
+        self._text_cursor = text_cursor
+        self._text_debug_values = text_debug_values
+        if not text_debug_values:
+            _limit_library_debug_logs()
         self._client: RemoteClient | None = None
         self._connected = False
         self._watcher: asyncio.Task[None] | None = None
@@ -218,6 +288,11 @@ class AndroidTvRemoteV2:
         self._volume: list[Callable[[int], None]] = []
         self._available: list[Callable[[bool], None]] = []
         self._text_field: list[Callable[[TextFieldStatus], None]] = []
+        self._ime_counter: int | None = None
+        self._field_counter: int | None = None
+        self._field_end: int | None = None
+        self._last_echo_field_counter: int | None = None
+        self._field_echo_seen = False
 
     @staticmethod
     def _default_factory(client_name: str, certfile: str, keyfile: str, host: str) -> RemoteClient:
@@ -248,7 +323,7 @@ class AndroidTvRemoteV2:
         except (ConnectionClosed, TimeoutError, OSError) as exc:
             client.disconnect()
             raise TvUnreachable(f"sem resposta da TV ({type(exc).__name__})") from None
-        if not _install_text_field_hook(client, self._on_text_field):
+        if not _install_text_field_hook(client, self._on_text_field, self._on_ime_batch):
             _log.warning("não consegui ligar a leitura do campo de texto da TV; sigo sem ela")
         self._connected = True
         self._watcher = asyncio.get_running_loop().create_task(self._watch_loss(client))
@@ -264,6 +339,8 @@ class AndroidTvRemoteV2:
             watcher.cancel()
             await asyncio.gather(watcher, return_exceptions=True)
         self._connected = False
+        self._forget_text_echo()
+        self._reset_protocol_ime_counters()
         if self._client is not None:
             self._client.disconnect()
 
@@ -317,16 +394,60 @@ class AndroidTvRemoteV2:
 
     async def send_text(self, text: str) -> None:
         # A TV **insere** o trecho no campo em foco (observado: reenviar o campo inteiro duplicava
-        # as letras), então quem chama manda só o acréscimo. A biblioteca usa os contadores que a TV
-        # empurra a cada edição. Vazio ela recusa com `ValueError`, e o protocolo não oferece outro
-        # jeito de limpar o campo (apagar é com `DEL`); por isso aqui também é erro de programação.
+        # as letras), então quem chama manda só o acréscimo. O adaptador devolve ao lote os
+        # contadores do eco da TV. Vazio a biblioteca recusava com `ValueError`, e o protocolo não
+        # oferece outro jeito de limpar o campo (apagar é com `DEL`); aqui também é erro de
+        # programação.
         if not text:
             raise ValueError("texto vazio não pode ser enviado à TV")
         client = self._require()
+        protocol: Any = getattr(client, "_remote_message_protocol", None)
+        if protocol is None:
+            raise RuntimeError("a biblioteca do controle remoto não expõe o protocolo IME")
+        library_ime_counter = protocol.ime_counter
+        library_field_counter = protocol.ime_field_counter
+        ime_counter = self._ime_counter if self._ime_counter is not None else library_ime_counter
+        field_counter = (
+            self._field_counter if self._field_counter is not None else library_field_counter
+        )
+        cursor = self._cursor_for(text)
+        blind = not self._field_echo_seen
+        _log.info(
+            "tv ime envio ime=%s campo=%s tam=%s cursor=%s-%s canal=remote "
+            "biblioteca_ime=%s biblioteca_campo=%s cego=%s",
+            ime_counter,
+            field_counter,
+            len(text),
+            cursor,
+            cursor,
+            library_ime_counter,
+            library_field_counter,
+            "sim" if blind else "não",
+        )
         try:
-            client.send_text(text)
+            _send_ime_batch(protocol, text, cursor, ime_counter, field_counter)
         except ConnectionClosed:
             raise TvUnreachable("a conexão com a TV fechou") from None
+
+    def _cursor_for(self, text: str) -> int:
+        if self._text_cursor == "library":
+            return len(text) - 1
+        if self._text_cursor == "field_end" and self._field_end is not None:
+            return self._field_end + len(text)
+        return len(text)
+
+    def _forget_text_echo(self) -> None:
+        self._ime_counter = None
+        self._field_counter = None
+        self._field_end = None
+        self._last_echo_field_counter = None
+        self._field_echo_seen = False
+
+    def _reset_protocol_ime_counters(self) -> None:
+        protocol: Any = getattr(self._client, "_remote_message_protocol", None)
+        if protocol is not None:
+            protocol.ime_counter = 0
+            protocol.ime_field_counter = 0
 
     def _require(self) -> RemoteClient:
         if not self._connected or self._client is None:
@@ -356,7 +477,45 @@ class AndroidTvRemoteV2:
             self._fan_out(self._volume, percent)
 
     def _on_text_field(self, field: TextFieldStatus) -> None:
+        previous_echo_field_counter = self._last_echo_field_counter
+        self._field_echo_seen = True
+        self._field_counter = field.counter
+        self._field_end = field.end
+        self._last_echo_field_counter = field.counter
+        if field.ime_counter is not None:
+            self._ime_counter = field.ime_counter
+        protocol: Any = getattr(self._client, "_remote_message_protocol", None)
+        if protocol is not None:
+            protocol.ime_field_counter = field.counter
+            if field.ime_counter is not None:
+                protocol.ime_counter = field.ime_counter
+        ime_origin = (
+            " ime_origem=herdado"
+            if field.ime_counter is None
+            and previous_echo_field_counter is not None
+            and previous_echo_field_counter != field.counter
+            else ""
+        )
+        suffix = f" valor={field.value!r}" if self._text_debug_values else ""
+        _log.info(
+            "tv ime eco app=%s campo=%s tam=%s cursor=%s-%s%s%s",
+            field.ime_counter if field.ime_counter is not None else "-",
+            field.counter,
+            len(field.value),
+            field.start,
+            field.end,
+            ime_origin,
+            suffix,
+        )
         self._fan_out(self._text_field, field)
+
+    def _on_ime_batch(self, batch: RemoteImeBatchEdit) -> None:
+        self._ime_counter = batch.ime_counter
+        self._field_counter = batch.field_counter
+        protocol: Any = getattr(self._client, "_remote_message_protocol", None)
+        if protocol is not None:
+            protocol.ime_counter = batch.ime_counter
+            protocol.ime_field_counter = batch.field_counter
 
     @staticmethod
     def _fan_out[T](callbacks: list[Callable[[T], None]], value: T) -> None:

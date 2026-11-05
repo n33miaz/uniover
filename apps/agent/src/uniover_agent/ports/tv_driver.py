@@ -20,6 +20,7 @@ class TextFieldStatus:
     end: int
     label: str
     counter: int
+    ime_counter: int | None = None
 
 
 class TvDriver(TvChannel, Protocol):

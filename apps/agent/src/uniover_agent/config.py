@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     # uma pausa entre as teclas, para o caso de a TV perder letras quando elas chegam coladas.
     tv_text_by_keys: bool = False
     tv_text_key_pause_ms: int = Field(default=0, ge=0, le=500)
+    # Cursor do lote IME do Remote v2. `library` repete o formato da biblioteca até a medição na
+    # TV escolher outro; os demais modos existem para o roteiro de diagnóstico.
+    tv_text_cursor: Literal["library", "chunk_end", "field_end"] = "library"
+    # Só para o roteiro acompanhado pelo dono: registra o valor que a TV ecoa. Pode expor texto
+    # digitado, por isso fica desligado e não deve ser usado fora de um teste controlado.
+    tv_text_debug_values: bool = False
     # Vigia do serviço do controle da Android TV: religa por ADB quando as portas 6466/6467 fecham.
     # Só age com `adb` neste PC; desligue se outra coisa (o vigia antigo do PC) já faz isso.
     tv_watchdog: bool = True
