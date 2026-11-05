@@ -52,8 +52,11 @@ export class PullApi {
 
     let params = new HttpParams().set('limit', limit);
     if (after) params = params.set('after', after);
-    const read = (bearer: string) =>
-      firstValueFrom(
+    const read = (bearer: string) => {
+      // O prazo pode ter acabado enquanto o token era renovado: nem chega a abrir a requisição.
+      if (signal?.aborted)
+        return Promise.reject(new DOMException('pedido cancelado', 'AbortError'));
+      return firstValueFrom(
         this.http
           .get<PullPage<T>>(path, {
             params,
@@ -62,6 +65,7 @@ export class PullApi {
           // Cancelado (o prazo do pedido acabou): solta a requisição em vez de deixá-la pendurada.
           .pipe(takeUntil(signal ? fromEvent(signal, 'abort') : NEVER)),
       );
+    };
 
     try {
       return await read(token);

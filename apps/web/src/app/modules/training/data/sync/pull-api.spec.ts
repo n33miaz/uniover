@@ -74,4 +74,40 @@ describe('PullApi', () => {
     await expect(result).rejects.toMatchObject({ name: 'SessionMismatchError' });
     http.expectNone('/api/v1/training/things?limit=20');
   });
+
+  it('cancels a pending request when the deadline aborts it', async () => {
+    const deadline = new AbortController();
+    const result = api.fetchPage<string>(
+      '/api/v1/training/things',
+      null,
+      20,
+      'conta-a',
+      deadline.signal,
+    );
+    const request = http.expectOne('/api/v1/training/things?limit=20');
+    deadline.abort();
+    await expect(result).rejects.toBeDefined();
+    expect(request.cancelled).toBe(true);
+  });
+
+  it('never opens the request when the deadline ran out during renewal', async () => {
+    const deadline = new AbortController();
+    renew.mockImplementation(async () => {
+      deadline.abort();
+      token = 'novo-token-da-conta-a';
+      return 'renewed';
+    });
+    const result = api.fetchPage<string>(
+      '/api/v1/training/things',
+      null,
+      20,
+      'conta-a',
+      deadline.signal,
+    );
+    http
+      .expectOne('/api/v1/training/things?limit=20')
+      .flush(null, { status: 401, statusText: 'Unauthorized' });
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    http.expectNone('/api/v1/training/things?limit=20');
+  });
 });
