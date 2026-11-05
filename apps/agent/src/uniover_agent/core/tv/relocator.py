@@ -13,6 +13,7 @@ O núcleo não sabe varrer rede nem gravar arquivo: as ações vêm por injeçã
 import logging
 from collections.abc import Awaitable, Callable
 
+from uniover_agent.core.tv.session import TvSessionError
 from uniover_agent.ports import Clock
 
 _log = logging.getLogger(__name__)
@@ -105,6 +106,9 @@ class TvRelocator:
             return
         try:
             await self._on_recovered()
+        except TvSessionError as exc:
+            # A TV voltou mas a sessão não abriu: é esperado e tem causa (sem rastro de pilha).
+            _log.info("a TV voltou, mas a sessão não abriu (%s)", exc.code)
         except Exception:
             _log.exception("falha ao reabrir a sessão da TV")
 
