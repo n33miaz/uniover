@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.5](https://github.com/n33miaz/uniover/compare/v0.42.4...v0.42.5) (2026-11-05)
+
+
+### Bug Fixes
+
+* **agent:** no adb connect while unauthorized
+
 ## [0.42.4](https://github.com/n33miaz/uniover/compare/v0.42.3...v0.42.4) (2026-11-05)
 
 
