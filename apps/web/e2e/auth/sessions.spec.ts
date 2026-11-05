@@ -22,6 +22,11 @@ test('the owner reviews and ends another session in Security', async ({ page, co
   await expect(page.getByRole('heading', { name: 'Sessões de Acesso' })).toBeVisible();
   await expect(page.getByText('Chrome · Windows')).toBeVisible();
   await expectNoHorizontalScroll(page);
+  // Os detalhes (e o Encerrar de cada sessão) vêm dobrados: o Chromium não dá caixa ao que está fechado, então abre-se tudo
+  // para medir o alvo de toque que a pessoa de fato alcança.
+  const summaries = page.locator('app-sessions-section summary');
+  for (const summary of await summaries.all()) await summary.click();
+  await expect(page.locator('app-sessions-section details:not([open])')).toHaveCount(0);
   const smallTargets = await page.locator('app-sessions-section button').evaluateAll(
     (buttons) =>
       buttons.filter((button) => {
