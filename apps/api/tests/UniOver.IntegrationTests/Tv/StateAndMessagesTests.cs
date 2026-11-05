@@ -57,6 +57,23 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task State_ConfirmedAsUnpaired_IsRelayedToTheApp()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "not_paired")));
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            using var response = await app.GetAsync("/api/v1/tv/state");
+            return (await TvApp.JsonAsync(response)).GetProperty("connection").GetString() == "not_paired";
+        }, "TV nao pareada visivel");
+
+        using var state = await app.GetAsync("/api/v1/tv/state");
+        (await TvApp.JsonAsync(state)).GetProperty("connection").GetString().Should().Be("not_paired");
+    }
+
+    [Fact]
     public async Task State_Change_PublishesTheIntegrationEvent_ToASubscriber_ThroughTheOutbox()
     {
         await using var app = await TvApp.StartAsync(postgres);

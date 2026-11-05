@@ -7,7 +7,7 @@ namespace UniOver.Modules.Tv.Contracts;
 /// Imutável depois de publicado. Só id do agente (slug), valores simples e instantes.
 /// </summary>
 /// <param name="Power"><c>on</c>, <c>off</c> ou <c>unknown</c>.</param>
-/// <param name="Connection"><c>hot</c>, <c>hibernating</c> ou <c>disconnected</c>.</param>
+/// <param name="Connection"><c>hot</c>, <c>hibernating</c>, <c>disconnected</c> ou <c>not_paired</c>.</param>
 /// <param name="At">Instante em que o agente observou o estado.</param>
 public sealed record TvStateChanged(
     Guid Id,

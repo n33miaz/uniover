@@ -16,6 +16,8 @@ public static class TvStateText
     public const string ConnectionHibernating = "hibernating";
 
     public const string ConnectionDisconnected = "disconnected";
+
+    public const string ConnectionNotPaired = "not_paired";
 }
 
 /// <summary>Última leitura do estado que o agente mandou (o volume só vive aqui, em memória).</summary>
