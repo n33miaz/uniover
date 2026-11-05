@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -39,7 +40,7 @@ internal sealed class IndexHidingFileProvider(IFileProvider inner) : IFileProvid
 }
 
 /// <summary>Lê o <c>index.html</c> uma vez e troca os marcadores por requisição.</summary>
-internal sealed class PwaIndexRenderer(IWebHostEnvironment environment, IOptions<PwaOptions> options)
+internal sealed partial class PwaIndexRenderer(IWebHostEnvironment environment, IOptions<PwaOptions> options)
 {
     public const string IndexFile = "index.html";
     private const string NonceMarker = "__CSP_NONCE__";
@@ -60,10 +61,19 @@ internal sealed class PwaIndexRenderer(IWebHostEnvironment environment, IOptions
         var manifest =
             $"""<link rel="manifest" href="{prefix}/manifest.webmanifest"><link rel="apple-touch-icon" href="{prefix}/apple-touch-icon.png">""";
 
-        return html
-            .Replace(NonceMarker, nonce, StringComparison.Ordinal)
+        // O desenho de abertura também sai do servidor: sem isto o HTML mostraria o da Início até o boot-skeleton.js
+        // (deferido) rodar. A variante vem só de regras fixas sobre o caminho, nunca do texto da requisição. Com service
+        // worker a navegação sai do "/" em cache (variante da Início) e o script corrige no cliente.
+        var boot = $" data-boot=\"{BootVariants.For(requestPath.Value)}\"";
+        var withNonce = html.Replace(NonceMarker, nonce, StringComparison.Ordinal);
+
+        return HtmlOpening()
+            .Replace(withNonce, match => match.Value + boot, 1)
             .Replace(ManifestMarker, manifest, StringComparison.Ordinal);
     }
+
+    [GeneratedRegex(@"<html(?=[\s>])", RegexOptions.IgnoreCase)]
+    private static partial Regex HtmlOpening();
 
     private static string? Load(IWebHostEnvironment environment)
     {
