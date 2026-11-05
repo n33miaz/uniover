@@ -211,7 +211,8 @@ test.describe('convidado que só tem o Treino', () => {
     await page.goto(manifest.start_url);
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(page.locator('app-training-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/treino\/?$/);
+    // O endereço do manifest leva a marca do app instalado (`?uniover_app=treino`); o caminho continua sendo o do Treino.
+    await expect(page).toHaveURL(/\/treino\/?\?uniover_app=treino$/);
     expect(tvRequests).toEqual([]);
   });
 
