@@ -23,10 +23,10 @@ APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
 # O `hello` volta de tempos em tempos: se a API do momento o recusou (ainda não conhecia um campo
 # novo) ou foi trocada com o agente já conectado, ele passa a valer sem reiniciar o agente.
 REHELLO_SECONDS: Final = 300.0
-# Prazo de cada passo da conexão. O transporte já limita a abertura (5 min, para a API acordar);
-# estes prazos são a segunda barreira: nenhum `await` de rede ou de reanúncio pode parar o laço
-# para sempre.
-CONNECT_TIMEOUT_SECONDS: Final = 330.0
+# Prazo de cada passo da conexão. O transporte já limita a abertura (105 s, a API dormindo acorda
+# em até ~1 min); estes prazos são a segunda barreira: nenhum `await` de rede ou de reanúncio pode
+# parar o laço para sempre.
+CONNECT_TIMEOUT_SECONDS: Final = 120.0
 SEND_TIMEOUT_SECONDS: Final = 60.0
 ON_CONNECTED_TIMEOUT_SECONDS: Final = 180.0
 CLOSE_TIMEOUT_SECONDS: Final = 15.0
@@ -129,6 +129,9 @@ class ConnectionSupervisor:
         # Até quando o passo atual deve acabar (relógio monotônico): é o que diz se o laço de
         # conexão anda ou está preso (`is_stalled`).
         self._due_at = clock.monotonic()
+        # Cada sessão tem um número; uma tarefa abandonada que ignorou o cancelamento vê que a sua
+        # passou e sai, em vez de seguir lendo ou enviando no canal da sessão seguinte.
+        self._generation = 0
 
     def _expect(self, seconds: float) -> None:
         self._due_at = self._clock.monotonic() + seconds
@@ -250,6 +253,8 @@ class ConnectionSupervisor:
     async def _session(self) -> None:
         started: float | None = None
         tasks: list[asyncio.Task[None]] = []
+        self._generation += 1
+        mine = self._generation
         try:
             await self._bounded(
                 self._transport.connect(), self._policy.connect_timeout, "a abertura"
@@ -267,8 +272,8 @@ class ConnectionSupervisor:
                     self._policy.on_connected_timeout,
                     "o anúncio depois da conexão",
                 )
-            keepalive = asyncio.create_task(self._send_keepalives(), name="keepalive")
-            reader = asyncio.create_task(self._read(), name="reader")
+            keepalive = asyncio.create_task(self._send_keepalives(mine), name="keepalive")
+            reader = asyncio.create_task(self._read(mine), name="reader")
             tasks = [keepalive, reader]
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             if reader.done():
@@ -283,6 +288,8 @@ class ConnectionSupervisor:
                 raise failure
         finally:
             self._in_session = False
+            # Antes de tudo: o que ficar para trás (ignorando o cancelamento) sai por conta própria.
+            self._generation += 1
             await self._stop(tasks)
             if (
                 started is not None
@@ -293,8 +300,10 @@ class ConnectionSupervisor:
             if self._on_disconnected is not None:
                 self._on_disconnected()
 
-    async def _read(self) -> None:
+    async def _read(self, generation: int) -> None:
         async for raw in self._transport.incoming():
+            if generation != self._generation:
+                return
             await self._process(raw)
 
     async def _stop(self, tasks: list[asyncio.Task[None]]) -> None:
@@ -322,11 +331,13 @@ class ConnectionSupervisor:
             # Não esconde o erro que trouxe a sessão até aqui: o canal fica abandonado.
             _log.warning("%s", exc)
 
-    async def _send_keepalives(self) -> None:
+    async def _send_keepalives(self, generation: int) -> None:
         last_hello = self._clock.monotonic()
-        while True:
+        while generation == self._generation:
             self._expect(self._keepalive_interval)
             await asyncio.sleep(self._keepalive_interval)
+            if generation != self._generation:
+                return
             await self._bounded(
                 self._transport.send(self._envelopes.keepalive()),
                 self._policy.send_timeout,

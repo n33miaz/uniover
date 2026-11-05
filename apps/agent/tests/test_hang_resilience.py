@@ -30,6 +30,7 @@ from uniover_agent.adapters.update_status import record_status
 from uniover_agent.core import BackoffPolicy, ConnectionSupervisor, EnvelopeFactory, EnvelopeGate
 from uniover_agent.core.diagnostics import DiagnosticsRecorder
 from uniover_agent.core.self_care import Check, CheckResult, SelfCare
+from uniover_agent.ports import TransportError
 
 from .support import AGENT_ID
 
@@ -248,6 +249,112 @@ def test_the_pulse_stops_while_the_connection_is_stalled_and_resumes_after(tmp_p
     assert path.exists()
 
 
+class DefiantConnect(FakeTransport):
+    """Abertura que ignora o cancelamento (um bug de biblioteca) até o teste soltá-la."""
+
+    def __init__(self) -> None:
+        super().__init__([[], []])
+        self.release = asyncio.Event()
+
+    async def connect(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(0.01)
+            except asyncio.CancelledError:
+                if self.release.is_set():
+                    raise
+
+
+async def test_an_open_that_ignores_its_deadline_makes_the_pulse_go_stale() -> None:
+    transport = DefiantConnect()
+    clock = RealClock()
+    supervisor = ConnectionSupervisor(
+        transport,
+        _ignore,
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        lambda: 0.5,
+        agent_version="0.1.0",
+        capabilities=[],
+        policy=BackoffPolicy(connect_timeout=0.05, stall_grace=0.1),
+    )
+    task = asyncio.create_task(supervisor.run())
+    try:
+        end = time.monotonic() + 3
+        while not supervisor.is_stalled() and time.monotonic() < end:  # noqa: ASYNC110
+            await asyncio.sleep(0.02)
+        assert supervisor.is_stalled(), "a abertura passou do prazo e do atraso tolerado"
+    finally:
+        transport.release.set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+def test_the_open_deadlines_favour_availability() -> None:
+    from uniover_agent.adapters.transport_ws import OPEN_TIMEOUT_SECONDS  # noqa: PLC0415
+    from uniover_agent.core.connection import CONNECT_TIMEOUT_SECONDS  # noqa: PLC0415
+
+    # A API dormindo acorda em até ~1 min: 105 s para abrir, 120 s para o laço desistir.
+    assert OPEN_TIMEOUT_SECONDS == 105.0
+    assert CONNECT_TIMEOUT_SECONDS == 120.0
+    assert OPEN_TIMEOUT_SECONDS < CONNECT_TIMEOUT_SECONDS
+
+
+async def test_a_task_abandoned_by_a_session_never_touches_the_next_session() -> None:
+    """Uma leitura que ignora o cancelamento fica para trás: acordando depois, não processa nada
+    da sessão seguinte, que reaproveita o mesmo transporte."""
+    processed: list[str] = []
+    blocked = asyncio.Event()
+    wake = asyncio.Event()
+
+    class TwoSessions(FakeTransport):
+        def __init__(self) -> None:
+            super().__init__([["m1", "m2"], ["s2"]])
+
+        async def send(self, message: dict[str, Any]) -> None:
+            # O batimento da primeira sessão falha: a sessão acaba e a leitura (presa) é abandonada.
+            if message["type"] == "agent.keepalive.v1" and self.connects == 1:
+                await blocked.wait()
+                raise TransportError("canal quebrado")
+            await super().send(message)
+
+    async def process(raw: str | bytes) -> None:
+        if raw == "m1":
+            blocked.set()
+            while not wake.is_set():  # ignora o cancelamento até ser solta
+                try:
+                    await asyncio.sleep(0.01)
+                except asyncio.CancelledError:
+                    continue
+        processed.append(str(raw))
+
+    transport = TwoSessions()
+    clock = FakeClock()
+    supervisor = ConnectionSupervisor(
+        transport,
+        process,
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        lambda: 0.5,
+        agent_version="0.1.0",
+        capabilities=[],
+        policy=FAST,
+        keepalive_interval=0.01,
+    )
+    task = asyncio.create_task(supervisor.run())
+    end = time.monotonic() + 5
+    while "s2" not in processed and time.monotonic() < end:  # noqa: ASYNC110
+        await asyncio.sleep(0.01)
+    assert "s2" in processed, "a sessão seguinte não chegou a rodar"
+    wake.set()  # a leitura abandonada acorda agora
+    await asyncio.sleep(0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert "m2" not in processed, "a leitura abandonada seguiu consumindo mensagens"
+
+
 # --- Auto-diagnóstico: uma verificação presa não prende as outras ------------------------------
 
 
@@ -447,3 +554,19 @@ def test_the_agent_pulse_still_moves_the_file_date_when_the_disk_is_full(
     monkeypatch.setattr(Path, "write_text", full)
     diary.beat()
     assert path.stat().st_mtime > 1_000
+
+
+def test_a_pulse_file_that_never_existed_cannot_be_faked_on_a_full_disk(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Sem o arquivo e sem espaço nada se grava: é por isso que o supervisor o cria antes de o agente
+    # subir (e o trata como mudo se ele continuar sem existir). O agente, ao menos, não quebra.
+    path = tmp_path / "runtime" / "last-alive"
+    diary = AbsenceDiary(path, FakeClock(datetime(2026, 11, 5, tzinfo=UTC)))
+
+    def full(self: Path, *args: Any, **kwargs: Any) -> int:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_text", full)
+    diary.beat()
+    assert not path.exists()
