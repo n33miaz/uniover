@@ -23,6 +23,13 @@ APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
 # O `hello` volta de tempos em tempos: se a API do momento o recusou (ainda não conhecia um campo
 # novo) ou foi trocada com o agente já conectado, ele passa a valer sem reiniciar o agente.
 REHELLO_SECONDS: Final = 300.0
+# Prazo de cada passo da conexão. O transporte já limita a abertura (5 min, para a API acordar);
+# estes prazos são a segunda barreira: nenhum `await` de rede ou de reanúncio pode parar o laço
+# para sempre.
+CONNECT_TIMEOUT_SECONDS: Final = 330.0
+SEND_TIMEOUT_SECONDS: Final = 60.0
+ON_CONNECTED_TIMEOUT_SECONDS: Final = 180.0
+CLOSE_TIMEOUT_SECONDS: Final = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +45,11 @@ class BackoffPolicy:
     restart_wait: float = 0.5
     # Fração de variação para mais e para menos (0,2 = de 80% a 120%).
     jitter: float = 0.2
+    # Prazos de cada passo (ver as constantes acima).
+    connect_timeout: float = CONNECT_TIMEOUT_SECONDS
+    send_timeout: float = SEND_TIMEOUT_SECONDS
+    on_connected_timeout: float = ON_CONNECTED_TIMEOUT_SECONDS
+    close_timeout: float = CLOSE_TIMEOUT_SECONDS
 
 
 class Backoff:
@@ -198,18 +210,35 @@ class ConnectionSupervisor:
         except Exception:
             _log.warning("não consegui deixar o rastro da falha de conexão", exc_info=True)
 
+    @staticmethod
+    async def _bounded[T](step: Awaitable[T], seconds: float, what: str) -> T:
+        """`step` com prazo: estourar vira `TransportError`, e o laço reconecta."""
+        try:
+            async with asyncio.timeout(seconds):
+                return await step
+        except TimeoutError:
+            raise TransportError(f"{what} passou de {seconds:.0f} s") from None
+
     async def _session(self) -> None:
         started: float | None = None
         keepalive: asyncio.Task[None] | None = None
         try:
-            await self._transport.connect()
+            await self._bounded(
+                self._transport.connect(), self._policy.connect_timeout, "a abertura"
+            )
             started = self._clock.monotonic()
             _log.info("conectado")
-            await self._transport.send(self._hello())
+            await self._bounded(
+                self._transport.send(self._hello()), self._policy.send_timeout, "o envio do hello"
+            )
             self._hello_done = True
             self._in_session = True
             if self._on_connected is not None:
-                await self._on_connected()
+                await self._bounded(
+                    self._on_connected(),
+                    self._policy.on_connected_timeout,
+                    "o anúncio depois da conexão",
+                )
             keepalive = asyncio.create_task(self._keepalive_guard())
             async for raw in self._transport.incoming():
                 await self._process(raw)
@@ -223,7 +252,13 @@ class ConnectionSupervisor:
                 and self._clock.monotonic() - started >= self._policy.stable_after
             ):
                 self._backoff.reset()
-            await self._transport.close()
+            try:
+                await self._bounded(
+                    self._transport.close(), self._policy.close_timeout, "o fechamento do canal"
+                )
+            except TransportError as exc:
+                # Não esconde o erro que trouxe a sessão até aqui: o canal fica abandonado.
+                _log.warning("%s", exc)
             if self._on_disconnected is not None:
                 self._on_disconnected()
 
@@ -246,7 +281,15 @@ class ConnectionSupervisor:
         last_hello = self._clock.monotonic()
         while True:
             await asyncio.sleep(self._keepalive_interval)
-            await self._transport.send(self._envelopes.keepalive())
+            await self._bounded(
+                self._transport.send(self._envelopes.keepalive()),
+                self._policy.send_timeout,
+                "o batimento",
+            )
             if self._clock.monotonic() - last_hello >= self._rehello_interval:
                 last_hello = self._clock.monotonic()
-                await self._transport.send(self._hello())
+                await self._bounded(
+                    self._transport.send(self._hello()),
+                    self._policy.send_timeout,
+                    "o hello periódico",
+                )

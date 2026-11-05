@@ -14,6 +14,7 @@ from uniover_agent.adapters.crash_trace import install_crash_trace, loop_excepti
 from uniover_agent.adapters.housekeeping import tidy
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.local_config import ConfigValue, update_config
+from uniover_agent.adapters.loop_watchdog import LoopWatchdog
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.run_state import RunState
@@ -94,6 +95,8 @@ from uniover_agent.ports import Clock, SecretStore, Transport, TvNotPaired, TvUn
 _log = logging.getLogger("uniover_agent")
 # De quanto em quanto tempo o vigia olha o ARP atrás do MAC da TV, enquanto não o aprendeu.
 ARP_LEARN_SECONDS = 600.0
+# Prazo da arrumação da pasta na partida: sem ele, um disco travado impediria o agente de subir.
+TIDY_TIMEOUT_SECONDS = 60.0
 
 
 def build_handler(
@@ -303,7 +306,12 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     asyncio.get_running_loop().set_exception_handler(loop_exception_handler(kit.recorder))
     announce_start(run_state, kit, settings, build_version())
     # Arruma a pasta (restos de atualização, estrutura): só mexe no que tem nome conhecido.
-    await asyncio.to_thread(tidy, installation_base())
+    # Com prazo: uma pasta travada (disco cheio ou em disputa) não impede o agente de subir.
+    try:
+        async with asyncio.timeout(TIDY_TIMEOUT_SECONDS):
+            await asyncio.to_thread(tidy, installation_base())
+    except TimeoutError:
+        _log.warning("a arrumação da pasta passou de %.0f s; sigo sem ela", TIDY_TIMEOUT_SECONDS)
     gate = EnvelopeGate(agent_id)
     envelopes = EnvelopeFactory(agent_id, gate, clock)
     transport = WebSocketTransport(
@@ -455,6 +463,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         UpdateStatusWatcher(update_source, transport, envelopes, clock).run,
         diary.run,
         tray.run,
+        # Se o laço de eventos parar, a pilha de todas as threads vai para `crash.log`.
+        LoopWatchdog(installation_base() / "logs").run,
     ]
     if tv is not None:
         jobs = [*jobs, tv.manager.watch, *tv.background]
