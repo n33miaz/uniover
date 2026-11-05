@@ -251,6 +251,20 @@ def update_in_trial(source: Path) -> bool:
     return version is not None and text.strip().split("|", 1)[0] == version
 
 
+def trial_marker(source: Path) -> Path:
+    return source.parent / "runtime" / "update-trial.txt"
+
+
+def write_trial_marker(source: Path, sha: str) -> None:
+    """Grava a prova da versão `sha` (`sha|quedas`), no formato que o supervisor lê.
+
+    Vai ANTES da troca das pastas: uma versão nova nunca fica no ar sem a prova (e sem a volta atrás
+    que vem com ela). Se não der para gravar (disco cheio), a troca nem acontece."""
+    marker = trial_marker(source)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"{sha}|0", encoding="ascii")
+
+
 def verify_archive(archive: Path, sha: str) -> None:
     """O zip está inteiro (CRC de cada arquivo) e é mesmo do commit pedido.
 
@@ -577,6 +591,22 @@ class UpdateResult:
     rejected: bool = field(default=False, compare=False)
 
 
+def promote(source: Path, new: Path, sha: str, record_trial: Callable[[Path, str], None]) -> None:
+    """Põe `new` no lugar de `source`, com a prova gravada ANTES (sem ela, a troca não acontece)."""
+    try:
+        record_trial(source, sha)
+    except OSError as exc:
+        raise SelfUpdateError(
+            f"não consegui registrar a prova da versão nova ({type(exc).__name__})"
+        ) from None
+    try:
+        swap_directories(source, new, keep_previous=True)
+    except BaseException:
+        # A troca não houve: a prova da versão que não entrou não vale.
+        trial_marker(source).unlink(missing_ok=True)
+        raise
+
+
 def _low_disk_result(free: int | None, minimum: int, sha: str) -> UpdateResult | None:
     """Sem espaço para baixar e montar a versão nova: adia (volta sozinha na checagem seguinte)."""
     if free is None or free >= minimum:
@@ -603,6 +633,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas de
     verify_files: Callable[[Path, str], bool] = verify_tree,
     free_bytes: Callable[[Path], int | None] = disk_free_bytes,
     min_free_bytes: int = MIN_FREE_BYTES,
+    record_trial: Callable[[Path, str], None] = write_trial_marker,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -654,7 +685,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas de
                 if sync:
                     run_sync(new)
                 run_check(new)
-                swap_directories(source, new, keep_previous=True)
+                promote(source, new, sha, record_trial)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
                 raise
