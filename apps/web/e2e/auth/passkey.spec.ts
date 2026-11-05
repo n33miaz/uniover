@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { Page } from '@playwright/test';
 import { expect, screenshot, test } from '../fixtures';
 import { IdentityMock, OWNER, TV_CONTROL_ONLY, mockIdentityApi } from './identity-mock';
+import { passkeyPassword } from './passkey-form';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -32,7 +33,7 @@ async function addVirtualAuthenticator(page: Page) {
 
 async function registerPasskey(page: Page, name: string) {
   await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
-  await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
+  await passkeyPassword(page).fill(OWNER.password);
   await page.getByLabel('Nome da passkey (opcional)').fill(name);
   await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
   // `exact`: sem ele o texto também casa com "Nenhuma passkey cadastrada." e o teste seguiria antes de a passkey existir.
@@ -56,7 +57,7 @@ test.describe('passkeys e confirmação', () => {
 
     // Senha errada: mensagem clara e nenhuma passkey criada.
     await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
-    await page.getByLabel('Senha', { exact: true }).fill('errada');
+    await passkeyPassword(page).fill('errada');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
     await expect(page.getByText('Senha incorreta.')).toBeVisible();
     expect(mock.passkeys).toHaveLength(0);

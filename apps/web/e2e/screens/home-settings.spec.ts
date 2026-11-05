@@ -1,6 +1,7 @@
 import { Page, Route, TestInfo } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { IdentityMock, OWNER, OWNER_ID, mockIdentityApi } from '../auth/identity-mock';
+import { passkeyPassword } from '../auth/passkey-form';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { expectNoA11yViolations, settle, smallTargets } from './screen-helpers';
 
@@ -305,10 +306,10 @@ test.describe('Configurações', () => {
 
       // Formulário de passkey com a senha errada: aviso de erro.
       await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
-      await page.getByLabel('Senha', { exact: true }).fill('errada');
+      await passkeyPassword(page).fill('errada');
       await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
       await expect(page.getByText('Senha incorreta.')).toBeVisible();
-      await page.getByLabel('Senha', { exact: true }).scrollIntoViewIfNeeded();
+      await passkeyPassword(page).scrollIntoViewIfNeeded();
       await screenshot(page, printPath(info, 'settings-passkey-form', scheme));
       expect(await smallTargets(page)).toEqual([]);
       await expectNoA11yViolations(page);

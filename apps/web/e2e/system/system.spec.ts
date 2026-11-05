@@ -1,5 +1,6 @@
 import { Page, TestInfo } from '@playwright/test';
 import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
+import { passkeyPassword } from '../auth/passkey-form';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-helpers';
 import { MockTv, TvMock, installFakeEventSource, mockTvApi } from '../tv/tv-mock';
@@ -82,7 +83,7 @@ async function preparePasskey(page: Page, browserName: string) {
   await addVirtualAuthenticator(page);
   await page.goto('/ajustes/seguranca');
   await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
-  await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
+  await passkeyPassword(page).fill(OWNER.password);
   await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
   await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
   await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();

@@ -7,6 +7,7 @@ import {
   TV_CONTROL_ONLY,
   mockIdentityApi,
 } from '../auth/identity-mock';
+import { passkeyPassword } from '../auth/passkey-form';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import {
   HOT_STATE,
@@ -95,7 +96,7 @@ test.describe('convite do dono (passkey)', () => {
 
     // Sem passkey cadastrada não há como confirmar: cadastra uma, como o dono faz em Segurança.
     await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
-    await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
+    await passkeyPassword(page).fill(OWNER.password);
     await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
     await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();
