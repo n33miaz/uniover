@@ -54,8 +54,12 @@ test.describe('tela de entrada: estrutura', () => {
     await expect(password(page)).toHaveAttribute('autocomplete', 'current-password');
     await expect(password(page)).toHaveAttribute('enterkeyhint', 'go');
 
-    // Não existe recuperação de senha nem "lembrar de mim" neste sistema.
-    await expect(page.getByText(/esqueci|recuperar|lembrar/i)).toHaveCount(0);
+    // A recuperação de senha é pelo e-mail, por um link próprio; "lembrar de mim" continua não existindo.
+    await expect(page.getByRole('link', { name: 'Esqueci minha senha' })).toHaveAttribute(
+      'href',
+      '/recuperar-senha',
+    );
+    await expect(page.getByText(/lembrar de mim/i)).toHaveCount(0);
     await expectNoHorizontalScroll(page);
   });
 
@@ -78,6 +82,10 @@ test.describe('tela de entrada: estrutura', () => {
     await openLogin(page);
     const animation = () =>
       page.locator('.card').evaluate((card) => getComputedStyle(card).animationName);
+    // Na primeira tela aberta o esqueleto já ocupou o lugar: o cartão entra parado, sem pular.
+    expect(await animation()).toBe('none');
+    // Fora da abertura (uma navegação depois), a entrada suave volta.
+    await page.evaluate(() => document.documentElement.classList.remove('boot-first-page'));
     expect(await animation()).not.toBe('none');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     expect(await animation()).toBe('none');
