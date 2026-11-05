@@ -79,3 +79,36 @@ def test_closing_does_not_wait_for_a_stuck_destination() -> None:
     handler.close()
     assert time.monotonic() - started < 2.0
     target.unblock.set()
+
+
+def test_flush_and_close_at_shutdown_write_everything_that_was_queued() -> None:
+    # `logging.shutdown()` chama `flush()` e `close()` em cada destino: o que estava na fila sai
+    # antes de o processo acabar, mesmo com o destino lento.
+    class Slow(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lines: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            time.sleep(0.005)
+            self.lines.append(record.getMessage())
+
+    target = Slow()
+    handler = OffloadHandler(target, drain=5.0)
+    for number in range(100):
+        handler.handle(record("linha %d", number))
+    handler.flush()
+    assert len(target.lines) == 100
+    handler.handle(record("ultima"))
+    handler.close()
+    assert target.lines[-1] == "ultima"
+
+
+def test_closing_with_a_full_queue_still_ends_the_thread_once_the_destination_moves() -> None:
+    target = Blocked()
+    handler = OffloadHandler(target, maxsize=2, drain=2.0)
+    for number in range(5):
+        handler.handle(record("linha %d", number))
+    threading.Timer(0.2, target.unblock.set).start()
+    handler.close()  # espera lugar para o marcador de fim em vez de descartá-lo
+    assert not handler._thread.is_alive()
