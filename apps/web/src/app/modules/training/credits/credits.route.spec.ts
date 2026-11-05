@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../../app.routes';
+import { SETTINGS_ROUTES } from '../../../settings.routes';
 import { CreditsPage } from './credits.page';
 
 // Estes testes carregam módulos sob demanda (e o último, o shell inteiro): com a máquina ocupada pelas outras suítes o
@@ -14,9 +15,8 @@ describe('credits route', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => localStorage.clear());
 
-  const shell = routes.find((route) => route.path === '')!;
-  const settings = (shell.children ?? []).find((child) => child.path === 'ajustes')!;
-  const children = settings.children ?? [];
+  // As telas de Configurações vivem num arquivo de rotas carregado sob demanda pela rota `ajustes`.
+  const children = SETTINGS_ROUTES;
   const about = children.find((child) => child.path === 'sobre')!;
   const sheet = (about.children ?? []).find((child) => child.path === 'creditos')!;
 
