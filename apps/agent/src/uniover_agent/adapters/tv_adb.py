@@ -73,6 +73,9 @@ LIVRE_SHELL_TIMEOUT_SECONDS: Final = 15.0
 # Depois de uma falha de conexão, o caminho preguiçoso (comando sem canal aberto) espera isto
 # antes de tentar de novo; a abertura explícita da sessão sempre tenta.
 DEFAULT_RETRY_AFTER_SECONDS: Final = 30.0
+DEFAULT_KILL_SERVER_COOLDOWN_SECONDS: Final = 600.0
+# Quantos tempos esgotados seguidos indicam o servidor do `adb` travado.
+KILL_SERVER_AFTER_TIMEOUTS: Final = 3
 # Copiar um APK leva segundos (o do CineVS, 52 MB, levou ~10 s): bem mais que um comando curto.
 DEFAULT_PULL_TIMEOUT_SECONDS: Final = 120.0
 
@@ -174,6 +177,7 @@ class AdbTv:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retry_after: float = DEFAULT_RETRY_AFTER_SECONDS,
         pull_timeout: float = DEFAULT_PULL_TIMEOUT_SECONDS,
+        kill_server_cooldown: float = DEFAULT_KILL_SERVER_COOLDOWN_SECONDS,
         runner: Runner | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -182,6 +186,7 @@ class AdbTv:
         self._timeout = timeout
         self._retry_after = retry_after
         self._pull_timeout = pull_timeout
+        self._kill_server_cooldown = kill_server_cooldown
         self._run: Runner = runner or run_process
         self._monotonic = monotonic
         # Um comando por vez: o `adb` só atende bem um cliente e a TV tem pouca memória.
@@ -189,6 +194,9 @@ class AdbTv:
         self._connected = False
         self._blocked_until = 0.0
         self._blocked_error: AdbError | None = None
+        self._timeout_streak = 0
+        self._last_kill_server_at: float | None = None
+        self._disconnect_task: asyncio.Task[None] | None = None
         # Quanto o último `input_text` esperou a trava (a lista de apps e as consultas de ícones a
         # seguram): entra no resumo da digitação para separar "trava ocupada" de "TV lenta".
         self.last_input_wait_seconds = 0.0
@@ -206,12 +214,23 @@ class AdbTv:
 
     async def disconnect(self) -> None:
         """Desconecta só esta TV (não mata o servidor do `adb`, que pode servir a outros usos)."""
+        self._connected = False
+        if self._lock.locked():
+            if self._disconnect_task is None or self._disconnect_task.done():
+                self._disconnect_task = asyncio.create_task(self._disconnect_when_available())
+            return
         async with self._lock:
-            self._connected = False
-            try:
-                await self._exec("disconnect", self._serial)
-            except AdbError as exc:
-                _log.debug("adb disconnect não confirmou: %s", exc.message)
+            await self._disconnect_locked()
+
+    async def _disconnect_when_available(self) -> None:
+        async with self._lock:
+            await self._disconnect_locked()
+
+    async def _disconnect_locked(self) -> None:
+        try:
+            await self._exec("disconnect", self._serial)
+        except AdbError as exc:
+            _log.debug("adb disconnect não confirmou: %s", exc.message)
 
     async def _connect_locked(self) -> None:
         self._connected = False
@@ -222,6 +241,17 @@ class AdbTv:
             if not parse_connect(joined.text):
                 raise AdbUnreachable("a TV não respondeu pelo ADB")
             state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+            if (
+                state in (DeviceState.OFFLINE, DeviceState.UNAUTHORIZED)
+                and "already connected" in joined.text
+            ):
+                await self._exec("disconnect", self._serial)
+                joined = await self._exec("connect", self._serial)
+                if connect_was_refused_for_auth(joined.text):
+                    raise AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
+                if not parse_connect(joined.text):
+                    raise AdbUnreachable("a TV não respondeu pelo ADB")
+                state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
         except AdbTimeout:
             # Na abertura, tempo esgotado é "a TV não respondeu": nenhum comando foi executado.
             error: AdbError = AdbUnreachable("a TV não respondeu pelo ADB")
@@ -232,6 +262,7 @@ class AdbTv:
             raise
         if state is DeviceState.DEVICE:
             self._blocked_error = None
+            self._timeout_streak = 0
             self._connected = True
             return
         failure: AdbError = (
@@ -625,13 +656,35 @@ class AdbTv:
             # lenta de APK não prova que o canal caiu: ela só falha, sem derrubar os comandos.
             if timeout is None:
                 self._connected = False
+            await self._restart_server_after_timeouts()
             raise AdbTimeout("a TV demorou demais para responder ao ADB") from None
         except FileNotFoundError:
             raise AdbUnavailable("o adb não foi encontrado neste PC") from None
         except OSError as exc:
             _log.warning("não foi possível executar o adb (%s)", type(exc).__name__)
-            raise AdbUnavailable("não foi possível executar o adb neste PC") from None
+            raise AdbUnavailable(
+                "não foi possível executar o adb neste PC", transient=True
+            ) from None
+        # Só timeouts seguidos contam: qualquer resposta do `adb` prova que o servidor atende.
+        self._timeout_streak = 0
         _log.debug(
             "adb %s -> código %d, %d caracteres", args[0], output.returncode, len(output.text)
         )
         return output
+
+    async def _restart_server_after_timeouts(self) -> None:
+        self._timeout_streak += 1
+        now = self._monotonic()
+        if self._timeout_streak < KILL_SERVER_AFTER_TIMEOUTS or (
+            self._last_kill_server_at is not None
+            and now - self._last_kill_server_at < self._kill_server_cooldown
+        ):
+            return
+        self._timeout_streak = 0
+        self._last_kill_server_at = now
+        # O servidor novo não conhece a TV: o próximo pedido reconecta.
+        self._connected = False
+        try:
+            await self._run([self._adb, "kill-server"], self._timeout)
+        except Exception as exc:
+            _log.info("adb kill-server não concluiu (%s)", type(exc).__name__)

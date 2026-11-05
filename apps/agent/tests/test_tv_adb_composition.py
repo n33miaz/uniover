@@ -12,10 +12,17 @@ import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent import main as main_module
-from uniover_agent.adapters.fakes import FakeSecretStore, FakeTvAdb, FakeTvRemote
+from uniover_agent.adapters.fakes import (
+    FakeClock,
+    FakeSecretStore,
+    FakeTransport,
+    FakeTvAdb,
+    FakeTvRemote,
+)
+from uniover_agent.adapters.tv_discovery import PortState
 from uniover_agent.config import Settings
-from uniover_agent.core import tv_text_handler
-from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, run
+from uniover_agent.core import EnvelopeFactory, EnvelopeGate, tv_text_handler
+from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, build_tv, run
 from uniover_agent.ports import AdbUnauthorized, AdbUnreachable, LaunchableApp
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
@@ -74,8 +81,8 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert len(setup.prepare) == 2  # o ADB e o TV Livre
     assert len(setup.after_hello) == 1
     # O anunciante da lista e o temporizador da limpeza automática.
-    # anunciante da lista, temporizador da limpeza e laço do modo foco
-    assert len(setup.background) == 3
+    # anunciante da lista, temporizador da limpeza, laço do modo foco e reavaliação do ADB
+    assert len(setup.background) == 4
     # A capacidade só vem depois do teste de conexão (passo de preparação).
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
 
@@ -156,6 +163,72 @@ async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
     assert "não autorizou" in caplog.text
     # Os comandos continuam registrados: respondem `adb_unauthorized` em vez de "desconhecido".
     assert "tv.apps.refresh.v1" in setup.handlers
+
+
+async def test_an_adb_authorized_later_is_declared_without_restarting_the_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    adb = FakeTvAdb()
+    adb.errors = [AdbUnauthorized("a"), AdbUnauthorized("b")]
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    probed: list[int] = []
+
+    async def open_port(host: str, port: int, *, wait: float) -> PortState:
+        probed.append(port)
+        return PortState.OPEN
+
+    monkeypatch.setattr(main_module, "tcp_probe", open_port)
+    clock = FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    setup = build_tv(
+        Settings(tv_host=TV_HOST, tv_watchdog=False), clock, FakeTransport(), envelopes
+    )
+    assert setup is not None
+    for step in setup.prepare:
+        await step()
+    assert "tv.adb" not in setup.capabilities
+    recheck = asyncio.create_task(setup.background[-1]())
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if "tv.adb" in setup.capabilities:
+            break
+    recheck.cancel()
+    # A segunda tentativa ainda recusa; a terceira (10 min simulados depois) é aceita.
+    assert clock.monotonic() == 600
+    assert probed == [6466, 6466]
+    assert adb.connects == 3
+    assert "tv.adb" in setup.capabilities
+    assert "tv.livre.v1" in setup.capabilities
+    assert setup.capabilities.count("tv.adb") == 1
+
+
+async def test_an_unauthorized_adb_is_not_rechecked_while_the_tv_control_is_silent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    adb = FakeTvAdb()
+    adb.errors = [AdbUnauthorized("a")]
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+
+    async def silent_port(host: str, port: int, *, wait: float) -> PortState:
+        return PortState.SILENT
+
+    monkeypatch.setattr(main_module, "tcp_probe", silent_port)
+    clock = FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    setup = build_tv(
+        Settings(tv_host=TV_HOST, tv_watchdog=False), clock, FakeTransport(), envelopes
+    )
+    assert setup is not None
+    for step in setup.prepare:
+        await step()
+    recheck = asyncio.create_task(setup.background[-1]())
+    for _ in range(10):
+        await asyncio.sleep(0)
+    recheck.cancel()
+    assert adb.connects == 1  # só a da partida: TV em standby não é acordada à toa
+    assert "tv.adb" not in setup.capabilities
 
 
 async def test_run_serves_apps_launch_and_typing_through_the_adb(
