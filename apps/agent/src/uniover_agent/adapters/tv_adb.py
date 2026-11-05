@@ -74,7 +74,7 @@ LIVRE_SHELL_TIMEOUT_SECONDS: Final = 15.0
 # antes de tentar de novo; a abertura explícita da sessão sempre tenta.
 DEFAULT_RETRY_AFTER_SECONDS: Final = 30.0
 DEFAULT_KILL_SERVER_COOLDOWN_SECONDS: Final = 600.0
-# Quantos tempos esgotados seguidos indicam o servidor do `adb` travado.
+# Quantos tempos esgotados seguidos fazem conferir se o servidor do `adb` está travado.
 KILL_SERVER_AFTER_TIMEOUTS: Final = 3
 # Copiar um APK leva segundos (o do CineVS, 52 MB, levou ~10 s): bem mais que um comando curto.
 DEFAULT_PULL_TIMEOUT_SECONDS: Final = 120.0
@@ -177,6 +177,7 @@ class AdbTv:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retry_after: float = DEFAULT_RETRY_AFTER_SECONDS,
         pull_timeout: float = DEFAULT_PULL_TIMEOUT_SECONDS,
+        kill_server: bool = False,
         kill_server_cooldown: float = DEFAULT_KILL_SERVER_COOLDOWN_SECONDS,
         runner: Runner | None = None,
         monotonic: Callable[[], float] = time.monotonic,
@@ -186,6 +187,9 @@ class AdbTv:
         self._timeout = timeout
         self._retry_after = retry_after
         self._pull_timeout = pull_timeout
+        # O servidor do `adb` é do PC inteiro (outro projeto, um emulador): só se mexe nele se o
+        # dono liga a opção, e mesmo assim só quando o próprio servidor não responde.
+        self._kill_server = kill_server
         self._kill_server_cooldown = kill_server_cooldown
         self._run: Runner = runner or run_process
         self._monotonic = monotonic
@@ -673,6 +677,8 @@ class AdbTv:
         return output
 
     async def _restart_server_after_timeouts(self) -> None:
+        if not self._kill_server:
+            return
         self._timeout_streak += 1
         now = self._monotonic()
         if self._timeout_streak < KILL_SERVER_AFTER_TIMEOUTS or (
@@ -681,6 +687,18 @@ class AdbTv:
         ):
             return
         self._timeout_streak = 0
+        # TV desligada ou lenta também esgota o tempo: só o servidor mudo (nem `devices`, que
+        # não fala com a TV, responde) justifica derrubá-lo.
+        try:
+            await self._run([self._adb, "devices"], self._timeout)
+        except TimeoutError:
+            hung = True
+        except Exception:
+            hung = False
+        else:
+            hung = False
+        if not hung:
+            return
         self._last_kill_server_at = now
         # O servidor novo não conhece a TV: o próximo pedido reconecta.
         self._connected = False

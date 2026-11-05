@@ -146,7 +146,10 @@ class Settings(BaseSettings):
     adb_path: str | None = None
     tv_adb_port: int = Field(default=5555, ge=1, le=65535)
     adb_timeout_seconds: float = Field(default=5.0, gt=0)
-    adb_kill_server_cooldown_seconds: float = Field(default=600.0, gt=0, le=3600)
+    # O servidor do `adb` é compartilhado pelo PC (emulador, outros projetos): derrubá-lo é opt-in.
+    adb_kill_server: bool = False
+    # Espaço mínimo entre dois `kill-server`; 0 desliga o descanso.
+    adb_kill_server_cooldown_seconds: float = Field(default=600.0, ge=0, le=3600)
     tv_adb_recheck_seconds: float = Field(default=300.0, gt=0, le=3600)
     # Tempo para copiar um APK da TV (bem maior que o de um comando curto).
     adb_pull_timeout_seconds: float = Field(default=120.0, gt=0)
