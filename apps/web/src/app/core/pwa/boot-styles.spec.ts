@@ -10,6 +10,11 @@ describe('adoptBootStyles (the app takes over the main stylesheet when the boot 
   let skeleton: HTMLElement;
   let notice: HTMLElement;
   const root = document.documentElement;
+  /** Dá ao link uma folha de verdade (o navegador de teste não baixa nada), como no instante em que a folha carrega. */
+  const finishLoading = (): void => {
+    Object.defineProperty(link, 'sheet', { value: { cssRules: [{}] }, configurable: true });
+    link.dispatchEvent(new Event('load'));
+  };
 
   beforeEach(() => {
     link = document.createElement('link');
@@ -58,11 +63,11 @@ describe('adoptBootStyles (the app takes over the main stylesheet when the boot 
     expect(root.getAttribute('data-styles-owner')).toBe('app');
     expect(link.media).toBe('print');
 
-    link.dispatchEvent(new Event('load'));
+    finishLoading();
     expect(link.media).toBe('all');
     expect(root.getAttribute('data-styles')).toBe('ready');
     expect(ready).toHaveBeenCalledTimes(1);
-    link.dispatchEvent(new Event('load'));
+    finishLoading();
     expect(ready).toHaveBeenCalledTimes(1);
     document.removeEventListener(STYLES_READY_EVENT, ready);
   });
@@ -101,7 +106,7 @@ describe('adoptBootStyles (the app takes over the main stylesheet when the boot 
   it('forgets the failures once the stylesheet loads', () => {
     sessionStorage.setItem(STYLES_FAILURES_KEY, '1');
     adoptBootStyles(document);
-    link.dispatchEvent(new Event('load'));
+    finishLoading();
     expect(sessionStorage.getItem(STYLES_FAILURES_KEY)).toBeNull();
   });
 });

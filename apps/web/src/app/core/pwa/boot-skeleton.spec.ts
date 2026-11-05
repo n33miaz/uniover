@@ -78,7 +78,7 @@ function runBootSelector(pathname: string): string | null {
 
 /** Uma folha de estilos marcada, como o passo de build a deixa: com media="print" até o script ligá-la. */
 function runBootStyles(
-  loaded: boolean,
+  loaded: boolean | 'empty' | 'denied',
   options: {
     entries?: { responseEnd: number }[];
     registration?: { update(): Promise<void> } | null;
@@ -98,7 +98,18 @@ function runBootStyles(
   const sheet = {
     media: 'print',
     href: 'http://x/styles-TESTE.css',
-    sheet: loaded ? {} : null,
+    sheet:
+      loaded === 'denied'
+        ? Object.defineProperty({}, 'cssRules', {
+            get: () => {
+              throw new Error('SecurityError');
+            },
+          })
+        : loaded === 'empty'
+          ? { cssRules: [] }
+          : loaded
+            ? { cssRules: [{}] }
+            : null,
     addEventListener: (name: string, listener: () => void) => (listeners[name] = listener),
   };
   const document = {
@@ -186,6 +197,7 @@ describe('boot skeleton', () => {
     expect(run.attributes['data-styles']).toBe('pending');
     expect(run.sheet.media).toBe('print');
     expect(run.events).toEqual([]);
+    run.sheet.sheet = { cssRules: [{}] };
     run.listeners['load']();
     expect(run.sheet.media).toBe('all');
     expect(run.attributes['data-styles']).toBe('ready');
@@ -225,6 +237,7 @@ describe('boot skeleton', () => {
   it('forgets the failures when the stylesheet loads', () => {
     sessionStorage.setItem('uniover.boot-styles-failures', '1');
     const run = runBootStyles(false);
+    run.sheet.sheet = { cssRules: [{}] };
     run.listeners['load']();
     expect(sessionStorage.getItem('uniover.boot-styles-failures')).toBeNull();
   });
@@ -237,6 +250,29 @@ describe('boot skeleton', () => {
     run.timers[0]();
     expect(run.notice.hidden).toBe(false);
     expect(run.attributes['data-styles']).toBe('pending');
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+  });
+
+  it('counts one failure once, even when both the event and the resource check report it', () => {
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+    const run = runBootStyles(false, { entries: [{ responseEnd: 120 }] });
+    run.listeners['error']();
+    run.timers[0]();
+    expect(run.attributes['data-styles']).toBe('pending');
+    expect(run.notice.hidden).toBe(false);
+    expect(sessionStorage.getItem('uniover.boot-styles-failures')).toBe('1');
+    sessionStorage.removeItem('uniover.boot-styles-failures');
+  });
+
+  it('treats the sheet that WebKit gives to a failed load (empty, or with unreadable rules) as a failure at once', () => {
+    for (const kind of ['empty', 'denied'] as const) {
+      sessionStorage.removeItem('uniover.boot-styles-failures');
+      const run = runBootStyles(kind);
+      expect(run.attributes['data-styles'], kind).toBe('pending');
+      expect(run.sheet.media, kind).toBe('print');
+      expect(run.notice.hidden, kind).toBe(false);
+      expect(run.events, kind).toEqual([]);
+    }
     sessionStorage.removeItem('uniover.boot-styles-failures');
   });
 

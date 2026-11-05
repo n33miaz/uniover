@@ -379,6 +379,7 @@ describe('UpdateSkeleton', () => {
       expect(boot.classList.contains('leaving')).toBe(false);
       expect(link.media).toBe('print');
 
+      Object.defineProperty(link, 'sheet', { value: { cssRules: [{}] }, configurable: true });
       link.dispatchEvent(new Event('load'));
       expect(link.media).toBe('all');
       expect(boot.classList.contains('leaving')).toBe(true);
