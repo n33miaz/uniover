@@ -135,7 +135,7 @@ test('cada endereço mostra um desenho próprio e formas visíveis desde o prime
         // Cartão visível sem nenhum osso por dentro é uma caixa branca, não um esqueleto.
         const emptyCards = [
           ...(visible[0]?.querySelectorAll<HTMLElement>(
-            '.bs-route-content .bs-pane, .bs-route-content .bs-route-sheet .bs-row',
+            '.bs-route-content .bs-pane, .bs-route-content .bs-route-sheet .bs-row, .bs-route-content .bs-route-row',
           ) ?? []),
         ].filter((card) => {
           const box = card.getBoundingClientRect();
@@ -281,6 +281,75 @@ test.describe('abertura da página de verdade', () => {
     await expect(page.locator('app-root [data-screen-ready]').first()).toBeVisible();
     const body = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
     expect(body).toContain('system-ui');
+  });
+
+  test('com a folha carregada antes do script de abertura rodar, ela vale e o esqueleto sai', async ({
+    context,
+    page,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    let sheetLoaded!: () => void;
+    const sheetDone = new Promise<void>((resolve) => (sheetLoaded = resolve));
+    let releaseScript!: () => void;
+    const scriptGate = new Promise<void>((resolve) => (releaseScript = resolve));
+    page.on('requestfinished', (request) => {
+      if (MAIN_STYLES.test(request.url())) sheetLoaded();
+    });
+    await page.route(/\/boot-skeleton\.js$/, async (route) => {
+      await sheetDone;
+      await scriptGate;
+      await route.fallback();
+    });
+
+    await page.goto('/', { waitUntil: 'commit' });
+    await sheetDone;
+    // A folha já chegou (ainda com media="print") e o script que a liga não rodou: o esqueleto cobre sozinho. É a
+    // abertura com o service worker, em que a folha vem do cache antes de o script de abertura executar.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.querySelector<HTMLLinkElement>('link[data-boot-styles]')?.sheet != null,
+        ),
+      )
+      .toBe(true);
+    expect(
+      await page.evaluate(() => document.documentElement.getAttribute('data-styles')),
+    ).toBeNull();
+    releaseScript();
+    await expect(page.locator('html')).toHaveAttribute('data-styles', 'ready');
+    await expect(page.locator('link[data-boot-styles]')).toHaveJSProperty('media', 'all');
+    await expect(page.locator('#boot-skeleton')).toHaveCount(0);
+    await expect(page.locator('app-root [data-screen-ready]').first()).toBeVisible();
+  });
+
+  test('com a folha de estilos fora do ar, o esqueleto fica e oferece tentar de novo em vez de mostrar a tela sem estilo', async ({
+    context,
+    page,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    // A falha chega depois de o script de abertura rodar (rede que cai no meio); se chegasse antes dele, o aviso sairia
+    // pelo prazo de 20 s do próprio script.
+    await page.route(MAIN_STYLES, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.abort();
+    });
+    await page.goto('/', { waitUntil: 'commit' });
+    await expect(page.locator('#boot-timeout')).toBeVisible();
+    await expect(page.locator('#boot-skeleton')).toHaveAttribute('data-boot-timeout', 'true');
+    await page.locator('app-root [data-screen-ready]').first().waitFor({ state: 'attached' });
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-styles'))).toBe(
+      'pending',
+    );
+    expect(await page.locator('#boot-skeleton.leaving').count()).toBe(0);
+    expect(
+      await page.evaluate(
+        () =>
+          document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest('#boot-skeleton') !==
+          null,
+      ),
+    ).toBe(true);
   });
 
   test('com a folha rápida, o esqueleto sai assim que a tela fica pronta e a folha vale desde o início', async ({

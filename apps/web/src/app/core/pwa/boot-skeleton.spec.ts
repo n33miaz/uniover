@@ -81,6 +81,11 @@ function runBootStyles(loaded: boolean) {
   const listeners: Record<string, () => void> = {};
   const attributes: Record<string, string> = {};
   const events: string[] = [];
+  const skeleton = {
+    marks: {} as Record<string, string>,
+    setAttribute: (name: string, value: string) => (skeleton.marks[name] = value),
+  };
+  const notice = { hidden: true };
   const sheet = {
     media: 'print',
     sheet: loaded ? {} : null,
@@ -91,7 +96,8 @@ function runBootStyles(loaded: boolean) {
       setAttribute: (name: string, value: string) => (attributes[name] = value),
       getAttribute: (name: string) => attributes[name] ?? null,
     },
-    getElementById: () => null,
+    getElementById: (id: string) =>
+      id === 'boot-skeleton' ? skeleton : id === 'boot-timeout' ? notice : null,
     addEventListener: () => undefined,
     querySelector: (selector: string) => (selector === 'link[data-boot-styles]' ? sheet : null),
     dispatchEvent: (event: Event) => events.push(event.type),
@@ -102,7 +108,7 @@ function runBootStyles(loaded: boolean) {
     () => 0,
     Event,
   );
-  return { sheet, listeners, attributes, events };
+  return { sheet, listeners, attributes, events, skeleton, notice };
 }
 
 /** A forma de uma árvore: tag e classes (ordenadas), sem texto, comentários nem atributos do Angular. */
@@ -149,20 +155,29 @@ describe('boot skeleton', () => {
     expect(boot!.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('turns the deferred stylesheet on and tells the app when it loads, or fails', () => {
-    for (const outcome of ['load', 'error'] as const) {
-      const run = runBootStyles(false);
-      expect(run.attributes['data-styles']).toBe('pending');
-      expect(run.sheet.media).toBe('print');
-      expect(run.events).toEqual([]);
-      run.listeners[outcome]();
-      expect(run.sheet.media).toBe('all');
-      expect(run.attributes['data-styles']).toBe('ready');
-      expect(run.events).toEqual(['uniover:styles-ready']);
-      // Os dois eventos podem chegar: só o primeiro vale.
-      run.listeners['load']();
-      expect(run.events).toHaveLength(1);
-    }
+  it('turns the deferred stylesheet on and tells the app when it loads', () => {
+    const run = runBootStyles(false);
+    expect(run.attributes['data-styles']).toBe('pending');
+    expect(run.sheet.media).toBe('print');
+    expect(run.events).toEqual([]);
+    run.listeners['load']();
+    expect(run.sheet.media).toBe('all');
+    expect(run.attributes['data-styles']).toBe('ready');
+    expect(run.events).toEqual(['uniover:styles-ready']);
+    // Um segundo aviso não repete o evento.
+    run.listeners['load']();
+    expect(run.events).toHaveLength(1);
+  });
+
+  it('keeps the skeleton and offers a retry at once when the stylesheet fails, instead of showing the page unstyled', () => {
+    const run = runBootStyles(false);
+    expect(run.notice.hidden).toBe(true);
+    run.listeners['error']();
+    expect(run.attributes['data-styles']).toBe('pending');
+    expect(run.sheet.media).toBe('print');
+    expect(run.events).toEqual([]);
+    expect(run.skeleton.marks['data-boot-timeout']).toBe('true');
+    expect(run.notice.hidden).toBe(false);
   });
 
   it('turns the stylesheet on at once when it was already loaded, and leaves no mark without a deferred one', () => {

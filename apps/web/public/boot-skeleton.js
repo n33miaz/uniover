@@ -47,9 +47,18 @@
   else if (p === '/boas-vindas') v = 'auth-welcome';
   else if (p === '/conectar') v = 'devices-connect';
   document.documentElement.setAttribute('data-boot', v);
+  // O esqueleto não sai da tela quando algo trava: sem o app ou sem a folha de estilos, ele fica e oferece "Tentar de Novo".
+  var giveUp = function () {
+    var el = document.getElementById('boot-skeleton');
+    var notice = document.getElementById('boot-timeout');
+    if (!el) return;
+    el.setAttribute('data-boot-timeout', 'true');
+    if (notice) notice.hidden = false;
+  };
   // A folha principal chega com media="print" (scripts/defer-styles.mjs) para não bloquear a primeira pintura do
-  // esqueleto. Ao carregar (ou falhar, para não prender o app) ela é ligada e o app é avisado: até lá o esqueleto estático
-  // continua cobrindo a tela. Sem o link marcado (servidor de desenvolvimento) não há o que esperar.
+  // esqueleto. Ao carregar ela é ligada e o app é avisado: até lá o esqueleto estático continua cobrindo a tela (sem
+  // estilo a página não pode aparecer). Se a folha falhar, o esqueleto fica e o aviso com a nova tentativa aparece na hora.
+  // Sem o link marcado (servidor de desenvolvimento) não há o que esperar.
   var sheet = document.querySelector('link[data-boot-styles]');
   if (sheet) {
     var root = document.documentElement;
@@ -63,16 +72,10 @@
     if (sheet.sheet) settle();
     else {
       sheet.addEventListener('load', settle);
-      sheet.addEventListener('error', settle);
+      sheet.addEventListener('error', giveUp);
     }
   }
-  setTimeout(function () {
-    var el = document.getElementById('boot-skeleton');
-    var notice = document.getElementById('boot-timeout');
-    if (!el) return;
-    el.setAttribute('data-boot-timeout', 'true');
-    if (notice) notice.hidden = false;
-  }, 20000);
+  setTimeout(giveUp, 20000);
   document.addEventListener('click', function (event) {
     if (event.target && event.target.id === 'boot-timeout-retry') location.reload();
   });
