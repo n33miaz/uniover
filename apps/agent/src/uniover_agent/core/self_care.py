@@ -28,6 +28,10 @@ REPAIR_COOLDOWN_SECONDS: Final = 1800.0
 # Teto de tentativas por verificação em 24 h: um reparo que não resolve não vira laço.
 MAX_REPAIRS_PER_DAY: Final = 4
 _DAY_SECONDS: Final = 24 * 3600.0
+# Uma verificação (ou reparo) que não responde nunca prende as outras: passado este prazo é
+# abandonada, e a rodada segue. A verificação mais lenta (consulta ao Agendador do Windows) tem 60
+# s.
+CHECK_TIMEOUT_SECONDS: Final = 180.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +82,7 @@ class SelfCare:
         first_run: float = FIRST_RUN_SECONDS,
         cooldown: float = REPAIR_COOLDOWN_SECONDS,
         on_critical: Callable[[Outcome], Awaitable[None]] | None = None,
+        check_timeout: float = CHECK_TIMEOUT_SECONDS,
     ) -> None:
         self._checks = tuple(checks)
         self._recorder = recorder
@@ -86,6 +91,7 @@ class SelfCare:
         self._first_run = first_run
         self._cooldown = cooldown
         self._on_critical = on_critical
+        self._check_timeout = check_timeout
         self._history: dict[str, _RepairHistory] = {}
         self._was_failing: set[str] = set()
         self.last: list[Outcome] = []
@@ -116,9 +122,21 @@ class SelfCare:
 
     async def _run_check(self, check: Check) -> CheckResult:
         try:
-            return await check.run()
+            async with asyncio.timeout(self._check_timeout):
+                return await check.run()
         except asyncio.CancelledError:
             raise
+        except TimeoutError:
+            _log.warning(
+                "a verificação %s passou de %.0f s e foi abandonada",
+                check.name,
+                self._check_timeout,
+            )
+            return CheckResult(
+                False,
+                f"a verificação passou de {self._check_timeout:.0f} s sem responder",
+                severity="warn",
+            )
         except Exception as exc:
             _log.exception("a verificação %s falhou", check.name, extra={"recorded": True})
             return CheckResult(False, f"a verificação não pôde rodar ({type(exc).__name__})")
@@ -163,9 +181,21 @@ class SelfCare:
         label = check.repair_label or "reparo"
         component = component_safe(check.name)
         try:
-            error = await check.repair()
+            async with asyncio.timeout(self._check_timeout):
+                error = await check.repair()
         except asyncio.CancelledError:
             raise
+        except TimeoutError:
+            _log.warning(
+                "o reparo de %s passou de %.0f s e foi abandonado", check.name, self._check_timeout
+            )
+            self._recorder.record(
+                "repair.failed",
+                "warn",
+                f"{check.name}: {label} passou do prazo",
+                component=component,
+            )
+            return Outcome(check.name, result, repair_error="o reparo passou do prazo")
         except Exception as exc:
             _log.exception("o reparo de %s falhou", check.name, extra={"recorded": True})
             self._recorder.record(

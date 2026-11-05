@@ -151,3 +151,21 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     config = tmp_path / "agent.toml"
     monkeypatch.setenv("UNIOVER_CONFIG_FILE", str(config))
     return config
+
+
+@pytest.fixture(autouse=True)
+def restore_root_logging() -> Iterator[None]:
+    """`configure_logging` troca os destinos do logger raiz, e cada um escreve numa thread de
+    fundo (`OffloadHandler`) no fluxo que o pytest capturava naquele teste. Sem devolver o
+    que havia, o destino sobrevive ao teste e escreve num fluxo já fechado."""
+    import logging  # noqa: PLC0415
+
+    root = logging.getLogger()
+    before = list(root.handlers)
+    level = root.level
+    yield
+    for handler in list(root.handlers):
+        if handler not in before:
+            root.removeHandler(handler)
+            handler.close()
+    root.setLevel(level)
