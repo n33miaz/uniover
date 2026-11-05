@@ -237,6 +237,31 @@ async def test_refused_certificate_only_means_not_paired_after_three_spaced_refu
     assert rig.manager.snapshot().connection == "not_paired"
 
 
+async def test_not_paired_clears_when_pairing_works_again_without_sending_keys() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(6)]
+    for _ in range(2):
+        with pytest.raises(TvSessionError):
+            await rig.manager.wake()
+        rig.clock.advance(30)
+    with pytest.raises(TvSessionError):
+        await rig.manager.wake()
+    assert rig.manager.snapshot().connection == "not_paired"
+    # Reparear: a próxima abertura (só o aquecimento, nenhuma tecla) volta ao normal.
+    rig.clock.advance(30)
+    await rig.manager.wake()
+    assert rig.manager.snapshot().connection == "hot"
+    assert rig.remote.keys == []
+
+
+async def test_missing_pairing_files_report_not_paired_at_once() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvNotPaired("par ausente")]
+    with pytest.raises(TvSessionError):
+        await rig.manager.wake()
+    assert rig.manager.snapshot().connection == "not_paired"
+
+
 async def test_certificate_refusals_close_together_count_only_once() -> None:
     rig = Rig()
     rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(8)]
