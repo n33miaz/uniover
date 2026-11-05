@@ -493,7 +493,8 @@ describe('boot skeleton', () => {
     expect(targets('training-food', '.bs-route-list')).toBe(true);
     expect(targets('training-glossary', '.bs-route-strip')).toBe(true);
     expect(targets('training-assessments', '.bs-route-strip')).toBe(true);
-    expect(targets('training-routines', '.bs-route-strip > :nth-child(3)')).toBe(true);
+    // Rotinas desenha o seletor Catálogo | Rotinas dentro da própria rota, não pela faixa genérica.
+    expect(targets('training-routines', '.bs-route-strip')).toBe(false);
     expect(targets('settings-about', '.bs-route-about')).toBe(true);
     expect(targets('training-assessments', '.bs-route-assess')).toBe(true);
     expect(targets('training-routines', '.bs-route-routines')).toBe(true);
@@ -501,6 +502,20 @@ describe('boot skeleton', () => {
     expect(targets('settings-siri', '.bs-route-panel > :not(.bs-cta)')).toBe(true);
     expect(targets('settings-credits', '.bs-route-sheet')).toBe(true);
     expect(targets('settings-credits', '.bs-route-scrim')).toBe(true);
+  });
+
+  it('draws Routines with the real selector, next-routine card, "Ver Mais" row and two buttons', () => {
+    const doc = new DOMParser().parseFromString(INDEX, 'text/html');
+    for (const route of Array.from(doc.querySelectorAll('.bs-route-routines'))) {
+      expect(
+        route.querySelectorAll(':scope > .bs-segments.bs-exercises-switch .bs-segment'),
+      ).toHaveLength(2);
+      expect(route.querySelectorAll(':scope > .bs-pane > .bs-line')).toHaveLength(1);
+      expect(route.querySelectorAll(':scope > .bs-pane .bs-pane-row .bs-icon')).toHaveLength(1);
+      expect(route.querySelector(':scope > .bs-routines-more .bone')).not.toBeNull();
+      expect(route.querySelectorAll(':scope > .bs-pane-actions .bs-cta')).toHaveLength(2);
+      expect(route.querySelector(':scope > .bs-route-link .bone')).not.toBeNull();
+    }
   });
 
   it('puts bones inside every card of About, Credits, Assessments and Routines, never an empty white box', () => {

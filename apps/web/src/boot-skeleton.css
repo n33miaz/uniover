@@ -372,8 +372,6 @@ html[data-boot='settings-appearance'] .bs-detail-cards,
     .bs-root[data-boot-variant='training-glossary'],
     html[data-boot='training-library'] .bs-boot,
     .bs-root[data-boot-variant='training-library'],
-    html[data-boot='training-routines'] .bs-boot,
-    .bs-root[data-boot-variant='training-routines'],
     html[data-boot='training-assessments'] .bs-boot,
     .bs-root[data-boot-variant='training-assessments'],
     html[data-boot='settings-tv-people'] .bs-boot,
@@ -693,16 +691,7 @@ html[data-boot='settings-credits'] .bs-route-content,
   display: none;
 }
 
-/* Rotinas conserva o seletor de duas opções e o cartão da próxima rotina, sem parecer uma grade de atalhos. */
-:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
-  .bs-route-strip {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
-  .bs-route-strip
-  > :nth-child(3) {
-  display: none;
-}
+/* Rotinas tem o seletor Catálogo | Rotinas (própria faixa, dentro da rota), o cartão da próxima rotina, "Ver mais" e os dois botões. */
 :is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
   .bs-route-grid,
 :is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
@@ -850,19 +839,46 @@ html[data-boot='settings-credits'] .bs-route-content,
   height: 24px;
   margin-bottom: var(--space-1);
 }
-.bs-route-routines .bs-pane > .bs-input {
-  height: 68px;
+/* As medidas são as da tela real em 390 px: seletor 52, cartão com rótulo, linha de 64 (o resumo quebra em duas linhas) e botão de 44, "Ver mais" 44. */
+.bs-route-routines .bs-segments {
+  padding: 3px;
 }
-:is(html[data-boot='training-routines'] .bs-boot, .bs-root[data-boot-variant='training-routines'])
-  .bs-segment {
-  height: 46px;
+.bs-route-routines .bs-segment {
+  height: 44px;
+}
+.bs-route-routines .bs-pane {
+  gap: var(--space-3);
+}
+.bs-route-routines .bs-pane > .bs-line {
+  height: 14px;
+}
+.bs-route-routines .bs-pane-row {
+  min-height: 64px;
+}
+.bs-route-routines .bs-icon {
+  width: 40px;
+  height: 40px;
+}
+.bs-route-routines .bs-pane > .bs-input {
+  height: 44px;
 }
 .bs-routines-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   height: 44px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
 }
 .bs-route-link {
   display: flex;
+  align-items: center;
   justify-content: center;
+}
+.bs-route-routines .bs-route-link {
+  min-height: 44px;
 }
 .bs-sheet-title {
   align-self: center;

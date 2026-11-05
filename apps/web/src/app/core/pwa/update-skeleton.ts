@@ -364,7 +364,12 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                   </div>
                 </div>
                 <div class="bs-route-routines">
+                  <div class="bs-segments bs-exercises-switch">
+                    <span class="bone ui-skeleton bs-segment"></span
+                    ><span class="bone ui-skeleton bs-segment"></span>
+                  </div>
                   <div class="bs-pane">
+                    <span class="bone ui-skeleton bs-line bs-w20"></span>
                     <div class="bs-pane-row">
                       <span class="bone ui-skeleton bs-icon"></span
                       ><span class="bs-lines"
@@ -374,7 +379,9 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                     </div>
                     <span class="bone ui-skeleton bs-input"></span>
                   </div>
-                  <span class="bone ui-skeleton bs-input bs-routines-more"></span>
+                  <div class="bs-routines-more">
+                    <span class="bone ui-skeleton bs-line bs-w40"></span>
+                  </div>
                   <div class="bs-pane-actions">
                     <span class="bone ui-skeleton bs-cta"></span
                     ><span class="bone ui-skeleton bs-cta"></span>
@@ -636,7 +643,12 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                     </div>
                   </div>
                   <div class="bs-route-routines">
+                    <div class="bs-segments bs-exercises-switch">
+                      <span class="bone ui-skeleton bs-segment"></span
+                      ><span class="bone ui-skeleton bs-segment"></span>
+                    </div>
                     <div class="bs-pane">
+                      <span class="bone ui-skeleton bs-line bs-w20"></span>
                       <div class="bs-pane-row">
                         <span class="bone ui-skeleton bs-icon"></span
                         ><span class="bs-lines"
@@ -646,7 +658,9 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                       </div>
                       <span class="bone ui-skeleton bs-input"></span>
                     </div>
-                    <span class="bone ui-skeleton bs-input bs-routines-more"></span>
+                    <div class="bs-routines-more">
+                      <span class="bone ui-skeleton bs-line bs-w40"></span>
+                    </div>
                     <div class="bs-pane-actions">
                       <span class="bone ui-skeleton bs-cta"></span
                       ><span class="bone ui-skeleton bs-cta"></span>
