@@ -272,7 +272,7 @@ describe('TvStore', () => {
         attempts: 1,
         at: new Date(2026, 9, 19, 14, 2).toISOString(),
       });
-      expect(store.watchdogNote()).toBe('Religando o controle da TV (cerca de 1 min)');
+      expect(store.watchdogNote()).toBe('Religando o controle da TV (pode levar alguns minutos)');
       emit('tv.watchdog', {
         kind: 'repaired',
         severity: 'info',
@@ -288,7 +288,10 @@ describe('TvStore', () => {
         attempts: 1,
         at: new Date(2026, 9, 19, 14, 4).toISOString(),
       });
-      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      // O vigia do agente tem 4 min para religar: o aviso dura mais que isso e some depois.
+      await vi.advanceTimersByTimeAsync(4 * 60_000);
+      expect(store.watchdogNote()).toBe('Religando o controle da TV (pode levar alguns minutos)');
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(store.watchdogNote()).toBeNull();
     });
   });
