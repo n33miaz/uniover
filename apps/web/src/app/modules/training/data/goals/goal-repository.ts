@@ -8,6 +8,7 @@ import {
   goalKey,
   validateGoal,
 } from '../../domain/progress/goal-model';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { TRAINING_DB } from '../training-db';
 import { type LocalGoal, resolveGoal, toGoalBody } from './goal';
@@ -103,9 +104,7 @@ export class GoalRepository {
   async applyRemote(remote: readonly LocalGoal[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.goals, async () => {
-      const found = await this.db.goals.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalGoal>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.goals, remote);
       const writes = mergeById(local, remote, resolveGoal);
       if (writes.length > 0) await this.db.goals.bulkPut(writes);
     });

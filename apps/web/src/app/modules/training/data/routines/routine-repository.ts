@@ -15,6 +15,7 @@ import {
   toggleSupersetWithNext,
 } from '../../domain/routines/supersets';
 import { validateRoutine } from '../../domain/routines/validate-routine';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { withTabLock } from '../tab-lock';
 import { TRAINING_DB } from '../training-db';
@@ -171,9 +172,7 @@ export class RoutineRepository {
   async applyRemote(remote: readonly LocalRoutine[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.routines, async () => {
-      const found = await this.db.routines.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalRoutine>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.routines, remote);
       const writes = mergeById(local, remote, resolveRoutine);
       if (writes.length > 0) await this.db.routines.bulkPut(writes);
     });
@@ -449,9 +448,7 @@ export class RoutineRepository {
   async applyRemoteProgram(remote: readonly LocalProgram[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.program, async () => {
-      const found = await this.db.program.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalProgram>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.program, remote);
       const writes = mergeById(local, remote, resolveProgram);
       if (writes.length > 0) await this.db.program.bulkPut(writes);
     });

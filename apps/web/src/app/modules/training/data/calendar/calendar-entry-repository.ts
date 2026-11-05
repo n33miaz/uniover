@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { OfflineQueue } from '../../../../core/offline-queue/offline-queue';
 import { QueueStorageFullError } from '../../../../core/offline-queue/outbox-store';
 import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { TRAINING_DB } from '../training-db';
 import { calendarEntryPath } from './calendar-api';
@@ -108,10 +109,7 @@ export class CalendarEntryRepository {
   async applyRemote(entries: readonly LocalCalendarEntry[]): Promise<void> {
     if (entries.length === 0) return;
     await this.db.transaction('rw', this.db.calendarEntries, async () => {
-      const local = new Map<string, LocalCalendarEntry>();
-      for (const entry of await this.db.calendarEntries.bulkGet(entries.map((entry) => entry.id))) {
-        if (entry) local.set(entry.id, entry);
-      }
+      const local = await existingRowsById(this.db.calendarEntries, entries);
       const writes = mergeById(local, entries, resolveCalendarEntry);
       if (writes.length) await this.db.calendarEntries.bulkPut(writes);
     });

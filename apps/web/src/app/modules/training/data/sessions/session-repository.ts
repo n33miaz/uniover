@@ -13,6 +13,7 @@ import {
   validateFinish,
   validateSet,
 } from '../../domain/session/session-model';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { withTabLock } from '../tab-lock';
 import { TRAINING_DB } from '../training-db';
@@ -513,9 +514,7 @@ export class SessionRepository {
   async applyRemoteSessions(remote: readonly LocalSession[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.sessions, this.db.sets, async () => {
-      const found = await this.db.sessions.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalSession>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.sessions, remote);
       const writes = mergeById(local, remote, resolveSession);
       if (writes.length === 0) return;
       await this.db.sessions.bulkPut(writes);
@@ -542,9 +541,7 @@ export class SessionRepository {
   async applyRemoteSets(remote: readonly LocalSet[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.sets, async () => {
-      const found = await this.db.sets.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalSet>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.sets, remote);
       const writes = mergeById(local, remote, resolveSet);
       if (writes.length > 0) await this.db.sets.bulkPut(writes);
     });

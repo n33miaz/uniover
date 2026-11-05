@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { musclesOfGroup } from '../../domain/taxonomy';
 import { matchesTokens, searchTokens } from '../../domain/text-search';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { TRAINING_DB } from '../training-db';
 import { LocalExercise, resolveExercise } from './exercise';
@@ -71,9 +72,7 @@ export class CatalogRepository {
   async applyRemote(remote: readonly LocalExercise[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.exercises, async () => {
-      const found = await this.db.exercises.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalExercise>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.exercises, remote);
       const writes = mergeById(local, remote, resolveExercise);
       if (writes.length > 0) await this.db.exercises.bulkPut(writes);
     });

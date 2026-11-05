@@ -13,6 +13,7 @@ import {
 import { addDaysToKey } from '../../domain/body/date-key';
 import type { WeightSample } from '../../domain/body/weight-trend';
 import { dateKey, deviceTimeZone } from '../../domain/progress/calendar';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { TRAINING_DB } from '../training-db';
 import { type LocalBodyEntry, asTombstone, resolveBodyEntry, toBodyEntryBody } from './body-entry';
@@ -276,9 +277,7 @@ export class BodyRepository {
   async applyRemote(remote: readonly LocalBodyEntry[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.bodyEntries, async () => {
-      const found = await this.db.bodyEntries.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalBodyEntry>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.bodyEntries, remote);
       const writes = mergeById(local, remote, resolveBodyEntry);
       if (writes.length > 0) await this.db.bodyEntries.bulkPut(writes);
     });

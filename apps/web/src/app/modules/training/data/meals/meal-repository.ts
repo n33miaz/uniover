@@ -4,6 +4,7 @@ import { QueueStorageFullError } from '../../../../core/offline-queue/outbox-sto
 import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
 import { uuidV7 } from '../../../../core/offline-queue/uuid-v7';
 import { dayKey, scale, type NutritionValues } from '../../domain/nutrition/nutrition';
+import { existingRowsById } from '../sync/existing-rows';
 import { mergeById } from '../sync/merge';
 import { TRAINING_DB } from '../training-db';
 import { type LocalFood } from '../foods/food';
@@ -182,9 +183,7 @@ export class MealRepository {
   async applyRemote(remote: readonly LocalMealEntry[]): Promise<void> {
     if (remote.length === 0) return;
     await this.db.transaction('rw', this.db.meals, async () => {
-      const found = await this.db.meals.bulkGet(remote.map((row) => row.id));
-      const local = new Map<string, LocalMealEntry>();
-      for (const row of found) if (row) local.set(row.id, row);
+      const local = await existingRowsById(this.db.meals, remote);
       const writes = mergeById(local, remote, resolveMeal);
       if (writes.length > 0) await this.db.meals.bulkPut(writes);
     });
