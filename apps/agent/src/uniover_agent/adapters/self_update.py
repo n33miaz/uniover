@@ -78,6 +78,13 @@ _TIMEOUT = httpx.Timeout(connect=15.0, read=60.0, write=15.0, pool=15.0)
 # O repositório inteiro compactado tem poucos MB; este teto só barra resposta absurda.
 _MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024
 _MAX_EXTRACTED_BYTES = 500 * 1024 * 1024
+# O tempo de cada leitura é limitado por `_TIMEOUT`, mas um servidor que pinga um byte a cada 59 s
+# nunca estoura nenhuma: o download inteiro tem um prazo só.
+DOWNLOAD_DEADLINE_SECONDS = 300.0
+# Abaixo disto de espaço livre a atualização nem começa: o pacote, a pasta nova e o ambiente
+# descartável dela somam centenas de MB, e uma atualização que enche o disco no meio piora o que
+# já estava ruim.
+MIN_FREE_BYTES = 600 * 1024 * 1024
 
 
 class SelfUpdateError(Exception):
@@ -160,10 +167,25 @@ def latest_commit(channel: str = DEFAULT_CHANNEL) -> str:
     return sha
 
 
-def download_archive(sha: str, destination: Path) -> None:
-    """Baixa o zip do commit para `destination` (arquivo)."""
+def disk_free_bytes(folder: Path) -> int | None:
+    """Espaço livre no disco de `folder`; `None` se não deu para saber (não bloqueia)."""
+    try:
+        return shutil.disk_usage(folder).free
+    except OSError:
+        return None
+
+
+def download_archive(
+    sha: str,
+    destination: Path,
+    *,
+    deadline: float = DOWNLOAD_DEADLINE_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> None:
+    """Baixa o zip do commit para `destination` (arquivo), no máximo em `deadline` segundos."""
     total = 0
     url = archive_url(sha)
+    give_up_at = monotonic() + deadline
     try:
         with (
             httpx.stream(
@@ -180,6 +202,8 @@ def download_archive(sha: str, destination: Path) -> None:
                 total += len(chunk)
                 if total > _MAX_DOWNLOAD_BYTES:
                     raise SelfUpdateError("o pacote baixado é grande demais")
+                if monotonic() > give_up_at:
+                    raise SelfUpdateError(f"o download passou de {deadline:.0f} s")
                 handle.write(chunk)
     except httpx.HTTPError as exc:
         raise SelfUpdateError(f"não consegui baixar o pacote ({type(exc).__name__})") from None
@@ -533,7 +557,20 @@ class UpdateResult:
     rejected: bool = field(default=False, compare=False)
 
 
-def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a atualização testável sem rede
+def _low_disk_result(free: int | None, minimum: int, sha: str) -> UpdateResult | None:
+    """Sem espaço para baixar e montar a versão nova: adia (volta sozinha na checagem seguinte)."""
+    if free is None or free >= minimum:
+        return None
+    _log.warning("auto-atualização adiada: pouco espaço no disco (%d MB livres)", free >> 20)
+    return UpdateResult(
+        False,
+        f"pouco espaço no disco ({free >> 20} MB livres); a atualização espera ter espaço",
+        "failed",
+        latest=sha,
+    )
+
+
+def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas deixam a atualização testável sem rede
     source: Path,
     *,
     sync: bool = True,
@@ -544,6 +581,8 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
     run_check: Callable[[Path], None] = run_uv_check,
     verify: Callable[[Path, str], None] = verify_archive,
     verify_files: Callable[[Path, str], bool] = verify_tree,
+    free_bytes: Callable[[Path], int | None] = disk_free_bytes,
+    min_free_bytes: int = MIN_FREE_BYTES,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -574,6 +613,9 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
                 latest=sha,
                 blocked=sha,
             )
+        low = _low_disk_result(free_bytes(source.parent), min_free_bytes, sha)
+        if low is not None:
+            return low
         workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=source.parent))
         try:
             archive = workspace / "main.zip"

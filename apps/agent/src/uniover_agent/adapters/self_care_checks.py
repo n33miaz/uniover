@@ -38,9 +38,10 @@ _log = logging.getLogger(__name__)
 
 LOW_DISK_BYTES: Final = 200 * 1024 * 1024
 TIGHT_DISK_BYTES: Final = 1024 * 1024 * 1024
-# O supervisor pode ficar ocupado numa atualização por vários minutos sem dar sinal (o `uv sync` tem
-# 10 min).
-SUPERVISOR_SILENCE_SECONDS: Final = 15 * 60.0
+# O supervisor dá sinal a cada poucos segundos, mesmo esperando um filho (toda espera dele tem
+# prazo), e o lançador reinicia o que passa de 15 min mudo. Este é o reforço, para o lançador
+# morto ou antigo: passados 20 min o supervisor é dado por travado aqui também.
+SUPERVISOR_SILENCE_SECONDS: Final = 20 * 60.0
 # Quanto tempo desconectado antes de olhar a API, e entre dois reinícios pedidos pelo auto-reparo.
 CONNECTION_GRACE_SECONDS: Final = 10 * 60.0
 RESTART_SPACING_SECONDS: Final = 3 * 3600.0
@@ -249,15 +250,59 @@ def startup_task_check(
 # -------------------------------------------------------------------------------------
 
 
+_KILL_SUPERVISOR_SCRIPT = (
+    "$ErrorActionPreference='SilentlyContinue';"
+    "Get-CimInstance Win32_Process -OperationTimeoutSec 30|"
+    "Where-Object{$_.ProcessId -ne $PID -and $_.Name -eq 'powershell.exe' -and $_.CommandLine -and "
+    "$_.CommandLine.IndexOf($env:UNIOVER_RUNNER,[StringComparison]::OrdinalIgnoreCase) -ge 0}|"
+    "ForEach-Object{Stop-Process -Id $_.ProcessId -Force;'killed'}"
+)
+
+
+def kill_wedged_supervisor(runner: Path) -> bool:
+    """Encerra o PowerShell do supervisor (só ele, pelo caminho completo do `run-agent.ps1` desta
+    instalação); o lançador, que o vigia, sobe outro. `True` se encerrou algum.
+
+    Ele estar vivo e mudo é o caso em que `Start-ScheduledTask` não adianta: o lançador está vivo e
+    o mutex dele recusa um segundo."""
+    if not runner.is_file():
+        return False
+    try:
+        done = run_hidden(
+            [
+                _powershell(),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                _KILL_SUPERVISOR_SCRIPT,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60.0,
+            env={**os.environ, "UNIOVER_RUNNER": str(runner)},
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return False
+    return "killed" in done.stdout
+
+
 def supervisor_check(
     runtime: Path,
     *,
     name: str = TASK_NAME,
     now: Callable[[], float] = time.time,
     start_task: Callable[[str], bool] | None = None,
+    kill_supervisor: Callable[[], bool] | None = None,
 ) -> Check:
     """O supervisor (script do Windows) deu sinal de vida há pouco? Sem ele, ninguém reinicia."""
     alive = runtime / "supervisor-alive"
+    runner = runtime.parent / "app" / "tools" / "run-agent.ps1"
 
     def launch(task: str) -> bool:
         try:
@@ -267,6 +312,7 @@ def supervisor_check(
         return done.returncode == 0
 
     do_start = start_task or launch
+    do_kill = kill_supervisor or (lambda: kill_wedged_supervisor(runner))
 
     async def run() -> CheckResult:
         try:
@@ -278,6 +324,10 @@ def supervisor_check(
         return CheckResult(True, "supervisor ativo")
 
     async def repair() -> str | None:
+        # Primeiro tira de cena um supervisor vivo e mudo (travado): enquanto ele existir,
+        # o lançador fica esperando por ele e nenhum reinício acontece. Sem ele, o
+        # lançador (ou a tarefa) sobe outro.
+        await _in_thread(do_kill)
         started = await _in_thread(lambda: do_start(name))
         return None if started else "não consegui pedir ao Agendador que inicie o lançador"
 

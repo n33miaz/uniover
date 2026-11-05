@@ -123,6 +123,13 @@ configuração, certificado nem registros.
   `runtime\stop-reason.txt`), com o PC reiniciado ou sem se despedir (queda).
 - **Pulso**: o agente regrava `runtime\last-alive` a cada minuto de dentro do laço de eventos. O supervisor reinicia um
   agente vivo que ficou mudo por cerca de 5 minutos (e conta como queda para a versão em prova).
+- **Nada espera sem prazo** (o travamento de 05/11/2026: disco cheio, um `uv` preso e ninguém reiniciando): o supervisor
+  roda cada filho (`self-update`, `uv sync`) com prazo e dá sinal de vida (`runtime\supervisor-alive`) enquanto espera; o
+  `self-update` nunca deixa `update-status.json` em "atualizando" e nem começa com menos de 600 MB livres; o ambiente
+  Python nunca é apagado com o disco quase cheio. O lançador vigia o supervisor e reinicia o que passa de 15 min mudo
+  (e o auto-diagnóstico do agente faz o mesmo, em 20 min). O agente escreve o registro numa thread à parte (console ou
+  disco parado não trava o laço de eventos), dá prazo a cada passo da conexão e a cada verificação do auto-diagnóstico, e,
+  se o laço de eventos parar, deixa a pilha de todas as threads em `logs\crash.log` (`adapters/loop_watchdog.py`).
 - **Auto-diagnóstico** a cada 10 minutos (`core/self_care.py`, `adapters/self_care_checks.py`): pasta de instalação,
   tarefa de início automático, supervisor, conexão (a API responde por HTTP; nunca abre um segundo canal), TV (só a
   porta, nunca tecla) e tarefas de fundo. Reparo seguro por verificação, com 30 min de espera e no máximo 4 por dia:
@@ -332,8 +339,9 @@ ou Cofre de Credenciais: o ambiente do processo filho é redirecionado e o cofre
 (`origin/main`, ou `-BaseSha`) com as funções do instalador dela, sobe o supervisor com agente e ícone de verdade e
 força a atualização para a candidata (a árvore local, empacotada como o zip do GitHub; ou `-CandidateRef`). Confere:
 a troca (`app\.version`), o reinício do supervisor, agente e ícone da versão nova de pé por 45 s, nenhum processo
-da versão velha, nenhuma janela visível, um segundo ciclo candidata -> candidata+1 e a recusa de uma candidata que
-não importa (a versão em uso segue rodando). Termina com `APROVADO` ou `REPROVADO` (e o motivo), apaga a pasta
+da versão velha, nenhuma janela visível, um segundo ciclo candidata -> candidata+1, a recusa de uma candidata que
+não importa (a versão em uso segue rodando) e uma atualização presa na rede, que o supervisor
+interrompe no prazo. Termina com `APROVADO` ou `REPROVADO` (e o motivo), apaga a pasta
 temporária e só encerra os processos que ele mesmo criou; o código de saída é 0 só se aprovado. Leva de 4 a 8 minutos.
 
 O código publicado na `main` ainda não conhece o modo ensaio do `self_update.py` (`UNIOVER_UPDATE_DRILL=1` e
