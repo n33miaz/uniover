@@ -389,8 +389,12 @@ class AndroidTvRemoteV2:
             raise ValueError("texto vazio não pode ser enviado à TV")
         client = self._require()
         protocol: Any = getattr(client, "_remote_message_protocol", None)
-        if protocol is None:
-            raise RuntimeError("a biblioteca do controle remoto não expõe o protocolo IME")
+        # Sem protocolo (a biblioteca já desligou) ou com o transporte fechando, o `_send_message`
+        # da biblioteca descartaria o lote em silêncio: aqui vira queda de conexão, e a sessão
+        # reabre e tenta de novo como nos outros comandos.
+        transport = getattr(protocol, "transport", None)
+        if protocol is None or (transport is not None and transport.is_closing()):
+            raise TvUnreachable("a conexão com a TV não está aberta")
         library_ime_counter = protocol.ime_counter
         library_field_counter = protocol.ime_field_counter
         ime_counter = self._ime_counter if self._ime_counter is not None else library_ime_counter

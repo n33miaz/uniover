@@ -709,6 +709,33 @@ async def test_library_closed_error_during_send_means_unreachable(tmp_path: Path
     await adapter.disconnect()
 
 
+async def test_text_without_a_library_protocol_means_unreachable(tmp_path: Path) -> None:
+    library = FakeLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    await adapter.connect()
+    library._remote_message_protocol = None
+    try:
+        with pytest.raises(TvUnreachable):
+            await adapter.send_text("oi")
+    finally:
+        await adapter.disconnect()
+
+
+async def test_text_on_a_closing_transport_means_unreachable_instead_of_being_dropped(
+    tmp_path: Path,
+) -> None:
+    library = FakeLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    await adapter.connect()
+    library._remote_message_protocol.transport = types.SimpleNamespace(is_closing=lambda: True)
+    try:
+        with pytest.raises(TvUnreachable):
+            await adapter.send_text("oi")
+    finally:
+        await adapter.disconnect()
+    assert library._remote_message_protocol.messages == []
+
+
 async def test_a_broken_listener_does_not_silence_the_others(tmp_path: Path) -> None:
     library = FakeLibrary()
     adapter = duplo_adapter(tmp_path, library)
