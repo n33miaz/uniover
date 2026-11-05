@@ -371,7 +371,9 @@ describe('retentionText', () => {
 
   it('says what a trail keeps without a time limit, so the number never promises less than what happens', () => {
     const all = sources({ identity: 180, devices: 180, tv: 30 }, { tv: ['tv.remove'] });
-    expect(retentionText(all, [])).toBe('Guardamos por 180 dias (TV: 30 dias; TV removida: sem prazo)');
+    expect(retentionText(all, [])).toBe(
+      'Guardamos por 180 dias (TV: 30 dias; TV removida: sem prazo)',
+    );
     expect(retentionText(all, ['tv'])).toBe('Guardamos por 30 dias (TV removida: sem prazo)');
     expect(retentionText(all, ['identity', 'devices'])).toBe('Guardamos por 180 dias');
   });
