@@ -372,6 +372,17 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
   'bicicleta-ergometrica': openArt('Cycling', 'cycling'),
   'eliptico-transport': openArt('Elliptical', 'elliptical'),
   'remo-ergometrico': openArt('Rowing', 'rowing'),
+  // Mais figuras do mesmo acervo, pelo mesmo critério (mesmo movimento e mesmo equipamento).
+  'elevacao-de-joelhos-nas-paralelas': openArt(
+    "Captain's Chair Knee Raise",
+    'captain-s-chair-knee-raise',
+  ),
+  'encolhimento-de-pernas-no-banco': openArt('Seated Knee Tuck', 'seated-knee-tuck'),
+  'desenvolvimento-sentado-com-halteres': openArt(
+    'Dumbbell Shoulder Press',
+    'dumbbell-shoulder-press',
+  ),
+  'remada-na-maquina-articulada': openArt('Machine Row', 'machine-row'),
 };
 
 /** A ilustração do exercício, ou `undefined` quando não há uma segura. */
