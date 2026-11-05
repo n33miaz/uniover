@@ -14,7 +14,7 @@ from uniover_agent.adapters.diagnostics_file import FileDiagnosticStore
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.startup_trace import (
-    CLAIM_STALE_SECONDS,
+    CLAIM_UNREADABLE_SECONDS,
     KIND,
     LOG_FILE,
     REPEAT_SECONDS,
@@ -81,7 +81,7 @@ def test_the_log_is_rotated_when_it_grows_too_much(tmp_path: Path) -> None:
 
 
 def test_a_broken_folder_never_raises(tmp_path: Path) -> None:
-    blocker = tmp_path / "logs"
+    blocker = tmp_path / "runtime"
     blocker.write_text("é um arquivo, não uma pasta", encoding="utf-8")
 
     assert record_startup_failure("cofre", "x", base=tmp_path) is False
@@ -141,7 +141,7 @@ def test_a_fresh_claim_blocks_and_a_stale_one_is_taken_over(tmp_path: Path) -> N
     assert queue(tmp_path) == []
     assert claim.exists()
 
-    stale = 2000.0 + CLAIM_STALE_SECONDS + 1
+    stale = 2000.0 + CLAIM_UNREADABLE_SECONDS + 1
     assert record_startup_failure("cofre", "x", base=tmp_path, clock=lambda: stale) is True
     assert not claim.exists()
 
@@ -205,7 +205,10 @@ def test_main_records_an_unexpected_exception_and_lets_it_rise(
 
     with pytest.raises(PermissionError):
         main_module.main(["run"])
-    assert seen == [("excecao", "PermissionError: negado")]
+    [(reason, detail)] = seen
+    assert reason == "excecao"
+    assert detail.startswith("PermissionError em test_startup_trace.py:")
+    assert "negado" not in detail
 
 
 def test_other_commands_do_not_write_startup_failures(monkeypatch: pytest.MonkeyPatch) -> None:

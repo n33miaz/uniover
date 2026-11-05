@@ -37,6 +37,7 @@ from uniover_agent.care_setup import (
     build_diagnostics,
     roll_back_if_in_trial,
 )
+from uniover_agent.composition.diagnostics_delivery import DiagnosticsDelivery
 from uniover_agent.composition.pairing import StoreFactory
 from uniover_agent.composition.pc import PcSetup, build_pc
 from uniover_agent.composition.system import (
@@ -375,6 +376,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         clock,
         enabled=lambda: features.supports(DIAGNOSTICS_CAPABILITY),
     )
+    # A falha de partida na fila sai no primeiro `hello`, com ou sem auto-verificação.
+    delivery = DiagnosticsDelivery(kit.store, features, shipper, self_care=settings.self_care)
+    await delivery.prepare()
 
     def on_disconnected() -> None:
         tray.disconnected()
@@ -387,8 +391,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         watch.connected_now()
         for step in after_hello:
             await step()
-        if settings.self_care:
-            await shipper.flush()
+        await delivery.after_hello()
 
     update_source = FileUpdateStatus(default_status_path(), agent_source_dir())
     supervisor = ConnectionSupervisor(
@@ -402,11 +405,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             "transport.keepalive.v1",
             LOGS_CAPABILITY,
             MAINTENANCE_CAPABILITY,
-            *(
-                (DIAGNOSTICS_CAPABILITY,)
-                if settings.self_care and features.supports(DIAGNOSTICS_CAPABILITY)
-                else ()
-            ),
+            *delivery.capabilities(),
             *(
                 tuple(
                     capability
