@@ -5,9 +5,11 @@ que só uma TV real responde (TGuard, Netflix, tempo de religação) está nas m
 """
 
 import asyncio
+import logging
 import socket
 import types
 import typing
+import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -155,7 +157,7 @@ async def test_keys_and_links_reach_the_tv_as_the_right_android_codes(tmp_path: 
     assert server.links == ["https://www.youtube.com/watch?v=abc"]
 
 
-async def test_text_reaches_the_tv_as_the_whole_field_value(tmp_path: Path) -> None:
+async def test_text_reaches_the_tv_as_the_inserted_chunks(tmp_path: Path) -> None:
     async with FakeTvServer(tmp_path) as server:
         adapter = make_adapter(tmp_path, server.port)
         await adapter.connect()
@@ -165,8 +167,211 @@ async def test_text_reaches_the_tv_as_the_whole_field_value(tmp_path: Path) -> N
             await eventually(lambda: len(server.texts) == 2)
         finally:
             await adapter.disconnect()
-    # Cada envio carrega o campo inteiro: o segundo substitui o primeiro, não se acrescenta a ele.
+    # Cada envio carrega só o trecho que o reconciliador pediu para inserir.
     assert server.texts == ["olá", "olá mundo"]
+
+
+@pytest.mark.parametrize(
+    ("cursor_mode", "expected_cursor"),
+    [("library", 7), ("chunk_end", 8), ("field_end", 13)],
+)
+async def test_ime_batches_use_the_echo_counters_and_the_configured_cursor(
+    tmp_path: Path, cursor_mode: str, expected_cursor: int
+) -> None:
+    fields: list[TextFieldStatus] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port, text_cursor=cursor_mode)
+        adapter.on_text_field(fields.append)
+        await adapter.connect()
+        try:
+            server.push_text_field("abcde", counter=17, start=5, end=5, app_counter=29)
+            await eventually(lambda: bool(fields))
+            protocol = adapter._client._remote_message_protocol
+            assert (protocol.ime_counter, protocol.ime_field_counter) == (29, 17)
+            await adapter.send_text("café 123")
+            await adapter.send_text("ação")
+            await eventually(lambda: len(server.ime_batches) == 2)
+        finally:
+            await adapter.disconnect()
+    first, second = [message.remote_ime_batch_edit for message in server.ime_batches]
+    assert (first.ime_counter, first.field_counter) == (29, 17)
+    assert first.edit_info[0].insert == 1
+    assert (
+        first.edit_info[0].text_field_status.value,
+        first.edit_info[0].text_field_status.start,
+        first.edit_info[0].text_field_status.end,
+    ) == ("café 123", expected_cursor, expected_cursor)
+    assert second.edit_info[0].text_field_status.value == "ação"
+    assert first.edit_info[0].text_field_status.value.encode("utf-8") == b"caf\xc3\xa9 123"
+    assert second.edit_info[0].text_field_status.value.encode("utf-8") == b"a\xc3\xa7\xc3\xa3o"
+    assert all(
+        unicodedata.is_normalized("NFC", edit.text_field_status.value)
+        for batch in (first, second)
+        for edit in batch.edit_info
+    )
+
+
+async def test_ime_batch_without_an_echo_uses_the_library_counters_and_hides_text_in_the_log(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            protocol = adapter._client._remote_message_protocol
+            protocol.ime_counter = 3
+            protocol.ime_field_counter = 5
+            with caplog.at_level("INFO"):
+                await adapter.send_text("segredo de teste")
+            await eventually(lambda: len(server.ime_batches) == 1)
+        finally:
+            await adapter.disconnect()
+    batch = server.ime_batches[0].remote_ime_batch_edit
+    assert (batch.ime_counter, batch.field_counter) == (3, 5)
+    assert "cego=sim" in caplog.text
+    assert "segredo de teste" not in caplog.text
+
+
+async def test_ime_batch_disables_the_library_debug_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent_with_debug: list[bool] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            protocol = adapter._client._remote_message_protocol
+            original = protocol._send_message
+
+            def record(message: RemoteMessage, should_debug_log: bool = True) -> None:
+                sent_with_debug.append(should_debug_log)
+                original(message, should_debug_log)
+
+            monkeypatch.setattr(protocol, "_send_message", record)
+            await adapter.send_text("texto privado")
+            await eventually(lambda: len(server.ime_batches) == 1)
+        finally:
+            await adapter.disconnect()
+    assert sent_with_debug == [False]
+
+
+async def test_ime_batch_refreshes_the_library_idle_timer(tmp_path: Path) -> None:
+    library = FakeLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    await adapter.connect()
+    try:
+        await adapter.send_text("teste")
+    finally:
+        await adapter.disconnect()
+    assert library._remote_message_protocol.idle_resets == 1
+
+
+async def test_reconnecting_clears_protocol_counters_before_the_first_blind_batch(
+    tmp_path: Path,
+) -> None:
+    library = FakeLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    await adapter.connect()
+    protocol = library._remote_message_protocol
+    protocol.ime_counter = 17
+    protocol.ime_field_counter = 23
+    await adapter.disconnect()
+    await adapter.connect()
+    try:
+        await adapter.send_text("novo")
+    finally:
+        await adapter.disconnect()
+    batch = protocol.messages[-1].remote_ime_batch_edit
+    assert (batch.ime_counter, batch.field_counter) == (0, 0)
+
+
+async def test_a_new_echo_between_batches_supplies_the_second_batches_counters(
+    tmp_path: Path,
+) -> None:
+    fields: list[TextFieldStatus] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        adapter.on_text_field(fields.append)
+        await adapter.connect()
+        try:
+            server.push_text_field("a", counter=2, start=1, end=1, app_counter=3)
+            await eventually(lambda: len(fields) == 1)
+            await adapter.send_text("b")
+            await eventually(lambda: len(server.ime_batches) == 1)
+            server.push_text_field("ab", counter=7, start=2, end=2, app_counter=11)
+            await eventually(lambda: len(fields) == 2)
+            await adapter.send_text("c")
+            await eventually(lambda: len(server.ime_batches) == 2)
+        finally:
+            await adapter.disconnect()
+    batches = [message.remote_ime_batch_edit for message in server.ime_batches]
+    assert [(batch.ime_counter, batch.field_counter) for batch in batches] == [(3, 2), (11, 7)]
+
+
+async def test_ime_batch_from_the_tv_is_inherited_by_a_field_echo_without_app_info(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    fields: list[TextFieldStatus] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        adapter.on_text_field(fields.append)
+        await adapter.connect()
+        try:
+            server.push_text_field("a", counter=2, start=1, end=1, app_counter=3)
+            await eventually(lambda: len(fields) == 1)
+            server.push_ime_batch(11, 7)
+            await eventually(lambda: (adapter._ime_counter, adapter._field_counter) == (11, 7))
+            with caplog.at_level("INFO"):
+                server.push_text_field("ab", counter=7, start=2, end=2)
+                await eventually(lambda: len(fields) == 2)
+                await adapter.send_text("c")
+            await eventually(lambda: len(server.ime_batches) == 1)
+        finally:
+            await adapter.disconnect()
+    batch = server.ime_batches[0].remote_ime_batch_edit
+    assert (batch.ime_counter, batch.field_counter) == (11, 7)
+    assert "ime_origem=herdado" in caplog.text
+
+
+async def test_library_debug_does_not_expose_an_echo_value_when_value_debugging_is_disabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    loggers = [logging.getLogger("androidtvremote2")]
+    loggers.extend(
+        candidate
+        for name, candidate in logging.Logger.manager.loggerDict.items()
+        if name.startswith("androidtvremote2.") and isinstance(candidate, logging.Logger)
+    )
+    levels = {logger: logger.level for logger in loggers}
+    try:
+        for logger in loggers:
+            logger.setLevel(logging.DEBUG)
+        fields: list[TextFieldStatus] = []
+        async with FakeTvServer(tmp_path) as server:
+            adapter = make_adapter(tmp_path, server.port)
+            adapter.on_text_field(fields.append)
+            await adapter.connect()
+            try:
+                with caplog.at_level(logging.DEBUG):
+                    server.push_text_field("segredo de teste", counter=4, app_counter=9)
+                    await eventually(lambda: bool(fields))
+            finally:
+                await adapter.disconnect()
+        assert "segredo de teste" not in caplog.text
+    finally:
+        for logger, level in levels.items():
+            logger.setLevel(level)
+
+
+def test_value_debugging_keeps_the_library_logger_level(tmp_path: Path) -> None:
+    logger = logging.getLogger("androidtvremote2")
+    previous_level = logger.level
+    try:
+        logger.setLevel(logging.DEBUG)
+        AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path, text_debug_values=True)
+        assert logger.level == logging.DEBUG
+    finally:
+        logger.setLevel(previous_level)
 
 
 async def test_empty_text_is_a_programming_error_and_nothing_is_sent(tmp_path: Path) -> None:
@@ -402,6 +607,7 @@ class FakeLibrary:
         self._volume: list[Callable[[VolumeInfo], None]] = []
         self._app: list[Callable[[str], None]] = []
         self._power: list[Callable[[bool], None]] = []
+        self._remote_message_protocol = FakeProtocol(self)
 
     def add_is_on_updated_callback(self, callback: Callable[[bool], None]) -> None:
         self._power.append(callback)
@@ -432,6 +638,29 @@ class FakeLibrary:
         if self.send_error is not None:
             raise self.send_error
         self.texts.append(text)
+
+
+class FakeProtocol:
+    """Parte privada da biblioteca que o adaptador acessa para montar o lote IME."""
+
+    def __init__(self, library: FakeLibrary) -> None:
+        self._library = library
+        self.ime_counter = 0
+        self.ime_field_counter = 0
+        self.idle_resets = 0
+        self.messages: list[RemoteMessage] = []
+        self._handle_message: Callable[[bytes], None] = lambda raw: None
+
+    def _send_message(self, message: RemoteMessage, should_debug_log: bool = True) -> None:
+        del should_debug_log
+        if self._library.send_error is not None:
+            raise self._library.send_error
+        copied = RemoteMessage()
+        copied.CopyFrom(message)
+        self.messages.append(copied)
+
+    def _reset_idle_disconnect_task(self) -> None:
+        self.idle_resets += 1
 
 
 def duplo_adapter(tmp_path: Path, library: FakeLibrary) -> AndroidTvRemoteV2:
@@ -593,11 +822,13 @@ async def test_the_text_field_state_the_tv_pushes_reaches_the_caller(tmp_path: P
             # Só o app em foco chegou até aqui: não é campo de texto, e o tratador da biblioteca
             # continua recebendo as mensagens (o app foi lido).
             assert fields == []
-            server.push_text_field("Matrix", counter=7, label="Buscar", start=6, end=6)
+            server.push_text_field(
+                "Matrix", counter=7, label="Buscar", start=6, end=6, app_counter=12
+            )
             await eventually(lambda: bool(fields))
         finally:
             await adapter.disconnect()
-    assert fields == [TextFieldStatus("Matrix", 6, 6, "Buscar", 7)]
+    assert fields == [TextFieldStatus("Matrix", 6, 6, "Buscar", 7, 12)]
 
 
 async def test_the_keyboard_request_also_carries_the_text_field_state(tmp_path: Path) -> None:
@@ -612,6 +843,72 @@ async def test_the_keyboard_request_also_carries_the_text_field_state(tmp_path: 
         finally:
             await adapter.disconnect()
     assert fields == [TextFieldStatus("", 0, 0, "Pesquisar", 3)]
+
+
+async def test_text_echo_logs_only_metadata_unless_value_debugging_is_enabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            with caplog.at_level("INFO"):
+                server.push_text_field(
+                    "segredo de teste", counter=4, start=16, end=16, app_counter=9
+                )
+                await eventually(lambda: "tv ime eco" in caplog.text)
+        finally:
+            await adapter.disconnect()
+    assert "tv ime eco app=9 campo=4 tam=16 cursor=16-16" in caplog.text
+    assert "segredo de teste" not in caplog.text
+
+
+async def test_text_echo_can_log_its_value_only_when_enabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port, text_debug_values=True)
+        await adapter.connect()
+        try:
+            with caplog.at_level("INFO"):
+                server.push_text_field("teste acompanhado", counter=4, app_counter=9)
+                await eventually(lambda: "valor='teste acompanhado'" in caplog.text)
+        finally:
+            await adapter.disconnect()
+    assert "valor='teste acompanhado'" in caplog.text
+
+
+async def test_the_real_library_still_exposes_the_private_ime_api_the_adapter_uses(
+    tmp_path: Path,
+) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            protocol = adapter._client._remote_message_protocol
+            assert callable(protocol._send_message)
+            assert isinstance(protocol.ime_counter, int)
+            assert isinstance(protocol.ime_field_counter, int)
+        finally:
+            await adapter.disconnect()
+
+
+def test_the_hook_logs_a_batch_the_tv_sends_without_exposing_edit_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    handled: list[bytes] = []
+    protocol = types.SimpleNamespace(_handle_message=handled.append)
+    client = types.SimpleNamespace(_remote_message_protocol=protocol)
+    message = RemoteMessage()
+    message.remote_ime_batch_edit.ime_counter = 7
+    message.remote_ime_batch_edit.field_counter = 11
+    message.remote_ime_batch_edit.edit_info.add().text_field_status.value = "segredo de teste"
+    assert _install_text_field_hook(client, lambda field: None) is True
+    with caplog.at_level("INFO"):
+        protocol._handle_message(message.SerializeToString())
+    assert handled == [message.SerializeToString()]
+    assert "tv ime lote da TV ime=7 campo=11" in caplog.text
+    assert "segredo de teste" not in caplog.text
 
 
 async def test_a_failing_listener_does_not_break_the_librarys_own_handling(tmp_path: Path) -> None:
@@ -696,7 +993,9 @@ async def test_a_hook_that_cannot_be_installed_does_not_stop_the_connection(
 ) -> None:
     from uniover_agent.adapters import tv_remote_v2  # noqa: PLC0415
 
-    monkeypatch.setattr(tv_remote_v2, "_install_text_field_hook", lambda client, callback: False)
+    monkeypatch.setattr(
+        tv_remote_v2, "_install_text_field_hook", lambda client, callback, on_batch=None: False
+    )
     async with FakeTvServer(tmp_path) as server:
         adapter = make_adapter(tmp_path, server.port)
         with caplog.at_level("WARNING"):

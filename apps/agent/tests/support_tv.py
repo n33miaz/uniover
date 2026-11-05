@@ -81,6 +81,7 @@ class FakeTvServer:
         self.keys: list[tuple[int, int]] = []
         self.links: list[str] = []
         self.texts: list[str] = []
+        self.ime_batches: list[RemoteMessage] = []
         self.connections = 0
         self._writers: list[asyncio.StreamWriter] = []
         self._server: asyncio.Server | None = None
@@ -130,6 +131,7 @@ class FakeTvServer:
         end: int = 0,
         show_request: bool = False,
         app: str | None = None,
+        app_counter: int | None = None,
     ) -> None:
         """A TV informa o campo de texto em foco: pela edição (`remote_ime_key_inject`) ou pelo
         pedido de teclado (`remote_ime_show_request`)."""
@@ -141,11 +143,21 @@ class FakeTvServer:
         )
         if app is not None and not show_request:
             message.remote_ime_key_inject.app_info.app_package = app
+        if app_counter is not None and not show_request:
+            message.remote_ime_key_inject.app_info.counter = app_counter
         field.counter_field = counter
         field.value = value
         field.start = start
         field.end = end
         field.label = label
+        for writer in self._writers:
+            writer.write(frame(message))
+
+    def push_ime_batch(self, ime_counter: int, field_counter: int) -> None:
+        """A TV confirma uma edição com os contadores que o próximo lote deve devolver."""
+        message = RemoteMessage()
+        message.remote_ime_batch_edit.ime_counter = ime_counter
+        message.remote_ime_batch_edit.field_counter = field_counter
         for writer in self._writers:
             writer.write(frame(message))
 
@@ -210,5 +222,8 @@ class FakeTvServer:
                 elif message.HasField("remote_app_link_launch_request"):
                     self.links.append(message.remote_app_link_launch_request.app_link)
                 elif message.HasField("remote_ime_batch_edit"):
+                    captured = RemoteMessage()
+                    captured.CopyFrom(message)
+                    self.ime_batches.append(captured)
                     for edit in message.remote_ime_batch_edit.edit_info:
                         self.texts.append(edit.text_field_status.value)
