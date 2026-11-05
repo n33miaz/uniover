@@ -293,6 +293,19 @@ def snapshot() -> list[Proc]:
     ]
 
 
+# A tarefa agendada da instalação real se repete de 10 em 10 minutos: cada repetição abre um
+# `wscript.exe launcher.vbs` (e um lançador que logo desiste, pelo mutex) que dura segundos.
+TRANSIENT_SECONDS = 120
+
+
+def is_transient(proc: Proc, now: float) -> bool:
+    """Processo da instalação real que nasce e morre sozinho (não prova que o ensaio a tocou)."""
+    if proc.name.lower() == "wscript.exe":
+        return True
+    started = proc.created / 10_000_000 - 11_644_473_600  # FILETIME -> segundos desde 1970
+    return now - started < TRANSIENT_SECONDS
+
+
 def ancestors_of(pid: int, procs: Iterable[Proc]) -> set[int]:
     by_pid = {p.pid: p for p in procs}
     chain = {pid}
@@ -730,8 +743,12 @@ class Drill:
             check=False,
             timeout=60,
         )
+        now = time.time()
         real = {
-            p.pid for p in snapshot() if str(self.real_base).lower() in f"{p.exe}\n{p.cmd}".lower()
+            p.pid
+            for p in snapshot()
+            if str(self.real_base).lower() in f"{p.exe}\n{p.cmd}".lower()
+            and not is_transient(p, now)
         }
         return {
             "pastas e arquivos de topo": top,

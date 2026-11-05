@@ -494,3 +494,15 @@ def test_the_installer_functions_the_drill_borrows_still_exist() -> None:
     ):
         assert f"function {name}" in installer, name
     assert "'Move-Folder'" in drill.INSTALL_BASE
+
+
+def test_only_long_lived_real_processes_count_for_the_untouched_check() -> None:
+    now = 1_800_000_000.0
+    filetime = int((now + 11_644_473_600) * 10_000_000)
+
+    def made(name: str, age: float) -> object:
+        return drill.Proc(1, 0, name, "", "", filetime - int(age * 10_000_000), 1)
+
+    assert drill.is_transient(made("wscript.exe", 3600), now)  # o gancho da tarefa agendada
+    assert drill.is_transient(made("powershell.exe", 5), now)  # lançador que acabou de nascer
+    assert not drill.is_transient(made("powershell.exe", 3600), now)  # o supervisor de verdade
