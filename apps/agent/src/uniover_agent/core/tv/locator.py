@@ -6,9 +6,15 @@ TV confirmada:
 1. **Tabela ARP**: o MAC da TV (que o agente guardou) mapeia direto para o IP atual. Não manda
    nada à rede: só lê o que o Windows já sabe.
 2. **SSDP**: uma única consulta multicast; as TVs respondem com o próprio endereço.
-3. **Varredura do /24**, devagar: poucas conexões ao mesmo tempo, com pausa entre os endereços, e
+3. **mDNS** (só a Android TV, que anuncia `_androidtvremote2._tcp`): uma escuta curta antes da
+   varredura, com o mesmo espaçamento do SSDP.
+4. **Varredura do /24**, devagar: poucas conexões ao mesmo tempo, com pausa entre os endereços, e
    no máximo uma a cada `sweep_seconds` (dez minutos). Uma TV com a pilha de rede travada não
    aguenta rajada de conexões.
+
+Depois de `empty_searches_limit` buscas seguidas sem achar nada (TV desligada por horas), as
+etapas caras (SSDP, mDNS e varredura) passam a rodar no máximo uma vez a cada `slow_search_seconds`
+(meia hora): a tabela ARP continua sendo lida em toda conferência, porque é de graça.
 
 Nenhum candidato vale só por ter a porta aberta: `identify` compara os identificadores guardados;
 sem identificador, a Android TV precisa completar uma sessão com o certificado pareado. O núcleo
@@ -27,6 +33,9 @@ _log = logging.getLogger(__name__)
 
 DEFAULT_SSDP_SECONDS = 120.0
 DEFAULT_SWEEP_SECONDS = 600.0
+DEFAULT_MDNS_SECONDS = 120.0
+DEFAULT_EMPTY_SEARCHES_LIMIT = 6
+DEFAULT_SLOW_SEARCH_SECONDS = 1800.0
 # Poucas conexões de uma vez, com pausa entre os endereços: a TV pode estar com a pilha travada.
 DEFAULT_CONCURRENCY = 16
 DEFAULT_SPACING_SECONDS = 0.05
@@ -110,7 +119,7 @@ class TvKnown:
 class Located:
     host: str
     mac: str | None
-    # De onde veio a confirmação: `arp`, `ssdp` ou `varredura` (só para o registro).
+    # De onde veio a confirmação: `arp`, `ssdp`, `mdns` ou `varredura` (só para o registro).
     via: str
 
 
@@ -125,8 +134,13 @@ Hosts = Callable[[], list[str]]
 @dataclass(slots=True)
 class _Schedule:
     last_ssdp: float | None = None
+    last_mdns: float | None = None
     last_sweep: float | None = None
     sweeps: int = 0
+    # Buscas caras seguidas sem achar a TV, e quando foi a última que rodou alguma etapa.
+    empty_searches: int = 0
+    last_search: float | None = None
+    ran_expensive_stage: bool = False
 
 
 class TvLocator:
@@ -141,8 +155,12 @@ class TvLocator:
         probe: Probe,
         identify: Identify,
         authenticate: Authenticate | None = None,
+        mdns: SsdpSearch | None = None,
         ssdp_seconds: float = DEFAULT_SSDP_SECONDS,
+        mdns_seconds: float = DEFAULT_MDNS_SECONDS,
         sweep_seconds: float = DEFAULT_SWEEP_SECONDS,
+        empty_searches_limit: int = DEFAULT_EMPTY_SEARCHES_LIMIT,
+        slow_search_seconds: float = DEFAULT_SLOW_SEARCH_SECONDS,
         concurrency: int = DEFAULT_CONCURRENCY,
         spacing_seconds: float = DEFAULT_SPACING_SECONDS,
         sweep_deadline_seconds: float = DEFAULT_SWEEP_DEADLINE_SECONDS,
@@ -155,7 +173,11 @@ class TvLocator:
         self._probe = probe
         self._identify = identify
         self._authenticate = authenticate
+        self._mdns = mdns
         self._ssdp_seconds = ssdp_seconds
+        self._mdns_seconds = mdns_seconds
+        self._empty_searches_limit = empty_searches_limit
+        self._slow_search_seconds = slow_search_seconds
         self._sweep_seconds = sweep_seconds
         self._concurrency = max(1, concurrency)
         self._spacing = spacing_seconds
@@ -178,11 +200,36 @@ class TvLocator:
             return await self._by_sweep(current_host) if self._authenticate is not None else None
         found = await self._by_arp(current_host)
         if found is not None or self._at_same_place:
+            self._schedule.empty_searches = 0
             return found
+        if self._searching_slowly():
+            return None
+        self._schedule.ran_expensive_stage = False
         found = await self._by_ssdp(current_host)
-        if found is not None:
-            return found
-        return await self._by_sweep(current_host)
+        if found is None:
+            found = await self._by_mdns(current_host)
+        if found is None:
+            found = await self._by_sweep(current_host)
+        self._note_search(found is not None)
+        return found
+
+    def _searching_slowly(self) -> bool:
+        """Muitas buscas vazias seguidas: as etapas caras esperam o intervalo longo."""
+        last = self._schedule.last_search
+        return (
+            self._schedule.empty_searches >= self._empty_searches_limit
+            and last is not None
+            and self._clock.monotonic() - last < self._slow_search_seconds
+        )
+
+    def _note_search(self, found: bool) -> None:
+        schedule = self._schedule
+        if found:
+            schedule.empty_searches = 0
+        elif schedule.ran_expensive_stage:
+            schedule.empty_searches += 1
+        if schedule.ran_expensive_stage:
+            schedule.last_search = self._clock.monotonic()
 
     # --- 1. ARP ------------------------------------------------------------------------------
 
@@ -196,13 +243,16 @@ class TvLocator:
         except OSError:
             return None
         addresses = [ip for mac in macs for ip in table.get(mac, [])]
-        if current_host in addresses:
-            # O Windows ainda a vê no endereço de sempre: a TV só está dormindo ou com a rede
-            # engasgada. Varrer a rede não a faria aparecer.
+        if current_host in addresses and await self._probe(current_host):
+            # O Windows ainda a vê no endereço de sempre e a porta do controle atende: a TV só
+            # está dormindo ou com a rede engasgada. Varrer a rede não a faria aparecer. Entrada
+            # velha do ARP, com a porta muda, não prova nada: a busca segue.
             self._at_same_place = True
             return None
         unconfirmed: list[str] = []
         for host in dict.fromkeys(addresses):
+            if host == current_host:
+                continue
             # Entrada velha do ARP pode apontar para um endereço que já é de outro aparelho: só
             # vale o que atende por TCP na porta da TV (e, de preferência, se diz quem é).
             if not await self._probe(host):
@@ -245,6 +295,7 @@ class TvLocator:
         if last is not None and now - last < self._ssdp_seconds:
             return None
         self._schedule.last_ssdp = now
+        self._schedule.ran_expensive_stage = True
         try:
             candidates = await self._ssdp()
         except OSError:
@@ -257,7 +308,30 @@ class TvLocator:
                 return self._found(host, identity, "ssdp")
         return None
 
-    # --- 3. varredura limitada -----------------------------------------------------------------
+    # --- 3. mDNS -----------------------------------------------------------------------------
+
+    async def _by_mdns(self, current_host: str) -> Located | None:
+        if self._mdns is None:
+            return None
+        now = self._clock.monotonic()
+        last = self._schedule.last_mdns
+        if last is not None and now - last < self._mdns_seconds:
+            return None
+        self._schedule.last_mdns = now
+        self._schedule.ran_expensive_stage = True
+        try:
+            candidates = await self._mdns()
+        except OSError:
+            return None
+        for host in list(dict.fromkeys(candidates))[:MAX_SSDP_CANDIDATES]:
+            if host == current_host:
+                continue
+            identity = await self._identify(host)
+            if identity is not None and self.known.matches(identity):
+                return self._found(host, identity, "mdns")
+        return None
+
+    # --- 4. varredura limitada -----------------------------------------------------------------
 
     async def _by_sweep(self, current_host: str) -> Located | None:
         now = self._clock.monotonic()
@@ -265,6 +339,7 @@ class TvLocator:
         if last is not None and now - last < self._sweep_seconds:
             return None
         self._schedule.last_sweep = now
+        self._schedule.ran_expensive_stage = True
         self._schedule.sweeps += 1
         hosts = [host for host in self._hosts() if host != current_host]
         queue: asyncio.Queue[str] = asyncio.Queue()

@@ -35,6 +35,7 @@ class TvRelocator:
         check_seconds: float = DEFAULT_CHECK_SECONDS,
         summary_seconds: float = DEFAULT_SUMMARY_SECONDS,
         on_alive: Callable[[], Awaitable[None]] | None = None,
+        on_recovered: Callable[[], Awaitable[None]] | None = None,
         is_paused: Callable[[], bool] = lambda: False,
     ) -> None:
         """`rescan` devolve o novo endereço da **mesma** TV, ou `None` (não achou ou não mudou).
@@ -51,6 +52,7 @@ class TvRelocator:
         self._summary_seconds = summary_seconds
         # Chamado a cada conferência em que a TV está lá (para aprender o que falta dela).
         self._on_alive = on_alive
+        self._on_recovered = on_recovered
         self._is_paused = is_paused
         self._failures = 0
         self._last_summary: float | None = None
@@ -60,10 +62,13 @@ class TvRelocator:
         if self._is_paused():
             return None
         if self._is_hot() or await self._safe_reachable():
+            recovered = self._failures > 0
             if self._failures >= self._failures_needed:
                 _log.info("a TV voltou a responder no endereço de sempre")
             self._failures = 0
             self._last_summary = None
+            if recovered:
+                await self._notify_recovered()
             await self._notify_alive()
             return None
         self._failures += 1
@@ -94,6 +99,14 @@ class TvRelocator:
             await self._on_alive()
         except Exception:
             _log.exception("falha ao guardar o que se sabe da TV")
+
+    async def _notify_recovered(self) -> None:
+        if self._on_recovered is None:
+            return
+        try:
+            await self._on_recovered()
+        except Exception:
+            _log.exception("falha ao reabrir a sessão da TV")
 
     async def _safe_reachable(self) -> bool:
         try:
