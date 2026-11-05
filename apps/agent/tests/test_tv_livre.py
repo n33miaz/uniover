@@ -5,6 +5,7 @@ só vale depois de verificada, o launcher de fábrica só é desativado depois d
 desinstalado sem a volta confirmada. Cada falha injetada tem de terminar sem tela preta.
 """
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -12,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters.fakes import FakeClock
+from uniover_agent.adapters.fakes import FakeClock, FakeTransport, FakeTvRemote
+from uniover_agent.core import (
+    EnvelopeFactory,
+    EnvelopeGate,
+    SessionState,
+    TvSessionManager,
+    TvWatchdog,
+)
 from uniover_agent.core.tv.livre import (
     FILES_DIR,
     HOME_COMPONENT,
@@ -23,7 +31,8 @@ from uniover_agent.core.tv.livre import (
     TvLivre,
     is_protected_for_disable,
 )
-from uniover_agent.ports import AdbNotReady, AdbTimeout
+from uniover_agent.core.tv.watchdog_events import WatchdogEvents
+from uniover_agent.ports import AdbNotReady, AdbTimeout, TvUnreachable
 from uniover_agent.ports.tv_livre import LauncherApkError, ShellResult
 
 from .support_livre import (
@@ -40,6 +49,11 @@ from .support_livre import (
 )
 
 CONFIG = json.dumps({"clock": {"size": "large"}, "apps": {"mode": "listed", "items": [NETFLIX]}})
+
+
+def state_of(manager: TvSessionManager) -> SessionState:
+    # Função à parte: o mypy estreita `manager.state` depois de um `assert` e acusaria o próximo.
+    return manager.state
 
 
 def make(
@@ -859,3 +873,100 @@ async def test_a_jpeg_that_does_not_decode_is_refused(broken: str) -> None:
         staging.add("p", 0, 1, hashlib.sha256(photo).hexdigest(), base64.b64encode(photo).decode())
 
     assert raised.value.code == "invalid_photo"
+
+
+# --- queda do controle remoto durante a operação ---------------------------------------------
+
+
+class DroppingAndroid(FakeAndroid):
+    """A TV derruba o serviço do controle remoto no meio da troca da Home (como no incidente)."""
+
+    def __init__(self, remote: FakeTvRemote) -> None:
+        super().__init__()
+        self.remote = remote
+        self.dropped = False
+
+    async def shell(self, command: str) -> ShellResult:
+        if command.startswith("cmd package set-home-activity") and not self.dropped:
+            self.dropped = True
+            self.remote.connect_errors = [TvUnreachable("sem resposta")] * 6
+            self.remote.drop()
+        return await super().shell(command)
+
+
+async def test_a_remote_service_dropped_during_set_home_is_repaired_without_a_command(
+    tmp_path: Path,
+) -> None:
+    clock = FakeClock()
+    remote = FakeTvRemote()
+    manager = TvSessionManager(clock, remote)
+    ports = [False, True]
+    restarts = 0
+
+    async def ports_open() -> bool | None:
+        return ports.pop(0) if len(ports) > 1 else ports[0]
+
+    async def restart() -> None:
+        nonlocal restarts
+        restarts += 1
+        remote.connect_errors = []
+
+    transport = FakeTransport()
+    envelopes = EnvelopeFactory("pc-casa", EnvelopeGate("pc-casa"), clock)
+    watchdog = TvWatchdog(
+        clock, manager, ports_open, restart, WatchdogEvents(transport, envelopes, clock)
+    )
+    android = DroppingAndroid(remote)
+    livre = TvLivre(
+        android,
+        FakeApkSource(tmp_path, None),
+        LivreStateFile(tmp_path / "state" / "tv-livre.json"),
+        PhotoStaging(clock),
+        clock,
+        remote_guard=manager,
+    )
+    await livre.run({"action": "install"})
+    await manager.wake()
+    assert state_of(manager) is SessionState.HOT
+
+    runner = asyncio.create_task(watchdog.run())
+    # O resultado da operação não depende da queda: o `set-home` termina como sempre.
+    await livre.run({"action": "set-home"})
+    await manager.settle()
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if state_of(manager) is SessionState.HOT and restarts:
+            break
+    runner.cancel()
+
+    assert android.dropped
+    assert restarts == 1
+    assert state_of(manager) is SessionState.HOT
+    assert remote.keys == []
+    assert android._current_home() == HOME_COMPONENT
+
+
+async def test_a_livre_action_that_fails_still_settles_the_remote_guard(tmp_path: Path) -> None:
+    class Guard:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def expect_remote_drop(self) -> None:
+            self.calls.append("expect")
+
+        def settle_remote_drop(self) -> None:
+            self.calls.append("settle")
+
+    guard = Guard()
+    android = FakeAndroid(sdk=26)
+    livre = TvLivre(
+        android,
+        FakeApkSource(tmp_path, None),
+        LivreStateFile(tmp_path / "state" / "tv-livre.json"),
+        PhotoStaging(FakeClock()),
+        FakeClock(),
+        remote_guard=guard,
+    )
+    await expect_error(livre, {"action": "install"}, "unsupported")
+    await livre.run({"action": "status"})
+    assert guard.calls == ["expect", "settle"]  # `status` só lê o suporte: não arma nada
