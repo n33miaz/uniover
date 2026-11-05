@@ -1354,7 +1354,7 @@ wheels = [
 
 [[package]]
 name = "uniover-agent"
-version = "0.36.34"
+version = "0.37.0"
 source = { editable = "." }
 dependencies = [
     { name = "androidtvremote2" },
