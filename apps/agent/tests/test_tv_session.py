@@ -557,3 +557,15 @@ async def test_an_unattended_reopening_does_not_retry_after_the_tv_dropped_it() 
     assert rig.remote.connects == connects  # a TV a derrubou sozinha: espera o próximo uso
     await rig.manager.wake()  # um uso de verdade volta a abrir
     assert state_of(rig.manager) is SessionState.HOT
+
+
+async def test_the_remote_drop_check_waits_for_the_last_overlapping_operation() -> None:
+    rig = Rig()
+    rig.manager.expect_remote_drop()
+    rig.manager.expect_remote_drop()
+    rig.manager.settle_remote_drop()  # a primeira acabou, a outra ainda mexe na TV
+    assert rig.repairs == 0
+    rig.manager.settle_remote_drop()
+    assert rig.repairs == 1
+    rig.manager.settle_remote_drop()  # sem pedido em aberto: nada
+    assert rig.repairs == 1

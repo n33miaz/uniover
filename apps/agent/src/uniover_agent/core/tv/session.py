@@ -182,7 +182,7 @@ class TvSessionManager:
         self._power_off_confirmation_timeout_seconds = power_off_confirmation_timeout_seconds
         self._certificate_refusals_needed = certificate_refusals_needed
         self._certificate_refusal_gap_seconds = certificate_refusal_gap_seconds
-        self._remote_drop_expected = False
+        self._remote_drop_expected = 0
         self._certificate_refusals = 0
         self._last_certificate_refusal_at: float | None = None
         self._warm_timeout_seconds = warm_timeout_seconds
@@ -579,7 +579,7 @@ class TvSessionManager:
 
     def expect_remote_drop(self) -> None:
         """Uma operação pesada pelo ADB vai começar e pode derrubar o serviço do controle."""
-        self._remote_drop_expected = True
+        self._remote_drop_expected += 1
 
     def settle_remote_drop(self) -> None:
         """A operação acabou: se o controle não está de pé, arma o vigia sem esperar um comando.
@@ -589,7 +589,10 @@ class TvSessionManager:
         """
         if not self._remote_drop_expected:
             return
-        self._remote_drop_expected = False
+        # Contador, não marca: com duas operações em andamento só a última a terminar confere.
+        self._remote_drop_expected -= 1
+        if self._remote_drop_expected:
+            return
         if self._state is SessionState.HOT and self._remote.connected:
             return
         self._signal_needs_repair()
