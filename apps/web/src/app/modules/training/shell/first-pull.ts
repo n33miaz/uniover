@@ -12,6 +12,19 @@ import type { TrainingSync } from '../data/sync/training-sync';
 export const FIRST_PULL_NEEDS = {
   /** A lista de fichas e a próxima da sequência (lê as sessões para saber qual foi a última). */
   routines: [RESOURCE_NAMES.routines, RESOURCE_NAMES.program, RESOURCE_NAMES.sessions],
+  /**
+   * Hoje decide entre "sem rotinas", a ficha de hoje (o programa da semana diz qual) e o treino aberto: as rotinas, o programa e
+   * os treinos (qual foi a última). O cartão mostra os nomes do catálogo e a carga da última vez (as séries), e nada relê isso
+   * quando as séries chegam depois; o resumo da semana também lê as séries e o catálogo. Metas e agenda ficam fora: a semana
+   * as relê sozinha quando chegam. A ordem é a da passada (o catálogo, a maior resposta, por último).
+   */
+  today: [
+    RESOURCE_NAMES.routines,
+    RESOURCE_NAMES.program,
+    RESOURCE_NAMES.sessions,
+    RESOURCE_NAMES.sets,
+    RESOURCE_NAMES.exercises,
+  ],
   /** Treinos, séries, metas e os nomes do catálogo. */
   progress: [
     RESOURCE_NAMES.sessions,

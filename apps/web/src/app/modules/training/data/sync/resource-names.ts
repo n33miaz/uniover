@@ -12,4 +12,5 @@ export const RESOURCE_NAMES = {
   goals: 'goals',
   bodyEntries: 'bodyEntries',
   bodyProfile: 'bodyProfile',
+  calendarEntries: 'calendarEntries',
 } as const;

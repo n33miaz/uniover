@@ -1,4 +1,5 @@
 import { Injectable, type Provider, inject } from '@angular/core';
+import { RESOURCE_NAMES } from '../sync/resource-names';
 import { provideResourceSync, type ResourceSync } from '../sync/resource-sync';
 import { CALENDAR_ENTRIES_PATH } from './calendar-api';
 import {
@@ -11,7 +12,7 @@ import { CalendarEntryRepository } from './calendar-entry-repository';
 @Injectable()
 export class CalendarEntriesResourceSync implements ResourceSync<CalendarEntryDto> {
   private readonly repository = inject(CalendarEntryRepository);
-  readonly resource = 'calendarEntries';
+  readonly resource = RESOURCE_NAMES.calendarEntries;
   readonly path = CALENDAR_ENTRIES_PATH;
   merge(items: readonly CalendarEntryDto[]): Promise<void> {
     return this.repository.applyRemote(
