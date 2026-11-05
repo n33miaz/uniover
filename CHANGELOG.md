@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.42.6](https://github.com/n33miaz/uniover/compare/v0.42.5...v0.42.6) (2026-11-05)
+
+
+### Bug Fixes
+
+* **tv:** lock the TV row on update and removal
+* **audit:** say TV removals are kept without limit
+
+
+### Performance Improvements
+
+* **tv:** index removal audit by user and date
+
 ## [0.42.5](https://github.com/n33miaz/uniover/compare/v0.42.4...v0.42.5) (2026-11-05)
 
 
