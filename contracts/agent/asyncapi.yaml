@@ -55,6 +55,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.wake.v1.schema.json'
+      tvPresence:
+        name: tv.presence.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.presence.v1.schema.json'
       tvAppLaunch:
         name: tv.app.launch.v1
         contentType: application/json
@@ -300,6 +305,13 @@ operations:
     summary: A API avisa que o app está aberto, para o agente aquecer a sessão com a TV.
     messages:
       - $ref: '#/channels/agentCommands/messages/tvWake'
+  sendTvPresence:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API avisa que alguém está diante da tela da TV no app (tela visível), para o agente poder abrir uma conexão ADB nova.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvPresence'
   sendTvAppLaunch:
     action: send
     channel:
