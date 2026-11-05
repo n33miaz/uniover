@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.42.0](https://github.com/n33miaz/uniover/compare/v0.41.0...v0.42.0) (2026-11-05)
+
+
+### Bug Fixes
+
+* **web:** hold today wait until first pull is read
+* **web:** match skeletons of four screens to real
+* **web:** draw bones inside skeleton list cards
+* **web:** shimmer bones inside list skeleton cards
+* **web:** keep skeleton when stylesheet fails
+* **web:** cap the first pull wait on today
+* **web:** app owns stylesheet if boot script fails
+* **web:** inline shimmer and notice styles
+* **web:** detect failed stylesheet, no retry loop
+
+
+### Performance Improvements
+
+* **web:** paint boot skeleton before stylesheet
+
 ## [0.41.0](https://github.com/n33miaz/uniover/compare/v0.40.0...v0.41.0) (2026-11-05)
 
 
