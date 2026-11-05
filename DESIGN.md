@@ -200,7 +200,7 @@ Diálogo e folha (`.ui-dialog`): entrada por `@starting-style` (opacidade 0 e `t
 
 ### 3.8 Camadas (z-index)
 
-Não há tokens de z-index. Valores em uso:
+Não há tokens de z-index. Principais camadas em uso (lista parcial: há também valores locais como `-1`, `1`, `2` e `20`; procure no código antes de criar uma camada nova):
 
 | Camada | Valor | Fonte |
 | --- | --- | --- |
@@ -216,9 +216,9 @@ Diálogos e folhas usam a camada superior nativa do `<dialog>` modal, sem z-inde
 
 ### 3.9 Pontos de quebra, área segura, viewport
 
-- Não há tokens de breakpoint. Quebras em uso: `min-width: 600px` / `max-width: 599px` (grade da Início: `home-page.css:238-267`), `min-width: 640px` (folha vira cartão centrado: `apps/web/src/app/modules/devices/pair-sheet.css:21-26`), `min-width: 520px` (nome da TV: `tv-page.css:193-197`), `max-height: 700px` (entrada compacta: `apps/web/src/app/core/auth/auth-layout.css:76-90`), `min-aspect-ratio: 6/5` (TV deitada: `tv-page.css:384-401`).
+- Não há tokens de breakpoint. Principais quebras em uso (lista parcial: há ajustes locais como `max-width: 350px/359px/360px`, `min-width: 560px` e `max-height: 480px/500px/520px`): `min-width: 600px` / `max-width: 599px` (grade da Início: `home-page.css:238-267`), `min-width: 640px` (folha vira cartão centrado: `apps/web/src/app/modules/devices/pair-sheet.css:21-26`), `min-width: 520px` (nome da TV: `tv-page.css:193-197`), `max-height: 700px` (entrada compacta: `apps/web/src/app/core/auth/auth-layout.css:76-90`), `min-aspect-ratio: 6/5` (TV deitada: `tv-page.css:384-401`).
 - Meta viewport: `width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content` (`apps/web/src/index.html:6-9`).
-- Área segura de baixo, num lugar só: `--safe-inset: env(safe-area-inset-bottom, 0px)`, `--safe-floor: 0px` (8px no app instalado com ponteiro de toque), `--safe-bottom: max(var(--safe-inset), var(--safe-floor))`, `--kb-inset: 0px` (altura que o teclado virtual cobre; posto por `apps/web/src/app/core/layout/keyboard-inset.ts`). Todo rodapé, folha, aviso ou botão fixo embaixo usa `--safe-bottom`, nunca `env(safe-area-inset-bottom)` solto (`styles.css:52-62`, `248-253`).
+- Área segura de baixo, num lugar só: `--safe-inset: env(safe-area-inset-bottom, 0px)`, `--safe-floor: 0px` (8px no app instalado com ponteiro de toque), `--safe-bottom: max(var(--safe-inset), var(--safe-floor))`, `--kb-inset: 0px` (altura que o teclado virtual cobre; posto por `apps/web/src/app/core/layout/keyboard-inset.ts`). Todo rodapé, folha, aviso ou botão fixo embaixo usa `--safe-bottom`, nunca `env(safe-area-inset-bottom)` solto (`styles.css:52-62`, `248-253`). Exceção conhecida a corrigir: a folha de Créditos do Treino (`apps/web/src/app/modules/training/credits/credits.page.css:7-9`) usa `90dvh` e `env(safe-area-inset-bottom)` direto.
 - Laterais e topo: `max(var(--gutter), env(safe-area-inset-left|right))` e `env(safe-area-inset-top)` (`apps/web/src/app/shared/ui/page-top-bar.ts:51-57`, `styles.css:555-556`).
 
 ## 4. Layout
