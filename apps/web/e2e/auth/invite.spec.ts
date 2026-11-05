@@ -49,7 +49,9 @@ test.describe('convite: boas-vindas', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
     await expect(page.getByText('Este acesso fica registrado: data, IP e aparelho.')).toBeVisible();
-    await expect(page.getByText('Não existe recuperação de senha')).toBeVisible();
+    await expect(
+      page.getByText('Você pode recuperar a senha pelo e-mail depois de criar a conta.'),
+    ).toBeVisible();
     expect(await page.evaluate(() => document.body.innerText)).not.toContain(invite.token);
     await expectNoHorizontalScroll(page);
   });

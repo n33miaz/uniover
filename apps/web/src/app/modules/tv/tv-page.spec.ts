@@ -217,7 +217,7 @@ describe('TvPage', () => {
       const actions = empty.querySelectorAll('a, button');
       expect(actions).toHaveLength(1);
       expect(actions[0].textContent?.trim()).toBe('Configurar TV');
-      expect(actions[0].getAttribute('href')).toBe('/ajustes/sistema');
+      expect(actions[0].getAttribute('href')).toBe('/tv/configurar');
       // Nenhum botão de comando para parecer pronto: o que sobra na tela é a casca (voltar, desligar e o menu).
       expect(
         root.querySelectorAll('button.round, button.pill-btn, button.seg, button.num'),
@@ -724,7 +724,13 @@ describe('TvPage', () => {
       expect(root.querySelector('app-tv-panel .grab')).not.toBeNull();
       expect(
         [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-      ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Gerenciar TVs']);
+      ).toEqual([
+        'Apps da TV',
+        'Mais botões',
+        'Personalizar',
+        'Gerenciar TVs',
+        'Ajuda para Configurar',
+      ]);
     });
 
     it('closes with Esc and with its own close button, and gives the focus back to the three dots', async () => {
