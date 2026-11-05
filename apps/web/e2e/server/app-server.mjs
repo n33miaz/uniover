@@ -3,6 +3,7 @@
 // do manifest do módulo e envia a CSP padrão da API. Limitação conhecida: esta cópia da CSP pode divergir da da
 // API; o teste contra o contêiner real repete a checagem.
 import { createServer } from 'node:http';
+import { runInNewContext } from 'node:vm';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
@@ -39,10 +40,36 @@ function manifestLinks(pathname) {
   );
 }
 
+// O esqueleto de abertura do endereço, gravado em <html data-boot> como a API faz (BootVariants.cs), para o primeiro
+// quadro já ter o desenho certo. A fonte é o próprio boot-skeleton.js do build servido (a mesma regra que a API e o
+// Angular seguem, conferida em contracts/boot-variants.json): ele roda aqui numa caixa isolada, só para ler a escolha.
+async function bootVariant(root, pathname) {
+  try {
+    const script = await readFile(join(root, 'boot-skeleton.js'), 'utf8');
+    let variant = null;
+    const document = {
+      documentElement: {
+        setAttribute: (name, value) => {
+          if (name === 'data-boot') variant = value;
+        },
+      },
+      getElementById: () => null,
+      addEventListener: () => undefined,
+      querySelector: () => null,
+    };
+    runInNewContext(script, { location: { pathname }, document, setTimeout: () => 0 });
+    return variant;
+  } catch {
+    return null;
+  }
+}
+
 async function sendPage(root, pathname, res, head) {
   const nonce = randomBytes(16).toString('base64');
+  const variant = await bootVariant(root, pathname);
   const html = (await readFile(join(root, 'index.html'), 'utf8'))
     .replaceAll('__CSP_NONCE__', nonce)
+    .replace(/<html(?=[\s>])/i, variant ? `<html data-boot="${variant}"` : '<html')
     .replace('<!--uniover:manifest-->', manifestLinks(pathname));
   res.writeHead(200, {
     'content-type': TYPES['.html'],
