@@ -186,7 +186,7 @@
     @if (notPaired()) {
       <section class="pairing" aria-labelledby="tv-pairing-title">
         <h2 id="tv-pairing-title" i18n="@@tv.not-paired.title">TV não pareada</h2>
-        <p i18n="@@tv.not-paired.body">O pareamento não foi aceito.</p>
+        <p i18n="@@tv.not-paired.body">Sem pareamento válido com a TV.</p>
         @if (isOwner()) {
           <a class="pairing-action ui-btn primary" routerLink="/tv/configurar" i18n="@@tv.not-paired.action"
             >Parear de novo</a

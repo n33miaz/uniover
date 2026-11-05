@@ -257,7 +257,7 @@ describe('TvPage', () => {
 
       const pairing = root.querySelector('.pairing')!;
       expect(pairing.querySelector('h2')?.textContent?.trim()).toBe('TV não pareada');
-      expect(pairing.textContent).toContain('O pareamento não foi aceito.');
+      expect(pairing.textContent).toContain('Sem pareamento válido com a TV.');
       const action = pairing.querySelector<HTMLAnchorElement>('a')!;
       expect(action.textContent?.trim()).toBe('Parear de novo');
       expect(action.getAttribute('href')).toBe('/tv/configurar');

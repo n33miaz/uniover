@@ -231,7 +231,7 @@ export function indicatorText(
     case 'not-paired':
       return {
         title: $localize`:@@tv.indicator.not-paired.title:TV não pareada`,
-        meaning: $localize`:@@tv.indicator.not-paired.meaning:O pareamento desta TV não vale mais. Pareie de novo para usar o controle.`,
+        meaning: $localize`:@@tv.indicator.not-paired.meaning:Sem pareamento válido com esta TV. Pareie para usar o controle.`,
         action: null,
         actionLabel: NO_ACTION,
         hints: NO_HINTS,
