@@ -127,6 +127,35 @@ async def test_offline_or_missing_tv_is_unreachable(state_text: str) -> None:
     assert caught.value.code == "adb_unreachable"
 
 
+async def test_already_connected_but_offline_is_disconnected_and_connected_once_more() -> None:
+    runner = FakeAdbRunner(
+        {
+            CONNECT: [ok(f"already connected to {SERIAL}\r\n"), ok(f"connected to {SERIAL}\r\n")],
+            GET_STATE: [ok("offline\r\n", returncode=1), ok("device\r\n")],
+            DISCONNECT: ok(f"disconnected {SERIAL}\r\n"),
+        }
+    )
+    adb = make(runner)
+    await adb.connect()
+    assert adb.connected
+    assert runner.calls == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
+
+
+async def test_three_timeouts_restart_the_adb_server_only_once_within_the_cooldown() -> None:
+    clock = Clock()
+    runner = FakeAdbRunner({("version",): TimeoutError(), ("kill-server",): ok("")})
+    adb = make(runner, clock)
+    for _ in range(4):
+        with pytest.raises(AdbTimeout):
+            await adb._exec("version")  # type: ignore[attr-defined]
+    assert runner.calls.count(("kill-server",)) == 1
+    clock.now = 601
+    for _ in range(3):
+        with pytest.raises(AdbTimeout):
+            await adb._exec("version")  # type: ignore[attr-defined]
+    assert runner.calls.count(("kill-server",)) == 2
+
+
 async def test_failed_connect_is_unreachable_and_does_not_leak_adb_output() -> None:
     runner = FakeAdbRunner(
         {CONNECT: ok(f"failed to connect to '{SERIAL}': Connection refused\r\n", returncode=1)}
@@ -158,6 +187,22 @@ async def test_disconnect_only_drops_this_tv_and_never_kills_the_server() -> Non
     await adb.connect()
     await adb.disconnect()
     assert not adb.connected
+    assert runner.calls[-1] == DISCONNECT
+
+
+async def test_disconnect_returns_without_waiting_for_a_long_adb_operation() -> None:
+    runner = authorized()
+    adb = make(runner)
+    await adb.connect()
+    await adb._lock.acquire()  # type: ignore[attr-defined]
+    try:
+        await asyncio.wait_for(adb.disconnect(), 0.01)
+        assert not adb.connected
+    finally:
+        adb._lock.release()  # type: ignore[attr-defined]
+    task = adb._disconnect_task  # type: ignore[attr-defined]
+    assert task is not None
+    await task
     assert runner.calls[-1] == DISCONNECT
     assert not any("kill-server" in part for call in runner.calls for part in call)
 
