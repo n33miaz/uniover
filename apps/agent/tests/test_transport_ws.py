@@ -7,13 +7,13 @@ from websockets.asyncio.server import ServerConnection
 
 from uniover_agent.adapters.fakes import FakeClock
 from uniover_agent.adapters.transport_ws import MAX_MESSAGE_BYTES, WebSocketTransport, build_ws_url
+from uniover_agent.composition.connection import build_handler
 from uniover_agent.core import (
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
     ProcessMessage,
 )
-from uniover_agent.main import build_handler
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,

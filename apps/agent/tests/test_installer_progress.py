@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_pairing
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore
 from uniover_agent.adapters.pairing_page import progress_page_html, write_progress_page
 from uniover_agent.adapters.process import NO_WINDOW
+from uniover_agent.composition import pairing as pairing_module
 from uniover_agent.config import connection_page_path
 from uniover_agent.main import main
 
@@ -38,7 +38,7 @@ def test_pair_installing_keeps_the_page_in_progress_for_the_installer_to_finish(
     with FakePairingApi() as api:
         monkeypatch.setenv("UNIOVER_API_URL", api.url)
         monkeypatch.setenv("UNIOVER_ALLOW_INSECURE", "1")
-        monkeypatch.setattr(main_module, "SystemClock", FakeClock)
+        monkeypatch.setattr(pairing_module, "SystemClock", FakeClock)
         code = main(["pair", "--no-browser", "--installing"], secrets=FakeSecretStore())
     assert code == 0
     page = connection_page_path().read_text(encoding="utf-8")

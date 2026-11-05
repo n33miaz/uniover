@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeTvAdb, FakeTvRemote
 from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.adapters.tv_discovery import PortState
+from uniover_agent.composition import connection as connection_module
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.connection import build_relocator
 from uniover_agent.config import Settings
-from uniover_agent.main import build_relocator
 from uniover_agent.ports import AdbUnauthorized, TvPortClosed
 
 from .support_adb import ADB, CONNECT, GET_STATE, HOST, SERIAL, FakeAdbRunner, ok
@@ -53,7 +54,7 @@ def test_the_owner_can_turn_the_watchdog_off(
 
 
 def probe_answers(monkeypatch: pytest.MonkeyPatch, *answers: PortState) -> list[str]:
-    """`tcp_probe` do `main` devolve as respostas em ordem e depois `OPEN`; devolve os sondados."""
+    """O `tcp_probe` dos dois vigias dá as respostas em ordem, depois `OPEN`; devolve os alvos."""
     pending = list(answers)
     asked: list[str] = []
 
@@ -61,7 +62,8 @@ def probe_answers(monkeypatch: pytest.MonkeyPatch, *answers: PortState) -> list[
         asked.append(f"{host}:{port}")
         return pending.pop(0) if pending else PortState.OPEN
 
-    monkeypatch.setattr(main_module, "tcp_probe", probe)
+    monkeypatch.setattr(tv_module, "tcp_probe", probe)
+    monkeypatch.setattr(connection_module, "tcp_probe", probe)
     return asked
 
 
@@ -126,7 +128,8 @@ async def test_the_address_watcher_only_warns_on_a_refusal_never_on_silence_or_a
         probed.append(host)
         return state
 
-    monkeypatch.setattr(main_module, "tcp_probe", probe)
+    monkeypatch.setattr(tv_module, "tcp_probe", probe)
+    monkeypatch.setattr(connection_module, "tcp_probe", probe)
     calls: list[int] = []
     relocator = build_relocator(
         Settings(tv_host=TV_HOST), FakeClock(), lambda: False, on_refused=lambda: calls.append(1)

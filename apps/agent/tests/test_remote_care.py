@@ -11,6 +11,12 @@ from websockets.asyncio.server import ServerConnection
 from uniover_agent.adapters.agent_log_file import FileLogSource
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
+from uniover_agent.composition.connection import build_remote_care, log_file_path, run
+from uniover_agent.composition.system import (
+    EXIT_CREDENTIAL_REJECTED,
+    build_version,
+    describe_os,
+)
 from uniover_agent.config import Settings
 from uniover_agent.core import (
     Command,
@@ -28,14 +34,6 @@ from uniover_agent.core.remote_care import (
     SEND_FAILED,
     TEXT_LIMIT_CHARS,
     fit_excerpt,
-)
-from uniover_agent.main import (
-    EXIT_CREDENTIAL_REJECTED,
-    build_remote_care,
-    build_version,
-    describe_os,
-    log_file_path,
-    run,
 )
 from uniover_agent.ports import TransportError
 from uniover_agent.ports.remote_care import LogUnavailable
@@ -386,7 +384,9 @@ def test_the_os_description_is_short_and_never_empty() -> None:
 async def test_run_announces_the_capabilities_the_system_and_the_tv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("uniover_agent.main.describe_os", lambda: "Windows 11 (10.0.26200)")
+    monkeypatch.setattr(
+        "uniover_agent.composition.connection.describe_os", lambda: "Windows 11 (10.0.26200)"
+    )
 
     async def script(connection: ServerConnection) -> None:
         await asyncio.sleep(0.1)

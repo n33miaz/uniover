@@ -7,11 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeSecretStore
 from uniover_agent.adapters.local_config import update_config
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.system import configure_logging
+from uniover_agent.composition.tv import tv_pair
 from uniover_agent.config import Settings, agent_source_dir, tv_cert_dir
-from uniover_agent.main import configure_logging, tv_pair
 
 from .support_tv import write_certificate
 
@@ -83,7 +84,7 @@ async def test_tv_pair_if_needed_skips_a_paired_samsung(
     async def never(host: str, name: str) -> str:
         raise AssertionError("não deveria parear de novo")
 
-    monkeypatch.setattr(main_module, "pair_samsung_tv", never)
+    monkeypatch.setattr(tv_module, "pair_samsung_tv", never)
     store = FakeSecretStore()
     store.set("samsung:tv", "token")
     code = await tv_pair(
@@ -103,7 +104,7 @@ async def test_tv_pair_if_needed_skips_a_paired_android(
     async def never(*args: object) -> None:
         raise AssertionError("não deveria parear de novo")
 
-    monkeypatch.setattr(main_module, "pair_tv", never)
+    monkeypatch.setattr(tv_module, "pair_tv", never)
     write_certificate(tv_cert_dir("tv"), "UniOver")
     assert await tv_pair(Settings(tv_host="192.168.0.4"), None, None, if_needed=True) == 0
     assert "já está pareada" in capsys.readouterr().out
@@ -115,7 +116,7 @@ async def test_tv_pair_does_not_ask_to_configure_what_tv_find_already_saved(
     async def pair(host: str, name: str) -> str:
         return "token"
 
-    monkeypatch.setattr(main_module, "pair_samsung_tv", pair)
+    monkeypatch.setattr(tv_module, "pair_samsung_tv", pair)
     store = FakeSecretStore()
     settings = Settings(tv_kind="samsung", tv_host="192.168.0.11")
     assert await tv_pair(settings, None, None, secrets=store) == 0

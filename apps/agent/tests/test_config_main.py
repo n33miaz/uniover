@@ -11,19 +11,19 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore
 from uniover_agent.adapters.local_config import save_agent_config
-from uniover_agent.config import ConfigError, Settings, require_api_url
-from uniover_agent.main import (
+from uniover_agent.composition import pairing as pairing_module
+from uniover_agent.composition.connection import run
+from uniover_agent.composition.pairing import pairing_info
+from uniover_agent.composition.system import (
     EXIT_CREDENTIAL_REJECTED,
     EXIT_NOT_PAIRED,
     configure_logging,
-    main,
-    pairing_info,
-    run,
     silence_noisy_loggers,
 )
+from uniover_agent.config import ConfigError, Settings, require_api_url
+from uniover_agent.main import main
 
 from .support import AGENT_ID, TOKEN, FakeApi, dump, tv_key
 
@@ -278,7 +278,7 @@ def test_pair_stores_token_in_vault_and_agent_id_in_config(
 ) -> None:
     monkeypatch.setenv("UNIOVER_API_URL", pairing_api.url)
     monkeypatch.setenv("UNIOVER_ALLOW_INSECURE", "1")
-    monkeypatch.setattr(main_module, "SystemClock", FakeClock)  # sem esperar o intervalo real
+    monkeypatch.setattr(pairing_module, "SystemClock", FakeClock)  # sem esperar o intervalo real
     store = FakeSecretStore()
     with caplog.at_level(logging.DEBUG):
         assert main(["pair", "--name", "PC da sala"], secrets=store) == 0

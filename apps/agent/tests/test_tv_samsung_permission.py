@@ -11,7 +11,6 @@ import pytest
 import websocket
 from samsungtvws import exceptions as samsung_exceptions
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
 from uniover_agent.adapters.tv_discovery import DiscoveredTv
@@ -24,6 +23,15 @@ from uniover_agent.adapters.tv_samsung import (
     is_permission_failure,
 )
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.tv import (
+    build_tv,
+    resolve_samsung_client_name,
+    samsung_client_name_key,
+    samsung_permission_key,
+    samsung_token_name,
+    tv_pair,
+)
 from uniover_agent.config import Settings
 from uniover_agent.core import (
     Command,
@@ -36,14 +44,6 @@ from uniover_agent.core import (
 from uniover_agent.core.tv.discovery import FoundTv, tv_discover_handler
 from uniover_agent.core.tv.locator import TvKnown
 from uniover_agent.core.tv.session import TV_PERMISSION_NEEDED, TvSessionError
-from uniover_agent.main import (
-    build_tv,
-    resolve_samsung_client_name,
-    samsung_client_name_key,
-    samsung_permission_key,
-    samsung_token_name,
-    tv_pair,
-)
 from uniover_agent.ports import TvNotPaired, TvPermissionNeeded, TvUnreachable
 
 from .support import AGENT_ID
@@ -118,7 +118,7 @@ async def test_pairing_from_the_cli_records_the_stable_name(
         seen.append(name)
         return "token"
 
-    monkeypatch.setattr(main_module, "pair_samsung_tv", pair)
+    monkeypatch.setattr(tv_module, "pair_samsung_tv", pair)
     store = FakeSecretStore()
     store.set(samsung_permission_key("sala"), "needed")
     assert await tv_pair(Settings(tv_client_name="X"), HOST, "sala", "samsung", store) == 0
@@ -466,7 +466,7 @@ async def test_a_marked_vault_starts_the_driver_blocked_and_persists_changes(
         built.append(driver)
         return driver
 
-    monkeypatch.setattr(main_module, "SamsungTvDriver", spy)
+    monkeypatch.setattr(tv_module, "SamsungTvDriver", spy)
     clock = FakeClock()
     setup = build_tv(
         samsung_settings(),
@@ -497,7 +497,7 @@ def test_the_driver_is_built_with_the_stable_name(monkeypatch: pytest.MonkeyPatc
         names.append(name)
         return real(host, token, name, **kwargs)
 
-    monkeypatch.setattr(main_module, "SamsungTvDriver", spy)
+    monkeypatch.setattr(tv_module, "SamsungTvDriver", spy)
     clock = FakeClock()
     build_tv(
         Settings(tv_kind="samsung", tv_host=HOST, tv_name="sala", tv_client_name="Mudou"),

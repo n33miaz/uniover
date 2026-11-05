@@ -9,19 +9,18 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
-from uniover_agent.config import Settings
-from uniover_agent.core import Command, EnvelopeFactory, EnvelopeGate
-from uniover_agent.main import (
+from uniover_agent.composition import connection as connection_module
+from uniover_agent.composition.connection import build_handler, run
+from uniover_agent.composition.pc import build_pc
+from uniover_agent.composition.system import (
     EXIT_CREDENTIAL_REJECTED,
     EXIT_OK,
-    build_handler,
-    build_pc,
-    main,
-    run,
     silence_noisy_loggers,
 )
+from uniover_agent.config import Settings
+from uniover_agent.core import Command, EnvelopeFactory, EnvelopeGate
+from uniover_agent.main import main
 
 from .support import AGENT_ID, TOKEN, FakeApi, dump, envelope
 
@@ -173,7 +172,7 @@ async def test_run_serves_the_pc_commands_without_any_tv(
 ) -> None:
     pc_input, power, launcher = FakeInput(), FakePower(), FakeLauncher()
     monkeypatch.setattr(
-        main_module,
+        connection_module,
         "build_pc",
         partial(build_pc, platform="win32", pc_input=pc_input, power=power, launcher=launcher),
     )

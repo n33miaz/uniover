@@ -29,6 +29,8 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
         wol,
     )
     from uniover_agent.adapters.tv_discovery import PortState  # noqa: PLC0415
+    from uniover_agent.composition import connection as connection_module  # noqa: PLC0415
+    from uniover_agent.composition import tv as tv_module  # noqa: PLC0415
 
     async def alive(host: str, port: int, wait: float = 1.0) -> bool:
         return True
@@ -62,10 +64,11 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(tv_discovery, "discover_android_tvs", no_mdns)
     monkeypatch.setattr(tv_locate, "tcp_open", alive)
-    monkeypatch.setattr(main_module, "tcp_probe", open_probe)
+    monkeypatch.setattr(connection_module, "tcp_probe", open_probe)
+    monkeypatch.setattr(tv_module, "tcp_probe", open_probe)
     monkeypatch.setattr(main_module, "identify_tv", no_identity)
     # A API dos testes "aceita o diagnóstico"; os testes do rollout trocam isto por vazio ou `None`.
-    monkeypatch.setattr(main_module, "fetch_api_features", api_features)
+    monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
     monkeypatch.setattr(tv_locate, "http_json", no_json)
     monkeypatch.setattr(tv_locate, "ssdp_search", no_ssdp)
     monkeypatch.setattr(tv_locate, "arp_mac", no_mac)

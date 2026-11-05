@@ -9,9 +9,9 @@ import pytest
 
 from tests.test_diagnostics import MemoryStore
 from uniover_agent.adapters.fakes import FakeClock
+from uniover_agent.composition.connection import supervise
 from uniover_agent.core.diagnostics import DiagnosticsRecorder
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
-from uniover_agent.main import supervise
 
 
 def recorder(clock: FakeClock) -> tuple[DiagnosticsRecorder, MemoryStore]:

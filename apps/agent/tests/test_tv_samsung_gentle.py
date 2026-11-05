@@ -7,16 +7,21 @@ from typing import Any
 import httpx
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung, wol
 from uniover_agent.adapters import tv_samsung_volume as volume_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
 from uniover_agent.adapters.tv_samsung import SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.adapters.wol import broadcast_for, magic_packet, send_wake_on_lan
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.tv import (
+    build_tv,
+    remember_tv_identity,
+    samsung_token_name,
+    tv_pair,
+)
 from uniover_agent.config import Settings
 from uniover_agent.core import EnvelopeFactory, EnvelopeGate, TvIdentity, TvKnown, TvSessionError
-from uniover_agent.main import build_tv, remember_tv_identity, samsung_token_name, tv_pair
 
 from .conftest import REAL_WOL_SEND
 from .support import AGENT_ID
@@ -140,7 +145,7 @@ def compose_samsung(
     def build(*args: Any, **kwargs: Any) -> SamsungTvDriver:
         return real(*args, factory=factory(client), rest_transport=transport, **kwargs)
 
-    monkeypatch.setattr(main_module, "SamsungTvDriver", build)
+    monkeypatch.setattr(tv_module, "SamsungTvDriver", build)
     secrets = FakeSecretStore()
     secrets.set(samsung_token_name("sala"), "token")
     clock = FakeClock()
@@ -174,7 +179,7 @@ async def test_power_with_the_tv_off_the_network_sends_the_magic_packet_to_the_s
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sent: list[tuple[str, str]] = []
-    monkeypatch.setattr(main_module, "build_liveness", lambda kind, host: _dead)
+    monkeypatch.setattr(tv_module, "build_liveness", lambda kind, host: _dead)
     monkeypatch.setattr(wol, "_send", lambda mac, host: sent.append((mac, host)))
     client = FakeSamsungClient()
     setup, _ = compose_samsung(monkeypatch, client, tv_mac=MAC)
@@ -192,7 +197,7 @@ async def test_power_with_the_tv_off_the_network_and_no_mac_says_it_cannot_send(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sent: list[tuple[str, str]] = []
-    monkeypatch.setattr(main_module, "build_liveness", lambda kind, host: _dead)
+    monkeypatch.setattr(tv_module, "build_liveness", lambda kind, host: _dead)
     monkeypatch.setattr(wol, "_send", lambda mac, host: sent.append((mac, host)))
     setup, _ = compose_samsung(monkeypatch, FakeSamsungClient())
     with pytest.raises(TvSessionError, match="sinal de ligar"):
@@ -364,7 +369,7 @@ async def paired_with(
     async def fake_pair(host: str, name: str) -> str:
         return "token"
 
-    monkeypatch.setattr(main_module, "pair_samsung_tv", fake_pair)
+    monkeypatch.setattr(tv_module, "pair_samsung_tv", fake_pair)
     code = await tv_pair(
         settings,
         None,
@@ -405,7 +410,7 @@ async def test_pairing_another_tv_by_host_does_not_touch_the_file(
     async def fake_pair(host: str, name: str) -> str:
         return "token"
 
-    monkeypatch.setattr(main_module, "pair_samsung_tv", fake_pair)
+    monkeypatch.setattr(tv_module, "pair_samsung_tv", fake_pair)
     code = await tv_pair(
         settings,
         HOST,

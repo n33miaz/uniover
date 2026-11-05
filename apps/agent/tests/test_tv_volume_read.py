@@ -14,9 +14,9 @@ from uniover_agent.adapters.tv_adb_parsing import (
 )
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.adapters.tv_volume_check import check_volume
+from uniover_agent.composition.tv import volume_reader_when_push_is_silent
 from uniover_agent.core import TvSessionManager
 from uniover_agent.core.domain import TvState
-from uniover_agent.main import volume_reader_when_push_is_silent
 
 from .support_adb import ADB, HOST, FakeAdbRunner, ok, shell
 

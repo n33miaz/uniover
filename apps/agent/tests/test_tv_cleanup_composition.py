@@ -7,10 +7,11 @@ import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent.adapters.fakes import FakeSecretStore, FakeTvAdb, FakeTvRemote
+from uniover_agent.composition.connection import run
+from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
 from uniover_agent.config import ConfigError, Settings, require_cleanup_keep
 from uniover_agent.core import Command
 from uniover_agent.core.domain import TvState
-from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, run
 from uniover_agent.ports import LaunchableApp
 
 from .support import AGENT_ID, TOKEN, FakeApi, dump, envelope

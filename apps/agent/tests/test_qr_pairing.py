@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 import segno
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore
 from uniover_agent.adapters.pairing_page import (
     connected_page_html,
@@ -21,8 +20,10 @@ from uniover_agent.adapters.qr_terminal import (
     render_for,
     supports_blocks,
 )
+from uniover_agent.composition import pairing as pairing_module
+from uniover_agent.composition.pairing import approval_link
 from uniover_agent.config import connection_page_path
-from uniover_agent.main import approval_link, main
+from uniover_agent.main import main
 from uniover_agent.ports import PairingDenied, PairingExpired, PairingTicket
 
 from .support import TOKEN
@@ -182,7 +183,7 @@ def test_pair_shows_the_code_the_qr_of_the_link_and_the_instruction(
     with FakePairingApi() as api:
         monkeypatch.setenv("UNIOVER_API_URL", api.url)
         monkeypatch.setenv("UNIOVER_ALLOW_INSECURE", "1")
-        monkeypatch.setattr(main_module, "SystemClock", FakeClock)
+        monkeypatch.setattr(pairing_module, "SystemClock", FakeClock)
         assert main(["pair"], secrets=FakeSecretStore()) == 0
         out = capsys.readouterr().out
     assert "ABCD-2345" in out
@@ -199,9 +200,9 @@ def test_pair_shows_the_code_the_qr_of_the_link_and_the_instruction(
 
 def test_pair_no_browser_never_opens_the_page(monkeypatch: pytest.MonkeyPatch) -> None:
     opened: list[Path] = []
-    monkeypatch.setattr(main_module, "can_open_browser", lambda: True)
-    monkeypatch.setattr(main_module, "open_connection_page", opened.append)
-    monkeypatch.setattr(main_module, "SystemClock", FakeClock)
+    monkeypatch.setattr(pairing_module, "can_open_browser", lambda: True)
+    monkeypatch.setattr(pairing_module, "open_connection_page", opened.append)
+    monkeypatch.setattr(pairing_module, "SystemClock", FakeClock)
     with FakePairingApi() as api:
         monkeypatch.setenv("UNIOVER_API_URL", api.url)
         monkeypatch.setenv("UNIOVER_ALLOW_INSECURE", "1")
@@ -215,8 +216,8 @@ def test_pair_falls_back_to_ascii_when_the_console_cannot_write_blocks(
     def refuse(_link: str) -> str:
         raise UnicodeEncodeError("cp1252", "█", 0, 1, "sem glifo")
 
-    monkeypatch.setattr(main_module, "render_for", refuse)
-    main_module.print_qr(LINK)
+    monkeypatch.setattr(pairing_module, "render_for", refuse)
+    pairing_module.print_qr(LINK)
     out = capsys.readouterr().out
     assert out.isascii()
     assert parse_ascii(out.rstrip("\n")) == expected_matrix(LINK)
@@ -228,8 +229,8 @@ def test_a_qr_failure_never_breaks_the_pairing(
     def broken(_link: str) -> str:
         raise RuntimeError("falha qualquer")
 
-    monkeypatch.setattr(main_module, "render_for", broken)
-    main_module.print_qr(LINK)
+    monkeypatch.setattr(pairing_module, "render_for", broken)
+    pairing_module.print_qr(LINK)
     assert capsys.readouterr().out == ""
 
 
@@ -258,7 +259,7 @@ def test_pair_rewrites_the_page_when_the_code_expires_or_is_denied(
             assert "ABCD-2345" in connection_page_path().read_text(encoding="utf-8")
             raise failure
 
-    monkeypatch.setattr(main_module, "PairAgent", FailingPairAgent)
+    monkeypatch.setattr(pairing_module, "PairAgent", FailingPairAgent)
     monkeypatch.setenv("UNIOVER_API_URL", "https://uniover.onrender.com")
     assert main(["pair", "--no-browser"], secrets=FakeSecretStore()) == 1
     page = connection_page_path().read_text(encoding="utf-8")
