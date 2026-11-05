@@ -13,9 +13,74 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
     <!--uniover:manifest-->
     <!--
-      Escolhe o desenho antes de baixar o app. O arquivo próprio é permitido pela CSP sem exceção para código em linha.
+      A folha completa sai separada para não inflar a casca, mas esta base precisa pintar antes da primeira requisição
+      de CSS. O servidor troca o nonce junto com o do app; assim a CSP continua sem exceção para código em linha.
     -->
-    <script src="boot-skeleton.js"></script>
+    <style nonce="__CSP_NONCE__">
+      :where(:root, body) {
+        background: #f2f5f1;
+      }
+      :where(body) {
+        margin: 0;
+      }
+      :where(.bs-root) {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+        overflow: hidden;
+        background: #f2f5f1;
+      }
+      :where(.bs-boot .bs-variant) {
+        display: none;
+        min-height: 100%;
+      }
+      :where(
+        html:not([data-boot]) .bs-home,
+        html[data-boot='home'] .bs-home,
+        html[data-boot='tv'] .bs-tv,
+        html[data-boot='pc'] .bs-detail,
+        html[data-boot^='training-'] .bs-training,
+        html[data-boot='settings'] .bs-settings,
+        html[data-boot^='settings-'] .bs-detail,
+        html[data-boot^='auth-'] .bs-plain,
+        html[data-boot='devices-connect'] .bs-plain
+      ) {
+        display: flex;
+      }
+      :where(.bs-root .bone) {
+        display: block;
+        min-height: 14px;
+        border-radius: 8px;
+        background: #d8e0d7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :where(
+          :root:not([data-theme='light']),
+          :root:not([data-theme='light']) body,
+          :root:not([data-theme='light']) .bs-root
+        ) {
+          background: #101512;
+        }
+        :where(:root:not([data-theme='light']) .bs-root .bone) {
+          background: #2f3b33;
+        }
+      }
+      :where(
+        :root[data-theme='dark'],
+        :root[data-theme='dark'] body,
+        :root[data-theme='dark'] .bs-root
+      ) {
+        background: #101512;
+      }
+      :where(:root[data-theme='dark'] .bs-root .bone) {
+        background: #2f3b33;
+      }
+    </style>
+    <!--
+      Escolhe o desenho sem bloquear a primeira pintura: até ele chegar, a Início já cobre a tela em vez de deixá-la
+      branca. O arquivo próprio continua coberto pela CSP, sem abrir uma permissão para script em linha.
+    -->
+    <script src="boot-skeleton.js" defer></script>
   </head>
   <body>
     <!--
