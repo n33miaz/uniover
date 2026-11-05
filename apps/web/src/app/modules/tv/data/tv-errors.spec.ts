@@ -87,7 +87,8 @@ describe('describeFailure', () => {
     const unauthorized = describeFailure(
       http(502, 'command-failed', { agentError: 'adb_unauthorized' }),
     );
-    expect(unauthorized.message).toContain('Aceite o aviso na tela da TV');
+    expect(unauthorized.message).toContain('aceite o aviso na tela da TV');
+    expect(unauthorized.message).toContain('Sempre permitir neste computador');
     const missing = describeFailure(
       http(502, 'command-failed', { agentError: 'cleanup_report_missing' }),
     );
