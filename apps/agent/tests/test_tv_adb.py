@@ -672,6 +672,57 @@ async def test_restart_remote_service_without_authorization_runs_no_shell_comman
     assert runner.shell_commands() == []
 
 
+def unauthorized_runner() -> FakeAdbRunner:
+    return FakeAdbRunner(
+        {CONNECT: ok(f"failed to authenticate to {SERIAL}\r\n"), GET_STATE: ok("unauthorized")}
+    )
+
+
+@pytest.mark.parametrize("state", ["unauthorized", "device not found"])
+async def test_restart_remote_service_never_reconnects_while_the_authorization_is_pending(
+    state: str,
+) -> None:
+    runner = unauthorized_runner()
+    adb = make(runner)
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    runner.calls.clear()
+    runner.script[GET_STATE] = ok(state, returncode=1 if "not found" in state else 0)
+    for _ in range(2):
+        with pytest.raises(AdbUnauthorized):
+            await adb.restart_remote_service()
+    # Só se lê o estado: `adb connect` faria a TV mostrar o aviso "Permitir depuração USB".
+    assert runner.calls == [GET_STATE, GET_STATE]
+    assert runner.shell_commands() == []
+
+
+async def test_restart_remote_service_resumes_once_the_owner_accepted_the_prompt() -> None:
+    runner = restart_script()
+    runner.script[CONNECT] = [
+        ok(f"failed to authenticate to {SERIAL}\r\n"),
+        ok(f"connected to {SERIAL}\r\n"),
+    ]
+    adb = make(runner)
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    runner.calls.clear()
+    runner.script[GET_STATE] = ok("device\r\n")
+    await adb.restart_remote_service()  # o dono aceitou na TV: `get-state` já diz `device`
+    assert runner.calls[:3] == [GET_STATE, CONNECT, GET_STATE]
+    assert runner.shell_commands() == [*SHIELD, START]
+
+
+async def test_an_explicit_connect_still_reconnects_after_a_refusal() -> None:
+    runner = unauthorized_runner()
+    adb = make(runner)
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    runner.connected()
+    await adb.connect()  # o caminho pedido pelo dono (partida do agente) continua conectando
+    assert adb.connected
+    assert runner.calls.count(CONNECT) == 2
+
+
 async def test_a_deferred_disconnect_does_not_drop_a_connection_opened_meanwhile() -> None:
     runner = authorized()
     adb = make(runner)

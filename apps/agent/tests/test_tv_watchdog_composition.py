@@ -7,11 +7,13 @@ import pytest
 
 from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeTvAdb, FakeTvRemote
+from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.adapters.tv_discovery import PortState
 from uniover_agent.config import Settings
 from uniover_agent.main import build_relocator
-from uniover_agent.ports import TvPortClosed
+from uniover_agent.ports import AdbUnauthorized, TvPortClosed
 
+from .support_adb import ADB, CONNECT, GET_STATE, HOST, SERIAL, FakeAdbRunner, ok
 from .test_tv_adb_composition import enable_adb
 from .test_tv_composition import TV_HOST, make_tv, pair_fake_tv
 
@@ -133,3 +135,36 @@ async def test_the_address_watcher_only_warns_on_a_refusal_never_on_silence_or_a
     assert await relocator.step() is None
     assert probed == [TV_HOST]
     assert len(calls) == warned
+
+
+async def test_a_refusal_never_reopens_the_adb_prompt_while_the_adb_is_unauthorized(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runner = FakeAdbRunner(
+        {CONNECT: ok(f"failed to authenticate to {SERIAL}\r\n"), GET_STATE: ok("unauthorized")}
+    )
+    adb = AdbTv(ADB, HOST, 5555, timeout=1.0, runner=runner, retry_after=30.0)
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()  # a partida do agente: o dono vê o aviso e ainda não o aceitou
+    runner.calls.clear()
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)  # type: ignore[arg-type]
+    probe_answers(monkeypatch, PortState.REFUSED, PortState.REFUSED)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    assert setup.watchdog is not None
+    relocator = build_relocator(
+        Settings(tv_host=TV_HOST),
+        FakeClock(),
+        lambda: False,
+        on_refused=setup.watchdog.request,
+    )
+    assert relocator is not None
+    task = asyncio.create_task(setup.watchdog.run())
+    assert await relocator.step() is None
+    await asyncio.sleep(0.05)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    assert runner.calls, "o vigia chegou a tentar religar"
+    assert CONNECT not in runner.calls
+    assert runner.shell_commands() == []
