@@ -8,6 +8,9 @@ As mensagens dos erros são fixas e seguras para ir à tela do dono: nunca traze
 computador nem a saída crua do `adb`.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -18,6 +21,21 @@ ADB_UNAUTHORIZED: Final = "adb_unauthorized"
 ADB_UNREACHABLE: Final = "adb_unreachable"
 ADB_TIMEOUT: Final = "adb_timeout"
 ADB_FAILED: Final = "adb_failed"
+
+# Só um pedido explícito da pessoa (um botão do app) pode abrir uma conexão nova com uma TV que
+# ainda não deu a permissão do ADB: cada conexão assim faz a TV mostrar o aviso "Permitir depuração
+# USB". O que o agente faz sozinho (partida, lista diária, limpeza, ícones, vigia) nunca a ergue.
+ADB_USER_INITIATED: Final[ContextVar[bool]] = ContextVar("adb_user_initiated", default=False)
+
+
+@contextmanager
+def user_initiated_adb() -> Iterator[None]:
+    """Dentro do bloco, o ADB pode pedir a permissão à TV (a pessoa pediu isto agora)."""
+    token = ADB_USER_INITIATED.set(True)
+    try:
+        yield
+    finally:
+        ADB_USER_INITIATED.reset(token)
 
 
 class AdbError(TvChannelError):

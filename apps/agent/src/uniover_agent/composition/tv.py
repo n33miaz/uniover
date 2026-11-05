@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
     FileIconCache,
@@ -29,6 +30,7 @@ from uniover_agent.adapters.tv_discovery import (
     PortState,
     TvKindName,
     find_tvs,
+    tcp_open,
     tcp_probe,
 )
 from uniover_agent.adapters.tv_livre_apk import ReleaseApkSource
@@ -49,6 +51,7 @@ from uniover_agent.adapters.wol import send_wake_on_lan
 from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK
 from uniover_agent.config import (
     Settings,
+    adb_key_backup_dir,
     config_path,
     require_cleanup_keep,
     require_tv_host,
@@ -92,6 +95,7 @@ from uniover_agent.core import (
     tv_text_handler,
     tv_wake_handler,
     unsupported_handler,
+    user_initiated,
 )
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import (
@@ -614,6 +618,11 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         kill_server_cooldown=settings.adb_kill_server_cooldown_seconds,
         pull_timeout=settings.adb_pull_timeout_seconds,
         monotonic=clock.monotonic,
+        # Lembra, por TV, se ela já deu a permissão do ADB a esta chave: enquanto não deu, o agente
+        # nunca conecta sozinho (cada conexão faria a TV mostrar o aviso de novo).
+        authorization=AdbAuthorization(
+            tv_cert_dir(settings.tv_name), AdbKeys(adb_key_backup_dir())
+        ),
     )
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
@@ -636,7 +645,9 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     # O handler de `tv.text.v1` continua sendo um só: ele recebe o ADB, não é substituído.
     if setup.text is not None:
         setup.text.use_adb(adb)
-    setup.handlers["tv.apps.refresh.v1"] = tv_apps_refresh_handler(apps)
+    # "Atualizar lista" é o pedido da pessoa que pode abrir o aviso do ADB na TV (uma vez, com a
+    # marca "Sempre permitir"); a lista diária, a limpeza e o resto nunca o abrem.
+    setup.handlers["tv.apps.refresh.v1"] = user_initiated(tv_apps_refresh_handler(apps))
     setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
     # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
     # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
@@ -711,8 +722,9 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             await adb.connect()
         except AdbUnauthorized:
             _log.warning(
-                "a TV não autorizou este PC no ADB: aceite o aviso na tela da TV. "
-                "Lista de apps desligada até lá (o agente confere de novo sozinho)"
+                "a TV ainda não deu a permissão do ADB ao UniOver: toque em Atualizar lista no "
+                "app e aceite o aviso na TV, marcando Sempre permitir neste computador. Nenhum "
+                "aviso é aberto sozinho; a lista de apps fica desligada até lá"
             )
             awaiting_authorization.set()
             return
@@ -744,11 +756,30 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
                     _log.info("a TV autorizou este PC no ADB: funções avançadas liberadas")
                     break
                 if state == "unknown":
-                    _log.info("a TV não consta mais no ADB deste PC; reinicie o agente para tentar")
+                    _log.info(
+                        "a TV não consta no ADB deste PC; a permissão só é pedida pelo app "
+                        "(Atualizar lista), nunca sozinha"
+                    )
                     break
             awaiting_authorization.clear()
 
+    async def keep_authorization_fresh() -> None:
+        # O Android 11+ revoga a permissão do ADB sem uso por 7 dias. Um contato autorizado por dia
+        # (nenhum comando de entrada) zera a contagem; só com a TV atendendo e a permissão
+        # registrada.
+        while True:
+            await clock.sleep(settings.tv_adb_keepalive_seconds)
+            if not await tcp_open(host, settings.tv_adb_port):
+                continue
+            outcome = await adb.keep_authorization_fresh()
+            _log.debug("contato periódico com o ADB da TV: %s", outcome)
+
+    # Quem declara a capacidade também vale para a permissão dada por um pedido da pessoa (a partida
+    # pode ter ficado sem ela), e uma recusa nova põe a reavaliação em espera de novo.
+    adb.on_authorized(declare_adb_capabilities)
+    adb.on_unauthorized(awaiting_authorization.set)
     setup.prepare.append(declare_when_usable)
+    setup.background.append(keep_authorization_fresh)
     setup.background.append(recheck_authorization)
     compose_livre(setup, settings, adb, host, clock)
     return adb
@@ -778,7 +809,12 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
         clock,
         remote_guard=setup.manager,
     )
-    setup.handlers["tv.livre.v1"] = tv_livre_handler(livre, setup.transport, setup.envelopes)
+    # Ler o estado ao abrir a tela não é pedido de permissão; as ações do TV Livre (instalar,
+    # aplicar) são ações da pessoa e podem abrir o aviso do ADB.
+    setup.handlers["tv.livre.v1"] = user_initiated(
+        tv_livre_handler(livre, setup.transport, setup.envelopes),
+        when=lambda command: command.body.get("action") != "status",
+    )
     setup.handlers["tv.livre.photo.v1"] = tv_livre_photo_handler(photos)
     setup.background_commands.add("tv.livre.v1")
 

@@ -36,6 +36,7 @@ from uniover_agent.ports.transport import (
     TransportError,
 )
 from uniover_agent.ports.tv_adb import (
+    ADB_USER_INITIATED,
     AdbCommandFailed,
     AdbError,
     AdbNotReady,
@@ -46,6 +47,7 @@ from uniover_agent.ports.tv_adb import (
     LaunchableApp,
     TvAdb,
     is_adb_typable,
+    user_initiated_adb,
 )
 from uniover_agent.ports.tv_channel import (
     TvCertificateRefused,
@@ -83,6 +85,7 @@ class SecretStore(Protocol):
 
 
 __all__ = [
+    "ADB_USER_INITIATED",
     "AdbCommandFailed",
     "AdbError",
     "AdbNotReady",
@@ -136,4 +139,5 @@ __all__ = [
     "TvRemote",
     "TvUnreachable",
     "is_adb_typable",
+    "user_initiated_adb",
 ]
