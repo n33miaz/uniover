@@ -387,6 +387,7 @@ def build_driver_setup(
         on_connected=learn_android_mac,
         text_cursor=settings.tv_text_cursor,
         text_debug_values=settings.tv_text_debug_values,
+        text_trace=settings.tv_text_trace,
     )
     manager = TvSessionManager(
         clock,

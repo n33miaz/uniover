@@ -102,11 +102,17 @@ def test_text_ime_options_are_passed_to_the_android_adapter(
     remote = FakeTvRemote()
     _built, options = pair_fake_tv(monkeypatch, remote)
     setup = make_tv(
-        Settings(tv_host=TV_HOST, tv_text_cursor="field_end", tv_text_debug_values=True)
+        Settings(
+            tv_host=TV_HOST,
+            tv_text_cursor="field_end",
+            tv_text_debug_values=True,
+            tv_text_trace=True,
+        )
     )
     assert setup is not None
     assert options[0]["text_cursor"] == "field_end"
     assert options[0]["text_debug_values"] is True
+    assert options[0]["text_trace"] is True
 
 
 @pytest.mark.parametrize("mac_on_first_connect", [True, False])
