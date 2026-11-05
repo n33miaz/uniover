@@ -277,6 +277,7 @@ def test_the_child_environment_points_everything_at_the_temporary_folder(tmp_pat
         "USERPROFILE": r"C:\real",
         "UNIOVER_CONFIG_FILE": r"C:\real\agent.toml",
         "UV_PROJECT_ENVIRONMENT": r"C:\real\venv",
+        "UV_OFFLINE": "1",
         "PYTHONPATH": r"C:\lixo",
         "VIRTUAL_ENV": str(tmp_path / ".venv"),
         "PATH": os.pathsep.join([str(tmp_path / ".venv" / "Scripts"), r"C:\Windows"]),
@@ -295,6 +296,7 @@ def test_the_child_environment_points_everything_at_the_temporary_folder(tmp_pat
     assert "UNIOVER_CONFIG_FILE" not in env
     assert "UV_PROJECT_ENVIRONMENT" not in env
     assert "VIRTUAL_ENV" not in env
+    assert "UV_OFFLINE" not in env
     assert env["PYTHONPATH"] == str(tmp_path / "support")
     assert env["PYTHON_KEYRING_BACKEND"] == "drill_keyring.DrillKeyring"
     assert (env["UNIOVER_UPDATE_DRILL"], env["UNIOVER_UPDATE_SOURCE_URL"]) == (
@@ -304,6 +306,87 @@ def test_the_child_environment_points_everything_at_the_temporary_folder(tmp_pat
     assert env["UV_CACHE_DIR"] == r"C:\cache"
     assert env["PATH"].split(os.pathsep) == [r"C:\uv", r"C:\Windows"]
     assert base["LOCALAPPDATA"] == r"C:\real\Local"  # o ambiente de quem chama não é alterado
+
+
+def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+
+    class FakeDrill:
+        def __init__(self, _args: object) -> None:
+            self.verdict = drill.Verdict()
+            self.base = tmp_path
+
+        def real_fingerprint(self) -> dict[str, object]:
+            return {"processos reais": []}
+
+        def prepare(self, _base_sha: str) -> None:
+            events.append("prepare")
+
+        def install_base(self, _base_sha: str) -> bool:
+            return True
+
+        def preflight(self, _base_sha: str) -> bool:
+            return True
+
+        def wait_ready(self) -> bool:
+            return True
+
+        def offer(self, label: str, *_args: object, **_kwargs: object) -> bool:
+            events.append(label)
+            return True
+
+        def refused_without_the_index(self, *_args: object) -> bool:
+            events.append("sem indice")
+            return True
+
+        def recover_interrupted_swap(self, _sha: str) -> bool:
+            events.append("queda entre as renomeacoes")
+            return True
+
+        def rollback_after_sync_failure(self, _sha: str) -> bool:
+            return True
+
+        def windows_check(self) -> None:
+            return None
+
+        def keep_evidence(self) -> None:
+            raise AssertionError("o ensaio falso nao deveria reprovar")
+
+        def cleanup(self) -> None:
+            return None
+
+    monkeypatch.setattr(drill, "Drill", FakeDrill)
+    monkeypatch.setattr(drill, "resolve_base", lambda _requested: "b" * 40)
+    monkeypatch.setattr(drill, "working_tree_files", lambda: dict(FILES))
+    monkeypatch.setattr(drill, "ref_files", lambda _ref: {})
+    monkeypatch.setattr(drill, "say", lambda _text="": None)
+    monkeypatch.setattr(drill, "wait_until", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(drill.os, "name", "nt")
+
+    assert drill.main([]) == 0
+    broken = events.index("A. candidata quebrada (recusa, a base segue)")
+    # Logo depois da recusa por código quebrado e antes de qualquer troca de versão.
+    assert events.index("sem indice") == broken + 1
+    assert events.index("sem indice") < events.index("B. base -> candidata")
+
+
+def test_stopping_the_drill_also_ends_an_update_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance = object.__new__(drill.Drill)
+    instance.launcher = None
+    update = proc(40, 1, "uv.exe", r"uv.exe run --project C:\x\app uniover-agent self-update")
+    snapshots = [[update], []]
+    killed: list[int] = []
+
+    monkeypatch.setattr(instance, "tree", lambda: snapshots.pop(0) if len(snapshots) > 1 else [])
+    monkeypatch.setattr(instance, "kill", killed.append)
+    monkeypatch.setattr(drill, "wait_until", lambda predicate, *_args: predicate())
+
+    assert instance.stop_everything()
+    assert killed == [40]
 
 
 def test_the_local_feed_answers_the_commit_and_the_known_zips_only() -> None:
