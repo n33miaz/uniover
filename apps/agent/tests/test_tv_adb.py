@@ -141,6 +141,56 @@ async def test_already_connected_but_offline_is_disconnected_and_connected_once_
     assert runner.calls == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
 
 
+UNAUTHORIZED_STATE = ok("error: device unauthorized.\r\n", returncode=1)
+
+
+async def test_an_unauthorized_tv_is_never_reconnected_to_avoid_a_new_prompt() -> None:
+    runner = FakeAdbRunner(
+        {
+            CONNECT: ok(f"already connected to {SERIAL}\r\n"),
+            GET_STATE: UNAUTHORIZED_STATE,
+            DISCONNECT: ok(f"disconnected {SERIAL}\r\n"),
+        }
+    )
+    with pytest.raises(AdbUnauthorized):
+        await make(runner).connect()
+    assert runner.calls == [CONNECT, GET_STATE]  # sem `disconnect` nem segundo `connect`
+
+
+async def test_reading_the_authorization_never_opens_a_connection() -> None:
+    runner = FakeAdbRunner({GET_STATE: [UNAUTHORIZED_STATE, ok("device\r\n")]})
+    adb = make(runner)
+    assert await adb.read_authorization() == "unauthorized"
+    assert not adb.connected
+    assert await adb.read_authorization() == "authorized"
+    assert adb.connected
+    assert runner.calls == [GET_STATE, GET_STATE]
+    gone = FakeAdbRunner({GET_STATE: ok(f"error: device '{SERIAL}' not found\r\n", returncode=1)})
+    assert await make(gone).read_authorization() == "unknown"
+
+
+async def test_a_blocked_unauthorized_tv_notices_the_acceptance_without_connecting() -> None:
+    clock = Clock()
+    runner = FakeAdbRunner(
+        {
+            CONNECT: ok(f"already connected to {SERIAL}\r\n"),
+            GET_STATE: [UNAUTHORIZED_STATE, UNAUTHORIZED_STATE, ok("device\r\n")],
+        }
+    )
+    adb = make(runner, clock)
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    clock.now = 5  # ainda no bloqueio de 30 s
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 1
+    clock.now = 10
+    runner.script[shell(LEANBACK_QUERY)] = ok(NO_ACTIVITIES)
+    runner.script[shell(LAUNCHER_QUERY)] = ok(NO_ACTIVITIES)
+    assert await adb.list_apps() == []
+    assert runner.calls.count(CONNECT) == 1  # a aceitação foi vista pelo `get-state`, sem conectar
+
+
 DEVICES = ("devices",)
 KILL = ("kill-server",)
 
