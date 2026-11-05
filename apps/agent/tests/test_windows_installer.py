@@ -139,9 +139,10 @@ def test_launcher_runs_its_fallback_when_updated_wrapper_is_missing(tmp_path: Pa
         env=environment,
     )
     try:
-        for _ in range(100):
-            if marker.exists():
-                break
+        # O lançador lista os processos (Get-CimInstance) antes do fallback: com muitos processos
+        # abertos, ou outros testes rodando, isso leva bem mais que 10 s.
+        deadline = time.monotonic() + 90
+        while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.1)
         assert marker.read_text(encoding="utf-8").strip() == "fallback"
     finally:
