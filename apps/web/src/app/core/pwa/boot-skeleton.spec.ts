@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { routes } from '../../app.routes';
+import { SETTINGS_ROUTES } from '../../settings.routes';
 import { TRAINING_ROUTES } from '../../modules/training/training.routes';
 import { BootVariant, bootVariantFor } from './boot-variant';
 import { PwaUpdateService } from './pwa-update.service';
@@ -388,8 +388,6 @@ describe('boot skeleton', () => {
   });
 
   it('covers the routes declared by the shell instead of relying only on a hand-written address list', () => {
-    const shell = routes.find((route) => route.path === '')!;
-    const settings = shell.children!.find((route) => route.path === 'ajustes')!;
     const expectedSettings: Readonly<Record<string, BootVariant>> = {
       '': 'settings',
       perfil: 'settings-profile',
@@ -406,9 +404,9 @@ describe('boot skeleton', () => {
       sobre: 'settings-about',
       creditos: 'settings-credits',
     };
-    const actualSettings = settings
-      .children!.filter((route) => route.path !== undefined)
-      .map((route) => route.path!);
+    const actualSettings = SETTINGS_ROUTES.filter((route) => route.path !== undefined).map(
+      (route) => route.path!,
+    );
     expect(Object.keys(expectedSettings).sort()).toEqual(actualSettings.sort());
     for (const path of actualSettings) {
       const address = `/ajustes/${path.replace(':id', 'uma-tv')}`.replace(/\/$/, '');
