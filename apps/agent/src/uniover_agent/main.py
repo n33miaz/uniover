@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from uniover_agent.adapters.installation import migrate_layout
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
-from uniover_agent.adapters.startup_trace import record_startup_failure
+from uniover_agent.adapters.startup_trace import describe_exception, record_startup_failure
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_locate import identify_tv
 from uniover_agent.adapters.tv_pairing import ask_code_in_window
@@ -181,5 +181,5 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
         # O erro continua subindo (o Python o imprime e sai com 1); antes de subir, fica no disco:
         # o processo não tem janela e o que ele imprime se perde.
         if command == "run":
-            record_startup_failure("excecao", f"{type(exc).__name__}: {exc}")
+            record_startup_failure("excecao", describe_exception(exc))
         raise

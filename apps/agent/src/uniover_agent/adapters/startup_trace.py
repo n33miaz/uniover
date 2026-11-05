@@ -6,13 +6,18 @@ sem janela e se perdia: o PC ligado, o agente reiniciando em laço e nenhuma pis
 nem no disco.
 
 Cada falha vira uma linha em `logs\startup.log` (para quem olha o PC) e uma ocorrência
-`startup.failed` na fila de diagnóstico (vai à API na próxima conexão). O mesmo motivo não se repete
-dentro da janela: o supervisor reinicia o agente a cada poucos minutos e isto não pode encher o
-disco.
+`startup.failed` na fila de diagnóstico (vai à API na próxima conexão). As duas gravações são
+independentes: log trancado ou sem espaço não impede a fila, e a fila trancada não impede o log. O
+mesmo motivo não se repete dentro da janela: o supervisor reinicia o agente a cada poucos minutos e
+isto não pode encher o disco.
 
 A janela é por motivo e só começa quando a ocorrência entrou na fila de verdade: fila trancada ou
 disco cheio não calam as tentativas seguintes. Dois processos (a tarefa agendada e uma execução
-manual) disputam a mesma janela por um arquivo de reserva criado de forma atômica: só um grava.
+manual) disputam a mesma janela por um arquivo de reserva criado de forma atômica que leva o número
+do processo dono: só um grava, e a reserva só é tomada de volta quando esse processo já não existe.
+
+Texto livre de exceção inesperada nunca entra aqui (a mensagem pode ser um segredo curto que
+nenhum padrão reconhece): só o tipo e o ponto do código onde ela foi levantada.
 
 Nada aqui levanta erro: é rastro, e rastro não pode piorar a partida.
 """
@@ -20,7 +25,9 @@ Nada aqui levanta erro: é rastro, e rastro não pode piorar a partida.
 import contextlib
 import os
 import re
+import sys
 import time
+import traceback
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -37,19 +44,37 @@ LOG_FILE: Final = "startup.log"
 KIND: Final = "startup.failed"
 # O mesmo motivo só é gravado de novo depois disto.
 REPEAT_SECONDS: Final = 6 * 3600.0
-# Uma reserva esquecida por um processo que caiu no meio deixa de valer depois disto.
-CLAIM_STALE_SECONDS: Final = 60.0
+# Reserva sem número de processo legível (processo caiu entre criar e gravar): vale por pouco tempo.
+CLAIM_UNREADABLE_SECONDS: Final = 60.0
+# Mesmo com o processo dono vivo, uma reserva tão velha é de número de processo reaproveitado.
+CLAIM_MAX_SECONDS: Final = 3600.0
 _LOG_LIMIT_BYTES: Final = 64 * 1024
 _REASON = re.compile(r"[a-z0-9_]{1,32}")
 # Sequência longa e opaca (token, chave, código) mesmo sem palavra-chave por perto.
 _OPAQUE = re.compile(r"[A-Za-z0-9_+/=-]{24,}")
+# Windows: `OpenProcess` com direito mínimo, e o código de saída de um processo que ainda roda.
+_PROCESS_QUERY_LIMITED_INFORMATION: Final = 0x1000
+_STILL_ACTIVE: Final = 259
+_ERROR_ACCESS_DENIED: Final = 5
 
 
 def sanitize(text: str) -> str:
-    """Uma linha só, sem segredo, caminho, endereço nem nome do usuário ou do PC."""
+    """Uma linha só, sem segredo, caminho, endereço nem nome do usuário ou do PC.
+
+    Serve a texto que o agente mesmo escreveu. Mensagem de exceção inesperada não passa por aqui:
+    ver `describe_exception`."""
     names = [os.environ.get("USERNAME", ""), os.environ.get("COMPUTERNAME", "")]
     one_line = " ".join(text.split())
     return _OPAQUE.sub(REDACTED, scrub_personal(one_line, names))
+
+
+def describe_exception(exc: BaseException) -> str:
+    """Só o tipo da exceção e onde ela foi levantada (arquivo, linha e função); nunca a mensagem."""
+    where = ""
+    with contextlib.suppress(Exception):
+        frame = traceback.extract_tb(exc.__traceback__)[-1]
+        where = f" em {Path(frame.filename).name}:{frame.lineno} ({frame.name})"
+    return f"{type(exc).__name__}{where}"
 
 
 def _marker(root: Path, reason: str) -> Path:
@@ -63,19 +88,71 @@ def _recently_recorded(marker: Path, now: float) -> bool:
         return False
 
 
+def _windows_process_alive(pid: int) -> bool:
+    import ctypes  # noqa: PLC0415 - só existe no Windows
+    from ctypes import wintypes  # noqa: PLC0415
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == _ERROR_ACCESS_DENIED
+    try:
+        code = wintypes.DWORD()
+        return not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) or (
+            code.value == _STILL_ACTIVE
+        )
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def process_alive(pid: int) -> bool:
+    """O processo `pid` ainda existe? Na dúvida (sem permissão para olhar), sim."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        return _windows_process_alive(pid)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _claim_is_abandoned(path: Path, now: float) -> bool:
+    """A reserva é de um processo que já não existe (ou velha demais para ser dele)?"""
+    try:
+        age = now - path.stat().st_mtime
+        if age > CLAIM_MAX_SECONDS:
+            return True
+        text = path.read_text(encoding="ascii").strip()
+    except OSError, ValueError:
+        return False
+    if not text.isdigit():
+        return age > CLAIM_UNREADABLE_SECONDS
+    return not process_alive(int(text))
+
+
 def _claim(path: Path, now: float) -> bool:
-    """Cria a reserva de forma atômica; só um processo por vez a tem."""
+    """Cria a reserva de forma atômica, com o número deste processo; só um a tem por vez."""
     for _ in range(2):
         try:
-            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
+            if not _claim_is_abandoned(path, now):
+                return False
             try:
-                if now - path.stat().st_mtime < CLAIM_STALE_SECONDS:
-                    return False
                 path.unlink(missing_ok=True)
             except OSError:
                 return False
             continue
+        with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+            handle.write(str(os.getpid()))
         return True
     return False
 
@@ -87,11 +164,11 @@ def record_startup_failure(
     base: Path | None = None,
     clock: Callable[[], float] = time.time,
 ) -> bool:
-    """Grava a falha de partida; `False` se foi contida por repetição ou não deu para gravar.
+    """Grava a falha de partida; `False` se foi contida por repetição ou não entrou na fila.
 
     `reason` é um código curto e fixo (`configuracao`, `cofre`, `nao_pareado`,
-    `credencial_recusada`, `excecao`): é ele que decide se o motivo é repetido. `detail` é o texto
-    livre, higienizado aqui. A janela só fecha quando a ocorrência entrou na fila de diagnóstico.
+    `credencial_recusada`, `excecao`): é ele que decide se o motivo é repetido. `detail` é texto do
+    próprio agente, higienizado aqui. A janela só fecha quando a ocorrência entrou na fila.
     """
     if not _REASON.fullmatch(reason):
         return False
@@ -108,7 +185,23 @@ def record_startup_failure(
         if _recently_recorded(marker, now):
             return False
         text = f"{reason}: {sanitize(detail)}"[:DETAIL_LIMIT].strip()
-        _write_log(root / "logs", now, text)
+        # Cada gravação por conta própria: uma falha numa não leva a outra junto.
+        with contextlib.suppress(Exception):
+            _write_log(root / "logs", now, text)
+        if not _enqueue(root / "runtime", now, text):
+            return False
+        _write_marker(marker, now)
+    except Exception:  # rastro nunca pode derrubar a partida
+        return False
+    finally:
+        if claim is not None:
+            with contextlib.suppress(OSError):
+                claim.unlink(missing_ok=True)
+    return True
+
+
+def _enqueue(runtime: Path, now: float, text: str) -> bool:
+    try:
         at = datetime.fromtimestamp(now, UTC).isoformat(timespec="milliseconds")
         event = DiagnosticEvent(
             id=str(uuid.uuid7()),
@@ -118,18 +211,17 @@ def record_startup_failure(
             detail=text,
             component="startup",
         )
-        if not FileDiagnosticStore(root / "runtime").append_confirmed(event):
-            return False
+        return FileDiagnosticStore(runtime).append_confirmed(event)
+    except Exception:
+        return False
+
+
+def _write_marker(marker: Path, now: float) -> None:
+    # Falhar aqui só deixa a janela aberta (a próxima partida tenta de novo): a fila já tem a linha.
+    with contextlib.suppress(OSError):
         temporary = marker.with_name(marker.name + ".tmp")
         temporary.write_text(str(now), encoding="utf-8")
         os.replace(temporary, marker)
-    except Exception:  # rastro nunca pode derrubar a partida
-        return False
-    finally:
-        if claim is not None:
-            with contextlib.suppress(OSError):
-                claim.unlink(missing_ok=True)
-    return True
 
 
 def _write_log(logs: Path, now: float, text: str) -> None:

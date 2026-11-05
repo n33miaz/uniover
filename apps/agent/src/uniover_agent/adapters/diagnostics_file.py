@@ -43,6 +43,8 @@ LEASE_SECONDS: Final = 120.0
 # A fila nunca passa disto: o mais antigo cai primeiro (o PC pode ficar dias sem API).
 MAX_EVENTS: Final = 200
 _COMPACT_BYTES: Final = 160 * 1024
+# Passado isto, o arquivo vivo recusa ocorrências novas (a compactação não está dando conta).
+_HARD_LIMIT_BYTES: Final = 2 * _COMPACT_BYTES
 _SEVERITIES: Final = frozenset({"info", "warn", "error"})
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")
 
@@ -131,6 +133,8 @@ class FileDiagnosticStore:
         try:
             with self._lock:
                 self._pending.parent.mkdir(parents=True, exist_ok=True)
+                if not self._make_room():
+                    return False
                 with self._pending.open("a", encoding="utf-8", newline="\n") as handle:
                     handle.write(_line(event) + "\n")
                 self._compact_if_large()
@@ -148,6 +152,36 @@ class FileDiagnosticStore:
                 self._compact()
         except OSError:
             _log.warning("não consegui compactar a fila do diagnóstico", exc_info=True)
+
+    def _make_room(self) -> bool:
+        """Garante que o arquivo vivo não passa do teto duro; `False` se não dá para acrescentar.
+
+        Com o arquivo de envio trancado (ou o disco cheio), a compactação não consegue levar o
+        excesso embora e o arquivo cresceria sem limite. Passado o teto, a ocorrência nova é
+        recusada (o chamador sabe e tenta depois) em vez de ser gravada onde ninguém a limita.
+        """
+        if self._pending_size() <= _HARD_LIMIT_BYTES:
+            return True
+        try:
+            self._compact()
+        except OSError:
+            _log.warning("não consegui compactar a fila do diagnóstico", exc_info=True)
+        return self._pending_size() <= _HARD_LIMIT_BYTES
+
+    def _pending_size(self) -> int:
+        try:
+            return self._pending.stat().st_size
+        except OSError:
+            return 0
+
+    def has_kind(self, kind: str) -> bool:
+        """Há na fila (viva, em envio ou em troca) alguma ocorrência deste tipo? Só lê."""
+        with self._lock:
+            return any(
+                event.kind == kind
+                for path in (self._sending, self._incoming, self._pending)
+                for event in self._read(path)
+            )
 
     def _compact(self) -> None:
         # Nunca regrava `diagnostics.jsonl` no lugar: o supervisor e outro processo acrescentam a
