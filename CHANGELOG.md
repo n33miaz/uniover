@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.42.11](https://github.com/n33miaz/uniover/compare/v0.42.10...v0.42.11) (2026-11-05)
+
+
+### Bug Fixes
+
+* **web:** first pull cap counts silence, not time
+* **web:** today waits for what it reads
+* **web:** hide the count until the catalog comes
+* **web:** routine editor waits for its routine
+* **web:** hide the count before the first read
+* **web:** abandon hung pulls, no total cap
+* **web:** skip a pull the deadline already ended
+
+
+### Performance Improvements
+
+* **web:** read merge rows without a get per id
+
 ## [0.42.10](https://github.com/n33miaz/uniover/compare/v0.42.9...v0.42.10) (2026-11-05)
 
 
