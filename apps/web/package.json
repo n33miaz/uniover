@@ -4,7 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "build": "ng build && node scripts/build-sw.mjs",
+    "build": "ng build && node scripts/defer-styles.mjs && node scripts/build-sw.mjs",
     "build:icons": "node scripts/build-icons.mjs",
     "audit:pwa": "node scripts/audit-pwa.mjs",
     "watch": "ng build --watch --configuration development",

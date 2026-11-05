@@ -15,6 +15,8 @@
     <!--
       A folha completa sai separada para não inflar a casca, mas esta base precisa pintar antes da primeira requisição
       de CSS. O servidor troca o nonce junto com o do app; assim a CSP continua sem exceção para código em linha.
+      No build (scripts/defer-styles.mjs) entram também, em outro <style>, as formas dos esqueletos (boot-skeleton.css e os
+      tokens do styles.css) e a folha principal passa a carregar sem bloquear a pintura: o esqueleto aparece junto com o HTML.
     -->
     <style nonce="__CSP_NONCE__">
       :where(:root, body) {

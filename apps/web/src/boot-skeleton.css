@@ -1,6 +1,6 @@
 /*
- * Esqueletos de tela inteira, um por tipo de tela. Ficam num estilo GLOBAL (no mesmo pacote do `styles.css`, que é uma
- * folha bloqueante no `<head>`) porque dois desenhos idênticos os usam: o estático do `index.html`, que cobre a tela antes
+ * Esqueletos de tela inteira, um por tipo de tela. Ficam num estilo GLOBAL (no mesmo pacote do `styles.css`; no build, o
+ * `scripts/defer-styles.mjs` também o copia para o HTML, para o esqueleto pintar sem esperar a folha externa) porque dois desenhos idênticos os usam: o estático do `index.html`, que cobre a tela antes
  * de qualquer JavaScript do Angular rodar, e o `UpdateSkeleton`, que cobre atualização, abertura lenta e a espera de uma
  * rota preguiçosa. Um só CSS garante que a troca de um pelo outro não dê salto. O brilho vem da classe única de espera
  * (`ui-skeleton`, em styles.css): aqui só a forma de cada osso, com as medidas e os raios da tela real.

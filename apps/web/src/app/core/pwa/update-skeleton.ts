@@ -20,6 +20,8 @@ export const ROUTE_WAIT_MS = 200;
 export const BOOT_SKELETON_ID = 'boot-skeleton';
 /** Tempo da saída do esqueleto estático (a animação `leaving` dura `--dur-exit`); passado isso ele é tirado do documento. */
 const BOOT_LEAVE_MS = 260;
+/** Evento que o `boot-skeleton.js` dispara no documento quando a folha de estilos principal terminou de carregar. */
+export const STYLES_READY_EVENT = 'uniover:styles-ready';
 /** Teto para registrar a demora sem expor a página incompleta por baixo da cobertura. */
 export const PAGE_READY_TIMEOUT_MS = 8_000;
 
@@ -541,13 +543,25 @@ export class UpdateSkeleton {
   private readonly waitingForPage = signal(false);
   protected readonly pageTimedOut = signal(false);
   private readyObserver: MutationObserver | undefined;
+  /**
+   * A folha de estilos principal sai do caminho da primeira pintura (media="print" até o `boot-skeleton.js` ligá-la), então
+   * o Angular pode subir antes dela. Enquanto ela não chega, o esqueleto estático do `index.html` (que não depende dela)
+   * segue cobrindo a tela: a página sem estilo nunca aparece, e o desenho do Angular, que usa as formas dessa folha, espera.
+   * Sem o atributo (servidor de desenvolvimento, testes) não há o que esperar.
+   */
+  private readonly stylesPending = signal(
+    this.doc.documentElement.getAttribute('data-styles') === 'pending',
+  );
+  /** O esqueleto estático ainda precisa sair, mas a folha de estilos não chegou: sai quando ela chegar. */
+  private dismissAfterStyles = false;
   protected readonly visible = computed(
     () =>
-      this.pwa.showSkeleton() ||
-      this.slowBoot() ||
-      this.routeWait() !== null ||
-      this.waitingForPage() ||
-      this.pageTimedOut(),
+      !this.stylesPending() &&
+      (this.pwa.showSkeleton() ||
+        this.slowBoot() ||
+        this.routeWait() !== null ||
+        this.waitingForPage() ||
+        this.pageTimedOut()),
   );
 
   /**
@@ -629,7 +643,9 @@ export class UpdateSkeleton {
       }
     });
     this.doc.addEventListener('uniover:page-ready', this.contentReady);
+    this.doc.addEventListener(STYLES_READY_EVENT, this.stylesReady);
     inject(DestroyRef).onDestroy(() => {
+      this.doc.removeEventListener(STYLES_READY_EVENT, this.stylesReady);
       this.win?.clearTimeout(this.routeTimer);
       this.win?.clearTimeout(this.pageReadyTimer);
       this.win?.clearTimeout(this.presentationTimer);
@@ -683,6 +699,14 @@ export class UpdateSkeleton {
     this.routeTimer = undefined;
     this.routeWait.set(null);
   }
+
+  private readonly stylesReady = (): void => {
+    this.stylesPending.set(false);
+    if (this.dismissAfterStyles) {
+      this.dismissAfterStyles = false;
+      this.dismissBootSkeleton();
+    }
+  };
 
   /** O LoadingFrame anuncia a primeira forma; os marcadores da rota cobrem conteúdo síncrono e esqueletos locais. */
   private readonly contentReady = (): void => {
@@ -796,6 +820,10 @@ export class UpdateSkeleton {
   private dismissBootSkeleton(): void {
     const element = this.doc.getElementById(BOOT_SKELETON_ID);
     if (!element) return;
+    if (this.stylesPending()) {
+      this.dismissAfterStyles = true;
+      return;
+    }
     element.classList.add('leaving');
     this.doc.getElementById('boot-timeout')?.remove();
     const win = this.win;

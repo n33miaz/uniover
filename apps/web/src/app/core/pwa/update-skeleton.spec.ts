@@ -7,6 +7,7 @@ import {
   PAGE_READY_TIMEOUT_MS,
   ROUTE_WAIT_MS,
   SLOW_BOOT_MS,
+  STYLES_READY_EVENT,
   UpdateSkeleton,
 } from './update-skeleton';
 
@@ -26,6 +27,7 @@ describe('UpdateSkeleton', () => {
     sessionStorage.clear();
     document.querySelectorAll('[data-test-screen-marker]').forEach((element) => element.remove());
     document.documentElement.removeAttribute('data-screen-timeout');
+    document.documentElement.removeAttribute('data-styles');
     history.pushState({}, '', '/');
   });
 
@@ -328,6 +330,46 @@ describe('UpdateSkeleton', () => {
     await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
     // O aviso estático dos 20 s sai junto: sem o esqueleto não há o que avisar.
     expect(document.getElementById('boot-timeout')).toBeNull();
+  });
+
+  it('keeps the static skeleton over the page until the main stylesheet arrives, even with the screen ready', async () => {
+    document.documentElement.setAttribute('data-styles', 'pending');
+    const boot = document.createElement('div');
+    boot.id = BOOT_SKELETON_ID;
+    document.body.appendChild(boot);
+    const { fixture, el } = setup();
+    fixture.detectChanges();
+    const pending = TestBed.inject(Router).navigateByUrl('/ok');
+    addReadyMarker('home');
+    await pending;
+    await fixture.whenStable();
+    // A tela está pronta, mas sem a folha de estilos ela não tem estilo: o esqueleto estático segue por cima, e o do
+    // Angular (que depende da folha) não é desenhado por cima dele.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(document.getElementById(BOOT_SKELETON_ID)).toBe(boot);
+    expect(boot.classList.contains('leaving')).toBe(false);
+    expect(boot.classList.contains('bs-covered')).toBe(false);
+    expect(el.querySelector('.bs-root')).toBeNull();
+
+    document.documentElement.setAttribute('data-styles', 'ready');
+    document.dispatchEvent(new Event(STYLES_READY_EVENT));
+    expect(boot.classList.contains('leaving')).toBe(true);
+    await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
+  });
+
+  it('takes the static skeleton away at once when the stylesheet arrived before the screen got ready', async () => {
+    document.documentElement.setAttribute('data-styles', 'pending');
+    const boot = document.createElement('div');
+    boot.id = BOOT_SKELETON_ID;
+    document.body.appendChild(boot);
+    const { fixture } = setup();
+    fixture.detectChanges();
+    document.dispatchEvent(new Event(STYLES_READY_EVENT));
+    const pending = TestBed.inject(Router).navigateByUrl('/ok');
+    addReadyMarker('home');
+    await pending;
+    expect(boot.classList.contains('leaving')).toBe(true);
+    await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
   });
 
   it('hides the static skeleton from painting while the Angular one is drawn over it', async () => {
