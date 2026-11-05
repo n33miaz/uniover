@@ -112,7 +112,7 @@ test.describe('head por módulo no cliente', () => {
     await expectHead(page, TRAINING);
     await expectTargetsRespond(page);
 
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar', exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
     await expectHead(page, ROOT);
     await expectSameDocument(page);
