@@ -130,6 +130,10 @@ configuração, certificado nem registros.
   (e o auto-diagnóstico do agente faz o mesmo, em 20 min). O agente escreve o registro numa thread à parte (console ou
   disco parado não trava o laço de eventos), dá prazo a cada passo da conexão e a cada verificação do auto-diagnóstico, e,
   se o laço de eventos parar, deixa a pilha de todas as threads em `logs\crash.log` (`adapters/loop_watchdog.py`).
+  O sinal de vida (`runtime\last-alive`) só é regravado enquanto o laço de conexão anda (cada passo declara seu prazo;
+  um que o ignora faz o agente calar e o supervisor o reinicia), e o fechamento do canal também tem prazo. Depois de uma
+  suspensão do PC (o relógio salta) o lançador e o auto-diagnóstico dão ao supervisor um novo prazo antes de agir.
+  O teto externo do `self-update` (2400 s) passa da soma dos limites internos (`self_update.WORST_CASE_SECONDS`).
 - **Auto-diagnóstico** a cada 10 minutos (`core/self_care.py`, `adapters/self_care_checks.py`): pasta de instalação,
   tarefa de início automático, supervisor, conexão (a API responde por HTTP; nunca abre um segundo canal), TV (só a
   porta, nunca tecla) e tarefas de fundo. Reparo seguro por verificação, com 30 min de espera e no máximo 4 por dia:

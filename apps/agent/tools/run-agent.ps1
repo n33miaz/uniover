@@ -712,9 +712,11 @@ $slowLapSeconds = [Math]::Max(60, $lapSeconds * 4)
 # Saida do agente que encontrou outro dono da instalacao (EXIT_ALREADY_RUNNING, em single_instance.py).
 $ownedElsewhereCode = 5
 $ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
-# Prazos de tudo que o supervisor espera: nada abaixo roda sem fim. O self-update tem de acabar antes de o agente dar a
-# atualizacao por interrompida (30 min); o sync cobre as duas tentativas do uv sync.
-$updateTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS' 1500
+# Prazos de tudo que o supervisor espera: nada abaixo roda sem fim. O teto do self-update (2400 s) tem de passar da soma dos
+# limites internos dele (consulta, download, extracao, duas tentativas de uv sync, auto-diagnostico: 1863 s em
+# self_update.WORST_CASE_SECONDS, com folga), para nunca matar uma atualizacao lenta mas legitima, e de acabar antes de o
+# agente dar a atualizacao por interrompida (50 min). Um teste confere as duas desigualdades.
+$updateTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS' 2400
 $syncTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS' 900
 # Abaixo disto de espaco livre (MB) nenhuma atualizacao comeca e o ambiente Python nunca e apagado.
 $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
