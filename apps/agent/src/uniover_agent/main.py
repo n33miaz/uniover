@@ -761,6 +761,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         host,
         settings.tv_adb_port,
         timeout=settings.adb_timeout_seconds,
+        kill_server=settings.adb_kill_server,
         kill_server_cooldown=settings.adb_kill_server_cooldown_seconds,
         pull_timeout=settings.adb_pull_timeout_seconds,
         monotonic=clock.monotonic,

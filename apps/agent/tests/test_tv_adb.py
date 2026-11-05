@@ -141,19 +141,58 @@ async def test_already_connected_but_offline_is_disconnected_and_connected_once_
     assert runner.calls == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
 
 
-async def test_three_timeouts_restart_the_adb_server_only_once_within_the_cooldown() -> None:
+DEVICES = ("devices",)
+KILL = ("kill-server",)
+
+
+def make_killing(runner: FakeAdbRunner, clock: Clock | None = None, **extra: float) -> AdbTv:
+    return AdbTv(
+        ADB,
+        HOST,
+        5555,
+        timeout=1.0,
+        runner=runner,
+        monotonic=clock or Clock(),
+        kill_server=True,
+        **extra,
+    )
+
+
+async def time_out(adb: AdbTv, times: int) -> None:
+    for _ in range(times):
+        with pytest.raises(AdbTimeout):
+            await adb._exec("version")  # type: ignore[attr-defined]
+
+
+async def test_the_adb_server_is_never_killed_unless_the_owner_opts_in() -> None:
+    runner = FakeAdbRunner({("version",): TimeoutError(), DEVICES: TimeoutError(), KILL: ok("")})
+    await time_out(make(runner), 6)
+    assert KILL not in runner.calls
+    assert DEVICES not in runner.calls
+
+
+async def test_a_slow_or_off_tv_does_not_kill_a_server_that_still_answers() -> None:
+    runner = FakeAdbRunner({("version",): TimeoutError(), DEVICES: ok("List of devices")})
+    await time_out(make_killing(runner), 6)
+    assert KILL not in runner.calls
+    assert runner.calls.count(DEVICES) == 2  # uma conferência a cada 3 tempos esgotados
+
+
+async def test_a_hung_server_is_killed_once_within_the_cooldown() -> None:
     clock = Clock()
-    runner = FakeAdbRunner({("version",): TimeoutError(), ("kill-server",): ok("")})
-    adb = make(runner, clock)
-    for _ in range(4):
-        with pytest.raises(AdbTimeout):
-            await adb._exec("version")  # type: ignore[attr-defined]
-    assert runner.calls.count(("kill-server",)) == 1
+    runner = FakeAdbRunner({("version",): TimeoutError(), DEVICES: TimeoutError(), KILL: ok("")})
+    adb = make_killing(runner, clock)
+    await time_out(adb, 4)
+    assert runner.calls.count(KILL) == 1
     clock.now = 601
-    for _ in range(3):
-        with pytest.raises(AdbTimeout):
-            await adb._exec("version")  # type: ignore[attr-defined]
-    assert runner.calls.count(("kill-server",)) == 2
+    await time_out(adb, 3)
+    assert runner.calls.count(KILL) == 2
+
+
+async def test_the_kill_cooldown_can_be_disabled() -> None:
+    runner = FakeAdbRunner({("version",): TimeoutError(), DEVICES: TimeoutError(), KILL: ok("")})
+    await time_out(make_killing(runner, kill_server_cooldown=0), 6)
+    assert runner.calls.count(KILL) == 2
 
 
 async def test_failed_connect_is_unreachable_and_does_not_leak_adb_output() -> None:

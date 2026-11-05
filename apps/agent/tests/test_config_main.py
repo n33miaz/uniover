@@ -96,6 +96,14 @@ def test_adb_settings_have_defaults_and_read_env(monkeypatch: pytest.MonkeyPatch
         Settings()
 
 
+def test_killing_the_adb_server_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings().adb_kill_server is False
+    monkeypatch.setenv("UNIOVER_ADB_KILL_SERVER", "true")
+    monkeypatch.setenv("UNIOVER_ADB_KILL_SERVER_COOLDOWN_SECONDS", "0")
+    settings = Settings()
+    assert (settings.adb_kill_server, settings.adb_kill_server_cooldown_seconds) == (True, 0.0)
+
+
 def test_tv_repair_timeouts_have_safe_defaults_and_accept_an_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
