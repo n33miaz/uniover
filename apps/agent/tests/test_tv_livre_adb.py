@@ -7,11 +7,11 @@ import pytest
 from uniover_agent.adapters.tv_adb import LIVRE_SHELL_TIMEOUT_SECONDS, AdbTv
 from uniover_agent.ports import AdbCommandFailed, AdbUnreachable
 
-from .support_adb import ADB, CONNECT, HOST, SERIAL, FakeAdbRunner, ok, shell
+from .support_adb import ADB, CONNECT, HOST, SERIAL, FakeAdbRunner, ok, open_gate, shell
 
 
 def make(runner: FakeAdbRunner) -> AdbTv:
-    return AdbTv(ADB, HOST, 5555, timeout=1.0, runner=runner, monotonic=lambda: 0.0)
+    return AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=runner, monotonic=lambda: 0.0)
 
 
 def authorized() -> FakeAdbRunner:

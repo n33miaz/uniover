@@ -18,12 +18,13 @@ from uniover_agent.adapters.fakes import (
     FakeTvAdb,
     FakeTvRemote,
 )
+from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.composition import tv as tv_module
 from uniover_agent.composition.connection import run
 from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
 from uniover_agent.config import Settings, tv_cert_dir
 from uniover_agent.core import Command, tv_text_handler
-from uniover_agent.ports import AdbUnauthorized, AdbUnreachable, LaunchableApp
+from uniover_agent.ports import AdbUnauthorized, AdbUnreachable, LaunchableApp, is_user_initiated
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
 from .support_adb import LAUNCHER_QUERY, LEANBACK_QUERY, NO_ACTIVITIES, FakeAdbRunner, ok
@@ -76,14 +77,13 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert built == [(tmp_path / "platform-tools" / "adb.exe", TV_HOST, 5556, 7.5)]
     # Um único handler de texto: o ADB se pluga na digitação, não registra outro por cima.
     assert len(created) == 1
-    assert setup.handlers["tv.text.v1"] is created[0]
+    assert "tv.text.v1" in setup.handlers  # embrulhado só para marcar o uso da TV
     assert setup.text is not None
     assert {"tv.apps.refresh.v1", "tv.app.launch.v1"} <= set(setup.handlers)
     assert len(setup.prepare) == 2  # o ADB e o TV Livre
     assert len(setup.after_hello) == 1
-    # Anunciante da lista, temporizador da limpeza, laço do modo foco, contato periódico com a TV
-    # (mantém a permissão viva).
-    assert len(setup.background) == 4
+    # Anunciante da lista, temporizador da limpeza e laço do modo foco.
+    assert len(setup.background) == 3
     # A capacidade só vem depois do teste de conexão (passo de preparação).
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
 
@@ -210,9 +210,14 @@ async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
     for step in setup.prepare:
         await step()
     assert ("connect", serial) not in runner.calls  # a partida só lê: nenhum aviso na TV
+    assert setup.activity is not None and not setup.activity.recent()
+    wake = setup.handlers["tv.wake.v1"]
+    await wake(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.wake.v1", {}))
+    assert not setup.activity.recent()  # o `wake` também vem do servidor: não prova ninguém na TV
     handler = setup.handlers["tv.apps.refresh.v1"]
     await handler(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.apps.refresh.v1", {}))
     assert runner.calls.count(("connect", serial)) == 1  # o toque conecta (e prova a permissão)
+    assert setup.activity.recent()  # o toque conta como uso da TV pelo app
     state = json.loads((tv_cert_dir("tv") / "adb-authorization.json").read_text(encoding="utf-8"))
     assert state["state"] == "verified"
     assert state["mac"] == "AA:BB:CC:00:11:22"
@@ -289,3 +294,29 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
     # Ao encerrar, a sessão fecha o canal ADB junto.
     assert not adb.connected
     assert adb.disconnects >= 1
+
+
+def test_an_adb_tv_cannot_be_built_without_the_permission_gate() -> None:
+    with pytest.raises(TypeError):
+        AdbTv(Path("adb"), TV_HOST, 5555)  # type: ignore[call-arg]
+
+
+async def test_the_volume_diagnostic_runs_with_the_gate_and_as_a_users_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_exe = tmp_path / "platform-tools" / "adb.exe"
+    fake_exe.parent.mkdir(parents=True)
+    fake_exe.write_text("x")
+    monkeypatch.setenv("UNIOVER_ADB_PATH", str(fake_exe))
+    seen: list[Any] = []
+
+    async def fake_check(kind: str, **kwargs: Any) -> int:
+        seen.append((kind, kwargs["adb"], is_user_initiated()))
+        return 0
+
+    monkeypatch.setattr(tv_module, "check_volume", fake_check)
+    assert await tv_module.tv_volume(Settings(tv_host=TV_HOST)) == 0
+    kind, adb, marked = seen[0]
+    assert kind == "android"
+    assert isinstance(adb, AdbTv)  # com a trava: nunca um `AdbTv` solto
+    assert marked  # o comando é um pedido de quem o roda
