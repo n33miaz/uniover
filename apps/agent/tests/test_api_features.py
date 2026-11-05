@@ -8,13 +8,13 @@ import httpx
 import pytest
 
 from tests.support import AGENT_ID, TOKEN, FakeApi
-from uniover_agent import main as main_module
 from uniover_agent.adapters import pairing_http
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore
+from uniover_agent.composition import connection as connection_module
+from uniover_agent.composition.connection import run
 from uniover_agent.config import Settings
 from uniover_agent.core.api_features import ApiFeatures
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY
-from uniover_agent.main import run
 
 # --- ApiFeatures --------------------------------------------------------------------------------
 
@@ -143,7 +143,7 @@ async def _run_against_the_fake_api(
     async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
         return features
 
-    monkeypatch.setattr(main_module, "fetch_api_features", api_features)
+    monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
 
     async def script(connection: Any) -> None:
         await asyncio.sleep(0.3)
@@ -173,7 +173,7 @@ async def test_a_query_that_never_answers_does_not_hold_the_first_connection(
         await asyncio.sleep(3600)
         return None
 
-    monkeypatch.setattr(main_module, "fetch_api_features", hangs)
+    monkeypatch.setattr(connection_module, "fetch_api_features", hangs)
 
     async def script(connection: Any) -> None:
         await asyncio.sleep(0.3)

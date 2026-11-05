@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import (
     FakeClock,
     FakeSecretStore,
@@ -19,9 +18,12 @@ from uniover_agent.adapters.fakes import (
     FakeTvAdb,
     FakeTvRemote,
 )
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.connection import run
+from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
+from uniover_agent.composition.tv import build_tv
 from uniover_agent.config import Settings
 from uniover_agent.core import EnvelopeFactory, EnvelopeGate, tv_text_handler
-from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, build_tv, run
 from uniover_agent.ports import AdbUnauthorized, AdbUnreachable, LaunchableApp
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
@@ -42,7 +44,7 @@ def enable_adb(
         built.append((*args, kwargs["timeout"]))
         return adb
 
-    monkeypatch.setattr(main_module, "AdbTv", fake_adapter)
+    monkeypatch.setattr(tv_module, "AdbTv", fake_adapter)
     return built
 
 
@@ -66,7 +68,7 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
         created.append(original(*args, **kwargs))
         return created[-1]
 
-    monkeypatch.setattr(main_module, "tv_text_handler", spy)
+    monkeypatch.setattr(tv_module, "tv_text_handler", spy)
     setup = make_tv(
         Settings(tv_host=TV_HOST, tv_adb_port=5556, adb_timeout_seconds=7.5, tv_watchdog=False)
     )

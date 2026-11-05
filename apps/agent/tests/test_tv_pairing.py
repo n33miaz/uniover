@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, InvalidAuth
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.tv_pairing import (
     TvPairingError,
     is_paired,
@@ -15,8 +14,10 @@ from uniover_agent.adapters.tv_pairing import (
     prepare_private_dir,
     restrict_to_current_user,
 )
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.tv import tv_pair
 from uniover_agent.config import ConfigError, Settings, require_tv_host, tv_cert_dir
-from uniover_agent.main import main, tv_pair
+from uniover_agent.main import main
 
 from .support_tv import write_certificate
 
@@ -239,7 +240,7 @@ async def test_tv_pair_command_reports_success_without_printing_the_code(
     async def fake_pair(host: str, client: str, folder: Path, ask: object) -> None:
         seen.update(host=host, client=client, folder=folder)
 
-    monkeypatch.setattr(main_module, "pair_tv", fake_pair)
+    monkeypatch.setattr(tv_module, "pair_tv", fake_pair)
     assert await tv_pair(Settings(), "192.168.0.4", None) == 0
     out = capsys.readouterr().out
     assert seen["host"] == "192.168.0.4"
@@ -255,7 +256,7 @@ async def test_tv_pair_command_reports_failure_on_stderr(
     async def failing(host: str, client: str, folder: Path, ask: object) -> None:
         raise TvPairingError("a TV não aceitou o código")
 
-    monkeypatch.setattr(main_module, "pair_tv", failing)
+    monkeypatch.setattr(tv_module, "pair_tv", failing)
     assert await tv_pair(Settings(), "192.168.0.4", "sala") == 1
     assert "não aceitou" in capsys.readouterr().err
 

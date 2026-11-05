@@ -12,7 +12,6 @@ from typing import Any, ClassVar
 import pytest
 from zeroconf import ServiceStateChange
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import arp as arp_module
 from uniover_agent.adapters import tv_discovery
 from uniover_agent.adapters.arp import parse_arp_table
@@ -32,7 +31,10 @@ from uniover_agent.adapters.tv_discovery import (
     tcp_open,
     tcp_probe,
 )
-from uniover_agent.main import EXIT_FAILURE, EXIT_OK, main, tv_find
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK
+from uniover_agent.composition.tv import tv_find
+from uniover_agent.main import main
 
 SAMSUNG_INFO: dict[str, Any] = {
     "id": "uuid:aaaa",
@@ -386,7 +388,7 @@ def test_tv_find_is_a_command_line_subcommand(
     async def find(kind: str | None) -> list[DiscoveredTv]:
         return [ANDROID]
 
-    monkeypatch.setattr(main_module, "find_tvs", find)
+    monkeypatch.setattr(tv_module, "find_tvs", find)
     assert main(["tv-find", "--kind", "android"]) == EXIT_OK
     assert saved(isolated_env)["tv_host"] == "192.168.0.40"
 

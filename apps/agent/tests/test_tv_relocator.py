@@ -9,14 +9,17 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_locate
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTvRemote
 from uniover_agent.adapters.local_config import update_config
 from uniover_agent.adapters.tv_discovery import PortState
+from uniover_agent.composition import connection as connection_module
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.connection import build_relocator, run
+from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED, EXIT_TV_MOVED
 from uniover_agent.config import Settings
 from uniover_agent.core import TvKnown, TvRelocator, TvSessionError
-from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, EXIT_TV_MOVED, build_relocator, main, run
+from uniover_agent.main import main
 from uniover_agent.ports import TvNotPaired
 
 from .support import AGENT_ID, TOKEN, FakeApi
@@ -397,7 +400,8 @@ async def test_android_without_saved_identity_uses_the_paired_session_and_saves_
         assert (host, port) == (OLD_HOST, 6466)
         return PortState.SILENT
 
-    monkeypatch.setattr(main_module, "tcp_probe", silent)
+    monkeypatch.setattr(connection_module, "tcp_probe", silent)
+    monkeypatch.setattr(tv_module, "tcp_probe", silent)
     sessions: list[tuple[str, str]] = []
 
     class FakeAuthenticatedRemote:
@@ -412,7 +416,8 @@ async def test_android_without_saved_identity_uses_the_paired_session_and_saves_
         async def disconnect(self) -> None:
             sessions.append((self.host, "close"))
 
-    monkeypatch.setattr(main_module, "AndroidTvRemoteV2", FakeAuthenticatedRemote)
+    monkeypatch.setattr(tv_module, "AndroidTvRemoteV2", FakeAuthenticatedRemote)
+    monkeypatch.setattr(connection_module, "AndroidTvRemoteV2", FakeAuthenticatedRemote)
     update_config(isolated_env, {"tv_host": OLD_HOST, "tv_text_by_keys": True})
     relocator = build_relocator(
         Settings(tv_host=OLD_HOST, tv_kind="android"), FakeClock(), lambda: False
@@ -444,7 +449,8 @@ async def test_android_does_not_learn_arp_from_an_unverified_open_port(
     async def open_port(host: str, port: int, wait: float) -> PortState:
         return PortState.OPEN
 
-    monkeypatch.setattr(main_module, "tcp_probe", open_port)
+    monkeypatch.setattr(connection_module, "tcp_probe", open_port)
+    monkeypatch.setattr(tv_module, "tcp_probe", open_port)
     relocator = build_relocator(
         Settings(tv_host=OLD_HOST, tv_kind="android"), FakeClock(), lambda: False
     )
@@ -464,7 +470,7 @@ async def test_run_returns_tv_moved_so_main_can_restart_with_the_new_address(
             await asyncio.sleep(0.3)
             return "192.168.0.77"
 
-    monkeypatch.setattr(main_module, "build_relocator", lambda *a, **k: Moved())
+    monkeypatch.setattr(connection_module, "build_relocator", lambda *a, **k: Moved())
 
     async def script(connection: ServerConnection) -> None:
         await asyncio.sleep(5)
@@ -493,7 +499,7 @@ def test_main_restarts_run_with_fresh_settings_after_a_move(
             return EXIT_TV_MOVED
         return EXIT_CREDENTIAL_REJECTED
 
-    monkeypatch.setattr(main_module, "run", fake_run)
+    monkeypatch.setattr(connection_module, "run", fake_run)
     assert main(["run"], secrets=FakeSecretStore()) == EXIT_CREDENTIAL_REJECTED
     assert seen == ["192.168.0.10", "192.168.0.77"]
 

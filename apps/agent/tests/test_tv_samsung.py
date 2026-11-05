@@ -10,7 +10,6 @@ import httpx
 import pytest
 from samsungtvws import SamsungTVWS
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung_pairing as samsung_pairing
 from uniover_agent.adapters import tv_samsung_volume as volume_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
@@ -27,6 +26,8 @@ from uniover_agent.adapters.tv_samsung_pairing import (
 )
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume, rendering_control_url
 from uniover_agent.adapters.tv_samsung_volume import ssdp_locations as real_ssdp_locations
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.tv import build_tv, samsung_token_name, tv_pair
 from uniover_agent.config import Settings
 from uniover_agent.core import (
     Command,
@@ -40,7 +41,6 @@ from uniover_agent.core import (
 from uniover_agent.core.tv.handlers import unsupported_handler
 from uniover_agent.core.tv.samsung_apps import SamsungTvApps
 from uniover_agent.core.tv.session import POWER_REPEAT_SECONDS
-from uniover_agent.main import build_tv, samsung_token_name, tv_pair
 from uniover_agent.ports import TvUnreachable
 
 from .support import AGENT_ID
@@ -845,7 +845,7 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     remote = SamsungTvDriver(
         "192.168.0.11", "token-secreto", "UniOver", factory=factory(client), fetch_power=power_on
     )
-    monkeypatch.setattr(main_module, "SamsungTvDriver", lambda *_args, **_kwargs: remote)
+    monkeypatch.setattr(tv_module, "SamsungTvDriver", lambda *_args, **_kwargs: remote)
     secrets = FakeSecretStore()
     secrets.set(samsung_token_name("sala"), "token-secreto")
     settings = Settings(tv_kind="samsung", tv_host="192.168.0.11", tv_name="sala")
@@ -960,7 +960,7 @@ async def test_samsung_link_launch_is_explicitly_unsupported(
     remote = SamsungTvDriver(
         "192.168.0.11", "token-secreto", "UniOver", factory=factory(client), fetch_power=power_on
     )
-    monkeypatch.setattr(main_module, "SamsungTvDriver", lambda *_args, **_kwargs: remote)
+    monkeypatch.setattr(tv_module, "SamsungTvDriver", lambda *_args, **_kwargs: remote)
     secrets = FakeSecretStore()
     secrets.set(samsung_token_name("sala"), "token-secreto")
     clock = FakeClock()
@@ -988,7 +988,7 @@ async def test_samsung_pair_saves_only_the_token_in_the_credential_store(
         assert (host, name) == ("192.168.0.11", "UniOver")
         return "token-secreto"
 
-    monkeypatch.setattr(main_module, "pair_samsung_tv", pair)
+    monkeypatch.setattr(tv_module, "pair_samsung_tv", pair)
     store = FakeSecretStore()
     with caplog.at_level(logging.DEBUG):
         assert await tv_pair(Settings(), "192.168.0.11", "sala", "samsung", store) == 0

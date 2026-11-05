@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeTvAdb, FakeTvRemote
+from uniover_agent.composition import tv as tv_module
 from uniover_agent.config import Settings
 from uniover_agent.core import AppEntry, AppIconPublisher, Command, ResultStatus
 from uniover_agent.core.domain import TvState
@@ -55,7 +55,7 @@ def test_with_aapt_the_icon_task_is_registered_and_listens_to_the_session(
         created.append(publisher)
         return publisher
 
-    monkeypatch.setattr(main_module, "AppIconPublisher", spy)
+    monkeypatch.setattr(tv_module, "AppIconPublisher", spy)
     setup = make_tv(
         Settings(tv_host=TV_HOST, icons_dir=str(tmp_path / "meus-icones"), tv_watchdog=False)
     )

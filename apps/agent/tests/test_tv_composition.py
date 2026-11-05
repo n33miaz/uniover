@@ -11,9 +11,16 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_locate
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport, FakeTvRemote
+from uniover_agent.composition import connection as connection_module
+from uniover_agent.composition import tv as tv_module
+from uniover_agent.composition.connection import build_handler, run
+from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED, silence_noisy_loggers
+from uniover_agent.composition.tv import (
+    TvSetup,
+    build_tv,
+)
 from uniover_agent.config import Settings, tv_cert_dir
 from uniover_agent.core import (
     Command,
@@ -22,14 +29,6 @@ from uniover_agent.core import (
     EnvelopeGate,
     ResultStatus,
     TvState,
-)
-from uniover_agent.main import (
-    EXIT_CREDENTIAL_REJECTED,
-    TvSetup,
-    build_handler,
-    build_tv,
-    run,
-    silence_noisy_loggers,
 )
 from uniover_agent.ports import TextFieldStatus
 
@@ -52,7 +51,7 @@ def pair_fake_tv(
         options.append(kwargs)
         return remote
 
-    monkeypatch.setattr(main_module, "AndroidTvRemoteV2", fake_adapter)
+    monkeypatch.setattr(tv_module, "AndroidTvRemoteV2", fake_adapter)
     return built, options
 
 
@@ -152,8 +151,8 @@ async def test_android_learns_mac_on_the_first_authenticated_session_or_after_hi
         remotes.append(remote)
         return remote
 
-    monkeypatch.setattr(main_module, "AndroidTvRemoteV2", fake_adapter)
-    monkeypatch.setattr(main_module, "arp_mac", arp_mac)
+    monkeypatch.setattr(tv_module, "AndroidTvRemoteV2", fake_adapter)
+    monkeypatch.setattr(tv_module, "arp_mac", arp_mac)
     monkeypatch.setattr(tv_locate, "tcp_open", open_port)
     clock = FakeClock()
     envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
@@ -410,7 +409,7 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
     """O que os marcadores precisam: handlers, capacidades, tarefa de fundo e envio de eventos."""
     remote = FakeTvRemote()
     pair_fake_tv(monkeypatch, remote)
-    original = main_module.build_tv
+    original = tv_module.build_tv
     ran: list[str] = []
     refresh_id = "0192f1e4-0000-7000-8000-0000000000b1"
 
@@ -437,7 +436,7 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
         setup.after_hello.append(event_after_hello)
         return setup
 
-    monkeypatch.setattr(main_module, "build_tv", extended)
+    monkeypatch.setattr(connection_module, "build_tv", extended)
 
     async def script(connection: ServerConnection) -> None:
         await connection.send(dump(envelope("tv.apps.refresh.v1", {}, id=refresh_id)))

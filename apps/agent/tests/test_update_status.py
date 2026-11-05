@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.adapters.self_update import SelfUpdateError, UpdateResult, self_update
 from uniover_agent.adapters.update_status import (
@@ -26,6 +25,9 @@ from uniover_agent.adapters.update_status import (
     record_status,
     record_updating,
 )
+from uniover_agent.composition import maintenance as maintenance_module
+from uniover_agent.composition.maintenance import update_agent
+from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.core import (
     ConnectionSupervisor,
     EnvelopeFactory,
@@ -40,7 +42,7 @@ from uniover_agent.core.update_report import (
     build_status,
     format_time,
 )
-from uniover_agent.main import EXIT_OK, main, update_agent
+from uniover_agent.main import main
 from uniover_agent.ports import TransportError
 from uniover_agent.ports.remote_care import UpdateStatus
 
@@ -418,7 +420,7 @@ def test_the_command_records_updating_and_then_the_result(
         seen.append(json.loads(default_status_path().read_text(encoding="utf-8"))["outcome"])
         return UpdateResult(False, "ok", "up_to_date", latest=LATEST)
 
-    monkeypatch.setattr(main_module, "self_update", fake)
+    monkeypatch.setattr(maintenance_module, "self_update", fake)
     assert update_agent(sync=True) == EXIT_OK
     assert seen == ["updating"]
     state = json.loads(default_status_path().read_text(encoding="utf-8"))
@@ -431,7 +433,7 @@ def test_an_unexpected_crash_in_the_update_is_recorded_and_still_exits_zero(
     def boom(source: Path, *, sync: bool, channel: str) -> UpdateResult:
         raise RuntimeError("segredo uo_dev_XYZ")
 
-    monkeypatch.setattr(main_module, "self_update", boom)
+    monkeypatch.setattr(maintenance_module, "self_update", boom)
     assert main(["self-update"]) == EXIT_OK
     state = json.loads(default_status_path().read_text(encoding="utf-8"))
     assert state["outcome"] == "failed"
@@ -445,10 +447,10 @@ def test_a_broken_state_folder_never_stops_the_update_itself(
     def explode(*args: object) -> None:
         raise OSError("disco cheio")
 
-    monkeypatch.setattr(main_module, "record_updating", explode)
-    monkeypatch.setattr(main_module, "record_result", explode)
+    monkeypatch.setattr(maintenance_module, "record_updating", explode)
+    monkeypatch.setattr(maintenance_module, "record_result", explode)
     monkeypatch.setattr(
-        main_module,
+        maintenance_module,
         "self_update",
         lambda source, *, sync, channel: UpdateResult(True, "agente atualizado"),
     )

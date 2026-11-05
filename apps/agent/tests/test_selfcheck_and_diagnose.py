@@ -8,12 +8,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from uniover_agent import main as main_module
 from uniover_agent import selfcheck
 from uniover_agent.adapters.self_update import UpdateResult
+from uniover_agent.composition import maintenance as maintenance_module
+from uniover_agent.composition.maintenance import update_agent
+from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK
 from uniover_agent.config import Settings
 from uniover_agent.core.self_care import Check, CheckResult
-from uniover_agent.main import EXIT_FAILURE, EXIT_OK, main, update_agent
+from uniover_agent.main import main
 
 # --- canal -------------------------------------------------------------------------------------
 
@@ -49,7 +51,7 @@ def test_the_update_receives_the_channel_of_the_settings(
         seen.append(channel)
         return UpdateResult(False, "ok", "up_to_date")
 
-    monkeypatch.setattr(main_module, "self_update", fake)
+    monkeypatch.setattr(maintenance_module, "self_update", fake)
     assert main(["self-update"]) == EXIT_OK
     assert seen == ["main"]
 
@@ -133,7 +135,7 @@ def test_diagnose_prints_one_plain_line_per_check_and_fails_only_on_a_real_probl
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
-        main_module,
+        maintenance_module,
         "build_checks",
         lambda *args, **kwargs: fake_checks(
             CheckResult(True, "em ordem"), CheckResult(False, "TV fora", severity="warn")
@@ -150,7 +152,7 @@ def test_diagnose_exits_with_failure_when_an_error_is_left(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
-        main_module,
+        maintenance_module,
         "build_checks",
         lambda *args, **kwargs: fake_checks(CheckResult(False, "pasta incompleta", fixable=True)),
     )
@@ -162,7 +164,7 @@ def test_diagnose_only_repairs_when_asked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
-        main_module,
+        maintenance_module,
         "build_checks",
         lambda *args, **kwargs: fake_checks(CheckResult(False, "quebrada", fixable=True)),
     )
@@ -178,7 +180,7 @@ def run_update(monkeypatch: pytest.MonkeyPatch, result: UpdateResult) -> list[tu
     from uniover_agent.adapters.fakes import FakeClock  # noqa: PLC0415
     from uniover_agent.care_setup import build_diagnostics  # noqa: PLC0415
 
-    monkeypatch.setattr(main_module, "self_update", lambda source, *, sync, channel: result)
+    monkeypatch.setattr(maintenance_module, "self_update", lambda source, *, sync, channel: result)
     kit = build_diagnostics(FakeClock())
     assert update_agent(sync=False, kit=kit) == EXIT_OK
     kit.recorder.flush_pending()
@@ -211,7 +213,7 @@ def test_an_unexpected_crash_of_the_update_is_recorded_as_an_error(
     def explode(source: object, *, sync: bool, channel: str) -> UpdateResult:
         raise RuntimeError("falha qualquer em /home/pessoa")
 
-    monkeypatch.setattr(main_module, "self_update", explode)
+    monkeypatch.setattr(maintenance_module, "self_update", explode)
     kit = build_diagnostics(FakeClock())
 
     assert update_agent(sync=False, kit=kit) == EXIT_OK

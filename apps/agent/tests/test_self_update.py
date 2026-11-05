@@ -12,7 +12,6 @@ from typing import Any
 import httpx
 import pytest
 
-from uniover_agent import main as main_module
 from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
@@ -28,7 +27,9 @@ from uniover_agent.adapters.self_update import (
     summarize_failure,
     swap_directories,
 )
-from uniover_agent.main import EXIT_OK, main
+from uniover_agent.composition import maintenance as maintenance_module
+from uniover_agent.composition.system import EXIT_OK
+from uniover_agent.main import main
 
 OLD = "a" * 40
 NEW = "b" * 40
@@ -575,7 +576,7 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
         seen.update(source=source, sync=sync, channel=channel)
         return UpdateResult(False, "não atualizei agora: sem rede")
 
-    monkeypatch.setattr(main_module, "self_update", fake)
+    monkeypatch.setattr(maintenance_module, "self_update", fake)
     assert main(["self-update", "--no-sync"]) == EXIT_OK
     assert "sem rede" in capsys.readouterr().out
     assert seen == {
