@@ -25,7 +25,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from PIL import Image, UnidentifiedImageError
 
@@ -243,17 +243,31 @@ class LivreStateFile:
         self._path.unlink(missing_ok=True)
 
 
+# Ações que consultam ou mexem no launcher pelo ADB: já derrubaram o serviço do controle da TV.
+_REMOTE_RISK_ACTIONS: Final = frozenset({"install", "set-home", "restore", "apply", "set-apps"})
+
+
+class RemoteDropGuard(Protocol):
+    """Quem cuida da sessão do controle enquanto uma operação pesada roda pelo ADB."""
+
+    def expect_remote_drop(self) -> None: ...
+
+    def settle_remote_drop(self) -> None: ...
+
+
 class TvLivre:
     """Os passos do TV Livre sobre o canal ADB; um por vez."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917 - dependências injetadas, todas necessárias
         self,
         adb: TvLivreAdb,
         apk: LauncherApkSource,
         state: LivreStateFile,
         photos: PhotoStaging,
         clock: Clock,
+        remote_guard: RemoteDropGuard | None = None,
     ) -> None:
+        self._remote_guard = remote_guard
         self._adb = adb
         self._apk = apk
         self._state = state
@@ -343,7 +357,24 @@ class TvLivre:
     # --- passos -------------------------------------------------------------------------------
 
     async def run(self, body: dict[str, Any]) -> None:
-        """Executa a ação do pedido. Levanta `LivreError`, `AdbError` ou `LauncherApkError`."""
+        """Executa a ação do pedido. Levanta `LivreError`, `AdbError` ou `LauncherApkError`.
+
+        Enquanto ela roda, o gerenciador sabe que o controle da TV pode cair; ao fim (com êxito ou
+        não) ele arma o vigia, e o resultado da ação não muda por causa disso.
+        """
+        guard = self._remote_guard if body.get("action") in _REMOTE_RISK_ACTIONS else None
+        if guard is not None:
+            guard.expect_remote_drop()
+        try:
+            await self._run_action(body)
+        finally:
+            if guard is not None:
+                try:
+                    guard.settle_remote_drop()
+                except Exception:
+                    _log.exception("TV Livre: falha ao conferir o controle da TV")
+
+    async def _run_action(self, body: dict[str, Any]) -> None:
         action = body.get("action")
         async with self._lock:
             if action == "status":
