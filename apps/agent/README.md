@@ -474,10 +474,19 @@ nunca abre uma conexão ADB nova com uma TV que ainda não deu e provou a permis
 o faz (**Atualizar lista** e as ações do TV Livre; ler o estado do TV Livre não conta). A marca do pedido pertence à
 tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
 
+- **Só com alguém usando a TV pelo app.** Mesmo com a permissão provada, um caminho automático só abre uma
+  conexão ADB **nova** até 60 s depois de um comando de uso que chegou do app para esta TV (tecla, texto, abrir app,
+  Atualizar lista, limpeza manual, TV Livre, procura de TVs). Fora disso (partida do agente, vigia, limpeza e foco
+  automáticos, ícones) o ADB só usa um transporte que já está aberto. Assim, depois de um reset de fábrica o aviso só
+  pode aparecer com a pessoa diante da TV. `tv.wake.v1`, a energia agendada e a configuração da limpeza não contam:
+  o servidor também as manda sozinho. Não há mais contato periódico (o vencimento de 7 dias é desligado na primeira
+  permissão, e qualquer uso do app conecta de novo).
 - **A chave.** O `adb` do PC assina com `adbkey`, da pasta `.android` do usuário (no Windows ela não muda por
   variável de ambiente, e o aviso da TV sempre oferece essa chave). Cada chave válida é copiada para
   `tv/.adb-key/<resumo>/`, pasta restrita ao usuário, na instalação (atualização e reinstalação não a tocam).
   Cópias de chaves diferentes convivem; cópia truncada ou adulterada (o resumo não confere com o nome) é ignorada.
+  A gravação é segura com vários processos: pasta provisória própria (pid e sufixo aleatório), troca só se o destino
+  não existe, e uma cópia que confere nunca é apagada nem substituída.
   Só vale como inválida a chave vazia ou truncada (começa com `-----BEGIN` e não termina); a de formato desconhecido
   é do usuário: não é tocada e nada é registrado em nome dela. Se o `adbkey` sumir ou estiver inválido, a cópia da chave registrada volta **antes** de qualquer chamada ao `adb`
   (senão ele gera outra e a TV pergunta de novo); a chave inválida fica em `adbkey.invalido`. Uma chave válida e
@@ -488,8 +497,8 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   aberto e fechado na porta 5555 popula a tabela e não inicia aperto de mão) e o serial do aparelho. O agente só
   conecta sozinho com `verified` **e** a mesma chave, o mesmo endereço e o mesmo MAC. Outro `tv_host`, outro
   aparelho no mesmo IP ou outra chave fecham a porta. TV que não atende na rede dá `adb_unreachable` sem chamar o
-  `adb`. Se uma conexão automática voltar `unauthorized` (reset de fábrica, permissão revogada), o registro vira
-  `needs_user` na hora, em disco: vale **uma** tentativa inevitável (o `adb` não confere autorização sem conectar) e
+  `adb`. Se uma conexão automática (dentro dos 60 s de uso) voltar `unauthorized` (reset de fábrica, permissão
+  revogada), o registro vira `needs_user` na hora, em disco: vale **uma** tentativa, com a pessoa diante da TV, e
   depois nenhuma, nem depois de reiniciar o agente, até um toque da pessoa.
 - **A capacidade `tv.adb` vai sempre ao `hello`** quando há `adb` neste PC, com ou sem permissão: o app só mostra
   **Atualizar lista** (o único toque que pede a permissão) a quem a tem. Nada fica exposto: toda rota automática por
@@ -507,9 +516,9 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz `disconnect` e `connect` e, se a TV
   atender sem aviso, o registro vira `verified`. Se o aviso voltar, é nesse toque, com a pessoa na TV, e nada é
   registrado como provado.
-- **Contato periódico.** A cada `UNIOVER_TV_ADB_KEEPALIVE_SECONDS` (padrão 12 h), com a permissão `verified`, a TV
-  atendendo e a identidade conferida, o agente faz `connect` e `get-state` e fecha (e confere o serial anotado: se
-  for outro aparelho, a permissão é invalidada). Zera a contagem de 7 dias mesmo em TV que não aceita o ajuste.
+- **O serial** (`getprop ro.serialno`, leitura de shell) só é lido dentro de um pedido da pessoa, nunca num caminho
+  automático: se o aparelho que responde tem outro serial que o anotado, a permissão é invalidada.
+- **`uniover-agent tv-volume`** monta o `AdbTv` com a mesma trava e roda como pedido de quem o digita.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
   repetir.
