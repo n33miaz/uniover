@@ -59,6 +59,23 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/identity/sessions/others/revoke",
     ];
 
+    /// <summary>
+    /// As rotas do controle do PC: por papel o convidado entra, e o que o barra é a permissão <c>module:pc</c> de cada rota (o dono
+    /// tem por padrão, o convidado só se concedida), que a varredura confere abaixo; a tabela vive aqui porque o controle do PC
+    /// tem um conjunto fixo de oito rotas, todas com a mesma permissão.
+    /// </summary>
+    private static readonly string[] GuestPcRoutes =
+    [
+        "/api/v1/pc/status",
+        "/api/v1/pc/pointer",
+        "/api/v1/pc/click",
+        "/api/v1/pc/key",
+        "/api/v1/pc/text",
+        "/api/v1/pc/media",
+        "/api/v1/pc/power",
+        "/api/v1/pc/apps/{appId}/launch",
+    ];
+
     /// <summary>Rotas que se autenticam por credencial própria (o agente do PC), não por papel de pessoa.</summary>
     private static readonly string[] RoleExempt =
     [
@@ -76,6 +93,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     private static bool IsGuestRoute(string method, string pattern) =>
         (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
         || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
+        || GuestPcRoutes.Contains(pattern)
         || GuestSessionRoutes.Contains(pattern)
         || pattern == TvPermissionMap.OwnPairingRoute;
 
@@ -214,8 +232,20 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         allowed.Where(p => p.Contains("/devices/", StringComparison.Ordinal)).Distinct()
             .Should().BeEquivalentTo(["/api/v1/devices/pairing/approve-own"]);
         allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !p.StartsWith("/api/v1/training/", StringComparison.Ordinal)
-                && !p.Contains("/devices/", StringComparison.Ordinal))
+                && !p.StartsWith("/api/v1/pc/", StringComparison.Ordinal) && !p.Contains("/devices/", StringComparison.Ordinal))
             .Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
+
+        // No controle do PC o convidado entra por papel em todas as rotas, e cada uma só abre com a permissão module:pc (e com
+        // nenhuma outra, como o resto do módulo).
+        allowed.Where(p => p.StartsWith("/api/v1/pc/", StringComparison.Ordinal)).Distinct()
+            .Should().BeEquivalentTo(GuestPcRoutes);
+        foreach (var endpoint in app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Where(e => RouteInspector.Pattern(e).StartsWith("/api/v1/pc/", StringComparison.Ordinal)))
+        {
+            var pcPolicy = (await AuthorizationPolicy.CombineAsync(policies, endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()))!;
+            pcPolicy.Requirements.OfType<PermissionRequirement>().Select(r => r.Permission)
+                .Should().Equal([AccessPermissions.PcModule], RouteInspector.Describe(endpoint));
+        }
         allowed.Count(p => p.StartsWith("/api/v1/tv/", StringComparison.Ordinal)).Should().BeGreaterThanOrEqualTo(10);
 
         // No Treino o convidado entra por papel em todas as rotas de dado da conta e em nenhuma de dado global: a importação
@@ -257,6 +287,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/maintenance", new { action = "restart" }),
             (HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode = "ABCD-EFGH" }),
             (HttpMethod.Post, "/api/v1/devices/pairing/deny", new { userCode = "ABCD-EFGH" }),
+            (HttpMethod.Get, "/api/v1/pc/status", null),
+            (HttpMethod.Post, "/api/v1/pc/power", new { action = "LOCK" }),
             (HttpMethod.Get, "/api/v1/training/exercises", null),
             (HttpMethod.Get, "/api/v1/training/routines", null),
             (HttpMethod.Get, "/api/v1/training/sessions", null),
@@ -279,7 +311,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{method} {url}");
         }
 
-        // E o Treino inteiro (as rotas de dado e a importação do catálogo): o convidado de hoje só tem a TV.
+        // E o Treino inteiro (as rotas de dado e a importação do catálogo): o convidado de hoje só tem a TV (e nem o PC).
         foreach (var (method, pattern, url, body) in TrainingPermissionMap.AllCalls())
         {
             using var response = await app.SendAsync(new HttpMethod(method), url, body, bearer: token);
