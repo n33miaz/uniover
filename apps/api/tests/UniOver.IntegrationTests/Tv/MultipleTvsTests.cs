@@ -228,6 +228,72 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
             .Detail.Should().Be($"kind=samsung agent={agent.Slug}");
     }
 
+    [Fact]
+    public async Task DeletingATv_WhileTheComputerIsBeingSwitched_RecordsTheComputerTheTvHadWhenItWasRemoved()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var oldAgent = await app.PairAsync("PC antigo");
+        var newAgent = await app.PairAsync("PC novo");
+        var tvId = await CreateTvAsync(app, oldAgent.Slug, "TV em disputa");
+
+        // Segura a remoção entre a leitura da TV e o DELETE (o apagar das telas é um comando da própria remoção): é nessa
+        // janela que a troca de computador confirmava e a trilha ficava com o computador antigo de uma TV já ligada ao novo.
+        await app.ExecuteSqlAsync("""
+            CREATE FUNCTION tv.hold_removal() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN PERFORM pg_sleep(1.5); RETURN NULL; END $$;
+            CREATE TRIGGER hold_removal BEFORE DELETE ON tv.tv_layouts
+                FOR EACH STATEMENT EXECUTE FUNCTION tv.hold_removal();
+            """);
+
+        var removal = app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{tvId}");
+        await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
+        var switching = app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { agentSlug = newAgent.Slug });
+        using var removed = await removal;
+        using var switched = await switching;
+
+        removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        switched.StatusCode.Should().Be(HttpStatusCode.NotFound, "a troca espera a remoção terminar e então a TV já não existe");
+        await using var check = app.Db();
+        var permanent = await check.TvRemovalAudit.AsNoTracking().SingleAsync(Ct);
+        permanent.AgentId.Should().Be(oldAgent.Slug);
+        (await check.Tvs.AnyAsync(t => t.Id == tvId, Ct)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DeletingATv_WhileASwitchIsInFlight_WaitsForItAndRecordsTheNewComputer()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var oldAgent = await app.PairAsync("PC antigo");
+        var newAgent = await app.PairAsync("PC novo");
+        var tvId = await CreateTvAsync(app, oldAgent.Slug, "TV em disputa");
+
+        // Segura a troca depois do UPDATE, ainda sem confirmar: quem remove a TV nesse intervalo tem de esperar o commit
+        // e ler o computador novo, não o que ficou na leitura anterior.
+        await app.ExecuteSqlAsync("""
+            CREATE FUNCTION tv.hold_switch() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN PERFORM pg_sleep(1.5); RETURN NULL; END $$;
+            CREATE TRIGGER hold_switch AFTER UPDATE ON tv.tvs
+                FOR EACH ROW EXECUTE FUNCTION tv.hold_switch();
+            """);
+
+        var switching = app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { agentSlug = newAgent.Slug });
+        await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
+        var removal = app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{tvId}");
+        using var switched = await switching;
+        using var removed = await removal;
+
+        switched.StatusCode.Should().Be(HttpStatusCode.OK);
+        removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await using var check = app.Db();
+        (await check.TvRemovalAudit.AsNoTracking().SingleAsync(Ct)).AgentId.Should().Be(newAgent.Slug);
+        (await check.CommandAudit.AsNoTracking().SingleAsync(a => a.Command == TvCommandNames.Remove, Ct))
+            .Detail.Should().Contain(newAgent.Slug);
+    }
+
     private sealed class ThrowingAudit : ITvCommandAudit
     {
         public Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken) =>
