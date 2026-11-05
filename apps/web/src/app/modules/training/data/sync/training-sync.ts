@@ -85,6 +85,7 @@ export class TrainingSync {
   private readonly _error = signal<TrainingSyncError | null>(null);
   private readonly _firstPassSettled = signal(false);
   private readonly _firstPullWaitExpired = signal(false);
+  private readonly _pulledResources = signal<ReadonlySet<string>>(new Set());
 
   /** Há um puxar em andamento. */
   readonly pulling = this._pulling.asReadonly();
@@ -104,6 +105,12 @@ export class TrainingSync {
    * começa, vale o teto `FIRST_PULL_BOOT_MAX_MS`.
    */
   readonly firstPullWaitExpired = this._firstPullWaitExpired.asReadonly();
+  /**
+   * Os recursos que já foram puxados do servidor até o fim, nesta abertura do app (o conjunto é trocado a cada um novo, e
+   * nunca perde nome). Quem depende só de alguns recursos para decidir um vazio (Rotinas, Corpo...) espera por eles em
+   * vez de esperar a passada inteira: ver `resourcesPulled`.
+   */
+  readonly pulledResources = this._pulledResources.asReadonly();
   private readonly _lastPullKnown = signal(false);
   /**
    * O instante do último puxar já foi lido do banco (mesmo que seja "nunca"). Antes disso `lastPullAt` vale `null` para
@@ -119,6 +126,7 @@ export class TrainingSync {
   private readonly waitMs = inject(FIRST_PULL_WAIT_MS);
   private waitTimer: ReturnType<typeof setTimeout> | null = null;
   private waitArmed = false;
+  private priority: readonly string[] = [];
 
   constructor() {
     this.waitTimer = setTimeout(
@@ -166,6 +174,26 @@ export class TrainingSync {
       this.starting = null;
     });
     return this.starting;
+  }
+
+  /**
+   * Todos os recursos citados já foram puxados nesta abertura do app? Lê o sinal: serve dentro de `effect`/`computed`.
+   * Só adianta a resposta; o prazo e o fim da passada (`firstPassSettled`, `firstPullWaitExpired`) continuam valendo
+   * para quem consulta por `awaitingFirstPull`.
+   */
+  resourcesPulled(names: readonly string[]): boolean {
+    const pulled = this._pulledResources();
+    return names.every((name) => pulled.has(name));
+  }
+
+  /**
+   * A tela que está aberta diz de quais recursos ela precisa: a passada, que puxa um recurso de cada vez, começa por
+   * eles (na ordem dada) e só depois segue a ordem de registro. Assim quem abre o endereço de Rotinas não espera, por
+   * exemplo, o catálogo de exercícios (a maior resposta) antes de ver as rotinas. Vale para a passada em curso (a escolha
+   * do próximo recurso é feita a cada recurso) e para as seguintes; a última tela que pede ganha.
+   */
+  prioritize(names: readonly string[]): void {
+    this.priority = names;
   }
 
   /** Botão manual: sobe o que está na fila e puxa em seguida. Resolve quando a passada termina. */
@@ -259,7 +287,11 @@ export class TrainingSync {
 
     this._pulling.set(true);
     try {
-      for (const resource of this.resources) await this.pullResource(resource, accountId);
+      const done = new Set<string>();
+      for (let next = this.nextResource(done); next; next = this.nextResource(done)) {
+        done.add(next.resource);
+        await this.pullResource(next, accountId);
+      }
       this._error.set(null);
       this._lastPullAt.set(this.runtime.now());
     } catch (error) {
@@ -268,6 +300,15 @@ export class TrainingSync {
       this.settle();
       this._pulling.set(false);
     }
+  }
+
+  /** O próximo recurso a puxar: os que a tela aberta pediu primeiro, depois a ordem de registro. */
+  private nextResource(done: ReadonlySet<string>): ResourceSync | undefined {
+    for (const name of this.priority) {
+      const wanted = this.resources.find((r) => r.resource === name);
+      if (wanted && !done.has(name)) return wanted;
+    }
+    return this.resources.find((r) => !done.has(r.resource));
   }
 
   private async pullResource(resource: ResourceSync, accountId: string): Promise<void> {
@@ -303,5 +344,6 @@ export class TrainingSync {
     }
 
     await this.db.syncState.put({ resource: name, cursor: stored, lastPullAt: this.runtime.now() });
+    this._pulledResources.update((pulled) => new Set(pulled).add(name));
   }
 }

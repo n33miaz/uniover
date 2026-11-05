@@ -14,7 +14,7 @@ import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { TrainingSync } from '../data/sync/training-sync';
 import { formatDayMonth } from '../shell/format';
-import { awaitingFirstPull } from '../shell/first-pull';
+import { FIRST_PULL_NEEDS, awaitingFirstPull, settledAfterFirstPull } from '../shell/first-pull';
 import { type ChipOption } from '../shell/training-chips';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { OTHER_EXERCISE, ProgressEvolution } from './evolution/evolution-card';
@@ -72,12 +72,24 @@ export class ProgressPage {
   protected readonly sheetOpen = signal(false);
   /** Os nomes do catálogo dos exercícios que a tela usa; `null` até a primeira leitura. */
   private readonly names = signal<ReadonlyMap<string, string> | null>(null);
-  private ticket = 0;
+  private chain: Promise<void> = Promise.resolve();
+
+  /**
+   * Espera só o que a tela lê: treinos, séries, metas e o catálogo (dele vêm os nomes; sem ele os exercícios com histórico
+   * somem da lista e o vazio seria falso), não a passada inteira. `settled` cobre a leitura que ainda estava a caminho.
+   */
+  private readonly settled = settledAfterFirstPull(
+    this.sync,
+    this.connectivity,
+    FIRST_PULL_NEEDS.progress,
+    () => this.reload(),
+  );
 
   /** O vazio só é conclusivo depois da primeira passada ou de uma falha dela. */
   protected readonly ready = computed(
     () =>
-      !awaitingFirstPull(this.sync, this.connectivity) &&
+      !awaitingFirstPull(this.sync, this.connectivity, FIRST_PULL_NEEDS.progress) &&
+      this.settled() &&
       this.history.data() !== null &&
       this.names() !== null,
   );
@@ -137,6 +149,7 @@ export class ProgressPage {
   );
 
   constructor() {
+    this.sync.prioritize(FIRST_PULL_NEEDS.progress);
     effect(() => {
       this.requested();
       untracked(() => this.picked.set(null));
@@ -160,11 +173,28 @@ export class ProgressPage {
     this.picked.set(id);
   }
 
-  private async loadNames(ids: readonly string[], requested: string | null): Promise<void> {
-    const ticket = ++this.ticket;
+  /** Ao fim da espera: lê o histórico e os nomes de novo, já com tudo o que a passada trouxe. */
+  private async reload(): Promise<void> {
+    await this.history.refresh();
+    const data = this.history.data();
+    if (data !== null) {
+      await this.loadNames(
+        data.exercises.map((exercise) => exercise.id),
+        this.requested(),
+      );
+    }
+  }
+
+  /** As leituras de nomes andam em fila: a última a começar é a última a gravar. */
+  private loadNames(ids: readonly string[], requested: string | null): Promise<void> {
+    const next = this.chain.then(() => this.readNames(ids, requested));
+    this.chain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async readNames(ids: readonly string[], requested: string | null): Promise<void> {
     const wanted = requested === null ? ids : [...new Set([...ids, requested])];
     const found = await Promise.all(wanted.map((id) => this.catalog.get(id)));
-    if (ticket !== this.ticket) return;
     const names = new Map<string, string>();
     found.forEach((exercise, index) => {
       if (exercise !== undefined) names.set(wanted[index], exercise.name);

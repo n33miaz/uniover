@@ -13,7 +13,7 @@ import { RoutineRepository } from '../data/routines/routine-repository';
 import type { LocalSession } from '../data/sessions/session';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { ExercisesSwitch } from '../shell/exercises-switch';
-import { awaitingFirstPull } from '../shell/first-pull';
+import { FIRST_PULL_NEEDS, awaitingFirstPull, settledAfterFirstPull } from '../shell/first-pull';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { SwapStore } from '../today/swap-store';
 import { TrainingSync } from '../data/sync/training-sync';
@@ -42,9 +42,21 @@ export class RoutinesListPage {
 
   protected readonly entries = signal<readonly RoutineEntry[]>([]);
   protected readonly ready = signal(false);
-  /** Antes da primeira passada, uma lista local vazia ainda não prova que não há rotinas nesta conta. */
+  /**
+   * Antes da primeira passada, uma lista local vazia ainda não prova que não há rotinas nesta conta. Só espera o que a tela
+   * lê (rotinas, programa e treinos), não a passada inteira; `settled` cobre a leitura que ainda estava a caminho.
+   */
+  private readonly settled = settledAfterFirstPull(
+    this.sync,
+    this.connectivity,
+    FIRST_PULL_NEEDS.routines,
+    () => this.load(),
+  );
   protected readonly loading = computed(
-    () => !this.ready() || awaitingFirstPull(this.sync, this.connectivity),
+    () =>
+      !this.ready() ||
+      !this.settled() ||
+      awaitingFirstPull(this.sync, this.connectivity, FIRST_PULL_NEEDS.routines),
   );
   protected readonly templatesOpen = signal(false);
   protected readonly starting = signal(false);
@@ -83,6 +95,7 @@ export class RoutinesListPage {
   });
 
   constructor() {
+    this.sync.prioritize(FIRST_PULL_NEEDS.routines);
     effect(() => {
       this.routines.revision();
       untracked(() => void this.load());
@@ -193,7 +206,16 @@ export class RoutinesListPage {
     }
   }
 
-  private async load(): Promise<void> {
+  /** As leituras andam em fila: a última a começar é a última a gravar, e quem espera uma delas vê as anteriores prontas. */
+  private chain: Promise<void> = Promise.resolve();
+
+  private load(): Promise<void> {
+    const next = this.chain.then(() => this.read());
+    this.chain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async read(): Promise<void> {
     const [all, alive, sessions, open] = await Promise.all([
       this.routines.all(),
       this.routines.listAll(),
