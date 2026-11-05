@@ -53,6 +53,20 @@ def test_typing_by_keys_is_off_by_default_and_read_from_env(
         Settings()
 
 
+def test_ime_text_options_keep_the_library_cursor_and_protect_echo_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    assert (settings.tv_text_cursor, settings.tv_text_debug_values) == ("library", False)
+    monkeypatch.setenv("UNIOVER_TV_TEXT_CURSOR", "field_end")
+    monkeypatch.setenv("UNIOVER_TV_TEXT_DEBUG_VALUES", "true")
+    settings = Settings()
+    assert (settings.tv_text_cursor, settings.tv_text_debug_values) == ("field_end", True)
+    monkeypatch.setenv("UNIOVER_TV_TEXT_CURSOR", "invalid")
+    with pytest.raises(ValueError, match="tv_text_cursor"):
+        Settings()
+
+
 def test_adb_settings_have_defaults_and_read_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNIOVER_ADB_PATH")
     settings = Settings()

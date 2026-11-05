@@ -39,17 +39,21 @@ from .support_tv import write_certificate
 TV_HOST = "192.168.0.4"
 
 
-def pair_fake_tv(monkeypatch: pytest.MonkeyPatch, remote: FakeTvRemote) -> list[tuple[Any, ...]]:
+def pair_fake_tv(
+    monkeypatch: pytest.MonkeyPatch, remote: FakeTvRemote
+) -> tuple[list[tuple[Any, ...]], list[dict[str, Any]]]:
     """Grava um par de certificado de teste e troca o adaptador real pelo dublê."""
     write_certificate(tv_cert_dir("tv"), "UniOver")
     built: list[tuple[Any, ...]] = []
+    options: list[dict[str, Any]] = []
 
     def fake_adapter(*args: Any, **kwargs: Any) -> FakeTvRemote:
         built.append(args)
+        options.append(kwargs)
         return remote
 
     monkeypatch.setattr(main_module, "AndroidTvRemoteV2", fake_adapter)
-    return built
+    return built, options
 
 
 def make_tv(settings: Settings) -> TvSetup | None:
@@ -72,7 +76,7 @@ def test_host_without_certificate_means_no_tv_and_tells_how_to_pair(
 
 def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
     remote = FakeTvRemote()
-    built = pair_fake_tv(monkeypatch, remote)
+    built, _options = pair_fake_tv(monkeypatch, remote)
     setup = make_tv(Settings(tv_host=TV_HOST, tv_client_name="Casa"))
     assert setup is not None
     assert built == [(TV_HOST, "Casa", tv_cert_dir("tv"))]
@@ -90,6 +94,19 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     }
     assert setup.background == []
     assert setup.after_hello == []
+
+
+def test_text_ime_options_are_passed_to_the_android_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = FakeTvRemote()
+    _built, options = pair_fake_tv(monkeypatch, remote)
+    setup = make_tv(
+        Settings(tv_host=TV_HOST, tv_text_cursor="field_end", tv_text_debug_values=True)
+    )
+    assert setup is not None
+    assert options[0]["text_cursor"] == "field_end"
+    assert options[0]["text_debug_values"] is True
 
 
 @pytest.mark.parametrize("mac_on_first_connect", [True, False])
