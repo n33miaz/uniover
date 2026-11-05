@@ -235,17 +235,6 @@ def _send_ime_batch(
     protocol._send_message(message, should_debug_log=False)
 
 
-def _limit_library_debug_logs() -> None:
-    """Impede que a biblioteca registre o valor do IME enquanto a depuração de valores está off."""
-    library_logger = logging.getLogger("androidtvremote2")
-    library_loggers = [library_logger]
-    for name, candidate in logging.Logger.manager.loggerDict.items():
-        if name.startswith("androidtvremote2.") and isinstance(candidate, logging.Logger):
-            library_loggers.append(candidate)
-    for logger in library_loggers:
-        logger.setLevel(max(logger.level, logging.INFO))
-
-
 def volume_percent(info: VolumeInfo) -> int | None:
     """Converte o nível da TV (`level` de `max`) em porcentagem; `None` se `max` não faz sentido."""
     maximum = info["max"]
@@ -278,8 +267,6 @@ class AndroidTvRemoteV2:
         self._on_connected = on_connected
         self._text_cursor = text_cursor
         self._text_debug_values = text_debug_values
-        if not text_debug_values:
-            _limit_library_debug_logs()
         self._client: RemoteClient | None = None
         self._connected = False
         self._watcher: asyncio.Task[None] | None = None

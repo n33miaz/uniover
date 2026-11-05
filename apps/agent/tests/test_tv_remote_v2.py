@@ -5,7 +5,6 @@ que só uma TV real responde (TGuard, Netflix, tempo de religação) está nas m
 """
 
 import asyncio
-import logging
 import socket
 import types
 import typing
@@ -331,47 +330,6 @@ async def test_ime_batch_from_the_tv_is_inherited_by_a_field_echo_without_app_in
     batch = server.ime_batches[0].remote_ime_batch_edit
     assert (batch.ime_counter, batch.field_counter) == (11, 7)
     assert "ime_origem=herdado" in caplog.text
-
-
-async def test_library_debug_does_not_expose_an_echo_value_when_value_debugging_is_disabled(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    loggers = [logging.getLogger("androidtvremote2")]
-    loggers.extend(
-        candidate
-        for name, candidate in logging.Logger.manager.loggerDict.items()
-        if name.startswith("androidtvremote2.") and isinstance(candidate, logging.Logger)
-    )
-    levels = {logger: logger.level for logger in loggers}
-    try:
-        for logger in loggers:
-            logger.setLevel(logging.DEBUG)
-        fields: list[TextFieldStatus] = []
-        async with FakeTvServer(tmp_path) as server:
-            adapter = make_adapter(tmp_path, server.port)
-            adapter.on_text_field(fields.append)
-            await adapter.connect()
-            try:
-                with caplog.at_level(logging.DEBUG):
-                    server.push_text_field("segredo de teste", counter=4, app_counter=9)
-                    await eventually(lambda: bool(fields))
-            finally:
-                await adapter.disconnect()
-        assert "segredo de teste" not in caplog.text
-    finally:
-        for logger, level in levels.items():
-            logger.setLevel(level)
-
-
-def test_value_debugging_keeps_the_library_logger_level(tmp_path: Path) -> None:
-    logger = logging.getLogger("androidtvremote2")
-    previous_level = logger.level
-    try:
-        logger.setLevel(logging.DEBUG)
-        AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path, text_debug_values=True)
-        assert logger.level == logging.DEBUG
-    finally:
-        logger.setLevel(previous_level)
 
 
 async def test_empty_text_is_a_programming_error_and_nothing_is_sent(tmp_path: Path) -> None:
