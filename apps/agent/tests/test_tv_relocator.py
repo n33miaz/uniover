@@ -76,6 +76,21 @@ async def test_a_tv_that_answers_resets_the_count() -> None:
     assert scene.rescans == 0
 
 
+async def test_a_tv_that_returns_after_a_failure_reopens_its_session() -> None:
+    scene = Scene()
+    reopened = 0
+
+    async def reopen() -> None:
+        nonlocal reopened
+        reopened += 1
+
+    relocator = scene.relocator(on_recovered=reopen)
+    await relocator.step()
+    scene.reachable = True
+    await relocator.step()
+    assert reopened == 1
+
+
 async def test_a_hot_session_proves_the_tv_is_there_without_probing() -> None:
     scene = Scene(hot=True)
 
@@ -296,18 +311,18 @@ async def test_the_tv_still_at_its_address_is_reachable_and_nothing_is_searched(
     assert not path_exists(isolated_env)
 
 
-async def test_a_tv_asleep_at_the_same_address_does_not_trigger_a_sweep(
+async def test_a_tv_asleep_with_a_stale_arp_entry_searches_only_at_the_slow_cadence(
     monkeypatch: pytest.MonkeyPatch, isolated_env: Path
 ) -> None:
     lan = Lan()
-    lan.open.clear()  # standby: nenhuma porta abre, mas o ARP ainda a vê onde sempre esteve
+    lan.open.clear()  # standby: nenhuma porta abre; o ARP ainda a vê, mas isso não prova nada
     lan.arp = {MAC: [OLD_HOST]}
     lan.install(monkeypatch)
     relocator = build_relocator(settings_for_old_host(tv_mac=MAC), FakeClock(), lambda: False)
     assert relocator is not None
     for _ in range(6):
         assert await relocator.step() is None
-    assert lan.ssdp_calls == 0
+    assert lan.ssdp_calls == 1  # uma busca cara; as outras conferências respeitam o espaçamento
     assert not path_exists(isolated_env)
 
 

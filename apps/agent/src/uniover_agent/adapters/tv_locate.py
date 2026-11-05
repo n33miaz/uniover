@@ -20,6 +20,7 @@ from uniover_agent.adapters.tv_discovery import (
     SAMSUNG_REST_PORT,
     FetchJson,
     TvKindName,
+    discover_android_tvs,
     http_json,
     local_address_for,
     local_ipv4,
@@ -27,7 +28,14 @@ from uniover_agent.adapters.tv_discovery import (
     subnet_hosts,
     tcp_open,
 )
-from uniover_agent.core.tv.locator import Authenticate, TvIdentity, TvKnown, TvLocator
+from uniover_agent.core.tv.locator import (
+    DEFAULT_EMPTY_SEARCHES_LIMIT,
+    DEFAULT_SLOW_SEARCH_SECONDS,
+    Authenticate,
+    TvIdentity,
+    TvKnown,
+    TvLocator,
+)
 from uniover_agent.ports import Clock
 
 _log = logging.getLogger(__name__)
@@ -126,13 +134,15 @@ def build_liveness(kind: TvKindName, host: str) -> Callable[[], Awaitable[bool]]
     return alive
 
 
-def build_locator(
+def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os limites
     kind: TvKindName,
     tv_host: str,
     known: TvKnown,
     clock: Clock,
     *,
     authenticate: Authenticate | None = None,
+    empty_searches_limit: int = DEFAULT_EMPTY_SEARCHES_LIMIT,
+    slow_search_seconds: float = DEFAULT_SLOW_SEARCH_SECONDS,
 ) -> TvLocator:
     """O `TvLocator` ligado à rede real, preso ao /24 da TV (o do `tv_host`)."""
     port = SAMSUNG_REST_PORT if kind == "samsung" else ANDROID_REMOTE_PORT
@@ -143,6 +153,9 @@ def build_locator(
     async def ssdp() -> list[str]:
         address = interface()
         return await ssdp_search(kind, address) if address else []
+
+    async def mdns() -> list[str]:
+        return [tv.host for tv in await discover_android_tvs()]
 
     async def identify(host: str) -> TvIdentity | None:
         return await identify_tv(kind, host)
@@ -167,4 +180,7 @@ def build_locator(
         probe=probe,
         identify=identify,
         authenticate=authenticate if kind == "android" else None,
+        mdns=mdns if kind == "android" else None,
+        empty_searches_limit=empty_searches_limit,
+        slow_search_seconds=slow_search_seconds,
     )

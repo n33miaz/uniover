@@ -22,6 +22,7 @@ class World:
         self.clock = clock
         self.arp: dict[str, list[str]] = {}
         self.ssdp: list[str] = []
+        self.mdns: list[str] = []
         self.identities: dict[str, TvIdentity] = {}
         self.open_hosts: set[str] = set()
         self.hosts = [f"192.168.0.{number}" for number in range(1, 255) if number != 12]
@@ -38,6 +39,10 @@ class World:
     async def ssdp_search(self) -> list[str]:
         self.calls.append("ssdp")
         return self.ssdp
+
+    async def mdns_search(self) -> list[str]:
+        self.calls.append("mdns")
+        return self.mdns
 
     async def identify(self, host: str) -> TvIdentity | None:
         self.calls.append(f"identify:{host}")
@@ -68,6 +73,7 @@ class World:
             probe=self.probe,
             identify=self.identify,
             authenticate=authenticate,
+            mdns=self.mdns_search,
             **limits,  # type: ignore[arg-type]
         )
 
@@ -282,8 +288,72 @@ async def test_the_android_hint_that_is_a_mac_is_used_for_the_arp_lookup() -> No
 async def test_arp_showing_the_tv_at_the_old_address_ends_the_search_without_a_sweep() -> None:
     lan = world()
     lan.arp = {MAC: ["192.168.0.11"]}
+    lan.open_hosts = {"192.168.0.11"}  # a porta do controle atende no endereço de sempre
     assert await lan.locator().find("192.168.0.11") is None
     assert lan.stages() == ["arp"]
+
+
+async def test_a_stale_arp_entry_at_the_old_address_does_not_stop_the_search() -> None:
+    lan = world()
+    lan.arp = {MAC: ["192.168.0.11"]}  # entrada velha: ninguém atende a porta ali
+    lan.mdns = ["192.168.0.14"]
+    lan.identities["192.168.0.14"] = ME
+    found = await lan.locator().find("192.168.0.11")
+    assert (found.host, found.via) == ("192.168.0.14", "mdns")  # type: ignore[union-attr]
+    assert lan.stages().index("arp") < lan.stages().index("ssdp") < lan.stages().index("mdns")
+
+
+async def test_mdns_runs_before_the_sweep_and_at_most_once_every_two_minutes() -> None:
+    lan = world()
+    locator = lan.locator()
+    await locator.find("192.168.0.11")
+    assert lan.stages().count("mdns") == 1
+    lan.clock.advance(60)
+    await locator.find("192.168.0.11")
+    assert lan.stages().count("mdns") == 1
+    lan.clock.advance(61)
+    await locator.find("192.168.0.11")
+    assert lan.stages().count("mdns") == 2
+
+
+async def test_after_six_empty_searches_the_expensive_stages_run_once_every_thirty_minutes() -> (
+    None
+):
+    lan = world()
+    locator = lan.locator(sweep_seconds=60)  # sem este teto a varredura já seria rara
+    searches = 0
+    for _ in range(6):
+        lan.clock.advance(601)
+        before = lan.stages().count("ssdp")
+        await locator.find("192.168.0.11")
+        searches += lan.stages().count("ssdp") - before
+    assert searches == 6
+    # TV sumida por horas: uma conferência por minuto, mas só uma busca cara a cada 30 min.
+    ssdp_before = lan.stages().count("ssdp")
+    sweeps_before = len(lan.probed)
+    for _ in range(180):
+        lan.clock.advance(60)
+        await locator.find("192.168.0.11")
+    assert lan.stages().count("ssdp") - ssdp_before <= 6
+    assert len(lan.probed) - sweeps_before <= 6 * len(lan.hosts)
+    assert lan.stages().count("arp") >= 186  # o ARP não custa nada e segue a cada conferência
+
+
+async def test_a_found_tv_restarts_the_empty_search_count() -> None:
+    lan = world()
+    locator = lan.locator()
+    for _ in range(6):
+        lan.clock.advance(601)
+        await locator.find("192.168.0.11")
+    lan.mdns = ["192.168.0.14"]
+    lan.identities["192.168.0.14"] = ME
+    lan.clock.advance(1801)
+    found = await locator.find("192.168.0.11")
+    assert found is not None
+    lan.mdns = []
+    lan.clock.advance(121)
+    assert await locator.find("192.168.0.11") is None  # mdns/ssdp de novo na cadência normal
+    assert lan.stages().count("ssdp") >= 8
 
 
 # --- limites: SSDP a cada 2 min, varredura a cada 10 min -------------------------------------
