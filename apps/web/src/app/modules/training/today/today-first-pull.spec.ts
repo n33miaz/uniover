@@ -96,12 +96,11 @@ describe('Today on a device that has never pulled', () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     let settledReads = 0;
-    let sync!: TrainingSync;
     vi.spyOn(RoutineRepository.prototype, 'all').mockImplementation(async function (
       this: RoutineRepository,
     ) {
       // As leituras anteriores ao fim da passada seguem normais; a primeira depois dele fica presa.
-      if (sync?.firstPassSettled()) {
+      if (TestBed.inject(TrainingSync).firstPassSettled()) {
         settledReads++;
         await gate;
       }
@@ -110,7 +109,7 @@ describe('Today on a device that has never pulled', () => {
     // O catálogo já veio: sem rotinas, o vazio é o estado certo (e não o aviso de catálogo ausente).
     const { harness, el, sawEmpty, stop } = await open(true);
     const fixture = harness.fixture;
-    sync = TestBed.inject(TrainingSync);
+    const sync = TestBed.inject(TrainingSync);
     await sync.start();
     expect(sync.firstPassSettled()).toBe(true);
     await vi.waitFor(() => expect(settledReads).toBeGreaterThan(0));
