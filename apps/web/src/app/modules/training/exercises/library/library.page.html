@@ -71,8 +71,8 @@
 
   <div class="meta">
     <div class="count">
-      <!-- Sem catálogo no aparelho (a primeira abertura baixando) "0 exercícios" seria falso: sem contagem até ele chegar. -->
-      @if (!catalogEmpty()) {
+      <!-- Antes da primeira leitura ou sem catálogo no aparelho (a primeira abertura baixando), "0 exercícios" seria falso: sem contagem até ele chegar. -->
+      @if (ready() && !failed() && !catalogEmpty()) {
         <p class="number" role="status">{{ countText() }}</p>
       }
     </div>

@@ -229,6 +229,7 @@ describe('ExerciseLibraryPage', () => {
     vi.spyOn(repository, 'search').mockRejectedValueOnce(new Error('indexeddb unavailable'));
     type(el, 'supino');
     await eventually(fixture, () => expect(el.textContent).toContain('Os Exercícios Não Abriram'));
+    expect(count(el)).toBeUndefined();
     vi.spyOn(repository, 'search').mockImplementation(real);
     Array.from(el.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.includes('Tentar de Novo'))!
