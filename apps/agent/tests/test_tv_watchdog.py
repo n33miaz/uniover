@@ -181,6 +181,66 @@ async def test_the_repair_rest_grows_to_ten_minutes_after_repeated_failures() ->
     assert rests == [60.0, 120.0, 300.0, 600.0]
 
 
+async def fail_once(rig: Rig) -> None:
+    rig.ports = [False]
+    await rig.watchdog.handle()
+    assert rig.restarts == 3
+
+
+async def test_automatic_requests_never_cut_the_rest_short() -> None:
+    # O relocador avisa a cada minuto que a porta segue recusada: o descanso não pode se desfazer.
+    rig = Rig(budget_seconds=31, cooldowns=(60.0, 600.0))
+    await fail_once(rig)
+    rig.clock.advance(61)
+    rig.ports = [False]
+    await rig.watchdog.handle()
+    assert rig.restarts == 6  # a segunda falha leva ao descanso de dez minutos
+    for _ in range(8):
+        rig.clock.advance(65)
+        rig.watchdog.request()
+        await rig.watchdog.handle()
+    assert rig.restarts == 6  # passaram 520 s e o descanso de 600 s segue valendo
+
+
+async def test_a_command_can_cut_the_short_rest_but_never_the_adb_one() -> None:
+    rig = Rig(budget_seconds=31)
+    await fail_once(rig)
+    rig.clock.advance(30)
+    rig.watchdog.request_after_command()
+    await rig.watchdog.handle()
+    assert rig.restarts == 3  # menos de 60 s desde a última tentativa
+    rig.clock.advance(31)
+    rig.watchdog.request_after_command()
+    await rig.watchdog.handle()
+    assert rig.restarts == 6
+
+    adb_rig = Rig(budget_seconds=31)
+    adb_rig.restart_script = [AdbUnauthorized("sem aceite")]
+    await adb_rig.watchdog.handle()
+    attempts = adb_rig.restarts
+    adb_rig.clock.advance(1000)
+    adb_rig.watchdog.request_after_command()
+    adb_rig.watchdog.request()
+    await adb_rig.watchdog.handle()
+    assert adb_rig.restarts == attempts  # o descanso de uma hora do ADB fica de pé
+
+
+async def test_only_a_command_opening_the_session_may_cut_the_rest() -> None:
+    rig = Rig()
+    automatic: list[str] = []
+    rig.manager.on_needs_repair(
+        lambda: automatic.append("auto"), on_command=lambda: automatic.append("command")
+    )
+    rig.remote.connect_errors = [TvPortClosed("recusou")] * 4
+    with pytest.raises(TvSessionError):
+        await rig.manager.wake()  # pré-aquecimento: automático
+    rig.remote.connect_errors = [TvPortClosed("recusou")] * 4
+    rig.clock.advance(120)
+    with pytest.raises(TvSessionError):
+        await rig.manager.send_key("HOME")  # comando do dono
+    assert automatic == ["auto", "command"]
+
+
 async def test_an_attempt_that_raises_counts_and_the_next_one_can_work() -> None:
     rig = Rig(budget_seconds=31)
     rig.ports = [False] * 6 + [True]  # o serviço só volta depois do 2º restart (aos 15 s)
