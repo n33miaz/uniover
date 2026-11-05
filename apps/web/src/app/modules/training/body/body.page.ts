@@ -178,7 +178,7 @@ type BodyView = 'summary' | 'records' | 'photos';
               ><small i18n="@@training.body.summary.photos-action">Ver Fotos</small>
             </button>
           </section>
-          <button type="button" class="primary ui-btn primary-action" (click)="editing.set('new')">
+          <button type="button" class="primary ui-btn block" (click)="editing.set('new')">
             <span i18n="@@training.body.weight.add">Registrar Peso</span>
           </button>
         } @else if (view() === 'records') {
