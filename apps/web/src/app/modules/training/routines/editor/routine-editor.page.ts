@@ -17,11 +17,17 @@ import { uuidV7 } from '../../../../core/offline-queue/uuid-v7';
 import { CatalogRepository } from '../../data/catalog/catalog-repository';
 import type { LocalExercise } from '../../data/catalog/exercise';
 import { RoutineRepository } from '../../data/routines/routine-repository';
+import { RESOURCE_NAMES } from '../../data/sync/resource-names';
 import { TrainingSync } from '../../data/sync/training-sync';
 import type { RoutineItemModel } from '../../domain/routines/routine-model';
 import { ExercisePickerSheet } from '../../exercises/picker/exercise-picker-sheet';
 import { BackNavigation } from '../../shell/back-navigation';
-import { awaitingFirstPull } from '../../shell/first-pull';
+import {
+  FIRST_PULL_NEEDS,
+  ROUTINE_EDITOR_PRIORITY,
+  awaitingFirstPull,
+  settledAfterFirstPull,
+} from '../../shell/first-pull';
 import { TrainingGlyph } from '../../shell/training-glyph';
 import { TrainingHeaderActions } from '../../shell/training-header-actions';
 import {
@@ -65,6 +71,7 @@ interface FieldConfig {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RoutineEditorPage {
+  private readonly loadingName = $localize`:@@training.editor.loading-name:Carregando…`;
   protected readonly loadingLabel = $localize`:@@training.editor.loading:Carregando a rotina…`;
   private readonly routines = inject(RoutineRepository);
   private readonly catalog = inject(CatalogRepository);
@@ -80,7 +87,21 @@ export class RoutineEditorPage {
   protected readonly routineId = this.route.snapshot.paramMap.get('id') ?? '';
   protected readonly editing = this.routineId !== '';
 
-  protected readonly state = signal<'loading' | 'missing' | 'ready'>('loading');
+  private readonly openState = signal<'loading' | 'missing' | 'ready'>('loading');
+  /**
+   * Aberto direto pelo endereço na primeira vez, a rotina pode ainda não ter chegado do servidor: a espera é só pelo que o
+   * editor lê (a rotina e o catálogo), e `settled` cobre a leitura que ainda estava a caminho. Enquanto isso, "não existe
+   * mais" não é dito: a tela fica no esqueleto.
+   */
+  private readonly settled = this.editing
+    ? settledAfterFirstPull(this.sync, this.connectivity, FIRST_PULL_NEEDS.routineEditor, () =>
+        this.openExisting(),
+      )
+    : signal(true).asReadonly();
+  protected readonly state = computed(() => {
+    const state = this.openState();
+    return state === 'missing' && !this.settled() ? 'loading' : state;
+  });
   protected readonly draft = signal<RoutineDraftState>(emptyDraft());
   private readonly initial = signal<RoutineDraftState>(emptyDraft());
   /** Os exercícios pelos ids, para o nome de cada linha. */
@@ -150,10 +171,15 @@ export class RoutineEditorPage {
   constructor() {
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) {
-      // Aberto direto pelo endereço na primeira vez, o editor espera a primeira passada do servidor trazer a rotina.
+      // A passada começa pela rotina e pelo catálogo, não pela ordem de registro (o catálogo, a maior resposta, antes dela).
+      this.sync.prioritize(ROUTINE_EDITOR_PRIORITY);
       effect(() => {
         this.routines.revision();
-        const waiting = awaitingFirstPull(this.sync, this.connectivity);
+        const waiting = awaitingFirstPull(
+          this.sync,
+          this.connectivity,
+          FIRST_PULL_NEEDS.routineEditor,
+        );
         untracked(() => void this.openExisting(waiting));
       });
     } else {
@@ -163,15 +189,20 @@ export class RoutineEditorPage {
     // Os nomes das linhas: lê do catálogo local o que ainda não foi lido (exercício novo na lista, ou apagado).
     effect(() => {
       const ids = this.draft().items.map((item) => item.exerciseId);
+      // O catálogo que chega depois da rotina (aparelho novo) completa os nomes que faltavam.
+      this.catalog.revision();
       untracked(() => void this.loadNames(ids));
     });
   }
 
   protected nameOf(item: RoutineItemModel): string {
-    return (
-      this.exercises().get(item.exerciseId)?.name ??
-      $localize`:@@training.editor.missing-exercise:Exercício que não existe mais`
-    );
+    const known = this.exercises().get(item.exerciseId)?.name;
+    if (known !== undefined) return known;
+    // Aparelho novo: o catálogo ainda vem a caminho, e dizer que o exercício não existe seria falso.
+    if (awaitingFirstPull(this.sync, this.connectivity, [RESOURCE_NAMES.exercises])) {
+      return this.loadingName;
+    }
+    return $localize`:@@training.editor.missing-exercise:Exercício que não existe mais`;
   }
 
   protected summaryOf(item: RoutineItemModel): string {
@@ -400,16 +431,16 @@ export class RoutineEditorPage {
     );
   }
 
-  private async openExisting(waitingForServer: boolean): Promise<void> {
+  private async openExisting(waitingForServer = false): Promise<void> {
     if (this.opened) return;
     const routine = await this.routines.get(this.routineId);
     if (this.opened) return;
     if (routine) {
       this.opened = true;
       this.open(draftFromRoutine(routine));
-      this.state.set('ready');
+      this.openState.set('ready');
     } else {
-      this.state.set(waitingForServer ? 'loading' : 'missing');
+      this.openState.set(waitingForServer ? 'loading' : 'missing');
     }
   }
 
@@ -426,7 +457,7 @@ export class RoutineEditorPage {
       }
     }
     this.open(draft);
-    this.state.set('ready');
+    this.openState.set('ready');
   }
 
   /** Abre o editor com a rotina: o que já veio preenchido não conta como alteração de quem edita. */
