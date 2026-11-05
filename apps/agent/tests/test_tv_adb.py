@@ -670,3 +670,32 @@ async def test_restart_remote_service_without_authorization_runs_no_shell_comman
     with pytest.raises(AdbUnauthorized):
         await make(runner).restart_remote_service()
     assert runner.shell_commands() == []
+
+
+async def test_a_deferred_disconnect_does_not_drop_a_connection_opened_meanwhile() -> None:
+    runner = authorized()
+    adb = make(runner)
+    await adb.connect()
+    await adb._lock.acquire()  # type: ignore[attr-defined]
+    await adb.disconnect()  # a trava está ocupada: o `adb disconnect` fica agendado
+    adb._connected = True  # type: ignore[attr-defined]  # outra abertura acontece antes dele
+    adb._lock.release()  # type: ignore[attr-defined]
+    task = adb._disconnect_task  # type: ignore[attr-defined]
+    assert task is not None
+    await task
+    assert DISCONNECT not in runner.calls
+    assert adb.connected
+
+
+async def test_closing_the_adb_cancels_a_pending_deferred_disconnect() -> None:
+    runner = authorized()
+    adb = make(runner)
+    await adb.connect()
+    await adb._lock.acquire()  # type: ignore[attr-defined]
+    await adb.disconnect()
+    task = adb._disconnect_task  # type: ignore[attr-defined]
+    assert task is not None
+    await adb.aclose()
+    assert task.cancelled()
+    adb._lock.release()  # type: ignore[attr-defined]
+    assert DISCONNECT not in runner.calls
