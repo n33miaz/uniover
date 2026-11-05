@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { AccountScope } from '../../../core/session/account-scope';
+import type { FakeAccountScope } from '../../../core/offline-queue/queue-test-kit';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { RoutineRepository } from '../data/routines/routine-repository';
@@ -6,6 +8,7 @@ import { TrainingSync } from '../data/sync/training-sync';
 import { exerciseDto, localExercise, setupTraining } from '../data/sync/training-test-kit';
 import { eventually, item, saveRoutine } from '../shell/screen-test-kit';
 import { TodayPage } from './today.page';
+import { FIRST_PULL_WAIT_MS } from './today-store';
 
 const EMPTY = 'Sem Rotinas Ainda';
 
@@ -26,14 +29,25 @@ describe('Today on a device that has never pulled', () => {
     localStorage.clear();
   });
 
-  async function open(withCatalog = false) {
+  async function open(
+    withCatalog = false,
+    options: { waitMs?: number; noSession?: boolean; seed?: () => Promise<void> } = {},
+  ) {
     TestBed.configureTestingModule({
-      providers: [provideRouter([{ path: 'treino', component: TodayPage }])],
+      providers: [
+        provideRouter([{ path: 'treino', component: TodayPage }]),
+        ...(options.waitMs === undefined
+          ? []
+          : [{ provide: FIRST_PULL_WAIT_MS, useValue: options.waitMs }]),
+      ],
     });
     const kit = setupTraining();
     kit.pause();
+    if (options.noSession)
+      (TestBed.inject(AccountScope) as unknown as FakeAccountScope).sessionAccount.set(null);
     localStorage.clear();
     if (withCatalog) await kit.trainingDb.exercises.bulkPut([localExercise('supino-reto')]);
+    await options.seed?.();
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/treino', TodayPage);
     const el = harness.routeNativeElement as HTMLElement;
@@ -43,7 +57,22 @@ describe('Today on a device that has never pulled', () => {
       if (el.textContent?.includes(EMPTY)) sawEmpty = true;
     });
     watcher.observe(el, { childList: true, subtree: true, characterData: true });
-    return { kit, harness, el, sawEmpty: () => sawEmpty, stop: () => watcher.disconnect() };
+    let sawDownloading = false;
+    const downloading = new MutationObserver(() => {
+      if (el.textContent?.includes('Baixando o catálogo…')) sawDownloading = true;
+    });
+    downloading.observe(el, { childList: true, subtree: true, characterData: true });
+    return {
+      kit,
+      harness,
+      el,
+      sawEmpty: () => sawEmpty,
+      sawDownloading: () => sawDownloading,
+      stop: () => {
+        watcher.disconnect();
+        downloading.disconnect();
+      },
+    };
   }
 
   it('keeps waiting from the catalog arriving until the routines it brought are read, and never says there are none', async () => {
@@ -125,6 +154,54 @@ describe('Today on a device that has never pulled', () => {
     await eventually(fixture, () => expect(el.textContent).toContain(EMPTY));
     expect(el.textContent).not.toContain('Baixando o catálogo…');
     expect(sawEmpty()).toBe(true);
+    stop();
+  });
+
+  it('does not wait forever when there is no valid session: with the catalog already here the empty state shows at once', async () => {
+    const { harness, el, sawDownloading, stop } = await open(true, { noSession: true });
+    await TestBed.inject(TrainingSync).start();
+    // Sem sessão a passada nunca puxa e nunca "acaba"; a espera não pode segurar o treino.
+    await eventually(harness.fixture, () => expect(el.textContent).toContain(EMPTY));
+    expect(sawDownloading()).toBe(false);
+    stop();
+  });
+
+  it('gives up waiting after the cap when there is no session and the catalog is still missing', async () => {
+    const { harness, el, stop } = await open(false, { noSession: true, waitMs: 400 });
+    await TestBed.inject(TrainingSync).start();
+    await eventually(harness.fixture, () =>
+      expect(el.textContent).toContain('Baixando o catálogo…'),
+    );
+    await eventually(harness.fixture, () => {
+      expect(el.textContent).toContain('O Catálogo Ainda Não Chegou');
+      expect(el.textContent).not.toContain('Baixando o catálogo…');
+    });
+    stop();
+  });
+
+  it('never flashes the download wait for a device that already has data while the first read of the last pull is still going', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(
+      TrainingSync.prototype as unknown as { readLastPullAt(): Promise<number | null> },
+      'readLastPullAt',
+    ).mockImplementation(async () => {
+      await gate;
+      return 1_760_000_000_000;
+    });
+    const { harness, el, sawEmpty, sawDownloading, stop } = await open(true, {
+      seed: async () => void (await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)])),
+    });
+    void TestBed.inject(TrainingSync).start();
+    // Enquanto não se sabe se o aparelho é novo, a tela espera com o esqueleto, sem vazio e sem "Baixando".
+    await vi.waitFor(() => expect(el.querySelector('app-today-skeleton')).not.toBeNull());
+    expect(el.textContent).not.toContain(EMPTY);
+    expect(el.textContent).not.toContain('Baixando o catálogo…');
+
+    release();
+    await eventually(harness.fixture, () => expect(el.textContent).toContain('Treino A'));
+    expect(sawDownloading()).toBe(false);
+    expect(sawEmpty()).toBe(false);
     stop();
   });
 });

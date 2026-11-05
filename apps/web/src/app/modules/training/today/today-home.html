@@ -31,7 +31,7 @@
     </section>
   }
 
-  @if (!store.ready() || !store.homeReady()) {
+  @if (!store.ready() || !store.homeReady() || store.pullUnknown()) {
     <!-- A forma do cartão do dia: a tela não pula quando a leitura local termina. A semana embaixo já aparece com as datas. -->
     <app-today-skeleton />
   } @else if (store.active(); as running) {

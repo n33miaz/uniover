@@ -69,6 +69,12 @@ export class TrainingSync {
    * esperar aqui, em vez de ficar num esqueleto que nunca acaba; o banco local passa a valer.
    */
   readonly firstPassSettled = this._firstPassSettled.asReadonly();
+  private readonly _lastPullKnown = signal(false);
+  /**
+   * O instante do último puxar já foi lido do banco (mesmo que seja "nunca"). Antes disso `lastPullAt` vale `null` para
+   * todo mundo, e quem já tem dados no aparelho seria tomado por um aparelho novo.
+   */
+  readonly lastPullKnown = this._lastPullKnown.asReadonly();
 
   private starting: Promise<void> | null = null;
   private started = false;
@@ -128,6 +134,7 @@ export class TrainingSync {
 
   private async boot(): Promise<void> {
     this._lastPullAt.set(await this.readLastPullAt());
+    this._lastPullKnown.set(true);
     await this.queue.start();
     this.seenSyncAt = this.queue.lastSyncAt();
     this.started = true;
