@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.1](https://github.com/n33miaz/uniover/compare/v0.37.0...v0.37.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **agent:** correct update drill phases
+
+
+### Performance Improvements
+
+* **web:** trim corpo css under budget
+
 ## [0.37.0](https://github.com/n33miaz/uniover/compare/v0.36.34...v0.37.0) (2026-11-05)
 
 
