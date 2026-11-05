@@ -256,6 +256,21 @@ describe('illustration map', () => {
     }
   });
 
+  it('cites the later Open Exercise Art figures as exact matches, with no variation mark', () => {
+    const later: Readonly<Record<string, string>> = {
+      'elevacao-de-joelhos-nas-paralelas': 'captain-s-chair-knee-raise',
+      'encolhimento-de-pernas-no-banco': 'seated-knee-tuck',
+      'desenvolvimento-sentado-com-halteres': 'dumbbell-shoulder-press',
+      'remada-na-maquina-articulada': 'machine-row',
+    };
+    for (const [slug, name] of Object.entries(later)) {
+      const entry = illustrationFor(slug);
+      expect(entry?.source, slug).toBe('open-exercise-art');
+      expect(entry?.variation, slug).toBeUndefined();
+      expect(entry?.frames, slug).toEqual([`${OPEN_ART_PREFIX}${name}.webp`]);
+    }
+  });
+
   it('keeps the Open Exercise Art originals as downloaded, with license and notice beside them', () => {
     expect(readFileSync(resolve(OPEN_ART_ROOT, 'NOTICE'), 'utf8')).toContain(OPEN_ART_COMMIT);
     expect(readFileSync(resolve(OPEN_ART_ROOT, 'LICENSE'), 'utf8')).toContain(
