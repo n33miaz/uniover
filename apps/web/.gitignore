@@ -46,6 +46,7 @@ Thumbs.db
 # Playwright
 /test-results
 /test-results-update
+/test-results-catalog
 /playwright-report
 
 # Lighthouse
