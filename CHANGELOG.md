@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.3](https://github.com/n33miaz/uniover/compare/v0.42.2...v0.42.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **web:** cap first pull wait in shared signal
+
 ## [0.42.2](https://github.com/n33miaz/uniover/compare/v0.42.1...v0.42.2) (2026-11-05)
 
 
