@@ -15,8 +15,8 @@ export interface TvConfig {
   readonly hibernateMinutes: number;
   /** Intervalo do pedido de "aquecer" enquanto a tela está visível. */
   readonly wakeIntervalMs: number;
-  /** Intervalo do sinal de presença ("há alguém na tela") enquanto a tela está visível: o agente só abre ADB sozinho com ele. */
-  readonly presenceIntervalMs: number;
+  /** Espaço mínimo entre dois sinais de presença ("alguém acabou de tocar na tela"): o agente só abre ADB sozinho logo depois de um. */
+  readonly presenceMinIntervalMs: number;
   /** Quanto o dedo precisa ficar parado numa tecla repetível antes de a repetição começar. */
   readonly repeatDelayMs: number;
   /** Intervalo da repetição (cerca de 4 por segundo, abaixo do limite de comandos do servidor). */
@@ -49,7 +49,7 @@ export const TV_CONFIG = new InjectionToken<TvConfig>('TV_CONFIG', {
     readTimeoutMs: 8_000,
     hibernateMinutes: 5,
     wakeIntervalMs: 120_000,
-    presenceIntervalMs: 20_000,
+    presenceMinIntervalMs: 5_000,
     repeatDelayMs: 400,
     repeatIntervalMs: 250,
     noticeMs: 6_000,

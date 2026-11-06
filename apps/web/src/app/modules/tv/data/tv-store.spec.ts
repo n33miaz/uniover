@@ -514,54 +514,57 @@ describe('TvStore', () => {
     });
   });
 
-  describe('presence while visible', () => {
-    it('signals on opening and again every 20 seconds', async () => {
+  describe('presence only after a touch', () => {
+    const touch = (type: 'pointerdown' | 'keydown' = 'pointerdown') =>
+      document.dispatchEvent(new Event(type));
+
+    it('sends nothing on its own, however long a visible page stays open', async () => {
       await started();
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(api.presence).not.toHaveBeenCalled();
+    });
+
+    it('signals on a touch and on a key press, at most once every 5 seconds', async () => {
+      await started();
+      touch();
+      await flush();
       expect(api.presence).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(19_000);
+      touch('keydown');
+      touch();
+      await vi.advanceTimersByTimeAsync(4_000);
       expect(api.presence).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(api.presence).toHaveBeenCalledTimes(2);
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(api.presence).toHaveBeenCalledTimes(3);
-    });
-
-    it('sends nothing while the page is hidden, and resumes at once when it is visible again', async () => {
-      await started();
-      setVisibility('hidden');
-      await vi.advanceTimersByTimeAsync(600_000);
-      expect(api.presence).toHaveBeenCalledTimes(1);
-
-      setVisibility('visible');
+      touch();
       await flush();
       expect(api.presence).toHaveBeenCalledTimes(2);
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(api.presence).toHaveBeenCalledTimes(3);
     });
 
-    it('never signals from a page that opens hidden', async () => {
-      setVisibility('hidden');
+    it('never signals from a hidden page, even on a touch', async () => {
       await started();
-      await vi.advanceTimersByTimeAsync(120_000);
+      setVisibility('hidden');
+      touch();
+      await flush();
       expect(api.presence).not.toHaveBeenCalled();
+      setVisibility('visible');
+      await flush();
+      expect(api.presence).not.toHaveBeenCalled(); // voltar a ficar visível não é um toque
     });
 
     it('does not signal for a state that is not "visible" (prerender), only for "visible"', async () => {
       Object.defineProperty(document, 'visibilityState', { value: 'prerender', configurable: true });
       await started();
-      await vi.advanceTimersByTimeAsync(60_000);
+      touch();
+      await flush();
       expect(api.presence).not.toHaveBeenCalled();
     });
 
-    it('stops on stop(): no more signals even if the page toggles', async () => {
+    it('stops on stop(): the listeners are gone', async () => {
       await started();
       store.stop();
-      await vi.advanceTimersByTimeAsync(600_000);
-      expect(api.presence).toHaveBeenCalledTimes(1);
-      setVisibility('hidden');
-      setVisibility('visible');
+      touch();
+      touch('keydown');
       await flush();
-      expect(api.presence).toHaveBeenCalledTimes(1);
+      expect(api.presence).not.toHaveBeenCalled();
     });
 
     it('does not signal while the agent is known to be offline, and signals again once it is back', async () => {
@@ -569,21 +572,55 @@ describe('TvStore', () => {
       api.state.mockResolvedValue(down);
       await started();
       emit('tv.state', down);
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(api.presence).toHaveBeenCalledTimes(1); // só a da abertura, antes de saber que caiu
+      touch();
+      await flush();
+      expect(api.presence).not.toHaveBeenCalled();
       api.state.mockResolvedValue(hot);
       emit('tv.state', hot);
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(api.presence).toHaveBeenCalledTimes(2);
+      touch();
+      await flush();
+      expect(api.presence).toHaveBeenCalledTimes(1);
     });
 
-    it('a failed signal is silent: no notice, and the next one still goes', async () => {
+    it('a failed signal is silent: no notice, and a later touch still goes', async () => {
       api.presence.mockRejectedValueOnce(problem(503, 'agent-offline'));
       await started();
+      touch();
+      await flush();
       expect(store.notice()).toBeNull();
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      touch();
+      await flush();
       expect(api.presence).toHaveBeenCalledTimes(2);
       expect(store.notice()).toBeNull();
+    });
+
+    it('opening an app signals first, then launches (the agent may need to reconnect)', async () => {
+      const order: string[] = [];
+      api.presence.mockImplementation(async () => void order.push('presence'));
+      api.launch.mockImplementation(async () => void order.push('launch'));
+      await started();
+      await store.launch(shortcut(1));
+      expect(order).toEqual(['presence', 'launch']);
+    });
+
+    it('cleaning the TV signals first, then cleans', async () => {
+      const order: string[] = [];
+      api.presence.mockImplementation(async () => void order.push('presence'));
+      api.cleanup.mockImplementation(async () => {
+        order.push('cleanup');
+        return {
+          closedApps: 0,
+          memoryBeforeMb: null,
+          memoryAfterMb: null,
+          freedMb: null,
+          failedSteps: [],
+          at: '2026-10-19T14:02:00Z',
+        };
+      });
+      await started();
+      await store.cleanup();
+      expect(order.slice(0, 2)).toEqual(['presence', 'cleanup']);
     });
   });
 
