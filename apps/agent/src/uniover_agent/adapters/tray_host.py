@@ -33,7 +33,10 @@ _STATE_TEXT = {
 }
 _READY_TIMEOUT = 8.0
 _REFRESH_SECONDS = 2.0
-_REPLACE_ATTEMPTS = 5
+# Esperas entre as tentativas de trocar o arquivo de estado (o total fica abaixo de 1 s).
+_REPLACE_DELAYS = (0.05, 0.1, 0.2, 0.4)
+_WARN_EVERY_SECONDS = 60.0
+_last_warning = float("-inf")
 Record = Callable[[str, Severity, str], None]
 
 
@@ -96,16 +99,36 @@ def _write_state(
         "exit": exit_host,
     }
     temporary = path.with_suffix(".json.new")
-    temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    # O host WinForms pode estar lendo o destino; no Windows essa leitura breve impede a troca.
-    for attempt in range(_REPLACE_ATTEMPTS):
+    try:
+        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        _replace_with_retry(temporary, path)
+    except OSError as exc:
+        # Não derruba o laço da bandeja: a próxima atualização (a cada poucos segundos) regrava.
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        _warn_state_not_written(exc)
+
+
+def _replace_with_retry(temporary: Path, path: Path) -> None:
+    # O host WinForms (ou um antivírus) pode estar lendo o destino; no Windows isso impede a troca.
+    for delay in _REPLACE_DELAYS:
         try:
             os.replace(temporary, path)
-            break
+            return
         except PermissionError:
-            if attempt == _REPLACE_ATTEMPTS - 1:
-                raise
-            time.sleep(0.02)
+            time.sleep(delay)
+    os.replace(temporary, path)
+
+
+def _warn_state_not_written(exc: OSError) -> None:
+    """No máximo um aviso por minuto, sem traceback."""
+    global _last_warning  # noqa: PLW0603 - limite de frequência do processo
+    now = time.monotonic()
+    if now - _last_warning >= _WARN_EVERY_SECONDS:
+        _last_warning = now
+        _log.warning("nao consegui gravar o estado da bandeja (%s); tento de novo", exc)
 
 
 def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e comandos

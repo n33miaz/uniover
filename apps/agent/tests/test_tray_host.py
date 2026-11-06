@@ -57,6 +57,33 @@ def test_host_state_recovers_when_windows_briefly_locks_the_file(
     assert json.loads(state.read_text(encoding="utf-8"))["status"] == "Conectado"
 
 
+def test_host_state_that_stays_locked_warns_once_without_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    state = tmp_path / "state.json"
+    monkeypatch.setattr(os, "replace", _always_locked)
+    monkeypatch.setattr("uniover_agent.adapters.tray_host.time.sleep", lambda _: None)
+    monkeypatch.setattr(tray_host, "_last_warning", float("-inf"))
+    view = TrayView("connected", False, "UniOver: conectado")
+
+    with caplog.at_level("WARNING", logger=tray_host.__name__):
+        for _ in range(3):
+            tray_host._write_state(state, view, tmp_path)
+
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert warnings[0].exc_info is None
+    assert list(tmp_path.glob("*.new")) == []
+
+    monkeypatch.undo()
+    tray_host._write_state(state, view, tmp_path)
+    assert json.loads(state.read_text(encoding="utf-8"))["status"] == "Conectado"
+
+
+def _always_locked(source: Path, target: Path) -> None:
+    raise PermissionError("[WinError 5] arquivo aberto pelo host")
+
+
 def test_missing_host_uses_pystray_without_starting_a_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
