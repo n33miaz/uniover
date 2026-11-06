@@ -160,6 +160,73 @@ describe('LiveTextSync', () => {
     });
   });
 
+  describe('batching against a slow TV (the agent turns each send into one input text)', () => {
+    const WORD = 'matrix reloaded';
+
+    it('sends the first letter in the same instant, then one batch with everything typed meanwhile', async () => {
+      const started = Date.now();
+      type(WORD[0]);
+      // Dentro dos 150 ms de meta: o primeiro caractere sai na mesma hora, sem esperar pausa.
+      expect(calls[0].at - started).toBe(0);
+      // O resto é digitado a 40 ms por letra enquanto a TV (ADB lento) ainda trabalha na primeira.
+      for (let end = 2; end <= WORD.length; end++) {
+        await wait(40);
+        type(WORD.slice(0, end));
+      }
+      expect(sentTexts()).toEqual([WORD[0]]);
+      await wait(1_000);
+      await finish();
+      // Um envio só para o lote inteiro, com o texto completo mais recente.
+      expect(sentTexts()).toEqual([WORD[0], WORD]);
+    });
+
+    it('never sends a text that is not what the field held, so nothing is lost or reordered', async () => {
+      const typed: string[] = [];
+      let field = '';
+      const press = (char: string) => {
+        field = char === '\b' ? field.slice(0, -1) : field + char;
+        typed.push(field);
+        type(field);
+      };
+      press('o');
+      await wait(30);
+      for (const char of 'la mundo') {
+        press(char);
+        await wait(35);
+      }
+      press('\b');
+      press('\b');
+      press('o');
+      await wait(2_000);
+      await finish();
+      await wait(2_000);
+      await finish();
+      // Cada texto enviado existiu de verdade no campo, e a ordem é a de digitação.
+      let at = -1;
+      for (const sent of sentTexts()) {
+        const index = typed.indexOf(sent, at + 1);
+        expect(index).toBeGreaterThan(at);
+        at = index;
+      }
+      expect(sentTexts().at(-1)).toBe(field);
+    });
+
+    it('resends the full latest text after a failed batch, so the agent only diffs what is missing', async () => {
+      type('c');
+      await finish();
+      await wait(TAIL);
+      type('caf');
+      await wait(TAIL);
+      await finish(failure('command-failed'));
+      // Nenhuma repetição sozinha; a próxima mudança leva o texto inteiro, nunca só o pedaço novo.
+      await wait(60_000);
+      expect(sentTexts()).toEqual(['c', 'caf']);
+      type('café');
+      await wait(TAIL);
+      expect(sentTexts()).toEqual(['c', 'caf', 'café']);
+    });
+  });
+
   describe('empty text', () => {
     it('sends the empty text when the field is erased down to nothing', async () => {
       type('abc');
