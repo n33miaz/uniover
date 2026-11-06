@@ -407,10 +407,18 @@ Pareamento (uma vez):
 
 Parear de novo pelo app (Android TV): se a TV deixar de aceitar o certificado (por três recusas confirmadas), o
 estado vira `not_paired` e o agente para de insistir; o app mostra "Parear de novo" só ao dono. O toque manda
-`tv.pair.v1` sem código (a TV mostra o código de 6 caracteres) e, depois que o dono o digita, com `code` (o agente
-conclui, reabre a sessão e o estado sai de `not_paired`). O agente nunca inicia isto sozinho, o código nunca vai para
-registro, auditoria nem mensagem de erro, e o certificado já existente é reaproveitado. A capacidade `tv.pair.v1` e o
-estado `not_paired` só vão à API depois de ela os listar em `features` (uma API anterior os recusaria).
+`tv.pair.v1` sem código (a TV mostra o código de 6 caracteres) e, depois que o dono o digita, com `code`. O agente
+responde `ok` assim que a TV aceita o par e só então reabre a sessão (sem tecla e sem contar como uso, então não dispara
+a limpeza nem a leitura de volume); o resultado da abertura chega pelo estado: `not_paired` some, ou continua se a TV
+recusar o certificado outra vez (logo depois de pareada uma recusa já vale, sem esperar três). Fechar a folha com o código
+na tela manda `tv.pair.v1` com `cancel: true`, e o agente larga o pareamento (a API ainda espera pelo menos 10 s entre dois
+pedidos de código na mesma TV). O agente nunca inicia isto sozinho, o código nunca vai para registro, auditoria nem
+mensagem de erro, e o certificado já existente é reaproveitado. A capacidade `tv.pair.v1` e o estado `not_paired` só vão
+à API depois de ela os listar em `features` (uma API anterior os recusaria), e o estado é dito de novo quando a lista chega.
+
+Limite conhecido: sem o par certificado/chave ao iniciar o agente, a TV nem é montada (sem `not_paired` e sem o handler
+`tv.pair.v1`), então não há como parear pelo app: rode `uniover-agent tv-pair` no computador. O pareamento pelo app
+vale para a credencial que se perde com o agente já rodando.
 
 Comportamentos que valem saber:
 

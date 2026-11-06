@@ -6,16 +6,17 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
+from uniover_agent.adapters.fakes import FakeClock, FakeTvRemote
 from uniover_agent.core import (
-    TV_NOT_PAIRED,
     TV_UNREACHABLE,
     Command,
     CommandResult,
     ResultStatus,
     TvSessionError,
+    TvSessionManager,
 )
 from uniover_agent.core.tv.pairing import TvPairing
-from uniover_agent.ports import TvPairingFailed
+from uniover_agent.ports import TvCertificateRefused, TvPairingFailed
 
 CODE = "A1B2C3"
 
@@ -23,14 +24,20 @@ CODE = "A1B2C3"
 class Pairing:
     """Pareamento com o `pair_tv` trocado por um duplo que registra o que recebeu."""
 
-    def __init__(self, *, code_seconds: float = 5.0, step_seconds: float = 2.0) -> None:
+    def __init__(
+        self, *, code_seconds: float = 5.0, step_seconds: float = 2.0, lock_seconds: float = 2.0
+    ) -> None:
         self.runs = 0
         self.codes: list[str] = []
         self.paired = 0
         self.on_run: Callable[[], Awaitable[None]] | None = None
         self.on_paired: Callable[[], Awaitable[None]] | None = None
         self.service = TvPairing(
-            self._run, self._paired, code_seconds=code_seconds, step_seconds=step_seconds
+            self._run,
+            self._paired,
+            code_seconds=code_seconds,
+            step_seconds=step_seconds,
+            lock_seconds=lock_seconds,
         )
         self.handle = self.service.handler()
 
@@ -45,8 +52,10 @@ class Pairing:
         if self.on_paired is not None:
             await self.on_paired()
 
-    async def send(self, code: str | None = None) -> CommandResult:
-        body = {} if code is None else {"code": code}
+    async def send(self, code: str | None = None, *, cancel: bool = False) -> CommandResult:
+        body: dict[str, object] = {"cancel": True} if cancel else {}
+        if code is not None:
+            body["code"] = code
         return await self.handle(Command("c-1", "tv.pair.v1", body))
 
 
@@ -69,6 +78,7 @@ async def test_both_steps_pair_the_tv_and_reopen_the_session() -> None:
     await pairing.send()
     result = await pairing.send(CODE)
     assert result.status is ResultStatus.OK
+    await pairing.service.settled()
     assert pairing.codes == [CODE]
     assert pairing.paired == 1
 
@@ -124,13 +134,16 @@ async def test_a_code_the_tv_refuses_fails_with_invalid_code_and_does_not_reopen
     assert again.code == "pair_not_started"
 
 
-async def test_an_expired_code_asks_to_start_again() -> None:
+async def test_an_expired_code_keeps_its_cause_and_then_asks_to_start_again() -> None:
     pairing = Pairing(code_seconds=0.05)
     await pairing.send()
     await asyncio.sleep(0.2)
     result = await pairing.send(CODE)
-    assert result.status is ResultStatus.REJECTED
-    assert result.code == "pair_not_started"
+    assert result.status is ResultStatus.FAILED
+    assert result.code == "pair_timeout"
+    # A causa vale uma vez; depois disso é um pedido sem pareamento esperando.
+    again = await pairing.send(CODE)
+    assert again.code == "pair_not_started"
 
 
 async def test_asking_again_replaces_the_previous_pairing() -> None:
@@ -143,17 +156,54 @@ async def test_asking_again_replaces_the_previous_pairing() -> None:
     assert pairing.codes == [CODE]
 
 
-async def test_a_session_that_still_refuses_the_certificate_is_a_failed_pairing() -> None:
+async def test_a_tv_that_still_refuses_after_pairing_ends_up_not_paired_never_paired() -> None:
+    # O caminho de verdade: o gerenciador de sessão real, com a TV recusando o certificado.
+    clock = FakeClock()
+    remote = FakeTvRemote()
+    manager = TvSessionManager(clock, remote)  # type: ignore[arg-type]
+    remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(50)]
+    for _ in range(3):
+        with pytest.raises(TvSessionError):
+            await manager.wake()
+        clock.advance(30)
+    assert manager.snapshot().connection == "not_paired"
+
+    async def run(ask_code: Callable[[], Awaitable[str]]) -> None:
+        await ask_code()
+
+    service = TvPairing(run, manager.pairing_done, step_seconds=2, lock_seconds=2)
+    handle = service.handler()
+    await handle(Command("1", "tv.pair.v1", {}))
+    result = await handle(Command("2", "tv.pair.v1", {"code": CODE}))
+    await service.settled()
+    # O par foi aceito, mas a sessão não abriu: o app confere pelo estado, que segue `not_paired`.
+    assert result.status is ResultStatus.OK
+    assert manager.snapshot().connection == "not_paired"
+    assert remote.keys == []
+
+    # Agora a TV aceita: a mesma sequência abre a sessão e o estado sai de `not_paired`.
+    remote.connect_errors.clear()
+    await handle(Command("3", "tv.pair.v1", {}))
+    await handle(Command("4", "tv.pair.v1", {"code": CODE}))
+    await service.settled()
+    assert manager.snapshot().connection == "hot"
+
+
+async def test_the_answer_comes_as_soon_as_the_pairing_succeeds_and_the_reopen_follows() -> None:
     pairing = Pairing()
+    release = asyncio.Event()
 
-    async def still_refused() -> None:
-        raise TvSessionError(TV_NOT_PAIRED, "a TV ainda não foi pareada")
+    async def slow_reopen() -> None:
+        await release.wait()
 
-    pairing.on_paired = still_refused
+    pairing.on_paired = slow_reopen
     await pairing.send()
-    result = await pairing.send(CODE)
-    assert result.status is ResultStatus.FAILED
-    assert result.code == "pair_failed"
+    result = await asyncio.wait_for(pairing.send(CODE), 1)
+    assert result.status is ResultStatus.OK
+    await asyncio.sleep(0)
+    assert pairing.paired == 1  # a reabertura começou e ainda não acabou
+    release.set()
+    await pairing.service.settled()
 
 
 async def test_a_tv_that_is_off_after_pairing_does_not_undo_it() -> None:
@@ -165,7 +215,42 @@ async def test_a_tv_that_is_off_after_pairing_does_not_undo_it() -> None:
     pairing.on_paired = off
     await pairing.send()
     result = await pairing.send(CODE)
+    await pairing.service.settled()
     assert result.status is ResultStatus.OK
+
+
+async def test_cancel_drops_the_waiting_pairing_and_the_code_is_no_longer_taken() -> None:
+    pairing = Pairing()
+    await pairing.send()
+    cancelled = await pairing.send(cancel=True)
+    assert cancelled.status is ResultStatus.OK
+    result = await pairing.send(CODE)
+    assert result.code == "pair_not_started"
+    assert pairing.codes == [] and pairing.paired == 0
+
+
+async def test_cancel_with_nothing_pending_is_harmless() -> None:
+    pairing = Pairing()
+    assert (await pairing.send(cancel=True)).status is ResultStatus.OK
+    assert pairing.runs == 0
+
+
+async def test_a_second_request_waits_a_little_and_then_says_busy() -> None:
+    pairing = Pairing(lock_seconds=0.05)
+    gate = asyncio.Event()
+
+    async def hang() -> None:
+        await gate.wait()
+
+    pairing.on_run = hang
+    first = asyncio.create_task(pairing.send())
+    await asyncio.sleep(0.01)
+    second = await pairing.send(cancel=True)
+    assert second.status is ResultStatus.REJECTED
+    assert second.code == "pair_busy"
+    gate.set()
+    await first
+    await pairing.service.aclose()
 
 
 async def test_a_code_that_is_not_text_is_rejected() -> None:
