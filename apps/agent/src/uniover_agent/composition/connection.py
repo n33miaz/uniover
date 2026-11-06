@@ -313,6 +313,15 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     tv = build_tv(settings, clock, transport, envelopes, secrets)
     pc = build_pc(settings, transport, envelopes)
     if tv is not None:
+        # Um sinal de presença recusado por idade (relógio do PC fora de hora) vai ao diagnóstico; o
+        # registrador junta as repetições, então o texto é fixo (sem a idade exata).
+        tv.on_presence_refused = lambda age: kit.recorder.record(
+            "tv.presence_clock_skew",
+            "warn",
+            "sinal de presença da TV recusado: relógio do PC fora de hora ou entrega atrasada; "
+            "o ADB não reconecta sozinho até a hora se acertar",
+            component="tv",
+        )
         for step in tv.prepare:
             await step()
     process = ProcessMessage(

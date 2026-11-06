@@ -249,6 +249,19 @@ async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
     state = json.loads((tv_cert_dir("tv") / "adb-authorization.json").read_text(encoding="utf-8"))
     assert state["state"] == "verified"
     assert state["mac"] == "AA:BB:CC:00:11:22"
+    # Um sinal velho demais (relógio do PC fora de hora) vai ao gancho do diagnóstico.
+    refused: list[float] = []
+    setup.on_presence_refused = refused.append
+    await setup.handlers["tv.presence.v1"](
+        Command(
+            "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1",
+            "tv.presence.v1",
+            {},
+            None,
+            "2020-01-01T00:00:00Z",
+        )
+    )
+    assert len(refused) == 1 and refused[0] > 15
 
 
 async def test_run_serves_apps_launch_and_typing_through_the_adb(

@@ -157,6 +157,9 @@ class TvSetup:
     light_settings: TvLightSettings | None = None
     # Quando alguém usa a TV pelo app (preenchido pelo canal ADB, que é quem precisa saber).
     activity: UserActivity | None = None
+    # Chamado quando um sinal de presença é recusado por idade fora da janela (relógio do PC fora de
+    # hora, entrega muito atrasada): quem monta a conexão o liga ao diagnóstico.
+    on_presence_refused: Callable[[float], None] | None = None
     # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
     # Rodam ao encerrar o agente (cancelam o que ficou agendado).
@@ -652,7 +655,12 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     # teclas sem pessoa na tela).
     if setup.activity is None:
         setup.activity = UserActivity(clock.monotonic)
-    setup.handlers[PRESENCE_TYPE] = tv_presence_handler(setup.activity)
+    setup.handlers[PRESENCE_TYPE] = tv_presence_handler(
+        setup.activity,
+        on_refused=lambda age: (
+            setup.on_presence_refused(age) if setup.on_presence_refused is not None else None
+        ),
+    )
     setup.silent_commands.add(PRESENCE_TYPE)
     adb = build_adb(path, host, settings, setup.activity.recent, monotonic=clock.monotonic)
     manager = setup.manager
