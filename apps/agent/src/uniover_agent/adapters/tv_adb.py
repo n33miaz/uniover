@@ -23,7 +23,7 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 from uniover_agent.adapters.adb_authorization import AdbAuthorization
 from uniover_agent.adapters.process import exec_hidden
@@ -123,6 +123,14 @@ _READ_AUTH_TIMEOUT: Final = f"settings get global {_AUTH_TIMEOUT_SETTING}"
 # quanto) o agente só lê o estado esperando o aceite, e quantas vezes confirma a permissão gravada.
 DEFAULT_PAIRING_WATCH_SECONDS: Final = 90.0
 DEFAULT_PAIRING_POLL_SECONDS: Final = 3.0
+# Ao encerrar o agente: quanto esperar a trava de uma operação em andamento antes de desconectar
+# mesmo assim (o servidor do `adb` sobrevive ao agente e religaria uma conexão não provada).
+DEFAULT_CLOSE_WAIT_SECONDS: Final = 2.0
+# Quanto a hibernação espera para confirmar a identidade da TV antes de decidir se o canal fica
+# (ela dá 5 s ao `disconnect` inteiro; sem confirmação, o canal se desfaz).
+_STAY_CHECK_SECONDS: Final = 2.5
+# MAC ainda não lido nesta operação (`None` já significa "a TV não atende").
+_UNREAD: Final = object()
 _READ_SERIAL: Final = "getprop ro.serialno"
 _SERIAL: Final = re.compile(r"[A-Za-z0-9._-]{3,64}")
 _SERIAL_UNAVAILABLE: Final = "-"
@@ -209,6 +217,7 @@ class AdbTv:
         pairing_watch_seconds: float = DEFAULT_PAIRING_WATCH_SECONDS,
         pairing_poll_seconds: float = DEFAULT_PAIRING_POLL_SECONDS,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        close_wait_seconds: float = DEFAULT_CLOSE_WAIT_SECONDS,
     ) -> None:
         self._adb = str(adb_path)
         self._serial = f"{host}:{port}"
@@ -237,6 +246,11 @@ class AdbTv:
         self._sleep = sleep
         # MAC da TV pela tabela ARP (sem ADB): sem ele a identidade da TV não se confirma.
         self._mac_resolver = mac_resolver
+        self._close_wait_seconds = close_wait_seconds
+        # O MAC lido uma vez por operação de conexão (a sondagem de rede custa até 1,5 s com a TV
+        # desligada): `_UNREAD` fora de uma operação.
+        self._mac_memo: object = _UNREAD
+        self._in_operation = False
         self._pairing_task: asyncio.Task[None] | None = None
         # A última recusa de `_may_connect` foi só falta de uso (e não falta de permissão)?
         self._refused_as_idle = False
@@ -268,7 +282,11 @@ class AdbTv:
         """
         if not self._connected:
             return False
-        return self._authorization.keeps_channel(await self._identity_mac())
+        try:
+            mac = await asyncio.wait_for(self._identity_mac(), _STAY_CHECK_SECONDS)
+        except TimeoutError:
+            return False  # sem confirmar a identidade, o canal não fica
+        return self._authorization.keeps_channel(mac)
 
     async def disconnect(self) -> None:
         """Desconecta só esta TV (não mata o servidor do `adb`, que pode servir a outros usos).
@@ -278,12 +296,12 @@ class AdbTv:
         if await self._stays_attached():
             return
         self._connected = False
+        if self._disconnect_task is None or self._disconnect_task.done():
+            self._disconnect_task = asyncio.create_task(self._disconnect_when_available())
         if self._lock.locked():
-            if self._disconnect_task is None or self._disconnect_task.done():
-                self._disconnect_task = asyncio.create_task(self._disconnect_when_available())
-            return
-        async with self._lock:
-            await self._disconnect_locked()
+            return  # a trava está com outra operação: o adiado desconecta quando ela soltar
+        # Protegido do cancelamento de quem chama (a hibernação dá 5 s): o `disconnect` termina.
+        await asyncio.shield(self._disconnect_task)
 
     async def _disconnect_when_available(self) -> None:
         async with self._lock:
@@ -301,15 +319,30 @@ class AdbTv:
             if task is not None and not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-        # Ao encerrar, nada fica registrado no servidor do `adb` sem estar provado.
-        # Sem esperar a trava de uma operação em andamento: encerrar nunca fica preso nela.
-        if self._lock.locked():
-            return
+        # Ao encerrar, nada fica registrado no servidor do `adb` sem estar provado (ele segue
+        # rodando depois do agente e religaria a conexão). A trava de uma operação em andamento é
+        # esperada por pouco tempo: passado esse tempo, o `adb disconnect` sai mesmo assim (é outro
+        # processo e não atrapalha o comando em curso), e encerrar nunca fica preso nela.
         try:
-            async with self._lock:
-                await self._disconnect_unless_verified_locked()
-        except Exception:
+            await asyncio.wait_for(self._disconnect_on_close(), self._close_wait_seconds * 2)
+        except TimeoutError, Exception:
             _log.debug("adb disconnect no encerramento não confirmou")
+
+    async def _disconnect_on_close(self) -> None:
+        held = False
+        try:
+            await asyncio.wait_for(self._lock.acquire(), self._close_wait_seconds)
+            held = True
+        except TimeoutError:
+            pass
+        try:
+            if self._authorization.keeps_channel(await self._identity_mac()):
+                return
+            self._connected = False
+            await self._disconnect_locked()
+        finally:
+            if held:
+                self._lock.release()
 
     async def _disconnect_unless_verified_locked(self) -> None:
         """Fim de um pedido, da espera do aceite ou do agente: sem prova, desfaz a conexão.
@@ -343,8 +376,16 @@ class AdbTv:
             _log.debug("adb disconnect não confirmou: %s", exc.message)
 
     async def _identity_mac(self) -> str | None:
-        """O MAC da TV de agora (ARP, sem ADB); `None` se a TV não atende."""
-        return await self._mac_resolver()
+        """O MAC da TV de agora (ARP, sem ADB); `None` se a TV não atende.
+
+        Dentro de uma operação de conexão a leitura é única (ver `_connect_locked`).
+        """
+        if self._mac_memo is not _UNREAD:
+            return cast("str | None", self._mac_memo)
+        mac = await self._mac_resolver()
+        if self._in_operation:
+            self._mac_memo = mac
+        return mac
 
     async def _may_connect(self) -> bool:
         """Pode abrir uma conexão nova agora? Nunca, sozinho, sem a permissão provada **desta** TV.
@@ -385,14 +426,22 @@ class AdbTv:
             state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
         except AdbTimeout:
             state = DeviceState.NOT_FOUND
-        if state is DeviceState.DEVICE:
-            # Um transporte vivo serve ao canal, mas nada é registrado: pode ser um "Permitir" de
-            # uma vez só, e o agente não abre outra conexão por conta própria.
+        if state is DeviceState.DEVICE and (
+            is_user_initiated() or self._authorization.keeps_channel(await self._identity_mac())
+        ):
+            # Um transporte vivo de uma permissão provada serve ao canal; nada é registrado e o
+            # agente não abre outra conexão por conta própria.
             self._blocked_error = None
             self._authorization_pending = False
             self._timeout_streak = 0
             self._connected = True
             return
+        if state in (DeviceState.DEVICE, DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
+            # Sobra de outra execução (agente morto na espera do aceite, atualização) ou
+            # transporte que a TV recusou: um `device` sem prova pode ser um "Permitir" de uma vez
+            # só. Nada disso fica no servidor do `adb`, que o religaria e mostraria o aviso.
+            self._connected = False
+            await self._undo_transport_locked()
         # Recusa da trava, não da TV: nada de `_authorization_pending` nem de `needs_user` aqui (só
         # uma recusa explícita da TV rebaixa o registro).
         if self._refused_as_idle:
@@ -400,6 +449,9 @@ class AdbTv:
         raise AdbUnauthorized(_GATED_MESSAGE)
 
     def _note_unauthorized(self) -> None:
+        # Atenção (precisa de TV real): logo depois de um `connect`, o `get-state` pode dizer
+        # `unauthorized` enquanto a autenticação ainda corre. Hoje isso rebaixa um registro provado
+        # a `needs_user` (só tira disponibilidade: nada abre aviso) até um toque da pessoa.
         self._authorization_pending = True
         # A TV pediu o aviso de novo (reset, revogação, outra chave): nada conecta sozinho até um
         # pedido da pessoa, mesmo depois de um reinício.
@@ -480,7 +532,23 @@ class AdbTv:
 
     async def _connect_locked(self, *, proof_ready: bool = False) -> None:
         """Abre o canal. `proof_ready`: quem chamou acabou de desconectar um canal que chegou a
-        `device`, então esta conexão já é a segunda da prova (não se repete o `disconnect`)."""
+        `device`, então esta conexão já é a segunda da prova (não se repete o `disconnect`).
+
+        O MAC da TV é lido **uma vez** por operação (porta e ARP custam até 1,5 s com a TV
+        desligada, e a operação os pedia em vários pontos).
+        """
+        outer = not self._in_operation
+        if outer:
+            self._in_operation = True
+            self._mac_memo = _UNREAD
+        try:
+            await self._connect_steps_locked(proof_ready=proof_ready)
+        finally:
+            if outer:
+                self._in_operation = False
+                self._mac_memo = _UNREAD
+
+    async def _connect_steps_locked(self, *, proof_ready: bool = False) -> None:
         self._connected = False
         try:
             allowed = await self._may_connect()
@@ -593,6 +661,34 @@ class AdbTv:
         self._connected = False
         await self._disconnect_locked()
 
+    def _watching_for_acceptance(self) -> bool:
+        task = self._pairing_task
+        return task is not None and not task.done()
+
+    async def _undo_transport_locked(self) -> None:
+        """Desfaz o transporte no servidor do `adb`, salvo durante a espera do aceite (ela precisa
+        dele para ver o `device` e o desfaz sozinha ao terminar)."""
+        if self._watching_for_acceptance():
+            return
+        await self._disconnect_locked()
+
+    async def _drop_lost_transport_locked(self, state: DeviceState) -> None:
+        """Fora de um pedido da pessoa, um transporte que a TV recusou (ou que caiu sem estar
+        provado) é desfeito com `adb disconnect`.
+
+        O servidor do `adb` religa sozinho as conexões TCP feitas com `adb connect`: se a TV
+        revogou a permissão (ou foi resetada) com o canal mantido aberto, cada religação mostraria
+        o aviso de novo, sem ninguém ter tocado. `unauthorized` sempre termina aqui; `offline` só
+        quando a permissão não está provada (provada, a TV desligada é só a TV desligada e o
+        servidor religa sem aviso). No pedido da pessoa, quem desfaz é o fim do pedido.
+        """
+        if is_user_initiated():
+            return
+        if state is DeviceState.UNAUTHORIZED or not self._authorization.keeps_channel(
+            await self._identity_mac()
+        ):
+            await self._undo_transport_locked()
+
     def _watch_for_acceptance(self, snapshot: str | None) -> None:
         """Pedido da pessoa que deixou o aviso na tela: espera o aceite lendo só o estado (90 s)."""
         if not is_user_initiated():
@@ -678,7 +774,15 @@ class AdbTv:
             if isinstance(self._blocked_error, AdbUnauthorized):
                 # O dono pode ter aceitado o aviso agora: conferir o estado não abre conexão.
                 state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
-                if state is DeviceState.DEVICE:
+                if (
+                    state is DeviceState.DEVICE
+                    and not is_user_initiated()
+                    and not self._authorization.keeps_channel(await self._identity_mac())
+                ):
+                    # Um `device` sem prova fora de um pedido da pessoa pode ser um "Permitir" de
+                    # uma vez só: o agente não o adota (a espera do aceite é quem trata dele).
+                    await self._undo_transport_locked()
+                elif state is DeviceState.DEVICE:
                     self._blocked_error = None
                     self._authorization_pending = False
                     self._connected = True
@@ -973,9 +1077,11 @@ class AdbTv:
             if state is DeviceState.UNAUTHORIZED:
                 self._connected = False
                 self._note_unauthorized()
+                await self._drop_lost_transport_locked(state)
                 raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
             if state in (DeviceState.OFFLINE, DeviceState.NOT_FOUND):
                 self._connected = False
+                await self._drop_lost_transport_locked(state)
                 raise AdbUnreachable("a conexão ADB com a TV caiu")
             raise AdbCommandFailed("a TV não entregou o arquivo")
         # O código de saída 0 não garante o arquivo: confere que ele existe e não está vazio.
@@ -1056,16 +1162,17 @@ class AdbTv:
         if state is DeviceState.UNAUTHORIZED:
             self._connected = False
             self._note_unauthorized()
+            await self._drop_lost_transport_locked(state)
             raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
         if state in (DeviceState.OFFLINE, DeviceState.NOT_FOUND):
             self._connected = False
+            await self._drop_lost_transport_locked(state)
             raise AdbUnreachable("a conexão ADB com a TV caiu")
         return output
 
     async def _exec(self, *args: str, timeout: float | None = None) -> AdbOutput:  # noqa: ASYNC109
-        if self._authorization is not None:
-            # Antes de qualquer `adb`: se o `adbkey` sumiu, ele gera outro e a TV pergunta de novo.
-            self._authorization.prepare()
+        # Antes de qualquer `adb`: se o `adbkey` sumiu, ele gera outro e a TV pergunta de novo.
+        self._authorization.prepare()
         try:
             output = await self._run([self._adb, *args], timeout or self._timeout)
         except TimeoutError:
