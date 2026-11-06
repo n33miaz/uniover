@@ -46,6 +46,8 @@ class DeviceState(StrEnum):
     DEVICE = "device"
     UNAUTHORIZED = "unauthorized"
     OFFLINE = "offline"
+    # O `adb` atual mostra `authorizing`/`connecting` enquanto o handshake corre.
+    CONNECTING = "connecting"
     NOT_FOUND = "not_found"
     UNKNOWN = "unknown"
 
@@ -79,6 +81,8 @@ def parse_device_state(text: str) -> DeviceState:
             return DeviceState.UNAUTHORIZED
         if "offline" in lowered:
             state = DeviceState.OFFLINE
+        elif "authorizing" in lowered or "connecting" in lowered:
+            state = DeviceState.CONNECTING
         elif "not found" in lowered or "no devices" in lowered:
             state = DeviceState.NOT_FOUND
     return state
