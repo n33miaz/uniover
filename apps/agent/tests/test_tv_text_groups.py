@@ -160,13 +160,14 @@ async def test_the_adb_after_the_adb_never_waits() -> None:
     assert rig.clock.sleeps == []
 
 
-async def test_after_erasing_with_keys_the_adb_text_waits_for_the_last_key() -> None:
+async def test_after_erasing_with_keys_the_adb_text_does_not_wait() -> None:
     rig = Rig(remote_settle=0.15)
     await rig.editor.set_text("abc")
     await rig.editor.set_text("ab")
     rig.clock.sleeps.clear()
     await rig.editor.set_text("abd")
-    assert rig.clock.sleeps == [pytest.approx(0.15)]
+    # Corrigir com backspace é o caso comum: nenhuma espera a mais antes do ADB.
+    assert rig.clock.sleeps == []
     assert rig.events[-2:] == [("tecla", "DEL"), ("adb", "d")]
 
 
