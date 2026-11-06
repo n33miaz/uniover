@@ -187,6 +187,7 @@ internal sealed partial class AgentHub(
                 if (isCurrent)
                 {
                     await persistedPresence.RecordHelloAsync(agentId, version, host, update, now, cancellationToken);
+                    await ClearHelloRefusalAsync(agentId, cancellationToken);
                 }
 
                 break;
@@ -300,6 +301,26 @@ internal sealed partial class AgentHub(
 #pragma warning restore CA1031
         {
             LogDiagnosticsFailed(agentId, ex.GetType().Name);
+        }
+    }
+
+    private async Task ClearHelloRefusalAsync(string agentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<AgentBeaconStore>();
+            await store.ClearProtocolRejectionAsync(agentId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Limpar a recusa é informativo: falha do banco não pode derrubar a conexão do agente.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogHelloRefusalNotRecorded(agentId, ex.GetType().Name);
         }
     }
 

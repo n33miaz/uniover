@@ -11197,7 +11197,6 @@ export interface components {
     };
     AgentBeaconBody: {
       code: null | string;
-      detail: null | string;
       /** Format: int32 */
       n: null | number | string;
       os: null | string;
