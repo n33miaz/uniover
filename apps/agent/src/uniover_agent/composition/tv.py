@@ -20,6 +20,7 @@ from uniover_agent.adapters.apk_tools import (
     locate_aapt2,
 )
 from uniover_agent.adapters.arp import arp_mac
+from uniover_agent.adapters.cleanup_day_file import CleanupDayFile
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.local_config import ConfigValue, update_config
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
@@ -699,6 +700,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         setup.envelopes,
         lambda: setup.manager.snapshot().app,
         lambda: light_settings.focus_active,
+        CleanupDayFile(installation_base() / "runtime"),
     )
 
     async def configure_cleanup(command: Command) -> CommandResult:

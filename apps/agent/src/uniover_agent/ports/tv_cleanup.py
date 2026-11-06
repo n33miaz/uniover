@@ -9,9 +9,27 @@ campo `null` do Android, por exemplo) **não** é falha: volta como vazio ou `No
 importa para quem decide o que proteger: ler errado não pode virar "nada a proteger".
 """
 
+from datetime import date
 from typing import Protocol
 
 from uniover_agent.ports.tv_adb import LaunchableApp
+
+
+class CleanupDayStore(Protocol):
+    """Guarda em que dia a limpeza leve automática já foi avaliada, para sobreviver a reinícios.
+
+    Nenhuma das duas operações levanta: arquivo ausente, corrompido ou disco cheio são "não sei" e
+    "não consegui gravar". Sem memória do dia o agente só avalia de novo (uma leitura de memória), e
+    uma leitura a mais nunca faz mal.
+    """
+
+    def load(self) -> date | None:
+        """O último dia gravado, ou `None` se não há (ou não se pôde ler) nada confiável."""
+        ...
+
+    def save(self, day: date) -> None:
+        """Grava o dia; falha de disco só vai para o registro."""
+        ...
 
 
 class TvAdbCleanup(Protocol):
