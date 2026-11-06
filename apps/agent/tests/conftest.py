@@ -39,7 +39,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
         return PortState.OPEN
 
     async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
-        return frozenset({"agent.diagnostics.v1"})
+        return frozenset({"agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired"})
 
     async def no_info(host: str) -> None:
         return None

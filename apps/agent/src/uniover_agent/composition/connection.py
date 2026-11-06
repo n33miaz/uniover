@@ -76,10 +76,15 @@ from uniover_agent.core import (
     agent_maintenance_handler,
     update_body,
 )
-from uniover_agent.core.api_features import FEATURES_TIMEOUT_SECONDS, ApiFeatures
+from uniover_agent.core.api_features import (
+    FEATURES_TIMEOUT_SECONDS,
+    NOT_PAIRED_FEATURE,
+    ApiFeatures,
+)
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
+from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
 from uniover_agent.ports import Clock, SecretStore, Transport, TvNotPaired, TvUnreachable
 
 _log = logging.getLogger("uniover_agent")
@@ -331,7 +336,11 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []
     if tv is not None:
-        publisher = TvStatePublisher(transport, envelopes)
+        publisher = TvStatePublisher(
+            transport,
+            envelopes,
+            reports_not_paired=lambda: features.supports(NOT_PAIRED_FEATURE),
+        )
         tv.manager.subscribe(publisher.publish)
         tv.manager.subscribe(tray.tv_state)
         manager, announcer = tv.manager, publisher
@@ -395,7 +404,16 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
                 if settings.self_care and features.supports(DIAGNOSTICS_CAPABILITY)
                 else ()
             ),
-            *(tuple(tv.capabilities) if tv is not None else ()),
+            *(
+                tuple(
+                    capability
+                    for capability in tv.capabilities
+                    # Uma API anterior recusa o `hello` com capacidade que não conhece.
+                    if capability != PAIR_CAPABILITY or features.supports(PAIR_CAPABILITY)
+                )
+                if tv is not None
+                else ()
+            ),
             *(tuple(pc.capabilities) if pc is not None else ()),
         ),
         on_connected=on_connected,
@@ -425,7 +443,10 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             clock,
             on_critical=lambda outcome: roll_back_if_in_trial(outcome, kit),
         )
-        jobs = [*jobs, care.run, shipper.run, features.run]
+        jobs = [*jobs, care.run, shipper.run]
+    if settings.self_care or tv is not None:
+        # O pareamento pelo app e o estado "não pareada" também dependem do que a API aceita.
+        jobs = [*jobs, features.run]
     # Cada tarefa de fundo é supervisionada: erro vira registro e ocorrência, e ela recomeça.
     background = [
         asyncio.create_task(
