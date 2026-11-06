@@ -108,25 +108,39 @@ function startupText(beacon: AgentBeacon): string {
 }
 
 /**
- * A linha que explica por que um computador desconectado está fora, ou `null`. Só vale o que aconteceu depois do último
- * contato de verdade (`lastSeenAt`): uma falha de semana passada não pode esconder um computador que depois voltou. Entre a
- * baliza e a recusa, a mais nova vence.
+ * A linha que explica o estado de um computador, ou `null`.
+ *
+ * A recusa de protocolo é o caso "conectado, mas mudo": o hello foi recusado com a conexão aberta, então a anotação nasce
+ * depois do contato e antes da queda, e o último contato (`lastSeenAt`) a passa. Por isso ela vale sem esse piso e aparece
+ * mesmo com o computador conectado; quem a apaga é a API, no primeiro hello aceito.
+ *
+ * Para um computador desconectado, as demais pistas só valem se vierem depois do último contato de verdade: uma falha de
+ * semana passada não pode esconder um computador que depois voltou. A recusa decidida pelo servidor vence a baliza anônima,
+ * mesmo que a baliza seja mais nova (quem sabe o endereço do computador pode mandar uma baliza qualquer).
  */
 export function startupLine(
   connected: boolean,
   lastSeenAt: string | null,
   beacon: AgentBeacon | undefined,
 ): StartupLine | null {
-  if (connected || !beacon) return null;
+  if (!beacon) return null;
+  if (beacon.rejectReason === 'protocol' && beacon.rejectedAt !== null) {
+    return {
+      text: connected
+        ? $localize`:@@devices.startup.reject.protocol-connected:Conectado, mas a versão do agente foi recusada`
+        : rejectionText('protocol'),
+      failed: true,
+      at: beacon.rejectedAt,
+    };
+  }
+  if (connected) return null;
   const floor = lastSeenAt ? Date.parse(lastSeenAt) : Number.NEGATIVE_INFINITY;
   const newer = (iso: string | null): iso is string => iso !== null && Date.parse(iso) > floor;
 
-  const rejected =
-    newer(beacon.rejectedAt) && beacon.rejectReason !== null ? beacon.rejectedAt : null;
-  const signalled = newer(beacon.at) ? beacon.at : null;
-  if (rejected !== null && (signalled === null || Date.parse(rejected) >= Date.parse(signalled))) {
-    return { text: rejectionText(beacon.rejectReason!), failed: true, at: rejected };
+  if (newer(beacon.rejectedAt) && beacon.rejectReason !== null) {
+    return { text: rejectionText(beacon.rejectReason), failed: true, at: beacon.rejectedAt };
   }
+  const signalled = newer(beacon.at) ? beacon.at : null;
   if (signalled !== null) {
     return {
       text: startupText(beacon),
