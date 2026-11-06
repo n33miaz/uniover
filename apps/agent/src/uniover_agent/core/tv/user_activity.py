@@ -68,6 +68,7 @@ def tv_presence_handler(
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     max_age_seconds: float = MAX_SIGNAL_AGE_SECONDS,
     max_skew_seconds: float = MAX_CLOCK_SKEW_SECONDS,
+    on_refused: Callable[[float], None] | None = None,
 ) -> Handler:
     """`tv.presence.v1`: alguém tocou na tela da TV. Sem resposta (a API não a espera).
 
@@ -75,7 +76,8 @@ def tv_presence_handler(
     em que a API o montou, e acima de `max_age_seconds` ele é ignorado, senão a janela de 60 s
     começaria na chegada e não no toque. Idade negativa (relógio do PC atrás do da API) vale até
     `max_skew_seconds`. Sem `ts` utilizável vale como chegou. Se os relógios diferem tanto que o
-    sinal é recusado, avisa **uma vez** no log (a causa seria invisível: nada reconectaria sozinho).
+    sinal é recusado, avisa **uma vez** no log e chama `on_refused(idade)` a cada recusa (o
+    diagnóstico limita a repetição): sem isso a causa seria invisível, e nada reconectaria sozinho.
     """
     warned = False
 
@@ -91,6 +93,12 @@ def tv_presence_handler(
                 "relógio deste PC (atraso na entrega ou relógio do PC fora de hora)",
                 age,
             )
+        if (
+            on_refused is not None
+            and age is not None
+            and not (-max_skew_seconds <= age <= max_age_seconds)
+        ):
+            on_refused(age)
         return CommandResult(command.id, ResultStatus.OK)
 
     return handle
