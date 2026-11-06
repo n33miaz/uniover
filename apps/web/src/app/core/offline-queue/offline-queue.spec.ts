@@ -39,19 +39,6 @@ describe('OfflineQueue', () => {
     expect(kit.queue().pendingCount()).toBe(1);
   });
 
-  it('counts as in flight only what already left, not what is waiting in storage', async () => {
-    const kit = setupQueue();
-    kit.pause();
-    const id = await kit.queue().enqueue(NEW_ITEM);
-    expect(kit.queue().pendingCount()).toBe(1);
-    expect(kit.store().sendingCount()).toBe(0);
-
-    const row = (await kit.db.outbox.get(id))!;
-    await kit.store().markSending(id, row.revision);
-    expect(kit.store().sendingCount()).toBe(1);
-    expect(kit.queue().pendingCount()).toBe(1);
-  });
-
   it('never throws because the device is offline or the API is asleep', async () => {
     vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
     const kit = setupQueue();

@@ -430,6 +430,34 @@ describe('SyncEngine', () => {
     expect(await listOf(db)).toEqual([]);
   });
 
+  it('also puts back a sending row left by a tab that closed after this tab had already made its first pass', async () => {
+    const db = createTestDb();
+    const kit = setupQueue(db);
+    await kit.engine().start();
+    await kit.engine().whenIdle();
+    expect(kit.transport.keys).toEqual([]);
+
+    // A outra aba enviava este item e foi descartada no meio do envio; esta aba passa a segurar o bloqueio.
+    await db.outbox.add({
+      id: '0199aaaa-0000-7000-8000-000000000002',
+      method: 'POST',
+      url: '/api/v1/test/items',
+      body: { n: 2 },
+      module: 'teste',
+      createdAt: 2,
+      attempts: 1,
+      nextAttemptAt: 0,
+      status: 'sending',
+      lastError: null,
+      revision: 0,
+    });
+    await kit.queue().syncNow();
+    await kit.engine().whenIdle();
+
+    expect(kit.transport.keys).toEqual(['0199aaaa-0000-7000-8000-000000000002']);
+    expect(await listOf(db)).toEqual([]);
+  });
+
   it('hydrates the counters from the database on start (items survive a reload)', async () => {
     const db = createTestDb();
     const first = setupQueue(db);

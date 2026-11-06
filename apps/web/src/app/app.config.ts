@@ -19,9 +19,7 @@ import { watchKeyboardInset } from './core/layout/keyboard-inset';
 import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
-import { guardQueueScopes } from './core/pwa/outbox-guard';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
-import { UnsavedWork, unsavedWorkInterceptor } from './core/pwa/unsaved-work';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -35,12 +33,7 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(
       withFetch(),
       // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.
-      withInterceptors([
-        connectivityInterceptor,
-        unsavedWorkInterceptor,
-        authInterceptor,
-        idempotencyInterceptor,
-      ]),
+      withInterceptors([connectivityInterceptor, authInterceptor, idempotencyInterceptor]),
     ),
     // Registra o service worker sem segurar a primeira tela (só em produção).
     provideAppInitializer(() => inject(PwaUpdateService).start()),
@@ -64,12 +57,9 @@ export const appConfig: ApplicationConfig = {
     // a conta aparece. O import dinâmico deixa o banco local e o motor fora do pacote inicial: a primeira tela não espera.
     provideAppInitializer(() => {
       const injector = inject(Injector);
-      // Só item em voo na fila de saída segura a recarga automática: o que espera já está guardado no IndexedDB e a recarga
-      // não o perde (contar também os pendentes bloquearia a atualização por horas offline).
-      void guardQueueScopes(injector.get(UnsavedWork), async () => {
-        const { QueueScopes } = await import('./core/offline-queue/queue-scopes');
-        return injector.get(QueueScopes);
-      });
+      void import('./core/offline-queue/queue-scopes').then(({ QueueScopes }) =>
+        injector.get(QueueScopes).follow(),
+      );
     }),
   ],
 };
