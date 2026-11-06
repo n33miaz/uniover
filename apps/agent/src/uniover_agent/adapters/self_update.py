@@ -96,7 +96,10 @@ SYNC_PAUSE_SECONDS = 3.0
 CHECK_TIMEOUT_SECONDS = 120
 # O pior caso de uma atualização que ainda anda: tudo isto, em série. O teto de quem a executa por
 # fora (o supervisor, em `run-agent.ps1`) tem de passar disto, senão mata uma atualização lenta
-# mas legítima, e a próxima tentativa recomeça do zero.
+# mas legítima, e a próxima tentativa recomeça do zero. A soma vale também por dentro: a consulta
+# e a extração não têm prazo próprio, então `self_update` confere o orçamento inteiro entre os
+# passos e desiste (antes de trocar as pastas) se ele acabou, em vez de deixar o supervisor matar
+# no meio.
 WORST_CASE_SECONDS = (
     FETCH_TIMEOUT_SECONDS
     + DOWNLOAD_DEADLINE_SECONDS
@@ -620,7 +623,7 @@ def _low_disk_result(free: int | None, minimum: int, sha: str) -> UpdateResult |
     )
 
 
-def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas deixam a atualização testável sem rede
+def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências injetadas deixam a atualização testável sem rede
     source: Path,
     *,
     sync: bool = True,
@@ -634,6 +637,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas de
     free_bytes: Callable[[Path], int | None] = disk_free_bytes,
     min_free_bytes: int = MIN_FREE_BYTES,
     record_trial: Callable[[Path, str], None] = write_trial_marker,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -650,8 +654,15 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas de
             False, "a versão instalada ainda está em prova; atualizo quando ela se confirmar"
         )
     sha: str | None = None
+    started = monotonic()
+
+    def within_budget() -> None:
+        if monotonic() - started > WORST_CASE_SECONDS:
+            raise SelfUpdateError("a atualização passou do tempo máximo; fica para a próxima vez")
+
     try:
         sha = (fetch_latest or (lambda: latest_commit(channel)))()
+        within_budget()
         if read_version(source) == sha:
             return UpdateResult(
                 False, "o agente já está na versão mais recente", "up_to_date", latest=sha
@@ -671,6 +682,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas de
         try:
             archive = workspace / "main.zip"
             download(sha, archive)
+            within_budget()
             verify(archive, sha)
             if verify_files(archive, sha):
                 _log.info("pacote conferido: os arquivos batem com o commit %s", sha[:12])
@@ -681,10 +693,13 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913 - dependências injetadas de
             try:
                 new.mkdir()
                 extract_agent(archive, new)
+                within_budget()
                 (new / VERSION_FILE).write_text(sha + "\n", encoding="utf-8")
                 if sync:
                     run_sync(new)
+                    within_budget()
                 run_check(new)
+                within_budget()
                 promote(source, new, sha, record_trial)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
