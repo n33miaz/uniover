@@ -1,5 +1,14 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, InjectionToken, computed, inject, isDevMode, signal } from '@angular/core';
+import {
+  DestroyRef,
+  Injectable,
+  InjectionToken,
+  computed,
+  inject,
+  isDevMode,
+  signal,
+} from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
 import { registerServiceWorker } from './register-sw';
 import { UnsavedWork } from './unsaved-work';
 
@@ -26,8 +35,8 @@ export const FIRST_CONTENT_WATCHDOG_MS = 10_000;
 export const UPDATE_FLAG_MAX_AGE_MS = 60_000;
 /** Depois de uma recuperação automática, outra só vale passada esta janela: nunca há laço de recarga. */
 export const AUTO_RECOVERY_GUARD_MS = 60_000;
-/** Com trabalho não salvo, a recarga automática espera; de quanto em quanto tempo se confere se a tela já está limpa. */
-export const DEFERRED_RETRY_MS = 3_000;
+/** Quanto se espera o worker perguntar às abas e responder se a troca automática pode seguir; sem resposta, não troca. */
+export const UPDATE_SWAP_ASK_TIMEOUT_MS = 4_000;
 /** A troca na navegação ociosa tem a mesma guarda contra laço das outras recuperações automáticas. */
 export const IDLE_SWAP_GUARD_MS = 60_000;
 
@@ -36,6 +45,9 @@ export const UPDATE_REFRESHING_KEY = 'uniover.update.refreshing';
 export const UPDATE_WATCHDOG_KEY = 'uniover.update.watchdog';
 export const CHUNK_RECOVERY_KEY = 'uniover.update.chunk-recovery';
 export const IDLE_SWAP_KEY = 'uniover.update.idle-swap';
+
+/** Resultado do pedido de troca do worker (ver `PwaUpdateService.takeOverNewWorker`). */
+type TakeOver = 'taken' | 'none' | 'busy' | 'sent-failed' | 'unsettled';
 
 /** Caches que a limpeza nunca apaga: o precache (a casca atual, para funcionar offline) e a arte dos exercícios. */
 function isProtectedCache(name: string): boolean {
@@ -96,7 +108,10 @@ export class PwaUpdateService {
   private reloading = false;
   private lastUpdateCheckAt: number | null = null;
   private watchdogTimer: number | undefined;
-  private deferTimer: number | undefined;
+  /** Chave de guarda de laço da origem da recarga adiada (`undefined`: nada adiado); só é gravada quando a recarga acontece. */
+  private deferredKey: string | undefined;
+  private visibilityBound = false;
+  private readonly router = inject(Router);
   /** Para onde a recarga vai quando a recuperação nasceu de uma navegação que falhou (senão, recarrega onde está). */
   private resumeUrl: string | undefined;
   private readonly watchedWorkers = new WeakSet<ServiceWorker>();
@@ -114,6 +129,10 @@ export class PwaUpdateService {
   constructor() {
     const win = this.win;
     if (!win) return;
+    const navigations = this.router.events.subscribe((event) => {
+      if (event instanceof NavigationEnd) this.onNavigated();
+    });
+    inject(DestroyRef).onDestroy(() => navigations.unsubscribe());
     const at = readStamp(win, UPDATE_REFRESHING_KEY);
     removeKey(win, UPDATE_REFRESHING_KEY);
     if (at !== null && Date.now() - at < UPDATE_FLAG_MAX_AGE_MS) {
@@ -130,6 +149,7 @@ export class PwaUpdateService {
     const win = this.win;
     if (this.started || !win || !this.enabled) return;
     this.started = true;
+    this.answerBusyQueries(win);
     const run = () => this.checkForUpdate(win);
     if (win.document.readyState === 'complete') run();
     else win.addEventListener('load', run, { once: true });
@@ -149,9 +169,21 @@ export class PwaUpdateService {
   }
 
   /**
-   * A navegação terminou. Com versão nova esperando e a tela ociosa (nada digitado, fila vazia, nenhuma escrita em voo)
-   * é o melhor momento para trocar sem a pessoa notar. No máximo uma vez por janela; ocupado, não faz nada (o aviso
-   * continua e a próxima navegação tenta de novo).
+   * A navegação terminou com sucesso: a pessoa seguiu em frente, então um alvo guardado de uma navegação que tinha falhado
+   * já não vale; é também um momento seguro. Com uma recarga adiada, ela dispara se a tela estiver limpa; senão, com versão
+   * nova esperando, tenta a troca ociosa.
+   */
+  onNavigated(): void {
+    this.resumeUrl = undefined;
+    this.unsaved.prune();
+    if (this.deferredKey !== undefined) this.runDeferred();
+    else this.applyOnIdleNavigation();
+  }
+
+  /**
+   * Com versão nova esperando e a tela ociosa (nada digitado, fila vazia, nenhuma escrita em voo, e, perguntando ao worker,
+   * nenhuma outra aba com trabalho) é o melhor momento para trocar sem a pessoa notar. No máximo uma vez por janela;
+   * ocupado, não faz nada (o aviso continua e a próxima navegação tenta de novo).
    */
   applyOnIdleNavigation(): void {
     const win = this.win;
@@ -159,34 +191,39 @@ export class PwaUpdateService {
     if (guardActive(win, IDLE_SWAP_KEY, IDLE_SWAP_GUARD_MS)) return;
     writeStamp(win, IDLE_SWAP_KEY);
     this.cancelDeferral();
-    void this.refresh(true);
+    void this.refresh(true, IDLE_SWAP_KEY);
   }
 
   /**
    * Uma rota ou importação falhou porque o pedaço de código não existe mais (a casca aberta é de uma versão que o
    * servidor já trocou). Atualiza pelo mesmo caminho do botão, no máximo uma vez por janela (a guarda no
    * `sessionStorage` impede laço). `target` é a rota que o usuário tentava abrir: o roteador volta ao endereço anterior
-   * quando a navegação falha, então a recarga vai direto ao alvo em vez de largá-lo na tela de antes. Devolve `true` se há uma recuperação em curso (ou começou agora) e `false` se a guarda
-   * a negou, para o erro seguir o caminho normal.
+   * quando a navegação falha, então a recarga vai direto ao alvo em vez de largá-lo na tela de antes. Com trabalho não
+   * salvo (nesta aba ou em outra) a recarga é adiada e o aviso fica à vista. Devolve `true` se há uma recuperação em curso (ou
+   * começou agora) e `false` se a guarda a negou, para o erro seguir o caminho normal.
    */
   recoverFromStaleShell(target?: string): boolean {
     if (this.applying) return true;
     const win = this.win;
     if (!win) return false;
     if (
-      this.deferTimer === undefined &&
+      this.deferredKey === undefined &&
       guardActive(win, CHUNK_RECOVERY_KEY, AUTO_RECOVERY_GUARD_MS)
     )
       return false;
     // Só caminhos do próprio app: nada de `//host` nem de esquema.
-    if (target && /^\/(?!\/)/.test(target)) this.resumeUrl = target;
-    // Trabalho não salvo: nada de recarregar agora. O aviso fica à vista e a recarga espera a tela limpar (ou o toque).
-    if (this.deferTimer !== undefined || this.unsaved.hasUnsaved()) {
-      this.deferReload(win);
+    if (target && target.startsWith('/') && !target.startsWith('//')) this.resumeUrl = target;
+    if (this.deferredKey !== undefined) {
+      // Outra tentativa de navegar, vinda da pessoa: é um momento seguro para conferir.
+      this.runDeferred();
+      return true;
+    }
+    if (this.unsaved.hasUnsaved()) {
+      this.deferReload(win, CHUNK_RECOVERY_KEY);
       return true;
     }
     writeStamp(win, CHUNK_RECOVERY_KEY);
-    void this.refresh(true);
+    void this.refresh(true, CHUNK_RECOVERY_KEY);
     return true;
   }
 
@@ -211,80 +248,98 @@ export class PwaUpdateService {
     }
     if (this.unsaved.hasUnsaved()) {
       this.bootRefreshing.set(false);
-      this.deferReload(win);
+      this.deferReload(win, UPDATE_WATCHDOG_KEY);
       return;
     }
     writeStamp(win, UPDATE_WATCHDOG_KEY);
-    void this.refresh(true);
-  }
-
-  /** Deixa o aviso de versão nova à vista e confere de tempos em tempos se já dá para recarregar sem perder nada. */
-  private deferReload(win: Window): void {
-    if (this.deferTimer !== undefined) return;
-    this.updateReady.set(true);
-    this.deferTimer = win.setInterval(() => {
-      if (this.applying || this.unsaved.hasUnsaved()) return;
-      this.cancelDeferral();
-      writeStamp(win, CHUNK_RECOVERY_KEY);
-      void this.refresh(true);
-    }, DEFERRED_RETRY_MS);
-  }
-
-  private cancelDeferral(): void {
-    if (this.deferTimer === undefined) return;
-    this.win?.clearInterval(this.deferTimer);
-    this.deferTimer = undefined;
-  }
-
-  /** Apareceu trabalho não salvo no meio de uma recarga automática: larga a recarga e espera a tela limpar. */
-  private resumeAfterWork(): void {
-    this.applying = false;
-    this.applyingUpdate.set(false);
-    const win = this.win;
-    if (win) this.deferReload(win);
+    void this.refresh(true, UPDATE_WATCHDOG_KEY);
   }
 
   /**
-   * `automatic`: o caminho não nasceu de um toque. Ele reconfere o trabalho não salvo antes de ativar o worker novo e antes de
-   * recarregar (a espera pelo worker leva segundos e a pessoa pode ter começado a digitar); se apareceu algo, desiste da
-   * recarga, devolve a tela e volta a esperar.
+   * Deixa o aviso de versão nova à vista e guarda a chave de guarda de laço (`key`) da origem da recarga, que só é gravada
+   * quando ela acontece. A recarga adiada não tem relógio: confere nos momentos seguros (navegação concluída, nova tentativa
+   * de navegar, volta à aba), nunca no meio de uma digitação.
    */
-  private async refresh(automatic: boolean): Promise<void> {
+  private deferReload(win: Window, key: string): void {
+    this.updateReady.set(true);
+    if (this.deferredKey !== undefined) return;
+    this.deferredKey = key;
+    if (this.visibilityBound) return;
+    this.visibilityBound = true;
+    win.document.addEventListener('visibilitychange', () => {
+      if (win.document.visibilityState === 'visible') this.runDeferred();
+    });
+  }
+
+  /** Num momento seguro: se a tela já está limpa, faz a recarga que estava adiada. */
+  private runDeferred(): void {
+    const win = this.win;
+    const key = this.deferredKey;
+    if (!win || key === undefined || this.applying || this.unsaved.hasUnsaved()) return;
+    this.deferredKey = undefined;
+    writeStamp(win, key);
+    void this.refresh(true, key);
+  }
+
+  private cancelDeferral(): void {
+    this.deferredKey = undefined;
+  }
+
+  /** Apareceu trabalho não salvo (nesta aba ou noutra) antes de qualquer passo sem volta: larga a recarga e espera. */
+  private resumeAfterWork(key: string): void {
+    this.applying = false;
+    this.applyingUpdate.set(false);
+    if (this.win) this.deferReload(this.win, key);
+  }
+
+  /**
+   * `automatic`: o caminho não nasceu de um toque. Só desiste da recarga enquanto nada irreversível aconteceu:
+   * antes de pedir a troca do worker (a troca só vem se TODAS as abas estiverem limpas, ver `askSwap`) e antes de desfazer
+   * o registro. Passou desse ponto, a recarga sempre acontece: uma casca velha sob um worker novo, ou sem worker, é pior que
+   * recarregar.
+   */
+  private async refresh(automatic: boolean, key = CHUNK_RECOVERY_KEY): Promise<void> {
     if (automatic && this.unsaved.hasUnsaved()) {
-      this.resumeAfterWork();
+      this.resumeAfterWork(key);
       return;
     }
     this.applying = true;
     this.applyingUpdate.set(true);
-    let tookOver = false;
+    let outcome: TakeOver = 'unsettled';
     try {
-      tookOver = await this.takeOverNewWorker();
+      outcome = await this.takeOverNewWorker(automatic);
     } catch {
       // Qualquer tropeço aqui ainda termina na recarga abaixo: o toque nunca vira um beco sem saída.
+    }
+    if (outcome === 'busy') {
+      this.resumeAfterWork(key);
+      return;
+    }
+    const committed = outcome === 'taken' || outcome === 'sent-failed';
+    if (automatic && !committed && this.unsaved.hasUnsaved()) {
+      this.resumeAfterWork(key);
+      return;
     }
     await this.clearRuntimeCaches();
     // Último recurso: o worker novo não assumiu. Recarregar sob o worker antigo só devolve a casca antiga (ele a serve do
     // próprio precache) e o aviso voltaria; então o registro é desfeito para a recarga vir da rede e a página nova
     // registrar o worker de novo.
-    if (!tookOver) await this.dropStaleWorker();
-    if (automatic && this.unsaved.hasUnsaved()) {
-      this.resumeAfterWork();
-      return;
-    }
+    if (outcome === 'sent-failed' || outcome === 'unsettled') await this.dropStaleWorker();
     this.reload();
   }
 
   /**
    * Faz o worker novo assumir a página. Com um worker esperando, pede a troca e espera o `controllerchange`; sem nenhum,
-   * pede uma busca e espera a instalação. Cada espera tem prazo: se o worker não responde, devolve `false`. Um worker que
-   * vira `redundant` no meio do pedido (outro deploy chegou e o substituiu) não é sucesso: o ciclo recomeça uma vez com o
-   * que estiver esperando. Devolve `true` só quando a página passou a ser controlada pelo worker novo ou quando não há
-   * nada mais novo para ativar.
+   * pede uma busca e espera a instalação. Cada espera tem prazo. Um worker que vira `redundant` no meio do pedido (outro
+   * deploy chegou e o substituiu) não é sucesso: o ciclo recomeça uma vez com o que estiver esperando.
+   * Resultados: `taken` (a página passou a ser controlada pelo worker novo), `none` (não há nada mais novo),
+   * `busy` (modo automático: o worker recusou a troca porque alguma aba tem trabalho; nada mudou), `sent-failed` (a troca
+   * foi pedida e o worker não assumiu no prazo) e `unsettled` (nada foi pedido: o worker nem terminou de instalar).
    */
-  private async takeOverNewWorker(): Promise<boolean> {
+  private async takeOverNewWorker(automatic: boolean): Promise<TakeOver> {
     const win = this.win;
     const registration = this.registration;
-    if (!win || !registration) return true;
+    if (!win || !registration) return 'none';
     const container = win.navigator.serviceWorker;
     const controllerBefore = container.controller;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -292,21 +347,70 @@ export class PwaUpdateService {
         registration.waiting ??
         (await this.withTimeout(this.findNewWorker(registration), UPDATE_INSTALL_TIMEOUT_MS));
       // Sem nada instalado e nada instalando: não há versão mais nova. Instalando ainda, passado o prazo: não deu tempo.
-      if (!waiting) return !registration.installing;
-      // Os ouvintes entram antes da mensagem: o worker pode assumir antes de o `postMessage` voltar.
-      const outcome = this.whenActivated(container, waiting);
-      try {
-        waiting.postMessage({ type: 'SKIP_WAITING' });
-      } catch {
-        // O worker pode ter terminado entre a leitura e a mensagem; o prazo abaixo cobre.
+      if (!waiting) return registration.installing ? 'unsettled' : 'none';
+      // Os ouvintes entram antes da mensagem: o worker pode assumir antes de a resposta voltar.
+      const activation = this.whenActivated(container, waiting);
+      if (automatic) {
+        const verdict = await this.askSwap(win, waiting);
+        if (verdict !== 'swapped') {
+          activation.dispose();
+          return 'busy';
+        }
+      } else {
+        try {
+          waiting.postMessage({ type: 'SKIP_WAITING' });
+        } catch {
+          // O worker pode ter terminado entre a leitura e a mensagem; o prazo abaixo cobre.
+        }
       }
-      const result = await this.withTimeout(outcome, UPDATE_ACTIVATE_TIMEOUT_MS);
-      if (result === 'taken') return true;
-      if (result === undefined) return false;
+      const result = await this.withTimeout(activation.promise, UPDATE_ACTIVATE_TIMEOUT_MS);
+      activation.dispose();
+      if (result === 'taken') return 'taken';
+      if (result === undefined) return 'sent-failed';
       // `redundant`: o substituto já pode ter assumido sozinho.
-      if (container.controller !== controllerBefore) return true;
+      if (container.controller !== controllerBefore) return 'taken';
     }
-    return false;
+    return 'sent-failed';
+  }
+
+  /**
+   * Pede ao worker que espera a troca, mas só se NENHUMA aba tiver trabalho não salvo: o `skipWaiting` com `clientsClaim` muda
+   * o worker de todas as abas e apaga o precache antigo, então uma aba ociosa não pode decidir pelas outras. O worker conhece as
+   * abas (`clients.matchAll`), pergunta a cada uma (ver `answerBusyQueries`) e trata a que não responde como ocupada; só então
+   * chama `skipWaiting` e responde `swapped`. Sem resposta no prazo, sem `MessageChannel` ou com erro, vale `busy`.
+   */
+  private async askSwap(win: Window, worker: ServiceWorker): Promise<'swapped' | 'busy'> {
+    const Channel = (win as Window & typeof globalThis).MessageChannel as
+      typeof MessageChannel | undefined;
+    if (typeof Channel !== 'function') return 'busy';
+    const channel = new Channel();
+    const answer = new Promise<'swapped' | 'busy'>((resolve) => {
+      channel.port1.onmessage = (event: MessageEvent) =>
+        resolve(event.data === 'swapped' ? 'swapped' : 'busy');
+    });
+    try {
+      worker.postMessage({ type: 'SWAP_IF_SAFE' }, [channel.port2]);
+    } catch {
+      channel.port1.close();
+      return 'busy';
+    }
+    const verdict = await this.withTimeout(answer, UPDATE_SWAP_ASK_TIMEOUT_MS);
+    channel.port1.close();
+    return verdict ?? 'busy';
+  }
+
+  /**
+   * Responde ao worker quando ele pergunta, antes de uma troca automática, se esta aba tem trabalho não salvo. O worker precisa
+   * da resposta das abas; `startMessages` garante a entrega mesmo a uma aba que ainda não tem controlador.
+   */
+  private answerBusyQueries(win: Window): void {
+    const container = win.navigator.serviceWorker;
+    if (!container) return;
+    container.addEventListener('message', (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type !== 'ARE_YOU_BUSY') return;
+      event.ports[0]?.postMessage({ busy: this.unsaved.hasUnsaved() });
+    });
+    container.startMessages?.();
   }
 
   /** Pede a busca de uma versão nova e devolve o worker instalado, se houve um. */
@@ -333,16 +437,17 @@ export class PwaUpdateService {
 
   /**
    * Resolve `taken` quando o worker passou a controlar a página (ou, o que dá no mesmo, terminou de ativar) e `redundant`
-   * quando ele foi descartado antes disso (um worker mais novo o substituiu).
+   * quando ele foi descartado antes disso (um worker mais novo o substituiu). `dispose` tira os ouvintes se a espera for
+   * abandonada.
    */
   private whenActivated(
     container: ServiceWorkerContainer,
     worker: ServiceWorker,
-  ): Promise<'taken' | 'redundant'> {
-    return new Promise((resolve) => {
+  ): { promise: Promise<'taken' | 'redundant'>; dispose: () => void } {
+    let dispose: () => void = () => undefined;
+    const promise = new Promise<'taken' | 'redundant'>((resolve) => {
       const done = (outcome: 'taken' | 'redundant') => {
-        container.removeEventListener('controllerchange', onControl);
-        worker.removeEventListener('statechange', onState);
+        dispose();
         resolve(outcome);
       };
       const onControl = () => done('taken');
@@ -350,10 +455,15 @@ export class PwaUpdateService {
         if (worker.state === 'activated') done('taken');
         else if (worker.state === 'redundant') done('redundant');
       };
+      dispose = () => {
+        container.removeEventListener('controllerchange', onControl);
+        worker.removeEventListener('statechange', onState);
+      };
       container.addEventListener('controllerchange', onControl);
       worker.addEventListener('statechange', onState);
       onState();
     });
+    return { promise, dispose };
   }
 
   /** Resolve com o valor da promessa ou, passado o prazo, com `undefined` (a espera nunca trava a atualização). */
@@ -415,6 +525,8 @@ export class PwaUpdateService {
       );
       if (!reachable) return;
       await this.withTimeout(registration.unregister(), UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+      // Sem registro, `checkForUpdate` registra de novo (a recarga que segue também o faz).
+      this.registration = undefined;
       await this.deleteCaches((name) => name.startsWith('workbox-precache'));
     } catch {
       // Sem desfazer o worker a recarga ainda acontece.
@@ -494,6 +606,8 @@ export class PwaUpdateService {
       this.applying = false;
       this.applyingUpdate.set(false);
       this.updateError.set(true);
+      // A recarga falhou depois de o registro ter sido desfeito: sem worker o app não abre offline, então registra de novo.
+      if (this.win && this.enabled && !this.registration) void this.register(this.win);
     }
   }
 }
