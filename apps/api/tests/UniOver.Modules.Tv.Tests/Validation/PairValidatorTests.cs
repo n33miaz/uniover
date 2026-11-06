@@ -20,6 +20,19 @@ public class PairValidatorTests
         PairValidator.Validate(null).Should().BeEmpty();
     }
 
+    [Fact]
+    public void CancellingAlone_IsValid_ButNotTogetherWithACode()
+    {
+        PairValidator.Validate(new PairRequest(null, true)).Should().BeEmpty();
+        PairValidator.Validate(new PairRequest(null, false)).Should().BeEmpty();
+        PairValidator.Validate(new PairRequest("A1B2C3", false)).Should().BeEmpty();
+        PairValidator.Validate(new PairRequest("A1B2C3", true)).Should().ContainKey("cancel");
+    }
+
+    [Fact]
+    public void TheMinimumIntervalBetweenCodeRequests_IsTenSeconds() =>
+        PairThrottle.MinimumInterval.Should().Be(TimeSpan.FromSeconds(10));
+
     [Theory]
     [InlineData("")]
     [InlineData("A1B2C")]

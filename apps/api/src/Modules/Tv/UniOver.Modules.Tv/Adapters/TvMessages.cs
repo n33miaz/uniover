@@ -74,12 +74,12 @@ internal static class TvMessages
             new TvPermissionRequestV1Message { Body = new TvPermissionRequestV1Body() }.ToJson()));
 
     /// <summary>
-    /// O pareamento da Android TV em dois passos: sem <paramref name="code"/> a TV mostra o código na tela; com ele o agente
-    /// conclui. A API só o manda a agente com <c>tv.pair.v1</c>, e só a pedido do dono.
+    /// O pareamento da Android TV em passos: sem <paramref name="code"/> a TV mostra o código na tela; com ele o agente
+    /// conclui; com <paramref name="cancel"/> o agente larga o pareamento que esperava o código. A API só o manda a agente com <c>tv.pair.v1</c>, e só a pedido do dono.
     /// </summary>
-    public static TvMessage Pair(string? code) =>
+    public static TvMessage Pair(string? code, bool cancel = false) =>
         new(AgentMessageTypes.TvPairV1, BodyOf(
-            new TvPairV1Message { Body = new TvPairV1Body { Code = code } }.ToJson()));
+            new TvPairV1Message { Body = new TvPairV1Body { Code = code, Cancel = cancel ? true : null } }.ToJson()));
 
     /// <summary>Pede ao agente que procure TVs compatíveis na rede local dele. O <paramref name="requestId"/> volta na lista.</summary>
     public static TvMessage Discover(Guid requestId) =>

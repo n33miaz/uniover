@@ -12124,7 +12124,9 @@ export interface components {
       status: string;
     };
     PairRequest: {
+      cancel?: null | boolean;
       code: null | string;
+      isCancel?: boolean;
     };
     PasskeySummary: {
       /** Format: date-time */

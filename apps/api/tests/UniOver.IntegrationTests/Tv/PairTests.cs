@@ -98,6 +98,72 @@ public sealed class PairTests(PostgresFixture postgres)
             .Should().NotContain(Code);
     }
 
+    [Fact]
+    public async Task Cancel_TellsTheAgentToDropThePairing_AndIsAuditedWithAFixedDetail()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectedAsync(app);
+
+        var request = app.PostAsync("/api/v1/tv/pair", new { cancel = true });
+        var command = await TvApp.NextCommandAsync(agent);
+
+        command.GetProperty("type").GetString().Should().Be("tv.pair.v1");
+        command.GetProperty("body").GetRawText().Should().Be("{\"cancel\":true}");
+        await TvApp.ReplyAsync(agent, command);
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            await using var db = app.Db();
+            return await db.CommandAudit.AnyAsync(Ct);
+        }, "linha da auditoria");
+        await using var audit = app.Db();
+        (await audit.CommandAudit.AsNoTracking().SingleAsync(Ct)).Detail.Should().Be("step=cancel");
+    }
+
+    [Fact]
+    public async Task CancelTogetherWithACode_IsRefusedBeforeReachingTheAgent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectedAsync(app);
+
+        using var response = await Within(app.PostAsync("/api/v1/tv/pair", new { code = Code, cancel = true }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await ExpectNothingReachedTheAgentAsync(app, agent);
+    }
+
+    [Fact]
+    public async Task AskingForTheCodeAgainWithinTenSeconds_IsRefused_ButCancelAndFinishAreNotThrottled()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectedAsync(app);
+
+        var first = app.PostAsync("/api/v1/tv/pair", new { });
+        await TvApp.ReplyAsync(agent, await TvApp.NextCommandAsync(agent));
+        (await Within(first)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var tooSoon = await Within(app.PostAsync("/api/v1/tv/pair", new { }));
+        tooSoon.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        tooSoon.Headers.RetryAfter.Should().NotBeNull();
+        (await TvApp.JsonAsync(tooSoon)).GetProperty("type").GetString().Should().EndWith("pair-too-soon");
+        await ExpectNothingReachedTheAgentAsync(app, agent);
+
+        // Cancelar e entregar o código nunca esperam: só o pedido do código troca o código na TV.
+        var cancel = app.PostAsync("/api/v1/tv/pair", new { cancel = true });
+        var cancelCommand = await TvApp.NextCommandAsync(agent);
+        cancelCommand.GetProperty("body").GetRawText().Should().Be("{\"cancel\":true}");
+        await TvApp.ReplyAsync(agent, cancelCommand);
+        (await Within(cancel)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Passado o intervalo, o pedido do código volta a valer.
+        app.Time.Advance(TimeSpan.FromSeconds(11));
+        var again = app.PostAsync("/api/v1/tv/pair", new { });
+        await TvApp.ReplyAsync(agent, await TvApp.NextCommandAsync(agent));
+        (await Within(again)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Theory]
     [InlineData("A1B2")]
     [InlineData("A1B2C3D")]

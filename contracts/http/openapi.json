@@ -3508,11 +3508,20 @@
       },
       "PairRequest": {
         "properties": {
+          "cancel": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
           "code": {
             "type": [
               "null",
               "string"
             ]
+          },
+          "isCancel": {
+            "type": "boolean"
           }
         },
         "required": [
