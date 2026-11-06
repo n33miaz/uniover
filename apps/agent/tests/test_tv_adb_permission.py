@@ -29,6 +29,7 @@ from uniover_agent.ports import (
     AdbIdle,
     AdbUnauthorized,
     AdbUnreachable,
+    is_user_initiated,
     user_initiated_adb,
 )
 
@@ -440,20 +441,6 @@ async def test_a_users_request_checks_the_recorded_serial(home: Home) -> None:
     assert home.authorization().record.state == VERIFIED
 
 
-async def test_a_users_request_that_meets_another_serial_invalidates_the_permission(
-    home: Home,
-) -> None:
-    authorization = home.verify()
-    authorization.note_serial("OUTRO-APARELHO")
-    runner = runner_with()
-    adb = home.adb(runner)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    assert home.authorization().record.state == NEEDS_USER
-    assert not adb.connected
-    assert DISCONNECT in runner.calls
-
-
 # --- cópias da chave com vários processos ao mesmo tempo -----------------------------------------
 
 
@@ -749,7 +736,7 @@ async def test_a_second_tap_right_after_accepting_still_proves_the_grant(home: H
     with user_initiated_adb():
         await adb.list_apps()
     assert DISCONNECT in runner.calls
-    assert runner.calls.count(CONNECT) == 3  # o toque que mostrou o aviso e as duas da prova
+    assert runner.calls.count(CONNECT) == 2  # o toque que mostrou o aviso e a conexão nova da prova
     assert home.authorization().record.state == VERIFIED
 
 
@@ -794,3 +781,290 @@ def test_a_restored_key_without_a_public_part_does_not_keep_the_old_one(home: Ho
     assert home.keys().restore_if_missing(fingerprint)
     assert (home.android / "adbkey").read_bytes() == KEY
     assert not (home.android / "adbkey.pub").exists()
+
+
+# --- revisão 5: prova só com conexão nova, serial sem trava eterna, sem rebaixar sem a TV ---------
+
+
+async def test_a_second_connection_that_is_already_connected_does_not_prove_the_grant(
+    home: Home,
+) -> None:
+    # O `disconnect` não derrubou o transporte: a segunda resposta é "already connected" + device.
+    runner = runner_with(connect=[FRESH, STALE])
+    with user_initiated_adb():
+        await home.adb(runner).connect()  # serve ao canal, mas não prova nada
+    record = home.authorization().record
+    assert record.state == "granted"
+    assert record.state != VERIFIED
+    assert (
+        runner.calls.count(PUT_TIMEOUT) == 1
+    )  # o ajuste do vencimento segue sobre o transporte vivo
+    home.active = True
+    runner.script[GET_STATE] = UNKNOWN
+    with pytest.raises(AdbUnauthorized):  # e nenhuma conexão sozinha com a permissão só `granted`
+        await home.adb(runner).connect()
+    assert runner.calls.count(CONNECT) == 2
+
+
+async def test_a_serial_that_changed_is_re_recorded_after_a_real_proof_not_locked(
+    home: Home,
+) -> None:
+    authorization = home.verify()
+    authorization.note_serial("OUTRO-APARELHO")
+    authorization.mark_timeout_disabled()
+    runner = runner_with()
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()  # o toque da pessoa: nada de `adb_unauthorized`
+    record = home.authorization().record
+    assert record.state == VERIFIED  # provada de novo, nunca `needs_user`
+    assert record.serial == SERIAL  # a identidade nova foi anotada
+    assert adb.connected
+    # A prova foi refeita por dentro do toque: conexão, desconexão e conexão nova.
+    assert runner.calls.count(CONNECT) == 2 and runner.calls.count(DISCONNECT) == 1
+    assert runner.calls.count(PUT_TIMEOUT) == 1  # o ajuste do aparelho novo se refez
+
+
+async def test_a_changed_serial_during_a_proof_is_re_recorded_in_the_same_call(
+    home: Home,
+) -> None:
+    authorization = home.authorization()
+    assert authorization.mark_granted(authorization.snapshot_key(), MAC)
+    authorization.note_serial("OUTRO-APARELHO")
+    runner = runner_with()
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert home.authorization().record.state == VERIFIED
+    assert home.authorization().record.serial == SERIAL
+    assert runner.calls.count(CONNECT) == 2  # só a prova normal (conexão e conexão nova)
+
+
+async def test_a_lock_refusal_and_the_watchdog_never_demote_the_record(home: Home) -> None:
+    authorization = home.authorization()
+    assert authorization.mark_granted(authorization.snapshot_key(), MAC)
+    authorization.mark_timeout_disabled()
+    runner = runner_with(state=UNKNOWN)  # a TV desligada: o `get-state` não a conhece
+    adb = home.adb(runner)
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()  # recusa da trava (só `granted`), não da TV
+    with pytest.raises(AdbUnauthorized):
+        await adb.restart_remote_service()  # o vigia vendo a TV desligada
+    record = home.authorization().record
+    assert record.state == "granted"  # nada de `needs_user`
+    assert record.timeout_disabled  # e o ajuste do vencimento não se perdeu
+    assert CONNECT not in runner.calls
+
+
+async def test_only_an_explicit_refusal_by_the_tv_demotes_the_record(home: Home) -> None:
+    home.verify()
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    with pytest.raises(AdbUnauthorized):
+        await home.adb(runner).connect()  # automático, na janela de presença: a TV recusou
+    assert home.authorization().record.state == NEEDS_USER
+
+
+async def test_without_a_mac_the_proof_completes_and_is_not_repeated_forever(home: Home) -> None:
+    home.mac = ""  # a ARP não mostra a TV (VPN, outra sub-rede)
+    runner = runner_with()
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()
+    record = home.authorization().record
+    assert record.state == VERIFIED and record.mac == ""  # provado com o que dá para provar
+    first = list(runner.calls)
+    assert first.count(DISCONNECT) == 1 and first.count(CONNECT) == 2
+    script_apps(runner)
+    for _ in range(3):  # os toques seguintes não derrubam nem reabrem o ADB
+        with user_initiated_adb():
+            await adb.list_apps()
+    assert runner.calls.count(DISCONNECT) == 1
+    assert runner.calls.count(CONNECT) == 2
+
+
+# --- a espera do aceite, o vencimento de 7 dias e a prova (restaurados da rodada 2) -----------
+
+
+async def test_a_live_transport_is_proven_by_the_users_request(home: Home) -> None:
+    runner = runner_with(connect=[STALE, FRESH])
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert runner.calls[:5] == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
+    assert home.authorization().record.state == VERIFIED
+
+
+async def test_a_live_transport_seen_outside_a_request_is_not_recorded(home: Home) -> None:
+    runner = runner_with(connect=REFUSED, state=DEVICE)
+    adb = home.adb(runner)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    script_apps(runner)
+    assert await adb.list_apps() == []  # serve ao canal, sem conectar
+    assert runner.calls.count(CONNECT) == 1
+    assert home.authorization().record.state == NEEDS_USER  # nada virou permissão
+
+
+async def test_a_new_key_does_not_inherit_the_timeout_done_for_the_old_one(home: Home) -> None:
+    first = home.verify()
+    first.mark_timeout_disabled()
+    home.write_key(fake_key("nova"))
+    runner = runner_with()
+    with user_initiated_adb():
+        await home.adb(runner).connect()
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+    assert home.authorization().record.timeout_disabled
+
+
+async def test_a_tv_that_keeps_the_timeout_is_tried_a_few_times_and_then_left_alone(
+    home: Home,
+) -> None:
+    runner = runner_with()
+    runner.script[GET_TIMEOUT] = ok("604800000\r\n")  # a TV não aceitou o 0
+    adb = home.adb(runner)
+    for _ in range(MAX_TIMEOUT_ATTEMPTS + 3):
+        with user_initiated_adb():
+            await adb.connect()
+    assert runner.calls.count(PUT_TIMEOUT) == MAX_TIMEOUT_ATTEMPTS
+    assert not home.authorization().record.timeout_disabled
+
+
+async def test_a_user_request_may_connect_but_a_failed_one_closes_the_door_again(
+    home: Home,
+) -> None:
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    adb = home.adb(runner)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    for _ in range(3):
+        with pytest.raises(AdbUnauthorized):
+            await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 1
+
+
+async def test_after_the_grant_a_dropped_transport_is_not_reopened_by_the_agent(
+    home: Home,
+) -> None:
+    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
+    adb = home.adb(runner, sleep=instant, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    await watched(adb)
+    await adb.disconnect()  # a TV foi para o standby, o transporte caiu
+    runner.script[GET_STATE] = UNKNOWN
+    for _ in range(3):
+        with pytest.raises(AdbUnauthorized):
+            await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 1  # concedida mas não provada: só um pedido prova
+    await adb.aclose()
+
+
+async def test_an_accept_without_always_allow_prompts_again_only_on_the_next_tap(
+    home: Home,
+) -> None:
+    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
+    adb = home.adb(runner, sleep=instant, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    await watched(adb)
+    assert runner.calls.count(CONNECT) == 1  # nenhum aviso novo sem toque
+    runner.script[CONNECT] = REFUSED  # o toque seguinte: a TV pede de novo
+    runner.script[GET_STATE] = UNAUTHORIZED
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    assert home.authorization().record.state == NEEDS_USER
+    connects = runner.calls.count(CONNECT)
+    for _ in range(3):
+        with pytest.raises(AdbUnauthorized):
+            await adb.list_apps()
+    assert runner.calls.count(CONNECT) == connects
+    await adb.aclose()
+
+
+async def test_the_next_tap_proves_the_grant_with_a_fresh_connection(home: Home) -> None:
+    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
+    adb = home.adb(runner, sleep=instant, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    await watched(adb)
+    script_apps(runner)
+    before = len(runner.calls)
+    with user_initiated_adb():
+        await adb.list_apps()  # o toque seguinte, com o transporte ainda vivo
+    assert runner.calls[before : before + 4] == [
+        DISCONNECT,
+        CONNECT,
+        GET_STATE,
+        GET_SERIAL,  # o serial anotado se confere dentro do toque; uma prova só, sem repetir
+    ]
+    assert home.authorization().record.state == VERIFIED
+    await adb.disconnect()
+    await adb.list_apps()  # provada: o agente reconecta sozinho
+    assert runner.calls.count(CONNECT) == 3
+    await adb.aclose()
+
+
+async def test_the_timeout_is_disabled_once_after_a_user_request(home: Home) -> None:
+    runner = runner_with()
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+    assert runner.calls.index(GET_TIMEOUT) > runner.calls.index(PUT_TIMEOUT)
+    assert home.authorization().record.timeout_disabled
+    with user_initiated_adb():
+        await adb.connect()
+        await home.adb(runner).connect()
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+
+
+async def test_the_timeout_step_never_runs_on_an_automatic_connect(home: Home) -> None:
+    home.verify()
+    runner = runner_with()
+    await home.adb(runner).connect()
+    assert PUT_TIMEOUT not in runner.calls
+    assert home.authorization().timeout_step_pending()
+
+
+async def test_the_timeout_step_runs_when_the_channel_was_already_open(home: Home) -> None:
+    home.verify()
+    runner = runner_with()
+    script_apps(runner)
+    adb = home.adb(runner)
+    await adb.connect()  # sozinho: sem o passo
+    assert PUT_TIMEOUT not in runner.calls
+    with user_initiated_adb():
+        await adb.list_apps()
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+
+
+async def test_the_watch_records_the_grant_without_connecting_or_disconnecting(home: Home) -> None:
+    runner = runner_with(state=[UNAUTHORIZED, UNAUTHORIZED, DEVICE])
+    adb = home.adb(runner, sleep=instant, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()  # o toque: o aviso aparece na TV
+    assert runner.calls == [CONNECT, GET_STATE]
+    await watched(adb)
+    record = home.authorization().record
+    assert record.state == "granted"  # aceita, ainda não provada
+    assert record.timeout_disabled  # desligado já na mesma sessão, sobre o transporte vivo
+    assert record.serial == SERIAL
+    assert record.mac == MAC
+    assert runner.calls.count(CONNECT) == 1
+    assert DISCONNECT not in runner.calls  # a espera nunca desconecta
+    assert adb.connected
+    await adb.aclose()
+
+
+async def test_the_watch_task_never_holds_the_user_marker(home: Home) -> None:
+    seen: list[bool] = []
+
+    def spy() -> AdbOutput:
+        seen.append(is_user_initiated())
+        return UNAUTHORIZED
+
+    runner = runner_with(state=[UNAUTHORIZED, spy, DEVICE])
+    adb = home.adb(runner, sleep=instant, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    await watched(adb)
+    assert seen == [False]
+    await adb.aclose()

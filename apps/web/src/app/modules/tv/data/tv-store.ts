@@ -6,6 +6,7 @@ import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvAccess } from './tv-access';
 import { TvApi, tvEventsPath } from './tv-api';
+import { TvPresence } from './tv-presence';
 import type { TvCleanupReport, TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
@@ -152,6 +153,7 @@ export class TvStore {
   private readonly config = inject(TV_CONFIG);
   private readonly doc = inject(DOCUMENT);
   private readonly access = inject(TvAccess);
+  private readonly presenceSignal = inject(TvPresence);
   private readonly selection = inject(TvSelection);
   private readonly session = inject(SessionState);
 
@@ -394,8 +396,6 @@ export class TvStore {
   private hadControl = false;
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
-  /** Quando o último sinal de presença saiu (relógio da página); nunca por tempo, só depois de um toque. */
-  private lastPresenceAt = Number.NEGATIVE_INFINITY;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private watchdogTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -645,7 +645,8 @@ export class TvStore {
    * abrir uma conexão ADB nova por conta própria, e por isso só sai depois de um toque ou tecla (ou antes de abrir um
    * app ou limpar a TV): nada o manda por tempo, então uma aba visível e esquecida num monitor ou num tablet fixo não
    * mantém janela nenhuma aberta. Só com a tela **visível** (não basta "não oculta"), com rede, com permissão de
-   * controlar e com o agente de pé; no máximo um a cada `presenceMinIntervalMs`. Falha não vira aviso.
+   * controlar e com o agente de pé; no máximo um a cada `presenceMinIntervalMs`, e quem chama espera o envio que já está a
+   * caminho (ver {@link TvPresence}). Falha não vira aviso.
    */
   async presence(): Promise<void> {
     if (
@@ -660,14 +661,7 @@ export class TvStore {
     ) {
       return;
     }
-    const now = Date.now();
-    if (now - this.lastPresenceAt < this.config.presenceMinIntervalMs) return;
-    this.lastPresenceAt = now;
-    try {
-      await this.api.presence();
-    } catch {
-      // Sem aviso: é só um sinal de presença.
-    }
+    await this.presenceSignal.signal();
   }
 
   /** Manda uma tecla. Devolve `true` se a TV confirmou; em falha o aviso já foi mostrado e a repetição deve parar. */
