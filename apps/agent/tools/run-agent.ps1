@@ -164,10 +164,32 @@ function Invoke-Bounded([string]$File, [string]$Arguments, [double]$TimeoutSecon
         $child = Start-Hidden ($env:ComSpec) $line
         # Sem tocar no Handle logo apos iniciar, o Windows PowerShell 5.1 devolve ExitCode nulo.
         $null = $child.Handle
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        # O prazo conta pelo relogio, que salta numa suspensao do PC: o filho (e o supervisor) dormiram junto e ao acordar o
+        # prazo ja pareceria vencido. Como no lancador, um salto entre duas voltas (de 2 s) alonga o prazo pelo que passou.
+        # Gancho de teste: UNIOVER_SUPERVISOR_TEST_CLOCK_JUMP="<apos s>:<salto s>" faz o relogio saltar uma vez.
+        $skew = 0.0
+        $jumpAfter = -1.0
+        $jumpBy = 0.0
+        $spec = [Environment]::GetEnvironmentVariable('UNIOVER_SUPERVISOR_TEST_CLOCK_JUMP')
+        if ($spec -and $spec -match '^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$') {
+            $jumpAfter = [double]::Parse($Matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
+            $jumpBy = [double]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture)
+        }
+        $began = [DateTime]::UtcNow
+        $previousTick = $began
+        $deadline = $began.AddSeconds($TimeoutSeconds)
         while (-not $child.WaitForExit(2000)) {
             Touch-Alive
-            if ((Get-Date) -ge $deadline) {
+            $tick = [DateTime]::UtcNow.AddSeconds($skew)
+            if ($jumpAfter -ge 0 -and ($tick - $began).TotalSeconds -ge $jumpAfter) {
+                $skew += $jumpBy
+                $jumpAfter = -1.0
+                $tick = [DateTime]::UtcNow.AddSeconds($skew)
+            }
+            $gap = ($tick - $previousTick).TotalSeconds
+            if ($gap -gt 60) { $deadline = $deadline.AddSeconds($gap - 2) }
+            $previousTick = $tick
+            if ($tick -ge $deadline) {
                 $result.TimedOut = $true
                 & taskkill.exe /PID $child.Id /T /F *> $null
                 [void]$child.WaitForExit(10000)
@@ -240,6 +262,9 @@ function Get-RunDescription($Run, [double]$Seconds) {
 }
 
 function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
+    # A causa da ultima falha (error, timeout, lowdisk): so `error` e defeito da versao; a volta atras por qualquer das
+    # outras nao a bloqueia (a falha foi do PC).
+    $script:lastSyncCause = 'error'
     Stop-VenvUsers
     # --frozen: o uv.lock manda (dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha), sem que
     # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC. Com prazo: um uv preso nao prende o supervisor.
@@ -247,6 +272,13 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     $run = Invoke-Bounded $Uv $arguments $syncTimeoutSeconds
     if (-not $run.TimedOut -and $run.ExitCode -eq 0) { return $true }
     Write-SupLog 'WARNING' ('uv sync falhou (' + (Get-RunDescription $run $syncTimeoutSeconds) + '): ' + (Get-Tail $run.Output))
+    # Um sync que so passou do prazo (rede lenta, antivirus) nao e um ambiente estragado: apagar o venv jogaria fora o
+    # que o cache do uv ja andou e pioraria a proxima tentativa. O ambiente fica e a proxima volta continua dele.
+    if ($run.TimedOut) {
+        $script:lastSyncCause = 'timeout'
+        Write-SupLog 'WARNING' 'o sync passou do prazo; o ambiente foi mantido e a proxima volta continua de onde parou'
+        return $false
+    }
     # Com uma versao em prova e a anterior guardada para onde voltar, o ambiente nao e apagado: se a segunda tentativa
     # tambem falhasse, nenhuma das duas versoes teria como rodar. Quem chama conta a falha e reverte ao chegar a tres.
     if ($KeepEnvironment) {
@@ -257,6 +289,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     # Disco quase cheio: refazer o ambiente (centenas de MB) so pioraria. O ambiente que existe e mantido e o agente sobe
     # com ele; sem ambiente nenhum nao ha o que subir e a volta seguinte tenta de novo quando houver espaco.
     if (Test-LowDisk) {
+        $script:lastSyncCause = 'lowdisk'
         Add-Diagnostic 'update.low_disk' 'error' 'pouco espaco em disco: o ambiente Python nao foi refeito'
         if (Test-Path -LiteralPath (Join-Path $venv 'Scripts\python.exe')) {
             Write-SupLog 'WARNING' 'pouco espaco em disco; mantenho o ambiente Python e subo o agente com ele'
@@ -324,7 +357,11 @@ function Invoke-Update([string]$Uv) {
     # O filho roda com prazo e a saida vai para arquivos (Invoke-Bounded): nem um uv preso nem um agente novo que herdasse a
     # ponta de um pipe prendem o supervisor. UV_NO_SYNC: o `uv run` nao re-sincroniza o ambiente do agente em execucao
     # (o sync e passo proprio, com prazo, deste supervisor; foi ele, dentro do `uv run`, que ficou preso sem filhos).
-    $env:UV_NO_SYNC = '1'
+    # So quando o ambiente existe e esta volta (ou uma anterior desta execucao) ja o sincronizou para ESTA versao: na primeira
+    # volta o update roda antes do sync, e depois de uma volta atras o ambiente e o da versao rejeitada; ali o `uv run`
+    # sincroniza sozinho, como sempre fez.
+    $venvPython = Join-Path $runtime 'venv\Scripts\python.exe'
+    if ($script:syncedVersion -and $script:syncedVersion -eq $before -and (Test-Path -LiteralPath $venvPython)) { $env:UV_NO_SYNC = '1' }
     try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" uniover-agent self-update') $updateTimeoutSeconds }
     finally { Remove-Item -LiteralPath 'Env:UV_NO_SYNC' -ErrorAction SilentlyContinue }
     $exitCode = $run.ExitCode
@@ -828,7 +865,7 @@ while ($true) {
             $syncFalls++
             if ($syncFalls -ge 3) {
                 if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
-                if (Invoke-Rollback 'a versao nova nao conseguiu preparar o ambiente (3 falhas seguidas); voltei para a anterior') {
+                if (Invoke-Rollback 'a versao nova nao conseguiu preparar o ambiente (3 falhas seguidas); voltei para a anterior' ($script:lastSyncCause -eq 'error')) {
                     Set-StopReason 'rollback'
                     exit 42
                 }
@@ -838,6 +875,7 @@ while ($true) {
         Sleep-Beating $wait; $wait = [Math]::Min($wait * 2, 300); continue
     }
     $syncFalls = 0
+    $script:syncedVersion = Get-Version
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
     Update-Tray $uv
     Ensure-AgentPulse

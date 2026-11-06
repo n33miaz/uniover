@@ -539,3 +539,61 @@ def test_without_a_timed_out_mark_the_first_lap_checks_for_an_update(
     )
     with heartbeat(pc.alive), pc.running(UNIOVER_TEST_UPDATES=str(updates)):
         assert wait_for(updates.exists, 40), pc.supervisor_log()
+
+
+def test_a_sync_that_only_timed_out_keeps_the_environment(pc: Pc) -> None:
+    # Um sync que passou do prazo (rede lenta, antivírus) não é um ambiente estragado: apagar o
+    # venv jogaria fora o que o cache do uv já andou.
+    venv = pc.runtime / "venv"
+    venv.mkdir()
+    sentinel = venv / "sentinela.txt"
+    sentinel.write_text("vivo", encoding="ascii")
+    pc.uv(["exit /b 0"], sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"])
+    with pc.running(UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="3"):
+        assert wait_for(lambda: "o ambiente foi mantido" in pc.supervisor_log(), 60), (
+            pc.supervisor_log()
+        )
+        assert sentinel.exists(), "o venv foi apagado por um sync que só estourou o prazo"
+
+
+def test_three_sync_timeouts_roll_back_without_blocking_the_version(pc: Pc) -> None:
+    # A falha foi do PC (lento, disco), não da versão: voltar para a anterior sim, bloquear não.
+    previous = pc.base / "app.previous"
+    (previous / "tools").mkdir(parents=True)
+    (previous / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (previous / "tools" / "run-agent.ps1").write_text("exit 0\n", encoding="ascii")
+    (previous / ".version").write_text("c" * 40 + "\n", encoding="ascii")
+    (pc.runtime / "update-trial.txt").write_text(CURRENT + "|0", encoding="ascii")
+    pc.uv(["exit /b 0"], sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"])
+    with pc.running(
+        UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2", UNIOVER_SUPERVISOR_LAP_SECONDS="0.3"
+    ):
+        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+            pc.supervisor_log()
+        )
+    blocked = pc.runtime / ".blocked-versions"
+    assert not blocked.exists() or CURRENT not in blocked.read_text(encoding="ascii")
+    assert (pc.base / "app" / ".version").read_text(encoding="ascii").strip() == "c" * 40
+
+
+def test_the_update_only_skips_the_sync_once_the_environment_was_synced_for_this_version(
+    pc: Pc, tmp_path: Path
+) -> None:
+    seen = tmp_path / "no-sync.txt"
+    venv_python = pc.runtime / "venv" / "Scripts" / "python.exe"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="ascii")
+    pc.uv(
+        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        update_lines=['echo [%UV_NO_SYNC%]>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
+    )
+    with heartbeat(pc.alive), pc.running(UNIOVER_TEST_UPDATES=str(seen)):
+        assert wait_for(seen.exists, 40), pc.supervisor_log()
+        assert wait_for(lambda: pc.starts() >= 1, 40)
+        (pc.runtime / "update-now").write_text("", encoding="ascii")
+        assert wait_for(lambda: len(seen.read_text("ascii").split()) >= 2, 60), pc.supervisor_log()
+    lines = seen.read_text("ascii").split()
+    # Primeira volta: o update roda antes de qualquer sync (o `uv run` sincroniza sozinho).
+    assert lines[0] == "[]"
+    # Depois do sync desta versão, o update não re-sincroniza o ambiente do agente em execução.
+    assert lines[1] == "[1]"
