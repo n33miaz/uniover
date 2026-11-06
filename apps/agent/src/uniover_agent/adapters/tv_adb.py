@@ -129,6 +129,11 @@ DEFAULT_CLOSE_WAIT_SECONDS: Final = 2.0
 # Quanto a hibernação espera para confirmar a identidade da TV antes de decidir se o canal fica
 # (ela dá 5 s ao `disconnect` inteiro; sem confirmação, o canal se desfaz).
 _STAY_CHECK_SECONDS: Final = 2.5
+# Num pedido da pessoa sobre uma permissão já dada, o `get-state` logo depois do `connect` pode
+# dizer `unauthorized`/`offline` enquanto a autenticação ainda corre: relê por até este tempo (de
+# `_SETTLE_POLL_SECONDS` em `_SETTLE_POLL_SECONDS`) antes de concluir.
+DEFAULT_SETTLE_SECONDS: Final = 3.0
+_SETTLE_POLL_SECONDS: Final = 0.5
 # MAC ainda não lido nesta operação (`None` já significa "a TV não atende").
 _UNREAD: Final = object()
 _READ_SERIAL: Final = "getprop ro.serialno"
@@ -218,6 +223,7 @@ class AdbTv:
         pairing_poll_seconds: float = DEFAULT_PAIRING_POLL_SECONDS,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         close_wait_seconds: float = DEFAULT_CLOSE_WAIT_SECONDS,
+        settle_seconds: float = DEFAULT_SETTLE_SECONDS,
     ) -> None:
         self._adb = str(adb_path)
         self._serial = f"{host}:{port}"
@@ -247,6 +253,7 @@ class AdbTv:
         # MAC da TV pela tabela ARP (sem ADB): sem ele a identidade da TV não se confirma.
         self._mac_resolver = mac_resolver
         self._close_wait_seconds = close_wait_seconds
+        self._settle_seconds = settle_seconds
         # O MAC lido uma vez por operação de conexão (a sondagem de rede custa até 1,5 s com a TV
         # desligada): `_UNREAD` fora de uma operação.
         self._mac_memo: object = _UNREAD
@@ -528,7 +535,29 @@ class AdbTv:
         if not parse_connect(joined.text):
             raise AdbUnreachable("a TV não respondeu pelo ADB")
         state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+        if state in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
+            state = await self._settle_state_locked(joined, state)
         return joined, state
+
+    async def _settle_state_locked(self, joined: AdbOutput, state: DeviceState) -> DeviceState:
+        """Só num pedido da pessoa e com a permissão já dada: relê o estado antes de concluir.
+
+        Um `unauthorized` ou `offline` passageiro logo depois do `connect` não é recusa da TV (a
+        pessoa leria "aceite o aviso" sem aviso nenhum, ou a prova nunca se completaria). Se o
+        estado não melhora no prazo, vale o que a TV disse. `offline` de uma conexão que já existia
+        (`already connected`) pede refazer a conexão, não esperar.
+        """
+        if not is_user_initiated() or not self._authorization.has_grant():
+            return state
+        if state is DeviceState.OFFLINE and "already connected" in joined.text:
+            return state
+        polls = int(self._settle_seconds / _SETTLE_POLL_SECONDS)
+        for _ in range(polls):
+            await self._sleep(_SETTLE_POLL_SECONDS)
+            state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
+            if state not in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
+                break
+        return state
 
     async def _connect_locked(self, *, proof_ready: bool = False) -> None:
         """Abre o canal. `proof_ready`: quem chamou acabou de desconectar um canal que chegou a
@@ -567,6 +596,16 @@ class AdbTv:
             joined, state = await self._handshake_locked()
             stale = "already connected" in joined.text
             credited = proof_ready  # há uma conexão anterior que chegou a `device`
+            if (
+                state is DeviceState.DEVICE
+                and not stale
+                and not proof_ready
+                and is_user_initiated()
+                and authorization.granted_for(await self._identity_mac())
+            ):
+                # A TV já tinha aceitado (`granted`) e esta conexão **nova** chegou a `device` sem
+                # aviso: a chave ficou gravada. É a prova que o `disconnect` + `connect` faria.
+                credited = True
             # `offline` pede refazer a conexão. Com `unauthorized`, uma conexão nova faria a TV
             # mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido. A exceção é o
             # pedido da pessoa sobre uma permissão ainda não provada: `device` logo depois de uma
@@ -580,6 +619,7 @@ class AdbTv:
                 state is DeviceState.DEVICE
                 and not proof_ready
                 and is_user_initiated()
+                and not credited
                 and await self._needs_proof()
             ):
                 await self._exec("disconnect", self._serial)

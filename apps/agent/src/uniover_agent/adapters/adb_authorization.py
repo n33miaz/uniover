@@ -237,6 +237,15 @@ def _mtime(path: Path) -> float:
         return 0.0
 
 
+def _stamp(path: Path) -> tuple[int, int]:
+    """Horário de modificação e tamanho do arquivo (`(0, 0)` se não existe)."""
+    try:
+        info = path.stat()
+    except OSError:
+        return (0, 0)
+    return (info.st_mtime_ns, info.st_size)
+
+
 class AdbAuthorization:
     """Estado gravado da permissão do ADB de uma TV e a regra de quando o agente pode conectar."""
 
@@ -253,9 +262,22 @@ class AdbAuthorization:
         self._endpoint = endpoint
         self._wall_clock = wall_clock
         self._record = self._load()
+        self._stamp = _stamp(self._path)
+
+    def _sync(self) -> None:
+        """Relê o arquivo se outro processo (o `tv-volume`, outro agente) o gravou depois.
+
+        O agente e a linha de comando guardam cópias em memória e gravam o registro inteiro: sem
+        isto, um `needs_user` gravado por um deles seria ignorado e depois sobrescrito pelo outro.
+        """
+        stamp = _stamp(self._path)
+        if stamp != self._stamp:
+            self._record = self._load()
+            self._stamp = stamp
 
     @property
     def record(self) -> AdbAuthRecord:
+        self._sync()
         return self._record
 
     @property
@@ -269,6 +291,7 @@ class AdbAuthorization:
 
     def verified_for(self, mac: str | None) -> bool:
         """A TV deu e provou a permissão a esta chave, a este endereço e a este aparelho?"""
+        self._sync()
         record = self._record
         fingerprint = self._keys.fingerprint()
         return (
@@ -281,8 +304,30 @@ class AdbAuthorization:
         )
 
     def keeps_channel(self, mac: str | None) -> bool:
-        """O canal ADB pode ficar aberto (hibernação, fim de pedido)? Só com a permissão provada."""
-        return self.verified_for(mac)
+        """O canal ADB pode ficar aberto (hibernação, fim de pedido)?
+
+        Só com a permissão provada **e** o vencimento de 7 dias desligado: se a TV ainda pode
+        revogar a chave por falta de uso, ou se a recusou três vezes, um canal aberto seria religado
+        pelo servidor do `adb` depois da revogação, e a religação mostraria o aviso sozinha.
+        """
+        return self.verified_for(mac) and self._record.timeout_disabled
+
+    def granted_for(self, mac: str | None) -> bool:
+        """A TV já aceitou (`granted`) esta chave neste endereço, e o aparelho não é outro?
+
+        Uma conexão **nova** que chega a `device` sem aviso depois disso já é a prova (a que o
+        toque faria desconectando e conectando de novo).
+        """
+        self._sync()
+        record = self._record
+        fingerprint = self._keys.fingerprint()
+        return (
+            record.state == GRANTED
+            and fingerprint is not None
+            and fingerprint == record.fingerprint
+            and record.endpoint == self._endpoint
+            and (not mac or not record.mac or record.mac == mac)
+        )
 
     def proven_for(self, mac: str | None) -> bool:
         """A prova já foi feita para esta chave, este endereço e o que se sabe do aparelho?
@@ -292,6 +337,7 @@ class AdbAuthorization:
         prova nem se refaz a cada toque. Só um MAC lido e diferente do anotado é outro aparelho; e
         um registro sem MAC diante de um MAC lido pede a prova de novo, uma vez, para aprendê-lo.
         """
+        self._sync()
         record = self._record
         fingerprint = self._keys.fingerprint()
         mac_ok = not mac or (record.mac != "" and record.mac == mac)
@@ -309,6 +355,7 @@ class AdbAuthorization:
         Não marca recusa da TV (`needs_user` só vem de uma recusa dela): o registro cai para
         `granted`, e o toque da pessoa o prova de novo e anota a identidade nova.
         """
+        self._sync()
         record = self._record
         state = GRANTED if record.state == VERIFIED else record.state
         self._save(
@@ -318,6 +365,7 @@ class AdbAuthorization:
     def key_and_endpoint_match(self) -> bool:
         """A chave e o endereço de agora são os do registro (o aparelho se confere à parte)?"""
         self.prepare()  # uma chave que sumiu volta antes de se comparar
+        self._sync()
         record = self._record
         fingerprint = self._keys.fingerprint()
         return (
@@ -329,6 +377,7 @@ class AdbAuthorization:
 
     def has_grant(self) -> bool:
         """A TV aceitou esta chave neste endereço (provada ou ainda não)?"""
+        self._sync()
         record = self._record
         fingerprint = self._keys.fingerprint()
         return (
@@ -339,12 +388,13 @@ class AdbAuthorization:
         )
 
     def timeout_step_pending(self) -> bool:
+        self._sync()
         record = self._record
         return not record.timeout_disabled and record.timeout_attempts < MAX_TIMEOUT_ATTEMPTS
 
     def prepare(self) -> None:
         """Antes de qualquer chamada ao `adb`: a cópia da chave registrada volta se ela sumiu."""
-        self._keys.restore_if_missing(self._record.fingerprint or None)
+        self._keys.restore_if_missing(self.record.fingerprint or None)
 
     def mark_granted(self, snapshot: str | None, mac: str | None) -> bool:
         """A TV aceitou: registra `granted`, sem provar. Recusa chave mudada."""
@@ -365,6 +415,7 @@ class AdbAuthorization:
             _log.warning(
                 "a TV não tem MAC na tabela ARP agora; a permissão não vai liberar conexão sozinha"
             )
+        self._sync()
         record = self._record
         # Um MAC vazio de qualquer lado é desconhecido, não outra TV: só dois MACs lidos e
         # diferentes são aparelhos diferentes (e uma leitura vazia nunca apaga um MAC lido).
@@ -398,16 +449,20 @@ class AdbAuthorization:
 
     def mark_needs_permission(self) -> None:
         """A TV pediu o aviso de novo: nenhuma conexão sozinha até um pedido da pessoa."""
+        self._sync()
         if self._record.state != NEEDS_USER:
             self._save(_replace(self._record, state=NEEDS_USER))
 
     def mark_timeout_disabled(self) -> None:
+        self._sync()
         self._save(_replace(self._record, timeout_disabled=True))
 
     def note_timeout_attempt(self) -> None:
+        self._sync()
         self._save(_replace(self._record, timeout_attempts=self._record.timeout_attempts + 1))
 
     def note_serial(self, serial: str) -> None:
+        self._sync()
         if serial != self._record.serial:
             self._save(_replace(self._record, serial=serial))
 
@@ -448,6 +503,7 @@ class AdbAuthorization:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_text(json.dumps(asdict(record)), encoding="utf-8")
             os.replace(temporary, self._path)
+            self._stamp = _stamp(self._path)
         except OSError as exc:
             # Sem disco o estado fica só na memória: o agente segue, mas não lembra ao reiniciar.
             _log.warning(
