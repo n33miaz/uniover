@@ -9,6 +9,7 @@ import {
   untracked,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { CatalogRepository } from '../../data/catalog/catalog-repository';
 import { CatalogWriter } from '../../data/catalog/catalog-writer';
 import {
@@ -139,6 +140,8 @@ export class ExerciseFormPage {
   private duplicateTicket = 0;
 
   constructor() {
+    // Editor sujo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => this.dirty());
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) void this.loadExisting();
     else {

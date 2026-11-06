@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import type { PhysicalAssessmentMeasure } from '../../data/physical-assessments/physical-assessment';
@@ -444,6 +445,8 @@ export class PhysicalAssessmentEditorPage {
   protected readonly label = measureLabel;
 
   constructor() {
+    // Editor sujo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => this.dirty());
     this.baseline.set(this.snapshot());
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {

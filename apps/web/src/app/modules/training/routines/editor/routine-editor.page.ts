@@ -14,6 +14,7 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { ConnectivityService } from '../../../../core/connectivity/connectivity.service';
 import { uuidV7 } from '../../../../core/offline-queue/uuid-v7';
+import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { CatalogRepository } from '../../data/catalog/catalog-repository';
 import type { LocalExercise } from '../../data/catalog/exercise';
 import { RoutineRepository } from '../../data/routines/routine-repository';
@@ -169,6 +170,8 @@ export class RoutineEditorPage {
   private opened = false;
 
   constructor() {
+    // Editor sujo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => this.dirty());
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) {
       // A passada começa pela rotina e pelo catálogo, não pela ordem de registro (o catálogo, a maior resposta, antes dela).

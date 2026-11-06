@@ -1,5 +1,6 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import { TrainingSync } from '../data/sync/training-sync';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
 import type { LocalExercise } from '../data/catalog/exercise';
@@ -216,6 +217,8 @@ export class LiveStore {
   private noticeCount = 0;
 
   constructor() {
+    // Treino aberto neste aparelho: a recarga automática de atualização nunca o interrompe.
+    registerUnsavedWork(() => this.session() !== undefined, 'session');
     effect(() => {
       this.sessions.revision();
       untracked(() => void this.load());
