@@ -419,7 +419,8 @@ async def test_a_wedged_supervisor_is_taken_out_before_the_task_is_started(tmp_p
         recheck=0.0,
     )
     assert check.repair is not None and await check.repair() is None
-    assert order == ["kill", "start teste"]
+    # O lançador é pedido ANTES: quem mata costuma estar dentro da árvore que morre.
+    assert order == ["start teste", "kill"]
 
 
 def test_killing_a_wedged_supervisor_without_its_script_touches_nothing(tmp_path: Path) -> None:
@@ -734,3 +735,54 @@ async def test_a_startup_failure_hook_that_never_returns_does_not_stop_the_loop(
     supervisor = build(transport, on_startup_failure=stuck)
     await run_until(supervisor, lambda: transport.connects >= 3 and calls >= 2)
     assert transport.connects >= 3 and calls >= 2, "o gancho preso parou o laço de conexão"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="mata processos do Windows")
+def test_a_killer_that_lives_inside_the_supervisor_tree_survives_and_the_supervisor_dies(
+    tmp_path: Path,
+) -> None:
+    """Como no PC: supervisor -> uv -> agente -> este PowerShell. O agente que repara o supervisor
+    é descendente dele; o reparo não pode levá-lo junto antes de acabar."""
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    runner = tmp_path / "UniOver" / "app" / "tools" / "run-agent.ps1"
+    result = tmp_path / "result.txt"
+    survived = tmp_path / "survived.txt"
+    code = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from uniover_agent.adapters.self_care_checks import kill_wedged_supervisor\n"
+        f"done = kill_wedged_supervisor(Path(r'{runner}'))\n"
+        f"Path(r'{result}').write_text(str(done))\n"
+        "time.sleep(1.5)\n"
+        f"Path(r'{survived}').write_text('vivo')\n"
+    )
+    script = tmp_path / "killer.py"
+    script.write_text(code, encoding="utf-8")
+    runner.parent.mkdir(parents=True)
+    # O supervisor falso roda o "agente" como filho e espera por ele.
+    runner.write_text(
+        f"& '{sys.executable}' '{script}'\nStart-Sleep -Seconds 120\n", encoding="ascii"
+    )
+    powershell = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+    supervisor = subprocess.Popen(  # noqa: S603 - PowerShell do sistema; script do próprio teste
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
+        creationflags=0x08000000,
+    )
+    try:
+        end = time.monotonic() + 90
+        while not survived.exists() and time.monotonic() < end:
+            time.sleep(0.3)
+        assert result.exists() and result.read_text() == "True", "o reparo não terminou"
+        assert survived.exists(), "o agente morreu junto com o supervisor que ele matou"
+        assert supervisor.wait(timeout=30) is not None, "o supervisor travado seguiu vivo"
+    finally:
+        if supervisor.poll() is None:
+            supervisor.kill()
