@@ -280,6 +280,35 @@ class AdbAuthorization:
             and mac == record.mac
         )
 
+    def proven_for(self, mac: str | None) -> bool:
+        """A prova já foi feita para esta chave, este endereço e o que se sabe do aparelho?
+
+        Diferente de `verified_for` (que libera conexão automática e exige MAC): sem MAC na ARP, a
+        prova se completa com o que dá para provar (chave, endereço e MAC vazio nos dois lados),
+        para o toque seguinte não a refazer para sempre.
+        """
+        record = self._record
+        fingerprint = self._keys.fingerprint()
+        return (
+            record.state == VERIFIED
+            and fingerprint is not None
+            and fingerprint == record.fingerprint
+            and record.endpoint == self._endpoint
+            and record.mac == (mac or "")
+        )
+
+    def forget_device(self) -> None:
+        """O aparelho que responde não é o anotado: esquece serial e ajuste e exige nova prova.
+
+        Não marca recusa da TV (`needs_user` só vem de uma recusa dela): o registro cai para
+        `granted`, e o toque da pessoa o prova de novo e anota a identidade nova.
+        """
+        record = self._record
+        state = GRANTED if record.state == VERIFIED else record.state
+        self._save(
+            _replace(record, state=state, serial="", timeout_disabled=False, timeout_attempts=0)
+        )
+
     def key_and_endpoint_match(self) -> bool:
         """A chave e o endereço de agora são os do registro (o aparelho se confere à parte)?"""
         self.prepare()  # uma chave que sumiu volta antes de se comparar
