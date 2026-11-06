@@ -68,8 +68,20 @@ public sealed class AgentBeacon
         Count = Count == int.MaxValue ? Count : Count + 1;
     }
 
+    /// <summary>
+    /// A recusa de protocolo vem do hub, com o agente autenticado: nenhuma outra recusa (em especial a de token inventado, que
+    /// qualquer um provoca) a sobrescreve. Quem a apaga é o primeiro hello aceito.
+    /// </summary>
+    public const string ProtocolReason = "protocol";
+
     public void ApplyRejection(string reason, DateTimeOffset now)
     {
+        if (string.Equals(LastRejectReason, ProtocolReason, StringComparison.Ordinal)
+            && !string.Equals(reason, ProtocolReason, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         LastRejectReason = reason;
         LastRejectedAt = now;
     }

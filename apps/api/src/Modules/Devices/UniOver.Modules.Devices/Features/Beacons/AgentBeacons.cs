@@ -59,7 +59,7 @@ internal static class BeaconRejection
     public const string WrongAgent = "wrong_agent";
 
     /// <summary>O <c>hello</c> do agente não cumpriu o contrato (versão do protocolo ou forma da mensagem).</summary>
-    public const string Protocol = "protocol";
+    public const string Protocol = AgentBeacon.ProtocolReason;
 }
 
 /// <summary>O corpo da baliza, como o agente o manda. Só descreve o contrato: a leitura é feita à mão (ver <see cref="AgentBeaconParser"/>).</summary>
@@ -140,7 +140,8 @@ internal sealed class AgentBeaconGate(TimeProvider time)
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, (DateTimeOffset Start, int Count)> _beacons = [];
-    private readonly Dictionary<Guid, DateTimeOffset> _rejections = [];
+    private readonly Dictionary<(Guid Agent, string Reason), DateTimeOffset> _rejections = [];
+    private readonly Dictionary<string, bool> _protocolRefusal = new(StringComparer.Ordinal);
     private (DateTimeOffset Start, int Count) _globalBeacons;
     private (DateTimeOffset Start, int Count) _globalRejections;
     private readonly Dictionary<string, DateTimeOffset> _missing = new(StringComparer.Ordinal);
@@ -186,6 +187,26 @@ internal sealed class AgentBeaconGate(TimeProvider time)
         }
     }
 
+    /// <summary>
+    /// Pode haver recusa de protocolo anotada para este agente? Desconhecido (processo novo) conta como sim: a primeira conferência
+    /// vai ao banco, e daí em diante só se volta lá depois de uma recusa nova. Os agentes são os pareados, então o tamanho é o deles.
+    /// </summary>
+    public bool MayHaveProtocolRefusal(string slug)
+    {
+        lock (_gate)
+        {
+            return !_protocolRefusal.TryGetValue(slug, out var has) || has;
+        }
+    }
+
+    public void SetProtocolRefusal(string slug, bool has)
+    {
+        lock (_gate)
+        {
+            _protocolRefusal[slug] = has;
+        }
+    }
+
     private bool TryAcceptGlobal(ref (DateTimeOffset Start, int Count) bucket, int limit)
     {
         var now = time.GetUtcNow();
@@ -228,17 +249,18 @@ internal sealed class AgentBeaconGate(TimeProvider time)
         }
     }
 
-    public bool TryAcceptRejection(Guid agentId)
+    /// <summary>Uma recusa por minuto, por agente <b>e por motivo</b>: um token inventado não ocupa a vaga da recusa de protocolo.</summary>
+    public bool TryAcceptRejection(Guid agentId, string reason)
     {
         var now = time.GetUtcNow();
         lock (_gate)
         {
-            if (_rejections.TryGetValue(agentId, out var last) && now - last < BeaconLimits.RejectionInterval)
+            if (_rejections.TryGetValue((agentId, reason), out var last) && now - last < BeaconLimits.RejectionInterval)
             {
                 return false;
             }
 
-            _rejections[agentId] = now;
+            _rejections[(agentId, reason)] = now;
             return true;
         }
     }
@@ -338,7 +360,7 @@ internal sealed partial class AgentBeaconStore(
                 return;
             }
 
-            if (!gate.TryAcceptRejection(agentId.Value))
+            if (!gate.TryAcceptRejection(agentId.Value, reason))
             {
                 return;
             }
@@ -352,6 +374,10 @@ internal sealed partial class AgentBeaconStore(
 
             row.ApplyRejection(reason, time.GetUtcNow());
             await SaveAsync(cancellationToken);
+            if (string.Equals(reason, BeaconRejection.Protocol, StringComparison.Ordinal))
+            {
+                gate.SetProtocolRefusal(slug!, true);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -367,23 +393,25 @@ internal sealed partial class AgentBeaconStore(
 
     /// <summary>
     /// O agente mandou um hello aceito: a recusa de protocolo anotada antes já não vale (ele foi atualizado ou corrigido) e sai.
-    /// Só mexe na linha que tem essa recusa; sem ela não grava nada. Nunca lança por causa do banco.
+    /// Só mexe na linha que tem essa recusa. Sem recusa anotada (a memória do processo sabe) nem consulta ao banco: o hello de
+    /// um agente saudável não paga nada. Com ela, é uma única atualização condicional. Nunca lança por causa do banco.
     /// </summary>
     public async Task ClearProtocolRejectionAsync(string slug, CancellationToken cancellationToken)
     {
+        if (!gate.MayHaveProtocolRefusal(slug))
+        {
+            return;
+        }
+
         try
         {
-            var agentId = await FindAgentAsync(slug, includeRevoked: false, cancellationToken);
-            if (agentId is null)
-            {
-                return;
-            }
-
             await db.AgentBeacons
-                .Where(b => b.AgentId == agentId && b.LastRejectReason == BeaconRejection.Protocol)
+                .Where(b => b.LastRejectReason == BeaconRejection.Protocol
+                    && db.Agents.Any(a => a.Id == b.AgentId && a.Slug == slug && a.RevokedAt == null))
                 .ExecuteUpdateAsync(
                     set => set.SetProperty(b => b.LastRejectReason, (string?)null).SetProperty(b => b.LastRejectedAt, (DateTimeOffset?)null),
                     cancellationToken);
+            gate.SetProtocolRefusal(slug, false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -447,7 +475,16 @@ internal sealed partial class AgentBeaconStore(
 internal static class AgentBeaconEndpoints
 {
     // Anônima de propósito: o agente que não consegue partir ainda não tem (ou não consegue ler) a credencial. O limite por IP é
-    // do limitador da rota; o por agente fica no AgentBeaconGate. Responde sempre 204, exista o slug ou não (429 só pelo IP).
+    // do limitador da rota; o por agente fica no AgentBeaconGate. Responde 204, exista o slug ou não. As duas únicas exceções não
+    // dependem do slug: 413 para corpo declarado acima de 512 bytes (cortado na entrada, sem ler) e 429 pelo limite por IP.
+    //
+    // Limites aceitos de propósito (a rota é anônima e o slug sai do nome do PC, então é adivinhável):
+    // - Tempo de resposta: a gravação é aguardada antes do 204, então quem mede o tempo distingue slug que existe de slug que não
+    //   existe (este fica na memória de inexistentes por 1 minuto). Gravar fora da requisição fica para depois.
+    // - Tetos globais: quem troca de endereço (um /64 de IPv6) gasta o teto de balizas ou o de recusas e apaga o diagnóstico de todos.
+    //   Só o diagnóstico para, e o custo ao banco continua limitado.
+    // - Falsificação: quem sabe o slug escreve a baliza do PC (um "ok" apaga a falha, 12 por minuto gastam o limite do agente). A
+    //   tela marca tudo como não verificado; só a recusa de protocolo (decidida no hub, com o agente autenticado) é confiável.
     public static void MapAgentBeacon(this IEndpointRouteBuilder group) =>
         group.MapPost("/agents/{slug}/beacon", HandleAsync)
             .AllowAnonymous()
@@ -455,6 +492,7 @@ internal static class AgentBeaconEndpoints
             .RequireRateLimiting(RateLimitPolicies.Beacon)
             .Accepts<AgentBeaconBody>("application/json")
             .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     public static void MapAgentBeacons(this IEndpointRouteBuilder group) =>

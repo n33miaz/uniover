@@ -8112,6 +8112,16 @@
           "204": {
             "description": "No Content"
           },
+          "413": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Payload Too Large"
+          },
           "429": {
             "content": {
               "application/problem\u002Bjson": {
