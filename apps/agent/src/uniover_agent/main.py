@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from pydantic import ValidationError
 
-from uniover_agent.adapters.installation import migrate_layout
+from uniover_agent.adapters.installation import legacy_wrapper_start, migrate_layout
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.single_instance import (
     ALREADY_RUNNING_MESSAGE,
@@ -89,6 +89,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+class InvalidSettingsError(ConfigError):
+    """A configuração recusada pelo pydantic; `fields` são os nomes dos campos (nunca valores)."""
+
+    def __init__(self, message: str, fields: Sequence[str]) -> None:
+        super().__init__(message)
+        self.fields = tuple(fields)
+
+
 def _load_settings() -> Settings:
     """`Settings()`, com a recusa do pydantic vista como erro de configuração.
 
@@ -99,7 +107,18 @@ def _load_settings() -> Settings:
         return Settings()
     except ValidationError as exc:
         fields = ", ".join(sorted({".".join(str(part) for part in e["loc"]) for e in exc.errors()}))
-        raise ConfigError(f"configuração inválida ({fields})") from None
+        raise InvalidSettingsError(
+            f"configuração inválida ({fields})", fields.split(", ")
+        ) from None
+
+
+def _other_instance_owns() -> bool:
+    """Pega a trava do agente desta instalação; `True` (e avisa, sem repetir) se já é de outro."""
+    if acquire():
+        return False
+    print(f"Erro: {ALREADY_RUNNING_MESSAGE}", file=sys.stderr)
+    log_once("ja_rodando", ALREADY_RUNNING_MESSAGE)
+    return True
 
 
 def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
@@ -110,14 +129,16 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     try:
         # Antes de qualquer acesso a arquivo do agente (a fila de diagnóstico é de um dono só): dois
         # agentes com a mesma identidade se derrubam no servidor.
-        # O wrapper antigo que só entrega a instalação ao lançador novo (e sai) não toma a trava.
-        takeover = bool(os.environ.get("UNIOVER_LEGACY_TAKEOVER"))
-        if command == "run" and not takeover and not acquire():
-            print(f"Erro: {ALREADY_RUNNING_MESSAGE}", file=sys.stderr)
-            log_once("ja_rodando", ALREADY_RUNNING_MESSAGE)
+        # O wrapper antigo que só entrega a instalação ao lançador novo (e sai) não toma a trava:
+        # quem sabe disso é a migração, que só a seguir avisa por `UNIOVER_LEGACY_TAKEOVER`. Nesse
+        # caso a trava é decidida depois dela; em todos os outros, antes.
+        legacy = command == "run" and legacy_wrapper_start()
+        if command == "run" and not legacy and _other_instance_owns():
             return EXIT_ALREADY_RUNNING
         # Também roda quando um wrapper antigo inicia o código novo pela primeira vez.
         migrate_layout()
+        if legacy and not os.environ.get("UNIOVER_LEGACY_TAKEOVER") and _other_instance_owns():
+            return EXIT_ALREADY_RUNNING
         settings = _load_settings()
         system.configure_logging(settings.log_level, settings.log_file)
         kit: DiagnosticsKit | None = None
@@ -191,7 +212,7 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
         print(f"Erro: {exc}", file=sys.stderr)
         if command == "run" and not session_started():
             reason = "configuracao" if isinstance(exc, ConfigError) else "cofre"
-            record_startup_failure(reason, str(exc))
+            record_startup_failure(reason, str(exc), keep=getattr(exc, "fields", ()))
         return system.EXIT_FAILURE
     except KeyboardInterrupt:
         print("Encerrado.")

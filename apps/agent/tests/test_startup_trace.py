@@ -19,6 +19,7 @@ from uniover_agent.adapters.startup_trace import (
     LOG_FILE,
     REPEAT_SECONDS,
     record_startup_failure,
+    sanitize,
 )
 from uniover_agent.composition import connection, system
 from uniover_agent.config import ConfigError
@@ -185,7 +186,9 @@ def test_main_records_a_config_error_and_still_returns_the_failure_code(
 ) -> None:
     seen: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        main_module, "record_startup_failure", lambda reason, detail: seen.append((reason, detail))
+        main_module,
+        "record_startup_failure",
+        lambda reason, detail, **_: seen.append((reason, detail)),
     )
 
     def broken() -> None:
@@ -202,7 +205,9 @@ def test_main_records_an_unexpected_exception_and_lets_it_rise(
 ) -> None:
     seen: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        main_module, "record_startup_failure", lambda reason, detail: seen.append((reason, detail))
+        main_module,
+        "record_startup_failure",
+        lambda reason, detail, **_: seen.append((reason, detail)),
     )
 
     def broken() -> None:
@@ -310,3 +315,25 @@ def test_compaction_keeps_the_newest_events_and_leaves_the_live_file_alone(
     assert "do supervisor" in collected
     assert f"falha {total - 1}" in collected
     assert len(collected) <= 20
+
+
+def test_config_field_names_are_kept_but_secret_looking_values_are_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "UNIOVER_TV_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS", "segredo-que-nao-e-numero"
+    )
+
+    assert main_module.main(["run"]) == 1
+
+    base = installation_base()
+    log = (base / "logs" / LOG_FILE).read_text(encoding="utf-8")
+    assert "tv_power_off_confirmation_timeout_seconds" in log
+    assert "[redacted]" not in log
+    assert "segredo-que-nao-e-numero" not in log
+    assert "tv_power_off_confirmation_timeout_seconds" in json.dumps(queue(base))
+    # Fora da lista de campos, a sequência longa e opaca continua apagada.
+    secret = "QWxhZGRpbjpvcGVuIHNlc2FtZQQWxhZGRpbjpvcGVuIHNlc2FtZQ"
+    assert secret not in sanitize(
+        f"erro {secret}", keep=("tv_power_off_confirmation_timeout_seconds",)
+    )

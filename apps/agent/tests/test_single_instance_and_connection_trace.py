@@ -15,7 +15,7 @@ import pytest
 from uniover_agent import main as main_module
 from uniover_agent.adapters import single_instance, startup_trace
 from uniover_agent.adapters.fakes import FakeTransport
-from uniover_agent.adapters.installation import installation_base
+from uniover_agent.adapters.installation import installation_base, legacy_wrapper_start
 from uniover_agent.adapters.single_instance import (
     ALREADY_RUNNING_MESSAGE,
     EXIT_ALREADY_RUNNING,
@@ -362,16 +362,71 @@ def test_the_other_instance_line_is_written_once_per_window(tmp_path: Path) -> N
     assert queue(tmp_path) == []  # so o log, a fila nao e tocada
 
 
-def test_a_run_started_by_the_legacy_wrapper_does_not_take_the_lock(
+def watch_order(monkeypatch: pytest.MonkeyPatch, *, takes_over: bool) -> list[str]:
+    """Registra a ordem real: a migração (que avisa o takeover quando o faz) e a trava."""
+    calls: list[str] = []
+    real_acquire = single_instance.acquire
+
+    def acquire_recorded() -> bool:
+        calls.append("acquire")
+        return real_acquire()
+
+    def migrate() -> None:
+        calls.append("migrate")
+        if takes_over:
+            os.environ["UNIOVER_LEGACY_TAKEOVER"] = "1"  # o que `migrate_layout` faz no fim
+
+    monkeypatch.delenv("UNIOVER_LEGACY_TAKEOVER", raising=False)
+    monkeypatch.setattr(main_module, "acquire", acquire_recorded)
+    monkeypatch.setattr(main_module, "migrate_layout", migrate)
+    return calls
+
+
+def test_a_legacy_wrapper_that_hands_over_the_install_never_takes_the_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    holder = start_holder()
+    (installation_base() / "agent-src").mkdir(parents=True)
+    calls = watch_order(monkeypatch, takes_over=True)
+    holder = start_holder()  # o agente do lançador novo, que já tem a trava
     try:
-        monkeypatch.setenv("UNIOVER_LEGACY_TAKEOVER", "1")
         assert main_module.main(["run"]) == 0
     finally:
         stop(holder)
+    assert calls == ["migrate"]
     assert not (installation_base() / "logs" / LOG_FILE).exists()
+
+
+def test_a_legacy_start_that_did_not_hand_over_still_respects_the_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (installation_base() / "agent-src").mkdir(parents=True)
+    calls = watch_order(monkeypatch, takes_over=False)
+    holder = start_holder()
+    try:
+        assert main_module.main(["run"]) == EXIT_ALREADY_RUNNING
+    finally:
+        stop(holder)
+    assert calls == ["migrate", "acquire"]
+
+
+def test_a_normal_start_takes_the_lock_before_touching_the_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = watch_order(monkeypatch, takes_over=False)
+    holder = start_holder()
+    try:
+        assert main_module.main(["run"]) == EXIT_ALREADY_RUNNING
+    finally:
+        stop(holder)
+    assert calls == ["acquire"]
+
+
+def test_the_legacy_layout_is_recognised_only_before_the_move(tmp_path: Path) -> None:
+    assert legacy_wrapper_start(tmp_path) is False
+    (tmp_path / "agent-src").mkdir()
+    assert legacy_wrapper_start(tmp_path) is True
+    (tmp_path / "app").mkdir()
+    assert legacy_wrapper_start(tmp_path) is False
 
 
 # --- so a falha antes do primeiro hello e falha de partida ---------------------------------
