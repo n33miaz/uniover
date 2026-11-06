@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcControlV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPermissionV1, TvPowerOffV1, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcControlV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -261,6 +261,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvLivreV1;
                 case "tv.maintenance.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvMaintenanceV1;
+                case "tv.pair.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvPairV1;
                 case "tv.permission.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvPermissionV1;
                 case "tv.power.off.v1":
@@ -382,6 +384,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvMaintenanceV1:
                     JsonSerializer.Serialize(writer, "tv.maintenance.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvPairV1:
+                    JsonSerializer.Serialize(writer, "tv.pair.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvPermissionV1:
                     JsonSerializer.Serialize(writer, "tv.permission.v1", options);

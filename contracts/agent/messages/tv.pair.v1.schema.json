@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.pair.v1.schema.json",
+  "title": "tv.pair.v1",
+  "description": "API para agente: pareamento da Android TV, em dois passos e só por pedido do dono. Sem 'code': o agente pede o pareamento e a TV mostra na tela um código de 6 caracteres (0-9 e A-F); responde logo com command.result.v1 (ok: o código está na tela; erro: tv_unreachable, pair_failed). Com 'code': o código digitado; o agente conclui o pareamento e responde com command.result.v1 (ok: pareada, e o estado not_paired some; erro: pair_not_started, invalid_code, pair_closed, pair_failed). O código vale poucos minutos, nunca aparece em registro, auditoria nem mensagem de erro, e o agente nunca inicia o pareamento sozinho.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "tv.pair.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9A-Fa-f]{6}$"
+        }
+      }
+    }
+  }
+}

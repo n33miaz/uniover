@@ -103,6 +103,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>tv.livre.v1</c>.</summary>
     public const string TvLivreV1 = "tv.livre.v1";
 
+    /// <summary>Tipo de mensagem <c>tv.pair.v1</c>.</summary>
+    public const string TvPairV1 = "tv.pair.v1";
+
     /// <summary>Tipo de mensagem <c>tv.permission.request.v1</c>.</summary>
     public const string TvPermissionRequestV1 = "tv.permission.request.v1";
 
@@ -159,6 +162,7 @@ public static class AgentMessageTypes
         TvLivrePhotoV1,
         TvLivreStateV1,
         TvLivreV1,
+        TvPairV1,
         TvPermissionRequestV1,
         TvPermissionV1,
         TvPowerOffV1,
