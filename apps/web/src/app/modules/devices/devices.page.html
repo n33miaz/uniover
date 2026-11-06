@@ -135,11 +135,14 @@
                         <span class="startup-text"
                           >{{ line.text
                           }}<span class="meta">
-                            · {{ startupAgo(line) }} ·
-                            <ng-container i18n="@@devices.startup.unverified"
-                              >não verificado</ng-container
-                            ></span
-                          ></span
+                            · {{ startupAgo(line) }}
+                            @if (!line.verified) {
+                              ·
+                              <ng-container i18n="@@devices.startup.unverified"
+                                >não verificado</ng-container
+                              >
+                            }
+                          </span></span
                         >
                       </p>
                     }
