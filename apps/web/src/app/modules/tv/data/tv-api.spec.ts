@@ -122,6 +122,15 @@ describe('TvApi', () => {
     await done;
   });
 
+  it('signals presence with a POST and no body', async () => {
+    const done = api.presence();
+    const request = http.expectOne('/api/v1/tv/presence');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toBeNull();
+    request.flush(null, { status: 202, statusText: 'Accepted' });
+    await done;
+  });
+
   it('sends a key as JSON', async () => {
     const done = api.sendKey('VOLUME_UP');
     const request = http.expectOne('/api/v1/tv/keys');

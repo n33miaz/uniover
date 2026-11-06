@@ -394,6 +394,7 @@ export class TvStore {
   private hadControl = false;
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
+  private presenceTimer: ReturnType<typeof setInterval> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private watchdogTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -403,8 +404,10 @@ export class TvStore {
       void this.wake();
       void this.refresh();
       this.armWake();
+      this.armPresence();
     } else {
       this.disarmWake();
+      this.disarmPresence();
     }
   };
   private readonly onOnline = () => {
@@ -434,7 +437,10 @@ export class TvStore {
         if (!this.started) return;
         if (!view) this.disconnect();
         else if (!this.connected) this.connect();
-        else if (control && !this.hadControl) void this.wake();
+        else if (control && !this.hadControl) {
+          void this.wake();
+          void this.presence();
+        }
         this.hadControl = view && control;
       });
     });
@@ -526,6 +532,7 @@ export class TvStore {
     void this.refresh();
     void this.wake();
     this.armWake();
+    this.armPresence();
   }
 
   private disconnect(): void {
@@ -534,6 +541,7 @@ export class TvStore {
     this.streamSub?.unsubscribe();
     this.streamSub = null;
     this.disarmWake();
+    this.disarmPresence();
   }
 
   /** Busca de novo o estado e os atalhos (abertura da tela, volta da rede, volta de aba oculta). */
@@ -627,6 +635,32 @@ export class TvStore {
       if (this.live(epoch)) this._notConfigured.set(false);
     } catch (error) {
       if (this.live(epoch)) this.absorb(describeFailure(error));
+    }
+  }
+
+  /**
+   * Avisa a API (e, por ela, o agente) que há alguém diante da tela da TV. Só com a tela **visível** (não basta "não
+   * oculta"), com rede, com permissão de controlar e com o agente de pé: é o único sinal que deixa o agente abrir uma
+   * conexão ADB nova por conta própria, então nunca sai de uma aba escondida. Falha não vira aviso: o próximo sinal
+   * (a cada 20 s) tenta de novo.
+   */
+  async presence(): Promise<void> {
+    if (
+      !this.started ||
+      !this.connected ||
+      this.doc.visibilityState !== 'visible' ||
+      this.link() !== 'ok' ||
+      !this.access.control() ||
+      this.account === null ||
+      this.listFirst() ||
+      this._state()?.agentOnline === false
+    ) {
+      return;
+    }
+    try {
+      await this.api.presence();
+    } catch {
+      // Sem aviso: é só um sinal de presença.
     }
   }
 
@@ -1252,6 +1286,20 @@ export class TvStore {
       // Rede de segurança: se o fluxo caiu sem aviso, o estado ainda se renova a cada rodada.
       void this.refresh();
     }, this.config.wakeIntervalMs);
+  }
+
+  private armPresence(): void {
+    this.disarmPresence();
+    if (!this.started || !this.connected || this.doc.visibilityState !== 'visible') return;
+    void this.presence();
+    this.presenceTimer = setInterval(() => {
+      void this.presence();
+    }, this.config.presenceIntervalMs);
+  }
+
+  private disarmPresence(): void {
+    clearInterval(this.presenceTimer);
+    this.presenceTimer = undefined;
   }
 
   private disarmWake(): void {
