@@ -4,22 +4,32 @@ import { DestroyRef, Injectable, inject } from '@angular/core';
 import { finalize } from 'rxjs';
 
 /** O que impede uma recarga automática: cada motivo é um tipo de trabalho que a recarga perderia ou cortaria. */
-export type UnsavedReason = 'form' | 'outbox' | 'request' | 'session';
+export type UnsavedReason = 'form' | 'outbox' | 'request';
 
 /** Quantos campos editados a vigia guarda no máximo; passou disso, `form` fica ligado até a conta baixar. */
 const MAX_TRACKED_FIELDS = 200;
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement;
 
+/** O texto do campo, para guardar como ponto de partida na primeira vez que a pessoa o foca. */
+function valueOf(field: Field): string {
+  if (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) return field.value;
+  return field.textContent ?? '';
+}
+
 /**
- * O campo guarda texto que a pessoa digitou e que ainda está lá? Só digitação conta. Caixas de marcar, rádios, interruptores,
+ * O campo guarda texto que a pessoa mudou e que ainda está lá? Só digitação conta, e "mudou" é comparado com o valor que o
+ * campo tinha quando a pessoa o focou (`baseline`), não com o atributo `value` (o Angular preenche a propriedade, então o
+ * atributo fica vazio): um campo que já vinha preenchido não conta até ser alterado, e apagá-lo conta. Sem ponto de partida
+ * (campo alterado sem foco), vale o atributo e só texto não vazio. Caixas de marcar, rádios, interruptores,
  * seletores e controles deslizantes ficam de fora: costumam salvar na hora (nada a perder) e, como o valor continua na
  * tela depois de salvo, travariam a recarga para sempre. Uma tela cujas escolhas só valem ao salvar (um editor) avisa pelo
  * `registerUnsavedWork`, que é a fonte preferida. Busca, botões e campos escondidos também não contam.
  */
-function holdsTypedValue(field: Field): boolean {
+function holdsTypedValue(field: Field, baseline: string | undefined): boolean {
   if (!field.isConnected || field.closest('[data-unsaved-ignore]')) return false;
-  if (field instanceof HTMLTextAreaElement) return field.value !== field.defaultValue;
+  if (field instanceof HTMLTextAreaElement)
+    return baseline === undefined ? field.value !== field.defaultValue : field.value !== baseline;
   if (field instanceof HTMLSelectElement) return false;
   if (field instanceof HTMLInputElement) {
     switch (field.type) {
@@ -35,10 +45,15 @@ function holdsTypedValue(field: Field): boolean {
       case 'file':
         return false;
       default:
-        return field.value !== '' && field.value !== field.defaultValue;
+        return baseline === undefined
+          ? field.value !== '' && field.value !== field.defaultValue
+          : field.value !== baseline;
     }
   }
-  return field.isContentEditable && (field.textContent ?? '').trim() !== '';
+  if (!field.isContentEditable) return false;
+  return baseline === undefined
+    ? (field.textContent ?? '').trim() !== ''
+    : (field.textContent ?? '') !== baseline;
 }
 
 /**
@@ -47,7 +62,8 @@ function holdsTypedValue(field: Field): boolean {
  *
  * Quatro fontes:
  * - campos de formulário editados pela pessoa e ainda com o valor lá (vigia no `document`, sem cada tela precisar avisar);
- * - fontes registradas por telas e serviços (`register`): um editor sujo, a fila offline com itens pendentes, o treino aberto;
+ * - fontes registradas por telas e serviços (`register`): um editor sujo, a fila offline com itens em voo. O treino aberto não
+ *   entra: a sessão fica gravada no aparelho e a recarga a retoma;
  * - escritas (`POST/PUT/PATCH/DELETE`) em voo, contadas pelo interceptador `unsavedWorkInterceptor`. Leituras não contam:
  *   uma leitura refeita pela página nova não perde nada, e uma conexão longa nunca terminaria.
  */
@@ -55,17 +71,25 @@ function holdsTypedValue(field: Field): boolean {
 export class UnsavedWork {
   private readonly sources = new Map<() => boolean, UnsavedReason>();
   private readonly edited = new Set<Field>();
+  /** O valor de cada campo na primeira vez que a pessoa o focou (ver `holdsTypedValue`). */
+  private readonly baselines = new WeakMap<Field, string>();
+  private readonly refreshers = new Set<() => Promise<unknown>>();
   /** Mais campos editados do que cabem na vigia: na dúvida, protege (ver `track`). */
   private overflow = false;
   private inFlight = 0;
 
   constructor() {
     const doc = inject(DOCUMENT);
+    const remember = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && !this.baselines.has(target))
+        this.baselines.set(target, valueOf(target));
+    };
     const track = (event: Event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      // Só entra o campo conectado que guarda texto digitado; um campo esvaziado sai na hora.
-      if (!holdsTypedValue(target)) {
+      // Só entra o campo conectado cujo texto mudou; um campo de volta ao valor de partida sai na hora.
+      if (!holdsTypedValue(target, this.baselines.get(target))) {
         this.edited.delete(target);
         return;
       }
@@ -74,9 +98,11 @@ export class UnsavedWork {
       if (this.edited.size < MAX_TRACKED_FIELDS) this.edited.add(target);
       else this.overflow = true;
     };
+    doc.addEventListener('focusin', remember, true);
     doc.addEventListener('input', track, true);
     doc.addEventListener('change', track, true);
     inject(DestroyRef).onDestroy(() => {
+      doc.removeEventListener('focusin', remember, true);
       doc.removeEventListener('input', track, true);
       doc.removeEventListener('change', track, true);
     });
@@ -86,6 +112,22 @@ export class UnsavedWork {
   register(source: () => boolean, reason: UnsavedReason = 'form'): () => void {
     this.sources.set(source, reason);
     return () => this.sources.delete(source);
+  }
+
+  /**
+   * Registra uma releitura assíncrona de uma fonte cujo valor pode estar velho (a fila de saída lê um banco compartilhado entre
+   * abas). `settle` a espera antes de uma decisão.
+   */
+  registerRefresh(refresh: () => Promise<unknown>): () => void {
+    this.refreshers.add(refresh);
+    return () => this.refreshers.delete(refresh);
+  }
+
+  /** Atualiza as fontes que podem estar velhas, com prazo curto: nunca segura a decisão por muito tempo nem lança. */
+  async settle(timeoutMs = 500): Promise<void> {
+    if (this.refreshers.size === 0) return;
+    const all = Promise.allSettled([...this.refreshers].map((refresh) => refresh()));
+    await Promise.race([all, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
   }
 
   /** Marca o início e o fim de uma escrita em voo. */
@@ -121,9 +163,21 @@ export class UnsavedWork {
     return this.reasons().length > 0;
   }
 
+  /** Há algo que só a pessoa pode decidir perder: texto digitado ou um editor sujo (`form`). */
+  needsConfirmation(): boolean {
+    return this.reasons().includes('form');
+  }
+
+  /** Há escrita em voo (pedido sem resposta ou item da fila já enviado): vale esperar terminar, não perguntar. */
+  isWriting(): boolean {
+    const reasons = this.reasons();
+    return reasons.includes('request') || reasons.includes('outbox');
+  }
+
   /** Solta os campos que saíram da página ou ficaram vazios (a navegação chama isto: nada de tela morta retida). */
   prune(): void {
-    for (const field of this.edited) if (!holdsTypedValue(field)) this.edited.delete(field);
+    for (const field of this.edited)
+      if (!holdsTypedValue(field, this.baselines.get(field))) this.edited.delete(field);
   }
 }
 
