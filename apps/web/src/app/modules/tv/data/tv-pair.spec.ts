@@ -37,6 +37,10 @@ describe('tv-pair', () => {
       expect(failure(403, { type: 'https://uniover.dev/problems/forbidden' })).toBe('forbidden');
     });
 
+    it('tells a request that came too soon apart from a plain failure', () => {
+      expect(failure(429, { type: 'https://uniover.dev/problems/pair-too-soon' })).toBe('wait');
+    });
+
     it('treats an offline or slow agent, and a TV that does not answer, as unreachable', () => {
       expect(failure(503, { type: 'https://uniover.dev/problems/agent-offline' })).toBe(
         'unreachable',

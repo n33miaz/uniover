@@ -79,17 +79,42 @@ test.describe('TV não pareada', () => {
     await expectNoHorizontalScroll(page);
     await confirm.click();
 
-    await expect(sheet(page).getByText('TV pareada. O controle volta em instantes.')).toBeVisible();
+    // O computador aceitou o código e reabre a sessão à parte: a folha espera o estado sair de "não pareada".
+    await expect(sheet(page).getByText('Pareando…')).toBeVisible();
     expect(tv.pairBodies()).toEqual([{}, { code: CODE }]);
     expect(tv.requests.filter((r) => r.path === '/pair').every((r) => !r.tvId)).toBe(true);
     // O código sumiu da folha assim que foi usado.
     await expect(sheet(page).locator('input')).toHaveCount(0);
 
-    // O agente reabre a sessão e a API manda o estado novo: o aviso sai sozinho.
+    // O agente reabre a sessão e a API manda o estado novo: só então a TV conta como pareada.
     await emitSse(page, 'tv.state', { ...HOT_STATE });
+    await expect(sheet(page).getByText('TV pareada. O controle volta em instantes.')).toBeVisible();
     await expect(section(page)).toHaveCount(0);
     await sheet(page).getByRole('button', { name: 'Pronto' }).click();
     await expect(sheet(page)).toHaveCount(0);
+  });
+
+  test('fechar a folha com o código na tela da TV avisa o computador, que larga o pareamento', async ({
+    page,
+  }) => {
+    await openUnpairedTv(page);
+    await section(page).getByRole('button', { name: 'Parear de novo' }).click();
+    await sheet(page).getByRole('button', { name: 'Mostrar Código' }).click();
+    await expect(sheet(page).getByLabel('Digite o código que aparece na TV.')).toBeVisible();
+
+    await sheet(page).getByRole('button', { name: 'Cancelar' }).click();
+    await expect(sheet(page)).toHaveCount(0);
+    expect(tv.pairBodies()).toEqual([{}, { cancel: true }]);
+    // A TV segue não pareada, e nada recomeçou sozinho.
+    await expect(section(page)).toBeVisible();
+  });
+
+  test('fechar a folha sem pedir o código não manda nada ao computador', async ({ page }) => {
+    await openUnpairedTv(page);
+    await section(page).getByRole('button', { name: 'Parear de novo' }).click();
+    await sheet(page).getByRole('button', { name: 'Cancelar' }).click();
+    await expect(sheet(page)).toHaveCount(0);
+    expect(tv.count('/pair')).toBe(0);
   });
 
   test('um código recusado pede outro e só recomeça por um novo toque', async ({ page }) => {

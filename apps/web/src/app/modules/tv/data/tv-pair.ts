@@ -7,9 +7,11 @@ import { problemOf } from '../../../core/auth/api-problem';
  * - `unsupported`: o computador da TV é antigo demais para parear pelo app;
  * - `code`: o código não serviu (a TV recusou, venceu ou o pareamento já tinha acabado): é preciso pedir outro;
  * - `forbidden`: só o dono pareia;
+ * - `wait`: pediu outro código cedo demais (a API espera alguns segundos entre dois pedidos);
  * - `failed`: qualquer outra falha.
  */
-export type TvPairFailure = 'unreachable' | 'unsupported' | 'code' | 'forbidden' | 'failed';
+export type TvPairFailure =
+  'unreachable' | 'unsupported' | 'code' | 'forbidden' | 'wait' | 'failed';
 
 /** Códigos que o agente devolve quando o código digitado não serve mais. */
 const CODE_FAILURES = new Set(['invalid_code', 'pair_closed', 'pair_timeout', 'pair_not_started']);
@@ -42,6 +44,7 @@ export function pairFailureOf(error: unknown): TvPairFailure {
   const problem = problemOf(error);
   if (problem?.kind === 'pair-unsupported') return 'unsupported';
   if (problem?.status === 403) return 'forbidden';
+  if (problem?.status === 429) return 'wait';
   if (problem?.kind === 'agent-offline' || problem?.kind === 'agent-timeout') return 'unreachable';
   const agentError = agentErrorOf(error);
   if (agentError === 'tv_unreachable') return 'unreachable';

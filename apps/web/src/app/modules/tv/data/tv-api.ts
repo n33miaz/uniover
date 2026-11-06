@@ -136,6 +136,11 @@ export class TvApi {
     );
   }
 
+  /** O dono fechou a folha de pareamento: o computador da TV larga o pareamento que esperava o código. */
+  async cancelPair(): Promise<void> {
+    await firstValueFrom(this.http.post(`${BASE}/pair`, { cancel: true }, this.target()));
+  }
+
   /** Pré-aquece a sessão com a TV; o servidor responde 202 sem esperar o agente. */
   async wake(): Promise<void> {
     await firstValueFrom(this.http.post(`${BASE}/wake`, null, this.target()));
