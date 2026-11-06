@@ -112,3 +112,60 @@ def test_closing_with_a_full_queue_still_ends_the_thread_once_the_destination_mo
     threading.Timer(0.2, target.unblock.set).start()
     handler.close()  # espera lugar para o marcador de fim em vez de descartá-lo
     assert not handler._thread.is_alive()
+
+
+def test_the_diagnostic_handler_behind_the_offload_keeps_the_exception_type() -> None:
+    # A ocorrência de diagnóstico lê `exc_info[1]`: passar pela fila não pode perder a causa.
+    from uniover_agent.adapters.diagnostics_file import DiagnosticsLogHandler  # noqa: PLC0415
+
+    from .test_diagnostics import recorder  # noqa: PLC0415
+
+    rec, store, _ = recorder()
+    handler = OffloadHandler(DiagnosticsLogHandler(rec))
+    log = logging.getLogger("uniover_agent.core.connection")
+    log.addHandler(handler)
+    try:
+        try:
+            raise ValueError("segredo")
+        except ValueError:
+            log.exception("falha inesperada na conexão; reconectando")
+        assert handler.drain(5)
+    finally:
+        log.removeHandler(handler)
+        handler.close()
+    assert [e.kind for e in store.events] == ["error.logged"]
+    assert "ValueError em" in store.events[0].detail
+    assert "segredo" not in store.events[0].detail
+
+
+def test_drain_does_not_leave_a_thread_behind_per_call() -> None:
+    target = Blocked()
+    handler = OffloadHandler(target, drain=0.1)
+    handler.handle(record("presa"))
+    before = threading.active_count()
+    for _ in range(20):
+        assert not handler.drain(0.01)
+    assert threading.active_count() == before
+    target.unblock.set()
+    handler.close()
+
+
+def test_dropped_lines_are_counted_exactly_across_threads() -> None:
+    target = Blocked()
+    handler = OffloadHandler(target, maxsize=1, drain=0.5)
+    handler.handle(record("a"))  # a thread de fundo a pega e trava no destino
+    time.sleep(0.1)
+    handler.handle(record("b"))  # ocupa o único lugar da fila
+
+    def spam() -> None:
+        for _ in range(500):
+            handler.handle(record("x"))
+
+    workers = [threading.Thread(target=spam) for _ in range(4)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert handler.dropped == 2000
+    target.unblock.set()
+    handler.close()
