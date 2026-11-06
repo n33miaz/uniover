@@ -121,12 +121,15 @@ class FakeAdbRunner:
 class OpenAuthorization(AdbAuthorization):
     """Trava aberta, só para os testes que não são sobre a permissão: nada é lido nem gravado.
 
-    Equivale ao comportamento de antes da trava (conecta sempre que preciso); os testes da trava
-    de verdade usam `AdbAuthorization` com pastas de `tmp_path`.
+    Equivale ao comportamento de antes da trava (conecta sempre que preciso); **ela não prova nada
+    sobre a trava de presença nem sobre o canal mantido**: os testes disso usam `AdbAuthorization`
+    de verdade com pastas de `tmp_path` (ver `Home` em `test_tv_adb_permission.py`). `keeps_channel`
+    escolhe o lado do `disconnect`: `False` (padrão) desconecta de verdade, `True` mantém o canal.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, keeps_channel: bool = False) -> None:
         super().__init__(Path("sem-estado"), AdbKeys(Path("sem-copia"), Path("sem-chave")), "x")
+        self._keeps_channel = keeps_channel
 
     def prepare(self) -> None:
         return None
@@ -144,7 +147,7 @@ class OpenAuthorization(AdbAuthorization):
         return False
 
     def keeps_channel(self, mac: str | None) -> bool:
-        return False  # o comportamento de antes da trava: `disconnect` desconecta de verdade
+        return self._keeps_channel
 
     def proven_for(self, mac: str | None) -> bool:
         return True
@@ -178,10 +181,14 @@ async def _open_mac() -> str | None:
     return "AA:BB:CC:00:11:22"
 
 
-def open_gate() -> dict[str, Any]:
-    """Os três argumentos obrigatórios de `AdbTv`, com a trava aberta."""
+def open_gate(*, keeps_channel: bool = False, user_active: bool = True) -> dict[str, Any]:
+    """Os três argumentos obrigatórios de `AdbTv`, com a trava aberta.
+
+    `user_active=False` simula ninguém usando a TV pelo app (mas a `OpenAuthorization` segue
+    liberando: quem testa a trava de verdade usa `AdbAuthorization`).
+    """
     return {
-        "authorization": OpenAuthorization(),
+        "authorization": OpenAuthorization(keeps_channel=keeps_channel),
         "mac_resolver": _open_mac,
-        "user_active": lambda: True,
+        "user_active": lambda: user_active,
     }

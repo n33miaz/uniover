@@ -52,16 +52,17 @@ class Clock:
         return self.now
 
 
-def make(runner: FakeAdbRunner, clock: Clock | None = None) -> AdbTv:
+def make(runner: FakeAdbRunner, clock: Clock | None = None, **gate: Any) -> AdbTv:
     return AdbTv(
         ADB,
         HOST,
         5555,
-        **open_gate(),
+        **open_gate(**gate),
         timeout=1.0,
         runner=runner,
         monotonic=clock or Clock(),
         retry_after=30.0,
+        close_wait_seconds=0.05,
     )
 
 
@@ -176,7 +177,7 @@ async def test_a_blocked_unauthorized_tv_notices_the_acceptance_without_connecti
             GET_STATE: [UNAUTHORIZED_STATE, UNAUTHORIZED_STATE, ok("device\r\n")],
         }
     )
-    adb = make(runner, clock)
+    adb = make(runner, clock, keeps_channel=True)  # permissão provada: o `device` serve ao canal
     with pytest.raises(AdbUnauthorized):
         await adb.list_apps()
     clock.now = 5  # ainda no bloqueio de 30 s
@@ -188,6 +189,25 @@ async def test_a_blocked_unauthorized_tv_notices_the_acceptance_without_connecti
     runner.script[shell(LAUNCHER_QUERY)] = ok(NO_ACTIVITIES)
     assert await adb.list_apps() == []
     assert runner.calls.count(CONNECT) == 1  # a aceitação foi vista pelo `get-state`, sem conectar
+
+
+async def test_a_blocked_tv_whose_device_is_not_proven_is_not_adopted_by_automatic_paths() -> None:
+    clock = Clock()
+    runner = FakeAdbRunner(
+        {
+            CONNECT: ok(f"already connected to {SERIAL}\r\n"),
+            GET_STATE: [UNAUTHORIZED_STATE, ok("device\r\n")],
+        }
+    )
+    adb = make(runner, clock)  # sem prova: um `device` pode ser um "Permitir" de uma vez só
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    clock.now = 10
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 1
+    assert runner.calls.count(DISCONNECT) == 2  # o da recusa e o do transporte sem prova
+    assert not adb.connected
 
 
 DEVICES = ("devices",)
@@ -749,4 +769,6 @@ async def test_closing_the_adb_cancels_a_pending_deferred_disconnect() -> None:
     await adb.aclose()
     assert task.cancelled()
     adb._lock.release()  # type: ignore[attr-defined]
-    assert DISCONNECT not in runner.calls
+    # O adiado foi cancelado, mas o encerramento esperou a trava só o prazo curto e desfez a
+    # conexão não provada mesmo assim (o servidor do `adb` sobrevive ao agente e a religaria).
+    assert runner.calls.count(DISCONNECT) == 1

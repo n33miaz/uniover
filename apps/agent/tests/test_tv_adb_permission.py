@@ -88,6 +88,7 @@ class Home:
         self.backup = root / "tv" / ".adb-key"
         self.android.mkdir(parents=True)
         self.mac: str | None = MAC
+        self.reads = 0  # quantas vezes o MAC foi lido
         self.active = True  # alguém usa a TV pelo app agora (a janela de 60 s)
 
     def write_key(self, data: bytes = KEY) -> None:
@@ -101,6 +102,7 @@ class Home:
         return AdbAuthorization(self.state, self.keys(), endpoint)
 
     async def resolve(self) -> str | None:
+        self.reads += 1
         return self.mac
 
     def adb(
@@ -903,15 +905,45 @@ async def test_a_live_transport_is_proven_by_the_users_request(home: Home) -> No
     assert home.authorization().record.state == VERIFIED
 
 
-async def test_a_live_transport_seen_outside_a_request_is_not_recorded(home: Home) -> None:
+async def test_an_unproven_live_transport_seen_outside_a_request_is_undone(home: Home) -> None:
     runner = runner_with(connect=REFUSED, state=DEVICE)
     adb = home.adb(runner)
     with user_initiated_adb(), pytest.raises(AdbUnauthorized):
         await adb.connect()
-    script_apps(runner)
-    assert await adb.list_apps() == []  # serve ao canal, sem conectar
-    assert runner.calls.count(CONNECT) == 1
+    await watched(adb)
+    runner.calls.clear()
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()  # sobra de um "Permitir" de uma vez só: o agente não a adota
+    assert CONNECT not in runner.calls
+    assert runner.calls.count(DISCONNECT) == 1  # e o servidor do `adb` não a religa
     assert home.authorization().record.state == NEEDS_USER  # nada virou permissão
+
+
+async def test_a_proven_live_transport_left_open_is_adopted_without_connecting(home: Home) -> None:
+    home.verify()
+    home.active = False  # ninguém usa a TV pelo app: não conectaria, mas o canal aberto serve
+    runner = runner_with(state=DEVICE)
+    adb = home.adb(runner)
+    script_apps(runner)
+    assert await adb.list_apps() == []
+    assert CONNECT not in runner.calls and DISCONNECT not in runner.calls
+
+
+OFFLINE = ok("error: device offline\r\n", returncode=1)
+
+
+@pytest.mark.parametrize("state", [UNAUTHORIZED, OFFLINE])
+async def test_a_refused_transport_left_from_before_is_undone_at_startup(
+    home: Home, state: AdbOutput
+) -> None:
+    home.verify()
+    authorization = home.authorization()
+    authorization.mark_needs_permission()  # a TV pediu o aviso de novo
+    runner = runner_with(state=state)
+    with pytest.raises(AdbUnauthorized):
+        await home.adb(runner, authorization=authorization).connect()  # a partida do agente
+    assert CONNECT not in runner.calls
+    assert runner.calls.count(DISCONNECT) == 1
 
 
 async def test_a_new_key_does_not_inherit_the_timeout_done_for_the_old_one(home: Home) -> None:
@@ -1218,6 +1250,131 @@ async def test_hibernation_disconnects_when_the_tv_is_not_the_proven_one(home: H
     assert runner.calls == [DISCONNECT]
 
 
+async def test_a_kept_channel_that_the_tv_revokes_is_disconnected(home: Home) -> None:
+    home.verify()
+    runner = runner_with()
+    adb = home.adb(runner)
+    await adb.connect()
+    await adb.disconnect()  # hibernação: a permissão está provada, o canal fica
+    assert adb.connected
+    runner.calls.clear()
+    # O dono revogou as autorizações na TV: o próximo comando automático recebe `unauthorized`.
+    runner.script[shell("grep MemAvailable /proc/meminfo")] = UNAUTHORIZED
+    with pytest.raises(AdbUnauthorized):
+        await adb.memory_available_mb()
+    assert DISCONNECT in runner.calls  # o servidor do `adb` não religa (e não abre o aviso)
+    assert CONNECT not in runner.calls
+    assert not adb.connected
+    assert home.authorization().record.state == NEEDS_USER
+
+
+async def test_a_kept_channel_that_goes_offline_stays_for_a_proven_tv(home: Home) -> None:
+    home.verify()
+    runner = runner_with()
+    adb = home.adb(runner)
+    await adb.connect()
+    runner.calls.clear()
+    runner.script[shell("grep MemAvailable /proc/meminfo")] = OFFLINE
+    with pytest.raises(AdbUnreachable):
+        await adb.memory_available_mb()
+    assert DISCONNECT not in runner.calls  # TV desligada: o servidor religa sem aviso
+
+
+async def test_an_unproven_transport_that_goes_offline_is_undone_outside_a_request(
+    home: Home,
+) -> None:
+    runner = runner_with(connect=[FRESH, STALE])
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()  # `granted`, sem prova
+    runner.script[shell("grep MemAvailable /proc/meminfo")] = OFFLINE
+    runner.calls.clear()
+    with pytest.raises(AdbUnreachable):
+        await adb.memory_available_mb()
+    assert DISCONNECT in runner.calls
+
+
+async def test_a_kept_channel_that_is_revoked_during_an_apk_copy_is_disconnected(
+    home: Home, tmp_path: Path
+) -> None:
+    home.verify()
+    runner = runner_with()
+    adb = home.adb(runner)
+    await adb.connect()
+    runner.calls.clear()
+    remote = "/data/app/com.exemplo.tv-1/base.apk"
+    target = tmp_path / "a.apk"
+    runner.script[("-s", ENDPOINT, "pull", remote, str(target))] = UNAUTHORIZED
+    with pytest.raises(AdbUnauthorized):
+        await adb.pull_apk(remote, target)
+    assert DISCONNECT in runner.calls
+
+
+async def test_closing_the_agent_undoes_an_unproven_connection_and_keeps_a_proven_one(
+    home: Home, tmp_path: Path
+) -> None:
+    runner = runner_with(connect=[FRESH, STALE])
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()  # sem prova
+    runner.calls.clear()
+    await adb.aclose()
+    assert runner.calls == [DISCONNECT]
+    other = Home(tmp_path / "outra")
+    other.write_key()
+    other.verify()
+    kept = runner_with()
+    adb2 = other.adb(kept)
+    await adb2.connect()
+    kept.calls.clear()
+    await adb2.aclose()
+    assert kept.calls == []  # provada: fica
+
+
+async def test_the_mac_is_read_once_per_connect_operation(home: Home, tmp_path: Path) -> None:
+    home.verify()
+    await home.adb(runner_with()).connect()  # automático
+    assert home.reads == 1
+    other = Home(tmp_path / "outra")
+    other.write_key()
+    with user_initiated_adb():
+        await other.adb(runner_with(connect=[FRESH, FRESH])).connect()  # toque com prova
+    assert other.reads == 1
+
+
+async def test_hibernation_disconnect_survives_a_hung_mac_probe(
+    home: Home, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = runner_with(connect=[FRESH, STALE])
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()  # `granted`, sem prova
+    runner.calls.clear()
+
+    async def hung() -> str | None:
+        await asyncio.sleep(30)
+        return None
+
+    monkeypatch.setattr(adb, "_mac_resolver", hung)
+    monkeypatch.setattr("uniover_agent.adapters.tv_adb._STAY_CHECK_SECONDS", 0.05)
+    await asyncio.wait_for(adb.disconnect(), 1)  # sem confirmar a identidade, o canal se desfaz
+    assert runner.calls == [DISCONNECT]
+
+
+async def test_the_hibernation_deadline_does_not_leave_the_channel_open(home: Home) -> None:
+    runner = runner_with(connect=[FRESH, STALE])
+    adb = home.adb(runner)
+    with user_initiated_adb():
+        await adb.connect()
+    runner.calls.clear()
+    runner.delay = 0.2  # o `adb disconnect` demora mais que o prazo de quem chamou
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(adb.disconnect(), 0.05)
+    await asyncio.sleep(0.4)
+    assert runner.calls == [DISCONNECT]  # o desfazer seguiu por conta própria
+    assert not adb.connected
+
+
 # --- MAC lido vazio num toque não derruba o registro --------------------------------------------
 
 
@@ -1279,6 +1436,35 @@ async def test_a_stale_presence_signal_is_ignored() -> None:
     assert not activity.recent()
     await presence(command(now - timedelta(seconds=5)))
     assert activity.recent()
+
+
+def presence_command(sent: datetime) -> Command:
+    return Command(
+        "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1",
+        "tv.presence.v1",
+        {},
+        None,
+        sent.isoformat().replace("+00:00", "Z"),
+    )
+
+
+async def test_a_pc_clock_a_little_behind_still_counts_but_a_very_late_one_does_not(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    now = datetime(2026, 11, 6, 12, 0, 0, tzinfo=UTC)
+    activity = UserActivity(lambda: 0.0)
+    presence = tv_presence_handler(activity, now=lambda: now)
+    await presence(presence_command(now + timedelta(seconds=3)))  # idade -3 s
+    assert activity.recent()
+    fresh = UserActivity(lambda: 0.0)
+    presence = tv_presence_handler(fresh, now=lambda: now)
+    with caplog.at_level("WARNING"):
+        await presence(presence_command(now + timedelta(seconds=40)))  # relógio 40 s atrás
+        await presence(presence_command(now + timedelta(seconds=45)))
+        await presence(presence_command(now - timedelta(seconds=40)))
+    assert not fresh.recent()
+    warnings = [r for r in caplog.records if "presença" in r.getMessage()]
+    assert len(warnings) == 1  # avisa uma vez só
 
 
 async def test_a_presence_signal_without_a_usable_timestamp_still_counts() -> None:
