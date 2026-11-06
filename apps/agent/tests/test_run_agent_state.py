@@ -48,6 +48,7 @@ FUNCTIONS = (
     "Read-Shared",
     "Invoke-Bounded",
     "Start-Hidden",
+    "Set-StopReason",
 )
 
 PRELUDE = r"""
@@ -426,10 +427,13 @@ def test_a_new_version_whose_trial_cannot_be_written_is_rolled_back_at_once(pc: 
     done = pc.run(f"Invoke-Update '{uv}'")
     assert done.returncode == 0, done.stderr
     assert done.stdout.split()[-1] == "True"
-    # A versão nova nunca fica no ar sem prova: voltou para a anterior e foi bloqueada.
+    # A versão nova nunca fica no ar sem prova: voltou para a anterior. Sem bloqueio: a falha foi
+    # do PC (disco, antivírus), não da versão, que volta a ser tentada na próxima checagem.
     assert (pc.source / ".version").read_text(encoding="ascii").strip() == OLD
-    assert BAD in (pc.runtime / ".blocked-versions").read_text(encoding="ascii")
+    blocked = pc.runtime / ".blocked-versions"
+    assert not blocked.exists() or BAD not in blocked.read_text(encoding="ascii")
     assert pc.state()["outcome"] == "rolled_back"
+    assert not pc.state().get("blockedSha")
 
 
 def test_a_trial_the_python_side_already_wrote_is_not_overwritten(pc: Pc) -> None:
@@ -445,3 +449,39 @@ def test_a_trial_the_python_side_already_wrote_is_not_overwritten(pc: Pc) -> Non
     assert done.returncode == 0, done.stderr
     assert done.stdout.split()[-1] == "True"
     assert marker.read_text(encoding="ascii").strip() == f"{BAD}|0"
+
+
+def test_an_update_that_times_out_and_loses_the_app_folder_takes_the_agent_down_with_it(
+    pc: Pc,
+) -> None:
+    pc.version(pc.source, OLD)
+    uv = fake_uv(
+        pc,
+        f'ren "{pc.source}" app-gone',
+        "ping -n 60 127.0.0.1 > nul",
+        "exit /b 0",
+    )
+    marker = pc.base / "agent.pid"
+    done = pc.run(
+        "$updateTimeoutSeconds = 3\n"
+        "$process = Start-Process -PassThru -WindowStyle Hidden ping -ArgumentList '-n','120','127.0.0.1'\n"
+        f"Set-Content -LiteralPath '{marker}' -Value $process.Id\n"
+        f"Invoke-Update '{uv}'\n"
+    )
+    # `exit 42`: o lançador restaura a pasta; o agente que estava rodando não fica órfão.
+    assert done.returncode == 42, done.stderr
+    pid = int(marker.read_text(encoding="ascii").strip())
+    time.sleep(1.5)
+    listing = subprocess.run(  # noqa: S603 - tasklist do sistema
+        [
+            str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"),
+            "/FI",
+            f"PID eq {pid}",
+            "/NH",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert str(pid) not in listing.stdout, "o agente ficou órfão depois do exit 42"
+    assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii").strip() == "update"

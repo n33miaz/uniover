@@ -139,6 +139,10 @@ configuração, certificado nem registros.
   ele cria o `last-alive` antes de subir o agente (com disco cheio só dá para mudar a data de um arquivo que existe) e dá o
   agente por mudo também se o arquivo nunca aparecer. A prova de uma versão nova é gravada ANTES da troca das pastas: sem
   conseguir gravá-la, a troca não acontece.
+  O supervisor recusado pelo mutex sai com 43 (o lançador espera e tenta de novo, sem rodar o fallback); reinícios seguidos
+  pelo lançador esperam 5, 10, 20 ... s (até 5 min); um supervisor de versão anterior, que não dá sinal durante a espera, é
+  vigiado por 45 min em vez de 15; depois de um update que estourou o prazo a primeira volta sobe o agente sem repeti-lo; a
+  volta atrás por não conseguir gravar a prova não bloqueia a versão (a falha foi do PC).
 - **Auto-diagnóstico** a cada 10 minutos (`core/self_care.py`, `adapters/self_care_checks.py`): pasta de instalação,
   tarefa de início automático, supervisor, conexão (a API responde por HTTP; nunca abre um segundo canal), TV (só a
   porta, nunca tecla) e tarefas de fundo. Reparo seguro por verificação, com 30 min de espera e no máximo 4 por dia:
