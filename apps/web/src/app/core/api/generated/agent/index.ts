@@ -33,6 +33,7 @@ export * from './tv_key_v3';
 export * from './tv_livre_photo_v1';
 export * from './tv_livre_state_v1';
 export * from './tv_livre_v1';
+export * from './tv_pair_v1';
 export * from './tv_permission_request_v1';
 export * from './tv_permission_v1';
 export * from './tv_power_off_v1';
