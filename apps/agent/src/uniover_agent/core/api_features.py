@@ -19,6 +19,8 @@ CHECK_INTERVAL_SECONDS: Final = 300.0
 # Enquanto a API não disse nada (dormindo, ainda subindo), pergunta de novo logo e vai espaçando.
 FIRST_RETRY_SECONDS: Final = 15.0
 FEATURES_TIMEOUT_SECONDS: Final = 3.0
+# A API aceita `tv.state.v1` com `connection: not_paired` (uma anterior recusaria o estado).
+NOT_PAIRED_FEATURE: Final = "tv.state.not_paired"
 
 
 class ApiFeatures:
