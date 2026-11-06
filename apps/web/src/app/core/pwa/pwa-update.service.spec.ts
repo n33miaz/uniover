@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { NavigationEnd, Router } from '@angular/router';
+import { Subject } from 'rxjs';
+import { type AskTab, swapIfSafe } from '../../../sw-swap-gate';
 import {
   AUTO_RECOVERY_GUARD_MS,
   CHUNK_RECOVERY_KEY,
-  DEFERRED_RETRY_MS,
   FIRST_CONTENT_WATCHDOG_MS,
   IDLE_SWAP_KEY,
   PWA_ENABLED,
@@ -13,6 +15,7 @@ import {
   UPDATE_FLAG_MAX_AGE_MS,
   UPDATE_INSTALL_TIMEOUT_MS,
   UPDATE_REFRESHING_KEY,
+  UPDATE_SWAP_ASK_TIMEOUT_MS,
   UPDATE_WATCHDOG_KEY,
 } from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
@@ -538,63 +541,133 @@ describe('PwaUpdateService', () => {
 
   describe('with unsaved work', () => {
     let busy = false;
-    const fakeTimers = () =>
-      vi.useFakeTimers({
-        toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    const realChannel = window.MessageChannel;
+
+    class FakeChannel {
+      static last: FakeChannel | undefined;
+      readonly port1: {
+        onmessage: ((event: { data: unknown }) => void) | null;
+        close: () => void;
+      } = { onmessage: null, close: vi.fn() };
+      readonly port2 = {};
+      constructor() {
+        FakeChannel.last = this;
+      }
+    }
+
+    afterEach(() => {
+      Object.defineProperty(window, 'MessageChannel', { value: realChannel, configurable: true });
+    });
+
+    /** Uma navegação concluída (o serviço escuta o roteador sozinho). */
+    function navigated() {
+      (TestBed.inject(Router).events as unknown as Subject<unknown>).next(
+        new NavigationEnd(1, '/a', '/a'),
+      );
+    }
+
+    /**
+     * Faz o papel do worker que espera: reúne as abas (esta e as `otherTabs`), pergunta com o mesmo \`swapIfSafe\` do worker
+     * real e, trocando, assume as abas (\`controllerchange\`). Devolve as mensagens que o worker recebeu.
+     */
+    function actAsWorker(worker: FakeWorker, container: EventTarget, otherTabs: AskTab[] = []) {
+      Object.defineProperty(window, 'MessageChannel', { value: FakeChannel, configurable: true });
+      const received: string[] = [];
+      worker.postMessage.mockImplementation((message: { type: string }) => {
+        received.push(message.type);
+        if (message.type !== 'SWAP_IF_SAFE') return;
+        const channel = FakeChannel.last!;
+        const unsaved = TestBed.inject(UnsavedWork);
+        void swapIfSafe(
+          [async () => unsaved.hasUnsaved(), ...otherTabs],
+          async () => undefined,
+        ).then((verdict) => {
+          channel.port1.onmessage?.({ data: verdict });
+          if (verdict === 'swapped') container.dispatchEvent(new Event('controllerchange'));
+        });
       });
+      return received;
+    }
 
     function setupBusy(initial = true) {
       busy = initial;
       const made = setup({});
       TestBed.inject(UnsavedWork).register(() => busy);
-      return made;
+      const waiting = new FakeWorker();
+      made.registration.waiting = waiting;
+      const received = actAsWorker(waiting, made.container);
+      return { ...made, waiting, received };
     }
 
-    it('defers an automatic recovery, keeps the notice visible and leaves the worker and the guard alone', async () => {
-      const { registration, service } = setupBusy();
+    it('defers an automatic recovery: no swap request, no reload, notice visible, guard untouched', async () => {
+      const { service, received } = setupBusy();
       await flush();
-      const waiting = new FakeWorker();
-      registration.waiting = waiting;
       const reload = stubReload();
-      fakeTimers();
 
       expect(service.recoverFromStaleShell('/treino')).toBe(true);
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS * 5);
+      await flush();
 
+      expect(received).toEqual([]);
       expect(reload).not.toHaveBeenCalled();
-      expect(waiting.postMessage).not.toHaveBeenCalled();
       expect(service.updateReady()).toBe(true);
       expect(service.showSkeleton()).toBe(false);
       expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
     });
 
-    it('recovers by itself, once, as soon as the screen is clean', async () => {
-      const { registration, container, service } = setupBusy();
+    it('has no clock: it waits for a safe moment, and a new try to navigate is one', async () => {
+      const { service, received } = setupBusy();
       await flush();
-      const waiting = new FakeWorker();
-      registration.waiting = waiting;
       const { assign, reload } = stubAssign();
-      fakeTimers();
-
       service.recoverFromStaleShell('/treino');
-      // Outros erros do mesmo pedaço, enquanto espera, não abrem outra espera nem recarregam.
-      expect(service.recoverFromStaleShell()).toBe(true);
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS);
-      busy = false;
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS);
-      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
-      container.dispatchEvent(new Event('controllerchange'));
-      await vi.advanceTimersByTimeAsync(0);
 
+      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
+      busy = false;
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(reload).not.toHaveBeenCalled();
+      expect(assign).not.toHaveBeenCalled();
+      vi.useRealTimers();
+
+      expect(service.recoverFromStaleShell('/treino')).toBe(true);
+      await flush();
+      expect(received).toEqual(['SWAP_IF_SAFE']);
       expect(assign).toHaveBeenCalledTimes(1);
       expect(assign).toHaveBeenCalledWith('/treino');
-      expect(reload).not.toHaveBeenCalled();
       expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).not.toBeNull();
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS * 5);
-      expect(assign).toHaveBeenCalledTimes(1);
     });
 
-    it('never reloads over something typed in a real field', async () => {
+    it('reloads when a navigation ends on a clean screen, and drops the target of the old failed one', async () => {
+      const { service } = setupBusy();
+      await flush();
+      const { assign, reload } = stubAssign();
+      service.recoverFromStaleShell('/treino');
+
+      navigated();
+      await flush();
+      expect(reload).not.toHaveBeenCalled();
+
+      busy = false;
+      navigated();
+      await flush();
+      // A pessoa já seguiu para outra tela: recarrega onde ela está, nunca no alvo antigo.
+      expect(assign).not.toHaveBeenCalled();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads when the person comes back to the tab on a clean screen', async () => {
+      const { service } = setupBusy();
+      await flush();
+      const reload = stubReload();
+      service.recoverFromStaleShell();
+      busy = false;
+      await flush();
+      expect(reload).not.toHaveBeenCalled();
+
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('never reloads over text typed in a real field, and goes on once it is gone', async () => {
       const { service } = setup({});
       await flush();
       const reload = stubReload();
@@ -602,14 +675,15 @@ describe('PwaUpdateService', () => {
       document.body.appendChild(input);
       input.value = 'Supino 3x10';
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      fakeTimers();
 
       expect(service.recoverFromStaleShell()).toBe(true);
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS * 3);
+      navigated();
+      await flush();
       expect(reload).not.toHaveBeenCalled();
 
       input.remove();
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS);
+      navigated();
+      await flush();
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
@@ -618,79 +692,223 @@ describe('PwaUpdateService', () => {
       await flush();
       const reload = stubReload();
       const end = TestBed.inject(UnsavedWork).beginRequest();
-      fakeTimers();
 
       service.recoverFromStaleShell();
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS * 2);
+      navigated();
+      await flush();
       expect(reload).not.toHaveBeenCalled();
       end();
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS);
+      navigated();
+      await flush();
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it('checks again right before reloading: work that starts during the swap cancels the reload', async () => {
-      const { registration, container, service } = setupBusy(false);
+    it('lets the tap on the notice update at once with a plain SKIP_WAITING, even with work pending', async () => {
+      const { service, container, waiting } = setupBusy();
       await flush();
-      const waiting = new FakeWorker();
-      // A pessoa começa a digitar enquanto o worker novo assume.
-      waiting.postMessage.mockImplementationOnce(() => {
-        busy = true;
-      });
-      registration.waiting = waiting;
-      const reload = stubReload();
-      fakeTimers();
-
-      service.recoverFromStaleShell();
-      await vi.advanceTimersByTimeAsync(0);
-      container.dispatchEvent(new Event('controllerchange'));
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(reload).not.toHaveBeenCalled();
-      expect(service.applyingUpdate()).toBe(false);
-      expect(service.updateReady()).toBe(true);
-
-      busy = false;
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS);
-      container.dispatchEvent(new Event('controllerchange'));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(reload).toHaveBeenCalledTimes(1);
-    });
-
-    it('lets the tap on the notice update at once, even with work pending', async () => {
-      const { registration, container, service } = setupBusy();
-      await flush();
-      registration.waiting = new FakeWorker();
       const reload = stubReload();
 
       service.applyUpdate();
       container.dispatchEvent(new Event('controllerchange'));
       await flush();
+      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
     it('stops waiting once the person taps the notice', async () => {
-      const { registration, container, service } = setupBusy();
+      const { service, container } = setupBusy();
       await flush();
-      registration.waiting = new FakeWorker();
       const reload = stubReload();
-      fakeTimers();
-
       service.recoverFromStaleShell();
       service.applyUpdate();
       container.dispatchEvent(new Event('controllerchange'));
-      await vi.advanceTimersByTimeAsync(0);
+      await flush();
       expect(reload).toHaveBeenCalledTimes(1);
       busy = false;
-      await vi.advanceTimersByTimeAsync(DEFERRED_RETRY_MS * 3);
+      navigated();
+      await flush();
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it('does not reload from the load watchdog over unsaved work, and frees the screen', async () => {
+    describe('several tabs', () => {
+      it('does not swap while ANOTHER tab has work: nothing changes and the notice stays', async () => {
+        busy = false;
+        const made = setup({});
+        const waiting = new FakeWorker();
+        made.registration.waiting = waiting;
+        let otherBusy = true;
+        const received = actAsWorker(waiting, made.container, [async () => otherBusy]);
+        const caches = stubCaches(['runtime-x']);
+        await flush();
+        const reload = stubReload();
+        const controllerChanged = vi.fn();
+        made.container.addEventListener('controllerchange', controllerChanged);
+
+        made.service.recoverFromStaleShell('/treino');
+        await flush();
+
+        expect(received).toEqual(['SWAP_IF_SAFE']);
+        expect(controllerChanged).not.toHaveBeenCalled();
+        expect(reload).not.toHaveBeenCalled();
+        expect(caches.delete).not.toHaveBeenCalled();
+        expect(made.registration.unregister).not.toHaveBeenCalled();
+        expect(made.service.applyingUpdate()).toBe(false);
+        expect(made.service.updateReady()).toBe(true);
+
+        otherBusy = false;
+        navigated();
+        await flush();
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+
+      it('treats a tab that does not answer as busy', async () => {
+        busy = false;
+        const made = setup({});
+        const waiting = new FakeWorker();
+        made.registration.waiting = waiting;
+        actAsWorker(waiting, made.container, [async () => undefined]);
+        await flush();
+        const reload = stubReload();
+
+        made.service.recoverFromStaleShell();
+        await flush();
+        expect(reload).not.toHaveBeenCalled();
+        expect(made.service.updateReady()).toBe(true);
+      });
+
+      it('does not swap when the worker never answers, or when MessageChannel is missing', async () => {
+        const { service, waiting } = setupBusy(false);
+        waiting.postMessage.mockImplementation(() => undefined);
+        Object.defineProperty(window, 'MessageChannel', {
+          value: FakeChannel,
+          configurable: true,
+        });
+        await flush();
+        const reload = stubReload();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        service.recoverFromStaleShell();
+        await vi.advanceTimersByTimeAsync(UPDATE_SWAP_ASK_TIMEOUT_MS);
+        expect(reload).not.toHaveBeenCalled();
+        expect(service.updateReady()).toBe(true);
+        vi.useRealTimers();
+
+        TestBed.resetTestingModule();
+        sessionStorage.clear();
+        const second = setupBusy(false);
+        Object.defineProperty(window, 'MessageChannel', { value: undefined, configurable: true });
+        await flush();
+        second.service.recoverFromStaleShell();
+        await flush();
+        expect(second.received).toEqual([]);
+        expect(reload).not.toHaveBeenCalled();
+      });
+
+      it('tells the worker the truth when it asks this tab whether it has work', async () => {
+        const { container } = setup({});
+        await flush();
+        const ask = () => {
+          const postMessage = vi.fn();
+          const event = Object.assign(new Event('message'), {
+            data: { type: 'ARE_YOU_BUSY' },
+            ports: [{ postMessage }],
+          });
+          container.dispatchEvent(event);
+          return postMessage;
+        };
+        expect(ask()).toHaveBeenCalledWith({ busy: false });
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+        expect(ask()).toHaveBeenCalledWith({ busy: true });
+        end();
+        const ignored = vi.fn();
+        container.dispatchEvent(
+          Object.assign(new Event('message'), {
+            data: { type: 'OTHER' },
+            ports: [{ postMessage: ignored }],
+          }),
+        );
+        expect(ignored).not.toHaveBeenCalled();
+      });
+
+      it('once the worker swapped, the tab never backs out of the reload (no old shell under the new worker)', async () => {
+        const { service, container } = setupBusy(false);
+        await flush();
+        const reload = stubReload();
+        // A pessoa começa a digitar no instante em que o worker novo assume.
+        container.addEventListener('controllerchange', () => {
+          busy = true;
+        });
+
+        service.recoverFromStaleShell();
+        await flush();
+
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+
+      it('never backs out after the stale worker was dropped, and registers again if the reload fails', async () => {
+        stubFetch();
+        const { service, container, registration, waiting } = setupBusy(false);
+        await flush();
+        // O worker aceita a troca mas nunca assume: no prazo, o último recurso desfaz o registro.
+        waiting.postMessage.mockImplementation(() => {
+          FakeChannel.last!.port1.onmessage?.({ data: 'swapped' });
+        });
+        Object.defineProperty(window, 'MessageChannel', { value: FakeChannel, configurable: true });
+        let slowStep = 0;
+        registration.unregister.mockImplementation(() => {
+          // Trabalho aparece justo depois de o registro ser desfeito: a recarga segue assim mesmo.
+          busy = true;
+          slowStep++;
+          return Promise.resolve(true);
+        });
+        vi.spyOn(window, 'location', 'get').mockReturnValue({
+          ...window.location,
+          reload: () => {
+            throw new Error('bloqueado');
+          },
+        } as Location);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        service.recoverFromStaleShell();
+        await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS + 1);
+        await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+        vi.useRealTimers();
+        await flush();
+
+        expect(slowStep).toBe(1);
+        expect(service.updateError()).toBe(true);
+        // O registro foi desfeito e a recarga falhou: o serviço registra de novo para o app não ficar sem worker.
+        expect(container.register).toHaveBeenCalledTimes(2);
+      });
+
+      it('registers again on the next check once the registration was dropped', async () => {
+        stubFetch();
+        const { service, container, waiting } = setupBusy(false);
+        await flush();
+        waiting.postMessage.mockImplementation(() => {
+          FakeChannel.last!.port1.onmessage?.({ data: 'swapped' });
+        });
+        Object.defineProperty(window, 'MessageChannel', { value: FakeChannel, configurable: true });
+        stubReload();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        service.recoverFromStaleShell();
+        await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS + 1);
+        vi.useRealTimers();
+        await flush();
+        expect(container.register).toHaveBeenCalledTimes(1);
+
+        window.dispatchEvent(new Event('online'));
+        await flush();
+        expect(container.register).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it('from the load watchdog: waits instead of reloading, frees the screen and keeps its own loop guard', async () => {
       sessionStorage.setItem(UPDATE_REFRESHING_KEY, String(Date.now()));
-      fakeTimers();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
       TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: false }] });
       const service = TestBed.inject(PwaUpdateService);
-      TestBed.inject(UnsavedWork).register(() => true, 'outbox');
+      busy = true;
+      TestBed.inject(UnsavedWork).register(() => busy, 'outbox');
       const reload = stubReload();
 
       await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
@@ -698,74 +916,127 @@ describe('PwaUpdateService', () => {
       expect(service.showSkeleton()).toBe(false);
       expect(service.updateReady()).toBe(true);
       expect(sessionStorage.getItem(UPDATE_WATCHDOG_KEY)).toBeNull();
+      vi.useRealTimers();
+
+      busy = false;
+      navigated();
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      // A guarda gravada é a do vigia (não a do pedaço ausente): a página seguinte não repete o ciclo.
+      expect(sessionStorage.getItem(UPDATE_WATCHDOG_KEY)).not.toBeNull();
+      expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
     });
   });
 
   describe('atomic service worker swap', () => {
+    const realChannel = window.MessageChannel;
+
+    class FakeChannel {
+      static last: FakeChannel | undefined;
+      readonly port1: {
+        onmessage: ((event: { data: unknown }) => void) | null;
+        close: () => void;
+      } = { onmessage: null, close: vi.fn() };
+      readonly port2 = {};
+      constructor() {
+        FakeChannel.last = this;
+      }
+    }
+
+    afterEach(() => {
+      Object.defineProperty(window, 'MessageChannel', { value: realChannel, configurable: true });
+    });
+
     async function waitingUpdate(busy: () => boolean = () => false) {
       const made = setup({});
       TestBed.inject(UnsavedWork).register(busy);
+      Object.defineProperty(window, 'MessageChannel', { value: FakeChannel, configurable: true });
       await flush();
       const waiting = new FakeWorker();
       waiting.state = 'installed';
+      const received: string[] = [];
+      waiting.postMessage.mockImplementation((message: { type: string }) => {
+        received.push(message.type);
+        if (message.type !== 'SWAP_IF_SAFE') return;
+        const channel = FakeChannel.last!;
+        void swapIfSafe(
+          [async () => TestBed.inject(UnsavedWork).hasUnsaved()],
+          async () => undefined,
+        ).then((verdict) => {
+          channel.port1.onmessage?.({ data: verdict });
+          if (verdict === 'swapped') made.container.dispatchEvent(new Event('controllerchange'));
+        });
+      });
       made.registration.waiting = waiting;
       made.registration.dispatchEvent(new Event('updatefound'));
       made.service.updateReady.set(true);
-      return { ...made, waiting };
+      return { ...made, waiting, received };
     }
 
-    it('never activates a waiting worker on its own: it waits for the tap, the next cold open or an idle navigation', async () => {
-      const { service, waiting } = await waitingUpdate();
+    function navigated() {
+      (TestBed.inject(Router).events as unknown as Subject<unknown>).next(
+        new NavigationEnd(1, '/a', '/a'),
+      );
+    }
+
+    it('never activates a waiting worker on its own: not on load, update found, coming back online or visibility', async () => {
+      const { registration, waiting, received, container } = await waitingUpdate();
+      const controllerChanged = vi.fn();
+      container.addEventListener('controllerchange', controllerChanged);
+      registration.dispatchEvent(new Event('updatefound'));
+      window.dispatchEvent(new Event('online'));
+      window.dispatchEvent(new Event('load'));
+      document.dispatchEvent(new Event('visibilitychange'));
       await flush();
-      expect(service.updateReady()).toBe(true);
+      expect(received).toEqual([]);
       expect(waiting.postMessage).not.toHaveBeenCalled();
+      expect(controllerChanged).not.toHaveBeenCalled();
     });
 
     it('does nothing on a navigation when there is no new version waiting', async () => {
       const { service } = setup({});
       await flush();
       const reload = stubReload();
-      service.applyOnIdleNavigation();
+      navigated();
       await flush();
+      expect(service.updateReady()).toBe(false);
       expect(reload).not.toHaveBeenCalled();
       expect(sessionStorage.getItem(IDLE_SWAP_KEY)).toBeNull();
     });
 
-    it('swaps and reloads on a navigation when the screen is idle', async () => {
-      const { service, container, waiting } = await waitingUpdate();
+    it('swaps (after asking every tab) and reloads on a navigation when everything is idle', async () => {
+      const { received } = await waitingUpdate();
       const reload = stubReload();
-      service.applyOnIdleNavigation();
-      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
-      container.dispatchEvent(new Event('controllerchange'));
+      navigated();
       await flush();
+      expect(received).toEqual(['SWAP_IF_SAFE']);
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
     it('leaves the notice up and the worker untouched on a navigation with unsaved work', async () => {
-      const { service, waiting } = await waitingUpdate(() => true);
+      const { service, received } = await waitingUpdate(() => true);
       const reload = stubReload();
-      service.applyOnIdleNavigation();
+      navigated();
       await flush();
-      expect(waiting.postMessage).not.toHaveBeenCalled();
+      expect(received).toEqual([]);
       expect(reload).not.toHaveBeenCalled();
       expect(service.updateReady()).toBe(true);
       expect(sessionStorage.getItem(IDLE_SWAP_KEY)).toBeNull();
     });
 
     it('tries only once per guard window, so a swap that fails never loops', async () => {
-      const { service, container, waiting } = await waitingUpdate();
+      const { service, received } = await waitingUpdate();
       const reload = stubReload();
-      service.applyOnIdleNavigation();
-      container.dispatchEvent(new Event('controllerchange'));
+      navigated();
       await flush();
       expect(reload).toHaveBeenCalledTimes(1);
 
       // A recarga não aconteceu de verdade neste ambiente: a mesma instância navega de novo dentro da janela.
       Object.assign(service, { reloading: false, applying: false });
-      waiting.postMessage.mockClear();
-      service.applyOnIdleNavigation();
+      received.length = 0;
+      navigated();
       await flush();
-      expect(waiting.postMessage).not.toHaveBeenCalled();
+      expect(received).toEqual([]);
       expect(reload).toHaveBeenCalledTimes(1);
     });
   });

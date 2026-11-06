@@ -9,6 +9,7 @@ import {
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { swapIfSafe } from './sw-swap-gate';
 import { SCOPED_MODULE_SLUGS } from './app/core/modules/module-slugs';
 import { EXERCISE_ART_CACHE } from './app/modules/training/illustrations/illustration-cache';
 
@@ -17,11 +18,41 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: (PrecacheEntry | string)[];
 };
 
-// Atualização controlada: um worker novo espera até o app pedir (botão "Atualizar") para não trocar a
-// casca no meio do uso. Na primeira instalação não há worker anterior, então ele já assume sozinho.
+// Atualização controlada: um worker novo espera até a pessoa tocar em "Atualizar" (SKIP_WAITING) ou até a próxima abertura a
+// frio. A troca automática (SWAP_IF_SAFE, pedida pela aba numa navegação ociosa ou na recuperação de um pedaço ausente) só
+// acontece se NENHUMA aba aberta tiver trabalho não salvo, porque o `clientsClaim` troca o worker de todas. Na primeira
+// instalação não há worker anterior, então ele já assume sozinho.
+const TAB_ANSWER_TIMEOUT_MS = 1_500;
+
+function askTab(client: Client): Promise<boolean | undefined> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => {
+      channel.port1.close();
+      resolve(undefined);
+    }, TAB_ANSWER_TIMEOUT_MS);
+    channel.port1.onmessage = (event: MessageEvent) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      resolve((event.data as { busy?: boolean } | null)?.busy !== false);
+    };
+    client.postMessage({ type: 'ARE_YOU_BUSY' }, [channel.port2]);
+  });
+}
+
+async function swapWhenEveryTabIsFree(reply: MessagePort | undefined): Promise<void> {
+  const tabs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const verdict = await swapIfSafe(
+    tabs.map((tab) => () => askTab(tab)),
+    () => self.skipWaiting(),
+  );
+  reply?.postMessage(verdict);
+}
+
 self.addEventListener('message', (event) => {
-  if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING')
-    void self.skipWaiting();
+  const type = (event.data as { type?: string } | undefined)?.type;
+  if (type === 'SKIP_WAITING') void self.skipWaiting();
+  else if (type === 'SWAP_IF_SAFE') event.waitUntil(swapWhenEveryTabIsFree(event.ports[0]));
 });
 clientsClaim();
 cleanupOutdatedCaches();
