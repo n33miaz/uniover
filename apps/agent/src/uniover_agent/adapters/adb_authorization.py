@@ -21,6 +21,7 @@ Então aqui a chave não é trocada, e sim **guardada e vigiada**:
 Nada aqui registra o conteúdo da chave: só um resumo curto dela (SHA-256) entra no arquivo e no log.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -267,7 +268,7 @@ class AdbAuthorization:
         self._stamp = _stamp(self._path)
         # Uma mudança que não chegou ao disco (gravação falhou): se outro processo gravar depois, a
         # releitura a descarta, e isso precisa aparecer no log.
-        self._unsaved = False
+        self._pending: AdbAuthRecord | None = None
 
     def _sync(self) -> None:
         """Relê o arquivo se outro processo (o `tv-volume`, outro agente) o gravou depois.
@@ -277,14 +278,28 @@ class AdbAuthorization:
         """
         stamp = _stamp(self._path)
         if stamp != self._stamp:
-            if self._unsaved:
-                _log.warning(
-                    "outro processo gravou o estado da permissão do ADB; "
-                    "a mudança que não chegou ao disco foi descartada"
-                )
-                self._unsaved = False
+            pending, self._pending = self._pending, None
             self._record = self._load()
             self._stamp = stamp
+            if pending is not None:
+                self._reconcile(pending)
+
+    def _reconcile(self, pending: AdbAuthRecord) -> None:
+        """Uma mudança que não chegou ao disco e outro processo gravou depois: **a mais restritiva
+        vence**. Um `needs_user` pendente é reaplicado por cima do que foi relido (senão um
+        `verified` antigo voltaria a liberar conexão sozinha depois de a TV pedir o aviso de novo);
+        qualquer outra mudança pendente é descartada, com aviso no log."""
+        if pending.state == NEEDS_USER and self._record.state != NEEDS_USER:
+            _log.warning(
+                "outro processo gravou o estado da permissão do ADB; "
+                "a recusa da TV que não chegou ao disco foi reaplicada"
+            )
+            self._save(_replace(self._record, state=NEEDS_USER, serial=""))
+        else:
+            _log.warning(
+                "outro processo gravou o estado da permissão do ADB; "
+                "a mudança que não chegou ao disco foi descartada"
+            )
 
     @property
     def record(self) -> AdbAuthRecord:
@@ -462,7 +477,9 @@ class AdbAuthorization:
         """A TV pediu o aviso de novo: nenhuma conexão sozinha até um pedido da pessoa."""
         self._sync()
         if self._record.state != NEEDS_USER:
-            self._save(_replace(self._record, state=NEEDS_USER))
+            # O serial se lê de novo na próxima prova (depois de um reset o aparelho costuma ser o
+            # mesmo, mas a leitura é o que confere isso) e o passo do vencimento recomeça junto.
+            self._save(_replace(self._record, state=NEEDS_USER, serial=""))
 
     def mark_timeout_disabled(self) -> None:
         self._sync()
@@ -515,25 +532,39 @@ class AdbAuthorization:
             temporary.write_text(json.dumps(asdict(record)), encoding="utf-8")
             _replace_file(temporary, self._path)
             self._stamp = _stamp(self._path)
-            self._unsaved = False
+            self._pending = None
         except OSError as exc:
-            self._unsaved = True
+            self._pending = record
+            temporary.unlink(missing_ok=True)  # a troca falhou: não deixa o `.tmp` para trás
             # Sem disco o estado fica só na memória: o agente segue, mas não lembra ao reiniciar.
             _log.warning(
                 "não consegui gravar o estado da permissão do ADB (%s)", type(exc).__name__
             )
 
 
+def _in_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 def _replace_file(source: Path, target: Path) -> None:
     """`os.replace` com poucas tentativas: no Windows, um antivírus ou o indexador segurando o
-    arquivo por um instante faz a troca falhar com `PermissionError` e logo passar."""
+    arquivo por um instante faz a troca falhar com `PermissionError` e logo passar.
+
+    Dentro do laço de eventos **nunca dorme** (travaria o agente todo): as tentativas seguem sem
+    pausa. Fora dele (linha de comando) há uma pausa curta entre elas."""
+    pause = not _in_event_loop()
     for attempt in range(_REPLACE_ATTEMPTS):
         try:
             os.replace(source, target)
         except PermissionError:
             if attempt == _REPLACE_ATTEMPTS - 1:
                 raise
-            time.sleep(0.02 * (attempt + 1))
+            if pause:
+                time.sleep(0.02 * (attempt + 1))
         else:
             return
 
