@@ -606,7 +606,7 @@ describe('TvStore', () => {
 
     it('opening an app right after the pointerdown waits for the presence already on its way', async () => {
       const order: string[] = [];
-      let release = () => {};
+      let release: () => void = () => undefined;
       api.presence.mockImplementation(
         () =>
           new Promise<void>((resolve) => {
@@ -630,7 +630,7 @@ describe('TvStore', () => {
 
     it('cleaning right after the pointerdown waits for the presence already on its way', async () => {
       const order: string[] = [];
-      let release = () => {};
+      let release: () => void = () => undefined;
       api.presence.mockImplementation(
         () =>
           new Promise<void>((resolve) => {
