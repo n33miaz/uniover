@@ -449,7 +449,7 @@ test.describe('dispositivos', () => {
     await expect(page.locator('.item').first().locator('.startup-mark')).toHaveText('!');
     await expect(page.locator('.item').nth(2).locator('.startup')).toHaveCount(0);
     await expect(page.locator('.item').nth(2).locator('.connection')).toContainText(
-      'Desligado desde',
+      'Sem contato desde',
     );
     await expect(page.locator('.item').nth(3).locator('.startup')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
@@ -488,7 +488,7 @@ test.describe('dispositivos', () => {
     await expect(first.locator('.last-seen')).toContainText(/Visto (agora|há)/);
     const second = page.locator('.item').nth(1);
     await expect(second.locator('.connection')).toHaveText(
-      /Desligado desde \d{2}\/\d{2}, \d{2}:\d{2}/,
+      /Sem contato desde \d{2}\/\d{2}, \d{2}:\d{2}/,
     );
     await expect(second.locator('.version')).toHaveCount(0);
     // Desconectado: não há a quem pedir registro, atualização ou reinício.

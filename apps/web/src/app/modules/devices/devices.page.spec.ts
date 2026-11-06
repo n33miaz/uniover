@@ -165,7 +165,7 @@ describe('DevicesPage', () => {
       ]);
       const { el } = await render();
       expect(el.querySelector('.startup')?.textContent).toContain('Credencial recusada');
-      expect(el.querySelector('.connection')?.textContent).toContain('Desligado desde');
+      expect(el.querySelector('.connection')?.textContent).toContain('Sem contato desde');
     });
 
     it('stays quiet for a connected computer and for one without clues', async () => {
@@ -186,6 +186,26 @@ describe('DevicesPage', () => {
       api.beacons.mockResolvedValue([]);
       const quiet = await render();
       expect(quiet.el.querySelector('.startup')).toBeNull();
+    });
+
+    it('says "connected, but refused" for a connected computer whose hello was refused', async () => {
+      // O hello recusado nasce depois da conexão e antes da última mensagem: a hora da recusa é anterior ao último contato.
+      api.list.mockResolvedValue([{ ...PC, lastSeenAt: '2026-10-20T10:00:00Z' }]);
+      api.beacons.mockResolvedValue([
+        {
+          agentId: 'a1',
+          stage: null,
+          code: null,
+          at: null,
+          rejectReason: 'protocol',
+          rejectedAt: '2026-10-20T09:00:00Z',
+        },
+      ]);
+      const { el } = await render();
+      expect(el.querySelector('.connection')?.textContent).toContain('Conectado agora');
+      const line = el.querySelector('.startup')!;
+      expect(line.textContent).toContain('Conectado, mas a versão do agente foi recusada');
+      expect(line.getAttribute('role')).toBeNull();
     });
 
     it('keeps the list when the clues cannot be read', async () => {
@@ -265,7 +285,7 @@ describe('DevicesPage', () => {
     expect(item.querySelector('.version')).toBeNull();
     expect(item.querySelector('.tv')?.textContent).toBe('Sem TV vinculada');
     expect(item.querySelector('.connection')?.textContent?.trim()).toMatch(
-      /^Desligado desde \d{2}\/\d{2}, \d{2}:\d{2}$/,
+      /^Sem contato desde \d{2}\/\d{2}, \d{2}:\d{2}$/,
     );
   });
 
