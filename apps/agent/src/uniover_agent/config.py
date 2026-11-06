@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     # uma pausa entre as teclas, para o caso de a TV perder letras quando elas chegam coladas.
     tv_text_by_keys: bool = False
     tv_text_key_pause_ms: int = Field(default=0, ge=0, le=500)
+    # Digitação pelo ADB: tamanho máximo de um grupo (um `input text`; uma falha custa um grupo) e
+    # quanto o primeiro grupo espera depois de um envio pelo Remote v2, que só prova que o pacote
+    # entrou no socket (evita o ADB digitar antes do que o Remote ainda não entregou).
+    tv_text_adb_group_chars: int = Field(default=80, ge=1, le=200)
+    tv_text_remote_settle_ms: int = Field(default=150, ge=0, le=2000)
     # Cursor do lote IME do Remote v2. `library` repete o formato da biblioteca até a medição na
     # TV escolher outro; os demais modos existem para o roteiro de diagnóstico.
     tv_text_cursor: Literal["library", "chunk_end", "field_end"] = "library"

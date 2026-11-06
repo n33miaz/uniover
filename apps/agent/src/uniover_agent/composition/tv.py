@@ -254,6 +254,8 @@ def build_driver_setup(
         monotonic=clock.monotonic,
         keys=settings.tv_text_by_keys,
         key_pause_seconds=settings.tv_text_key_pause_ms / 1000,
+        remote_settle_seconds=settings.tv_text_remote_settle_ms / 1000,
+        adb_group_chars=settings.tv_text_adb_group_chars,
         sleep=clock.sleep,
     )
     # O estado real do campo (quando a TV o manda) semeia o diff da digitação; outro app em foco ou

@@ -886,7 +886,10 @@ class AdbTv:
         async with self._lock:
             self.last_input_wait_seconds = self._monotonic() - asked
             await self._ensure_connected_locked()
-            await self._shell(command)
+            output = await self._shell(command)
+        if not command_succeeded(output):
+            # Pode ter digitado parte do grupo: quem chama não repete, só avisa.
+            raise AdbCommandFailed("a TV não confirmou a digitação")
 
     # --- limpeza da TV ------------------------------------------------------------------------
     # Todos são comandos fixos (o único dado variável, o pacote, é validado e vai entre aspas). Um
