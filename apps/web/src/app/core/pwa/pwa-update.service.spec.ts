@@ -21,7 +21,7 @@ import {
 import { registerServiceWorker } from './register-sw';
 import { OTHER_TABS_ANSWER_TIMEOUT_MS, answerTabBusyQueries } from './tab-busy';
 import { FakeBroadcastChannel, installFakeBroadcastChannel } from './tab-busy-test-kit';
-import { UnsavedWork } from './unsaved-work';
+import { AUTO_REQUEST_MAX_AGE_MS, UnsavedWork } from './unsaved-work';
 
 class FakeWorker extends EventTarget {
   state = 'installing';
@@ -675,26 +675,6 @@ describe('PwaUpdateService', () => {
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it('never reloads over text typed in a real field, and goes on once it is gone', async () => {
-      const { service } = setup({});
-      await flush();
-      const reload = stubReload();
-      const input = document.createElement('input');
-      document.body.appendChild(input);
-      input.value = 'Supino 3x10';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-
-      expect(service.recoverFromStaleShell()).toBe(true);
-      navigated();
-      await flush();
-      expect(reload).not.toHaveBeenCalled();
-
-      input.remove();
-      navigated();
-      await flush();
-      expect(reload).toHaveBeenCalledTimes(1);
-    });
-
     it('holds the reload while a write is in flight', async () => {
       const { service } = setup({});
       await flush();
@@ -1212,6 +1192,24 @@ describe('PwaUpdateService', () => {
       expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
     });
 
+    it('lets an automatic reload go on after 5 minutes of a request that never answers', async () => {
+      const { service } = setup({});
+      await flush();
+      const reload = stubReload();
+      vi.useFakeTimers({ toFake: ['Date'] });
+      TestBed.inject(UnsavedWork).beginRequest();
+
+      service.recoverFromStaleShell();
+      navigated();
+      await flush();
+      expect(reload).not.toHaveBeenCalled();
+
+      vi.setSystemTime(Date.now() + AUTO_REQUEST_MAX_AGE_MS + 1);
+      navigated();
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
     it('checks again right before updating: text typed while it was asking the other tabs brings the dialog', async () => {
       stubLocks(2);
       otherTab(() => false);
@@ -1339,6 +1337,29 @@ describe('PwaUpdateService', () => {
         end();
         await vi.advanceTimersByTimeAsync(200);
         await decided;
+
+        expect(service.confirmingUpdate()).toBe('mine');
+        expect(service.updateDeciding()).toBe(false);
+        expect(waiting.postMessage).not.toHaveBeenCalled();
+      });
+
+      it('after the person accepted losing one dirty editor, a different editor that turns dirty during the wait asks again', async () => {
+        const { service, waiting } = setupWaiting(true);
+        await flush();
+        stubReload();
+        fakeClock();
+
+        await service.applyUpdate();
+        expect(service.confirmingUpdate()).toBe('mine');
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+        let another = false;
+        TestBed.inject(UnsavedWork).register(() => another, 'form');
+        const confirmed = service.confirmUpdate();
+        await vi.advanceTimersByTimeAsync(300);
+        another = true;
+        end();
+        await vi.advanceTimersByTimeAsync(200);
+        await confirmed;
 
         expect(service.confirmingUpdate()).toBe('mine');
         expect(service.updateDeciding()).toBe(false);

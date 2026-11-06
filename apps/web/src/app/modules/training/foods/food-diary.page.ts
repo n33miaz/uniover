@@ -29,13 +29,7 @@ type SearchState =
           ‹
         </button>
         <label for="diary-day" i18n="@@training.food.day">Dia</label>
-        <input
-          id="diary-day"
-          type="date"
-          data-unsaved-ignore
-          [value]="day()"
-          (change)="changeDay($event)"
-        />
+        <input id="diary-day" type="date" [value]="day()" (change)="changeDay($event)" />
         <button
           type="button"
           class="day-step"
