@@ -101,6 +101,7 @@ from uniover_agent.core.tv.livre import (
     tv_livre_handler,
     tv_livre_photo_handler,
 )
+from uniover_agent.core.tv.pairing import PAIR_CAPABILITY, TvPairing
 from uniover_agent.ports import (
     AdbError,
     AdbUnauthorized,
@@ -274,12 +275,34 @@ def build_driver_setup(
         text=text,
         known=known,
     )
+    attach_pairing(setup, settings, host, cert_dir, remote)
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
     adb = compose_adb(setup, settings, host, clock)  # [composição: adb]
     if adb is not None:
         manager.set_volume_reader(volume_reader_when_push_is_silent(manager, adb))
     compose_watchdog(setup, settings, host, clock, adb)  # [composição: vigia]
     return setup
+
+
+def attach_pairing(
+    setup: TvSetup, settings: Settings, host: str, cert_dir: Path, remote: AndroidTvRemoteV2
+) -> None:
+    """Acrescenta `tv.pair.v1`: o dono pareia a Android TV de novo pelo app (só por toque dele)."""
+
+    async def run(ask_code: Callable[[], Awaitable[str]]) -> None:
+        await pair_tv(host, settings.tv_client_name, cert_dir, ask_code)
+
+    async def paired() -> None:
+        # O contexto TLS fica no cliente da biblioteca: um par refeito pede um cliente novo.
+        remote.forget_client()
+        await setup.manager.pairing_done()
+
+    pairing = TvPairing(run, paired)
+    setup.handlers["tv.pair.v1"] = pairing.handler()
+    # A espera pelo código e pela TV não pode segurar as teclas na fila.
+    setup.background_commands.add("tv.pair.v1")
+    setup.capabilities.append(PAIR_CAPABILITY)
+    setup.closers.append(pairing.aclose)
 
 
 def volume_reader_when_push_is_silent(

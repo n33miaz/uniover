@@ -405,6 +405,13 @@ Pareamento (uma vez):
 4. Defina `UNIOVER_TV_HOST` (ou `tv_host` no `agent.toml`) e rode `uniover-agent run`. O agente só declara a
    capacidade `tv.remote` à API se o endereço estiver definido **e** o certificado existir.
 
+Parear de novo pelo app (Android TV): se a TV deixar de aceitar o certificado (por três recusas confirmadas), o
+estado vira `not_paired` e o agente para de insistir; o app mostra "Parear de novo" só ao dono. O toque manda
+`tv.pair.v1` sem código (a TV mostra o código de 6 caracteres) e, depois que o dono o digita, com `code` (o agente
+conclui, reabre a sessão e o estado sai de `not_paired`). O agente nunca inicia isto sozinho, o código nunca vai para
+registro, auditoria nem mensagem de erro, e o certificado já existente é reaproveitado. A capacidade `tv.pair.v1` e o
+estado `not_paired` só vão à API depois de ela os listar em `features` (uma API anterior os recusaria).
+
 Comportamentos que valem saber:
 
 - **Dormir não é desligar.** Hibernando, o estado publicado é `connection: hibernating` e `power: unknown`; o

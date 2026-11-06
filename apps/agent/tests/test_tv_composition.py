@@ -5,6 +5,7 @@ O controle da TV é o dublê (`FakeTvRemote`); a API é o servidor WebSocket fal
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -90,9 +91,39 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
         "tv.wake.v1",
         "tv.app.launch.v1",
         "tv.discover.v1",
+        "tv.pair.v1",
     }
+    assert "tv.pair.v1" in setup.background_commands
     assert setup.background == []
     assert setup.after_hello == []
+
+
+async def test_the_composed_pairing_asks_the_tv_for_a_code_and_reopens_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    paired_with: list[tuple[str, str, Path]] = []
+
+    async def fake_pair_tv(
+        host: str, client_name: str, cert_dir: Path, ask_code: Callable[[], Awaitable[str]]
+    ) -> None:
+        paired_with.append((host, client_name, cert_dir))
+        assert await ask_code() == "A1B2C3"
+
+    monkeypatch.setattr(tv_module, "pair_tv", fake_pair_tv)
+    setup = make_tv(Settings(tv_host=TV_HOST, tv_client_name="Casa"))
+    assert setup is not None
+    handler = setup.handlers["tv.pair.v1"]
+    shown = await handler(Command("1", "tv.pair.v1", {}))
+    assert shown.status is ResultStatus.OK
+    assert remote.connects == 0  # pedir o código nunca abre a sessão nem envia tecla
+    done = await handler(Command("2", "tv.pair.v1", {"code": "A1B2C3"}))
+    assert done.status is ResultStatus.OK
+    assert paired_with == [(TV_HOST, "Casa", tv_cert_dir("tv"))]
+    assert remote.forgotten == 1
+    assert remote.keys == []
+    assert setup.manager.snapshot().connection == "hot"
 
 
 def test_text_ime_options_are_passed_to_the_android_adapter(

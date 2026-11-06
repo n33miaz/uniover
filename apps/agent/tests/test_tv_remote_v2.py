@@ -1117,3 +1117,25 @@ async def test_a_hook_that_cannot_be_installed_does_not_stop_the_connection(
         finally:
             await adapter.disconnect()
     assert "sigo sem ela" in caplog.text
+
+
+async def test_forgetting_the_client_makes_the_next_connection_read_the_certificate_again(
+    tmp_path: Path,
+) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        first = adapter._client
+        await adapter.disconnect()
+        # O mesmo cliente (e o contexto TLS dele) serve a próxima conexão...
+        await adapter.connect()
+        assert adapter._client is first
+        await adapter.disconnect()
+        # ...até um pareamento novo pedir o esquecimento.
+        adapter.forget_client()
+        assert adapter._client is None
+        await adapter.connect()
+        try:
+            assert adapter._client is not None and adapter._client is not first
+        finally:
+            await adapter.disconnect()
