@@ -9,7 +9,7 @@ import {
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
-import { provideRouter, withNavigationErrorHandler } from '@angular/router';
+import { NavigationEnd, Router, provideRouter, withNavigationErrorHandler } from '@angular/router';
 import { routes } from './app.routes';
 import { idempotencyInterceptor } from './core/api/idempotency.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
@@ -20,6 +20,7 @@ import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
+import { UnsavedWork, unsavedWorkInterceptor } from './core/pwa/unsaved-work';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -33,10 +34,23 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(
       withFetch(),
       // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.
-      withInterceptors([connectivityInterceptor, authInterceptor, idempotencyInterceptor]),
+      withInterceptors([
+        connectivityInterceptor,
+        unsavedWorkInterceptor,
+        authInterceptor,
+        idempotencyInterceptor,
+      ]),
     ),
     // Registra o service worker sem segurar a primeira tela (só em produção).
     provideAppInitializer(() => inject(PwaUpdateService).start()),
+    // Com versão nova esperando, a troca acontece numa navegação ociosa (nada digitado, fila vazia, nada em voo).
+    provideAppInitializer(() => {
+      const pwa = inject(PwaUpdateService);
+      const subscription = inject(Router).events.subscribe((event) => {
+        if (event instanceof NavigationEnd) pwa.applyOnIdleNavigation();
+      });
+      inject(DestroyRef).onDestroy(() => subscription.unsubscribe());
+    }),
     // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).
     provideAppInitializer(() => inject(InstallHintService).start()),
     // Mantém --kb-inset (teclado virtual) para os rodapés fixos subirem junto.
@@ -57,9 +71,14 @@ export const appConfig: ApplicationConfig = {
     // a conta aparece. O import dinâmico deixa o banco local e o motor fora do pacote inicial: a primeira tela não espera.
     provideAppInitializer(() => {
       const injector = inject(Injector);
-      void import('./core/offline-queue/queue-scopes').then(({ QueueScopes }) =>
-        injector.get(QueueScopes).follow(),
-      );
+      void import('./core/offline-queue/queue-scopes').then(({ QueueScopes }) => {
+        const scopes = injector.get(QueueScopes);
+        scopes.follow();
+        // Itens esperando ou em voo na fila de saída seguram a recarga automática (ficam no aparelho, mas a pessoa espera o envio).
+        injector
+          .get(UnsavedWork)
+          .register(() => (scopes.active()?.store.pendingCount() ?? 0) > 0, 'outbox');
+      });
     }),
   ],
 };

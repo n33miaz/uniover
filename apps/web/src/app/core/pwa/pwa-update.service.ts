@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, InjectionToken, computed, inject, isDevMode, signal } from '@angular/core';
 import { registerServiceWorker } from './register-sw';
+import { UnsavedWork } from './unsaved-work';
 
 /** Liga o service worker só fora do modo de desenvolvimento; os testes trocam este valor. */
 export const PWA_ENABLED = new InjectionToken<boolean>('PWA_ENABLED', {
@@ -25,11 +26,16 @@ export const FIRST_CONTENT_WATCHDOG_MS = 10_000;
 export const UPDATE_FLAG_MAX_AGE_MS = 60_000;
 /** Depois de uma recuperação automática, outra só vale passada esta janela: nunca há laço de recarga. */
 export const AUTO_RECOVERY_GUARD_MS = 60_000;
+/** Com trabalho não salvo, a recarga automática espera; de quanto em quanto tempo se confere se a tela já está limpa. */
+export const DEFERRED_RETRY_MS = 3_000;
+/** A troca na navegação ociosa tem a mesma guarda contra laço das outras recuperações automáticas. */
+export const IDLE_SWAP_GUARD_MS = 60_000;
 
 /** Chaves do `sessionStorage` (por aba): a marca de atualização em curso e as guardas contra laço. */
 export const UPDATE_REFRESHING_KEY = 'uniover.update.refreshing';
 export const UPDATE_WATCHDOG_KEY = 'uniover.update.watchdog';
 export const CHUNK_RECOVERY_KEY = 'uniover.update.chunk-recovery';
+export const IDLE_SWAP_KEY = 'uniover.update.idle-swap';
 
 /** Caches que a limpeza nunca apaga: o precache (a casca atual, para funcionar offline) e a arte dos exercícios. */
 function isProtectedCache(name: string): boolean {
@@ -72,11 +78,17 @@ function guardActive(win: Window, key: string, windowMs: number): boolean {
  * usuário aceita, troca de verdade: espera o worker novo assumir a página, limpa os caches de execução que podem ter
  * conteúdo velho e só então recarrega, uma vez. O mesmo caminho serve para se recuperar de uma casca antiga que pede
  * um pedaço de código que já não existe (ver `chunk-error.ts`).
+ *
+ * A troca (ativar o worker novo e recarregar) só acontece num momento seguro: quando a pessoa toca no aviso, na próxima
+ * abertura a frio (o worker novo espera até lá), ou numa navegação ociosa. Os caminhos automáticos conferem o
+ * `UnsavedWork` (formulário sujo, fila de saída, escrita em voo, treino aberto): havendo algo, adiam e mostram o aviso
+ * discreto, e a conferência se repete até a tela ficar limpa, logo antes de ativar e de novo logo antes de recarregar.
  */
 @Injectable({ providedIn: 'root' })
 export class PwaUpdateService {
   private readonly win = inject(DOCUMENT).defaultView;
   private readonly enabled = inject(PWA_ENABLED);
+  private readonly unsaved = inject(UnsavedWork);
   private registration: ServiceWorkerRegistration | undefined;
   private started = false;
   private registering = false;
@@ -84,6 +96,7 @@ export class PwaUpdateService {
   private reloading = false;
   private lastUpdateCheckAt: number | null = null;
   private watchdogTimer: number | undefined;
+  private deferTimer: number | undefined;
   /** Para onde a recarga vai quando a recuperação nasceu de uma navegação que falhou (senão, recarrega onde está). */
   private resumeUrl: string | undefined;
   private readonly watchedWorkers = new WeakSet<ServiceWorker>();
@@ -131,7 +144,22 @@ export class PwaUpdateService {
   applyUpdate(): void {
     if (this.applying) return;
     this.updateError.set(false);
-    void this.refresh();
+    this.cancelDeferral();
+    void this.refresh(false);
+  }
+
+  /**
+   * A navegação terminou. Com versão nova esperando e a tela ociosa (nada digitado, fila vazia, nenhuma escrita em voo)
+   * é o melhor momento para trocar sem a pessoa notar. No máximo uma vez por janela; ocupado, não faz nada (o aviso
+   * continua e a próxima navegação tenta de novo).
+   */
+  applyOnIdleNavigation(): void {
+    const win = this.win;
+    if (!win || this.applying || !this.updateReady() || this.unsaved.hasUnsaved()) return;
+    if (guardActive(win, IDLE_SWAP_KEY, IDLE_SWAP_GUARD_MS)) return;
+    writeStamp(win, IDLE_SWAP_KEY);
+    this.cancelDeferral();
+    void this.refresh(true);
   }
 
   /**
@@ -144,11 +172,21 @@ export class PwaUpdateService {
   recoverFromStaleShell(target?: string): boolean {
     if (this.applying) return true;
     const win = this.win;
-    if (!win || guardActive(win, CHUNK_RECOVERY_KEY, AUTO_RECOVERY_GUARD_MS)) return false;
-    writeStamp(win, CHUNK_RECOVERY_KEY);
+    if (!win) return false;
+    if (
+      this.deferTimer === undefined &&
+      guardActive(win, CHUNK_RECOVERY_KEY, AUTO_RECOVERY_GUARD_MS)
+    )
+      return false;
     // Só caminhos do próprio app: nada de `//host` nem de esquema.
     if (target && /^\/(?!\/)/.test(target)) this.resumeUrl = target;
-    void this.refresh();
+    // Trabalho não salvo: nada de recarregar agora. O aviso fica à vista e a recarga espera a tela limpar (ou o toque).
+    if (this.deferTimer !== undefined || this.unsaved.hasUnsaved()) {
+      this.deferReload(win);
+      return true;
+    }
+    writeStamp(win, CHUNK_RECOVERY_KEY);
+    void this.refresh(true);
     return true;
   }
 
@@ -171,11 +209,51 @@ export class PwaUpdateService {
       this.bootRefreshing.set(false);
       return;
     }
+    if (this.unsaved.hasUnsaved()) {
+      this.bootRefreshing.set(false);
+      this.deferReload(win);
+      return;
+    }
     writeStamp(win, UPDATE_WATCHDOG_KEY);
-    void this.refresh();
+    void this.refresh(true);
   }
 
-  private async refresh(): Promise<void> {
+  /** Deixa o aviso de versão nova à vista e confere de tempos em tempos se já dá para recarregar sem perder nada. */
+  private deferReload(win: Window): void {
+    if (this.deferTimer !== undefined) return;
+    this.updateReady.set(true);
+    this.deferTimer = win.setInterval(() => {
+      if (this.applying || this.unsaved.hasUnsaved()) return;
+      this.cancelDeferral();
+      writeStamp(win, CHUNK_RECOVERY_KEY);
+      void this.refresh(true);
+    }, DEFERRED_RETRY_MS);
+  }
+
+  private cancelDeferral(): void {
+    if (this.deferTimer === undefined) return;
+    this.win?.clearInterval(this.deferTimer);
+    this.deferTimer = undefined;
+  }
+
+  /** Apareceu trabalho não salvo no meio de uma recarga automática: larga a recarga e espera a tela limpar. */
+  private resumeAfterWork(): void {
+    this.applying = false;
+    this.applyingUpdate.set(false);
+    const win = this.win;
+    if (win) this.deferReload(win);
+  }
+
+  /**
+   * `automatic`: o caminho não nasceu de um toque. Ele reconfere o trabalho não salvo antes de ativar o worker novo e antes de
+   * recarregar (a espera pelo worker leva segundos e a pessoa pode ter começado a digitar); se apareceu algo, desiste da
+   * recarga, devolve a tela e volta a esperar.
+   */
+  private async refresh(automatic: boolean): Promise<void> {
+    if (automatic && this.unsaved.hasUnsaved()) {
+      this.resumeAfterWork();
+      return;
+    }
     this.applying = true;
     this.applyingUpdate.set(true);
     let tookOver = false;
@@ -189,6 +267,10 @@ export class PwaUpdateService {
     // próprio precache) e o aviso voltaria; então o registro é desfeito para a recarga vir da rede e a página nova
     // registrar o worker de novo.
     if (!tookOver) await this.dropStaleWorker();
+    if (automatic && this.unsaved.hasUnsaved()) {
+      this.resumeAfterWork();
+      return;
+    }
     this.reload();
   }
 
