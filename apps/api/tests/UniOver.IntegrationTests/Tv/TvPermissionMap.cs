@@ -69,6 +69,7 @@ internal static class TvPermissionMap
         new("POST", "/api/v1/tv/keys", "tv:control", KeyBody),
         new("POST", "/api/v1/tv/text", "tv:control", TextBody),
         new("POST", "/api/v1/tv/wake", "tv:control"),
+        new("POST", "/api/v1/tv/presence", "tv:control"),
         new("POST", "/api/v1/tv/permission/request", "tv:control"),
         new("POST", "/api/v1/tv/cleanup", "tv:control"),
         new("POST", "/api/v1/tv/power/off", "tv:power"),
