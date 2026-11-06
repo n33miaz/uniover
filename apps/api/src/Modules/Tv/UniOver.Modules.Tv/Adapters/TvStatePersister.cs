@@ -32,6 +32,12 @@ internal sealed partial class TvStatePersister(
     /// <summary>Chamado a cada estado novo do agente; só agenda gravação se algo gravável mudou.</summary>
     public void Observe(string agentId, TvStateSnapshot snapshot)
     {
+        // "Ligando" dura segundos e acaba em outro estado: gravá-lo só acordaria o banco duas vezes a cada despertar da TV.
+        if (string.Equals(snapshot.Connection, TvStateText.ConnectionWaking, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         lock (_gate)
         {
             _pending[agentId] = snapshot;

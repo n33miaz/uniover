@@ -13,7 +13,7 @@ public sealed record DevicesModuleInfo(string Module, string Version, IReadOnlyL
 public sealed class GetModuleInfoHandler(string version)
 {
     /// <summary>Mensagens opcionais que esta API aceita dos agentes (o agente só as usa se estiverem aqui).</summary>
-    public static readonly IReadOnlyList<string> AgentFeatures = ["agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired", "tv.presence.v1"];
+    public static readonly IReadOnlyList<string> AgentFeatures = ["agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired", "tv.state.waking", "tv.presence.v1"];
 
     public DevicesModuleInfo Handle() => new(DevicesModule.Name, version, AgentFeatures);
 }

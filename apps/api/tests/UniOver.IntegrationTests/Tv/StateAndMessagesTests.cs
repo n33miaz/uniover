@@ -133,6 +133,32 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task State_WhileTheTvIsWaking_IsShownToTheScreenButNeverWritten()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "hibernating")));
+        await app.AdvanceUntilAsync(async () => await StateRowAsync(app) != "nenhuma", "primeira gravação");
+        await app.WaitForOutboxAsync(1);
+        var before = await app.TvFingerprintAsync();
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "waking")));
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            using var response = await app.GetAsync("/api/v1/tv/state");
+            return (await TvApp.JsonAsync(response)).GetProperty("connection").GetString() == "waking";
+        }, "TV ligando visível");
+        await app.SettleAsync();
+
+        // "Ligando" é passageiro: o banco e o evento seguem como estavam. Só o estado que vem depois (aberta) é gravado.
+        (await app.TvFingerprintAsync()).Should().Be(before);
+        (await OutboxCountAsync(app)).Should().Be(1);
+        (await StateRowAsync(app)).Should().EndWith("|hibernating");
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "hot")));
+        await app.AdvanceUntilAsync(async () => (await StateRowAsync(app)).EndsWith("|hot", StringComparison.Ordinal), "estado aberto gravado");
+    }
+
+    [Fact]
     public async Task State_ThatFlickersAndComesBack_DoesNotWriteAgain()
     {
         await using var app = await TvApp.StartAsync(postgres);
