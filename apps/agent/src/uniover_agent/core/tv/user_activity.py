@@ -78,11 +78,10 @@ def tv_presence_handler(
     Um sinal que o gateway segurou (agente reconectando) chega velho: o `ts` do envelope é a hora
     em que a API o montou, e acima de `max_age_seconds` ele é ignorado, senão a janela de 60 s
     começaria na chegada e não no toque. Idade negativa (relógio do PC atrás do da API) vale até
-    `max_skew_seconds`. Sem `ts` utilizável vale como chegou. Se os relógios diferem tanto que o
-    sinal é recusado; só uma idade negativa além da folga, ou acima de `SKEW_REPORT_AGE_SECONDS`,
-    é tratada como relógio fora de hora: avisa **uma vez** no log e chama `on_refused(idade)` a cada
-    ocorrência (o diagnóstico limita a repetição). Um atraso comum de entrega recusa o sinal sem
-    alertar ninguém.
+    `max_skew_seconds`. Sem `ts` utilizável vale como chegou. Fora da janela o sinal é recusado.
+    Só uma idade negativa além da folga, ou acima de `SKEW_REPORT_AGE_SECONDS`, é tratada como
+    relógio fora de hora: avisa **uma vez** no log e chama `on_refused(idade)` a cada ocorrência (o
+    diagnóstico limita a repetição). Um atraso comum de entrega recusa o sinal sem alertar ninguém.
     """
     warned = False
 
