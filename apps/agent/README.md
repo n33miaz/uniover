@@ -530,10 +530,24 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   `adb`). A recusa da trava (sem presença, sem MAC, permissão só `granted`) e o vigia vendo a TV desligada não gravam
   nada nem perdem o ajuste do vencimento.
 - **`uniover-agent tv-volume`** monta o `AdbTv` com a mesma trava e roda como pedido de quem o digita.
-- **Ao atualizar:** publique a **API antes** do agente (um agente novo diante de uma API antiga não tem a capacidade
-  `tv.presence.v1` aceita e nenhum caminho automático volta a conectar). Quem atualiza não tem registro de permissão:
-  a lista diária, a limpeza, os ícones e abrir apps pela Siri ficam parados até tocar **uma vez** em **Atualizar
-  lista**.
+- **Ao atualizar:** a API anterior recusa o `hello` inteiro que traz uma capacidade que não conhece, então o agente só
+  declara `tv.presence.v1` depois de a rota pública `devices/info` listá-la em `features` (a mesma regra do
+  diagnóstico). Agente novo diante de API antiga segue funcionando e só não tem a conexão automática; publicar a API
+  antes continua sendo o caminho, mas a ordem inversa não derruba o agente. Quem atualiza não tem registro de
+  permissão: a lista diária, a limpeza, os ícones e abrir apps pela Siri ficam parados até tocar **uma vez** em
+  **Atualizar lista**.
+- **Nada não provado fica no servidor do `adb`.** O servidor do `adb` religa sozinho as conexões TCP feitas com
+  `adb connect`, e cada religação de uma TV que não guardou a permissão mostraria o aviso sem ninguém ter pedido.
+  Por isso todo pedido da pessoa que **não termina em `verified`** (fim da espera de 90 s, recusa, ou parado em
+  `granted`) termina com `adb disconnect <host:porta>` antes de responder, e uma recusa num caminho automático
+  desfaz a conexão na hora. Provada, a conexão fica.
+- **Hibernação.** Com o registro `verified` (mesma chave, endereço e MAC) a hibernação por ociosidade da sessão
+  **não** desconecta o canal ADB: a chave gravada não mostra aviso, e é isso que mantém a lista diária, a limpeza, os
+  ícones e abrir app pela Siri funcionando fora da janela de presença. Sem `verified`, desconecta como sempre.
+- **MAC lido vazio num toque** (ARP vazia) é desconhecido, nunca "outra TV": não apaga o MAC anotado, não perde o
+  ajuste do vencimento nem o serial e não refaz a prova. Só dois MACs lidos e diferentes são aparelhos diferentes.
+- **Presença atrasada:** o agente ignora um `tv.presence.v1` com mais de 15 s de idade (pelo `ts` do envelope); o
+  gateway pode segurar a entrega enquanto o agente reconecta, e a janela de 60 s tem de contar do toque.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
   repetir.
