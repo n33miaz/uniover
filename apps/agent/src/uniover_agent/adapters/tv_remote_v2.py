@@ -362,6 +362,16 @@ class AndroidTvRemoteV2:
         if self._client is not None:
             self._client.disconnect()
 
+    def forget_client(self) -> None:
+        """Descarta o cliente guardado: o próximo `connect` lê o certificado do disco de novo.
+
+        A biblioteca guarda o contexto TLS no cliente; depois de um pareamento novo (par refeito)
+        o contexto antigo recusaria a TV outra vez.
+        """
+        client, self._client = self._client, None
+        if client is not None:
+            client.disconnect()
+
     def _new_client(self) -> RemoteClient:
         client = self._factory(
             self._client_name, str(self._certfile), str(self._keyfile), self._host

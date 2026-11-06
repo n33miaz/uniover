@@ -47,6 +47,18 @@ class TvPermissionNeeded(TvNotPaired):
     """
 
 
+class TvPairingFailed(TvChannelError):  # noqa: N818 - lê-se como fato
+    """O pareamento pedido pelo app não terminou. `reason` é o código estável que a API repassa.
+
+    A mensagem já é para a pessoa e nunca carrega o código de pareamento (nem o da TV, nem o
+    texto cru da biblioteca).
+    """
+
+    def __init__(self, message: str, reason: str = "pair_failed") -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 class TvChannel(Protocol):
     @property
     def connected(self) -> bool: ...

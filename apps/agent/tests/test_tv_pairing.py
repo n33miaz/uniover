@@ -74,25 +74,30 @@ async def test_a_malformed_code_is_refused_before_reaching_the_tv(
     tmp_path: Path, code: str
 ) -> None:
     library = FakePairing()
-    with pytest.raises(TvPairingError, match="6 caracteres"):
+    with pytest.raises(TvPairingError, match="6 caracteres") as caught:
         await pair_tv(
             "10.0.0.4", "UniOver", tmp_path / "tv", lambda: answer(code), factory=lambda *_: library
         )
+    assert caught.value.reason == "invalid_code"
     assert library.codes == []
     assert library.disconnects == 1
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "message"),
+    ("kwargs", "message", "reason"),
     [
-        ({"start_error": CannotConnect("x")}, "não consegui falar com a TV"),
-        ({"start_error": ConnectionClosed("x")}, "não consegui falar com a TV"),
-        ({"finish_error": InvalidAuth(f"código {SECRET_CODE}")}, "não aceitou o código"),
-        ({"finish_error": ConnectionClosed("x")}, "fechou a conexão"),
+        ({"start_error": CannotConnect("x")}, "não consegui falar com a TV", "tv_unreachable"),
+        ({"start_error": ConnectionClosed("x")}, "não consegui falar com a TV", "tv_unreachable"),
+        (
+            {"finish_error": InvalidAuth(f"código {SECRET_CODE}")},
+            "não aceitou o código",
+            "invalid_code",
+        ),
+        ({"finish_error": ConnectionClosed("x")}, "fechou a conexão", "pair_closed"),
     ],
 )
 async def test_failures_become_clear_messages_without_the_code(
-    tmp_path: Path, kwargs: dict[str, Exception], message: str
+    tmp_path: Path, kwargs: dict[str, Exception], message: str, reason: str
 ) -> None:
     library = FakePairing(**kwargs)
     with pytest.raises(TvPairingError, match=message) as caught:
@@ -104,6 +109,8 @@ async def test_failures_become_clear_messages_without_the_code(
             factory=lambda *_: library,
         )
     assert SECRET_CODE not in str(caught.value)
+    # O app reconhece cada falha pelo código estável, nunca pelo texto.
+    assert caught.value.reason == reason
     assert library.disconnects == 1
 
 

@@ -21,6 +21,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 
 from uniover_agent.adapters.process import run_hidden
 from uniover_agent.adapters.tv_remote_v2 import CERT_FILE, KEY_FILE
+from uniover_agent.ports import TvPairingFailed
 
 _log = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ _CODE_PATTERN = re.compile(r"^[0-9A-Fa-f]{6}$")
 _PRIVATE_DIR_MODE = 0o700
 
 
-class TvPairingError(Exception):
+class TvPairingError(TvPairingFailed):
     """Falha do pareamento; a mensagem já é para o usuário (sem segredo)."""
 
 
@@ -158,18 +159,23 @@ async def pair_tv(
             await client.async_start_pairing()
         except CannotConnect, ConnectionClosed, OSError:
             raise TvPairingError(
-                f"não consegui falar com a TV em {host}: confira o endereço e se ela está ligada"
+                f"não consegui falar com a TV em {host}: confira o endereço e se ela está ligada",
+                "tv_unreachable",
             ) from None
         code = (await ask_code()).strip()
         if not _CODE_PATTERN.fullmatch(code):
-            raise TvPairingError("o código tem 6 caracteres (0-9 e A-F), como aparece na TV")
+            raise TvPairingError(
+                "o código tem 6 caracteres (0-9 e A-F), como aparece na TV", "invalid_code"
+            )
         try:
             await client.async_finish_pairing(code)
         except InvalidAuth:
-            raise TvPairingError("a TV não aceitou o código; rode o pareamento de novo") from None
+            raise TvPairingError(
+                "a TV não aceitou o código; rode o pareamento de novo", "invalid_code"
+            ) from None
         except ConnectionClosed:
             raise TvPairingError(
-                "a TV fechou a conexão (pareamento cancelado ou demorou demais)"
+                "a TV fechou a conexão (pareamento cancelado ou demorou demais)", "pair_closed"
             ) from None
     except BaseException:
         if created:

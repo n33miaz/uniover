@@ -56,6 +56,7 @@ class FakeTvRemote:
         self.texts: list[str] = []
         self.connects = 0
         self.disconnects = 0
+        self.forgotten = 0
         self.connect_errors: list[Exception] = []
         self.on_connect: Callable[[], None] | None = None
         self._connected = False
@@ -64,6 +65,9 @@ class FakeTvRemote:
         self._volume: list[Callable[[int], None]] = []
         self._available: list[Callable[[bool], None]] = []
         self._text_field: list[Callable[[TextFieldStatus], None]] = []
+
+    def forget_client(self) -> None:
+        self.forgotten += 1
 
     @property
     def connected(self) -> bool:
