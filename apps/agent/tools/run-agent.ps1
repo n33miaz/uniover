@@ -566,6 +566,7 @@ $wait = 5
 $syncFalls = 0
 $script:ownedElsewhere = $false
 $script:ownerSeenStamp = $null
+$script:ownerReported = $null
 $updateFailures = 0
 $nextUpdate = [DateTime]::MinValue
 $tray = $null
@@ -712,8 +713,15 @@ while ($true) {
         # mais olharia o pulso dele. Pulso parado nas duas ultimas tentativas (a segunda ve o mesmo carimbo parado da
         # primeira, o que descarta um PC que acabou de acordar) e o dono e encerrado; pulso em dia, ele e deixado em paz.
         if (Test-OwnerStalled) {
-            Write-SupLog 'ERROR' 'o outro agente desta instalacao esta mudo ha mais de 5 minutos; vou encerra-lo'
-            Add-Diagnostic 'process.unresponsive' 'error' 'o agente que segurava a instalacao parou de dar sinal de vida e foi encerrado'
+            # Um dono que o supervisor nao consegue encerrar (por exemplo, rodando como administrador) voltaria a cada volta:
+            # o aviso e o diagnostico saem uma vez por dono. O carimbo do pulso parado o identifica (o dono travado nao o muda,
+            # e outro dono grava um novo); os numeros dos processos do ambiente incluiriam o icone, que sobe de novo a cada volta.
+            $ownerKey = [string]$script:ownerSeenStamp.Ticks
+            if ($ownerKey -ne $script:ownerReported) {
+                $script:ownerReported = $ownerKey
+                Write-SupLog 'ERROR' 'o outro agente desta instalacao esta mudo ha mais de 5 minutos; vou encerra-lo'
+                Add-Diagnostic 'process.unresponsive' 'error' 'o agente que segurava a instalacao parou de dar sinal de vida e foi encerrado'
+            }
             Set-StopReason 'unresponsive'
             Stop-VenvUsers
             $script:ownedElsewhere = $false
@@ -724,6 +732,7 @@ while ($true) {
         continue
     }
     $script:ownedElsewhere = $false
+    $script:ownerReported = $null
     if (-not $restartForUpdate) {
         Write-SupLog 'WARNING' ('o agente terminou (codigo ' + $code + ') depois de ' + [int]$seconds + ' s')
         if (-not $hung) {
