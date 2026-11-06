@@ -225,7 +225,10 @@ async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
     await wake(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.wake.v1", {}))
     assert not setup.activity.recent()  # o `wake` também vem do servidor: não prova ninguém na TV
     handler = setup.handlers["tv.apps.refresh.v1"]
-    await handler(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.apps.refresh.v1", {}))
+    refresh = Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.apps.refresh.v1", {})
+    # Como o `ProcessMessage` executa um comando: numa tarefa própria (`_execute_detached`). A marca
+    # de pedido da pessoa tem de chegar ao `AdbTv` por dentro dela.
+    await asyncio.ensure_future(handler(refresh))
     # O toque conecta e, ainda no mesmo pedido, reconecta para provar que a permissão ficou gravada.
     assert runner.calls.count(("connect", serial)) == 2
     # O toque conecta por levar a marca de pedido da pessoa; nem ele nem nenhum comando de tipo
