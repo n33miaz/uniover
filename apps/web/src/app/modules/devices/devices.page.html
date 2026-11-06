@@ -133,7 +133,13 @@
                           line.failed ? '!' : 'i'
                         }}</span>
                         <span class="startup-text"
-                          >{{ line.text }}<span class="meta"> · {{ startupAgo(line) }}</span></span
+                          >{{ line.text
+                          }}<span class="meta">
+                            · {{ startupAgo(line) }} ·
+                            <ng-container i18n="@@devices.startup.unverified"
+                              >não verificado</ng-container
+                            ></span
+                          ></span
                         >
                       </p>
                     }
