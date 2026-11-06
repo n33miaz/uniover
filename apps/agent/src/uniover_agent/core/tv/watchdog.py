@@ -23,7 +23,7 @@ from typing import Final
 
 from uniover_agent.core.tv.session import SessionState, TvSessionManager
 from uniover_agent.core.tv.watchdog_events import WatchdogEvents
-from uniover_agent.ports import AdbNotReady, AdbUnauthorized, AdbUnavailable, Clock
+from uniover_agent.ports import AdbIdle, AdbNotReady, AdbUnauthorized, AdbUnavailable, Clock
 
 _log = logging.getLogger(__name__)
 
@@ -206,6 +206,19 @@ class TvWatchdog:
             self._last_attempt_at = self._clock.monotonic()
             try:
                 await self._restart()
+            except AdbIdle:
+                # Fora da janela de presença: o ADB não abre conexão sozinho sem ninguém usando a
+                # TV pelo app. Insistir só gastaria sondagens; descansa pouco (um comando do dono
+                # encurta o descanso) e o evento diz a causa de verdade.
+                self._rest_until = self._clock.monotonic() + self._cooldowns[0]
+                self._rest_is_adb = False
+                self._events.emit(
+                    "adb_unreachable",
+                    "info",
+                    "ADB só abre com alguém usando a TV pelo app; controle não religado.",
+                    self._attempts,
+                )
+                return True
             except (AdbUnauthorized, AdbUnavailable) as exc:
                 # Sem autorização ou sem o `adb`, insistir não adianta e só cansaria a TV.
                 if isinstance(exc, AdbUnavailable) and exc.transient:

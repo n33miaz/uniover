@@ -22,6 +22,7 @@ from uniover_agent.core import (
 )
 from uniover_agent.ports import (
     AdbCommandFailed,
+    AdbIdle,
     AdbTimeout,
     AdbUnauthorized,
     AdbUnavailable,
@@ -274,6 +275,24 @@ async def test_an_unauthorized_adb_stops_at_once_and_rests_for_an_hour() -> None
     await rig.watchdog.handle()
     assert rig.restarts == 1
     rig.clock.advance(1)
+    await rig.watchdog.handle()
+    assert rig.restarts == 2
+
+
+async def test_an_adb_outside_the_presence_window_stops_at_once_with_a_correct_event() -> None:
+    rig = Rig()
+    rig.restart_script = [AdbIdle("sem ninguém na TV")]
+    await rig.watchdog.handle()
+    assert rig.restarts == 1  # nenhuma repetição durante o prazo
+    assert rig.clock.sleeps == []
+    assert await rig.sent_kinds() == ["repair_started", "adb_unreachable"]
+    body = rig.transport.sent[-1]["body"]
+    assert body["severity"] == "info"
+    assert "alguém usando a TV" in body["detail"]
+    assert state_of(rig.manager) is SessionState.HIBERNATING
+    # Descanso curto (não o de uma hora): um comando do dono ainda o encurta.
+    rig.clock.advance(61)
+    rig.watchdog.request_after_command()
     await rig.watchdog.handle()
     assert rig.restarts == 2
 
