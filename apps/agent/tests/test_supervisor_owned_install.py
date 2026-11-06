@@ -217,3 +217,62 @@ def test_a_rollback_request_is_honored_while_waiting_for_the_owner(pc: Pc) -> No
             assert not previous.exists()
         finally:
             stop_owner(owner)
+
+
+def test_an_unkillable_stalled_owner_is_reported_once_not_on_every_lap(pc: Pc) -> None:
+    """Dono que o supervisor nao reconhece como do ambiente (ex.: rodando como administrador)."""
+    pc.uv(WAIT_FOR_OWNER)
+    owner = subprocess.Popen(
+        ["ping", "-n", "300", "127.0.0.1"],  # noqa: S607
+        stdout=subprocess.DEVNULL,
+        creationflags=0x08000000,
+    )
+    Path(str(pc.agents) + ".owner").write_text(str(owner.pid), encoding="ascii")
+    make_stale(pc.alive)
+    try:
+        with pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS="1"):
+            assert wait_for(lambda: pc.starts() >= 8, 120), pc.supervisor_log()
+            assert owner.poll() is None  # nada o encerrou
+            assert pc.supervisor_log().count("esta mudo ha mais de 5 minutos") == 1
+            unresponsive = [i for i in pc.diagnostics() if i["kind"] == "process.unresponsive"]
+            assert len(unresponsive) == 1
+    finally:
+        stop_owner(owner)
+
+
+def test_an_update_hands_over_to_a_fresh_supervisor_before_any_new_agent_runs(
+    pc: Pc, tmp_path: Path
+) -> None:
+    """O script antigo, ja carregado, nunca sobe o agente novo: troca a versao e sai com 42.
+
+    Quem sobe o agente novo e o supervisor que o lancador abre em seguida, ja com o script novo
+    (e e so ele que conhece o codigo 5 como "nao e queda").
+    """
+    new = "b" * 40
+    version = pc.base / "app" / ".version"
+    pc.uv(
+        [f"exit /b {EXIT_ALREADY_RUNNING}"],
+        update_lines=[f'echo {new}> "{version}"', "exit /b 0"],
+    )
+    environment = os.environ | {
+        "LOCALAPPDATA": str(pc.local),
+        "PATH": str(pc.bin) + os.pathsep + os.environ["PATH"],
+        "UNIOVER_TEST_AGENTS": str(pc.agents),
+        "UNIOVER_TEST_TRAYS": str(pc.trays),
+        "APPDATA": str(pc.roaming),
+    }
+    process = subprocess.Popen(  # noqa: S603 - PowerShell do sistema; script do repositorio
+        [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(RUNNER)],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=0x08000000,
+    )
+    try:
+        assert process.wait(timeout=120) == 42
+    finally:
+        if process.poll() is None:
+            kill_tree(process)
+    assert pc.starts() == 0  # nenhum agente subiu sob o script antigo
+    assert (pc.runtime / "update-trial.txt").read_text(encoding="ascii") == new + "|0"
+    assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "update"
