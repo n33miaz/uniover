@@ -58,11 +58,13 @@ from uniover_agent.ports import (
     AdbError,
     AdbIdentityUnconfirmed,
     AdbIdle,
+    AdbNotReady,
     AdbTimeout,
     AdbUnauthorized,
     AdbUnavailable,
     AdbUnreachable,
     LaunchableApp,
+    UserRequest,
     current_user_request,
     is_user_initiated,
 )
@@ -261,6 +263,8 @@ class AdbTv:
         self._mac_memo: object = _UNREAD
         self._in_operation = False
         self._pairing_task: asyncio.Task[None] | None = None
+        # O pedido da pessoa que já passou pelo portão nesta conexão (`_ensure_connected_locked`).
+        self._gated_request: UserRequest | None = None
         # A última recusa de `_may_connect` foi só falta de uso (e não falta de permissão)?
         self._refused_as_idle = False
         self._timeout_streak = 0
@@ -813,7 +817,11 @@ class AdbTv:
 
     async def _ensure_connected_locked(self) -> None:
         if self._connected:
-            if is_user_initiated():
+            request = current_user_request()
+            if request is not None:
+                if request is self._gated_request:
+                    # Mesmo pedido, mesma conexão: um texto em vários grupos confere uma vez só.
+                    return
                 self._remember_user_request()
                 if await self._needs_proof():
                     # Transporte vivo sem prova de permissão gravada: a pessoa pediu, então confere.
@@ -821,7 +829,9 @@ class AdbTv:
                     await self._connect_locked(proof_ready=True)
                 else:
                     await self._finish_pairing_locked()
+                self._gated_request = request
             return
+        self._gated_request = None
         if self._blocked_error is not None and self._monotonic() < self._blocked_until:
             if isinstance(self._blocked_error, AdbUnauthorized):
                 # O dono pode ter aceitado o aviso agora: conferir o estado não abre conexão.
@@ -886,9 +896,14 @@ class AdbTv:
         async with self._lock:
             self.last_input_wait_seconds = self._monotonic() - asked
             await self._ensure_connected_locked()
-            output = await self._shell(command)
+            try:
+                output = await self._shell(command)
+            except AdbNotReady as exc:
+                # O comando já foi ao shell: a conexão pode ter caído com ele pela metade.
+                exc.may_have_executed = True
+                raise
         if not command_succeeded(output):
-            # Pode ter digitado parte do grupo: quem chama não repete, só avisa.
+            # Pode ter digitado parte do grupo: quem chama não repete às cegas.
             raise AdbCommandFailed("a TV não confirmou a digitação")
 
     # --- limpeza da TV ------------------------------------------------------------------------

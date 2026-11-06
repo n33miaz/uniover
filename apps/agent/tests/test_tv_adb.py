@@ -21,6 +21,7 @@ from uniover_agent.ports import (
     AdbUnavailable,
     AdbUnreachable,
     LaunchableApp,
+    user_initiated_adb,
 )
 
 from .support_adb import (
@@ -579,6 +580,61 @@ async def test_input_text_types_a_percent_text_as_is_and_a_jvm_error_is_a_failur
     await adb.input_text("%ab")
     with pytest.raises(AdbCommandFailed):
         await adb.input_text("x")
+
+
+async def test_input_text_with_a_bad_exit_and_empty_output_is_a_failure() -> None:
+    runner = authorized()
+    runner.script[shell("input text 'x'")] = ok("", returncode=1)
+    adb = make(runner)
+    with pytest.raises(AdbCommandFailed) as caught:
+        await adb.input_text("x")
+    assert caught.value.may_have_executed
+
+
+async def test_a_dropped_connection_after_the_shell_started_may_have_typed() -> None:
+    runner = authorized()
+    runner.script[shell("input text 'x'")] = ok("error: device offline\r\n", returncode=1)
+    adb = make(runner)
+    with pytest.raises(AdbUnreachable) as caught:
+        await adb.input_text("x")
+    # O comando já tinha ido ao shell: quem digita não pode tratar como "nada foi executado".
+    assert caught.value.may_have_executed
+
+
+async def test_a_channel_that_never_opened_did_not_type() -> None:
+    runner = FakeAdbRunner({CONNECT: ok("failed to connect\r\n", returncode=1)})
+    adb = make(runner)
+    with pytest.raises(AdbUnreachable) as caught:
+        await adb.input_text("x")
+    assert not caught.value.may_have_executed
+    assert runner.shell_commands() == []
+
+
+async def test_a_text_in_several_groups_runs_the_gate_once_per_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = authorized()
+    runner.script[shell("input text 'abc'")] = ok("")
+    runner.script[shell("input text 'def'")] = ok("")
+    runner.script[shell("input text 'gh'")] = ok("")
+    adb = make(runner)
+    await adb.connect()
+    proofs: list[int] = []
+    original = adb._needs_proof
+
+    async def counting() -> bool:
+        proofs.append(1)
+        return await original()
+
+    monkeypatch.setattr(adb, "_needs_proof", counting)
+    with user_initiated_adb():
+        for group in ("abc", "def", "gh"):
+            await adb.input_text(group)
+    assert len(proofs) == 1
+    # Outro pedido da pessoa confere de novo.
+    with user_initiated_adb():
+        await adb.input_text("abc")
+    assert len(proofs) == 2
 
 
 # --- executor de processos de verdade (o próprio Python faz de `adb`) ---------------------------
