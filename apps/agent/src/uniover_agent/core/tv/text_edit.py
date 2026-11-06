@@ -32,9 +32,11 @@ latências diferentes. Do mais rápido para o mais lento:
   canais: é um envio só e rápido, e a ordem não depende de dois caminhos.
 
 A ordem entre canais tem dois sentidos. Do ADB para o Remote é segura: o `adb shell input` só
-volta com as teclas já injetadas. Do Remote (teclas ou texto) para o ADB não: o `await` só prova
-que o pacote entrou no socket. Por isso, depois de qualquer envio pelo Remote, o primeiro grupo
-ADB espera `remote_settle_seconds` contados do envio (ajuste `tv_text_remote_settle_ms`).
+volta com as teclas já injetadas. Do Remote para o ADB não: o `await` só prova que o pacote entrou
+no socket. Por isso, depois de um `send_text` pelo Remote (o caso raro: letra acentuada seguida de
+ASCII), o primeiro grupo ADB espera `remote_settle_seconds` contados do envio (ajuste
+`tv_text_remote_settle_ms`). Teclas (`DEL` e digitação) não esperam: apagar e corrigir é o caso
+comum, e o processo `adb` leva muito mais que isso para sair, então o pacote já saiu na frente.
 
 Quando a TV informa o estado do campo em foco (valor, cursor, rótulo), `last_text` parte do valor
 real em vez do palpite, e a troca de campo vem por esse aviso, não pela pausa de 20 s (ver
@@ -356,7 +358,6 @@ class TextReconciler:
         try:
             for _ in range(min(edit.delete, MAX_DELETIONS)):
                 await self._tv.send_key(DELETE_KEY)
-                self._remote_at = self._monotonic()
                 self._last = self._last[:-1]
                 self._last_at = self._monotonic()
         finally:
@@ -434,7 +435,6 @@ class TextReconciler:
                 raise TvSessionError(
                     TEXT_KEY_UNSUPPORTED, "a TV não aceita esta tecla de digitação"
                 ) from None
-            self._remote_at = self._monotonic()
             self._typed(char)
 
     def _typed(self, text: str) -> None:
