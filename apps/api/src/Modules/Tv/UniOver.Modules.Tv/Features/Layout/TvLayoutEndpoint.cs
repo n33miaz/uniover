@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Features.Selection;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Persistence;
 
 namespace UniOver.Modules.Tv.Features.Layout;
@@ -108,9 +109,13 @@ internal static class TvLayoutEndpoint
         if (!TvLayoutValidator.TryParse(body, out var document)) return Invalid();
         if (!selection.Current.IsPersisted) return TypedResults.Conflict();
         var json = JsonSerializer.Serialize(document, Json);
-        // A restrição de chave primária arbitra duas primeiras cargas ao mesmo tempo sem substituir a primeira base.
-        var inserted = await db.Database.ExecuteSqlInterpolatedAsync(
-            $"INSERT INTO tv.tv_layouts (tv_id, document, updated_at) VALUES ({selection.Current.Id}, CAST({json} AS jsonb), {time.GetUtcNow()}) ON CONFLICT (tv_id) DO NOTHING", ct);
+        // A restrição de chave primária arbitra duas primeiras cargas ao mesmo tempo sem substituir a primeira base. O INSERT
+        // roda sob o bloqueio da TV: uma remoção em andamento termina antes, e então a TV não existe mais (404), em vez de a
+        // linha do layout sobrar órfã.
+        var inserted = 0;
+        var present = await TvRowLock.WriteIfPresentAsync(db, selection.Current.Id, async () => inserted = await db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO tv.tv_layouts (tv_id, document, updated_at) VALUES ({selection.Current.Id}, CAST({json} AS jsonb), {time.GetUtcNow()}) ON CONFLICT (tv_id) DO NOTHING", ct), ct);
+        if (!present) return TypedResults.NotFound();
         return inserted == 0 ? TypedResults.Conflict() : TypedResults.Ok(document);
     }
 
@@ -119,9 +124,10 @@ internal static class TvLayoutEndpoint
         if (!TvLayoutValidator.TryParse(body, out var document)) return Invalid();
         if (!selection.Current.IsPersisted) return TypedResults.NotFound();
         var json = JsonSerializer.Serialize(document, Json);
-        await db.Database.ExecuteSqlInterpolatedAsync(
-            $"INSERT INTO tv.tv_layouts (tv_id, document, updated_at) VALUES ({selection.Current.Id}, CAST({json} AS jsonb), {time.GetUtcNow()}) ON CONFLICT (tv_id) DO UPDATE SET document = EXCLUDED.document, updated_at = EXCLUDED.updated_at", ct);
-        return TypedResults.Ok(document);
+        // Sob o bloqueio da TV pelo mesmo motivo do POST: o upsert não recria a linha de uma TV removida.
+        var present = await TvRowLock.WriteIfPresentAsync(db, selection.Current.Id, () => db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO tv.tv_layouts (tv_id, document, updated_at) VALUES ({selection.Current.Id}, CAST({json} AS jsonb), {time.GetUtcNow()}) ON CONFLICT (tv_id) DO UPDATE SET document = EXCLUDED.document, updated_at = EXCLUDED.updated_at", ct), ct);
+        return present ? TypedResults.Ok(document) : TypedResults.NotFound();
     }
 
     private static ProblemHttpResult Invalid() => ProblemDetailsExtensions.ValidationProblem(
