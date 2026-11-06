@@ -17,6 +17,12 @@ export interface TvConfig {
   readonly wakeIntervalMs: number;
   /** Espaço mínimo entre dois sinais de presença ("alguém acabou de tocar na tela"): o agente só abre ADB sozinho logo depois de um. */
   readonly presenceMinIntervalMs: number;
+  /**
+   * Quanto quem vai pedir algo ao ADB espera o sinal de presença antes de mandar o pedido assim mesmo. Com o agente
+   * reconectando, o gateway segura o sinal por até 25 s, e esperar tudo isso antes do comando (que ainda espera mais 25 s)
+   * deixaria o toque parado quase um minuto. Passado este tempo o sinal segue a caminho e o pedido sai.
+   */
+  readonly presenceMaxWaitMs: number;
   /** Quanto o dedo precisa ficar parado numa tecla repetível antes de a repetição começar. */
   readonly repeatDelayMs: number;
   /** Intervalo da repetição (cerca de 4 por segundo, abaixo do limite de comandos do servidor). */
@@ -50,6 +56,7 @@ export const TV_CONFIG = new InjectionToken<TvConfig>('TV_CONFIG', {
     hibernateMinutes: 5,
     wakeIntervalMs: 120_000,
     presenceMinIntervalMs: 5_000,
+    presenceMaxWaitMs: 1_500,
     repeatDelayMs: 400,
     repeatIntervalMs: 250,
     noticeMs: 6_000,
