@@ -5,6 +5,7 @@ import {
   createEnvironmentInjector,
   runInInjectionContext,
 } from '@angular/core';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   REQUEST_MAX_AGE_MS,
@@ -274,51 +275,95 @@ describe('UnsavedWork', () => {
     });
   });
 
-  describe('after the work was saved but the fields stay on screen', () => {
-    it('forgets the fields of a form when it is submitted, and starts over from what they show', () => {
+  describe('a form that was submitted', () => {
+    it('keeps counting its text: sending can fail, and then the text is still all there is', () => {
       const form = mount(document.createElement('form'));
       form.addEventListener('submit', (event) => event.preventDefault());
       const name = document.createElement('input');
       form.appendChild(name);
       type(name, 'Perfil novo');
-      expect(work.hasUnsaved()).toBe(true);
 
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      expect(work.reasons()).toEqual(['form']);
+
+      // O envio sai e falha (offline, 500, validação da tela): o texto continua no campo e continua protegido.
+      const end = work.beginRequest();
+      end();
+      expect(work.needsConfirmation()).toBe(true);
+      expect(work.hasUnsaved()).toBe(true);
+    });
+
+    it('stops counting only when the field leaves the page, as before', () => {
+      const form = mount(document.createElement('form'));
+      const name = document.createElement('input');
+      form.appendChild(name);
+      type(name, 'Perfil novo');
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form.remove();
+      work.prune();
+      expect(work.hasUnsaved()).toBe(false);
+    });
+  });
+
+  describe('an editor that saved (registered with its own element)', () => {
+    function editorWith(host: HTMLElement) {
+      const dirty = signal(false);
+      TestBed.runInInjectionContext(() => registerUnsavedWork(() => dirty(), 'form', host));
+      return dirty;
+    }
+
+    it('re-baselines only the fields inside its element when it goes from dirty to clean', () => {
+      const host = mount(document.createElement('section'));
+      const inside = document.createElement('input');
+      host.appendChild(inside);
+      const outside = mount(document.createElement('input'));
+      const dirty = editorWith(host);
+
+      type(inside, 'rascunho do editor');
+      type(outside, 'filtro de outra folha');
+      dirty.set(true);
+      TestBed.tick();
+
+      // O editor salvou: o texto dele continua na tela, mas já não é trabalho pendente. O campo de fora segue contando.
+      dirty.set(false);
+      TestBed.tick();
+      expect(work.reasons()).toEqual(['form']);
+      outside.remove();
+      work.prune();
       expect(work.hasUnsaved()).toBe(false);
 
-      // Mexer de novo depois de salvo conta de novo, a partir do que ficou na tela.
-      type(name, 'Perfil novo 2');
-      expect(work.reasons()).toEqual(['form']);
-      type(name, 'Perfil novo');
+      // Mexer de novo no campo do editor volta a contar, a partir do texto que ficou.
+      type(inside, 'rascunho do editor 2');
+      expect(work.hasUnsaved()).toBe(true);
+      type(inside, 'rascunho do editor');
       expect(work.hasUnsaved()).toBe(false);
     });
 
-    it('forgets the watched fields when a registered editor goes from dirty to clean (it saved)', () => {
+    it('does not forget anything while the editor stays dirty', () => {
+      const host = mount(document.createElement('section'));
+      const inside = document.createElement('input');
+      host.appendChild(inside);
+      const dirty = editorWith(host);
+      type(inside, 'rascunho');
+      dirty.set(true);
+      TestBed.tick();
+      expect(work.hasUnsaved()).toBe(true);
+    });
+
+    it('does nothing for an editor that passes no element: no rebaseline without a host', () => {
       let dirty = false;
       work.register(() => dirty, 'form');
       const field = mount(document.createElement('input'));
       type(field, 'rascunho');
       dirty = true;
-      expect(work.reasons()).toEqual(['form']);
-
-      // O editor salvou: fica limpo, mas o campo ainda mostra o texto digitado.
-      dirty = false;
-      expect(work.hasUnsaved()).toBe(false);
-      type(field, 'rascunho 2');
       expect(work.hasUnsaved()).toBe(true);
-    });
-
-    it('does not forget anything while the editor stays dirty', () => {
-      work.register(() => true, 'form');
-      const field = mount(document.createElement('input'));
-      type(field, 'rascunho');
-      expect(work.reasons()).toEqual(['form']);
+      dirty = false;
       expect(work.hasUnsaved()).toBe(true);
     });
   });
 
   describe('requests in flight', () => {
-    it('stops counting a write that never answers, so it cannot block a reload forever', () => {
+    it('lets the tap stop waiting for a write that never answers, but an automatic reload keeps deferring while it lives', () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       try {
         work.beginRequest();
@@ -326,8 +371,10 @@ describe('UnsavedWork', () => {
         vi.setSystemTime(Date.now() + REQUEST_MAX_AGE_MS - 1);
         expect(work.isWriting()).toBe(true);
         vi.setSystemTime(Date.now() + 2);
+        // O toque não espera mais; a recarga automática ainda vê o pedido vivo (um upload lento não é cortado).
         expect(work.isWriting()).toBe(false);
-        expect(work.hasUnsaved()).toBe(false);
+        expect(work.hasUnsaved()).toBe(true);
+        expect(work.reasons()).toEqual(['request']);
       } finally {
         vi.useRealTimers();
       }

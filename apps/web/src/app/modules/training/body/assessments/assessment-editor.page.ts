@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -446,7 +453,7 @@ export class PhysicalAssessmentEditorPage {
 
   constructor() {
     // Editor sujo: a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.dirty());
+    registerUnsavedWork(() => this.dirty(), 'form', inject(ElementRef).nativeElement);
     this.baseline.set(this.snapshot());
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {

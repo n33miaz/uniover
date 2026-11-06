@@ -171,7 +171,7 @@ export class RoutineEditorPage {
 
   constructor() {
     // Editor sujo: a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.dirty());
+    registerUnsavedWork(() => this.dirty(), 'form', this.host.nativeElement);
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) {
       // A passada começa pela rotina e pelo catálogo, não pela ordem de registro (o catálogo, a maior resposta, antes dela).

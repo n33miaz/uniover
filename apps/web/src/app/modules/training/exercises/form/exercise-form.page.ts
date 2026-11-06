@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   computed,
   effect,
   inject,
@@ -141,7 +142,7 @@ export class ExerciseFormPage {
 
   constructor() {
     // Editor sujo: a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.dirty());
+    registerUnsavedWork(() => this.dirty(), 'form', inject(ElementRef).nativeElement);
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) void this.loadExisting();
     else {
