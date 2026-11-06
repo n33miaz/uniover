@@ -205,3 +205,37 @@ async def test_an_api_that_lists_diagnostics_gets_the_capability_and_the_events(
     hello = next(m for m in received if m["type"] == "agent.hello.v1")
     assert DIAGNOSTICS_CAPABILITY in hello["body"]["capabilities"]
     assert any(m["type"] == "agent.diagnostics.v1" for m in received)
+
+
+async def test_listeners_hear_only_real_changes_of_what_the_api_accepts() -> None:
+    answers: list[frozenset[str] | None] = [frozenset(), None, frozenset({"x"}), frozenset({"x"})]
+
+    async def fetch() -> frozenset[str] | None:
+        return answers.pop(0)
+
+    features = ApiFeatures(fetch, FakeClock())
+    heard: list[bool] = []
+    features.on_change(lambda: heard.append(features.supports("x")))
+    await features.refresh()  # vazio igual ao desconhecido: nada mudou
+    await features.refresh()  # API dormindo
+    assert heard == []
+    await features.refresh()  # a API passou a aceitar
+    await features.refresh()  # a mesma lista de novo
+    assert heard == [True]
+
+
+async def test_a_failing_listener_never_breaks_the_refresh(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def fetch() -> frozenset[str] | None:
+        return frozenset({"x"})
+
+    features = ApiFeatures(fetch, FakeClock())
+
+    def boom() -> None:
+        raise RuntimeError("falhou")
+
+    features.on_change(boom)
+    await features.refresh()
+    assert features.supports("x")
+    assert "falha ao avisar" in caplog.text
