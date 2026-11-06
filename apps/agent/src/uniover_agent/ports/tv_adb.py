@@ -94,6 +94,9 @@ class AdbError(TvChannelError):
     """Falha do canal ADB. `code` vai para a API e `message` para o dono."""
 
     code: str = ADB_FAILED
+    # O comando pode ter chegado à TV e ter efeito mesmo com este erro (tempo estourado, saída de
+    # falha depois de executar, conexão caída no meio). Quem digita não repete às cegas.
+    may_have_executed: bool = False
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -104,6 +107,8 @@ class AdbNotReady(AdbError):  # noqa: N818 - lê-se como estado, não como erro 
     """O canal não abriu, então o comando **nem chegou a ser executado** na TV.
 
     Quem tem outro caminho (digitar pelo Remote v2) pode usá-lo sem risco de repetir o efeito.
+    Só vale para o erro levantado antes de o comando ir ao shell da TV: se o adaptador o levanta
+    depois (conexão caída no meio do comando), marca `may_have_executed` e o caso é ambíguo.
     """
 
 
@@ -153,12 +158,14 @@ class AdbTimeout(AdbError):  # noqa: N818
     """O comando estourou o tempo: não se sabe se a TV chegou a executá-lo."""
 
     code = ADB_TIMEOUT
+    may_have_executed = True
 
 
 class AdbCommandFailed(AdbError):  # noqa: N818
     """O `adb` respondeu, mas o comando não deu certo (app inexistente, por exemplo)."""
 
     code = ADB_FAILED
+    may_have_executed = True
 
 
 def is_adb_typable(text: str) -> bool:
