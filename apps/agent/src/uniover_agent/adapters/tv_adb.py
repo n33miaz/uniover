@@ -56,6 +56,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
 from uniover_agent.ports import (
     AdbCommandFailed,
     AdbError,
+    AdbIdle,
     AdbTimeout,
     AdbUnauthorized,
     AdbUnavailable,
@@ -127,6 +128,7 @@ _SERIAL_UNAVAILABLE: Final = "-"
 _UNAUTHORIZED_MESSAGE: Final = "a TV ainda não autorizou este PC no ADB"
 _GATED_MESSAGE: Final = "a TV ainda não deu ao UniOver a permissão do ADB; peça pelo app"
 _IDLE_MESSAGE: Final = "o ADB só abre conexão nova enquanto alguém usa a TV pelo app"
+_IDENTITY_MESSAGE: Final = "não deu para confirmar qual aparelho responde aqui; peça pelo app"
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
@@ -235,6 +237,8 @@ class AdbTv:
         # MAC da TV pela tabela ARP (sem ADB): sem ele a identidade da TV não se confirma.
         self._mac_resolver = mac_resolver
         self._pairing_task: asyncio.Task[None] | None = None
+        # A última recusa de `_may_connect` foi só falta de uso (e não falta de permissão)?
+        self._refused_as_idle = False
         self._timeout_streak = 0
         self._last_kill_server_at: float | None = None
         self._disconnect_task: asyncio.Task[None] | None = None
@@ -304,11 +308,19 @@ class AdbTv:
         authorization = self._authorization
         if is_user_initiated():
             return True
-        if not authorization.key_and_endpoint_match() or not self._user_active():
+        self._refused_as_idle = False
+        if not authorization.key_and_endpoint_match():
+            return False
+        if not self._user_active():
+            self._refused_as_idle = True
             return False
         mac = await self._identity_mac()
         if mac is None:
             raise AdbUnreachable("a TV não respondeu na rede")
+        if not mac:
+            # A porta abriu mas a tabela ARP não mostra o aparelho (outra sub-rede, VPN): não é TV
+            # fora do ar nem recusa dela, só identidade que não se confirma. Sem bloqueio de 30 s.
+            raise AdbIdle(_IDENTITY_MESSAGE)
         return authorization.verified_for(mac)
 
     async def _refuse_connect_locked(self) -> None:
@@ -329,8 +341,8 @@ class AdbTv:
             self._timeout_streak = 0
             self._connected = True
             return
-        if self._authorization.key_and_endpoint_match():
-            raise AdbUnauthorized(_IDLE_MESSAGE)
+        if self._refused_as_idle:
+            raise AdbIdle(_IDLE_MESSAGE)
         self._authorization_pending = True
         raise AdbUnauthorized(_GATED_MESSAGE)
 
@@ -359,7 +371,8 @@ class AdbTv:
             await self._shell(_DISABLE_AUTH_TIMEOUT)
             value = parse_setting_value((await self._shell(_READ_AUTH_TIMEOUT)).text)
         except AdbError as exc:
-            authorization.note_timeout_attempt()
+            # Tempo esgotado ou transporte caído não é resposta da TV: não gasta uma das tentativas
+            # (senão três toques com Wi-Fi instável a esgotariam para sempre).
             _log.info("não consegui desligar o vencimento da permissão do ADB (%s)", exc.code)
             return
         if value == "0":
@@ -548,6 +561,10 @@ class AdbTv:
                     self._blocked_error = None
                     self._authorization_pending = False
                     self._connected = True
+                    if is_user_initiated() and await self._needs_proof():
+                        # A pessoa tocou de novo logo depois de aceitar: a prova é neste toque.
+                        await self._disconnect_locked()
+                        await self._connect_locked()
                     return
             raise type(self._blocked_error)(self._blocked_error.message)
         await self._connect_locked()

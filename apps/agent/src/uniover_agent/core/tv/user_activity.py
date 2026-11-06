@@ -4,7 +4,8 @@ Uma conexão ADB nova a uma TV que perdeu a permissão (reset de fábrica, revog
 aviso "Permitir depuração USB". Sem ninguém diante da tela da TV no app ninguém o veria, então a
 partida, o vigia e as tarefas de fundo só usam um transporte que já está aberto.
 
-O sinal é **explícito**: `tv.presence.v1`, que a tela da TV manda enquanto está visível. O tipo de
+O sinal é **explícito**: `tv.presence.v1`, que a tela da TV manda quando alguém **toca nela** (nunca
+por tempo: uma aba esquecida aberta não manda nada). O tipo de
 um comando não prova ninguém (o atalho do iPhone e o desligamento agendado mandam teclas e abrem
 apps sem pessoa na tela), então tecla, texto e afins não contam. Dentro de `WINDOW_SECONDS` depois
 de um sinal, abrir a conexão é parte do uso. Os pedidos da pessoa que já levam a marca de

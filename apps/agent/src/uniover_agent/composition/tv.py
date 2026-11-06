@@ -147,7 +147,7 @@ class TvSetup:
     text: TextReconciler | None = None
     # Comandos longos, atendidos em tarefa própria para não segurar as teclas atrás deles.
     background_commands: set[str] = field(default_factory=set)
-    # Comandos executados sem resposta (a API não a espera: a presença chega a cada 20 s).
+    # Comandos executados sem resposta (a API não a espera: a presença vem a cada toque na tela).
     silent_commands: set[str] = field(default_factory=set)
     # O que se sabe da TV (dica de identificador e MAC): o vigia do endereço e o Wake-on-LAN usam.
     known: TvKnown = field(default_factory=TvKnown)

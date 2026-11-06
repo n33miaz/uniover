@@ -20,6 +20,7 @@ from uniover_agent.ports.tv_channel import TvChannel, TvChannelError
 ADB_UNAVAILABLE: Final = "adb_unavailable"
 ADB_UNAUTHORIZED: Final = "adb_unauthorized"
 ADB_UNREACHABLE: Final = "adb_unreachable"
+ADB_IDLE: Final = "adb_idle"
 ADB_TIMEOUT: Final = "adb_timeout"
 ADB_FAILED: Final = "adb_failed"
 
@@ -80,6 +81,16 @@ class AdbUnauthorized(AdbNotReady):
     """A TV ainda não autorizou este PC (aparece um aviso na tela da TV)."""
 
     code = ADB_UNAUTHORIZED
+
+
+class AdbIdle(AdbNotReady):
+    """O ADB não abriu conexão nova por regra, não por defeito: ninguém tocou na tela da TV agora.
+
+    Não é recusa da TV (ela pode estar com a permissão dada): é o agente que se recusa a abrir um
+    aviso sem ninguém por perto. Um toque no app (ou o sinal de presença) libera.
+    """
+
+    code = ADB_IDLE
 
 
 class AdbUnreachable(AdbNotReady):
