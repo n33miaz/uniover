@@ -541,6 +541,9 @@ $hangLaps = [int](Get-Setting 'UNIOVER_SUPERVISOR_HANG_LAPS' 20)
 $hangGraceSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANG_GRACE_SECONDS' 240
 $confirmAfterSeconds = Get-Setting 'UNIOVER_SUPERVISOR_CONFIRM_SECONDS' 600
 $slowLapSeconds = [Math]::Max(60, $lapSeconds * 4)
+# Saida do agente que encontrou outro dono da instalacao (EXIT_ALREADY_RUNNING, em single_instance.py).
+$ownedElsewhereCode = 5
+$ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
@@ -660,6 +663,13 @@ while ($true) {
     $seconds = ((Get-Date) - $started).TotalSeconds
     $code = $null
     try { $code = $process.ExitCode } catch { }
+    # Codigo 5: outro agente ja e dono desta instalacao (uma execucao manual aberta, um processo antigo que sobreviveu).
+    # Nao e queda: nao conta contra a versao em prova, nao entra na fila de diagnostico e a espera e fixa e calma.
+    if (-not $restartForUpdate -and -not $hung -and $code -eq $ownedElsewhereCode) {
+        Write-SupLog 'INFO' 'outro agente ja roda nesta instalacao; espero antes de tentar de novo'
+        Start-Sleep -Seconds $ownedElsewhereWait
+        continue
+    }
     if (-not $restartForUpdate) {
         Write-SupLog 'WARNING' ('o agente terminou (codigo ' + $code + ') depois de ' + [int]$seconds + ' s')
         if (-not $hung) {
