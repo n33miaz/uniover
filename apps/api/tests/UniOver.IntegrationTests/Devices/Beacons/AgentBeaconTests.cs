@@ -415,6 +415,71 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task TheRefusalDoor_HasItsOwnGlobalCeiling_EvenWhenTheAddressChanges()
+    {
+        var counter = new SlugAndBeaconQueryCounter();
+        // O teto de tokens inválidos por origem não entra aqui (alto): é o endereço que muda, e só o teto geral das recusas segura.
+        await using var app = await TransportApp.StartAsync(
+            postgres, new DevicesAppOptions { CommandInterceptor = counter, TokenFailureLimit = 100000 });
+        var queries = counter.Count;
+
+        for (var i = 0; i < 100; i++)
+        {
+            (await app.HandshakeStatusAsync($"pc-fantasma-{i:000}", DeviceSecrets.NewDeviceToken().Token))
+                .Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        // Cada tentativa gasta o teto antes de qualquer consulta: o excedente (40) não custa nada. É um limite aceito: quem esgota o
+        // teto apaga as anotações de recusa de todos por um minuto, mas o custo ao banco é fixo.
+        (counter.Count - queries).Should().BeLessThanOrEqualTo(60);
+        (counter.Count - queries).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task AForgedInvalidToken_CannotTakeTheProtocolSlot_NorOverwriteTheProtocolRefusal()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+
+        // Um token inventado no caminho do agente ocupa a vaga do "invalid_token" neste minuto...
+        (await app.HandshakeStatusAsync(app.Agent.Slug, DeviceSecrets.NewDeviceToken().Token)).Should().Be(HttpStatusCode.Unauthorized);
+        (await RowAsync(app, app.Agent.Id))!.LastRejectReason.Should().Be("invalid_token");
+
+        // ...e a recusa de protocolo do hub, no mesmo minuto, ainda entra (a janela é por motivo).
+        await agent.SendTextAsync(agent.Envelope("agent.hello.v1", new JsonObject { ["agentVersion"] = "9.9.9" }));
+        await WaitForRejectionAsync(app, "protocol");
+
+        // Um novo token inventado, no minuto seguinte, não apaga a recusa de protocolo.
+        app.App.Time.Advance(TimeSpan.FromMinutes(1));
+        (await app.HandshakeStatusAsync(app.Agent.Slug, DeviceSecrets.NewDeviceToken().Token)).Should().Be(HttpStatusCode.Unauthorized);
+        (await RowAsync(app, app.Agent.Id))!.LastRejectReason.Should().Be("protocol");
+    }
+
+    [Fact]
+    public async Task AnAcceptedHello_CostsNoBeaconQuery_WhenNoProtocolRefusalIsNoted()
+    {
+        var counter = new SlugAndBeaconQueryCounter(beaconTableOnly: true);
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = counter });
+        await using var agent = await app.ConnectAsync();
+
+        // O primeiro hello confere o banco uma vez (processo novo); daí em diante o agente saudável não paga nada.
+        await agent.SendHelloAsync("2.5.0", "tv.remote");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "2.5.0", "primeiro hello processado");
+        // A limpeza roda logo depois da presença; um hello seguinte só é processado depois dela terminar.
+        await agent.SendHelloAsync("2.5.1", "tv.remote");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "2.5.1", "segundo hello processado");
+        var afterSecond = counter.Count;
+        afterSecond.Should().BeLessThanOrEqualTo(1, "uma única atualização condicional, só no primeiro hello do processo");
+
+        await agent.SendHelloAsync("2.5.2", "tv.remote");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "2.5.2", "terceiro hello processado");
+        await agent.SendHelloAsync("2.5.3", "tv.remote");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "2.5.3", "quarto hello processado");
+
+        counter.Count.Should().Be(afterSecond);
+    }
+
+    [Fact]
     public async Task ARepeatedGuessOfAMissingSlug_CostsOneQueryPerMinute()
     {
         var counter = new SlugAndBeaconQueryCounter();
@@ -436,7 +501,7 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
     }
 
     /// <summary>Conta as consultas das duas portas anônimas: a procura do agente pelo slug e as leituras e gravações da tabela de balizas.</summary>
-    private sealed class SlugAndBeaconQueryCounter : DbCommandInterceptor
+    private sealed class SlugAndBeaconQueryCounter(bool beaconTableOnly = false) : DbCommandInterceptor
     {
         private int _count;
 
@@ -460,7 +525,7 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         {
             var text = command.CommandText;
             if (text.Contains("agent_beacons", StringComparison.OrdinalIgnoreCase)
-                || (text.Contains("slug", StringComparison.OrdinalIgnoreCase) && text.Contains("agents", StringComparison.OrdinalIgnoreCase)
+                || (!beaconTableOnly && text.Contains("slug", StringComparison.OrdinalIgnoreCase) && text.Contains("agents", StringComparison.OrdinalIgnoreCase)
                     && !text.Contains("token_hash", StringComparison.OrdinalIgnoreCase)))
             {
                 Interlocked.Increment(ref _count);

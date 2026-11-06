@@ -206,6 +206,8 @@ describe('DevicesPage', () => {
       const line = el.querySelector('.startup')!;
       expect(line.textContent).toContain('Conectado, mas a versão do agente foi recusada');
       expect(line.getAttribute('role')).toBeNull();
+      // Vem do hub, com o agente autenticado: não leva o selo de não verificado.
+      expect(line.textContent).not.toContain('não verificado');
     });
 
     it('keeps the list when the clues cannot be read', async () => {
