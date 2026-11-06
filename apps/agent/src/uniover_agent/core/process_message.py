@@ -87,6 +87,7 @@ class ProcessMessage:
                 command.type,
                 command.body,
                 command.correlation_id,
+                command.sent_at,
                 self._monotonic(),
                 is_latest,
             )

@@ -13,12 +13,15 @@ de um sinal, abrir a conexão é parte do uso. Os pedidos da pessoa que já leva
 """
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Final
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import Handler
 
 WINDOW_SECONDS: Final = 60.0
+# Idade máxima de um sinal de presença (pelo `ts` do envelope): mais velho que isto é ignorado.
+MAX_SIGNAL_AGE_SECONDS: Final = 15.0
 # Declarada no `agent.hello.v1`: a API só manda `tv.presence.v1` a quem a tem.
 PRESENCE_CAPABILITY: Final = "tv.presence.v1"
 PRESENCE_TYPE: Final = "tv.presence.v1"
@@ -41,11 +44,35 @@ class UserActivity:
         return self._last is not None and self._monotonic() - self._last <= self._window
 
 
-def tv_presence_handler(activity: UserActivity) -> Handler:
-    """`tv.presence.v1`: alguém está na tela da TV. Sem resposta (a API não a espera)."""
+def _age_seconds(sent_at: str | None, now: datetime) -> float | None:
+    if not sent_at:
+        return None
+    try:
+        sent = datetime.fromisoformat(sent_at)
+    except ValueError:
+        return None
+    if sent.tzinfo is None:
+        return None
+    return (now - sent).total_seconds()
+
+
+def tv_presence_handler(
+    activity: UserActivity,
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    max_age_seconds: float = MAX_SIGNAL_AGE_SECONDS,
+) -> Handler:
+    """`tv.presence.v1`: alguém tocou na tela da TV. Sem resposta (a API não a espera).
+
+    Um sinal que o gateway segurou (agente reconectando) chega velho: o `ts` do envelope é a hora
+    em que a API o montou, e acima de `max_age_seconds` ele é ignorado, senão a janela de 60 s
+    começaria na chegada e não no toque. Sem `ts` utilizável vale como chegou.
+    """
 
     async def handle(command: Command) -> CommandResult:
-        activity.touch()
+        age = _age_seconds(command.sent_at, now())
+        if age is None or age <= max_age_seconds:
+            activity.touch()
         return CommandResult(command.id, ResultStatus.OK)
 
     return handle
