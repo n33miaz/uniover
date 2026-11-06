@@ -35,6 +35,32 @@ import { PwaUpdateService } from './pwa-update.service';
           </div>
         </div>
       }
+      @if (pwa.confirmingUpdate()) {
+        <div class="scrim">
+          <div
+            class="dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="update-confirm-title"
+            aria-describedby="update-confirm-text"
+            tabindex="-1"
+            (keydown.escape)="pwa.cancelUpdate()"
+          >
+            <h2 id="update-confirm-title" i18n="@@pwa.update-confirm-title">Atualizar agora?</h2>
+            <p id="update-confirm-text" i18n="@@pwa.update-confirm-text">
+              Há algo não salvo nesta tela. Atualizar recarrega a página e perde esse trabalho.
+            </p>
+            <div class="choices">
+              <button type="button" class="keep ui-tap" (click)="pwa.cancelUpdate()">
+                <span i18n="@@pwa.update-confirm-keep">Continuar editando</span>
+              </button>
+              <button type="button" class="action ui-tap" (click)="pwa.confirmUpdate()">
+                <span i18n="@@pwa.update-confirm-go">Atualizar mesmo assim</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
@@ -56,6 +82,48 @@ import { PwaUpdateService } from './pwa-update.service';
       border-radius: var(--radius);
       background: var(--a-accent);
       color: var(--a-on-accent);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .scrim {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: grid;
+      place-items: center;
+      padding: var(--gutter);
+      background: color-mix(in srgb, var(--a-ink) 45%, transparent);
+    }
+    .dialog {
+      max-width: 22rem;
+      padding: 20px;
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius);
+      background: var(--a-surface);
+      color: var(--a-ink);
+    }
+    .dialog h2 {
+      margin: 0 0 8px;
+      font-size: var(--fs-title);
+    }
+    .dialog p {
+      margin: 0 0 16px;
+      font-size: var(--fs-small);
+    }
+    .choices {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .keep {
+      min-height: 44px;
+      padding: 0 16px;
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius);
+      background: var(--a-surface);
+      color: var(--a-ink);
       font: inherit;
       font-weight: 600;
       cursor: pointer;
