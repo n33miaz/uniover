@@ -633,3 +633,27 @@ def test_a_swap_that_fails_removes_the_marker_of_the_version_that_did_not_come_i
     assert not result.updated
     assert not (installed.base / "runtime" / "update-trial.txt").exists()
     assert read_version(installed.source) == OLD
+
+
+def test_an_update_that_used_up_its_whole_budget_gives_up_before_swapping(
+    installed: Installation,
+) -> None:
+    # A extração/consulta lentas (antivírus, disco no limite) comem o orçamento: a atualização
+    # desiste antes de trocar as pastas, em vez de o supervisor matá-la no meio.
+    clock = {"now": 0.0}
+
+    def slow_download(sha: str, destination: Path) -> None:
+        installed.download(sha, destination)
+        clock["now"] += module.WORST_CASE_SECONDS + 1
+
+    result = installed.update(NEW, download=slow_download, monotonic=lambda: clock["now"])
+    assert not result.updated and result.outcome == "failed"
+    assert "tempo máximo" in result.message
+    assert read_version(installed.source) == OLD
+    assert installed.leftovers() == []
+    assert not (installed.base / "runtime" / "update-trial.txt").exists()
+
+
+def test_an_update_inside_its_budget_is_not_affected(installed: Installation) -> None:
+    clock = {"now": 0.0}
+    assert installed.update(NEW, monotonic=lambda: clock["now"]).updated
