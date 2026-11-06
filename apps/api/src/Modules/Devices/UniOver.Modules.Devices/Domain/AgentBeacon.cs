@@ -9,7 +9,6 @@ public sealed class AgentBeacon
 {
     public const int StageMax = 32;
     public const int CodeMax = 32;
-    public const int DetailMax = 200;
     public const int VersionMax = 40;
     public const int OsMax = 24;
     public const int ReasonMax = 32;
@@ -27,8 +26,6 @@ public sealed class AgentBeacon
     public string? LastStage { get; private set; }
 
     public string? LastCode { get; private set; }
-
-    public string? LastDetail { get; private set; }
 
     /// <summary>Quando a API recebeu a baliza (relógio do servidor; o do PC não vale).</summary>
     public DateTimeOffset? LastAt { get; private set; }
@@ -59,13 +56,12 @@ public sealed class AgentBeacon
         && string.Equals(LastCode, code, StringComparison.Ordinal)
         && now - at < window;
 
-    public void ApplyBeacon(string stage, string code, string? detail, string? version, string? os, DateTimeOffset now)
+    public void ApplyBeacon(string stage, string code, string? version, string? os, DateTimeOffset now)
     {
         var failed = !string.Equals(code, OkCode, StringComparison.Ordinal);
         FirstFailAt = failed ? FirstFailAt ?? now : null;
         LastStage = stage;
         LastCode = code;
-        LastDetail = detail;
         LastAt = now;
         Version = version;
         Os = os;

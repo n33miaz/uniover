@@ -20,7 +20,6 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                     agent_id = table.Column<Guid>(type: "uuid", nullable: false),
                     last_stage = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: true),
                     last_code = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: true),
-                    last_detail = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     last_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     first_fail_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     count = table.Column<int>(type: "integer", nullable: false),
