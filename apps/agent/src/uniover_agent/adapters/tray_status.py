@@ -23,8 +23,14 @@ _log = logging.getLogger(__name__)
 
 # Espera entre as novas tentativas de uma gravação que falhou (rodam fora do laço de eventos).
 RETRY_DELAYS = (0.05, 0.1, 0.2)
+# Quantas vezes o ciclo de novas tentativas recomeça enquanto o estado continua pendente.
+RETRY_CYCLES = 3
 # Regrava o estado mesmo sem mudança: uma gravação perdida se corrige sozinha.
 REWRITE_SECONDS = 60.0
+# Regravações seguidas que ainda deixam o estado pendente antes de o log avisar (uma por minuto).
+STALE_WARN_AFTER = 3
+# Uma sobra `.new` mais nova que isto pode ser de uma gravação em andamento.
+ORPHAN_AGE_SECONDS = 60.0
 _READ_DELAYS = (0.02, 0.05, 0.1)
 
 
@@ -33,7 +39,12 @@ def status_path() -> Path:
 
 
 class TrayStatus:
-    """Grava por troca atômica para que a bandeja nunca leia JSON pela metade."""
+    """Grava por troca atômica para que a bandeja nunca leia JSON pela metade.
+
+    Duas travas, para o laço de eventos nunca esperar por disco: `_state_lock` protege só os campos
+    (fica presa por instantes) e `_io_lock` serializa as gravações. Quem chama de dentro do laço
+    só tenta `_io_lock` sem esperar; se outra gravação está em curso, ela vê o estado pendente e
+    regrava ao terminar."""
 
     def __init__(
         self,
@@ -50,11 +61,15 @@ class TrayStatus:
         # conexão" por ele.
         self._since = datetime.now(UTC)
         self._power: Literal["on", "off", "unknown"] = "unknown"
-        self._lock = threading.Lock()
-        # Gravação que falhou e ainda não foi refeita: a próxima regravação periódica a cobre.
-        self._dirty = False
+        self._state_lock = threading.Lock()
+        self._io_lock = threading.Lock()
+        # O arquivo pode estar diferente dos campos: falta gravar (ou a última gravação falhou).
+        self._dirty = True
         self._retrying = False
         self._retry_thread: threading.Thread | None = None
+        self._last_error = ""
+        self._stale_rewrites = 0
+        self._sweep_orphans()
         self.write()
 
     @property
@@ -63,18 +78,10 @@ class TrayStatus:
 
     def write(self) -> None:
         """Grava o estado atual. Nunca levanta nem dorme: se a troca falhar, refaz em segundo plano
-        e deixa o estado marcado como pendente para a regravação periódica."""
-        with self._lock:
-            done = self._attempt()
-            self._dirty = not done
-            start = not done and not self._retrying
-            if start:
-                self._retrying = True
-        if start:
-            self._retry_thread = threading.Thread(
-                target=self._retry, name="tray-status-retry", daemon=True
-            )
-            self._retry_thread.start()
+        e o estado fica pendente para a regravação periódica."""
+        with self._state_lock:
+            self._dirty = True
+        self._flush(blocking=False)
 
     def wait_retries(self, timeout: float = 5.0) -> None:
         """Espera as novas tentativas em segundo plano terminarem (útil em testes)."""
@@ -88,40 +95,87 @@ class TrayStatus:
         while True:
             await self._clock.sleep(REWRITE_SECONDS)
             await asyncio.to_thread(self.write)
+            self._note_rewrite()
+
+    def _note_rewrite(self) -> None:
+        if not self._dirty:
+            self._stale_rewrites = 0
+            return
+        self._stale_rewrites += 1
+        if self._stale_rewrites >= STALE_WARN_AFTER:
+            # Cada regravação é de um minuto: o aviso sai no máximo uma vez por minuto.
+            _log.warning(
+                "o estado da bandeja segue sem gravar há %d regravações (%s)",
+                self._stale_rewrites,
+                self._last_error or "sem erro registrado",
+            )
+
+    def _flush(self, *, blocking: bool) -> bool:
+        """Grava enquanto houver estado pendente. `False` se falhou ou se outra gravação, que
+        cuidará do pendente, está em curso."""
+        while True:
+            if not self._io_lock.acquire(blocking=blocking):
+                return False
+            try:
+                with self._state_lock:
+                    if not self._dirty:
+                        return True
+                    self._dirty = False
+                    payload = self._payload()
+                if not self._attempt(payload):
+                    with self._state_lock:
+                        self._dirty = True
+                    self._ensure_retry()
+                    return False
+            finally:
+                self._io_lock.release()
+
+    def _ensure_retry(self) -> None:
+        with self._state_lock:
+            if self._retrying:
+                return
+            self._retrying = True
+        self._retry_thread = threading.Thread(
+            target=self._retry, name="tray-status-retry", daemon=True
+        )
+        self._retry_thread.start()
 
     def _retry(self) -> None:
-        for index, delay in enumerate(self._retry_delays):
-            time.sleep(delay)
-            with self._lock:
-                done = self._attempt()
-                if done:
-                    self._dirty = False
-                if done or index == len(self._retry_delays) - 1:
+        cycles = 0
+        while True:
+            for delay in self._retry_delays:
+                time.sleep(delay)
+                if self._flush(blocking=True):
+                    break
+            with self._state_lock:
+                cycles += 1
+                # Uma falha nova no fim do ciclo não espera os 60 s: recomeça, até o limite.
+                if not self._dirty or cycles >= RETRY_CYCLES:
                     self._retrying = False
                     return
-        with self._lock:
-            self._retrying = False
 
-    def _attempt(self) -> bool:
-        """Uma tentativa de gravação atômica; chamada com o `_lock` preso."""
+    def _payload(self) -> str:
+        """Texto a gravar; chamada com o `_state_lock` preso."""
+        return json.dumps(
+            {
+                "connected": self._connected,
+                "power": self._power,
+                "tv_name": self._tv_name,
+                "since": self._since.isoformat(timespec="seconds"),
+            },
+            ensure_ascii=False,
+        )
+
+    def _attempt(self, payload: str) -> bool:
+        """Uma tentativa de gravação atômica; chamada com o `_io_lock` preso."""
         temporary = self._path.with_name(f"{self._path.name}.{uuid4().hex}.new")
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_text(
-                json.dumps(
-                    {
-                        "connected": self._connected,
-                        "power": self._power,
-                        "tv_name": self._tv_name,
-                        "since": self._since.isoformat(timespec="seconds"),
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+            temporary.write_text(payload, encoding="utf-8")
             temporary.replace(self._path)
-        except OSError:
+        except OSError as exc:
             # A bandeja pode estar lendo o arquivo sem compartilhar a troca no Windows.
+            self._last_error = type(exc).__name__
             try:
                 temporary.unlink(missing_ok=True)
             except OSError:
@@ -129,20 +183,35 @@ class TrayStatus:
             return False
         return True
 
+    def _sweep_orphans(self) -> None:
+        """Apaga sobras `tray-status.json.*.new` de gravações que o processo não terminou."""
+        cutoff = time.time() - ORPHAN_AGE_SECONDS
+        try:
+            for leftover in self._path.parent.glob(f"{self._path.name}.*.new"):
+                try:
+                    if leftover.stat().st_mtime < cutoff:
+                        leftover.unlink()
+                except OSError:
+                    continue
+        except OSError:
+            return
+
     def connected(self) -> None:
-        self._change(True)
+        self._change(connected=True)
 
     def disconnected(self) -> None:
-        self._change(False)
+        self._change(connected=False)
 
-    def _change(self, connected: bool) -> None:
-        if self._connected != connected:
-            self._since = datetime.now(UTC)
-        self._connected = connected
+    def _change(self, *, connected: bool) -> None:
+        with self._state_lock:
+            if self._connected != connected:
+                self._since = datetime.now(UTC)
+            self._connected = connected
         self.write()
 
     def tv_state(self, state: TvState) -> None:
-        self._power = state.power
+        with self._state_lock:
+            self._power = state.power
         self.write()
 
 
