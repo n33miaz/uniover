@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,9 @@ def test_the_diary_explains_a_long_gap_since_the_last_beat(
     clock = FakeClock()
     path = tmp_path / "runtime" / "last-alive"
     path.parent.mkdir()
-    path.write_text(f"{clock.now().timestamp() - 7200:.0f}", encoding="ascii")
+    old = clock.now().timestamp() - 7200
+    path.write_text(f"{old:.0f}", encoding="ascii")
+    os.utime(path, (old, old))  # a data do arquivo também é de 2 h atrás
     diary = AbsenceDiary(path, clock, uptime=lambda: 300.0)
     with caplog.at_level(logging.WARNING):
         diary.start()
@@ -63,3 +66,17 @@ def test_the_diary_reports_a_reconnect_after_a_long_outage(tmp_path: Path) -> No
     diary.connected()
     assert len(diary.reasons) == 1
     assert "rede ou servidor" in diary.reasons[0]
+
+
+def test_with_a_full_disk_only_the_file_date_moves_and_that_is_no_absence(
+    tmp_path: Path,
+) -> None:
+    # Disco cheio: o agente só consegue mudar a data do arquivo e o texto fica velho. O `start()`
+    # da próxima execução usa o maior dos dois, senão relataria uma ausência que não houve.
+    clock = FakeClock()
+    path = tmp_path / "last-alive"
+    path.write_text(f"{clock.now().timestamp() - 7200:.0f}", encoding="ascii")  # texto velho
+    # A data (mtime) é de agora: o arquivo foi tocado há pouco.
+    diary = AbsenceDiary(path, clock, uptime=lambda: 300.0)
+    diary.start()
+    assert diary.reasons == []

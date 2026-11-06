@@ -75,16 +75,27 @@ class AbsenceDiary:
 
     def start(self) -> None:
         """Lê a última marca da execução anterior e explica o intervalo, se foi longo."""
-        try:
-            previous: float | None = float(self._path.read_text(encoding="ascii").strip())
-        except OSError, ValueError:
-            previous = None
+        previous = self._last_mark()
         self.beat()
         if previous is None:
             return
         gap = self._clock.now().timestamp() - previous
         if gap >= LONG_ABSENCE_SECONDS:
             self._report(likely_reason(gap, self._uptime(), process_restarted=True))
+
+    def _last_mark(self) -> float | None:
+        """A última marca: o maior entre o texto e a data do arquivo. Com o disco cheio só a data
+        avança (o texto fica velho), e ler só o texto relataria uma ausência que não houve."""
+        marks: list[float] = []
+        try:
+            marks.append(float(self._path.read_text(encoding="ascii").strip()))
+        except OSError, ValueError:
+            pass
+        try:
+            marks.append(self._path.stat().st_mtime)
+        except OSError:
+            pass
+        return max(marks) if marks else None
 
     def beat(self) -> None:
         try:
