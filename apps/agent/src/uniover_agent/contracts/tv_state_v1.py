@@ -15,10 +15,10 @@ class TvStateV1BodyPower(RootModel[Literal['on', 'off', 'unknown']]):
 
 
 class TvStateV1BodyConnection(
-    RootModel[Literal['hot', 'hibernating', 'disconnected', 'not_paired']]
+    RootModel[Literal['hot', 'hibernating', 'disconnected', 'not_paired', 'waking']]
 ):
     root: Annotated[
-        Literal['hot', 'hibernating', 'disconnected', 'not_paired'],
+        Literal['hot', 'hibernating', 'disconnected', 'not_paired', 'waking'],
         Field(title='TvStateV1BodyConnection'),
     ]
 
