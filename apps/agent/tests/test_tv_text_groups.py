@@ -198,10 +198,10 @@ class FailsOnCall(FakeTvAdb):
 
 
 @pytest.mark.parametrize("error", [AdbCommandFailed("x"), AdbTimeout("x")])
-async def test_a_failing_middle_group_resolved_by_the_echo_retypes_only_the_rest(
+async def test_an_echo_of_only_the_confirmed_text_does_not_prove_the_group_and_resyncs(
     error: Exception,
 ) -> None:
-    """A TV não digitou nada do grupo que falhou (eco igual ao confirmado): só o resto vai."""
+    """O eco `abc` não diz se o grupo `def` chegou: só `abcdef` diria. Refaz o campo."""
     rig = Rig(adb_group_chars=3, adb=FailsOnCall(2, error))
     rig.remote.on_text_field(rig.editor.observe_field)
     rig.remote.push_text_field(field("", counter=7))
@@ -212,22 +212,9 @@ async def test_a_failing_middle_group_resolved_by_the_echo_retypes_only_the_rest
     assert rig.remote.texts == []
     rig.remote.push_text_field(field("abc", counter=7))
     await rig.editor.set_text("abcdefgh")
-    # Sem repetir "abc" nem apagar nada.
-    assert rig.adb.typed == ["abc", "def", "gh"]
-    assert rig.remote.keys.count("DEL") == 0
+    assert rig.remote.keys.count("DEL") == 6
+    assert rig.adb.typed == ["abc", "abc", "def", "gh"]
     assert rig.editor.last_text == "abcdefgh"
-
-
-async def test_a_failing_last_group_resolved_by_the_echo_is_retried_alone() -> None:
-    rig = Rig(adb_group_chars=3, adb=FailsOnCall(3, AdbCommandFailed("x")))
-    rig.remote.on_text_field(rig.editor.observe_field)
-    rig.remote.push_text_field(field("", counter=7))
-    with pytest.raises(TvSessionError):
-        await rig.editor.set_text("abcdefgh")
-    assert rig.editor.last_text == "abcdef"
-    rig.remote.push_text_field(field("abcdef", counter=7))
-    await rig.editor.set_text("abcdefgh")
-    assert rig.adb.typed == ["abc", "def", "gh"]
 
 
 async def test_the_adb_going_away_in_the_middle_sends_the_rest_by_the_remote_in_order() -> None:
@@ -314,7 +301,7 @@ async def test_an_ambiguous_failure_resolved_by_a_later_echo_types_only_the_rest
 
 async def test_an_echo_that_arrived_during_the_failing_command_resolves_it_at_once() -> None:
     rig, adb = ambiguous_rig(AdbTimeout("x"))
-    adb.on_typed = [field("abcdef", counter=7)]
+    adb.on_typed = [field("abcd", counter=7), field("abcdef", counter=7)]
     rig.remote.push_text_field(field("", counter=7))
     with pytest.raises(TvSessionError):
         await rig.editor.set_text("abcdefgh")
@@ -324,16 +311,31 @@ async def test_an_echo_that_arrived_during_the_failing_command_resolves_it_at_on
     assert rig.remote.keys.count("DEL") == 0
 
 
-async def test_an_echo_that_does_not_fit_the_confirmed_and_the_group_is_ignored() -> None:
+async def test_an_intermediate_or_unrelated_echo_does_not_resolve_the_doubt() -> None:
     rig, _ = ambiguous_rig(AdbTimeout("x"))
     rig.remote.push_text_field(field("", counter=7))
     with pytest.raises(TvSessionError):
         await rig.editor.set_text("abcdefgh")
     rig.remote.push_text_field(field("zzz", counter=7))  # outro texto
     rig.remote.push_text_field(field("abcdefxyz", counter=7))  # passa do grupo
+    for partial in ("abc", "abcd", "abcde"):  # ecos intermediários da digitação
+        rig.remote.push_text_field(field(partial, counter=7))
     assert rig.editor.last_text == "abc"
     await rig.editor.set_text("abcdefgh")
     assert rig.remote.keys.count("DEL") == 6
+
+
+async def test_an_intermediate_echo_during_the_failing_command_is_not_taken_as_the_result() -> None:
+    rig, adb = ambiguous_rig(AdbTimeout("x"))
+    adb.on_typed = [field("abcd", counter=7)]
+    rig.remote.push_text_field(field("", counter=7))
+    with pytest.raises(TvSessionError):
+        await rig.editor.set_text("abcdefgh")
+    assert rig.editor.last_text == "abc"
+    await rig.editor.set_text("abcdefgh")
+    # Sem prova do grupo inteiro: refaz, nunca digita "efgh" em cima do "abcdef" que a TV já tem.
+    assert rig.remote.keys.count("DEL") == 6
+    assert adb.typed[-3:] == ["abc", "def", "gh"]
 
 
 async def test_a_new_field_clears_the_doubt() -> None:
@@ -346,6 +348,42 @@ async def test_a_new_field_clears_the_doubt() -> None:
     await rig.editor.set_text("novo!")
     assert rig.remote.keys.count("DEL") == 0
     assert adb.typed[-1] == "!"
+
+
+async def test_changing_app_or_session_clears_the_doubt() -> None:
+    rig, _ = ambiguous_rig(AdbTimeout("x"))
+    with pytest.raises(TvSessionError):
+        await rig.editor.set_text("abcdefgh")
+    rig.editor.observe_app("com.a")
+    rig.editor.observe_app("com.b")  # outro app em foco: o campo era de outro lugar
+    rig.clock.advance(60)
+    await rig.editor.set_text("xyz")
+    # Sem dúvida pendente, nada de apagar "confirmado + grupo" no campo do outro app.
+    assert rig.remote.keys.count("DEL") == 0
+
+
+async def test_a_resync_over_the_deletion_cap_continues_where_it_stopped_never_over_deleting() -> (
+    None
+):
+    adb = TypesThenRaises(1, "abc", AdbTimeout("x"))
+    rig = Rig(adb_group_chars=3, adb=adb)
+    rig.remote.on_text_field(rig.editor.observe_field)
+    adb.push = rig.remote.push_text_field
+    rig.remote.push_text_field(field("x" * 199, counter=7))  # campo que já tinha texto
+    target = "x" * 199 + "abc"
+    with pytest.raises(TvSessionError):
+        await rig.editor.set_text(target)
+    assert rig.editor.last_text == "x" * 199
+    # 199 + 3 = 202 `DEL`: o teto de 200 por mensagem para, avisa e guarda quantos faltam.
+    with pytest.raises(TvSessionError) as caught:
+        await rig.editor.set_text(target)
+    assert caught.value.code == "text_resync_incomplete"
+    assert rig.remote.keys.count("DEL") == 200
+    await rig.editor.set_text(target)
+    # Só os 2 que faltavam, e depois o texto inteiro.
+    assert rig.remote.keys.count("DEL") == 202
+    assert "".join(adb.typed[1:]) == target
+    assert rig.editor.last_text == target
 
 
 async def test_a_failure_before_the_shell_is_not_ambiguous_and_the_remote_takes_the_rest() -> None:

@@ -591,14 +591,26 @@ async def test_input_text_with_a_bad_exit_and_empty_output_is_a_failure() -> Non
     assert caught.value.may_have_executed
 
 
-async def test_a_dropped_connection_after_the_shell_started_may_have_typed() -> None:
+async def test_a_client_reply_of_device_offline_means_the_command_did_not_run() -> None:
     runner = authorized()
     runner.script[shell("input text 'x'")] = ok("error: device offline\r\n", returncode=1)
     adb = make(runner)
     with pytest.raises(AdbUnreachable) as caught:
         await adb.input_text("x")
-    # O comando já tinha ido ao shell: quem digita não pode tratar como "nada foi executado".
-    assert caught.value.may_have_executed
+    # O próprio cliente `adb` respondeu antes de abrir o shell: nada foi digitado.
+    assert not caught.value.may_have_executed
+
+
+async def test_a_timeout_while_connecting_is_not_ambiguous_but_one_in_the_shell_is() -> None:
+    runner = FakeAdbRunner({CONNECT: TimeoutError()})
+    with pytest.raises(AdbUnreachable) as connecting:
+        await make(runner).input_text("x")
+    assert not connecting.value.may_have_executed
+    runner = authorized()
+    runner.script[shell("input text 'x'")] = TimeoutError()
+    with pytest.raises(AdbTimeout) as typing:
+        await make(runner).input_text("x")
+    assert typing.value.may_have_executed
 
 
 async def test_a_channel_that_never_opened_did_not_type() -> None:
