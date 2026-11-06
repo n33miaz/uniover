@@ -23,6 +23,7 @@ from uniover_agent.adapters.startup_trace import process_alive
 EXIT_ALREADY_RUNNING: Final = 5
 ALREADY_RUNNING_MESSAGE: Final = "outra instância do agente já está rodando"
 _ERROR_ALREADY_EXISTS: Final = 183
+_ERROR_ACCESS_DENIED: Final = 5
 LOCK_FILE: Final = "agent.lock"
 
 # Trava deste processo, por nome: `main` roda várias vezes no mesmo processo nos testes e a TV pode
@@ -31,7 +32,9 @@ _held: dict[str, Any] = {}
 
 
 def mutex_name(base: Path) -> str:
-    digest = hashlib.sha256(str(base).lower().encode("utf-8")).hexdigest()[:16]
+    # A mesma pasta escrita de outro jeito (barra final, `/`, caixa, link) tem de dar o mesmo nome.
+    canonical = os.path.normcase(os.path.realpath(base))
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
     return f"Local\\UniOver-Agent-{digest}"
 
 
@@ -45,7 +48,11 @@ def _acquire_windows(name: str) -> bool:
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     handle = kernel32.CreateMutexW(None, True, name)
     if not handle:
-        # Sem como criar o mutex, o agente não pode ficar fora do ar por causa da trava.
+        # Mutex criado por um processo elevado: a permissão padrão nega acesso ao token limitado
+        # da tarefa, e negar acesso quer dizer que já existe dono.
+        if ctypes.get_last_error() == _ERROR_ACCESS_DENIED:
+            return False
+        # Qualquer outra falha: o agente não pode ficar fora do ar por causa da trava.
         return True
     if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
         kernel32.CloseHandle(handle)

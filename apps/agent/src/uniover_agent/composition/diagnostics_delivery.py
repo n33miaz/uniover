@@ -65,8 +65,17 @@ class DiagnosticsDelivery:
         return ()
 
     async def after_hello(self) -> None:
-        """Logo depois do `hello`: envia a fila (sem `self_care`, só a das falhas de partida)."""
+        """Logo depois do `hello`: envia a fila.
+
+        Sem `self_care`, a fila só sai quando há falha de partida nela, e sai inteira (o que o
+        supervisor e a auto-verificação deixaram antes também): o arquivo é um só.
+        """
         if not (self._self_care or self._pending_startup):
+            return
+        if self._pending_startup and not self._features.supports(DIAGNOSTICS_CAPABILITY):
+            # Este `hello` não declarou o diagnóstico: nada a enviar agora. A consulta feita aqui
+            # decide o `hello` da próxima conexão.
+            await self._features.refresh()
             return
         await self._shipper.flush()
         if self._pending_startup:
@@ -85,6 +94,10 @@ class DiagnosticsDelivery:
         processo. Ela sai no primeiro `hello` que der: aqui já se sabe o que a API aceita, para o
         `hello` declarar o diagnóstico.
         """
+        # Sem a capacidade (a consulta de partida falhou: rede ainda fora do ar), tenta de novo:
+        # sem `self_care` nada mais a pergunta e a falha de partida ficaria presa até o reinício.
+        if self._pending_startup and not self._features.supports(DIAGNOSTICS_CAPABILITY):
+            await self._features.refresh()
         if self._reported or not (unexpected or attempts >= CONNECTION_FAILURES_BEFORE_TRACE):
             return
         self._reported = True

@@ -1,12 +1,14 @@
 """Um só agente por instalação; falha de conexão antes do primeiro hello deixa rastro."""
 
 import asyncio
+import ctypes
 import os
 import subprocess
 import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,6 +20,7 @@ from uniover_agent.adapters.single_instance import (
     ALREADY_RUNNING_MESSAGE,
     EXIT_ALREADY_RUNNING,
     acquire,
+    mutex_name,
 )
 from uniover_agent.adapters.startup_trace import KIND, LOG_FILE, record_startup_failure
 from uniover_agent.composition.diagnostics_delivery import CONNECTION_FAILURES_BEFORE_TRACE
@@ -102,6 +105,31 @@ def test_a_second_run_exits_with_its_own_code_without_touching_the_queue() -> No
     assert not (base / "runtime" / "diagnostics.sending.jsonl").exists()
     # O segundo agente nem chega à estrutura de pastas do primeiro.
     assert not (base / "config").exists()
+
+
+def test_the_same_installation_written_differently_has_one_mutex(tmp_path: Path) -> None:
+    base = tmp_path / "UniOver"
+    base.mkdir()
+    assert mutex_name(base) == mutex_name(Path(str(base) + os.sep))
+    assert mutex_name(base) == mutex_name(Path(str(base).replace("\\", "/")))
+    assert mutex_name(base) == mutex_name(Path(str(base).upper()))
+    assert mutex_name(base) != mutex_name(tmp_path / "Other")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="mutex nomeado do Windows")
+def test_access_denied_on_the_mutex_means_someone_else_owns_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutex de processo elevado: a tarefa sem elevacao recebe acesso negado e nao roda junto."""
+    kernel32 = MagicMock()
+    kernel32.CreateMutexW.return_value = 0
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: kernel32, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5)
+    assert single_instance._acquire_windows("UniOver-Agent-teste") is False
+
+    # Qualquer outra falha em criar o mutex nao tira o agente do ar.
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 8)
+    assert single_instance._acquire_windows("UniOver-Agent-teste") is True
 
 
 def test_other_commands_do_not_take_the_lock() -> None:
@@ -225,3 +253,69 @@ def test_without_a_writable_marker_the_queue_still_stops_the_repetition(tmp_path
     assert (runtime / "startup-failure.cofre.txt").is_dir()
     # Outro motivo não é calado pelo primeiro.
     assert record_startup_failure("nao_pareado", "c", base=tmp_path, clock=lambda: 1100.0) is True
+
+
+# --- sem auto-verificacao, a falha de partida nao fica presa por uma consulta que falhou ---------
+
+
+class Flaky:
+    """`fetch` das capacidades da API: nao sabe nas primeiras `down` consultas, depois diz."""
+
+    def __init__(self, down: int) -> None:
+        self.down = down
+        self.calls = 0
+
+    async def __call__(self) -> frozenset[str] | None:
+        self.calls += 1
+        return None if self.calls <= self.down else frozenset({DIAGNOSTICS_CAPABILITY})
+
+
+def flaky_delivery(tmp_path: Path, down: int) -> tuple[Delivery, Flaky]:
+    flow = Delivery(
+        tmp_path / "runtime",
+        self_care=False,
+        api_features=None,
+        base=tmp_path,
+    )
+    fetch = Flaky(down)
+    flow.features._fetch = fetch
+    return flow, fetch
+
+
+async def test_without_self_care_a_failed_features_query_is_retried_when_the_connection_fails(
+    tmp_path: Path,
+) -> None:
+    flow, fetch = flaky_delivery(tmp_path, down=1)
+    assert record_startup_failure("cofre", "x", base=tmp_path) is True
+
+    await flow.delivery.prepare()
+    assert flow.delivery.capabilities() == ()  # rede fora do ar na partida
+
+    await flow.delivery.connection_failed(TransportError("sem rede"), False, 1)
+
+    assert fetch.calls == 2
+    assert flow.delivery.capabilities() == (DIAGNOSTICS_CAPABILITY,)
+
+
+async def test_without_self_care_a_query_that_failed_before_the_hello_is_retried_after_it(
+    tmp_path: Path,
+) -> None:
+    flow, fetch = flaky_delivery(tmp_path, down=1)
+    assert record_startup_failure("cofre", "x", base=tmp_path) is True
+    await flow.delivery.prepare()
+
+    await flow.delivery.after_hello()  # o hello saiu sem declarar o diagnostico
+
+    assert flow.transport.sent == []  # nada enviado sem a capacidade declarada
+    assert fetch.calls == 2
+    assert flow.delivery.capabilities() == (DIAGNOSTICS_CAPABILITY,)  # a proxima conexao declara
+
+
+async def test_nothing_is_asked_when_there_is_no_startup_failure_and_no_self_care(
+    tmp_path: Path,
+) -> None:
+    flow, fetch = flaky_delivery(tmp_path, down=0)
+    await flow.delivery.prepare()
+    await flow.delivery.connection_failed(TransportError("sem rede"), False, 1)
+    await flow.delivery.after_hello()
+    assert fetch.calls == 0
