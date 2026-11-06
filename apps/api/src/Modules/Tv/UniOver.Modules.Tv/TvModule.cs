@@ -152,6 +152,7 @@ public static class TvModule
         services.AddScoped<ManageTvsHandler>();
         services.AddScoped<PermissionHandler>();
         services.AddScoped<PairHandler>();
+        services.AddSingleton<PairThrottle>();
         services.AddScoped<NearbyTvsHandler>();
         services.AddScoped<IPairedTvRegistrar, PairedTvRegistrar>();
         return services;

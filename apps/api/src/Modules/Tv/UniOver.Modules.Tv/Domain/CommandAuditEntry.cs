@@ -28,7 +28,7 @@ public static class TvCommandNames
     /// <summary>Alguém pediu que a TV Samsung mostre de novo o aviso "Permitir" do UniOver (o agente nunca o faz sozinho).</summary>
     public const string PermissionRequest = "tv.permission.request";
 
-    /// <summary>O dono pediu o pareamento da Android TV (passo <c>start</c>: mostrar o código; <c>finish</c>: entregar o digitado). O código nunca entra na trilha.</summary>
+    /// <summary>O dono pediu o pareamento da Android TV (passo <c>start</c>: mostrar o código; <c>finish</c>: entregar o digitado; <c>cancel</c>: desistir). O código nunca entra na trilha.</summary>
     public const string Pair = "tv.pair";
 
     /// <summary>O administrador pediu ao agente que procure TVs compatíveis na rede dele (ao adicionar uma TV).</summary>

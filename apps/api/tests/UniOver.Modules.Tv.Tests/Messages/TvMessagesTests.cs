@@ -105,6 +105,14 @@ public class TvMessagesTests
     }
 
     [Fact]
+    public void Pair_Cancelling_CarriesOnlyTheCancelFlag()
+    {
+        var message = TvMessages.Pair(null, cancel: true);
+        message.Type.Should().Be("tv.pair.v1");
+        message.Body.GetRawText().Should().Be("{\"cancel\":true}");
+    }
+
+    [Fact]
     public void Pair_WithACode_CarriesItInTheBody()
     {
         var message = TvMessages.Pair("A1B2C3");
