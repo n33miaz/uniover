@@ -39,7 +39,9 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
         return PortState.OPEN
 
     async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
-        return frozenset({"agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired"})
+        return frozenset(
+            {"agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired", "tv.presence.v1"}
+        )
 
     async def no_info(host: str) -> None:
         return None
@@ -67,7 +69,8 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(connection_module, "tcp_probe", open_probe)
     monkeypatch.setattr(tv_module, "tcp_probe", open_probe)
     monkeypatch.setattr(main_module, "identify_tv", no_identity)
-    # A API dos testes "aceita o diagnóstico"; os testes do rollout trocam isto por vazio ou `None`.
+    # A API dos testes "aceita o diagnóstico e a presença"; os testes do rollout trocam isto por
+    # vazio ou `None`.
     monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
     monkeypatch.setattr(tv_locate, "http_json", no_json)
     monkeypatch.setattr(tv_locate, "ssdp_search", no_ssdp)

@@ -5,7 +5,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys
+from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbAuthRecord, AdbKeys
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput
 
 HOST = "192.168.1.6"
@@ -101,6 +101,9 @@ class FakeAdbRunner:
         try:
             await asyncio.sleep(self.delay)
             reply = self.script.get(key)
+            if reply is None and key == DISCONNECT:
+                # Desfazer uma conexão recusada é do adaptador; o teste só precisa que dê certo.
+                reply = ok(f"disconnected {SERIAL}\r\n")
             if reply is None:
                 raise AssertionError(f"comando adb sem resposta no teste: {key}")
             if isinstance(reply, list):
@@ -139,6 +142,27 @@ class OpenAuthorization(AdbAuthorization):
 
     def has_grant(self) -> bool:
         return False
+
+    def keeps_channel(self, mac: str | None) -> bool:
+        return False  # o comportamento de antes da trava: `disconnect` desconecta de verdade
+
+    def proven_for(self, mac: str | None) -> bool:
+        return True
+
+    def forget_device(self) -> None:
+        return None
+
+    def note_serial(self, serial: str) -> None:
+        return None
+
+    def mark_timeout_disabled(self) -> None:
+        return None
+
+    def note_timeout_attempt(self) -> None:
+        return None
+
+    def _save(self, record: AdbAuthRecord) -> None:
+        self._record = record  # nunca grava em disco (nem em `sem-estado/`)
 
     def mark_granted(self, snapshot: str | None, mac: str | None) -> bool:
         return True
