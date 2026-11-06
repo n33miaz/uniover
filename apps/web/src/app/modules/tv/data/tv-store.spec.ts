@@ -651,6 +651,20 @@ describe('TvStore', () => {
       expect(api.cleanup).toHaveBeenCalledTimes(1);
     });
 
+    it('opening an app does not wait more than a moment for a presence the gateway is holding', async () => {
+      const order: string[] = [];
+      api.presence.mockImplementation(() => new Promise<void>(() => undefined)); // o gateway segura o sinal
+      api.launch.mockImplementation(async () => void order.push('launch'));
+      await started();
+      const launching = store.launch(shortcut(1));
+      await flush();
+      expect(api.launch).not.toHaveBeenCalled(); // ainda dentro do prazo
+      await vi.advanceTimersByTimeAsync(1_500);
+      await launching;
+      expect(order).toEqual(['launch']);
+      expect(api.presence).toHaveBeenCalledTimes(1); // o sinal segue a caminho; nada é reenviado
+    });
+
     it('cleaning the TV signals first, then cleans', async () => {
       const order: string[] = [];
       api.presence.mockImplementation(async () => void order.push('presence'));
