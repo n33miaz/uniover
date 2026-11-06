@@ -8,6 +8,7 @@ using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.TvLivre;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 using UniOver.SharedKernel;
@@ -58,31 +59,77 @@ internal sealed partial class TvAgentMessageHandler(
             return;
         }
 
-        var tv = await db.Tvs.SingleOrDefaultAsync(t => t.AgentSlug == message.AgentId, cancellationToken);
-        var tvId = tv?.Id ?? Guid.Empty;
-        if (tv is null)
+        if (WritesTvRows(message.Type))
         {
-            // Instalações que ainda dependem de AgentId não têm linha em tvs. Mantêm o comportamento anterior, mas só
-            // enquanto não houver TV salva para o agente: uma TV adicional nunca recebe mensagens por esse atalho.
-            var fallback = await agents.ResolveAsync(cancellationToken);
-            if (!fallback.IsConfigured || !string.Equals(fallback.AgentSlug, message.AgentId, StringComparison.Ordinal))
-            {
-                LogIgnored(message.AgentId, message.Type);
-                return;
-            }
+            await HandleWritingAsync(message, cancellationToken);
+            return;
         }
 
+        // Estado e vigia não gravam linhas da TV (são por agente): sem bloqueio.
+        var tv = await db.Tvs.AsNoTracking().SingleOrDefaultAsync(t => t.AgentSlug == message.AgentId, cancellationToken);
+        if (!await ControlsTvAsync(tv, message, cancellationToken))
+        {
+            LogIgnored(message.AgentId, message.Type);
+            return;
+        }
+
+        var tvId = tv?.Id ?? Guid.Empty;
         switch (message.Type)
         {
             case AgentMessageTypes.TvStateV1:
                 HandleState(tvId, message);
                 break;
-            case AgentMessageTypes.TvAppsV1:
-            case AgentMessageTypes.TvAppsV2:
-                await HandleAppsAsync(tvId, message, cancellationToken);
-                break;
             case AgentMessageTypes.TvWatchdogV1:
                 await HandleWatchdogAsync(tvId, message, cancellationToken);
+                break;
+        }
+    }
+
+    /// <summary>Os tipos que gravam linhas com <c>tv_id</c> (atalhos, ícones, relatórios, TV Livre) ou a própria TV.</summary>
+    private static bool WritesTvRows(string type) =>
+        type is AgentMessageTypes.TvAppsV1 or AgentMessageTypes.TvAppsV2 or AgentMessageTypes.TvCleanupResultV1
+            or AgentMessageTypes.TvLivreStateV1 or AgentMessageTypes.TvPermissionV1;
+
+    /// <summary>
+    /// Instalações que ainda dependem de AgentId não têm linha em tvs. Mantêm o comportamento anterior, mas só enquanto não
+    /// houver TV salva para o agente: uma TV adicional nunca recebe mensagens por esse atalho.
+    /// </summary>
+    private async Task<bool> ControlsTvAsync(ConfiguredTv? tv, InboundMessage message, CancellationToken cancellationToken)
+    {
+        if (tv is not null)
+        {
+            return true;
+        }
+
+        var fallback = await agents.ResolveAsync(cancellationToken);
+        return fallback.IsConfigured && string.Equals(fallback.AgentSlug, message.AgentId, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Grava o que o agente mandou sob o bloqueio da linha da TV, o mesmo que a remoção toma: a TV é lida JÁ com o bloqueio
+    /// (uma remoção ou troca de computador em andamento termina antes, e a leitura vê o resultado) e nada é gravado se ela
+    /// sumiu ou passou a outro computador. Sem isso, a mensagem enviada antes da remoção terminava de gravar depois dela e
+    /// deixava atalhos, ícones e relatórios órfãos de uma TV que prometia ter sido limpa. O que vai para as telas sai depois
+    /// do commit.
+    /// </summary>
+    private async Task HandleWritingAsync(InboundMessage message, CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var tv = await TvRowLock.LockByAgentAsync(db, message.AgentId, cancellationToken);
+        if (!await ControlsTvAsync(tv, message, cancellationToken))
+        {
+            LogDropped(message.AgentId, message.Type);
+            return;
+        }
+
+        var tvId = tv?.Id ?? Guid.Empty;
+        var publishShortcuts = false;
+        switch (message.Type)
+        {
+            case AgentMessageTypes.TvAppsV1:
+            case AgentMessageTypes.TvAppsV2:
+                await StoreAppsAsync(tvId, message, cancellationToken);
+                publishShortcuts = true;
                 break;
             case AgentMessageTypes.TvLivreStateV1:
                 await HandleLivreStateAsync(tvId, message, cancellationToken);
@@ -93,6 +140,14 @@ internal sealed partial class TvAgentMessageHandler(
             case AgentMessageTypes.TvPermissionV1:
                 await HandlePermissionAsync(tv, message, cancellationToken);
                 break;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        if (publishShortcuts)
+        {
+            // Mesmo sem mudança a tela recebe a lista: quem pediu a atualização espera ver a resposta.
+            stream.PublishShortcuts(tvId, await shortcutReader.ListAsync(tvId, cancellationToken));
         }
     }
 
@@ -213,7 +268,7 @@ internal sealed partial class TvAgentMessageHandler(
         persister.Observe(message.AgentId, snapshot);
     }
 
-    private async Task HandleAppsAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
+    private async Task StoreAppsAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {
         // `tv.apps.v1` não traz ícone; `tv.apps.v2` pode trazer, app por app. Sem o campo, o ícone guardado fica.
         var incoming = message.Body.GetProperty("apps").EnumerateArray()
@@ -230,9 +285,6 @@ internal sealed partial class TvAgentMessageHandler(
         {
             await db.SaveChangesAsync(cancellationToken);
         }
-
-        // Mesmo sem mudança a tela recebe a lista: quem pediu a atualização espera ver a resposta.
-        stream.PublishShortcuts(tvId, await shortcutReader.ListAsync(tvId, cancellationToken));
     }
 
     /// <summary>
@@ -289,6 +341,9 @@ internal sealed partial class TvAgentMessageHandler(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Ícone do app {Package} do agente {AgentId} recusado (tipo, base64, tamanho ou conteúdo inválido).")]
     private partial void LogIconRejected(string agentId, string package);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Mensagem {Type} do agente {AgentId} descartada sem gravar: a TV dele foi removida ou passou a outro computador.")]
+    private partial void LogDropped(string agentId, string type);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Mensagem {Type} do agente {AgentId} ignorada: não é o agente que controla a TV.")]
     private partial void LogIgnored(string agentId, string type);
