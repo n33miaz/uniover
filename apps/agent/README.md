@@ -524,7 +524,8 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   reconexão a mais. Sem um `granted` anterior (toque que já encontra um transporte vivo), a prova é um
   `disconnect` e uma `connect` nova. Se vier `already connected` (o `disconnect` não derrubou o transporte) a
   conexão serve, mas nada é dado como provado. Dentro do pedido da pessoa, e só com a permissão já dada, um
-  `offline` logo depois do `connect` é relido por até ~3 s antes de valer (a conexão pode ainda estar subindo).
+  `offline`, `authorizing` ou `connecting` logo depois do `connect` é relido por até ~3 s antes de valer (a
+  conexão pode ainda estar subindo).
   **`unauthorized` nunca é relido:** o aviso real aceito sem "Sempre permitir" não deixa a chave gravada, e ler o
   estado não separa isso da autenticação ainda correndo. Um `unauthorized` visto num pedido da pessoa (mesmo com o
   registro `verified`, depois de um reset) rebaixa para `needs_user`; a espera do aceite regrava `granted` sem herdar
@@ -535,7 +536,12 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   automático. Se o aparelho que responde tem outro serial que o anotado, o agente esquece o serial e o ajuste e
   refaz a prova dentro do mesmo toque, anotando a identidade nova (sem trava eterna, e sem `needs_user`).
 - **O registro é relido do disco** quando o arquivo mudou (horário e tamanho) antes de decidir e antes de gravar: o
-  agente e o `tv-volume` não sobrescrevem um ao outro.
+  agente e o `tv-volume` não sobrescrevem um ao outro. Se uma gravação falhou (disco, arquivo em
+  uso por mais de cinco tentativas) e outro processo grava depois, **a mais restritiva vence**: um `needs_user`
+  pendente é reaplicado por cima do que foi relido; qualquer outra mudança pendente é descartada com aviso no log.
+  A troca do arquivo (`os.replace`) tenta de novo em caso de `PermissionError`, sem dormir dentro do laço de eventos,
+  e a gravação que falha não deixa o `.tmp` para trás. `needs_user` também apaga o serial anotado: a leitura
+  `getprop ro.serialno` roda de novo na prova seguinte.
 - **O vigia e a janela de presença:** com o ADB fora da janela (`adb_idle`) o vigia não insiste: uma tentativa, o
   evento `adb_unreachable` (`info`) diz que o ADB só abre com alguém usando a TV pelo app, e descansa o degrau curto.
   Sem o MAC na ARP (VPN, outra sub-rede) o código é outro, `adb_identity` (`AdbIdentityUnconfirmed`), com mensagem
