@@ -356,6 +356,71 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Presence_FollowsTheSelectedTv_AndNeverReachesATvTheMemberDoesNotBelongTo()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        var raphaelAgent = await app.PairAsync("PC Raphael");
+        var raphaelTvId = await CreateTvAsync(app, raphaelAgent.Slug, "TV Raphael");
+        var member = await app.NewGuestAsync("Raphael", ["module:tv", "tv:control"], 96);
+        await SetMembersAsync(app, raphaelTvId, member.UserId);
+
+        await using var defaultConnection = await app.ConnectAndWaitAsync();
+        await using var raphaelConnection = await app.ConnectAsync(raphaelAgent);
+        await defaultConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.presence.v1");
+        await raphaelConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.presence.v1");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.presence.v1", StringComparer.Ordinal) == true
+                && app.Presence.Get(raphaelAgent.Slug)?.Capabilities.Contains("tv.presence.v1", StringComparer.Ordinal) == true,
+            "capacidades de presença dos dois agentes");
+
+        // A TV de outra pessoa não se distingue de uma inexistente, e o sinal não chega ao agente dela.
+        using (var foreign = await app.SendAsync(
+            HttpMethod.Post, $"/api/v1/tv/presence?tvId={defaultTvId}", bearer: member.Login.AccessToken))
+        {
+            foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        // Na própria TV o sinal chega ao agente da própria TV...
+        using (var own = await app.SendAsync(
+            HttpMethod.Post, $"/api/v1/tv/presence?tvId={raphaelTvId}", bearer: member.Login.AccessToken))
+        {
+            own.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        }
+
+        (await TvApp.NextCommandAsync(raphaelConnection)).GetProperty("type").GetString().Should().Be("tv.presence.v1");
+
+        // ...e o dono, escolhendo a TV do Raphael, também não toca o agente da TV padrão.
+        using (var owner = await app.SendAsync(HttpMethod.Post, $"/api/v1/tv/presence?tvId={defaultTvId}"))
+        {
+            owner.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        }
+
+        // O primeiro comando que o agente da TV padrão recebe é este sinal do dono (e só ele): o do membro não veio.
+        var first = await TvApp.NextCommandAsync(defaultConnection);
+        first.GetProperty("type").GetString().Should().Be("tv.presence.v1");
+        var wake = app.PostAsync($"/api/v1/tv/wake?tvId={defaultTvId}");
+        var second = await TvApp.NextCommandAsync(defaultConnection);
+        second.GetProperty("type").GetString().Should().Be("tv.wake.v1", "o sinal do membro nunca foi para esta TV");
+        await TvApp.ReplyAsync(defaultConnection, second);
+        (await wake.WaitAsync(FakeAgent.Patience, Ct)).Dispose();
+    }
+
+    [Fact]
+    public async Task Presence_ForAGuestWithoutControl_Returns403()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var viewer = await app.NewGuestAsync("Leitor", ["module:tv"], 97);
+
+        using var response = await app.SendAsync(HttpMethod.Post, "/api/v1/tv/presence", bearer: viewer.Login.AccessToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task BackgroundAppClosing_IsOffByDefault_AuditsTheChange_AndReachesTheAgent()
     {
         await using var app = await TvApp.StartAsync(postgres);
