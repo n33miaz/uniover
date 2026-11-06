@@ -121,7 +121,8 @@ async def test_connect_refused_for_authentication_is_unauthorized() -> None:
     runner = FakeAdbRunner({CONNECT: ok(f"failed to authenticate to {SERIAL}\r\n")})
     with pytest.raises(AdbUnauthorized):
         await make(runner).connect()
-    assert runner.calls == [CONNECT]
+    # A recusa desfaz a conexão: o servidor do `adb` religa sozinho uma conexão TCP não provada.
+    assert runner.calls == [CONNECT, DISCONNECT]
 
 
 @pytest.mark.parametrize(
@@ -163,7 +164,8 @@ async def test_an_unauthorized_tv_is_never_reconnected_to_avoid_a_new_prompt() -
     )
     with pytest.raises(AdbUnauthorized):
         await make(runner).connect()
-    assert runner.calls == [CONNECT, GET_STATE]  # sem `disconnect` nem segundo `connect`
+    # Sem segundo `connect`; o único `disconnect` é o que desfaz a conexão recusada.
+    assert runner.calls == [CONNECT, GET_STATE, DISCONNECT]
 
 
 async def test_a_blocked_unauthorized_tv_notices_the_acceptance_without_connecting() -> None:

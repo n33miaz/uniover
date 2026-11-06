@@ -19,6 +19,7 @@ from uniover_agent.adapters.fakes import (
     FakeTvRemote,
 )
 from uniover_agent.adapters.tv_adb import AdbTv
+from uniover_agent.composition import connection as connection_module
 from uniover_agent.composition import tv as tv_module
 from uniover_agent.composition.connection import run
 from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
@@ -380,3 +381,44 @@ async def test_a_scheduled_power_off_without_valid_credentials_only_fails_and_re
     assert result.code in {"failed", "offline"}
     assert adb.connects == 0  # nenhum `adb connect` (e, logo, nenhum aviso de depuração)
     assert remote.events == []  # nenhuma tecla de energia
+
+
+@pytest.mark.parametrize(
+    ("features", "declared"),
+    [
+        (frozenset({"agent.diagnostics.v1", "tv.presence.v1"}), True),
+        (frozenset({"agent.diagnostics.v1"}), False),  # API anterior ao sinal de presença
+        (frozenset(), False),
+        (None, False),  # API dormindo ou ainda subindo
+    ],
+)
+async def test_the_hello_declares_presence_only_after_the_api_lists_it(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    features: frozenset[str] | None,
+    declared: bool,
+) -> None:
+    """Uma API anterior recusa o `hello` inteiro que traz uma capacidade que não conhece."""
+
+    async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
+        return features
+
+    monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, FakeTvAdb())
+
+    async def script(connection: ServerConnection) -> None:
+        await asyncio.sleep(0.4)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, tv_host=TV_HOST
+        )
+        assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
+    hello = next(m for m in api.received if m["type"] == "agent.hello.v1")
+    capabilities = hello["body"]["capabilities"]
+    assert ("tv.presence.v1" in capabilities) is declared
+    assert "tv.adb" in capabilities  # o resto da TV segue declarado como sempre

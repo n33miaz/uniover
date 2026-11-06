@@ -64,6 +64,7 @@ from uniover_agent.core import (
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
     PC_SILENT_TYPES,
+    PRESENCE_CAPABILITY,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
@@ -415,8 +416,12 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
                 tuple(
                     capability
                     for capability in tv.capabilities
-                    # Uma API anterior recusa o `hello` com capacidade que não conhece.
-                    if capability != PAIR_CAPABILITY or features.supports(PAIR_CAPABILITY)
+                    # Uma API anterior recusa o `hello` com capacidade que não conhece: as opcionais
+                    # só vão depois de a API listá-las em `features`.
+                    if (capability != PAIR_CAPABILITY or features.supports(PAIR_CAPABILITY))
+                    and (
+                        capability != PRESENCE_CAPABILITY or features.supports(PRESENCE_CAPABILITY)
+                    )
                 )
                 if tv is not None
                 else ()
