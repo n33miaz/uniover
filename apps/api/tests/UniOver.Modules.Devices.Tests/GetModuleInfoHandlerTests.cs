@@ -13,6 +13,6 @@ public class GetModuleInfoHandlerTests
         info.Module.Should().Be("devices");
         info.Version.Should().Be("1.2.3");
         // O agente só declara e envia o diagnóstico se a API disser aqui que o aceita (rollout seguro).
-        info.Features.Should().Contain("agent.diagnostics.v1");
+        info.Features.Should().Contain(["agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired"]);
     }
 }

@@ -23,6 +23,7 @@ internal static class TvAuditNormalizer
         TvCommandNames.PowerSchedule,
         TvCommandNames.Cleanup,
         TvCommandNames.PermissionRequest,
+        TvCommandNames.Pair,
         TvCommandNames.Discover,
         TvCommandNames.LivreRefresh,
         TvCommandNames.LivreInstall,
