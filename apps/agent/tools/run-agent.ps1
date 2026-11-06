@@ -325,6 +325,19 @@ function Update-Tray([string]$Uv) {
     $script:tray = Start-Tray $Uv
 }
 
+function Test-OwnerStalled {
+    # O pulso (`last-alive`) do dono desta instalacao esta parado alem do limite da deteccao de travamento? Sem o arquivo
+    # nada prova (um dono que nunca gravou pulso nao e julgado por ele). So vale na segunda vez que o mesmo carimbo
+    # velho e visto: um PC que acordou agora ainda tem o carimbo antigo, mas o dono o regrava no minuto seguinte.
+    try {
+        $write = (Get-Item -LiteralPath (Join-Path $runtime 'last-alive') -ErrorAction Stop).LastWriteTimeUtc
+    } catch { $script:ownerSeenStamp = $null; return $false }
+    if (([DateTime]::UtcNow - $write).TotalSeconds -lt ($hangLaps * $lapSeconds)) { $script:ownerSeenStamp = $null; return $false }
+    if ($script:ownerSeenStamp -eq $write) { return $true }
+    $script:ownerSeenStamp = $write
+    return $false
+}
+
 function Wait-Lap([double]$Seconds, [string]$Uv) {
     # A espera de uma volta, em fatias curtas: quem pede o icone de volta pelo atalho do menu Iniciar (que apaga o
     # tray-closed) nao espera os 15 s da volta.
@@ -551,6 +564,8 @@ Write-SupLog 'INFO' 'supervisor iniciado'
 Ensure-TrayShortcut
 $wait = 5
 $syncFalls = 0
+$script:ownedElsewhere = $false
+$script:ownerSeenStamp = $null
 $updateFailures = 0
 $nextUpdate = [DateTime]::MinValue
 $tray = $null
@@ -574,7 +589,9 @@ while ($true) {
         }
     }
     $rollbackReady = Test-RollbackReady
-    if (-not (Sync-Agent $uv $rollbackReady)) {
+    # Com outro dono da instalacao (codigo 5) o ambiente acabou de ser preparado e o sync (que antes encerra quem usa o
+    # ambiente) nao roda a cada tentativa: so mataria o dono que esta vivo e bem.
+    if (-not $script:ownedElsewhere -and -not (Sync-Agent $uv $rollbackReady)) {
         # Versao em prova que nao consegue preparar o proprio ambiente nunca chegaria a rodar, nem a cair: sem esta conta o
         # laco esperaria para sempre. Na terceira falha seguida volta para a anterior, pela mesma rotina do pedido do dono.
         if ($rollbackReady) {
@@ -666,10 +683,47 @@ while ($true) {
     # Codigo 5: outro agente ja e dono desta instalacao (uma execucao manual aberta, um processo antigo que sobreviveu).
     # Nao e queda: nao conta contra a versao em prova, nao entra na fila de diagnostico e a espera e fixa e calma.
     if (-not $restartForUpdate -and -not $hung -and $code -eq $ownedElsewhereCode) {
+        $script:ownedElsewhere = $true
         Write-SupLog 'INFO' 'outro agente ja roda nesta instalacao; espero antes de tentar de novo'
+        # Os pedidos do dono (reiniciar, voltar a versao) nao podem ficar esperando um agente nosso: valem agora.
+        $restartFlag = Join-Path $runtime 'restart-now'
+        if (Test-Path -LiteralPath $restartFlag) {
+            Remove-Item -LiteralPath $restartFlag -Force -ErrorAction SilentlyContinue
+            Write-SupLog 'INFO' 'reinicio pedido; encerro o outro agente desta instalacao'
+            Set-StopReason 'restart'
+            Stop-VenvUsers
+            $script:ownedElsewhere = $false
+            continue
+        }
+        $rollbackFlag = Join-Path $runtime 'rollback-now'
+        if (Test-Path -LiteralPath $rollbackFlag) {
+            $fresh = Test-FreshFlag $rollbackFlag
+            Remove-Item -LiteralPath $rollbackFlag -Force -ErrorAction SilentlyContinue
+            if ($fresh -and (Test-Path -LiteralPath $previous)) {
+                Set-StopReason 'rollback'
+                if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
+                Stop-VenvUsers
+                $script:ownedElsewhere = $false
+                if (Invoke-Rollback) { exit 42 }
+                continue
+            }
+        }
+        # O dono pode ser um processo travado que sobrou de um supervisor morto: ele segura a trava para sempre e ninguem
+        # mais olharia o pulso dele. Pulso parado nas duas ultimas tentativas (a segunda ve o mesmo carimbo parado da
+        # primeira, o que descarta um PC que acabou de acordar) e o dono e encerrado; pulso em dia, ele e deixado em paz.
+        if (Test-OwnerStalled) {
+            Write-SupLog 'ERROR' 'o outro agente desta instalacao esta mudo ha mais de 5 minutos; vou encerra-lo'
+            Add-Diagnostic 'process.unresponsive' 'error' 'o agente que segurava a instalacao parou de dar sinal de vida e foi encerrado'
+            Set-StopReason 'unresponsive'
+            Stop-VenvUsers
+            $script:ownedElsewhere = $false
+            $script:ownerSeenStamp = $null
+            continue
+        }
         Start-Sleep -Seconds $ownedElsewhereWait
         continue
     }
+    $script:ownedElsewhere = $false
     if (-not $restartForUpdate) {
         Write-SupLog 'WARNING' ('o agente terminou (codigo ' + $code + ') depois de ' + [int]$seconds + ' s')
         if (-not $hung) {
