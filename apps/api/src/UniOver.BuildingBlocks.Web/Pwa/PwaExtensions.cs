@@ -133,6 +133,10 @@ public static class PwaExtensions
 
         endpoints.MapGet("/", ServeIndex).AllowAnonymous();
         endpoints.MapGet("/index.html", ServeIndex).AllowAnonymous();
+        // O padrão do fallback sem rota explícita é `{*path:nonfile}`: um caminho cujo último trecho parece arquivo
+        // (`/chunk-ANTIGO.js`, de uma casca anterior ao deploy) NÃO cai aqui e dá 404, em vez de receber o index.html
+        // com 200 e quebrar a importação por tipo MIME. Só rotas do app (sem extensão) viram o index.html. O teste
+        // `PwaStaticAssetsTests` trava essa regra.
         // Só GET/HEAD navegam: um POST em rota desconhecida não deve receber HTML com 200.
         endpoints.MapFallback(ServeIndex).AllowAnonymous().WithMetadata(new HttpMethodMetadata(["GET", "HEAD"]));
         return endpoints;
