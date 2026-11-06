@@ -14,5 +14,6 @@ public class GetModuleInfoHandlerTests
         info.Version.Should().Be("1.2.3");
         // O agente só declara e envia o diagnóstico se a API disser aqui que o aceita (rollout seguro).
         info.Features.Should().Contain(["agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired"]);
+        info.Features.Should().Contain("tv.presence.v1", "o agente só declara a presença depois de a API a listar");
     }
 }
