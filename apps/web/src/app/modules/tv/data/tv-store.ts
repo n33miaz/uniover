@@ -287,6 +287,7 @@ export class TvStore {
     if (!state.agentOnline || state.connection === 'disconnected') return 'agent-off';
     if (state.connection === 'not_paired') return 'not-paired';
     if (state.connection === 'waking') return 'tv-waking';
+    if (state.connection === 'unknown') return 'loading';
     return state.connection === 'hibernating' ? 'hibernating' : 'hot';
   });
 
