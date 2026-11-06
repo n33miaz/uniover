@@ -35,6 +35,11 @@ class ApiFeatures:
         self._clock = clock
         self._interval = interval
         self._known: frozenset[str] = frozenset()
+        self._listeners: list[Callable[[], None]] = []
+
+    def on_change(self, listener: Callable[[], None]) -> None:
+        """Avisa quando muda o que a API aceita (o que foi escondido pode ser dito agora)."""
+        self._listeners.append(listener)
 
     def supports(self, feature: str) -> bool:
         return feature in self._known
@@ -46,8 +51,13 @@ class ApiFeatures:
         except Exception:
             _log.warning("não consegui consultar o que a API aceita", exc_info=True)
             return
-        if found is not None:
+        if found is not None and found != self._known:
             self._known = found
+            for listener in self._listeners:
+                try:
+                    listener()
+                except Exception:
+                    _log.exception("falha ao avisar a mudança do que a API aceita")
 
     async def run(self) -> None:
         """Consulta de tempos em tempos: a resposta de hoje manda no próximo `hello`."""

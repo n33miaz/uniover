@@ -364,6 +364,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     features = ApiFeatures(
         lambda: fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS), clock
     )
+    if tv is not None and publisher is not None:
+        # `not_paired` vai como `disconnected` até a API aceitá-lo: depois, o estado sai de novo.
+        features.on_change(lambda: publisher.publish(tv.manager.snapshot()))
     shipper = DiagnosticsShipper(
         kit.store,
         kit.recorder,
