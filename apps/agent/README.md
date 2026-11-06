@@ -510,22 +510,31 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   canal opcional da sessão): só leem o estado com `get-state`, que não abre conexão. Um transporte que já estava
   aberto pode continuar em uso, mas nada é registrado a partir dele (pode ser um "Permitir" de uma vez só).
 - **Fluxo de um toque.** O toque conecta e deixa o aviso na TV (o app mostra `adb_unauthorized` e a dica). O agente
-  espera o aceite até 90 s **só lendo `get-state`**: nunca desconecta nem reconecta. Quando a TV diz `device`,
-  registra `granted`, roda `settings put global adb_allowed_connection_time 0` (confere com `settings get`) e anota o
+  espera o aceite até 90 s **só lendo `get-state`**: nunca reconecta e, enquanto espera, mantém a conexão para ver o
+  `device`; ao terminar (aceite, fim da janela ou recusa) a desfaz com `adb disconnect`, salvo se já estiver provada.
+  Quando a TV diz `device`, registra `granted`, roda `settings put global adb_allowed_connection_time 0` (confere com `settings get`) e anota o
   serial (`getprop ro.serialno`, uma leitura de shell: em transporte TCP o `adb get-serialno` devolve só `host:porta`;
   não conferido na TV real), tudo sobre o transporte já autorizado. O Android 11+ revoga a permissão do ADB
   que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); só a resposta da TV conta
   como tentativa (3 recusas dela encerram o ajuste), nunca tempo esgotado ou transporte caído.
 - **A prova.** Um "Permitir" sem "Sempre permitir" vale só para aquela conexão. Por isso `granted` ainda não deixa o
-  agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz um `disconnect` e uma `connect` e, se a TV
-  atender sem aviso, o registro vira `verified`. A segunda conexão tem de ser **realmente nova** (`connected to`):
-  se vier `already connected` (o `disconnect` não derrubou o transporte) a conexão serve, mas nada é dado como
-  provado. Uma prova é um `disconnect` e uma `connect`, nunca duas. Se o aviso voltar, é nesse toque, com a pessoa
+  agente conectar sozinho: o **toque seguinte** em **Atualizar lista** abre uma conexão **realmente nova**
+  (`connected to`, nunca `already connected`) e, se a TV a atender com `device` e sem aviso, o registro vira
+  `verified`: como a espera do aceite já desfez a conexão do `granted`, essa conexão nova é a prova, sem
+  reconexão a mais. Sem um `granted` anterior (toque que já encontra um transporte vivo), a prova é um
+  `disconnect` e uma `connect` nova. Se vier `already connected` (o `disconnect` não derrubou o transporte) a
+  conexão serve, mas nada é dado como provado. Dentro do pedido da pessoa, e só com a permissão já dada, um
+  `unauthorized` ou `offline` logo depois do `connect` é relido por até ~3 s antes de valer (a autenticação pode
+  ainda estar correndo). Se o aviso voltar, é nesse toque, com a pessoa
   na TV. Sem MAC na ARP (VPN, outra sub-rede) a prova se completa com chave, endereço e MAC vazio e não se repete a
   cada toque; só a conexão automática continua exigindo o MAC.
 - **O serial** (`getprop ro.serialno`, leitura de shell) só é lido dentro de um pedido da pessoa, nunca num caminho
   automático. Se o aparelho que responde tem outro serial que o anotado, o agente esquece o serial e o ajuste e
   refaz a prova dentro do mesmo toque, anotando a identidade nova (sem trava eterna, e sem `needs_user`).
+- **O registro é relido do disco** quando o arquivo mudou (horário e tamanho) antes de decidir e antes de gravar: o
+  agente e o `tv-volume` não sobrescrevem um ao outro.
+- **O vigia e a janela de presença:** com o ADB fora da janela (`adb_idle`) o vigia não insiste: uma tentativa, o
+  evento `adb_unreachable` (`info`) diz que o ADB só abre com alguém usando a TV pelo app, e descansa o degrau curto.
 - **O registro só cai para `needs_user` por uma recusa explícita da TV** (`unauthorized` ou falha de autenticação do
   `adb`). A recusa da trava (sem presença, sem MAC, permissão só `granted`) e o vigia vendo a TV desligada não gravam
   nada nem perdem o ajuste do vencimento.
@@ -544,6 +553,11 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
 - **Hibernação.** Com o registro `verified` (mesma chave, endereço e MAC) a hibernação por ociosidade da sessão
   **não** desconecta o canal ADB: a chave gravada não mostra aviso, e é isso que mantém a lista diária, a limpeza, os
   ícones e abrir app pela Siri funcionando fora da janela de presença. Sem `verified`, desconecta como sempre.
+  O canal só fica com o vencimento de 7 dias desligado (`timeout_disabled`) além do `verified`: sem isso a TV ainda
+  pode revogar a chave por falta de uso, e o servidor do `adb` religaria o canal sozinho depois. **Resíduo
+  aceito:** uma revogação deliberada ("Revogar autorizações de depuração USB") ou um reset de fábrica com o canal
+  aberto pode mostrar **um** aviso pela religação do próprio servidor do `adb` antes de o agente receber o
+  `unauthorized` e rodar o `adb disconnect`; depois disso nada o reabre.
   **Limitação:** isso só vale **enquanto o transporte sobrevive**. Depois que a TV desliga (o servidor do `adb` acaba
   desistindo de religar) ou o PC reinicia, o canal some e uma conexão nova só se abre com alguém usando a TV pelo app
   (a janela de presença) ou num pedido da pessoa: até lá, Siri, agendamentos e limpeza respondem `adb_idle` mesmo com a
@@ -558,7 +572,8 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
 - **Presença atrasada:** o agente ignora um `tv.presence.v1` com mais de 15 s de idade (pelo `ts` do envelope); o
   gateway pode segurar a entrega enquanto o agente reconecta, e a janela de 60 s tem de contar do toque. A idade vale
   de -5 s a +15 s (folga para o relógio do PC estar um pouco atrás do da API); fora disso o sinal é recusado e o agente
-  avisa **uma vez** no log (relógio do PC fora de hora derrubaria a presença sem ninguém ver). O `hello` com
+  avisa **uma vez** no log e registra `tv.presence_clock_skew` no diagnóstico (`agent.diagnostics.v1`, repetições
+  agrupadas): relógio do PC fora de hora derrubaria a presença sem ninguém ver. O `hello` com
   `tv.presence.v1` sai assim que a API passa a listá-la em `features`, sem esperar os 5 minutos do `hello` repetido.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
