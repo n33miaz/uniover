@@ -287,25 +287,45 @@ async def test_pairing_done_clears_not_paired_and_opens_the_session() -> None:
     assert rig.remote.keys == []  # abrir a sessão nunca envia tecla
 
 
-async def test_pairing_done_with_a_tv_that_still_refuses_goes_back_to_not_paired() -> None:
+async def test_pairing_done_with_a_tv_that_still_refuses_stays_not_paired() -> None:
     rig = Rig()
     await refused_until_not_paired(rig)
+    emitted = len(rig.states)
+    # A recusa logo depois de a TV aceitar o par vale na hora: sem "desconectada" nem "pareada".
+    rig.remote.connect_errors = [TvCertificateRefused("recusado")]
     with pytest.raises(TvSessionError) as caught:
         await rig.manager.pairing_done()
-    assert (
-        caught.value.code == TV_UNREACHABLE
-    )  # a primeira recusa depois do pareamento é só contada
+    assert caught.value.code == TV_NOT_PAIRED
+    assert rig.manager.snapshot().connection == "not_paired"
+    assert {state.connection for state in rig.states[emitted:]} <= {"not_paired"}
+
+
+async def test_pairing_done_with_the_tv_off_clears_not_paired_without_undoing_the_pairing() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    rig.remote.connect_errors = [TvUnreachable("standby") for _ in range(4)]
+    with pytest.raises(TvSessionError) as caught:
+        await rig.manager.pairing_done()
+    assert caught.value.code == TV_UNREACHABLE
+    # O par foi aceito; a TV só não respondeu agora.
     assert rig.manager.snapshot().connection == "disconnected"
 
 
-async def test_pairing_done_resets_the_refusal_count() -> None:
+async def test_pairing_done_reopens_unattended_without_cleanup_or_volume_triggers() -> None:
     rig = Rig()
     await refused_until_not_paired(rig)
-    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(50)]
-    with pytest.raises(TvSessionError):
-        await rig.manager.pairing_done()
-    # Uma recusa só não basta para voltar a "não pareada": a contagem recomeçou do zero.
-    assert rig.manager.snapshot().connection != "not_paired"
+    opened: list[float] = []
+    rig.manager.on_session_opened(opened.append)
+    rig.remote.connect_errors.clear()
+    await rig.manager.pairing_done()
+    assert rig.manager.snapshot().connection == "hot"
+    assert opened == []  # a limpeza e a leitura de volume nascem deste aviso
+    # Uma abertura de verdade, por outro lado, o dispara.
+    await rig.manager.hibernate_if_idle()
+    rig.clock.advance(400)
+    await rig.manager.hibernate_if_idle()
+    await rig.manager.wake()
+    assert len(opened) == 1
 
 
 async def test_missing_pairing_files_report_not_paired_at_once() -> None:

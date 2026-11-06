@@ -611,21 +611,28 @@ class TvSessionManager:
             return await action()
 
     async def pairing_done(self) -> None:
-        """O pareamento pedido pelo app deu certo: apaga "não pareada" e já tenta abrir a sessão.
+        """O pareamento pedido pelo app deu certo: reabre a sessão para ver se a TV aceita.
 
-        Só isto (ou uma sessão aberta de verdade) tira o estado `not_paired`. Se a abertura falhar,
-        vale o estado que ela deixar: outra recusa volta a `not_paired`; TV sem resposta vira
-        `disconnected`. Não envia tecla. Levanta `TvSessionError` quando a sessão não abriu.
+        Só uma sessão aberta de verdade (ou um pareamento que a TV aceitou) tira o estado
+        `not_paired`. Logo depois de a TV aceitar o par, uma recusa do certificado vale na hora
+        (não espera três): o pareamento não pegou e o estado continua `not_paired`. TV sem
+        resposta (desligada, rede lenta) não desfaz o pareamento: o estado vira `disconnected`.
+        A abertura é sem ninguém usando o controle (não conta como uso: não renova a hibernação
+        nem dispara a limpeza ou a leitura de volume) e nunca envia tecla. Levanta
+        `TvSessionError` quando a sessão não abriu; com `TV_NOT_PAIRED` o par foi recusado.
         """
-        self._certificate_refusals = 0
-        self._last_certificate_refusal_at = None
         self._reset_backoff()
-        if self._connection == "not_paired":
-            self._connection = (
-                "disconnected" if self._state is SessionState.REPAIRING else "hibernating"
-            )
-            self._emit()
-        await self._ensure_hot(interactive=False)
+        # A próxima recusa conta como confirmada: a TV acabou de aceitar o par, não está só ocupada.
+        self._certificate_refusals = self._certificate_refusals_needed - 1
+        self._last_certificate_refusal_at = None
+        try:
+            await self._ensure_hot(interactive=False, unattended=True)
+        except TvSessionError as exc:
+            if exc.code != TV_NOT_PAIRED and self._connection == "not_paired":
+                # O pareamento pegou; a TV só não respondeu agora.
+                self._connection = "disconnected"
+                self._emit()
+            raise
 
     async def hibernate_if_idle(self) -> bool:
         """Fecha os canais se passou o tempo sem comando; devolve se hibernou."""
