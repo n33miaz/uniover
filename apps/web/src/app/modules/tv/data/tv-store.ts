@@ -36,6 +36,7 @@ import {
  * é "ainda não sei" (sem leitura, reconectando, servidor acordando): a tela o mostra verde, como o controle pronto.
  * `unresponsive` é a leitura que passou do prazo sem resposta; `pc-off` é o computador do agente CONFIRMADO desligado
  * (fora da graça de presença da API, com o "desde quando" conhecido); `agent-off`, o agente fora sem esse detalhe.
+ * `tv-waking` é a TV ligando: o agente abre a sessão e ela ainda não respondeu (não é erro: o comando espera).
  */
 export type TvStatus =
   | 'unconfigured'
@@ -46,7 +47,8 @@ export type TvStatus =
   | 'pc-off'
   | 'agent-off'
   | 'hot'
-  | 'hibernating';
+  | 'hibernating'
+  | 'tv-waking';
 
 export type TvLink = 'ok' | 'waking' | 'offline';
 export type TvStreamStatus = 'connecting' | 'live' | 'reconnecting';
@@ -284,6 +286,7 @@ export class TvStore {
     if (!state) return null;
     if (!state.agentOnline || state.connection === 'disconnected') return 'agent-off';
     if (state.connection === 'not_paired') return 'not-paired';
+    if (state.connection === 'waking') return 'tv-waking';
     return state.connection === 'hibernating' ? 'hibernating' : 'hot';
   });
 
@@ -337,9 +340,14 @@ export class TvStore {
    */
   readonly disabledReason = computed<string | null>(() => {
     if (this.canSend()) {
-      return this.status() === 'unresponsive'
-        ? $localize`:@@tv.reason.unresponsive:O controle não recebeu resposta. Tente de novo.`
-        : null;
+      switch (this.status()) {
+        case 'unresponsive':
+          return $localize`:@@tv.reason.unresponsive:O controle não recebeu resposta. Tente de novo.`;
+        case 'tv-waking':
+          return $localize`:@@tv.reason.waking:TV ligando… Os botões já funcionam e esperam a TV responder.`;
+        default:
+          return null;
+      }
     }
     if (this.link() === 'offline') {
       const seen = this.seenAtText();

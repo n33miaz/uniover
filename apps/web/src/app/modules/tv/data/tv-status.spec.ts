@@ -12,6 +12,7 @@ import {
 const ALL: TvStatus[] = [
   'hot',
   'hibernating',
+  'tv-waking',
   'agent-off',
   'unconfigured',
   'not-paired',
@@ -25,6 +26,7 @@ const INDICATORS: TvIndicator[] = [
   'connected',
   'sleeping',
   'connecting',
+  'waking',
   'unresponsive',
   'agent-off',
   'pc-off',
@@ -54,6 +56,10 @@ describe('statusLabel', () => {
     expect(statusLabel('unresponsive')).toBe('sem resposta');
   });
 
+  it('says the TV is waking up, which is not an error', () => {
+    expect(statusLabel('tv-waking')).toBe('TV ligando…');
+  });
+
   it('no label says the TV is switched off', () => {
     for (const status of ALL) expect(statusLabel(status)).not.toMatch(/tv desligada/i);
   });
@@ -64,6 +70,7 @@ describe('deriveIndicator', () => {
     ['hot', 'connected'],
     ['hibernating', 'sleeping'],
     ['loading', 'connecting'],
+    ['tv-waking', 'waking'],
     ['unresponsive', 'unresponsive'],
     ['pc-off', 'pc-off'],
     ['agent-off', 'agent-off'],
@@ -84,6 +91,7 @@ describe('deriveIndicator', () => {
     expect(deriveIndicator('agent-off', WATCHDOG_REPAIR_FAILED)).toBe('agent-off');
     expect(deriveIndicator('pc-off', WATCHDOG_REPAIR_FAILED)).toBe('pc-off');
     expect(deriveIndicator('loading', WATCHDOG_REPAIR_FAILED)).toBe('connecting');
+    expect(deriveIndicator('tv-waking', WATCHDOG_REPAIR_FAILED)).toBe('waking');
   });
 
   it('other watchdog news (repaired, recovered) do not raise attention', () => {
@@ -101,6 +109,7 @@ describe('indicatorPhase', () => {
       connected: 'connected',
       sleeping: 'sleeping',
       connecting: 'connecting',
+      waking: 'connecting',
       unresponsive: 'no-reply',
       'agent-off': 'agent-off',
       'pc-off': 'pc-off',
@@ -120,6 +129,14 @@ describe('indicatorText', () => {
       expect(text.title.length, indicator).toBeGreaterThan(2);
       expect(text.meaning.length, indicator).toBeGreaterThan(20);
     }
+  });
+
+  it('says the TV is waking, with no action and no alarm: the tap waits for the TV', () => {
+    const text = indicatorText('waking', 5);
+    expect(text.title).toBe('TV ligando…');
+    expect(text.meaning).toMatch(/espera/i);
+    expect(text.action).toBeNull();
+    expect(indicatorText('waking', 5, false).meaning).not.toMatch(/toque/i);
   });
 
   it('offers to wake the remote when it sleeps and says the TV itself is untouched', () => {

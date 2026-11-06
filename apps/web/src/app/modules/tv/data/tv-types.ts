@@ -12,8 +12,11 @@ export type TvCleanupResult = components['schemas']['TvCleanupOk'];
 
 type TvStateDto = components['schemas']['TvState'];
 
-/** `hot`: sessão aberta · `hibernating`: controle dormindo (não é "TV desligada") · `disconnected`: sem sessão. */
-export type TvConnection = 'hot' | 'hibernating' | 'disconnected' | 'not_paired';
+/**
+ * `hot`: sessão aberta · `hibernating`: controle dormindo (não é "TV desligada") · `disconnected`: sem sessão · `waking`:
+ * o agente está abrindo a sessão e a TV ainda não respondeu (acordando do standby; passageiro, nunca é erro).
+ */
+export type TvConnection = 'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking';
 export type TvPower = 'on' | 'off' | 'unknown';
 
 /** O estado já normalizado: o gerador tipa `volume` como número ou texto e `connection`/`power` como texto livre. */
@@ -145,7 +148,7 @@ function toPower(value: unknown): TvPower {
 function toConnection(value: unknown, agentOnline: boolean): TvConnection {
   // Sem agente conectado não há sessão com a TV, qualquer que seja a última leitura.
   if (!agentOnline) return 'disconnected';
-  return value === 'hot' || value === 'hibernating' || value === 'not_paired'
+  return value === 'hot' || value === 'hibernating' || value === 'not_paired' || value === 'waking'
     ? value
     : 'disconnected';
 }

@@ -12,6 +12,8 @@ export function statusLabel(status: TvStatus): string {
       return $localize`:@@tv.status.hot:conectada`;
     case 'hibernating':
       return $localize`:@@tv.status.hibernating:controle dormindo`;
+    case 'tv-waking':
+      return $localize`:@@tv.status.waking:TV ligando…`;
     case 'agent-off':
       return $localize`:@@tv.status.agent-off:agente desligado`;
     case 'unconfigured':
@@ -30,6 +32,7 @@ export function statusLabel(status: TvStatus): string {
 /**
  * O que o indicador do cabeçalho conta, com mais detalhe do que o `TvStatus` do store:
  * - `connected` · `sleeping` · `connecting` (ainda sem certeza, inclusive com o servidor acordando: sai verde) ·
+ *   `waking` (a TV está ligando: o agente abre a sessão e ela ainda não respondeu; não é erro) ·
  *   `agent-off` · `pc-off` (o computador do agente, confirmado desligado) · `unresponsive` (a leitura passou do prazo
  *   sem resposta) · `offline` (o aparelho está sem rede);
  * - `not-configured` e `repair-failed` são os casos de **atenção**: pedem uma providência de quem cuida da casa.
@@ -40,6 +43,7 @@ export type TvIndicator =
   | 'connected'
   | 'sleeping'
   | 'connecting'
+  | 'waking'
   | 'unresponsive'
   | 'agent-off'
   | 'pc-off'
@@ -81,6 +85,8 @@ export function deriveIndicator(status: TvStatus, watchdogKind: string | null): 
       return 'not-paired';
     case 'agent-off':
       return 'agent-off';
+    case 'tv-waking':
+      return 'waking';
     case 'hibernating':
       return watchdogKind === WATCHDOG_REPAIR_FAILED ? 'repair-failed' : 'sleeping';
     case 'hot':
@@ -97,6 +103,7 @@ export function indicatorPhase(indicator: TvIndicator): TvPhase {
     case 'sleeping':
       return 'sleeping';
     case 'connecting':
+    case 'waking':
       return 'connecting';
     case 'unresponsive':
       return 'no-reply';
@@ -192,6 +199,16 @@ export function indicatorText(
         meaning: canControl
           ? $localize`:@@tv.indicator.connecting.meaning:Buscando o estado da TV. Os botões já funcionam e esperam a conexão voltar.`
           : $localize`:@@tv.indicator.connecting.meaning-view:Buscando o estado da TV.`,
+        action: null,
+        actionLabel: NO_ACTION,
+        hints: NO_HINTS,
+      };
+    case 'waking':
+      return {
+        title: $localize`:@@tv.indicator.waking.title:TV ligando…`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.waking.meaning:A TV está ligando e ainda não respondeu. O toque espera a TV responder, sem precisar repetir.`
+          : $localize`:@@tv.indicator.waking.meaning-view:A TV está ligando e ainda não respondeu.`,
         action: null,
         actionLabel: NO_ACTION,
         hints: NO_HINTS,
