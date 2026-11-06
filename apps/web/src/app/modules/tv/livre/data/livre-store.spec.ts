@@ -119,7 +119,7 @@ describe('TvLivreStore', () => {
 
     it('reading the state waits for the presence that the tap just started', async () => {
       const order: string[] = [];
-      let release = () => {};
+      let release: () => void = () => undefined;
       tvApi.presence.mockImplementation(
         () =>
           new Promise<void>((resolve) => {
