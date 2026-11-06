@@ -22,6 +22,7 @@ ADB_UNAVAILABLE: Final = "adb_unavailable"
 ADB_UNAUTHORIZED: Final = "adb_unauthorized"
 ADB_UNREACHABLE: Final = "adb_unreachable"
 ADB_IDLE: Final = "adb_idle"
+ADB_IDENTITY: Final = "adb_identity"
 ADB_TIMEOUT: Final = "adb_timeout"
 ADB_FAILED: Final = "adb_failed"
 
@@ -130,6 +131,16 @@ class AdbIdle(AdbNotReady):
     """
 
     code = ADB_IDLE
+
+
+class AdbIdentityUnconfirmed(AdbNotReady):
+    """O ADB não abriu: não deu para confirmar qual aparelho responde (a ARP não mostra o MAC).
+
+    Diferente de `AdbIdle`: aqui alguém pode estar usando a TV pelo app, e a causa é a rede (VPN,
+    outra sub-rede), não a falta de uso. O pedido da pessoa (Atualizar lista) não depende do MAC.
+    """
+
+    code = ADB_IDENTITY
 
 
 class AdbUnreachable(AdbNotReady):

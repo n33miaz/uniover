@@ -22,6 +22,7 @@ from uniover_agent.core import (
 )
 from uniover_agent.ports import (
     AdbCommandFailed,
+    AdbIdentityUnconfirmed,
     AdbIdle,
     AdbTimeout,
     AdbUnauthorized,
@@ -295,6 +296,16 @@ async def test_an_adb_outside_the_presence_window_stops_at_once_with_a_correct_e
     rig.watchdog.request_after_command()
     await rig.watchdog.handle()
     assert rig.restarts == 2
+
+
+async def test_an_unconfirmed_identity_has_its_own_event_text() -> None:
+    rig = Rig()
+    rig.restart_script = [AdbIdentityUnconfirmed("sem MAC na ARP")]
+    await rig.watchdog.handle()
+    assert rig.restarts == 1
+    assert await rig.sent_kinds() == ["repair_started", "adb_unreachable"]
+    detail = rig.transport.sent[-1]["body"]["detail"]
+    assert "MAC" in detail and "alguém usando a TV" not in detail  # não culpa a falta de uso
 
 
 async def test_a_temporary_adb_execution_failure_uses_the_short_repair_rest() -> None:

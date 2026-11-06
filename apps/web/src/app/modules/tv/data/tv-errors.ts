@@ -80,6 +80,9 @@ function commandFailedMessage(code: string | null, context?: TvFailureContext): 
   if (code === 'adb_idle') {
     return $localize`:@@tv.error.adb-idle:O ADB só conecta enquanto você usa a tela da TV. Toque de novo, ou em Atualizar lista.`;
   }
+  if (code === 'adb_identity') {
+    return $localize`:@@tv.error.adb-identity:Não deu para confirmar qual aparelho responde pelo ADB (a rede não mostra o endereço dele). Toque em Atualizar lista.`;
+  }
   if (code === 'cleanup_report_missing') {
     return $localize`:@@tv.error.cleanup-report-missing:A TV recebeu o pedido, mas não deu para confirmar o que foi limpo. Confira a TV.`;
   }

@@ -23,7 +23,14 @@ from typing import Final
 
 from uniover_agent.core.tv.session import SessionState, TvSessionManager
 from uniover_agent.core.tv.watchdog_events import WatchdogEvents
-from uniover_agent.ports import AdbIdle, AdbNotReady, AdbUnauthorized, AdbUnavailable, Clock
+from uniover_agent.ports import (
+    AdbIdentityUnconfirmed,
+    AdbIdle,
+    AdbNotReady,
+    AdbUnauthorized,
+    AdbUnavailable,
+    Clock,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -206,16 +213,21 @@ class TvWatchdog:
             self._last_attempt_at = self._clock.monotonic()
             try:
                 await self._restart()
-            except AdbIdle:
-                # Fora da janela de presença: o ADB não abre conexão sozinho sem ninguém usando a
-                # TV pelo app. Insistir só gastaria sondagens; descansa pouco (um comando do dono
-                # encurta o descanso) e o evento diz a causa de verdade.
+            except (AdbIdle, AdbIdentityUnconfirmed) as exc:
+                # Fora da janela de presença (ou sem como confirmar qual aparelho responde: a ARP
+                # não mostra o MAC): o ADB não abre conexão sozinho. Insistir só gastaria sondagens;
+                # descansa pouco (um comando do dono encurta o descanso) e o evento diz a causa
+                # de verdade, uma para cada caso.
                 self._rest_until = self._clock.monotonic() + self._cooldowns[0]
                 self._rest_is_adb = False
                 self._events.emit(
                     "adb_unreachable",
                     "info",
-                    "ADB só abre com alguém usando a TV pelo app; controle não religado.",
+                    (
+                        "ADB só abre com alguém usando a TV pelo app; controle não religado."
+                        if isinstance(exc, AdbIdle)
+                        else "ARP sem o MAC da TV; ADB não abriu e o controle não foi religado."
+                    ),
                     self._attempts,
                 )
                 return True
