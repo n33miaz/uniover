@@ -19,6 +19,49 @@ describe('UpdateBanner', () => {
     expect(apply).toHaveBeenCalled();
   });
 
+  it('asks before throwing away unsaved work, with an in-app dialog and no window.confirm', async () => {
+    const service = TestBed.inject(PwaUpdateService);
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    const confirmUpdate = vi.spyOn(service, 'confirmUpdate').mockImplementation(() => undefined);
+    const fixture = TestBed.createComponent(UpdateBanner);
+    const el = fixture.nativeElement as HTMLElement;
+    service.updateReady.set(true);
+    await fixture.whenStable();
+    expect(el.querySelector('[role="alertdialog"]')).toBeNull();
+
+    service.confirmingUpdate.set(true);
+    await fixture.whenStable();
+    const dialog = el.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain('Atualizar agora?');
+    expect(dialog.textContent).toContain('não salvo');
+
+    const [keep, go] = Array.from(dialog.querySelectorAll('button'));
+    expect(keep.textContent).toContain('Continuar editando');
+    keep.click();
+    expect(service.confirmingUpdate()).toBe(false);
+    expect(confirmUpdate).not.toHaveBeenCalled();
+
+    service.confirmingUpdate.set(true);
+    await fixture.whenStable();
+    el.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')[1].click();
+    expect(go.textContent).toContain('Atualizar mesmo assim');
+    expect(confirmUpdate).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('closes the dialog on Escape', async () => {
+    const service = TestBed.inject(PwaUpdateService);
+    const fixture = TestBed.createComponent(UpdateBanner);
+    const el = fixture.nativeElement as HTMLElement;
+    service.updateReady.set(true);
+    service.confirmingUpdate.set(true);
+    await fixture.whenStable();
+    el.querySelector('[role="alertdialog"]')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(service.confirmingUpdate()).toBe(false);
+  });
+
   it('keeps the error hidden until reloading was impossible', async () => {
     const service = TestBed.inject(PwaUpdateService);
     const fixture = TestBed.createComponent(UpdateBanner);
