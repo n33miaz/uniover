@@ -19,7 +19,7 @@ import { watchKeyboardInset } from './core/layout/keyboard-inset';
 import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
-import { guardOutbox } from './core/pwa/outbox-guard';
+import { guardQueueScopes } from './core/pwa/outbox-guard';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
 import { UnsavedWork, unsavedWorkInterceptor } from './core/pwa/unsaved-work';
 
@@ -66,11 +66,9 @@ export const appConfig: ApplicationConfig = {
       const injector = inject(Injector);
       // Só item em voo na fila de saída segura a recarga automática: o que espera já está guardado no IndexedDB e a recarga
       // não o perde (contar também os pendentes bloquearia a atualização por horas offline).
-      void guardOutbox(injector.get(UnsavedWork), async () => {
+      void guardQueueScopes(injector.get(UnsavedWork), async () => {
         const { QueueScopes } = await import('./core/offline-queue/queue-scopes');
-        const scopes = injector.get(QueueScopes);
-        scopes.follow();
-        return () => scopes.active()?.store.sendingCount() ?? 0;
+        return injector.get(QueueScopes);
       });
     }),
   ],
