@@ -20,6 +20,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'tv.permission.v1'
   | 'tv.pair.v1'
   | 'tv.discovery.v1'
+  | 'tv.presence.v1'
   | 'tv.key.INPUT'
   | 'tv.key.INFO'
   | 'tv.key.GUIDE'
