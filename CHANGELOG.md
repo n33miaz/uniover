@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.42.12](https://github.com/n33miaz/uniover/compare/v0.42.11...v0.42.12) (2026-11-06)
+
+
+### Bug Fixes
+
+* **tv:** lock TV row when storing agent data
+* **tv:** lock TV row in API writes of TV data
+* **tv:** delete rows orphaned by TV removal
+
 ## [0.42.11](https://github.com/n33miaz/uniover/compare/v0.42.10...v0.42.11) (2026-11-05)
 
 
