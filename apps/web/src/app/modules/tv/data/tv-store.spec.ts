@@ -209,6 +209,18 @@ describe('TvStore', () => {
       expect(store.disabledReason()).toBeNull();
     });
 
+    it('"waking" says the TV is turning on, keeps the buttons working and clears when the session opens', async () => {
+      await started();
+      emit('tv.state', { ...hot, connection: 'waking' });
+      expect(store.lastKnownStatus()).toBe('tv-waking');
+      expect(store.status()).toBe('tv-waking');
+      expect(store.canSend()).toBe(true);
+      expect(store.disabledReason()).toContain('TV ligando');
+      emit('tv.state', hot);
+      expect(store.status()).toBe('hot');
+      expect(store.disabledReason()).toBeNull();
+    });
+
     it('"not_paired" blocks the buttons and clears when the session opens again', async () => {
       await started();
       emit('tv.state', { ...hot, connection: 'not_paired' });

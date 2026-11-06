@@ -74,6 +74,17 @@ describe('parseState', () => {
     expect(state).toMatchObject({ connection: 'not_paired', agentOnline: true });
   });
 
+  it('accepts a TV that is waking up, while the agent is online', () => {
+    expect(parseState({ ...base, connection: 'waking' })).toMatchObject({
+      connection: 'waking',
+      agentOnline: true,
+    });
+    // Sem agente conectado não há sessão a abrir: vale a regra de sempre.
+    expect(parseState({ ...base, agentOnline: false, connection: 'waking' })?.connection).toBe(
+      'disconnected',
+    );
+  });
+
   it('accepts the volume as text (the generated type allows number or string)', () => {
     expect(parseState({ ...base, volume: '30' })?.volume).toBe(30);
     expect(parseState({ ...base, volume: null })?.volume).toBeNull();
