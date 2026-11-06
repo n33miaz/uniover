@@ -15,6 +15,7 @@ class TvPairV1Body(BaseModel):
         extra='forbid',
     )
     code: Annotated[str | None, Field(pattern='^[0-9A-Fa-f]{6}$')] = None
+    cancel: Literal[True] | None = None
 
 
 class TvPairV1Message(BaseModel):
