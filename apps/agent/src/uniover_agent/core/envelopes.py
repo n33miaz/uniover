@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from uniover_agent.core.domain import TvState
+from uniover_agent.core.domain import TvState, WireConnection
 from uniover_agent.core.envelope_gate import EnvelopeGate
 from uniover_agent.ports import AppIcon, Clock
 from uniover_agent.ports.diagnostics import DiagnosticEvent
@@ -122,12 +122,13 @@ class EnvelopeFactory:
             body["error"] = {"code": code or "failed", "message": message or code or "falha"}
         return self._build("command.result.v1", body, correlation_id)
 
-    def tv_state(self, state: TvState) -> dict[str, Any]:
+    def tv_state(self, state: TvState, connection: WireConnection | None = None) -> dict[str, Any]:
+        """`connection` troca o valor da sessão pelo do fio (o publicador decide, por API)."""
         body: dict[str, Any] = {
             "power": state.power,
             "volume": state.volume,
             "app": state.app,
-            "connection": state.connection,
+            "connection": connection or state.connection,
         }
         return self._build("tv.state.v1", body, None)
 

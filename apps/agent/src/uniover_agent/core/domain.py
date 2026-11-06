@@ -32,9 +32,10 @@ class CommandResult:
 
 
 Power = Literal["on", "off", "unknown"]
+Connection = Literal["hot", "hibernating", "disconnected", "not_paired"]
 # `waking` só existe no fio (`tv.state.v1`): a sessão em si nunca tem esse valor, que o publicador
 # monta a partir de `TvState.waking` quando a API o aceita.
-Connection = Literal["hot", "hibernating", "disconnected", "not_paired", "waking"]
+WireConnection = Literal["hot", "hibernating", "disconnected", "not_paired", "waking"]
 
 
 @dataclass(frozen=True, slots=True)

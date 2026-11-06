@@ -1,11 +1,11 @@
 """Publica `tv.state.v1` quando o estado da TV muda, sem nunca bloquear quem mudou o estado."""
 
 import asyncio
-import dataclasses
 import logging
 from collections.abc import Callable
+from typing import Any
 
-from uniover_agent.core.domain import TvState
+from uniover_agent.core.domain import Connection, TvState, WireConnection
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.ports import Transport, TransportError
 
@@ -45,19 +45,19 @@ class TvStatePublisher:
 
         Uma falha de envio sobe para o laço de conexão, que reconecta.
         """
-        await self._transport.send(self._envelopes.tv_state(self._wire(state)))
+        await self._transport.send(self._message(state))
 
-    def _wire(self, state: TvState) -> TvState:
-        if state.waking:
+    def _message(self, state: TvState) -> dict[str, Any]:
+        return self._envelopes.tv_state(state, self._wire(state))
+
+    def _wire(self, state: TvState) -> WireConnection:
+        if state.waking and self._reports_waking():
             # `waking` não é um valor da sessão: só vai ao fio, e só para a API que o conhece.
-            return (
-                dataclasses.replace(state, connection="waking", waking=False)
-                if self._reports_waking()
-                else dataclasses.replace(state, waking=False)
-            )
-        if state.connection == "not_paired" and not self._reports_not_paired():
-            return dataclasses.replace(state, connection="disconnected")
-        return state
+            return "waking"
+        connection: Connection = state.connection
+        if connection == "not_paired" and not self._reports_not_paired():
+            return "disconnected"
+        return connection
 
     async def aclose(self) -> None:
         task, self._task = self._task, None
@@ -69,7 +69,7 @@ class TvStatePublisher:
         while self._pending is not None:
             state, self._pending = self._pending, None
             try:
-                await self._transport.send(self._envelopes.tv_state(self._wire(state)))
+                await self._transport.send(self._message(state))
             except TransportError as exc:
                 # Sem canal com a API agora: o estado é reenviado no próximo `hello`.
                 _log.debug("estado da TV não enviado (%s)", exc)
