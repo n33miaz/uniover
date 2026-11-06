@@ -237,21 +237,75 @@ async def test_refused_certificate_only_means_not_paired_after_three_spaced_refu
     assert rig.manager.snapshot().connection == "not_paired"
 
 
-async def test_not_paired_clears_when_pairing_works_again_without_sending_keys() -> None:
-    rig = Rig()
-    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(6)]
-    for _ in range(2):
+async def refused_until_not_paired(rig: Rig) -> None:
+    """Leva a TV a `not_paired` por recusas confirmadas (três, com o intervalo entre elas)."""
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(50)]
+    for _ in range(3):
         with pytest.raises(TvSessionError):
             await rig.manager.wake()
         rig.clock.advance(30)
-    with pytest.raises(TvSessionError):
-        await rig.manager.wake()
     assert rig.manager.snapshot().connection == "not_paired"
-    # Reparear: a próxima abertura (só o aquecimento, nenhuma tecla) volta ao normal.
-    rig.clock.advance(30)
+
+
+async def test_not_paired_clears_only_when_a_session_opens() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    # A TV passou a aceitar o certificado (pareada por fora): a abertura seguinte prova isso.
+    rig.remote.connect_errors.clear()
     await rig.manager.wake()
     assert rig.manager.snapshot().connection == "hot"
-    assert rig.remote.keys == []
+
+
+async def test_not_paired_survives_repair_hibernation_and_standby() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    # Nada disto prova que a TV voltou a aceitar o UniOver: o estado fica como está.
+    rig.manager.mark_repairing()
+    assert rig.manager.snapshot().connection == "not_paired"
+    rig.manager.clear_repairing()
+    assert rig.manager.snapshot().connection == "not_paired"
+    await rig.manager.while_closed(_nothing)
+    assert rig.manager.snapshot().connection == "not_paired"
+    rig.remote.connect_errors = [TvUnreachable("standby")]
+    rig.clock.advance(30)
+    with pytest.raises(TvSessionError) as caught:
+        await rig.manager.wake()
+    assert caught.value.code == TV_UNREACHABLE
+    assert rig.manager.snapshot().connection == "not_paired"
+
+
+async def _nothing() -> bool:
+    return True
+
+
+async def test_pairing_done_clears_not_paired_and_opens_the_session() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    rig.remote.connect_errors.clear()
+    await rig.manager.pairing_done()
+    assert rig.manager.snapshot().connection == "hot"
+    assert rig.remote.keys == []  # abrir a sessão nunca envia tecla
+
+
+async def test_pairing_done_with_a_tv_that_still_refuses_goes_back_to_not_paired() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    with pytest.raises(TvSessionError) as caught:
+        await rig.manager.pairing_done()
+    assert (
+        caught.value.code == TV_UNREACHABLE
+    )  # a primeira recusa depois do pareamento é só contada
+    assert rig.manager.snapshot().connection == "disconnected"
+
+
+async def test_pairing_done_resets_the_refusal_count() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    rig.remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(50)]
+    with pytest.raises(TvSessionError):
+        await rig.manager.pairing_done()
+    # Uma recusa só não basta para voltar a "não pareada": a contagem recomeçou do zero.
+    assert rig.manager.snapshot().connection != "not_paired"
 
 
 async def test_missing_pairing_files_report_not_paired_at_once() -> None:
