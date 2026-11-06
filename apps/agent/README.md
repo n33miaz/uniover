@@ -524,8 +524,11 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   reconexão a mais. Sem um `granted` anterior (toque que já encontra um transporte vivo), a prova é um
   `disconnect` e uma `connect` nova. Se vier `already connected` (o `disconnect` não derrubou o transporte) a
   conexão serve, mas nada é dado como provado. Dentro do pedido da pessoa, e só com a permissão já dada, um
-  `unauthorized` ou `offline` logo depois do `connect` é relido por até ~3 s antes de valer (a autenticação pode
-  ainda estar correndo). Se o aviso voltar, é nesse toque, com a pessoa
+  `offline` logo depois do `connect` é relido por até ~3 s antes de valer (a conexão pode ainda estar subindo).
+  **`unauthorized` nunca é relido:** o aviso real aceito sem "Sempre permitir" não deixa a chave gravada, e ler o
+  estado não separa isso da autenticação ainda correndo. Um `unauthorized` visto num pedido da pessoa (mesmo com o
+  registro `verified`, depois de um reset) rebaixa para `needs_user`; a espera do aceite regrava `granted` sem herdar
+  o ajuste do vencimento nem o serial (o passo do vencimento se refaz) e a prova fica para o toque seguinte. Se o aviso voltar, é nesse toque, com a pessoa
   na TV. Sem MAC na ARP (VPN, outra sub-rede) a prova se completa com chave, endereço e MAC vazio e não se repete a
   cada toque; só a conexão automática continua exigindo o MAC.
 - **O serial** (`getprop ro.serialno`, leitura de shell) só é lido dentro de um pedido da pessoa, nunca num caminho
@@ -535,6 +538,8 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   agente e o `tv-volume` não sobrescrevem um ao outro.
 - **O vigia e a janela de presença:** com o ADB fora da janela (`adb_idle`) o vigia não insiste: uma tentativa, o
   evento `adb_unreachable` (`info`) diz que o ADB só abre com alguém usando a TV pelo app, e descansa o degrau curto.
+  Sem o MAC na ARP (VPN, outra sub-rede) o código é outro, `adb_identity` (`AdbIdentityUnconfirmed`), com mensagem
+  própria no app e no evento: a causa é a rede, não a falta de uso.
 - **O registro só cai para `needs_user` por uma recusa explícita da TV** (`unauthorized` ou falha de autenticação do
   `adb`). A recusa da trava (sem presença, sem MAC, permissão só `granted`) e o vigia vendo a TV desligada não gravam
   nada nem perdem o ajuste do vencimento.
@@ -571,9 +576,10 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   ajuste do vencimento nem o serial e não refaz a prova. Só dois MACs lidos e diferentes são aparelhos diferentes.
 - **Presença atrasada:** o agente ignora um `tv.presence.v1` com mais de 15 s de idade (pelo `ts` do envelope); o
   gateway pode segurar a entrega enquanto o agente reconecta, e a janela de 60 s tem de contar do toque. A idade vale
-  de -5 s a +15 s (folga para o relógio do PC estar um pouco atrás do da API); fora disso o sinal é recusado e o agente
-  avisa **uma vez** no log e registra `tv.presence_clock_skew` no diagnóstico (`agent.diagnostics.v1`, repetições
-  agrupadas): relógio do PC fora de hora derrubaria a presença sem ninguém ver. O `hello` com
+  de -5 s a +15 s (folga para o relógio do PC estar um pouco atrás do da API); fora disso o sinal é recusado. Só uma
+  idade negativa além da folga, ou acima de 120 s, aponta o relógio: então o agente avisa **uma vez** no log e registra
+  `tv.presence_clock_skew` (um atraso comum de entrega, de 15 a 120 s, recusa o sinal sem alertar). O registro vai ao
+  diagnóstico (`agent.diagnostics.v1`, repetições agrupadas): relógio fora de hora derrubaria a presença sem ninguém ver. O `hello` com
   `tv.presence.v1` sai assim que a API passa a listá-la em `features`, sem esperar os 5 minutos do `hello` repetido.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
