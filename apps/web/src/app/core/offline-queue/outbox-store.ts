@@ -43,11 +43,14 @@ export class OutboxStore {
   private readonly runtime = inject(QUEUE_RUNTIME);
 
   private readonly _pendingCount = signal(0);
+  private readonly _sendingCount = signal(0);
   private readonly _failedCount = signal(0);
   private readonly _lastSyncAt = signal<number | null>(null);
 
   /** Itens a enviar (esperando ou em voo). */
   readonly pendingCount = this._pendingCount.asReadonly();
+  /** Itens em voo agora (um envio que uma recarga cortaria; os que esperam já estão guardados no aparelho). */
+  readonly sendingCount = this._sendingCount.asReadonly();
   /** Itens recusados de vez, à espera de o usuário descartar ou reenviar. */
   readonly failedCount = this._failedCount.asReadonly();
   /** Instante (ms) do último envio aceito pelo servidor. */
@@ -105,14 +108,17 @@ export class OutboxStore {
   }
 
   /** Marca em voo e conta a tentativa. Devolve `undefined` se o item mudou ou sumiu desde que foi lido. */
-  markSending(id: string, revision: number): Promise<OutboxItem | undefined> {
-    return this.db.transaction('rw', this.db.outbox, async () => {
+  async markSending(id: string, revision: number): Promise<OutboxItem | undefined> {
+    const marked = await this.db.transaction('rw', this.db.outbox, async () => {
       const row = await this.db.outbox.get(id);
       if (!row || row.status !== 'pending' || row.revision !== revision) return undefined;
       const next: OutboxItem = { ...row, status: 'sending', attempts: row.attempts + 1 };
       await this.db.outbox.put(next);
       return next;
     });
+    // O contador de itens em voo (`sendingCount`) muda aqui.
+    if (marked) await this.refresh();
+    return marked;
   }
 
   /**
@@ -233,6 +239,7 @@ export class OutboxStore {
       this.db.meta.get(LAST_SYNC_KEY),
     ]);
     this._pendingCount.set(pending + sending);
+    this._sendingCount.set(sending);
     this._failedCount.set(failed);
     this._lastSyncAt.set(typeof lastSync?.value === 'number' ? lastSync.value : null);
   }
