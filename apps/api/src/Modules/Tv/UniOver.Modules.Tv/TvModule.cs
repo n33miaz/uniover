@@ -64,7 +64,7 @@ public static class TvModule
         // Sem nenhuma TV salva a API sobe normalmente e os comandos respondem 503.
         services.AddOptions<TvModuleOptions>()
             .Bind(configuration.GetSection(TvModuleOptions.SectionName))
-            .Validate(TvModuleOptions.IsValid, "Modules:Tv tem valor fora do permitido (tempos positivos, e o de reabertura não menor que o do comando).")
+            .Validate(TvModuleOptions.IsValid, "Modules:Tv tem valor fora do permitido (tempos positivos; reabertura não menor que o comando; desligar não menor que a reabertura).")
             .ValidateOnStart();
 
         // Cada rota da TV cita a política da sua permissão (catálogo do BuildingBlocks, lida do banco com cache curto); só o

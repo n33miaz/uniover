@@ -16,6 +16,16 @@ public class CommandWaitOptionsTests
     }
 
     [Fact]
+    public void ThePowerOffWait_CannotBeShorterThanTheReopeningWait()
+    {
+        // O desligar também abre a sessão: se esperasse menos que a abertura, daria 504 com a tecla já enviada.
+        TvModuleOptions.IsValid(new TvModuleOptions { HibernatingTimeoutSeconds = 40, PowerOffTimeoutSeconds = 30 })
+            .Should().BeFalse();
+        TvModuleOptions.IsValid(new TvModuleOptions { HibernatingTimeoutSeconds = 30, PowerOffTimeoutSeconds = 30 })
+            .Should().BeTrue();
+    }
+
+    [Fact]
     public void TheReopeningWait_CannotBeShorterThanTheOpenSessionWait()
     {
         TvModuleOptions.IsValid(new TvModuleOptions { CommandTimeoutSeconds = 20, HibernatingTimeoutSeconds = 10 })

@@ -66,7 +66,7 @@ public sealed class TvModuleOptions
         return options.CommandTimeoutSeconds > 0
             && options.HibernatingTimeoutSeconds >= options.CommandTimeoutSeconds
             && options.CleanupTimeoutSeconds > 0
-            && options.PowerOffTimeoutSeconds > 0
+            && options.PowerOffTimeoutSeconds >= options.HibernatingTimeoutSeconds
             && options.LivreTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
             && options.Sse.IsValid();
