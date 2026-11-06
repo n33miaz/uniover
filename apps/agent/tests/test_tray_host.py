@@ -65,10 +65,15 @@ def test_host_state_that_stays_locked_warns_once_without_raising(
     monkeypatch.setattr("uniover_agent.adapters.tray_host.time.sleep", lambda _: None)
     monkeypatch.setattr(tray_host, "_last_warning", float("-inf"))
     view = TrayView("connected", False, "UniOver: conectado")
+    recorded: list[tuple[str, str, str]] = []
 
     with caplog.at_level("WARNING", logger=tray_host.__name__):
         for _ in range(3):
-            tray_host._write_state(state, view, tmp_path)
+            tray_host._write_state(
+                state, view, tmp_path, record=lambda *event: recorded.append(event)
+            )
+
+    assert recorded == [("tray.state_write_failed", "warn", "PermissionError")]
 
     warnings = [record for record in caplog.records if record.levelname == "WARNING"]
     assert len(warnings) == 1

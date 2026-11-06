@@ -79,13 +79,14 @@ def _promote_host(
         return
 
 
-def _write_state(
+def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
     path: Path,
     view: TrayView,
     assets: Path,
     *,
     balloon: dict[str, str] | None = None,
     exit_host: bool = False,
+    record: Record | None = None,
 ) -> None:
     data = {
         "icon": str(assets / view.icon_file),
@@ -108,7 +109,7 @@ def _write_state(
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
-        _warn_state_not_written(exc)
+        _warn_state_not_written(exc, record)
 
 
 def _replace_with_retry(temporary: Path, path: Path) -> None:
@@ -122,13 +123,15 @@ def _replace_with_retry(temporary: Path, path: Path) -> None:
     os.replace(temporary, path)
 
 
-def _warn_state_not_written(exc: OSError) -> None:
+def _warn_state_not_written(exc: OSError, record: Record | None) -> None:
     """No máximo um aviso por minuto, sem traceback."""
     global _last_warning  # noqa: PLW0603 - limite de frequência do processo
     now = time.monotonic()
     if now - _last_warning >= _WARN_EVERY_SECONDS:
         _last_warning = now
         _log.warning("nao consegui gravar o estado da bandeja (%s); tento de novo", exc)
+        if record is not None:
+            record("tray.state_write_failed", "warn", type(exc).__name__)
 
 
 def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e comandos
@@ -147,7 +150,7 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
     runtime = base / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     state = runtime / "tray-host-state.json"
-    _write_state(state, first, assets)
+    _write_state(state, first, assets, record=record)
     events: queue.Queue[str] = queue.Queue()
     pending: queue.Queue[dict[str, str]] = queue.Queue()
     stopping = threading.Event()
@@ -249,11 +252,11 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
                 try:
                     view = controller.refresh()
                     balloon = None if pending.empty() else pending.get_nowait()
-                    _write_state(state, view, assets, balloon=balloon)
+                    _write_state(state, view, assets, balloon=balloon, record=record)
                 except Exception as exc:
                     _log.warning("nao consegui atualizar o painel da bandeja", exc_info=True)
                     record("tray.refresh_failed", "error", type(exc).__name__)
-            _write_state(state, view, assets, exit_host=True)
+            _write_state(state, view, assets, exit_host=True, record=record)
             try:
                 process.wait(timeout=3)
             except subprocess.TimeoutExpired:
