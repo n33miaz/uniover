@@ -17,8 +17,9 @@ from uniover_agent.adapters.single_instance import (
 )
 from uniover_agent.adapters.startup_trace import (
     describe_exception,
-    log_only,
+    log_once,
     record_startup_failure,
+    session_started,
 )
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_locate import identify_tv
@@ -109,9 +110,11 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     try:
         # Antes de qualquer acesso a arquivo do agente (a fila de diagnóstico é de um dono só): dois
         # agentes com a mesma identidade se derrubam no servidor.
-        if command == "run" and not acquire():
+        # O wrapper antigo que só entrega a instalação ao lançador novo (e sai) não toma a trava.
+        takeover = bool(os.environ.get("UNIOVER_LEGACY_TAKEOVER"))
+        if command == "run" and not takeover and not acquire():
             print(f"Erro: {ALREADY_RUNNING_MESSAGE}", file=sys.stderr)
-            log_only(ALREADY_RUNNING_MESSAGE)
+            log_once("ja_rodando", ALREADY_RUNNING_MESSAGE)
             return EXIT_ALREADY_RUNNING
         # Também roda quando um wrapper antigo inicia o código novo pela primeira vez.
         migrate_layout()
@@ -177,7 +180,8 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             code = asyncio.run(connection.run(settings, open_store, kit))
             if code == system.EXIT_NOT_PAIRED:
                 record_startup_failure("nao_pareado", "sem agent_id ou sem token no cofre")
-            elif code == system.EXIT_CREDENTIAL_REJECTED:
+            elif code == system.EXIT_CREDENTIAL_REJECTED and not session_started():
+                # Depois de um `hello` (token revogado horas depois) não é falha de partida.
                 record_startup_failure("credencial_recusada", "o servidor recusou a credencial")
             if code != system.EXIT_TV_MOVED:
                 return code
@@ -185,7 +189,7 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             settings = _load_settings()
     except (ConfigError, SecretStoreError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)
-        if command == "run":
+        if command == "run" and not session_started():
             reason = "configuracao" if isinstance(exc, ConfigError) else "cofre"
             record_startup_failure(reason, str(exc))
         return system.EXIT_FAILURE
@@ -195,6 +199,6 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     except Exception as exc:
         # O erro continua subindo (o Python o imprime e sai com 1); antes de subir, fica no disco:
         # o processo não tem janela e o que ele imprime se perde.
-        if command == "run":
+        if command == "run" and not session_started():
             record_startup_failure("excecao", describe_exception(exc))
         raise

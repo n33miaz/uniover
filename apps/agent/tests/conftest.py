@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters import crash_trace
+from uniover_agent.adapters import crash_trace, startup_trace
 from uniover_agent.adapters import wol as _wol
 
 # O envio real do pacote mágico (os testes trocam `wol._send`; o do próprio WOL o usa de volta).
@@ -83,10 +83,13 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def restore_process_hooks() -> Iterator[None]:
-    """O rastro de queda que `run` liga (ganchos e faulthandler) volta ao que o pytest tinha."""
+    """O rastro de queda que `run` liga (ganchos e faulthandler) volta ao que o pytest tinha, e o
+    `hello` já dado (que encerra a fase de partida) é esquecido."""
     excepthook, threading_hook = sys.excepthook, threading.excepthook
+    startup_trace._session["started"] = False  # o `hello` de um teste não vale para o seguinte
     yield
     sys.excepthook, threading.excepthook = excepthook, threading_hook
+    startup_trace._session["started"] = False
     faulthandler.disable()
     faulthandler.enable()
     for handle in crash_trace._keep_open:

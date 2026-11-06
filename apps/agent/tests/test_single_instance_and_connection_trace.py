@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from uniover_agent import main as main_module
-from uniover_agent.adapters import single_instance
+from uniover_agent.adapters import single_instance, startup_trace
 from uniover_agent.adapters.fakes import FakeTransport
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.single_instance import (
@@ -22,8 +22,12 @@ from uniover_agent.adapters.single_instance import (
     acquire,
     mutex_name,
 )
-from uniover_agent.adapters.startup_trace import KIND, LOG_FILE, record_startup_failure
-from uniover_agent.composition.diagnostics_delivery import CONNECTION_FAILURES_BEFORE_TRACE
+from uniover_agent.adapters.startup_trace import KIND, LOG_FILE, log_once, record_startup_failure
+from uniover_agent.composition import connection, system
+from uniover_agent.composition.diagnostics_delivery import (
+    CONNECTION_FAILURES_BEFORE_TRACE,
+    REFRESH_EVERY_SECONDS,
+)
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY
 from uniover_agent.ports import TransportError
 
@@ -319,3 +323,85 @@ async def test_nothing_is_asked_when_there_is_no_startup_failure_and_no_self_car
     await flow.delivery.connection_failed(TransportError("sem rede"), False, 1)
     await flow.delivery.after_hello()
     assert fetch.calls == 0
+
+
+async def test_the_features_query_is_not_repeated_on_every_failed_attempt(tmp_path: Path) -> None:
+    flow, fetch = flaky_delivery(tmp_path, down=1000)
+    now = [1000.0]
+    flow.delivery._monotonic = lambda: now[0]
+    assert record_startup_failure("cofre", "x", base=tmp_path) is True
+    await flow.delivery.prepare()
+    assert fetch.calls == 1
+
+    for attempt in range(1, 6):
+        now[0] += 10
+        await flow.delivery.connection_failed(TransportError("sem rede"), False, attempt)
+    await flow.delivery.after_hello()
+    assert fetch.calls == 2  # uma so, dentro do periodo
+
+    now[0] += REFRESH_EVERY_SECONDS
+    await flow.delivery.connection_failed(TransportError("sem rede"), False, 7)
+    assert fetch.calls == 3
+
+
+# --- aviso de "outra instancia" so uma vez por janela --------------------------------------
+
+
+def test_the_other_instance_line_is_written_once_per_window(tmp_path: Path) -> None:
+    now = [0.0]
+    for minute in range(30):
+        now[0] = minute * 60.0
+        log_once("ja_rodando", ALREADY_RUNNING_MESSAGE, base=tmp_path, clock=lambda: now[0])
+    text = (tmp_path / "logs" / LOG_FILE).read_text(encoding="utf-8")
+    assert text.count(ALREADY_RUNNING_MESSAGE) == 1
+
+    log_once("ja_rodando", ALREADY_RUNNING_MESSAGE, base=tmp_path, clock=lambda: 7 * 3600.0)
+    assert (tmp_path / "logs" / LOG_FILE).read_text(encoding="utf-8").count(
+        ALREADY_RUNNING_MESSAGE
+    ) == 2
+    assert queue(tmp_path) == []  # so o log, a fila nao e tocada
+
+
+def test_a_run_started_by_the_legacy_wrapper_does_not_take_the_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    holder = start_holder()
+    try:
+        monkeypatch.setenv("UNIOVER_LEGACY_TAKEOVER", "1")
+        assert main_module.main(["run"]) == 0
+    finally:
+        stop(holder)
+    assert not (installation_base() / "logs" / LOG_FILE).exists()
+
+
+# --- so a falha antes do primeiro hello e falha de partida ---------------------------------
+
+
+def test_a_credential_rejected_after_a_hello_is_not_a_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def rejected(*args: object, **kwargs: object) -> int:
+        return system.EXIT_CREDENTIAL_REJECTED
+
+    monkeypatch.setattr(connection, "run", rejected)
+    monkeypatch.setitem(startup_trace._session, "started", True)
+
+    assert main_module.main(["run"]) == system.EXIT_CREDENTIAL_REJECTED
+
+    assert not (installation_base() / "logs" / LOG_FILE).exists()
+    assert not (installation_base() / "runtime" / "diagnostics.jsonl").exists()
+
+
+def test_an_exception_after_a_hello_is_not_a_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def broken(*args: object, **kwargs: object) -> int:
+        raise PermissionError("depois de horas")
+
+    monkeypatch.setattr(connection, "run", broken)
+    monkeypatch.setitem(startup_trace._session, "started", True)
+
+    with pytest.raises(PermissionError):
+        main_module.main(["run"])
+
+    assert not (installation_base() / "logs" / LOG_FILE).exists()
