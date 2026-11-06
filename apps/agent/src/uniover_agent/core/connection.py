@@ -237,7 +237,11 @@ class ConnectionSupervisor:
             return
         self._failures_before_hello += 1
         try:
-            await self._on_startup_failure(exc, unexpected, self._failures_before_hello)
+            await self._bounded(
+                self._on_startup_failure(exc, unexpected, self._failures_before_hello),
+                self._policy.send_timeout,
+                "o rastro da falha de conexão",
+            )
         except Exception:
             _log.warning("não consegui deixar o rastro da falha de conexão", exc_info=True)
 

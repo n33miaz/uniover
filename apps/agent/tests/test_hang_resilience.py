@@ -719,3 +719,18 @@ def test_the_stalled_connection_is_only_logged_from_the_second_unhealthy_beat(
     with caplog.at_level("ERROR"):
         asyncio.run(beats())
     assert seen[:4] == [0, 0, 1, 1], "o alarme sai na segunda leitura ruim, uma vez só"
+
+
+async def test_a_startup_failure_hook_that_never_returns_does_not_stop_the_loop() -> None:
+    transport = FakeTransport([[], []])
+    transport.connect_error = TransportError("sem rede")
+    calls = 0
+
+    async def stuck(exc: BaseException, unexpected: bool, count: int) -> None:
+        nonlocal calls
+        calls += 1
+        await never()
+
+    supervisor = build(transport, on_startup_failure=stuck)
+    await run_until(supervisor, lambda: transport.connects >= 3 and calls >= 2)
+    assert transport.connects >= 3 and calls >= 2, "o gancho preso parou o laço de conexão"
