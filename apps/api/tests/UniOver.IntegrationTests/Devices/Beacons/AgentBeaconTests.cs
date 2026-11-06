@@ -126,15 +126,57 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ABodyOverTheCap_Returns204_AndWritesNothing()
+    public async Task ABodyOverTheCap_IsCutAtTheDoor_AndWritesNothing()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         var before = await app.DatabaseFingerprintAsync();
 
-        using var response = await PostAsync(app, app.Agent.Slug, Body(detail: new string('a', 700)));
+        // O corpo declarado maior que 512 bytes é recusado na entrada, sem ser lido (413 não diz nada sobre o slug).
+        using var declared = await PostAsync(app, app.Agent.Slug, Body(detail: new string('a', 700)));
+        declared.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        // Sem tamanho declarado (chunked), o leitor corta ao passar do teto; a rota segue respondendo 204.
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/devices/agents/{app.Agent.Slug}/beacon")
+        {
+            Content = new StreamContent(new NoLengthStream(Encoding.UTF8.GetBytes(Body(detail: new string('a', 700))))),
+        };
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var chunked = await app.App.Client.SendAsync(request, Ct);
+        chunked.StatusCode.Should().BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.RequestEntityTooLarge);
+
         (await app.DatabaseFingerprintAsync()).Should().Be(before);
+    }
+
+    /// <summary>Fluxo sem tamanho conhecido: o HttpClient manda o corpo em pedaços (chunked).</summary>
+    private sealed class NoLengthStream(byte[] data) : Stream
+    {
+        private readonly MemoryStream _inner = new(data);
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     [Fact]
@@ -261,7 +303,7 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         // O token revogado no caminho dele e no caminho de outro agente ativo: nenhum dos dois ganha anotação.
         (await app.HandshakeStatusAsync(app.Agent.Slug, app.Agent.Token)).Should().Be(HttpStatusCode.Forbidden);
         (await app.HandshakeStatusAsync(other.Slug, app.Agent.Token)).Should().Be(HttpStatusCode.Forbidden);
-        await Task.Delay(100, Ct);
+        // A anotação é aguardada dentro da própria recusa: quando a resposta chega, ela já terminou (ou foi descartada). Sem espera.
 
         (await app.DatabaseFingerprintAsync()).Should().Be(before);
         app.App.Logs.Lines.Should().NotContain(line => line.Contains(app.Agent.Token, StringComparison.Ordinal));
@@ -280,7 +322,6 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         // Uma anotação por minuto e por agente: a seguinte só entra depois do intervalo.
         app.App.Time.Advance(TimeSpan.FromSeconds(30));
         (await app.HandshakeStatusAsync(app.Agent.Slug, DeviceSecrets.NewDeviceToken().Token)).Should().Be(HttpStatusCode.Unauthorized);
-        await Task.Delay(100, Ct);
         (await RowAsync(app, app.Agent.Id))!.LastRejectedAt.Should().Be(first);
 
         app.App.Time.Advance(TimeSpan.FromSeconds(30));
@@ -333,7 +374,7 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task TheAnonymousDoorsShareAGlobalCeiling_SoRotatingAddressesCannotMultiplyQueries()
+    public async Task TheBeaconDoorHasAGlobalCeiling_SoRotatingAddressesCannotMultiplyQueries()
     {
         var counter = new SlugAndBeaconQueryCounter();
         await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = counter });
@@ -348,6 +389,50 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
 
         (counter.Count - queries).Should().BeLessThanOrEqualTo(120);
         (counter.Count - queries).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task ABeaconFlood_CannotBlindTheRefusalNotes()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+
+        // Esgota o teto geral das balizas com palpites de slug (cada um novo, então a memória de inexistentes não ajuda).
+        for (var i = 0; i < 140; i++)
+        {
+            using var response = await PostAsync(app, $"pc-fantasma-{i:000}", Body());
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        // A recusa tem balde próprio: continua sendo anotada.
+        (await app.HandshakeStatusAsync(app.Agent.Slug, DeviceSecrets.NewDeviceToken().Token)).Should().Be(HttpStatusCode.Unauthorized);
+        (await RowAsync(app, app.Agent.Id))!.LastRejectReason.Should().Be("invalid_token");
+
+        // E a baliza verdadeira do agente existente também passa, depois que a janela do teto geral vira.
+        app.App.Time.Advance(TimeSpan.FromMinutes(1));
+        using var real = await PostAsync(app, app.Agent.Slug, Body("supervisor", "no_config"));
+        real.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await RowAsync(app, app.Agent.Id))!.LastStage.Should().Be("supervisor");
+    }
+
+    [Fact]
+    public async Task ARepeatedGuessOfAMissingSlug_CostsOneQueryPerMinute()
+    {
+        var counter = new SlugAndBeaconQueryCounter();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = counter });
+        var queries = counter.Count;
+
+        for (var i = 0; i < 50; i++)
+        {
+            using var response = await PostAsync(app, "pc-que-nao-existe", Body());
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        (counter.Count - queries).Should().Be(1);
+
+        app.App.Time.Advance(TimeSpan.FromMinutes(1));
+        using var later = await PostAsync(app, "pc-que-nao-existe", Body());
+        // Passado o minuto o palpite volta a ser procurado (o relógio andando também acorda rotinas de fundo, então só se exige que cresça).
+        (counter.Count - queries).Should().BeGreaterThan(1);
     }
 
     /// <summary>Conta as consultas das duas portas anônimas: a procura do agente pelo slug e as leituras e gravações da tabela de balizas.</summary>
@@ -391,7 +476,6 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
 
         // Sem cabeçalho a autorização responde antes do limitador de requisições: anotar aqui seria uma consulta por tentativa.
         (await app.HandshakeStatusAsync(app.Agent.Slug, bearer: null)).Should().Be(HttpStatusCode.Unauthorized);
-        await Task.Delay(100, Ct);
 
         (await app.DatabaseFingerprintAsync()).Should().Be(before);
     }
@@ -416,7 +500,6 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
 
         (await app.HandshakeStatusAsync("nao-existe", app.Agent.Token)).Should().Be(HttpStatusCode.Forbidden);
         (await app.HandshakeStatusAsync("nao-existe", bearer: null)).Should().Be(HttpStatusCode.Unauthorized);
-        await Task.Delay(100, Ct);
 
         (await app.DatabaseFingerprintAsync()).Should().Be(before);
     }
@@ -433,6 +516,53 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         var row = await WaitForRejectionAsync(app, "protocol");
         row.LastRejectedAt.Should().NotBeNull();
         agent.State.Should().Be(System.Net.WebSockets.WebSocketState.Open);
+    }
+
+    private static async Task<JsonElement> ReadItemAsync(TransportApp app, Guid agentId)
+    {
+        using var response = await app.App.SendAsync(HttpMethod.Get, ReadUrl, bearer: app.Login.AccessToken);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        return json.GetProperty("items").EnumerateArray().Single(i => i.GetProperty("agentId").GetGuid() == agentId);
+    }
+
+    private static async Task<JsonElement> ReadAgentAsync(TransportApp app)
+    {
+        using var response = await app.App.ListAgentsRawAsync(app.Login);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        return json.EnumerateArray().Single(i => i.GetProperty("id").GetGuid() == app.Agent.Id);
+    }
+
+    [Fact]
+    public async Task AProtocolRefusal_FromTheHub_ReachesTheReadModel_BeforeTheLastContact_UntilAnAcceptedHello()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+
+        // Conectado e mudo: o hello fora do contrato é recusado com a conexão aberta.
+        app.App.Time.Advance(TimeSpan.FromSeconds(5));
+        await agent.SendTextAsync(agent.Envelope("agent.hello.v1", new JsonObject { ["agentVersion"] = "9.9.9" }));
+        var refusal = await WaitForRejectionAsync(app, "protocol");
+        var refusedAt = refusal.LastRejectedAt!.Value;
+
+        var item = await ReadItemAsync(app, app.Agent.Id);
+        item.GetProperty("rejectReason").GetString().Should().Be("protocol");
+        item.GetProperty("rejectedAt").GetDateTimeOffset().Should().Be(refusedAt);
+        (await ReadAgentAsync(app)).GetProperty("connected").GetBoolean().Should().BeTrue();
+
+        // A queda grava o último contato DEPOIS da recusa: é essa ordem que a tela tem de aguentar (sem piso para o protocolo).
+        app.App.Time.Advance(TimeSpan.FromSeconds(5));
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(async () => !(await ReadAgentAsync(app)).GetProperty("connected").GetBoolean(), "queda gravada");
+        var after = await ReadAgentAsync(app);
+        after.GetProperty("lastSeenAt").GetDateTimeOffset().Should().BeAfter(refusedAt);
+        (await ReadItemAsync(app, app.Agent.Id)).GetProperty("rejectReason").GetString().Should().Be("protocol");
+
+        // Reconectou e mandou um hello aceito: a recusa antiga sai.
+        await using var fixedAgent = await app.ConnectAsync();
+        await fixedAgent.SendHelloAsync("2.5.0", "tv.remote");
+        await TransportApp.WaitUntilAsync(
+            async () => (await RowAsync(app, app.Agent.Id))!.LastRejectReason is null, "recusa de protocolo limpa pelo hello aceito");
+        (await ReadItemAsync(app, app.Agent.Id)).GetProperty("rejectReason").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     // ---- leitura ----

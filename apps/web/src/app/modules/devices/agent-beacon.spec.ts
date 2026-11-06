@@ -107,20 +107,49 @@ describe('startupLine', () => {
     ).toBe('Versão do agente recusada');
   });
 
-  it('lets the newest of the beacon and the rejection win', () => {
-    const rejectedLast = beacon({
-      stage: 'supervisor',
-      code: 'crash_loop',
-      at: '2026-11-02T08:00:00Z',
+  it('lets the server-decided refusal win over an anonymous beacon, even a newer one', () => {
+    const both = beacon({
+      stage: 'hello_sent',
+      code: 'ok',
+      at: '2026-11-02T10:00:00Z',
       rejectReason: 'invalid_token',
       rejectedAt: '2026-11-02T09:00:00Z',
     });
-    expect(startupLine(false, SEEN, rejectedLast)?.text).toBe('Credencial recusada');
-
-    const signalledLast = { ...rejectedLast, at: '2026-11-02T10:00:00Z' };
-    expect(startupLine(false, SEEN, signalledLast)?.text).toBe(
-      'Não conseguiu iniciar: o agente fecha ao abrir',
+    expect(startupLine(false, SEEN, both)?.text).toBe('Credencial recusada');
+    expect(startupLine(false, SEEN, { ...both, at: '2026-11-02T08:00:00Z' })?.text).toBe(
+      'Credencial recusada',
     );
+  });
+
+  it('shows the protocol refusal while connected, as "connected but refused"', () => {
+    const line = startupLine(true, SEEN, beacon({ rejectReason: 'protocol', rejectedAt: LATER }));
+    expect(line).toEqual({
+      text: 'Conectado, mas a versão do agente foi recusada',
+      failed: true,
+      at: LATER,
+    });
+  });
+
+  it('keeps the protocol refusal after the session drops, although the drop is the newest contact', () => {
+    // A linha do tempo real: o hello é recusado com a conexão aberta (09:00) e a queda grava o último contato depois (09:30).
+    const refusedAt = '2026-11-02T09:00:00Z';
+    const droppedAt = '2026-11-02T09:30:00Z';
+    const clue = beacon({ rejectReason: 'protocol', rejectedAt: refusedAt });
+
+    expect(startupLine(true, droppedAt, clue)?.text).toBe(
+      'Conectado, mas a versão do agente foi recusada',
+    );
+    expect(startupLine(false, droppedAt, clue)).toEqual({
+      text: 'Versão do agente recusada',
+      failed: true,
+      at: refusedAt,
+    });
+  });
+
+  it('does not let any other refusal show on a connected computer', () => {
+    expect(
+      startupLine(true, SEEN, beacon({ rejectReason: 'invalid_token', rejectedAt: LATER })),
+    ).toBeNull();
   });
 });
 

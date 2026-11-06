@@ -142,16 +142,45 @@ public class AgentBeaconTests
     }
 
     [Fact]
-    public void TheGateHasAGlobalCeilingPerMinute_AndStartsOverAfterTheWindow()
+    public void TheGateHasSeparateGlobalCeilings_ForBeaconsAndForRefusals()
     {
         var time = new FakeTimeProvider(T0);
         var gate = new AgentBeaconGate(time);
 
-        Enumerable.Range(0, BeaconLimits.GlobalPerMinute).Should().AllSatisfy(_ => gate.TryAcceptGlobal().Should().BeTrue());
-        gate.TryAcceptGlobal().Should().BeFalse();
+        Enumerable.Range(0, BeaconLimits.GlobalBeaconsPerMinute).Should().AllSatisfy(_ => gate.TryAcceptGlobalBeacon().Should().BeTrue());
+        gate.TryAcceptGlobalBeacon().Should().BeFalse();
+
+        // O balde das recusas não foram gastos pela enxurrada de balizas.
+        Enumerable.Range(0, BeaconLimits.GlobalRejectionsPerMinute).Should().AllSatisfy(_ => gate.TryAcceptGlobalRejection().Should().BeTrue());
+        gate.TryAcceptGlobalRejection().Should().BeFalse();
 
         time.Advance(BeaconLimits.Window);
-        gate.TryAcceptGlobal().Should().BeTrue();
+        gate.TryAcceptGlobalBeacon().Should().BeTrue();
+        gate.TryAcceptGlobalRejection().Should().BeTrue();
+    }
+
+    [Fact]
+    public void AMissingSlugIsRemembered_ForAShortTime_WithBoundedMemory()
+    {
+        var time = new FakeTimeProvider(T0);
+        var gate = new AgentBeaconGate(time);
+
+        gate.IsKnownMissing("pc-sala").Should().BeFalse();
+        gate.RememberMissing("pc-sala");
+        gate.IsKnownMissing("pc-sala").Should().BeTrue();
+        gate.IsKnownMissing("pc-quarto").Should().BeFalse();
+
+        time.Advance(BeaconLimits.MissingSlugMemory);
+        gate.IsKnownMissing("pc-sala").Should().BeFalse();
+
+        // Passou da capacidade: esquece tudo em vez de crescer.
+        for (var i = 0; i <= BeaconLimits.MissingSlugCapacity; i++)
+        {
+            gate.RememberMissing($"pc-{i:0000}");
+        }
+
+        gate.IsKnownMissing("pc-0000").Should().BeFalse();
+        gate.IsKnownMissing($"pc-{BeaconLimits.MissingSlugCapacity:0000}").Should().BeTrue();
     }
 
     [Fact]
