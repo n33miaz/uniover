@@ -394,7 +394,8 @@ export class TvStore {
   private hadControl = false;
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
-  private presenceTimer: ReturnType<typeof setInterval> | undefined;
+  /** Quando o último sinal de presença saiu (relógio da página); nunca por tempo, só depois de um toque. */
+  private lastPresenceAt = Number.NEGATIVE_INFINITY;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private watchdogTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -404,11 +405,13 @@ export class TvStore {
       void this.wake();
       void this.refresh();
       this.armWake();
-      this.armPresence();
     } else {
       this.disarmWake();
-      this.disarmPresence();
     }
+  };
+  /** Um toque ou uma tecla na página: é a única coisa que prova alguém diante da tela (uma aba esquecida aberta não prova). */
+  private readonly onTouch = () => {
+    void this.presence();
   };
   private readonly onOnline = () => {
     this.connect();
@@ -437,10 +440,7 @@ export class TvStore {
         if (!this.started) return;
         if (!view) this.disconnect();
         else if (!this.connected) this.connect();
-        else if (control && !this.hadControl) {
-          void this.wake();
-          void this.presence();
-        }
+        else if (control && !this.hadControl) void this.wake();
         this.hadControl = view && control;
       });
     });
@@ -457,6 +457,8 @@ export class TvStore {
     this.doc.addEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.addEventListener('online', this.onOnline);
     this.doc.defaultView?.addEventListener('pageshow', this.onPageShow);
+    this.doc.addEventListener('pointerdown', this.onTouch, { capture: true, passive: true });
+    this.doc.addEventListener('keydown', this.onTouch, { capture: true, passive: true });
     this.connect();
   }
 
@@ -467,6 +469,8 @@ export class TvStore {
     this.doc.removeEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.removeEventListener('online', this.onOnline);
     this.doc.defaultView?.removeEventListener('pageshow', this.onPageShow);
+    this.doc.removeEventListener('pointerdown', this.onTouch, { capture: true });
+    this.doc.removeEventListener('keydown', this.onTouch, { capture: true });
     clearTimeout(this.noticeTimer);
     clearTimeout(this.nudgeTimer);
     clearTimeout(this.watchdogTimer);
@@ -532,7 +536,6 @@ export class TvStore {
     void this.refresh();
     void this.wake();
     this.armWake();
-    this.armPresence();
   }
 
   private disconnect(): void {
@@ -541,7 +544,6 @@ export class TvStore {
     this.streamSub?.unsubscribe();
     this.streamSub = null;
     this.disarmWake();
-    this.disarmPresence();
   }
 
   /** Busca de novo o estado e os atalhos (abertura da tela, volta da rede, volta de aba oculta). */
@@ -639,10 +641,11 @@ export class TvStore {
   }
 
   /**
-   * Avisa a API (e, por ela, o agente) que há alguém diante da tela da TV. Só com a tela **visível** (não basta "não
-   * oculta"), com rede, com permissão de controlar e com o agente de pé: é o único sinal que deixa o agente abrir uma
-   * conexão ADB nova por conta própria, então nunca sai de uma aba escondida. Falha não vira aviso: o próximo sinal
-   * (a cada 20 s) tenta de novo.
+   * Avisa a API (e, por ela, o agente) que alguém acabou de **tocar** na tela da TV. É o único sinal que deixa o agente
+   * abrir uma conexão ADB nova por conta própria, e por isso só sai depois de um toque ou tecla (ou antes de abrir um
+   * app ou limpar a TV): nada o manda por tempo, então uma aba visível e esquecida num monitor ou num tablet fixo não
+   * mantém janela nenhuma aberta. Só com a tela **visível** (não basta "não oculta"), com rede, com permissão de
+   * controlar e com o agente de pé; no máximo um a cada `presenceMinIntervalMs`. Falha não vira aviso.
    */
   async presence(): Promise<void> {
     if (
@@ -657,6 +660,9 @@ export class TvStore {
     ) {
       return;
     }
+    const now = Date.now();
+    if (now - this.lastPresenceAt < this.config.presenceMinIntervalMs) return;
+    this.lastPresenceAt = now;
     try {
       await this.api.presence();
     } catch {
@@ -814,6 +820,8 @@ export class TvStore {
     ) {
       return false;
     }
+    // Abrir um app usa o ADB: o sinal de presença vai antes, para o agente poder reconectar se precisar.
+    await this.presence();
     try {
       await this.api.launch(shortcut.id);
       if (this.live(epoch)) {
@@ -844,6 +852,7 @@ export class TvStore {
       return false;
     }
     this._cleaning.set(true);
+    await this.presence();
     try {
       const result = await this.api.cleanup();
       if (this.live(epoch)) {
@@ -1286,20 +1295,6 @@ export class TvStore {
       // Rede de segurança: se o fluxo caiu sem aviso, o estado ainda se renova a cada rodada.
       void this.refresh();
     }, this.config.wakeIntervalMs);
-  }
-
-  private armPresence(): void {
-    this.disarmPresence();
-    if (!this.started || !this.connected || this.doc.visibilityState !== 'visible') return;
-    void this.presence();
-    this.presenceTimer = setInterval(() => {
-      void this.presence();
-    }, this.config.presenceIntervalMs);
-  }
-
-  private disarmPresence(): void {
-    clearInterval(this.presenceTimer);
-    this.presenceTimer = undefined;
   }
 
   private disarmWake(): void {
