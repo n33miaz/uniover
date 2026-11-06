@@ -37,18 +37,21 @@ if ($anchor -ieq $realBase) {
 # Este lancador e o unico dono do agente. Qualquer agente que sobrou (layout antigo com
 # agent-src/venv/run-agent.ps1 na raiz, ou um supervisor orfao) sai antes: dois agentes com a
 # mesma identidade disputariam a conexao com o servidor.
-$leftovers = Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction SilentlyContinue | Where-Object {
-    $_.CommandLine -and ($_.ProcessId -ne $PID) -and (
-        $_.CommandLine -like "*$base\run-agent.ps1*" -or
-        $_.CommandLine -like "*$base\agent-src*" -or
-        $_.CommandLine -like "*$base\venv*" -or
-        $_.CommandLine -like "*$base\app\*" -or
-        $_.CommandLine -like "*$base\runtime\*"
-    )
+function Stop-Leftovers {
+    $leftovers = Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and ($_.ProcessId -ne $PID) -and (
+            $_.CommandLine -like "*$base\run-agent.ps1*" -or
+            $_.CommandLine -like "*$base\agent-src*" -or
+            $_.CommandLine -like "*$base\venv*" -or
+            $_.CommandLine -like "*$base\app\*" -or
+            $_.CommandLine -like "*$base\runtime\*"
+        )
+    }
+    foreach ($process in $leftovers) {
+        & taskkill.exe /PID $process.ProcessId /T /F *> $null
+    }
 }
-foreach ($process in $leftovers) {
-    & taskkill.exe /PID $process.ProcessId /T /F *> $null
-}
+Stop-Leftovers
 
 # Queda de energia no meio da troca de pasta da atualizacao (app -> app.previous, depois app.new -> app): sem `app` o
 # supervisor nao tem de onde subir e esperaria para sempre, e nenhum outro caminho a restaura. Este lancador (que a
@@ -204,6 +207,10 @@ if ($forced -gt 0) { $legacyStaleSeconds = 0.0 }
 $forcedLegacy = 0.0
 if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_LEGACY_STALE_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedLegacy) -and $forcedLegacy -gt 0) { $legacyStaleSeconds = $forcedLegacy }
 $staleRestarts = 0
+$busyWait = 30.0
+$forcedBusy = 0.0
+if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_BUSY_WAIT_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedBusy) -and $forcedBusy -gt 0) { $busyWait = $forcedBusy }
+$busySeenStamp = $null
 # Suspensao/hibernacao: o relogio de parede salta de uma volta da vigia para a outra (que deveria levar $pollMs). O
 # supervisor dormiu junto e o sinal dele parece velho de horas: depois de um salto assim o prazo recomeca do despertar.
 $pollMs = 5000
@@ -224,7 +231,8 @@ if ($jumpSpec -and $jumpSpec -match '^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$') {
 }
 
 function Get-WatchNow {
-    return (Get-Date).AddSeconds($script:clockSkew)
+    # UTC: no fim do horario de verao a hora local volta uma hora e o silencio do supervisor pareceria menor (ou maior).
+    return [DateTime]::UtcNow.AddSeconds($script:clockSkew)
 }
 
 function Stop-SupervisorTree($Process) {
@@ -269,7 +277,7 @@ function Invoke-Supervisor([string]$Script) {
         }
         $previous = $now
         $last = $resumedAt
-        try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTime.AddSeconds($script:clockSkew); if ($stamp -gt $last) { $last = $stamp } } catch { }
+        try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTimeUtc.AddSeconds($script:clockSkew); if ($stamp -gt $last) { $last = $stamp } } catch { }
         $silent = ($now - $last).TotalSeconds
         if ($silent -gt $limit) {
             Write-LauncherLog ('o supervisor esta vivo (pid ' + $process.Id + ') mas sem sinal ha ' + [int]$silent + ' s; vou reinicia-lo') 'ERROR'
@@ -307,9 +315,26 @@ while ($true) {
         if (((Get-Date) - $started).TotalSeconds -ge 600) { $staleRestarts = 0 }
         # Codigo 43: o supervisor novo encontrou outro vivo da mesma instalacao (o mutex dele). Nao e um supervisor ruim: espera
         # e tenta de novo, sem rodar o `run-agent.fallback.ps1` (uma copia antiga, possivelmente sem o mutex).
+        # (Um lancador anterior a este, ainda em execucao, nao conhece o 43: cai no fallback, que nao tem o mutex. So vale ate
+        # todas as maquinas reiniciarem o lancador; depende de existir um supervisor orfao, o que e raro.)
         if ($code -eq 43) {
             Write-LauncherLog 'ja ha um supervisor vivo desta instalacao; espero e tento de novo' 'INFO'
-            Start-Sleep -Seconds 30
+            # Esse supervisor sobrou da varredura da partida (o CIM falhou ou estourou). Se ele estiver travado, esperar para
+            # sempre repetiria o incidente: com o pulso parado (o MESMO carimbo velho em duas voltas, o que descarta um PC que
+            # acabou de acordar) a varredura e refeita.
+            $stamp = $null
+            try { $stamp = (Get-Item -LiteralPath (Join-Path $runtimeDir 'supervisor-alive') -ErrorAction Stop).LastWriteTimeUtc } catch { }
+            $silentFor = [double]::MaxValue
+            if ($null -ne $stamp) { $silentFor = ([DateTime]::UtcNow - $stamp).TotalSeconds }
+            if ($silentFor -gt $staleSeconds -and $busySeenStamp -eq $stamp) {
+                Write-LauncherLog 'o supervisor que segura a instalacao esta sem sinal; refaco a varredura' 'ERROR'
+                Add-LauncherDiagnostic 'supervisor.unresponsive' 'error' 'o supervisor que segurava a instalacao estava sem sinal; o lancador refez a varredura'
+                Stop-Leftovers
+                $busySeenStamp = $null
+            }
+            elseif ($silentFor -gt $staleSeconds) { $busySeenStamp = $stamp }
+            else { $busySeenStamp = $null }
+            Start-Sleep -Seconds $busyWait
             continue
         }
         Write-LauncherLog ('o supervisor terminou (codigo ' + $code + ') depois de ' + [int]((Get-Date) - $started).TotalSeconds + ' s')
@@ -317,13 +342,15 @@ while ($true) {
     }
     # Durante a primeira migracao, a tarefa ja aponta para este lancador antes de `agent-src`
     # virar `app`. A queda nesse intervalo ainda pode iniciar o supervisor antigo.
+    # O legado e o fallback tambem rodam sob a vigia: um que trava sem dar sinal repetiria o incidente (e o antigo, sem pulso,
+    # tem o prazo maior de supervisor anterior).
     if (Test-Path -LiteralPath $legacy) {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $legacy
+        try { [void](Invoke-Supervisor $legacy) } catch { Write-LauncherLog ('nao consegui vigiar o supervisor legado (' + $_.Exception.GetType().Name + ')') }
         Start-Sleep -Seconds 5
         continue
     }
     if (Test-Path -LiteralPath $fallback) {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $fallback
+        try { [void](Invoke-Supervisor $fallback) } catch { Write-LauncherLog ('nao consegui vigiar o fallback (' + $_.Exception.GetType().Name + ')') }
     }
     Start-Sleep -Seconds 30
 }

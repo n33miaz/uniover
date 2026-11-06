@@ -231,7 +231,10 @@ def counting_supervisor(*, touches: bool) -> str:
 
 def starts(tmp_path: Path) -> int:
     marker = tmp_path / "started.txt"
-    return len(marker.read_text(encoding="utf-8-sig").split()) if marker.exists() else 0
+    try:
+        return len(marker.read_text(encoding="utf-8-sig").split())
+    except OSError:  # inexistente, ou aberto para escrita naquele instante
+        return 0
 
 
 def test_a_live_supervisor_that_gave_no_sign_for_too_long_is_restarted_by_the_launcher(
@@ -442,5 +445,97 @@ def test_a_supervisor_that_lost_the_mutex_does_not_send_the_launcher_to_the_fall
         )
         time.sleep(3)
         assert starts(tmp_path) == 0, "o fallback (copia antiga do supervisor) foi executado"
+    finally:
+        stop(launcher)
+
+
+def spawn_decoy(script: Path) -> subprocess.Popen[bytes]:
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("Start-Sleep -Seconds 300\n", encoding="ascii")
+    return subprocess.Popen(  # noqa: S603 - PowerShell do sistema; script do próprio teste
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
+        creationflags=0x08000000,
+    )
+
+
+def busy_supervisor() -> str:
+    """Supervisor novo que perde o mutex: anota a partida e sai com 43."""
+    return "Add-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value 'x'\nexit 43\n"
+
+
+def test_a_mutex_holder_with_a_frozen_pulse_is_swept_again(tmp_path: Path) -> None:
+    # O supervisor que segura a instalação sobrou da varredura da partida (o CIM falhou) e está
+    # travado: esperar para sempre repetiria o incidente. Pulso parado (o mesmo carimbo velho em
+    # duas voltas), a varredura é refeita e o diagnóstico fica registrado.
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(busy_supervisor(), encoding="ascii")
+    runtime = base / "runtime"
+    runtime.mkdir()
+    alive = runtime / "supervisor-alive"
+    alive.write_text("x", encoding="ascii")
+    old = time.time() - 3600
+    os.utime(alive, (old, old))
+    launcher = run_launcher(tmp_path, stale="5", extra={"UNIOVER_LAUNCHER_BUSY_WAIT_SECONDS": "2"})
+    decoy = None
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        # Nasce DEPOIS da varredura da partida: só a refeita pode pegá-lo.
+        decoy = spawn_decoy(base / "run-agent.ps1")
+        assert decoy.wait(timeout=90) is not None, "a varredura não foi refeita"
+        log = (base / "logs" / "supervisor.log").read_text("utf-8")
+        assert "refaco a varredura" in log
+        assert "supervisor.unresponsive" in (runtime / "diagnostics.jsonl").read_text("utf-8")
+    finally:
+        if decoy is not None and decoy.poll() is None:
+            decoy.kill()
+        stop(launcher)
+
+
+def test_a_mutex_holder_with_a_fresh_pulse_is_left_alone(tmp_path: Path) -> None:
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(busy_supervisor(), encoding="ascii")
+    runtime = base / "runtime"
+    runtime.mkdir()
+    alive = runtime / "supervisor-alive"
+    alive.write_text("x", encoding="ascii")
+    launcher = run_launcher(tmp_path, stale="5", extra={"UNIOVER_LAUNCHER_BUSY_WAIT_SECONDS": "2"})
+    decoy = None
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        decoy = spawn_decoy(base / "run-agent.ps1")
+        end = time.monotonic() + 15
+        while time.monotonic() < end:
+            alive.write_text("x", encoding="ascii")  # o dono do mutex está vivo
+            time.sleep(0.5)
+        assert decoy.poll() is None, "um supervisor vivo foi varrido"
+    finally:
+        if decoy is not None and decoy.poll() is None:
+            decoy.kill()
+        stop(launcher)
+
+
+def test_a_hung_fallback_is_watched_and_restarted_like_the_supervisor(tmp_path: Path) -> None:
+    # Sem `app`, o lançador cai no fallback. Um fallback que trava sem dar sinal repetia o incidente
+    # (rodava síncrono, sem prazo): agora é vigiado como o supervisor.
+    base = tmp_path / "UniOver"
+    base.mkdir()
+    (base / "run-agent.fallback.ps1").write_text(
+        "Add-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value 'fallback'\nStart-Sleep -Seconds 300\n",
+        encoding="ascii",
+    )
+    launcher = run_launcher(tmp_path, stale="3")
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 2, 120), "o fallback travado não foi reiniciado"
+        log = (base / "logs" / "supervisor.log").read_text("utf-8")
+        assert "sem sinal" in log
     finally:
         stop(launcher)
