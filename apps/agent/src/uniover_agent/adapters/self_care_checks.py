@@ -257,7 +257,7 @@ _KILL_SUPERVISOR_SCRIPT = (
     "Get-CimInstance Win32_Process -OperationTimeoutSec 30|"
     "Where-Object{$_.ProcessId -ne $PID -and $_.Name -eq 'powershell.exe' -and $_.CommandLine -and "
     "$_.CommandLine.IndexOf($env:UNIOVER_RUNNER,[StringComparison]::OrdinalIgnoreCase) -ge 0}|"
-    "ForEach-Object{Stop-Process -Id $_.ProcessId -Force;'killed'}"
+    "ForEach-Object{& taskkill.exe /PID $_.ProcessId /T /F *> $null;'killed'}"
 )
 
 
@@ -335,8 +335,16 @@ def supervisor_check(  # noqa: PLR0913 - dependências injetadas deixam o teste 
         return CheckResult(True, "supervisor ativo")
 
     async def repair() -> str | None:
-        # Primeiro tira de cena um supervisor vivo e mudo (travado): enquanto ele existir,
-        # o lançador fica esperando por ele e nenhum reinício acontece. Sem ele, o
+        # O sinal pode ter voltado entre a verificação e o reparo (o PC acordou, o supervisor
+        # terminou a volta lenta): não se mata um supervisor que já está bem.
+        try:
+            if age_of_signal() <= SUPERVISOR_SILENCE_SECONDS:
+                return None
+        except OSError:
+            pass
+        # Primeiro tira de cena um supervisor vivo e mudo (travado), com tudo o que ele abriu
+        # (`taskkill /T`: agente, ícone e filhos de atualização que sobrariam órfãos): enquanto
+        # ele existir, o lançador fica esperando por ele e nenhum reinício acontece. Sem ele, o
         # lançador (ou a tarefa) sobe outro.
         await _in_thread(do_kill)
         started = await _in_thread(lambda: do_start(name))

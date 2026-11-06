@@ -23,6 +23,9 @@ BEAT_SECONDS: Final = 1.0
 CHECK_SECONDS: Final = 5.0
 STALL_SECONDS: Final = 60.0
 CRASH_FILE: Final = "crash.log"
+# Uma conferência a cada 5 s que veio depois de mais que isto: o PC dormiu (ou o processo ficou
+# congelado), e o laço não está parado por defeito.
+RESUME_GAP_SECONDS: Final = 30.0
 
 
 def dump_all_threads(logs: Path, header: str) -> bool:
@@ -48,6 +51,7 @@ class LoopWatchdog:
         beat: float = BEAT_SECONDS,
         monotonic: Callable[[], float] = time.monotonic,
         dump: Callable[[Path, str], bool] = dump_all_threads,
+        wall: Callable[[], float] = time.time,
     ) -> None:
         self._logs = logs
         self._stall_after = stall_after
@@ -55,6 +59,8 @@ class LoopWatchdog:
         self._beat = beat
         self._monotonic = monotonic
         self._dump = dump
+        self._wall = wall
+        self._last_wall = wall()
         self._stamp = monotonic()
         self._dumped = False
         self._stop = threading.Event()
@@ -96,9 +102,20 @@ class LoopWatchdog:
             self._dumped = True
             self.dumps += 1
 
+    def tick(self) -> None:
+        """Uma volta da thread. Se o relógio de parede saltou (PC suspenso), o carimbo do laço
+        parece velho de horas sem ele ter parado: dá-se uma carência em vez de um despejo."""
+        now = self._wall()
+        jumped = now - self._last_wall > max(RESUME_GAP_SECONDS, self._check_every * 4)
+        self._last_wall = now
+        if jumped:
+            self._stamp = self._monotonic()
+            self._dumped = False
+        self.check_now()
+
     def _watch(self) -> None:
         while not self._stop.wait(self._check_every):
             try:
-                self.check_now()
+                self.tick()
             except Exception:
                 _log.debug("o vigia do laço falhou", exc_info=True)

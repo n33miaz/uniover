@@ -100,3 +100,28 @@ def test_a_dump_that_could_not_be_written_is_tried_again_later(tmp_path: Path) -
     moment.now = 76
     watchdog.check_now()
     assert len(headers) == 3, "gravado uma vez, não repete enquanto o laço segue parado"
+
+
+def test_a_wall_clock_jump_after_a_suspend_gives_a_grace_instead_of_a_dump(tmp_path: Path) -> None:
+    moment = Moment()
+    wall = Moment()
+    dumps: list[str] = []
+
+    def dump(logs: Path, header: str) -> bool:
+        dumps.append(header)
+        return True
+
+    watchdog = LoopWatchdog(
+        tmp_path, stall_after=60, check_every=5, monotonic=moment, dump=dump, wall=wall
+    )
+    # O PC dormiu 2 h: o monotônico (que conta o tempo dormido) e o de parede saltam juntos.
+    moment.now = 7200
+    wall.now = 7200
+    watchdog.tick()
+    assert dumps == [], "a suspensão não é um laço parado"
+    # Sem suspensão (a parede anda 5 s por volta), um laço que parou de verdade ainda é registrado.
+    for step in range(1, 15):
+        moment.now = 7200 + step * 5
+        wall.now = 7200 + step * 5
+        watchdog.tick()
+    assert len(dumps) == 1
