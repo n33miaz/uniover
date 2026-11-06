@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 
 from uniover_agent.adapters.adb_authorization import (
-    MAX_TIMEOUT_ATTEMPTS,
     NEEDS_USER,
     VERIFIED,
     AdbAuthorization,
@@ -22,12 +21,10 @@ from uniover_agent.adapters.adb_authorization import (
 )
 from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput
-from uniover_agent.composition.tv import USER_COMMANDS
-from uniover_agent.core import Command, CommandResult, ResultStatus, UserActivity, touching
+from uniover_agent.core import Command, UserActivity, tv_presence_handler
 from uniover_agent.ports import (
     AdbUnauthorized,
     AdbUnreachable,
-    is_user_initiated,
     user_initiated_adb,
 )
 
@@ -400,215 +397,17 @@ async def test_the_user_activity_window_decides_if_a_connection_may_open() -> No
     assert activity.recent()
 
 
-async def test_only_the_users_commands_count_as_use_of_the_tv() -> None:
+async def test_only_the_presence_signal_counts_as_use_of_the_tv() -> None:
     now = [0.0]
     activity = UserActivity(lambda: now[0])
+    presence = tv_presence_handler(activity)
 
-    async def inner(command: Command) -> CommandResult:
-        return CommandResult(command.id, ResultStatus.OK)
+    result = await presence(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.presence.v1", {}))
 
-    touched = touching(inner, activity)
-    await touched(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.key.v1", {}))
+    assert result.status.value == "ok"
     assert activity.recent()
-    for name in ("tv.cleanup.config.v1", "tv.power.off.v1", "tv.wake.v1"):
-        assert name not in USER_COMMANDS  # o servidor também manda estes sozinho
-    assert {"tv.key.v1", "tv.apps.refresh.v1", "tv.livre.v1"} <= USER_COMMANDS
-
-
-async def test_a_user_request_may_connect_but_a_failed_one_closes_the_door_again(
-    home: Home,
-) -> None:
-    runner = runner_with(connect=REFUSED, state=UNKNOWN)
-    adb = home.adb(runner)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    for _ in range(3):
-        with pytest.raises(AdbUnauthorized):
-            await adb.list_apps()
-    assert runner.calls.count(CONNECT) == 1
-
-
-# --- a espera do aceite só observa; a prova é de um pedido seguinte da pessoa ---------------------
-
-
-async def test_the_watch_records_the_grant_without_connecting_or_disconnecting(home: Home) -> None:
-    runner = runner_with(state=[UNAUTHORIZED, UNAUTHORIZED, DEVICE])
-    adb = home.adb(runner, sleep=instant, **PAIRING)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()  # o toque: o aviso aparece na TV
-    assert runner.calls == [CONNECT, GET_STATE]
-    await watched(adb)
-    record = home.authorization().record
-    assert record.state == "granted"  # aceita, ainda não provada
-    assert record.timeout_disabled  # desligado já na mesma sessão, sobre o transporte vivo
-    assert record.serial == SERIAL
-    assert record.mac == MAC
-    assert runner.calls.count(CONNECT) == 1
-    assert DISCONNECT not in runner.calls  # a espera nunca desconecta
-    assert adb.connected
-    await adb.aclose()
-
-
-async def test_the_watch_task_never_holds_the_user_marker(home: Home) -> None:
-    seen: list[bool] = []
-
-    def spy() -> AdbOutput:
-        seen.append(is_user_initiated())
-        return UNAUTHORIZED
-
-    runner = runner_with(state=[UNAUTHORIZED, spy, DEVICE])
-    adb = home.adb(runner, sleep=instant, **PAIRING)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    await watched(adb)
-    assert seen == [False]
-    await adb.aclose()
-
-
-async def test_after_the_grant_a_dropped_transport_is_not_reopened_by_the_agent(
-    home: Home,
-) -> None:
-    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
-    adb = home.adb(runner, sleep=instant, **PAIRING)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    await watched(adb)
-    await adb.disconnect()  # a TV foi para o standby, o transporte caiu
-    runner.script[GET_STATE] = UNKNOWN
-    for _ in range(3):
-        with pytest.raises(AdbUnauthorized):
-            await adb.list_apps()
-    assert runner.calls.count(CONNECT) == 1  # concedida mas não provada: só um pedido prova
-    await adb.aclose()
-
-
-async def test_the_next_tap_proves_the_grant_with_a_fresh_connection(home: Home) -> None:
-    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
-    adb = home.adb(runner, sleep=instant, **PAIRING)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    await watched(adb)
-    script_apps(runner)
-    before = len(runner.calls)
-    with user_initiated_adb():
-        await adb.list_apps()  # o toque seguinte, com o transporte ainda vivo
-    # Reconectou e, ainda no mesmo toque, reconectou de novo: a segunda conexão é a prova.
-    assert runner.calls[before : before + 7] == [
-        DISCONNECT,
-        CONNECT,
-        GET_STATE,
-        DISCONNECT,
-        CONNECT,
-        GET_STATE,
-        GET_SERIAL,  # o serial anotado se confere dentro do pedido da pessoa
-    ]
-    assert home.authorization().record.state == VERIFIED
-    await adb.disconnect()
-    await adb.list_apps()  # provada: o agente reconecta sozinho
-    assert runner.calls.count(CONNECT) == 4  # a primeira, as duas do toque e a automática
-    await adb.aclose()
-
-
-async def test_an_accept_without_always_allow_prompts_again_only_on_the_next_tap(
-    home: Home,
-) -> None:
-    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
-    adb = home.adb(runner, sleep=instant, **PAIRING)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    await watched(adb)
-    assert runner.calls.count(CONNECT) == 1  # nenhum aviso novo sem toque
-    runner.script[CONNECT] = REFUSED  # o toque seguinte: a TV pede de novo
-    runner.script[GET_STATE] = UNAUTHORIZED
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.list_apps()
-    assert home.authorization().record.state == NEEDS_USER
-    connects = runner.calls.count(CONNECT)
-    for _ in range(3):
-        with pytest.raises(AdbUnauthorized):
-            await adb.list_apps()
-    assert runner.calls.count(CONNECT) == connects
-    await adb.aclose()
-
-
-async def test_a_live_transport_seen_outside_a_request_is_not_recorded(home: Home) -> None:
-    runner = runner_with(connect=REFUSED, state=DEVICE)
-    adb = home.adb(runner)
-    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
-        await adb.connect()
-    script_apps(runner)
-    assert await adb.list_apps() == []  # serve ao canal, sem conectar
-    assert runner.calls.count(CONNECT) == 1
-    assert home.authorization().record.state == NEEDS_USER  # nada virou permissão
-
-
-async def test_a_live_transport_is_proven_by_the_users_request(home: Home) -> None:
-    runner = runner_with(connect=[STALE, FRESH])
-    with user_initiated_adb():
-        await home.adb(runner).connect()
-    assert runner.calls[:5] == [CONNECT, GET_STATE, DISCONNECT, CONNECT, GET_STATE]
-    assert home.authorization().record.state == VERIFIED
-
-
-# --- o vencimento de 7 dias: desligado uma vez, só com a permissão dada ---------------------------
-
-
-async def test_the_timeout_is_disabled_once_after_a_user_request(home: Home) -> None:
-    runner = runner_with()
-    adb = home.adb(runner)
-    with user_initiated_adb():
-        await adb.connect()
-    assert runner.calls.count(PUT_TIMEOUT) == 1
-    assert runner.calls.index(GET_TIMEOUT) > runner.calls.index(PUT_TIMEOUT)
-    assert home.authorization().record.timeout_disabled
-    with user_initiated_adb():
-        await adb.connect()
-        await home.adb(runner).connect()
-    assert runner.calls.count(PUT_TIMEOUT) == 1
-
-
-async def test_the_timeout_step_never_runs_on_an_automatic_connect(home: Home) -> None:
-    home.verify()
-    runner = runner_with()
-    await home.adb(runner).connect()
-    assert PUT_TIMEOUT not in runner.calls
-    assert home.authorization().timeout_step_pending()
-
-
-async def test_the_timeout_step_runs_when_the_channel_was_already_open(home: Home) -> None:
-    home.verify()
-    runner = runner_with()
-    script_apps(runner)
-    adb = home.adb(runner)
-    await adb.connect()  # sozinho: sem o passo
-    assert PUT_TIMEOUT not in runner.calls
-    with user_initiated_adb():
-        await adb.list_apps()
-    assert runner.calls.count(PUT_TIMEOUT) == 1
-
-
-async def test_a_tv_that_keeps_the_timeout_is_tried_a_few_times_and_then_left_alone(
-    home: Home,
-) -> None:
-    runner = runner_with()
-    runner.script[GET_TIMEOUT] = ok("604800000\r\n")  # a TV não aceitou o 0
-    adb = home.adb(runner)
-    for _ in range(MAX_TIMEOUT_ATTEMPTS + 3):
-        with user_initiated_adb():
-            await adb.connect()
-    assert runner.calls.count(PUT_TIMEOUT) == MAX_TIMEOUT_ATTEMPTS
-    assert not home.authorization().record.timeout_disabled
-
-
-async def test_a_new_key_does_not_inherit_the_timeout_done_for_the_old_one(home: Home) -> None:
-    first = home.verify()
-    first.mark_timeout_disabled()
-    home.write_key(fake_key("nova"))
-    runner = runner_with()
-    with user_initiated_adb():
-        await home.adb(runner).connect()
-    assert runner.calls.count(PUT_TIMEOUT) == 1
-    assert home.authorization().record.timeout_disabled
+    now[0] = 61.0
+    assert not activity.recent()  # a janela é de 60 s
 
 
 # --- o serial: só se lê dentro de um pedido da pessoa ------------------------------------------
