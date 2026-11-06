@@ -171,7 +171,7 @@ export class RoutineEditorPage {
 
   constructor() {
     // Editor sujo: a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.dirty(), 'form', this.host.nativeElement);
+    registerUnsavedWork(() => this.dirty());
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) {
       // A passada começa pela rotina e pelo catálogo, não pela ordem de registro (o catálogo, a maior resposta, antes dela).
@@ -354,6 +354,9 @@ export class RoutineEditorPage {
       const result = await this.routines.save(toSaveDraft(draft));
       switch (result.status) {
         case 'saved':
+          // Salvo: o editor deixa de estar sujo antes de navegar. Se a navegação falhar (um pedaço de código que a versão nova
+          // levou), o aviso de versão nova não pode pedir "salve" a quem acabou de salvar.
+          this.initial.set(draft);
           // A lista substitui o editor no histórico: "voltar" não reabre um editor já salvo.
           await this.router.navigate(['/treino/rotinas'], { replaceUrl: true });
           return;

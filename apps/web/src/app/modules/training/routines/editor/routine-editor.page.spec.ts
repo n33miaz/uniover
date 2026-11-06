@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { OfflineQueue } from '../../../../core/offline-queue/offline-queue';
+import { UnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { RoutineRepository } from '../../data/routines/routine-repository';
 import { catalog, eventually, item, saveRoutine, setupScreen } from '../../shell/screen-test-kit';
 import { RoutineEditorPage } from './routine-editor.page';
@@ -292,6 +293,42 @@ describe('RoutineEditorPage', () => {
       button(el, 'Cancelar').click();
       expect(el.querySelector('.ui-notice.warn')).toBeNull();
       expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
+    });
+
+    it('is no longer unsaved work once saved, before navigating, even if the navigation then fails', async () => {
+      const { fixture, el, router } = await open('/treino/rotinas/nova?exercicio=prancha');
+      await eventually(fixture, () => expect(names(el)).toHaveLength(1));
+      const unsaved = TestBed.inject(UnsavedWork);
+      setName(el, 'Só o core');
+      fixture.detectChanges();
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      let dirtyWhileNavigating: boolean | undefined;
+      vi.spyOn(router, 'navigate').mockImplementation(async () => {
+        dirtyWhileNavigating = unsaved.needsConfirmation();
+        // O pedaço de código da lista sumiu com a versão nova: a navegação não acontece.
+        return false;
+      });
+      button(el, 'Salvar Rotina').click();
+      await vi.waitFor(() => expect(dirtyWhileNavigating).toBeDefined(), { timeout: 3000 });
+
+      expect(dirtyWhileNavigating).toBe(false);
+      expect(unsaved.hasUnsaved()).toBe(false);
+    });
+
+    it('keeps counting what is typed after the save as unsaved', async () => {
+      const { fixture, el, router } = await open('/treino/rotinas/nova?exercicio=prancha');
+      await eventually(fixture, () => expect(names(el)).toHaveLength(1));
+      const unsaved = TestBed.inject(UnsavedWork);
+      setName(el, 'Só o core');
+      fixture.detectChanges();
+      vi.spyOn(router, 'navigate').mockResolvedValue(false);
+      button(el, 'Salvar Rotina').click();
+      await vi.waitFor(() => expect(unsaved.needsConfirmation()).toBe(false), { timeout: 3000 });
+
+      setName(el, 'Só o core 2');
+      fixture.detectChanges();
+      expect(unsaved.needsConfirmation()).toBe(true);
     });
 
     it('creates the routine with the exercises chosen', async () => {

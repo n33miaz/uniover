@@ -1,11 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -453,7 +446,7 @@ export class PhysicalAssessmentEditorPage {
 
   constructor() {
     // Editor sujo: a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.dirty(), 'form', inject(ElementRef).nativeElement);
+    registerUnsavedWork(() => this.dirty());
     this.baseline.set(this.snapshot());
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
@@ -577,6 +570,8 @@ export class PhysicalAssessmentEditorPage {
       );
       return null;
     }
+    // O que está sendo salvo: é com isto que o editor passa a se comparar, e mexer durante o salvamento continua contando.
+    const saved = this.snapshot();
     const measurements = this.measures()
       .filter((row) => row.type.trim() && String(row.reportedValue).trim())
       .map((row) => ({ ...row, type: row.type.trim(), unit: row.unit.trim() }));
@@ -597,6 +592,8 @@ export class PhysicalAssessmentEditorPage {
       this.persistedId,
     );
     this.persistedId = row.id;
+    // Salvo: o editor deixa de estar sujo antes de navegar (os anexos pendentes ainda contam até subirem).
+    this.baseline.set(saved);
     return row.id;
   }
 
