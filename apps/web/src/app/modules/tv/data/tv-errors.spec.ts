@@ -93,6 +93,9 @@ describe('describeFailure', () => {
     const idle = describeFailure(http(502, 'command-failed', { agentError: 'adb_idle' }));
     expect(idle.message).toContain('enquanto você usa a tela da TV');
     expect(idle.message).not.toContain('ainda não deu a permissão');
+    const identity = describeFailure(http(502, 'command-failed', { agentError: 'adb_identity' }));
+    expect(identity.message).toContain('qual aparelho responde');
+    expect(identity.message).not.toContain('enquanto você usa a tela da TV');
     const missing = describeFailure(
       http(502, 'command-failed', { agentError: 'cleanup_report_missing' }),
     );

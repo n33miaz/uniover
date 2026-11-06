@@ -33,6 +33,7 @@ describe('livreCodeMessage', () => {
     expect(livreCodeMessage('adb_unauthorized')).toContain('Aceite');
     expect(livreCodeMessage('adb_idle')).toContain('enquanto você usa a tela da TV');
     expect(livreCodeMessage('adb_unauthorized')).toContain('Sempre permitir neste computador');
+    expect(livreCodeMessage('adb_identity')).toContain('qual aparelho responde');
     expect(livreCodeMessage('adb_qualquer_outro')).toContain('ADB');
   });
 

@@ -85,6 +85,8 @@ export function livreCodeMessage(code: string): string | null {
       return $localize`:@@tv-livre.error.adb-unauthorized:Aceite o aviso do ADB na tela da TV, marcando Sempre permitir neste computador, e tente de novo.`;
     case 'adb_idle':
       return $localize`:@@tv-livre.error.adb-idle:O ADB só conecta enquanto você usa a tela da TV. Toque de novo.`;
+    case 'adb_identity':
+      return $localize`:@@tv-livre.error.adb-identity:Não deu para confirmar qual aparelho responde pelo ADB. Toque em Atualizar lista.`;
     case 'adb_unreachable':
     case 'adb_unavailable':
     case 'adb_timeout':
