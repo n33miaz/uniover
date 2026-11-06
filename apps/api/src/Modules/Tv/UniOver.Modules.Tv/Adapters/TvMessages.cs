@@ -89,6 +89,10 @@ internal static class TvMessages
     public static TvMessage Wake() =>
         new(AgentMessageTypes.TvWakeV1, BodyOf(new TvWakeV1Message { Body = new TvWakeV1Body() }.ToJson()));
 
+    /// <summary>Avisa que alguém está diante da tela da TV no app agora. Sem corpo e sem resposta.</summary>
+    public static TvMessage Presence() =>
+        new(AgentMessageTypes.TvPresenceV1, BodyOf(new TvPresenceV1Message { Body = new TvPresenceV1Body() }.ToJson()));
+
     public static TvMessage AppsRefresh() =>
         new(AgentMessageTypes.TvAppsRefreshV1, BodyOf(new TvAppsRefreshV1Message { Body = new TvAppsRefreshV1Body() }.ToJson()));
 

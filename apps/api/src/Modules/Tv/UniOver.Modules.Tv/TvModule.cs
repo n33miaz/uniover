@@ -40,6 +40,7 @@ using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Features.TvLivre;
 using UniOver.Modules.Tv.Features.UpdateShortcut;
 using UniOver.Modules.Tv.Features.Tvs;
+using UniOver.Modules.Tv.Features.Presence;
 using UniOver.Modules.Tv.Features.Wake;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
@@ -138,6 +139,8 @@ public static class TvModule
         services.AddScoped<ReorderShortcutsHandler>();
         services.AddScoped<RefreshShortcutsHandler>();
         services.AddScoped<WakeHandler>();
+        services.AddSingleton<PresenceThrottle>();
+        services.AddScoped<PresenceHandler>();
         services.AddScoped<SiriTokensHandler>();
         services.AddScoped<SiriCommandHandler>();
         services.AddScoped<CleanupHandler>();
@@ -178,6 +181,7 @@ public static class TvModule
         group.MapReorderShortcuts();
         group.MapRefreshShortcuts();
         group.MapWake();
+        group.MapPresence();
         group.MapCleanup();
         group.MapTvLivre();
         group.MapRecentCommands();
