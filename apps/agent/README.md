@@ -514,15 +514,26 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   registra `granted`, roda `settings put global adb_allowed_connection_time 0` (confere com `settings get`) e anota o
   serial (`getprop ro.serialno`, uma leitura de shell: em transporte TCP o `adb get-serialno` devolve só `host:porta`;
   não conferido na TV real), tudo sobre o transporte já autorizado. O Android 11+ revoga a permissão do ADB
-  que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); só a resposta da TV conta como tentativa (3 recusas dela encerram o ajuste), nunca tempo
-  esgotado ou transporte caído.
+  que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); só a resposta da TV conta
+  como tentativa (3 recusas dela encerram o ajuste), nunca tempo esgotado ou transporte caído.
 - **A prova.** Um "Permitir" sem "Sempre permitir" vale só para aquela conexão. Por isso `granted` ainda não deixa o
-  agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz `disconnect` e `connect` e, se a TV
-  atender sem aviso, o registro vira `verified`. Se o aviso voltar, é nesse toque, com a pessoa na TV, e nada é
-  registrado como provado.
+  agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz um `disconnect` e uma `connect` e, se a TV
+  atender sem aviso, o registro vira `verified`. A segunda conexão tem de ser **realmente nova** (`connected to`):
+  se vier `already connected` (o `disconnect` não derrubou o transporte) a conexão serve, mas nada é dado como
+  provado. Uma prova é um `disconnect` e uma `connect`, nunca duas. Se o aviso voltar, é nesse toque, com a pessoa
+  na TV. Sem MAC na ARP (VPN, outra sub-rede) a prova se completa com chave, endereço e MAC vazio e não se repete a
+  cada toque; só a conexão automática continua exigindo o MAC.
 - **O serial** (`getprop ro.serialno`, leitura de shell) só é lido dentro de um pedido da pessoa, nunca num caminho
-  automático: se o aparelho que responde tem outro serial que o anotado, a permissão é invalidada.
+  automático. Se o aparelho que responde tem outro serial que o anotado, o agente esquece o serial e o ajuste e
+  refaz a prova dentro do mesmo toque, anotando a identidade nova (sem trava eterna, e sem `needs_user`).
+- **O registro só cai para `needs_user` por uma recusa explícita da TV** (`unauthorized` ou falha de autenticação do
+  `adb`). A recusa da trava (sem presença, sem MAC, permissão só `granted`) e o vigia vendo a TV desligada não gravam
+  nada nem perdem o ajuste do vencimento.
 - **`uniover-agent tv-volume`** monta o `AdbTv` com a mesma trava e roda como pedido de quem o digita.
+- **Ao atualizar:** publique a **API antes** do agente (um agente novo diante de uma API antiga não tem a capacidade
+  `tv.presence.v1` aceita e nenhum caminho automático volta a conectar). Quem atualiza não tem registro de permissão:
+  a lista diária, a limpeza, os ícones e abrir apps pela Siri ficam parados até tocar **uma vez** em **Atualizar
+  lista**.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
   repetir.
