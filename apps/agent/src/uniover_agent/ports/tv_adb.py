@@ -9,10 +9,11 @@ computador nem a saída crua do `adb`.
 """
 
 import asyncio
-from collections.abc import Iterator
+import logging
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final, Protocol
 
 from uniover_agent.ports.tv_channel import TvChannel, TvChannelError
@@ -29,23 +30,61 @@ ADB_FAILED: Final = "adb_failed"
 # USB". O que o agente faz sozinho (partida, lista diária, limpeza, ícones, vigia) nunca a ergue.
 # A marca guarda a **tarefa** que a ergueu: uma tarefa filha (`create_task` copia o contexto) não
 # herda o direito, então nada que o pedido deixe rodando em segundo plano abre o aviso depois.
-ADB_USER_INITIATED: Final[ContextVar[asyncio.Task[object] | None]] = ContextVar(
+_log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, eq=False)
+class UserRequest:
+    """O pedido da pessoa em andamento: a tarefa que o recebeu e o que fazer quando ele termina.
+
+    O adaptador registra aqui o que precisa ser desfeito no fim (por exemplo, `adb disconnect` de
+    uma conexão que não terminou provada: o servidor do `adb` religa sozinho conexões TCP feitas
+    com `adb connect`, e cada religação seria um aviso novo na TV).
+    """
+
+    task: asyncio.Task[object] | None
+    cleanups: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+
+    def on_finish(self, cleanup: Callable[[], Awaitable[None]]) -> None:
+        if cleanup not in self.cleanups:
+            self.cleanups.append(cleanup)
+
+    async def finish(self) -> None:
+        """Roda o que o pedido deixou para o fim (uma vez); falha de um não impede os outros."""
+        pending, self.cleanups = self.cleanups, []
+        for cleanup in pending:
+            try:
+                await cleanup()
+            except Exception:
+                _log.exception("falha ao encerrar o pedido do ADB")
+
+
+ADB_USER_INITIATED: Final[ContextVar[UserRequest | None]] = ContextVar(
     "adb_user_initiated", default=None
 )
 
 
+def current_user_request() -> UserRequest | None:
+    """O pedido da pessoa desta tarefa, ou `None` (tarefa filha ou caminho automático)."""
+    request = ADB_USER_INITIATED.get()
+    return request if request is not None and request.task is asyncio.current_task() else None
+
+
 def is_user_initiated() -> bool:
     """A tarefa de agora é a que o pedido da pessoa marcou?"""
-    marked = ADB_USER_INITIATED.get()
-    return marked is not None and marked is asyncio.current_task()
+    return current_user_request() is not None
 
 
 @contextmanager
-def user_initiated_adb() -> Iterator[None]:
-    """Dentro do bloco, o ADB pode pedir a permissão à TV (a pessoa pediu isto agora)."""
-    token = ADB_USER_INITIATED.set(asyncio.current_task())
+def user_initiated_adb() -> Iterator[UserRequest]:
+    """Dentro do bloco, o ADB pode pedir a permissão à TV (a pessoa pediu isto agora).
+
+    Quem roda um pedido inteiro (o handler do app) deve chamar `await request.finish()` no fim.
+    """
+    request = UserRequest(asyncio.current_task())
+    token = ADB_USER_INITIATED.set(request)
     try:
-        yield
+        yield request
     finally:
         ADB_USER_INITIATED.reset(token)
 

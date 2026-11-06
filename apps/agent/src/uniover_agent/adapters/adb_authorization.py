@@ -280,21 +280,27 @@ class AdbAuthorization:
             and mac == record.mac
         )
 
+    def keeps_channel(self, mac: str | None) -> bool:
+        """O canal ADB pode ficar aberto (hibernação, fim de pedido)? Só com a permissão provada."""
+        return self.verified_for(mac)
+
     def proven_for(self, mac: str | None) -> bool:
         """A prova já foi feita para esta chave, este endereço e o que se sabe do aparelho?
 
-        Diferente de `verified_for` (que libera conexão automática e exige MAC): sem MAC na ARP, a
-        prova se completa com o que dá para provar (chave, endereço e MAC vazio nos dois lados),
-        para o toque seguinte não a refazer para sempre.
+        Diferente de `verified_for` (que libera conexão automática e exige MAC): um MAC que não se
+        leu agora (`""`, ARP vazia num toque) é **desconhecido**, nunca "outra TV": não invalida a
+        prova nem se refaz a cada toque. Só um MAC lido e diferente do anotado é outro aparelho; e
+        um registro sem MAC diante de um MAC lido pede a prova de novo, uma vez, para aprendê-lo.
         """
         record = self._record
         fingerprint = self._keys.fingerprint()
+        mac_ok = not mac or (record.mac != "" and record.mac == mac)
         return (
             record.state == VERIFIED
             and fingerprint is not None
             and fingerprint == record.fingerprint
             and record.endpoint == self._endpoint
-            and record.mac == (mac or "")
+            and mac_ok
         )
 
     def forget_device(self) -> None:
@@ -360,10 +366,12 @@ class AdbAuthorization:
                 "a TV não tem MAC na tabela ARP agora; a permissão não vai liberar conexão sozinha"
             )
         record = self._record
+        # Um MAC vazio de qualquer lado é desconhecido, não outra TV: só dois MACs lidos e
+        # diferentes são aparelhos diferentes (e uma leitura vazia nunca apaga um MAC lido).
         same_tv = (
             record.fingerprint == snapshot
             and record.endpoint == self._endpoint
-            and record.mac == (mac or "")
+            and (not mac or not record.mac or record.mac == mac)
         )
         # Depois de `needs_user` (reset de fábrica, revogação) o ajuste que se fez na TV não vale
         # mais: ela volta ao padrão de 7 dias. `granted` para `verified` é o mesmo grant e mantém.
@@ -376,7 +384,7 @@ class AdbAuthorization:
                 state=state,
                 fingerprint=snapshot,
                 endpoint=self._endpoint,
-                mac=mac or "",
+                mac=(mac or record.mac) if same_tv else (mac or ""),
                 serial=record.serial if same_tv else "",
                 # Outra chave ou outra TV não herda o que se fez na TV anterior.
                 timeout_disabled=record.timeout_disabled if carried else False,

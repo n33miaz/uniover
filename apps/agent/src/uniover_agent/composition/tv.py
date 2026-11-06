@@ -997,8 +997,11 @@ async def tv_volume(settings: Settings) -> int:
     path = locate_adb(settings.adb_path)
     # Diagnóstico pedido por quem roda o comando: é um pedido da pessoa, então pode abrir o aviso.
     adb = None if path is None else build_adb(path, host, settings, lambda: True)
-    with user_initiated_adb():
-        return await check_volume("android", adb=adb)
+    with user_initiated_adb() as request:
+        try:
+            return await check_volume("android", adb=adb)
+        finally:
+            await request.finish()
 
 
 async def tv_find(
