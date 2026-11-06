@@ -39,6 +39,7 @@ describe('startupLine', () => {
       text: 'Não conseguiu iniciar: o Windows bloqueou o programa',
       failed: true,
       at: LATER,
+      verified: false,
     });
   });
 
@@ -70,7 +71,12 @@ describe('startupLine', () => {
 
   it('shows the last stage reached when the start itself went fine', () => {
     const line = startupLine(false, SEEN, beacon({ stage: 'supervisor', code: 'ok', at: LATER }));
-    expect(line).toEqual({ text: 'Última etapa: supervisor', failed: false, at: LATER });
+    expect(line).toEqual({
+      text: 'Última etapa: supervisor',
+      failed: false,
+      at: LATER,
+      verified: false,
+    });
     expect(
       startupLine(false, SEEN, beacon({ stage: 'stopped_by_user', code: 'ok', at: LATER }))?.text,
     ).toBe('Parado pelo usuário');
@@ -100,25 +106,50 @@ describe('startupLine', () => {
   it('shows "Credencial recusada" for a refused credential', () => {
     for (const reason of ['invalid_token', 'wrong_agent']) {
       const line = startupLine(false, SEEN, beacon({ rejectReason: reason, rejectedAt: LATER }));
-      expect(line).toEqual({ text: 'Credencial recusada', failed: true, at: LATER });
+      expect(line).toEqual({
+        text: 'Credencial recusada',
+        failed: true,
+        at: LATER,
+        verified: false,
+      });
     }
     expect(
       startupLine(false, SEEN, beacon({ rejectReason: 'protocol', rejectedAt: LATER }))?.text,
     ).toBe('Versão do agente recusada');
   });
 
-  it('lets the server-decided refusal win over an anonymous beacon, even a newer one', () => {
-    const both = beacon({
+  it('lets only a refusal that needs a real token win over a newer anonymous beacon', () => {
+    const wrongAgent = beacon({
       stage: 'hello_sent',
       code: 'ok',
       at: '2026-11-02T10:00:00Z',
-      rejectReason: 'invalid_token',
+      rejectReason: 'wrong_agent',
       rejectedAt: '2026-11-02T09:00:00Z',
     });
-    expect(startupLine(false, SEEN, both)?.text).toBe('Credencial recusada');
-    expect(startupLine(false, SEEN, { ...both, at: '2026-11-02T08:00:00Z' })?.text).toBe(
-      'Credencial recusada',
-    );
+    expect(startupLine(false, SEEN, wrongAgent)?.text).toBe('Credencial recusada');
+  });
+
+  it('makes a forgeable invalid_token compete with the beacon by time', () => {
+    const base = beacon({
+      stage: 'child_spawn',
+      code: 'blocked_av',
+      rejectReason: 'invalid_token',
+    });
+    // O token inventado é mais novo: ele vence. A baliza é mais nova: ela vence (o ataque não esconde a pista verdadeira).
+    expect(
+      startupLine(false, SEEN, {
+        ...base,
+        at: '2026-11-02T08:00:00Z',
+        rejectedAt: '2026-11-02T09:00:00Z',
+      })?.text,
+    ).toBe('Credencial recusada');
+    expect(
+      startupLine(false, SEEN, {
+        ...base,
+        at: '2026-11-02T10:00:00Z',
+        rejectedAt: '2026-11-02T09:00:00Z',
+      })?.text,
+    ).toBe('Não conseguiu iniciar: o antivírus bloqueou');
   });
 
   it('shows the protocol refusal while connected, as "connected but refused"', () => {
@@ -127,6 +158,7 @@ describe('startupLine', () => {
       text: 'Conectado, mas a versão do agente foi recusada',
       failed: true,
       at: LATER,
+      verified: true,
     });
   });
 
@@ -143,6 +175,7 @@ describe('startupLine', () => {
       text: 'Versão do agente recusada',
       failed: true,
       at: refusedAt,
+      verified: true,
     });
   });
 

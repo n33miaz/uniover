@@ -184,17 +184,52 @@ public class AgentBeaconTests
     }
 
     [Fact]
-    public void TheGateAcceptsOneRejectionPerInterval()
+    public void TheGateAcceptsOneRejectionPerIntervalAgentAndReason()
     {
         var time = new FakeTimeProvider(T0);
         var gate = new AgentBeaconGate(time);
         var agent = Guid.NewGuid();
 
-        gate.TryAcceptRejection(agent).Should().BeTrue();
-        gate.TryAcceptRejection(agent).Should().BeFalse();
-        gate.TryAcceptRejection(Guid.NewGuid()).Should().BeTrue();
+        gate.TryAcceptRejection(agent, "invalid_token").Should().BeTrue();
+        gate.TryAcceptRejection(agent, "invalid_token").Should().BeFalse();
+        gate.TryAcceptRejection(Guid.NewGuid(), "invalid_token").Should().BeTrue();
+
+        // Um token inventado não ocupa a vaga da recusa de protocolo (nem o contrário).
+        gate.TryAcceptRejection(agent, "protocol").Should().BeTrue();
+        gate.TryAcceptRejection(agent, "protocol").Should().BeFalse();
 
         time.Advance(BeaconLimits.RejectionInterval);
-        gate.TryAcceptRejection(agent).Should().BeTrue();
+        gate.TryAcceptRejection(agent, "invalid_token").Should().BeTrue();
+        gate.TryAcceptRejection(agent, "protocol").Should().BeTrue();
+    }
+
+    [Fact]
+    public void AProtocolRefusal_IsNotOverwrittenByAnotherReason_AndComesBackOnlyForProtocol()
+    {
+        var beacon = AgentBeacon.Create(Guid.NewGuid());
+        beacon.ApplyRejection("invalid_token", T0);
+        beacon.ApplyRejection("protocol", T0.AddMinutes(1));
+
+        beacon.ApplyRejection("invalid_token", T0.AddMinutes(2));
+        beacon.ApplyRejection("wrong_agent", T0.AddMinutes(3));
+
+        beacon.LastRejectReason.Should().Be("protocol");
+        beacon.LastRejectedAt.Should().Be(T0.AddMinutes(1));
+
+        beacon.ApplyRejection("protocol", T0.AddMinutes(4));
+        beacon.LastRejectedAt.Should().Be(T0.AddMinutes(4));
+    }
+
+    [Fact]
+    public void TheGateKnowsWhetherAProtocolRefusalMayBeNoted()
+    {
+        var gate = new AgentBeaconGate(new FakeTimeProvider(T0));
+
+        gate.MayHaveProtocolRefusal("pc-sala").Should().BeTrue("processo novo: ainda não se conferiu o banco");
+        gate.SetProtocolRefusal("pc-sala", false);
+        gate.MayHaveProtocolRefusal("pc-sala").Should().BeFalse();
+        gate.MayHaveProtocolRefusal("pc-quarto").Should().BeTrue();
+        gate.SetProtocolRefusal("pc-sala", true);
+        gate.MayHaveProtocolRefusal("pc-sala").Should().BeTrue();
     }
 }
