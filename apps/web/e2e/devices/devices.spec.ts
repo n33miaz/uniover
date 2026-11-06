@@ -444,6 +444,7 @@ test.describe('dispositivos', () => {
     await expect(page.locator('.item').nth(1).locator('.startup')).toContainText(
       'Credencial recusada',
     );
+    await expect(page.locator('.item').nth(1).locator('.startup')).toContainText('não verificado');
     // Estado nunca só por cor: a marca "!" acompanha o texto.
     await expect(page.locator('.item').first().locator('.startup-mark')).toHaveText('!');
     await expect(page.locator('.item').nth(2).locator('.startup')).toHaveCount(0);

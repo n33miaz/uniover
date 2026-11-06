@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Infrastructure;
@@ -74,7 +76,6 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         var row = (await RowAsync(app, app.Agent.Id))!;
         row.LastStage.Should().Be("child_spawn");
         row.LastCode.Should().Be("crash_loop");
-        row.LastDetail.Should().Be("Saiu com codigo 3");
         row.Version.Should().Be("0.42.10");
         row.Os.Should().Be("windows");
         row.Count.Should().Be(1);
@@ -137,16 +138,17 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ADetailThatLooksLikeAPathOrASecret_IsDropped_AndTheBeaconStays()
+    public async Task AFreeTextDetail_IsAcceptedAndIgnored_NeverStored()
     {
         await using var app = await TransportApp.StartAsync(postgres);
 
-        using var response = await PostAsync(app, app.Agent.Slug, Body(detail: "C:\\Users\\ana\\agent.log"));
+        using var response = await PostAsync(app, app.Agent.Slug, Body(detail: "perfil joao silva maquina ANA-PC"));
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        var row = (await RowAsync(app, app.Agent.Id))!;
-        row.LastStage.Should().Be("bootstrap");
-        row.LastDetail.Should().BeNull();
+        (await RowAsync(app, app.Agent.Id))!.LastStage.Should().Be("bootstrap");
+        await using var db = app.App.Db();
+        (await db.Database.SqlQueryRaw<string>("SELECT column_name AS \"Value\" FROM information_schema.columns WHERE table_name = 'agent_beacons'")
+            .ToListAsync(Ct)).Should().NotContain("last_detail");
     }
 
     [Fact]
@@ -248,17 +250,20 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         await WaitForRowAsync(app, app.Agent.Id, row => row.LastRejectReason == reason, $"recusa {reason} anotada");
 
     [Fact]
-    public async Task ARevokedToken_IsRecordedPerSlug_WithoutTheTokenInTheLogs()
+    public async Task ARevokedToken_WritesNothing_AndNeverShowsInTheLogs()
     {
         await using var app = await TransportApp.StartAsync(postgres);
+        var other = await app.PairAnotherAsync("Outro PC");
         using var revoke = await app.App.RevokeRawAsync(app.Login, app.Agent.Id, "teste");
         revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+        var before = await app.DatabaseFingerprintAsync();
 
+        // O token revogado no caminho dele e no caminho de outro agente ativo: nenhum dos dois ganha anotação.
         (await app.HandshakeStatusAsync(app.Agent.Slug, app.Agent.Token)).Should().Be(HttpStatusCode.Forbidden);
+        (await app.HandshakeStatusAsync(other.Slug, app.Agent.Token)).Should().Be(HttpStatusCode.Forbidden);
+        await Task.Delay(100, Ct);
 
-        var row = await WaitForRejectionAsync(app, "revoked");
-        row.LastRejectedAt.Should().Be(app.App.Time.GetUtcNow());
-        row.LastStage.Should().BeNull();
+        (await app.DatabaseFingerprintAsync()).Should().Be(before);
         app.App.Logs.Lines.Should().NotContain(line => line.Contains(app.Agent.Token, StringComparison.Ordinal));
     }
 
@@ -283,6 +288,99 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         await TransportApp.WaitUntilAsync(
             async () => (await RowAsync(app, app.Agent.Id))!.LastRejectedAt == first.AddMinutes(1), "segunda recusa anotada");
         app.App.Logs.Lines.Should().NotContain(line => line.Contains(stranger, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("uo_dev_x")]
+    [InlineData("uo_dev_")]
+    [InlineData("uo_dev_!!!!notbase64!!!!")]
+    [InlineData("Basic")]
+    public async Task AMalformedToken_CostsNoDatabaseQuery_AndWritesNothing(string bearer)
+    {
+        var counter = new SlugAndBeaconQueryCounter();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = counter });
+        var before = await app.DatabaseFingerprintAsync();
+        var queries = counter.Count;
+
+        for (var i = 0; i < 40; i++)
+        {
+            (await app.HandshakeStatusAsync(app.Agent.Slug, bearer)).Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        // Nem a consulta do token (texto sem a forma certa nunca vai ao banco) nem a de anotar a recusa: zero, sem limite a esperar.
+        counter.Count.Should().Be(queries);
+        (await app.DatabaseFingerprintAsync()).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task ARejectionNote_CostsAtMostOneQueryPerWellFormedUnknownToken_UntilTheGuardCutsIt()
+    {
+        var counter = new SlugAndBeaconQueryCounter();
+        await using var app = await TransportApp.StartAsync(
+            postgres, new DevicesAppOptions { CommandInterceptor = counter, TokenFailureLimit = 3 });
+        var queries = counter.Count;
+
+        // O teto de tokens inválidos por origem (3 aqui) corta antes de qualquer anotação: depois dele é 429 e nenhuma consulta nova.
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 12; i++)
+        {
+            statuses.Add(await app.HandshakeStatusAsync(app.Agent.Slug, DeviceSecrets.NewDeviceToken().Token));
+        }
+
+        statuses.Should().Contain(HttpStatusCode.TooManyRequests);
+        // No máximo: uma procura de slug por tentativa que o teto deixou passar (3) mais a leitura e a gravação da única anotação aceita.
+        counter.Count.Should().BeLessThanOrEqualTo(queries + 3 + 2);
+    }
+
+    [Fact]
+    public async Task TheAnonymousDoorsShareAGlobalCeiling_SoRotatingAddressesCannotMultiplyQueries()
+    {
+        var counter = new SlugAndBeaconQueryCounter();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = counter });
+        var queries = counter.Count;
+
+        // Slugs diferentes (e inexistentes): o limite por agente nunca entra, só o teto geral.
+        for (var i = 0; i < 160; i++)
+        {
+            using var response = await PostAsync(app, $"pc-fantasma-{i:000}", Body());
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        (counter.Count - queries).Should().BeLessThanOrEqualTo(120);
+        (counter.Count - queries).Should().BeGreaterThan(0);
+    }
+
+    /// <summary>Conta as consultas das duas portas anônimas: a procura do agente pelo slug e as leituras e gravações da tabela de balizas.</summary>
+    private sealed class SlugAndBeaconQueryCounter : DbCommandInterceptor
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            Observe(command);
+            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<int> NonQueryExecutedAsync(
+            DbCommand command, CommandExecutedEventData eventData, int result, CancellationToken cancellationToken = default)
+        {
+            Observe(command);
+            return base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Observe(DbCommand command)
+        {
+            var text = command.CommandText;
+            if (text.Contains("agent_beacons", StringComparison.OrdinalIgnoreCase)
+                || (text.Contains("slug", StringComparison.OrdinalIgnoreCase) && text.Contains("agents", StringComparison.OrdinalIgnoreCase)
+                    && !text.Contains("token_hash", StringComparison.OrdinalIgnoreCase)))
+            {
+                Interlocked.Increment(ref _count);
+            }
+        }
     }
 
     [Fact]
@@ -359,7 +457,7 @@ public sealed class AgentBeaconTests(PostgresFixture postgres)
         item.GetProperty("agentId").GetGuid().Should().Be(app.Agent.Id);
         item.GetProperty("stage").GetString().Should().Be("child_spawn");
         item.GetProperty("code").GetString().Should().Be("crash_loop");
-        item.GetProperty("detail").GetString().Should().Be("Saiu com codigo 3");
+        item.TryGetProperty("detail", out _).Should().BeFalse("texto livre de rota anônima não é guardado nem devolvido");
         item.GetProperty("verified").GetBoolean().Should().BeFalse();
         item.GetProperty("count").GetInt32().Should().Be(1);
         item.GetProperty("rejectReason").GetString().Should().Be("invalid_token");
