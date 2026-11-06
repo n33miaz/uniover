@@ -28,6 +28,7 @@ const MAX_TEXT = 200;
         >Texto para digitar no PC</label
       >
       <input
+        data-unsaved-ignore
         id="pc-text"
         type="text"
         class="field"
