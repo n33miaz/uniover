@@ -121,6 +121,11 @@ async def test_the_composed_pairing_asks_the_tv_for_a_code_and_reopens_the_sessi
     done = await handler(Command("2", "tv.pair.v1", {"code": "A1B2C3"}))
     assert done.status is ResultStatus.OK
     assert paired_with == [(TV_HOST, "Casa", tv_cert_dir("tv"))]
+    # A resposta sai assim que o par é aceito; a sessão reabre logo depois, sem tecla.
+    for _ in range(50):
+        if setup.manager.snapshot().connection == "hot":
+            break
+        await asyncio.sleep(0.01)
     assert remote.forgotten == 1
     assert remote.keys == []
     assert setup.manager.snapshot().connection == "hot"
