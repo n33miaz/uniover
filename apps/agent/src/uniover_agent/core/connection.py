@@ -109,6 +109,15 @@ class ConnectionSupervisor:
         self._on_startup_failure = on_startup_failure
         self._hello_done = False
         self._failures_before_hello = 0
+        self._in_session = False
+
+    async def hello_now(self) -> None:
+        """Reenvia o `hello` já, na sessão aberta (as capacidades declaradas mudaram).
+
+        Sem sessão aberta não faz nada: o `hello` da próxima conexão já sai com o que há de novo.
+        """
+        if self._in_session:
+            await self._transport.send(self._hello())
 
     def _declared(self) -> tuple[str, ...]:
         source = self._capabilities
@@ -198,12 +207,14 @@ class ConnectionSupervisor:
             _log.info("conectado")
             await self._transport.send(self._hello())
             self._hello_done = True
+            self._in_session = True
             if self._on_connected is not None:
                 await self._on_connected()
             keepalive = asyncio.create_task(self._keepalive_guard())
             async for raw in self._transport.incoming():
                 await self._process(raw)
         finally:
+            self._in_session = False
             if keepalive is not None:
                 keepalive.cancel()
                 await asyncio.gather(keepalive, return_exceptions=True)

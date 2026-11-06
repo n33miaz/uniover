@@ -36,6 +36,10 @@ class ApiFeatures:
         self._interval = interval
         self._known: frozenset[str] = frozenset()
         self._listeners: list[Callable[[], None]] = []
+        # Chamado quando a API passa a listar algo que não listava: o `hello` já enviado não
+        # declarou a capacidade nova, e esperar o próximo (5 min) a deixaria sem uso (a presença da
+        # TV, por exemplo, só chega a quem a declara).
+        self.on_added: Callable[[], Awaitable[None]] | None = None
 
     def on_change(self, listener: Callable[[], None]) -> None:
         """Avisa quando muda o que a API aceita (o que foi escondido pode ser dito agora)."""
@@ -52,12 +56,20 @@ class ApiFeatures:
             _log.warning("não consegui consultar o que a API aceita", exc_info=True)
             return
         if found is not None and found != self._known:
+            added = bool(found - self._known)
             self._known = found
             for listener in self._listeners:
                 try:
                     listener()
                 except Exception:
                     _log.exception("falha ao avisar a mudança do que a API aceita")
+            if added and self.on_added is not None:
+                try:
+                    await self.on_added()
+                except Exception:
+                    _log.warning(
+                        "não consegui reenviar o hello com a capacidade nova", exc_info=True
+                    )
 
     async def run(self) -> None:
         """Consulta de tempos em tempos: a resposta de hoje manda no próximo `hello`."""

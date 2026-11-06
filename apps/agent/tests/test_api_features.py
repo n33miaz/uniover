@@ -50,6 +50,43 @@ async def test_a_silent_api_does_not_erase_what_was_already_known_and_an_old_one
     assert not features.supports("x")
 
 
+async def test_a_newly_listed_feature_fires_on_added_once() -> None:
+    answers: list[frozenset[str] | None] = [
+        frozenset(),
+        frozenset({"x"}),
+        frozenset({"x"}),
+        None,
+        frozenset({"x", "y"}),
+    ]
+
+    async def fetch() -> frozenset[str] | None:
+        return answers.pop(0)
+
+    fired: list[bool] = []
+
+    async def added() -> None:
+        fired.append(True)
+
+    features = ApiFeatures(fetch, FakeClock())
+    features.on_added = added
+    for expected in (0, 1, 1, 1, 2):  # nada novo, novo, igual, API dormindo, outro novo
+        await features.refresh()
+        assert len(fired) == expected
+
+
+async def test_a_failing_on_added_never_breaks_the_refresh() -> None:
+    async def fetch() -> frozenset[str] | None:
+        return frozenset({"x"})
+
+    async def added() -> None:
+        raise RuntimeError("canal fechado")
+
+    features = ApiFeatures(fetch, FakeClock())
+    features.on_added = added
+    await features.refresh()
+    assert features.supports("x")
+
+
 async def test_a_failing_fetch_is_logged_and_never_raises() -> None:
     async def fetch() -> frozenset[str] | None:
         raise RuntimeError("falha")
