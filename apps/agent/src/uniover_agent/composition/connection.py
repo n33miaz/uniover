@@ -82,6 +82,7 @@ from uniover_agent.core import (
 from uniover_agent.core.api_features import (
     FEATURES_TIMEOUT_SECONDS,
     NOT_PAIRED_FEATURE,
+    WAKING_FEATURE,
     ApiFeatures,
 )
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
@@ -355,6 +356,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             transport,
             envelopes,
             reports_not_paired=lambda: features.supports(NOT_PAIRED_FEATURE),
+            reports_waking=lambda: features.supports(WAKING_FEATURE),
         )
         tv.manager.subscribe(publisher.publish)
         tv.manager.subscribe(tray.tv_state)
@@ -380,7 +382,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         lambda: fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS), clock
     )
     if tv is not None and publisher is not None:
-        # `not_paired` vai como `disconnected` até a API aceitá-lo: depois, o estado sai de novo.
+        # `not_paired` vai como `disconnected` e `waking` (TV ligando) como o estado de antes até a
+        # API aceitá-los: depois, o estado sai de novo.
         features.on_change(lambda: publisher.publish(tv.manager.snapshot()))
     shipper = DiagnosticsShipper(
         kit.store,

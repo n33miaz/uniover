@@ -32,7 +32,9 @@ class CommandResult:
 
 
 Power = Literal["on", "off", "unknown"]
-Connection = Literal["hot", "hibernating", "disconnected", "not_paired"]
+# `waking` só existe no fio (`tv.state.v1`): a sessão em si nunca tem esse valor, que o publicador
+# monta a partir de `TvState.waking` quando a API o aceita.
+Connection = Literal["hot", "hibernating", "disconnected", "not_paired", "waking"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,3 +45,6 @@ class TvState:
     volume: int | None
     app: str | None
     connection: Connection
+    # A sessão está sendo aberta e a TV ainda não respondeu (acordando do standby). Passageiro: a
+    # API só o recebe se disse que aceita (`tv.state.waking`); sem isso o estado sai como sempre.
+    waking: bool = False

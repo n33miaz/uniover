@@ -22,12 +22,15 @@ class TvStatePublisher:
         envelopes: EnvelopeFactory,
         *,
         reports_not_paired: Callable[[], bool] = lambda: True,
+        reports_waking: Callable[[], bool] = lambda: True,
     ) -> None:
         self._transport = transport
         self._envelopes = envelopes
         # Uma API anterior recusa `not_paired` (o contrato é fechado) e ficaria com o último estado:
         # até ela dizer que o aceita, o agente conta `disconnected`, como antes.
         self._reports_not_paired = reports_not_paired
+        # Idem para `waking` (TV ligando): até a API aceitá-lo, o estado sai como antes de existir.
+        self._reports_waking = reports_waking
         self._pending: TvState | None = None
         self._task: asyncio.Task[None] | None = None
 
@@ -45,6 +48,13 @@ class TvStatePublisher:
         await self._transport.send(self._envelopes.tv_state(self._wire(state)))
 
     def _wire(self, state: TvState) -> TvState:
+        if state.waking:
+            # `waking` não é um valor da sessão: só vai ao fio, e só para a API que o conhece.
+            return (
+                dataclasses.replace(state, connection="waking", waking=False)
+                if self._reports_waking()
+                else dataclasses.replace(state, waking=False)
+            )
         if state.connection == "not_paired" and not self._reports_not_paired():
             return dataclasses.replace(state, connection="disconnected")
         return state
