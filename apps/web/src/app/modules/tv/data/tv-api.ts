@@ -146,6 +146,11 @@ export class TvApi {
     await firstValueFrom(this.http.post(`${BASE}/wake`, null, this.target()));
   }
 
+  /** Avisa que há alguém na tela da TV (visível agora); a API responde 202 sem esperar o agente e repassa no máximo um a cada 10 s. */
+  async presence(): Promise<void> {
+    await firstValueFrom(this.http.post(`${BASE}/presence`, null, this.target()));
+  }
+
   /** `POWER` nunca passa aqui (a API responde 400): desligar é {@link powerOff}. */
   async sendKey(key: TvKey): Promise<void> {
     const body: components['schemas']['SendKeyRequest'] = { key, direction: null };

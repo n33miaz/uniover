@@ -56,6 +56,7 @@ describe('TvStore', () => {
     state: vi.fn(),
     shortcuts: vi.fn(),
     wake: vi.fn(),
+    presence: vi.fn(),
     sendKey: vi.fn(),
     sendText: vi.fn(),
     powerOff: vi.fn(),
@@ -126,6 +127,7 @@ describe('TvStore', () => {
     });
     api.shortcuts.mockResolvedValue([shortcut(1), shortcut(2)]);
     api.wake.mockResolvedValue(undefined);
+    api.presence.mockResolvedValue(undefined);
     api.sendKey.mockResolvedValue(undefined);
     api.sendText.mockResolvedValue(undefined);
     api.powerOff.mockResolvedValue('sent');
@@ -509,6 +511,79 @@ describe('TvStore', () => {
       emit('tv.state', hot);
       await vi.advanceTimersByTimeAsync(120_000);
       expect(api.wake).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('presence while visible', () => {
+    it('signals on opening and again every 20 seconds', async () => {
+      await started();
+      expect(api.presence).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(19_000);
+      expect(api.presence).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(api.presence).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(api.presence).toHaveBeenCalledTimes(3);
+    });
+
+    it('sends nothing while the page is hidden, and resumes at once when it is visible again', async () => {
+      await started();
+      setVisibility('hidden');
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(api.presence).toHaveBeenCalledTimes(1);
+
+      setVisibility('visible');
+      await flush();
+      expect(api.presence).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(api.presence).toHaveBeenCalledTimes(3);
+    });
+
+    it('never signals from a page that opens hidden', async () => {
+      setVisibility('hidden');
+      await started();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(api.presence).not.toHaveBeenCalled();
+    });
+
+    it('does not signal for a state that is not "visible" (prerender), only for "visible"', async () => {
+      Object.defineProperty(document, 'visibilityState', { value: 'prerender', configurable: true });
+      await started();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(api.presence).not.toHaveBeenCalled();
+    });
+
+    it('stops on stop(): no more signals even if the page toggles', async () => {
+      await started();
+      store.stop();
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(api.presence).toHaveBeenCalledTimes(1);
+      setVisibility('hidden');
+      setVisibility('visible');
+      await flush();
+      expect(api.presence).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not signal while the agent is known to be offline, and signals again once it is back', async () => {
+      const down = { ...hot, agentOnline: false, connection: 'disconnected' };
+      api.state.mockResolvedValue(down);
+      await started();
+      emit('tv.state', down);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(api.presence).toHaveBeenCalledTimes(1); // só a da abertura, antes de saber que caiu
+      api.state.mockResolvedValue(hot);
+      emit('tv.state', hot);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(api.presence).toHaveBeenCalledTimes(2);
+    });
+
+    it('a failed signal is silent: no notice, and the next one still goes', async () => {
+      api.presence.mockRejectedValueOnce(problem(503, 'agent-offline'));
+      await started();
+      expect(store.notice()).toBeNull();
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(api.presence).toHaveBeenCalledTimes(2);
+      expect(store.notice()).toBeNull();
     });
   });
 
@@ -1330,9 +1405,10 @@ describe('TvStore', () => {
       setVisibility('visible');
       window.dispatchEvent(new Event('online'));
       await flush();
-      // O fluxo e a leitura periódica continuam; o "aquecer", que a API recusaria, nunca sai.
+      // O fluxo e a leitura periódica continuam; o "aquecer" e a presença, que a API recusaria, nunca saem.
       expect(api.state.mock.calls.length).toBeGreaterThan(1);
       expect(api.wake).not.toHaveBeenCalled();
+      expect(api.presence).not.toHaveBeenCalled();
     });
 
     it('with tv:control it wakes on opening, on every round and when the page is visible again', async () => {
