@@ -285,9 +285,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         print(_NOT_PAIRED, file=sys.stderr)
         return EXIT_NOT_PAIRED
     api_url = require_api_url(settings)
-    tray = TrayStatus(settings.tv_name)
-
     clock = SystemClock()
+    tray = TrayStatus(settings.tv_name, clock)
+
     kit = kit or build_diagnostics(clock)
     run_state = RunState(installation_base() / "runtime")
     install_crash_trace(installation_base() / "logs", kit.recorder)
@@ -408,6 +408,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [
         UpdateStatusWatcher(update_source, transport, envelopes, clock).run,
         diary.run,
+        tray.run,
     ]
     if tv is not None:
         jobs = [*jobs, tv.manager.watch, *tv.background]
