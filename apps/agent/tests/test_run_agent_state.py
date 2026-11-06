@@ -485,3 +485,27 @@ def test_an_update_that_times_out_and_loses_the_app_folder_takes_the_agent_down_
     )
     assert str(pid) not in listing.stdout, "o agente ficou órfão depois do exit 42"
     assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii").strip() == "update"
+
+
+def test_a_clock_jump_during_a_child_does_not_make_the_deadline_expire(pc: Pc) -> None:
+    # O PC dormiu (o relógio saltou 100 s) no meio do filho: ao acordar o prazo já pareceria vencido
+    # e o filho (um `uv sync`, por exemplo) seria morto. O salto é descontado do prazo.
+    uv = fake_uv(pc, "ping -n 4 127.0.0.1 > nul", "exit /b 0")
+    done = pc.run(
+        "$env:UNIOVER_SUPERVISOR_TEST_CLOCK_JUMP = '1:100'\n"
+        f"$r = Invoke-Bounded '{uv}' '' 15\n"
+        "'timedout=' + $r.TimedOut + ' code=' + $r.ExitCode\n"
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-2:] == ["timedout=False", "code=0"]
+
+
+def test_a_child_that_really_runs_past_the_deadline_is_still_killed_after_a_jump(pc: Pc) -> None:
+    uv = fake_uv(pc, "ping -n 60 127.0.0.1 > nul", "exit /b 0")
+    done = pc.run(
+        "$env:UNIOVER_SUPERVISOR_TEST_CLOCK_JUMP = '1:100'\n"
+        f"$r = Invoke-Bounded '{uv}' '' 6\n"
+        "'timedout=' + $r.TimedOut\n"
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-1] == "timedout=True"
