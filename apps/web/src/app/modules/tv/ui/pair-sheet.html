@@ -1,0 +1,119 @@
+<dialog
+  #dialog
+  class="sheet"
+  aria-labelledby="pair-title"
+  aria-describedby="pair-text"
+  [attr.aria-busy]="busy() ? 'true' : null"
+  (cancel)="cancel($event)"
+>
+  <h2 id="pair-title" i18n="@@tv.pair.title">Parear a TV</h2>
+
+  @switch (phase()) {
+    @case ('intro') {
+      <p id="pair-text" class="text" i18n="@@tv.pair.intro">
+        A TV mostra um código de 6 caracteres na tela. Deixe-a ligada.
+      </p>
+    }
+    @case ('asking') {
+      <p id="pair-text" class="text" role="status" i18n="@@tv.pair.asking">
+        Pedindo o código à TV…
+      </p>
+    }
+    @case ('entry') {
+      <form id="pair-form" class="code-form" (submit)="pair($event)">
+        <label id="pair-text" class="text" for="pair-code" i18n="@@tv.pair.code-label">
+          Digite o código que aparece na TV.
+        </label>
+        <input
+          id="pair-code"
+          class="code"
+          type="text"
+          name="uniover-tv-code"
+          [attr.inputmode]="'text'"
+          autocomplete="off"
+          [attr.autocapitalize]="'characters'"
+          [attr.autocorrect]="'off'"
+          spellcheck="false"
+          maxlength="6"
+          [value]="code()"
+          (input)="typed($event)"
+        />
+      </form>
+    }
+    @case ('pairing') {
+      <p id="pair-text" class="text" role="status" i18n="@@tv.pair.pairing">Pareando…</p>
+    }
+    @case ('done') {
+      <p id="pair-text" class="text" role="status" i18n="@@tv.pair.done">
+        TV pareada. O controle volta em instantes.
+      </p>
+    }
+    @case ('unreachable') {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.unreachable">
+        A TV não respondeu. Ligue-a e tente de novo.
+      </p>
+    }
+    @case ('unsupported') {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.unsupported">
+        O computador da TV precisa ser atualizado para parear pelo app.
+      </p>
+    }
+    @case ('refused') {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.code-failed">
+        O código não serviu ou venceu. Peça outro à TV.
+      </p>
+    }
+    @case ('forbidden') {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.forbidden">
+        Só quem administra o app pode parear a TV.
+      </p>
+    }
+    @default {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.failed">
+        Não consegui parear agora. Tente de novo.
+      </p>
+    }
+  }
+
+  <div class="footer">
+    @switch (phase()) {
+      @case ('intro') {
+        <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.pair.cancel">
+          Cancelar
+        </button>
+        <button type="button" class="primary" (click)="ask()" i18n="@@tv.pair.show">
+          Mostrar Código
+        </button>
+      }
+      @case ('entry') {
+        <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.pair.cancel">
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="primary"
+          [disabled]="!canPair()"
+          (click)="pair()"
+          i18n="@@tv.pair.confirm"
+        >
+          Parear
+        </button>
+      }
+      @case ('done') {
+        <button type="button" class="primary" (click)="cancel()" i18n="@@tv.pair.ready">
+          Pronto
+        </button>
+      }
+      @default {
+        <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.pair.close">
+          Fechar
+        </button>
+        @if (canRetry()) {
+          <button type="button" class="primary" (click)="ask()" i18n="@@tv.pair.retry">
+            Tentar de Novo
+          </button>
+        }
+      }
+    }
+  </div>
+</dialog>

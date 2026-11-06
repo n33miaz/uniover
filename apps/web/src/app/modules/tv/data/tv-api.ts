@@ -126,6 +126,16 @@ export class TvApi {
     return parseShortcuts(dto) ?? [];
   }
 
+  /**
+   * Pareia a Android TV de novo, só pelo dono e só por toque dele. Sem `code` a TV mostra um código de 6 caracteres na
+   * tela; com ele o pareamento termina. O código vai só no corpo (nunca na URL) e nunca é guardado nem registrado.
+   */
+  async pair(code?: string): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${BASE}/pair`, code === undefined ? {} : { code }, this.target()),
+    );
+  }
+
   /** Pré-aquece a sessão com a TV; o servidor responde 202 sem esperar o agente. */
   async wake(): Promise<void> {
     await firstValueFrom(this.http.post(`${BASE}/wake`, null, this.target()));
