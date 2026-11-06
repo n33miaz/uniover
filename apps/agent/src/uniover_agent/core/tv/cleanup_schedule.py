@@ -2,6 +2,10 @@
 
 O temporizador mora no agente porque a TV some da rede em standby. Ele nunca abre a sessão por
 conta própria: reage somente a uma sessão que já respondeu ou a uma configuração recebida.
+
+A limpeza leve só roda com a TV sob pressão de memória (`MemAvailable` abaixo do limite
+configurado): com memória sobrando ela não ganha nada e ainda gasta uma rodada de ADB. O "já
+avaliei hoje" é guardado em disco, para um reinício do agente não repetir a avaliação do dia.
 """
 
 import asyncio
@@ -15,13 +19,24 @@ from typing import Final
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.tv.cleanup import CleanupReport, TvCleanup
 from uniover_agent.core.tv.session import TvSessionError
-from uniover_agent.ports import AdbError, Clock, Transport, TransportError, TvAdbCleanup
+from uniover_agent.ports import (
+    AdbError,
+    CleanupDayStore,
+    Clock,
+    Transport,
+    TransportError,
+    TvAdbCleanup,
+)
 
 _log = logging.getLogger(__name__)
 
 SLOW_SESSION_SECONDS: Final = 10.0
 REPEAT_SECONDS: Final = 30 * 60.0
 COMMAND_QUIET_SECONDS: Final = 15 * 60.0
+# O app da frente chega da TV logo depois de a sessão abrir (o Remote v2 o empurra); a limpeza leve
+# espera um pouco por ele, porque sem saber qual poupar ela não toca em app nenhum.
+FOREGROUND_POLLS: Final = 5
+FOREGROUND_POLL_SECONDS: Final = 1.0
 
 # Comandos que querem dizer "tem gente usando a TV". O resto (batimento da API, configuração,
 # pedidos de log ou de atualização) chega o tempo todo e não conta: contar tudo manteria a janela
@@ -57,6 +72,7 @@ class TvCleanupScheduler:
         envelopes: EnvelopeFactory,
         foreground: Callable[[], str | None],
         is_focused: Callable[[], bool] = lambda: False,
+        day_store: CleanupDayStore | None = None,
     ) -> None:
         self._cleanup = cleanup
         self._adb = adb
@@ -68,7 +84,10 @@ class TvCleanupScheduler:
         self._configuration = CleanupConfiguration()
         self._last_light: float | None = None
         self._last_deep: float | None = None
-        self._light_day: date | None = None
+        self._day_store = day_store
+        # O dia em que a limpeza leve já foi avaliada (rodou ou não precisou). Vem do disco: um
+        # reinício do agente não pode repetir a avaliação do dia.
+        self._light_day: date | None = day_store.load() if day_store is not None else None
         self._last_command = clock.monotonic()
         self._slow_session = False
         self._last_session_ms: int | None = None
@@ -110,7 +129,6 @@ class TvCleanupScheduler:
         today = self._clock.now().date()
         self._last_session_ms = round(elapsed * 1000)
         if self._configuration.light_enabled and self._light_day != today:
-            self._light_day = today
             self._pending_light = True
         if elapsed > SLOW_SESSION_SECONDS:
             self._slow_session = True
@@ -168,13 +186,63 @@ class TvCleanupScheduler:
 
     async def _run_light(self) -> None:
         started = self._clock.monotonic()
+        today = self._clock.now().date()
+        # Os gatilhos (a primeira sessão do dia, uma sessão lenta) só pedem a avaliação: quem decide
+        # é a memória da TV. Sem conseguir lê-la nada é feito, e a avaliação do dia não se perde.
+        needed = await self._light_needed()
+        if needed is not True:
+            self._last_light = self._clock.monotonic()
+            if needed is False:
+                self._mark_light_day(today)
+            return
+        foreground = await self._foreground_when_known()
+        if foreground is None:
+            # Sem saber qual app poupar a limpeza leve não toca em nenhum, e dizer "concluída" sem
+            # ter feito nada era o relatório vazio de sempre.
+            self._last_light = self._clock.monotonic()
+            await self._send_skipped("light", "automatic", "foreground-unverifiable")
+            return
         try:
-            report = await self._cleanup.run_light(self._foreground())
+            report = await self._cleanup.run_light(foreground)
         except TvSessionError as exc:
+            self._mark_light_day(today)
             await self._send_skipped("light", "automatic", exc.code)
             return
+        self._mark_light_day(today)
         self._last_light = self._clock.monotonic()
         await self._send_completed("light", "automatic", started, report)
+
+    async def _light_needed(self) -> bool | None:
+        """A memória livre da TV está abaixo do limite? `None` se não deu para ler."""
+        try:
+            available = await self._adb.memory_available_mb()
+        except AdbError:
+            return None
+        if available is None:
+            return None
+        needed = available < self._configuration.deep_threshold_mb
+        if not needed:
+            _log.info(
+                "limpeza leve dispensada: memória livre %d MB, limite %d MB",
+                available,
+                self._configuration.deep_threshold_mb,
+            )
+        return needed
+
+    async def _foreground_when_known(self) -> str | None:
+        """O app da frente, esperando um pouco por ele logo depois de a sessão abrir."""
+        for _ in range(FOREGROUND_POLLS):
+            package = self._foreground()
+            if package is not None:
+                return package
+            await self._clock.sleep(FOREGROUND_POLL_SECONDS)
+        return self._foreground()
+
+    def _mark_light_day(self, day: date) -> None:
+        """A avaliação do dia terminou: vale também depois de um reinício do agente."""
+        self._light_day = day
+        if self._day_store is not None:
+            self._day_store.save(day)
 
     async def _run_deep(self) -> None:
         if not self._configuration.close_background_apps:

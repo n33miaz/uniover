@@ -7,10 +7,11 @@ import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent.adapters.fakes import FakeSecretStore, FakeTvAdb, FakeTvRemote
+from uniover_agent.adapters.installation import installation_base
 from uniover_agent.composition.connection import run
 from uniover_agent.composition.system import EXIT_CREDENTIAL_REJECTED
 from uniover_agent.config import ConfigError, Settings, require_cleanup_keep
-from uniover_agent.core import Command
+from uniover_agent.core import Command, TvCleanupScheduler
 from uniover_agent.core.domain import TvState
 from uniover_agent.ports import LaunchableApp
 
@@ -165,6 +166,41 @@ async def test_by_default_the_composed_cleanup_never_stops_or_kills_an_app(
         step in {"go-home", "kill-background"} or step.startswith("force-stop:")
         for step in adb.cleanup_log
     )
+
+
+async def test_the_cleanup_day_is_kept_on_disk_so_an_agent_restart_does_not_repeat_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    adb = running_tv()
+    adb.memory_mb = [100, 100, 120]  # pouca memória livre: a limpeza leve do dia roda
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    enable_adb(monkeypatch, tmp_path, adb)
+
+    async def session_of_the_day() -> list[str]:
+        setup = make_tv(Settings(tv_host=TV_HOST))
+        assert setup is not None
+        scheduler = setup.cleanup_scheduler
+        assert isinstance(scheduler, TvCleanupScheduler)
+        remote.push_app("com.spotify.tv.android")
+        setup.manager.touch()
+        await setup.manager.wake()
+        scheduler.configure(True, False, 160)
+        scheduler.note_session_opened(1)
+        before = len(adb.cleanup_log)
+        await scheduler.run_pending()
+        return adb.cleanup_log[before:]
+
+    first = await session_of_the_day()
+    assert "memory" in first
+    day_file = installation_base() / "runtime" / "cleanup-day.json"
+    # O arquivo mora na pasta de instalação (aqui, a de teste), nunca na real do usuário.
+    assert tmp_path in day_file.parents
+    assert day_file.is_file()
+
+    # O agente reinicia: processo e memória novos, mesmo disco. O mesmo dia não se repete.
+    second = await session_of_the_day()
+    assert second == []
 
 
 # --- ponta a ponta ----------------------------------------------------------------------------

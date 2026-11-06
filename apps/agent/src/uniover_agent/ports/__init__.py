@@ -64,7 +64,7 @@ from uniover_agent.ports.tv_channel import (
     TvPortClosed,
     TvUnreachable,
 )
-from uniover_agent.ports.tv_cleanup import TvAdbCleanup
+from uniover_agent.ports.tv_cleanup import CleanupDayStore, TvAdbCleanup
 from uniover_agent.ports.tv_driver import TextFieldStatus, TvDriver
 from uniover_agent.ports.tv_remote import TvRemote
 
@@ -105,6 +105,7 @@ __all__ = [
     "ApkSource",
     "AppIcon",
     "CachedIcon",
+    "CleanupDayStore",
     "Clock",
     "ConnectionReplaced",
     "CredentialRejected",
