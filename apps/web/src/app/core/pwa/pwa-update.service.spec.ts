@@ -803,6 +803,7 @@ describe('PwaUpdateService', () => {
         await flush();
         const reload = stubReload();
         service.recoverFromStaleShell();
+        await service.applyUpdate();
         await service.confirmUpdate();
         container.dispatchEvent(new Event('controllerchange'));
         await flush();
@@ -1209,6 +1210,49 @@ describe('PwaUpdateService', () => {
 
       expect(service.confirmingUpdate()).toBeNull();
       expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    });
+
+    it('checks again right before updating: text typed while it was asking the other tabs brings the dialog', async () => {
+      stubLocks(2);
+      otherTab(() => false);
+      const { service, waiting } = setupWaiting(false);
+      await flush();
+      stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      const decided = service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS - 100);
+      // A página segue usável durante a pergunta: a pessoa começa a digitar.
+      busy = true;
+      await vi.advanceTimersByTimeAsync(100);
+      await decided;
+
+      expect(service.confirmingUpdate()).toBe('mine');
+      expect(service.updateDeciding()).toBe(false);
+      expect(waiting.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('after confirming only for another tab, asks again if this tab got unsaved text while it waited for writes', async () => {
+      stubLocks(2);
+      otherTab(() => true);
+      const { service, waiting } = setupWaiting(false);
+      await flush();
+      stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+      await service.applyUpdate();
+      expect(service.confirmingUpdate()).toBe('other-tab');
+      // Um envio sai depois de o diálogo abrir; a confirmação espera por ele.
+      const end = TestBed.inject(UnsavedWork).beginRequest();
+      const confirmed = service.confirmUpdate();
+      await vi.advanceTimersByTimeAsync(300);
+      busy = true;
+      end();
+      await vi.advanceTimersByTimeAsync(200);
+      await confirmed;
+
+      expect(service.confirmingUpdate()).toBe('mine');
+      expect(waiting.postMessage).not.toHaveBeenCalled();
     });
 
     it('keeps the button on "Atualizando…" through the whole decision, with no full-page skeleton and no flicker', async () => {

@@ -223,6 +223,8 @@ export class PwaUpdateService {
         ) {
           ask = 'other-tab';
         }
+        // A página segue usável durante a decisão: confere de novo logo antes de trocar.
+        if (!ask && this.unsaved.needsConfirmation()) ask = 'mine';
       }
     } finally {
       this.deciding = false;
@@ -250,6 +252,7 @@ export class PwaUpdateService {
    */
   async confirmUpdate(): Promise<void> {
     if (this.applying || this.deciding) return;
+    const accepted = this.confirmingUpdate();
     this.confirmingUpdate.set(null);
     this.deciding = true;
     this.updateDeciding.set(true);
@@ -257,6 +260,13 @@ export class PwaUpdateService {
       await this.waitForWrites(this.win);
     } finally {
       this.deciding = false;
+    }
+    // Quem aceitou perder o texto desta aba não pergunta de novo; quem confirmou só por outra aba, sim, se durante a espera
+    // esta aba ficou com texto não salvo.
+    if (accepted !== 'mine' && this.unsaved.needsConfirmation()) {
+      this.updateDeciding.set(false);
+      this.confirmingUpdate.set('mine');
+      return;
     }
     this.proceed();
   }

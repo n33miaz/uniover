@@ -37,7 +37,7 @@ describe('UpdateBanner', () => {
     service.navigationBlocked.set(true);
     await fixture.whenStable();
 
-    expect(el.textContent).toContain('Há uma versão nova: salve para continuar');
+    expect(el.textContent).toContain('Há uma versão nova: salve ou descarte para continuar');
     expect(el.textContent).not.toContain('Nova versão disponível');
     el.querySelector('button')!.click();
     expect(apply).toHaveBeenCalledTimes(1);
