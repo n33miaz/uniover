@@ -58,7 +58,6 @@ from uniover_agent.ports import (
     AdbError,
     AdbIdentityUnconfirmed,
     AdbIdle,
-    AdbNotReady,
     AdbTimeout,
     AdbUnauthorized,
     AdbUnavailable,
@@ -895,13 +894,13 @@ class AdbTv:
         asked = self._monotonic()
         async with self._lock:
             self.last_input_wait_seconds = self._monotonic() - asked
-            await self._ensure_connected_locked()
             try:
-                output = await self._shell(command)
-            except AdbNotReady as exc:
-                # O comando já foi ao shell: a conexão pode ter caído com ele pela metade.
-                exc.may_have_executed = True
+                await self._ensure_connected_locked()
+            except AdbError as exc:
+                # Conectar ou conferir o aparelho vem antes do shell: nada foi digitado.
+                exc.may_have_executed = False
                 raise
+            output = await self._shell(command)
         if not command_succeeded(output):
             # Pode ter digitado parte do grupo: quem chama não repete às cegas.
             raise AdbCommandFailed("a TV não confirmou a digitação")

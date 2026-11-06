@@ -107,8 +107,8 @@ class AdbNotReady(AdbError):  # noqa: N818 - lê-se como estado, não como erro 
     """O canal não abriu, então o comando **nem chegou a ser executado** na TV.
 
     Quem tem outro caminho (digitar pelo Remote v2) pode usá-lo sem risco de repetir o efeito.
-    Só vale para o erro levantado antes de o comando ir ao shell da TV: se o adaptador o levanta
-    depois (conexão caída no meio do comando), marca `may_have_executed` e o caso é ambíguo.
+    Também vale para o aviso do próprio cliente `adb` (`unauthorized`, `device offline`) e para o
+    `adb` que nem iniciou: o shell da TV não rodou o comando.
     """
 
 

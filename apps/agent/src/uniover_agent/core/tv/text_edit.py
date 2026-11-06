@@ -28,12 +28,16 @@ latências diferentes. Do mais rápido para o mais lento:
   reenvio do app (sempre o texto completo) digita só o que falta. Se a falha é **ambígua**
   (tempo estourado, saída de erro depois de executar, conexão caída no meio:
   `may_have_executed`), a TV pode ter digitado o grupo inteiro ou parte dele, e a base fica
-  marcada como duvidosa: o próximo eco do campo da TV (mesmo contador) com um valor coerente
-  (começa pelo confirmado e não passa do confirmado mais o grupo) vira o `last_text`; sem esse
-  eco, o campo é tratado como desconhecido e o próximo texto **apaga** o confirmado mais o
-  tamanho do grupo (`DEL`) e redigita tudo. O custo, só nesse caso raro: se havia na TV um
-  texto anterior ao que o agente digitou e que ele não conhecia, pode perder até o tamanho de
-  um grupo dele. Nunca se insere em cima de uma base velha;
+  marcada como duvidosa. Só um eco do campo (mesmo contador) **igual ao confirmado mais o
+  grupo inteiro** resolve a dúvida: ele prova o grupo digitado. Um eco intermediário (a TV ecoa
+  cada tecla, e ecos velhos chegam atrasados) não prova nada e é ignorado. Sem esse eco, o campo
+  é tratado como desconhecido e o próximo texto **apaga** o confirmado mais o tamanho do grupo
+  (`DEL`, contados um a um, então uma falha no meio não faz o reenvio apagar a mais) e redigita
+  tudo. O custo, só nesse caso raro: se havia na TV um texto anterior ao que o agente digitou e
+  que ele não conhecia, pode perder até o tamanho de um grupo dele. Trocar de campo ou de app
+  desfaz a dúvida. Limite conhecido: matar o processo `adb` no PC não garante que o `input` da TV
+  parou, e teclas que chegam depois de um `DEL` do refazer ainda podem embaralhar o campo.
+  Nunca se insere em cima de uma base velha;
 * **Remote v2** (`send_text`) para o resto (acentos, emoji, controle, e quando o ADB não está
   pronto). Um texto com um caractere só do Remote vai **inteiro** por ele, nunca dividido entre
   canais: é um envio só e rápido, e a ordem não depende de dois caminhos.
@@ -90,6 +94,7 @@ ADB_GROUP_CHARS: Final = 80
 # A partir de tantas teclas seguidas pelo Remote, o ADB espera a acomodação (ver o módulo).
 SETTLE_KEY_RUN: Final = 8
 TEXT_KEY_UNSUPPORTED: Final = "text_key_unsupported"
+RESYNC_INCOMPLETE: Final = "text_resync_incomplete"
 
 # Caractere -> tecla do controle (`KEYCODE_*` do Android, escolhido pelo adaptador). Só entram os
 # caracteres que a tecla **sozinha** (sem SHIFT) produz em qualquer mapa de teclas do Android:
@@ -228,6 +233,8 @@ class TextReconciler:
         # Grupo do ADB de resultado incerto (a TV pode ter digitado tudo ou parte dele); enquanto
         # houver um, `last_text` é só o confirmado antes dele. Ver `_doubt` e `_resolve_doubt`.
         self._uncertain: str | None = None
+        # Quantos `DEL` ainda faltam para esvaziar o campo duvidoso (só enquanto refaz).
+        self._erase_left: int | None = None
         # Último eco do campo (mesmo contador) que chegou com uma edição nossa em andamento.
         self._echo: TextFieldStatus | None = None
         self._sleep = sleep
@@ -293,6 +300,7 @@ class TextReconciler:
         self._field_counter = None
         self._pending_field = None
         self._echo = None
+        self._clear_doubt()
 
     def observe_app(self, app: str) -> None:
         """O app em foco mudou? Então o estado do campo era de outro lugar.
@@ -311,7 +319,7 @@ class TextReconciler:
             return
         self._last = unicodedata.normalize("NFC", field.value)
         self._last_at = self._monotonic()
-        self._uncertain = None  # outro campo, ou o valor real: a dúvida não vale mais
+        self._clear_doubt()  # outro campo, ou o valor real: a dúvida não vale mais
 
     async def set_text(self, text: str, *, queued: float = 0.0) -> None:
         """Faz o campo ter `text`. Levanta `TvSessionError` se a TV não pôde ser alcançada.
@@ -366,21 +374,29 @@ class TextReconciler:
         Se a TV já ecoou o campo durante o comando (com eco coerente), a dúvida se resolve na hora.
         """
         self._uncertain = group
+        self._erase_left = None
         self._resolve_doubt(self._echo)
 
+    def _clear_doubt(self) -> None:
+        self._uncertain = None
+        self._erase_left = None
+
     def _resolve_doubt(self, field: TextFieldStatus | None) -> bool:
-        """Aceita um eco como o novo `last_text` se ele cabe entre o confirmado e o grupo."""
+        """Só o eco `confirmado + grupo inteiro` prova o grupo digitado e vira o `last_text`.
+
+        Ecos intermediários (`abcd` de `abc` + `def`) ou atrasados (o estado do grupo anterior) não
+        provam nada. Com o refazer em andamento (`_erase_left`) o campo já está mudando: nada vale.
+        """
         group = self._uncertain
         if group is None:
             return True
-        if field is None:
+        if field is None or self._erase_left is not None:
             return False
-        value = unicodedata.normalize("NFC", field.value)
-        if not value.startswith(self._last) or len(value) > len(self._last) + len(group):
+        if unicodedata.normalize("NFC", field.value) != self._last + group:
             return False
-        self._last = value
+        self._last += group
         self._last_at = self._monotonic()
-        self._uncertain = None
+        self._clear_doubt()
         self._echo = None
         return True
 
@@ -388,22 +404,30 @@ class TextReconciler:
         """Sem eco que prove o campo: apaga o confirmado mais o grupo duvidoso e redigita tudo.
 
         `last_text` só é zerado quando todos os `DEL` saíram: no meio, o que sai primeiro é o trecho
-        desconhecido, então o confirmado não encurta passo a passo como num apagar comum.
+        desconhecido, então o confirmado não encurta passo a passo como num apagar comum. Em vez
+        disso `_erase_left` conta os `DEL` que ainda faltam e anda a cada um que saiu: uma falha no
+        meio, ou o teto de `MAX_DELETIONS` por mensagem, continua do ponto onde parou na próxima.
         """
-        count = min(len(self._last) + len(self._uncertain or ""), MAX_DELETIONS)
-        trace.previous, trace.delete, trace.insert = len(self._last), count, len(target)
+        if self._erase_left is None:
+            self._erase_left = len(self._last) + len(self._uncertain or "")
+        trace.previous, trace.delete, trace.insert = len(self._last), self._erase_left, len(target)
         started = self._monotonic()
         await self._tv.wake()
         trace.wake = self._monotonic() - started
         started = self._monotonic()
+        sent = 0
         try:
-            for _ in range(count):
+            while self._erase_left > 0 and sent < MAX_DELETIONS:
                 await self._tv.send_key(DELETE_KEY)
+                self._erase_left -= 1
+                sent += 1
         finally:
             trace.erase = self._monotonic() - started
-        self._mark_key_run(count)
+        self._mark_key_run(sent)
+        if self._erase_left > 0:
+            raise TvSessionError(RESYNC_INCOMPLETE, "o campo da TV é grande demais para refazer")
         self._last = ""
-        self._uncertain = None
+        self._clear_doubt()
         self._last_at = self._monotonic()
         if target:
             started = self._monotonic()
