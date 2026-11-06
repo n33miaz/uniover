@@ -262,10 +262,10 @@ function Get-RunDescription($Run, [double]$Seconds) {
 }
 
 function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
+    Stop-VenvUsers
     # A causa da ultima falha (error, timeout, lowdisk): so `error` e defeito da versao; a volta atras por qualquer das
     # outras nao a bloqueia (a falha foi do PC).
     $script:lastSyncCause = 'error'
-    Stop-VenvUsers
     # --frozen: o uv.lock manda (dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha), sem que
     # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC. Com prazo: um uv preso nao prende o supervisor.
     $arguments = 'sync --frozen --project "' + $source + '" --quiet'
