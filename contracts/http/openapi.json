@@ -124,12 +124,6 @@
               "string"
             ]
           },
-          "detail": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
           "n": {
             "format": "int32",
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -173,8 +167,7 @@
           "code",
           "ver",
           "os",
-          "n",
-          "detail"
+          "n"
         ],
         "type": "object"
       },

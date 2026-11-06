@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -30,11 +31,22 @@ internal static class BeaconLimits
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 
     /// <summary>
-    /// Teto da API inteira para o que estas duas portas anônimas mandam ao banco (balizas e anotações de recusa) por minuto. O limite
-    /// por IP não segura quem troca de endereço (um /64 de IPv6 inteiro) nem o proxy sem IP real; este segura, e o excedente é descartado
-    /// antes de qualquer consulta.
+    /// Teto da API inteira para as balizas anônimas por minuto. O limite por IP não segura quem troca de endereço (um /64 de IPv6
+    /// inteiro) nem o proxy sem IP real; este segura, e o excedente é descartado antes de qualquer consulta.
     /// </summary>
-    public const int GlobalPerMinute = 120;
+    public const int GlobalBeaconsPerMinute = 120;
+
+    /// <summary>
+    /// Teto da API inteira para as anotações de recusa por minuto, em balde à parte: uma enxurrada de balizas não cega as recusas, e a
+    /// recusa já é limitada antes pelo teto de tokens inválidos por origem.
+    /// </summary>
+    public const int GlobalRejectionsPerMinute = 60;
+
+    /// <summary>Quanto tempo um slug que não existe fica lembrado como inexistente (a repetição do mesmo palpite não volta ao banco).</summary>
+    public static readonly TimeSpan MissingSlugMemory = TimeSpan.FromMinutes(1);
+
+    /// <summary>Quantos slugs inexistentes a memória guarda; passou disso, esquece tudo (o tamanho não cresce com o abuso).</summary>
+    public const int MissingSlugCapacity = 1000;
 }
 
 /// <summary>Os motivos de recusa do handshake que a API anota: códigos fixos, nunca texto do cliente nem pedaço de credencial.</summary>
@@ -57,8 +69,8 @@ internal static class BeaconRejection
 /// <param name="Ver">Versão do agente.</param>
 /// <param name="Os">Sistema do PC.</param>
 /// <param name="N">Quantas vezes o agente já partiu (ignorado pela API).</param>
-/// <param name="Detail">Aceito por compatibilidade e ignorado: texto livre vindo de rota anônima não é guardado enquanto nada o mostrar.</param>
-internal sealed record AgentBeaconBody(int? V, string? Stage, string? Code, string? Ver, string? Os, int? N, string? Detail);
+/// <remarks>Qualquer outro campo (como um texto livre de detalhe) é ignorado: a API só guarda o que a tela mostra.</remarks>
+internal sealed record AgentBeaconBody(int? V, string? Stage, string? Code, string? Ver, string? Os, int? N);
 
 /// <summary>Uma baliza já conferida, pronta para gravar.</summary>
 internal sealed record BeaconInput(string Stage, string Code, string? Version, string? Os);
@@ -129,26 +141,68 @@ internal sealed class AgentBeaconGate(TimeProvider time)
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, (DateTimeOffset Start, int Count)> _beacons = [];
     private readonly Dictionary<Guid, DateTimeOffset> _rejections = [];
-    private (DateTimeOffset Start, int Count) _global;
+    private (DateTimeOffset Start, int Count) _globalBeacons;
+    private (DateTimeOffset Start, int Count) _globalRejections;
+    private readonly Dictionary<string, DateTimeOffset> _missing = new(StringComparer.Ordinal);
 
-    /// <summary>O teto geral por minuto; vale antes de qualquer consulta ao banco.</summary>
-    public bool TryAcceptGlobal()
+    /// <summary>O teto geral das balizas por minuto; vale antes de qualquer consulta ao banco.</summary>
+    public bool TryAcceptGlobalBeacon() => TryAcceptGlobal(ref _globalBeacons, BeaconLimits.GlobalBeaconsPerMinute);
+
+    /// <summary>O teto geral das anotações de recusa por minuto, separado do das balizas.</summary>
+    public bool TryAcceptGlobalRejection() => TryAcceptGlobal(ref _globalRejections, BeaconLimits.GlobalRejectionsPerMinute);
+
+    /// <summary>Esse slug acabou de ser procurado e não existia: repetir o palpite não custa consulta nem gasta o teto.</summary>
+    public bool IsKnownMissing(string slug)
     {
         var now = time.GetUtcNow();
         lock (_gate)
         {
-            if (now - _global.Start >= BeaconLimits.Window)
-            {
-                _global = (now, 1);
-                return true;
-            }
-
-            if (_global.Count >= BeaconLimits.GlobalPerMinute)
+            if (!_missing.TryGetValue(slug, out var until))
             {
                 return false;
             }
 
-            _global = (_global.Start, _global.Count + 1);
+            if (now < until)
+            {
+                return true;
+            }
+
+            _missing.Remove(slug);
+            return false;
+        }
+    }
+
+    public void RememberMissing(string slug)
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            if (_missing.Count >= BeaconLimits.MissingSlugCapacity)
+            {
+                _missing.Clear();
+            }
+
+            _missing[slug] = now + BeaconLimits.MissingSlugMemory;
+        }
+    }
+
+    private bool TryAcceptGlobal(ref (DateTimeOffset Start, int Count) bucket, int limit)
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            if (now - bucket.Start >= BeaconLimits.Window)
+            {
+                bucket = (now, 1);
+                return true;
+            }
+
+            if (bucket.Count >= limit)
+            {
+                return false;
+            }
+
+            bucket = (bucket.Start, bucket.Count + 1);
             return true;
         }
     }
@@ -222,13 +276,20 @@ internal sealed partial class AgentBeaconStore(
         ArgumentNullException.ThrowIfNull(input);
         try
         {
-            if (!gate.TryAcceptGlobal())
+            // Palpite repetido de um slug que não existe: nem consulta nem teto gasto. Os outros gastam o teto das balizas.
+            if (gate.IsKnownMissing(slug) || !gate.TryAcceptGlobalBeacon())
             {
                 return;
             }
 
             var agentId = await FindAgentAsync(slug, includeRevoked: false, cancellationToken);
-            if (agentId is null || !gate.TryAcceptBeacon(agentId.Value))
+            if (agentId is null)
+            {
+                gate.RememberMissing(slug);
+                return;
+            }
+
+            if (!gate.TryAcceptBeacon(agentId.Value))
             {
                 return;
             }
@@ -263,7 +324,7 @@ internal sealed partial class AgentBeaconStore(
     /// <summary>Anota que o handshake do agente do caminho <paramref name="slug"/> foi recusado. Sem agente com esse slug, não grava nada.</summary>
     public async Task TryRecordRejectionAsync(string? slug, string reason, CancellationToken cancellationToken)
     {
-        if (!AgentSlug.IsValid(slug) || !gate.TryAcceptGlobal())
+        if (!AgentSlug.IsValid(slug) || gate.IsKnownMissing(slug!) || !gate.TryAcceptGlobalRejection())
         {
             return;
         }
@@ -271,7 +332,13 @@ internal sealed partial class AgentBeaconStore(
         try
         {
             var agentId = await FindAgentAsync(slug!, includeRevoked: false, cancellationToken);
-            if (agentId is null || !gate.TryAcceptRejection(agentId.Value))
+            if (agentId is null)
+            {
+                gate.RememberMissing(slug!);
+                return;
+            }
+
+            if (!gate.TryAcceptRejection(agentId.Value))
             {
                 return;
             }
@@ -295,6 +362,38 @@ internal sealed partial class AgentBeaconStore(
 #pragma warning restore CA1031
         {
             LogFailed("recusa", ex.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// O agente mandou um hello aceito: a recusa de protocolo anotada antes já não vale (ele foi atualizado ou corrigido) e sai.
+    /// Só mexe na linha que tem essa recusa; sem ela não grava nada. Nunca lança por causa do banco.
+    /// </summary>
+    public async Task ClearProtocolRejectionAsync(string slug, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var agentId = await FindAgentAsync(slug, includeRevoked: false, cancellationToken);
+            if (agentId is null)
+            {
+                return;
+            }
+
+            await db.AgentBeacons
+                .Where(b => b.AgentId == agentId && b.LastRejectReason == BeaconRejection.Protocol)
+                .ExecuteUpdateAsync(
+                    set => set.SetProperty(b => b.LastRejectReason, (string?)null).SetProperty(b => b.LastRejectedAt, (DateTimeOffset?)null),
+                    cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Limpar a recusa é secundário: falha do banco não pode derrubar a conexão do agente.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogFailed("limpeza da recusa", ex.GetType().Name);
         }
     }
 
@@ -352,6 +451,7 @@ internal static class AgentBeaconEndpoints
     public static void MapAgentBeacon(this IEndpointRouteBuilder group) =>
         group.MapPost("/agents/{slug}/beacon", HandleAsync)
             .AllowAnonymous()
+            .WithMetadata(new RequestSizeLimitAttribute(BeaconLimits.MaxBodyBytes))
             .RequireRateLimiting(RateLimitPolicies.Beacon)
             .Accepts<AgentBeaconBody>("application/json")
             .Produces(StatusCodes.Status204NoContent)
