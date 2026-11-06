@@ -57,10 +57,10 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task State_ConfirmedAsUnpaired_IsRelayedToTheApp()
+    public async Task State_ConfirmedAsUnpaired_IsStoredAndPublished_AndAnOfflineAgentStillReadsAsDisconnected()
     {
         await using var app = await TvApp.StartAsync(postgres);
-        await using var agent = await app.ConnectAndWaitAsync();
+        var agent = await app.ConnectAndWaitAsync();
 
         await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "not_paired")));
         await TvApp.WaitUntilAsync(async () =>
@@ -69,8 +69,21 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
             return (await TvApp.JsonAsync(response)).GetProperty("connection").GetString() == "not_paired";
         }, "TV nao pareada visivel");
 
-        using var state = await app.GetAsync("/api/v1/tv/state");
-        (await TvApp.JsonAsync(state)).GetProperty("connection").GetString().Should().Be("not_paired");
+        // O valor cabe na coluna e vai ao banco e ao evento de integração (e dali ao fluxo ao vivo), não só à leitura.
+        await app.AdvanceUntilAsync(async () => await StateRowAsync(app) != "nenhuma", "estado gravado");
+        (await StateRowAsync(app)).Should().Be($"{TvApp.AgentSlug}|on|com.exemplo.video|not_paired");
+        await app.WaitForOutboxAsync(1);
+        await TvApp.WaitUntilAsync(() => !app.Events.States.IsEmpty, "assinante recebeu");
+        app.Events.States.Single().Connection.Should().Be("not_paired");
+
+        // Com o agente fora do ar, "não pareada" não passa por estado atual: a leitura diz que o agente está desligado.
+        await agent.DisposeAsync();
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Connected == false, "agente caiu");
+        app.PassReconnectGrace();
+        using var offline = await app.GetAsync("/api/v1/tv/state");
+        var body = await TvApp.JsonAsync(offline);
+        body.GetProperty("agentOnline").GetBoolean().Should().BeFalse();
+        body.GetProperty("connection").GetString().Should().Be("disconnected");
     }
 
     [Fact]
