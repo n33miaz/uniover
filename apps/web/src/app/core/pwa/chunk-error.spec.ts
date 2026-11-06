@@ -56,13 +56,16 @@ describe('chunk recovery wiring', () => {
     });
   });
 
-  it('recovers when the global handler sees a missing chunk, and stays quiet about it', () => {
+  it('recovers when the global handler sees a missing chunk, logging only a warning, never an error', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const handler = TestBed.inject(ErrorHandler);
     handler.handleError(new TypeError('Failed to fetch dynamically imported module: /chunk-A.js'));
     expect(recover).toHaveBeenCalledTimes(1);
     expect(logged).not.toHaveBeenCalled();
+    expect(warned).toHaveBeenCalledTimes(1);
     logged.mockRestore();
+    warned.mockRestore();
   });
 
   it('logs the error normally when the loop guard denies the recovery', () => {
@@ -106,8 +109,12 @@ describe('chunk recovery wiring', () => {
       ],
     });
     const router = TestBed.inject(Router);
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await router.navigateByUrl('/sumiu').catch(() => undefined);
     expect(recover).toHaveBeenCalledTimes(1);
+    // Engolido pela recuperação, mas registrado.
+    expect(warned).toHaveBeenCalledTimes(1);
+    warned.mockRestore();
     expect(recover).toHaveBeenCalledWith('/sumiu');
     await router.navigateByUrl('/quebrou').catch(() => undefined);
     expect(recover).toHaveBeenCalledTimes(1);

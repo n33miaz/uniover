@@ -39,7 +39,15 @@ export function isChunkLoadError(error: unknown): boolean {
  * guarda contra laço) em vez de deixar a tela vazia.
  */
 export function recoverFromChunkNavigationError(event: NavigationError): void {
-  if (isChunkLoadError(event.error)) inject(PwaUpdateService).recoverFromStaleShell(event.url);
+  if (!isChunkLoadError(event.error)) return;
+  // Engolido pela recuperação (ou adiado por trabalho não salvo): fica pelo menos o registro de que houve.
+  warnChunkError(event.error);
+  inject(PwaUpdateService).recoverFromStaleShell(event.url);
+}
+
+/** Registro discreto do pedaço ausente (aviso, não erro): a recuperação cuida da tela, mas o motivo não some. */
+function warnChunkError(error: unknown): void {
+  console.warn('Pedaço de código ausente; recuperando a página.', error);
 }
 
 /**
@@ -52,8 +60,10 @@ export class ChunkAwareErrorHandler extends ErrorHandler {
   private readonly injector = inject(Injector);
 
   override handleError(error: unknown): void {
-    if (isChunkLoadError(error) && this.injector.get(PwaUpdateService).recoverFromStaleShell())
-      return;
+    if (isChunkLoadError(error)) {
+      warnChunkError(error);
+      if (this.injector.get(PwaUpdateService).recoverFromStaleShell()) return;
+    }
     super.handleError(error);
   }
 }
