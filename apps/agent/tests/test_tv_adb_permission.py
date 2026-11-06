@@ -5,6 +5,7 @@ são de mentira, e o processo é o `FakeAdbRunner`.
 """
 
 import asyncio
+import os
 import threading
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -34,6 +35,7 @@ from uniover_agent.core import (
     user_initiated,
 )
 from uniover_agent.ports import (
+    AdbIdentityUnconfirmed,
     AdbIdle,
     AdbUnauthorized,
     AdbUnreachable,
@@ -712,9 +714,10 @@ async def test_a_tv_that_answers_the_port_but_not_the_arp_is_not_called_unreacha
     runner = runner_with(state=UNKNOWN)
     adb = home.adb(runner)
     for _ in range(2):  # sem bloqueio de 30 s: cada chamada reavalia
-        with pytest.raises(AdbIdle, match="qual aparelho responde") as caught:
+        with pytest.raises(AdbIdentityUnconfirmed, match="qual aparelho responde") as caught:
             await adb.connect()
-        assert caught.value.code == "adb_idle"
+        assert caught.value.code == "adb_identity"  # não é falta de uso: código próprio
+        assert not isinstance(caught.value, AdbIdle)
     assert CONNECT not in runner.calls
     assert adb._blocked_error is None
 
@@ -1392,25 +1395,77 @@ async def test_hibernation_disconnects_a_verified_channel_while_the_expiry_is_st
     assert not adb.connected
 
 
-async def test_a_user_request_rereads_a_passing_unauthorized_on_a_granted_tv(home: Home) -> None:
+async def test_a_user_request_never_rereads_unauthorized_so_a_prompt_accepted_is_not_a_proof(
+    home: Home,
+) -> None:
+    """Cenário A: `granted`, e no toque seguinte o aviso volta e a pessoa o aceita sem "Sempre"."""
     authorization = home.authorization()
     assert authorization.mark_granted(authorization.snapshot_key(), MAC)
-    runner = runner_with(state=[UNAUTHORIZED, UNAUTHORIZED, DEVICE])  # a autenticação ainda corria
+    authorization.mark_timeout_disabled()
+    authorization.note_serial(SERIAL)
+    runner = runner_with(state=[UNAUTHORIZED, DEVICE])  # o aviso na tela, depois o OK da pessoa
+    adb = home.adb(runner, sleep=instant, settle_seconds=3.0, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    assert runner.calls.count(GET_STATE) == 1  # nada de releitura: `unauthorized` vale na hora
+    assert home.authorization().record.state == NEEDS_USER
+    await watched(adb)  # a espera do aceite vê o `device` e regrava como `granted`
+    record = home.authorization().record
+    assert record.state == "granted"  # sem prova: ela fica para o toque seguinte
+    assert not home.authorization().keeps_channel(MAC)
+    assert PUT_TIMEOUT in runner.calls  # o vencimento é refeito (não herdou o ajuste de antes)
+    assert not adb.connected  # e a conexão não fica: o servidor do `adb` não a religa
+
+
+async def test_a_verified_record_is_demoted_when_the_prompt_comes_back_inside_a_request(
+    home: Home,
+) -> None:
+    """Cenário B: `verified` e a TV foi resetada: o aviso volta, aceito em segundos."""
+    home.verify(settled=True)
+    authorization = home.authorization()
+    authorization.note_serial(SERIAL)
+    runner = runner_with(state=[UNAUTHORIZED, DEVICE])
+    adb = home.adb(runner, sleep=instant, settle_seconds=3.0, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    assert home.authorization().record.state == NEEDS_USER  # nunca segue `verified`
+    await watched(adb)
+    record = home.authorization().record
+    assert record.state == "granted" and record.serial == SERIAL  # o serial foi lido de novo
+    assert PUT_TIMEOUT in runner.calls  # o passo do vencimento reabre
+    assert not home.authorization().keeps_channel(MAC)
+    assert not home.authorization().verified_for(MAC)  # nada conecta sozinho até a prova
+
+
+async def test_a_user_request_rereads_a_passing_offline_on_a_granted_tv(home: Home) -> None:
+    authorization = home.authorization()
+    assert authorization.mark_granted(authorization.snapshot_key(), MAC)
+    runner = runner_with(state=[OFFLINE, OFFLINE, DEVICE])  # a conexão ainda subia
     adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
     with user_initiated_adb():
         await adb.connect()
-    assert runner.calls.count(GET_STATE) >= 3
-    assert home.authorization().record.state == VERIFIED  # sem `needs_user` nem "aceite o aviso"
+    assert home.authorization().record.state == VERIFIED  # sem `unauthorized` visto: a prova segue
 
 
-async def test_a_user_request_stops_rereading_after_the_settle_time(home: Home) -> None:
+async def test_a_user_request_stops_rereading_offline_after_the_settle_time(home: Home) -> None:
     authorization = home.authorization()
     assert authorization.mark_granted(authorization.snapshot_key(), MAC)
-    runner = runner_with(state=UNAUTHORIZED)  # a TV recusou de verdade
+    runner = runner_with(state=OFFLINE)
+    adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
+    with user_initiated_adb(), pytest.raises(AdbUnreachable):
+        await adb.connect()
+    assert runner.calls.count(GET_STATE) == 1 + 6  # a leitura da conexão e 6 de 0,5 s
+
+
+async def test_an_offline_that_turns_unauthorized_while_rereading_is_the_real_prompt(
+    home: Home,
+) -> None:
+    authorization = home.authorization()
+    assert authorization.mark_granted(authorization.snapshot_key(), MAC)
+    runner = runner_with(state=[OFFLINE, UNAUTHORIZED])
     adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
     with user_initiated_adb(), pytest.raises(AdbUnauthorized):
         await adb.connect()
-    assert runner.calls.count(GET_STATE) == 1 + 6  # a leitura da conexão e 6 de 0,5 s
     assert home.authorization().record.state == NEEDS_USER
 
 
@@ -1426,9 +1481,9 @@ async def test_the_first_ever_tap_does_not_wait_before_showing_the_prompt_messag
 
 async def test_an_automatic_unauthorized_is_never_reread(home: Home) -> None:
     home.verify(settled=True)
-    runner = runner_with(state=UNAUTHORIZED)
+    runner = runner_with(state=OFFLINE)
     adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
-    with pytest.raises(AdbUnauthorized):
+    with pytest.raises(AdbUnreachable):
         await adb.connect()
     assert runner.calls.count(GET_STATE) == 1
 
@@ -1478,6 +1533,42 @@ def test_a_record_written_by_another_process_is_reloaded_before_use(home: Home) 
     assert not agent.verified_for(MAC)  # o agente relê e não segue conectando sozinho
     assert not agent.keeps_channel(MAC)
     assert agent.record.state == NEEDS_USER
+
+
+def test_a_failed_save_is_logged_when_another_process_later_overwrites_it(
+    home: Home, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    agent = home.verify()
+
+    def broken(*args: Any, **kwargs: Any) -> None:
+        raise OSError("sem disco")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("uniover_agent.adapters.adb_authorization.os.replace", broken)
+        agent.mark_needs_permission()  # só na memória do agente
+    assert agent.record.state == NEEDS_USER
+    other = home.authorization()  # outro processo grava o arquivo em seguida
+    other.note_serial(SERIAL)
+    with caplog.at_level("WARNING"):
+        assert agent.record.serial == SERIAL  # a releitura vale...
+    assert any("descartada" in r.getMessage() for r in caplog.records)  # ...e avisa que perdeu
+
+
+def test_a_transient_permission_error_on_the_swap_is_retried(
+    home: Home, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent = home.verify()
+    real = os.replace
+    failures = [PermissionError("arquivo em uso")]
+
+    def flaky(source: Any, target: Any) -> None:
+        if failures:
+            raise failures.pop()
+        real(source, target)
+
+    monkeypatch.setattr("uniover_agent.adapters.adb_authorization.os.replace", flaky)
+    agent.note_serial(SERIAL)
+    assert home.authorization().record.serial == SERIAL  # chegou ao disco na segunda tentativa
 
 
 def test_a_stale_copy_never_overwrites_what_another_process_wrote(home: Home) -> None:
@@ -1587,9 +1678,14 @@ async def test_a_refused_presence_signal_is_reported_to_the_diagnostics_hook() -
     activity = UserActivity(lambda: 0.0)
     presence = tv_presence_handler(activity, now=lambda: now, on_refused=refused.append)
     await presence(presence_command(now - timedelta(seconds=2)))  # aceito: sem aviso
-    await presence(presence_command(now - timedelta(seconds=40)))
-    await presence(presence_command(now + timedelta(seconds=30)))
-    assert [round(age) for age in refused] == [40, -30]  # cada recusa; o registrador limita
+    await presence(presence_command(now - timedelta(seconds=40)))  # atraso normal de entrega
+    await presence(presence_command(now - timedelta(seconds=119)))  # ainda atraso
+    assert refused == []
+    await presence(
+        presence_command(now - timedelta(seconds=300))
+    )  # absurdo: relógio do PC adiantado
+    await presence(presence_command(now + timedelta(seconds=30)))  # relógio do PC atrasado
+    assert [round(age) for age in refused] == [300, -30]  # cada ocorrência; o registrador limita
 
 
 async def test_a_presence_signal_without_a_usable_timestamp_still_counts() -> None:
