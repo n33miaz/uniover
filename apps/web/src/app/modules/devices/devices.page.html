@@ -128,7 +128,7 @@
                       </div>
                     </dl>
                     @if (startup(agent); as line) {
-                      <p class="startup" [class.bad]="line.failed" role="status">
+                      <p class="startup" [class.bad]="line.failed">
                         <span class="startup-mark" aria-hidden="true">{{
                           line.failed ? '!' : 'i'
                         }}</span>

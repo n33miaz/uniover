@@ -303,12 +303,12 @@ export class DevicesPage {
     return value ? this.contactFormat.format(new Date(value)) : null;
   }
 
-  /** "Conectado agora", "Desligado desde 18/10, 15:30" (último contato) ou "Desconectado" quando nunca houve contato. */
+  /** "Conectado agora", "Sem contato desde 18/10, 15:30" (último contato) ou "Desconectado" quando nunca houve contato. */
   protected connection(agent: DeviceAgent): string {
     if (agent.connected) return $localize`:@@devices.connected:Conectado agora`;
     if (!agent.lastSeenAt) return $localize`:@@devices.disconnected:Desconectado`;
     const since = this.sinceFormat.format(new Date(agent.lastSeenAt));
-    return $localize`:@@devices.off-since:Desligado desde ${since}:time:`;
+    return $localize`:@@devices.no-contact-since:Sem contato desde ${since}:time:`;
   }
 
   protected viewLogLabel(agent: DeviceAgent): string {
