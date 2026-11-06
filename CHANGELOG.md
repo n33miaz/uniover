@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.42.13](https://github.com/n33miaz/uniover/compare/v0.42.12...v0.42.13) (2026-11-06)
+
+
+### Features
+
+* **api:** record agent startup beacons
+* **web:** show why a PC did not start
+* **web:** label beacon clues as unverified
+* **contracts:** add not_paired TV connection
+* **agent:** report not_paired after refusals
+* **web:** show unpaired TV and re-pair action
+* **api:** relay not_paired TV connection
+* **contracts:** add tv.pair.v1 message
+* **agent:** pair the Android TV from the app
+* **api:** add the TV pairing endpoint
+* **web:** pair the TV from not_paired
+* **contracts:** add cancel to tv.pair.v1
+* **api:** throttle and cancel TV pairing
+* **web:** cancel pairing and confirm by state
+
+
+### Bug Fixes
+
+* **agent:** retry tray host state write
+* **agent:** heal stale tray status file
+* **agent:** record tray host write failures
+* **agent:** harden tray status write locking
+* **api:** bound anonymous beacon DB queries
+* **api:** surface protocol refusals, split buckets
+* **web:** show refused hello, soften contact text
+* **api:** per-reason refusal window, document 413
+* **web:** trust only server-side refusals
+* **web:** neutral not_paired wording
+* **agent:** keep not_paired until proven paired
+* **agent:** gate pairing on API features
+* **agent:** keep not_paired when TV still refuses
+* **agent:** answer pairing before the reopen
+* **agent:** republish state when features arrive
+
 ## [0.42.12](https://github.com/n33miaz/uniover/compare/v0.42.11...v0.42.12) (2026-11-06)
 
 
