@@ -12,17 +12,21 @@ from typing import Any
 
 import pytest
 
+from uniover_agent.adapters import adb_authorization as adb_authorization_module
 from uniover_agent.adapters.adb_authorization import (
+    MAX_TIMEOUT_ATTEMPTS,
     NEEDS_USER,
     VERIFIED,
     AdbAuthorization,
     AdbKeys,
     key_fingerprint,
+    resolve_tv_mac,
 )
 from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput
 from uniover_agent.core import Command, UserActivity, tv_presence_handler
 from uniover_agent.ports import (
+    AdbIdle,
     AdbUnauthorized,
     AdbUnreachable,
     user_initiated_adb,
@@ -332,12 +336,12 @@ async def test_after_a_reset_nothing_connects_at_startup_or_while_idle(home: Hom
     adb = home.adb(runner, clock)
     for seconds in (0, 31, 600, 90000):
         clock.now = seconds
-        with pytest.raises(AdbUnauthorized):
+        with pytest.raises(AdbIdle):
             await adb.connect()
-        with pytest.raises(AdbUnauthorized):
+        with pytest.raises(AdbIdle):
             await adb.list_apps()
     restarted = home.adb(runner, clock)
-    with pytest.raises(AdbUnauthorized):
+    with pytest.raises(AdbIdle):
         await restarted.connect()  # a partida do agente
     assert CONNECT not in runner.calls  # nenhum aviso na TV sem ninguém diante dela
     assert home.authorization().record.state == VERIFIED  # ocioso não invalida nada
@@ -350,7 +354,7 @@ async def test_after_a_reset_only_the_use_of_the_tv_costs_one_attempt_and_then_n
     runner = runner_with(connect=REFUSED, state=UNKNOWN)
     clock = Clock()
     adb = home.adb(runner, clock)
-    home.active = True  # um comando do app acabou de chegar
+    home.active = True  # o sinal de presença acabou de chegar
     with pytest.raises(AdbUnauthorized):
         await adb.connect()  # a única tentativa: a pessoa está diante da TV e vê o aviso
     assert runner.calls.count(CONNECT) == 1
@@ -380,8 +384,10 @@ async def test_idle_agent_gets_an_error_that_does_not_blame_the_tv(home: Home) -
     home.verify()
     home.active = False
     runner = runner_with(state=UNKNOWN)
-    with pytest.raises(AdbUnauthorized, match="alguém usa a TV pelo app"):
+    with pytest.raises(AdbIdle, match="alguém usa a TV pelo app") as caught:
         await home.adb(runner).connect()
+    # Código próprio: o app não diz "a TV ainda não deu a permissão" a uma TV que já deu.
+    assert caught.value.code == "adb_idle"
 
 
 async def test_the_user_activity_window_decides_if_a_connection_may_open() -> None:
@@ -625,3 +631,166 @@ async def test_the_accept_watch_lives_only_in_memory(home: Home) -> None:
     assert task.cancelled()
     restarted = home.adb(runner_with(), **PAIRING)  # o reinício não a retoma
     assert restarted._pairing_task is None
+
+
+# --- a permissão nova zera o ajuste; tentativas só pela resposta da TV; ARP; prova no toque ------
+
+
+def test_a_grant_after_a_reset_does_not_inherit_the_timeout_done_before_it(home: Home) -> None:
+    first = home.verify()
+    first.mark_timeout_disabled()
+    first.note_timeout_attempt()
+    first.mark_needs_permission()  # reset de fábrica: a TV voltou ao padrão de 7 dias
+    again = home.authorization()
+    assert again.record.timeout_disabled  # o registro velho ainda diz "desligado"...
+    assert again.mark_granted(again.snapshot_key(), MAC)
+    record = home.authorization().record
+    assert not record.timeout_disabled  # ...mas a permissão nova começa do zero
+    assert record.timeout_attempts == 0
+    assert home.authorization().timeout_step_pending()
+
+
+def test_granted_to_verified_keeps_the_timeout_done_for_the_same_grant(home: Home) -> None:
+    authorization = home.authorization()
+    assert authorization.mark_granted(authorization.snapshot_key(), MAC)
+    authorization.mark_timeout_disabled()
+    assert authorization.mark_verified(authorization.snapshot_key(), MAC)
+    assert home.authorization().record.timeout_disabled
+
+
+async def test_after_a_reset_the_new_grant_runs_the_timeout_step_again(home: Home) -> None:
+    first = home.verify()
+    first.mark_timeout_disabled()
+    first.mark_needs_permission()
+    runner = runner_with()
+    with user_initiated_adb():
+        await home.adb(runner).connect()  # a pessoa tocou e a TV, já sem o ajuste, aceitou
+    assert runner.calls.count(PUT_TIMEOUT) == 1
+    assert home.authorization().record.timeout_disabled
+
+
+async def test_timeouts_and_dropped_transports_do_not_spend_the_timeout_attempts(
+    home: Home,
+) -> None:
+    runner = runner_with()
+    runner.script[PUT_TIMEOUT] = TimeoutError()  # a TV lenta: nenhuma resposta dela
+    adb = home.adb(runner)
+    for _ in range(MAX_TIMEOUT_ATTEMPTS + 3):
+        with user_initiated_adb():
+            await adb.connect()
+    record = home.authorization().record
+    assert record.timeout_attempts == 0
+    assert home.authorization().timeout_step_pending()
+    runner.script[PUT_TIMEOUT] = ok("")  # a TV volta a responder: o ajuste enfim acontece
+    with user_initiated_adb():
+        await adb.connect()
+    assert home.authorization().record.timeout_disabled
+
+
+async def test_only_the_tvs_own_refusal_spends_an_attempt(home: Home) -> None:
+    runner = runner_with()
+    runner.script[GET_TIMEOUT] = ok("604800000\r\n")
+    adb = home.adb(runner)
+    for _ in range(MAX_TIMEOUT_ATTEMPTS):
+        with user_initiated_adb():
+            await adb.connect()
+    assert home.authorization().record.timeout_attempts == MAX_TIMEOUT_ATTEMPTS
+    assert not home.authorization().timeout_step_pending()
+
+
+async def test_a_tv_that_answers_the_port_but_not_the_arp_is_not_called_unreachable(
+    home: Home,
+) -> None:
+    home.verify()
+    home.mac = ""  # porta aberta, a ARP não mostra o aparelho (VPN, outra sub-rede)
+    runner = runner_with(state=UNKNOWN)
+    adb = home.adb(runner)
+    for _ in range(2):  # sem bloqueio de 30 s: cada chamada reavalia
+        with pytest.raises(AdbIdle, match="qual aparelho responde") as caught:
+            await adb.connect()
+        assert caught.value.code == "adb_idle"
+    assert CONNECT not in runner.calls
+    assert adb._blocked_error is None
+
+
+async def test_resolve_tv_mac_tells_a_closed_port_from_an_unknown_mac(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def closed(host: str, port: int, wait: float) -> bool:
+        return False
+
+    async def opened(host: str, port: int, wait: float) -> bool:
+        return True
+
+    async def no_mac(host: str) -> str | None:
+        return None
+
+    async def some_mac(host: str) -> str | None:
+        return MAC
+
+    monkeypatch.setattr(adb_authorization_module, "tcp_open", closed)
+    assert await resolve_tv_mac(HOST, 5555) is None
+    monkeypatch.setattr(adb_authorization_module, "tcp_open", opened)
+    monkeypatch.setattr(adb_authorization_module, "arp_mac", no_mac)
+    assert await resolve_tv_mac(HOST, 5555) == ""
+    monkeypatch.setattr(adb_authorization_module, "arp_mac", some_mac)
+    assert await resolve_tv_mac(HOST, 5555) == MAC
+
+
+async def test_a_second_tap_right_after_accepting_still_proves_the_grant(home: Home) -> None:
+    # O primeiro toque deixou o aviso na tela; a pessoa aceitou e tocou de novo dentro dos 30 s
+    # do bloqueio: o caminho bloqueado vê `device`, mas a prova é neste toque (não num terceiro).
+    runner = runner_with(connect=[REFUSED, FRESH], state=[UNKNOWN, DEVICE])
+    script_apps(runner)
+    adb = home.adb(runner)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    runner.script[GET_STATE] = DEVICE
+    with user_initiated_adb():
+        await adb.list_apps()
+    assert DISCONNECT in runner.calls
+    assert runner.calls.count(CONNECT) == 3  # o toque que mostrou o aviso e as duas da prova
+    assert home.authorization().record.state == VERIFIED
+
+
+# --- arquivo de estado corrompido e cópia sem `.pub` ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"state": "verified", "timeout_attempts": 1e400}',
+        '{"state": "verified", "timeout_attempts": Infinity}',
+        '{"state": "verified", "granted_at": 1e999, "last_handshake_at": NaN}',
+        '{"state": "verified", "timeout_attempts": "muitas"}',
+        "[1, 2, 3]",
+        "isto não é json",
+    ],
+)
+def test_a_corrupted_state_file_starts_clean_instead_of_stopping_the_agent(
+    home: Home, text: str
+) -> None:
+    home.state.mkdir(parents=True)
+    (home.state / "adb-authorization.json").write_text(text, encoding="utf-8")
+    authorization = home.authorization()  # não levanta
+    assert authorization.record.timeout_attempts <= MAX_TIMEOUT_ATTEMPTS
+    assert not authorization.verified_for(MAC) or authorization.record.state == VERIFIED
+
+
+def test_each_save_uses_its_own_temporary_file(home: Home) -> None:
+    authorization = home.authorization()
+    for _ in range(5):
+        authorization.note_timeout_attempt()
+    assert [p.name for p in home.state.iterdir()] == ["adb-authorization.json"]
+
+
+def test_a_restored_key_without_a_public_part_does_not_keep_the_old_one(home: Home) -> None:
+    home.verify()
+    fingerprint = key_fingerprint(KEY)
+    assert fingerprint is not None
+    (home.backup / fingerprint / "adbkey.pub").unlink()  # cópia sem o `.pub`
+    (home.android / "adbkey").unlink()
+    (home.android / "adbkey.pub").write_bytes(b"pub de outra chave\n")
+    assert home.keys().restore_if_missing(fingerprint)
+    assert (home.android / "adbkey").read_bytes() == KEY
+    assert not (home.android / "adbkey.pub").exists()
