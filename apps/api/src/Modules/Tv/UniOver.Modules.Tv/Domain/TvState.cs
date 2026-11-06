@@ -18,6 +18,12 @@ public static class TvStateText
     public const string ConnectionDisconnected = "disconnected";
 
     public const string ConnectionNotPaired = "not_paired";
+
+    /// <summary>
+    /// O agente está abrindo a sessão e a TV ainda não respondeu (acordando do standby). É passageiro: a tela mostra "TV ligando"
+    /// em vez de um erro, e a API não o grava.
+    /// </summary>
+    public const string ConnectionWaking = "waking";
 }
 
 /// <summary>Última leitura do estado que o agente mandou (o volume só vive aqui, em memória).</summary>

@@ -76,7 +76,7 @@ public class TvCommandRunnerTests
         var audit = new FakeAudit(auditFails);
         var stream = new FakeStream();
         var state = new InMemoryTvStateStore();
-        var options = Options.Create(new TvModuleOptions { CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 15 });
+        var options = Options.Create(new TvModuleOptions { CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 25 });
         var runner = new TvCommandRunner(options, new FixedAgentResolver(agentId), presence ?? new FakePresence(), sender, state, audit, stream, TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
         return (runner, sender, audit, stream, state);
     }
@@ -235,16 +235,31 @@ public class TvCommandRunnerTests
     }
 
     [Fact]
-    public async Task TimeoutIsLonger_WhenTheSessionWithTheTvIsHibernating()
+    public async Task TimeoutIsShort_WhenTheSessionWithTheTvIsOpenOrUnknown()
     {
         var (runner, sender, _, _, state) = Build(TvSendOutcome.Ok(TimeSpan.Zero));
 
         await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
-        sender.LastTimeout.Should().Be(TimeSpan.FromSeconds(8));
+        sender.LastTimeout.Should().Be(TimeSpan.FromSeconds(8), "sem leitura nenhuma vale a espera curta");
 
-        state.Apply("pc-casa", new TvStateSnapshot("on", null, null, "hibernating", DateTimeOffset.UtcNow));
+        state.Apply("pc-casa", new TvStateSnapshot("on", null, null, "hot", DateTimeOffset.UtcNow));
         await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
-        sender.LastTimeout.Should().Be(TimeSpan.FromSeconds(15));
+        sender.LastTimeout.Should().Be(TimeSpan.FromSeconds(8));
+    }
+
+    [Theory]
+    [InlineData("hibernating")]
+    [InlineData("disconnected")]
+    [InlineData("waking")]
+    public async Task TimeoutIsLonger_WhenTheSessionWithTheTvIsNotOpen(string connection)
+    {
+        var (runner, sender, _, _, state) = Build(TvSendOutcome.Ok(TimeSpan.Zero));
+        state.Apply("pc-casa", new TvStateSnapshot("on", null, null, connection, DateTimeOffset.UtcNow));
+
+        await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
+
+        // Com a sessão fechada o agente reabre antes de responder (até 20 s): a espera da API tem de passar disso.
+        sender.LastTimeout.Should().Be(TimeSpan.FromSeconds(25));
     }
 
     [Fact]

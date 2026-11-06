@@ -128,8 +128,13 @@ internal sealed partial class TvCommandRunner(
             ? selected!
             : new TvTarget(Guid.Empty, (await agents.ResolveAsync(cancellationToken)).AgentSlug ?? string.Empty, ConfiguredTv.DefaultName, true);
 
+    // Com a sessão aberta (ou sem leitura nenhuma) a resposta leva centenas de milissegundos. Em qualquer outro estado
+    // (dormindo, caída ou ligando) o agente reabre a sessão antes de responder, e isso leva até o tempo de abertura dele:
+    // a espera tem de cobri-lo, senão a API desiste de um comando que o agente ainda executa de forma legítima.
     private TimeSpan TimeoutFor(string agentId, TvModuleOptions settings) =>
-        string.Equals(state.Last(agentId)?.Connection, TvStateText.ConnectionHibernating, StringComparison.Ordinal)
+        state.Last(agentId)?.Connection is TvStateText.ConnectionHibernating
+            or TvStateText.ConnectionDisconnected
+            or TvStateText.ConnectionWaking
             ? settings.HibernatingTimeout
             : settings.CommandTimeout;
 

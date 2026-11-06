@@ -152,7 +152,7 @@ public class PresenceTests
     {
         var sender = new Sender(outcome);
         var runner = new TvCommandRunner(
-            Options.Create(new TvModuleOptions { CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 15 }),
+            Options.Create(new TvModuleOptions { CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 25 }),
             new FixedAgentResolver("pc-casa"),
             new FakePresence(),
             sender,
