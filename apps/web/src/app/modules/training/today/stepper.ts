@@ -32,6 +32,7 @@ let nextStepperId = 0;
         <app-training-glyph name="minus" />
       </button>
       <input
+        data-unsaved-ignore
         #field
         class="value"
         type="text"
