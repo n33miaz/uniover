@@ -153,6 +153,13 @@ export interface TvMock {
   permissionAnswer: 'asked' | 'unreachable' | 'unsupported' | 'busy';
   /** Com `asked`, a TV passa a reconhecer o UniOver na hora (a pessoa aceitou). */
   grantOnAsk: boolean;
+  /**
+   * O que `POST /pair` (o pareamento da Android TV, só do dono) responde: `ok`, `unreachable` (a TV não respondeu),
+   * `unsupported` (computador antigo) ou `refused` (o código digitado não serviu; só no segundo passo).
+   */
+  pairAnswer: 'ok' | 'unreachable' | 'unsupported' | 'refused';
+  /** Os corpos dos `POST /pair` recebidos, na ordem (o do primeiro passo é `{}`). */
+  pairBodies(): Record<string, unknown>[];
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
   count(path: string): number;
   /** O `mode` de cada `POST /power/off` recebido (`null` é o pedido de antes, sem corpo). */
@@ -297,6 +304,11 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     nearbyGate: null,
     permissionAnswer: 'asked',
     grantOnAsk: true,
+    pairAnswer: 'ok',
+    pairBodies: () =>
+      mock.requests
+        .filter((r) => r.method === 'POST' && r.path === '/pair')
+        .map((r) => r.body ?? {}),
     powerOffModes: () =>
       mock.requests
         .filter((r) => r.method === 'POST' && r.path === '/power/off')
@@ -414,6 +426,32 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
         });
       }
       if (mock.grantOnAsk) chosen.permissionNeeded = false;
+      return json(route, 200, { ok: true, latencyMs: 40 });
+    }
+
+    // Parear a Android TV: só o dono (a API recusa as outras contas com 403) e só em dois passos que ele mesmo pede.
+    if (method === 'POST' && path === '/pair') {
+      if (identity.role !== 'owner') {
+        mock.denied.push({ method, path, body, tvId });
+        return problem(route, { status: 403, kind: 'forbidden' });
+      }
+      if (mock.pairAnswer === 'unsupported') {
+        return problem(route, { status: 409, kind: 'pair-unsupported' });
+      }
+      if (mock.pairAnswer === 'unreachable') {
+        return problem(route, {
+          status: 502,
+          kind: 'command-failed',
+          extra: { agentError: 'tv_unreachable' },
+        });
+      }
+      if (mock.pairAnswer === 'refused' && typeof body?.['code'] === 'string') {
+        return problem(route, {
+          status: 502,
+          kind: 'command-failed',
+          extra: { agentError: 'invalid_code' },
+        });
+      }
       return json(route, 200, { ok: true, latencyMs: 40 });
     }
 

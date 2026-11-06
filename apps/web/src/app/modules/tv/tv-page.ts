@@ -26,6 +26,7 @@ import { SuggestionSheet } from './ui/suggestion-sheet';
 import { TvMenu, TvMenuChoice } from './ui/tv-menu';
 import { TvSwitcher } from './ui/tv-switcher';
 import { PowerSheet } from './ui/power-sheet';
+import { PairSheet } from './ui/pair-sheet';
 import { TvSuggestionRequest } from './ui/shortcut-row';
 import { PcOffIcon } from './ui/pc-off-icon';
 import { StatusIndicator } from './ui/status-indicator';
@@ -64,6 +65,7 @@ const TITLE_MEDIUM_MAX = 12;
     StatusIndicator,
     TvIcon,
     PowerSheet,
+    PairSheet,
     CustomizeSheet,
     TvPanel,
     TvMenu,
@@ -86,6 +88,8 @@ export class TvPage {
   protected readonly isGuest = inject(SessionState).isGuest;
 
   protected readonly powerOpen = signal(false);
+  /** A folha de pareamento: só abre pelo toque do dono em "Parear de novo", nunca sozinha. */
+  protected readonly pairOpen = signal(false);
   protected readonly customizeOpen = signal(false);
   protected readonly menuOpen = signal(false);
   /** A folha que troca de TV, e o título que a abriu (o foco volta a ele). */

@@ -86,6 +86,25 @@ describe('TvApi', () => {
     expect((await list).map((item) => item.id)).toEqual(['a', 'b']);
   });
 
+  it('asks the TV for the pairing code with an empty body', async () => {
+    const done = api.pair();
+    const request = http.expectOne('/api/v1/tv/pair');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({});
+    request.flush({ ok: true, latencyMs: 5 });
+    await done;
+  });
+
+  it('delivers the typed code in the body, never in the URL', async () => {
+    const done = api.pair('A1B2C3');
+    const request = http.expectOne('/api/v1/tv/pair');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ code: 'A1B2C3' });
+    expect(request.request.urlWithParams).not.toContain('A1B2C3');
+    request.flush({ ok: true, latencyMs: 5 });
+    await done;
+  });
+
   it('wakes with a POST and no body', async () => {
     const done = api.wake();
     const request = http.expectOne('/api/v1/tv/wake');
@@ -247,6 +266,9 @@ describe('TvApi', () => {
       const clean = api.cleanup();
       http.expectOne('/api/v1/tv/cleanup?tvId=amigo').flush({});
       await clean;
+      const pair = api.pair();
+      http.expectOne('/api/v1/tv/pair?tvId=amigo').flush({ ok: true, latencyMs: 5 });
+      await pair;
       const launch = api.launch('a1');
       http.expectOne('/api/v1/tv/shortcuts/a1/launch?tvId=amigo').flush({});
       await launch;

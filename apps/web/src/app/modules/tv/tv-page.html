@@ -188,12 +188,14 @@
         <h2 id="tv-pairing-title" i18n="@@tv.not-paired.title">TV não pareada</h2>
         <p i18n="@@tv.not-paired.body">Sem pareamento válido com a TV.</p>
         @if (isOwner()) {
-          <a
+          <button
+            type="button"
             class="pairing-action ui-btn primary"
-            routerLink="/tv/configurar"
+            (click)="pairOpen.set(true)"
             i18n="@@tv.not-paired.action"
-            >Parear de novo</a
           >
+            Parear de novo
+          </button>
         } @else {
           <p i18n="@@tv.not-paired.guest">Peça a quem administra o app para parear a TV.</p>
         }
@@ -271,6 +273,10 @@
 
 @if (powerOpen() && access.power()) {
   <app-power-sheet (closed)="powerOpen.set(false)" />
+}
+
+@if (pairOpen() && isOwner()) {
+  <app-tv-pair-sheet (closed)="pairOpen.set(false)" />
 }
 
 @if (customizeOpen() && access.control()) {

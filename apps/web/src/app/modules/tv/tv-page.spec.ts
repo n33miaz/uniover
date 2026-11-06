@@ -3,6 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { collectShellData } from '../../core/layout/route-data';
 import { SessionState } from '../../core/session/session-state';
+import { TvApi } from './data/tv-api';
 import { TvPrefs, tvPrefsStorageKey } from './data/tv-prefs';
 import { TvSelection } from './data/tv-selection';
 import { TvStore } from './data/tv-store';
@@ -12,6 +13,7 @@ import { TV_ROUTES } from './tv.routes';
 
 describe('TvPage', () => {
   let store: FakeTvStore;
+  let pairApi: { pair: ReturnType<typeof vi.fn<(code?: string) => Promise<void>>> };
   let fixture: ReturnType<typeof TestBed.createComponent<TvPage>>;
   let root: HTMLElement;
 
@@ -46,8 +48,13 @@ describe('TvPage', () => {
   beforeEach(async () => {
     localStorage.clear();
     store = createFakeTvStore();
+    pairApi = { pair: vi.fn<(code?: string) => Promise<void>>().mockResolvedValue(undefined) };
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+      providers: [
+        provideRouter([]),
+        { provide: TvStore, useValue: store },
+        { provide: TvApi, useValue: pairApi },
+      ],
     });
     TestBed.inject(SessionState).setUser({
       id: 'tv-page-user',
@@ -249,7 +256,7 @@ describe('TvPage', () => {
       expect(root.querySelector('app-tv-control')).not.toBeNull();
     });
 
-    it('shows the owner an unpaired-TV state and routes re-pairing to setup', async () => {
+    it('shows the owner an unpaired-TV state with a button that opens the pairing sheet, only on tap', async () => {
       store.status.set('not-paired');
       store.canSend.set(false);
       store.disabledReason.set('A TV não está pareada.');
@@ -258,10 +265,34 @@ describe('TvPage', () => {
       const pairing = root.querySelector('.pairing')!;
       expect(pairing.querySelector('h2')?.textContent?.trim()).toBe('TV não pareada');
       expect(pairing.textContent).toContain('Sem pareamento válido com a TV.');
-      const action = pairing.querySelector<HTMLAnchorElement>('a')!;
+      // Um botão (nada de ir para o guia geral) e a folha só existe depois do toque, sem falar com a API.
+      expect(pairing.querySelector('a')).toBeNull();
+      const action = pairing.querySelector<HTMLButtonElement>('button')!;
       expect(action.textContent?.trim()).toBe('Parear de novo');
-      expect(action.getAttribute('href')).toBe('/tv/configurar');
+      expect(root.querySelector('app-tv-pair-sheet')).toBeNull();
+      expect(pairApi.pair).not.toHaveBeenCalled();
       expect(root.querySelector('.reason-row')).toBeNull();
+
+      action.click();
+      await render();
+      const sheet = root.querySelector<HTMLDialogElement>('app-tv-pair-sheet dialog')!;
+      expect(sheet.hasAttribute('open')).toBe(true);
+      expect(sheet.querySelector('h2')?.textContent).toBe('Parear a TV');
+      // Abrir a folha ainda não pede nada à TV: o código só sai no "Mostrar Código".
+      expect(pairApi.pair).not.toHaveBeenCalled();
+    });
+
+    it('keeps the pairing sheet open when the TV comes back, so the person sees it finish', async () => {
+      store.status.set('not-paired');
+      await render();
+      root.querySelector<HTMLButtonElement>('.pairing button')!.click();
+      await render();
+
+      store.status.set('hot');
+      await render();
+
+      expect(root.querySelector('.pairing')).toBeNull();
+      expect(root.querySelector('app-tv-pair-sheet dialog')).not.toBeNull();
     });
 
     it('does not offer re-pairing to a guest', async () => {
