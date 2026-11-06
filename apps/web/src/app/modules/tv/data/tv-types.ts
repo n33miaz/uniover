@@ -14,9 +14,11 @@ type TvStateDto = components['schemas']['TvState'];
 
 /**
  * `hot`: sessão aberta · `hibernating`: controle dormindo (não é "TV desligada") · `disconnected`: sem sessão · `waking`:
- * o agente está abrindo a sessão e a TV ainda não respondeu (acordando do standby; passageiro, nunca é erro).
+ * o agente está abrindo a sessão e a TV ainda não respondeu (acordando do standby; passageiro, nunca é erro) ·
+ * `unknown`: um valor que esta versão do app não conhece (uma API mais nova); vale como "reconectando", nunca como queda.
  */
-export type TvConnection = 'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking';
+export type TvConnection =
+  'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking' | 'unknown';
 export type TvPower = 'on' | 'off' | 'unknown';
 
 /** O estado já normalizado: o gerador tipa `volume` como número ou texto e `connection`/`power` como texto livre. */
@@ -148,9 +150,14 @@ function toPower(value: unknown): TvPower {
 function toConnection(value: unknown, agentOnline: boolean): TvConnection {
   // Sem agente conectado não há sessão com a TV, qualquer que seja a última leitura.
   if (!agentOnline) return 'disconnected';
-  return value === 'hot' || value === 'hibernating' || value === 'not_paired' || value === 'waking'
+  // Um valor que esta versão não conhece (uma API mais nova) é "reconectando", nunca "agente desligado".
+  return value === 'hot' ||
+    value === 'hibernating' ||
+    value === 'disconnected' ||
+    value === 'not_paired' ||
+    value === 'waking'
     ? value
-    : 'disconnected';
+    : 'unknown';
 }
 
 /** Lê o estado vindo da API ou do SSE; `null` quando o corpo não tem a forma esperada. */

@@ -91,9 +91,14 @@ describe('parseState', () => {
     expect(parseState({ ...base, volume: 'nada' })?.volume).toBeNull();
   });
 
-  it('turns unknown texts into safe values', () => {
+  it('turns unknown texts into safe values, a new connection kind meaning "reconnecting"', () => {
     const state = parseState({ ...base, power: 'ligada', connection: 'quente' });
-    expect(state).toMatchObject({ power: 'unknown', connection: 'disconnected' });
+    expect(state).toMatchObject({ power: 'unknown', connection: 'unknown' });
+    expect(parseState({ ...base, connection: 'disconnected' })?.connection).toBe('disconnected');
+    // Sem agente a conexão é sempre "disconnected", qualquer que seja o texto.
+    expect(parseState({ ...base, agentOnline: false, connection: 'quente' })?.connection).toBe(
+      'disconnected',
+    );
   });
 
   it('rejects what is not an object', () => {

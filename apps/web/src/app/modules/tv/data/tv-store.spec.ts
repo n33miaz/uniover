@@ -221,6 +221,16 @@ describe('TvStore', () => {
       expect(store.disabledReason()).toBeNull();
     });
 
+    it('a connection kind this version does not know is "reconnecting", not "agent off"', async () => {
+      await started();
+      emit('tv.state', { ...hot, connection: 'algo-novo' });
+      expect(store.lastKnownStatus()).toBe('loading');
+      expect(store.status()).toBe('loading');
+      expect(store.canSend()).toBe(true);
+      emit('tv.state', hot);
+      expect(store.status()).toBe('hot');
+    });
+
     it('"not_paired" blocks the buttons and clears when the session opens again', async () => {
       await started();
       emit('tv.state', { ...hot, connection: 'not_paired' });
