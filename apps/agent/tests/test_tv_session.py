@@ -777,12 +777,17 @@ async def test_waking_is_cleared_when_the_opening_is_cancelled() -> None:
     # Deixa a primeira tentativa falhar e a abertura entrar na espera.
     for _ in range(3):
         await asyncio.sleep(0)
+    assert rig.states[-1].waking is True
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert rig.manager.snapshot().waking is False
+    assert rig.states[-1].waking is False
     assert state_of(rig.manager) is SessionState.HIBERNATING
+    # A marca não fica para a abertura seguinte: uma volta rápida não pisca "TV ligando".
+    rig.states.clear()
+    await rig.manager.send_key("HOME")
+    assert wakings(rig) == [("hot", False)]
 
 
 async def test_an_unpaired_tv_is_not_waking() -> None:
@@ -801,7 +806,7 @@ async def test_an_unpaired_tv_is_not_waking() -> None:
 
 async def test_the_repair_taking_over_ends_waking() -> None:
     rig = Rig()
-    rig.remote.connect_errors = [TvPortClosed("a"), TvPortClosed("b")]
+    rig.remote.connect_errors = [TvUnreachable("a"), TvPortClosed("b")]
 
     def take_over() -> None:
         rig.manager.mark_repairing()
@@ -810,4 +815,50 @@ async def test_the_repair_taking_over_ends_waking() -> None:
     with pytest.raises(TvSessionError):
         await rig.manager.send_key("HOME")
 
-    assert rig.manager.snapshot().waking is False
+    assert any(waking for _, waking in wakings(rig)), "chegou a ligar antes de o reparo assumir"
+    assert rig.states[-1].waking is False
+    rig.manager.clear_repairing()
+    rig.states.clear()
+    await rig.manager.send_key("HOME")
+    assert wakings(rig) == [("hot", False)]
+
+
+class GatedSecondTry(FakeTvRemote):
+    """A primeira tentativa não tem resposta; a segunda só termina quando o teste libera."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def connect(self) -> None:
+        self.connects += 1
+        if self.connects == 1:
+            raise TvUnreachable("sem resposta")
+        await self.release.wait()
+        self._connected = True
+
+
+async def test_a_key_waiting_for_the_open_that_the_wake_started_sees_the_tv_waking() -> None:
+    clock = FakeClock()
+    remote = GatedSecondTry()
+    manager = TvSessionManager(clock, remote)
+    states: list[TvState] = []
+    manager.subscribe(states.append)
+
+    opening = asyncio.create_task(manager.wake())  # o app abriu o controle: ninguém tocou em nada
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert remote.connects == 2
+    assert not any(state.waking for state in states), 'só o `wake` espera: nada de "ligando"'
+
+    key = asyncio.create_task(manager.send_key("HOME"))  # a pessoa toca e espera a mesma abertura
+    for _ in range(3):
+        await asyncio.sleep(0)
+    assert states[-1].waking is True
+
+    remote.release.set()
+    await asyncio.gather(opening, key)
+
+    assert states[-1].connection == "hot"
+    assert states[-1].waking is False
+    assert remote.keys == ["HOME"]

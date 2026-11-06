@@ -203,9 +203,13 @@ class TvSessionManager:
         self._channels: list[_Registered] = [_Registered(remote, required=True)]
         self._state = SessionState.HIBERNATING
         self._connection: Connection = "hibernating"
-        # A TV não respondeu à primeira tentativa de uma abertura pedida por alguém (comando ou
-        # "acordar"): é o "TV ligando" que a tela mostra no lugar de um erro. Ver `_warm`.
+        # A TV não respondeu à primeira tentativa de uma abertura que um comando espera (ele a
+        # pediu ou aguarda a que outro, como o `wake`, já começou): é o "TV ligando" que a tela
+        # mostra no lugar de um erro. Ver `_warm` e `_ensure_hot`.
         self._waking = False
+        # A abertura em curso já teve uma tentativa sem resposta; quantos comandos esperam por ela.
+        self._open_failed_once = False
+        self._interactive_waiters = 0
         self._power: bool | None = None
         self._volume: int | None = None
         self._remote_volume_seen = False
@@ -754,11 +758,26 @@ class TvSessionManager:
         self._raise_if_repairing()
         if self._is_hot():
             return
+        # Outra abertura em curso (o `wake` do app, por exemplo): este comando espera por ela, e se
+        # a TV já não respondeu à primeira tentativa, quem espera vê "TV ligando".
+        waiting = interactive and self._lock.locked()
+        if waiting:
+            self._interactive_waiters += 1
+            if self._open_failed_once and self._state is SessionState.WARMING:
+                self._begin_waking()
+        try:
+            await self._open_locked(interactive=interactive, unattended=unattended)
+        finally:
+            if waiting:
+                self._interactive_waiters -= 1
+
+    async def _open_locked(self, *, interactive: bool, unattended: bool) -> None:
         async with self._lock:
             self._raise_if_repairing()
             if self._is_hot():
                 return
             self._raise_if_cooling_down(interactive=interactive)
+            self._open_failed_once = False
             try:
                 try:
                     async with asyncio.timeout(self._warm_timeout_seconds):
@@ -779,6 +798,7 @@ class TvSessionManager:
                 raise
             finally:
                 # Abriu, desistiu ou foi cortada: a TV deixou de estar "ligando".
+                self._open_failed_once = False
                 self._end_waking()
 
     def _begin_waking(self) -> None:
@@ -830,9 +850,10 @@ class TvSessionManager:
                 if delay is None:
                     await self._give_up(TV_UNREACHABLE, str(exc))
                 _log.debug("TV não respondeu (tentativa %d): %s", attempt, exc)
-                if interactive:
-                    # Alguém espera por esta abertura e a TV ainda não atendeu: está ligando. Só
-                    # agora, e não ao começar: a volta da hibernação leva menos de um segundo e
+                self._open_failed_once = True
+                if interactive or self._interactive_waiters:
+                    # Um comando espera por esta abertura e a TV ainda não atendeu: está ligando.
+                    # Só agora, e não ao começar: a volta da hibernação leva menos de um segundo e
                     # piscaria "TV ligando" a cada toque.
                     self._begin_waking()
                 await self._clock.sleep(delay)
