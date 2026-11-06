@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.42.14](https://github.com/n33miaz/uniover/compare/v0.42.13...v0.42.14) (2026-11-06)
+
+
+### Features
+
+* **agent:** record startup failures
+* **contracts:** add tv.presence.v1
+* **contracts:** declare tv.presence.v1 in hello
+* **api:** relay tv presence to the agent
+* **agent:** count only tv.presence as use
+* **web:** send tv presence while visible
+* **web:** explain adb_idle without blaming the TV
+* **api:** list tv.presence.v1 in agent features
+* **agent:** resend hello when features change
+
+
+### Bug Fixes
+
+* **agent:** make startup trace durable
+* **agent:** harden startup failure reporting
+* **agent:** single instance and connection trace
+* **agent:** treat exit 5 as not a crash
+* **agent:** close review gaps in startup report
+* **agent:** stop a stalled install owner
+* **agent:** tame startup trace noise
+* **agent:** report a stuck install owner once
+* **agent:** lock after takeover, keep field names
+* **agent:** ask ADB permission once, never alone
+* **web:** ask to always allow ADB on the TV
+* **agent:** prove the ADB grant is saved first
+* **agent:** bind ADB grant to TV, never re-prompt
+* **agent:** declare tv.adb so the owner can tap
+* **web:** tell to tap Atualizar lista again
+* **agent:** open ADB only while the app is in use
+* **agent:** prove the ADB grant inside one tap
+* **agent:** close the remaining ADB reprompt gaps
+* **web:** signal presence on touch, never by time
+* **agent:** prove with one new connection
+* **web:** await presence and signal from TV Livre
+* **api:** count only delivered presence signals
+* **web:** satisfy lint in the presence specs
+* **agent:** undo unproven ADB links, keep proven
+* **agent:** ignore stale presence signals
+* **agent:** accept a little PC clock skew
+* **agent:** undo unproven ADB transports
+* **web:** cap the wait for the presence signal
+* **agent:** report refused presence to diagnostics
+* **agent:** rest the watchdog while ADB is idle
+* **agent:** tighten ADB proof and channel rules
+* **agent:** alert on clock skew only past 120 s
+* **agent:** give a missing ARP MAC its own code
+* **agent:** stop rereading unauthorized in proofs
+* **agent:** reread authorizing like offline
+* **agent:** harden the ADB record save and reload
+
 ## [0.42.13](https://github.com/n33miaz/uniover/compare/v0.42.12...v0.42.13) (2026-11-06)
 
 
