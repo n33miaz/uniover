@@ -63,6 +63,16 @@
         O código não serviu ou venceu. Peça outro à TV.
       </p>
     }
+    @case ('unconfirmed') {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.unconfirmed">
+        A TV não aceitou o pareamento. Tente de novo com um código novo.
+      </p>
+    }
+    @case ('wait') {
+      <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.wait">
+        Espere alguns segundos antes de pedir outro código.
+      </p>
+    }
     @case ('forbidden') {
       <p id="pair-text" class="text" role="alert" i18n="@@tv.pair.forbidden">
         Só quem administra o app pode parear a TV.

@@ -13,7 +13,10 @@ import { TV_ROUTES } from './tv.routes';
 
 describe('TvPage', () => {
   let store: FakeTvStore;
-  let pairApi: { pair: ReturnType<typeof vi.fn<(code?: string) => Promise<void>>> };
+  let pairApi: {
+    pair: ReturnType<typeof vi.fn<(code?: string) => Promise<void>>>;
+    cancelPair: ReturnType<typeof vi.fn<() => Promise<void>>>;
+  };
   let fixture: ReturnType<typeof TestBed.createComponent<TvPage>>;
   let root: HTMLElement;
 
@@ -48,7 +51,10 @@ describe('TvPage', () => {
   beforeEach(async () => {
     localStorage.clear();
     store = createFakeTvStore();
-    pairApi = { pair: vi.fn<(code?: string) => Promise<void>>().mockResolvedValue(undefined) };
+    pairApi = {
+      pair: vi.fn<(code?: string) => Promise<void>>().mockResolvedValue(undefined),
+      cancelPair: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    };
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),

@@ -105,6 +105,15 @@ describe('TvApi', () => {
     await done;
   });
 
+  it('tells the computer the pairing sheet was closed with a cancel body', async () => {
+    const done = api.cancelPair();
+    const request = http.expectOne('/api/v1/tv/pair');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ cancel: true });
+    request.flush({ ok: true, latencyMs: 5 });
+    await done;
+  });
+
   it('wakes with a POST and no body', async () => {
     const done = api.wake();
     const request = http.expectOne('/api/v1/tv/wake');
