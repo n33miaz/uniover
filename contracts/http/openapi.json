@@ -17286,6 +17286,38 @@
         ]
       }
     },
+    "/api/v1/tv/presence": {
+      "post": {
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "PresenceEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/shortcuts": {
       "get": {
         "responses": {
@@ -18465,6 +18497,9 @@
     },
     {
       "name": "WakeEndpoint"
+    },
+    {
+      "name": "PresenceEndpoint"
     },
     {
       "name": "CleanupEndpoint"

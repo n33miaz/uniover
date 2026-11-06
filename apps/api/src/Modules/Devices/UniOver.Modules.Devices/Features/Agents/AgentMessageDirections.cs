@@ -60,6 +60,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.TvLivrePhotoV1,
         AgentMessageTypes.TvLivreV1,
         AgentMessageTypes.TvPowerOffV1,
+        AgentMessageTypes.TvPresenceV1,
         AgentMessageTypes.TvTextV1,
         AgentMessageTypes.TvWakeV1,
     }.ToFrozenSet(StringComparer.Ordinal);

@@ -12,6 +12,9 @@ internal static class TvCapabilities
     /// <summary>O agente pareia a Android TV pelo app (<c>tv.pair.v1</c>), em dois passos e só quando o dono pede.</summary>
     public const string PairV1 = "tv.pair.v1";
 
+    /// <summary>O agente entende <c>tv.presence.v1</c>: só com a tela da TV visível ele abre uma conexão ADB nova por conta própria.</summary>
+    public const string PresenceV1 = "tv.presence.v1";
+
     /// <summary>O agente sabe procurar TVs compatíveis na rede local (<c>tv.discover.v1</c>).</summary>
     public const string DiscoveryV1 = "tv.discovery.v1";
 }
