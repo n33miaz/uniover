@@ -26,6 +26,9 @@ MAX_SIGNAL_AGE_SECONDS: Final = 15.0
 # Folga para o relógio do PC estar um pouco atrás do da API (idade negativa): além disso o sinal
 # é recusado, senão um relógio muito atrasado aceitaria até um sinal entregue com atraso.
 MAX_CLOCK_SKEW_SECONDS: Final = 5.0
+# Só idade negativa além da folga, ou idade acima disto, aponta o relógio do PC: entre 15 s e isto é
+# atraso normal de entrega (o gateway segura o sinal enquanto o agente reconecta) e não alerta.
+SKEW_REPORT_AGE_SECONDS: Final = 120.0
 # Declarada no `agent.hello.v1`: a API só manda `tv.presence.v1` a quem a tem.
 PRESENCE_CAPABILITY: Final = "tv.presence.v1"
 PRESENCE_TYPE: Final = "tv.presence.v1"
@@ -76,8 +79,10 @@ def tv_presence_handler(
     em que a API o montou, e acima de `max_age_seconds` ele é ignorado, senão a janela de 60 s
     começaria na chegada e não no toque. Idade negativa (relógio do PC atrás do da API) vale até
     `max_skew_seconds`. Sem `ts` utilizável vale como chegou. Se os relógios diferem tanto que o
-    sinal é recusado, avisa **uma vez** no log e chama `on_refused(idade)` a cada recusa (o
-    diagnóstico limita a repetição): sem isso a causa seria invisível, e nada reconectaria sozinho.
+    sinal é recusado; só uma idade negativa além da folga, ou acima de `SKEW_REPORT_AGE_SECONDS`,
+    é tratada como relógio fora de hora: avisa **uma vez** no log e chama `on_refused(idade)` a cada
+    ocorrência (o diagnóstico limita a repetição). Um atraso comum de entrega recusa o sinal sem
+    alertar ninguém.
     """
     warned = False
 
@@ -86,19 +91,18 @@ def tv_presence_handler(
         age = _age_seconds(command.sent_at, now())
         if age is None or -max_skew_seconds <= age <= max_age_seconds:
             activity.touch()
-        elif not warned:
-            warned = True
-            _log.warning(
-                "sinal de presença da TV recusado: o `ts` dele tem %.0f s de diferença para o "
-                "relógio deste PC (atraso na entrega ou relógio do PC fora de hora)",
-                age,
-            )
-        if (
-            on_refused is not None
-            and age is not None
-            and not (-max_skew_seconds <= age <= max_age_seconds)
-        ):
-            on_refused(age)
+            return CommandResult(command.id, ResultStatus.OK)
+        if age < -max_skew_seconds or age > SKEW_REPORT_AGE_SECONDS:
+            # Relógio do PC fora de hora (ou entrega muito atrasada): a causa seria invisível.
+            if not warned:
+                warned = True
+                _log.warning(
+                    "sinal de presença da TV recusado: o `ts` dele tem %.0f s de diferença para o "
+                    "relógio deste PC (relógio do PC fora de hora?)",
+                    age,
+                )
+            if on_refused is not None:
+                on_refused(age)
         return CommandResult(command.id, ResultStatus.OK)
 
     return handle
