@@ -19,6 +19,7 @@ import {
   displayNameLength,
   normalizeDisplayName,
 } from '../../core/auth/display-name';
+import { registerUnsavedWork } from '../../core/pwa/unsaved-work';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph } from './settings-glyph';
 import { SessionsSection } from './sessions-section';
@@ -69,6 +70,11 @@ export class ProfilePage {
   protected readonly dirty = computed(
     () => normalizeDisplayName(this.name()) !== (this.user()?.displayName ?? ''),
   );
+
+  constructor() {
+    // Nome mudado e ainda não salvo: a recarga automática de atualização espera, e o toque no aviso pergunta.
+    registerUnsavedWork(() => this.dirty());
+  }
 
   protected readonly nameError = computed(() => {
     const issue = displayNameIssue(this.name());

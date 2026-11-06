@@ -1,5 +1,14 @@
-import { Component, effect, inject, signal, untracked, type WritableSignal } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  type WritableSignal,
+} from '@angular/core';
 import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
+import { registerUnsavedWork } from '../../core/pwa/unsaved-work';
 import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { SystemApi, SystemSettingKey, SystemSettingValue } from './system-api';
@@ -48,7 +57,14 @@ export class SystemPage {
   protected readonly error = signal<string | null>(null);
   protected readonly saved = signal(false);
 
+  /** O e-mail de contato digitado ainda difere do que o servidor guardou (nada carregado ainda: limpo). */
+  private readonly contactDirty = computed(() => {
+    const saved = this.settings()?.find((item) => item.key === 'training.off-contact');
+    return saved !== undefined && this.contact() !== String(saved.value ?? '');
+  });
+
   constructor() {
+    registerUnsavedWork(() => this.contactDirty());
     effect(() => {
       if (
         this.session.status() === 'authenticated' &&

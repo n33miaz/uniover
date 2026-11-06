@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { problemOf } from '../../core/auth/api-problem';
+import { registerUnsavedWork } from '../../core/pwa/unsaved-work';
 import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { SettingsGlyph } from './settings-glyph';
@@ -118,7 +119,17 @@ export class SiriPage {
   /** Nomes dos apps por TV, para a lista de chaves mostrar "Abrir Vídeo" e não um id. */
   private readonly namesByTv = new Map<string, ReadonlyMap<string, string>>();
 
+  private readonly defaultKeyName = $localize`:@@settings.siri.default-name:Meu iPhone`;
+
   constructor() {
+    // Atalho em criação com algo já mexido (nome, ações, validade): a recarga automática espera.
+    registerUnsavedWork(
+      () =>
+        this.creating() &&
+        (this.name() !== this.defaultKeyName ||
+          this.chosen().size > 0 ||
+          this.expiryDays() !== null),
+    );
     effect(() => {
       if (this.session.status() === 'authenticated' && untracked(() => this.keys()) === null) {
         untracked(() => void this.load());
@@ -143,7 +154,7 @@ export class SiriPage {
 
   protected async openCreate(): Promise<void> {
     this.creating.set(true);
-    this.name.set($localize`:@@settings.siri.default-name:Meu iPhone`);
+    this.name.set(this.defaultKeyName);
     this.chosen.set(new Set());
     this.expiryDays.set(null);
     this.say(null);
