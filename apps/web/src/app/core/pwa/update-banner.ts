@@ -24,7 +24,9 @@ import { PwaUpdateService } from './pwa-update.service';
           <div class="ui-collapse-inner">
             <div class="banner">
               @if (pwa.navigationBlocked()) {
-                <span i18n="@@pwa.update-blocked">Há uma versão nova: salve para continuar</span>
+                <span i18n="@@pwa.update-blocked"
+                  >Há uma versão nova: salve ou descarte para continuar</span
+                >
               } @else {
                 <span i18n="@@pwa.update-available">Nova versão disponível</span>
               }
