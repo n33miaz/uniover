@@ -5,6 +5,8 @@ enche a fila de diagnostico e a espera e calma, nunca um laco apertado. O laco d
 `uv` falso, como em `test_supervisor_guardrails`.
 """
 
+import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -12,7 +14,8 @@ import pytest
 
 from uniover_agent.adapters.single_instance import EXIT_ALREADY_RUNNING
 
-from .test_supervisor_guardrails import CURRENT, POWERSHELL, RUNNER, Pc, wait_for
+from .support import kill_tree
+from .test_supervisor_guardrails import CURRENT, POWERSHELL, RUNNER, Pc, heartbeat, wait_for
 
 pytestmark = pytest.mark.skipif(not POWERSHELL.is_file(), reason="precisa do Windows")
 
@@ -96,3 +99,121 @@ def test_any_other_short_exit_is_still_a_crash_for_a_version_in_proof(pc: Pc) ->
             lambda: trial.exists() and trial.read_text(encoding="ascii") != CURRENT + "|0", 60
         ), pc.supervisor_log()
         assert wait_for(lambda: any(i["kind"] == "process.exited" for i in pc.diagnostics()), 5)
+
+
+# --- o dono que sobrou: travado e encerrado; vivo e deixado em paz ------------------------------
+
+# Agente falso: espera o dono aparecer (arquivo com o numero do processo) e sai com 5 enquanto vive.
+WAIT_FOR_OWNER = [
+    ":wait",
+    'if exist "%UNIOVER_TEST_AGENTS%.owner" goto check',
+    "ping -n 2 127.0.0.1 > nul",
+    "goto wait",
+    ":check",
+    'set /p OWNER=<"%UNIOVER_TEST_AGENTS%.owner"',
+    'tasklist /FI "PID eq %OWNER%" /NH 2>nul | "%SystemRoot%\\System32\\find.exe" "%OWNER%" > nul',
+    f"if not errorlevel 1 exit /b {EXIT_ALREADY_RUNNING}",
+    "ping -n 300 127.0.0.1 > nul",
+    "exit /b 0",
+]
+SYNC_COUNTED = ['echo x>>"%UNIOVER_TEST_AGENTS%.sync"', "exit /b 0"]
+
+
+def start_owner(pc: Pc) -> subprocess.Popen[bytes]:
+    """Um processo de verdade que o supervisor reconhece como usuario desta instalacao."""
+    source = pc.base / "app"
+    owner = subprocess.Popen(  # noqa: S603 - cmd do sistema, so espera; o teste o encerra
+        f'cmd.exe /d /c "ping -n 300 127.0.0.1 > nul & rem uniover-agent {source}"',
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=0x08000000,
+    )
+    Path(str(pc.agents) + ".owner").write_text(str(owner.pid), encoding="ascii")
+    return owner
+
+
+def stop_owner(owner: subprocess.Popen[bytes]) -> None:
+    kill_tree(owner)
+
+
+def syncs(pc: Pc) -> int:
+    path = Path(str(pc.agents) + ".sync")
+    return len(path.read_text(encoding="ascii").splitlines()) if path.exists() else 0
+
+
+def make_stale(path: Path) -> None:
+    path.write_text("0", encoding="ascii")
+    old = time.time() - 3600
+    os.utime(path, (old, old))
+
+
+def test_a_stalled_owner_is_stopped_and_the_agent_comes_back(pc: Pc) -> None:
+    pc.uv(WAIT_FOR_OWNER, sync_lines=SYNC_COUNTED)
+    with pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        owner = start_owner(pc)
+        try:
+            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+            make_stale(pc.alive)  # o dono parou de dar sinal de vida
+            assert wait_for(lambda: owner.poll() is not None, 90), pc.supervisor_log()
+            kinds = {i["kind"] for i in pc.diagnostics()}
+            assert "process.unresponsive" in kinds
+            assert wait_for(lambda: "mudo" in pc.supervisor_log(), 5)
+            # Sem o dono, o agente sobe de verdade (e fica).
+            before = pc.starts()
+            assert wait_for(lambda: pc.starts() > before, 60), pc.supervisor_log()
+            time.sleep(float(OWNED_WAIT) + 1)
+            assert pc.starts() == before + 1
+        finally:
+            stop_owner(owner)
+
+
+def test_a_live_owner_is_left_alone_and_nothing_is_synced_meanwhile(pc: Pc) -> None:
+    pc.uv(WAIT_FOR_OWNER, sync_lines=SYNC_COUNTED)
+    with heartbeat(pc.alive), pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        owner = start_owner(pc)
+        try:
+            assert wait_for(lambda: pc.starts() >= 4, 90), pc.supervisor_log()
+            assert owner.poll() is None
+            assert not any(i["kind"] == "process.unresponsive" for i in pc.diagnostics())
+            assert syncs(pc) == 1  # so o do primeiro laco; as tentativas seguintes nao sincronizam
+        finally:
+            stop_owner(owner)
+
+
+def test_a_restart_request_is_honored_while_waiting_for_the_owner(pc: Pc) -> None:
+    pc.uv(WAIT_FOR_OWNER)
+    flag = pc.runtime / "restart-now"
+    with heartbeat(pc.alive), pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        owner = start_owner(pc)
+        try:
+            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+            flag.write_text("", encoding="ascii")
+            assert wait_for(lambda: not flag.exists(), 30), pc.supervisor_log()
+            assert wait_for(lambda: owner.poll() is not None, 30), pc.supervisor_log()
+            assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "restart"
+            assert "reinicio pedido" in pc.supervisor_log()
+        finally:
+            stop_owner(owner)
+
+
+def test_a_rollback_request_is_honored_while_waiting_for_the_owner(pc: Pc) -> None:
+    pc.uv(WAIT_FOR_OWNER)
+    previous = pc.base / "app.previous"
+    previous.mkdir()
+    (previous / "marker.txt").write_text("anterior", encoding="ascii")
+    flag = pc.runtime / "rollback-now"
+    with heartbeat(pc.alive), pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        owner = start_owner(pc)
+        try:
+            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+            flag.write_text("", encoding="ascii")
+            assert wait_for(lambda: not flag.exists(), 30), pc.supervisor_log()
+            assert wait_for((pc.base / "app" / "marker.txt").exists, 30), pc.supervisor_log()
+            assert owner.poll() is not None
+            assert not previous.exists()
+        finally:
+            stop_owner(owner)
