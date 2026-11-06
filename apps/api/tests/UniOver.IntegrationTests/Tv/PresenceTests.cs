@@ -114,7 +114,8 @@ public sealed class PresenceTests(PostgresFixture postgres)
         await TvApp.ReplyAsync(agent, command);
         (await Within(key)).Dispose();
 
-        // O atalho do iPhone e o desligamento agendado também só mandam o comando: nenhum sinal de presença sobe sozinho.
+        // Só o comando de tecla e o `wake` são exercidos aqui (o atalho do iPhone e o desligamento agendado usam a mesma
+        // via de comando, sem rota própria de presença): nenhum deles faz subir um sinal de presença sozinho.
         var wake = app.PostAsync("/api/v1/tv/wake");
         var next = await TvApp.NextCommandAsync(agent);
         next.GetProperty("type").GetString().Should().Be("tv.wake.v1");
