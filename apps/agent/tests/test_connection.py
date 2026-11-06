@@ -195,6 +195,44 @@ async def test_on_connected_runs_after_the_hello_on_every_connection() -> None:
     assert order[:2] == ["hello=1", "hello=2"]
 
 
+async def test_hello_now_resends_the_hello_with_the_current_capabilities() -> None:
+    clock = FakeClock()
+    capabilities = ["transport.keepalive.v1"]
+    gate_open = asyncio.Event()
+
+    class Blocking(FakeTransport):
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            await gate_open.wait()
+            yield "nunca"
+
+    transport = Blocking()
+    supervisor = ConnectionSupervisor(
+        transport,
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=lambda: list(capabilities),
+    )
+    await supervisor.hello_now()  # sem sessão aberta: nada a reenviar
+    assert transport.sent == []
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(200):
+        if transport.sent:
+            break
+        await asyncio.sleep(0)
+    capabilities.append("tv.presence.v1")  # a API passou a listar a capacidade
+    await supervisor.hello_now()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    declared = [m["body"]["capabilities"] for m in transport.sent if m["type"] == "agent.hello.v1"]
+    assert declared == [["transport.keepalive.v1"], ["transport.keepalive.v1", "tv.presence.v1"]]
+    await supervisor.hello_now()  # sessão encerrada: de novo nada a reenviar
+    assert len(transport.sent) == 2
+
+
 async def test_server_restart_reconnects_fast_without_growing_the_backoff() -> None:
     restarting: list[str | bytes | Exception] = [ServerRestarting("código 1012")]
     scripts: list[list[str | bytes | Exception]] = [
