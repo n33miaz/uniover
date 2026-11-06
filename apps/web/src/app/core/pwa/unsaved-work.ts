@@ -6,17 +6,21 @@ import { finalize } from 'rxjs';
 /** O que impede uma recarga automática: cada motivo é um tipo de trabalho que a recarga perderia ou cortaria. */
 export type UnsavedReason = 'form' | 'outbox' | 'request' | 'session';
 
-/** Quantos campos editados a vigia guarda no máximo (os desconectados saem a cada leitura; isto só barra vazamento). */
+/** Quantos campos editados a vigia guarda no máximo; passou disso, `form` fica ligado até a conta baixar. */
 const MAX_TRACKED_FIELDS = 200;
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement;
 
-/** O campo guarda algo que a pessoa digitou e que ainda está lá? Busca, botões e campos escondidos não contam. */
+/**
+ * O campo guarda texto que a pessoa digitou e que ainda está lá? Só digitação conta. Caixas de marcar, rádios, interruptores,
+ * seletores e controles deslizantes ficam de fora: costumam salvar na hora (nada a perder) e, como o valor continua na
+ * tela depois de salvo, travariam a recarga para sempre. Uma tela cujas escolhas só valem ao salvar (um editor) avisa pelo
+ * `registerUnsavedWork`, que é a fonte preferida. Busca, botões e campos escondidos também não contam.
+ */
 function holdsTypedValue(field: Field): boolean {
   if (!field.isConnected || field.closest('[data-unsaved-ignore]')) return false;
   if (field instanceof HTMLTextAreaElement) return field.value !== field.defaultValue;
-  if (field instanceof HTMLSelectElement)
-    return Array.from(field.options).some((o) => o.selected !== o.defaultSelected);
+  if (field instanceof HTMLSelectElement) return false;
   if (field instanceof HTMLInputElement) {
     switch (field.type) {
       case 'search':
@@ -25,10 +29,11 @@ function holdsTypedValue(field: Field): boolean {
       case 'submit':
       case 'reset':
       case 'range':
-        return false;
       case 'checkbox':
       case 'radio':
-        return field.checked !== field.defaultChecked;
+      case 'color':
+      case 'file':
+        return false;
       default:
         return field.value !== '' && field.value !== field.defaultValue;
     }
@@ -50,6 +55,8 @@ function holdsTypedValue(field: Field): boolean {
 export class UnsavedWork {
   private readonly sources = new Map<() => boolean, UnsavedReason>();
   private readonly edited = new Set<Field>();
+  /** Mais campos editados do que cabem na vigia: na dúvida, protege (ver `track`). */
+  private overflow = false;
   private inFlight = 0;
 
   constructor() {
@@ -57,8 +64,15 @@ export class UnsavedWork {
     const track = (event: Event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
+      // Só entra o campo conectado que guarda texto digitado; um campo esvaziado sai na hora.
+      if (!holdsTypedValue(target)) {
+        this.edited.delete(target);
+        return;
+      }
+      if (this.edited.has(target)) return;
       if (this.edited.size >= MAX_TRACKED_FIELDS) this.prune();
       if (this.edited.size < MAX_TRACKED_FIELDS) this.edited.add(target);
+      else this.overflow = true;
     };
     doc.addEventListener('input', track, true);
     doc.addEventListener('change', track, true);
@@ -90,7 +104,8 @@ export class UnsavedWork {
     const found = new Set<UnsavedReason>();
     if (this.inFlight > 0) found.add('request');
     this.prune();
-    if (this.edited.size > 0) found.add('form');
+    if (this.edited.size < MAX_TRACKED_FIELDS) this.overflow = false;
+    if (this.edited.size > 0 || this.overflow) found.add('form');
     for (const [source, reason] of this.sources) {
       try {
         if (source()) found.add(reason);
@@ -106,7 +121,8 @@ export class UnsavedWork {
     return this.reasons().length > 0;
   }
 
-  private prune(): void {
+  /** Solta os campos que saíram da página ou ficaram vazios (a navegação chama isto: nada de tela morta retida). */
+  prune(): void {
     for (const field of this.edited) if (!holdsTypedValue(field)) this.edited.delete(field);
   }
 }

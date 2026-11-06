@@ -1,6 +1,12 @@
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import {
+  EnvironmentInjector,
+  createEnvironmentInjector,
+  runInInjectionContext,
+} from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { guardOutbox } from './outbox-guard';
 import { UnsavedWork, registerUnsavedWork, unsavedWorkInterceptor } from './unsaved-work';
 
 function type(field: HTMLInputElement | HTMLTextAreaElement, value: string): void {
@@ -40,19 +46,11 @@ describe('UnsavedWork', () => {
       expect(work.hasUnsaved()).toBe(false);
     });
 
-    it('counts textareas, checkboxes and contenteditable regions', () => {
+    it('counts textareas and contenteditable regions', () => {
       const area = mount(document.createElement('textarea'));
       type(area, 'nota');
       expect(work.hasUnsaved()).toBe(true);
       type(area, '');
-      expect(work.hasUnsaved()).toBe(false);
-
-      const box = mount(document.createElement('input'));
-      box.type = 'checkbox';
-      box.checked = true;
-      box.dispatchEvent(new Event('change', { bubbles: true }));
-      expect(work.hasUnsaved()).toBe(true);
-      box.checked = false;
       expect(work.hasUnsaved()).toBe(false);
 
       const editable = mount(document.createElement('div'));
@@ -67,6 +65,56 @@ describe('UnsavedWork', () => {
       type(input, 'rascunho');
       expect(work.hasUnsaved()).toBe(true);
       input.remove();
+      expect(work.hasUnsaved()).toBe(false);
+    });
+
+    it('ignores switches, checkboxes, radios and selects: they save on the spot and would pin the screen', () => {
+      const box = mount(document.createElement('input'));
+      box.type = 'checkbox';
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      const radio = mount(document.createElement('input'));
+      radio.type = 'radio';
+      radio.checked = true;
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
+      const select = mount(document.createElement('select'));
+      select.add(new Option('a'));
+      select.add(new Option('b'));
+      select.selectedIndex = 1;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(work.hasUnsaved()).toBe(false);
+    });
+
+    it('never tracks a field that is empty, disconnected or not typed text', () => {
+      const detached = document.createElement('input');
+      type(detached, 'solto');
+      const empty = mount(document.createElement('input'));
+      type(empty, '');
+      expect(work.hasUnsaved()).toBe(false);
+      // Nada ficou retido: uma tela criada e destruída não deixa campos na vigia.
+      expect((work as unknown as { edited: Set<unknown> }).edited.size).toBe(0);
+    });
+
+    it('prune releases fields that left the page, so dead screens are not held in memory', () => {
+      const input = mount(document.createElement('input'));
+      type(input, 'rascunho');
+      const tracked = (work as unknown as { edited: Set<unknown> }).edited;
+      expect(tracked.size).toBe(1);
+      input.remove();
+      work.prune();
+      expect(tracked.size).toBe(0);
+    });
+
+    it('keeps protecting when more fields are edited than the watcher can hold', () => {
+      const fields: HTMLInputElement[] = [];
+      for (let i = 0; i < 201; i++) {
+        const input = mount(document.createElement('input'));
+        type(input, 'x');
+        fields.push(input);
+      }
+      expect(work.hasUnsaved()).toBe(true);
+      // O campo que não coube também está protegido: a conta só baixa quando campos saem.
+      for (const field of fields) field.remove();
       expect(work.hasUnsaved()).toBe(false);
     });
 
@@ -111,11 +159,12 @@ describe('UnsavedWork', () => {
       expect(work.reasons()).toEqual(['form']);
     });
 
-    it('registerUnsavedWork unregisters when the owner is destroyed', () => {
-      TestBed.runInInjectionContext(() => registerUnsavedWork(() => true));
+    it('registerUnsavedWork unregisters when the owner is destroyed, while the registry lives on', () => {
+      const owner = createEnvironmentInjector([], TestBed.inject(EnvironmentInjector));
+      runInInjectionContext(owner, () => registerUnsavedWork(() => true));
       expect(work.hasUnsaved()).toBe(true);
-      TestBed.resetTestingModule();
-      expect(TestBed.inject(UnsavedWork).hasUnsaved()).toBe(false);
+      owner.destroy();
+      expect(work.hasUnsaved()).toBe(false);
     });
   });
 
@@ -175,5 +224,31 @@ describe('unsavedWorkInterceptor', () => {
     http.get('/api/v1/x').subscribe();
     expect(work.hasUnsaved()).toBe(false);
     controller.expectOne('/api/v1/x').flush({});
+  });
+});
+
+describe('guardOutbox', () => {
+  it('counts as busy until the queue has loaded, then follows the pending count', async () => {
+    const work = TestBed.inject(UnsavedWork);
+    let pending = 0;
+    let finish!: (read: () => number) => void;
+    void guardOutbox(work, () => new Promise((resolve) => (finish = resolve)));
+    expect(work.reasons()).toEqual(['outbox']);
+
+    finish(() => pending);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(work.hasUnsaved()).toBe(false);
+    pending = 2;
+    expect(work.reasons()).toEqual(['outbox']);
+    pending = 0;
+    expect(work.hasUnsaved()).toBe(false);
+  });
+
+  it('lets go when the queue fails to load, and hands the error back', async () => {
+    const work = TestBed.inject(UnsavedWork);
+    const failed = guardOutbox(work, () => Promise.reject(new Error('sem fila')));
+    await expect(failed).rejects.toThrow('sem fila');
+    expect(work.hasUnsaved()).toBe(false);
   });
 });
