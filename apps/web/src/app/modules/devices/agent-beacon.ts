@@ -34,6 +34,8 @@ export interface StartupLine {
   readonly text: string;
   readonly failed: boolean;
   readonly at: string;
+  /** Veio do servidor com o agente autenticado (a recusa de protocolo): é a única pista que não vem de rota anônima. */
+  readonly verified: boolean;
 }
 
 /** O que impediu a partida, em poucas palavras. Um código novo do agente cai no texto neutro. */
@@ -115,8 +117,9 @@ function startupText(beacon: AgentBeacon): string {
  * mesmo com o computador conectado; quem a apaga é a API, no primeiro hello aceito.
  *
  * Para um computador desconectado, as demais pistas só valem se vierem depois do último contato de verdade: uma falha de
- * semana passada não pode esconder um computador que depois voltou. A recusa decidida pelo servidor vence a baliza anônima,
- * mesmo que a baliza seja mais nova (quem sabe o endereço do computador pode mandar uma baliza qualquer).
+ * semana passada não pode esconder um computador que depois voltou. Só a recusa que exige um token verdadeiro (`wrong_agent`)
+ * vence a baliza, mesmo que a baliza seja mais nova. As outras (`invalid_token`, que qualquer um provoca com um token
+ * inventado) disputam com a baliza pelo horário: a mais nova vence.
  */
 export function startupLine(
   connected: boolean,
@@ -131,21 +134,31 @@ export function startupLine(
         : rejectionText('protocol'),
       failed: true,
       at: beacon.rejectedAt,
+      verified: true,
     };
   }
   if (connected) return null;
   const floor = lastSeenAt ? Date.parse(lastSeenAt) : Number.NEGATIVE_INFINITY;
   const newer = (iso: string | null): iso is string => iso !== null && Date.parse(iso) > floor;
 
-  if (newer(beacon.rejectedAt) && beacon.rejectReason !== null) {
-    return { text: rejectionText(beacon.rejectReason), failed: true, at: beacon.rejectedAt };
-  }
   const signalled = newer(beacon.at) ? beacon.at : null;
+  if (newer(beacon.rejectedAt) && beacon.rejectReason !== null) {
+    const trusted = beacon.rejectReason === 'wrong_agent';
+    if (trusted || signalled === null || Date.parse(beacon.rejectedAt) >= Date.parse(signalled)) {
+      return {
+        text: rejectionText(beacon.rejectReason),
+        failed: true,
+        at: beacon.rejectedAt,
+        verified: false,
+      };
+    }
+  }
   if (signalled !== null) {
     return {
       text: startupText(beacon),
       failed: beacon.code !== null && beacon.code !== 'ok',
       at: signalled,
+      verified: false,
     };
   }
   return null;
