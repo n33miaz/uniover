@@ -544,10 +544,22 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
 - **Hibernação.** Com o registro `verified` (mesma chave, endereço e MAC) a hibernação por ociosidade da sessão
   **não** desconecta o canal ADB: a chave gravada não mostra aviso, e é isso que mantém a lista diária, a limpeza, os
   ícones e abrir app pela Siri funcionando fora da janela de presença. Sem `verified`, desconecta como sempre.
+  **Limitação:** isso só vale **enquanto o transporte sobrevive**. Depois que a TV desliga (o servidor do `adb` acaba
+  desistindo de religar) ou o PC reinicia, o canal some e uma conexão nova só se abre com alguém usando a TV pelo app
+  (a janela de presença) ou num pedido da pessoa: até lá, Siri, agendamentos e limpeza respondem `adb_idle` mesmo com a
+  permissão `verified`. É a regra ("nenhum aviso sem ninguém diante da TV"), e custa essa disponibilidade.
+- **Revogação com o canal aberto.** Se a TV revoga a permissão (ou é resetada) com o canal mantido, o próximo comando
+  automático recebe `unauthorized`: o agente grava `needs_user` e roda `adb disconnect` na hora (também na limpeza, nos
+  ícones, no foco e na cópia de APK), senão o servidor do `adb` religaria sozinho e cada religação abriria o aviso. A
+  mesma limpeza acontece na partida e no encerramento do agente: transporte sem prova que sobrou de outra execução não
+  fica no servidor do `adb`.
 - **MAC lido vazio num toque** (ARP vazia) é desconhecido, nunca "outra TV": não apaga o MAC anotado, não perde o
   ajuste do vencimento nem o serial e não refaz a prova. Só dois MACs lidos e diferentes são aparelhos diferentes.
 - **Presença atrasada:** o agente ignora um `tv.presence.v1` com mais de 15 s de idade (pelo `ts` do envelope); o
-  gateway pode segurar a entrega enquanto o agente reconecta, e a janela de 60 s tem de contar do toque.
+  gateway pode segurar a entrega enquanto o agente reconecta, e a janela de 60 s tem de contar do toque. A idade vale
+  de -5 s a +15 s (folga para o relógio do PC estar um pouco atrás do da API); fora disso o sinal é recusado e o agente
+  avisa **uma vez** no log (relógio do PC fora de hora derrubaria a presença sem ninguém ver). O `hello` com
+  `tv.presence.v1` sai assim que a API passa a listá-la em `features`, sem esperar os 5 minutos do `hello` repetido.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
   repetir.
