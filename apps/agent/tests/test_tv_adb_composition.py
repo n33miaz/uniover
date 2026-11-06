@@ -123,6 +123,7 @@ async def test_capability_is_declared_when_the_adb_answers(
         "tv.kind.android",
         *ANDROID_KEYS,
         "tv.adb",
+        "tv.presence.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -148,6 +149,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
         "tv.kind.android",
         *ANDROID_KEYS,
         "tv.adb",
+        "tv.presence.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -226,7 +228,18 @@ async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
     await handler(Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.apps.refresh.v1", {}))
     # O toque conecta e, ainda no mesmo pedido, reconecta para provar que a permissão ficou gravada.
     assert runner.calls.count(("connect", serial)) == 2
-    assert setup.activity.recent()  # o toque conta como uso da TV pelo app
+    # O toque conecta por levar a marca de pedido da pessoa; nem ele nem nenhum comando de tipo
+    # (tecla, atalho do iPhone) conta como alguém na tela: só o sinal de presença conta.
+    assert not setup.activity.recent()
+    await setup.handlers["tv.key.v1"](
+        Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.key.v1", {"key": "OK"})
+    )
+    assert not setup.activity.recent()
+    assert "tv.presence.v1" in setup.silent_commands  # sem resposta: chega a cada 20 s
+    await setup.handlers["tv.presence.v1"](
+        Command("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", "tv.presence.v1", {})
+    )
+    assert setup.activity.recent()
     state = json.loads((tv_cert_dir("tv") / "adb-authorization.json").read_text(encoding="utf-8"))
     assert state["state"] == "verified"
     assert state["mac"] == "AA:BB:CC:00:11:22"
@@ -247,9 +260,11 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         "text2": "0192f1e4-0000-7000-8000-0000000000c5",
         "text3": "0192f1e4-0000-7000-8000-0000000000c6",
     }
+    presence_id = "0192f1e4-0000-7000-8000-0000000000c7"
 
     async def script(connection: ServerConnection) -> None:
         await connection.send(dump(envelope("tv.wake.v1", {}, id=ids["wake"])))
+        await connection.send(dump(envelope("tv.presence.v1", {}, id=presence_id)))
         await asyncio.sleep(0.3)
         await connection.send(dump(envelope("tv.apps.refresh.v1", {}, id=ids["refresh"])))
         target = {"target": {"kind": "package", "value": "com.cnvs.apptv"}}
@@ -277,6 +292,7 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         "tv.kind.android",
         *ANDROID_KEYS,
         "tv.adb",
+        "tv.presence.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -295,6 +311,9 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         m["correlationId"]: m["body"] for m in api.received if m["type"] == "command.result.v1"
     }
     assert all(results[ids[name]] == {"ok": True} for name in ids)
+    # O sinal de presença é aceito pelo contrato e executado sem resposta (chega a cada 20 s).
+    assert presence_id not in results
+    assert not [m for m in api.received if m.get("correlationId") == presence_id]
     assert adb.launched == [("com.cnvs.apptv", None)]
     # "ab" pelo ADB; o "ç" não é ASCII e vai pelo controle remoto; "a" apaga os dois (DEL x2).
     assert adb.typed == ["ab"]
