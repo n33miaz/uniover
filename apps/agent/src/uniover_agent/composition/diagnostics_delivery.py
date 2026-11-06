@@ -12,6 +12,7 @@ antes do primeiro `hello`, declara a capacidade nele e envia a fila logo depois,
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import Final
 
@@ -26,10 +27,13 @@ _log = logging.getLogger(__name__)
 # Tentativas seguidas sem `hello` a partir das quais a demora já merece um rastro (a espera entre
 # elas cresce até 30 s: são uns dois minutos sem conseguir falar com a API).
 CONNECTION_FAILURES_BEFORE_TRACE: Final = 8
+# Sem a capacidade, a consulta ao que a API aceita só se repete depois disto (o laço de conexão
+# tenta a cada poucos segundos e não pode transformar cada tentativa numa consulta).
+REFRESH_EVERY_SECONDS: Final = 120.0
 
 
 class DiagnosticsDelivery:
-    def __init__(
+    def __init__(  # noqa: PLR0913 - dependências por nome
         self,
         store: FileDiagnosticStore,
         features: ApiFeatures,
@@ -37,6 +41,7 @@ class DiagnosticsDelivery:
         *,
         self_care: bool,
         record: Callable[[str, str], bool] = record_startup_failure,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._record = record
         self._reported = False
@@ -45,6 +50,15 @@ class DiagnosticsDelivery:
         self._shipper = shipper
         self._self_care = self_care
         self._pending_startup = False
+        self._monotonic = monotonic
+        self._last_retry: float | None = None
+
+    async def _refresh_if_due(self) -> None:
+        now = self._monotonic()
+        if self._last_retry is not None and now - self._last_retry < REFRESH_EVERY_SECONDS:
+            return
+        self._last_retry = now
+        await self._features.refresh()
 
     async def prepare(self) -> None:
         """Antes da primeira conexão: se há falha de partida a contar, sabe o que a API aceita."""
@@ -75,7 +89,7 @@ class DiagnosticsDelivery:
         if self._pending_startup and not self._features.supports(DIAGNOSTICS_CAPABILITY):
             # Este `hello` não declarou o diagnóstico: nada a enviar agora. A consulta feita aqui
             # decide o `hello` da próxima conexão.
-            await self._features.refresh()
+            await self._refresh_if_due()
             return
         await self._shipper.flush()
         if self._pending_startup:
@@ -97,7 +111,7 @@ class DiagnosticsDelivery:
         # Sem a capacidade (a consulta de partida falhou: rede ainda fora do ar), tenta de novo:
         # sem `self_care` nada mais a pergunta e a falha de partida ficaria presa até o reinício.
         if self._pending_startup and not self._features.supports(DIAGNOSTICS_CAPABILITY):
-            await self._features.refresh()
+            await self._refresh_if_due()
         if self._reported or not (unexpected or attempts >= CONNECTION_FAILURES_BEFORE_TRACE):
             return
         self._reported = True

@@ -18,6 +18,7 @@ from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.run_state import RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
+from uniover_agent.adapters.startup_trace import mark_session_started
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
 from uniover_agent.adapters.tray_status import TrayStatus
@@ -386,6 +387,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         watch.disconnected_now()
 
     async def on_connected() -> None:
+        mark_session_started()  # daqui em diante, o que cair não é falha de partida
         tray.connected()
         diary.connected()
         watch.connected_now()

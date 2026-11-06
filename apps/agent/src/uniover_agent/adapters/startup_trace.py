@@ -214,6 +214,41 @@ def log_only(detail: str, *, base: Path | None = None) -> None:
         _write_log((base or installation_base()) / "logs", time.time(), sanitize(detail))
 
 
+def log_once(
+    reason: str,
+    detail: str,
+    *,
+    base: Path | None = None,
+    clock: Callable[[], float] = time.time,
+) -> None:
+    """Como `log_only`, mas o mesmo motivo só volta a ser escrito depois da janela de repetição.
+
+    Quem espera outro dono da instalação tenta de novo a cada minuto: sem a janela, a linha
+    empurraria para fora do arquivo (que gira em 64 KB) as falhas de partida que importam.
+    """
+    with contextlib.suppress(Exception):
+        root = base or installation_base()
+        now = clock()
+        marker = _marker(root, reason)
+        if _recently_recorded(marker, now):
+            return
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        _write_log(root / "logs", now, sanitize(detail))
+        _write_marker(marker, now)
+
+
+# Já houve um `hello` neste processo? Depois dele, o que cai não é falha de partida.
+_session: dict[str, bool] = {"started": False}
+
+
+def mark_session_started() -> None:
+    _session["started"] = True
+
+
+def session_started() -> bool:
+    return _session["started"]
+
+
 def _queued(runtime: Path, reason: str) -> bool:
     try:
         return FileDiagnosticStore(runtime).has_kind(KIND, f"{reason}:")
