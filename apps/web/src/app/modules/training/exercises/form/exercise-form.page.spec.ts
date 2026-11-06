@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { OfflineQueue } from '../../../../core/offline-queue/offline-queue';
 import { QueueStorageFullError } from '../../../../core/offline-queue/outbox-store';
+import { UnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { localExercise } from '../../data/sync/training-test-kit';
 import { catalog, eventually, setupScreen } from '../../shell/screen-test-kit';
 import { ExerciseFormPage } from './exercise-form.page';
@@ -180,6 +181,26 @@ describe('ExerciseFormPage', () => {
       expect(queue).toHaveLength(1);
       expect(queue[0]).toMatchObject({ method: 'PUT', body: { name: 'Remada articulada' } });
       expect(router.url).toContain(saved!.id);
+    });
+
+    it('is no longer unsaved work once saved, before navigating, even if the navigation then fails', async () => {
+      const { fixture, el, router } = await open('/treino/exercicios/novo');
+      const unsaved = TestBed.inject(UnsavedWork);
+      fill(fixture, el, 'Remada articulada', 'middle_back');
+      chooseEquipment(fixture, el, 'Máquina');
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      let dirtyWhileNavigating: boolean | undefined;
+      vi.spyOn(router, 'navigate').mockImplementation(async () => {
+        dirtyWhileNavigating = unsaved.needsConfirmation();
+        // O pedaço de código da ficha sumiu com a versão nova: a navegação não acontece.
+        return false;
+      });
+      button(el, 'Salvar Exercício').click();
+      await vi.waitFor(() => expect(dirtyWhileNavigating).toBeDefined(), { timeout: 3000 });
+
+      expect(dirtyWhileNavigating).toBe(false);
+      expect(unsaved.hasUnsaved()).toBe(false);
     });
 
     it('saves the steps one per line, and the record type that was chosen', async () => {

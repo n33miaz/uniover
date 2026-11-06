@@ -2,7 +2,6 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  ElementRef,
   computed,
   effect,
   inject,
@@ -142,7 +141,7 @@ export class ExerciseFormPage {
 
   constructor() {
     // Editor sujo: a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.dirty(), 'form', inject(ElementRef).nativeElement);
+    registerUnsavedWork(() => this.dirty());
     inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) void this.loadExisting();
     else {
@@ -211,6 +210,8 @@ export class ExerciseFormPage {
       });
       switch (result.status) {
         case 'saved':
+          // Salvo: o formulário deixa de estar sujo antes de navegar (ver o editor de rotinas).
+          this.initial.set(form);
           // A ficha do exercício substitui o formulário no histórico: "voltar" não reabre um formulário já salvo.
           await this.router.navigate(['/treino/exercicios', result.exercise.id], {
             replaceUrl: true,

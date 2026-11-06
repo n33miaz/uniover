@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
+import { UnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { PhysicalAssessmentRepository } from '../../data/physical-assessments/physical-assessment-repository';
 import { eventually, setupScreen } from '../../shell/screen-test-kit';
 import { TRAINING_ROUTES } from '../../training.routes';
@@ -69,6 +71,29 @@ describe('PhysicalAssessmentEditorPage', () => {
     add.click();
     harness.detectChanges();
     expect(saveButton(el).disabled).toBe(false);
+  });
+
+  it('is no longer unsaved work once saved, before navigating, even if the navigation then fails', async () => {
+    const { harness, el } = await open('/treino/corpo/avaliacoes/nova');
+    await eventually({ detectChanges: () => harness.detectChanges() }, () =>
+      expect(saveButton(el)).toBeDefined(),
+    );
+    const unsaved = TestBed.inject(UnsavedWork);
+    type(el, '#origin', 'Clínica sintética');
+    harness.detectChanges();
+    expect(unsaved.needsConfirmation()).toBe(true);
+
+    let dirtyWhileNavigating: boolean | undefined;
+    vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockImplementation(async () => {
+      dirtyWhileNavigating = unsaved.needsConfirmation();
+      // O pedaço de código da ficha sumiu com a versão nova: a navegação não acontece.
+      return false;
+    });
+    saveButton(el).click();
+    await vi.waitFor(() => expect(dirtyWhileNavigating).toBeDefined(), { timeout: 3000 });
+
+    expect(dirtyWhileNavigating).toBe(false);
+    expect(unsaved.hasUnsaved()).toBe(false);
   });
 
   it('opens an existing assessment with Save off, and on after an edit', async () => {
