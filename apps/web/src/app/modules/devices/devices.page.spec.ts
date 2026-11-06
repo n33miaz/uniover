@@ -146,6 +146,7 @@ describe('DevicesPage', () => {
       const { el } = await render();
       const line = el.querySelector('.startup')!;
       expect(line.textContent).toContain('Não conseguiu iniciar: o antivírus bloqueou');
+      expect(line.textContent).toContain('não verificado');
       expect(line.classList.contains('bad')).toBe(true);
       expect(line.querySelector('.startup-mark')?.textContent).toBe('!');
     });

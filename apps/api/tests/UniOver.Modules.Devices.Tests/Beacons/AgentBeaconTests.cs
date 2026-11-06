@@ -22,7 +22,6 @@ public class AgentBeaconTests
         input.Code.Should().Be("crash_loop");
         input.Version.Should().Be("0.42.10+3f2a9c1d4e5b");
         input.Os.Should().Be("windows 11");
-        input.Detail.Should().Be("Saiu com codigo 3 (2 vezes)");
     }
 
     [Fact]
@@ -33,7 +32,6 @@ public class AgentBeaconTests
         input.Should().NotBeNull();
         input!.Version.Should().BeNull();
         input.Os.Should().BeNull();
-        input.Detail.Should().BeNull();
     }
 
     [Theory]
@@ -66,30 +64,16 @@ public class AgentBeaconTests
         input.Should().NotBeNull();
         input!.Version.Should().BeNull();
         input.Os.Should().BeNull();
-        input.Detail.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("C:\\Users\\ana\\agent.log")]
-    [InlineData("/home/ana/.config")]
-    [InlineData("ana@example.com")]
-    [InlineData("https://example.com/x")]
-    [InlineData("token=abc")]
-    [InlineData("uo_dev_short")]
-    [InlineData("Authorization abcdefghijklmnopqrstuvwxyz0123456789")]
-    [InlineData("linha\nnova")]
-    public void ADetailThatCouldCarryASecretOrAPathIsDropped(string detail) =>
-        AgentBeaconParser.CleanDetail(detail).Should().BeNull();
-
     [Fact]
-    public void ADetailIsTrimmedAndCappedAt200()
+    public void ADetailIsAcceptedInTheBody_ButTheParsedBeaconHasNoPlaceForIt()
     {
-        AgentBeaconParser.CleanDetail("  Sem rede  ").Should().Be("Sem rede");
-        AgentBeaconParser.CleanDetail(new string('a', 201)).Should().BeNull();
-        AgentBeaconParser.CleanDetail(string.Join(" ", Enumerable.Repeat("ab", 67))).Should().HaveLength(200);
-        AgentBeaconParser.CleanDetail(string.Join(" ", Enumerable.Repeat("ab", 68))).Should().BeNull();
-        AgentBeaconParser.CleanDetail(null).Should().BeNull();
-        AgentBeaconParser.CleanDetail("   ").Should().BeNull();
+        var input = Parse("""{"stage":"bootstrap","code":"ok","detail":"perfil joao silva maquina ANA-PC"}""");
+
+        input.Should().NotBeNull();
+        typeof(BeaconInput).GetProperties().Select(p => p.Name).Should().NotContain("Detail");
+        typeof(AgentBeacon).GetProperties().Select(p => p.Name).Should().NotContain("LastDetail");
     }
 
     [Fact]
@@ -97,17 +81,17 @@ public class AgentBeaconTests
     {
         var beacon = AgentBeacon.Create(Guid.NewGuid());
 
-        beacon.ApplyBeacon("bootstrap", "ok", null, "1.0", "windows", T0);
+        beacon.ApplyBeacon("bootstrap", "ok", "1.0", "windows", T0);
         beacon.FirstFailAt.Should().BeNull();
 
-        beacon.ApplyBeacon("supervisor", "no_config", null, "1.0", "windows", T0.AddMinutes(1));
+        beacon.ApplyBeacon("supervisor", "no_config", "1.0", "windows", T0.AddMinutes(1));
         beacon.FirstFailAt.Should().Be(T0.AddMinutes(1));
 
-        beacon.ApplyBeacon("supervisor", "crash_loop", null, "1.0", "windows", T0.AddMinutes(9));
+        beacon.ApplyBeacon("supervisor", "crash_loop", "1.0", "windows", T0.AddMinutes(9));
         beacon.FirstFailAt.Should().Be(T0.AddMinutes(1));
         beacon.LastCode.Should().Be("crash_loop");
 
-        beacon.ApplyBeacon("hello_sent", "ok", null, "1.0", "windows", T0.AddMinutes(20));
+        beacon.ApplyBeacon("hello_sent", "ok", "1.0", "windows", T0.AddMinutes(20));
         beacon.FirstFailAt.Should().BeNull();
         beacon.Count.Should().Be(4);
         beacon.Verified.Should().BeFalse();
@@ -120,7 +104,7 @@ public class AgentBeaconTests
         var window = TimeSpan.FromMinutes(5);
         beacon.IsRepeat("bootstrap", "ok", T0, window).Should().BeFalse();
 
-        beacon.ApplyBeacon("bootstrap", "ok", null, null, null, T0);
+        beacon.ApplyBeacon("bootstrap", "ok", null, null, T0);
 
         beacon.IsRepeat("bootstrap", "ok", T0.AddMinutes(4), window).Should().BeTrue();
         beacon.IsRepeat("bootstrap", "ok", T0.AddMinutes(5), window).Should().BeFalse();
@@ -132,7 +116,7 @@ public class AgentBeaconTests
     public void ARejectionKeepsTheBeaconAsItWas()
     {
         var beacon = AgentBeacon.Create(Guid.NewGuid());
-        beacon.ApplyBeacon("bootstrap", "ok", null, null, null, T0);
+        beacon.ApplyBeacon("bootstrap", "ok", null, null, T0);
 
         beacon.ApplyRejection("revoked", T0.AddMinutes(2));
 
@@ -155,6 +139,19 @@ public class AgentBeaconTests
 
         time.Advance(BeaconLimits.Window);
         gate.TryAcceptBeacon(agent).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TheGateHasAGlobalCeilingPerMinute_AndStartsOverAfterTheWindow()
+    {
+        var time = new FakeTimeProvider(T0);
+        var gate = new AgentBeaconGate(time);
+
+        Enumerable.Range(0, BeaconLimits.GlobalPerMinute).Should().AllSatisfy(_ => gate.TryAcceptGlobal().Should().BeTrue());
+        gate.TryAcceptGlobal().Should().BeFalse();
+
+        time.Advance(BeaconLimits.Window);
+        gate.TryAcceptGlobal().Should().BeTrue();
     }
 
     [Fact]
