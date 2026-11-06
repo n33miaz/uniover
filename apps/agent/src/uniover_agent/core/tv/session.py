@@ -610,6 +610,23 @@ class TvSessionManager:
                 self._set_connection("hibernating")
             return await action()
 
+    async def pairing_done(self) -> None:
+        """O pareamento pedido pelo app deu certo: apaga "não pareada" e já tenta abrir a sessão.
+
+        Só isto (ou uma sessão aberta de verdade) tira o estado `not_paired`. Se a abertura falhar,
+        vale o estado que ela deixar: outra recusa volta a `not_paired`; TV sem resposta vira
+        `disconnected`. Não envia tecla. Levanta `TvSessionError` quando a sessão não abriu.
+        """
+        self._certificate_refusals = 0
+        self._last_certificate_refusal_at = None
+        self._reset_backoff()
+        if self._connection == "not_paired":
+            self._connection = (
+                "disconnected" if self._state is SessionState.REPAIRING else "hibernating"
+            )
+            self._emit()
+        await self._ensure_hot(interactive=False)
+
     async def hibernate_if_idle(self) -> bool:
         """Fecha os canais se passou o tempo sem comando; devolve se hibernou."""
         if self._state is not SessionState.HOT or not self._is_idle() or self._keep_hot:
@@ -1028,6 +1045,12 @@ class TvSessionManager:
             self._channel_lost()
 
     def _set_connection(self, connection: Connection) -> None:
+        # `not_paired` só sai quando algo prova o pareamento: uma sessão aberta ("hot") ou um
+        # pareamento novo (`pairing_done`). Reparo, hibernação, TV em standby e rede caída não
+        # provam nada, e sobrescrevê-lo mostraria "conectada" para uma TV que ainda vai recusar a
+        # tecla.
+        if self._connection == "not_paired" and connection != "hot":
+            return
         self._connection = connection
         self._emit()
 
