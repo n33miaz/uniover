@@ -19,6 +19,8 @@ _log = logging.getLogger(__name__)
 BEAT_SECONDS = 60.0
 # Abaixo disto é uma queda comum de conexão, sem nada a explicar.
 LONG_ABSENCE_SECONDS = 180.0
+# Leituras ruins seguidas para a conexão ser dada por parada (a primeira pode ser só o despertar).
+UNHEALTHY_BEATS_TO_ALARM = 2
 
 
 def windows_uptime_seconds() -> float | None:
@@ -61,6 +63,7 @@ class AbsenceDiary:
         self._lost_at: float | None = None
         self._healthy: Callable[[], bool] = lambda: True
         self._withheld = False
+        self._unhealthy_beats = 0
         self.reasons: list[str] = []
 
     def require_healthy(self, healthy: Callable[[], bool]) -> None:
@@ -111,11 +114,16 @@ class AbsenceDiary:
         while True:
             await self._clock.sleep(BEAT_SECONDS)
             if self._healthy():
+                self._unhealthy_beats = 0
                 if self._withheld:
                     self._withheld = False
                     _log.info("a conexão voltou a andar; retomo a marca de vida")
                 self.beat()
-            elif not self._withheld:
+                continue
+            # Ao acordar de uma suspensão o prazo de um passo pode parecer vencido por um instante:
+            # só a segunda leitura seguida (um minuto depois) conta como conexão parada.
+            self._unhealthy_beats += 1
+            if self._unhealthy_beats >= UNHEALTHY_BEATS_TO_ALARM and not self._withheld:
                 self._withheld = True
                 _log.error(
                     "a conexão está parada; sem sinal de vida, o supervisor reinicia o agente"

@@ -570,3 +570,152 @@ def test_a_pulse_file_that_never_existed_cannot_be_faked_on_a_full_disk(
     monkeypatch.setattr(Path, "write_text", full)
     diary.beat()
     assert not path.exists()
+
+
+async def test_a_supervisor_whose_signal_came_back_is_not_killed_by_the_repair(
+    tmp_path: Path,
+) -> None:
+    alive = tmp_path / "supervisor-alive"
+    alive.write_text("x", encoding="ascii")
+    order: list[str] = []
+
+    def kill() -> bool:
+        order.append("kill")
+        return True
+
+    def start(name: str) -> bool:
+        order.append("start")
+        return True
+
+    # Na hora do reparo o sinal já está recente (a verificação o leu velho, o PC acordou).
+    check = supervisor_check(
+        tmp_path,
+        name="teste",
+        now=lambda: alive.stat().st_mtime + 10,
+        start_task=start,
+        kill_supervisor=kill,
+        recheck=0.0,
+    )
+    assert check.repair is not None
+    assert await check.repair() is None
+    assert order == []
+
+
+def spawn_fake_supervisor(runner: Path, marker: Path) -> Any:
+    import subprocess  # noqa: PLC0415
+
+    runner.parent.mkdir(parents=True, exist_ok=True)
+    runner.write_text(
+        "$child = Start-Process -PassThru -WindowStyle Hidden ping "
+        "-ArgumentList '-n','120','127.0.0.1'\n"
+        f"Set-Content -LiteralPath '{marker}' -Value $child.Id\n"
+        "Start-Sleep -Seconds 120\n",
+        encoding="ascii",
+    )
+    powershell = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+    return subprocess.Popen(  # noqa: S603 - PowerShell do sistema; script do próprio teste
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
+        creationflags=0x08000000,
+    )
+
+
+def alive_pid(pid: int) -> bool:
+    import subprocess  # noqa: PLC0415
+
+    done = subprocess.run(  # noqa: S603 - tasklist do sistema
+        [
+            os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "tasklist.exe"),
+            "/FI",
+            f"PID eq {pid}",
+            "/NH",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        creationflags=0x08000000,
+    )
+    return str(pid) in done.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="mata processos do Windows")
+def test_the_real_kill_takes_the_supervisor_and_its_children_and_leaves_the_others(
+    tmp_path: Path,
+) -> None:
+    runner = tmp_path / "UniOver" / "app" / "tools" / "run-agent.ps1"
+    marker = tmp_path / "child.pid"
+    decoy_runner = tmp_path / "Outra" / "app" / "tools" / "run-agent.ps1"
+    decoy_marker = tmp_path / "decoy-child.pid"
+    target = spawn_fake_supervisor(runner, marker)
+    decoy = spawn_fake_supervisor(decoy_runner, decoy_marker)
+    try:
+        end = time.monotonic() + 60
+        while not (marker.exists() and decoy_marker.exists()) and time.monotonic() < end:
+            time.sleep(0.2)
+        assert marker.exists() and decoy_marker.exists(), "os falsos supervisores não subiram"
+        child = int(marker.read_text(encoding="ascii").strip())
+        decoy_child = int(decoy_marker.read_text(encoding="ascii").strip())
+        assert kill_wedged_supervisor(runner) is True
+        assert target.wait(timeout=20) is not None
+        end = time.monotonic() + 20
+        while alive_pid(child) and time.monotonic() < end:
+            time.sleep(0.3)
+        assert not alive_pid(child), "o filho do supervisor sobrou órfão"
+        # Outro supervisor (de outra pasta) e o filho dele seguem vivos.
+        assert decoy.poll() is None and alive_pid(decoy_child)
+    finally:
+        for proc in (target, decoy):
+            if proc.poll() is None:
+                proc.kill()
+        for marker_file in (marker, decoy_marker):
+            if marker_file.exists():
+                import subprocess  # noqa: PLC0415
+
+                subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
+                    [
+                        os.path.join(
+                            os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
+                        ),
+                        "/PID",
+                        marker_file.read_text(encoding="ascii").strip(),
+                        "/F",
+                    ],
+                    capture_output=True,
+                    check=False,
+                    creationflags=0x08000000,
+                )
+
+
+def test_the_stalled_connection_is_only_logged_from_the_second_unhealthy_beat(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Ao acordar de uma suspensão o prazo de um passo parece vencido por um instante: um alarme
+    # falso viraria ocorrência de erro na tela do dono.
+    diary = AbsenceDiary(tmp_path / "last-alive", FakeClock(datetime(2026, 11, 5, tzinfo=UTC)))
+    seen: list[int] = []
+
+    def unhealthy() -> bool:
+        # Quantos alarmes já havia quando a leitura número N foi feita.
+        seen.append(len([r for r in caplog.records if "conexão está parada" in r.getMessage()]))
+        return False
+
+    diary.require_healthy(unhealthy)
+
+    async def beats() -> None:
+        task = asyncio.create_task(diary.run())
+        for _ in range(60):
+            if len(seen) >= 4:
+                break
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    with caplog.at_level("ERROR"):
+        asyncio.run(beats())
+    assert seen[:4] == [0, 0, 1, 1], "o alarme sai na segunda leitura ruim, uma vez só"
