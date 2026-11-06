@@ -1,22 +1,30 @@
-"""Quando alguém usa a TV pelo app: a única hora em que o agente pode abrir uma conexão ADB nova.
+"""Quando alguém está diante da tela da TV no app: a hora de o agente abrir ADB sozinho.
 
 Uma conexão ADB nova a uma TV que perdeu a permissão (reset de fábrica, revogação) faz aparecer o
-aviso "Permitir depuração USB". Sem ninguém usando a TV pelo app, ninguém o veria, então a
-partida, o vigia e as tarefas de fundo só usam um transporte que já está aberto. Dentro de
-`WINDOW_SECONDS` depois de um comando do app que mexe na TV, abrir a conexão é parte do uso.
+aviso "Permitir depuração USB". Sem ninguém diante da tela da TV no app ninguém o veria, então a
+partida, o vigia e as tarefas de fundo só usam um transporte que já está aberto.
+
+O sinal é **explícito**: `tv.presence.v1`, que a tela da TV manda enquanto está visível. O tipo de
+um comando não prova ninguém (o atalho do iPhone e o desligamento agendado mandam teclas e abrem
+apps sem pessoa na tela), então tecla, texto e afins não contam. Dentro de `WINDOW_SECONDS` depois
+de um sinal, abrir a conexão é parte do uso. Os pedidos da pessoa que já levam a marca de
+`user_initiated_adb` (Atualizar lista, TV Livre) não dependem deste sinal.
 """
 
 from collections.abc import Callable
 from typing import Final
 
-from uniover_agent.core.domain import Command, CommandResult
+from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import Handler
 
 WINDOW_SECONDS: Final = 60.0
+# Declarada no `agent.hello.v1`: a API só manda `tv.presence.v1` a quem a tem.
+PRESENCE_CAPABILITY: Final = "tv.presence.v1"
+PRESENCE_TYPE: Final = "tv.presence.v1"
 
 
 class UserActivity:
-    """A última vez que um comando de uso chegou do app para esta TV."""
+    """O último sinal de presença que chegou do app para esta TV."""
 
     def __init__(
         self, monotonic: Callable[[], float], window_seconds: float = WINDOW_SECONDS
@@ -32,11 +40,11 @@ class UserActivity:
         return self._last is not None and self._monotonic() - self._last <= self._window
 
 
-def touching(handler: Handler, activity: UserActivity) -> Handler:
-    """Marca o uso da TV antes de atender o comando."""
+def tv_presence_handler(activity: UserActivity) -> Handler:
+    """`tv.presence.v1`: alguém está na tela da TV. Sem resposta (a API não a espera)."""
 
     async def handle(command: Command) -> CommandResult:
         activity.touch()
-        return await handler(command)
+        return CommandResult(command.id, ResultStatus.OK)
 
     return handle

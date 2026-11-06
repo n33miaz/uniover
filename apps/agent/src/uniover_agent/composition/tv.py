@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys, resolve_tv_mac
 from uniover_agent.adapters.apk_tools import (
@@ -60,6 +60,8 @@ from uniover_agent.core import (
     DISCOVERY_CAPABILITY,
     PERMISSION_CAPABILITY,
     POWER_OFF_CAPABILITY,
+    PRESENCE_CAPABILITY,
+    PRESENCE_TYPE,
     SAMSUNG_MAINTENANCE_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
@@ -85,7 +87,6 @@ from uniover_agent.core import (
     TvWatchdog,
     UserActivity,
     WatchdogEvents,
-    touching,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
@@ -93,6 +94,7 @@ from uniover_agent.core import (
     tv_discover_handler,
     tv_key_handler,
     tv_power_off_handler,
+    tv_presence_handler,
     tv_text_handler,
     tv_wake_handler,
     unsupported_handler,
@@ -145,6 +147,8 @@ class TvSetup:
     text: TextReconciler | None = None
     # Comandos longos, atendidos em tarefa própria para não segurar as teclas atrás deles.
     background_commands: set[str] = field(default_factory=set)
+    # Comandos executados sem resposta (a API não a espera: a presença chega a cada 20 s).
+    silent_commands: set[str] = field(default_factory=set)
     # O que se sabe da TV (dica de identificador e MAC): o vigia do endereço e o Wake-on-LAN usam.
     known: TvKnown = field(default_factory=TvKnown)
     # O vigia do serviço do controle (só Android TV com `adb`): quem vê uma porta recusada o avisa.
@@ -159,23 +163,6 @@ class TvSetup:
     closers: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
 
 
-# Comandos que o app manda quando alguém usa a TV (tecla, texto, abrir app, lista, limpeza manual,
-# TV Livre). Ficam de fora os que o servidor também manda sozinho (energia agendada, configuração
-# da limpeza, `wake`): esses não provam ninguém diante da TV.
-USER_COMMANDS: Final = frozenset(
-    {
-        "tv.key.v1",
-        "tv.text.v1",
-        "tv.app.launch.v1",
-        "tv.apps.refresh.v1",
-        "tv.cleanup.v1",
-        "tv.livre.v1",
-        "tv.livre.photo.v1",
-        "tv.discover.v1",
-    }
-)
-
-
 def build_tv(
     settings: Settings,
     clock: Clock,
@@ -187,10 +174,6 @@ def build_tv(
     setup = build_driver_setup(settings, clock, transport, envelopes, secrets)
     if setup is not None:
         attach_discovery(setup, settings)
-        if setup.activity is None:
-            setup.activity = UserActivity(clock.monotonic)
-        for name in USER_COMMANDS & setup.handlers.keys():
-            setup.handlers[name] = touching(setup.handlers[name], setup.activity)
     return setup
 
 
@@ -663,10 +646,14 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             "lista de apps e abertura por pacote ficam desligadas"
         )
         return None
-    # Quando alguém usa a TV pelo app: a única hora em que uma conexão ADB nova pode ser aberta
-    # por um caminho automático (ver `AdbTv._may_connect`).
+    # Quando alguém está diante da tela da TV no app: a única hora em que um caminho automático
+    # pode abrir uma conexão ADB nova (ver `AdbTv._may_connect`). O sinal é só `tv.presence.v1`: o
+    # tipo de um comando não prova ninguém (o atalho do iPhone e o desligamento agendado mandam
+    # teclas sem pessoa na tela).
     if setup.activity is None:
         setup.activity = UserActivity(clock.monotonic)
+    setup.handlers[PRESENCE_TYPE] = tv_presence_handler(setup.activity)
+    setup.silent_commands.add(PRESENCE_TYPE)
     adb = build_adb(path, host, settings, setup.activity.recent, monotonic=clock.monotonic)
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
@@ -744,6 +731,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         if "tv.adb" in setup.capabilities:
             return
         setup.capabilities.append("tv.adb")
+        setup.capabilities.append(PRESENCE_CAPABILITY)
         # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
         setup.capabilities.append("tv.cleanup.automatic.v1")
         # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema
