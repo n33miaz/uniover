@@ -474,13 +474,16 @@ nunca abre uma conexão ADB nova com uma TV que ainda não deu e provou a permis
 o faz (**Atualizar lista** e as ações do TV Livre; ler o estado do TV Livre não conta). A marca do pedido pertence à
 tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
 
-- **Só com alguém usando a TV pelo app.** Mesmo com a permissão provada, um caminho automático só abre uma
-  conexão ADB **nova** até 60 s depois de um comando de uso que chegou do app para esta TV (tecla, texto, abrir app,
-  Atualizar lista, limpeza manual, TV Livre, procura de TVs). Fora disso (partida do agente, vigia, limpeza e foco
-  automáticos, ícones) o ADB só usa um transporte que já está aberto. Assim, depois de um reset de fábrica o aviso só
-  pode aparecer com a pessoa diante da TV. `tv.wake.v1`, a energia agendada e a configuração da limpeza não contam:
-  o servidor também as manda sozinho. Não há mais contato periódico (o vencimento de 7 dias é desligado na primeira
-  permissão, e qualquer uso do app conecta de novo).
+- **Só logo depois de alguém tocar na tela da TV no app.** Mesmo com a permissão provada, um caminho automático
+  só abre uma conexão ADB **nova** até 60 s depois de um `tv.presence.v1`. A tela da TV o manda **só quando alguém
+  toca nela** (toque ou tecla, no máximo um a cada 5 s) e antes de abrir um app ou limpar a TV; **nunca por tempo**,
+  então uma aba visível e esquecida num monitor ou num tablet fixo não mantém janela nenhuma aberta. Tecla, texto,
+  atalho do iPhone, `tv.wake.v1`, energia agendada e configuração da limpeza, sozinhos, **não** contam: o servidor
+  ou um atalho sem pessoa na tela também os manda. Fora da janela (partida do agente, vigia, limpeza e foco
+  automáticos, ícones) o ADB só usa um transporte que já está aberto; a recusa tem código próprio, `adb_idle` (não
+  é "a TV não deu a permissão"). Os pedidos que levam a marca de pedido da pessoa (**Atualizar lista**, TV Livre)
+  abrem a conexão sem depender do sinal. Não há contato periódico: o vencimento de 7 dias é desligado na primeira
+  permissão (de novo em cada permissão nova, depois de um reset), e qualquer conexão ADB zera a contagem.
 - **A chave.** O `adb` do PC assina com `adbkey`, da pasta `.android` do usuário (no Windows ela não muda por
   variável de ambiente, e o aviso da TV sempre oferece essa chave). Cada chave válida é copiada para
   `tv/.adb-key/<resumo>/`, pasta restrita ao usuário, na instalação (atualização e reinstalação não a tocam).
@@ -497,7 +500,7 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   aberto e fechado na porta 5555 popula a tabela e não inicia aperto de mão) e o serial do aparelho. O agente só
   conecta sozinho com `verified` **e** a mesma chave, o mesmo endereço e o mesmo MAC. Outro `tv_host`, outro
   aparelho no mesmo IP ou outra chave fecham a porta. TV que não atende na rede dá `adb_unreachable` sem chamar o
-  `adb`. Se uma conexão automática (dentro dos 60 s de uso) voltar `unauthorized` (reset de fábrica, permissão
+  `adb`. Se uma conexão automática (dentro dos 60 s do último toque) voltar `unauthorized` (reset de fábrica, permissão
   revogada), o registro vira `needs_user` na hora, em disco: vale **uma** tentativa, com a pessoa diante da TV, e
   depois nenhuma, nem depois de reiniciar o agente, até um toque da pessoa.
 - **A capacidade `tv.adb` vai sempre ao `hello`** quando há `adb` neste PC, com ou sem permissão: o app só mostra
@@ -511,7 +514,8 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   registra `granted`, roda `settings put global adb_allowed_connection_time 0` (confere com `settings get`) e anota o
   serial (`getprop ro.serialno`, uma leitura de shell: em transporte TCP o `adb get-serialno` devolve só `host:porta`;
   não conferido na TV real), tudo sobre o transporte já autorizado. O Android 11+ revoga a permissão do ADB
-  que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); são até 3 tentativas.
+  que ficou 7 dias sem uso, e `0` desliga esse vencimento (AOSP, `AdbDebuggingManager`); só a resposta da TV conta como tentativa (3 recusas dela encerram o ajuste), nunca tempo
+  esgotado ou transporte caído.
 - **A prova.** Um "Permitir" sem "Sempre permitir" vale só para aquela conexão. Por isso `granted` ainda não deixa o
   agente conectar sozinho: o **toque seguinte** em **Atualizar lista** faz `disconnect` e `connect` e, se a TV
   atender sem aviso, o registro vira `verified`. Se o aviso voltar, é nesse toque, com a pessoa na TV, e nada é
