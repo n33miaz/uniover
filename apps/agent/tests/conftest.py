@@ -40,7 +40,13 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
     async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
         return frozenset(
-            {"agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired", "tv.presence.v1"}
+            {
+                "agent.diagnostics.v1",
+                "tv.pair.v1",
+                "tv.state.not_paired",
+                "tv.state.waking",
+                "tv.presence.v1",
+            }
         )
 
     async def no_info(host: str) -> None:

@@ -305,11 +305,18 @@ async def test_a_failed_text_does_not_block_the_next_one() -> None:
 # --- publicação do estado ---------------------------------------------------------------------
 
 
-def make_publisher(*, reports_not_paired: bool = True) -> tuple[TvStatePublisher, FakeTransport]:
+def make_publisher(
+    *, reports_not_paired: bool = True, reports_waking: bool = True
+) -> tuple[TvStatePublisher, FakeTransport]:
     transport = FakeTransport()
     envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), FakeClock())
     return (
-        TvStatePublisher(transport, envelopes, reports_not_paired=lambda: reports_not_paired),
+        TvStatePublisher(
+            transport,
+            envelopes,
+            reports_not_paired=lambda: reports_not_paired,
+            reports_waking=lambda: reports_waking,
+        ),
         transport,
     )
 
@@ -328,6 +335,23 @@ async def test_publisher_tells_an_older_api_disconnected_instead_of_not_paired()
         await asyncio.sleep(0)
     await publisher.aclose()
     assert [m["body"]["connection"] for m in transport.sent] == ["disconnected", "disconnected"]
+
+
+async def test_publisher_tells_an_api_that_accepts_it_that_the_tv_is_waking() -> None:
+    publisher, transport = make_publisher()
+    await publisher.announce(TvState("unknown", None, None, "hibernating", waking=True))
+    assert transport.sent[0]["body"]["connection"] == "waking"
+
+
+async def test_publisher_keeps_the_old_state_for_an_api_that_does_not_know_waking() -> None:
+    publisher, transport = make_publisher(reports_waking=False)
+    await publisher.announce(TvState("unknown", None, None, "hibernating", waking=True))
+    publisher.publish(TvState("unknown", None, None, "disconnected", waking=True))
+    for _ in range(3):
+        await asyncio.sleep(0)
+    await publisher.aclose()
+    # Exatamente o que se mandava antes de existir "ligando": a conexão da sessão, sem o novo valor.
+    assert [m["body"]["connection"] for m in transport.sent] == ["hibernating", "disconnected"]
 
 
 async def test_publisher_sends_a_valid_state_message() -> None:

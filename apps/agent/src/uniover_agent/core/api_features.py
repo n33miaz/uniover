@@ -21,6 +21,8 @@ FIRST_RETRY_SECONDS: Final = 15.0
 FEATURES_TIMEOUT_SECONDS: Final = 3.0
 # A API aceita `tv.state.v1` com `connection: not_paired` (uma anterior recusaria o estado).
 NOT_PAIRED_FEATURE: Final = "tv.state.not_paired"
+# A API aceita `tv.state.v1` com `connection: waking` (a TV está ligando; uma anterior o recusaria).
+WAKING_FEATURE: Final = "tv.state.waking"
 
 
 class ApiFeatures:

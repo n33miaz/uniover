@@ -203,6 +203,9 @@ class TvSessionManager:
         self._channels: list[_Registered] = [_Registered(remote, required=True)]
         self._state = SessionState.HIBERNATING
         self._connection: Connection = "hibernating"
+        # A TV não respondeu à primeira tentativa de uma abertura pedida por alguém (comando ou
+        # "acordar"): é o "TV ligando" que a tela mostra no lugar de um erro. Ver `_warm`.
+        self._waking = False
         self._power: bool | None = None
         self._volume: int | None = None
         self._remote_volume_seen = False
@@ -255,7 +258,14 @@ class TvSessionManager:
         power: Power = "unknown"
         if self._connection == "hot" and self._power is not None:
             power = "on" if self._power else "off"
-        return TvState(power, self._volume, self._app, self._connection)
+        # "Ligando" só enquanto a abertura que alguém pediu segue sem resposta da TV. Pareamento
+        # pendente tem a vez: uma TV sem par não está ligando.
+        waking = (
+            self._waking
+            and self._state is SessionState.WARMING
+            and self._connection != "not_paired"
+        )
+        return TvState(power, self._volume, self._app, self._connection, waking)
 
     @property
     def remote_volume_seen(self) -> bool:
@@ -767,6 +777,19 @@ class TvSessionManager:
                     self._state = SessionState.HIBERNATING
                     self._set_connection("disconnected")
                 raise
+            finally:
+                # Abriu, desistiu ou foi cortada: a TV deixou de estar "ligando".
+                self._end_waking()
+
+    def _begin_waking(self) -> None:
+        if not self._waking:
+            self._waking = True
+            self._emit()
+
+    def _end_waking(self) -> None:
+        if self._waking:
+            self._waking = False
+            self._emit()
 
     def _raise_if_cooling_down(self, *, interactive: bool) -> None:
         """TV offline e ainda dentro da espera: falha na hora, sem tocar na rede."""
@@ -807,6 +830,11 @@ class TvSessionManager:
                 if delay is None:
                     await self._give_up(TV_UNREACHABLE, str(exc))
                 _log.debug("TV não respondeu (tentativa %d): %s", attempt, exc)
+                if interactive:
+                    # Alguém espera por esta abertura e a TV ainda não atendeu: está ligando. Só
+                    # agora, e não ao começar: a volta da hibernação leva menos de um segundo e
+                    # piscaria "TV ligando" a cada toque.
+                    self._begin_waking()
                 await self._clock.sleep(delay)
                 self._raise_if_repairing()
             else:

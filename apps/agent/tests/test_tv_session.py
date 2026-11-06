@@ -691,3 +691,123 @@ async def test_an_opening_that_never_returns_ends_as_offline_and_frees_the_lock(
     with pytest.raises(TvSessionError):
         await manager.wake()
     assert remote.connects == 1  # a espera crescente evitou nova tentativa na hora
+
+
+# --- "TV ligando": a abertura que alguém pediu e a TV ainda não atendeu --------------------------
+
+
+def wakings(rig: Rig) -> list[tuple[str, bool]]:
+    """O que se publicou: a conexão e se a TV estava ligando, na ordem."""
+    return [(state.connection, state.waking) for state in rig.states]
+
+
+async def test_a_command_that_finds_the_tv_slow_to_answer_publishes_waking_until_it_opens() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvUnreachable("a"), TvUnreachable("b")]
+
+    await rig.manager.send_key("HOME")
+
+    # Ligando só depois da primeira tentativa sem resposta, e uma vez só (não a cada espera).
+    assert wakings(rig) == [("hibernating", True), ("hot", False)]
+    assert rig.manager.snapshot().waking is False
+    assert rig.remote.keys == ["HOME"]
+
+
+async def test_the_usual_fast_wake_up_never_flashes_waking() -> None:
+    rig = Rig()
+
+    await rig.manager.send_key("HOME")
+
+    assert wakings(rig) == [("hot", False)]
+
+
+async def test_prewarming_and_background_reopenings_never_say_the_tv_is_waking() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvUnreachable("a")]
+    await rig.manager.wake()  # o app abre a tela do controle: ninguém tocou em nada
+    assert wakings(rig) == [("hot", False)]
+
+    rig = Rig()
+    rig.remote.connect_errors = [TvUnreachable("a")]
+    await rig.manager.reopen_unattended()
+    assert wakings(rig) == [("hot", False)]
+
+
+async def test_waking_ends_as_disconnected_when_the_tv_never_answers() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvUnreachable("sem resposta") for _ in range(4)]
+
+    with pytest.raises(TvSessionError):
+        await rig.manager.send_key("HOME")
+
+    assert wakings(rig) == [("hibernating", True), ("disconnected", False)]
+    assert rig.manager.snapshot().waking is False
+
+
+class SlowSecondTry(FakeTvRemote):
+    """A primeira tentativa não tem resposta; a segunda nunca volta."""
+
+    async def connect(self) -> None:
+        self.connects += 1
+        if self.connects == 1:
+            raise TvUnreachable("sem resposta")
+        await asyncio.Event().wait()
+
+
+async def test_waking_ends_when_the_opening_runs_out_of_time() -> None:
+    clock = FakeClock()
+    manager = TvSessionManager(clock, SlowSecondTry(), warm_timeout_seconds=0.05)
+    seen: list[TvState] = []
+    manager.subscribe(seen.append)
+
+    with pytest.raises(TvSessionError) as caught:
+        await manager.send_key("HOME")
+
+    assert caught.value.code == TV_UNREACHABLE
+    assert [(state.connection, state.waking) for state in seen] == [
+        ("hibernating", True),
+        ("disconnected", False),
+    ]
+
+
+async def test_waking_is_cleared_when_the_opening_is_cancelled() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvUnreachable("a")]
+    task = asyncio.create_task(rig.manager.send_key("HOME"))
+    # Deixa a primeira tentativa falhar e a abertura entrar na espera.
+    for _ in range(3):
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert rig.manager.snapshot().waking is False
+    assert state_of(rig.manager) is SessionState.HIBERNATING
+
+
+async def test_an_unpaired_tv_is_not_waking() -> None:
+    rig = Rig()
+    await refused_until_not_paired(rig)
+    rig.manager._reset_backoff()  # a espera crescente já passou
+    rig.states.clear()
+    rig.remote.connect_errors = [TvUnreachable("a"), TvUnreachable("b")]
+
+    await rig.manager.send_key("HOME")
+
+    assert rig.clock.sleeps[-2:] == [1.0, 2.0], "abriu depois de duas tentativas sem resposta"
+    assert all(not waking for _, waking in wakings(rig))
+    assert rig.manager.snapshot().connection == "hot"
+
+
+async def test_the_repair_taking_over_ends_waking() -> None:
+    rig = Rig()
+    rig.remote.connect_errors = [TvPortClosed("a"), TvPortClosed("b")]
+
+    def take_over() -> None:
+        rig.manager.mark_repairing()
+
+    rig.manager.on_needs_repair(take_over)
+    with pytest.raises(TvSessionError):
+        await rig.manager.send_key("HOME")
+
+    assert rig.manager.snapshot().waking is False
