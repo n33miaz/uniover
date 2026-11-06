@@ -9,11 +9,16 @@ public sealed class TvModuleOptions
 
     public string Version { get; set; } = "0.0.0";
 
-    /// <summary>Tempo que a API espera o agente responder a um comando.</summary>
+    /// <summary>Tempo que a API espera o agente responder a um comando com a sessão com a TV aberta.</summary>
     public int CommandTimeoutSeconds { get; set; } = 8;
 
-    /// <summary>Maior, para quando a sessão com a TV está dormindo: o agente reconecta (1, 2, 4 s) antes de responder.</summary>
-    public int HibernatingTimeoutSeconds { get; set; } = 15;
+    /// <summary>
+    /// Maior, para quando a sessão com a TV não está aberta (dormindo, caída ou ligando): o agente reabre antes de responder
+    /// (1, 2 e 4 s de espera entre as tentativas, e no máximo 20 s no total: <c>tv_session_warm_timeout_seconds</c> do agente).
+    /// Tem de passar desse máximo com folga, senão a API desiste de um comando que o agente ainda está executando de
+    /// forma legítima e a pessoa vê um erro com a TV a segundos de responder.
+    /// </summary>
+    public int HibernatingTimeoutSeconds { get; set; } = 25;
 
     /// <summary>
     /// Tempo que a API espera a limpeza da TV. É maior que o dos outros comandos: o agente fecha apps e mede a memória
@@ -23,10 +28,11 @@ public sealed class TvModuleOptions
 
     /// <summary>
     /// Tempo que a API espera o desligamento com leitura. É o maior dos comandos de uma tecla: o agente pode abrir a sessão
-    /// (1, 2 e 4 s de espera), ler a energia, apertar <c>POWER</c> uma vez e esperar a confirmação, e sem confirmação ele não
+    /// (até 20 s), ler a energia (2 s), apertar <c>POWER</c> uma vez e esperar a confirmação (5 s), e sem confirmação ele não
     /// repete a tecla. Responder a tempo importa: um 504 depois de a tecla ter saído levaria a pessoa a repetir o pedido.
+    /// Por isso passa do tempo de abertura (<see cref="HibernatingTimeoutSeconds"/>) pela leitura e pela confirmação.
     /// </summary>
-    public int PowerOffTimeoutSeconds { get; set; } = 25;
+    public int PowerOffTimeoutSeconds { get; set; } = 30;
 
     /// <summary>
     /// Tempo que a API espera um passo do TV Livre. Instalar, definir como padrão e voltar ao original levam dezenas de
@@ -58,7 +64,7 @@ public sealed class TvModuleOptions
     {
         ArgumentNullException.ThrowIfNull(options);
         return options.CommandTimeoutSeconds > 0
-            && options.HibernatingTimeoutSeconds > 0
+            && options.HibernatingTimeoutSeconds >= options.CommandTimeoutSeconds
             && options.CleanupTimeoutSeconds > 0
             && options.PowerOffTimeoutSeconds > 0
             && options.LivreTimeoutSeconds > 0
