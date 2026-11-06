@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 
@@ -76,6 +77,10 @@ internal sealed class SiriTokensHandler(TvDbContext db, ITvCommandAudit audit, T
             return (null, CreateSiriTokenFailure.Invalid);
         }
 
+        // A TV fica bloqueada até o commit: uma remoção em andamento termina antes e então a chave não é criada para uma TV
+        // que já não existe (ela sobraria órfã, e válida, depois da limpeza da remoção).
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await TvRowLock.LockAsync(db, tvId, cancellationToken);
         var tv = await db.Tvs.AsNoTracking().SingleOrDefaultAsync(t => t.Id == tvId, cancellationToken);
         if (tv is null)
         {
@@ -113,6 +118,7 @@ internal sealed class SiriTokensHandler(TvDbContext db, ITvCommandAudit audit, T
                 origin.UserId, tv.AgentSlug, TvCommandNames.SiriTokenCreate, token.Name, ok: true, errorCode: null, latencyMs: null,
                 origin.Client, now, tvId),
             cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return (new CreatedSiriToken(token.Id, token.Name, tvId, token.Actions, token.CreatedAt, token.ExpiresAt, secret), null);
     }

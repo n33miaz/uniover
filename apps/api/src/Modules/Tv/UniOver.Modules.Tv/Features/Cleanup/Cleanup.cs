@@ -11,6 +11,7 @@ using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Selection;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Ports;
 using UniOver.Modules.Tv.Persistence;
 
@@ -77,11 +78,16 @@ internal sealed class CleanupHandler(
         var report = await ticket.WaitAsync(ReportGrace, cancellationToken);
         if (report is not null && db is not null && time is not null)
         {
-            db.CleanupReports.Add(CleanupReportEntry.Completed(
-                command.TvId, "manual", "manual", startedAt ?? time.GetUtcNow(), (int)outcome.Latency.TotalMilliseconds,
-                report.MemoryBeforeMb, report.MemoryAfterMb, report.ClosedApps,
-                JsonSerializer.Serialize(report.ClosedPackages ?? [])));
-            await db.SaveChangesAsync(cancellationToken);
+            // A espera pelo agente já passou: a TV pode ter sido removida nela. Só o INSERT fica sob o bloqueio da TV; sem ela
+            // o relatório seria uma linha órfã de uma TV que prometia ter os dados apagados.
+            await TvRowLock.WriteIfPresentAsync(db, command.TvId, async () =>
+            {
+                db.CleanupReports.Add(CleanupReportEntry.Completed(
+                    command.TvId, "manual", "manual", startedAt ?? time.GetUtcNow(), (int)outcome.Latency.TotalMilliseconds,
+                    report.MemoryBeforeMb, report.MemoryAfterMb, report.ClosedApps,
+                    JsonSerializer.Serialize(report.ClosedPackages ?? [])));
+                await db.SaveChangesAsync(cancellationToken);
+            }, cancellationToken);
         }
         return new CleanupResult(false, outcome, report);
     }

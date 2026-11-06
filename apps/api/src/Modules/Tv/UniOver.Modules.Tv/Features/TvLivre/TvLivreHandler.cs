@@ -7,6 +7,7 @@ using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Selection;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 using UniOver.SharedKernel;
@@ -79,17 +80,24 @@ internal sealed class TvLivreHandler(
     public async Task SaveConfigAsync(LivreConfig config, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(config);
-        var entry = await store.EnsureAsync(TvId, cancellationToken);
-        entry.SaveConfig(LivreConfigValidator.Serialize(LivreConfigValidator.Normalize(config)), time.GetUtcNow());
-        await db.SaveChangesAsync(cancellationToken);
+        // Sob o bloqueio da TV: uma remoção em andamento termina antes e então não se recria a linha dela. TV já removida: nada a guardar.
+        await TvRowLock.WriteIfPresentAsync(db, TvId, async () =>
+        {
+            var entry = await store.EnsureAsync(TvId, cancellationToken);
+            entry.SaveConfig(LivreConfigValidator.Serialize(LivreConfigValidator.Normalize(config)), time.GetUtcNow());
+            await db.SaveChangesAsync(cancellationToken);
+        }, cancellationToken);
     }
 
     public async Task SavePhotoAsync(byte[] photo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(photo);
-        var entry = await store.EnsureAsync(TvId, cancellationToken);
-        entry.SavePhoto(photo, LivrePhoto.Sha256Hex(photo), time.GetUtcNow());
-        await db.SaveChangesAsync(cancellationToken);
+        await TvRowLock.WriteIfPresentAsync(db, TvId, async () =>
+        {
+            var entry = await store.EnsureAsync(TvId, cancellationToken);
+            entry.SavePhoto(photo, LivrePhoto.Sha256Hex(photo), time.GetUtcNow());
+            await db.SaveChangesAsync(cancellationToken);
+        }, cancellationToken);
     }
 
     public async Task<(byte[] Data, string Sha256)?> ReadPhotoAsync(CancellationToken cancellationToken)
@@ -180,7 +188,13 @@ internal sealed class TvLivreHandler(
             }
         }
 
-        var revision = await store.NextRevisionAsync(tvId, cancellationToken);
+        // A reserva cria a linha da TV se faltar: sob o bloqueio da TV, para não recriá-la depois de uma remoção.
+        var revision = 0;
+        if (!await TvRowLock.WriteIfPresentAsync(
+                db, tvId, async () => revision = await store.NextRevisionAsync(tvId, cancellationToken), cancellationToken))
+        {
+            return LivreStep.Unsupported;
+        }
 
         var outcome = await runner.RunAsync(
             origin,
