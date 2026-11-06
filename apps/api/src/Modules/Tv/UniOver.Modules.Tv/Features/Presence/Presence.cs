@@ -11,9 +11,14 @@ using UniOver.Modules.Tv.Features.Commands;
 
 namespace UniOver.Modules.Tv.Features.Presence;
 
+/// <summary>A reserva de um sinal: guarda o instante anterior para devolvê-lo se a entrega falhar.</summary>
+internal readonly record struct PresenceTicket(string AgentSlug, long Now, long? Previous);
+
 /// <summary>
 /// Deixa passar no máximo um sinal de presença por agente a cada <see cref="MinInterval"/>, não importa quantas abas ou
-/// pessoas o mandem: o agente só precisa saber que alguém está na tela, e uma rajada só encheria o canal dele.
+/// pessoas o mandem: o agente só precisa saber que alguém está na tela, e uma rajada só encheria o canal dele. O sinal só
+/// conta como "passou" se foi **entregue**: <see cref="Undo"/> devolve a reserva quando a entrega falha, para o sinal
+/// seguinte (daqui a pouco) não ser descartado por um que nunca chegou ao agente.
 /// </summary>
 internal sealed class PresenceThrottle(TimeProvider time)
 {
@@ -21,7 +26,7 @@ internal sealed class PresenceThrottle(TimeProvider time)
 
     private readonly ConcurrentDictionary<string, long> last = new(StringComparer.Ordinal);
 
-    public bool TryPass(string agentSlug)
+    public PresenceTicket? TryPass(string agentSlug)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentSlug);
 
@@ -32,7 +37,7 @@ internal sealed class PresenceThrottle(TimeProvider time)
             {
                 if (last.TryAdd(agentSlug, now))
                 {
-                    return true;
+                    return new PresenceTicket(agentSlug, now, null);
                 }
 
                 continue;
@@ -40,13 +45,26 @@ internal sealed class PresenceThrottle(TimeProvider time)
 
             if (time.GetElapsedTime(previous, now) < MinInterval)
             {
-                return false;
+                return null;
             }
 
             if (last.TryUpdate(agentSlug, now, previous))
             {
-                return true;
+                return new PresenceTicket(agentSlug, now, previous);
             }
+        }
+    }
+
+    /// <summary>Devolve a reserva (só se ninguém mais passou nesse meio tempo).</summary>
+    public void Undo(PresenceTicket ticket)
+    {
+        if (ticket.Previous is { } previous)
+        {
+            last.TryUpdate(ticket.AgentSlug, previous, ticket.Now);
+        }
+        else
+        {
+            last.TryRemove(new KeyValuePair<string, long>(ticket.AgentSlug, ticket.Now));
         }
     }
 }
@@ -71,13 +89,14 @@ internal sealed class PresenceHandler(TvCommandRunner runner, IAgentPresenceRead
         if (string.IsNullOrWhiteSpace(agentId)
             || presence.Get(agentId) is not { } info
             || !info.Capabilities.Contains(TvCapabilities.PresenceV1, StringComparer.Ordinal)
-            || !throttle.TryPass(agentId))
+            || throttle.TryPass(agentId) is not { } ticket)
         {
             return;
         }
 
-        // Falha de entrega não é problema de quem só avisa que está olhando: o próximo sinal tenta de novo.
-        _ = await runner.RunAsync(
+        // Falha de entrega não é problema de quem só avisa que está olhando, mas o sinal que não chegou ao agente não
+        // pode ocupar o intervalo: a reserva volta e o próximo tenta de novo.
+        var outcome = await runner.RunAsync(
             origin,
             CommandName,
             null,
@@ -85,6 +104,10 @@ internal sealed class PresenceHandler(TvCommandRunner runner, IAgentPresenceRead
             waitForReply: false,
             cancellationToken: cancellationToken,
             auditCommand: false);
+        if (!outcome.IsDelivered)
+        {
+            throttle.Undo(ticket);
+        }
     }
 }
 
