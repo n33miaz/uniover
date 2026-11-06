@@ -83,8 +83,6 @@ export function stageLabel(stage: string): string | null {
 /** Por que o servidor recusou a conexão. */
 export function rejectionText(reason: string): string {
   switch (reason) {
-    case 'revoked':
-      return $localize`:@@devices.startup.reject.revoked:Credencial revogada`;
     case 'protocol':
       return $localize`:@@devices.startup.reject.protocol:Versão do agente recusada`;
     default:
