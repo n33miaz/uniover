@@ -20,6 +20,7 @@ import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
+import { unsavedWorkInterceptor } from './core/pwa/unsaved-work';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -33,7 +34,12 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(
       withFetch(),
       // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.
-      withInterceptors([connectivityInterceptor, authInterceptor, idempotencyInterceptor]),
+      withInterceptors([
+        connectivityInterceptor,
+        unsavedWorkInterceptor,
+        authInterceptor,
+        idempotencyInterceptor,
+      ]),
     ),
     // Registra o service worker sem segurar a primeira tela (só em produção).
     provideAppInitializer(() => inject(PwaUpdateService).start()),

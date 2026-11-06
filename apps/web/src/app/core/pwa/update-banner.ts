@@ -31,10 +31,10 @@ import { PwaUpdateService } from './pwa-update.service';
               <button
                 type="button"
                 class="action ui-tap"
-                [disabled]="pwa.applyingUpdate()"
+                [disabled]="pwa.applyingUpdate() || pwa.updateDeciding()"
                 (click)="pwa.applyUpdate()"
               >
-                @if (pwa.applyingUpdate()) {
+                @if (pwa.applyingUpdate() || pwa.updateDeciding()) {
                   <span i18n="@@pwa.updating">Atualizando…</span>
                 } @else {
                   <span i18n="@@pwa.update">Atualizar</span>
@@ -65,8 +65,8 @@ import { PwaUpdateService } from './pwa-update.service';
           <h2 id="update-confirm-title" i18n="@@pwa.update-confirm-title">Atualizar agora?</h2>
           @if (kind === 'other-tab') {
             <p id="update-confirm-text" i18n="@@pwa.update-confirm-other-tab">
-              Outra aba aberta tem algo não salvo. Atualizar recarrega todas as abas e esse trabalho
-              se perde.
+              Outra aba aberta tem algo não salvo. Ao atualizar, ela vai precisar salvar e
+              recarregar.
             </p>
           } @else {
             <p id="update-confirm-text" i18n="@@pwa.update-confirm-text">
