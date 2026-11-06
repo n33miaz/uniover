@@ -126,7 +126,7 @@ class TvCleanupScheduler:
 
     def note_session_opened(self, elapsed: float) -> None:
         """A sessão só chega aqui depois de a TV responder; é o ponto seguro do gatilho diário."""
-        today = self._clock.now().date()
+        today = self._today()
         self._last_session_ms = round(elapsed * 1000)
         if self._configuration.light_enabled and self._light_day != today:
             self._pending_light = True
@@ -186,21 +186,36 @@ class TvCleanupScheduler:
 
     async def _run_light(self) -> None:
         started = self._clock.monotonic()
-        today = self._clock.now().date()
+        today = self._today()
         # Os gatilhos (a primeira sessão do dia, uma sessão lenta) só pedem a avaliação: quem decide
-        # é a memória da TV. Sem conseguir lê-la nada é feito, e a avaliação do dia não se perde.
-        needed = await self._light_needed()
-        if needed is not True:
+        # é a memória da TV.
+        try:
+            available = await self._adb.memory_available_mb()
+        except AdbError as exc:
+            # Sem ler a memória nada é feito, e o motivo aparece uma vez por dia (como antes).
+            await self._skip_light_for_the_day(today, exc.code)
+            return
+        if available is None:
+            await self._skip_light_for_the_day(today, "memory-unavailable")
+            return
+        if available >= self._configuration.deep_threshold_mb:
+            _log.info(
+                "limpeza leve dispensada: memória livre %d MB, limite %d MB",
+                available,
+                self._configuration.deep_threshold_mb,
+            )
             self._last_light = self._clock.monotonic()
-            if needed is False:
-                self._mark_light_day(today)
+            self._mark_light_day(today)
             return
         foreground = await self._foreground_when_known()
+        if self._is_focused():
+            # A pessoa deu play durante a espera: a trégua da mídia vale também para a leve.
+            self._pending_light = True
+            return
         if foreground is None:
             # Sem saber qual app poupar a limpeza leve não toca em nenhum, e dizer "concluída" sem
             # ter feito nada era o relatório vazio de sempre.
-            self._last_light = self._clock.monotonic()
-            await self._send_skipped("light", "automatic", "foreground-unverifiable")
+            await self._skip_light_for_the_day(today, "foreground-unverifiable")
             return
         try:
             report = await self._cleanup.run_light(foreground)
@@ -212,22 +227,11 @@ class TvCleanupScheduler:
         self._last_light = self._clock.monotonic()
         await self._send_completed("light", "automatic", started, report)
 
-    async def _light_needed(self) -> bool | None:
-        """A memória livre da TV está abaixo do limite? `None` se não deu para ler."""
-        try:
-            available = await self._adb.memory_available_mb()
-        except AdbError:
-            return None
-        if available is None:
-            return None
-        needed = available < self._configuration.deep_threshold_mb
-        if not needed:
-            _log.info(
-                "limpeza leve dispensada: memória livre %d MB, limite %d MB",
-                available,
-                self._configuration.deep_threshold_mb,
-            )
-        return needed
+    async def _skip_light_for_the_day(self, today: date, reason: str) -> None:
+        """A leve não pôde rodar: um relatório "pulada" e a avaliação do dia fica feita."""
+        self._last_light = self._clock.monotonic()
+        self._mark_light_day(today)
+        await self._send_skipped("light", "automatic", reason)
 
     async def _foreground_when_known(self) -> str | None:
         """O app da frente, esperando um pouco por ele logo depois de a sessão abrir."""
@@ -237,6 +241,10 @@ class TvCleanupScheduler:
                 return package
             await self._clock.sleep(FOREGROUND_POLL_SECONDS)
         return self._foreground()
+
+    def _today(self) -> date:
+        """O dia na hora local do PC: a virada é à meia-noite dele, não às 21h (em UTC)."""
+        return self._clock.now().astimezone().date()
 
     def _mark_light_day(self, day: date) -> None:
         """A avaliação do dia terminou: vale também depois de um reinício do agente."""

@@ -192,7 +192,10 @@ async def test_the_cleanup_day_is_kept_on_disk_so_an_agent_restart_does_not_repe
         return adb.cleanup_log[before:]
 
     first = await session_of_the_day()
-    assert "memory" in first
+    # A limpeza do primeiro dia de fato rodou (não foi dispensada): pediu a redução de memória do
+    # app em segundo plano e poupou o da frente.
+    assert "trim-memory:com.cnvs.apptv" in first
+    assert "trim-memory:com.spotify.tv.android" not in first
     day_file = installation_base() / "runtime" / "cleanup-day.json"
     # O arquivo mora na pasta de instalação (aqui, a de teste), nunca na real do usuário.
     assert tmp_path in day_file.parents

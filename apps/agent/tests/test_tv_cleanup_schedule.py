@@ -1,7 +1,7 @@
 """Agendamento da limpeza automática só com relógio e ADB falsos."""
 
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport, FakeTvAdb
 from uniover_agent.core.envelope_gate import EnvelopeGate
@@ -242,7 +242,7 @@ async def test_light_cleanup_is_dispensed_when_the_tv_has_memory_to_spare() -> N
     assert transport.sent == []
     assert adb.cleanup_log == ["memory"], "só a leitura da memória: nenhum app é tocado"
     # A avaliação do dia terminou (não precisou): um reinício não a repete.
-    assert store.saved == [clock.now().date()]
+    assert store.saved == [clock.now().astimezone().date()]
 
 
 async def test_light_cleanup_runs_when_the_free_memory_is_under_the_threshold() -> None:
@@ -286,17 +286,60 @@ async def test_a_slow_session_does_not_clean_a_tv_that_has_memory() -> None:
     assert transport.sent == []
 
 
-async def test_unreadable_memory_does_nothing_and_keeps_the_day_open() -> None:
+async def test_unreadable_memory_is_reported_once_a_day_with_the_error_code() -> None:
     store = MemoryDayStore()
-    scheduler, adb, transport, _ = make(day_store=store)
+    scheduler, adb, transport, clock = make(day_store=store)
     adb.cleanup_errors = {"memory": AdbError("sem resposta")}
     scheduler.configure(True, False, 160)
     scheduler.note_session_opened(1)
 
     await scheduler.run_pending()
 
-    assert transport.sent == []
-    assert store.saved == [], "sem medir a avaliação do dia não conta como feita"
+    (message,) = transport.sent
+    assert (message["body"]["result"], message["body"]["reason"]) == ("skipped", "adb_failed")
+    assert not any(step.startswith("trim-memory:") for step in adb.cleanup_log)
+    assert store.saved == [clock.now().astimezone().date()]
+    # Outra sessão no mesmo dia não repete a leitura nem o relatório.
+    clock.advance(2 * 60 * 60)
+    scheduler.note_session_opened(1)
+    await scheduler.run_pending()
+    assert len(transport.sent) == 1
+
+
+async def test_a_memory_reading_the_tv_did_not_answer_is_reported_as_unavailable() -> None:
+    scheduler, adb, transport, _ = make()
+    adb.memory_mb = [None]
+    scheduler.configure(True, False, 160)
+    scheduler.note_session_opened(1)
+
+    await scheduler.run_pending()
+
+    assert [m["body"]["reason"] for m in transport.sent] == ["memory-unavailable"]
+
+
+async def test_the_day_counts_in_local_time_not_in_utc() -> None:
+    """Às 22h de Brasília já é o dia seguinte em UTC: a limpeza da manhã não pode ser perdida."""
+    store = MemoryDayStore()
+    instant = datetime(2026, 11, 6, 1, 0, tzinfo=UTC)
+    clock = FakeClock(fixed=instant)
+    adb = FakeTvAdb([LaunchableApp(FOREGROUND, ".Main")])
+    adb.memory_mb = [400]
+    scheduler = TvCleanupScheduler(
+        TvCleanup(adb, clock, allow_app_closing=False),
+        adb,
+        clock,
+        FakeTransport(),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        lambda: FOREGROUND,
+        day_store=store,
+    )
+    scheduler.configure(True, False, 160)
+    scheduler.note_session_opened(1)
+
+    await scheduler.run_pending()
+
+    # O dia gravado é o da hora local do PC, e não a data UTC do relógio.
+    assert store.saved == [instant.astimezone().date()]
 
 
 # --- o dia da limpeza sobrevive ao reinício do agente --------------------------------------------
@@ -309,7 +352,7 @@ async def test_the_day_of_a_finished_cleanup_is_saved_and_a_restart_does_not_rep
     scheduler.note_session_opened(1)
     await scheduler.run_pending()
     assert len(transport.sent) == 1
-    assert store.saved == [clock.now().date()]
+    assert store.saved == [clock.now().astimezone().date()]
 
     # O agente reinicia (processo novo, memória vazia) e a sessão abre de novo no mesmo dia.
     restarted, _, again, _ = make(day_store=store)
@@ -388,4 +431,47 @@ async def test_light_cleanup_without_any_foreground_app_is_reported_as_skipped_n
     assert message["body"]["reason"] == "foreground-unverifiable"
     assert len(clock.sleeps) == 5, "esperou o app da frente antes de desistir"
     assert not any(step.startswith("trim-memory:") for step in adb.cleanup_log)
-    assert store.saved == [], "não rodou: a avaliação do dia fica aberta"
+    assert store.saved == [clock.now().astimezone().date()]
+    # Uma TV que nunca informa o app não gera uma linha "pulada" a cada sessão do dia.
+    clock.advance(2 * 60 * 60)
+    scheduler.note_session_opened(1)
+    await scheduler.run_pending()
+    assert len(transport.sent) == 1
+
+
+async def test_media_started_during_the_foreground_wait_holds_the_light_cleanup_back() -> None:
+    clock = FakeClock()
+    adb = FakeTvAdb([LaunchableApp(FOREGROUND, ".Main"), LaunchableApp("com.example.other", ".M")])
+    adb.running = frozenset({FOREGROUND, "com.example.other"})
+    adb.memory_mb = [100, 100, 120]
+    transport = FakeTransport()
+    focused = [False]
+    waits = [0]
+
+    def foreground() -> str | None:
+        waits[0] += 1
+        if waits[0] == 2:
+            focused[0] = True  # a pessoa deu play enquanto se esperava o app da frente
+        return None if waits[0] < 3 else FOREGROUND
+
+    scheduler = TvCleanupScheduler(
+        TvCleanup(adb, clock, allow_app_closing=False),
+        adb,
+        clock,
+        transport,
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        foreground,
+        lambda: focused[0],
+    )
+    scheduler.configure(True, False, 160)
+    scheduler.note_session_opened(1)
+
+    await scheduler.run_pending()
+
+    assert transport.sent == []
+    assert not any(step.startswith("trim-memory:") for step in adb.cleanup_log)
+    # Acabada a mídia, o gatilho segue pendente e a limpeza roda.
+    focused[0] = False
+    scheduler.resume()
+    await scheduler.run_pending()
+    assert [m["body"]["result"] for m in transport.sent] == ["completed"]
