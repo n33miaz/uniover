@@ -333,11 +333,17 @@ function Invoke-Update([string]$Uv) {
     if ($run.TimedOut) {
         Write-SupLog 'ERROR' ('self-update passou de ' + [int]$updateTimeoutSeconds + ' s e foi interrompido: ' + (Get-Tail $output))
         Add-Diagnostic 'update.timed_out' 'error' ('o processo de atualizacao passou do prazo e foi interrompido')
+        # O reinicio que o lancador fizer depois nao volta logo ao mesmo update antes de subir o agente (ver a partida).
+        try { [System.IO.File]::WriteAllText((Join-Path $runtime 'update-timed-out'), (Get-UtcStamp (Get-Date)), [System.Text.Encoding]::ASCII) } catch { }
         # Morto no meio da troca de pastas (app -> app.previous, app.new -> app), pode ter ficado sem `app`: sair faz o
         # lancador restaurar (aqui nao ha o que supervisionar).
         if (-not (Test-Path -LiteralPath $source)) {
             Write-SupLog 'ERROR' 'a pasta app sumiu no meio da troca; peco ao lancador que a restaure'
             Set-StopReason 'update'
+            # Como os outros caminhos do `exit 42`: o agente e o icone (quando o update rodou dentro do laco do agente) nao
+            # podem ficar orfaos ate a volta seguinte, com o motivo de parada ja gravado.
+            if ($null -ne $process -and -not $process.HasExited) { & taskkill.exe /PID $process.Id /T /F *> $null }
+            if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
             exit 42
         }
         if ($before -eq $after) {
@@ -368,11 +374,17 @@ function Invoke-Update([string]$Uv) {
         # nova nunca ficaria no ar sem prova: volta para a anterior agora.
         $existing = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
         if (-not ($existing.Count -eq 2 -and $existing[0] -eq $after)) {
-            try { [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII) }
-            catch {
+            # Antivirus ou arquivo em uso soltam em instantes: 3 tentativas antes de desistir da versao.
+            $wrote = $false
+            for ($try = 1; $try -le 3 -and -not $wrote; $try++) {
+                try { [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII); $wrote = $true }
+                catch { if ($try -lt 3) { Start-Sleep -Seconds 1 } }
+            }
+            if (-not $wrote) {
                 Write-SupLog 'ERROR' 'nao consegui gravar a prova da versao nova (disco cheio?); volto para a anterior'
                 Add-Diagnostic 'update.trial_unwritable' 'error' 'nao consegui gravar a prova da versao nova; voltou para a anterior'
-                [void](Invoke-Rollback 'nao consegui gravar a prova da versao nova (disco cheio); voltei para a anterior')
+                # Sem bloquear: a falha foi do PC (disco, antivirus), nao da versao; ela volta a ser tentada na proxima checagem.
+                [void](Invoke-Rollback 'nao consegui gravar a prova da versao nova (disco cheio); voltei para a anterior' $false)
             }
         }
         return $true
@@ -691,8 +703,9 @@ function Confirm-Trial {
     } catch { }
 }
 
-function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedido do administrador') {
-    # Volta para `app.previous` (a versao que a ultima atualizacao guardou) e bloqueia a que sai.
+function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedido do administrador', [bool]$Block = $true) {
+    # Volta para `app.previous` (a versao que a ultima atualizacao guardou) e bloqueia a que sai (salvo `$Block` falso: a
+    # versao que sai nao tem defeito, o problema foi do PC).
     try {
         if (-not (Test-Path -LiteralPath $previous)) { return $false }
         $bad = Get-Version
@@ -706,11 +719,13 @@ function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedi
             try { Move-Folder $rejected $source } catch { }
             throw
         }
-        if ($bad -and -not (Select-String -LiteralPath $blocked -SimpleMatch $bad -Quiet -ErrorAction SilentlyContinue)) {
+        if ($Block -and $bad -and -not (Select-String -LiteralPath $blocked -SimpleMatch $bad -Quiet -ErrorAction SilentlyContinue)) {
             Add-Content -LiteralPath $blocked -Value $bad -Encoding ASCII
         }
         Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
-        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $bad; checkedAt = (Get-UtcStamp (Get-Date)); reason = $Reason } | Out-Null
+        $blockedValue = $null
+        if ($Block) { $blockedValue = $bad }
+        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $blockedValue; checkedAt = (Get-UtcStamp (Get-Date)); reason = $Reason } | Out-Null
         Write-SupLog 'WARNING' ('voltei para a versao anterior: ' + $Reason)
         Add-Diagnostic 'update.rolled_back' 'warn' $Reason
         return $true
@@ -756,7 +771,8 @@ try { $ownsSupervisor = $supervisorMutex.WaitOne(0) }
 catch [System.Threading.AbandonedMutexException] { $ownsSupervisor = $true }
 if (-not $ownsSupervisor) {
     Write-SupLog 'WARNING' 'ja existe um supervisor desta instalacao; este encerra'
-    exit 0
+    # 43: o lancador sabe que nao e um supervisor ruim e nao roda o fallback (copia antiga, possivelmente sem este mutex).
+    exit 43
 }
 Write-SupLog 'INFO' 'supervisor iniciado'
 Touch-Alive
@@ -766,11 +782,22 @@ Ensure-TrayShortcut
 Touch-Alive
 $wait = 5
 $syncFalls = 0
+# Se o ultimo update estourou o prazo (e o lancador reiniciou tudo), a primeira volta nao o repete antes de subir o agente: o
+# agente ficaria ate 40 min fora do ar a cada reinicio. A marca vale por 2 h; a proxima checagem sai meia hora depois.
+$timedOutFlag = Join-Path $runtime 'update-timed-out'
+$timedOutRecently = $false
+try {
+    if (Test-Path -LiteralPath $timedOutFlag) {
+        $timedOutRecently = ((Get-Item -LiteralPath $timedOutFlag).LastWriteTimeUtc -gt [DateTime]::UtcNow.AddHours(-2))
+        Remove-Item -LiteralPath $timedOutFlag -Force -ErrorAction SilentlyContinue
+    }
+} catch { }
 $script:ownedElsewhere = $false
 $script:ownerSeenStamp = $null
 $script:ownerReported = $null
 $updateFailures = 0
 $nextUpdate = [DateTime]::MinValue
+if ($timedOutRecently) { $nextUpdate = (Get-Date).AddMinutes(30); Write-SupLog 'INFO' 'o ultimo update estourou o prazo; a primeira volta sobe o agente sem repeti-lo' }
 $tray = $null
 while ($true) {
     Touch-Alive

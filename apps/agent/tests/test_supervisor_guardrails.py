@@ -493,10 +493,49 @@ def test_a_second_supervisor_of_the_same_installation_exits_and_leaves_the_first
             creationflags=0x08000000,
         )
         try:
-            assert second.wait(timeout=60) == 0, "o segundo supervisor devia sair sozinho"
+            assert second.wait(timeout=60) == 43, "o segundo supervisor devia sair com 43"
         finally:
             if second.poll() is None:
                 second.kill()
         assert "ja existe um supervisor" in pc.supervisor_log()
         time.sleep(3)
         assert pc.starts() == 1, "o segundo supervisor não pode ter subido outro agente"
+
+
+def test_a_supervisor_killed_by_force_leaves_the_mutex_to_the_next_one(pc: Pc) -> None:
+    # O lançador mata o travado com `taskkill /F`: o mutex fica abandonado e o seguinte o assume.
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: pc.starts() >= 1, 30)
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
+        assert "ja existe um supervisor" not in pc.supervisor_log()
+
+
+def test_after_an_update_timeout_the_first_lap_starts_the_agent_without_repeating_it(
+    pc: Pc, tmp_path: Path
+) -> None:
+    updates = tmp_path / "updates.txt"
+    pc.uv(
+        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        update_lines=['echo x>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
+    )
+    (pc.runtime / "update-timed-out").write_text("2026-11-05T12:00:00.000Z", encoding="ascii")
+    with heartbeat(pc.alive), pc.running(UNIOVER_TEST_UPDATES=str(updates)):
+        assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
+        time.sleep(3)
+        assert not updates.exists(), "a primeira volta repetiu o update que tinha estourado"
+        assert not (pc.runtime / "update-timed-out").exists()
+        assert "sem repeti-lo" in pc.supervisor_log()
+
+
+def test_without_a_timed_out_mark_the_first_lap_checks_for_an_update(
+    pc: Pc, tmp_path: Path
+) -> None:
+    updates = tmp_path / "updates.txt"
+    pc.uv(
+        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        update_lines=['echo x>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
+    )
+    with heartbeat(pc.alive), pc.running(UNIOVER_TEST_UPDATES=str(updates)):
+        assert wait_for(updates.exists, 40), pc.supervisor_log()
