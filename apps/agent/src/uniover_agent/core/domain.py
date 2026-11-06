@@ -11,6 +11,9 @@ class Command:
     type: str
     body: dict[str, Any] = field(default_factory=dict)
     correlation_id: str | None = None
+    # `ts` do envelope (ISO 8601, UTC): quando a API montou a mensagem. Quem se importa com a idade
+    # dela (o sinal de presença) a confere; os demais ignoram.
+    sent_at: str | None = None
 
 
 class ResultStatus(StrEnum):

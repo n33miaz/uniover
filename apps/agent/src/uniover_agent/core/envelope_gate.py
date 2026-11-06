@@ -173,6 +173,7 @@ class EnvelopeGate:
             type=message_type,
             body=data["body"],
             correlation_id=data["correlationId"],
+            sent_at=data["ts"],
         )
         return Accepted(command, model)
 
