@@ -56,6 +56,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
 from uniover_agent.ports import (
     AdbCommandFailed,
     AdbError,
+    AdbIdentityUnconfirmed,
     AdbIdle,
     AdbTimeout,
     AdbUnauthorized,
@@ -130,8 +131,8 @@ DEFAULT_CLOSE_WAIT_SECONDS: Final = 2.0
 # (ela dá 5 s ao `disconnect` inteiro; sem confirmação, o canal se desfaz).
 _STAY_CHECK_SECONDS: Final = 2.5
 # Num pedido da pessoa sobre uma permissão já dada, o `get-state` logo depois do `connect` pode
-# dizer `unauthorized`/`offline` enquanto a autenticação ainda corre: relê por até este tempo (de
-# `_SETTLE_POLL_SECONDS` em `_SETTLE_POLL_SECONDS`) antes de concluir.
+# dizer `offline` (conexão ainda subindo): relê por até este tempo (de `_SETTLE_POLL_SECONDS` em
+# `_SETTLE_POLL_SECONDS`) antes de concluir. `unauthorized` nunca é relido.
 DEFAULT_SETTLE_SECONDS: Final = 3.0
 _SETTLE_POLL_SECONDS: Final = 0.5
 # MAC ainda não lido nesta operação (`None` já significa "a TV não atende").
@@ -420,7 +421,7 @@ class AdbTv:
         if not mac:
             # A porta abriu mas a tabela ARP não mostra o aparelho (outra sub-rede, VPN): não é TV
             # fora do ar nem recusa dela, só identidade que não se confirma. Sem bloqueio de 30 s.
-            raise AdbIdle(_IDENTITY_MESSAGE)
+            raise AdbIdentityUnconfirmed(_IDENTITY_MESSAGE)
         return authorization.verified_for(mac)
 
     async def _refuse_connect_locked(self) -> None:
@@ -456,9 +457,12 @@ class AdbTv:
         raise AdbUnauthorized(_GATED_MESSAGE)
 
     def _note_unauthorized(self) -> None:
-        # Atenção (precisa de TV real): logo depois de um `connect`, o `get-state` pode dizer
-        # `unauthorized` enquanto a autenticação ainda corre. Hoje isso rebaixa um registro provado
-        # a `needs_user` (só tira disponibilidade: nada abre aviso) até um toque da pessoa.
+        # Qualquer `unauthorized` rebaixa o registro a `needs_user` (nada conecta sozinho até um
+        # toque da pessoa), e a espera do aceite o regrava como `granted` sem herdar o ajuste do
+        # vencimento. Num caminho automático, um `unauthorized` passageiro logo depois de um
+        # `connect` (autenticação ainda correndo; precisa de TV real para medir) só tira
+        # disponibilidade: nada abre aviso. Num pedido da pessoa vale sempre: o aviso é real e a
+        # chave pode não ter ficado gravada.
         self._authorization_pending = True
         # A TV pediu o aviso de novo (reset, revogação, outra chave): nada conecta sozinho até um
         # pedido da pessoa, mesmo depois de um reinício.
@@ -535,27 +539,34 @@ class AdbTv:
         if not parse_connect(joined.text):
             raise AdbUnreachable("a TV não respondeu pelo ADB")
         state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
-        if state in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
-            state = await self._settle_state_locked(joined, state)
+        if state is DeviceState.OFFLINE:
+            state = await self._settle_offline_locked(joined)
         return joined, state
 
-    async def _settle_state_locked(self, joined: AdbOutput, state: DeviceState) -> DeviceState:
-        """Só num pedido da pessoa e com a permissão já dada: relê o estado antes de concluir.
+    async def _settle_offline_locked(self, joined: AdbOutput) -> DeviceState:
+        """Só num pedido da pessoa e com a permissão já dada: relê um `offline` antes de concluir.
 
-        Um `unauthorized` ou `offline` passageiro logo depois do `connect` não é recusa da TV (a
-        pessoa leria "aceite o aviso" sem aviso nenhum, ou a prova nunca se completaria). Se o
-        estado não melhora no prazo, vale o que a TV disse. `offline` de uma conexão que já existia
-        (`already connected`) pede refazer a conexão, não esperar.
+        Um `offline` logo depois do `connect` pode ser a conexão ainda subindo, e a prova nunca se
+        completaria. **Só `offline` é relido**: `unauthorized` vale na hora. Reler `unauthorized`
+        confundiria a pessoa apertando OK num aviso real (que não deixa a chave gravada) com a
+        autenticação ainda correndo, e daria por provada uma permissão que a TV não guardou. Um
+        `unauthorized` visto, mesmo que depois a TV diga `device`, é um aceite novo: o registro cai
+        para `needs_user`, a espera do aceite o regrava como `granted` (sem herdar o ajuste do
+        vencimento nem o serial) e a prova fica para o toque seguinte. `offline` de uma conexão que
+        já existia (`already connected`) pede refazer a conexão, não esperar.
         """
-        if not is_user_initiated() or not self._authorization.has_grant():
-            return state
-        if state is DeviceState.OFFLINE and "already connected" in joined.text:
+        state = DeviceState.OFFLINE
+        if (
+            not is_user_initiated()
+            or not self._authorization.has_grant()
+            or "already connected" in joined.text
+        ):
             return state
         polls = int(self._settle_seconds / _SETTLE_POLL_SECONDS)
         for _ in range(polls):
             await self._sleep(_SETTLE_POLL_SECONDS)
             state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
-            if state not in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
+            if state is not DeviceState.OFFLINE:
                 break
         return state
 

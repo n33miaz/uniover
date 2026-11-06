@@ -49,6 +49,8 @@ STATE_FILE: Final = "adb-authorization.json"
 # janela de presença): não existe contato periódico.
 MAX_TIMEOUT_ATTEMPTS: Final = 3
 FINGERPRINT_LENGTH: Final = 16
+# Tentativas da troca atômica do arquivo de estado (ver `_replace_file`).
+_REPLACE_ATTEMPTS: Final = 5
 GRANTED: Final = "granted"
 VERIFIED: Final = "verified"
 NEEDS_USER: Final = "needs_user"
@@ -263,6 +265,9 @@ class AdbAuthorization:
         self._wall_clock = wall_clock
         self._record = self._load()
         self._stamp = _stamp(self._path)
+        # Uma mudança que não chegou ao disco (gravação falhou): se outro processo gravar depois, a
+        # releitura a descarta, e isso precisa aparecer no log.
+        self._unsaved = False
 
     def _sync(self) -> None:
         """Relê o arquivo se outro processo (o `tv-volume`, outro agente) o gravou depois.
@@ -272,6 +277,12 @@ class AdbAuthorization:
         """
         stamp = _stamp(self._path)
         if stamp != self._stamp:
+            if self._unsaved:
+                _log.warning(
+                    "outro processo gravou o estado da permissão do ADB; "
+                    "a mudança que não chegou ao disco foi descartada"
+                )
+                self._unsaved = False
             self._record = self._load()
             self._stamp = stamp
 
@@ -502,13 +513,29 @@ class AdbAuthorization:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_text(json.dumps(asdict(record)), encoding="utf-8")
-            os.replace(temporary, self._path)
+            _replace_file(temporary, self._path)
             self._stamp = _stamp(self._path)
+            self._unsaved = False
         except OSError as exc:
+            self._unsaved = True
             # Sem disco o estado fica só na memória: o agente segue, mas não lembra ao reiniciar.
             _log.warning(
                 "não consegui gravar o estado da permissão do ADB (%s)", type(exc).__name__
             )
+
+
+def _replace_file(source: Path, target: Path) -> None:
+    """`os.replace` com poucas tentativas: no Windows, um antivírus ou o indexador segurando o
+    arquivo por um instante faz a troca falhar com `PermissionError` e logo passar."""
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, target)
+        except PermissionError:
+            if attempt == _REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+        else:
+            return
 
 
 def _finite(value: Any) -> float:
