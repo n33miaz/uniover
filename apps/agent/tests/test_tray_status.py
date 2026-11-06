@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,9 @@ import pytest
 
 from uniover_agent.adapters.fakes import FakeClock
 from uniover_agent.adapters.tray_status import (
+    RETRY_CYCLES,
     REWRITE_SECONDS,
+    STALE_WARN_AFTER,
     TrayStatus,
     heartbeat_age,
     read_state_text,
@@ -219,14 +222,126 @@ def test_a_write_from_the_event_loop_does_not_sleep_there(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     status = TrayStatus("Sala", retry_delays=(5.0,))
     block_replace(monkeypatch, [1000])
-    sleeps: list[float] = []
-    monkeypatch.setattr("uniover_agent.adapters.tray_status.time.sleep", sleeps.append)
+    sleepers: list[threading.Thread] = []
+    monkeypatch.setattr(
+        "uniover_agent.adapters.tray_status.time.sleep",
+        lambda _: sleepers.append(threading.current_thread()),
+    )
+    loop_threads: list[threading.Thread] = []
+
+    async def from_the_loop() -> None:
+        loop_threads.append(threading.current_thread())
+        status.connected()
+        status.disconnected()
+
+    asyncio.run(from_the_loop())
+    status.wait_retries()
+
+    assert sleepers
+    assert loop_threads[0] not in sleepers
+    assert {thread.name for thread in sleepers} == {"tray-status-retry"}
+
+
+def test_the_retry_cycle_restarts_while_the_state_is_still_pending(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    status = TrayStatus("Sala", retry_delays=(0.0,))
+    failures = [2]
+    calls = block_replace(monkeypatch, failures)
 
     status.connected()
     status.wait_retries()
 
-    # O único sono acontece na thread de nova tentativa, nunca em quem chamou `write()`.
-    assert sleeps == [5.0]
+    # A primeira tentativa e o primeiro ciclo falham; o segundo ciclo grava.
+    assert len(calls) == 3
+    assert saved(tmp_path)["connected"] is True
+    assert status.dirty is False
+
+
+def test_the_retry_cycles_are_bounded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    status = TrayStatus("Sala", retry_delays=(0.0,))
+    calls = block_replace(monkeypatch, [1000])
+
+    status.connected()
+    status.wait_retries()
+
+    assert len(calls) == 1 + RETRY_CYCLES
+    assert status.dirty is True
+
+
+def test_a_change_during_a_retry_write_is_not_overwritten_by_the_old_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    status = TrayStatus("Sala", retry_delays=(0.0, 0.0))
+    original = Path.replace
+    calls: list[int] = []
+
+    def replace(self: Path, target: Path) -> Path:
+        calls.append(1)
+        if len(calls) == 1:
+            raise PermissionError("[WinError 5] bandeja lendo o arquivo")
+        if len(calls) == 2:
+            # A nova tentativa já tem o texto antigo pronto quando o estado muda.
+            status.disconnected()
+        return original(self, target)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    status.connected()
+    status.wait_retries()
+
+    assert saved(tmp_path)["connected"] is False
+    assert status.dirty is False
+
+
+def test_a_state_that_stays_pending_is_logged_after_a_few_rewrites(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    clock = FakeClock()
+    status = TrayStatus("Sala", clock, retry_delays=())
+    block_replace(monkeypatch, [1000])
+    original = clock.sleep
+
+    async def sleep_few_times(seconds: float) -> None:
+        if len(clock.sleeps) == STALE_WARN_AFTER:
+            raise asyncio.CancelledError
+        await original(seconds)
+
+    monkeypatch.setattr(clock, "sleep", sleep_few_times)
+
+    async def ticks() -> None:
+        with pytest.raises(asyncio.CancelledError):
+            await status.run()
+
+    with caplog.at_level("WARNING", logger="uniover_agent.adapters.tray_status"):
+        asyncio.run(ticks())
+
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "PermissionError" in warnings[0].getMessage()
+
+
+def test_old_orphan_temporary_files_are_swept_on_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    runtime(tmp_path).mkdir(parents=True)
+    old = runtime(tmp_path) / "tray-status.json.aaaa.new"
+    recent = runtime(tmp_path) / "tray-status.json.bbbb.new"
+    other = runtime(tmp_path) / "tray-host-state.json.new"
+    for leftover in (old, recent, other):
+        leftover.write_text("{}", encoding="utf-8")
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).timestamp()
+    os.utime(old, (long_ago, long_ago))
+
+    TrayStatus("Sala")
+
+    assert not old.exists()
+    assert recent.exists()
+    assert other.exists()
 
 
 def test_the_tray_read_retries_when_windows_briefly_denies_it(
