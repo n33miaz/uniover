@@ -341,9 +341,10 @@ class AdbTv:
             self._timeout_streak = 0
             self._connected = True
             return
+        # Recusa da trava, não da TV: nada de `_authorization_pending` nem de `needs_user` aqui (só
+        # uma recusa explícita da TV rebaixa o registro).
         if self._refused_as_idle:
             raise AdbIdle(_IDLE_MESSAGE)
-        self._authorization_pending = True
         raise AdbUnauthorized(_GATED_MESSAGE)
 
     def _note_unauthorized(self) -> None:
@@ -396,27 +397,25 @@ class AdbTv:
             return
         authorization.note_serial(serial or _SERIAL_UNAVAILABLE)
 
-    async def _check_serial_locked(self, authorization: AdbAuthorization) -> None:
-        """Num pedido da pessoa, confere o serial anotado: outro aparelho invalida a permissão."""
+    async def _serial_changed_locked(self, authorization: AdbAuthorization) -> bool:
+        """Num pedido da pessoa, confere o serial anotado: outro aparelho no mesmo endereço?"""
         record = authorization.record
         known = record.serial
         if known in ("", _SERIAL_UNAVAILABLE) or record.endpoint != self._serial:
-            return
+            return False
         try:
             serial = await self._read_serial_locked()
         except AdbError:
-            return  # sem leitura não há prova de troca de aparelho
-        if serial is None or serial == known:
-            return
-        _log.warning("o aparelho que respondeu não é o anotado; a permissão do ADB foi invalidada")
-        authorization.mark_needs_permission()
-        self._connected = False
-        await self._disconnect_locked()
-        raise AdbUnauthorized(_GATED_MESSAGE)
+            return False  # sem leitura não há prova de troca de aparelho
+        return serial is not None and serial != known
 
     async def _needs_proof(self) -> bool:
-        """Falta provar que a TV guardou a permissão (só o pedido da pessoa pode provar)."""
-        return not self._authorization.verified_for(await self._identity_mac())
+        """Falta provar que a TV guardou a permissão (só o pedido da pessoa pode provar).
+
+        Sem MAC na ARP a prova se completa com chave, endereço e MAC vazio (`proven_for`): nunca
+        fica pedindo prova a cada toque.
+        """
+        return not self._authorization.proven_for(await self._identity_mac())
 
     async def _handshake_locked(self) -> tuple[AdbOutput, DeviceState]:
         joined = await self._exec("connect", self._serial)
@@ -427,7 +426,9 @@ class AdbTv:
         state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
         return joined, state
 
-    async def _connect_locked(self) -> None:
+    async def _connect_locked(self, *, proof_ready: bool = False) -> None:
+        """Abre o canal. `proof_ready`: quem chamou acabou de desconectar um canal que chegou a
+        `device`, então esta conexão já é a segunda da prova (não se repete o `disconnect`)."""
         self._connected = False
         try:
             allowed = await self._may_connect()
@@ -444,17 +445,25 @@ class AdbTv:
         try:
             joined, state = await self._handshake_locked()
             stale = "already connected" in joined.text
+            credited = proof_ready  # há uma conexão anterior que chegou a `device`
             # `offline` pede refazer a conexão. Com `unauthorized`, uma conexão nova faria a TV
             # mostrar de novo o aviso "Permitir depuração USB" sem ninguém ter pedido. A exceção é o
             # pedido da pessoa sobre uma permissão ainda não provada: `device` logo depois de uma
             # conexão (nova ou não) pode ser um "Permitir" de uma vez só aceito durante ela, e só
             # uma segunda conexão, ainda dentro do mesmo pedido, mostra se ficou gravado. A pessoa
             # está diante da TV: se o aviso voltar, é a hora de ela marcar "Sempre permitir".
-            if (stale and state is DeviceState.OFFLINE) or (
-                state is DeviceState.DEVICE and is_user_initiated() and await self._needs_proof()
+            if stale and state is DeviceState.OFFLINE:
+                await self._exec("disconnect", self._serial)
+                joined, state = await self._handshake_locked()
+            elif (
+                state is DeviceState.DEVICE
+                and not proof_ready
+                and is_user_initiated()
+                and await self._needs_proof()
             ):
                 await self._exec("disconnect", self._serial)
                 joined, state = await self._handshake_locked()
+                credited = True
         except AdbTimeout:
             # Na abertura, tempo esgotado é "a TV não respondeu": nenhum comando foi executado.
             error: AdbError = AdbUnreachable("a TV não respondeu pelo ADB")
@@ -471,11 +480,10 @@ class AdbTv:
             self._timeout_streak = 0
             self._connected = True
             if is_user_initiated():
-                # O serial só se lê dentro de um pedido da pessoa, nunca num caminho automático.
-                await self._check_serial_locked(authorization)
-                # Conexão nova, pedida pela pessoa, atendida sem aviso: ficou gravada.
-                authorization.mark_verified(snapshot, await self._identity_mac())
-            if is_user_initiated():
+                if await self._register_user_connection_locked(
+                    authorization, snapshot, "already connected" not in joined.text, credited
+                ):
+                    return  # o aparelho era outro: a prova foi refeita dentro desta chamada
                 await self._finish_pairing_locked()
             return
         failure: AdbError = (
@@ -487,6 +495,40 @@ class AdbTv:
         if state in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
             self._watch_for_acceptance(snapshot)
         raise failure
+
+    async def _register_user_connection_locked(
+        self,
+        authorization: AdbAuthorization,
+        snapshot: str | None,
+        fresh: bool,
+        credited: bool,
+    ) -> bool:
+        """Registra o que a conexão do pedido da pessoa provou. `True` se refez a prova por dentro.
+
+        * **Provada** = uma segunda conexão, realmente **nova** (`connected to`, nunca `already
+          connected`), chegou a `device` depois de uma anterior que também chegou: só então
+          `verified`. Se a segunda veio "já conectada" (o `disconnect` não derrubou o transporte), a
+          conexão serve mas nada é dado como provado (`granted`).
+        * O serial só se lê aqui, dentro de um pedido da pessoa. Se for outro aparelho, esquece o
+          serial e o ajuste: a prova refeita a seguir anota a identidade nova (nada de trava eterna,
+          e nada de `needs_user`, que só vem de uma recusa da TV).
+        """
+        changed = await self._serial_changed_locked(authorization)
+        if changed:
+            _log.warning("o aparelho que respondeu não é o anotado; a prova vai ser refeita")
+            authorization.forget_device()
+            if not (credited and fresh):
+                await self._disconnect_locked()
+                await self._connect_locked(proof_ready=True)
+                return True
+        mac = await self._identity_mac()
+        if not await self._needs_proof() and not changed:
+            return False  # já provada antes: nada a registrar
+        if credited and fresh:
+            authorization.mark_verified(snapshot, mac)
+        else:
+            authorization.mark_granted(snapshot, mac)
+        return False
 
     def _watch_for_acceptance(self, snapshot: str | None) -> None:
         """Pedido da pessoa que deixou o aviso na tela: espera o aceite lendo só o estado (90 s)."""
@@ -549,7 +591,7 @@ class AdbTv:
                 if await self._needs_proof():
                     # Transporte vivo sem prova de permissão gravada: a pessoa pediu, então confere.
                     await self._disconnect_locked()
-                    await self._connect_locked()
+                    await self._connect_locked(proof_ready=True)
                 else:
                     await self._finish_pairing_locked()
             return
@@ -564,7 +606,7 @@ class AdbTv:
                     if is_user_initiated() and await self._needs_proof():
                         # A pessoa tocou de novo logo depois de aceitar: a prova é neste toque.
                         await self._disconnect_locked()
-                        await self._connect_locked()
+                        await self._connect_locked(proof_ready=True)
                     return
             raise type(self._blocked_error)(self._blocked_error.message)
         await self._connect_locked()
@@ -808,9 +850,9 @@ class AdbTv:
             if self._authorization_pending:
                 state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
                 if state is not DeviceState.DEVICE:
-                    failure = AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
-                    self._remember_failure(failure)
-                    raise failure
+                    # Só informa o vigia: a TV não recusou nada agora (pode estar desligada), então
+                    # nada é gravado nem rebaixado.
+                    raise AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
             await self._connect_locked()
             for command in _SHIELD_REMOTE_SERVICE:
                 await self._shell(command)
