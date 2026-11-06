@@ -7,13 +7,11 @@ import {
 } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
-  OUTBOX_LOAD_TIMEOUT_MS,
-  type OutboxProbe,
-  type QueueScopesLike,
-  guardOutbox,
-  guardQueueScopes,
-} from './outbox-guard';
-import { UnsavedWork, registerUnsavedWork, unsavedWorkInterceptor } from './unsaved-work';
+  REQUEST_MAX_AGE_MS,
+  UnsavedWork,
+  registerUnsavedWork,
+  unsavedWorkInterceptor,
+} from './unsaved-work';
 
 function type(field: HTMLInputElement | HTMLTextAreaElement, value: string): void {
   field.value = value;
@@ -199,10 +197,10 @@ describe('UnsavedWork', () => {
   describe('registered sources', () => {
     it('reports the reason of the source while it holds work, and stops after it is removed', () => {
       let busy = false;
-      const stop = work.register(() => busy, 'outbox');
+      const stop = work.register(() => busy, 'request');
       expect(work.hasUnsaved()).toBe(false);
       busy = true;
-      expect(work.reasons()).toEqual(['outbox']);
+      expect(work.reasons()).toEqual(['request']);
       stop();
       expect(work.hasUnsaved()).toBe(false);
     });
@@ -210,8 +208,8 @@ describe('UnsavedWork', () => {
     it('treats a source that throws as work (when in doubt, protect it)', () => {
       work.register(() => {
         throw new Error('quebrou');
-      }, 'outbox');
-      expect(work.reasons()).toEqual(['outbox']);
+      }, 'request');
+      expect(work.reasons()).toEqual(['request']);
     });
 
     it('lists each reason once', () => {
@@ -236,50 +234,105 @@ describe('UnsavedWork', () => {
       expect(work.needsConfirmation()).toBe(false);
       expect(work.isWriting()).toBe(true);
       end();
-      work.register(() => true, 'outbox');
-      expect(work.needsConfirmation()).toBe(false);
-      expect(work.isWriting()).toBe(true);
+      expect(work.isWriting()).toBe(false);
       work.register(() => true, 'form');
       expect(work.needsConfirmation()).toBe(true);
     });
   });
 
-  describe('settle', () => {
-    it('waits for the refreshers (a source that may be stale) before a decision', async () => {
-      let stale = true;
-      work.register(() => stale, 'outbox');
-      work.registerRefresh(async () => {
-        await Promise.resolve();
-        stale = false;
-      });
-      expect(work.hasUnsaved()).toBe(true);
-      await work.settle();
+  describe('fields that are not unsaved work', () => {
+    it('ignores date and time pickers (a filter such as the diary day), and anything marked data-unsaved-ignore', () => {
+      for (const type of ['date', 'time', 'datetime-local', 'month', 'week']) {
+        const input = mount(document.createElement('input'));
+        input.type = type;
+        // Sem valor válido o jsdom zera o campo: o que importa é nunca entrar na vigia.
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      const date = mount(document.createElement('input'));
+      date.type = 'date';
+      date.value = '2026-11-06';
+      date.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(work.hasUnsaved()).toBe(false);
+
+      const stepper = mount(document.createElement('input'));
+      stepper.setAttribute('data-unsaved-ignore', '');
+      type(stepper, '80');
       expect(work.hasUnsaved()).toBe(false);
     });
 
-    it('never throws and never waits longer than its limit for a refresher that fails or hangs', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    it('keeps the text of a focused page region out of memory: only text fields get a starting value', () => {
+      const main = mount(document.createElement('main'));
+      main.tabIndex = -1;
+      main.textContent = 'a página inteira';
+      main.focus();
+      const baselines = (work as unknown as { baselines: WeakMap<object, string> }).baselines;
+      expect(baselines.has(main)).toBe(false);
+
+      const input = mount(document.createElement('input'));
+      input.focus();
+      expect(baselines.has(input)).toBe(true);
+    });
+  });
+
+  describe('after the work was saved but the fields stay on screen', () => {
+    it('forgets the fields of a form when it is submitted, and starts over from what they show', () => {
+      const form = mount(document.createElement('form'));
+      form.addEventListener('submit', (event) => event.preventDefault());
+      const name = document.createElement('input');
+      form.appendChild(name);
+      type(name, 'Perfil novo');
+      expect(work.hasUnsaved()).toBe(true);
+
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      expect(work.hasUnsaved()).toBe(false);
+
+      // Mexer de novo depois de salvo conta de novo, a partir do que ficou na tela.
+      type(name, 'Perfil novo 2');
+      expect(work.reasons()).toEqual(['form']);
+      type(name, 'Perfil novo');
+      expect(work.hasUnsaved()).toBe(false);
+    });
+
+    it('forgets the watched fields when a registered editor goes from dirty to clean (it saved)', () => {
+      let dirty = false;
+      work.register(() => dirty, 'form');
+      const field = mount(document.createElement('input'));
+      type(field, 'rascunho');
+      dirty = true;
+      expect(work.reasons()).toEqual(['form']);
+
+      // O editor salvou: fica limpo, mas o campo ainda mostra o texto digitado.
+      dirty = false;
+      expect(work.hasUnsaved()).toBe(false);
+      type(field, 'rascunho 2');
+      expect(work.hasUnsaved()).toBe(true);
+    });
+
+    it('does not forget anything while the editor stays dirty', () => {
+      work.register(() => true, 'form');
+      const field = mount(document.createElement('input'));
+      type(field, 'rascunho');
+      expect(work.reasons()).toEqual(['form']);
+      expect(work.hasUnsaved()).toBe(true);
+    });
+  });
+
+  describe('requests in flight', () => {
+    it('stops counting a write that never answers, so it cannot block a reload forever', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
       try {
-        work.registerRefresh(() => Promise.reject(new Error('banco travou')));
-        work.registerRefresh(() => new Promise(() => undefined));
-        const done = work.settle(500);
-        await vi.advanceTimersByTimeAsync(500);
-        await expect(done).resolves.toBeUndefined();
+        work.beginRequest();
+        expect(work.isWriting()).toBe(true);
+        vi.setSystemTime(Date.now() + REQUEST_MAX_AGE_MS - 1);
+        expect(work.isWriting()).toBe(true);
+        vi.setSystemTime(Date.now() + 2);
+        expect(work.isWriting()).toBe(false);
+        expect(work.hasUnsaved()).toBe(false);
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('stops calling a refresher once it was removed', async () => {
-      const refresh = vi.fn().mockResolvedValue(undefined);
-      const stop = work.registerRefresh(refresh);
-      stop();
-      await work.settle();
-      expect(refresh).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('requests in flight', () => {
     it('counts begin and end, and ending twice does not go negative', () => {
       const end = work.beginRequest();
       const other = work.beginRequest();
@@ -335,96 +388,5 @@ describe('unsavedWorkInterceptor', () => {
     http.get('/api/v1/x').subscribe();
     expect(work.hasUnsaved()).toBe(false);
     controller.expectOne('/api/v1/x').flush({});
-  });
-});
-
-describe('guardOutbox', () => {
-  it('counts as busy until the queue has loaded, then follows the in-flight count', async () => {
-    const work = TestBed.inject(UnsavedWork);
-    let pending = 0;
-    let finish!: (probe: OutboxProbe) => void;
-    void guardOutbox(work, () => new Promise((resolve) => (finish = resolve)));
-    expect(work.reasons()).toEqual(['outbox']);
-
-    finish({ inFlight: () => pending, refresh: () => Promise.resolve() });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(work.hasUnsaved()).toBe(false);
-    pending = 2;
-    expect(work.reasons()).toEqual(['outbox']);
-    pending = 0;
-    expect(work.hasUnsaved()).toBe(false);
-  });
-
-  it('lets go when the queue import hangs, so the watchdog is never stuck behind it', async () => {
-    vi.useFakeTimers();
-    try {
-      const work = TestBed.inject(UnsavedWork);
-      void guardOutbox(work, () => new Promise(() => undefined));
-      expect(work.hasUnsaved()).toBe(true);
-      await vi.advanceTimersByTimeAsync(OUTBOX_LOAD_TIMEOUT_MS);
-      expect(work.hasUnsaved()).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('lets go when the queue fails to load, and hands the error back', async () => {
-    const work = TestBed.inject(UnsavedWork);
-    const failed = guardOutbox(work, () => Promise.reject(new Error('sem fila')));
-    await expect(failed).rejects.toThrow('sem fila');
-    expect(work.hasUnsaved()).toBe(false);
-  });
-});
-
-describe('guardQueueScopes', () => {
-  function fakeScopes(counts: { pending: number; sending: number }) {
-    const refresh = vi.fn().mockImplementation(async () => {
-      counts.sending = 0;
-    });
-    const scopes: QueueScopesLike = {
-      follow: vi.fn(),
-      active: () => ({
-        store: {
-          sendingCount: () => counts.sending,
-          pendingCount: () => counts.pending,
-          refresh,
-        },
-      }),
-    } as unknown as QueueScopesLike;
-    return { scopes, refresh };
-  }
-
-  it('follows the queue and reads the in-flight count, never the pending one', async () => {
-    const work = TestBed.inject(UnsavedWork);
-    const counts = { pending: 7, sending: 0 };
-    const { scopes } = fakeScopes(counts);
-    await guardQueueScopes(work, async () => scopes);
-
-    expect(scopes.follow).toHaveBeenCalledTimes(1);
-    // Sete itens esperando no aparelho, nenhum em voo: a recarga não perde nada.
-    expect(work.hasUnsaved()).toBe(false);
-    counts.sending = 1;
-    expect(work.reasons()).toEqual(['outbox']);
-  });
-
-  it('rereads the count (other tabs share the database) when a decision calls settle', async () => {
-    const work = TestBed.inject(UnsavedWork);
-    const counts = { pending: 0, sending: 1 };
-    const { scopes, refresh } = fakeScopes(counts);
-    await guardQueueScopes(work, async () => scopes);
-    expect(work.hasUnsaved()).toBe(true);
-
-    await work.settle();
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(work.hasUnsaved()).toBe(false);
-  });
-
-  it('counts as clean when there is no account queue yet', async () => {
-    const work = TestBed.inject(UnsavedWork);
-    const scopes = { follow: vi.fn(), active: () => null } as unknown as QueueScopesLike;
-    await guardQueueScopes(work, async () => scopes);
-    expect(work.hasUnsaved()).toBe(false);
-    await expect(work.settle()).resolves.toBeUndefined();
   });
 });

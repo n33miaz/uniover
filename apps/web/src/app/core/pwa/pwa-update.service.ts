@@ -103,6 +103,7 @@ export class PwaUpdateService {
   private readonly win = inject(DOCUMENT).defaultView;
   private readonly enabled = inject(PWA_ENABLED);
   private readonly unsaved = inject(UnsavedWork);
+  private readonly destroyRef = inject(DestroyRef);
   private registration: ServiceWorkerRegistration | undefined;
   private started = false;
   private registering = false;
@@ -112,7 +113,7 @@ export class PwaUpdateService {
   private watchdogTimer: number | undefined;
   /** Recarga automática adiada por trabalho não salvo (`undefined`: nada adiado); a guarda de laço só é gravada quando ela acontece. */
   private deferred: { key: string; escalate: boolean } | undefined;
-  /** Conferindo se há outra aba antes do último recurso, ou relendo a fila antes de decidir. */
+  /** Conferindo se há outra aba antes do último recurso. */
   private checking = false;
   /** Decidindo o que fazer com o toque (esperando escritas, perguntando às outras abas). */
   private deciding = false;
@@ -135,6 +136,8 @@ export class PwaUpdateService {
    * o aviso passa a dizer o motivo ("salve para continuar") em vez de a navegação simplesmente não acontecer.
    */
   readonly navigationBlocked = signal(false);
+  /** O toque está decidindo (esperando escritas, perguntando às outras abas): o botão mostra "Atualizando…" sem o esqueleto. */
+  readonly updateDeciding = signal(false);
   /**
    * O esqueleto de página inteira fica de pé do toque em "Atualizar" até o primeiro conteúdo da página nova (a recarga
    * recomeça o app, então a marca atravessa a recarga pelo `sessionStorage`).
@@ -147,7 +150,7 @@ export class PwaUpdateService {
     const navigations = this.router.events.subscribe((event) => {
       if (event instanceof NavigationEnd) this.onNavigated();
     });
-    inject(DestroyRef).onDestroy(() => navigations.unsubscribe());
+    this.destroyRef.onDestroy(() => navigations.unsubscribe());
     const at = readStamp(win, UPDATE_REFRESHING_KEY);
     removeKey(win, UPDATE_REFRESHING_KEY);
     if (at !== null && Date.now() - at < UPDATE_FLAG_MAX_AGE_MS) {
@@ -166,7 +169,7 @@ export class PwaUpdateService {
     this.started = true;
     this.holdTabLock(win);
     // As outras abas perguntam, antes de um toque delas, se esta tem trabalho não salvo.
-    answerTabBusyQueries(win, () => this.unsaved.needsConfirmation());
+    this.destroyRef.onDestroy(answerTabBusyQueries(win, () => this.unsaved.needsConfirmation()));
     const container = win.navigator.serviceWorker;
     this.controlled = container?.controller != null;
     // Permanente: um worker novo pode assumir esta aba por pedido de outra.
@@ -184,45 +187,52 @@ export class PwaUpdateService {
   /**
    * O toque no aviso. Antes de ativar o worker novo (que muda TODAS as abas e tira o precache antigo):
    * - texto digitado ou editor sujo nesta aba: pede confirmação (`mine`);
-   * - só escritas em voo: espera até `UPDATE_WRITES_WAIT_MS` terminarem, sem perguntar;
+   * - escritas em voo: espera até `UPDATE_WRITES_WAIT_MS` terminarem, sem perguntar, e confere de novo se a espera trouxe texto
+   *   não salvo de volta (um salvamento que falhou);
    * - outra aba com trabalho não salvo (pergunta por `BroadcastChannel`, ~500 ms; quem não responde conta como limpa): pede
    *   confirmação (`other-tab`);
    * - o treino aberto não pede nada: a sessão fica gravada no aparelho.
-   * Sem nada disso, atualiza direto.
+   * Sem nada disso, atualiza direto. Durante a decisão o botão fica em "Atualizando…" (`updateDeciding`), sem o esqueleto de
+   * página inteira e sem piscar. Devolve a promessa da decisão (a troca em si não é esperada).
    */
-  applyUpdate(): void {
-    if (this.applying || this.deciding) return;
-    void this.decideTap();
+  applyUpdate(): Promise<void> {
+    if (this.applying || this.deciding) return Promise.resolve();
+    return this.decideTap();
   }
 
   private async decideTap(): Promise<void> {
     const win = this.win;
     this.deciding = true;
+    this.updateDeciding.set(true);
+    this.updateError.set(false);
+    let ask: UpdateConfirmation | null = null;
     try {
-      this.updateError.set(false);
-      await this.unsaved.settle();
       if (this.unsaved.needsConfirmation()) {
-        this.confirmingUpdate.set('mine');
-        return;
-      }
-      if (this.unsaved.isWriting()) {
-        this.applyingUpdate.set(true);
-        await this.waitForWrites(win);
-        this.applyingUpdate.set(false);
-      }
-      // Uma aba só (pelo bloqueio compartilhado) dispensa a pergunta e os 500 ms dela.
-      if (
-        win &&
-        (await this.otherTabsMayBeOpen()) &&
-        (await askOtherTabs(win, OTHER_TABS_ANSWER_TIMEOUT_MS))
-      ) {
-        this.confirmingUpdate.set('other-tab');
-        return;
+        ask = 'mine';
+      } else {
+        if (this.unsaved.isWriting()) {
+          await this.waitForWrites(win);
+          if (this.unsaved.needsConfirmation()) ask = 'mine';
+        }
+        // Uma aba só (pelo bloqueio compartilhado) dispensa a pergunta e os 500 ms dela.
+        if (
+          !ask &&
+          win &&
+          (await this.otherTabsMayBeOpen()) &&
+          (await askOtherTabs(win, OTHER_TABS_ANSWER_TIMEOUT_MS))
+        ) {
+          ask = 'other-tab';
+        }
       }
     } finally {
       this.deciding = false;
     }
-    this.confirmUpdate();
+    if (ask) {
+      this.updateDeciding.set(false);
+      this.confirmingUpdate.set(ask);
+      return;
+    }
+    this.proceed();
   }
 
   /** Espera as escritas em voo acabarem (confere a cada 100 ms), no máximo `UPDATE_WRITES_WAIT_MS`. */
@@ -234,13 +244,31 @@ export class PwaUpdateService {
     }
   }
 
-  /** A pessoa confirmou (ou não havia o que perder): troca a casca de verdade e sempre termina recarregando a página. */
-  confirmUpdate(): void {
-    if (this.applying) return;
+  /**
+   * A pessoa confirmou o diálogo. Aceitou perder o texto digitado, não um pedido que ainda está saindo: espera as escritas em
+   * voo terminarem (no máximo `UPDATE_WRITES_WAIT_MS`) antes de trocar a casca. Devolve a promessa dessa espera.
+   */
+  async confirmUpdate(): Promise<void> {
+    if (this.applying || this.deciding) return;
+    this.confirmingUpdate.set(null);
+    this.deciding = true;
+    this.updateDeciding.set(true);
+    try {
+      await this.waitForWrites(this.win);
+    } finally {
+      this.deciding = false;
+    }
+    this.proceed();
+  }
+
+  /** Decidido: troca a casca de verdade e sempre termina recarregando a página. */
+  private proceed(): void {
     this.confirmingUpdate.set(null);
     this.updateError.set(false);
     this.cancelDeferral();
+    // `refreshByTap` liga `applyingUpdate` na hora, então não há intervalo em que o botão volte a "Atualizar".
     void this.refreshByTap();
+    this.updateDeciding.set(false);
   }
 
   /** A pessoa preferiu continuar o que estava fazendo. */
@@ -387,20 +415,11 @@ export class PwaUpdateService {
     });
   }
 
-  /**
-   * Num momento seguro: relê as fontes que podem estar velhas (a fila lê um banco que outras abas mexem) e, se a tela está
-   * limpa, faz a recarga que estava adiada.
-   */
+  /** Num momento seguro: se a tela está limpa, faz a recarga que estava adiada. */
   private async runDeferred(): Promise<void> {
-    if (!this.deferred || this.applying || this.checking || this.reloading) return;
-    this.checking = true;
-    try {
-      await this.unsaved.settle();
-    } finally {
-      this.checking = false;
-    }
     const deferred = this.deferred;
-    if (!deferred || this.applying || this.reloading || this.unsaved.hasUnsaved()) return;
+    if (!deferred || this.applying || this.checking || this.reloading) return;
+    if (this.unsaved.hasUnsaved()) return;
     this.deferred = undefined;
     await this.reloadAutomatically(deferred.key, deferred.escalate);
   }
@@ -429,9 +448,27 @@ export class PwaUpdateService {
   private holdTabLock(win: Window): void {
     const locks = win.navigator.locks;
     if (!locks || typeof locks.request !== 'function') return;
-    locks
-      .request(TAB_LOCK_NAME, { mode: 'shared' }, () => new Promise<void>(() => undefined))
-      .catch(() => undefined);
+    let release: (() => void) | undefined;
+    const acquire = () =>
+      locks
+        .request(
+          TAB_LOCK_NAME,
+          { mode: 'shared' },
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        )
+        .catch(() => undefined);
+    void acquire();
+    // Uma página que segura um bloqueio pode ficar de fora do cache de voltar/avançar: larga ao sair e pega de novo se voltar.
+    win.addEventListener('pagehide', () => {
+      release?.();
+      release = undefined;
+    });
+    win.addEventListener('pageshow', (event) => {
+      if ((event as PageTransitionEvent).persisted && release === undefined) void acquire();
+    });
   }
 
   /**

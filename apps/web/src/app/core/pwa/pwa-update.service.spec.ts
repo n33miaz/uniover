@@ -20,7 +20,7 @@ import {
 } from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
 import { OTHER_TABS_ANSWER_TIMEOUT_MS, answerTabBusyQueries } from './tab-busy';
-import { installFakeBroadcastChannel } from './tab-busy-test-kit';
+import { FakeBroadcastChannel, installFakeBroadcastChannel } from './tab-busy-test-kit';
 import { UnsavedWork } from './unsaved-work';
 
 class FakeWorker extends EventTarget {
@@ -75,10 +75,9 @@ function stubLocks(held: number | null) {
   return locks as NonNullable<typeof locks>;
 }
 
-/** O toque decide em passos assíncronos (releitura da fila, abas, escritas): dá tempo de eles correrem, sem depender de timers. */
+/** O toque decide em passos assíncronos (escritas, abas): espera a decisão terminar. */
 async function tap(service: PwaUpdateService): Promise<void> {
-  service.applyUpdate();
-  for (let i = 0; i < 30; i++) await Promise.resolve();
+  await service.applyUpdate();
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve));
@@ -776,7 +775,7 @@ describe('PwaUpdateService', () => {
         const reload = stubReload();
 
         await tap(service);
-        service.confirmUpdate();
+        await service.confirmUpdate();
         expect(service.confirmingUpdate()).toBeNull();
         container.dispatchEvent(new Event('controllerchange'));
         await flush();
@@ -804,7 +803,7 @@ describe('PwaUpdateService', () => {
         await flush();
         const reload = stubReload();
         service.recoverFromStaleShell();
-        service.confirmUpdate();
+        await service.confirmUpdate();
         container.dispatchEvent(new Event('controllerchange'));
         await flush();
         expect(reload).toHaveBeenCalledTimes(1);
@@ -939,7 +938,7 @@ describe('PwaUpdateService', () => {
         const locks = stubLocks(1);
         lateFirstPaint();
         const { service, registration } = setup({});
-        TestBed.inject(UnsavedWork).register(() => true, 'outbox');
+        TestBed.inject(UnsavedWork).register(() => true, 'form');
         await vi.advanceTimersByTimeAsync(0);
         const reload = stubReload();
         locks.query.mockClear();
@@ -1005,7 +1004,7 @@ describe('PwaUpdateService', () => {
         TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: false }] });
         const service = TestBed.inject(PwaUpdateService);
         busy = true;
-        TestBed.inject(UnsavedWork).register(() => busy, 'outbox');
+        TestBed.inject(UnsavedWork).register(() => busy, 'form');
         const reload = stubReload();
 
         await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
@@ -1022,6 +1021,47 @@ describe('PwaUpdateService', () => {
         expect(sessionStorage.getItem(UPDATE_WATCHDOG_KEY)).not.toBeNull();
         expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
       });
+    });
+
+    it('lets go of the tab lock when the page is hidden and takes it again when the back/forward cache restores it', async () => {
+      const locks = stubLocks(1);
+      let released = false;
+      locks.request.mockImplementation(
+        (_name: string, _options: unknown, hold: () => Promise<void>) => {
+          const held = hold();
+          void held.then(() => (released = true));
+          return held;
+        },
+      );
+      setup({});
+      await flush();
+      expect(locks.request).toHaveBeenCalledTimes(1);
+
+      window.dispatchEvent(new Event('pagehide'));
+      await flush();
+      expect(released).toBe(true);
+
+      window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+      await flush();
+      expect(locks.request).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+      await flush();
+      expect(locks.request).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops answering the other tabs when the app is torn down, leaving no channel open', async () => {
+      const restore = installFakeBroadcastChannel();
+      try {
+        const before = FakeBroadcastChannel.openCount();
+        setup({});
+        await flush();
+        expect(FakeBroadcastChannel.openCount()).toBe(before + 1);
+
+        TestBed.resetTestingModule();
+        expect(FakeBroadcastChannel.openCount()).toBe(before);
+      } finally {
+        restore();
+      }
     });
 
     it('holds a shared tab lock for as long as the tab lives', async () => {
@@ -1098,7 +1138,7 @@ describe('PwaUpdateService', () => {
         expect(waiting.postMessage).not.toHaveBeenCalled();
 
         await tap(service);
-        service.confirmUpdate();
+        await service.confirmUpdate();
         container.dispatchEvent(new Event('controllerchange'));
         await flush();
         expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
@@ -1117,16 +1157,15 @@ describe('PwaUpdateService', () => {
 
       it('lets the tap through when the other tab is clean', async () => {
         stubLocks(2);
-        let otherBusy = true;
-        otherTab(() => otherBusy);
-        otherBusy = false;
+        otherTab(() => false);
         const { service, container, waiting } = setupWaiting();
         await flush();
         const reload = stubReload();
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
-        await tap(service);
+        const decided = service.applyUpdate();
         await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+        await decided;
         container.dispatchEvent(new Event('controllerchange'));
         await vi.advanceTimersByTimeAsync(0);
 
@@ -1136,20 +1175,27 @@ describe('PwaUpdateService', () => {
       });
     });
 
-    it('treats a tab that does not answer within ~500 ms as clean, so a frozen tab never blocks the tap', async () => {
+    it('treats a tab that is open but does not answer within ~500 ms as clean, so a frozen tab never blocks the tap', async () => {
       stubLocks(3);
+      // Uma aba que existe (ouve o canal) e está congelada: recebe a pergunta e nunca responde.
+      const frozen = new FakeBroadcastChannel('uniover.tab-busy');
+      const heard = vi.fn();
+      frozen.onmessage = heard;
       const { service, waiting } = setupWaiting();
       await flush();
       stubReload();
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
-      await tap(service);
+      const decided = service.applyUpdate();
       await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS - 1);
+      expect(heard).toHaveBeenCalledTimes(1);
       expect(waiting.postMessage).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(1);
+      await decided;
       expect(service.confirmingUpdate()).toBeNull();
       expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      frozen.close();
     });
 
     it('does not even ask (and does not wait 500 ms) when the shared lock shows a single tab', async () => {
@@ -1165,6 +1211,36 @@ describe('PwaUpdateService', () => {
       expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
     });
 
+    it('keeps the button on "Atualizando…" through the whole decision, with no full-page skeleton and no flicker', async () => {
+      stubLocks(2);
+      otherTab(() => false);
+      const { service } = setupWaiting();
+      await flush();
+      stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const end = TestBed.inject(UnsavedWork).beginRequest();
+      const states: string[] = [];
+      const look = () =>
+        states.push(
+          `${service.updateDeciding() || service.applyingUpdate() ? 'busy' : 'idle'}/${service.showSkeleton() ? 'skeleton' : 'none'}`,
+        );
+
+      const decided = service.applyUpdate();
+      look();
+      await vi.advanceTimersByTimeAsync(300);
+      look();
+      end();
+      await vi.advanceTimersByTimeAsync(200);
+      look();
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+      await decided;
+      look();
+
+      // Do toque até a troca começar o botão nunca volta a "Atualizar"; o esqueleto só vem com a troca de verdade.
+      expect(states.slice(0, 3)).toEqual(['busy/none', 'busy/none', 'busy/none']);
+      expect(states[3]).toBe('busy/skeleton');
+    });
+
     describe('writes in flight', () => {
       function fakeClock() {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
@@ -1177,14 +1253,16 @@ describe('PwaUpdateService', () => {
         fakeClock();
         const end = TestBed.inject(UnsavedWork).beginRequest();
 
-        await tap(service);
+        const decided = service.applyUpdate();
         await vi.advanceTimersByTimeAsync(1_000);
         expect(service.confirmingUpdate()).toBeNull();
-        expect(service.applyingUpdate()).toBe(true);
+        expect(service.updateDeciding()).toBe(true);
+        expect(service.showSkeleton()).toBe(false);
         expect(waiting.postMessage).not.toHaveBeenCalled();
 
         end();
         await vi.advanceTimersByTimeAsync(200);
+        await decided;
         expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
       });
 
@@ -1195,11 +1273,32 @@ describe('PwaUpdateService', () => {
         fakeClock();
         TestBed.inject(UnsavedWork).beginRequest();
 
-        await tap(service);
+        const decided = service.applyUpdate();
         await vi.advanceTimersByTimeAsync(UPDATE_WRITES_WAIT_MS - 200);
         expect(waiting.postMessage).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(400);
+        await decided;
         expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      });
+
+      it('asks again if the wait brought unsaved text back (a save that failed)', async () => {
+        const { service, waiting } = setupWaiting(false);
+        await flush();
+        stubReload();
+        fakeClock();
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+
+        const decided = service.applyUpdate();
+        await vi.advanceTimersByTimeAsync(300);
+        // O pedido terminou com erro e o editor voltou a ficar sujo.
+        busy = true;
+        end();
+        await vi.advanceTimersByTimeAsync(200);
+        await decided;
+
+        expect(service.confirmingUpdate()).toBe('mine');
+        expect(service.updateDeciding()).toBe(false);
+        expect(waiting.postMessage).not.toHaveBeenCalled();
       });
 
       it('still asks when there is typed text, and that comes before waiting for writes', async () => {
@@ -1209,6 +1308,27 @@ describe('PwaUpdateService', () => {
 
         await tap(service);
         expect(service.confirmingUpdate()).toBe('mine');
+      });
+
+      it('also waits for them after the person confirmed losing the typed text', async () => {
+        const { service, waiting } = setupWaiting(true);
+        await flush();
+        stubReload();
+        fakeClock();
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+
+        await service.applyUpdate();
+        expect(service.confirmingUpdate()).toBe('mine');
+        const confirmed = service.confirmUpdate();
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(service.confirmingUpdate()).toBeNull();
+        expect(service.updateDeciding()).toBe(true);
+        expect(waiting.postMessage).not.toHaveBeenCalled();
+
+        end();
+        await vi.advanceTimersByTimeAsync(200);
+        await confirmed;
+        expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
       });
     });
 
@@ -1261,25 +1381,6 @@ describe('PwaUpdateService', () => {
       await flush();
       expect(reload).toHaveBeenCalledTimes(1);
       expect(service.updateReady()).toBe(true);
-    });
-
-    it('rereads a stale outbox count before deciding on a deferred reload', async () => {
-      const { service } = setupWaiting(false);
-      let stale = true;
-      TestBed.inject(UnsavedWork).register(() => stale, 'outbox');
-      TestBed.inject(UnsavedWork).registerRefresh(async () => {
-        stale = false;
-      });
-      await flush();
-      const reload = stubReload();
-
-      service.recoverFromStaleShell();
-      await flush();
-      // A releitura vê que o item em voo já terminou (outra aba o enviou): a recarga segue sem esperar outro gatilho.
-      expect(reload).not.toHaveBeenCalled();
-      navigated();
-      await flush();
-      expect(reload).toHaveBeenCalledTimes(1);
     });
   });
 

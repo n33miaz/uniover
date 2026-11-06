@@ -18,7 +18,7 @@ describe('UpdateBanner', () => {
 
   it('shows the notice and the button only when an update is ready', async () => {
     const { service, fixture, el } = mount();
-    const apply = vi.spyOn(service, 'applyUpdate').mockImplementation(() => undefined);
+    const apply = vi.spyOn(service, 'applyUpdate').mockResolvedValue(undefined);
     await fixture.whenStable();
     expect(el.querySelector('button')).toBeNull();
 
@@ -32,7 +32,7 @@ describe('UpdateBanner', () => {
 
   it('says why a navigation did nothing, with a button that runs the update confirmation', async () => {
     const { service, fixture, el } = mount();
-    const apply = vi.spyOn(service, 'applyUpdate').mockImplementation(() => undefined);
+    const apply = vi.spyOn(service, 'applyUpdate').mockResolvedValue(undefined);
     service.updateReady.set(true);
     service.navigationBlocked.set(true);
     await fixture.whenStable();
@@ -45,6 +45,17 @@ describe('UpdateBanner', () => {
     service.navigationBlocked.set(false);
     await fixture.whenStable();
     expect(el.textContent).toContain('Nova versão disponível');
+  });
+
+  it('keeps the button on "Atualizando…" and disabled while the tap is still deciding', async () => {
+    const { service, fixture, el } = mount();
+    service.updateReady.set(true);
+    service.updateDeciding.set(true);
+    await fixture.whenStable();
+
+    const button = el.querySelector<HTMLButtonElement>('.banner button')!;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Atualizando…');
   });
 
   it('keeps the error hidden until reloading was impossible', async () => {
@@ -80,7 +91,7 @@ describe('UpdateBanner', () => {
     it('is an in-app dialog (never window.confirm) that says the unsaved work is on this screen', async () => {
       const confirmSpy = vi.spyOn(window, 'confirm');
       const { dialog, keep, go, service } = await open('mine');
-      const confirmUpdate = vi.spyOn(service, 'confirmUpdate').mockImplementation(() => undefined);
+      const confirmUpdate = vi.spyOn(service, 'confirmUpdate').mockResolvedValue(undefined);
 
       expect(dialog.textContent).toContain('Atualizar agora?');
       expect(dialog.textContent).toContain('nesta tela');
@@ -99,7 +110,9 @@ describe('UpdateBanner', () => {
     it('says another open tab has unsaved work when that is the reason', async () => {
       const { dialog } = await open('other-tab');
       expect(dialog.textContent).toContain('Outra aba aberta tem algo não salvo');
+      expect(dialog.textContent).toContain('ela vai precisar salvar e recarregar');
       expect(dialog.textContent).not.toContain('nesta tela');
+      expect(dialog.textContent).not.toContain('se perde');
     });
 
     it('moves the focus into the dialog, onto the safe choice, and gives it back on close', async () => {

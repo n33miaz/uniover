@@ -4,12 +4,24 @@ import { DestroyRef, Injectable, inject } from '@angular/core';
 import { finalize } from 'rxjs';
 
 /** O que impede uma recarga automática: cada motivo é um tipo de trabalho que a recarga perderia ou cortaria. */
-export type UnsavedReason = 'form' | 'outbox' | 'request';
+export type UnsavedReason = 'form' | 'request';
+
+/** Uma escrita sem resposta há mais que isto deixa de contar: um pedido que nunca termina não pode travar a recarga para sempre. */
+export const REQUEST_MAX_AGE_MS = 30_000;
 
 /** Quantos campos editados a vigia guarda no máximo; passou disso, `form` fica ligado até a conta baixar. */
 const MAX_TRACKED_FIELDS = 200;
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement;
+
+/** Campo em que a pessoa digita: `input`, `textarea` ou região `contenteditable`. */
+function isTextField(target: EventTarget | Element | null): target is Field {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
 
 /** O texto do campo, para guardar como ponto de partida na primeira vez que a pessoa o foca. */
 function valueOf(field: Field): string {
@@ -32,6 +44,7 @@ function holdsTypedValue(field: Field, baseline: string | undefined): boolean {
     return baseline === undefined ? field.value !== field.defaultValue : field.value !== baseline;
   if (field instanceof HTMLSelectElement) return false;
   if (field instanceof HTMLInputElement) {
+    // Dia e hora (`date`, `time`...) costumam ser filtro (o dia do diário), não texto a salvar.
     switch (field.type) {
       case 'search':
       case 'hidden':
@@ -43,6 +56,11 @@ function holdsTypedValue(field: Field, baseline: string | undefined): boolean {
       case 'radio':
       case 'color':
       case 'file':
+      case 'date':
+      case 'time':
+      case 'datetime-local':
+      case 'month':
+      case 'week':
         return false;
       default:
         return baseline === undefined
@@ -58,14 +76,21 @@ function holdsTypedValue(field: Field, baseline: string | undefined): boolean {
 
 /**
  * Registro do "trabalho não salvo" da aba. Uma recarga automática (atualização, recuperação de pedaço ausente) só
- * acontece quando ele está vazio; nunca se perde o que a pessoa digitou, a fila de saída offline nem um pedido em voo.
+ * acontece quando ele está vazio; nunca se perde o que a pessoa digitou nem um pedido em voo desta aba. A fila de saída
+ * offline não entra: o que espera está gravado no aparelho, e os envios desta aba saem pelo `HttpClient`, que o interceptador
+ * já conta (ler o banco compartilhado seguraria a recarga por causa de outra aba).
  *
  * Quatro fontes:
  * - campos de formulário editados pela pessoa e ainda com o valor lá (vigia no `document`, sem cada tela precisar avisar);
- * - fontes registradas por telas e serviços (`register`): um editor sujo, a fila offline com itens em voo. O treino aberto não
- *   entra: a sessão fica gravada no aparelho e a recarga a retoma;
- * - escritas (`POST/PUT/PATCH/DELETE`) em voo, contadas pelo interceptador `unsavedWorkInterceptor`. Leituras não contam:
- *   uma leitura refeita pela página nova não perde nada, e uma conexão longa nunca terminaria.
+ * - fontes registradas por telas e serviços (`register`): um editor sujo. O treino aberto não entra: a sessão fica gravada no
+ *   aparelho e a recarga a retoma. Quando uma fonte registrada fica limpa (o editor salvou), os campos vigiados são soltos e
+ *   ganham novo ponto de partida; o mesmo vale no `submit` de um formulário;
+ * - escritas (`POST/PUT/PATCH/DELETE`) em voo, contadas pelo interceptador `unsavedWorkInterceptor` (as com mais de
+ *   `REQUEST_MAX_AGE_MS` deixam de contar). Leituras não contam: uma leitura refeita pela página nova não perde nada, e uma
+ *   conexão longa nunca terminaria.
+ *
+ * Só campos de texto são vigiados (`input`, `textarea`, `contenteditable`). Para uma tela cujo campo é só um filtro ou um
+ * controle que age na hora (o passo do treino, o teclado remoto), marque-o com `data-unsaved-ignore`.
  */
 @Injectable({ providedIn: 'root' })
 export class UnsavedWork {
@@ -73,21 +98,33 @@ export class UnsavedWork {
   private readonly edited = new Set<Field>();
   /** O valor de cada campo na primeira vez que a pessoa o focou (ver `holdsTypedValue`). */
   private readonly baselines = new WeakMap<Field, string>();
-  private readonly refreshers = new Set<() => Promise<unknown>>();
+  /** Último estado de cada fonte registrada de `form`, para notar quando ela fica limpa. */
+  private readonly sourceWasOn = new Map<() => boolean, boolean>();
   /** Mais campos editados do que cabem na vigia: na dúvida, protege (ver `track`). */
   private overflow = false;
-  private inFlight = 0;
+  /** As escritas em voo desta aba e quando cada uma começou. */
+  private readonly inFlight = new Map<symbol, number>();
 
   constructor() {
     const doc = inject(DOCUMENT);
     const remember = (event: Event) => {
       const target = event.target;
-      if (target instanceof HTMLElement && !this.baselines.has(target))
+      // Só campos de texto: o `textContent` do <main> ou do diálogo focado seria a página inteira na memória.
+      if (isTextField(target) && !this.baselines.has(target))
         this.baselines.set(target, valueOf(target));
+    };
+    const submitted = (event: Event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      for (const element of Array.from(form.elements)) {
+        if (!isTextField(element)) continue;
+        this.edited.delete(element);
+        this.baselines.set(element, valueOf(element));
+      }
     };
     const track = (event: Event) => {
       const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (!isTextField(target)) return;
       // Só entra o campo conectado cujo texto mudou; um campo de volta ao valor de partida sai na hora.
       if (!holdsTypedValue(target, this.baselines.get(target))) {
         this.edited.delete(target);
@@ -99,10 +136,12 @@ export class UnsavedWork {
       else this.overflow = true;
     };
     doc.addEventListener('focusin', remember, true);
+    doc.addEventListener('submit', submitted, true);
     doc.addEventListener('input', track, true);
     doc.addEventListener('change', track, true);
     inject(DestroyRef).onDestroy(() => {
       doc.removeEventListener('focusin', remember, true);
+      doc.removeEventListener('submit', submitted, true);
       doc.removeEventListener('input', track, true);
       doc.removeEventListener('change', track, true);
     });
@@ -111,51 +150,51 @@ export class UnsavedWork {
   /** Registra uma fonte; devolve a função que a retira (chame ao destruir quem registrou). */
   register(source: () => boolean, reason: UnsavedReason = 'form'): () => void {
     this.sources.set(source, reason);
-    return () => this.sources.delete(source);
-  }
-
-  /**
-   * Registra uma releitura assíncrona de uma fonte cujo valor pode estar velho (a fila de saída lê um banco compartilhado entre
-   * abas). `settle` a espera antes de uma decisão.
-   */
-  registerRefresh(refresh: () => Promise<unknown>): () => void {
-    this.refreshers.add(refresh);
-    return () => this.refreshers.delete(refresh);
-  }
-
-  /** Atualiza as fontes que podem estar velhas, com prazo curto: nunca segura a decisão por muito tempo nem lança. */
-  async settle(timeoutMs = 500): Promise<void> {
-    if (this.refreshers.size === 0) return;
-    const all = Promise.allSettled([...this.refreshers].map((refresh) => refresh()));
-    await Promise.race([all, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+    return () => {
+      this.sources.delete(source);
+      this.sourceWasOn.delete(source);
+    };
   }
 
   /** Marca o início e o fim de uma escrita em voo. */
   beginRequest(): () => void {
-    this.inFlight++;
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      this.inFlight--;
-    };
+    const token = Symbol('request');
+    this.inFlight.set(token, Date.now());
+    return () => void this.inFlight.delete(token);
+  }
+
+  private hasLiveRequest(): boolean {
+    const now = Date.now();
+    for (const startedAt of this.inFlight.values())
+      if (now - startedAt < REQUEST_MAX_AGE_MS) return true;
+    return false;
   }
 
   /** Todos os motivos ativos agora (sem repetição). */
   reasons(): UnsavedReason[] {
     const found = new Set<UnsavedReason>();
-    if (this.inFlight > 0) found.add('request');
+    if (this.hasLiveRequest()) found.add('request');
+    let editorSaved = false;
+    for (const [source, reason] of this.sources) {
+      let on: boolean;
+      try {
+        on = source();
+      } catch {
+        // Uma fonte defeituosa não derruba a conferência; na dúvida, protege o trabalho.
+        on = true;
+      }
+      if (on) found.add(reason);
+      if (reason === 'form') {
+        if (this.sourceWasOn.get(source) && !on) editorSaved = true;
+        this.sourceWasOn.set(source, on);
+      }
+    }
+    // Um editor registrado que ficou limpo salvou: os campos dele continuam na tela com o texto digitado, mas já não são
+    // trabalho pendente. Ganham novo ponto de partida.
+    if (editorSaved) this.rebaseline();
     this.prune();
     if (this.edited.size < MAX_TRACKED_FIELDS) this.overflow = false;
     if (this.edited.size > 0 || this.overflow) found.add('form');
-    for (const [source, reason] of this.sources) {
-      try {
-        if (source()) found.add(reason);
-      } catch {
-        // Uma fonte defeituosa não derruba a conferência; na dúvida, protege o trabalho.
-        found.add(reason);
-      }
-    }
     return [...found];
   }
 
@@ -168,10 +207,16 @@ export class UnsavedWork {
     return this.reasons().includes('form');
   }
 
-  /** Há escrita em voo (pedido sem resposta ou item da fila já enviado): vale esperar terminar, não perguntar. */
+  /** Há escrita em voo (pedido desta aba sem resposta): vale esperar terminar, não perguntar. */
   isWriting(): boolean {
-    const reasons = this.reasons();
-    return reasons.includes('request') || reasons.includes('outbox');
+    return this.reasons().includes('request');
+  }
+
+  /** Os campos vigiados ganham como ponto de partida o texto que têm agora, e a vigia esvazia. */
+  private rebaseline(): void {
+    for (const field of this.edited) this.baselines.set(field, valueOf(field));
+    this.edited.clear();
+    this.overflow = false;
   }
 
   /** Solta os campos que saíram da página ou ficaram vazios (a navegação chama isto: nada de tela morta retida). */
