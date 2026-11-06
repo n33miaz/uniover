@@ -11214,7 +11214,6 @@ export interface components {
       code: null | string;
       /** Format: int32 */
       count: number | string;
-      detail: null | string;
       /** Format: date-time */
       firstFailAt: null | string;
       os: null | string;

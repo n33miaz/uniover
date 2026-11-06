@@ -133,7 +133,6 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             e.Property(x => x.AgentId).ValueGeneratedNever();
             e.Property(x => x.LastStage).HasMaxLength(AgentBeacon.StageMax);
             e.Property(x => x.LastCode).HasMaxLength(AgentBeacon.CodeMax);
-            e.Property(x => x.LastDetail).HasMaxLength(AgentBeacon.DetailMax);
             e.Property(x => x.Version).HasMaxLength(AgentBeacon.VersionMax);
             e.Property(x => x.Os).HasMaxLength(AgentBeacon.OsMax);
             e.Property(x => x.LastRejectReason).HasMaxLength(AgentBeacon.ReasonMax);

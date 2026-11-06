@@ -30,6 +30,7 @@ public static class DeviceAuth
 
     internal const string FailureItem = "uniover.device.failure";
     internal const string RevokedFailure = "revoked";
+    internal const string MalformedFailure = "malformed";
     internal const string ThrottledFailure = "throttled";
     internal const string UnknownFailure = "unknown";
     internal const string RetryAfterItem = "uniover.device.retry-after";
@@ -82,7 +83,11 @@ internal sealed class DeviceTokenAuthentication(
                 return AuthenticateResult.Fail("throttled");
 
             default:
-                Context.Items[DeviceAuth.FailureItem] = DeviceAuth.UnknownFailure;
+                // Só vira "desconhecido" o token que tem a forma do nosso e foi procurado no banco (aí o teto de tokens inválidos já
+                // o contou). Texto sem a forma certa nunca foi ao banco, não conta no teto e não pode custar uma consulta a mais.
+                Context.Items[DeviceAuth.FailureItem] = DeviceSecrets.HashPresentedToken(token) is null
+                    ? DeviceAuth.MalformedFailure
+                    : DeviceAuth.UnknownFailure;
                 return AuthenticateResult.Fail("unknown");
         }
     }
@@ -104,14 +109,11 @@ internal sealed class DeviceTokenAuthentication(
         Response.StatusCode = revoked ? StatusCodes.Status403Forbidden : StatusCodes.Status401Unauthorized;
 
         // O dono precisa saber por que o PC não conecta: anota o motivo (um código fixo) no agente do caminho. O token nunca entra.
-        // Só quando houve um token para recusar: a abertura sem cabeçalho nenhum não anota nada, porque a autorização roda antes do
-        // limitador de requisições e essa rota anônima faria uma consulta ao banco por tentativa. Token inexistente já passa pelo teto de
-        // tokens inválidos por origem (o 429 acima), e os outros motivos exigem um token verdadeiro.
-        if (revoked)
-        {
-            await RecordRejectionAsync(BeaconRejection.Revoked);
-        }
-        else if (failure is DeviceAuth.UnknownFailure)
+        // Só se anota o token que tem a forma do nosso e foi procurado no banco sem achar (o teto de tokens inválidos por origem já o
+        // contou, e o 429 acima o corta). Sem cabeçalho ou com texto de forma errada nada é anotado, porque a autorização roda antes do
+        // limitador de requisições e isso seria uma consulta ao banco por tentativa. Token revogado também não: o agente revogado some da
+        // tela, e anotar pelo caminho marcaria o agente errado.
+        if (failure is DeviceAuth.UnknownFailure)
         {
             await RecordRejectionAsync(BeaconRejection.InvalidToken);
         }

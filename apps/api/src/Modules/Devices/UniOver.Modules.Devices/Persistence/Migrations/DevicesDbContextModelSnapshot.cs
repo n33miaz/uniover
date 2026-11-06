@@ -275,11 +275,6 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("last_code");
 
-                    b.Property<string>("LastDetail")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("last_detail");
-
                     b.Property<string>("LastRejectReason")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")

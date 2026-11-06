@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Persistence;
@@ -27,14 +28,18 @@ internal static class BeaconLimits
     public static readonly TimeSpan RejectionInterval = TimeSpan.FromMinutes(1);
 
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Teto da API inteira para o que estas duas portas anônimas mandam ao banco (balizas e anotações de recusa) por minuto. O limite
+    /// por IP não segura quem troca de endereço (um /64 de IPv6 inteiro) nem o proxy sem IP real; este segura, e o excedente é descartado
+    /// antes de qualquer consulta.
+    /// </summary>
+    public const int GlobalPerMinute = 120;
 }
 
 /// <summary>Os motivos de recusa do handshake que a API anota: códigos fixos, nunca texto do cliente nem pedaço de credencial.</summary>
 internal static class BeaconRejection
 {
-    /// <summary>O token existe, mas foi revogado.</summary>
-    public const string Revoked = "revoked";
-
     /// <summary>O token não corresponde a nenhum agente.</summary>
     public const string InvalidToken = "invalid_token";
 
@@ -52,11 +57,11 @@ internal static class BeaconRejection
 /// <param name="Ver">Versão do agente.</param>
 /// <param name="Os">Sistema do PC.</param>
 /// <param name="N">Quantas vezes o agente já partiu (ignorado pela API).</param>
-/// <param name="Detail">Texto curto opcional, de letras, números e pontuação simples.</param>
+/// <param name="Detail">Aceito por compatibilidade e ignorado: texto livre vindo de rota anônima não é guardado enquanto nada o mostrar.</param>
 internal sealed record AgentBeaconBody(int? V, string? Stage, string? Code, string? Ver, string? Os, int? N, string? Detail);
 
 /// <summary>Uma baliza já conferida, pronta para gravar.</summary>
-internal sealed record BeaconInput(string Stage, string Code, string? Version, string? Os, string? Detail);
+internal sealed record BeaconInput(string Stage, string Code, string? Version, string? Os);
 
 /// <summary>
 /// Leitura defensiva do corpo da baliza. Nada aqui lança: o que não serve vira <c>null</c> e a rota responde 204 do mesmo jeito,
@@ -72,14 +77,6 @@ internal static partial class AgentBeaconParser
 
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._ -]{0,23}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
     private static partial Regex OsPattern();
-
-    // Letras, números, espaço e pontuação simples. Fica de fora tudo que carrega caminho, e-mail, URL ou "chave=valor".
-    [GeneratedRegex(@"^[\p{L}\p{N} .,;:()+_-]{1,200}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
-    private static partial Regex DetailPattern();
-
-    // Uma sequência longa sem espaço parece token, chave ou hash: o texto inteiro é descartado.
-    [GeneratedRegex(@"[A-Za-z0-9_-]{24,}", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
-    private static partial Regex LongTokenPattern();
 
     public static BeaconInput? Parse(ReadOnlySpan<byte> body)
     {
@@ -111,29 +108,12 @@ internal static partial class AgentBeaconParser
                 stage,
                 code,
                 version is not null && VersionPattern().IsMatch(version) ? version : null,
-                os is not null && OsPattern().IsMatch(os) ? os : null,
-                CleanDetail(Text(root, "detail")));
+                os is not null && OsPattern().IsMatch(os) ? os : null);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or RegexMatchTimeoutException)
         {
             return null;
         }
-    }
-
-    /// <summary>O detalhe só passa se couber no alfabeto simples e não parecer um segredo; do contrário some, e a baliza segue sem ele.</summary>
-    public static string? CleanDetail(string? detail)
-    {
-        var text = detail?.Trim();
-        if (string.IsNullOrEmpty(text)
-            || text.Length > AgentBeacon.DetailMax
-            || !DetailPattern().IsMatch(text)
-            || text.Contains("uo_dev", StringComparison.OrdinalIgnoreCase)
-            || LongTokenPattern().IsMatch(text))
-        {
-            return null;
-        }
-
-        return text;
     }
 
     private static string? Text(JsonElement root, string name) =>
@@ -149,6 +129,29 @@ internal sealed class AgentBeaconGate(TimeProvider time)
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, (DateTimeOffset Start, int Count)> _beacons = [];
     private readonly Dictionary<Guid, DateTimeOffset> _rejections = [];
+    private (DateTimeOffset Start, int Count) _global;
+
+    /// <summary>O teto geral por minuto; vale antes de qualquer consulta ao banco.</summary>
+    public bool TryAcceptGlobal()
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            if (now - _global.Start >= BeaconLimits.Window)
+            {
+                _global = (now, 1);
+                return true;
+            }
+
+            if (_global.Count >= BeaconLimits.GlobalPerMinute)
+            {
+                return false;
+            }
+
+            _global = (_global.Start, _global.Count + 1);
+            return true;
+        }
+    }
 
     public bool TryAcceptBeacon(Guid agentId)
     {
@@ -191,7 +194,6 @@ internal sealed record AgentBeaconItem(
     Guid AgentId,
     string? Stage,
     string? Code,
-    string? Detail,
     DateTimeOffset? At,
     DateTimeOffset? FirstFailAt,
     int Count,
@@ -220,6 +222,11 @@ internal sealed partial class AgentBeaconStore(
         ArgumentNullException.ThrowIfNull(input);
         try
         {
+            if (!gate.TryAcceptGlobal())
+            {
+                return;
+            }
+
             var agentId = await FindAgentAsync(slug, includeRevoked: false, cancellationToken);
             if (agentId is null || !gate.TryAcceptBeacon(agentId.Value))
             {
@@ -238,7 +245,7 @@ internal sealed partial class AgentBeaconStore(
                 return;
             }
 
-            row.ApplyBeacon(input.Stage, input.Code, input.Detail, input.Version, input.Os, now);
+            row.ApplyBeacon(input.Stage, input.Code, input.Version, input.Os, now);
             await SaveAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -256,15 +263,14 @@ internal sealed partial class AgentBeaconStore(
     /// <summary>Anota que o handshake do agente do caminho <paramref name="slug"/> foi recusado. Sem agente com esse slug, não grava nada.</summary>
     public async Task TryRecordRejectionAsync(string? slug, string reason, CancellationToken cancellationToken)
     {
-        if (!AgentSlug.IsValid(slug))
+        if (!AgentSlug.IsValid(slug) || !gate.TryAcceptGlobal())
         {
             return;
         }
 
         try
         {
-            // Inclui revogados: "revoked" é justamente o caso do agente que o dono desligou.
-            var agentId = await FindAgentAsync(slug!, includeRevoked: true, cancellationToken);
+            var agentId = await FindAgentAsync(slug!, includeRevoked: false, cancellationToken);
             if (agentId is null || !gate.TryAcceptRejection(agentId.Value))
             {
                 return;
@@ -302,7 +308,6 @@ internal sealed partial class AgentBeaconStore(
                               b.AgentId,
                               b.LastStage,
                               b.LastCode,
-                              b.LastDetail,
                               b.LastAt,
                               b.FirstFailAt,
                               b.Count,
@@ -327,9 +332,10 @@ internal sealed partial class AgentBeaconStore(
         {
             await db.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             // Duas balizas do mesmo agente criaram a linha ao mesmo tempo (a chave é o agente): a que chegou antes já gravou.
+            // Qualquer outro erro (permissão, coluna, agente apagado no meio) sobe e é registrado por quem chamou, só com o tipo.
             db.ChangeTracker.Clear();
         }
     }

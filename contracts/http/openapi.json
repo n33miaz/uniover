@@ -205,12 +205,6 @@
               "string"
             ]
           },
-          "detail": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
           "firstFailAt": {
             "format": "date-time",
             "type": [
@@ -257,7 +251,6 @@
           "agentId",
           "stage",
           "code",
-          "detail",
           "at",
           "firstFailAt",
           "count",
