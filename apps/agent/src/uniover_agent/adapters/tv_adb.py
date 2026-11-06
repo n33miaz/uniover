@@ -62,6 +62,7 @@ from uniover_agent.ports import (
     AdbUnavailable,
     AdbUnreachable,
     LaunchableApp,
+    current_user_request,
     is_user_initiated,
 )
 from uniover_agent.ports.tv_livre import ShellResult
@@ -257,8 +258,25 @@ class AdbTv:
         async with self._lock:
             await self._connect_locked()
 
+    async def _stays_attached(self) -> bool:
+        """Com a permissão provada para esta chave, endereço e aparelho, o canal fica aberto.
+
+        A chave gravada na TV não mostra aviso ao religar, e é isso que mantém a lista diária, a
+        limpeza, os ícones e abrir app pela Siri funcionando depois da hibernação por ociosidade.
+        Sem a prova o canal se desfaz como sempre (o servidor do `adb` religa sozinho uma conexão
+        TCP feita com `adb connect`, e cada religação seria um aviso novo).
+        """
+        if not self._connected:
+            return False
+        return self._authorization.keeps_channel(await self._identity_mac())
+
     async def disconnect(self) -> None:
-        """Desconecta só esta TV (não mata o servidor do `adb`, que pode servir a outros usos)."""
+        """Desconecta só esta TV (não mata o servidor do `adb`, que pode servir a outros usos).
+
+        Com a permissão provada o canal **fica** (ver `_stays_attached`); sem ela desconecta.
+        """
+        if await self._stays_attached():
+            return
         self._connected = False
         if self._lock.locked():
             if self._disconnect_task is None or self._disconnect_task.done():
@@ -283,6 +301,40 @@ class AdbTv:
             if task is not None and not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+        # Ao encerrar, nada fica registrado no servidor do `adb` sem estar provado.
+        # Sem esperar a trava de uma operação em andamento: encerrar nunca fica preso nela.
+        if self._lock.locked():
+            return
+        try:
+            async with self._lock:
+                await self._disconnect_unless_verified_locked()
+        except Exception:
+            _log.debug("adb disconnect no encerramento não confirmou")
+
+    async def _disconnect_unless_verified_locked(self) -> None:
+        """Fim de um pedido, da espera do aceite ou do agente: sem prova, desfaz a conexão.
+
+        O servidor do `adb` tenta religar sozinho as conexões TCP feitas com `adb connect`; numa TV
+        que ainda não guardou a permissão (aviso ignorado, recusa, só `granted`) cada tentativa
+        mostraria o aviso de novo, sem ninguém ter pedido. Provada, a conexão fica.
+        """
+        if self._authorization.keeps_channel(await self._identity_mac()):
+            return
+        self._connected = False
+        await self._disconnect_locked()
+
+    async def _end_user_request(self) -> None:
+        """Ao fim do pedido da pessoa que usou o ADB: o que não terminou provado é desconectado."""
+        task = self._pairing_task
+        if task is not None and not task.done():
+            return  # a espera do aceite segue com a conexão e a desfaz ao terminar
+        async with self._lock:
+            await self._disconnect_unless_verified_locked()
+
+    def _remember_user_request(self) -> None:
+        request = current_user_request()
+        if request is not None:
+            request.on_finish(self._end_user_request)
 
     async def _disconnect_locked(self) -> None:
         try:
@@ -438,6 +490,7 @@ class AdbTv:
         if not allowed:
             await self._refuse_connect_locked()
             return
+        self._remember_user_request()
         authorization = self._authorization
         # A chave de **antes** da conexão: se o `adbkey` mudar no meio (o Android Studio mexe nele),
         # nada é registrado nem guardado em nome da chave errada.
@@ -473,6 +526,7 @@ class AdbTv:
             self._remember_failure(exc)
             if isinstance(exc, AdbUnauthorized):
                 self._watch_for_acceptance(snapshot)
+                await self._drop_after_refusal()
             raise
         if state is DeviceState.DEVICE:
             self._blocked_error = None
@@ -494,6 +548,7 @@ class AdbTv:
         self._remember_failure(failure)
         if state in (DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
             self._watch_for_acceptance(snapshot)
+            await self._drop_after_refusal()
         raise failure
 
     async def _register_user_connection_locked(
@@ -530,6 +585,14 @@ class AdbTv:
             authorization.mark_granted(snapshot, mac)
         return False
 
+    async def _drop_after_refusal(self) -> None:
+        """Recusa num caminho automático: desfaz a conexão (no pedido da pessoa, quem a desfaz é a
+        espera do aceite, que precisa dela para ver o `device`)."""
+        if is_user_initiated():
+            return
+        self._connected = False
+        await self._disconnect_locked()
+
     def _watch_for_acceptance(self, snapshot: str | None) -> None:
         """Pedido da pessoa que deixou o aviso na tela: espera o aceite lendo só o estado (90 s)."""
         if not is_user_initiated():
@@ -541,15 +604,30 @@ class AdbTv:
     async def _acceptance_watch(self, snapshot: str | None) -> None:
         """Continuação do toque da pessoa: espera o aceite por até `pairing_watch_seconds` (90 s).
 
-        **Nunca conecta nem desconecta** e não leva a marca de pedido da pessoa. Enquanto espera só
-        lê `get-state`. Quando a TV diz `device`, registra a permissão como `granted` (ainda não
-        provada) e, como continuação do mesmo toque, roda sobre o transporte já autorizado dois
-        comandos fixos de shell: desliga o vencimento de 7 dias (`settings put`/`get`) e anota o
-        serial (`getprop`). A prova (uma conexão nova) só acontece num pedido seguinte da pessoa.
+        **Nunca conecta** e não leva a marca de pedido da pessoa. Enquanto espera só lê `get-state`
+        (a conexão do toque precisa ficar para ela ver o `device`). Quando a TV diz `device`,
+        registra a permissão como `granted` (ainda não provada) e, como continuação do mesmo toque,
+        roda sobre o transporte já autorizado dois comandos fixos de shell: desliga o vencimento de
+        7 dias (`settings put`/`get`) e anota o serial (`getprop`). A prova (uma conexão nova) só
+        acontece num pedido seguinte da pessoa.
+
+        **Ao terminar** (aceite, fim da janela, recusa) desfaz a conexão com `adb disconnect`, a
+        menos que a permissão esteja provada: o servidor do `adb` religa sozinho conexões TCP não
+        provadas.
 
         É limitada no tempo (contagem e relógio, conferido de novo depois de esperar a trava) e só
         existe na memória: nada a retoma depois dos 90 s nem depois de reiniciar o agente.
         """
+        try:
+            await self._watch_loop(snapshot)
+        finally:
+            try:
+                async with self._lock:
+                    await self._disconnect_unless_verified_locked()
+            except Exception:
+                _log.debug("adb disconnect ao fim da espera não confirmou")
+
+    async def _watch_loop(self, snapshot: str | None) -> None:
         authorization = self._authorization
         poll = max(self._pairing_poll_seconds, 0.001)
         deadline = self._monotonic() + self._pairing_watch_seconds
@@ -588,6 +666,7 @@ class AdbTv:
     async def _ensure_connected_locked(self) -> None:
         if self._connected:
             if is_user_initiated():
+                self._remember_user_request()
                 if await self._needs_proof():
                     # Transporte vivo sem prova de permissão gravada: a pessoa pediu, então confere.
                     await self._disconnect_locked()

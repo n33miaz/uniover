@@ -118,8 +118,12 @@ def user_initiated(
     async def handle(command: Command) -> CommandResult:
         if not when(command):
             return await handler(command)
-        with user_initiated_adb():
-            return await handler(command)
+        with user_initiated_adb() as request:
+            try:
+                return await handler(command)
+            finally:
+                # O que o pedido deixou sem prova (conexão do ADB) é desfeito antes de responder.
+                await request.finish()
 
     return handle
 
