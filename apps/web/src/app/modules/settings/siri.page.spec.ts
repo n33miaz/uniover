@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { UnsavedWork } from '../../core/pwa/unsaved-work';
 import { SessionState } from '../../core/session/session-state';
 import { SystemApi, TvItem } from './system-api';
 import { SiriApi, SiriApp, SiriKey } from './siri-api';
@@ -150,6 +151,30 @@ describe('SiriPage', () => {
     name.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     expect(submit().disabled).toBe(true);
+  });
+
+  it('counts a key being created as unsaved work only once something was changed, and not after closing it', async () => {
+    const { el, click, toggle, fixture } = await render();
+    const unsaved = TestBed.inject(UnsavedWork);
+    expect(unsaved.needsConfirmation()).toBe(false);
+
+    // Abrir o formulário com o nome sugerido não é uma mudança.
+    await click('Criar chave');
+    expect(unsaved.needsConfirmation()).toBe(false);
+
+    toggle('Mudo');
+    expect(unsaved.needsConfirmation()).toBe(true);
+    toggle('Mudo');
+    expect(unsaved.needsConfirmation()).toBe(false);
+
+    const name = el.querySelector<HTMLInputElement>('#siri-name')!;
+    name.value = 'iPhone da sala';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(unsaved.needsConfirmation()).toBe(true);
+
+    await click('Cancelar');
+    expect(unsaved.needsConfirmation()).toBe(false);
   });
 
   it('offers the apps of the TV, and only for the TV that is chosen', async () => {

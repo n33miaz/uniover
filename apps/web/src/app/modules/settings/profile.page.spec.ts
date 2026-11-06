@@ -3,6 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiProblem, networkProblem } from '../../core/auth/api-problem';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
+import { UnsavedWork } from '../../core/pwa/unsaved-work';
 import { SessionState } from '../../core/session/session-state';
 import { ProfilePage } from './profile.page';
 
@@ -188,6 +189,37 @@ describe('ProfilePage', () => {
       );
       // Salvo, o botão volta a esperar uma mudança.
       expect(saveButton(el).disabled).toBe(true);
+    });
+
+    it('counts as unsaved work only while the typed name differs from the saved one', async () => {
+      const { fixture, el } = await render();
+      const unsaved = TestBed.inject(UnsavedWork);
+      expect(unsaved.needsConfirmation()).toBe(false);
+
+      type(el, 'Neemias');
+      fixture.detectChanges();
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      // Só espaços de diferença não é mudança.
+      type(el, '  Dono da   Casa ');
+      fixture.detectChanges();
+      expect(unsaved.needsConfirmation()).toBe(false);
+
+      type(el, 'Neemias');
+      fixture.detectChanges();
+      await save(fixture, el);
+      // Salvo com sucesso: o nome fica no campo, mas já não é trabalho pendente (nada a "salvar ou descartar").
+      expect(unsaved.needsConfirmation()).toBe(false);
+      expect(unsaved.hasUnsaved()).toBe(false);
+    });
+
+    it('still counts the name when saving failed', async () => {
+      api.updateMe.mockRejectedValue(problem(500));
+      const { fixture, el } = await render();
+      type(el, 'Neemias');
+      fixture.detectChanges();
+      await save(fixture, el);
+      expect(TestBed.inject(UnsavedWork).needsConfirmation()).toBe(true);
     });
 
     it('takes the "saved" message away as soon as the person edits again', async () => {
