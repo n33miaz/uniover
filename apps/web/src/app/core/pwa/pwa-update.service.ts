@@ -252,7 +252,8 @@ export class PwaUpdateService {
    */
   async confirmUpdate(): Promise<void> {
     if (this.applying || this.deciding) return;
-    const accepted = this.confirmingUpdate();
+    // O que estava sujo quando a pessoa aceitou: ela aceitou perder isso, não o que ficar sujo durante a espera.
+    const acceptedDirty = new Set(this.unsaved.dirtySources());
     this.confirmingUpdate.set(null);
     this.deciding = true;
     this.updateDeciding.set(true);
@@ -261,9 +262,8 @@ export class PwaUpdateService {
     } finally {
       this.deciding = false;
     }
-    // Quem aceitou perder o texto desta aba não pergunta de novo; quem confirmou só por outra aba, sim, se durante a espera
-    // esta aba ficou com texto não salvo.
-    if (accepted !== 'mine' && this.unsaved.needsConfirmation()) {
+    // Se durante a espera algo novo ficou sujo (um editor que não estava sujo quando a pessoa aceitou), pergunta de novo.
+    if (this.unsaved.dirtySources().some((source) => !acceptedDirty.has(source))) {
       this.updateDeciding.set(false);
       this.confirmingUpdate.set('mine');
       return;
@@ -293,7 +293,6 @@ export class PwaUpdateService {
   onNavigated(): void {
     this.resumeUrl = undefined;
     this.navigationBlocked.set(false);
-    this.unsaved.prune();
     void this.runDeferred();
   }
 
