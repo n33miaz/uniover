@@ -375,14 +375,21 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
                 && app.Presence.Get(raphaelAgent.Slug)?.Capabilities.Contains("tv.presence.v1", StringComparer.Ordinal) == true,
             "capacidades de presença dos dois agentes");
 
-        // A TV de outra pessoa não se distingue de uma inexistente, e o sinal não chega ao agente dela.
+        // A TV de outra pessoa não se distingue de uma inexistente...
         using (var foreign = await app.SendAsync(
             HttpMethod.Post, $"/api/v1/tv/presence?tvId={defaultTvId}", bearer: member.Login.AccessToken))
         {
             foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
 
-        // Na própria TV o sinal chega ao agente da própria TV...
+        // ...e nada chegou ao agente dela: o primeiro comando que ele recebe é o `wake` pedido a seguir, não um sinal.
+        var wake = app.PostAsync($"/api/v1/tv/wake?tvId={defaultTvId}");
+        var first = await TvApp.NextCommandAsync(defaultConnection);
+        first.GetProperty("type").GetString().Should().Be("tv.wake.v1", "o sinal do membro nunca foi para esta TV");
+        await TvApp.ReplyAsync(defaultConnection, first);
+        (await wake.WaitAsync(FakeAgent.Patience, Ct)).Dispose();
+
+        // Na própria TV o sinal chega ao agente da própria TV.
         using (var own = await app.SendAsync(
             HttpMethod.Post, $"/api/v1/tv/presence?tvId={raphaelTvId}", bearer: member.Login.AccessToken))
         {
@@ -391,20 +398,13 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 
         (await TvApp.NextCommandAsync(raphaelConnection)).GetProperty("type").GetString().Should().Be("tv.presence.v1");
 
-        // ...e o dono, escolhendo a TV do Raphael, também não toca o agente da TV padrão.
+        // O intervalo da TV padrão segue livre (o sinal do membro não o gastou): o do dono passa e chega a ela.
         using (var owner = await app.SendAsync(HttpMethod.Post, $"/api/v1/tv/presence?tvId={defaultTvId}"))
         {
             owner.StatusCode.Should().Be(HttpStatusCode.Accepted);
         }
 
-        // O primeiro comando que o agente da TV padrão recebe é este sinal do dono (e só ele): o do membro não veio.
-        var first = await TvApp.NextCommandAsync(defaultConnection);
-        first.GetProperty("type").GetString().Should().Be("tv.presence.v1");
-        var wake = app.PostAsync($"/api/v1/tv/wake?tvId={defaultTvId}");
-        var second = await TvApp.NextCommandAsync(defaultConnection);
-        second.GetProperty("type").GetString().Should().Be("tv.wake.v1", "o sinal do membro nunca foi para esta TV");
-        await TvApp.ReplyAsync(defaultConnection, second);
-        (await wake.WaitAsync(FakeAgent.Patience, Ct)).Dispose();
+        (await TvApp.NextCommandAsync(defaultConnection)).GetProperty("type").GetString().Should().Be("tv.presence.v1");
     }
 
     [Fact]
