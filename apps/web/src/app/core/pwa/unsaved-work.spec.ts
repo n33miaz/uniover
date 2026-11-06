@@ -6,7 +6,7 @@ import {
   runInInjectionContext,
 } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { guardOutbox } from './outbox-guard';
+import { OUTBOX_LOAD_TIMEOUT_MS, guardOutbox } from './outbox-guard';
 import { UnsavedWork, registerUnsavedWork, unsavedWorkInterceptor } from './unsaved-work';
 
 function type(field: HTMLInputElement | HTMLTextAreaElement, value: string): void {
@@ -243,6 +243,19 @@ describe('guardOutbox', () => {
     expect(work.reasons()).toEqual(['outbox']);
     pending = 0;
     expect(work.hasUnsaved()).toBe(false);
+  });
+
+  it('lets go when the queue import hangs, so the watchdog is never stuck behind it', async () => {
+    vi.useFakeTimers();
+    try {
+      const work = TestBed.inject(UnsavedWork);
+      void guardOutbox(work, () => new Promise(() => undefined));
+      expect(work.hasUnsaved()).toBe(true);
+      await vi.advanceTimersByTimeAsync(OUTBOX_LOAD_TIMEOUT_MS);
+      expect(work.hasUnsaved()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lets go when the queue fails to load, and hands the error back', async () => {

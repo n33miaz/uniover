@@ -64,12 +64,13 @@ export const appConfig: ApplicationConfig = {
     // a conta aparece. O import dinâmico deixa o banco local e o motor fora do pacote inicial: a primeira tela não espera.
     provideAppInitializer(() => {
       const injector = inject(Injector);
-      // Itens esperando ou em voo na fila de saída seguram a recarga automática (até a fila carregar, ela conta como ocupada).
+      // Só item em voo na fila de saída segura a recarga automática: o que espera já está guardado no IndexedDB e a recarga
+      // não o perde (contar também os pendentes bloquearia a atualização por horas offline).
       void guardOutbox(injector.get(UnsavedWork), async () => {
         const { QueueScopes } = await import('./core/offline-queue/queue-scopes');
         const scopes = injector.get(QueueScopes);
         scopes.follow();
-        return () => scopes.active()?.store.pendingCount() ?? 0;
+        return () => scopes.active()?.store.sendingCount() ?? 0;
       });
     }),
   ],
