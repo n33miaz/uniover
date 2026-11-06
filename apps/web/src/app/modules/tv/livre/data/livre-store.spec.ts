@@ -61,13 +61,14 @@ describe('TvLivreStore', () => {
     photo: vi.fn(),
     deletePhoto: vi.fn(),
   };
-  const tvApi = { shortcuts: vi.fn() };
+  const tvApi = { shortcuts: vi.fn(), presence: vi.fn() };
   const reducer = vi.fn<(file: Blob) => Promise<PhotoFit<Blob>>>();
   let store: TvLivreStore;
 
   beforeEach(() => {
     calls.length = 0;
-    for (const fn of [...Object.values(api), tvApi.shortcuts, reducer]) fn.mockReset();
+    for (const fn of [...Object.values(api), tvApi.shortcuts, tvApi.presence, reducer]) fn.mockReset();
+    tvApi.presence.mockResolvedValue(undefined);
     api.get.mockResolvedValue(view());
     api.photo.mockResolvedValue(null);
     tvApi.shortcuts.mockResolvedValue([
@@ -95,6 +96,53 @@ describe('TvLivreStore', () => {
     store.start();
     await settle();
   }
+
+  describe('presence on touch (the TV Livre screen has no TvStore)', () => {
+    const touch = (type: 'pointerdown' | 'keydown' = 'pointerdown') =>
+      document.dispatchEvent(new Event(type));
+
+    it('sends nothing on its own, signals on a touch or a key, and is silent after stop()', async () => {
+      await open();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(tvApi.presence).not.toHaveBeenCalled();
+      touch();
+      await settle();
+      expect(tvApi.presence).toHaveBeenCalledTimes(1);
+      touch('keydown'); // dentro dos 5 s: o mesmo sinal vale
+      await settle();
+      expect(tvApi.presence).toHaveBeenCalledTimes(1);
+      store.stop();
+      touch();
+      await settle();
+      expect(tvApi.presence).toHaveBeenCalledTimes(1);
+    });
+
+    it('reading the state waits for the presence that the tap just started', async () => {
+      const order: string[] = [];
+      let release = () => {};
+      tvApi.presence.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            release = () => {
+              order.push('presence-done');
+              resolve();
+            };
+          }),
+      );
+      api.refresh.mockImplementation(async () => {
+        order.push('refresh');
+        return view();
+      });
+      await open();
+      touch();
+      const refreshing = store.refresh();
+      await settle();
+      expect(api.refresh).not.toHaveBeenCalled();
+      release();
+      await refreshing;
+      expect(order).toEqual(['presence-done', 'refresh']);
+    });
+  });
 
   describe('opening', () => {
     it('shows the wait only until the first state arrives, then builds the draft from it', async () => {

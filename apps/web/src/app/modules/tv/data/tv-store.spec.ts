@@ -604,6 +604,53 @@ describe('TvStore', () => {
       expect(order).toEqual(['presence', 'launch']);
     });
 
+    it('opening an app right after the pointerdown waits for the presence already on its way', async () => {
+      const order: string[] = [];
+      let release = () => {};
+      api.presence.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            release = () => {
+              order.push('presence-done');
+              resolve();
+            };
+          }),
+      );
+      api.launch.mockImplementation(async () => void order.push('launch'));
+      await started();
+      touch(); // o toque real: o `pointerdown` já manda a presença (ainda a caminho)
+      const launching = store.launch(shortcut(1));
+      await flush();
+      expect(api.presence).toHaveBeenCalledTimes(1); // a segunda chamada não manda outra...
+      expect(api.launch).not.toHaveBeenCalled(); // ...e espera a primeira terminar
+      release();
+      await launching;
+      expect(order).toEqual(['presence-done', 'launch']);
+    });
+
+    it('cleaning right after the pointerdown waits for the presence already on its way', async () => {
+      const order: string[] = [];
+      let release = () => {};
+      api.presence.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            release = () => {
+              order.push('presence-done');
+              resolve();
+            };
+          }),
+      );
+      await started();
+      touch();
+      const cleaning = store.cleanup();
+      await flush();
+      expect(api.cleanup).not.toHaveBeenCalled();
+      release();
+      await cleaning;
+      expect(order[0]).toBe('presence-done');
+      expect(api.cleanup).toHaveBeenCalledTimes(1);
+    });
+
     it('cleaning the TV signals first, then cleans', async () => {
       const order: string[] = [];
       api.presence.mockImplementation(async () => void order.push('presence'));

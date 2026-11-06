@@ -1,6 +1,8 @@
+import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { SessionState } from '../../../../core/session/session-state';
 import { TvApi } from '../../data/tv-api';
+import { TvPresence } from '../../data/tv-presence';
 import { TvSelection } from '../../data/tv-selection';
 import type { TvShortcut } from '../../data/tv-types';
 import {
@@ -66,6 +68,8 @@ function toDataUrl(blob: Blob): Promise<string | null> {
 export class TvLivreStore {
   private readonly api = inject(TvLivreApi);
   private readonly tvApi = inject(TvApi);
+  private readonly presence = inject(TvPresence);
+  private readonly doc = inject(DOCUMENT);
   private readonly session = inject(SessionState);
   private readonly selection = inject(TvSelection);
   private readonly reducer = inject(LIVRE_PHOTO_REDUCER);
@@ -163,13 +167,22 @@ export class TvLivreStore {
     // O aviso é do pedido de antes de sair da tela; o estado e o rascunho ficam (a tela abre já com eles e renova por baixo).
     this._notice.set(null);
     this.supportAttempts = 0;
+    // Esta tela não passa pelo `TvStore`: o toque nela também é o sinal de presença que deixa o agente reconectar o ADB.
+    this.doc.addEventListener('pointerdown', this.onTouch, { capture: true, passive: true });
+    this.doc.addEventListener('keydown', this.onTouch, { capture: true, passive: true });
     void this.load();
   }
 
   stop(): void {
     this.started = false;
+    this.doc.removeEventListener('pointerdown', this.onTouch, { capture: true });
+    this.doc.removeEventListener('keydown', this.onTouch, { capture: true });
     this.clearSupportRetry();
   }
+
+  private readonly onTouch = () => {
+    void this.presence.signal();
+  };
 
   /** Lê o estado e os atalhos da TV (para nome e ícone dos apps). Sem estado ainda, mostra a espera; com ele, atualiza por baixo. */
   async load(): Promise<void> {
@@ -198,6 +211,8 @@ export class TvLivreStore {
   /** Pede ao agente o estado de agora (instalado, versão, é a tela inicial?). */
   refresh(): Promise<boolean> {
     return this.run('refresh', async (epoch) => {
+      // Ler o estado passa pelo agente e só reconecta o ADB logo depois de um sinal de presença: espera o do toque.
+      await this.presence.signal();
       this.adopt(await this.live(epoch, this.api.refresh()), epoch);
       return $localize`:@@tv-livre.notice.refreshed:Estado atualizado.`;
     });

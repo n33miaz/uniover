@@ -229,8 +229,8 @@ async def test_a_tap_reaches_the_real_adb_marked_but_the_startup_never_connects(
     # Como o `ProcessMessage` executa um comando: numa tarefa própria (`_execute_detached`). A marca
     # de pedido da pessoa tem de chegar ao `AdbTv` por dentro dela.
     await asyncio.ensure_future(handler(refresh))
-    # O toque conecta e, ainda no mesmo pedido, reconecta para provar que a permissão ficou gravada.
-    assert runner.calls.count(("connect", serial)) == 2
+    # O transporte vivo da partida é desfeito e o toque abre uma conexão nova: essa é a prova.
+    assert runner.calls.count(("connect", serial)) == 1
     # O toque conecta por levar a marca de pedido da pessoa; nem ele nem nenhum comando de tipo
     # (tecla, atalho do iPhone) conta como alguém na tela: só o sinal de presença conta.
     assert not setup.activity.recent()
