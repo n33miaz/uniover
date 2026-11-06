@@ -62,7 +62,11 @@ export class SyncEngine {
   private forceRequested = false;
   /** Depois de `stop()` o motor não começa nada novo: a conta saiu de cena e o banco vai ser fechado. */
   private stopped = false;
-  /** Pendente até a primeira passagem com o bloqueio em mãos (só então ninguém mais está enviando). */
+  /**
+   * Verdadeiro a cada vez que esta aba pega o bloqueio de envio (só então ninguém mais está enviando): o que estiver `sending`
+   * no banco é de quem enviava antes e já não existe (uma aba que fechou no meio do envio, mesmo depois da primeira passagem
+   * desta).
+   */
   private needsReset = true;
   private pollTimer: unknown;
   private wakeTimer: unknown;
@@ -184,9 +188,10 @@ export class SyncEngine {
     // Sem rede não há o que tentar: o evento `online` volta aqui. Não gasta tentativa nem aumenta o backoff.
     if (!this.connectivity.online()) return;
 
-    const result = await this.locks.tryRun(syncLockName(this.accountId), () =>
-      this.sendInOrder(force),
-    );
+    const result = await this.locks.tryRun(syncLockName(this.accountId), () => {
+      this.needsReset = true;
+      return this.sendInOrder(force);
+    });
     if (!result.ran) await this.store.refresh(); // outra aba envia; só atualiza o que esta aba mostra
     this.updateTimers();
   }
