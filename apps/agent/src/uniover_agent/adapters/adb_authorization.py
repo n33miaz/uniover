@@ -24,6 +24,7 @@ Nada aqui registra o conteúdo da chave: só um resumo curto dela (SHA-256) entr
 import hashlib
 import json
 import logging
+import math
 import os
 import secrets
 import shutil
@@ -42,8 +43,10 @@ _log = logging.getLogger(__name__)
 KEY_FILE: Final = "adbkey"
 PUBLIC_KEY_FILE: Final = "adbkey.pub"
 STATE_FILE: Final = "adb-authorization.json"
-# Tentativas, no total, de desligar o vencimento da permissão na TV: depois disso o agente fica
-# com o contato periódico (que também zera a contagem de 7 dias).
+# Respostas da TV que não aceitaram desligar o vencimento da permissão (só a resposta dela conta,
+# nunca tempo esgotado nem transporte caído). Depois disso o agente desiste do ajuste; a contagem de
+# 7 dias da TV só zera quando alguma conexão ADB acontece (um toque no app, uma tarefa dentro da
+# janela de presença): não existe contato periódico.
 MAX_TIMEOUT_ATTEMPTS: Final = 3
 FINGERPRINT_LENGTH: Final = 16
 GRANTED: Final = "granted"
@@ -92,11 +95,13 @@ async def resolve_tv_mac(host: str, port: int) -> str | None:
     """MAC da TV pela tabela ARP, sem ADB: um TCP aberto e fechado na hora popula a tabela.
 
     Abrir e fechar a porta do ADB não inicia aperto de mão nenhum (o `adbd` só reage ao `CNXN` do
-    cliente), então não mostra aviso. `None` se a TV não atende (desligada ou fora da rede).
+    cliente), então não mostra aviso. `None` se a TV não atende (desligada ou fora da rede); `""`
+    se atende e a ARP não a mostra.
     """
     if not await tcp_open(host, port, MAC_PROBE_SECONDS):
         return None
-    return await arp_mac(host)
+    # Porta aberta e sem MAC na ARP (outra sub-rede, VPN): "" não é TV fora do ar.
+    return await arp_mac(host) or ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +178,10 @@ class AdbKeys:
                 source = self._backup / chosen / name
                 if source.is_file():
                     shutil.copyfile(source, self._android / name)
+                elif name == PUBLIC_KEY_FILE:
+                    # Cópia sem `.pub`: o que está ao lado era de outra chave (o `adb` deriva a
+                    # pública da privada, mas outras ferramentas leriam a errada).
+                    (self._android / name).unlink(missing_ok=True)
         except OSError as exc:
             _log.warning("não consegui devolver a chave do ADB guardada (%s)", type(exc).__name__)
             return False
@@ -327,6 +336,9 @@ class AdbAuthorization:
             and record.endpoint == self._endpoint
             and record.mac == (mac or "")
         )
+        # Depois de `needs_user` (reset de fábrica, revogação) o ajuste que se fez na TV não vale
+        # mais: ela volta ao padrão de 7 dias. `granted` para `verified` é o mesmo grant e mantém.
+        carried = same_tv and record.state in (GRANTED, VERIFIED)
         if record.state == VERIFIED and same_tv and state == GRANTED:
             return True  # uma leitura de `device` não rebaixa o que já foi provado
         now = self._wall_clock()
@@ -338,8 +350,8 @@ class AdbAuthorization:
                 mac=mac or "",
                 serial=record.serial if same_tv else "",
                 # Outra chave ou outra TV não herda o que se fez na TV anterior.
-                timeout_disabled=record.timeout_disabled if same_tv else False,
-                timeout_attempts=record.timeout_attempts if same_tv else 0,
+                timeout_disabled=record.timeout_disabled if carried else False,
+                timeout_attempts=record.timeout_attempts if carried else 0,
                 granted_at=record.granted_at if same_tv and record.granted_at else now,
                 last_handshake_at=now,
             )
@@ -379,16 +391,22 @@ class AdbAuthorization:
                 mac=str(raw.get("mac", ""))[:32],
                 serial=str(raw.get("serial", ""))[:64],
                 timeout_disabled=raw.get("timeout_disabled") is True,
-                timeout_attempts=max(0, int(raw.get("timeout_attempts", 0))),
-                granted_at=float(raw.get("granted_at", 0.0)),
-                last_handshake_at=float(raw.get("last_handshake_at", 0.0)),
+                timeout_attempts=min(
+                    MAX_TIMEOUT_ATTEMPTS, max(0, int(raw.get("timeout_attempts", 0)))
+                ),
+                granted_at=_finite(raw.get("granted_at", 0.0)),
+                last_handshake_at=_finite(raw.get("last_handshake_at", 0.0)),
             )
-        except TypeError, ValueError:
+        except TypeError, ValueError, OverflowError:
+            # Arquivo corrompido (`1e400`, `Infinity`): recomeça sem permissão, sem derrubar o app.
             return defaults
 
     def _save(self, record: AdbAuthRecord) -> None:
         self._record = record
-        temporary = self._path.with_name(self._path.name + ".tmp")
+        # Nome próprio por gravação: o agente e o `tv-volume` podem gravar o mesmo arquivo juntos.
+        temporary = self._path.with_name(
+            f"{self._path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp"
+        )
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             temporary.write_text(json.dumps(asdict(record)), encoding="utf-8")
@@ -398,6 +416,11 @@ class AdbAuthorization:
             _log.warning(
                 "não consegui gravar o estado da permissão do ADB (%s)", type(exc).__name__
             )
+
+
+def _finite(value: Any) -> float:
+    number = float(value)
+    return number if math.isfinite(number) else 0.0
 
 
 def _replace(record: AdbAuthRecord, **changes: Any) -> AdbAuthRecord:
