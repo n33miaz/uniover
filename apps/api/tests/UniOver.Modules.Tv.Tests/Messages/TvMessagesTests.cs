@@ -95,4 +95,20 @@ public class TvMessagesTests
         TvMessages.AppsRefresh().Type.Should().Be("tv.apps.refresh.v1");
         TvMessages.AppsRefresh().Body.GetRawText().Should().Be("{}");
     }
+
+    [Fact]
+    public void Pair_WithoutACode_HasAnEmptyBody()
+    {
+        var message = TvMessages.Pair(null);
+        message.Type.Should().Be("tv.pair.v1");
+        message.Body.GetRawText().Should().Be("{}");
+    }
+
+    [Fact]
+    public void Pair_WithACode_CarriesItInTheBody()
+    {
+        var message = TvMessages.Pair("A1B2C3");
+        message.Type.Should().Be("tv.pair.v1");
+        message.Body.GetRawText().Should().Be("{\"code\":\"A1B2C3\"}");
+    }
 }

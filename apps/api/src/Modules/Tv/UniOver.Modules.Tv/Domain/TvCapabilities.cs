@@ -9,6 +9,9 @@ internal static class TvCapabilities
     /// <summary>O agente avisa a permissão da TV Samsung (<c>tv.permission.v1</c>) e a pede só quando mandado (<c>tv.permission.request.v1</c>).</summary>
     public const string PermissionV1 = "tv.permission.v1";
 
+    /// <summary>O agente pareia a Android TV pelo app (<c>tv.pair.v1</c>), em dois passos e só quando o dono pede.</summary>
+    public const string PairV1 = "tv.pair.v1";
+
     /// <summary>O agente sabe procurar TVs compatíveis na rede local (<c>tv.discover.v1</c>).</summary>
     public const string DiscoveryV1 = "tv.discovery.v1";
 }

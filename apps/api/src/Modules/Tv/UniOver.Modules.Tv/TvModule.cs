@@ -26,6 +26,7 @@ using UniOver.Modules.Tv.Features.LaunchShortcut;
 using UniOver.Modules.Tv.Features.ListShortcuts;
 using UniOver.Modules.Tv.Features.Layout;
 using UniOver.Modules.Tv.Features.Nearby;
+using UniOver.Modules.Tv.Features.Pair;
 using UniOver.Modules.Tv.Features.Permission;
 using UniOver.Modules.Tv.Features.PowerOff;
 using UniOver.Modules.Tv.Features.PowerSchedule;
@@ -150,6 +151,7 @@ public static class TvModule
         services.AddScoped<BindAgentHandler>();
         services.AddScoped<ManageTvsHandler>();
         services.AddScoped<PermissionHandler>();
+        services.AddScoped<PairHandler>();
         services.AddScoped<NearbyTvsHandler>();
         services.AddScoped<IPairedTvRegistrar, PairedTvRegistrar>();
         return services;
@@ -184,6 +186,7 @@ public static class TvModule
         group.MapBindAgent();
         group.MapTvs();
         group.MapPermission();
+        group.MapPair();
         group.MapNearbyTvs();
         group.MapSiriTokens();
 
