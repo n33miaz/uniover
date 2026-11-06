@@ -160,7 +160,7 @@ describe('LiveTextSync', () => {
     });
   });
 
-  describe('batching against a slow TV (the agent turns each send into one input text)', () => {
+  describe('batching while a send is slow (one follow-up carries what was typed meanwhile)', () => {
     const WORD = 'matrix reloaded';
 
     it('sends the first letter in the same instant, then one batch with everything typed meanwhile', async () => {
