@@ -77,6 +77,9 @@ function commandFailedMessage(code: string | null, context?: TvFailureContext): 
   if (code === 'adb_unauthorized') {
     return $localize`:@@tv.error.adb-unauthorized:A TV ainda não deu a permissão do ADB ao computador do agente. Toque em Atualizar lista, aceite o aviso na tela da TV e marque Sempre permitir neste computador. Depois toque em Atualizar lista de novo.`;
   }
+  if (code === 'adb_idle') {
+    return $localize`:@@tv.error.adb-idle:O ADB só conecta enquanto você usa a tela da TV. Toque de novo, ou em Atualizar lista.`;
+  }
   if (code === 'cleanup_report_missing') {
     return $localize`:@@tv.error.cleanup-report-missing:A TV recebeu o pedido, mas não deu para confirmar o que foi limpo. Confira a TV.`;
   }
