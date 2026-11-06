@@ -53,7 +53,12 @@ from uniover_agent.core.tv.session import (
 )
 from uniover_agent.core.tv.state_publisher import TvStatePublisher
 from uniover_agent.core.tv.text_edit import AdbTyping, TextReconciler
-from uniover_agent.core.tv.user_activity import UserActivity, touching
+from uniover_agent.core.tv.user_activity import (
+    PRESENCE_CAPABILITY,
+    PRESENCE_TYPE,
+    UserActivity,
+    tv_presence_handler,
+)
 from uniover_agent.core.tv.watchdog import TvWatchdog
 from uniover_agent.core.tv.watchdog_events import WatchdogEvents
 
@@ -64,6 +69,8 @@ __all__ = [
     "DISCOVERY_CAPABILITY",
     "PERMISSION_CAPABILITY",
     "POWER_OFF_CAPABILITY",
+    "PRESENCE_CAPABILITY",
+    "PRESENCE_TYPE",
     "SAMSUNG_MAINTENANCE_CAPABILITY",
     "TV_NOT_PAIRED",
     "TV_PERMISSION_NEEDED",
@@ -103,7 +110,6 @@ __all__ = [
     "can_restrict_background",
     "describe_apps",
     "is_protected",
-    "touching",
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",
@@ -111,6 +117,7 @@ __all__ = [
     "tv_discover_handler",
     "tv_key_handler",
     "tv_power_off_handler",
+    "tv_presence_handler",
     "tv_text_handler",
     "tv_wake_handler",
     "unsupported_handler",

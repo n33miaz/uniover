@@ -323,7 +323,10 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         envelopes,
         transport,
         background_types=tv.background_commands if tv is not None else (),
-        silent_types=PC_SILENT_TYPES if pc is not None else (),
+        silent_types=(
+            *(PC_SILENT_TYPES if pc is not None else ()),
+            *(tv.silent_commands if tv is not None else ()),
+        ),
         # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
         command_timeout_seconds=settings.tv_command_timeout_seconds if tv is not None else None,
         uncapped_types=tv.background_commands if tv is not None else (),
