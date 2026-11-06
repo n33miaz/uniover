@@ -194,9 +194,15 @@ def quote_for_device_shell(text: str) -> str:
 
 
 def input_text_command(text: str) -> str:
-    """Comando `input text` para um texto que passou em `is_adb_typable` (espaço vira `%s`)."""
+    """Comando `input text` de UM grupo (ver `adb_text_groups`); espaço vira `%s`.
+
+    O `%` literal vai como está, menos quando o próximo caractere é um `s` literal: o Android leria
+    o par como espaço, e esse texto precisa ser dividido antes (`ValueError`).
+    """
     if not is_adb_typable(text):
         raise ValueError("texto fora do que o ADB digita com fidelidade")
+    if "%s" in text:
+        raise ValueError("texto com `%s` literal precisa ir em dois comandos")
     return "input text " + quote_for_device_shell(text.replace(" ", "%s"))
 
 

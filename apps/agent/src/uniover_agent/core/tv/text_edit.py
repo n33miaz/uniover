@@ -19,9 +19,22 @@ latências diferentes. Do mais rápido para o mais lento:
   enviado logo depois de teclas poderia chegar fora de ordem ou com contadores velhos, e o `await`
   não prova entrega (a biblioteca só enfileira no mesmo socket). Dentro do mesmo fluxo de teclas (o
   `DEL` e as letras) a ordem é a do socket;
-* **ADB** (`input text`) quando é ASCII imprimível e o canal está pronto: um processo `adb` por
-  trecho, e no Android TV o `input text` sobe uma JVM a cada chamada;
-* **Remote v2** (`send_text`) para o resto (acentos, emoji, `%`, e quando o ADB não está pronto).
+* **ADB** (`input text`) quando é ASCII imprimível (inclusive `%`) e o canal está pronto: um
+  processo `adb` por grupo, e no Android TV o `input text` sobe uma JVM a cada chamada. O acréscimo
+  vira **um** grupo na maioria das vezes; só se divide onde o Android leria um `%` literal seguido
+  de `s` como espaço, ou acima de `adb_group_chars`. Cada grupo é confirmado (o `adb shell`
+  só volta depois de a TV injetar as teclas) antes de `last_text` andar e de o próximo sair: se um
+  grupo do meio falha, o campo tem os anteriores, e o reenvio do app (sempre o texto completo)
+  digita só o que falta. Nenhum grupo é repetido às cegas depois de falha ou tempo esgotado: a
+  TV pode já ter digitado;
+* **Remote v2** (`send_text`) para o resto (acentos, emoji, controle, e quando o ADB não está
+  pronto). Um texto com um caractere só do Remote vai **inteiro** por ele, nunca dividido entre
+  canais: é um envio só e rápido, e a ordem não depende de dois caminhos.
+
+A ordem entre canais tem dois sentidos. Do ADB para o Remote é segura: o `adb shell input` só
+volta com as teclas já injetadas. Do Remote (teclas ou texto) para o ADB não: o `await` só prova
+que o pacote entrou no socket. Por isso, depois de qualquer envio pelo Remote, o primeiro grupo
+ADB espera `remote_settle_seconds` contados do envio (ajuste `tv_text_remote_settle_ms`).
 
 Quando a TV informa o estado do campo em foco (valor, cursor, rótulo), `last_text` parte do valor
 real em vez do palpite, e a troca de campo vem por esse aviso, não pela pausa de 20 s (ver
@@ -45,7 +58,13 @@ from dataclasses import dataclass
 from typing import Final, Protocol
 
 from uniover_agent.core.tv.session import TvSessionError
-from uniover_agent.ports import AdbError, AdbNotReady, TextFieldStatus, is_adb_typable
+from uniover_agent.ports import (
+    AdbError,
+    AdbNotReady,
+    TextFieldStatus,
+    adb_text_groups,
+    is_adb_typable,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -55,6 +74,8 @@ FIELD_IDLE_SECONDS: Final = 20.0
 # Teto de teclas `DEL` por mensagem (o texto tem no máximo 200 caracteres).
 MAX_DELETIONS: Final = 200
 DELETE_KEY: Final = "DEL"
+# Tamanho máximo de um grupo do ADB (um `input text`): uma falha custa no máximo um grupo.
+ADB_GROUP_CHARS: Final = 80
 TEXT_KEY_UNSUPPORTED: Final = "text_key_unsupported"
 
 # Caractere -> tecla do controle (`KEYCODE_*` do Android, escolhido pelo adaptador). Só entram os
@@ -141,6 +162,7 @@ class _Trace:
     previous: int = 0
     delete: int = 0
     insert: int = 0
+    groups: int = 0
     channel: str = CHANNEL_NONE
     adb_unavailable: str | None = None
     adb_wait: float | None = None
@@ -156,9 +178,11 @@ class _Trace:
             return round(seconds * 1000)
 
         adb = "-" if self.adb_wait is None else str(ms(self.adb_wait))
+        groups = f"grupos={self.groups} " if self.groups > 1 else ""
         fallback = f" adb_indisponivel={self.adb_unavailable}" if self.adb_unavailable else ""
         return (
             f"texto anterior={self.previous} apagar={self.delete} inserir={self.insert} "
+            f"{groups}"
             f"canal={self.channel}{fallback} resultado={self.outcome} | ms "
             f"vez={ms(self.queued + self.lock_wait)} adb={adb} wake={ms(self.wake)} "
             f"apagar={ms(self.erase)} digitar={ms(self.typing)} total={ms(self.total)}"
@@ -176,6 +200,8 @@ class TextReconciler:
         field_idle_seconds: float = FIELD_IDLE_SECONDS,
         keys: bool = False,
         key_pause_seconds: float = 0.0,
+        remote_settle_seconds: float = 0.0,
+        adb_group_chars: int = ADB_GROUP_CHARS,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._tv = tv
@@ -183,6 +209,9 @@ class TextReconciler:
         self._idle = field_idle_seconds
         self._keys = keys
         self._key_pause = key_pause_seconds
+        self._remote_settle = remote_settle_seconds
+        self._adb_group_chars = adb_group_chars
+        self._remote_at: float | None = None
         self._sleep = sleep
         self._adb: AdbTyping | None = None
         self._last = ""
@@ -327,6 +356,7 @@ class TextReconciler:
         try:
             for _ in range(min(edit.delete, MAX_DELETIONS)):
                 await self._tv.send_key(DELETE_KEY)
+                self._remote_at = self._monotonic()
                 self._last = self._last[:-1]
                 self._last_at = self._monotonic()
         finally:
@@ -345,23 +375,51 @@ class TextReconciler:
             await self._type_keys(text, keys)
             return
         adb = self._adb
+        rest = text
         if adb is not None and is_adb_typable(text):
             trace.channel = CHANNEL_ADB
+            rest = await self._type_adb(adb, text, trace)
+            if not rest:
+                return
+            trace.channel = CHANNEL_REMOTE if rest == text else f"{CHANNEL_ADB}+{CHANNEL_REMOTE}"
+        else:
+            trace.channel = CHANNEL_REMOTE
+        trace.groups += 1
+        await self._tv.send_text(rest)
+        self._remote_at = self._monotonic()
+        self._typed(rest)
+
+    async def _type_adb(self, adb: AdbTyping, text: str, trace: _Trace) -> str:
+        """Digita grupo a grupo pelo ADB; devolve o que sobrou para o Remote (`""` se tudo foi).
+
+        Só `AdbNotReady` (nada foi executado: gate fechado, sem permissão) passa o resto ao
+        Remote v2, que digita o mesmo texto sem repetir efeito e depois do que o ADB já escreveu.
+        Qualquer outra falha pode ter digitado parte do grupo, então não se repete: `last_text` fica
+        no último grupo confirmado e o erro sobe.
+        """
+        pending = adb_text_groups(text, self._adb_group_chars)
+        for index, group in enumerate(pending):
+            await self._settle_after_remote()
             try:
-                await adb.input_text(text)
+                await adb.input_text(group)
             except AdbNotReady as exc:
-                # Nada foi executado na TV: o Remote v2 digita o mesmo texto sem repetir efeito.
                 trace.adb_unavailable = exc.code
+                return "".join(pending[index:])
             except AdbError as exc:
                 raise TvSessionError(exc.code, exc.message) from None
-            else:
-                self._typed(text)
-                return
             finally:
                 trace.adb_wait = getattr(adb, "last_input_wait_seconds", None)
-        trace.channel = CHANNEL_REMOTE
-        await self._tv.send_text(text)
-        self._typed(text)
+            trace.groups += 1
+            self._typed(group)
+        return ""
+
+    async def _settle_after_remote(self) -> None:
+        """Dá ao último envio pelo Remote v2 o tempo de chegar antes de o ADB digitar por cima."""
+        if self._remote_at is None or self._remote_settle <= 0:
+            return
+        remaining = self._remote_settle - (self._monotonic() - self._remote_at)
+        if remaining > 0:
+            await self._sleep(remaining)
 
     async def _type_keys(self, text: str, keys: list[str]) -> None:
         """Uma tecla por caractere, na ordem; `last_text` anda tecla a tecla, como no `DEL`."""
@@ -376,6 +434,7 @@ class TextReconciler:
                 raise TvSessionError(
                     TEXT_KEY_UNSUPPORTED, "a TV não aceita esta tecla de digitação"
                 ) from None
+            self._remote_at = self._monotonic()
             self._typed(char)
 
     def _typed(self, text: str) -> None:

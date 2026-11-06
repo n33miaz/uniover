@@ -235,11 +235,11 @@ async def test_a_non_ascii_addition_goes_to_the_remote_as_a_whole_never_split_ac
 
 
 @pytest.mark.parametrize("text", ["50%", "100% certo"])
-async def test_percent_is_not_typed_by_the_adb(text: str) -> None:
+async def test_percent_is_typed_by_the_adb_since_only_percent_s_is_special(text: str) -> None:
     rig = Rig(with_adb=True)
     await rig.editor.set_text(text)
-    assert rig.remote.texts == [text]
-    assert rig.adb.typed == []
+    assert rig.adb.typed == [text]
+    assert rig.remote.texts == []
 
 
 async def test_when_the_adb_is_not_ready_the_remote_types_the_same_text() -> None:

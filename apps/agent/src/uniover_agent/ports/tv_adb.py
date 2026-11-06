@@ -162,12 +162,35 @@ class AdbCommandFailed(AdbError):  # noqa: N818
 
 
 def is_adb_typable(text: str) -> bool:
-    """Texto que o `input text` escreve fielmente: ASCII imprimível, sem `%`.
+    """Texto que o `input text` escreve fielmente: ASCII imprimível (inclusive `%`).
 
-    `%` fica de fora porque `%s` vira espaço e o Android não tem como escrever um `%` literal
-    seguido de `s`. Acentos e emoji o `input text` simplesmente descarta.
+    O `input text` do Android (`Input.sendText`, conferido na fonte do Android 11, o da TCL) só
+    interpreta `%s`, que vira espaço. Qualquer outro `%` é escrito como está, então `%ab` vai
+    inteiro. O que ele não escreve é um `%` literal logo seguido de um `s` literal: esse par é
+    separado em dois comandos por `adb_text_groups`. Acentos e emoji o `input text` descarta.
     """
-    return bool(text) and all(" " <= char <= "~" and char != "%" for char in text)
+    return bool(text) and all(" " <= char <= "~" for char in text)
+
+
+def adb_text_groups(text: str, max_chars: int = 200) -> list[str]:
+    """Divide um texto digitável em grupos, cada um um comando `input text` só.
+
+    Um grupo termina onde o próximo caractere seria o `s` de um `%` literal (o par `%s` viraria um
+    espaço dentro do mesmo comando) ou quando chega a `max_chars`. Os grupos, juntos e na ordem,
+    dão o texto de volta. Levanta `ValueError` se o texto não for digitável pelo ADB.
+    """
+    if not is_adb_typable(text):
+        raise ValueError("texto fora do que o ADB digita com fidelidade")
+    if max_chars < 1:
+        raise ValueError("o grupo precisa de ao menos um caractere")
+    groups: list[str] = []
+    start = 0
+    for index in range(1, len(text)):
+        if (text[index - 1] == "%" and text[index] == "s") or index - start >= max_chars:
+            groups.append(text[start:index])
+            start = index
+    groups.append(text[start:])
+    return groups
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +225,8 @@ class TvAdb(TvChannel, Protocol):
     async def input_text(self, text: str) -> None:
         """Digita no campo em foco (acrescenta ao que há lá).
 
-        Só ASCII imprimível sem `%` (o `input text` do Android não tem como escrever `%` seguido
-        de `s`). Levanta `ValueError` fora disso, e `AdbError` se não deu certo.
+        Só ASCII imprimível, e sem um `%` literal seguido de `s` (o `input text` do Android lê o par
+        como espaço: quem chama divide com `adb_text_groups`). Levanta `ValueError` fora disso, e
+        `AdbError` se não deu certo.
         """
         ...

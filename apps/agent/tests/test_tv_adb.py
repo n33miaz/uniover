@@ -563,12 +563,22 @@ async def test_input_text_quotes_shell_metacharacters() -> None:
     assert runner.shell_commands()[-1] == quoted
 
 
-@pytest.mark.parametrize("text", ["", "ação", "50%", "a\nb", "x" * 201])
+@pytest.mark.parametrize("text", ["", "ação", "a%sb", "a\nb", "x" * 201])
 async def test_input_text_refuses_what_it_cannot_type_faithfully(text: str) -> None:
     runner = authorized()
     with pytest.raises(ValueError, match="texto"):
         await make(runner).input_text(text)
     assert runner.calls == []
+
+
+async def test_input_text_types_a_percent_text_as_is_and_a_jvm_error_is_a_failure() -> None:
+    runner = authorized()
+    runner.script[shell("input text '%ab'")] = ok("")
+    runner.script[shell("input text 'x'")] = ok("java.lang.IllegalStateException: boom\r\n")
+    adb = make(runner)
+    await adb.input_text("%ab")
+    with pytest.raises(AdbCommandFailed):
+        await adb.input_text("x")
 
 
 # --- executor de processos de verdade (o próprio Python faz de `adb`) ---------------------------

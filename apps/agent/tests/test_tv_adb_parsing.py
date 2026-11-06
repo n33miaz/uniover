@@ -170,7 +170,7 @@ def test_input_text_command_uses_percent_s_for_spaces_and_quotes_everything() ->
     assert input_text_command("it's") == "input text 'it'\\''s'"
 
 
-@pytest.mark.parametrize("text", ["", "ação", "olá", "😀", "50%", "a\nb", "a\tb", "x\x7f"])
+@pytest.mark.parametrize("text", ["", "ação", "olá", "😀", "a\nb", "a\tb", "x\x7f"])
 def test_text_the_adb_cannot_type_faithfully_is_refused(text: str) -> None:
     assert not is_adb_typable(text)
     with pytest.raises(ValueError, match="fidelidade"):
