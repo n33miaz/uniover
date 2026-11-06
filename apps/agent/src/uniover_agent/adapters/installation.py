@@ -140,6 +140,15 @@ def _move_once(source: Path, destination: Path) -> None:
         shutil.move(str(source), str(destination))
 
 
+def legacy_wrapper_start(base: Path | None = None) -> bool:
+    """Esta partida vem do wrapper antigo (existe `agent-src` e ainda não existe `app`)?
+
+    É o único momento em que a migração entrega a instalação ao lançador novo: o processo atual
+    acabará saindo, e quem decide se ele toma a trava do agente é a própria migração."""
+    root = base or installation_base()
+    return (root / "agent-src").is_dir() and not (root / "app").exists()
+
+
 def migrate_layout(base: Path | None = None) -> Path:
     """Organiza instalações antigas, sem sobrescrever nada que já foi migrado.
 
@@ -150,7 +159,7 @@ def migrate_layout(base: Path | None = None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     legacy_source = root / "agent-src"
     app = root / "app"
-    took_over_legacy_wrapper = legacy_source.is_dir() and not app.exists()
+    took_over_legacy_wrapper = legacy_wrapper_start(root)
     # A tarefa antiga só sabe iniciar `agent-src`. Antes de renomear essa pasta, instalamos e
     # registramos o lançador estável, que também entende o caminho legado até a troca terminar.
     # Assim uma queda de energia em qualquer lado da renomeação ainda tem um caminho inicializável.

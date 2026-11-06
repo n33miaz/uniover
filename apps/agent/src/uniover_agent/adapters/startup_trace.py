@@ -29,7 +29,7 @@ import sys
 import time
 import traceback
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -58,14 +58,18 @@ _STILL_ACTIVE: Final = 259
 _ERROR_ACCESS_DENIED: Final = 5
 
 
-def sanitize(text: str) -> str:
+def sanitize(text: str, keep: Collection[str] = ()) -> str:
     """Uma linha só, sem segredo, caminho, endereço nem nome do usuário ou do PC.
 
     Serve a texto que o agente mesmo escreveu. Mensagem de exceção inesperada não passa por aqui:
-    ver `describe_exception`."""
+    ver `describe_exception`. `keep` são nomes de campo da própria configuração (identificadores
+    do código, nunca valores): o filtro de sequências opacas só vale para o resto do texto."""
     names = [os.environ.get("USERNAME", ""), os.environ.get("COMPUTERNAME", "")]
     one_line = " ".join(text.split())
-    return _OPAQUE.sub(REDACTED, scrub_personal(one_line, names))
+    return _OPAQUE.sub(
+        lambda found: found.group(0) if found.group(0) in keep else REDACTED,
+        scrub_personal(one_line, names),
+    )
 
 
 def describe_exception(exc: BaseException) -> str:
@@ -163,12 +167,14 @@ def record_startup_failure(
     *,
     base: Path | None = None,
     clock: Callable[[], float] = time.time,
+    keep: Collection[str] = (),
 ) -> bool:
     """Grava a falha de partida; `False` se foi contida por repetição ou não entrou na fila.
 
     `reason` é um código curto e fixo (`configuracao`, `cofre`, `nao_pareado`,
     `credencial_recusada`, `excecao`): é ele que decide se o motivo é repetido. `detail` é texto do
-    próprio agente, higienizado aqui. A janela só fecha quando a ocorrência entrou na fila.
+    próprio agente, higienizado aqui (`keep`: nomes de campo da configuração que a higiene não
+    apaga). A janela só fecha quando a ocorrência entrou na fila.
     """
     if not _REASON.fullmatch(reason):
         return False
@@ -182,7 +188,8 @@ def record_startup_failure(
         if not _claim(claim, now):
             claim = None
             return False
-        return _record_claimed(root, marker, reason, detail, now)
+        text = f"{reason}: {sanitize(detail, keep)}"[:DETAIL_LIMIT].strip()
+        return _record_claimed(root, marker, reason, text, now)
     except Exception:  # rastro nunca pode derrubar a partida
         return False
     finally:
@@ -191,10 +198,9 @@ def record_startup_failure(
                 claim.unlink(missing_ok=True)
 
 
-def _record_claimed(root: Path, marker: Path, reason: str, detail: str, now: float) -> bool:
+def _record_claimed(root: Path, marker: Path, reason: str, text: str, now: float) -> bool:
     if _recently_recorded(marker, now):
         return False
-    text = f"{reason}: {sanitize(detail)}"[:DETAIL_LIMIT].strip()
     # Sem o marcador (disco, permissão) a regra das 6 h não se sustenta sozinha: o que ainda espera
     # na fila com o mesmo motivo basta para não repetir.
     if _queued(root / "runtime", reason):
