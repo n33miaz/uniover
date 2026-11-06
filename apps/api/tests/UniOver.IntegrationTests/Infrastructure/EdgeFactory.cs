@@ -18,11 +18,17 @@ public sealed class EdgeFactory(
     string environment = "Development",
     IReadOnlyDictionary<string, string?>? settings = null,
     bool withTestEndpoints = false,
-    bool withTestModule = false) : WebApplicationFactory<Program>
+    bool withTestModule = false,
+    string? webRoot = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(environment);
+        if (webRoot is not null)
+        {
+            builder.UseWebRoot(webRoot);
+        }
+
         foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
         {
             builder.UseSetting(key, value);
