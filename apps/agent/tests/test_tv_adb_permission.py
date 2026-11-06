@@ -1412,6 +1412,7 @@ async def test_a_user_request_never_rereads_unauthorized_so_a_prompt_accepted_is
     await watched(adb)  # a espera do aceite vê o `device` e regrava como `granted`
     record = home.authorization().record
     assert record.state == "granted"  # sem prova: ela fica para o toque seguinte
+    assert GET_SERIAL in runner.calls  # o serial foi lido de novo (o `needs_user` o esqueceu)
     assert not home.authorization().keeps_channel(MAC)
     assert PUT_TIMEOUT in runner.calls  # o vencimento é refeito (não herdou o ajuste de antes)
     assert not adb.connected  # e a conexão não fica: o servidor do `adb` não a religa
@@ -1431,7 +1432,8 @@ async def test_a_verified_record_is_demoted_when_the_prompt_comes_back_inside_a_
     assert home.authorization().record.state == NEEDS_USER  # nunca segue `verified`
     await watched(adb)
     record = home.authorization().record
-    assert record.state == "granted" and record.serial == SERIAL  # o serial foi lido de novo
+    assert record.state == "granted" and record.serial == SERIAL
+    assert GET_SERIAL in runner.calls  # lido de verdade na TV, não herdado do registro velho
     assert PUT_TIMEOUT in runner.calls  # o passo do vencimento reabre
     assert not home.authorization().keeps_channel(MAC)
     assert not home.authorization().verified_for(MAC)  # nada conecta sozinho até a prova
@@ -1479,9 +1481,45 @@ async def test_the_first_ever_tap_does_not_wait_before_showing_the_prompt_messag
     assert runner.calls.count(GET_STATE) == 1
 
 
-async def test_an_automatic_unauthorized_is_never_reread(home: Home) -> None:
+async def test_an_automatic_offline_is_never_reread(home: Home) -> None:
     home.verify(settled=True)
     runner = runner_with(state=OFFLINE)
+    adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
+    with pytest.raises(AdbUnreachable):
+        await adb.connect()
+    assert runner.calls.count(GET_STATE) == 1
+
+
+async def test_an_automatic_unauthorized_ends_at_once_in_needs_user_and_a_disconnect(
+    home: Home,
+) -> None:
+    home.verify(settled=True)
+    runner = runner_with(state=UNAUTHORIZED)
+    adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()  # caminho automático, dentro da janela de presença
+    assert runner.calls.count(GET_STATE) == 1  # nenhuma releitura
+    assert home.authorization().record.state == NEEDS_USER
+    assert DISCONNECT in runner.calls  # o servidor do `adb` não religa sozinho
+    assert not adb.connected
+
+
+async def test_a_user_request_rereads_authorizing_like_offline(home: Home) -> None:
+    authorization = home.authorization()
+    assert authorization.mark_granted(authorization.snapshot_key(), MAC)
+    authorizing = ok("error: device authorizing\r\n", returncode=1)
+    runner = runner_with(state=[authorizing, authorizing, DEVICE])
+    adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
+    with user_initiated_adb():
+        await adb.connect()
+    assert runner.calls.count(GET_STATE) >= 3
+    assert home.authorization().record.state == VERIFIED
+
+
+async def test_an_automatic_authorizing_is_not_reread(home: Home) -> None:
+    home.verify(settled=True)
+    authorizing = ok("error: device connecting\r\n", returncode=1)
+    runner = runner_with(state=authorizing)
     adb = home.adb(runner, sleep=instant, settle_seconds=3.0)
     with pytest.raises(AdbUnreachable):
         await adb.connect()
@@ -1535,7 +1573,28 @@ def test_a_record_written_by_another_process_is_reloaded_before_use(home: Home) 
     assert agent.record.state == NEEDS_USER
 
 
-def test_a_failed_save_is_logged_when_another_process_later_overwrites_it(
+def test_a_pending_needs_user_wins_over_a_verified_another_process_wrote(
+    home: Home, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    agent = home.verify(settled=True)
+
+    def broken(*args: Any, **kwargs: Any) -> None:
+        raise OSError("sem disco")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("uniover_agent.adapters.adb_authorization.os.replace", broken)
+        agent.mark_needs_permission()  # a TV pediu o aviso de novo; só na memória do agente
+    assert agent.record.state == NEEDS_USER
+    other = home.authorization()  # o `tv-volume` parte do `verified` que estava em disco
+    other.note_serial(SERIAL)
+    with caplog.at_level("WARNING"):
+        assert agent.record.state == NEEDS_USER  # a mais restritiva vence
+    assert not agent.verified_for(MAC)
+    assert any("reaplicada" in r.getMessage() for r in caplog.records)
+    assert home.authorization().record.state == NEEDS_USER  # e agora também está no disco
+
+
+def test_any_other_pending_change_is_discarded_with_a_warning(
     home: Home, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     agent = home.verify()
@@ -1545,13 +1604,45 @@ def test_a_failed_save_is_logged_when_another_process_later_overwrites_it(
 
     with monkeypatch.context() as patch:
         patch.setattr("uniover_agent.adapters.adb_authorization.os.replace", broken)
-        agent.mark_needs_permission()  # só na memória do agente
-    assert agent.record.state == NEEDS_USER
-    other = home.authorization()  # outro processo grava o arquivo em seguida
-    other.note_serial(SERIAL)
+        agent.note_serial("SO-NA-MEMORIA")
+    home.authorization().mark_timeout_disabled()  # outro processo grava
     with caplog.at_level("WARNING"):
-        assert agent.record.serial == SERIAL  # a releitura vale...
-    assert any("descartada" in r.getMessage() for r in caplog.records)  # ...e avisa que perdeu
+        assert agent.record.serial == ""  # a releitura vale
+    assert any("descartada" in r.getMessage() for r in caplog.records)
+
+
+def test_a_failed_swap_leaves_no_tmp_file_behind(
+    home: Home, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent = home.verify()
+
+    def broken(*args: Any, **kwargs: Any) -> None:
+        raise OSError("sem disco")
+
+    monkeypatch.setattr("uniover_agent.adapters.adb_authorization.os.replace", broken)
+    agent.note_serial(SERIAL)
+    assert list(home.state.glob("*.tmp")) == []
+
+
+async def test_the_swap_retries_inside_the_event_loop_without_sleeping(
+    home: Home, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent = home.verify()
+    real = os.replace
+    failures = [PermissionError("em uso"), PermissionError("em uso")]
+
+    def flaky(source: Any, target: Any) -> None:
+        if failures:
+            raise failures.pop()
+        real(source, target)
+
+    def no_sleep(seconds: float) -> None:
+        raise AssertionError("dormiu dentro do laço de eventos")
+
+    monkeypatch.setattr("uniover_agent.adapters.adb_authorization.os.replace", flaky)
+    monkeypatch.setattr("uniover_agent.adapters.adb_authorization.time.sleep", no_sleep)
+    agent.note_serial(SERIAL)
+    assert home.authorization().record.serial == SERIAL
 
 
 def test_a_transient_permission_error_on_the_swap_is_retried(
