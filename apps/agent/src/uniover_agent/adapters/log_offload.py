@@ -33,6 +33,7 @@ class OffloadHandler(logging.Handler):
         super().__init__(target.level)
         self.target = target
         self.dropped = 0
+        self._lock = threading.Lock()
         self._drain = drain
         self._queue: queue.Queue[logging.LogRecord | None] = queue.Queue(maxsize)
         self._plain = logging.Formatter()
@@ -51,23 +52,27 @@ class OffloadHandler(logging.Handler):
             snapshot.args = None
             if record.exc_info and not record.exc_text:
                 snapshot.exc_text = self._plain.formatException(record.exc_info)
-            snapshot.exc_info = None
+            # A pilha já está no texto, mas a exceção em si fica: quem a lê de `exc_info[1]` (a
+            # ocorrência de diagnóstico, com "Tipo: mensagem") não pode perdê-la. Sem rastreio.
+            exc = record.exc_info[1] if record.exc_info else None
+            snapshot.exc_info = (type(exc), exc, None) if exc is not None else None
             self._queue.put_nowait(snapshot)
         except queue.Full:
-            self.dropped += 1
+            with self._lock:
+                self.dropped += 1
         except Exception:
             self.handleError(record)
 
     def drain(self, timeout: float = DRAIN_SECONDS) -> bool:
         """Espera a fila esvaziar (testes e encerramento). `False` se o destino não acompanhou."""
-        done = threading.Event()
-
-        def wait() -> None:
-            self._queue.join()
-            done.set()
-
-        threading.Thread(target=wait, name="log-offload-drain", daemon=True).start()
-        return done.wait(timeout)
+        # Sem thread auxiliar (uma por chamada ficava presa enquanto o destino travasse): consulta a
+        # fila até o prazo.
+        end = time.monotonic() + timeout
+        while self._queue.unfinished_tasks:
+            if time.monotonic() >= end:
+                return False
+            time.sleep(0.005)
+        return True
 
     def flush(self) -> None:
         # `logging.shutdown()` chama `flush()` e depois `close()` em cada destino: o que está na
@@ -102,7 +107,8 @@ class OffloadHandler(logging.Handler):
                 self._queue.task_done()
 
     def _report_drops(self) -> None:
-        lost, self.dropped = self.dropped, 0
+        with self._lock:
+            lost, self.dropped = self.dropped, 0
         if not lost:
             return
         note = logging.LogRecord(
