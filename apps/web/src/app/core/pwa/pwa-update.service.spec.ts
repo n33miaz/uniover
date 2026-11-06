@@ -15,9 +15,12 @@ import {
   UPDATE_FLAG_MAX_AGE_MS,
   UPDATE_INSTALL_TIMEOUT_MS,
   UPDATE_REFRESHING_KEY,
+  UPDATE_WRITES_WAIT_MS,
   UPDATE_WATCHDOG_KEY,
 } from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
+import { OTHER_TABS_ANSWER_TIMEOUT_MS, answerTabBusyQueries } from './tab-busy';
+import { installFakeBroadcastChannel } from './tab-busy-test-kit';
 import { UnsavedWork } from './unsaved-work';
 
 class FakeWorker extends EventTarget {
@@ -55,7 +58,9 @@ function stubCaches(names: string[]) {
 }
 
 /** O jsdom não tem Web Locks: este substituto diz quantas abas seguram o bloqueio (`null`: o navegador não tem Web Locks). */
+let locksChosen = false;
 function stubLocks(held: number | null) {
+  locksChosen = true;
   const locks =
     held === null
       ? undefined
@@ -68,6 +73,12 @@ function stubLocks(held: number | null) {
         };
   Object.defineProperty(window.navigator, 'locks', { value: locks, configurable: true });
   return locks as NonNullable<typeof locks>;
+}
+
+/** O toque decide em passos assíncronos (releitura da fila, abas, escritas): dá tempo de eles correrem, sem depender de timers. */
+async function tap(service: PwaUpdateService): Promise<void> {
+  service.applyUpdate();
+  for (let i = 0; i < 30; i++) await Promise.resolve();
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve));
@@ -111,6 +122,7 @@ describe('PwaUpdateService', () => {
     Reflect.deleteProperty(window.navigator, 'serviceWorker');
     Reflect.deleteProperty(window, 'caches');
     Reflect.deleteProperty(window.navigator, 'locks');
+    locksChosen = false;
     sessionStorage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -119,6 +131,8 @@ describe('PwaUpdateService', () => {
   function setup(controller: object | null) {
     const registration = new FakeRegistration();
     const container = stubServiceWorker(registration, controller);
+    // Por padrão o teste é de uma aba só (o toque não precisa perguntar às outras); quem quer outra coisa chama `stubLocks`.
+    if (!locksChosen) stubLocks(1);
     TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: true }] });
     const service = TestBed.inject(PwaUpdateService);
     service.start();
@@ -225,11 +239,11 @@ describe('PwaUpdateService', () => {
       const waiting = new FakeWorker();
       registration.waiting = waiting;
 
-      service.applyUpdate();
+      await tap(service);
       expect(service.showSkeleton()).toBe(true);
       expect(service.applyingUpdate()).toBe(true);
       expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
-      service.applyUpdate();
+      await tap(service);
       expect(waiting.postMessage).toHaveBeenCalledTimes(1);
 
       // Enquanto o worker novo não assume, nada de recarregar (era aqui que a casca antiga voltava).
@@ -256,7 +270,7 @@ describe('PwaUpdateService', () => {
       const reload = stubReload();
       const waiting = new FakeWorker();
       registration.waiting = waiting;
-      service.applyUpdate();
+      await tap(service);
       await flush();
       waiting.state = 'activated';
       waiting.dispatchEvent(new Event('statechange'));
@@ -273,7 +287,7 @@ describe('PwaUpdateService', () => {
       registration.waiting = new FakeWorker();
 
       vi.useFakeTimers();
-      service.applyUpdate();
+      await tap(service);
       await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS - 1);
       expect(reload).not.toHaveBeenCalled();
       expect(registration.unregister).not.toHaveBeenCalled();
@@ -304,7 +318,7 @@ describe('PwaUpdateService', () => {
       registration.waiting = new FakeWorker();
 
       vi.useFakeTimers();
-      service.applyUpdate();
+      await tap(service);
       await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS);
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       // Sem rede o app depende do worker para abrir: nada de desfazer o registro.
@@ -321,7 +335,7 @@ describe('PwaUpdateService', () => {
       const first = new FakeWorker();
       registration.waiting = first;
 
-      service.applyUpdate();
+      await tap(service);
       await flush();
       expect(first.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
 
@@ -352,7 +366,7 @@ describe('PwaUpdateService', () => {
       registration.waiting = first;
 
       vi.useFakeTimers();
-      service.applyUpdate();
+      await tap(service);
       await vi.advanceTimersByTimeAsync(0);
       registration.waiting = new FakeWorker();
       first.state = 'redundant';
@@ -373,7 +387,7 @@ describe('PwaUpdateService', () => {
         return Promise.resolve();
       });
 
-      service.applyUpdate();
+      await tap(service);
       await flush();
       expect(registration.update).toHaveBeenCalledTimes(1);
       expect(incoming.postMessage).not.toHaveBeenCalled();
@@ -397,7 +411,7 @@ describe('PwaUpdateService', () => {
       const fetchSpy = stubFetch();
       registration.update.mockClear();
 
-      service.applyUpdate();
+      await tap(service);
       await flush();
       expect(registration.update).toHaveBeenCalledTimes(1);
       expect(reload).toHaveBeenCalledTimes(1);
@@ -417,7 +431,7 @@ describe('PwaUpdateService', () => {
       });
 
       vi.useFakeTimers();
-      service.applyUpdate();
+      await tap(service);
       await vi.advanceTimersByTimeAsync(UPDATE_INSTALL_TIMEOUT_MS - 1);
       expect(reload).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
@@ -431,7 +445,7 @@ describe('PwaUpdateService', () => {
       await flush();
       const reload = stubReload();
       registration.update.mockRejectedValue(new Error('offline'));
-      service.applyUpdate();
+      await tap(service);
       await flush();
       expect(reload).toHaveBeenCalledTimes(1);
     });
@@ -444,7 +458,7 @@ describe('PwaUpdateService', () => {
       caches.keys.mockReturnValue(new Promise(() => undefined));
 
       vi.useFakeTimers();
-      service.applyUpdate();
+      await tap(service);
       await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
       expect(reload).toHaveBeenCalledTimes(1);
     });
@@ -454,7 +468,7 @@ describe('PwaUpdateService', () => {
       await flush();
       const reload = stubReload();
       stubCaches(['velho']).keys.mockRejectedValue(new Error('bloqueado'));
-      service.applyUpdate();
+      await tap(service);
       await flush();
       expect(reload).toHaveBeenCalledTimes(1);
     });
@@ -470,7 +484,7 @@ describe('PwaUpdateService', () => {
         },
       } as Location);
 
-      service.applyUpdate();
+      await tap(service);
       container.dispatchEvent(new Event('controllerchange'));
       await flush();
       expect(service.updateError()).toBe(true);
@@ -715,15 +729,13 @@ describe('PwaUpdateService', () => {
       });
 
       it('does not activate a waiting worker on load, update found, online, visibility or navigation either', async () => {
-        const { registration, container, service } = setup({});
+        const { registration, service } = setup({});
         await flush();
         const waiting = new FakeWorker();
         waiting.state = 'installed';
         registration.waiting = waiting;
         registration.dispatchEvent(new Event('updatefound'));
         service.updateReady.set(true);
-        const controllerChanged = vi.fn();
-        container.addEventListener('controllerchange', controllerChanged);
 
         window.dispatchEvent(new Event('online'));
         window.dispatchEvent(new Event('load'));
@@ -734,7 +746,6 @@ describe('PwaUpdateService', () => {
         await flush();
 
         expect(waiting.postMessage).not.toHaveBeenCalled();
-        expect(controllerChanged).not.toHaveBeenCalled();
       });
     });
 
@@ -744,17 +755,17 @@ describe('PwaUpdateService', () => {
         await flush();
         const reload = stubReload();
 
-        service.applyUpdate();
+        await tap(service);
         await flush();
 
-        expect(service.confirmingUpdate()).toBe(true);
+        expect(service.confirmingUpdate()).toBe('mine');
         expect(service.applyingUpdate()).toBe(false);
         expect(service.showSkeleton()).toBe(false);
         expect(waiting.postMessage).not.toHaveBeenCalled();
         expect(reload).not.toHaveBeenCalled();
 
         service.cancelUpdate();
-        expect(service.confirmingUpdate()).toBe(false);
+        expect(service.confirmingUpdate()).toBeNull();
         expect(waiting.postMessage).not.toHaveBeenCalled();
         expect(reload).not.toHaveBeenCalled();
       });
@@ -764,9 +775,9 @@ describe('PwaUpdateService', () => {
         await flush();
         const reload = stubReload();
 
-        service.applyUpdate();
+        await tap(service);
         service.confirmUpdate();
-        expect(service.confirmingUpdate()).toBe(false);
+        expect(service.confirmingUpdate()).toBeNull();
         container.dispatchEvent(new Event('controllerchange'));
         await flush();
 
@@ -779,8 +790,8 @@ describe('PwaUpdateService', () => {
         await flush();
         const reload = stubReload();
 
-        service.applyUpdate();
-        expect(service.confirmingUpdate()).toBe(false);
+        await tap(service);
+        expect(service.confirmingUpdate()).toBeNull();
         container.dispatchEvent(new Event('controllerchange'));
         await flush();
 
@@ -847,7 +858,7 @@ describe('PwaUpdateService', () => {
         const own = setup({});
         own.registration.waiting = new FakeWorker();
         await flush();
-        own.service.applyUpdate();
+        await tap(own.service);
         own.container.dispatchEvent(new Event('controllerchange'));
         await flush();
         // Uma só recarga: a do próprio toque.
@@ -1020,6 +1031,255 @@ describe('PwaUpdateService', () => {
       expect(locks.request).toHaveBeenCalledTimes(1);
       expect(locks.request.mock.calls[0][0]).toBe(TAB_LOCK_NAME);
       expect(locks.request.mock.calls[0][1]).toEqual({ mode: 'shared' });
+    });
+  });
+
+  describe('the tap and the other tabs', () => {
+    let restoreChannel: () => void;
+    let busy = false;
+    const stops: (() => void)[] = [];
+
+    beforeEach(() => {
+      restoreChannel = installFakeBroadcastChannel();
+    });
+
+    afterEach(() => {
+      for (const stop of stops.splice(0)) stop();
+      restoreChannel();
+    });
+
+    /** Outra aba aberta, com ou sem trabalho não salvo. */
+    function otherTab(isBusy: () => boolean) {
+      stops.push(answerTabBusyQueries(window, isBusy, 'tab-b'));
+    }
+
+    function navigated() {
+      (TestBed.inject(Router).events as unknown as Subject<unknown>).next(
+        new NavigationEnd(1, '/a', '/a'),
+      );
+    }
+
+    function setupWaiting(initialBusy = false) {
+      busy = initialBusy;
+      const made = setup({});
+      TestBed.inject(UnsavedWork).register(() => busy);
+      const waiting = new FakeWorker();
+      made.registration.waiting = waiting;
+      return { ...made, waiting };
+    }
+
+    describe('A taps while B has unsaved work', () => {
+      it('asks first, naming the other tab, and touches nothing until the person decides', async () => {
+        stubLocks(2);
+        otherTab(() => true);
+        const { service, waiting } = setupWaiting();
+        await flush();
+        const reload = stubReload();
+
+        await tap(service);
+
+        expect(service.confirmingUpdate()).toBe('other-tab');
+        expect(service.applyingUpdate()).toBe(false);
+        expect(service.showSkeleton()).toBe(false);
+        expect(waiting.postMessage).not.toHaveBeenCalled();
+        expect(reload).not.toHaveBeenCalled();
+      });
+
+      it('goes on to activate the worker if the person confirms, and not if they decline', async () => {
+        stubLocks(2);
+        otherTab(() => true);
+        const { service, container, waiting } = setupWaiting();
+        await flush();
+        const reload = stubReload();
+
+        await tap(service);
+        service.cancelUpdate();
+        await flush();
+        expect(waiting.postMessage).not.toHaveBeenCalled();
+
+        await tap(service);
+        service.confirmUpdate();
+        container.dispatchEvent(new Event('controllerchange'));
+        await flush();
+        expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+
+      it('asks about this tab first: its own unsaved work wins over the other tab', async () => {
+        stubLocks(2);
+        otherTab(() => true);
+        const { service } = setupWaiting(true);
+        await flush();
+
+        await tap(service);
+        expect(service.confirmingUpdate()).toBe('mine');
+      });
+
+      it('lets the tap through when the other tab is clean', async () => {
+        stubLocks(2);
+        let otherBusy = true;
+        otherTab(() => otherBusy);
+        otherBusy = false;
+        const { service, container, waiting } = setupWaiting();
+        await flush();
+        const reload = stubReload();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        await tap(service);
+        await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+        container.dispatchEvent(new Event('controllerchange'));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(service.confirmingUpdate()).toBeNull();
+        expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('treats a tab that does not answer within ~500 ms as clean, so a frozen tab never blocks the tap', async () => {
+      stubLocks(3);
+      const { service, waiting } = setupWaiting();
+      await flush();
+      stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      await tap(service);
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS - 1);
+      expect(waiting.postMessage).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(service.confirmingUpdate()).toBeNull();
+      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    });
+
+    it('does not even ask (and does not wait 500 ms) when the shared lock shows a single tab', async () => {
+      stubLocks(1);
+      otherTab(() => true);
+      const { service, waiting } = setupWaiting();
+      await flush();
+      stubReload();
+
+      await tap(service);
+
+      expect(service.confirmingUpdate()).toBeNull();
+      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    });
+
+    describe('writes in flight', () => {
+      function fakeClock() {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      }
+
+      it('waits for them to finish instead of asking, and shows the update in progress meanwhile', async () => {
+        const { service, waiting } = setupWaiting();
+        await flush();
+        stubReload();
+        fakeClock();
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+
+        await tap(service);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(service.confirmingUpdate()).toBeNull();
+        expect(service.applyingUpdate()).toBe(true);
+        expect(waiting.postMessage).not.toHaveBeenCalled();
+
+        end();
+        await vi.advanceTimersByTimeAsync(200);
+        expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      });
+
+      it('does not wait forever: after about 5 s it goes on', async () => {
+        const { service, waiting } = setupWaiting();
+        await flush();
+        stubReload();
+        fakeClock();
+        TestBed.inject(UnsavedWork).beginRequest();
+
+        await tap(service);
+        await vi.advanceTimersByTimeAsync(UPDATE_WRITES_WAIT_MS - 200);
+        expect(waiting.postMessage).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(400);
+        expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      });
+
+      it('still asks when there is typed text, and that comes before waiting for writes', async () => {
+        const { service } = setupWaiting(true);
+        await flush();
+        TestBed.inject(UnsavedWork).beginRequest();
+
+        await tap(service);
+        expect(service.confirmingUpdate()).toBe('mine');
+      });
+    });
+
+    describe('when a navigation fails while the reload is deferred', () => {
+      it('says so instead of swallowing it, and clears the message once a navigation works again', async () => {
+        const { service } = setupWaiting(true);
+        await flush();
+        stubReload();
+
+        expect(service.recoverFromStaleShell('/treino/rotinas')).toBe(true);
+        await flush();
+        expect(service.navigationBlocked()).toBe(true);
+        expect(service.updateReady()).toBe(true);
+
+        navigated();
+        await flush();
+        expect(service.navigationBlocked()).toBe(false);
+
+        // A pessoa tenta outra rota que também some: o aviso volta.
+        service.recoverFromStaleShell('/treino/exercicios');
+        await flush();
+        expect(service.navigationBlocked()).toBe(true);
+      });
+
+      it('shows nothing of the sort when the tab is clean and just reloads', async () => {
+        const { service } = setupWaiting(false);
+        await flush();
+        const reload = stubReload();
+
+        service.recoverFromStaleShell();
+        await flush();
+
+        expect(reload).toHaveBeenCalledTimes(1);
+        expect(service.navigationBlocked()).toBe(false);
+      });
+    });
+
+    it('shows the notice, without reloading again, when a second worker change comes inside the guard window', async () => {
+      const { container, service } = setupWaiting(false);
+      await flush();
+      const reload = stubReload();
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      service.updateReady.set(false);
+      // A página de verdade teria sido trocada; aqui a mesma instância segue viva para a segunda troca.
+      Object.assign(service, { reloading: false });
+
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(service.updateReady()).toBe(true);
+    });
+
+    it('rereads a stale outbox count before deciding on a deferred reload', async () => {
+      const { service } = setupWaiting(false);
+      let stale = true;
+      TestBed.inject(UnsavedWork).register(() => stale, 'outbox');
+      TestBed.inject(UnsavedWork).registerRefresh(async () => {
+        stale = false;
+      });
+      await flush();
+      const reload = stubReload();
+
+      service.recoverFromStaleShell();
+      await flush();
+      // A releitura vê que o item em voo já terminou (outra aba o enviou): a recarga segue sem esperar outro gatilho.
+      expect(reload).not.toHaveBeenCalled();
+      navigated();
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -1,4 +1,14 @@
-import { Component, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  effect,
+  inject,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { PwaUpdateService } from './pwa-update.service';
 
 /**
@@ -13,7 +23,11 @@ import { PwaUpdateService } from './pwa-update.service';
         <div class="ui-collapse" [animate.leave]="'leaving'">
           <div class="ui-collapse-inner">
             <div class="banner">
-              <span i18n="@@pwa.update-available">Nova versão disponível</span>
+              @if (pwa.navigationBlocked()) {
+                <span i18n="@@pwa.update-blocked">Há uma versão nova: salve para continuar</span>
+              } @else {
+                <span i18n="@@pwa.update-available">Nova versão disponível</span>
+              }
               <button
                 type="button"
                 class="action ui-tap"
@@ -35,33 +49,41 @@ import { PwaUpdateService } from './pwa-update.service';
           </div>
         </div>
       }
-      @if (pwa.confirmingUpdate()) {
-        <div class="scrim">
-          <div
-            class="dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="update-confirm-title"
-            aria-describedby="update-confirm-text"
-            tabindex="-1"
-            (keydown.escape)="pwa.cancelUpdate()"
-          >
-            <h2 id="update-confirm-title" i18n="@@pwa.update-confirm-title">Atualizar agora?</h2>
+    </div>
+    @if (pwa.confirmingUpdate(); as kind) {
+      <div class="scrim">
+        <div
+          #dialog
+          class="dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="update-confirm-title"
+          aria-describedby="update-confirm-text"
+          tabindex="-1"
+          (keydown)="onKeydown($event)"
+        >
+          <h2 id="update-confirm-title" i18n="@@pwa.update-confirm-title">Atualizar agora?</h2>
+          @if (kind === 'other-tab') {
+            <p id="update-confirm-text" i18n="@@pwa.update-confirm-other-tab">
+              Outra aba aberta tem algo não salvo. Atualizar recarrega todas as abas e esse trabalho
+              se perde.
+            </p>
+          } @else {
             <p id="update-confirm-text" i18n="@@pwa.update-confirm-text">
               Há algo não salvo nesta tela. Atualizar recarrega a página e perde esse trabalho.
             </p>
-            <div class="choices">
-              <button type="button" class="keep ui-tap" (click)="pwa.cancelUpdate()">
-                <span i18n="@@pwa.update-confirm-keep">Continuar editando</span>
-              </button>
-              <button type="button" class="action ui-tap" (click)="pwa.confirmUpdate()">
-                <span i18n="@@pwa.update-confirm-go">Atualizar mesmo assim</span>
-              </button>
-            </div>
+          }
+          <div class="choices">
+            <button #keep type="button" class="keep ui-tap" (click)="pwa.cancelUpdate()">
+              <span i18n="@@pwa.update-confirm-keep">Continuar editando</span>
+            </button>
+            <button type="button" class="action ui-tap" (click)="pwa.confirmUpdate()">
+              <span i18n="@@pwa.update-confirm-go">Atualizar mesmo assim</span>
+            </button>
           </div>
         </div>
-      }
-    </div>
+      </div>
+    }
   `,
   styles: `
     .banner {
@@ -139,4 +161,55 @@ import { PwaUpdateService } from './pwa-update.service';
 })
 export class UpdateBanner {
   protected readonly pwa = inject(PwaUpdateService);
+  private readonly doc = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
+  private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog');
+  private readonly keep = viewChild<ElementRef<HTMLButtonElement>>('keep');
+  /** Quem tinha o foco quando o diálogo abriu, para devolver o foco ao fechar. */
+  private previousFocus: HTMLElement | null = null;
+
+  constructor() {
+    effect(() => {
+      const open = this.pwa.confirmingUpdate() !== null;
+      untracked(() => (open ? this.onOpen() : this.onClose()));
+    });
+  }
+
+  /** O foco vai para "Continuar editando" (a escolha segura) assim que o diálogo aparece. */
+  private onOpen(): void {
+    if (this.previousFocus === null)
+      this.previousFocus = this.doc.activeElement as HTMLElement | null;
+    afterNextRender(() => this.keep()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  private onClose(): void {
+    const back = this.previousFocus;
+    this.previousFocus = null;
+    if (back?.isConnected) back.focus();
+  }
+
+  /** Escape fecha; Tab e Shift+Tab ficam dentro do diálogo (`aria-modal` sozinho não prende o foco). */
+  protected onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.pwa.cancelUpdate();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const buttons = Array.from(this.dialog()?.nativeElement.querySelectorAll('button') ?? []);
+    if (buttons.length === 0) return;
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    const active = this.doc.activeElement;
+    if (event.shiftKey && (active === first || !buttons.includes(active as HTMLButtonElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (
+      !event.shiftKey &&
+      (active === last || !buttons.includes(active as HTMLButtonElement))
+    ) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 }

@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { registerServiceWorker } from './register-sw';
+import { OTHER_TABS_ANSWER_TIMEOUT_MS, answerTabBusyQueries, askOtherTabs } from './tab-busy';
 import { UnsavedWork } from './unsaved-work';
 
 /** Liga o service worker só fora do modo de desenvolvimento; os testes trocam este valor. */
@@ -35,6 +36,13 @@ export const FIRST_CONTENT_WATCHDOG_MS = 10_000;
 export const UPDATE_FLAG_MAX_AGE_MS = 60_000;
 /** Depois de uma recuperação automática, outra só vale passada esta janela: nunca há laço de recarga. */
 export const AUTO_RECOVERY_GUARD_MS = 60_000;
+/** O toque espera, no máximo, este tempo as escritas em voo terminarem antes de recarregar (sem perguntar à pessoa). */
+export const UPDATE_WRITES_WAIT_MS = 5_000;
+const WRITES_POLL_MS = 100;
+
+/** Por que o diálogo do toque abre: trabalho não salvo nesta aba, ou em outra aba aberta. */
+export type UpdateConfirmation = 'mine' | 'other-tab';
+
 /** Chaves do `sessionStorage` (por aba): a marca de atualização em curso e as guardas contra laço. */
 export const UPDATE_REFRESHING_KEY = 'uniover.update.refreshing';
 export const UPDATE_WATCHDOG_KEY = 'uniover.update.watchdog';
@@ -104,8 +112,10 @@ export class PwaUpdateService {
   private watchdogTimer: number | undefined;
   /** Recarga automática adiada por trabalho não salvo (`undefined`: nada adiado); a guarda de laço só é gravada quando ela acontece. */
   private deferred: { key: string; escalate: boolean } | undefined;
-  /** Conferindo se há outra aba antes do último recurso. */
+  /** Conferindo se há outra aba antes do último recurso, ou relendo a fila antes de decidir. */
   private checking = false;
+  /** Decidindo o que fazer com o toque (esperando escritas, perguntando às outras abas). */
+  private deciding = false;
   /** A página já tinha um worker no comando (a primeira instalação, que assume a página, não é troca). */
   private controlled = false;
   private visibilityBound = false;
@@ -118,8 +128,13 @@ export class PwaUpdateService {
   readonly updateReady = signal(false);
   readonly applyingUpdate = signal(false);
   readonly updateError = signal(false);
-  /** O toque no aviso com trabalho não salvo abre a confirmação antes de recarregar. */
-  readonly confirmingUpdate = signal(false);
+  /** O toque no aviso com trabalho não salvo (nesta aba ou noutra) abre a confirmação antes de recarregar. */
+  readonly confirmingUpdate = signal<UpdateConfirmation | null>(null);
+  /**
+   * Uma navegação falhou (pedaço de código que a versão nova levou) enquanto a recarga está adiada por trabalho não salvo:
+   * o aviso passa a dizer o motivo ("salve para continuar") em vez de a navegação simplesmente não acontecer.
+   */
+  readonly navigationBlocked = signal(false);
   /**
    * O esqueleto de página inteira fica de pé do toque em "Atualizar" até o primeiro conteúdo da página nova (a recarga
    * recomeça o app, então a marca atravessa a recarga pelo `sessionStorage`).
@@ -150,6 +165,8 @@ export class PwaUpdateService {
     if (this.started || !win || !this.enabled) return;
     this.started = true;
     this.holdTabLock(win);
+    // As outras abas perguntam, antes de um toque delas, se esta tem trabalho não salvo.
+    answerTabBusyQueries(win, () => this.unsaved.needsConfirmation());
     const container = win.navigator.serviceWorker;
     this.controlled = container?.controller != null;
     // Permanente: um worker novo pode assumir esta aba por pedido de outra.
@@ -165,22 +182,62 @@ export class PwaUpdateService {
   }
 
   /**
-   * O toque no aviso. Com trabalho não salvo nesta aba pede confirmação antes (o aviso aparece, entre outros motivos, porque a
-   * recarga foi adiada por causa desse trabalho): `confirmingUpdate` abre o diálogo do aviso. Sem trabalho, atualiza direto.
+   * O toque no aviso. Antes de ativar o worker novo (que muda TODAS as abas e tira o precache antigo):
+   * - texto digitado ou editor sujo nesta aba: pede confirmação (`mine`);
+   * - só escritas em voo: espera até `UPDATE_WRITES_WAIT_MS` terminarem, sem perguntar;
+   * - outra aba com trabalho não salvo (pergunta por `BroadcastChannel`, ~500 ms; quem não responde conta como limpa): pede
+   *   confirmação (`other-tab`);
+   * - o treino aberto não pede nada: a sessão fica gravada no aparelho.
+   * Sem nada disso, atualiza direto.
    */
   applyUpdate(): void {
-    if (this.applying) return;
-    if (this.unsaved.hasUnsaved()) {
-      this.confirmingUpdate.set(true);
-      return;
+    if (this.applying || this.deciding) return;
+    void this.decideTap();
+  }
+
+  private async decideTap(): Promise<void> {
+    const win = this.win;
+    this.deciding = true;
+    try {
+      this.updateError.set(false);
+      await this.unsaved.settle();
+      if (this.unsaved.needsConfirmation()) {
+        this.confirmingUpdate.set('mine');
+        return;
+      }
+      if (this.unsaved.isWriting()) {
+        this.applyingUpdate.set(true);
+        await this.waitForWrites(win);
+        this.applyingUpdate.set(false);
+      }
+      // Uma aba só (pelo bloqueio compartilhado) dispensa a pergunta e os 500 ms dela.
+      if (
+        win &&
+        (await this.otherTabsMayBeOpen()) &&
+        (await askOtherTabs(win, OTHER_TABS_ANSWER_TIMEOUT_MS))
+      ) {
+        this.confirmingUpdate.set('other-tab');
+        return;
+      }
+    } finally {
+      this.deciding = false;
     }
     this.confirmUpdate();
+  }
+
+  /** Espera as escritas em voo acabarem (confere a cada 100 ms), no máximo `UPDATE_WRITES_WAIT_MS`. */
+  private async waitForWrites(win: Window | null): Promise<void> {
+    if (!win) return;
+    const until = Date.now() + UPDATE_WRITES_WAIT_MS;
+    while (this.unsaved.isWriting() && Date.now() < until) {
+      await new Promise<void>((resolve) => win.setTimeout(resolve, WRITES_POLL_MS));
+    }
   }
 
   /** A pessoa confirmou (ou não havia o que perder): troca a casca de verdade e sempre termina recarregando a página. */
   confirmUpdate(): void {
     if (this.applying) return;
-    this.confirmingUpdate.set(false);
+    this.confirmingUpdate.set(null);
     this.updateError.set(false);
     this.cancelDeferral();
     void this.refreshByTap();
@@ -188,7 +245,7 @@ export class PwaUpdateService {
 
   /** A pessoa preferiu continuar o que estava fazendo. */
   cancelUpdate(): void {
-    this.confirmingUpdate.set(false);
+    this.confirmingUpdate.set(null);
   }
 
   /**
@@ -197,8 +254,9 @@ export class PwaUpdateService {
    */
   onNavigated(): void {
     this.resumeUrl = undefined;
+    this.navigationBlocked.set(false);
     this.unsaved.prune();
-    this.runDeferred();
+    void this.runDeferred();
   }
 
   /**
@@ -219,11 +277,16 @@ export class PwaUpdateService {
     // Só caminhos do próprio app: nada de `//host` nem de esquema.
     if (target && target.startsWith('/') && !target.startsWith('//')) this.resumeUrl = target;
     if (this.deferred !== undefined) {
-      // Outra tentativa de navegar, vinda da pessoa: é um momento seguro para conferir.
-      this.runDeferred();
+      // Outra tentativa de navegar, vinda da pessoa: é um momento seguro para conferir. Se ainda assim há trabalho, a
+      // navegação não vai acontecer e o aviso diz por quê.
+      void this.runDeferred().then(() => {
+        if (this.deferred !== undefined) this.navigationBlocked.set(true);
+      });
       return true;
     }
-    void this.reloadAutomatically(CHUNK_RECOVERY_KEY, false);
+    void this.reloadAutomatically(CHUNK_RECOVERY_KEY, false).then((started) => {
+      if (!started) this.navigationBlocked.set(true);
+    });
     return true;
   }
 
@@ -263,7 +326,11 @@ export class PwaUpdateService {
     const wasControlled = this.controlled;
     this.controlled = win.navigator.serviceWorker.controller !== null;
     if (!wasControlled || this.applying || this.reloading) return;
-    if (guardActive(win, CONTROLLER_CHANGE_KEY, AUTO_RECOVERY_GUARD_MS)) return;
+    if (guardActive(win, CONTROLLER_CHANGE_KEY, AUTO_RECOVERY_GUARD_MS)) {
+      // Dois deploys seguidos: não recarrega de novo dentro da janela, mas a aba está com a casca velha, então avisa.
+      this.updateReady.set(true);
+      return;
+    }
     void this.reloadAutomatically(CONTROLLER_CHANGE_KEY, false);
   }
 
@@ -316,17 +383,26 @@ export class PwaUpdateService {
     if (this.visibilityBound) return;
     this.visibilityBound = true;
     win.document.addEventListener('visibilitychange', () => {
-      if (win.document.visibilityState === 'visible') this.runDeferred();
+      if (win.document.visibilityState === 'visible') void this.runDeferred();
     });
   }
 
-  /** Num momento seguro: se a tela já está limpa, faz a recarga que estava adiada. */
-  private runDeferred(): void {
+  /**
+   * Num momento seguro: relê as fontes que podem estar velhas (a fila lê um banco que outras abas mexem) e, se a tela está
+   * limpa, faz a recarga que estava adiada.
+   */
+  private async runDeferred(): Promise<void> {
+    if (!this.deferred || this.applying || this.checking || this.reloading) return;
+    this.checking = true;
+    try {
+      await this.unsaved.settle();
+    } finally {
+      this.checking = false;
+    }
     const deferred = this.deferred;
-    if (!deferred || this.applying || this.checking || this.reloading) return;
-    if (this.unsaved.hasUnsaved()) return;
+    if (!deferred || this.applying || this.reloading || this.unsaved.hasUnsaved()) return;
     this.deferred = undefined;
-    void this.reloadAutomatically(deferred.key, deferred.escalate);
+    await this.reloadAutomatically(deferred.key, deferred.escalate);
   }
 
   private cancelDeferral(): void {
