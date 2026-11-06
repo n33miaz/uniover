@@ -354,3 +354,93 @@ def test_the_launcher_does_not_start_another_supervisor_while_the_old_one_will_n
         assert starts(tmp_path) == 1, "outro supervisor subiu com o antigo ainda vivo"
     finally:
         stop(launcher)
+
+
+def legacy_supervisor(*, with_pulse_code: bool) -> str:
+    """Supervisor de mentira, mudo; o novo se reconhece por `Invoke-Bounded` no texto."""
+    body = counting_supervisor(touches=False)
+    return ("# Invoke-Bounded\n" if with_pulse_code else "# versao antiga\n") + body
+
+
+def test_an_old_style_supervisor_gets_the_longer_limit_and_a_new_one_does_not(
+    tmp_path: Path,
+) -> None:
+    # O supervisor anterior bloqueia em `uv sync`/`self-update` sem dar sinal por muitos minutos:
+    # o prazo de 15 min do novo mataria uma atualização lenta e legítima, em ciclo.
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(
+        legacy_supervisor(with_pulse_code=False), encoding="ascii"
+    )
+    launcher = run_launcher(
+        tmp_path, stale="3", extra={"UNIOVER_LAUNCHER_LEGACY_STALE_SECONDS": "60"}
+    )
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        time.sleep(14)
+        assert starts(tmp_path) == 1, "o supervisor antigo foi morto cedo demais"
+    finally:
+        stop(launcher)
+
+
+def test_a_new_style_supervisor_keeps_the_short_limit(tmp_path: Path) -> None:
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(
+        legacy_supervisor(with_pulse_code=True), encoding="ascii"
+    )
+    launcher = run_launcher(
+        tmp_path, stale="3", extra={"UNIOVER_LAUNCHER_LEGACY_STALE_SECONDS": "600"}
+    )
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 2, 90)
+    finally:
+        stop(launcher)
+
+
+def test_repeated_restarts_back_off_instead_of_looping_at_once(tmp_path: Path) -> None:
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(
+        legacy_supervisor(with_pulse_code=True), encoding="ascii"
+    )
+    launcher = run_launcher(
+        tmp_path, stale="2", extra={"UNIOVER_LAUNCHER_RESTART_BASE_SECONDS": "2"}
+    )
+    try:
+        log = base / "logs" / "supervisor.log"
+
+        def waits() -> list[str]:
+            if not log.exists():
+                return []
+            return [
+                line.split("novo supervisor em ")[1].split(" s")[0]
+                for line in log.read_text("utf-8").splitlines()
+                if "novo supervisor em" in line
+            ]
+
+        assert wait_for(lambda: len(waits()) >= 3, 120), waits()
+        assert waits()[:3] == ["2", "4", "8"], "a espera tem de dobrar a cada reinício seguido"
+    finally:
+        stop(launcher)
+
+
+def test_a_supervisor_that_lost_the_mutex_does_not_send_the_launcher_to_the_fallback(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text("exit 43\n", encoding="ascii")
+    (base / "run-agent.fallback.ps1").write_text(
+        "Add-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value 'fallback'\n", encoding="ascii"
+    )
+    launcher = run_launcher(tmp_path, stale="30")
+    try:
+        log = base / "logs" / "supervisor.log"
+        assert wait_for(
+            lambda: log.exists() and "ja ha um supervisor vivo" in log.read_text("utf-8"), 60
+        )
+        time.sleep(3)
+        assert starts(tmp_path) == 0, "o fallback (copia antiga do supervisor) foi executado"
+    finally:
+        stop(launcher)

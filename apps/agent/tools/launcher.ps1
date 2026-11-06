@@ -196,6 +196,14 @@ $staleSeconds = 900.0
 $forced = 0.0
 if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_STALE_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $staleSeconds = $forced }
 $staleCode = -9999
+# Um supervisor de uma versao anterior (sem `Invoke-Bounded`/pulso durante a espera) bloqueia em `uv sync` e `self-update`
+# por muitos minutos sem dar sinal: vigia-lo com os 15 min do novo mataria uma atualizacao lenta e legitima, em ciclo.
+# Esse prazo maior so vale para ele; a variavel de teste de $staleSeconds vale para os dois, salvo a propria deste.
+$legacyStaleSeconds = 2700.0
+if ($forced -gt 0) { $legacyStaleSeconds = 0.0 }
+$forcedLegacy = 0.0
+if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_LEGACY_STALE_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedLegacy) -and $forcedLegacy -gt 0) { $legacyStaleSeconds = $forcedLegacy }
+$staleRestarts = 0
 # Suspensao/hibernacao: o relogio de parede salta de uma volta da vigia para a outra (que deveria levar $pollMs). O
 # supervisor dormiu junto e o sinal dele parece velho de horas: depois de um salto assim o prazo recomeca do despertar.
 $pollMs = 5000
@@ -242,6 +250,10 @@ function Invoke-Supervisor([string]$Script) {
     $process = [System.Diagnostics.Process]::Start($info)
     $startedAt = Get-WatchNow
     $alive = Join-Path $runtimeDir 'supervisor-alive'
+    $limit = $staleSeconds
+    $oldStyle = $true
+    try { $oldStyle = -not (Select-String -LiteralPath $Script -SimpleMatch 'Invoke-Bounded' -Quiet -ErrorAction Stop) } catch { }
+    if ($oldStyle -and $legacyStaleSeconds -gt $limit) { $limit = $legacyStaleSeconds }
     $previous = $startedAt
     $resumedAt = $startedAt
     while (-not $process.WaitForExit($pollMs)) {
@@ -257,9 +269,9 @@ function Invoke-Supervisor([string]$Script) {
         }
         $previous = $now
         $last = $resumedAt
-        try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTime; if ($stamp -gt $last) { $last = $stamp } } catch { }
+        try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTime.AddSeconds($script:clockSkew); if ($stamp -gt $last) { $last = $stamp } } catch { }
         $silent = ($now - $last).TotalSeconds
-        if ($silent -gt $staleSeconds) {
+        if ($silent -gt $limit) {
             Write-LauncherLog ('o supervisor esta vivo (pid ' + $process.Id + ') mas sem sinal ha ' + [int]$silent + ' s; vou reinicia-lo') 'ERROR'
             Add-LauncherDiagnostic 'supervisor.unresponsive' 'error' 'o supervisor travou (sem sinal de vida) e foi reiniciado pelo lancador'
             # So devolve (e o lancador so sobe outro supervisor) depois de CONFIRMAR que a arvore morreu: o supervisor novo
@@ -280,7 +292,26 @@ while ($true) {
         try { $code = Invoke-Supervisor $current }
         catch { Write-LauncherLog ('nao consegui iniciar ou vigiar o supervisor (' + $_.Exception.GetType().Name + ')') }
         if ($code -eq 42) { Write-LauncherLog 'o supervisor pediu para reiniciar (versao nova ou volta atras)' 'INFO'; continue }
-        if ($code -eq $staleCode) { Start-Sleep -Seconds 5; continue }
+        if ($code -eq $staleCode) {
+            # Sem recuo, um travamento que se repete (um passo da partida que nunca termina) reiniciaria sem parar: a espera
+            # dobra a cada reinicio seguido (5, 10, 20 ... ate 5 min) e volta ao inicio quando um supervisor dura.
+            $baseWait = 5.0
+            $forcedBase = 0.0
+            if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_RESTART_BASE_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedBase) -and $forcedBase -gt 0) { $baseWait = $forcedBase }
+            $pause = [Math]::Min($baseWait * [Math]::Pow(2, $staleRestarts), 300.0)
+            $staleRestarts++
+            Write-LauncherLog ('novo supervisor em ' + [int]$pause + ' s (reinicio seguido numero ' + $staleRestarts + ')') 'INFO'
+            Start-Sleep -Seconds $pause
+            continue
+        }
+        if (((Get-Date) - $started).TotalSeconds -ge 600) { $staleRestarts = 0 }
+        # Codigo 43: o supervisor novo encontrou outro vivo da mesma instalacao (o mutex dele). Nao e um supervisor ruim: espera
+        # e tenta de novo, sem rodar o `run-agent.fallback.ps1` (uma copia antiga, possivelmente sem o mutex).
+        if ($code -eq 43) {
+            Write-LauncherLog 'ja ha um supervisor vivo desta instalacao; espero e tento de novo' 'INFO'
+            Start-Sleep -Seconds 30
+            continue
+        }
         Write-LauncherLog ('o supervisor terminou (codigo ' + $code + ') depois de ' + [int]((Get-Date) - $started).TotalSeconds + ' s')
         if (((Get-Date) - $started).TotalSeconds -ge 30) { Start-Sleep -Seconds 5; continue }
     }
