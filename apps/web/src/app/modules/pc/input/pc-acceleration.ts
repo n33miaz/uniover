@@ -32,10 +32,18 @@ export class PointerAccelerator {
 
   constructor(private readonly config: AccelerationConfig = DEFAULT_ACCELERATION) {}
 
-  /** `elapsedMs` é o tempo desde o movimento anterior do mesmo dedo; zero ou negativo conta como o menor intervalo possível. */
-  apply(dx: number, dy: number, elapsedMs: number): PointerDelta {
+  /**
+   * `elapsedMs` é o tempo desde o movimento anterior do mesmo dedo; zero ou negativo conta como o menor intervalo possível.
+   * `config` troca a curva só nesta chamada (a sensibilidade escolhida pela pessoa).
+   */
+  apply(
+    dx: number,
+    dy: number,
+    elapsedMs: number,
+    config: AccelerationConfig = this.config,
+  ): PointerDelta {
     const distance = Math.hypot(dx, dy);
-    const gain = gainFor(distance / Math.max(1, elapsedMs), this.config);
+    const gain = gainFor(distance / Math.max(1, elapsedMs), config);
     const wantedX = dx * gain + this.remainderX;
     const wantedY = dy * gain + this.remainderY;
     const stepX = Math.trunc(wantedX);
@@ -52,18 +60,75 @@ export class PointerAccelerator {
   }
 }
 
+/**
+ * A sensibilidade do ponteiro que a pessoa escolhe. O Windows já aplica a própria aceleração ao movimento relativo que o
+ * agente envia ("aprimorar a precisão do ponteiro"); por isso o padrão é `normal`, 1 pixel do dedo para 1 do ponteiro, sem
+ * curva por cima. `boosted` devolve a curva do app (mais rápido com o dedo veloz) para quem a prefere.
+ */
+export type PointerSensitivity = 'low' | 'normal' | 'high' | 'boosted';
+
+export const POINTER_SENSITIVITIES: readonly PointerSensitivity[] = [
+  'low',
+  'normal',
+  'high',
+  'boosted',
+];
+
+const flat = (gain: number): AccelerationConfig => ({ baseGain: gain, slope: 0, maxGain: gain });
+
+const SENSITIVITY_CONFIG: Readonly<Record<PointerSensitivity, AccelerationConfig>> = {
+  low: flat(0.7),
+  normal: flat(1),
+  high: flat(1.6),
+  boosted: DEFAULT_ACCELERATION,
+};
+
+export function accelerationFor(sensitivity: PointerSensitivity): AccelerationConfig {
+  return SENSITIVITY_CONFIG[sensitivity];
+}
+
 /** Um clique da roda do Windows, em unidades de roda. */
 export const WHEEL_UNIT = 120;
 
 /**
- * Deslize de dois dedos em pixels vira rolagem em unidades de roda. Segue o padrão do Windows: deslizar para baixo rola
- * para baixo (valor negativo na roda). Cerca de 40 px de deslize valem um clique da roda.
+ * Rolagem: quanto cada pixel do deslize vale conforme a velocidade do dedo (devagar rola fino, rápido rola longe, até o
+ * teto). Os valores são o ganho sobre os 40 px por clique.
  */
-export function wheelFromSwipe(
-  swipeX: number,
-  swipeY: number,
-  pxPerNotch = 40,
-): { scrollX: number; scrollY: number } {
-  const unit = WHEEL_UNIT / pxPerNotch;
-  return { scrollX: Math.round(swipeX * unit), scrollY: Math.round(-swipeY * unit) };
+export const SCROLL_ACCELERATION: AccelerationConfig = { baseGain: 1, slope: 0.9, maxGain: 3 };
+
+/**
+ * Deslize de dois dedos em pixels vira rolagem em unidades de roda, proporcional à velocidade do dedo. Segue o padrão do
+ * Windows: deslizar para baixo rola para baixo (valor negativo na roda); `invert` troca o sentido dos dois eixos (a rolagem
+ * "natural" do celular). Cerca de 40 px de deslize valem um clique da roda; a sobra fracionária fica para o passo seguinte.
+ */
+export class ScrollAccelerator {
+  private remainderX = 0;
+  private remainderY = 0;
+
+  constructor(
+    private readonly config: AccelerationConfig = SCROLL_ACCELERATION,
+    private readonly pxPerNotch = 40,
+  ) {}
+
+  apply(
+    swipeX: number,
+    swipeY: number,
+    elapsedMs: number,
+    invert = false,
+  ): { scrollX: number; scrollY: number } {
+    const speed = Math.hypot(swipeX, swipeY) / Math.max(1, elapsedMs);
+    const unit = (WHEEL_UNIT / this.pxPerNotch) * gainFor(speed, this.config) * (invert ? -1 : 1);
+    const wantedX = swipeX * unit + this.remainderX;
+    const wantedY = -swipeY * unit + this.remainderY;
+    const stepX = Math.trunc(wantedX);
+    const stepY = Math.trunc(wantedY);
+    this.remainderX = wantedX - stepX;
+    this.remainderY = wantedY - stepY;
+    return { scrollX: stepX, scrollY: stepY };
+  }
+
+  reset(): void {
+    this.remainderX = 0;
+    this.remainderY = 0;
+  }
 }

@@ -1,9 +1,10 @@
 import {
   DEFAULT_ACCELERATION,
   PointerAccelerator,
+  ScrollAccelerator,
   WHEEL_UNIT,
+  accelerationFor,
   gainFor,
-  wheelFromSwipe,
 } from './pc-acceleration';
 
 describe('gainFor', () => {
@@ -60,13 +61,63 @@ describe('PointerAccelerator', () => {
   });
 });
 
-describe('wheelFromSwipe', () => {
+describe('accelerationFor', () => {
+  it('normal adds no curve of its own: one pixel of finger is one pixel of pointer at any speed', () => {
+    const normal = accelerationFor('normal');
+    expect(gainFor(0, normal)).toBe(1);
+    expect(gainFor(50, normal)).toBe(1);
+    expect(new PointerAccelerator().apply(40, 0, 5, normal).dx).toBe(40);
+  });
+
+  it('low and high scale the pointer evenly, boosted brings the speed curve back', () => {
+    expect(new PointerAccelerator().apply(10, 0, 5, accelerationFor('low')).dx).toBe(7);
+    expect(new PointerAccelerator().apply(10, 0, 5, accelerationFor('high')).dx).toBe(16);
+    expect(accelerationFor('boosted')).toBe(DEFAULT_ACCELERATION);
+    const fast = new PointerAccelerator().apply(40, 0, 10, accelerationFor('boosted')).dx;
+    expect(fast).toBeGreaterThan(40);
+  });
+});
+
+const STEADY = { baseGain: 1, slope: 0, maxGain: 1 };
+
+describe('ScrollAccelerator', () => {
   it('scrolls down when the fingers go down (the Windows default: a negative wheel)', () => {
-    expect(wheelFromSwipe(0, 40).scrollY).toBe(-WHEEL_UNIT);
+    // Com ganho 1, 40 px valem um clique da roda.
+    expect(new ScrollAccelerator(STEADY).apply(0, 40, 400).scrollY).toBe(-WHEEL_UNIT);
   });
 
   it('keeps the horizontal sense: fingers to the right scroll to the right', () => {
-    expect(wheelFromSwipe(40, 0).scrollX).toBe(WHEEL_UNIT);
-    expect(wheelFromSwipe(-20, 0).scrollX).toBe(-WHEEL_UNIT / 2);
+    expect(new ScrollAccelerator(STEADY).apply(40, 0, 400).scrollX).toBe(WHEEL_UNIT);
+    expect(new ScrollAccelerator(STEADY).apply(-20, 0, 400).scrollX).toBe(-WHEEL_UNIT / 2);
+  });
+
+  it('is proportional to the speed of the fingers: the same swipe done fast goes farther', () => {
+    const slow = new ScrollAccelerator().apply(0, 40, 400).scrollY;
+    const medium = new ScrollAccelerator().apply(0, 40, 40).scrollY;
+    const fast = new ScrollAccelerator().apply(0, 40, 10).scrollY;
+    expect(Math.abs(medium)).toBeGreaterThan(Math.abs(slow));
+    expect(Math.abs(fast)).toBeGreaterThan(Math.abs(medium));
+  });
+
+  it('never goes beyond its ceiling, however fast', () => {
+    expect(new ScrollAccelerator().apply(0, 40, 1).scrollY).toBe(-WHEEL_UNIT * 3);
+  });
+
+  it('inverting flips both axes (natural scrolling)', () => {
+    const step = new ScrollAccelerator(STEADY).apply(40, 40, 400, true);
+    expect(step).toEqual({ scrollX: -WHEEL_UNIT, scrollY: WHEEL_UNIT });
+  });
+
+  it('keeps the fraction of a wheel unit for the next step and forgets it on reset', () => {
+    const scroller = new ScrollAccelerator(STEADY);
+    // 0,4 px valem 1,2 unidade: sozinho cada passo perderia a sobra.
+    const total = Array.from({ length: 5 }, () => scroller.apply(0.4, 0, 16).scrollX).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    expect(total).toBe(6);
+    scroller.apply(0.1, 0, 16);
+    scroller.reset();
+    expect(scroller.apply(0.1, 0, 16).scrollX).toBe(0);
   });
 });
