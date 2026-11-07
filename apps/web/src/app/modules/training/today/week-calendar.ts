@@ -27,22 +27,17 @@ import {
 import { routinesOnWeekday } from '../domain/routines/week-plan';
 import { formatKg } from '../shell/format';
 import { TrainingSheet } from '../shell/training-sheet';
-import { weekRangeLabel } from './today-text';
+import { CalendarDayDetail } from './calendar-day-detail';
+import { setsText, weekRangeLabel } from './today-text';
+import { WeekStats } from './week-stats';
 import {
   type CalendarDay,
   type CalendarMonth,
   sundayMonth,
+  type Workout,
   sundayWeek,
   moveMonth,
 } from './week-calendar-model';
-
-interface Workout {
-  readonly sessionId: string;
-  readonly dayKey: string;
-  readonly name: string;
-  readonly sets: number;
-  readonly volumeKg: number;
-}
 
 interface PeriodRead {
   readonly key: string;
@@ -71,15 +66,10 @@ const STREAK_WEEKS = 12;
 
 const dateAt = (day: CalendarDay) => new Date(Date.UTC(day.year, day.month - 1, day.day));
 const sentenceCase = (value: string) => value.charAt(0).toLocaleUpperCase('pt-BR') + value.slice(1);
-const setsText = (count: number) =>
-  count === 1
-    ? $localize`:@@training.today.calendar.one-set:1 série`
-    : $localize`:@@training.today.calendar.many-sets:${count}:count: séries`;
-
 /** Visão compacta da semana (domingo a sábado) e calendário do mês, ambos lidos do banco da conta em uso. */
 @Component({
   selector: 'app-week-calendar',
-  imports: [TrainingSheet],
+  imports: [TrainingSheet, WeekStats, CalendarDayDetail],
   templateUrl: './week-calendar.html',
   styleUrl: './week-calendar.css',
   host: {
@@ -403,14 +393,6 @@ export class WeekCalendar {
       : count === 1
         ? $localize`:@@training.today.calendar.week-day-one:${visibleDate}:date:, 1 treino`
         : $localize`:@@training.today.calendar.week-day-many:${visibleDate}:date:, ${count}:count: treinos`;
-  }
-
-  protected formatVolume(value: number): string {
-    return formatKg(value);
-  }
-
-  protected formatSets(count: number): string {
-    return setsText(count);
   }
 
   /** O resumo reutiliza a página que já edita e apaga séries, sempre a partir do banco local. */

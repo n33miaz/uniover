@@ -87,6 +87,7 @@
   font: inherit;
   cursor: pointer;
   animation: appear 0.24s var(--ease-out, ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 24ms);
   transition:
     background-color 160ms ease,
     transform 160ms ease,
@@ -94,24 +95,6 @@
 }
 .day:active {
   transform: scale(0.96);
-}
-.day:nth-child(2) {
-  animation-delay: 24ms;
-}
-.day:nth-child(3) {
-  animation-delay: 48ms;
-}
-.day:nth-child(4) {
-  animation-delay: 72ms;
-}
-.day:nth-child(5) {
-  animation-delay: 96ms;
-}
-.day:nth-child(6) {
-  animation-delay: 120ms;
-}
-.day:nth-child(7) {
-  animation-delay: 144ms;
 }
 .day.today,
 .month-day.today {
@@ -139,11 +122,6 @@
   color: var(--a-ink2);
   background: var(--a-warn-soft);
   text-decoration: line-through;
-}
-.day-note {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
 }
 .month-day.done {
   background: var(--a-accent-soft);
@@ -203,41 +181,6 @@
   text-decoration: underline;
   cursor: pointer;
 }
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-2);
-  margin: 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--a-line);
-}
-.stats dd,
-.stats dt {
-  line-height: 1.25;
-}
-.stats div {
-  display: flex;
-  flex-direction: column-reverse;
-  min-width: 0;
-}
-.stats dt {
-  color: var(--a-ink2);
-  font-size: var(--fs-label);
-}
-.stats dd {
-  margin: 0;
-  overflow: hidden;
-  font-size: 1rem;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.month-nav h3 {
-  margin: 0;
-  text-align: center;
-  font-size: 1rem;
-  font-weight: 800;
-}
 .month-grid {
   align-items: center;
 }
@@ -286,36 +229,6 @@
 .month-stats,
 .goal-note {
   margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-.day-detail {
-  padding: var(--space-3);
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-}
-.day-detail h3 {
-  margin: 0 0 var(--space-2);
-  font-size: 1rem;
-  font-weight: 750;
-}
-.day-detail p {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-.day-detail ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-}
-.day-detail li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.day-detail li span {
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }

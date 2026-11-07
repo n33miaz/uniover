@@ -1,0 +1,40 @@
+:host {
+  display: contents;
+}
+
+.seal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(17rem, calc(100% - 2 * var(--gutter)));
+  padding: 18px 20px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-2);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+.seal-icon {
+  width: 2.6rem;
+  height: 2.6rem;
+  color: var(--a-ink3);
+}
+.seal h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.seal-since {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
+.seal-retry {
+  width: 100%;
+  margin-top: 6px;
+}

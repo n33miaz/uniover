@@ -26,11 +26,7 @@
           (pointercancel)="endDrag()"
           ><app-home-glyph name="grip"
         /></span>
-        <app-module-app-icon
-          class="ico"
-          [class.planned]="isPlanned(item.id)"
-          [icon]="iconOf(item.id)"
-        />
+        <app-module-app-icon class="ico" [planned]="isPlanned(item.id)" [icon]="iconOf(item.id)" />
         <span class="name">{{ title(item.id) }}</span>
 
         <div class="moves">

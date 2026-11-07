@@ -1,0 +1,67 @@
+:host {
+  display: contents;
+}
+
+/* Recorde: um aviso quente e curto, sem festa. */
+.record {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) var(--space-2) var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--a-warn) 45%, var(--a-line));
+  border-radius: var(--radius);
+  background: var(--a-warn-soft);
+  color: var(--a-ink);
+}
+
+.star {
+  --glyph-size: 24px;
+  color: var(--a-warn-ink);
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.record p {
+  margin: 0;
+}
+
+.record-title {
+  flex: 1 1 auto;
+  font-weight: 800;
+}
+
+.record-line {
+  padding-right: var(--space-2);
+  font-weight: 650;
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.icon.small {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  .icon:hover {
+    background: var(--a-surface-2);
+  }
+}

@@ -1,0 +1,107 @@
+:host {
+  display: contents;
+}
+
+/* Saudação: faixa suave com a hora do dia desenhada ao fundo. */
+.hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  min-height: clamp(136px, 21vw, 172px);
+  padding: clamp(var(--space-5), 3vw, var(--space-6));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--a-accent) 22%, var(--a-line));
+  border-radius: var(--radius-xl);
+  background: var(--a-hero);
+  box-shadow:
+    var(--shadow-2),
+    inset 0 1px 0 var(--a-highlight);
+}
+
+/* A cena tem proporção 3:2; a altura acompanha a largura para ela ficar no alto, acima da hora. */
+.scene {
+  --glyph-size: clamp(112px, 19vw, 156px);
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  height: calc(var(--glyph-size) * 2 / 3);
+  color: var(--a-accent);
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+.hero-text,
+.time {
+  position: relative;
+}
+
+/* Sobre a faixa verde o cinza padrão quase some: a espera usa a cor da marca, mais forte no meio do brilho. */
+.date-skeleton,
+.greeting-skeleton,
+.time-skeleton {
+  --skeleton-base: color-mix(in srgb, var(--a-accent) 16%, transparent);
+  --skeleton-glint: color-mix(in srgb, var(--a-accent) 6%, transparent);
+  display: block;
+}
+
+.date-skeleton {
+  width: 10rem;
+  min-height: 0.8rem;
+  margin-bottom: var(--space-2);
+}
+
+.greeting-skeleton {
+  width: clamp(9rem, 48vw, 14rem);
+  min-height: clamp(1.35rem, 5vw, 2rem);
+}
+
+.time-skeleton {
+  width: 4.25rem;
+  min-height: 2.25rem;
+  align-self: end;
+}
+
+.date {
+  margin: 0 0 var(--space-1);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.date::first-letter {
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: clamp(1.125rem, 5.5vw, 2rem);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.time {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 2.5rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Celular deitado: a saudação encolhe para sobrar espaço aos cartões. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .hero {
+    min-height: 0;
+    padding: var(--space-4);
+  }
+
+  /* Com a tela larga e baixa, a cena sai de cima da hora e fica ao lado dela. */
+  .scene {
+    --glyph-size: 96px;
+    top: 50%;
+    right: 7rem;
+    translate: 0 -50%;
+  }
+}

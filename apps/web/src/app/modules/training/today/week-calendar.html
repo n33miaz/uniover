@@ -41,6 +41,7 @@
       <button
         type="button"
         class="day"
+        [style.--i]="index"
         [class.done]="hasWorkout(day.key, weekWorkouts())"
         [class.today]="isToday(day.key)"
         [class.planned]="stateOf(day, weekWorkouts()) === 'planned'"
@@ -78,21 +79,12 @@
       Ver Mês
     </button>
   </div>
-  <!-- Os três números ficam sempre na tela: enquanto a semana é lida, um traço guarda o lugar (sem salto de altura). -->
-  <dl class="stats">
-    <div>
-      <dt i18n="@@training.today.calendar.sessions">Treinos</dt>
-      <dd>{{ statsReady() ? weekCount() : '—' }}</dd>
-    </div>
-    <div>
-      <dt i18n="@@training.today.calendar.sets">Séries</dt>
-      <dd>{{ statsReady() ? weekSets() : '—' }}</dd>
-    </div>
-    <div>
-      <dt i18n="@@training.today.calendar.volume">Volume</dt>
-      <dd>{{ statsReady() ? weekVolume() : '—' }}</dd>
-    </div>
-  </dl>
+  <app-week-stats
+    [ready]="statsReady()"
+    [sessions]="weekCount()"
+    [sets]="weekSets()"
+    [volume]="weekVolume()"
+  />
 </section>
 
 @if (sheetOpen()) {
@@ -158,36 +150,12 @@
         {{ monthCountText() }} · {{ monthSetsText() }} · {{ monthVolume() }} de volume
       </p>
     }
-    <section class="day-detail" aria-labelledby="selected-day-title">
-      <h3 id="selected-day-title">{{ selectedLabel() }}</h3>
-      @if (selectedEntry()?.note; as note) {
-        <p class="day-note">
-          <span i18n="@@training.today.calendar.note-label">Nota:</span> {{ note }}
-        </p>
-      }
-      @if (selectedEntry()?.absent) {
-        <p class="day-note" i18n="@@training.today.calendar.absent-label">Ausência planejada</p>
-      }
-      @if (selectedWorkouts().length === 0) {
-        <p i18n="@@training.today.calendar.no-session">Nenhum treino registrado neste dia.</p>
-      } @else {
-        <ul class="ui-plain">
-          @for (workout of selectedWorkouts(); track $index) {
-            <li>
-              <button type="button" class="ui-row" (click)="openWorkout(workout)">
-                <span class="ui-row-text">
-                  <span class="ui-row-title">{{ workout.name }}</span>
-                  <span class="ui-row-sub" i18n="@@training.today.calendar.session-detail"
-                    >{{ formatSets(workout.sets) }} · {{ formatVolume(workout.volumeKg) }} de
-                    volume</span
-                  >
-                </span>
-              </button>
-            </li>
-          }
-        </ul>
-      }
-    </section>
+    <app-calendar-day-detail
+      [heading]="selectedLabel()"
+      [entry]="selectedEntry()"
+      [workouts]="selectedWorkouts()"
+      (workoutOpened)="openWorkout($event)"
+    />
     <p class="goal-note">{{ goalNote() }}</p>
   </app-training-sheet>
 }

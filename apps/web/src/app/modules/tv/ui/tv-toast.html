@@ -1,0 +1,7 @@
+@if (notice(); as notice) {
+  @if (notice.kind === 'error') {
+    <p class="toast error" role="alert" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
+  } @else {
+    <p class="toast" role="status" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
+  }
+}

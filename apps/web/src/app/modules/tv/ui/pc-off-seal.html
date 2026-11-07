@@ -1,0 +1,10 @@
+<section class="seal" aria-labelledby="tv-seal-title">
+  <app-pc-off-icon class="seal-icon" />
+  <h2 id="tv-seal-title" i18n="@@tv.seal.title">PC Desligado</h2>
+  @if (since(); as since) {
+    <p class="seal-since" i18n="@@tv.seal.since">desde {{ since }}</p>
+  }
+  <button type="button" class="seal-retry ui-btn" [disabled]="retrying()" (click)="retry.emit()">
+    <span i18n="@@tv.seal.retry">Tentar de Novo</span>
+  </button>
+</section>

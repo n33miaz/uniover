@@ -60,3 +60,12 @@ export function sundayMonth(month: CalendarMonth): readonly (CalendarDay | null)
   while (days.length % 7 !== 0) days.push(null);
   return days;
 }
+
+/** Um treino feito, já somado: o que o calendário mostra por dia (a sessão, o nome da ficha, as séries e o volume). */
+export interface Workout {
+  readonly sessionId: string;
+  readonly dayKey: string;
+  readonly name: string;
+  readonly sets: number;
+  readonly volumeKg: number;
+}

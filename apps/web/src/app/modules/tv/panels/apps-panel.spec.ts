@@ -557,7 +557,7 @@ describe('AppsPanel', () => {
       expect(region.getAttribute('role')).toBe('status');
       expect(region.getAttribute('aria-live')).toBe('polite');
       // Não é a região do "Buscando…": um aviso não apaga o outro.
-      expect(region).not.toBe(root.querySelector('.sr:not([data-reorder-status])'));
+      expect(region).not.toBe(root.querySelector('.ui-visually-hidden:not([data-reorder-status])'));
 
       mover('Disney', 'left').click();
       await render();
@@ -879,7 +879,9 @@ describe('AppsPanel', () => {
       fixture.detectChanges();
       expect(refresh().getAttribute('aria-label')).toBe('Buscando…');
       expect(refresh().getAttribute('aria-disabled')).toBe('true');
-      expect(root.querySelector('[role="status"].sr')?.textContent?.trim()).toBe('Buscando…');
+      expect(root.querySelector('[role="status"].ui-visually-hidden')?.textContent?.trim()).toBe(
+        'Buscando…',
+      );
       // O foco fica no botão durante o pedido.
       expect(document.activeElement).toBe(refresh());
 
@@ -891,7 +893,9 @@ describe('AppsPanel', () => {
       expect(store.refreshShortcuts).toHaveBeenCalledTimes(1);
       expect(refresh().getAttribute('aria-label')).toBe('Atualizar lista');
       expect(refresh().hasAttribute('aria-disabled')).toBe(false);
-      expect(root.querySelector('[role="status"].sr')?.textContent?.trim()).toBe('');
+      expect(root.querySelector('[role="status"].ui-visually-hidden')?.textContent?.trim()).toBe(
+        '',
+      );
     });
 
     it('can ask again after a failed request', async () => {
@@ -968,7 +972,9 @@ describe('AppsPanel', () => {
       store.shortcuts.set(null);
       await render();
       expect(root.querySelector('.loading')).not.toBeNull();
-      expect(root.querySelector('.loading .sr')?.textContent?.trim()).toBe('Carregando os apps…');
+      expect(root.querySelector('.loading .ui-visually-hidden')?.textContent?.trim()).toBe(
+        'Carregando os apps…',
+      );
       expect(root.querySelector('.loading-bar')).toBeNull();
       expect(root.querySelector('.empty')).toBeNull();
     });

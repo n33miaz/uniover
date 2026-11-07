@@ -28,6 +28,7 @@ import { ExerciseIllustration } from '../illustrations/exercise-illustration';
 import { ExerciseChooserSheet } from './exercise-chooser-sheet';
 import { FocusHint, type Tip } from './focus-hint';
 import { HowToSheet } from './how-to-sheet';
+import { LiveRecordBanner } from './live-record-banner';
 import { LiveStore } from './live-store';
 import { PlanSheet } from './plan-sheet';
 import { RestCard } from './rest-card';
@@ -75,6 +76,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
     TodayGlyph,
     RestCard,
     FocusHint,
+    LiveRecordBanner,
     LiveSetFields,
     LiveSetExtras,
     SessionMenuSheet,
@@ -299,7 +301,6 @@ export class LiveSession {
       : $localize`:@@training.live.screen-unsupported:Manter a Tela Acesa (indisponível neste navegador)`,
   );
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
-  protected readonly dismissLabel = $localize`:@@training.live.record-dismiss:Dispensar o aviso de recorde`;
 
   constructor() {
     void this.timer.restore();

@@ -240,77 +240,6 @@ h1 {
   filter: grayscale(1);
   pointer-events: none;
 }
-.seal {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: min(17rem, calc(100% - 2 * var(--gutter)));
-  padding: 18px 20px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  box-shadow: var(--shadow-2);
-  text-align: center;
-  transform: translate(-50%, -50%);
-}
-.seal-icon {
-  width: 2.6rem;
-  height: 2.6rem;
-  color: var(--a-ink3);
-}
-.seal h2 {
-  margin: 0;
-  font-size: 1.15rem;
-}
-.seal-since {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: 0.9rem;
-}
-.seal-retry {
-  width: 100%;
-  margin-top: 6px;
-}
-.pairing {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: min(17rem, calc(100% - 2 * var(--gutter)));
-  padding: 18px 20px;
-  border: 1px solid var(--a-line);
-  border-left: 4px solid var(--a-warn);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  box-shadow: var(--shadow-2);
-  text-align: center;
-  transform: translate(-50%, -50%);
-}
-.pairing h2,
-.pairing p {
-  margin: 0;
-}
-.pairing h2 {
-  font-size: 1.15rem;
-  white-space: nowrap;
-}
-.pairing p {
-  color: var(--a-ink2);
-  font-size: 0.9rem;
-}
-.pairing-action {
-  width: 100%;
-  margin-top: 6px;
-}
 @media (prefers-reduced-motion: reduce) {
   .tv.pc-off app-tv-control,
   .tv.pc-off app-tv-view-only {
@@ -318,34 +247,11 @@ h1 {
   }
 }
 
-/* Sem TV configurada: o estado vazio ocupa o lugar do controle, no meio do que sobra da altura, com uma ação só. */
-.empty {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 0 24px;
-  text-align: center;
-  text-wrap: balance;
-}
-.empty app-tv-icon {
-  width: 3.5rem;
-  height: 3.5rem;
-  color: var(--a-ink2);
-}
-.empty h2 {
-  margin: 0;
-  font-size: clamp(1.15rem, 5.4vw, 1.5rem);
-  white-space: nowrap;
-}
-.empty p {
-  margin: 0;
-  color: var(--a-ink2);
-}
-
-/* Conta sem acesso à TV: uma frase no meio do que sobra da altura, discreta (não é um erro). */
+/*
+ * Sem TV configurada (`empty`, com uma ação só) e conta sem acesso à TV (`blocked`, uma frase discreta, não é um erro): o
+ * estado ocupa o lugar do controle, no meio do que sobra da altura.
+ */
+.empty,
 .blocked {
   display: flex;
   flex: 1 1 auto;
@@ -354,71 +260,35 @@ h1 {
   justify-content: center;
   gap: 10px;
   padding: 0 24px;
-  color: var(--a-ink2);
   text-align: center;
   text-wrap: balance;
+}
+.empty {
+  gap: 14px;
+}
+.blocked {
+  color: var(--a-ink2);
+}
+.empty app-tv-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  color: var(--a-ink2);
 }
 .blocked app-tv-icon {
   width: 2.75rem;
   height: 2.75rem;
 }
+.empty h2 {
+  margin: 0;
+  font-size: clamp(1.15rem, 5.4vw, 1.5rem);
+  white-space: nowrap;
+}
+.empty p {
+  color: var(--a-ink2);
+}
+.empty p,
 .blocked p {
   margin: 0;
-}
-
-/* Aviso passageiro: flutua sobre a fileira de baixo sem pegar o toque, para o controle seguir usável. */
-.toast {
-  position: fixed;
-  right: var(--gutter);
-  bottom: calc(var(--gutter) + var(--safe-bottom) + var(--kb-inset));
-  left: var(--gutter);
-  z-index: 5;
-  max-width: 36rem;
-  margin: 0 auto;
-  padding: 12px 14px;
-  border: 1px solid var(--a-line);
-  border-left: 4px solid var(--a-accent);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
-  color: var(--a-ink);
-  font-size: 0.95rem;
-  pointer-events: none;
-}
-.toast.error {
-  border-left-color: var(--a-bad);
-}
-/*
- * O aviso sobe e aparece ao entrar (`@starting-style`) e desce e esmaece ao sair (`animate.leave`, que segura o
- * elemento até o fim da animação). Com "reduzir movimento" ele só aparece e some.
- */
-.toast {
-  transition:
-    opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-base) var(--ease-out);
-}
-@starting-style {
-  .toast {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-.toast-leave {
-  animation: toast-out var(--dur-base) var(--ease-out) forwards;
-}
-@keyframes toast-out {
-  to {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    transition: none;
-  }
-  .toast-leave {
-    animation: none;
-  }
 }
 
 /* Paisagem: duas colunas no controle e mais largura. */

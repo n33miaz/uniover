@@ -158,3 +158,10 @@ export function ageLabel(milliseconds: number): string {
   const days = Math.floor(hours / 24);
   return $localize`:@@training.today.age-days:há ${days}:days: dias`;
 }
+
+/** "1 série" ou "N séries". */
+export function setsText(count: number): string {
+  return count === 1
+    ? $localize`:@@training.today.calendar.one-set:1 série`
+    : $localize`:@@training.today.calendar.many-sets:${count}:count: séries`;
+}

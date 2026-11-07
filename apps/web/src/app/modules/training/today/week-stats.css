@@ -1,0 +1,33 @@
+:host {
+  display: contents;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--a-line);
+}
+.stats dd,
+.stats dt {
+  line-height: 1.25;
+}
+.stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  min-width: 0;
+}
+.stats dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+}
+.stats dd {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

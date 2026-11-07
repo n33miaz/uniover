@@ -1,0 +1,30 @@
+<section class="day-detail" aria-labelledby="selected-day-title">
+  <h3 id="selected-day-title">{{ heading() }}</h3>
+  @if (entry()?.note; as note) {
+    <p class="day-note">
+      <span i18n="@@training.today.calendar.note-label">Nota:</span> {{ note }}
+    </p>
+  }
+  @if (entry()?.absent) {
+    <p class="day-note" i18n="@@training.today.calendar.absent-label">Ausência planejada</p>
+  }
+  @if (workouts().length === 0) {
+    <p i18n="@@training.today.calendar.no-session">Nenhum treino registrado neste dia.</p>
+  } @else {
+    <ul class="ui-plain">
+      @for (workout of workouts(); track $index) {
+        <li>
+          <button type="button" class="ui-row" (click)="workoutOpened.emit(workout)">
+            <span class="ui-row-text">
+              <span class="ui-row-title">{{ workout.name }}</span>
+              <span class="ui-row-sub" i18n="@@training.today.calendar.session-detail"
+                >{{ formatSets(workout.sets) }} · {{ formatVolume(workout.volumeKg) }} de
+                volume</span
+              >
+            </span>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+</section>

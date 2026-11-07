@@ -1,0 +1,39 @@
+:host {
+  display: contents;
+}
+
+.pairing {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(17rem, calc(100% - 2 * var(--gutter)));
+  padding: 18px 20px;
+  border: 1px solid var(--a-line);
+  border-left: 4px solid var(--a-warn);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-2);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+.pairing h2,
+.pairing p {
+  margin: 0;
+}
+.pairing h2 {
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+.pairing p {
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
+.pairing-action {
+  width: 100%;
+  margin-top: 6px;
+}

@@ -119,7 +119,7 @@
     texto para o leitor de tela é o de sempre; os blocos são só desenho.
   -->
   <div class="loading" role="status" aria-live="polite" i18n-aria-live="@@common.aria.polite">
-    <span class="sr" i18n="@@tv.apps.loading">Carregando os apps…</span>
+    <span class="ui-visually-hidden" i18n="@@tv.apps.loading">Carregando os apps…</span>
     @if (store.shortcutsLoading()) {
       <div class="loading-bar ui-skeleton" aria-hidden="true"></div>
       <div class="loading-tiles" aria-hidden="true">
@@ -219,9 +219,9 @@
     }
   </div>
   <!-- Quem usa leitor de tela ouve o andamento do pedido; a região fica sempre no lugar para o aviso ser lido. -->
-  <span class="sr" role="status">{{ refreshing() ? searchingText : '' }}</span>
+  <span class="ui-visually-hidden" role="status">{{ refreshing() ? searchingText : '' }}</span>
   <!-- Onde o app ficou depois de mover: região própria, para um aviso não apagar o outro. -->
-  <span class="sr" role="status" [attr.aria-live]="'polite'" data-reorder-status>{{
+  <span class="ui-visually-hidden" role="status" [attr.aria-live]="'polite'" data-reorder-status>{{
     announcement()
   }}</span>
   @if (store.cleaning()) {

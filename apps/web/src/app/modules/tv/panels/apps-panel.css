@@ -26,19 +26,6 @@ app-tv-cleanup-sheet {
   font-size: 0.95rem;
 }
 
-/* Texto só para leitor de tela: o andamento do pedido de atualizar a lista. */
-.sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* Mantém a área da busca e da grade estável até a TV devolver a lista, sem sugerir que não há apps. */
 .loading {
   display: flex;
@@ -234,24 +221,20 @@ app-tv-icon.spin {
   flex-direction: column;
   min-width: 0;
 }
+/* Na edição o azulejo vira um cartão: o app em cima e os dois botões embaixo (o conteúdo é do `AppsTile`). O campo de renomear
+   ocupa a linha toda, no lugar do azulejo. */
+.item.cardlike,
 .item.editing {
-  grid-column: 1 / -1;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2, var(--a-surface));
 }
-
-/* Na edição o azulejo vira um cartão: o app em cima e os dois botões embaixo (o conteúdo é do `AppsTile`). */
 .item.cardlike {
   padding: 6px 4px 8px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface-2, var(--a-surface));
 }
-
-/* O campo de renomear ocupa a linha toda, no lugar do azulejo. */
 .item.editing {
+  grid-column: 1 / -1;
   padding: 10px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface-2, var(--a-surface));
 }
 .edit {
   display: flex;
