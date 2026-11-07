@@ -137,6 +137,9 @@ test.describe('Touchpad', () => {
     await page.mouse.move(x, y);
     await page.mouse.down();
     await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    // O aviso é forte e inconfundível: contorno cheio e a palavra, não só uma cor.
+    await expect(page.locator('.pad.holding')).toBeVisible();
+    await expect(page.getByText('Arrastando', { exact: true })).toBeVisible();
     expect(pc.sent('/click')).toEqual([{ button: 'LEFT', action: 'DOWN' }]);
     await page.mouse.move(x + 60, y + 20, { steps: 4 });
     await page.mouse.up();
@@ -196,13 +199,19 @@ test.describe('Touchpad', () => {
     page,
   }) => {
     await openPc(page);
+    // Só o aperto falha: o soltar tem de passar, e é isso que prova que nada ficou apertado.
     pc.commandFailure = { status: 504, kind: 'timeout' };
+    pc.failOnly = (request) => request.body?.['action'] === 'DOWN';
     const drag = page.getByRole('button', { name: 'Arrastar' });
     await drag.click();
     await expect
       .poll(() => pc.sent('/click').map((body) => body['action']))
       .toEqual(['DOWN', 'UP']);
     await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    // O soltar passou (só o aperto falhou): a página ao esconder não tem mais nada a soltar, então nenhum pedido novo sai.
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await page.waitForTimeout(300);
+    expect(pc.sent('/click').map((body) => body['action'])).toEqual(['DOWN', 'UP']);
     await expect(page.getByRole('alert')).toContainText('O PC não respondeu a tempo.');
   });
 

@@ -46,6 +46,7 @@ export class PointerBatcher {
   private lastSentAt = Number.NEGATIVE_INFINITY;
   private timer: unknown = null;
   private stopped = false;
+  private held = false;
 
   constructor(
     private readonly send: (batch: PointerBatch) => Promise<boolean>,
@@ -64,6 +65,21 @@ export class PointerBatcher {
     this.pending.scrollX += scrollX;
     this.pending.scrollY += scrollY;
     this.schedule();
+  }
+
+  /**
+   * Segura o que o dedo andou: some no que espera, mas nada sai até `resume()`. É o que a pressão longa usa enquanto o
+   * aperto do botão ainda não terminou (o ponteiro só anda depois que o botão está apertado). `drain()` continua mandando.
+   */
+  hold(): void {
+    this.held = true;
+    this.cancelTimer();
+  }
+
+  /** Solta o que foi segurado: o que se acumulou sai assim que a taxa permite. */
+  resume(): void {
+    this.held = false;
+    if (this.hasPending()) this.schedule();
   }
 
   /** Há algo esperando ou em voo? */
@@ -107,7 +123,7 @@ export class PointerBatcher {
   }
 
   private schedule(): void {
-    if (this.stopped || this.inFlight || this.timer !== null) return;
+    if (this.stopped || this.held || this.inFlight || this.timer !== null) return;
     const wait = Math.max(0, this.lastSentAt + this.options.minIntervalMs - this.clock.now());
     if (wait === 0) {
       this.dispatch();
@@ -115,7 +131,7 @@ export class PointerBatcher {
     }
     this.timer = this.clock.setTimeout(() => {
       this.timer = null;
-      if (!this.inFlight) this.dispatch();
+      if (!this.inFlight && !this.held) this.dispatch();
     }, wait);
   }
 
@@ -152,7 +168,7 @@ export class PointerBatcher {
       .finally(() => {
         this.inFlight = null;
         // O que se acumulou durante o voo sai assim que a taxa permite.
-        if (this.hasPending()) this.schedule();
+        if (this.hasPending() && !this.held) this.schedule();
       });
   }
 }

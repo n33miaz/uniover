@@ -26,6 +26,8 @@ export interface PcMock {
   status: PcStatusBody;
   /** Falha dos comandos (não da leitura do estado). */
   commandFailure: PcFailure | null;
+  /** Se definida, a falha acima vale só para os comandos que ela aceita (ex.: só o `DOWN` do botão). */
+  failOnly: ((request: PcRequest) => boolean) | null;
   /** Os comandos (tudo que não é a leitura do estado), por rota. */
   sent(path: string): Record<string, unknown>[];
 }
@@ -70,6 +72,7 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
     denied: [],
     status: { ...READY, apps: [...READY.apps] },
     commandFailure: null,
+    failOnly: null,
     sent: (path) =>
       mock.requests.filter((r) => r.method === 'POST' && r.path === path).map((r) => r.body ?? {}),
   };
@@ -102,7 +105,9 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
       });
     }
     if (method !== 'POST') return problem(route, { status: 404, kind: 'not-found' });
-    if (mock.commandFailure) return problem(route, mock.commandFailure);
+    if (mock.commandFailure && (!mock.failOnly || mock.failOnly(entry))) {
+      return problem(route, mock.commandFailure);
+    }
     if (path === '/power' && ['SLEEP', 'SHUTDOWN'].includes(String(body?.['action']))) {
       if (body?.['confirm'] !== true) return problem(route, { status: 400, kind: 'validation' });
     }

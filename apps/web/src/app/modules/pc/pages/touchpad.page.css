@@ -43,11 +43,33 @@
     linear-gradient(var(--a-accent-soft), var(--a-accent-soft)) padding-box,
     linear-gradient(135deg, var(--a-accent), var(--a-accent-soft)) border-box;
 }
-/* Botão esquerdo apertado (arrastando): o contorno cheio avisa, como o "Arrastar" ligado. */
+/* Botão esquerdo apertado (arrastando): contorno cheio e grosso, fundo de destaque e um pulso curto ao começar. O iOS não
+   vibra, então o aviso tem de ser visto de relance. */
 .pad.holding {
+  border-width: 4px;
   background:
     linear-gradient(var(--a-accent-soft), var(--a-accent-soft)) padding-box,
     linear-gradient(135deg, var(--a-accent), var(--a-accent)) border-box;
+  box-shadow: 0 0 0 5px var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  animation: pad-grab var(--dur-base) var(--ease-out);
+}
+.holding-label {
+  font-size: var(--fs-title);
+  font-weight: 700;
+}
+@keyframes pad-grab {
+  from {
+    transform: scale(0.97);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pad.holding {
+    animation: none;
+  }
 }
 .pad:focus-visible {
   outline: 3px solid var(--a-accent);

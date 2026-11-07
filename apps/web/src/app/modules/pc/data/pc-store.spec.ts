@@ -6,7 +6,13 @@ import { SessionState } from '../../../core/session/session-state';
 import { status } from '../pc-test-kit';
 import { PcApi } from './pc-api';
 import { PcPrefs } from './pc-prefs';
-import { DOWN_TIMEOUT_MS, HOLD_HEARTBEAT_MS, PC_POLL_MS, PcStore } from './pc-store';
+import {
+  DOWN_TIMEOUT_MS,
+  HOLD_HEARTBEAT_MS,
+  PC_POLL_MS,
+  PcStore,
+  UP_RETRY_BACKOFF_MS,
+} from './pc-store';
 
 function setup(initial: PcStatus | null = status()) {
   const current = signal<PcStatus | null>(initial);
@@ -318,22 +324,33 @@ describe('PcStore holding the button', () => {
     stop();
   });
 
-  it('hiding the page while the DOWN is on its way releases it when the DOWN answers', async () => {
+  it('hiding the page while the DOWN is on its way sends the keepalive UP at once (the page is dying), and the queued UP only after the DOWN settled', async () => {
     const { store, api } = setup();
     const stop = store.watch();
-    const finish = hanging(api.click);
+    const log: string[] = [];
+    let finish: () => void = () => undefined;
+    api.click.mockImplementation(((_button?: string, action?: string, options?: unknown) => {
+      if (action === 'DOWN') {
+        log.push('DOWN sent');
+        return new Promise<void>((resolve) => {
+          finish = () => {
+            log.push('DOWN settled');
+            resolve();
+          };
+        });
+      }
+      log.push(options ? 'UP sent (keepalive)' : 'UP sent');
+      return Promise.resolve();
+    }) as never);
     const starting = store.startDrag();
     await flush();
     window.dispatchEvent(new Event('pagehide'));
     await flush();
+    expect(log).toEqual(['DOWN sent', 'UP sent (keepalive)']);
     finish();
     await starting;
     await flush();
-    expect((api.click.mock.calls as unknown[][]).map(([, action]) => action)).toEqual([
-      'DOWN',
-      'UP',
-      'UP',
-    ]);
+    expect(log).toEqual(['DOWN sent', 'UP sent (keepalive)', 'DOWN settled', 'UP sent']);
     expect(store.dragging()).toBe(false);
     stop();
   });
@@ -513,6 +530,286 @@ describe('PcStore sign of life while the button is held', () => {
   });
 });
 
+describe('PcStore button commands in order and without leftovers', () => {
+  /** Um pedido que só termina quando o teste manda, com o que aconteceu anotado numa lista. */
+  function logged(api: ReturnType<typeof setup>['api'], log: string[]) {
+    const finishers: (() => void)[] = [];
+    api.click.mockImplementation(((_button?: string, action?: string, options?: unknown) => {
+      if (action === 'DOWN') {
+        log.push('DOWN sent');
+        return new Promise<void>((resolve) => {
+          finishers.push(() => {
+            log.push('DOWN settled');
+            resolve();
+          });
+        });
+      }
+      log.push(options ? 'UP sent (keepalive)' : 'UP sent');
+      return Promise.resolve();
+    }) as never);
+    return { settleDown: () => finishers.shift()!() };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('an UP asked while the DOWN is still on its way waits for the DOWN to settle', async () => {
+    const { store, api } = setup();
+    const log: string[] = [];
+    const { settleDown } = logged(api, log);
+    const starting = store.startDrag();
+    await flush();
+    await store.release();
+    await flush();
+    expect(log).toEqual(['DOWN sent']);
+    settleDown();
+    await starting;
+    expect(log).toEqual(['DOWN sent', 'DOWN settled', 'UP sent']);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('when the DOWN fails, the UP goes only after it settled', async () => {
+    const { store, api } = setup();
+    const log: string[] = [];
+    api.click.mockImplementation(((_button?: string, action?: string) => {
+      if (action === 'DOWN') {
+        log.push('DOWN sent');
+        return new Promise<void>((_resolve, reject) =>
+          setTimeout(() => {
+            log.push('DOWN settled');
+            reject(new HttpErrorResponse({ status: 503 }));
+          }, 10),
+        );
+      }
+      log.push('UP sent');
+      return Promise.resolve();
+    }) as never);
+    await store.toggleDrag();
+    expect(log).toEqual(['DOWN sent', 'DOWN settled', 'UP sent']);
+  });
+
+  it('on the timeout the UP goes out, and if the DOWN answers OK later there is one more UP', async () => {
+    vi.useFakeTimers();
+    const { store, api } = setup();
+    const log: string[] = [];
+    const { settleDown } = logged(api, log);
+    const starting = store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(DOWN_TIMEOUT_MS);
+    expect((await starting)?.kind).toBe('timeout');
+    expect(log).toEqual(['DOWN sent', 'UP sent']);
+    settleDown();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toEqual(['DOWN sent', 'UP sent', 'DOWN settled', 'UP sent']);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('a late DOWN does not release a new drag that started after the timeout', async () => {
+    vi.useFakeTimers();
+    const { store, api } = setup();
+    const log: string[] = [];
+    const { settleDown } = logged(api, log);
+    const first = store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(DOWN_TIMEOUT_MS);
+    await first;
+    const second = store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(0);
+    settleDown(); // o primeiro DOWN, atrasado
+    await vi.advanceTimersByTimeAsync(0);
+    settleDown(); // o segundo
+    await second;
+    expect(store.dragging()).toBe(true);
+    expect(log.filter((entry) => entry === 'UP sent')).toHaveLength(1);
+  });
+
+  it('movement during a held-down press waits for the DOWN and then goes out', async () => {
+    const { store, api } = setup();
+    const log: string[] = [];
+    const { settleDown } = logged(api, log);
+    api.pointer.mockImplementation((() => {
+      log.push('pointer');
+      return Promise.resolve();
+    }) as never);
+    const starting = store.startDrag();
+    await flush();
+    store.beginGesture();
+    store.movePointer(10, 0, 16);
+    store.movePointer(5, 0, 16);
+    await flush();
+    expect(log).toEqual(['DOWN sent']);
+    settleDown();
+    await starting;
+    await flush();
+    expect(log).toEqual(['DOWN sent', 'DOWN settled', 'pointer']);
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+    expect(store.dragging()).toBe(true);
+  });
+});
+
+describe('PcStore after leaving the screen', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const clickActions = (api: ReturnType<typeof setup>['api']) =>
+    (api.click.mock.calls as unknown[][]).map(([, action]) => action);
+
+  /** O DOWN fica no ar até o teste mandar; os UP seguem a regra dada. */
+  function hangingDown(api: ReturnType<typeof setup>['api'], up: () => Promise<void>) {
+    let finish: () => void = () => undefined;
+    api.click.mockImplementation(((_button?: string, action?: string) =>
+      action === 'DOWN'
+        ? new Promise<void>((resolve) => {
+            finish = resolve;
+          })
+        : up()) as never);
+    return () => finish();
+  }
+
+  it('leaving while the DOWN is on its way: a failing UP is retried, never re-marked as held, and no heartbeat leaks', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    const finish = hangingDown(api, () => Promise.reject(new HttpErrorResponse({ status: 503 })));
+    const starting = store.startDrag();
+    await vi.advanceTimersByTimeAsync(0);
+    stop();
+    finish();
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0));
+    await starting;
+    expect(clickActions(api)).toEqual(['DOWN', 'UP', 'UP', 'UP']);
+    expect(store.dragging()).toBe(false);
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 6);
+    expect(api.pointer).not.toHaveBeenCalled();
+  });
+
+  it('the retry stops at the first UP that gets through', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    let attempts = 0;
+    const finish = hangingDown(api, () =>
+      ++attempts === 1 ? Promise.reject(new HttpErrorResponse({ status: 503 })) : Promise.resolve(),
+    );
+    const starting = store.startDrag();
+    await vi.advanceTimersByTimeAsync(0);
+    stop();
+    finish();
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS[0]);
+    await starting;
+    expect(clickActions(api)).toEqual(['DOWN', 'UP', 'UP']);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('hiding the page while the DOWN is on its way: the UP that fails afterwards leaves no heartbeat either', async () => {
+    const { store, api } = setup();
+    store.watch();
+    const finish = hangingDown(api, () => Promise.reject(new HttpErrorResponse({ status: 503 })));
+    const starting = store.startDrag();
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(0);
+    finish();
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0));
+    await starting;
+    expect(store.dragging()).toBe(false);
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 6);
+    expect(api.pointer).not.toHaveBeenCalled();
+  });
+
+  it('leaving with the button held and the UP failing keeps trying a few times, with no heartbeat', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockClear();
+    api.click.mockRejectedValue(new HttpErrorResponse({ status: 503 }));
+    stop();
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0));
+    expect(clickActions(api)).toEqual(['UP', 'UP', 'UP']);
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 6);
+    expect(api.pointer).not.toHaveBeenCalled();
+  });
+
+  it('coming back to the screen allows the heartbeat again', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    stop();
+    store.watch();
+    await store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(api.pointer).toHaveBeenCalledWith(0, 0);
+  });
+});
+
+describe('PcStore releasing with the token of the account that pressed', () => {
+  /** O que cada pedido de botão levou: a ação e a conta cuja sessão estava em vigor. */
+  function recordAccounts(api: ReturnType<typeof setup>['api']) {
+    const sent: [string, string | null][] = [];
+    const session = TestBed.inject(SessionState);
+    api.click.mockImplementation(((_button?: string, action?: string) => {
+      sent.push([String(action), session.accountId()]);
+      return Promise.resolve();
+    }) as never);
+    return sent;
+  }
+
+  afterEach(() => localStorage.clear());
+
+  it('before the session ends the UP goes with the old account, and nothing is sent to the new one', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    const sent = recordAccounts(api);
+    await store.toggleDrag();
+    expect(store.dragging()).toBe(true);
+
+    await TestBed.inject(SessionState).beforeEnd();
+    signIn('conta-b');
+    TestBed.tick();
+    await flush();
+
+    expect(sent).toEqual([
+      ['DOWN', 'conta-a'],
+      ['UP', 'conta-a'],
+    ]);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('with the DOWN still on its way, the session end waits for it and the UP goes with the old account', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    const sent = recordAccounts(api);
+    let finish: () => void = () => undefined;
+    api.click.mockImplementationOnce(((_button?: string, action?: string) => {
+      sent.push([String(action), TestBed.inject(SessionState).accountId()]);
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    }) as never);
+    const starting = store.startDrag();
+    await flush();
+    const ending = TestBed.inject(SessionState).beforeEnd();
+    await flush();
+    finish();
+    await ending;
+    await starting;
+    signIn('conta-b');
+    TestBed.tick();
+    await flush();
+    expect(sent).toEqual([
+      ['DOWN', 'conta-a'],
+      ['UP', 'conta-a'],
+    ]);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('with nothing held the session end sends nothing', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    const sent = recordAccounts(api);
+    void store;
+    await TestBed.inject(SessionState).beforeEnd();
+    expect(sent).toEqual([]);
+  });
+});
+
 describe('PcStore pointer', () => {
   it('accelerates the swipe and sends it as one request', async () => {
     const { store, api } = setup();
@@ -633,7 +930,7 @@ describe('PcStore when the account changes', () => {
     expect(api.pointer).toHaveBeenCalledTimes(1);
   });
 
-  it('an active drag does not carry over: the next toggle presses, and an UP goes out for the old one', async () => {
+  it('an active drag does not carry over: the next toggle presses, it does not release (the UP of the old one went before the switch)', async () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
@@ -647,7 +944,6 @@ describe('PcStore when the account changes', () => {
     await store.toggleDrag();
     expect(api.click.mock.calls).toEqual([
       ['LEFT', 'DOWN'],
-      ['LEFT', 'UP'],
       ['LEFT', 'DOWN'],
     ]);
     expect(store.dragging()).toBe(true);

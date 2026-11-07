@@ -32,12 +32,20 @@ export interface PadGestureConfig {
   readonly tapMaxMs: number;
   /** Um dedo parado por tanto tempo (ms) aperta o botão esquerdo e o segura até sair. */
   readonly longPressMs: number;
+  /** Durante a espera da pressão longa o dedo precisa ficar a menos que isto (px) de onde pousou; saiu, não é pressão. */
+  readonly longPressRadiusPx: number;
 }
+
+/** Quanto tempo o dedo fica parado até apertar o botão (um toque lento de propósito não pode virar arrasto). */
+export const LONG_PRESS_MS = 600;
+/** O quanto o dedo pode tremer durante a espera. */
+export const LONG_PRESS_RADIUS_PX = 4;
 
 export const DEFAULT_PAD_GESTURE: PadGestureConfig = {
   slopPx: 6,
   tapMaxMs: 260,
-  longPressMs: 450,
+  longPressMs: LONG_PRESS_MS,
+  longPressRadiusPx: LONG_PRESS_RADIUS_PX,
 };
 
 interface Point {
@@ -109,6 +117,14 @@ export class PadGesture {
     const center = this.center()!;
     const last = this.lastCenter ?? center;
     this.lastCenter = center;
+
+    // Passou do raio de tremor: o dedo está andando, não pressionando (mesmo antes de passar do limite do movimento).
+    if (
+      this.pressTimer !== null &&
+      Math.hypot(center.x - this.origin.x, center.y - this.origin.y) > this.config.longPressRadiusPx
+    ) {
+      this.clearPress();
+    }
 
     if (!this.displaced) {
       if (Math.hypot(center.x - this.origin.x, center.y - this.origin.y) <= this.config.slopPx) {

@@ -1,4 +1,11 @@
-import { DEFAULT_PAD_GESTURE, PadGesture, PadHandlers, PadTimers } from './pad-gesture';
+import {
+  DEFAULT_PAD_GESTURE,
+  LONG_PRESS_MS,
+  LONG_PRESS_RADIUS_PX,
+  PadGesture,
+  PadHandlers,
+  PadTimers,
+} from './pad-gesture';
 
 /** Relógio de mentira: o teste avança o tempo e o disparo da pressão longa acontece quando ele manda. */
 function fakeTimers() {
@@ -174,7 +181,7 @@ describe('PadGesture long press', () => {
   it('after the press the finger drags: it moves the pointer, and the end is still one release', () => {
     const { gesture, handlers, clock } = setup();
     gesture.down(1, 100, 100, 0);
-    clock.advance(500);
+    clock.advance(700);
     gesture.move(1, 130, 100, 520);
     expect(handlers.move).toHaveBeenCalledWith(30, 0, expect.any(Number));
     gesture.up(1, 560);
@@ -213,7 +220,7 @@ describe('PadGesture long press', () => {
   it('a second finger landing during the press is ignored: it neither scrolls nor ends the drag', () => {
     const { gesture, handlers, clock } = setup();
     gesture.down(1, 100, 100, 0);
-    clock.advance(500);
+    clock.advance(700);
     gesture.down(2, 140, 100, 520);
     gesture.move(2, 140, 160, 540);
     gesture.up(2, 560);
@@ -226,7 +233,7 @@ describe('PadGesture long press', () => {
   it('cancel while pressed releases the button (the system took the touch)', () => {
     const { gesture, handlers, clock } = setup();
     gesture.down(1, 100, 100, 0);
-    clock.advance(500);
+    clock.advance(700);
     gesture.cancel();
     expect(handlers.dragEnd).toHaveBeenCalledTimes(1);
     gesture.cancel();
@@ -240,5 +247,46 @@ describe('PadGesture long press', () => {
     expect(clock.pending).toBe(0);
     clock.advance(1_000);
     expect(handlers.dragStart).not.toHaveBeenCalled();
+  });
+
+  it('needs 600 ms and a finger within a small radius (named constants)', () => {
+    expect(LONG_PRESS_MS).toBe(600);
+    expect(DEFAULT_PAD_GESTURE.longPressMs).toBe(LONG_PRESS_MS);
+    expect(DEFAULT_PAD_GESTURE.longPressRadiusPx).toBe(LONG_PRESS_RADIUS_PX);
+    expect(LONG_PRESS_RADIUS_PX).toBeLessThan(DEFAULT_PAD_GESTURE.slopPx);
+  });
+
+  it('a finger that drifts past the radius during the wait is not a press, even inside the movement slop', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.move(1, 100 + LONG_PRESS_RADIUS_PX + 1, 100, 100);
+    expect(clock.pending).toBe(0);
+    clock.advance(2_000);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+    gesture.up(1, 2_100);
+    expect(handlers.dragEnd).not.toHaveBeenCalled();
+    expect(handlers.tap).not.toHaveBeenCalled();
+  });
+
+  it('a tremor inside the radius keeps the press going', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.move(1, 102, 101, 100);
+    clock.advance(LONG_PRESS_MS);
+    expect(handlers.dragStart).toHaveBeenCalledTimes(1);
+    gesture.up(1, 800);
+  });
+
+  it('a second finger landing at the last moment still cancels it and goes on as a scroll', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    clock.advance(LONG_PRESS_MS - 10);
+    gesture.down(2, 140, 100, LONG_PRESS_MS - 10);
+    clock.advance(1_000);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+    gesture.move(1, 100, 130, 700);
+    gesture.move(2, 140, 130, 700);
+    expect(handlers.scroll).toHaveBeenCalled();
+    expect(handlers.move).not.toHaveBeenCalled();
   });
 });

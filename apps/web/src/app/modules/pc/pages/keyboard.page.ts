@@ -30,7 +30,7 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
  * Teclado do PC: um campo para digitar texto (vai inteiro, com acentos, para onde o cursor do PC estiver) e as teclas e os
  * atalhos que o teclado do celular não tem. Cada toque é um comando; o texto digitado nunca fica guardado na tela depois
  * de enviado (pode ser uma senha). Ctrl, Shift, Alt e Win são teclas "armadas": ficam marcadas e valem só para a próxima
- * tecla, que sai como um atalho (com o campo, uma letra sozinha vira a tecla, por exemplo Ctrl armado e "c" é Ctrl+C).
+ * tecla, que sai como um atalho (com o campo, uma letra sozinha vira a tecla, por exemplo Ctrl armado e "c" é Ctrl+C). Qualquer envio, de tecla ou de texto, solta as armadas.
  */
 @Component({
   selector: 'app-pc-keyboard-page',
@@ -243,14 +243,20 @@ export class KeyboardPage {
   }
 
   protected press(item: KeyButton): void {
+    // Sem como enviar, nada é gasto: as teclas armadas esperam o próximo envio de verdade.
+    if (!this.store.canSend()) return;
     tick();
     void this.store.sendKey(item.key, this.takeModifiers(item.modifiers));
   }
 
-  /** Com tecla armada, uma letra sozinha no campo é o atalho; qualquer outro texto vai inteiro, como texto. */
+  /**
+   * Qualquer envio gasta as teclas armadas. Com elas, uma letra sozinha no campo é o atalho; qualquer outro texto vai
+   * inteiro, como texto, e as armadas se soltam do mesmo jeito (modificador não vale para texto).
+   */
   private sendValue(value: string) {
-    if (this.armed().size > 0 && /^[a-z]$/i.test(value)) {
-      return this.store.sendKey(value.toUpperCase() as PcLetter, this.takeModifiers());
+    const armed = this.takeModifiers();
+    if (armed.length > 0 && /^[a-z]$/i.test(value)) {
+      return this.store.sendKey(value.toUpperCase() as PcLetter, armed);
     }
     return this.store.sendText(value);
   }

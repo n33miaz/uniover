@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { PcStore } from '../data/pc-store';
 import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 import { tick } from '../input/haptics';
@@ -22,7 +29,7 @@ import { PadButton, PadGesture } from '../input/pad-gesture';
         role="group"
         aria-labelledby="pad-help"
         [class.active]="active()"
-        [class.holding]="store.dragging()"
+        [class.holding]="holding()"
         tabindex="0"
         (pointerdown)="onDown($event)"
         (pointermove)="onMove($event)"
@@ -31,12 +38,16 @@ import { PadButton, PadGesture } from '../input/pad-gesture';
         (contextmenu)="$event.preventDefault()"
         (keydown)="onKey($event)"
       >
-        <span class="hint" aria-hidden="true" i18n="@@pc.pad.hint"
-          >Deslize para mover · toque para clicar</span
-        >
-        <span class="hint second" aria-hidden="true" i18n="@@pc.pad.hint-scroll"
-          >Dois dedos rolam</span
-        >
+        @if (holding()) {
+          <span class="hint holding-label" role="status" i18n="@@pc.pad.dragging">Arrastando</span>
+        } @else {
+          <span class="hint" aria-hidden="true" i18n="@@pc.pad.hint"
+            >Deslize para mover · toque para clicar</span
+          >
+          <span class="hint second" aria-hidden="true" i18n="@@pc.pad.hint-scroll"
+            >Dois dedos rolam</span
+          >
+        }
       </div>
       <button
         type="button"
@@ -73,7 +84,7 @@ import { PadButton, PadGesture } from '../input/pad-gesture';
         class="ui-btn"
         [attr.aria-pressed]="store.dragging()"
         [class.on]="store.dragging()"
-        [disabled]="!store.canSend()"
+        [disabled]="!store.canSend() && !store.dragging()"
         (click)="drag()"
         i18n="@@pc.pad.drag"
       >
@@ -100,6 +111,10 @@ export class TouchpadPage {
   protected readonly store = inject(PcStore);
   protected readonly active = signal(false);
   protected readonly settingsOpen = signal(false);
+  /** Uma pressão longa apertou o botão (vale na hora, antes de a resposta do PC chegar: o iOS não vibra). */
+  private readonly pressing = signal(false);
+  /** O botão está apertado (ou acabou de ser apertado pelo dedo): a superfície mostra isso com força. */
+  protected readonly holding = computed(() => this.pressing() || this.store.dragging());
   /** O botão está apertado por uma pressão longa (e então é o fim do dedo que solta; o "Arrastar" é do botão). */
   private pressHold = false;
 
@@ -116,7 +131,7 @@ export class TouchpadPage {
       // Cancelar solta o que uma pressão longa segurava; o resto (o "Arrastar") o store solta aqui.
       this.gesture.cancel();
       // Largar a tela com o botão apertado deixaria o PC arrastando para sempre.
-      void this.store.release();
+      void this.store.release({ persistent: true });
     });
   }
 
@@ -179,18 +194,23 @@ export class TouchpadPage {
     void this.store.toggleDrag();
   }
 
-  /** Um dedo parado apertou o botão esquerdo; se o "Arrastar" já o segurava, o fim do dedo não o solta. */
+  /**
+   * Um dedo parado apertou o botão esquerdo. Se o "Arrastar" já o segurava, ou o aperto dele ainda está saindo, o dedo não
+   * assume nada: o fim do dedo não pode soltar o que não apertou.
+   */
   private startHold(): void {
-    if (this.store.dragging()) return;
+    if (this.store.dragging() || this.store.buttonBusy) return;
     tick(20);
     this.pressHold = true;
+    this.pressing.set(true);
     void this.store.startDrag();
   }
 
   private endHold(): void {
     if (!this.pressHold) return;
     this.pressHold = false;
-    void this.store.release();
+    this.pressing.set(false);
+    void this.store.release({ persistent: true });
   }
 
   private finish(): void {
