@@ -85,11 +85,13 @@ class Lab:
         self.pc_ahead = pc_ahead
         self.skews: list[float] = []
         self.refusals: list[float] = []
+        self.unstable: list[int] = []
         self.clock = ClockOffset(
             now=lambda: NOW + timedelta(seconds=self.elapsed - self.drift + self.pc_ahead),
             monotonic=lambda: mono_origin + self.elapsed,
             on_skew=self.skews.append,
             on_refused=self.refusals.append,
+            on_unstable=self.unstable.append,
         )
         self.pc = FakeInput()
         self.power = FakePower()
@@ -156,10 +158,13 @@ async def test_with_an_empty_window_the_age_is_unknown_and_the_command_is_accept
 
 
 @pytest.mark.parametrize("pc_ahead", [3.0, 60.0, -30.0])
-async def test_with_an_empty_window_a_pc_clock_that_is_off_does_not_matter(pc_ahead: float) -> None:
-    lab = Lab(seeded=False, pc_ahead=pc_ahead)
+async def test_with_a_confirmed_estimate_the_pc_wall_clock_does_not_matter(pc_ahead: float) -> None:
+    lab = Lab(pc_ahead=pc_ahead)  # semeado: a estimativa existe
+    assert lab.clock.offset is not None
     assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
     assert (await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 0.5))[0] == "ok"
+    # Pelo relógio de parede um comando de 10 s e outro de 0,5 s seriam indistinguíveis aqui.
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
 
 
 async def test_a_single_beat_is_not_enough_to_make_an_estimate() -> None:
@@ -477,3 +482,34 @@ async def test_refusing_a_stale_text_never_logs_what_was_typed(
     with caplog.at_level("DEBUG"):
         await lab.run("pc.text.v1", {"text": "senha-secreta-123"}, 30)
     assert "senha-secreta-123" not in caplog.text
+
+
+async def test_an_old_outlier_streak_does_not_survive_an_empty_window() -> None:
+    lab = Lab()
+    lab.api_step = 4.0
+    lab.beats(2)  # duas fora do esperado: falta uma para refazer a estimativa
+    lab.suspend(3600, monotonic_counts=True)  # a janela esvazia
+    assert lab.clock.offset is None
+    lab.beats(2)  # dois batimentos que concordam (com a API 4 s atrás) confirmam de novo
+    confirmed = lab.clock.offset
+    assert confirmed is not None
+    lab.api_step = 8.0
+    lab.beats(1)  # UM batimento fora do esperado: com a sequência velha, seriam três
+    assert lab.clock.offset == pytest.approx(confirmed)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+
+
+async def test_a_link_whose_beats_never_agree_is_reported_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lab = Lab(seeded=False)
+    with caplog.at_level("DEBUG"):
+        for beat in range(30):
+            lab.elapsed += 25.0
+            lab.heartbeat(0.2 if beat % 2 else 3.0)  # cada par discorda do anterior
+    assert lab.clock.offset is None
+    assert lab.unstable == [10]
+    assert caplog.text.count("enlace instável") == 1
+    # Dois que concordam, enfim, formam a estimativa e zeram a contagem.
+    lab.beats(2)
+    assert lab.clock.offset is not None

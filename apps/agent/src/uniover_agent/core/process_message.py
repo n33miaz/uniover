@@ -21,9 +21,11 @@ _log = logging.getLogger(__name__)
 _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
-# Teto de comandos do PC esperando a vez. Acima disso, os dois movimentos pendentes mais antigos
-# que estão lado a lado são somados num só: o movimento é relativo, então o caminho (a soma) se
-# preserva, e nada que veio antes de um clique ou tecla passa para depois dele.
+# Teto de comandos do PC esperando a vez. Acima disso, os dois movimentos pendentes mais NOVOS que
+# estão lado a lado e podem ser somados viram um só: o movimento é relativo, então o caminho (a
+# soma) se preserva, e nada que veio antes de um clique ou tecla passa para depois dele. Sem par
+# que se possa somar (a soma passaria dos limites, ou misturaria movimento e rolagem fora de
+# ordem), o movimento mais antigo é descartado.
 MAX_PENDING_PC: Final = 128
 
 
@@ -143,34 +145,46 @@ class ProcessMessage:
     def _enqueue_pc(self, command: Command) -> None:
         self._pc_queue.append(command)
         if len(self._pc_queue) > MAX_PENDING_PC:
-            self._merge_oldest_moves()
+            self._shrink_pc_queue()
         if self._pc_consumer is None or self._pc_consumer.done():
             self._pc_consumer = asyncio.create_task(self._consume_pc())
             self._tasks.add(self._pc_consumer)
             self._pc_consumer.add_done_callback(self._tasks.discard)
         self._pc_wakeup.set()
 
-    def _merge_oldest_moves(self) -> None:
-        """Soma o par de movimentos vizinhos mais antigo da fila (o mais velho entra no seguinte).
+    def _shrink_pc_queue(self) -> None:
+        """Tira uma vaga da fila: soma o par de movimentos vizinhos mais novo que se possa somar.
 
         Só vizinhos: entre dois movimentos não há clique, tecla nem texto, então somar não muda o
-        que acontece antes de nenhum deles. Sem nenhum par assim (movimentos separados por
-        comandos com resposta, o que o app não produz) a fila passa do teto por esta vez.
+        que acontece antes de nenhum deles. Se nenhum par se soma, descarta o movimento mais
+        antigo; se nem movimento há (a fila só tem comandos com resposta), passa do teto por
+        esta vez.
         """
         queue = self._pc_queue
-        for index in range(len(queue) - 1):
+        silent = self._silent_types
+        for index in range(len(queue) - 2, -1, -1):
             older, newer = queue[index], queue[index + 1]
-            if older.type == POINTER_TYPE == newer.type and older.type in self._silent_types:
-                queue[index + 1] = merge_pointer_commands(older, newer)
+            if older.type == POINTER_TYPE == newer.type and older.type in silent:
+                merged = merge_pointer_commands(older, newer)
+                if merged is not None:
+                    queue[index + 1] = merged
+                    del queue[index]
+                    self._warn_pc_overflow("somando")
+                    return
+        for index, queued in enumerate(queue):
+            if queued.type in silent:
                 del queue[index]
-                if not self._pc_overflowing:
-                    self._pc_overflowing = True
-                    _log.warning(
-                        "faixa do PC cheia (%d comandos esperando): somando os movimentos mais "
-                        "antigos do mouse",
-                        MAX_PENDING_PC,
-                    )
+                self._warn_pc_overflow("descartando")
                 return
+
+    def _warn_pc_overflow(self, action: str) -> None:
+        if not self._pc_overflowing:
+            self._pc_overflowing = True
+            _log.warning(
+                "faixa do PC cheia (%d comandos esperando): %s movimentos do mouse",
+                MAX_PENDING_PC,
+                action,
+            )
 
     async def _consume_pc(self) -> None:
         # Um único consumidor: a ordem da faixa não depende de tarefas encadeadas, e cancelar este

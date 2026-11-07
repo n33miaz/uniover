@@ -32,6 +32,10 @@ PC_CONTROL_CAPABILITY: Final = "pc.control.v1"
 PC_SILENT_TYPES: Final = frozenset({"pc.pointer.v1"})
 
 POINTER_TYPE: Final = "pc.pointer.v1"
+# Limites de um movimento e de uma rolagem (contrato e adaptador): uma soma que os passasse seria
+# cortada pelo adaptador e perderia caminho, então não se soma.
+MAX_POINTER_DELTA: Final = 2000
+MAX_SCROLL_DELTA: Final = 1200
 UNSUPPORTED: Final = "unsupported"
 UNKNOWN_APP: Final = "unknown_app"
 # Tempo entre responder à API e suspender: o resultado precisa sair antes de o PC adormecer.
@@ -64,17 +68,39 @@ def _guarded(handle: Callable[[Command], CommandResult], *, noisy: bool = True) 
     return run
 
 
-def merge_pointer_commands(older: Command, newer: Command) -> Command:
-    """Junta dois movimentos seguidos num só: as somas de deslocamento e de rolagem.
+def _pointer_axes(command: Command) -> tuple[int, int, int, int]:
+    body = command.body
+    return (
+        int(body.get("dx", 0)),
+        int(body.get("dy", 0)),
+        int(body.get("scrollX", 0)),
+        int(body.get("scrollY", 0)),
+    )
+
+
+def _pointer_kind(command: Command) -> str:
+    dx, dy, scroll_x, scroll_y = _pointer_axes(command)
+    if not (scroll_x or scroll_y):
+        return "move"  # inclusive o movimento vazio que mantém um arrasto vivo
+    return "mixed" if (dx or dy) else "scroll"
+
+
+def merge_pointer_commands(older: Command, newer: Command) -> Command | None:
+    """Junta dois comandos seguidos de ponteiro num só, somando deslocamento e rolagem.
 
     O caminho é o mesmo (movimento é relativo e a soma é a mesma, desde que nada fique entre eles).
-    O resultado leva o `id` e o `ts` do mais novo, que dita a idade.
+    O resultado leva o `id` e o `ts` do mais novo, que dita a idade. Devolve `None`, e não junta,
+    quando a ordem entre movimento e rolagem mudaria (um deles mistura os dois, ou um só move e o
+    outro só rola) ou quando a soma passaria dos limites do adaptador.
     """
-
-    def total(key: str) -> int:
-        return int(older.body.get(key, 0)) + int(newer.body.get(key, 0))
-
-    body = {key: total(key) for key in ("dx", "dy", "scrollX", "scrollY")}
+    kind = _pointer_kind(older)
+    if kind == "mixed" or kind != _pointer_kind(newer):
+        return None
+    total = [a + b for a, b in zip(_pointer_axes(older), _pointer_axes(newer), strict=True)]
+    limits = (MAX_POINTER_DELTA, MAX_POINTER_DELTA, MAX_SCROLL_DELTA, MAX_SCROLL_DELTA)
+    if any(abs(value) > limit for value, limit in zip(total, limits, strict=True)):
+        return None
+    body = dict(zip(("dx", "dy", "scrollX", "scrollY"), total, strict=True))
     return Command(newer.id, newer.type, body, newer.correlation_id, newer.sent_at)
 
 

@@ -16,6 +16,7 @@ from uniover_agent.core import (
     ResultStatus,
 )
 from uniover_agent.core.handle_command import FreshKeyHandler, Handler
+from uniover_agent.core.pc.handlers import MAX_POINTER_DELTA
 from uniover_agent.core.process_message import MAX_PENDING_PC
 
 from .support import AGENT_ID, dump, envelope, tv_key
@@ -41,7 +42,10 @@ class Lab:
         return CommandResult(command.id, ResultStatus.OK)
 
     async def pointer(self, command: Command) -> CommandResult:
-        self.log.append(f"pointer:{command.body['dx']}")
+        if command.body.get("scrollY"):
+            self.log.append(f"scroll:{command.body['scrollY']}")
+        else:
+            self.log.append(f"pointer:{command.body['dx']}")
         return CommandResult(command.id, ResultStatus.OK)
 
     async def click(self, command: Command) -> CommandResult:
@@ -92,6 +96,11 @@ def now() -> str:
 
 def pointer(dx: int) -> str:
     return dump(envelope("pc.pointer.v1", {"dx": dx, "dy": 0}, ts=now()))
+
+
+def scroll(amount: int) -> str:
+    body = {"dx": 0, "dy": 0, "scrollY": amount}
+    return dump(envelope("pc.pointer.v1", body, ts=now()))
 
 
 def click(action: str) -> str:
@@ -238,7 +247,7 @@ async def test_a_failing_release_never_breaks_the_shutdown() -> None:
     await process.aclose()
 
 
-async def test_a_backlog_merges_the_oldest_moves_and_keeps_the_whole_path() -> None:
+async def test_a_backlog_merges_the_newest_moves_and_keeps_the_whole_path() -> None:
     lab = Lab()
     process, _ = build(lab)
     await start_blocked_down(lab, process)  # trava a faixa: o DOWN está em execução, fora da fila
@@ -254,7 +263,44 @@ async def test_a_backlog_merges_the_oldest_moves_and_keeps_the_whole_path() -> N
     assert lab.log[0] == "click:DOWN"
     assert len(moved) == MAX_PENDING_PC
     assert sum(moved) == sum(range(1, total + 1))
-    assert moved[-1] == total  # o movimento mais novo segue inteiro, no fim
+    assert all(abs(delta) <= MAX_POINTER_DELTA for delta in moved)
+    await process.aclose()
+
+
+async def test_a_sum_past_the_real_limit_is_not_merged_the_oldest_move_is_dropped_instead(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    await start_blocked_down(lab, process)
+    total = MAX_PENDING_PC + 40
+    big = MAX_POINTER_DELTA * 3 // 4  # dois deles passam do limite do adaptador
+    with caplog.at_level("WARNING"):
+        for _ in range(total):
+            await process(pointer(big))
+    assert caplog.text.count("descartando") == 1
+    lab.pc_gate.set()
+    await settle()
+    await asyncio.sleep(0.05)
+    moved = [int(entry.split(":")[1]) for entry in lab.log if entry.startswith("pointer")]
+    assert moved == [big] * MAX_PENDING_PC  # nenhum passou do limite; sobraram os mais novos
+    await process.aclose()
+
+
+async def test_moves_and_scrolls_are_never_merged_so_their_order_is_kept() -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    await start_blocked_down(lab, process)
+    total = MAX_PENDING_PC + 40
+    sent = [("pointer" if n % 2 == 0 else "scroll", n + 1) for n in range(total)]
+    for kind, value in sent:
+        await process(pointer(value) if kind == "pointer" else scroll(value))
+    lab.pc_gate.set()
+    await settle()
+    await asyncio.sleep(0.05)
+    expected = [f"{kind}:{value}" for kind, value in sent[-MAX_PENDING_PC:]]
+    # Nada se somou (vizinhos de tipos diferentes); o mais antigo saiu e a ordem ficou.
+    assert lab.log[1:] == expected
     await process.aclose()
 
 
