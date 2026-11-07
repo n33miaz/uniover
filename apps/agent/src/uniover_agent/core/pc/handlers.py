@@ -7,12 +7,19 @@ não é conferido de novo; o que depende do PC (um favorito que sumiu da configu
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.pc.apps import PcApp
+from uniover_agent.core.pc.freshness import (
+    MAX_COMMAND_AGE_SECONDS,
+    MAX_POINTER_AGE_SECONDS,
+    MAX_POWER_AGE_SECONDS,
+    fresh_only,
+)
 from uniover_agent.ports import Transport, TransportError
 from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
 
@@ -175,23 +182,44 @@ def pc_app_launch_handler(launcher: PcLauncher, apps: Sequence[PcApp]) -> Handle
     return _guarded(handle)
 
 
-def pc_handlers(
+def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     pc: PcInput,
     power: PcPower,
     launcher: PcLauncher,
     apps: Sequence[PcApp],
     *,
     shutdown_delay_seconds: int,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> dict[str, Handler]:
-    """Todos os comandos `pc.*` que este agente executa quando o controle está ligado."""
+    """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
+
+    Cada um só roda dentro da sua validade (ver `freshness`); o UP de um clique passa sempre.
+    """
+
+    def fresh(
+        handle: Handler,
+        max_age: float,
+        *,
+        exempt: Callable[[Command], bool] | None = None,
+        quiet: bool = False,
+    ) -> Handler:
+        return fresh_only(handle, max_age_seconds=max_age, now=now, exempt=exempt, quiet=quiet)
+
     return {
-        "pc.pointer.v1": pc_pointer_handler(pc),
-        "pc.click.v1": pc_click_handler(pc),
-        "pc.key.v1": pc_key_handler(pc),
-        "pc.text.v1": pc_text_handler(pc),
-        "pc.media.v1": pc_media_handler(pc),
-        "pc.power.v1": pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds),
-        "pc.app.launch.v1": pc_app_launch_handler(launcher, apps),
+        "pc.pointer.v1": fresh(pc_pointer_handler(pc), MAX_POINTER_AGE_SECONDS, quiet=True),
+        "pc.click.v1": fresh(
+            pc_click_handler(pc),
+            MAX_COMMAND_AGE_SECONDS,
+            exempt=lambda command: command.body.get("action") == "UP",
+        ),
+        "pc.key.v1": fresh(pc_key_handler(pc), MAX_COMMAND_AGE_SECONDS),
+        "pc.text.v1": fresh(pc_text_handler(pc), MAX_COMMAND_AGE_SECONDS),
+        "pc.media.v1": fresh(pc_media_handler(pc), MAX_COMMAND_AGE_SECONDS),
+        "pc.power.v1": fresh(
+            pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds),
+            MAX_POWER_AGE_SECONDS,
+        ),
+        "pc.app.launch.v1": fresh(pc_app_launch_handler(launcher, apps), MAX_COMMAND_AGE_SECONDS),
     }
 
 

@@ -3,6 +3,7 @@
 import asyncio
 import tomllib
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
@@ -46,6 +47,9 @@ class FakeInput:
 
     def media(self, action: str, steps: int) -> None:
         self.calls.append(("media", action, steps))
+
+    def release_all(self) -> None:
+        self.calls.append(("release_all",))
 
 
 class FakePower:
@@ -179,14 +183,22 @@ async def test_run_serves_the_pc_commands_without_any_tv(
     ids = [f"0192f1e4-0000-7000-8000-0000000000b{n}" for n in range(8)]
 
     async def script(connection: ServerConnection) -> None:
-        await connection.send(dump(envelope("pc.pointer.v1", {"dx": 4, "dy": -3}, id=ids[0])))
-        await connection.send(dump(envelope("pc.click.v1", {"button": "LEFT"}, id=ids[1])))
-        await connection.send(dump(envelope("pc.text.v1", {"text": "olá"}, id=ids[2])))
-        await connection.send(dump(envelope("pc.power.v1", {"action": "LOCK"}, id=ids[3])))
-        await connection.send(dump(envelope("pc.app.launch.v1", {"appId": "notas"}, id=ids[4])))
-        await connection.send(dump(envelope("pc.app.launch.v1", {"appId": "cmd"}, id=ids[5])))
+        # A API monta o `ts` agora; o agente recusa comando do PC velho demais.
+        now = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        await connection.send(
+            dump(envelope("pc.pointer.v1", {"dx": 4, "dy": -3}, ts=now, id=ids[0]))
+        )
+        await connection.send(dump(envelope("pc.click.v1", {"button": "LEFT"}, ts=now, id=ids[1])))
+        await connection.send(dump(envelope("pc.text.v1", {"text": "olá"}, ts=now, id=ids[2])))
+        await connection.send(dump(envelope("pc.power.v1", {"action": "LOCK"}, ts=now, id=ids[3])))
+        await connection.send(
+            dump(envelope("pc.app.launch.v1", {"appId": "notas"}, ts=now, id=ids[4]))
+        )
+        await connection.send(
+            dump(envelope("pc.app.launch.v1", {"appId": "cmd"}, ts=now, id=ids[5]))
+        )
         # Fora do contrato (botão que não existe): o envelope recusa antes do handler.
-        await connection.send(dump(envelope("pc.click.v1", {"button": "BACK"}, id=ids[6])))
+        await connection.send(dump(envelope("pc.click.v1", {"button": "BACK"}, ts=now, id=ids[6])))
         await asyncio.sleep(0.4)
         await connection.close(4403, "revoked")
 
@@ -223,7 +235,9 @@ async def test_run_serves_the_pc_commands_without_any_tv(
     assert results[ids[4]] == {"ok": True}
     assert results[ids[5]]["error"]["code"] == "unknown_app"
     assert results[ids[6]]["ok"] is False
-    assert pc_input.calls == [("move", 4, -3), ("click", "LEFT", "CLICK"), ("text", "olá")]
+    assert pc_input.calls[:3] == [("move", 4, -3), ("click", "LEFT", "CLICK"), ("text", "olá")]
+    # A conexão caiu e o agente encerrou: os botões apertados (se houvesse) foram soltos.
+    assert ("release_all",) in pc_input.calls[3:]
     assert power.calls == [("lock",)]
     assert launcher.opened == ["notepad"]
 
