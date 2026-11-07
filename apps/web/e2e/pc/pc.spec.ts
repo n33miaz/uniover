@@ -128,6 +128,113 @@ test.describe('Touchpad', () => {
     ]);
   });
 
+  test('um dedo parado segura o botão esquerdo e tirar o dedo solta, sem clique', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const drag = page.getByRole('button', { name: 'Arrastar' });
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    expect(pc.sent('/click')).toEqual([{ button: 'LEFT', action: 'DOWN' }]);
+    await page.mouse.move(x + 60, y + 20, { steps: 4 });
+    await page.mouse.up();
+    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    expect(pc.sent('/click')).toEqual([
+      { button: 'LEFT', action: 'DOWN' },
+      { button: 'LEFT', action: 'UP' },
+    ]);
+    await expect.poll(() => pc.sent('/pointer').length).toBeGreaterThan(0);
+  });
+
+  test('esconder a página com o botão apertado solta o botão (pagehide)', async ({ page }) => {
+    await openPc(page);
+    const drag = page.getByRole('button', { name: 'Arrastar' });
+    await drag.click();
+    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await expect
+      .poll(() => pc.sent('/click'))
+      .toEqual([
+        { button: 'LEFT', action: 'DOWN' },
+        { button: 'LEFT', action: 'UP' },
+      ]);
+    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('ir para o segundo plano com o botão apertado também solta', async ({ page }) => {
+    await openPc(page);
+    const drag = page.getByRole('button', { name: 'Arrastar' });
+    await drag.click();
+    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect
+      .poll(() => pc.sent('/click').map((body) => body['action']))
+      .toEqual(['DOWN', 'UP']);
+    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('trocar de aba com o botão apertado solta o botão', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Arrastar' }).click();
+    await expect(page.getByRole('button', { name: 'Arrastar' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await tabs(page).getByRole('link', { name: 'Teclado' }).click();
+    await expect(page).toHaveURL(/\/pc\/teclado$/);
+    await expect
+      .poll(() => pc.sent('/click').map((body) => body['action']))
+      .toEqual(['DOWN', 'UP']);
+  });
+
+  test('se o aperto do botão falha, um soltar vai logo em seguida e nada fica apertado', async ({
+    page,
+  }) => {
+    await openPc(page);
+    pc.commandFailure = { status: 504, kind: 'timeout' };
+    const drag = page.getByRole('button', { name: 'Arrastar' });
+    await drag.click();
+    await expect
+      .poll(() => pc.sent('/click').map((body) => body['action']))
+      .toEqual(['DOWN', 'UP']);
+    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('alert')).toContainText('O PC não respondeu a tempo.');
+  });
+
+  test('os ajustes mudam a sensibilidade e ficam guardados neste aparelho', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Touchpad' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole('radio', { name: 'Normal' })).toBeChecked();
+    await sheet.getByRole('radio', { name: 'Alta' }).check();
+    await sheet.getByRole('switch', { name: 'Inverter rolagem' }).check();
+    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    const { x, y } = await padCenter(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let step = 1; step <= 6; step++) await page.mouse.move(x + step * 12, y);
+    await page.mouse.up();
+    const total = () => pc.sent('/pointer').reduce((sum, body) => sum + Number(body['dx']), 0);
+    // 72 px do dedo com ganho 1,6 (a sobra fracionária fica para o passo seguinte).
+    await expect.poll(total).toBeGreaterThanOrEqual(113);
+    expect(total()).toBeLessThanOrEqual(116);
+
+    await page.reload();
+    await expect(status(page)).toHaveText('Conectado');
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const again = page.getByRole('dialog', { name: 'Touchpad' });
+    await expect(again.getByRole('radio', { name: 'Alta' })).toBeChecked();
+    await expect(again.getByRole('switch', { name: 'Inverter rolagem' })).toBeChecked();
+  });
+
   test('cabe na tela, sem rolagem lateral, alvos de 44 px e sem falha de acessibilidade', async ({
     page,
   }) => {
@@ -172,6 +279,53 @@ test.describe('Teclado', () => {
         { key: 'C', modifiers: ['CTRL'] },
         { key: 'TAB', modifiers: ['ALT'] },
       ]);
+  });
+
+  test('as teclas armadas valem para a próxima tecla e se soltam sozinhas', async ({ page }) => {
+    await openPc(page, '/pc/teclado');
+    const key = (name: string) => page.getByRole('button', { name, exact: true });
+    const shift = key('Shift');
+    await expect(shift).toHaveAttribute('aria-pressed', 'false');
+    await shift.click();
+    await expect(shift).toHaveAttribute('aria-pressed', 'true');
+    await key('Enter').click();
+    await expect(shift).toHaveAttribute('aria-pressed', 'false');
+    await key('Enter').click();
+
+    await key('Ctrl').click();
+    await key('Alt').click();
+    await key('Del (Delete)').click();
+
+    await key('Win').click();
+    await page.getByLabel('Texto para digitar no PC').fill('d');
+    await page.getByRole('button', { name: 'Digitar' }).click();
+    await expect
+      .poll(() => pc.sent('/key'))
+      .toEqual([
+        { key: 'ENTER', modifiers: ['SHIFT'] },
+        { key: 'ENTER' },
+        { key: 'DELETE', modifiers: ['CTRL', 'ALT'] },
+        { key: 'D', modifiers: ['WIN'] },
+      ]);
+    expect(pc.sent('/text')).toEqual([]);
+    await expect(page.locator('.mods [aria-pressed="true"]')).toHaveCount(0);
+  });
+
+  test('as teclas F1 a F12 existem', async ({ page }) => {
+    await openPc(page, '/pc/teclado');
+    await page.getByRole('button', { name: 'F5', exact: true }).click();
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'F5' }]);
+  });
+
+  test('o texto com emoji vai inteiro, e o limite conta pontos de código', async ({ page }) => {
+    await openPc(page, '/pc/teclado');
+    const field = page.getByLabel('Texto para digitar no PC');
+    await field.fill('oi 😀 ação');
+    await page.getByRole('button', { name: 'Digitar' }).click();
+    await expect.poll(() => pc.sent('/text')).toEqual([{ text: 'oi 😀 ação' }]);
+
+    await field.fill('😀'.repeat(200) + 'x');
+    await expect(field).toHaveValue('😀'.repeat(200));
   });
 
   test('cabe na tela e não tem falha de acessibilidade', async ({ page }) => {
