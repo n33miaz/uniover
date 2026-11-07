@@ -1,12 +1,45 @@
-import { PadGesture, PadHandlers } from './pad-gesture';
+import { DEFAULT_PAD_GESTURE, PadGesture, PadHandlers, PadTimers } from './pad-gesture';
+
+/** Relógio de mentira: o teste avança o tempo e o disparo da pressão longa acontece quando ele manda. */
+function fakeTimers() {
+  let now = 0;
+  let next = 1;
+  const pending = new Map<number, { at: number; handler: () => void }>();
+  const timers: PadTimers = {
+    set: (handler, ms) => {
+      const id = next++;
+      pending.set(id, { at: now + ms, handler });
+      return id;
+    },
+    clear: (handle) => void pending.delete(handle as number),
+  };
+  return {
+    timers,
+    get pending() {
+      return pending.size;
+    },
+    advance(ms: number) {
+      now += ms;
+      for (const [id, entry] of [...pending]) {
+        if (entry.at <= now) {
+          pending.delete(id);
+          entry.handler();
+        }
+      }
+    },
+  };
+}
 
 function setup() {
   const handlers = {
     move: vi.fn<PadHandlers['move']>(),
     scroll: vi.fn<PadHandlers['scroll']>(),
     tap: vi.fn<PadHandlers['tap']>(),
+    dragStart: vi.fn<PadHandlers['dragStart']>(),
+    dragEnd: vi.fn<PadHandlers['dragEnd']>(),
   };
-  return { handlers, gesture: new PadGesture(handlers) };
+  const clock = fakeTimers();
+  return { handlers, clock, gesture: new PadGesture(handlers, DEFAULT_PAD_GESTURE, clock.timers) };
 }
 
 describe('PadGesture', () => {
@@ -80,7 +113,7 @@ describe('PadGesture', () => {
     gesture.up(1, 40);
     gesture.move(2, 140, 150, 56);
     expect(handlers.move).not.toHaveBeenCalled();
-    expect(handlers.scroll).toHaveBeenLastCalledWith(0, 20);
+    expect(handlers.scroll).toHaveBeenLastCalledWith(0, 20, 40);
     gesture.up(2, 80);
   });
 
@@ -110,5 +143,102 @@ describe('PadGesture', () => {
     gesture.up(9, 20);
     expect(handlers.move).not.toHaveBeenCalled();
     expect(handlers.tap).not.toHaveBeenCalled();
+  });
+
+  it('passes the time since the last step with the scroll, so the speed of the fingers is known', () => {
+    const { gesture, handlers } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.down(2, 140, 100, 0);
+    gesture.move(1, 100, 120, 100);
+    gesture.move(2, 140, 120, 100);
+    gesture.move(1, 100, 140, 120);
+    expect(handlers.scroll.mock.calls.map(([, , elapsed]) => elapsed)).toEqual([100, 0, 20]);
+  });
+});
+
+describe('PadGesture long press', () => {
+  it('a finger held still presses the left button, and lifting it releases (and never clicks)', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    clock.advance(DEFAULT_PAD_GESTURE.longPressMs - 1);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+    clock.advance(1);
+    expect(handlers.dragStart).toHaveBeenCalledTimes(1);
+    expect(gesture.dragging).toBe(true);
+    gesture.up(1, 600);
+    expect(handlers.dragEnd).toHaveBeenCalledTimes(1);
+    expect(gesture.dragging).toBe(false);
+    expect(handlers.tap).not.toHaveBeenCalled();
+  });
+
+  it('after the press the finger drags: it moves the pointer, and the end is still one release', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    clock.advance(500);
+    gesture.move(1, 130, 100, 520);
+    expect(handlers.move).toHaveBeenCalledWith(30, 0, expect.any(Number));
+    gesture.up(1, 560);
+    expect(handlers.dragEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('moving before the time is up is a plain movement: nothing is pressed', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.move(1, 140, 100, 100);
+    expect(clock.pending).toBe(0);
+    clock.advance(1_000);
+    gesture.up(1, 1_100);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+    expect(handlers.dragEnd).not.toHaveBeenCalled();
+  });
+
+  it('a quick tap never starts the press, and the timer does not outlive the touch', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.up(1, 80);
+    expect(clock.pending).toBe(0);
+    clock.advance(1_000);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT');
+  });
+
+  it('a second finger cancels the press (that is a scroll or a right click)', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.down(2, 140, 100, 100);
+    clock.advance(1_000);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+  });
+
+  it('a second finger landing during the press is ignored: it neither scrolls nor ends the drag', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    clock.advance(500);
+    gesture.down(2, 140, 100, 520);
+    gesture.move(2, 140, 160, 540);
+    gesture.up(2, 560);
+    expect(handlers.scroll).not.toHaveBeenCalled();
+    expect(handlers.dragEnd).not.toHaveBeenCalled();
+    gesture.up(1, 600);
+    expect(handlers.dragEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel while pressed releases the button (the system took the touch)', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    clock.advance(500);
+    gesture.cancel();
+    expect(handlers.dragEnd).toHaveBeenCalledTimes(1);
+    gesture.cancel();
+    expect(handlers.dragEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel before the time is up leaves nothing scheduled', () => {
+    const { gesture, handlers, clock } = setup();
+    gesture.down(1, 100, 100, 0);
+    gesture.cancel();
+    expect(clock.pending).toBe(0);
+    clock.advance(1_000);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
   });
 });
