@@ -549,6 +549,43 @@ describe('AuthService', () => {
       expect(await dbGet()).toBe('pendente');
     });
 
+    it('logout lets the before-end callbacks run while the token of the account is still in memory', async () => {
+      api.login.mockResolvedValue(tokens('jwt'));
+      await service().login('a@b.c', 'x');
+      const seen: (string | null)[] = [];
+      session().onBeforeEnd(() => seen.push(session().bearer()));
+      const order: string[] = [];
+      api.logout.mockImplementation(() => {
+        order.push('api');
+        return Promise.resolve();
+      });
+      session().onBeforeEnd(() => order.push('hook'));
+      await service().logout();
+      expect(seen).toEqual(['jwt']);
+      expect(order).toEqual(['hook', 'api']);
+      expect(session().bearer()).toBeNull();
+    });
+
+    it('logging in over another session also runs them first, with the old token', async () => {
+      api.login.mockResolvedValueOnce(tokens('jwt-a'));
+      await service().login('a@b.c', 'x');
+      const seen: (string | null)[] = [];
+      session().onBeforeEnd(() => seen.push(session().bearer()));
+      api.login.mockResolvedValueOnce(tokens('jwt-b'));
+      await service().login('b@b.c', 'x');
+      expect(seen).toEqual(['jwt-a']);
+    });
+
+    it('a failing before-end callback never blocks the logout', async () => {
+      api.login.mockResolvedValue(tokens('jwt'));
+      await service().login('a@b.c', 'x');
+      session().onBeforeEnd(() => {
+        throw new Error('falhou');
+      });
+      expect(await service().logout()).toBe(true);
+      expect(service().status()).toBe('anonymous');
+    });
+
     it('a renewal that comes back after logout does not bring the session back', async () => {
       api.login.mockResolvedValue(tokens('jwt'));
       await service().login('a@b.c', 'x');
