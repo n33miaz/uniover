@@ -102,6 +102,80 @@ function Add-LauncherDiagnostic([string]$Kind, [string]$Severity, [string]$Detai
     } catch { }
 }
 
+# --- Baliza de partida (o mesmo bloco, igual, no lancador e no supervisor) ---------------------------------------------
+# Um POST curto e anonimo para a API (`/api/v1/devices/agents/<slug>/beacon`) em cada marco da partida, para separar "o PC
+# esta desligado" de "o agente nao sobe" e de "o PC nao alcanca o servidor" (a propria baliza falha). So estagio, codigo e
+# versao: nenhum segredo, caminho ou nome. O endereco e o slug vem do config\agent.toml (api_url e agent_id); sem eles (ou com
+# um endereco que nao seja https, salvo o do proprio PC) nada e enviado. Nunca atrasa nem derruba a partida: o POST roda num
+# processo separado, oculto, que acaba sozinho (10 s de prazo), e qualquer falha aqui dentro e engolida. No maximo uma baliza
+# por estagio+codigo a cada 10 minutos (arquivo `runtime\beacon.<estagio>.<codigo>` para valer entre processos; sem poder
+# grava-lo vale a memoria deste processo). UNIOVER_BEACON_DISABLED=1 desliga.
+$script:beaconSent = @{}
+
+function Get-BeaconTarget {
+    try {
+        $file = Join-Path $base 'config\agent.toml'
+        if (-not (Test-Path -LiteralPath $file)) { return $null }
+        $text = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8)
+        $api = $null
+        $slug = $null
+        if ($text -match '(?m)^\s*api_url\s*=\s*"([^"\r\n]+)"') { $api = $Matches[1] }
+        if ($text -match '(?m)^\s*agent_id\s*=\s*"([^"\r\n]+)"') { $slug = $Matches[1] }
+        if (-not $api -or -not $slug) { return $null }
+        if ($slug -notmatch '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$') { return $null }
+        if ($api -match '[''"`\s]') { return $null }
+        $uri = $null
+        if (-not [System.Uri]::TryCreate($api, [System.UriKind]::Absolute, [ref]$uri)) { return $null }
+        if ($uri.UserInfo -or $uri.Query -or $uri.Fragment) { return $null }
+        $local = ($uri.Host -eq '127.0.0.1' -or $uri.Host -eq 'localhost')
+        if (-not ($uri.Scheme -eq 'https' -or ($uri.Scheme -eq 'http' -and $local))) { return $null }
+        return ($api.TrimEnd('/') + '/api/v1/devices/agents/' + $slug + '/beacon')
+    } catch { return $null }
+}
+
+function Get-BeaconExitCode($Code) {
+    # O codigo da baliza e [a-z][a-z0-9_]{1,31}: o numero de saida vira `exit_7` (e `exit_neg...` para os negativos do Windows).
+    $number = 0
+    if ($null -eq $Code -or -not [int]::TryParse([string]$Code, [ref]$number)) { return 'exit_unknown' }
+    if ($number -lt 0) { return ('exit_neg' + [string][Math]::Abs([long]$number)) }
+    return ('exit_' + $number)
+}
+
+function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
+    try {
+        if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return }
+        if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return }
+        $spacing = 600.0
+        $forced = 0.0
+        if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_BEACON_MIN_INTERVAL_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $spacing = $forced }
+        $key = $Stage + '.' + $Code
+        $now = [DateTime]::UtcNow
+        if ($script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
+        $stamp = Join-Path (Join-Path $base 'runtime') ('beacon.' + $key)
+        try {
+            $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
+            if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
+        } catch { }
+        $target = Get-BeaconTarget
+        if (-not $target) { return }
+        $script:beaconSent[$key] = $now
+        try { [System.IO.File]::WriteAllText($stamp, 'x', [System.Text.Encoding]::ASCII) } catch { }
+        $body = '{"v":1,"stage":"' + $Stage + '","code":"' + $Code + '"'
+        if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
+        $body += ',"os":"windows"}'
+        $post = '$ProgressPreference = ''SilentlyContinue''; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
+            'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri ''' + $target + ''' -ContentType ''application/json'' -Body ''' + $body + ''' -TimeoutSec 10 | Out-Null } catch { }'
+        $info = New-Object System.Diagnostics.ProcessStartInfo
+        $info.FileName = 'powershell.exe'
+        $info.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ' + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($post))
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $child = [System.Diagnostics.Process]::Start($info)
+        if ($null -ne $child) { $child.Dispose() }
+    } catch { }
+}
+# --- Fim da baliza de partida -------------------------------------------------------------------------------------------
+
 function Set-RecoveryState([hashtable]$Changes) {
     # Mesmo arquivo e mesmo jeito do supervisor (runtime\update-status.json): junta ao que ja esta la. Nunca levanta erro.
     try {
@@ -303,6 +377,9 @@ function Invoke-Supervisor([string]$Script) {
     return $process.ExitCode
 }
 
+# Primeiro marco: o lancador subiu (a tarefa agendada funcionou). Nao atrasa nada: o POST roda em outro processo.
+Send-Beacon 'bootstrap' 'ok' ([string](Get-FolderVersion $appDir))
+
 while ($true) {
     Restore-AppFolder
     if (Test-Path -LiteralPath $current) {
@@ -320,6 +397,7 @@ while ($true) {
             $pause = [Math]::Min($baseWait * [Math]::Pow(2, $staleRestarts), 300.0)
             $staleRestarts++
             Write-LauncherLog ('novo supervisor em ' + [int]$pause + ' s (reinicio seguido numero ' + $staleRestarts + ')') 'INFO'
+            Send-Beacon 'supervisor' 'stale' ([string](Get-FolderVersion $appDir))
             Start-Sleep -Seconds $pause
             continue
         }
@@ -350,6 +428,7 @@ while ($true) {
             continue
         }
         Write-LauncherLog ('o supervisor terminou (codigo ' + $code + ') depois de ' + [int]((Get-Date) - $started).TotalSeconds + ' s')
+        Send-Beacon 'supervisor' (Get-BeaconExitCode $code) ([string](Get-FolderVersion $appDir))
         if (((Get-Date) - $started).TotalSeconds -ge 30) { Start-Sleep -Seconds 5; continue }
     }
     # Durante a primeira migracao, a tarefa ja aponta para este lancador antes de `agent-src`
@@ -364,5 +443,6 @@ while ($true) {
     if (Test-Path -LiteralPath $fallback) {
         try { [void](Invoke-Supervisor $fallback) } catch { Write-LauncherLog ('nao consegui vigiar o fallback (' + $_.Exception.GetType().Name + ')') }
     }
+    elseif (-not (Test-Path -LiteralPath $current)) { Send-Beacon 'bootstrap' 'no_app' }
     Start-Sleep -Seconds 30
 }
