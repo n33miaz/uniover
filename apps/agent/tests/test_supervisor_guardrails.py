@@ -608,7 +608,7 @@ def test_a_lap_whose_environment_was_only_kept_runs_no_update_at_all(
     pc: Pc, tmp_path: Path
 ) -> None:
     # Volta 1: sync de verdade (o update roda com UV_NO_SYNC). Volta 2: o sync estoura o prazo e o
-    # ambiente existente é só mantido: o update NÃO roda (nem com UV_NO_SYNC, nem com sync implícito).
+    # ambiente existente é só mantido: o update NÃO roda (sem UV_NO_SYNC nem sync implícito).
     seen = tmp_path / "update-env.txt"
     flag = tmp_path / "sync-flag.txt"
     python = pc.runtime / "venv" / "Scripts" / "python.exe"
