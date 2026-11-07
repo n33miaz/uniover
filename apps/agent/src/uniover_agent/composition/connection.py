@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import shutil
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
@@ -31,6 +32,8 @@ from uniover_agent.adapters.tv_discovery import (
 )
 from uniover_agent.adapters.tv_locate import build_locator
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
+from uniover_agent.adapters.tv_use_marker import MARKER_FILE as TV_USE_MARKER_FILE
+from uniover_agent.adapters.tv_use_marker import TvUseMarker
 from uniover_agent.adapters.update_status import FileUpdateStatus, default_status_path
 from uniover_agent.care_setup import (
     DiagnosticsKit,
@@ -87,6 +90,7 @@ from uniover_agent.core.api_features import (
     ApiFeatures,
 )
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
+from uniover_agent.core.disk_alarm import DiskAlarm
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
@@ -496,8 +500,24 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         # Se o laço de eventos parar, a pilha de todas as threads vai para `crash.log`.
         LoopWatchdog(installation_base() / "logs").run,
     ]
+    # O disco da instalação: um diagnóstico quando o espaço piora de nível e outro quando volta.
+    root = installation_base()
+    jobs = [
+        *jobs,
+        DiskAlarm(
+            lambda: shutil.disk_usage(root).free,
+            kit.recorder,
+            clock,
+            warn_bytes=settings.disk_warn_mb * 1024 * 1024,
+            critical_bytes=settings.disk_critical_mb * 1024 * 1024,
+        ).run,
+    ]
     if tv is not None:
-        jobs = [*jobs, tv.manager.watch, *tv.background]
+        # A atualização do agente espera a TV ficar parada: a marca de último uso é o que ela lê.
+        marker = TvUseMarker(
+            root / "runtime" / TV_USE_MARKER_FILE, tv.manager.seconds_since_use, clock
+        )
+        jobs = [*jobs, tv.manager.watch, marker.run, *tv.background]
     if settings.self_care:
         care = SelfCare(
             build_checks(

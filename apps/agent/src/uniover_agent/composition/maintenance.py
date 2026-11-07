@@ -7,7 +7,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from uniover_agent.adapters.installation import migrate_layout
-from uniover_agent.adapters.self_update import DEFAULT_CHANNEL, UpdateResult, self_update
+from uniover_agent.adapters.self_update import (
+    DEFAULT_CHANNEL,
+    DISK_RESUME_BYTES,
+    TV_IDLE_SECONDS,
+    TV_MAX_DEFER_SECONDS,
+    UpdateResult,
+    self_update,
+)
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.update_status import (
     default_status_path,
@@ -67,6 +74,7 @@ def update_agent(
             sync=sync,
             channel=channel,
             ignore_deferral=os.environ.get("UNIOVER_UPDATE_FORCE") == "1",
+            **_update_limits(settings),
         )
     except Exception as exc:
         # Não devia acontecer (a atualização devolve o motivo); se ocorrer, o estado diz que falhou.
@@ -93,6 +101,24 @@ def update_agent(
         _note_update_outcome(kit, result)
     print(result.message)
     return EXIT_OK
+
+
+def _update_limits(settings: Settings | None) -> dict[str, Any]:
+    """Os limites da atualização que a configuração mudou; o que está no padrão não é repassado
+    (valem os padrões do próprio `self_update`)."""
+    if settings is None:
+        return {}
+    wanted: dict[str, Any] = {
+        "resume_free_bytes": settings.disk_warn_mb * 1024 * 1024,
+        "tv_idle_seconds": float(settings.update_tv_idle_seconds),
+        "tv_max_defer_seconds": float(settings.update_max_defer_seconds),
+    }
+    defaults: dict[str, Any] = {
+        "resume_free_bytes": DISK_RESUME_BYTES,
+        "tv_idle_seconds": TV_IDLE_SECONDS,
+        "tv_max_defer_seconds": TV_MAX_DEFER_SECONDS,
+    }
+    return {name: value for name, value in wanted.items() if value != defaults[name]}
 
 
 def _note_update_outcome(kit: DiagnosticsKit, result: UpdateResult) -> None:

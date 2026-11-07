@@ -173,6 +173,16 @@ class Settings(BaseSettings):
     # De que ramo do repositório o agente se atualiza (`develop` hoje; `main` quando a publicação
     # voltar).
     update_channel: str = DEFAULT_CHANNEL
+    # A atualização não troca a versão com a TV em uso: espera `update_tv_idle_seconds` sem uso (0
+    # desliga a espera) e, no máximo, `update_max_defer_seconds` desde que começou a esperar.
+    update_tv_idle_seconds: int = Field(default=10 * 60, ge=0, le=3600)
+    update_max_defer_seconds: int = Field(default=24 * 3600, ge=0, le=7 * 24 * 3600)
+    # Alarme de espaço em disco da pasta do agente (diagnóstico uma vez por episódio): aviso abaixo
+    # de `disk_warn_mb`, crítico abaixo de `disk_critical_mb` (o mínimo para atualizar; o
+    # supervisor usa o mesmo, 600 MB). Uma versão devolvida por falta de espaço só volta a poder
+    # ser instalada com `disk_warn_mb` livres.
+    disk_warn_mb: int = Field(default=2048, ge=1, le=1_000_000)
+    disk_critical_mb: int = Field(default=600, ge=1, le=1_000_000)
     # Auto-diagnóstico periódico com reparo seguro e envio das ocorrências à API. Desligue só para
     # depurar.
     self_care: bool = True
