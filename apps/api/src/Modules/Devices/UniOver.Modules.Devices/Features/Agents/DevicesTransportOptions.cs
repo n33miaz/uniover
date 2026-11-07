@@ -25,14 +25,16 @@ public sealed class DevicesTransportOptions
     /// <summary>
     /// Quanto um comando espera a sessão reaparecer depois de uma queda do agente. As quedas medidas em 28/10 (deploy e
     /// manutenção do Render) voltam em 2 a 118 s; 25 s cobre a troca normal sem deixar quem toca o botão esperando demais.
-    /// Passado o prazo o comando falha com "reconectando", e não com "desligado", enquanto a presença segue na graça.
+    /// Passado o prazo o comando falha com "reconectando", e não com "desligado", enquanto a presença segue na graça. Os comandos
+    /// do PC (<c>pc.*</c>) não esperam: mouse, teclado e energia agem ao vivo e falham na hora sem sessão (<see cref="Contracts.Agents.AgentDelivery.Immediate"/>).
     /// </summary>
     public int ReconnectGraceSeconds { get; set; } = 25;
 
     /// <summary>
     /// Quanto o agente sem socket ainda aparece conectado (verde): a queda só é mostrada quando se confirma. Cobre os 118 s
-    /// medidos; um comando enviado nesse intervalo espera a reconexão (<see cref="ReconnectGraceSeconds"/>) e, se ela não
-    /// vem, falha dizendo que o PC está reconectando. Zero mostra a queda na hora.
+    /// medidos; um comando da TV enviado nesse intervalo espera a reconexão (<see cref="ReconnectGraceSeconds"/>) e, se ela não
+    /// vem, falha dizendo que o PC está reconectando. Um comando do PC falha na hora, mesmo com a presença ainda verde.
+    /// Zero mostra a queda na hora.
     /// </summary>
     public int PresenceGraceSeconds { get; set; } = 150;
 

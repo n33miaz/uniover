@@ -51,6 +51,29 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private static Task<HttpResponseMessage> PostAsync(TransportApp app, string path, object? body, string? token = null) =>
         app.App.SendAsync(HttpMethod.Post, $"/api/v1/pc/{path}", body, token ?? app.Login.AccessToken);
 
+    /// <summary>O PC anuncia o favorito "navegador", como o agente faz ao conectar.</summary>
+    private static async Task AnnounceAppAsync(TransportApp app, FakeAgent agent)
+    {
+        await agent.SendTextAsync(agent.Envelope("pc.apps.v1", new JsonObject
+        {
+            ["apps"] = new JsonArray(new JsonObject { ["id"] = "navegador", ["label"] = "Navegador" }),
+            ["at"] = "2026-11-01T14:00:00Z",
+        }));
+        await TransportApp.WaitUntilAsync(async () => await StatusAppsAsync(app) == 1, "favoritos recebidos");
+    }
+
+    /// <summary>O relógio é falso: sem resposta do agente, a espera só acaba quando o teste o avança além do prazo.</summary>
+    private static async Task AdvanceUntilDoneAsync(TransportApp app, Task pending)
+    {
+        for (var i = 0; i < 200 && !pending.IsCompleted; i++)
+        {
+            app.App.Time.Advance(TimeSpan.FromSeconds(11));
+            await Task.Delay(25, Ct);
+        }
+
+        pending.IsCompleted.Should().BeTrue("o prazo do comando já devia ter estourado");
+    }
+
     // ---- estado ----
 
     [Fact]
@@ -133,14 +156,20 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Pointer_ThatDoesNotMove_SendsNothing()
+    public async Task Pointer_ThatDoesNotMove_IsStillForwardedToTheAgent_AsTheKeepAliveOfAHeldButton()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
 
         using var response = await PostAsync(app, "pointer", new { dx = 0, dy = 0 });
+        var command = (await Within(agent.ReceiveAsync()))!.Value;
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.pointer.v1");
+        var body = command.GetProperty("body");
+        (body.GetProperty("dx").GetInt32(), body.GetProperty("dy").GetInt32()).Should().Be((0, 0));
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
     }
 
     [Theory]
@@ -283,7 +312,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Power_RefusedByTheAgent_IsNotAudited()
+    public async Task Power_RefusedByTheAgent_IsAuditedAsAFailedAttempt_NotAsDone()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
@@ -294,7 +323,74 @@ public sealed class PcControlTests(PostgresFixture postgres)
 
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         await using var db = app.App.Db();
-        (await db.PairingAudit.CountAsync(a => a.Event == "pc_lock", Ct)).Should().Be(0);
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_lock", Ct)).Should().Be(0, "não foi feito");
+        var attempt = await db.PairingAudit.SingleAsync(a => a.Event == "pc_lock_failed", Ct);
+        attempt.AgentId.Should().Be(app.Agent.Id);
+        attempt.UserId.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Power_WithoutAnAnswerInTime_Returns504_AndTheAttemptIsAuditedBecauseTheAgentMayHaveActed()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        var http = PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true });
+        await Within(agent.ReceiveAsync());
+        await AdvanceUntilDoneAsync(app, http);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown", Ct)).Should().Be(0);
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Launch_RefusedByTheAgent_IsAuditedAsAFailedAttempt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        await AnnounceAppAsync(app, agent);
+
+        var http = PostAsync(app, "apps/navegador/launch", null);
+        await AnswerAsync(agent, Failed("unknown_app"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_app_launch", Ct)).Should().Be(0);
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_app_launch_failed", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task APowerCommandWithNoLiveSession_SentNothing_SoLeavesNoAuditLine()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectPcAsync(app);
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+
+        using var response = await PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task KeysRefusedByTheAgent_NeverEnterTheAuditTrail()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        var http = PostAsync(app, "key", new { key = "ENTER" });
+        await AnswerAsync(agent, Failed("failed"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
     }
 
     [Fact]
@@ -323,12 +419,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
-        await agent.SendTextAsync(agent.Envelope("pc.apps.v1", new JsonObject
-        {
-            ["apps"] = new JsonArray(new JsonObject { ["id"] = "navegador", ["label"] = "Navegador" }),
-            ["at"] = "2026-11-01T14:00:00Z",
-        }));
-        await TransportApp.WaitUntilAsync(async () => await StatusAppsAsync(app) == 1, "favoritos recebidos");
+        await AnnounceAppAsync(app, agent);
 
         using var unknown = await PostAsync(app, "apps/cmd/launch", null);
         var http = PostAsync(app, "apps/navegador/launch", null);
@@ -546,5 +637,156 @@ public sealed class PcControlTests(PostgresFixture postgres)
             using var response = await PostAsync(app, "pointer", new { dx = 1, dy = 1 });
             response.StatusCode.Should().Be(HttpStatusCode.NoContent, $"o pedido {i} cabe no balde do movimento");
         }
+    }
+
+    // ---- queda do canal: o comando ao vivo não espera nem chega atrasado ----
+
+    private static async Task WaitUntilTheServerLostTheSessionAsync(TransportApp app) =>
+        await TransportApp.WaitUntilAsync(
+            async () =>
+            {
+                using var probe = await PostAsync(app, "pointer", new { dx = 1, dy = 1 });
+                return probe.StatusCode == HttpStatusCode.ServiceUnavailable;
+            },
+            "sessão encerrada no servidor");
+
+    [Fact]
+    public async Task InsideThePresenceGrace_EveryCommandFailsAtOnceAs503_AndNothingArrivesWhenThePcComesBack()
+    {
+        // Graça de presença ligada: o PC segue "verde" na tela depois da queda, que é quando o comando antigo ficava esperando.
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PresenceGraceSeconds = 150 });
+        var agent = await ConnectPcAsync(app);
+        await AnnounceAppAsync(app, agent);
+        await agent.DisposeAsync();
+        await WaitUntilTheServerLostTheSessionAsync(app);
+        app.Presence.Get(app.Agent.Slug)!.Connected.Should().BeTrue("a presença segue verde durante a graça");
+        var before = app.App.Time.GetUtcNow();
+
+        (string Path, object? Body)[] commands =
+        [
+            ("pointer", new { dx = 5, dy = 5 }),
+            ("click", new { button = "LEFT" }),
+            ("key", new { key = "ENTER" }),
+            ("text", new { text = "olá" }),
+            ("media", new { action = "VOLUME_UP" }),
+            ("power", new { action = "SLEEP", confirm = true }),
+            ("apps/navegador/launch", null),
+        ];
+        foreach (var (path, body) in commands)
+        {
+            // O relógio não anda: se algum deles esperasse a janela de reconexão, o teste estouraria aqui.
+            using var response = await Within(PostAsync(app, path, body));
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, path);
+            (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-offline", path);
+        }
+
+        app.App.Time.GetUtcNow().Should().Be(before);
+
+        await using var back = await ConnectPcAsync(app);
+        // A graça de presença já mostra o PC conectado, então se espera a sessão nova de verdade: o pedido só passa (204) quando ela existe.
+        await TransportApp.WaitUntilAsync(
+            async () =>
+            {
+                using var afterwards = await PostAsync(app, "pointer", new { dx = 77, dy = 0 });
+                return afterwards.StatusCode == HttpStatusCode.NoContent;
+            },
+            "sessão nova aceitando comandos");
+        var first = (await Within(back.ReceiveAsync()))!.Value;
+
+        first.GetProperty("type").GetString().Should().Be("pc.pointer.v1");
+        first.GetProperty("body").GetProperty("dx").GetInt32().Should().Be(77, "nada do que foi pedido durante a queda é entregue depois");
+    }
+
+    [Fact]
+    public async Task Pointer_WithNoLiveSession_FailsAtOnceAs503_WithoutWaitingAnything()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PresenceGraceSeconds = 150 });
+        var agent = await ConnectPcAsync(app);
+        await agent.DisposeAsync();
+        await WaitUntilTheServerLostTheSessionAsync(app);
+
+        using var zero = await Within(PostAsync(app, "pointer", new { dx = 0, dy = 0 }));
+        zero.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "o sinal de vida também falha na hora");
+        using var response = await Within(PostAsync(app, "pointer", new { dx = 9, dy = 9, scrollY = 120 }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-offline");
+    }
+
+    // ---- o texto digitado nunca vai a log nem a auditoria ----
+
+    [Fact]
+    public async Task TheTypedText_NeverReachesAnyLogLineOrAuditRow_WhateverHappensToTheCommand()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectPcAsync(app);
+        var secret = "segredo-" + Guid.NewGuid().ToString("N");
+        var bodies = new List<string>();
+
+        // 1. O agente executa: o texto chega a ele (e só a ele).
+        var done = PostAsync(app, "text", new { text = secret });
+        var delivered = await AnswerAsync(agent);
+        using var okResponse = await Within(done);
+        delivered.GetProperty("body").GetProperty("text").GetString().Should().Be(secret);
+        okResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // 2. O agente recusa.
+        var refused = PostAsync(app, "text", new { text = secret });
+        await AnswerAsync(agent, Failed("failed"));
+        using var refusedResponse = await Within(refused);
+        bodies.Add(await refusedResponse.Content.ReadAsStringAsync(Ct));
+
+        // 3. O agente não responde no prazo.
+        var silent = PostAsync(app, "text", new { text = secret });
+        await Within(agent.ReceiveAsync());
+        await AdvanceUntilDoneAsync(app, silent);
+        using var timedOut = await Within(silent);
+        bodies.Add(await timedOut.Content.ReadAsStringAsync(Ct));
+
+        // 4. O pedido é inválido (quebra de linha): recusado antes de sair da API.
+        using var invalid = await PostAsync(app, "text", new { text = secret + "\n" });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        bodies.Add(await invalid.Content.ReadAsStringAsync(Ct));
+
+        // 5. O PC está fora do ar.
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+        using var offline = await PostAsync(app, "text", new { text = secret });
+        offline.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        bodies.Add(await offline.Content.ReadAsStringAsync(Ct));
+
+        refusedResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        timedOut.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
+        bodies.Should().NotContain(b => b.Contains(secret, StringComparison.Ordinal), "nem a resposta devolve o texto");
+        app.App.Logs.Lines.Should().NotBeEmpty("a captura de log estava ligada");
+        app.App.Logs.Lines.Should().NotContain(l => l.Contains(secret, StringComparison.Ordinal), "o texto pode ser senha");
+
+        await using var db = app.App.Db();
+        var rows = await db.PairingAudit.AsNoTracking().ToListAsync(Ct);
+        rows.Should().NotContain(r => r.Event.StartsWith("pc_", StringComparison.Ordinal), "texto não entra na trilha");
+        JsonSerializer.Serialize(rows).Should().NotContain(secret);
+    }
+
+    // ---- limite de taxa: mídia e teclas têm balde próprio, acima dos 300 por minuto dos comandos comuns ----
+
+    [Fact]
+    public async Task Media_HasItsOwnLimitOfSixHundredPerMinute_SoTheVolumeRepeatNeverGets429()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectPcAsync(app);
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+
+        // O volume segurado repete a cada 190 ms (uns 316 por minuto) e passa do teto de 300 dos comandos comuns. Com o PC fora
+        // do ar o pedido volta 503 na hora, mas já passou pelo limitador: o que interessa aqui é só nunca ser 429.
+        for (var i = 0; i < 600; i++)
+        {
+            using var response = await PostAsync(app, "media", new { action = "VOLUME_UP" });
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, $"o pedido {i} cabe no balde da mídia");
+        }
+
+        using var limited = await PostAsync(app, "media", new { action = "VOLUME_UP" });
+        limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "ainda há teto: 600 por minuto");
     }
 }

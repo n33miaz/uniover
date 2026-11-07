@@ -50,6 +50,28 @@ public sealed class PcMessagesTests
     }
 
     [Fact]
+    public void EveryMessageBuiltHere_IsDeliveredLive_NeverWaitingForTheAgentToReconnect()
+    {
+        OutboundMessage[] all =
+        [
+            PcMessages.Pointer(1, 1, 0, 0),
+            PcMessages.Click(PcClickV1BodyButton.Left, PcClickV1BodyAction.Down),
+            PcMessages.Key(PcKeyV1BodyKey.Enter, []),
+            PcMessages.Text("olá"),
+            PcMessages.Media(PcMediaV1BodyAction.VolumeUp, 1),
+            PcMessages.Power(PcPowerV1BodyAction.Shutdown),
+            PcMessages.AppLaunch("navegador"),
+        ];
+
+        all.Should().OnlyContain(m => m.Delivery == AgentDelivery.Immediate);
+    }
+
+    [Fact]
+    public void AMessageThatDoesNotSayOtherwise_WaitsForTheReconnectionAsTheTvAlwaysDid() =>
+        new OutboundMessage("tv.key.v1", JsonDocument.Parse("{}").RootElement.Clone()).Delivery
+            .Should().Be(AgentDelivery.WaitForReconnect);
+
+    [Fact]
     public void Pointer_LeavesOutTheScrollThatIsZero()
     {
         PcMessages.Pointer(3, -2, 0, 0).Body.GetRawText().Should().Be("{\"dx\":3,\"dy\":-2}");

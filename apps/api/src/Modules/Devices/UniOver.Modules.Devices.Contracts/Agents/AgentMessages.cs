@@ -7,7 +7,24 @@ namespace UniOver.Modules.Devices.Contracts.Agents;
 /// Mensagem que um módulo quer mandar a um agente. Só o <c>type</c> (ex.: <c>tv.key.v1</c>) e o corpo: o envelope
 /// (id, origem, destino, instante) é montado e validado pelo Devices, para que nenhum módulo conheça o transporte.
 /// </summary>
-public sealed record OutboundMessage(string Type, JsonElement Body);
+/// <param name="Delivery">O que fazer quando o agente está sem sessão no momento do envio (ver <see cref="AgentDelivery"/>).</param>
+public sealed record OutboundMessage(string Type, JsonElement Body, AgentDelivery Delivery = AgentDelivery.WaitForReconnect);
+
+/// <summary>Como o gateway trata a mensagem quando não há sessão viva com o agente.</summary>
+public enum AgentDelivery
+{
+    /// <summary>
+    /// Espera a janela de reconexão (<c>ReconnectGraceSeconds</c>) antes de desistir: serve a comandos que podem chegar
+    /// atrasados sem dano, como os da TV, para que a troca de instância do Render não vire erro.
+    /// </summary>
+    WaitForReconnect = 0,
+
+    /// <summary>
+    /// Só entrega se há sessão agora; senão falha na hora com <c>agent_offline</c>. É o de quem age no PC ao vivo (mouse,
+    /// teclado, energia): um comando que espera e chega depois, junto com os outros, cai em outra janela.
+    /// </summary>
+    Immediate = 1,
+}
 
 /// <summary>Mensagem do agente que já passou pela validação do contrato e pelas checagens de origem e destino.</summary>
 /// <param name="AgentId">Slug do agente que mandou (o mesmo do <c>source</c> do envelope).</param>

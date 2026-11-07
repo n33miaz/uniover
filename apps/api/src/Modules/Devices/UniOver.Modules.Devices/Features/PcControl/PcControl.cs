@@ -154,8 +154,11 @@ internal static class PcValidator
 
 /// <summary>
 /// O caminho comum dos comandos do PC: acha o computador, entrega, e deixa a linha de auditoria dos que mexem na energia
-/// ou abrem programas (só depois de o agente confirmar, como na manutenção remota: pedido recusado não mudou nada). O
-/// movimento do mouse e as teclas não entram na trilha: seriam milhares de linhas sem valor, e o texto pode ser senha.
+/// ou abrem programas: uma linha de sucesso depois de o agente confirmar e, se ele recusar, falhar ou não responder a
+/// tempo (pode ter agido mesmo assim), uma linha de tentativa que não deu certo. Sem sessão viva nada foi enviado e nada
+/// é gravado. O movimento do mouse e as teclas não entram na trilha: seriam milhares de linhas sem valor, e o texto pode
+/// ser senha (a linha de auditoria nem tem campo para ele). Nenhum comando espera o agente voltar de uma queda: sem
+/// sessão agora, o pedido falha na hora (ver <see cref="AgentDelivery.Immediate"/> em <see cref="PcMessages"/>).
 /// </summary>
 internal sealed class PcControlHandler(
     PcAgentResolver resolver,
@@ -178,18 +181,20 @@ internal sealed class PcControlHandler(
             : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug)));
     }
 
-    /// <summary>Movimento do mouse: sem esperar resposta (a próxima mensagem já está a caminho) e sem auditoria.</summary>
+    /// <summary>
+    /// Movimento do mouse: não espera nada, nem a resposta do agente (a próxima mensagem já está a caminho) nem a volta dele de
+    /// uma queda (sem sessão agora falha na hora, e a tela descarta o movimento pendente), e não entra na auditoria.
+    /// Movimento zero é repassado como qualquer outro (é o sinal de vida que a tela manda com o botão apertado).
+    /// </summary>
     public async Task<IResult> PointerAsync(Guid userId, PcPointerRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // O movimento zero também segue: a tela o manda a cada ~10 s enquanto um botão está apertado, e é ele que mantém
+        // vivo o temporizador de soltura do agente.
         var (dx, dy, scrollX, scrollY) = (request.Dx!.Value, request.Dy!.Value, request.ScrollX ?? 0, request.ScrollY ?? 0);
-        if (dx == 0 && dy == 0 && scrollX == 0 && scrollY == 0)
-        {
-            return TypedResults.NoContent();
-        }
 
-        var target = await ReadyTargetAsync(userId, cancellationToken);
+        var target =await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
         {
             return target.Failure;
@@ -216,11 +221,21 @@ internal sealed class PcControlHandler(
         var reply = await gateway.RequestAsync(target.Slug, message, timeout, cancellationToken);
         if (reply.IsFailure)
         {
+            // Sem resposta no prazo o comando já estava com o agente e pode ter sido executado: fica na trilha. Sem sessão
+            // para entregar (nada saiu) e mensagem recusada pelo contrato (nunca saiu daqui) não deixam linha. Limite
+            // conhecido: se o socket cai depois da entrega e antes da resposta, o gateway também diz "offline" e a
+            // tentativa fica sem linha.
+            if (reply.Error.Code == AgentErrors.TimeoutCode)
+            {
+                await AuditFailedAttemptAsync(auditEvent, client, target.AgentId, userId, cancellationToken);
+            }
+
             return RemoteCareProblems.FromGateway(reply.Error);
         }
 
         if (!reply.Value.Ok)
         {
+            await AuditFailedAttemptAsync(auditEvent, client, target.AgentId, userId, cancellationToken);
             return RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
         }
 
@@ -231,6 +246,19 @@ internal sealed class PcControlHandler(
         }
 
         return TypedResults.NoContent();
+    }
+
+    /// <summary>Grava a tentativa que o agente recusou ou deixou sem resposta; só as ações auditadas têm linha.</summary>
+    private async Task AuditFailedAttemptAsync(
+        string? auditEvent, ClientInfo client, Guid agentId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (auditEvent is null || PairingEvents.PcFailureOf(auditEvent) is not { } failedEvent)
+        {
+            return;
+        }
+
+        audit.Add(failedEvent, client, agentId: agentId, userId: userId);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IResult> LaunchAsync(
@@ -292,22 +320,22 @@ internal static class PcControlEndpoints
 
         group.MapPost("/click", ClickAsync)
             .RequireAuthorization(ModulePolicy)
-            .RequireRateLimiting(RateLimitPolicies.Commands)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
             .WithCommonProblems();
 
         group.MapPost("/key", KeyAsync)
             .RequireAuthorization(ModulePolicy)
-            .RequireRateLimiting(RateLimitPolicies.Commands)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
             .WithCommonProblems();
 
         group.MapPost("/text", TextAsync)
             .RequireAuthorization(ModulePolicy)
-            .RequireRateLimiting(RateLimitPolicies.Commands)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
             .WithCommonProblems();
 
         group.MapPost("/media", MediaAsync)
             .RequireAuthorization(ModulePolicy)
-            .RequireRateLimiting(RateLimitPolicies.Commands)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
             .WithCommonProblems();
 
         group.MapPost("/power", PowerAsync)
