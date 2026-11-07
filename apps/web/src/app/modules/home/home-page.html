@@ -25,23 +25,13 @@
       }
     </span>
   </header>
-  <header class="hero ui-rise">
-    <app-home-glyph class="scene" [name]="dayPart()" />
-    <div class="hero-text">
-      @if (loading()) {
-        <span appSkeleton class="date-skeleton"></span>
-        <span appSkeleton class="greeting-skeleton"></span>
-      } @else {
-        <p class="date">{{ dateLabel() }}</p>
-        <h1>{{ greeting() }}</h1>
-      }
-    </div>
-    @if (loading()) {
-      <span appSkeleton class="time-skeleton"></span>
-    } @else {
-      <p class="time">{{ time() }}</p>
-    }
-  </header>
+  <app-home-hero
+    [loading]="loading()"
+    [dayPart]="dayPart()"
+    [dateLabel]="dateLabel()"
+    [greeting]="greeting()"
+    [time]="time()"
+  />
 
   <div class="section-head">
     <h2 id="modules-label" i18n="@@home.modules">Módulos</h2>
@@ -67,7 +57,7 @@
           [class.planned]="!path"
           [attr.data-module]="widget.definition.id"
         >
-          <app-module-app-icon class="ico" [icon]="widget.definition.icon" />
+          <app-module-app-icon class="ico" [icon]="widget.definition.icon" [planned]="!path" />
           <h3>{{ widget.definition.title }}</h3>
           @if (registry.statusOf(widget.definition) === 'soon') {
             <app-home-soon-badge />

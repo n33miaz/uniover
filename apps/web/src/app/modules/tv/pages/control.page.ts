@@ -1,4 +1,3 @@
-import { NgTemplateOutlet } from '@angular/common';
 import {
   Component,
   DestroyRef,
@@ -12,26 +11,22 @@ import {
 } from '@angular/core';
 import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
-import { TvRoundKeys } from '../data/tv-round-keys';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
-import { KeyButton, vibrate } from '../input/key-button';
+import { vibrate } from '../input/key-button';
 import { StagePager } from '../input/stage-pager';
 import { TouchpadSurface } from '../input/touchpad-surface';
+import { BottomKeys } from '../ui/bottom-keys';
 import { DirectionalRing } from '../ui/directional-ring';
 import { NumberPad } from '../ui/number-pad';
 import { PageDots } from '../ui/page-dots';
 import { ShortcutRow, TvSuggestionRequest } from '../ui/shortcut-row';
-import { TvIcon } from '../ui/tv-icon';
 
 /** Páginas do palco central, nesta ordem: direções com o OK, números e, por último, o touchpad. */
 const PAGE_COUNT = 3;
 
 /** Onde a página do palco fica guardada enquanto a aba do navegador existir (recarregar não volta ao começo). */
 const PAGE_KEY = 'uniover.tv.stage-page';
-
-/** As partes de uma pílula: o botão que aumenta, o nível (ou o rótulo) e o botão que diminui. */
-type PillPart = 'more' | 'level' | 'less';
 
 /** Deslocamento do dedo (px) a partir do qual o gesto é arrasto, e não toque. */
 const DRAG_SLOP_PX = 6;
@@ -50,16 +45,7 @@ const DRAG_SLOP_PX = 6;
  */
 @Component({
   selector: 'app-tv-control',
-  imports: [
-    NgTemplateOutlet,
-    KeyButton,
-    TouchpadSurface,
-    DirectionalRing,
-    NumberPad,
-    PageDots,
-    ShortcutRow,
-    TvIcon,
-  ],
+  imports: [TouchpadSurface, DirectionalRing, NumberPad, PageDots, ShortcutRow, BottomKeys],
   templateUrl: './control.page.html',
   styleUrl: './control.page.css',
 })
@@ -67,8 +53,6 @@ export class ControlPage {
   protected readonly store = inject(TvStore);
   protected readonly prefs = inject(TvPrefs);
   protected readonly access = inject(TvAccess);
-  /** As colunas dos botões redondos e os extras que completam a grade. */
-  protected readonly roundKeys = inject(TvRoundKeys);
   /** Abrir apps pelos atalhos de cima é de quem tem `tv:launch` (esta tela só existe para quem tem `tv:control`). */
   protected readonly canLaunch = this.access.launch;
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
@@ -96,49 +80,6 @@ export class ControlPage {
   protected readonly shortcuts = computed(() =>
     (this.store.shortcuts() ?? []).filter((shortcut) => shortcut.enabled),
   );
-
-  /** As pílulas de volume e canal numa fileira deitada, acima dos botões redondos (Personalizar). */
-  protected readonly rowPills = computed(() => this.prefs.pillLayout() === 'row');
-
-  /**
-   * As três partes de uma pílula na ordem em que aparecem (e em que o foco passa): em pé, mais em cima e menos embaixo;
-   * deitada, menos à esquerda e mais à direita.
-   */
-  protected readonly pillParts = computed<readonly PillPart[]>(() =>
-    this.rowPills() ? ['less', 'level', 'more'] : ['more', 'level', 'less'],
-  );
-
-  /** O nível que o agente leu na TV (ou na soundbar). Sem leitura possível o app não inventa um número. */
-  private readonly volumeRead = computed(() => this.store.state()?.volume ?? null);
-  /** Os passos que a TV confirmou há pouco, para a pílula responder ao toque quando não há nível a mostrar. */
-  private readonly volumeSteps = computed(() =>
-    this.volumeRead() === null ? this.store.volumeNudge() : 0,
-  );
-  protected readonly volumeKnown = computed(() => this.volumeRead() !== null);
-  protected readonly volumeText = computed(() => {
-    const volume = this.volumeRead();
-    if (volume !== null) return String(volume);
-    const steps = this.volumeSteps();
-    if (steps === 0) return '';
-    return `${steps > 0 ? '+' : '−'}${Math.abs(steps)}`;
-  });
-  /** Quanto da pílula de volume se enche (0 a 100); sem nível conhecido fica vazia. */
-  protected readonly volumePercent = computed(() => {
-    const volume = this.volumeRead();
-    return volume === null ? 0 : Math.min(100, Math.max(0, volume));
-  });
-  protected readonly volumeLabel = computed(() => {
-    const volume = this.volumeRead();
-    if (volume !== null) return $localize`:@@tv.volume.level:Volume ${volume}:level:`;
-    const text = this.volumeText();
-    return text === ''
-      ? $localize`:@@tv.volume.unread:Volume sem leitura`
-      : $localize`:@@tv.volume.nudge:Volume ${text}:steps:`;
-  });
-
-  protected askKeyboard(event: Event): void {
-    this.openKeyboard.emit(event.currentTarget as HTMLElement);
-  }
 
   protected openShortcut(shortcut: TvShortcut): void {
     if (!this.store.canSend() || !this.canLaunch()) return;

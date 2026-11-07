@@ -146,37 +146,6 @@ h2:focus {
   --module-icon-size: 36px;
   --module-icon-radius: var(--radius-sm);
   --a-on-module-app: #fff;
-  --module-app-bg: var(--a-accent);
-}
-
-.ico.planned {
-  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
-}
-
-@media (prefers-color-scheme: dark) {
-  .ico {
-    --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
-  }
-
-  .ico.planned {
-    --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
-  }
-}
-
-:host-context([data-theme='dark']) .ico {
-  --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
-}
-
-:host-context([data-theme='dark']) .ico.planned {
-  --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
-}
-
-:host-context([data-theme='light']) .ico {
-  --module-app-bg: var(--a-accent);
-}
-
-:host-context([data-theme='light']) .ico.planned {
-  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
 }
 
 .name {

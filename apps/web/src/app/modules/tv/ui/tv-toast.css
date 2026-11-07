@@ -1,0 +1,58 @@
+:host {
+  display: contents;
+}
+
+/* Aviso passageiro: flutua sobre a fileira de baixo sem pegar o toque, para o controle seguir usável. */
+.toast {
+  position: fixed;
+  right: var(--gutter);
+  bottom: calc(var(--gutter) + var(--safe-bottom) + var(--kb-inset));
+  left: var(--gutter);
+  z-index: 5;
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border: 1px solid var(--a-line);
+  border-left: 4px solid var(--a-accent);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  color: var(--a-ink);
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+.toast.error {
+  border-left-color: var(--a-bad);
+}
+/*
+ * O aviso sobe e aparece ao entrar (`@starting-style`) e desce e esmaece ao sair (`animate.leave`, que segura o
+ * elemento até o fim da animação). Com "reduzir movimento" ele só aparece e some.
+ */
+.toast {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.toast-leave {
+  animation: toast-out var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+  .toast-leave {
+    animation: none;
+  }
+}

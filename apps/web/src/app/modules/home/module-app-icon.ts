@@ -53,6 +53,7 @@ const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
 @Component({
   selector: 'app-module-app-icon',
   imports: [HomeGlyph],
+  host: { '[class.planned]': 'planned()' },
   template: `
     @if (definition(); as def) {
       <svg viewBox="0 0 512 512" aria-hidden="true" focusable="false">
@@ -67,15 +68,40 @@ const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
     }
   `,
   styles: `
+    /* Os módulos que já existem usam a cor da marca; os planejados ficam em verde-cinza discreto. */
     :host {
+      --bg-ready: var(--a-accent);
+      --bg-planned: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
       display: inline-flex;
       flex: none;
       width: var(--module-icon-size, 56px);
       height: var(--module-icon-size, 56px);
       overflow: hidden;
       border-radius: var(--module-icon-radius, var(--radius-sm));
-      background: var(--module-app-bg, var(--a-accent));
+      background: var(--bg-ready);
       color: var(--a-on-module-app, #fff);
+    }
+
+    :host(.planned) {
+      background: var(--bg-planned);
+    }
+
+    /* O verde claro do tema escuro é bom para texto, mas não para o desenho branco dentro do ícone. */
+    @media (prefers-color-scheme: dark) {
+      :host {
+        --bg-ready: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+        --bg-planned: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+      }
+    }
+
+    :host-context([data-theme='dark']) {
+      --bg-ready: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+      --bg-planned: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+    }
+
+    :host-context([data-theme='light']) {
+      --bg-ready: var(--a-accent);
+      --bg-planned: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
     }
 
     svg,
@@ -105,6 +131,8 @@ const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
 })
 export class ModuleAppIcon {
   readonly icon = input.required<ModuleIconName>();
+  /** Módulo ainda sem tela ("Em Breve"): o fundo fica em verde-cinza em vez da cor da marca. */
+  readonly planned = input(false);
 
   protected readonly definition = computed(() => APP_ICONS[this.icon()]);
   protected readonly glyph = computed(() => moduleGlyph(this.icon()));

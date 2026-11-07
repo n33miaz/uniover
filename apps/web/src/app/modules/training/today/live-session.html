@@ -118,23 +118,7 @@
 
         <div class="more">
           @if (bannerLines().length > 0 && !timer.active()) {
-            <div class="record" role="status">
-              <div class="record-head">
-                <app-today-glyph class="star" name="star" />
-                <p class="record-title" i18n="@@training.live.record-title">Recorde!</p>
-                <button
-                  type="button"
-                  class="icon small ui-tap"
-                  [attr.aria-label]="dismissLabel"
-                  (click)="live.dismissBanner()"
-                >
-                  <app-training-glyph name="close" />
-                </button>
-              </div>
-              @for (line of bannerLines(); track line) {
-                <p class="record-line">{{ line }}</p>
-              }
-            </div>
+            <app-live-record-banner [lines]="bannerLines()" (dismissed)="live.dismissBanner()" />
           }
 
           @if (lastText() || suggestion() || firstTime()) {

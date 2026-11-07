@@ -17,9 +17,9 @@ import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
 import { HomeEditSheet } from './home-edit-sheet';
 import { HomeGlyph } from './home-glyph';
+import { HomeHero } from './home-hero';
 import { ModuleAppIcon } from './module-app-icon';
 import { HomeSoonBadge } from './home-soon-badge';
-import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 
 type ChipTone = 'ok' | 'warn' | 'connecting';
 type DayPart = 'morning' | 'afternoon' | 'evening';
@@ -64,7 +64,7 @@ export function greetingFor(hour: number): string {
  */
 @Component({
   selector: 'app-home-page',
-  imports: [RouterLink, HomeGlyph, HomeEditSheet, ModuleAppIcon, HomeSoonBadge, Skeleton],
+  imports: [RouterLink, HomeGlyph, HomeHero, HomeEditSheet, ModuleAppIcon, HomeSoonBadge],
   templateUrl: './home-page.html',
   styleUrl: './home-page.css',
 })

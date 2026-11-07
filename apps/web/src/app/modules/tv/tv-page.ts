@@ -28,10 +28,12 @@ import { TvSwitcher } from './ui/tv-switcher';
 import { PowerSheet } from './ui/power-sheet';
 import { PairSheet } from './ui/pair-sheet';
 import { TvSuggestionRequest } from './ui/shortcut-row';
-import { PcOffIcon } from './ui/pc-off-icon';
+import { PairingNotice } from './ui/pairing-notice';
+import { PcOffSeal } from './ui/pc-off-seal';
 import { StatusIndicator } from './ui/status-indicator';
 import { TvIcon } from './ui/tv-icon';
 import { TvPanel } from './ui/tv-panel';
+import { TvToast } from './ui/tv-toast';
 
 /**
  * Até quantas letras o nome cabe numa linha no tamanho inteiro (curto) e no médio. A coluna do meio do cabeçalho é a
@@ -59,7 +61,9 @@ const TITLE_MEDIUM_MAX = 12;
   selector: 'app-tv-page',
   imports: [
     RouterLink,
-    PcOffIcon,
+    PcOffSeal,
+    PairingNotice,
+    TvToast,
     ControlPage,
     ViewOnlyPage,
     StatusIndicator,
