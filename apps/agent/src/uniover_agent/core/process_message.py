@@ -21,8 +21,9 @@ _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
 # Teto de comandos do PC esperando a vez. Acima disso, cada movimento novo do mouse (silencioso: o
-# app manda outro logo) descarta o movimento pendente MAIS ANTIGO, e o posicionamento mais recente
-# é o que sobrevive se algo travar.
+# app manda outro logo) descarta o movimento pendente MAIS ANTIGO. O movimento é relativo, então
+# descartar os antigos faz o cursor parar aquém de onde o dedo foi (a soma deles se perde); só
+# acontece com a faixa travada, e ficar com os mais novos evita um salto atrasado e longo.
 MAX_PENDING_PC: Final = 128
 
 
@@ -34,8 +35,9 @@ class ProcessMessage:
     Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos. Comandos em
     `silent_types` são executados mas não respondidos.
 
-    Os comandos `pc.*` correm numa faixa à parte: um após o outro, na ordem de chegada (apertar,
-    mover, soltar), sem esperar as teclas da TV e sem que elas esperem por eles.
+    Os comandos `pc.*` correm numa faixa à parte: um só consumidor os executa um após o outro, na
+    ordem de chegada (apertar, mover, soltar), sem esperar as teclas da TV e sem que elas esperem
+    por eles.
     `release_inputs` solta os botões do mouse que o PC ficou segurando; é chamado quando a conexão
     cai e ao encerrar, depois de parar a faixa.
     """
@@ -71,13 +73,17 @@ class ProcessMessage:
         self._command_timeout = command_timeout_seconds
         self._uncapped_types = frozenset(uncapped_types)
         self._release_inputs = release_inputs
-        # Recebe o `ts` de toda mensagem aceita da API (batimento e comandos): é daí que o PC estima
-        # a diferença entre o relógio dele e o da API.
+        # Recebe o `ts` de cada batimento da API (`api.keepalive.v1`): só ele, que a API nunca
+        # segura, serve para estimar a diferença entre o relógio dela e o monotônico deste agente.
+        # Um comando `pc.*` não entra aí: se tivesse chegado atrasado, ensinaria a estimativa a
+        # tratar o atraso como normal.
         self._observe_timestamp = observe_timestamp
         self._tasks: set[asyncio.Task[None]] = set()
-        self._pc_tasks: set[asyncio.Task[None]] = set()
-        self._last_pc_task: asyncio.Task[None] | None = None
-        self._pending_silent: deque[asyncio.Task[None]] = deque()
+        # Faixa do PC: a fila, o consumidor único (criado ao primeiro comando) e o aviso de excesso.
+        self._pc_queue: deque[Command] = deque()
+        self._pc_wakeup = asyncio.Event()
+        self._pc_consumer: asyncio.Task[None] | None = None
+        self._pc_overflowing = False
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -91,9 +97,9 @@ class ProcessMessage:
         command = outcome.command
         if self._on_command is not None:
             self._on_command(command)
-        if self._observe_timestamp is not None:
-            self._observe_timestamp(command.sent_at)
         if command.type == _KEEPALIVE_TYPE:
+            if self._observe_timestamp is not None:
+                self._observe_timestamp(command.sent_at)
             # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
             return
         if (
@@ -136,34 +142,39 @@ class ProcessMessage:
 
     def _enqueue_pc(self, command: Command) -> None:
         silent = command.type in self._silent_types
-        if len(self._pc_tasks) >= MAX_PENDING_PC and not self._drop_oldest_silent() and silent:
+        if len(self._pc_queue) >= MAX_PENDING_PC and not self._drop_oldest_silent() and silent:
             return  # fila cheia só de comandos com resposta: este movimento novo é que cai
-        task = asyncio.create_task(self._execute_pc(command, self._last_pc_task))
-        self._last_pc_task = task
-        self._tasks.add(task)
-        self._pc_tasks.add(task)
-        if silent:
-            self._pending_silent.append(task)
-        task.add_done_callback(self._tasks.discard)
-        task.add_done_callback(self._pc_tasks.discard)
+        self._pc_queue.append(command)
+        if self._pc_consumer is None or self._pc_consumer.done():
+            self._pc_consumer = asyncio.create_task(self._consume_pc())
+            self._tasks.add(self._pc_consumer)
+            self._pc_consumer.add_done_callback(self._tasks.discard)
+        self._pc_wakeup.set()
 
     def _drop_oldest_silent(self) -> bool:
-        """Cancela o movimento pendente mais antigo; devolve se havia algum."""
-        while self._pending_silent:
-            oldest = self._pending_silent.popleft()
-            if oldest.done():
-                continue
-            oldest.cancel()
-            self._pc_tasks.discard(oldest)  # já não conta para o teto
-            return True
+        """Tira da fila o movimento mais antigo; devolve se havia algum. Avisa uma vez."""
+        for index, queued in enumerate(self._pc_queue):
+            if queued.type in self._silent_types:
+                del self._pc_queue[index]
+                if not self._pc_overflowing:
+                    self._pc_overflowing = True
+                    _log.warning(
+                        "faixa do PC cheia (%d comandos esperando): descartando os movimentos "
+                        "mais antigos do mouse",
+                        MAX_PENDING_PC,
+                    )
+                return True
         return False
 
-    async def _execute_pc(self, command: Command, previous: asyncio.Task[None] | None) -> None:
-        # Só espera quem veio antes na faixa do PC (nunca as teclas da TV). `wait` não propaga o
-        # cancelamento do anterior: o cancelamento desta tarefa, sim.
-        if previous is not None and not previous.done():
-            await asyncio.wait({previous})
-        await self._execute_detached(command)
+    async def _consume_pc(self) -> None:
+        # Um único consumidor: a ordem da faixa não depende de tarefas encadeadas, e cancelar este
+        # (queda da conexão, encerramento) interrompe tudo de uma vez.
+        while True:
+            while not self._pc_queue:
+                self._pc_overflowing = False
+                self._pc_wakeup.clear()
+                await self._pc_wakeup.wait()
+            await self._execute_detached(self._pc_queue.popleft())
 
     def _newest_press(self, key: str) -> Callable[[], bool]:
         self._latest_key[key] = self._latest_key.get(key, 0) + 1
@@ -194,10 +205,10 @@ class ProcessMessage:
     def connection_lost(self) -> None:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
-        for task in tuple(self._pc_tasks):
-            task.cancel()
-        self._last_pc_task = None
-        self._pending_silent.clear()
+        self._pc_queue.clear()
+        if self._pc_consumer is not None:
+            self._pc_consumer.cancel()  # o próximo comando cria outro consumidor
+            self._pc_consumer = None
         self._release_held_inputs()
 
     def _release_held_inputs(self) -> None:

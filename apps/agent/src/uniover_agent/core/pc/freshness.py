@@ -2,8 +2,9 @@
 
 A API segura um comando enquanto o agente reconecta (até 25 s) e o entrega de uma vez. Para o
 movimento do mouse isso é um salto; para um clique, tecla ou texto, é uma ação na janela errada. A
-idade vem do `ts` do envelope, descontada a diferença entre o relógio deste PC e o da API
-(`ClockOffset`): um PC com o relógio adiantado não faz tudo parecer velho. Soltar um botão (UP) e
+idade vem do `ts` do envelope medido contra o relógio monotônico deste agente, descontada a
+referência dos batimentos da API (`ClockOffset`); um PC com o relógio adiantado não faz tudo parecer
+velho, e sem referência ainda vale a regra do relógio de parede. Soltar um botão (UP) e
 cancelar um desligamento nunca expiram: são sempre seguros.
 """
 
@@ -37,9 +38,10 @@ def fresh_only(
 ) -> Handler:
     """Recusa (`expired`) o comando velho demais, sem chamar `handle`.
 
-    Sem idade conhecida (sem `ts` utilizável ou sem amostras ainda) vale como chegou. `exempt`
-    libera comandos que nunca expiram. `quiet` não registra a recusa (o movimento do mouse, de alta
-    taxa). O registro nunca leva o corpo do comando.
+    Sem `ts` utilizável o comando vale como chegou. `exempt` libera comandos que nunca expiram.
+    `quiet` é o movimento do mouse (alta taxa): cada recusa não é registrada, mas uma sequência
+    longa delas é avisada uma vez (`ClockOffset.pointer_result`), porque ponteiro morto em silêncio
+    é um defeito que ninguém enxerga. O registro nunca leva o corpo do comando.
     """
 
     async def run(command: Command) -> CommandResult:
@@ -47,8 +49,12 @@ def fresh_only(
             return await handle(command)
         age = clock.age(command.sent_at)
         if age is None or age <= max_age_seconds:
+            if quiet:
+                clock.pointer_result(dropped=False)
             return await handle(command)
-        if not quiet:
+        if quiet:
+            clock.pointer_result(dropped=True, age=age)
+        else:
             _log.info("comando %s recusado por idade (%.1f s)", command.type, age)
             clock.refused(age)
         return CommandResult(command.id, ResultStatus.REJECTED, "comando expirado", EXPIRED)
