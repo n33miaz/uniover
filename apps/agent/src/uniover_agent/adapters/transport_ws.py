@@ -30,8 +30,10 @@ PING_INTERVAL_SECONDS: Final = 20.0
 # Quanto esperar o pong antes de dar a conexão por morta. O padrão da biblioteca (20 s) derrubava
 # o canal com 1011 por um soluço do PC ou da rede; 60 s ainda detecta conexão morta a tempo.
 PING_TIMEOUT_SECONDS: Final = 60.0
-# Acordar a API dormindo (Render) pode passar de 4 minutos: a abertura espera até 5.
-OPEN_TIMEOUT_SECONDS: Final = 300.0
+# A API dormindo (Render grátis) acorda em até ~1 minuto: a abertura espera 105 s e, se não deu, o
+# laço tenta de novo (com espera crescente) em vez de deixar o agente fora do ar por minutos. O
+# prazo do laço de conexão (`CONNECT_TIMEOUT_SECONDS`, 120 s) é a segunda barreira, acima deste.
+OPEN_TIMEOUT_SECONDS: Final = 105.0
 
 _REPLACED_REASON: Final = "replaced"
 _REVOKED_REASON: Final = "revoked"

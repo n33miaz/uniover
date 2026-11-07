@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -398,10 +399,11 @@ async def test_the_watcher_loop_survives_a_broken_poll_and_starts_from_the_curre
 
     watcher = UpdateStatusWatcher(Flaky(), transport, factory(), clock, interval=1.0)
     task = asyncio.create_task(watcher.run())
-    for _ in range(100):
-        if transport.sent:
-            break
-        await asyncio.sleep(0)
+    # A leitura roda numa thread: espera por tempo (não por voltas do laço), senão um PC carregado
+    # derruba o teste sem defeito nenhum.
+    end = time.monotonic() + 10
+    while not transport.sent and time.monotonic() < end:  # noqa: ASYNC110
+        await asyncio.sleep(0.01)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     # A primeira leitura é o ponto de partida (o `hello` já a levou): só a mudança sai.
@@ -416,7 +418,9 @@ def test_the_command_records_updating_and_then_the_result(
 ) -> None:
     seen: list[str] = []
 
-    def fake(source: Path, *, sync: bool, channel: str) -> UpdateResult:
+    def fake(
+        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
         seen.append(json.loads(default_status_path().read_text(encoding="utf-8"))["outcome"])
         return UpdateResult(False, "ok", "up_to_date", latest=LATEST)
 
@@ -430,7 +434,9 @@ def test_the_command_records_updating_and_then_the_result(
 def test_an_unexpected_crash_in_the_update_is_recorded_and_still_exits_zero(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def boom(source: Path, *, sync: bool, channel: str) -> UpdateResult:
+    def boom(
+        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
         raise RuntimeError("segredo uo_dev_XYZ")
 
     monkeypatch.setattr(maintenance_module, "self_update", boom)
@@ -452,7 +458,9 @@ def test_a_broken_state_folder_never_stops_the_update_itself(
     monkeypatch.setattr(
         maintenance_module,
         "self_update",
-        lambda source, *, sync, channel: UpdateResult(True, "agente atualizado"),
+        lambda source, *, sync, channel, ignore_deferral=False: UpdateResult(
+            True, "agente atualizado"
+        ),
     )
     assert update_agent(sync=True) == EXIT_OK
     assert "agente atualizado" in capsys.readouterr().out
@@ -650,3 +658,46 @@ def test_the_code_published_in_develop_updates_itself_into_this_version(tmp_path
         NEW,
         OLD,
     )
+
+
+def test_a_deferred_check_gives_back_the_state_that_was_there_without_a_failure_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A volta atrás acabou de ser gravada pelo supervisor; a checagem que adia a mesma versão não
+    # pode trocá-la por "falha" (nem deixar "atualizando").
+    path = default_status_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"outcome": "rolled_back", "rolledBack": True, "blockedSha": None}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        maintenance_module,
+        "self_update",
+        lambda source, *, sync, channel, ignore_deferral=False: UpdateResult(
+            False, "adiada", "deferred", latest=LATEST
+        ),
+    )
+    assert update_agent(sync=True) == EXIT_OK
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert (state["outcome"], state["latestSha"]) == ("rolled_back", LATEST)
+    # Neutro, mas o dono vê por que não há atualização.
+    assert "adiada" in state["reason"]
+
+
+def test_the_owners_update_now_reaches_the_update_as_a_bypass_of_the_deferral(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[bool] = []
+
+    def fake(
+        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
+        seen.append(ignore_deferral)
+        return UpdateResult(False, "ok", "up_to_date", latest=LATEST)
+
+    monkeypatch.setattr(maintenance_module, "self_update", fake)
+    update_agent(sync=True)
+    monkeypatch.setenv("UNIOVER_UPDATE_FORCE", "1")
+    update_agent(sync=True)
+    assert seen == [False, True]

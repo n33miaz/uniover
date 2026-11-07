@@ -47,7 +47,9 @@ def test_the_update_receives_the_channel_of_the_settings(
     isolated_env.write_text('update_channel = "main"\n', encoding="utf-8")
     seen: list[str] = []
 
-    def fake(source: Path, *, sync: bool, channel: str) -> UpdateResult:
+    def fake(
+        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
         seen.append(channel)
         return UpdateResult(False, "ok", "up_to_date")
 
@@ -180,7 +182,11 @@ def run_update(monkeypatch: pytest.MonkeyPatch, result: UpdateResult) -> list[tu
     from uniover_agent.adapters.fakes import FakeClock  # noqa: PLC0415
     from uniover_agent.care_setup import build_diagnostics  # noqa: PLC0415
 
-    monkeypatch.setattr(maintenance_module, "self_update", lambda source, *, sync, channel: result)
+    monkeypatch.setattr(
+        maintenance_module,
+        "self_update",
+        lambda source, *, sync, channel, ignore_deferral=False: result,
+    )
     kit = build_diagnostics(FakeClock())
     assert update_agent(sync=False, kit=kit) == EXIT_OK
     kit.recorder.flush_pending()
@@ -210,7 +216,9 @@ def test_an_unexpected_crash_of_the_update_is_recorded_as_an_error(
     from uniover_agent.adapters.fakes import FakeClock  # noqa: PLC0415
     from uniover_agent.care_setup import build_diagnostics  # noqa: PLC0415
 
-    def explode(source: object, *, sync: bool, channel: str) -> UpdateResult:
+    def explode(
+        source: object, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
         raise RuntimeError("falha qualquer em /home/pessoa")
 
     monkeypatch.setattr(maintenance_module, "self_update", explode)

@@ -8,6 +8,7 @@ from importlib import metadata
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from uniover_agent.adapters.log_offload import OffloadHandler
 from uniover_agent.adapters.self_update import read_version
 from uniover_agent.config import agent_source_dir
 
@@ -65,14 +66,20 @@ def silence_noisy_loggers() -> None:
 
 
 def configure_logging(level: str, log_file: str | None = None) -> None:
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    # Cada destino escreve numa thread própria (`OffloadHandler`): um console oculto que não
+    # esvazia ou um disco travado nunca param o laço de eventos dentro de `logging`.
+    handlers: list[logging.Handler] = [OffloadHandler(logging.StreamHandler())]
     if log_file:
         # A tarefa do Windows roda sem janela: o arquivo é o único lugar onde o dono (ou quem o
         # ajuda) vê o que o agente fez. Rodízio de 1 MB com 2 cópias: nunca enche o disco.
         try:
             Path(log_file).parent.mkdir(parents=True, exist_ok=True)
             handlers.append(
-                RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+                OffloadHandler(
+                    RotatingFileHandler(
+                        log_file, maxBytes=1_000_000, backupCount=2, encoding="utf-8"
+                    )
+                )
             )
         except OSError:
             print("Aviso: não consegui abrir o arquivo de registro.", file=sys.stderr)

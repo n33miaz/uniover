@@ -23,6 +23,16 @@ APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
 # O `hello` volta de tempos em tempos: se a API do momento o recusou (ainda não conhecia um campo
 # novo) ou foi trocada com o agente já conectado, ele passa a valer sem reiniciar o agente.
 REHELLO_SECONDS: Final = 300.0
+# Prazo de cada passo da conexão. O transporte já limita a abertura (105 s, a API dormindo acorda
+# em até ~1 min); estes prazos são a segunda barreira: nenhum `await` de rede ou de reanúncio pode
+# parar o laço para sempre.
+CONNECT_TIMEOUT_SECONDS: Final = 120.0
+SEND_TIMEOUT_SECONDS: Final = 60.0
+ON_CONNECTED_TIMEOUT_SECONDS: Final = 180.0
+CLOSE_TIMEOUT_SECONDS: Final = 15.0
+# Cada passo declara até quando deve acabar; este é o atraso a mais que ainda se tolera antes de a
+# conexão ser dada por parada (ver `ConnectionSupervisor.is_stalled`).
+STALL_GRACE_SECONDS: Final = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +48,12 @@ class BackoffPolicy:
     restart_wait: float = 0.5
     # Fração de variação para mais e para menos (0,2 = de 80% a 120%).
     jitter: float = 0.2
+    # Prazos de cada passo (ver as constantes acima).
+    connect_timeout: float = CONNECT_TIMEOUT_SECONDS
+    send_timeout: float = SEND_TIMEOUT_SECONDS
+    on_connected_timeout: float = ON_CONNECTED_TIMEOUT_SECONDS
+    close_timeout: float = CLOSE_TIMEOUT_SECONDS
+    stall_grace: float = STALL_GRACE_SECONDS
 
 
 class Backoff:
@@ -110,6 +126,28 @@ class ConnectionSupervisor:
         self._hello_done = False
         self._failures_before_hello = 0
         self._in_session = False
+        # Até quando o passo atual deve acabar (relógio monotônico): é o que diz se o laço de
+        # conexão anda ou está preso (`is_stalled`).
+        self._due_at = clock.monotonic()
+        # Cada sessão tem um número; uma tarefa abandonada que ignorou o cancelamento vê que a sua
+        # passou e sai, em vez de seguir lendo ou enviando no canal da sessão seguinte.
+        self._generation = 0
+
+    def _expect(self, seconds: float) -> None:
+        self._due_at = self._clock.monotonic() + seconds
+
+    def is_stalled(self) -> bool:
+        """O laço de conexão passou do prazo do passo atual (e da tolerância) sem andar?
+
+        Todo passo tem prazo e o declara antes de começar (`_bounded`, `_sleep`, o batimento), então
+        isto só fica verdadeiro quando um prazo foi ignorado, como um fechamento de canal que não
+        obedece ao cancelamento. Quem dá o sinal de vida do agente deve parar de dá-lo: um agente
+        com a conexão presa parece saudável por outras tarefas e nunca seria reiniciado."""
+        return self._clock.monotonic() > self._due_at + self._policy.stall_grace
+
+    async def _sleep(self, seconds: float) -> None:
+        self._expect(seconds)
+        await self._clock.sleep(seconds)
 
     async def hello_now(self) -> None:
         """Reenvia o `hello` já, na sessão aberta (as capacidades declaradas mudaram).
@@ -117,7 +155,12 @@ class ConnectionSupervisor:
         Sem sessão aberta não faz nada: o `hello` da próxima conexão já sai com o que há de novo.
         """
         if self._in_session:
-            await self._transport.send(self._hello())
+            # Prazo próprio (sem mexer no que o laço de conexão espera): outra tarefa a chama.
+            try:
+                async with asyncio.timeout(self._policy.send_timeout):
+                    await self._transport.send(self._hello())
+            except TimeoutError:
+                raise TransportError("o reenvio do hello passou do prazo") from None
 
     def _declared(self) -> tuple[str, ...]:
         source = self._capabilities
@@ -167,13 +210,13 @@ class ConnectionSupervisor:
                 _log.warning(
                     "outra instância deste agente assumiu a conexão; nova tentativa em %.0f s", wait
                 )
-                await self._clock.sleep(wait)
+                await self._sleep(wait)
                 continue
             except ServerRestarting as exc:
                 # Não cresce a espera: o aviso é do próprio servidor, não falha de rede.
                 wait = self._policy.restart_wait * (0.5 + self._random())
                 _log.info("servidor reiniciando (%s); volto em %.1f s", exc, wait)
-                await self._clock.sleep(wait)
+                await self._sleep(wait)
                 continue
             except TransportError as exc:
                 _log.warning("conexão perdida (%s)", exc)
@@ -187,66 +230,127 @@ class ConnectionSupervisor:
                 _log.info("conexão encerrada pelo servidor")
             delay = self._backoff.next_delay()
             _log.info("reconectando em %.1f s", delay)
-            await self._clock.sleep(delay)
+            await self._sleep(delay)
 
     async def _note_failure(self, exc: BaseException, *, unexpected: bool) -> None:
         if self._hello_done or self._on_startup_failure is None:
             return
         self._failures_before_hello += 1
         try:
-            await self._on_startup_failure(exc, unexpected, self._failures_before_hello)
+            await self._bounded(
+                self._on_startup_failure(exc, unexpected, self._failures_before_hello),
+                self._policy.send_timeout,
+                "o rastro da falha de conexão",
+            )
         except Exception:
             _log.warning("não consegui deixar o rastro da falha de conexão", exc_info=True)
 
+    async def _bounded[T](self, step: Awaitable[T], seconds: float, what: str) -> T:
+        """`step` com prazo: estourar vira `TransportError`, e o laço reconecta."""
+        self._expect(seconds)
+        try:
+            async with asyncio.timeout(seconds):
+                return await step
+        except TimeoutError:
+            raise TransportError(f"{what} passou de {seconds:.0f} s") from None
+
     async def _session(self) -> None:
         started: float | None = None
-        keepalive: asyncio.Task[None] | None = None
+        tasks: list[asyncio.Task[None]] = []
+        self._generation += 1
+        mine = self._generation
         try:
-            await self._transport.connect()
+            await self._bounded(
+                self._transport.connect(), self._policy.connect_timeout, "a abertura"
+            )
             started = self._clock.monotonic()
             _log.info("conectado")
-            await self._transport.send(self._hello())
+            await self._bounded(
+                self._transport.send(self._hello()), self._policy.send_timeout, "o envio do hello"
+            )
             self._hello_done = True
             self._in_session = True
             if self._on_connected is not None:
-                await self._on_connected()
-            keepalive = asyncio.create_task(self._keepalive_guard())
-            async for raw in self._transport.incoming():
-                await self._process(raw)
+                await self._bounded(
+                    self._on_connected(),
+                    self._policy.on_connected_timeout,
+                    "o anúncio depois da conexão",
+                )
+            keepalive = asyncio.create_task(self._send_keepalives(mine), name="keepalive")
+            reader = asyncio.create_task(self._read(mine), name="reader")
+            tasks = [keepalive, reader]
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            if reader.done():
+                reader.result()
+                return
+            # O batimento acabou antes da leitura: não consegue mais enviar. A leitura pode estar
+            # parada num canal meio morto, então a sessão termina aqui (o `finally` cancela a
+            # leitura e fecha o canal, com prazo) e o laço reconecta.
+            failure = keepalive.exception()
+            if failure is not None:
+                _log.warning("o batimento não saiu (%s); reconecto", type(failure).__name__)
+                raise failure
         finally:
             self._in_session = False
-            if keepalive is not None:
-                keepalive.cancel()
-                await asyncio.gather(keepalive, return_exceptions=True)
+            # Antes de tudo: o que ficar para trás (ignorando o cancelamento) sai por conta própria.
+            self._generation += 1
+            await self._stop(tasks)
             if (
                 started is not None
                 and self._clock.monotonic() - started >= self._policy.stable_after
             ):
                 self._backoff.reset()
-            await self._transport.close()
+            await self._close_channel()
             if self._on_disconnected is not None:
                 self._on_disconnected()
 
-    async def _keepalive_guard(self) -> None:
-        """Se o batimento não consegue mais enviar, derruba o canal para o laço reconectar.
+    async def _read(self, generation: int) -> None:
+        async for raw in self._transport.incoming():
+            if generation != self._generation:
+                return
+            await self._process(raw)
 
-        Sem isto a tarefa morria calada e a conexão ficava aberta, mas sem batimento nenhum.
-        """
+    async def _stop(self, tasks: list[asyncio.Task[None]]) -> None:
+        """Cancela as tarefas da sessão e espera por elas, com prazo: uma que ignore o
+        cancelamento é abandonada, nunca espera-se por ela para sempre."""
+        if not tasks:
+            return
+        for task in tasks:
+            task.cancel()
+        self._expect(self._policy.close_timeout)
+        _, pending = await asyncio.wait(tasks, timeout=self._policy.close_timeout)
+        for task in tasks:
+            if task.done() and not task.cancelled():
+                task.exception()  # lida: não sobra "exceção nunca recuperada"
+        if pending:
+            _log.warning("%d tarefa(s) da sessão não obedeceram ao cancelamento", len(pending))
+
+    async def _close_channel(self) -> None:
+        """Fecha o canal, com prazo: um fechamento que não volta não prende o laço de conexão."""
         try:
-            await self._send_keepalives()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            _log.warning(
-                "o batimento não saiu (%s); fecho o canal para reconectar", type(exc).__name__
+            await self._bounded(
+                self._transport.close(), self._policy.close_timeout, "o fechamento do canal"
             )
-            await self._transport.close()
+        except TransportError as exc:
+            # Não esconde o erro que trouxe a sessão até aqui: o canal fica abandonado.
+            _log.warning("%s", exc)
 
-    async def _send_keepalives(self) -> None:
+    async def _send_keepalives(self, generation: int) -> None:
         last_hello = self._clock.monotonic()
-        while True:
+        while generation == self._generation:
+            self._expect(self._keepalive_interval)
             await asyncio.sleep(self._keepalive_interval)
-            await self._transport.send(self._envelopes.keepalive())
+            if generation != self._generation:
+                return
+            await self._bounded(
+                self._transport.send(self._envelopes.keepalive()),
+                self._policy.send_timeout,
+                "o batimento",
+            )
             if self._clock.monotonic() - last_hello >= self._rehello_interval:
                 last_hello = self._clock.monotonic()
-                await self._transport.send(self._hello())
+                await self._bounded(
+                    self._transport.send(self._hello()),
+                    self._policy.send_timeout,
+                    "o hello periódico",
+                )

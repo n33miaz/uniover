@@ -43,6 +43,12 @@ FUNCTIONS = (
     "Get-Tail",
     "Get-UpdateOutcome",
     "Confirm-Trial",
+    "Touch-Alive",
+    "Get-FreeMegabytes",
+    "Read-Shared",
+    "Invoke-Bounded",
+    "Start-Hidden",
+    "Set-StopReason",
 )
 
 PRELUDE = r"""
@@ -54,6 +60,8 @@ $previous = Join-Path $base 'app.previous'
 $runtime = Join-Path $base 'runtime'
 $blocked = Join-Path $runtime '.blocked-versions'
 $trial = Join-Path $runtime 'update-trial.txt'
+$updateTimeoutSeconds = 60
+$minFreeMb = 0
 $script:lastDiagnostic = @{}
 $tokens = $null; $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:UNIOVER_TEST_RUNNER, [ref]$tokens, [ref]$errors)
@@ -408,3 +416,96 @@ def test_the_tail_of_a_failure_output_is_short_and_on_one_line(pc: Pc) -> None:
     done = pc.run('Get-Tail ((1..10 | ForEach-Object { "linha $_" }) -join "`r`n")')
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "linha 8 | linha 9 | linha 10"
+
+
+def test_a_new_version_whose_trial_cannot_be_written_is_rolled_back_at_once(pc: Pc) -> None:
+    pc.version(pc.source, OLD)
+    pc.version(pc.previous, OLD)
+    # O destino da prova é uma pasta: gravar o arquivo falha, como num disco cheio.
+    (pc.runtime / "update-trial.txt").mkdir()
+    uv = fake_uv(pc, f'echo {BAD}> "{pc.source / ".version"}"', "exit /b 0")
+    done = pc.run(f"Invoke-Update '{uv}'")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-1] == "True"
+    # A versão nova nunca fica no ar sem prova: voltou para a anterior. Sem bloqueio: a falha foi
+    # do PC (disco, antivírus), não da versão, que volta a ser tentada na próxima checagem.
+    assert (pc.source / ".version").read_text(encoding="ascii").strip() == OLD
+    blocked = pc.runtime / ".blocked-versions"
+    assert not blocked.exists() or BAD not in blocked.read_text(encoding="ascii")
+    assert pc.state()["outcome"] == "rolled_back"
+    assert not pc.state().get("blockedSha")
+
+
+def test_a_trial_the_python_side_already_wrote_is_not_overwritten(pc: Pc) -> None:
+    pc.version(pc.source, OLD)
+    marker = pc.runtime / "update-trial.txt"
+    uv = fake_uv(
+        pc,
+        f'echo {BAD}> "{pc.source / ".version"}"',
+        f'echo {BAD}^|0> "{marker}"',
+        "exit /b 0",
+    )
+    done = pc.run(f"Invoke-Update '{uv}'")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-1] == "True"
+    assert marker.read_text(encoding="ascii").strip() == f"{BAD}|0"
+
+
+def test_an_update_that_times_out_and_loses_the_app_folder_takes_the_agent_down_with_it(
+    pc: Pc,
+) -> None:
+    pc.version(pc.source, OLD)
+    uv = fake_uv(
+        pc,
+        f'ren "{pc.source}" app-gone',
+        "ping -n 60 127.0.0.1 > nul",
+        "exit /b 0",
+    )
+    marker = pc.base / "agent.pid"
+    done = pc.run(
+        "$updateTimeoutSeconds = 3\n"
+        "$process = Start-Process -PassThru -WindowStyle Hidden ping -ArgumentList '-n','120','127.0.0.1'\n"
+        f"Set-Content -LiteralPath '{marker}' -Value $process.Id\n"
+        f"Invoke-Update '{uv}'\n"
+    )
+    # `exit 42`: o lançador restaura a pasta; o agente que estava rodando não fica órfão.
+    assert done.returncode == 42, done.stderr
+    pid = int(marker.read_text(encoding="ascii").strip())
+    time.sleep(1.5)
+    listing = subprocess.run(  # noqa: S603 - tasklist do sistema
+        [
+            str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"),
+            "/FI",
+            f"PID eq {pid}",
+            "/NH",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert str(pid) not in listing.stdout, "o agente ficou órfão depois do exit 42"
+    assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii").strip() == "update"
+
+
+def test_a_clock_jump_during_a_child_does_not_make_the_deadline_expire(pc: Pc) -> None:
+    # O PC dormiu (o relógio saltou 100 s) no meio do filho: ao acordar o prazo já pareceria vencido
+    # e o filho (um `uv sync`, por exemplo) seria morto. O salto é descontado do prazo.
+    uv = fake_uv(pc, "ping -n 4 127.0.0.1 > nul", "exit /b 0")
+    done = pc.run(
+        "$env:UNIOVER_SUPERVISOR_TEST_CLOCK_JUMP = '1:100'\n"
+        f"$r = Invoke-Bounded '{uv}' '' 15\n"
+        "'timedout=' + $r.TimedOut + ' code=' + $r.ExitCode\n"
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-2:] == ["timedout=False", "code=0"]
+
+
+def test_a_child_that_really_runs_past_the_deadline_is_still_killed_after_a_jump(pc: Pc) -> None:
+    uv = fake_uv(pc, "ping -n 60 127.0.0.1 > nul", "exit /b 0")
+    done = pc.run(
+        "$env:UNIOVER_SUPERVISOR_TEST_CLOCK_JUMP = '1:100'\n"
+        f"$r = Invoke-Bounded '{uv}' '' 6\n"
+        "'timedout=' + $r.TimedOut\n"
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split()[-1] == "timedout=True"

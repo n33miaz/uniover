@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from uniover_agent.adapters.diagnostics_file import DiagnosticsLogHandler, FileDiagnosticStore
 from uniover_agent.adapters.installation import _is_real_installation, anchor_dir, installation_base
+from uniover_agent.adapters.log_offload import OffloadHandler
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import probe_api
 from uniover_agent.adapters.run_state import RunState
@@ -75,7 +76,9 @@ def build_diagnostics(clock: Clock) -> DiagnosticsKit:
 
 def attach_log_handler(kit: DiagnosticsKit) -> logging.Handler:
     """Todo erro que o agente registrar vira também uma ocorrência (ver `DiagnosticsLogHandler`)."""
-    handler = DiagnosticsLogHandler(kit.recorder)
+    # Gravar a ocorrência é escrita em disco: sai da thread do laço de eventos (ver
+    # `OffloadHandler`).
+    handler = OffloadHandler(DiagnosticsLogHandler(kit.recorder))
     logging.getLogger("uniover_agent").addHandler(handler)
     return handler
 

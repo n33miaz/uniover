@@ -24,6 +24,9 @@ from uniover_agent.ports.remote_care import UpdateStatus
 _log = logging.getLogger(__name__)
 
 STATUS_FILE: Final = "update-status.json"
+DEFERRED_REASON: Final = (
+    "uma versão nova voltou por demora ou disco deste PC; fica adiada (Atualizar agora tenta já)"
+)
 # Um arquivo de estado maior que isto não foi escrito por nós.
 _MAX_BYTES: Final = 16 * 1024
 
@@ -117,6 +120,22 @@ def record_updating(path: Path, now: datetime) -> None:
 def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
     """O que a checagem concluiu. Atualizar com sucesso encerra a volta atrás e o bloqueio."""
     if result.outcome is None:
+        return
+    if result.outcome == "deferred":
+        # Neutro: nada mudou. `record_updating` trocou o resultado por "atualizando"; devolve o
+        # que havia (a volta atrás que acabou de acontecer, ou "em dia"), sem o rótulo de falha.
+        state = _load(path)
+        previous = "rolled_back" if state.get("rolledBack") is True else "up_to_date"
+        record_status(
+            path,
+            {
+                "outcome": previous,
+                "checkedAt": format_time(now),
+                # Neutro, mas o dono vê por que não há atualização ("Atualizar agora" a força).
+                "reason": DEFERRED_REASON,
+                **({"latestSha": result.latest} if result.latest is not None else {}),
+            },
+        )
         return
     changes: dict[str, Any] = {
         "outcome": result.outcome,

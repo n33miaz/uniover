@@ -26,8 +26,9 @@ OUTCOMES: Final = frozenset(
     {"not_checked", "updating", "updated", "up_to_date", "failed", "blocked", "rolled_back"}
 )
 REASON_LIMIT: Final = 200
-# Passou disto sem terminar: o processo morreu no meio, e isso conta como falha.
-UPDATING_STALE_AFTER: Final = timedelta(minutes=30)
+# Passou disto sem terminar: o processo morreu no meio, e isso conta como falha. Tem de passar do
+# teto que o supervisor dá ao `self-update` (`run-agent.ps1`, que passa de `WORST_CASE_SECONDS`).
+UPDATING_STALE_AFTER: Final = timedelta(minutes=50)
 POLL_SECONDS: Final = 30.0
 STALE_REASON: Final = "a atualização foi interrompida e não terminou"
 

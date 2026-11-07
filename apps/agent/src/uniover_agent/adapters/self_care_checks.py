@@ -19,7 +19,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -38,9 +38,12 @@ _log = logging.getLogger(__name__)
 
 LOW_DISK_BYTES: Final = 200 * 1024 * 1024
 TIGHT_DISK_BYTES: Final = 1024 * 1024 * 1024
-# O supervisor pode ficar ocupado numa atualização por vários minutos sem dar sinal (o `uv sync` tem
-# 10 min).
-SUPERVISOR_SILENCE_SECONDS: Final = 15 * 60.0
+# O supervisor dá sinal a cada poucos segundos, mesmo esperando um filho (toda espera dele tem
+# prazo), e o lançador reinicia o que passa de 15 min mudo. Este é o reforço, para o lançador
+# morto ou antigo: passados 20 min o supervisor é dado por travado aqui também.
+SUPERVISOR_SILENCE_SECONDS: Final = 20 * 60.0
+# Antes de dar o supervisor por mudo, confere de novo depois deste tempo (ver `supervisor_check`).
+RECHECK_SECONDS: Final = 20.0
 # Quanto tempo desconectado antes de olhar a API, e entre dois reinícios pedidos pelo auto-reparo.
 CONNECTION_GRACE_SECONDS: Final = 10 * 60.0
 RESTART_SPACING_SECONDS: Final = 3 * 3600.0
@@ -249,15 +252,135 @@ def startup_task_check(
 # -------------------------------------------------------------------------------------
 
 
-def supervisor_check(
+# Quem mata (o agente) costuma ser DESCENDENTE do supervisor que mata: supervisor -> uv -> agente ->
+# este PowerShell. `taskkill /T` o levaria junto, antes de qualquer outra coisa acontecer. Então o
+# supervisor que está na cadeia de ancestrais de quem chama morre sozinho (sem `/T`: quem chama e
+# os irmãos ficam, e o supervisor novo os recolhe na varredura da partida); os outros morrem com
+# toda a árvore.
+# Os filhos e descendentes por pai E por data: um processo cujo pai morreu e cujo PID foi
+# reaproveitado pelo supervisor (o `explorer.exe`, por exemplo) tem `ParentProcessId` igual, mas é
+# MAIS ANTIGO que ele.
+DESCENDANTS_SCRIPT = (
+    "function Get-Kids($all,$p){@($all|"
+    "Where-Object{[int]$_.ParentProcessId -eq [int]$p.ProcessId -and "
+    "$_.CreationDate -gt $p.CreationDate})};"
+    "function Get-Descendants($all,$root){$out=New-Object System.Collections.ArrayList;"
+    "$queue=New-Object System.Collections.ArrayList;[void]$queue.Add($root);"
+    "while($queue.Count -gt 0){$cur=$queue[0];$queue.RemoveAt(0);"
+    "foreach($kid in (Get-Kids $all $cur)){[void]$out.Add($kid);[void]$queue.Add($kid)}};"
+    ",$out};"
+)
+
+_FIND_SUPERVISORS = (
+    "$ErrorActionPreference='SilentlyContinue';"
+    "$all=@(Get-CimInstance Win32_Process -OperationTimeoutSec 30);"
+    "$found=@($all|Where-Object{$_.ProcessId -ne $PID -and $_.Name -eq 'powershell.exe' -and "
+    "$_.CommandLine -and "
+    "$_.CommandLine.IndexOf($env:UNIOVER_RUNNER,[StringComparison]::OrdinalIgnoreCase) -ge 0});"
+)
+_LIST_SUPERVISORS_SCRIPT = _FIND_SUPERVISORS + "$found|ForEach-Object{[string]$_.ProcessId}"
+# Com `UNIOVER_ONLY_PIDS` só esses morrem: um supervisor NOVO (subido pelo lançador entre a
+# observação do silêncio e a morte) tem outro PID e fica. Dos ancestrais de quem chama, os filhos
+# diretos que não estão na cadeia (ícone, `uv` de um `self-update` em curso) morrem com a árvore
+# e só então o próprio ancestral, sem `/T`.
+_KILL_SUPERVISOR_SCRIPT = (
+    DESCENDANTS_SCRIPT + _FIND_SUPERVISORS + "$mine=@{};$id=[int]$env:UNIOVER_SELF_PID;"
+    "while($id -and -not $mine.ContainsKey($id)){$mine[$id]=1;"
+    "$row=$all|Where-Object{$_.ProcessId -eq $id}|Select-Object -First 1;"
+    "if($row){$id=[int]$row.ParentProcessId}else{$id=0}};"
+    "$only=$null;if($null -ne $env:UNIOVER_ONLY_PIDS){"
+    "$only=@($env:UNIOVER_ONLY_PIDS.Split(',')|Where-Object{$_}|ForEach-Object{[int]$_})};"
+    "$found|Where-Object{$null -eq $only -or $only -contains [int]$_.ProcessId}|"
+    "ForEach-Object{$sup=[int]$_.ProcessId;"
+    "if($mine.ContainsKey($sup)){"
+    "$victims=@(foreach($kid in (Get-Kids $all $_)){"
+    "if(-not $mine.ContainsKey([int]$kid.ProcessId)){@($kid)+(Get-Descendants $all $kid)}});"
+    "Stop-Process -Id $sup -Force}"
+    "else{$victims=Get-Descendants $all $_;& taskkill.exe /PID $sup /F *> $null};"
+    "foreach($d in $victims){& taskkill.exe /PID $d.ProcessId /F *> $null};'killed'}"
+)
+
+
+def supervisor_pids(runner: Path) -> list[int]:
+    """Os PIDs dos supervisores desta instalação vivos agora (pelo caminho do `run-agent.ps1`)."""
+    if not runner.is_file():
+        return []
+    try:
+        done = run_hidden(
+            [
+                _powershell(),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                _LIST_SUPERVISORS_SCRIPT,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60.0,
+            env={**os.environ, "UNIOVER_RUNNER": str(runner)},
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return []
+    return [int(line) for line in done.stdout.split() if line.isdigit()]
+
+
+def kill_wedged_supervisor(runner: Path, only: Collection[int] | None = None) -> bool:
+    """Encerra o PowerShell do supervisor (só ele, pelo caminho completo do `run-agent.ps1` desta
+    instalação); o lançador, que o vigia, sobe outro. `True` se encerrou algum.
+
+    Ele estar vivo e mudo é o caso em que `Start-ScheduledTask` não adianta: o lançador está vivo e
+    o mutex dele recusa um segundo."""
+    if not runner.is_file() or (only is not None and not only):
+        # Lista vazia é "ninguém", não "todos" (uma variável de ambiente vazia some no Windows).
+        return False
+    try:
+        done = run_hidden(
+            [
+                _powershell(),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                _KILL_SUPERVISOR_SCRIPT,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60.0,
+            env={
+                **os.environ,
+                "UNIOVER_RUNNER": str(runner),
+                "UNIOVER_SELF_PID": str(os.getpid()),
+                **({} if only is None else {"UNIOVER_ONLY_PIDS": ",".join(str(p) for p in only)}),
+            },
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return False
+    return "killed" in done.stdout
+
+
+def supervisor_check(  # noqa: PLR0913 - dependências injetadas deixam o teste sem relógio nem Agendador
     runtime: Path,
     *,
     name: str = TASK_NAME,
     now: Callable[[], float] = time.time,
     start_task: Callable[[str], bool] | None = None,
+    kill_supervisor: Callable[[], bool] | None = None,
+    recheck: float = RECHECK_SECONDS,
 ) -> Check:
     """O supervisor (script do Windows) deu sinal de vida há pouco? Sem ele, ninguém reinicia."""
     alive = runtime / "supervisor-alive"
+    runner = runtime.parent / "app" / "tools" / "run-agent.ps1"
 
     def launch(task: str) -> bool:
         try:
@@ -268,9 +391,17 @@ def supervisor_check(
 
     do_start = start_task or launch
 
+    def age_of_signal() -> float:
+        return now() - alive.stat().st_mtime
+
     async def run() -> CheckResult:
         try:
-            age = now() - alive.stat().st_mtime
+            age = age_of_signal()
+            if age > SUPERVISOR_SILENCE_SECONDS:
+                # Logo depois de o PC acordar de uma suspensão longa o sinal parece velho de horas
+                # (o supervisor dormiu junto e ainda não renovou): dá-lhe um instante antes de agir.
+                await asyncio.sleep(recheck)
+                age = age_of_signal()
         except OSError:
             return CheckResult(False, "o supervisor nunca deu sinal de vida", fixable=True)
         if age > SUPERVISOR_SILENCE_SECONDS:
@@ -278,7 +409,30 @@ def supervisor_check(
         return CheckResult(True, "supervisor ativo")
 
     async def repair() -> str | None:
+        # O sinal pode ter voltado entre a verificação e o reparo (o PC acordou, o supervisor
+        # terminou a volta lenta): não se mata um supervisor que já está bem.
+        try:
+            if age_of_signal() <= SUPERVISOR_SILENCE_SECONDS:
+                return None
+        except OSError:
+            pass
+        # Os PIDs vistos AGORA são os únicos que morrem: um supervisor novo, subido pelo lançador
+        # que o pedido abaixo traz de volta, tem outro PID e fica.
+        seen = (
+            None
+            if kill_supervisor is not None
+            else await _in_thread(lambda: supervisor_pids(runner))
+        )
+        # Primeiro pede o lançador: com um vivo o mutex dele recusa o segundo e nada acontece; com
+        # o lançador morto este sobe e a varredura inicial dele resolve. Só depois tira de cena um
+        # supervisor vivo e mudo (travado), que serve ao lançador antigo, síncrono: enquanto o
+        # supervisor existir esse lançador espera por ele. A ordem importa: quem mata costuma
+        # estar dentro da árvore que morre e não chegaria a pedir o lançador.
         started = await _in_thread(lambda: do_start(name))
+        if kill_supervisor is not None:
+            await _in_thread(kill_supervisor)
+        elif seen:
+            await _in_thread(lambda: kill_wedged_supervisor(runner, only=seen))
         return None if started else "não consegui pedir ao Agendador que inicie o lançador"
 
     return Check("supervisor", run, repair, "lançador iniciado de novo pelo Agendador")

@@ -78,6 +78,36 @@ _TIMEOUT = httpx.Timeout(connect=15.0, read=60.0, write=15.0, pool=15.0)
 # O repositório inteiro compactado tem poucos MB; este teto só barra resposta absurda.
 _MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024
 _MAX_EXTRACTED_BYTES = 500 * 1024 * 1024
+# O tempo de cada leitura é limitado por `_TIMEOUT`, mas um servidor que pinga um byte a cada 59 s
+# nunca estoura nenhuma: o download inteiro tem um prazo só.
+DOWNLOAD_DEADLINE_SECONDS = 300.0
+# Abaixo disto de espaço livre a atualização nem começa: o pacote, a pasta nova e o ambiente
+# descartável dela somam centenas de MB, e uma atualização que enche o disco no meio piora o que
+# já estava ruim.
+MIN_FREE_BYTES = 600 * 1024 * 1024
+# Limites de cada passo (usados por quem os executa e somados em `WORST_CASE_SECONDS`).
+FETCH_TIMEOUT_SECONDS = (
+    120.0  # a consulta do commit mais recente (várias leituras, cada uma com prazo)
+)
+EXTRACT_SECONDS = 120.0  # extrair e conferir o pacote, com o disco no limite
+SYNC_TIMEOUT_SECONDS = 600
+SYNC_ATTEMPTS = 2
+SYNC_PAUSE_SECONDS = 3.0
+CHECK_TIMEOUT_SECONDS = 120
+# O pior caso de uma atualização que ainda anda: tudo isto, em série. O teto de quem a executa por
+# fora (o supervisor, em `run-agent.ps1`) tem de passar disto, senão mata uma atualização lenta
+# mas legítima, e a próxima tentativa recomeça do zero. A soma vale também por dentro: a consulta
+# e a extração não têm prazo próprio, então `self_update` confere o orçamento inteiro entre os
+# passos e desiste (antes de trocar as pastas) se ele acabou, em vez de deixar o supervisor matar
+# no meio.
+WORST_CASE_SECONDS = (
+    FETCH_TIMEOUT_SECONDS
+    + DOWNLOAD_DEADLINE_SECONDS
+    + EXTRACT_SECONDS
+    + SYNC_ATTEMPTS * SYNC_TIMEOUT_SECONDS
+    + (SYNC_ATTEMPTS - 1) * SYNC_PAUSE_SECONDS
+    + CHECK_TIMEOUT_SECONDS
+)
 
 
 class SelfUpdateError(Exception):
@@ -160,10 +190,25 @@ def latest_commit(channel: str = DEFAULT_CHANNEL) -> str:
     return sha
 
 
-def download_archive(sha: str, destination: Path) -> None:
-    """Baixa o zip do commit para `destination` (arquivo)."""
+def disk_free_bytes(folder: Path) -> int | None:
+    """Espaço livre no disco de `folder`; `None` se não deu para saber (não bloqueia)."""
+    try:
+        return shutil.disk_usage(folder).free
+    except OSError:
+        return None
+
+
+def download_archive(
+    sha: str,
+    destination: Path,
+    *,
+    deadline: float = DOWNLOAD_DEADLINE_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> None:
+    """Baixa o zip do commit para `destination` (arquivo), no máximo em `deadline` segundos."""
     total = 0
     url = archive_url(sha)
+    give_up_at = monotonic() + deadline
     try:
         with (
             httpx.stream(
@@ -180,6 +225,8 @@ def download_archive(sha: str, destination: Path) -> None:
                 total += len(chunk)
                 if total > _MAX_DOWNLOAD_BYTES:
                     raise SelfUpdateError("o pacote baixado é grande demais")
+                if monotonic() > give_up_at:
+                    raise SelfUpdateError(f"o download passou de {deadline:.0f} s")
                 handle.write(chunk)
     except httpx.HTTPError as exc:
         raise SelfUpdateError(f"não consegui baixar o pacote ({type(exc).__name__})") from None
@@ -205,6 +252,20 @@ def update_in_trial(source: Path) -> bool:
         return False
     version = read_version(source)
     return version is not None and text.strip().split("|", 1)[0] == version
+
+
+def trial_marker(source: Path) -> Path:
+    return source.parent / "runtime" / "update-trial.txt"
+
+
+def write_trial_marker(source: Path, sha: str) -> None:
+    """Grava a prova da versão `sha` (`sha|quedas`), no formato que o supervisor lê.
+
+    Vai ANTES da troca das pastas: uma versão nova nunca fica no ar sem a prova (e sem a volta atrás
+    que vem com ela). Se não der para gravar (disco cheio), a troca nem acontece."""
+    marker = trial_marker(source)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"{sha}|0", encoding="ascii")
 
 
 def verify_archive(archive: Path, sha: str) -> None:
@@ -363,6 +424,46 @@ def extract_agent(archive: Path, destination: Path) -> None:
                 _log.warning("não consegui remover a imagem temporária da bandeja")
 
 
+DEFERRED_VERSIONS_FILE = ".deferred-versions"
+# O adiamento cresce a cada devolução do mesmo commit: 24 h, 72 h, uma semana. Num PC que segue
+# lento, tentar de novo todo dia custaria uns 50 min fora do ar por dia (o sync em prova, 3 vezes).
+DEFER_STEPS_SECONDS = (24 * 3600.0, 72 * 3600.0, 7 * 24 * 3600.0)
+
+
+def deferred_versions(source: Path, now: float) -> set[str]:
+    """Commits que o supervisor devolveu por culpa do PC (demora, disco) e não por defeito deles.
+
+    Não são bloqueados, mas voltar a instalar o mesmo commit a cada checagem seria um laço de
+    atualizar e voltar: ficam adiados (`sha|epoch`, uma linha por devolução), cada vez por mais
+    tempo (`DEFER_STEPS_SECONDS`), contado da última devolução."""
+    try:
+        path = source.parent / "runtime" / DEFERRED_VERSIONS_FILE
+        entries = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    returns: dict[str, list[float]] = {}
+    for line in entries:
+        sha, _, stamp = line.strip().partition("|")
+        try:
+            since = float(stamp)
+        except ValueError:
+            continue
+        if _SHA.fullmatch(sha):
+            returns.setdefault(sha, []).append(since)
+    deferred: set[str] = set()
+    for sha, stamps in returns.items():
+        period = DEFER_STEPS_SECONDS[min(len(stamps), len(DEFER_STEPS_SECONDS)) - 1]
+        # Um carimbo no futuro (o relógio voltou) conta como adiado, até um período à frente. Os
+        # que passam disso são falsos (a pilha do CMOS acabou e o relógio voltou anos): só eles
+        # saem, e vale o maior dos que sobram. Inválido o conjunto todo, a versão nunca mais seria
+        # adiada (as devoluções novas levam a data antiga) e voltaria ao laço de instalar e
+        # devolver.
+        valid = [stamp for stamp in stamps if stamp <= now + period]
+        if valid and now - max(valid) < period:
+            deferred.add(sha)
+    return deferred
+
+
 def blocked_versions(source: Path) -> set[str]:
     """Commits recusados pelo monitor do Windows depois de uma queda repetida."""
     try:
@@ -476,7 +577,7 @@ def _run_uv(  # noqa: PLR0913 - cada argumento é um limite ou um caminho, todos
     raise SelfUpdateError(f"{what} falhou ({reason})")
 
 
-def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
+def run_uv_sync(source: Path, *, pause: float = SYNC_PAUSE_SECONDS) -> None:
     """Sincroniza a candidata, num ambiente só dela, antes de ela substituir a instalação.
 
     Tenta de novo uma vez (arquivo preso por antivírus, cache do `uv` em uso, rede) e, se ainda
@@ -486,11 +587,11 @@ def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
     _run_uv(
         ["sync", "--frozen", "--project", str(source), "--quiet"],
         what="a sincronização das dependências",
-        timeout=600,
+        timeout=SYNC_TIMEOUT_SECONDS,
         cwd=source.parent,
         environment=environment,
         pause=pause,
-        attempts=2,
+        attempts=SYNC_ATTEMPTS,
     )
 
 
@@ -513,7 +614,7 @@ def run_uv_check(source: Path) -> None:
             "uniover_agent.selfcheck",
         ],
         what="o auto-diagnóstico da versão nova",
-        timeout=120,
+        timeout=CHECK_TIMEOUT_SECONDS,
         cwd=source.parent,
         environment=candidate_env(source),
         pause=0.0,
@@ -533,7 +634,36 @@ class UpdateResult:
     rejected: bool = field(default=False, compare=False)
 
 
-def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a atualização testável sem rede
+def promote(source: Path, new: Path, sha: str, record_trial: Callable[[Path, str], None]) -> None:
+    """Põe `new` no lugar de `source`, com a prova gravada ANTES (sem ela, a troca não acontece)."""
+    try:
+        record_trial(source, sha)
+    except OSError as exc:
+        raise SelfUpdateError(
+            f"não consegui registrar a prova da versão nova ({type(exc).__name__})"
+        ) from None
+    try:
+        swap_directories(source, new, keep_previous=True)
+    except BaseException:
+        # A troca não houve: a prova da versão que não entrou não vale.
+        trial_marker(source).unlink(missing_ok=True)
+        raise
+
+
+def _low_disk_result(free: int | None, minimum: int, sha: str) -> UpdateResult | None:
+    """Sem espaço para baixar e montar a versão nova: adia (volta sozinha na checagem seguinte)."""
+    if free is None or free >= minimum:
+        return None
+    _log.warning("auto-atualização adiada: pouco espaço no disco (%d MB livres)", free >> 20)
+    return UpdateResult(
+        False,
+        f"pouco espaço no disco ({free >> 20} MB livres); a atualização espera ter espaço",
+        "failed",
+        latest=sha,
+    )
+
+
+def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências injetadas deixam a atualização testável sem rede
     source: Path,
     *,
     sync: bool = True,
@@ -544,6 +674,12 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
     run_check: Callable[[Path], None] = run_uv_check,
     verify: Callable[[Path, str], None] = verify_archive,
     verify_files: Callable[[Path, str], bool] = verify_tree,
+    free_bytes: Callable[[Path], int | None] = disk_free_bytes,
+    min_free_bytes: int = MIN_FREE_BYTES,
+    record_trial: Callable[[Path, str], None] = write_trial_marker,
+    monotonic: Callable[[], float] = time.monotonic,
+    wall: Callable[[], float] = time.time,
+    ignore_deferral: bool = False,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -560,8 +696,15 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
             False, "a versão instalada ainda está em prova; atualizo quando ela se confirmar"
         )
     sha: str | None = None
+    started = monotonic()
+
+    def within_budget() -> None:
+        if monotonic() - started > WORST_CASE_SECONDS:
+            raise SelfUpdateError("a atualização passou do tempo máximo; fica para a próxima vez")
+
     try:
         sha = (fetch_latest or (lambda: latest_commit(channel)))()
+        within_budget()
         if read_version(source) == sha:
             return UpdateResult(
                 False, "o agente já está na versão mais recente", "up_to_date", latest=sha
@@ -574,10 +717,23 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
                 latest=sha,
                 blocked=sha,
             )
+        if not ignore_deferral and sha in deferred_versions(source, wall()):
+            # "deferred" é interno (não existe no contrato): quem grava o estado devolve o que
+            # havia.
+            return UpdateResult(
+                False,
+                "esta versão voltou por demora ou disco do PC; tento de novo mais tarde",
+                "deferred",
+                latest=sha,
+            )
+        low = _low_disk_result(free_bytes(source.parent), min_free_bytes, sha)
+        if low is not None:
+            return low
         workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=source.parent))
         try:
             archive = workspace / "main.zip"
             download(sha, archive)
+            within_budget()
             verify(archive, sha)
             if verify_files(archive, sha):
                 _log.info("pacote conferido: os arquivos batem com o commit %s", sha[:12])
@@ -588,11 +744,14 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
             try:
                 new.mkdir()
                 extract_agent(archive, new)
+                within_budget()
                 (new / VERSION_FILE).write_text(sha + "\n", encoding="utf-8")
                 if sync:
                     run_sync(new)
+                    within_budget()
                 run_check(new)
-                swap_directories(source, new, keep_previous=True)
+                within_budget()
+                promote(source, new, sha, record_trial)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
                 raise

@@ -9,6 +9,7 @@ import pytest
 
 from uniover_agent.adapters.fakes import FakeSecretStore
 from uniover_agent.adapters.local_config import update_config
+from uniover_agent.adapters.log_offload import OffloadHandler
 from uniover_agent.composition import tv as tv_module
 from uniover_agent.composition.system import configure_logging
 from uniover_agent.composition.tv import tv_pair
@@ -56,11 +57,14 @@ def test_log_file_gets_the_records_with_rotation(tmp_path: Path) -> None:
     configure_logging("INFO", str(target))
     try:
         logging.getLogger("uniover_agent").info("registro de teste")
-        handlers = [h for h in logging.getLogger().handlers if isinstance(h, RotatingFileHandler)]
+        offloaded = [h for h in logging.getLogger().handlers if isinstance(h, OffloadHandler)]
+        handlers = [h.target for h in offloaded if isinstance(h.target, RotatingFileHandler)]
         assert len(handlers) == 1
         assert (handlers[0].maxBytes, handlers[0].backupCount) == (1_000_000, 2)
-        for handler in handlers:
-            handler.flush()
+        for offload in offloaded:
+            assert offload.drain()
+        for rotating in handlers:
+            rotating.flush()
         assert "registro de teste" in target.read_text(encoding="utf-8")
     finally:
         configure_logging("WARNING")

@@ -87,7 +87,7 @@ class Installation:
         )
 
     def leftovers(self) -> list[str]:
-        return sorted(p.name for p in self.base.iterdir() if p.name != "agent-src")
+        return sorted(p.name for p in self.base.iterdir() if p.name not in {"agent-src", "runtime"})
 
 
 @pytest.fixture
@@ -572,7 +572,9 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
 ) -> None:
     seen: dict[str, object] = {}
 
-    def fake(source: Path, *, sync: bool, channel: str) -> UpdateResult:
+    def fake(
+        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
         seen.update(source=source, sync=sync, channel=channel)
         return UpdateResult(False, "não atualizei agora: sem rede")
 
@@ -586,3 +588,173 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
     }
     assert main(["self-update"]) == EXIT_OK
     assert seen["sync"] is True
+
+
+def test_the_trial_marker_is_written_before_the_folders_are_swapped(
+    installed: Installation,
+) -> None:
+    order: list[str] = []
+
+    def record(source: Path, sha: str) -> None:
+        # Neste instante a versão nova ainda NÃO está no lugar.
+        order.append(f"prova {sha[:1]} com versão {read_version(source)[:1]}")  # type: ignore[index]
+
+    assert installed.update(NEW, record_trial=record).updated
+    assert order == [f"prova {NEW[:1]} com versão {OLD[:1]}"]
+    assert read_version(installed.source) == NEW
+
+
+def test_the_real_marker_has_the_format_the_supervisor_reads(installed: Installation) -> None:
+    assert installed.update(NEW).updated
+    marker = installed.base / "runtime" / "update-trial.txt"
+    assert marker.read_text(encoding="ascii") == f"{NEW}|0"
+
+
+def test_a_marker_that_cannot_be_written_aborts_the_swap_and_leaves_the_install_alone(
+    installed: Installation,
+) -> None:
+    def full_disk(_source: Path, _sha: str) -> None:
+        raise OSError(28, "No space left on device")
+
+    result = installed.update(NEW, record_trial=full_disk)
+    # A versão nova nunca fica no ar sem a prova: nada foi trocado.
+    assert not result.updated and result.outcome == "failed"
+    assert "prova" in result.message
+    assert read_version(installed.source) == OLD
+    assert installed.leftovers() == []
+
+
+def test_a_swap_that_fails_removes_the_marker_of_the_version_that_did_not_come_in(
+    installed: Installation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuses(*_args: object, **_kwargs: object) -> None:
+        raise SelfUpdateError("a pasta do agente está em uso; fica para a próxima vez")
+
+    monkeypatch.setattr("uniover_agent.adapters.self_update.swap_directories", refuses)
+    result = installed.update(NEW)
+    assert not result.updated
+    assert not (installed.base / "runtime" / "update-trial.txt").exists()
+    assert read_version(installed.source) == OLD
+
+
+def test_an_update_that_used_up_its_whole_budget_gives_up_before_swapping(
+    installed: Installation,
+) -> None:
+    # A extração/consulta lentas (antivírus, disco no limite) comem o orçamento: a atualização
+    # desiste antes de trocar as pastas, em vez de o supervisor matá-la no meio.
+    clock = {"now": 0.0}
+
+    def slow_download(sha: str, destination: Path) -> None:
+        installed.download(sha, destination)
+        clock["now"] += module.WORST_CASE_SECONDS + 1
+
+    result = installed.update(NEW, download=slow_download, monotonic=lambda: clock["now"])
+    assert not result.updated and result.outcome == "failed"
+    assert "tempo máximo" in result.message
+    assert read_version(installed.source) == OLD
+    assert installed.leftovers() == []
+    assert not (installed.base / "runtime" / "update-trial.txt").exists()
+
+
+def test_an_update_inside_its_budget_is_not_affected(installed: Installation) -> None:
+    clock = {"now": 0.0}
+    assert installed.update(NEW, monotonic=lambda: clock["now"]).updated
+
+
+def test_a_version_returned_for_the_pcs_sake_is_deferred_for_24_hours(
+    installed: Installation,
+) -> None:
+    # O supervisor devolveu a versão por demora/disco do PC (sem bloqueá-la): sem este adiamento o
+    # self-update a reinstalaria a cada checagem, num laço de atualizar e voltar.
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now) - 3600}\n", encoding="ascii")
+    result = installed.update(NEW, wall=lambda: now)
+    # Resultado neutro (`deferred`, interno): não é falha e não aparece como tal ao dono.
+    assert not result.updated and result.outcome == "deferred" and result.latest == NEW
+    assert installed.downloads == []
+    # Passadas 24 h ela volta a ser tentada.
+    assert installed.update(NEW, wall=lambda: now + 24 * 3600 + 1).updated
+
+
+def test_the_deferral_grows_with_each_return_24h_72h_a_week(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    base = 1_800_000_000.0
+    day = 24 * 3600
+    marks = runtime / ".deferred-versions"
+    marks.write_text(f"{NEW}|{int(base)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, base + day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + day + 1) == set()
+    # Segunda devolução: 72 h a partir dela.
+    marks.write_text(f"{NEW}|{int(base)}\n{NEW}|{int(base)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, base + 3 * day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + 3 * day + 1) == set()
+    # Terceira em diante: uma semana.
+    marks.write_text(f"{NEW}|{int(base)}\n" * 3, encoding="ascii")
+    assert module.deferred_versions(installed.source, base + 7 * day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + 7 * day + 1) == set()
+    marks.write_text(f"{NEW}|{int(base)}\n" * 9, encoding="ascii")
+    assert module.deferred_versions(installed.source, base + 7 * day + 1) == set()
+
+
+def test_the_owners_explicit_request_bypasses_the_deferral(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now) - 60}\n", encoding="ascii")
+    assert installed.update(NEW, wall=lambda: now, ignore_deferral=True).updated
+
+
+def test_a_newer_commit_is_not_held_back_by_a_deferred_one(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    other = "c" * 40
+    now = 1_800_000_000.0
+    (runtime / ".deferred-versions").write_text(f"{other}|{int(now) - 60}\n", encoding="ascii")
+    assert installed.update(NEW, wall=lambda: now).updated
+
+
+def test_the_deferral_counts_from_the_last_return_not_the_first(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    base = 1_800_000_000.0
+    day = 24 * 3600
+    # Duas devoluções, a segunda 5 dias depois da primeira: 72 h contadas da SEGUNDA.
+    (runtime / ".deferred-versions").write_text(
+        f"{NEW}|{int(base)}\n{NEW}|{int(base + 5 * day)}\n", encoding="ascii"
+    )
+    assert module.deferred_versions(installed.source, base + 8 * day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + 8 * day + 1) == set()
+
+
+def test_a_return_stamped_in_the_future_after_the_clock_went_back_is_still_deferred(
+    installed: Installation,
+) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    day = 24 * 3600
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now + 3600)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, now) == {NEW}
+    # Um carimbo absurdo (anos à frente) é falso: não adia para sempre.
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now + 400 * day)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, now) == set()
+
+
+def test_a_bogus_far_future_stamp_does_not_cancel_the_genuine_returns(
+    installed: Installation,
+) -> None:
+    # A pilha do CMOS acabou e o relógio voltou anos: um carimbo "do futuro" se mistura a devoluções
+    # novas, gravadas com a data antiga. Só o falso sai; vale o maior dos que sobram.
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    day = 24 * 3600
+    (runtime / ".deferred-versions").write_text(
+        f"{NEW}|{int(now + 900 * day)}\n{NEW}|{int(now - 3600)}\n", encoding="ascii"
+    )
+    # Duas devoluções (72 h): a falsa não conta como válida, a recente sim.
+    assert module.deferred_versions(installed.source, now) == {NEW}
+    assert module.deferred_versions(installed.source, now + 4 * day) == set()

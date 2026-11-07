@@ -7,6 +7,7 @@ contrato novo); a linha entra no `agent.log`, que o dono já consulta pelo envio
 """
 
 import logging
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -18,6 +19,8 @@ _log = logging.getLogger(__name__)
 BEAT_SECONDS = 60.0
 # Abaixo disto é uma queda comum de conexão, sem nada a explicar.
 LONG_ABSENCE_SECONDS = 180.0
+# Leituras ruins seguidas para a conexão ser dada por parada (a primeira pode ser só o despertar).
+UNHEALTHY_BEATS_TO_ALARM = 2
 
 
 def windows_uptime_seconds() -> float | None:
@@ -58,14 +61,21 @@ class AbsenceDiary:
         self._clock = clock
         self._uptime = uptime
         self._lost_at: float | None = None
+        self._healthy: Callable[[], bool] = lambda: True
+        self._withheld = False
+        self._unhealthy_beats = 0
         self.reasons: list[str] = []
+
+    def require_healthy(self, healthy: Callable[[], bool]) -> None:
+        """A marca de vida só é regravada enquanto `healthy()` for verdadeiro.
+
+        Sem isto, o laço de conexão podia ficar preso enquanto outras tarefas mantinham a marca
+        fresca: o agente parecia saudável, nunca era reiniciado e ficava fora do ar."""
+        self._healthy = healthy
 
     def start(self) -> None:
         """Lê a última marca da execução anterior e explica o intervalo, se foi longo."""
-        try:
-            previous: float | None = float(self._path.read_text(encoding="ascii").strip())
-        except OSError, ValueError:
-            previous = None
+        previous = self._last_mark()
         self.beat()
         if previous is None:
             return
@@ -73,12 +83,31 @@ class AbsenceDiary:
         if gap >= LONG_ABSENCE_SECONDS:
             self._report(likely_reason(gap, self._uptime(), process_restarted=True))
 
+    def _last_mark(self) -> float | None:
+        """A última marca: o maior entre o texto e a data do arquivo. Com o disco cheio só a data
+        avança (o texto fica velho), e ler só o texto relataria uma ausência que não houve."""
+        marks: list[float] = []
+        try:
+            marks.append(float(self._path.read_text(encoding="ascii").strip()))
+        except OSError, ValueError:
+            pass
+        try:
+            marks.append(self._path.stat().st_mtime)
+        except OSError:
+            pass
+        return max(marks) if marks else None
+
     def beat(self) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(f"{self._clock.now().timestamp():.0f}", encoding="ascii")
         except OSError:
-            return
+            # Disco cheio: regravar o texto falha, mas só a data do arquivo basta para o supervisor
+            # (que olha o `mtime`) e não aloca espaço. Sem isto um agente saudável parecia mudo.
+            try:
+                os.utime(self._path)
+            except OSError:
+                return
 
     def disconnected(self) -> None:
         self._lost_at = self._clock.monotonic()
@@ -95,7 +124,21 @@ class AbsenceDiary:
         """Marca de vida a cada minuto, para a próxima execução saber quando esta parou."""
         while True:
             await self._clock.sleep(BEAT_SECONDS)
-            self.beat()
+            if self._healthy():
+                self._unhealthy_beats = 0
+                if self._withheld:
+                    self._withheld = False
+                    _log.info("a conexão voltou a andar; retomo a marca de vida")
+                self.beat()
+                continue
+            # Ao acordar de uma suspensão o prazo de um passo pode parecer vencido por um instante:
+            # só a segunda leitura seguida (um minuto depois) conta como conexão parada.
+            self._unhealthy_beats += 1
+            if self._unhealthy_beats >= UNHEALTHY_BEATS_TO_ALARM and not self._withheld:
+                self._withheld = True
+                _log.error(
+                    "a conexão está parada; sem sinal de vida, o supervisor reinicia o agente"
+                )
 
     def _report(self, reason: str) -> None:
         self.reasons.append(reason)
