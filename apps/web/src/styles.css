@@ -736,8 +736,11 @@ html.boot-first-page .ui-rise {
   animation: ui-wait-in 1ms linear var(--wait-delay, 200ms) backwards;
 }
 
-/* O desenho que cobre a abertura já evita o pisca; a página abaixo precisa mostrar a própria forma no primeiro quadro. */
-html.has-boot-skeleton {
+/* O desenho que cobre a abertura já evita o pisca; a página abaixo precisa mostrar a própria forma no primeiro quadro.
+   O esqueleto estático do `index.html` também conta: ele sai com uma animação de saída (e só então é tirado do documento),
+   e a forma da página que nasce nesse intervalo, se esperasse o atraso comum, deixaria um vazio entre os dois. */
+html.has-boot-skeleton,
+html:has(> body > #boot-skeleton) {
   --wait-delay: 0ms;
 }
 
