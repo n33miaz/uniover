@@ -8,6 +8,7 @@ import { test as base, expect } from '@playwright/test';
 import { mockIdentityApi } from '../auth/identity-mock';
 import { mockTvApi, installFakeEventSource } from '../tv/tv-mock';
 import { mockAuditApi } from '../settings/audit-mock';
+import { mockPcApi } from '../pc/pc-mock';
 import { openTraining, startTraining } from '../training/support/training-pages';
 
 const test = base.extend<{ violations: string[] }>({
@@ -73,6 +74,39 @@ test.describe('CSP estrita: nenhuma violação de estilo nas telas lazy', () => 
     await page.goto('/ajustes/auditoria');
     await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
     await page.getByRole('button', { name: /filtr/i }).first().click();
+    await page.waitForLoadState('networkidle');
+    await expectEveryStylesheetApplied(page);
+    expect(violations, 'violações de CSP').toEqual([]);
+  });
+
+  test('Controle do PC: a folha de ajustes do touchpad e o Teclado, sem folha em linha', async ({
+    page,
+    context,
+    violations,
+  }) => {
+    const identity = await mockIdentityApi(context);
+    identity.loggedIn = true;
+    await mockPcApi(context, identity);
+    await mockTvApi(context, identity);
+    await installFakeEventSource(page);
+    await page.goto('/pc');
+    await expect(page.getByRole('status').filter({ hasText: 'Conectado' })).toBeVisible();
+
+    // A folha nasce em tempo de execução (`@if` + `showModal`): os estilos do componente passam pelo mesmo nonce.
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Touchpad' });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('radio', { name: 'Alta' }).check();
+    // O raio do canto vem do confirm-sheet.css: só existe se o <style> do componente foi aceito pela CSP.
+    expect(
+      await sheet.evaluate((dialog) => getComputedStyle(dialog).borderTopLeftRadius),
+    ).not.toBe('0px');
+    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Teclado' }).click();
+    await expect(page).toHaveURL(/\/pc\/teclado$/);
+    await expect(page.getByLabel('Texto para digitar no PC')).toBeVisible();
     await page.waitForLoadState('networkidle');
     await expectEveryStylesheetApplied(page);
     expect(violations, 'violações de CSP').toEqual([]);
