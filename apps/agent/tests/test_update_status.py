@@ -681,7 +681,8 @@ def test_a_deferred_check_gives_back_the_state_that_was_there_without_a_failure_
     assert update_agent(sync=True) == EXIT_OK
     state = json.loads(path.read_text(encoding="utf-8"))
     assert (state["outcome"], state["latestSha"]) == ("rolled_back", LATEST)
-    assert "reason" not in state
+    # Neutro, mas o dono vê por que não há atualização.
+    assert "adiada" in state["reason"]
 
 
 def test_the_owners_update_now_reaches_the_update_as_a_bypass_of_the_deferral(

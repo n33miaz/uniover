@@ -24,6 +24,9 @@ from uniover_agent.ports.remote_care import UpdateStatus
 _log = logging.getLogger(__name__)
 
 STATUS_FILE: Final = "update-status.json"
+DEFERRED_REASON: Final = (
+    "uma versão nova voltou por demora ou disco deste PC; fica adiada (Atualizar agora tenta já)"
+)
 # Um arquivo de estado maior que isto não foi escrito por nós.
 _MAX_BYTES: Final = 16 * 1024
 
@@ -128,7 +131,8 @@ def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
             {
                 "outcome": previous,
                 "checkedAt": format_time(now),
-                "reason": None,
+                # Neutro, mas o dono vê por que não há atualização ("Atualizar agora" a força).
+                "reason": DEFERRED_REASON,
                 **({"latestSha": result.latest} if result.latest is not None else {}),
             },
         )
