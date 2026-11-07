@@ -657,3 +657,29 @@ def test_an_update_that_used_up_its_whole_budget_gives_up_before_swapping(
 def test_an_update_inside_its_budget_is_not_affected(installed: Installation) -> None:
     clock = {"now": 0.0}
     assert installed.update(NEW, monotonic=lambda: clock["now"]).updated
+
+
+def test_a_version_returned_for_the_pcs_sake_is_deferred_for_24_hours(
+    installed: Installation,
+) -> None:
+    # O supervisor devolveu a versão por demora/disco do PC (sem bloqueá-la): sem este adiamento o
+    # self-update a reinstalaria a cada checagem, num laço de atualizar e voltar.
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now) - 3600}\n", encoding="ascii")
+    result = installed.update(NEW, wall=lambda: now)
+    assert not result.updated and result.outcome == "failed" and result.latest == NEW
+    assert "24 h" in result.message
+    assert installed.downloads == []
+    # Passadas 24 h ela volta a ser tentada.
+    assert installed.update(NEW, wall=lambda: now + 24 * 3600 + 1).updated
+
+
+def test_a_newer_commit_is_not_held_back_by_a_deferred_one(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    other = "c" * 40
+    now = 1_800_000_000.0
+    (runtime / ".deferred-versions").write_text(f"{other}|{int(now) - 60}\n", encoding="ascii")
+    assert installed.update(NEW, wall=lambda: now).updated

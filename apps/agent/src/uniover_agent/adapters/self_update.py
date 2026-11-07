@@ -424,6 +424,32 @@ def extract_agent(archive: Path, destination: Path) -> None:
                 _log.warning("não consegui remover a imagem temporária da bandeja")
 
 
+DEFERRED_VERSIONS_FILE = ".deferred-versions"
+DEFER_SECONDS = 24 * 3600.0
+
+
+def deferred_versions(source: Path, now: float) -> set[str]:
+    """Commits que o supervisor devolveu por culpa do PC (demora, disco) e não por defeito deles.
+
+    Não são bloqueados, mas voltar a instalar o mesmo commit a cada checagem seria um laço de
+    atualizar e voltar: ficam adiados por 24 h (`sha|epoch`, uma linha por devolução)."""
+    try:
+        path = source.parent / "runtime" / DEFERRED_VERSIONS_FILE
+        entries = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    deferred: set[str] = set()
+    for line in entries:
+        sha, _, stamp = line.strip().partition("|")
+        try:
+            since = float(stamp)
+        except ValueError:
+            continue
+        if _SHA.fullmatch(sha) and 0 <= now - since < DEFER_SECONDS:
+            deferred.add(sha)
+    return deferred
+
+
 def blocked_versions(source: Path) -> set[str]:
     """Commits recusados pelo monitor do Windows depois de uma queda repetida."""
     try:
@@ -638,6 +664,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     min_free_bytes: int = MIN_FREE_BYTES,
     record_trial: Callable[[Path, str], None] = write_trial_marker,
     monotonic: Callable[[], float] = time.monotonic,
+    wall: Callable[[], float] = time.time,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -674,6 +701,13 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 "blocked",
                 latest=sha,
                 blocked=sha,
+            )
+        if sha in deferred_versions(source, wall()):
+            return UpdateResult(
+                False,
+                "esta versão voltou por demora ou disco do PC; tento de novo em até 24 h",
+                "failed",
+                latest=sha,
             )
         low = _low_disk_result(free_bytes(source.parent), min_free_bytes, sha)
         if low is not None:
