@@ -123,7 +123,9 @@ function Get-BeaconTarget {
         if ($text -match '(?m)^\s*agent_id\s*=\s*"([^"\r\n]+)"') { $slug = $Matches[1] }
         if (-not $api -or -not $slug) { return $null }
         if ($slug -notmatch '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$') { return $null }
-        if ($api -match '[''"`\s]') { return $null }
+        # So ASCII imprimivel (sem espaco nem aspas, inclusive as tipograficas): o endereco vai ao filho por variavel de ambiente,
+        # nunca dentro do codigo dele, mas um endereco com caractere estranho nao e um endereco que a API usaria.
+        if ($api -cmatch '[^!-~]' -or $api -match '[''"`]') { return $null }
         $uri = $null
         if (-not [System.Uri]::TryCreate($api, [System.UriKind]::Absolute, [ref]$uri)) { return $null }
         if ($uri.UserInfo -or $uri.Query -or $uri.Fragment) { return $null }
@@ -141,7 +143,7 @@ function Get-BeaconExitCode($Code) {
     return ('exit_' + $number)
 }
 
-function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
+function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool]$IgnoreSpacing = $false) {
     try {
         if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return }
         if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return }
@@ -150,12 +152,14 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
         if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_BEACON_MIN_INTERVAL_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $spacing = $forced }
         $key = $Stage + '.' + $Code
         $now = [DateTime]::UtcNow
-        if ($script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
+        if (-not $IgnoreSpacing -and $script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
         $stamp = Join-Path (Join-Path $base 'runtime') ('beacon.' + $key)
-        try {
-            $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
-            if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
-        } catch { }
+        if (-not $IgnoreSpacing) {
+            try {
+                $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
+                if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
+            } catch { }
+        }
         $target = Get-BeaconTarget
         if (-not $target) { return }
         $script:beaconSent[$key] = $now
@@ -163,13 +167,17 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
         $body = '{"v":1,"stage":"' + $Stage + '","code":"' + $Code + '"'
         if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
         $body += ',"os":"windows"}'
-        $post = '$ProgressPreference = ''SilentlyContinue''; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
-            'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri ''' + $target + ''' -ContentType ''application/json'' -Body ''' + $body + ''' -TimeoutSec 10 | Out-Null } catch { }'
+        # O codigo do filho e constante: endereco e corpo vao por variavel de ambiente (nada do config entra no codigo).
+        $post = '$Progress = 1; $ProgressPreference = ''SilentlyContinue''; ' +
+            'try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
+            'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $env:UNIOVER_BEACON_URI -ContentType ''application/json'' -Body $env:UNIOVER_BEACON_BODY -TimeoutSec 10 | Out-Null } catch { }'
         $info = New-Object System.Diagnostics.ProcessStartInfo
         $info.FileName = 'powershell.exe'
         $info.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ' + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($post))
         $info.UseShellExecute = $false
         $info.CreateNoWindow = $true
+        $info.EnvironmentVariables['UNIOVER_BEACON_URI'] = $target
+        $info.EnvironmentVariables['UNIOVER_BEACON_BODY'] = $body
         $child = [System.Diagnostics.Process]::Start($info)
         if ($null -ne $child) { $child.Dispose() }
     } catch { }

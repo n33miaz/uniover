@@ -108,7 +108,9 @@ function Get-BeaconTarget {
         if ($text -match '(?m)^\s*agent_id\s*=\s*"([^"\r\n]+)"') { $slug = $Matches[1] }
         if (-not $api -or -not $slug) { return $null }
         if ($slug -notmatch '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$') { return $null }
-        if ($api -match '[''"`\s]') { return $null }
+        # So ASCII imprimivel (sem espaco nem aspas, inclusive as tipograficas): o endereco vai ao filho por variavel de ambiente,
+        # nunca dentro do codigo dele, mas um endereco com caractere estranho nao e um endereco que a API usaria.
+        if ($api -cmatch '[^!-~]' -or $api -match '[''"`]') { return $null }
         $uri = $null
         if (-not [System.Uri]::TryCreate($api, [System.UriKind]::Absolute, [ref]$uri)) { return $null }
         if ($uri.UserInfo -or $uri.Query -or $uri.Fragment) { return $null }
@@ -126,7 +128,7 @@ function Get-BeaconExitCode($Code) {
     return ('exit_' + $number)
 }
 
-function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
+function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool]$IgnoreSpacing = $false) {
     try {
         if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return }
         if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return }
@@ -135,12 +137,14 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
         if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_BEACON_MIN_INTERVAL_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $spacing = $forced }
         $key = $Stage + '.' + $Code
         $now = [DateTime]::UtcNow
-        if ($script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
+        if (-not $IgnoreSpacing -and $script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
         $stamp = Join-Path (Join-Path $base 'runtime') ('beacon.' + $key)
-        try {
-            $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
-            if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
-        } catch { }
+        if (-not $IgnoreSpacing) {
+            try {
+                $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
+                if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
+            } catch { }
+        }
         $target = Get-BeaconTarget
         if (-not $target) { return }
         $script:beaconSent[$key] = $now
@@ -148,13 +152,17 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '') {
         $body = '{"v":1,"stage":"' + $Stage + '","code":"' + $Code + '"'
         if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
         $body += ',"os":"windows"}'
-        $post = '$ProgressPreference = ''SilentlyContinue''; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
-            'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri ''' + $target + ''' -ContentType ''application/json'' -Body ''' + $body + ''' -TimeoutSec 10 | Out-Null } catch { }'
+        # O codigo do filho e constante: endereco e corpo vao por variavel de ambiente (nada do config entra no codigo).
+        $post = '$Progress = 1; $ProgressPreference = ''SilentlyContinue''; ' +
+            'try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
+            'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $env:UNIOVER_BEACON_URI -ContentType ''application/json'' -Body $env:UNIOVER_BEACON_BODY -TimeoutSec 10 | Out-Null } catch { }'
         $info = New-Object System.Diagnostics.ProcessStartInfo
         $info.FileName = 'powershell.exe'
         $info.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ' + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($post))
         $info.UseShellExecute = $false
         $info.CreateNoWindow = $true
+        $info.EnvironmentVariables['UNIOVER_BEACON_URI'] = $target
+        $info.EnvironmentVariables['UNIOVER_BEACON_BODY'] = $body
         $child = [System.Diagnostics.Process]::Start($info)
         if ($null -ne $child) { $child.Dispose() }
     } catch { }
@@ -191,7 +199,7 @@ function Ensure-AgentPulse {
 }
 
 function Ensure-TvUseMarker {
-    # A marca de "a TV foi usada" (a DATA de `runtime	v-last-use`, que o agente atualiza): ela nasce aqui, com data antiga
+    # A marca de "a TV foi usada" (a DATA de `runtime\tv-last-use`, que o agente atualiza): ela nasce aqui, com data antiga
     # (nunca usada), pela mesma razao do `last-alive`: com o disco cheio o agente so consegue mudar a data de um arquivo que
     # ja existe. Um arquivo que ja existe fica como esta (o agente pode ter gravado um uso).
     $path = Join-Path $runtime 'tv-last-use'
@@ -499,6 +507,7 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
     # sincroniza sozinho, como sempre fez.
     $venvPython = Join-Path $runtime 'venv\Scripts\python.exe'
     $keptOk = ($script:keptForDisk -and $script:noSyncLaunch)
+    $usesKeptEnvironment = ($keptOk -and -not ($script:syncedVersion -and $script:syncedVersion -eq $before))
     if ((($script:syncedVersion -and $script:syncedVersion -eq $before) -or $keptOk) -and (Test-Path -LiteralPath $venvPython)) { $env:UV_NO_SYNC = '1' }
     # Um pedido explicito do dono (`update-now`) vale mais que o adiamento de 24 h de uma versao devolvida por culpa do PC.
     if ($Forced) { $env:UNIOVER_UPDATE_FORCE = '1' }
@@ -510,6 +519,16 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
     $exitCode = $run.ExitCode
     $output = $run.Output
     $after = Get-Version
+    # O codigo de manutencao nao importou no ambiente apenas mantido (faltam pacotes dele): repetir a cada checagem so geraria o mesmo
+    # erro. Registra uma vez e volta ao caminho normal (o update espera o sync completo da proxima subida).
+    if ($usesKeptEnvironment -and -not $run.TimedOut -and $exitCode -ne 0 -and $before -eq $after -and $output -match 'ModuleNotFoundError|ImportError|No module named|Failed to spawn') {
+        $script:keptForDisk = $false
+        if (-not $script:keptImportNoted) {
+            $script:keptImportNoted = $true
+            Write-SupLog 'WARNING' ('o update nao rodou no ambiente mantido por falta de espaco (importacao falhou): ' + (Get-Tail $output))
+            Add-Diagnostic 'update.kept_env_unusable' 'warn' 'a atualizacao nao rodou no ambiente Python mantido por falta de espaco; espera o proximo sync completo'
+        }
+    }
     if ($run.TimedOut) {
         Write-SupLog 'ERROR' ('self-update passou de ' + [int]$updateTimeoutSeconds + ' s e foi interrompido: ' + (Get-Tail $output))
         Add-Diagnostic 'update.timed_out' 'error' ('o processo de atualizacao passou do prazo e foi interrompido')
@@ -564,7 +583,11 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
                 Write-SupLog 'ERROR' 'nao consegui gravar a prova da versao nova (disco cheio?); volto para a anterior'
                 Add-Diagnostic 'update.trial_unwritable' 'error' 'nao consegui gravar a prova da versao nova; voltou para a anterior'
                 # Sem bloquear: a falha foi do PC (disco, antivirus), nao da versao; ela volta a ser tentada na proxima checagem.
-                [void](Invoke-Rollback 'nao consegui gravar a prova da versao nova (disco cheio); voltei para a anterior' $false 'lowdisk')
+                # Marcada como falta de espaco so se o disco esta mesmo baixo: sem espaco faltando o motivo e outro (antivirus, arquivo
+                # preso) e o adiamento normal, que cresce, vale.
+                $trialCause = ''
+                if (Test-LowDisk) { $trialCause = 'lowdisk' }
+                [void](Invoke-Rollback 'nao consegui gravar a prova da versao nova; voltei para a anterior' $false $trialCause)
             }
         }
         return $true
@@ -888,8 +911,9 @@ function Confirm-Trial {
 
 function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedido do administrador', [bool]$Block = $true, [string]$Cause = '') {
     # Volta para `app.previous` (a versao que a ultima atualizacao guardou) e bloqueia a que sai (salvo `$Block` falso: a
-    # versao que sai nao tem defeito, o problema foi do PC). `$Cause` 'lowdisk': a devolucao foi por falta de espaco; a versao
-    # fica listada em `.deferred-lowdisk` e o adiamento dela expira quando o disco volta com folga (o `self-update` le).
+    # versao que sai nao tem defeito, o problema foi do PC). `$Cause` 'lowdisk': a devolucao foi por falta de espaco; ela fica
+    # em `.deferred-lowdisk` (`sha|epoch`, o mesmo epoch da linha de `.deferred-versions`) e, se for a unica devolucao desse commit,
+    # o primeiro adiamento dele expira quando o disco volta com folga (o `self-update` le).
     try {
         if (-not (Test-Path -LiteralPath $previous)) { return $false }
         $bad = Get-Version
@@ -912,11 +936,12 @@ function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedi
         elseif ($bad) {
             # Devolvida por culpa do PC (demora, disco) e nao por defeito dela: nao e bloqueada, mas o self-update a adia por
             # 24 h (`.deferred-versions`, "sha|epoch"), senao atualizaria e voltaria em laco a cada checagem.
-            try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-versions') -Value ($bad + '|' + [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII } catch { }
+            $returnedAt = [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-versions') -Value ($bad + '|' + $returnedAt) -Encoding ASCII } catch { }
             # A causa fica em arquivo a parte: o formato de `.deferred-versions` e lido pela versao anterior (a que acabou de
             # voltar), que ignoraria uma linha com campo a mais e reinstalaria a versao devolvida na hora.
             if ($Cause -eq 'lowdisk') {
-                try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-lowdisk') -Value $bad -Encoding ASCII } catch { }
+                try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-lowdisk') -Value ($bad + '|' + $returnedAt) -Encoding ASCII } catch { }
             }
         }
         Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $blockedValue; checkedAt = (Get-UtcStamp (Get-Date)); reason = $Reason } | Out-Null
@@ -955,6 +980,8 @@ $syncTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS' 900
 $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
 # De quanto em quanto tempo a atualizacao adiada por causa do ambiente apenas mantido volta a ser considerada (30 min).
 $keptRetrySeconds = Get-Setting 'UNIOVER_SUPERVISOR_KEPT_RETRY_SECONDS' 1800
+# Um agente que passa disto de pe nao esta em laco de quedas rapidas (a baliza de "abriu" volta a valer).
+$stableSeconds = Get-Setting 'UNIOVER_SUPERVISOR_STABLE_SECONDS' 60
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
@@ -1082,7 +1109,7 @@ while ($true) {
     $started = Get-Date
     Write-SupLog 'INFO' ('agente iniciado (pid ' + $process.Id + ')')
     # Num laco de quedas rapidas o "abriu" de cada volta apagaria no servidor a falha da volta anterior: so o primeiro conta.
-    if ($script:fastExits -lt 1) { Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) }
+    if ($script:fastExits -lt 1) { Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $true }
     $restartForUpdate = $false
     $hung = $false
     # O pulso do agente e o `last-alive`, que ele regrava a cada minuto de dentro do laco de eventos: se o laco trava
@@ -1096,6 +1123,11 @@ while ($true) {
         Wait-Lap $lapSeconds $uv
         Touch-Alive
         $lap = Get-Date
+        # Depois de quedas rapidas, o agente que se firmou conta como recuperado: o "abriu" apaga no servidor a falha antiga.
+        if ($script:fastExits -gt 0 -and (($lap - $started).TotalSeconds -ge $stableSeconds)) {
+            $script:fastExits = 0
+            Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $true
+        }
         $slow = (($lap - $previousLap).TotalSeconds -gt $slowLapSeconds)
         $previousLap = $lap
         $write = $null
@@ -1225,7 +1257,7 @@ while ($true) {
     if (-not $restartForUpdate) {
         Write-SupLog 'WARNING' ('o agente terminou (codigo ' + $code + ') depois de ' + [int]$seconds + ' s')
         # Quedas rapidas e seguidas (menos de 60 s cada) viram `crash_loop`, o codigo que a tela do dono ja sabe nomear.
-        if ($seconds -lt 60) { $script:fastExits++ } else { $script:fastExits = 0 }
+        if ($seconds -lt $stableSeconds) { $script:fastExits++ } else { $script:fastExits = 0 }
         $exitBeacon = Get-BeaconExitCode $code
         if ($hung) { $exitBeacon = 'unresponsive' }
         elseif ($script:fastExits -ge 3) { $exitBeacon = 'crash_loop' }

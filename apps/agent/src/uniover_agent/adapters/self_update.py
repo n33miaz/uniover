@@ -442,17 +442,28 @@ DEFERRED_LOWDISK_FILE = ".deferred-lowdisk"
 DEFER_STEPS_SECONDS = (24 * 3600.0, 72 * 3600.0, 7 * 24 * 3600.0)
 
 
-def lowdisk_deferred(source: Path) -> set[str]:
-    """Commits devolvidos por falta de espaço (`.deferred-lowdisk`, um por linha).
+def lowdisk_deferred(source: Path) -> set[tuple[str, float]]:
+    """As devoluções por falta de espaço (`.deferred-lowdisk`, uma linha `sha|epoch` por devolução).
 
-    Arquivo à parte de propósito: `.deferred-versions` mantém o formato `sha|epoch` que a versão
-    anterior (a que volta numa devolução) sabe ler. Uma linha com campo a mais seria ignorada por
-    ela, e a versão devolvida seria reinstalada na hora."""
+    O `epoch` é o da linha da mesma devolução em `.deferred-versions`: só assim se sabe se a
+    devolução MAIS RECENTE de um commit foi por disco. Arquivo à parte de propósito:
+    `.deferred-versions` mantém o formato `sha|epoch` que a versão anterior (a que volta numa
+    devolução) sabe ler. Uma linha com campo a mais seria ignorada por ela, e a versão devolvida
+    seria reinstalada na hora."""
     try:
         text = (source.parent / "runtime" / DEFERRED_LOWDISK_FILE).read_text(encoding="utf-8")
     except OSError:
         return set()
-    return {line.strip() for line in text.splitlines() if _SHA.fullmatch(line.strip())}
+    marks: set[tuple[str, float]] = set()
+    for line in text.splitlines():
+        sha, _, stamp = line.strip().partition("|")
+        try:
+            moment = float(stamp)
+        except ValueError:
+            continue
+        if _SHA.fullmatch(sha):
+            marks.add((sha, moment))
+    return marks
 
 
 def deferred_versions(source: Path, now: float, *, disk_ok: bool = False) -> set[str]:
@@ -462,9 +473,12 @@ def deferred_versions(source: Path, now: float, *, disk_ok: bool = False) -> set
     atualizar e voltar: ficam adiados (`sha|epoch`, uma linha por devolução), cada vez por mais
     tempo (`DEFER_STEPS_SECONDS`), contado da última devolução.
 
-    Com `disk_ok` (o disco voltou com folga), o adiamento dos commits devolvidos por falta de
-    espaço expira na hora, sem esperar as 24 h: a causa passou. A contagem das devoluções segue
-    valendo, então uma nova devolução do mesmo commit continua adiada por mais tempo."""
+    Com `disk_ok` (o disco voltou com folga), pula-se SÓ o primeiro degrau (as 24 h) de um commit
+    cuja única devolução foi por falta de espaço: a causa passou, e a primeira falha por disco não
+    deve segurar a versão por um dia. A partir da segunda devolução vale o adiamento que cresce
+    (72 h, uma semana) mesmo com o disco livre, e uma devolução mais recente por outro motivo
+    (demora, prova que não gravou com disco sobrando) também volta ao adiamento normal: sem isso o
+    PC fraco repetiria o ciclo de instalar e voltar a cada checagem."""
     try:
         path = source.parent / "runtime" / DEFERRED_VERSIONS_FILE
         entries = path.read_text(encoding="utf-8").splitlines()
@@ -480,9 +494,9 @@ def deferred_versions(source: Path, now: float, *, disk_ok: bool = False) -> set
         if _SHA.fullmatch(sha):
             returns.setdefault(sha, []).append(since)
     deferred: set[str] = set()
-    expired = lowdisk_deferred(source) if disk_ok else set()
+    by_disk = lowdisk_deferred(source) if disk_ok else set()
     for sha, stamps in returns.items():
-        if sha in expired:
+        if len(stamps) == 1 and (sha, stamps[0]) in by_disk:
             continue
         period = DEFER_STEPS_SECONDS[min(len(stamps), len(DEFER_STEPS_SECONDS)) - 1]
         # Um carimbo no futuro (o relógio voltou) conta como adiado, até um período à frente. Os
@@ -706,30 +720,43 @@ def _clear_tv_wait(source: Path) -> None:
 
 
 def should_wait_for_tv(
-    source: Path, now: float, *, in_use: bool, max_defer_seconds: float = TV_MAX_DEFER_SECONDS
+    source: Path,
+    now: float,
+    *,
+    sha: str,
+    in_use: bool,
+    max_defer_seconds: float = TV_MAX_DEFER_SECONDS,
 ) -> bool:
-    """A atualização deve esperar a TV ficar parada? Espera no máximo `max_defer_seconds`.
+    """A atualização para `sha` deve esperar a TV parar? Espera no máximo `max_defer_seconds`.
 
     O relógio da espera começa na primeira checagem em que havia atualização e a TV estava em uso,
-    e fica guardado em `runtime\\.update-waiting-for-tv` (um reinício do agente não o zera, senão
-    reinícios seguidos adiariam para sempre). Com a TV parada ele é apagado. Se o relógio não puder
+    e fica guardado, com o commit a que se refere, em `runtime\\.update-waiting-for-tv`
+    (`sha|epoch`; um reinício do agente não o zera, senão reinícios seguidos adiariam para sempre).
+    Outro commit recomeça a contagem. Com a TV parada o arquivo é apagado. Se o relógio não puder
     ser gravado (disco), não espera: sem como contar, o teto não se faria valer."""
     if not in_use or max_defer_seconds <= 0:
         _clear_tv_wait(source)
         return False
     path = source.parent / "runtime" / TV_WAIT_FILE
+    since: float | None = None
     try:
-        since: float | None = float(path.read_text(encoding="utf-8").strip())
+        saved_sha, _, saved_at = path.read_text(encoding="utf-8").strip().partition("|")
+        if saved_sha == sha:
+            since = float(saved_at)
     except OSError, ValueError:
         since = None
     if since is None or since > now:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(f"{now:.0f}\n", encoding="utf-8")
+            path.write_text(f"{sha}|{now:.0f}\n", encoding="utf-8")
         except OSError:
             return False
         return True
     return now - since < max_defer_seconds
+
+
+class _TvBusyAgain(SelfUpdateError):  # noqa: N818 - não é um erro: é o adiamento
+    """A TV voltou a ser usada enquanto a candidata era preparada: não se troca a versão agora."""
 
 
 def _low_disk_result(free: int | None, minimum: int, sha: str) -> UpdateResult | None:
@@ -785,6 +812,18 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         )
     sha: str | None = None
     started = monotonic()
+    # Só a espera pela TV mantém o relógio dela: qualquer outro desfecho o apaga (a próxima espera
+    # recomeça do zero, em vez de herdar um relógio velho).
+    waiting_for_tv = False
+
+    def tv_must_wait(candidate: str) -> bool:
+        return not ignore_deferral and should_wait_for_tv(
+            source,
+            wall(),
+            sha=candidate,
+            in_use=tv_in_use(source, wall(), tv_idle_seconds),
+            max_defer_seconds=tv_max_defer_seconds,
+        )
 
     def within_budget() -> None:
         if monotonic() - started > WORST_CASE_SECONDS:
@@ -794,7 +833,6 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         sha = (fetch_latest or (lambda: latest_commit(channel)))()
         within_budget()
         if read_version(source) == sha:
-            _clear_tv_wait(source)
             return UpdateResult(
                 False, "o agente já está na versão mais recente", "up_to_date", latest=sha
             )
@@ -820,12 +858,8 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         low = _low_disk_result(free, min_free_bytes, sha)
         if low is not None:
             return low
-        if not ignore_deferral and should_wait_for_tv(
-            source,
-            wall(),
-            in_use=tv_in_use(source, wall(), tv_idle_seconds),
-            max_defer_seconds=tv_max_defer_seconds,
-        ):
+        if tv_must_wait(sha):
+            waiting_for_tv = True
             _log.info("atualização adiada: a TV foi usada há pouco; espero ela ficar parada")
             return UpdateResult(
                 False,
@@ -855,8 +889,10 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                     within_budget()
                 run_check(new)
                 within_budget()
+                # Baixar e montar leva minutos: a TV pode ter voltado a ser usada nesse intervalo.
+                if tv_must_wait(sha):
+                    raise _TvBusyAgain("a TV voltou a ser usada; a troca fica para quando parar")
                 promote(source, new, sha, record_trial)
-                _clear_tv_wait(source)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
                 raise
@@ -864,11 +900,23 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 shutil.rmtree(candidate_env(new), ignore_errors=True)
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
+    except _TvBusyAgain:
+        waiting_for_tv = True
+        _log.info("atualização adiada: a TV voltou a ser usada enquanto eu preparava a versão nova")
+        return UpdateResult(
+            False,
+            "a TV está em uso; a atualização espera ela ficar parada",
+            "deferred_busy",
+            latest=sha,
+        )
     except UpdateRejected as exc:
         _log.error("atualização recusada: %s", exc, extra={"recorded": True})
         return UpdateResult(False, f"pacote recusado: {exc}", "failed", latest=sha, rejected=True)
     except (SelfUpdateError, OSError) as exc:
         _log.warning("auto-atualização adiada: %s", exc)
         return UpdateResult(False, f"não atualizei agora: {exc}", "failed", latest=sha)
+    finally:
+        if not waiting_for_tv:
+            _clear_tv_wait(source)
     _log.info("agente atualizado")
     return UpdateResult(True, "agente atualizado", "updated", latest=sha)

@@ -105,7 +105,7 @@ def test_a_wait_clock_that_cannot_be_written_does_not_wait(installed: Installati
     mark_use(installed, 5)
     runtime = installed.base / "runtime"
     (runtime / module.TV_WAIT_FILE).mkdir()  # uma pasta no lugar do arquivo: gravar falha
-    assert module.should_wait_for_tv(installed.source, NOW, in_use=True) is False
+    assert module.should_wait_for_tv(installed.source, NOW, sha=NEW, in_use=True) is False
 
 
 def test_an_agent_that_is_already_current_forgets_the_wait(installed: Installation) -> None:
@@ -137,11 +137,42 @@ async def test_the_session_reports_only_real_use() -> None:
     await manager.reopen_unattended()
     clock.advance(10)
     assert manager.seconds_since_use() is None  # a reabertura sozinha não é uso
-    manager.set_keep_hot(True)
-    assert manager.seconds_since_use() is None  # nem o modo foco
+    await manager.wake()
+    clock.advance(10)
+    # A tela do controle aberta (o `wake` periódico) só pré-aquece: não é uso, nem a abertura dele.
+    assert manager.seconds_since_use() is None
     await manager.send_key("HOME")
     clock.advance(42)
     assert manager.seconds_since_use() == 42.0
+
+
+async def test_the_background_recovery_after_a_drop_is_not_use() -> None:
+    clock = FakeClock()
+    remote = FakeTvRemote()
+    manager = TvSessionManager(clock, remote)
+    await manager.wake()
+    remote.drop()  # a TV derrubou a sessão: o vigia de fundo a reabre sozinho
+    await manager.settle()
+    assert remote.connects == 2
+    assert manager.seconds_since_use() is None
+    await manager.send_key("HOME")
+    remote.drop()
+    await manager.settle()
+    clock.advance(30)
+    assert (
+        manager.seconds_since_use() == 30.0
+    )  # o comando de antes segue valendo, a recuperação não o renova
+
+
+async def test_a_session_kept_warm_for_playback_counts_as_use_until_released() -> None:
+    clock = FakeClock()
+    manager = TvSessionManager(clock, FakeTvRemote())
+    await manager.wake()
+    manager.set_keep_hot(True)
+    clock.advance(600)
+    assert manager.seconds_since_use() == 0.0
+    manager.set_keep_hot(False)
+    assert manager.seconds_since_use() is None
 
 
 def test_the_marker_carries_the_last_use_into_the_file_date(tmp_path: Path) -> None:
@@ -173,17 +204,22 @@ def test_the_marker_creates_the_file_when_it_is_missing_and_survives_failure(
 # --- espaço em disco: o adiamento por falta de espaço expira quando o disco volta ---------
 
 
-def defer(pc: Installation, *, lowdisk: bool, returns: int = 1) -> None:
+def defer(pc: Installation, *returns: bool, ago: int = 3600) -> None:
+    """Uma linha em `.deferred-versions` por devolução (True: devolvida por falta de espaço).
+
+    A última devolução foi há `ago` s; as anteriores, uma hora antes uma da outra."""
     runtime = pc.base / "runtime"
+    stamps = [int(NOW) - ago - 3600 * (len(returns) - 1 - n) for n in range(len(returns))]
     (runtime / ".deferred-versions").write_text(
-        f"{NEW}|{int(NOW) - 3600}\n" * returns, encoding="ascii"
+        "".join(f"{NEW}|{stamp}\n" for stamp in stamps), encoding="ascii"
     )
-    if lowdisk:
-        (runtime / module.DEFERRED_LOWDISK_FILE).write_text(NEW + "\n", encoding="ascii")
+    marks = "".join(f"{NEW}|{stamp}\n" for stamp, low in zip(stamps, returns, strict=True) if low)
+    if marks:
+        (runtime / module.DEFERRED_LOWDISK_FILE).write_text(marks, encoding="ascii")
 
 
 def test_a_low_disk_deferral_expires_when_the_disk_has_room_again(installed: Installation) -> None:
-    defer(installed, lowdisk=True)
+    defer(installed, True)
     assert module.deferred_versions(installed.source, NOW) == {NEW}
     assert module.deferred_versions(installed.source, NOW, disk_ok=True) == set()
 
@@ -191,20 +227,20 @@ def test_a_low_disk_deferral_expires_when_the_disk_has_room_again(installed: Ins
 def test_only_the_versions_returned_for_lack_of_space_expire_with_the_disk(
     installed: Installation,
 ) -> None:
-    defer(installed, lowdisk=False)  # devolvida por demora, não por disco
+    defer(installed, False)  # devolvida por demora, não por disco
     assert module.deferred_versions(installed.source, NOW, disk_ok=True) == {NEW}
 
 
 def test_the_deferral_file_keeps_its_old_format(installed: Installation) -> None:
     # A versão anterior (a que volta numa devolução) lê `.deferred-versions` como `sha|epoch`: a
     # causa vai em arquivo à parte, senão ela ignoraria a linha e reinstalaria a devolvida.
-    defer(installed, lowdisk=True)
+    defer(installed, True)
     lines = (installed.base / "runtime" / ".deferred-versions").read_text(encoding="ascii")
     assert [line.count("|") for line in lines.splitlines()] == [1]
 
 
 def test_the_update_runs_when_the_disk_came_back_with_room(installed: Installation) -> None:
-    defer(installed, lowdisk=True)
+    defer(installed, True)
     # 1 GB livres: acima do mínimo para atualizar, mas ainda sem a folga que a devolvida pede.
     assert update(installed, free=1 * GIB).outcome == "deferred"
     assert installed.downloads == []
@@ -214,10 +250,90 @@ def test_the_update_runs_when_the_disk_came_back_with_room(installed: Installati
 def test_a_low_disk_deferral_does_not_hide_a_version_while_the_disk_is_still_low(
     installed: Installation,
 ) -> None:
-    defer(installed, lowdisk=True)
+    defer(installed, True)
     result = update(installed, free=100 * 1024 * 1024)
     assert result.outcome == "deferred"
     assert installed.downloads == []
+
+
+def test_the_exemption_is_only_for_a_first_return_that_was_for_lack_of_space(
+    installed: Installation,
+) -> None:
+    day = 24 * 3600
+    # Uma devolução por disco e, depois, uma por outro motivo: vale o adiamento normal (e cresce).
+    defer(installed, True, False)
+    assert module.deferred_versions(installed.source, NOW, disk_ok=True) == {NEW}
+    assert module.deferred_versions(installed.source, NOW + 2 * day, disk_ok=True) == {NEW}
+    assert module.deferred_versions(installed.source, NOW + 4 * day, disk_ok=True) == set()
+    # O contrário (a última foi por disco, mas já havia outra devolução): também cresce.
+    defer(installed, False, True)
+    assert module.deferred_versions(installed.source, NOW, disk_ok=True) == {NEW}
+
+
+def test_repeated_returns_for_lack_of_space_still_grow_the_deferral(
+    installed: Installation,
+) -> None:
+    day = 24 * 3600
+    defer(installed, True, True)  # segunda devolução por disco: 72 h mesmo com o disco livre
+    assert module.deferred_versions(installed.source, NOW, disk_ok=True) == {NEW}
+    assert module.deferred_versions(installed.source, NOW + 2 * day, disk_ok=True) == {NEW}
+    assert module.deferred_versions(installed.source, NOW + 4 * day, disk_ok=True) == set()
+    defer(installed, True, True, True)  # terceira: uma semana
+    assert module.deferred_versions(installed.source, NOW + 6 * day, disk_ok=True) == {NEW}
+
+
+def test_a_mark_in_the_old_format_never_exempts_anything(installed: Installation) -> None:
+    defer(installed, False)
+    (installed.base / "runtime" / module.DEFERRED_LOWDISK_FILE).write_text(
+        NEW + "\n", encoding="ascii"
+    )
+    assert module.deferred_versions(installed.source, NOW, disk_ok=True) == {NEW}
+
+
+def test_the_wait_clock_restarts_when_the_candidate_changes(installed: Installation) -> None:
+    other = "c" * 40
+    marker = mark_use(installed, 0)
+    assert update(installed).outcome == "deferred_busy"
+    moment = NOW + 23 * 3600
+    os.utime(marker, (moment, moment))
+    result = installed.update(other, wall=lambda: moment, free_bytes=lambda _folder: 50 * GIB)
+    assert result.outcome == "deferred_busy"
+    # 25 h depois da primeira espera, mas só 2 h depois da espera pelo commit novo: ainda espera.
+    later = NOW + 25 * 3600
+    os.utime(marker, (later, later))
+    assert installed.update(other, wall=lambda: later, free_bytes=lambda _f: 50 * GIB).outcome == (
+        "deferred_busy"
+    )
+
+
+def test_any_other_outcome_forgets_the_wait_clock(installed: Installation) -> None:
+    mark_use(installed, 0)
+    assert update(installed).outcome == "deferred_busy"
+    waiting = installed.base / "runtime" / module.TV_WAIT_FILE
+    assert waiting.is_file()
+
+    def broken(_sha: str, _destination: Path) -> None:
+        raise module.SelfUpdateError("sem rede")
+
+    later = NOW + 3600  # a marca de uso ficou velha: a TV parou
+    result = installed.update(
+        NEW, wall=lambda: later, free_bytes=lambda _f: 50 * GIB, download=broken
+    )
+    assert result.outcome == "failed"
+    assert not waiting.exists()
+
+
+def test_the_tv_is_checked_again_right_before_the_swap(installed: Installation) -> None:
+    # Baixar e montar leva minutos: a TV foi usada enquanto a candidata era preparada.
+    def used_meanwhile(_candidate: Path) -> None:
+        mark_use(installed, 1)
+
+    result = update(installed, run_check=used_meanwhile)
+    assert result.outcome == "deferred_busy" and not result.updated
+    assert read_version(installed) == OLD  # nada foi trocado
+    assert installed.leftovers() == []  # a candidata não ficou pelo caminho
+    assert not (installed.base / "runtime" / "update-trial.txt").exists()
+    assert (installed.base / "runtime" / module.TV_WAIT_FILE).is_file()
 
 
 def read_version(pc: Installation) -> str | None:

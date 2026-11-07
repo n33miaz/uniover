@@ -154,3 +154,88 @@ def test_the_supervisor_creates_the_tv_use_marker_with_an_old_date_and_keeps_an_
     with heartbeat(pc.alive), pc.running():
         assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
     assert marker.stat().st_mtime == pytest.approx(used, abs=1)
+
+
+def rollback_after_an_unwritable_trial(
+    pc: Pc, tmp_path: Path, *, disk_fills: bool
+) -> tuple[str, str]:
+    """Uma versão nova entra, a prova dela não grava e o supervisor volta para a anterior.
+
+    A prova não grava porque o caminho dela é uma pasta (o antivírus ou o disco cheio fazem igual).
+    Com `disk_fills`, o espaço livre cai durante a atualização. Devolve o conteúdo de
+    `.deferred-versions` e de `.deferred-lowdisk` ("" se o arquivo não existe)."""
+    previous = pc.base / "app.previous"
+    (previous / "tools").mkdir(parents=True)
+    (previous / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (previous / "tools" / "run-agent.ps1").write_text("exit 0\n", encoding="ascii")
+    (previous / ".version").write_text("c" * 40 + "\n", encoding="ascii")
+    (pc.runtime / "update-trial.txt").mkdir()
+    free = tmp_path / "free-mb.txt"
+    free.write_text("5000", encoding="ascii")
+    lines = ["echo " + "d" * 40 + '>"%UNIOVER_TEST_APP%\\.version"']
+    if disk_fills:
+        lines.append('echo 10>"%UNIOVER_TEST_FREE%"')
+    lines.append("exit /b 0")
+    pc.uv(["exit /b 0"], update_lines=lines)
+    deferred = pc.runtime / ".deferred-versions"
+    with pc.running(
+        UNIOVER_TEST_APP=str(pc.base / "app"),
+        UNIOVER_TEST_FREE=str(free),
+        UNIOVER_SUPERVISOR_TEST_FREE_MB_FILE=str(free),
+    ):
+        assert wait_for(deferred.exists, 90), pc.supervisor_log()
+    lowdisk = pc.runtime / ".deferred-lowdisk"
+    return (
+        deferred.read_text(encoding="ascii"),
+        lowdisk.read_text(encoding="ascii") if lowdisk.exists() else "",
+    )
+
+
+def test_a_trial_that_cannot_be_written_with_plenty_of_disk_is_a_normal_deferral(
+    pc: Pc, tmp_path: Path
+) -> None:
+    deferred, lowdisk = rollback_after_an_unwritable_trial(pc, tmp_path, disk_fills=False)
+    assert deferred.startswith("d" * 40 + "|")
+    assert lowdisk == ""  # o espaço não faltou: o adiamento que cresce vale, sem a isenção do disco
+
+
+def test_a_trial_that_cannot_be_written_because_the_disk_filled_is_marked_with_the_same_epoch(
+    pc: Pc, tmp_path: Path
+) -> None:
+    deferred, lowdisk = rollback_after_an_unwritable_trial(pc, tmp_path, disk_fills=True)
+    assert deferred.startswith("d" * 40 + "|")
+    assert lowdisk.strip() == deferred.strip()  # `sha|epoch`, o mesmo da linha do adiamento
+
+
+def test_an_update_that_cannot_import_on_the_kept_environment_is_noted_once_then_waits(
+    pc: Pc, tmp_path: Path
+) -> None:
+    venv_python(pc)
+    free = tmp_path / "free-mb.txt"
+    free.write_text("100", encoding="ascii")
+    seen = tmp_path / "updates.txt"
+    pc.uv(
+        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        sync_lines=["echo sem espaco 1>&2", "exit /b 1"],
+        update_lines=[
+            'echo x>>"%UNIOVER_TEST_UPDATES%"',
+            "echo ModuleNotFoundError: No module named httpx 1>&2",
+            "exit /b 1",
+        ],
+    )
+    with (
+        heartbeat(pc.alive),
+        pc.running(
+            UNIOVER_SUPERVISOR_TEST_FREE_MB_FILE=str(free),
+            UNIOVER_SUPERVISOR_KEPT_RETRY_SECONDS="3",
+            UNIOVER_TEST_UPDATES=str(seen),
+        ),
+    ):
+        assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
+        free.write_text("5000", encoding="ascii")
+        assert wait_for(seen.exists, 40), pc.supervisor_log()
+        time.sleep(12)  # várias checagens de 3 s: nenhuma repete o update
+    assert len(seen.read_text("ascii").split()) == 1
+    kinds = [item["kind"] for item in pc.diagnostics()]
+    assert kinds.count("update.kept_env_unusable") == 1
+    assert pc.starts() == 1  # sem reinício e sem apagar o ambiente

@@ -4,6 +4,7 @@ Os scripts de verdade (Windows PowerShell 5.1) numa instalação falsa em pasta 
 (`LOCALAPPDATA` trocado), com um servidor HTTP local no lugar da API: nada sai do computador.
 """
 
+import base64
 import json
 import os
 import re
@@ -91,6 +92,35 @@ def configure(base: Path, api_url: str, slug: str = SLUG) -> None:
     )
 
 
+def beacon_children() -> int:
+    """Quantos processos de POST de baliza ainda vivem (o código do filho é constante)."""
+    prefix = base64.b64encode("$Progress".encode("utf-16-le")).decode("ascii")
+    script = (
+        "@(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | "
+        f"Where-Object {{ $_.ProcessId -ne $PID -and "
+        f"$_.CommandLine -like '*-EncodedCommand {prefix}*' }}).Count"
+    )
+    result = subprocess.run(  # noqa: S603 - Windows PowerShell do sistema; consulta só de leitura
+        [str(POWERSHELL), "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        creationflags=0x08000000,
+    )
+    return int(result.stdout.strip() or "0")
+
+
+def settle_beacons(pc: Pc, *, seconds: float = 40.0) -> None:
+    """Espera o supervisor passar da hora de avisar e todo POST de baliza acabar.
+
+    Uma ausência só prova alguma coisa depois disso: um tempo fixo curto passaria mesmo com o POST
+    atrasado a caminho."""
+    assert wait_for(lambda: "agente iniciado" in pc.supervisor_log(), 30), pc.supervisor_log()
+    time.sleep(2)  # o aviso sai logo depois do registro de partida
+    assert wait_for(lambda: beacon_children() == 0, seconds), "o POST da baliza não terminou"
+
+
 @pytest.fixture
 def pc(tmp_path: Path) -> Pc:
     return Pc(tmp_path)
@@ -118,13 +148,13 @@ def test_nothing_is_sent_without_a_configuration_or_with_a_bad_one(pc: Pc, api: 
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     with heartbeat(pc.alive), pc.running():  # sem agent.toml
         assert wait_for(lambda: pc.starts() >= 1, 30)
-        time.sleep(4)
+        settle_beacons(pc)
     assert api.requests == []
     configure(pc.base, "https://user:senha@exemplo.invalid", SLUG)  # credencial no endereço
     pc.agents.unlink()
     with heartbeat(pc.alive), pc.running():
         assert wait_for(lambda: pc.starts() >= 1, 30)
-        time.sleep(4)
+        settle_beacons(pc)
     assert api.requests == []
 
 
@@ -184,15 +214,52 @@ def test_the_beacon_state_file_keeps_a_new_supervisor_from_repeating_it(
     pc: Pc, api: FakeApi
 ) -> None:
     configure(pc.base, api.url)
+    pc.uv(["exit /b 7"])
+    with pc.running():
+        assert wait_for(lambda: api.count("child_exit.exit_7") >= 1, 60), pc.supervisor_log()
+    assert (pc.runtime / "beacon.child_exit.exit_7").is_file()
+    starts = pc.starts()
+    with pc.running():  # outro supervisor, minutos antes da janela acabar, com o mesmo erro
+        assert wait_for(lambda: pc.starts() > starts, 40), pc.supervisor_log()
+        settle_beacons(pc)
+    assert api.count("child_exit.exit_7") == 1
+
+
+def test_a_recovered_agent_clears_an_old_failure_even_inside_the_ten_minute_window(
+    pc: Pc, api: FakeApi, tmp_path: Path
+) -> None:
+    configure(pc.base, api.url)
+    flag = tmp_path / "ran-once.txt"
+    pc.uv(
+        [
+            'if exist "%UNIOVER_TEST_FLAG%" goto stay',
+            'echo x>"%UNIOVER_TEST_FLAG%"',
+            "exit /b 1",
+            ":stay",
+            "ping -n 300 127.0.0.1 > nul",
+            "exit /b 0",
+        ]
+    )
+    with (
+        heartbeat(pc.alive),
+        pc.running(UNIOVER_TEST_FLAG=str(flag), UNIOVER_SUPERVISOR_STABLE_SECONDS="3"),
+    ):
+        assert wait_for(lambda: api.count("child_spawn.ok") >= 2, 90), api.codes()
+    codes = api.codes()
+    # "abriu", caiu, e só depois de firmado o segundo "abriu" (não o da volta em que ainda caía).
+    assert codes.index("child_exit.exit_1") < len(codes) - 1
+    assert codes[-1] == "child_spawn.ok" and codes.count("child_spawn.ok") == 2
+
+
+def test_the_url_and_body_travel_by_environment_not_inside_the_child_code(
+    pc: Pc, api: FakeApi
+) -> None:
+    # Caracteres que um código montado por texto sofreria (`;`, `$`, `(`) chegam intactos.
+    configure(pc.base, api.url + "/base;$(x)")
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     with heartbeat(pc.alive), pc.running():
-        assert wait_for(lambda: api.count("child_spawn.ok") >= 1, 40)
-    assert (pc.runtime / "beacon.child_spawn.ok").is_file()
-    pc.agents.unlink()
-    with heartbeat(pc.alive), pc.running():  # outro supervisor, minutos antes da janela acabar
-        assert wait_for(lambda: pc.starts() >= 1, 30)
-        time.sleep(4)
-    assert api.count("child_spawn.ok") == 1
+        assert wait_for(lambda: api.count("child_spawn.ok") >= 1, 40), pc.supervisor_log()
+    assert api.requests[0][0] == "/base;$(x)" + ROUTE
 
 
 def test_the_launcher_reports_that_it_started(tmp_path: Path, api: FakeApi) -> None:
@@ -284,6 +351,9 @@ def target_of(tmp_path: Path, toml: str) -> str:
         ),
         ('api_url = "http://uniover.example"\nagent_id = "pc-de-casa"\n', "NONE"),
         ('api_url = "https://uniover.example"\nagent_id = "PC de Casa"\n', "NONE"),
+        ('api_url = "https://uniover.example/\u2018x\u2019"\nagent_id = "pc-de-casa"\n', "NONE"),
+        ('api_url = "https://uniover.example/\u201cx"\nagent_id = "pc-de-casa"\n', "NONE"),
+        ('api_url = "https://uni\u00e3o.example"\nagent_id = "pc-de-casa"\n', "NONE"),
         ('api_url = "https://u:p@uniover.example"\nagent_id = "pc-de-casa"\n', "NONE"),
         ('api_url = "https://uniover.example/?x=1"\nagent_id = "pc-de-casa"\n', "NONE"),
         ('api_url = "https://uniover.example"\n', "NONE"),
