@@ -167,6 +167,8 @@ export class AuthService {
    * token de acesso fica em memória, a renovação é agendada e a conta é lida. O cookie de refresh já veio na resposta.
    */
   async signInWithTokens(tokens: TokenResponse): Promise<void> {
+    // Entrar por cima de outra sessão: o que ela deixou no outro lado se desfaz com o token dela, antes de ele sair da memória.
+    if (this.session.status() !== 'anonymous') await this.session.beforeEnd();
     // Sessão nova (família nova): a incerteza de uma renovação da sessão anterior não vale mais.
     this.marker.clear();
     this.session.setToken(tokens.accessToken, tokens.expiresIn);
@@ -183,6 +185,8 @@ export class AuthService {
   async logout(): Promise<boolean> {
     let confirmed = true;
     if (this.session.status() !== 'anonymous') {
+      // Ainda com o token desta conta: quem tem algo a desfazer no outro lado (um botão apertado no PC) faz agora.
+      await this.session.beforeEnd();
       try {
         await this.authorized((token) => this.api.logout(token), {
           stepUp: false,

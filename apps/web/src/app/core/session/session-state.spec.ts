@@ -352,3 +352,45 @@ describe('SessionState', () => {
     });
   });
 });
+
+describe('SessionState before-end callbacks', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('runs every registered callback and waits for them', async () => {
+    const state = TestBed.inject(SessionState);
+    const done: string[] = [];
+    state.onBeforeEnd(async () => {
+      await Promise.resolve();
+      done.push('a');
+    });
+    state.onBeforeEnd(() => done.push('b'));
+    await state.beforeEnd();
+    expect(done.sort()).toEqual(['a', 'b']);
+  });
+
+  it('stops calling one that was unregistered, and survives one that throws', async () => {
+    const state = TestBed.inject(SessionState);
+    const called = vi.fn();
+    const off = state.onBeforeEnd(called);
+    state.onBeforeEnd(() => {
+      throw new Error('falhou');
+    });
+    await state.beforeEnd();
+    off();
+    await state.beforeEnd();
+    expect(called).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up waiting after the limit, so leaving is never held by a slow request', async () => {
+    vi.useFakeTimers();
+    const state = TestBed.inject(SessionState);
+    state.onBeforeEnd(() => new Promise<void>(() => undefined));
+    let finished = false;
+    const waiting = state.beforeEnd(500).then(() => (finished = true));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await waiting;
+    expect(finished).toBe(true);
+  });
+});
