@@ -47,6 +47,9 @@ class FakeInput:
     def media(self, action: str, steps: int) -> None:
         self._record("media", action, steps)
 
+    def release_all(self) -> None:
+        self.calls.append(("release_all",))
+
 
 class FakePower:
     def __init__(self) -> None:
