@@ -188,7 +188,6 @@ public sealed class GatewayTests(PostgresFixture postgres)
     public async Task LiveMessages_ToAnAgentWithoutASession_FailAtOnce_WithoutWaitingTheReconnectGrace()
     {
         await using var app = await TransportApp.StartAsync(postgres);
-        var before = app.App.Time.GetUtcNow();
 
         // O relógio é falso e ninguém o avança: quem esperasse a janela de 25 s ficaria pendurado até o teste estourar.
         var send = await Within(app.Gateway.SendAsync(app.Agent.Slug, Live(), TestContext.Current.CancellationToken));
@@ -196,7 +195,6 @@ public sealed class GatewayTests(PostgresFixture postgres)
 
         send.Error.Code.Should().Be("agent_offline");
         request.Error.Code.Should().Be("agent_offline");
-        app.App.Time.GetUtcNow().Should().Be(before);
     }
 
     [Fact]

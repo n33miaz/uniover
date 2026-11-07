@@ -461,6 +461,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         using var response = await PostAsync(app, "key", new { key = "ENTER" });
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-offline", "a presença já mostra a queda: é desconectado, não reconectando");
     }
 
     // ---- permissão ----
@@ -660,7 +661,6 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await agent.DisposeAsync();
         await WaitUntilTheServerLostTheSessionAsync(app);
         app.Presence.Get(app.Agent.Slug)!.Connected.Should().BeTrue("a presença segue verde durante a graça");
-        var before = app.App.Time.GetUtcNow();
 
         (string Path, object? Body)[] commands =
         [
@@ -678,10 +678,8 @@ public sealed class PcControlTests(PostgresFixture postgres)
             using var response = await Within(PostAsync(app, path, body));
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, path);
-            (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-offline", path);
+            (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting", path);
         }
-
-        app.App.Time.GetUtcNow().Should().Be(before);
 
         await using var back = await ConnectPcAsync(app);
         // A graça de presença já mostra o PC conectado, então se espera a sessão nova de verdade: o pedido só passa (204) quando ela existe.
@@ -711,7 +709,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         using var response = await Within(PostAsync(app, "pointer", new { dx = 9, dy = 9, scrollY = 120 }));
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-offline");
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting");
     }
 
     // ---- o texto digitado nunca vai a log nem a auditoria ----
@@ -768,25 +766,57 @@ public sealed class PcControlTests(PostgresFixture postgres)
         JsonSerializer.Serialize(rows).Should().NotContain(secret);
     }
 
-    // ---- limite de taxa: mídia e teclas têm balde próprio, acima dos 300 por minuto dos comandos comuns ----
-
+    // ---- limite de taxa: clique, tecla, texto e mídia têm balde próprio, acima dos 300 por minuto dos comandos comuns ----
     [Fact]
-    public async Task Media_HasItsOwnLimitOfSixHundredPerMinute_SoTheVolumeRepeatNeverGets429()
+    public async Task ClickKeyTextAndMedia_ShareOneBucketOfSixHundredPerMinute_SeparateFromTheOrdinaryCommands()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         var agent = await ConnectPcAsync(app);
-        await agent.DisposeAsync();
-        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+        using var stop = new CancellationTokenSource();
 
-        // O volume segurado repete a cada 190 ms (uns 316 por minuto) e passa do teto de 300 dos comandos comuns. Com o PC fora
-        // do ar o pedido volta 503 na hora, mas já passou pelo limitador: o que interessa aqui é só nunca ser 429.
+        // O agente simulado atende todos os comandos, como o de verdade: o limite é provado com o PC no ar.
+        var pump = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    while (!stop.IsCancellationRequested)
+                    {
+                        await AnswerAsync(agent);
+                    }
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or TimeoutException or InvalidOperationException or System.Net.WebSockets.WebSocketException or ObjectDisposedException)
+                {
+                    // Fim do teste: o servidor fechou o canal junto com o app.
+                }
+            },
+            Ct);
+
+        // 600 pedidos misturados passam do teto de 300 dos comandos comuns sem um 429: o volume segurado (uns 316 por minuto)
+        // e as teclas repetidas moram todos neste balde.
+        (string Path, object Body)[] inputs =
+        [
+            ("click", new { button = "LEFT" }),
+            ("key", new { key = "ENTER" }),
+            ("text", new { text = "a" }),
+            ("media", new { action = "VOLUME_UP" }),
+        ];
         for (var i = 0; i < 600; i++)
         {
-            using var response = await PostAsync(app, "media", new { action = "VOLUME_UP" });
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, $"o pedido {i} cabe no balde da mídia");
+            var (path, body) = inputs[i % inputs.Length];
+            using var response = await PostAsync(app, path, body);
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent, $"o pedido {i} ({path}) cabe no balde de entrada do PC");
         }
 
-        using var limited = await PostAsync(app, "media", new { action = "VOLUME_UP" });
-        limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "ainda há teto: 600 por minuto");
+        // O 601º, de qualquer um dos quatro, bate no teto: o balde é um só.
+        using var limited = await PostAsync(app, "key", new { key = "ENTER" });
+        limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "o balde de entrada tem teto: 600 por minuto");
+
+        // E o balde dos comandos comuns segue intacto: o estado ainda responde.
+        using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        status.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // O agente e a bomba de respostas terminam com o app, que fecha o canal: fechar o agente aqui disputaria a leitura.
+        await stop.CancelAsync();
     }
 }

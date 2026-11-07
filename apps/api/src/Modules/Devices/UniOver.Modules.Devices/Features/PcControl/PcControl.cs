@@ -158,7 +158,9 @@ internal static class PcValidator
 /// tempo (pode ter agido mesmo assim), uma linha de tentativa que não deu certo. Sem sessão viva nada foi enviado e nada
 /// é gravado. O movimento do mouse e as teclas não entram na trilha: seriam milhares de linhas sem valor, e o texto pode
 /// ser senha (a linha de auditoria nem tem campo para ele). Nenhum comando espera o agente voltar de uma queda: sem
-/// sessão agora, o pedido falha na hora (ver <see cref="AgentDelivery.Immediate"/> em <see cref="PcMessages"/>).
+/// sessão viva agora, o pedido falha na hora e volta como "reconectando" (ver <see cref="AgentDelivery.Immediate"/> em
+/// <see cref="PcMessages"/>). Isso não cobre a sessão meio aberta (o socket já morto que a API ainda não notou), que pode
+/// entregar com atraso: quem descarta o <c>pc.*</c> velho, pela idade, é o agente (outra frente).
 /// </summary>
 internal sealed class PcControlHandler(
     PcAgentResolver resolver,
@@ -194,14 +196,14 @@ internal sealed class PcControlHandler(
         // vivo o temporizador de soltura do agente.
         var (dx, dy, scrollX, scrollY) = (request.Dx!.Value, request.Dy!.Value, request.ScrollX ?? 0, request.ScrollY ?? 0);
 
-        var target =await ReadyTargetAsync(userId, cancellationToken);
+        var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
         {
             return target.Failure;
         }
 
         var sent = await gateway.SendAsync(target.Slug, PcMessages.Pointer(dx, dy, scrollX, scrollY), cancellationToken);
-        return sent.IsSuccess ? TypedResults.NoContent() : RemoteCareProblems.FromGateway(sent.Error);
+        return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
 
     public async Task<IResult> RunAsync(
@@ -230,7 +232,7 @@ internal sealed class PcControlHandler(
                 await AuditFailedAttemptAsync(auditEvent, client, target.AgentId, userId, cancellationToken);
             }
 
-            return RemoteCareProblems.FromGateway(reply.Error);
+            return PcProblems.FromGateway(reply.Error);
         }
 
         if (!reply.Value.Ok)

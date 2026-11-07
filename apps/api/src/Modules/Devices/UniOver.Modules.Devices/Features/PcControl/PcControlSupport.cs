@@ -91,6 +91,27 @@ internal static class PcProblems
         statusCode: StatusCodes.Status409Conflict,
         title: "Nenhum computador está com o controle do PC ligado.",
         type: ProblemDetailsExtensions.TypeBase + UnavailableType);
+
+    public const string ReconnectingType = "agent-reconnecting";
+
+    /// <summary>
+    /// O PC aparece conectado (a presença segue verde na graça depois de uma queda) mas não há sessão viva agora: o comando não
+    /// foi enviado nem será entregue depois. A tela mostra "reconectando", e não "desconectado".
+    /// </summary>
+    public static IResult Reconnecting() => Results.Problem(
+        statusCode: StatusCodes.Status503ServiceUnavailable,
+        title: "O PC está reconectando. Tente de novo em instantes.",
+        type: ProblemDetailsExtensions.TypeBase + ReconnectingType);
+
+    /// <summary>
+    /// Falha de entrega do gateway como resposta HTTP. Só se chega aqui com o PC mostrado como conectado (sem isso o pedido já
+    /// voltou como "desconectado"), então "sem sessão" é a queda que ainda está na graça: reconectando.
+    /// </summary>
+    public static IResult FromGateway(UniOver.SharedKernel.Error error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return error.Code == AgentErrors.OfflineCode ? Reconnecting() : RemoteCareProblems.FromGateway(error);
+    }
 }
 
 /// <summary>Guarda a lista de favoritos que o agente anuncia (<c>pc.apps.v1</c>), na ordem em que ele a mandou.</summary>

@@ -1,7 +1,10 @@
 using System.Net.WebSockets;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Devices.Features.Agents;
 
 namespace UniOver.IntegrationTests.Devices.Transport;
 
@@ -80,13 +83,11 @@ public sealed class MessageValidationTests(PostgresFixture postgres)
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await app.ConnectAsync();
-        var before = app.App.Time.GetUtcNow();
 
         await agent.SendHelloAsync("2.5.0", "transport.keepalive.v1");
         var first = (await agent.ReceiveAnyAsync())!.Value;
 
-        // O relógio é falso e não andou: o batimento não veio do temporizador do período.
-        app.App.Time.GetUtcNow().Should().Be(before);
+        // O relógio falso não andou: só o hello pode ter disparado o batimento, não o temporizador do período.
         first.GetProperty("type").GetString().Should().Be("api.keepalive.v1");
         first.GetProperty("target").GetString().Should().Be($"agent:{app.Agent.Slug}");
     }
@@ -95,13 +96,21 @@ public sealed class MessageValidationTests(PostgresFixture postgres)
     public async Task AnAgentWithoutTheKeepAliveCapability_NeverGetsAKeepAlive()
     {
         await using var app = await TransportApp.StartAsync(postgres);
-        await using var agent = await app.ConnectAsync();
+        // Sem fechar o agente à mão: a leitura pendente abaixo disputaria o socket; o app o fecha ao terminar.
+        var agent = await app.ConnectAsync();
 
         await agent.SendHelloAsync("0.1.0", "tv.remote");
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "0.1.0", "hello processado");
+
+        // Sem a capacidade o laço só dorme: o 1º temporizador do período é a espera pelo hello, o 2º é o sono do laço.
+        var period = app.App.Services.GetRequiredService<IOptions<DevicesTransportOptions>>().Value.ApplicationKeepAlive;
+        int Timers() => app.App.Time.CreatedTimers.Count(t => t.Due == period);
+        await TransportApp.WaitUntilAsync(() => Timers() >= 2, "laço do batimento dormindo");
         var next = agent.ReceiveAnyAsync();
-        app.App.Time.Advance(TimeSpan.FromSeconds(60));
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        // Um período depois o laço acorda, confere a capacidade, não envia e volta a dormir (3º temporizador).
+        app.App.Time.Advance(period);
+        await TransportApp.WaitUntilAsync(() => Timers() >= 3, "laço do batimento acordou e voltou a dormir");
 
         next.IsCompleted.Should().BeFalse("versões sem a capacidade não recebem tipos novos");
     }

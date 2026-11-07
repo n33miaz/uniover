@@ -474,6 +474,12 @@ internal sealed partial class AgentHub(
                 await firstWait.CancelAsync();
             }
 
+            // A sessão acabou enquanto esperava (cancelar o token também libera o WhenAny): não há o que enviar.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             while (true)
             {
                 if (connections.Supports(session, KeepAliveCapability))
