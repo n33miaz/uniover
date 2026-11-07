@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.42.15](https://github.com/n33miaz/uniover/compare/v0.42.14...v0.42.15) (2026-11-07)
+
+
+### Features
+
+* **contracts:** add the waking TV connection
+* **api:** accept the TV waking state
+* **agent:** report the TV waking state
+* **web:** show the TV waking state
+* **agent:** send adb text in confirmed groups
+* **web:** track unsaved work before reloads
+
+
+### Bug Fixes
+
+* **api:** wait longer while the session is closed
+* **agent:** gate the TV cleanup by memory and day
+* **agent:** mark waking for keys awaiting an open
+* **agent:** refine the light cleanup gate
+* **api:** keep power off wait above reopening
+* **web:** read unknown connections as reconnecting
+* **agent:** skip the settle wait after DEL keys
+* **agent:** resync after an ambiguous adb failure
+* **agent:** trust only a full-group echo
+* **web:** defer auto reload over unsaved work
+* **web:** stop holding stale fields as unsaved
+* **web:** swap workers only when all tabs are idle
+* **web:** count only in-flight outbox items
+* **web:** log swallowed chunk errors
+* **web:** never swap workers on its own
+* **web:** refine what counts as unsaved work
+* **web:** ask other tabs before a tap updates
+* **web:** reset stuck sending rows on each lock
+* **web:** mark filter and keyboard fields ignored
+* **web:** count only this tab's unsaved work
+* **web:** scope unsaved tracking to the editor
+* **web:** recheck unsaved text before the swap
+* **web:** clear editor dirty state on save
+* **web:** track settings forms as unsaved work
+* **web:** drop the page-wide unsaved watcher
+* **web:** tighten update last resort and notice
+
 ## [0.42.14](https://github.com/n33miaz/uniover/compare/v0.42.13...v0.42.14) (2026-11-06)
 
 
