@@ -225,7 +225,8 @@ def counting_supervisor(*, touches: bool) -> str:
             "while ($true) { [System.IO.File]::WriteAllText($alive, 'x'); Start-Sleep -Milliseconds 500 }\n"
         )
     else:
-        body += "Start-Sleep -Seconds 300\n"
+        # O texto cita `supervisor-alive`: é um supervisor que dá sinal (e, aqui, parou de dar).
+        body = "# supervisor-alive\n" + body + "Start-Sleep -Seconds 300\n"
     return body
 
 
@@ -492,6 +493,9 @@ def test_a_mutex_holder_with_a_frozen_pulse_is_swept_again(tmp_path: Path) -> No
         assert decoy.wait(timeout=90) is not None, "a varredura não foi refeita"
         log = (base / "logs" / "supervisor.log").read_text("utf-8")
         assert "refaco a varredura" in log
+        # O mesmo carimbo velho em DUAS voltas: a primeira só anota (um PC que acabou de acordar).
+        before = log.split("refaco a varredura")[0]
+        assert before.count("ja ha um supervisor vivo") >= 2
         assert "supervisor.unresponsive" in (runtime / "diagnostics.jsonl").read_text("utf-8")
     finally:
         if decoy is not None and decoy.poll() is None:
@@ -523,13 +527,15 @@ def test_a_mutex_holder_with_a_fresh_pulse_is_left_alone(tmp_path: Path) -> None
         stop(launcher)
 
 
-def test_a_hung_fallback_is_watched_and_restarted_like_the_supervisor(tmp_path: Path) -> None:
-    # Sem `app`, o lançador cai no fallback. Um fallback que trava sem dar sinal repetia o incidente
-    # (rodava síncrono, sem prazo): agora é vigiado como o supervisor.
+def test_a_fallback_that_stops_its_pulse_is_watched_and_restarted(tmp_path: Path) -> None:
+    # Sem `app`, o lançador cai no fallback. Um que dá sinal (grava o `supervisor-alive`) e para é
+    # vigiado como o supervisor.
     base = tmp_path / "UniOver"
     base.mkdir()
     (base / "run-agent.fallback.ps1").write_text(
-        "Add-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value 'fallback'\nStart-Sleep -Seconds 300\n",
+        "# supervisor-alive\n"
+        "Add-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value 'fallback'\n"
+        "Start-Sleep -Seconds 300\n",
         encoding="ascii",
     )
     launcher = run_launcher(tmp_path, stale="3")
@@ -537,5 +543,41 @@ def test_a_hung_fallback_is_watched_and_restarted_like_the_supervisor(tmp_path: 
         assert wait_for(lambda: starts(tmp_path) >= 2, 120), "o fallback travado não foi reiniciado"
         log = (base / "logs" / "supervisor.log").read_text("utf-8")
         assert "sem sinal" in log
+    finally:
+        stop(launcher)
+
+
+def test_a_healthy_fallback_that_never_writes_the_pulse_is_never_killed(tmp_path: Path) -> None:
+    # O fallback é copiado uma vez só: numa instalação antiga ele nem sabe do `supervisor-alive`.
+    # Vigiá-lo pelo pulso o mataria a cada prazo, mesmo sadio. Ele é esperado, como antes da vigia.
+    base = tmp_path / "UniOver"
+    base.mkdir()
+    (base / "run-agent.fallback.ps1").write_text(
+        "Add-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value 'fallback'\n"
+        "Start-Sleep -Seconds 300\n",
+        encoding="ascii",
+    )
+    launcher = run_launcher(tmp_path, stale="3")
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        time.sleep(20)
+        assert starts(tmp_path) == 1, "um fallback sadio e sem pulso foi morto"
+        log = base / "logs" / "supervisor.log"
+        assert not log.exists() or "sem sinal" not in log.read_text("utf-8")
+    finally:
+        stop(launcher)
+
+
+def test_the_launcher_creates_the_pulse_file_before_the_supervisor_starts(tmp_path: Path) -> None:
+    # Com o disco cheio o `Touch-Alive` só muda a data de um arquivo que já existe.
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (app / "tools" / "run-agent.ps1").write_text(
+        counting_supervisor(touches=False), encoding="ascii"
+    )
+    launcher = run_launcher(tmp_path, stale="300")
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        assert (base / "runtime" / "supervisor-alive").exists()
     finally:
         stop(launcher)
