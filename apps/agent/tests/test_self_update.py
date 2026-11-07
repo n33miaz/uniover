@@ -741,3 +741,20 @@ def test_a_return_stamped_in_the_future_after_the_clock_went_back_is_still_defer
     # Um carimbo absurdo (anos à frente) é falso: não adia para sempre.
     (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now + 400 * day)}\n", encoding="ascii")
     assert module.deferred_versions(installed.source, now) == set()
+
+
+def test_a_bogus_far_future_stamp_does_not_cancel_the_genuine_returns(
+    installed: Installation,
+) -> None:
+    # A pilha do CMOS acabou e o relógio voltou anos: um carimbo "do futuro" se mistura a devoluções
+    # novas, gravadas com a data antiga. Só o falso sai; vale o maior dos que sobram.
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    day = 24 * 3600
+    (runtime / ".deferred-versions").write_text(
+        f"{NEW}|{int(now + 900 * day)}\n{NEW}|{int(now - 3600)}\n", encoding="ascii"
+    )
+    # Duas devoluções (72 h): a falsa não conta como válida, a recente sim.
+    assert module.deferred_versions(installed.source, now) == {NEW}
+    assert module.deferred_versions(installed.source, now + 4 * day) == set()
