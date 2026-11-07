@@ -290,37 +290,111 @@ def test_a_mark_in_the_old_format_never_exempts_anything(installed: Installation
     assert module.deferred_versions(installed.source, NOW, disk_ok=True) == {NEW}
 
 
-def test_the_wait_clock_restarts_when_the_candidate_changes(installed: Installation) -> None:
+def clock_file(pc: Installation) -> Path:
+    return pc.base / "runtime" / module.TV_WAIT_FILE
+
+
+def clock_start(pc: Installation) -> str:
+    """O início guardado no relógio da espera (`sha|epoch[|again]`)."""
+    return clock_file(pc).read_text(encoding="ascii").strip().split("|")[1]
+
+
+def broken_download(_sha: str, _destination: Path) -> None:
+    raise module.SelfUpdateError("sem rede")
+
+
+def test_the_oldest_start_of_the_wait_is_kept_when_the_candidate_changes(
+    installed: Installation,
+) -> None:
     other = "c" * 40
     marker = mark_use(installed, 0)
     assert update(installed).outcome == "deferred_busy"
+    started = clock_start(installed)
     moment = NOW + 23 * 3600
     os.utime(marker, (moment, moment))
-    result = installed.update(other, wall=lambda: moment, free_bytes=lambda _folder: 50 * GIB)
-    assert result.outcome == "deferred_busy"
-    # 25 h depois da primeira espera, mas só 2 h depois da espera pelo commit novo: ainda espera.
+    first = installed.update(other, wall=lambda: moment, free_bytes=lambda _f: 50 * GIB)
+    assert first.outcome == "deferred_busy"
+    assert clock_start(installed) == started  # o commit novo só troca o sha informativo
+    # 25 h depois da primeira espera o teto vale, mesmo com um commit novo no meio.
     later = NOW + 25 * 3600
     os.utime(marker, (later, later))
-    assert installed.update(other, wall=lambda: later, free_bytes=lambda _f: 50 * GIB).outcome == (
-        "deferred_busy"
-    )
+    final = installed.update(other, wall=lambda: later, free_bytes=lambda _f: 50 * GIB)
+    assert final.outcome != "deferred_busy"
+    assert installed.downloads[-1] == other  # o teto venceu: seguiu para o download
 
 
-def test_any_other_outcome_forgets_the_wait_clock(installed: Installation) -> None:
+def test_a_failed_check_keeps_the_wait_clock(installed: Installation) -> None:
+    marker = mark_use(installed, 0)
+    assert update(installed).outcome == "deferred_busy"
+    started = clock_start(installed)
+    later = NOW + 25 * 3600  # passou do teto: a checagem segue e o download falha
+    os.utime(marker, (later, later))
+    result = update(installed, now=later, download=broken_download)
+    assert result.outcome == "failed"
+    assert clock_file(installed).is_file() and clock_start(installed) == started
+
+
+def test_a_tv_in_constant_use_updates_after_24_hours_even_with_a_failure_in_between(
+    installed: Installation,
+) -> None:
+    marker = mark_use(installed, 0)
+    assert update(installed).outcome == "deferred_busy"
+    hour = 3600
+    for hours in (3, 12, 23):  # a TV segue em uso: espera
+        os.utime(marker, (NOW + hours * hour, NOW + hours * hour))
+        assert update(installed, now=NOW + hours * hour).outcome == "deferred_busy"
+    # Passou do teto: o download falha uma vez...
+    moment = NOW + 24 * hour + 60
+    os.utime(marker, (moment, moment))
+    assert update(installed, now=moment, download=broken_download).outcome == "failed"
+    # ...e a checagem seguinte, com a TV ainda em uso, atualiza (o relógio não recomeçou).
+    after = moment + 12 * 60
+    os.utime(marker, (after, after))
+    assert update(installed, now=after).updated
+    assert not clock_file(installed).exists()  # apagado só depois da troca
+
+
+def test_an_idle_tv_at_the_start_of_a_check_clears_the_clock(installed: Installation) -> None:
     mark_use(installed, 0)
     assert update(installed).outcome == "deferred_busy"
-    waiting = installed.base / "runtime" / module.TV_WAIT_FILE
-    assert waiting.is_file()
-
-    def broken(_sha: str, _destination: Path) -> None:
-        raise module.SelfUpdateError("sem rede")
-
-    later = NOW + 3600  # a marca de uso ficou velha: a TV parou
-    result = installed.update(
-        NEW, wall=lambda: later, free_bytes=lambda _f: 50 * GIB, download=broken
-    )
+    assert clock_file(installed).is_file()
+    result = update(installed, now=NOW + 3600, download=broken_download)  # TV parada há 1 h
     assert result.outcome == "failed"
-    assert not waiting.exists()
+    assert not clock_file(installed).exists()
+
+
+def test_after_the_tv_returned_during_preparation_the_clock_survives_the_next_idle_start(
+    installed: Installation,
+) -> None:
+    # Check 1: a TV estava parada, foi usada durante a preparação: não troca e marca o retorno.
+    def used_meanwhile(_candidate: Path) -> None:
+        mark_use(installed, 1)
+
+    assert update(installed, run_check=used_meanwhile).outcome == "deferred_busy"
+    started = clock_start(installed)
+    assert clock_file(installed).read_text(encoding="ascii").strip().endswith("|again")
+    # Check 2, 20 min depois: a TV passou a janela inteira parada. Não apaga o relógio só por isso.
+    later = NOW + 20 * 60
+    result = update(installed, now=later, download=broken_download)
+    assert result.outcome == "failed"
+    assert clock_file(installed).is_file() and clock_start(installed) == started
+    assert not clock_file(installed).read_text(encoding="ascii").strip().endswith("|again")
+    # Check 3, com a TV parada e sem retorno na anterior: agora sim recomeça do zero.
+    assert update(installed, now=later + 20 * 60, download=broken_download).outcome == "failed"
+    assert not clock_file(installed).exists()
+
+
+def test_the_tv_is_not_released_before_the_whole_idle_window_after_a_return(
+    installed: Installation,
+) -> None:
+    def used_meanwhile(_candidate: Path) -> None:
+        mark_use(installed, 1)
+
+    assert update(installed, run_check=used_meanwhile).outcome == "deferred_busy"
+    # 5 min depois do último uso: a janela de 10 min não fechou, nada é baixado.
+    result = update(installed, now=NOW + 5 * 60)
+    assert result.outcome == "deferred_busy"
+    assert len(installed.downloads) == 1  # só a primeira preparação baixou
 
 
 def test_the_tv_is_checked_again_right_before_the_swap(installed: Installation) -> None:
@@ -333,7 +407,7 @@ def test_the_tv_is_checked_again_right_before_the_swap(installed: Installation) 
     assert read_version(installed) == OLD  # nada foi trocado
     assert installed.leftovers() == []  # a candidata não ficou pelo caminho
     assert not (installed.base / "runtime" / "update-trial.txt").exists()
-    assert (installed.base / "runtime" / module.TV_WAIT_FILE).is_file()
+    assert clock_file(installed).is_file()
 
 
 def read_version(pc: Installation) -> str | None:

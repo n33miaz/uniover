@@ -153,7 +153,7 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool
         if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
         $body += ',"os":"windows"}'
         # O codigo do filho e constante: endereco e corpo vao por variavel de ambiente (nada do config entra no codigo).
-        $post = '$Progress = 1; $ProgressPreference = ''SilentlyContinue''; ' +
+        $post = '$ProgressPreference = ''SilentlyContinue''; ' +
             'try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
             'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $env:UNIOVER_BEACON_URI -ContentType ''application/json'' -Body $env:UNIOVER_BEACON_BODY -TimeoutSec 10 | Out-Null } catch { }'
         $info = New-Object System.Diagnostics.ProcessStartInfo
@@ -168,6 +168,22 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool
     } catch { }
 }
 # --- Fim da baliza de partida -------------------------------------------------------------------------------------------
+
+function Set-BeaconNeedsOk {
+    # Um aviso de falha foi dado: o proximo "abriu" tem de chegar mesmo dentro da janela de 10 minutos para apagar a falha no servidor.
+    # Fica em arquivo (um supervisor novo, depois de uma queda, tambem o sabe); sem poder grava-lo vale a memoria.
+    $script:beaconNeedsOk = $true
+    try { [System.IO.File]::WriteAllText((Join-Path $runtime 'beacon-needs-ok'), 'x', [System.Text.Encoding]::ASCII) } catch { }
+}
+
+function Test-BeaconNeedsOk {
+    return ($script:beaconNeedsOk -or (Test-Path -LiteralPath (Join-Path $runtime 'beacon-needs-ok')))
+}
+
+function Clear-BeaconNeedsOk {
+    $script:beaconNeedsOk = $false
+    Remove-Item -LiteralPath (Join-Path $runtime 'beacon-needs-ok') -Force -ErrorAction SilentlyContinue
+}
 
 function Set-StopReason([string]$Reason) {
     # Diz ao agente, na proxima subida, que a parada foi de proposito (e nao uma queda).
@@ -1032,6 +1048,7 @@ while ($true) {
     if (-not $uv -or -not (Test-Path -LiteralPath $source)) {
         Write-SupLog 'WARNING' 'sem uv ou sem a pasta do agente; espero 5 minutos'
         if (-not $uv) { Send-Beacon 'supervisor' 'no_uv' ([string](Get-Version)) } else { Send-Beacon 'bootstrap' 'no_app' }
+        Set-BeaconNeedsOk
         Sleep-Beating 300; continue
     }
     $rollbackReady = Test-RollbackReady
@@ -1078,6 +1095,7 @@ while ($true) {
         $syncCode = 'sync_failed'
         if ($script:lastSyncCause -eq 'lowdisk') { $syncCode = 'disk_full' }
         Send-Beacon 'supervisor' $syncCode ([string](Get-Version))
+        Set-BeaconNeedsOk
         # Versao em prova que nao consegue preparar o proprio ambiente nunca chegaria a rodar, nem a cair: sem esta conta o
         # laco esperaria para sempre. Na terceira falha seguida volta para a anterior, pela mesma rotina do pedido do dono. So
         # bloqueia a versao se TODAS as falhas foram defeito dela (erro do uv): demora e disco cheio sao do PC.
@@ -1109,7 +1127,12 @@ while ($true) {
     $started = Get-Date
     Write-SupLog 'INFO' ('agente iniciado (pid ' + $process.Id + ')')
     # Num laco de quedas rapidas o "abriu" de cada volta apagaria no servidor a falha da volta anterior: so o primeiro conta.
-    if ($script:fastExits -lt 1) { Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $true }
+    # Uma partida normal respeita a janela de 10 minutos; so a que vem depois de uma falha avisada fura a janela, para apagar a falha.
+    if ($script:fastExits -lt 1) {
+        $clearsFailure = Test-BeaconNeedsOk
+        Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $clearsFailure
+        if ($clearsFailure) { Clear-BeaconNeedsOk }
+    }
     $restartForUpdate = $false
     $hung = $false
     # O pulso do agente e o `last-alive`, que ele regrava a cada minuto de dentro do laco de eventos: se o laco trava
@@ -1127,6 +1150,7 @@ while ($true) {
         if ($script:fastExits -gt 0 -and (($lap - $started).TotalSeconds -ge $stableSeconds)) {
             $script:fastExits = 0
             Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $true
+            Clear-BeaconNeedsOk
         }
         $slow = (($lap - $previousLap).TotalSeconds -gt $slowLapSeconds)
         $previousLap = $lap
@@ -1262,6 +1286,7 @@ while ($true) {
         if ($hung) { $exitBeacon = 'unresponsive' }
         elseif ($script:fastExits -ge 3) { $exitBeacon = 'crash_loop' }
         Send-Beacon 'child_exit' $exitBeacon ([string](Get-Version))
+        Set-BeaconNeedsOk
         if ($envUnusable) {
             Add-Diagnostic 'agent.env_unusable' 'error' 'o agente cai ao subir sobre o ambiente Python mantido (sem sync completo); espero para tentar de novo'
             $wait = [Math]::Max($wait, 60)
