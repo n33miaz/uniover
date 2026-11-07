@@ -168,7 +168,7 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool
         if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
         $body += ',"os":"windows"}'
         # O codigo do filho e constante: endereco e corpo vao por variavel de ambiente (nada do config entra no codigo).
-        $post = '$Progress = 1; $ProgressPreference = ''SilentlyContinue''; ' +
+        $post = '$ProgressPreference = ''SilentlyContinue''; ' +
             'try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }; ' +
             'try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri $env:UNIOVER_BEACON_URI -ContentType ''application/json'' -Body $env:UNIOVER_BEACON_BODY -TimeoutSec 10 | Out-Null } catch { }'
         $info = New-Object System.Diagnostics.ProcessStartInfo

@@ -251,6 +251,45 @@ def test_a_recovered_agent_clears_an_old_failure_even_inside_the_ten_minute_wind
     assert codes[-1] == "child_spawn.ok" and codes.count("child_spawn.ok") == 2
 
 
+def test_a_normal_restart_keeps_the_ten_minute_window_for_the_started_beacon(
+    pc: Pc, api: FakeApi
+) -> None:
+    configure(pc.base, api.url)
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: api.count("child_spawn.ok") >= 1, 40), pc.supervisor_log()
+    pc.agents.unlink()
+    with heartbeat(pc.alive), pc.running():  # outro supervisor sem falha nenhuma no meio
+        assert wait_for(lambda: pc.starts() >= 1, 30)
+        settle_beacons(pc)
+    assert api.count("child_spawn.ok") == 1
+
+
+def test_the_started_beacon_after_a_reported_failure_breaks_the_window_and_only_then(
+    pc: Pc, api: FakeApi, tmp_path: Path
+) -> None:
+    configure(pc.base, api.url)
+    flag = tmp_path / "ran-once.txt"
+    pc.uv(
+        [
+            'if exist "%UNIOVER_TEST_FLAG%" goto stay',
+            'echo x>"%UNIOVER_TEST_FLAG%"',
+            "exit /b 1",
+            ":stay",
+            "ping -n 300 127.0.0.1 > nul",
+            "exit /b 0",
+        ]
+    )
+    with pc.running(UNIOVER_TEST_FLAG=str(flag)):
+        assert wait_for(lambda: api.count("child_exit.exit_1") >= 1, 60), pc.supervisor_log()
+    assert (pc.runtime / "beacon-needs-ok").is_file()
+    assert api.count("child_spawn.ok") == 1
+    with heartbeat(pc.alive), pc.running(UNIOVER_TEST_FLAG=str(flag)):
+        assert wait_for(lambda: api.count("child_spawn.ok") >= 2, 60), api.codes()
+        assert wait_for(lambda: not (pc.runtime / "beacon-needs-ok").exists(), 10)
+    assert api.codes()[-1] == "child_spawn.ok"
+
+
 def test_the_url_and_body_travel_by_environment_not_inside_the_child_code(
     pc: Pc, api: FakeApi
 ) -> None:

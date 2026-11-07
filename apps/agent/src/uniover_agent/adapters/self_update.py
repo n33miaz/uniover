@@ -96,6 +96,7 @@ TV_IDLE_SECONDS = 600.0
 TV_MAX_DEFER_SECONDS = 24 * 3600.0
 TV_LAST_USE_FILE = "tv-last-use"
 TV_WAIT_FILE = ".update-waiting-for-tv"
+TV_AGAIN_FLAG = "again"
 # Limites de cada passo (usados por quem os executa e somados em `WORST_CASE_SECONDS`).
 FETCH_TIMEOUT_SECONDS = (
     120.0  # a consulta do commit mais recente (várias leituras, cada uma com prazo)
@@ -719,40 +720,70 @@ def _clear_tv_wait(source: Path) -> None:
         _log.debug("não consegui apagar a marca de espera pela TV")
 
 
-def should_wait_for_tv(
+def _read_tv_wait(path: Path) -> tuple[str, float, bool] | None:
+    """O relógio da espera: (commit, início, a TV voltou a ser usada na checagem anterior)."""
+    try:
+        sha, _, rest = path.read_text(encoding="utf-8").strip().partition("|")
+        stamp, _, flag = rest.partition("|")
+        return sha, float(stamp), flag == TV_AGAIN_FLAG
+    except OSError, ValueError:
+        return None
+
+
+def _write_tv_wait(path: Path, sha: str, since: float, *, again: bool) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        flag = f"|{TV_AGAIN_FLAG}" if again else ""
+        path.write_text(f"{sha}|{since:.0f}{flag}\n", encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def should_wait_for_tv(  # noqa: PLR0913 - limites e relógio nomeados, todos necessários
     source: Path,
     now: float,
     *,
     sha: str,
     in_use: bool,
     max_defer_seconds: float = TV_MAX_DEFER_SECONDS,
+    start_of_check: bool = True,
 ) -> bool:
     """A atualização para `sha` deve esperar a TV parar? Espera no máximo `max_defer_seconds`.
 
     O relógio da espera começa na primeira checagem em que havia atualização e a TV estava em uso,
-    e fica guardado, com o commit a que se refere, em `runtime\\.update-waiting-for-tv`
-    (`sha|epoch`; um reinício do agente não o zera, senão reinícios seguidos adiariam para sempre).
-    Outro commit recomeça a contagem. Com a TV parada o arquivo é apagado. Se o relógio não puder
-    ser gravado (disco), não espera: sem como contar, o teto não se faria valer."""
-    if not in_use or max_defer_seconds <= 0:
-        _clear_tv_wait(source)
-        return False
+    e fica em `runtime\\.update-waiting-for-tv` (`sha|epoch`; um reinício do agente não o zera,
+    senão reinícios seguidos adiariam para sempre). Vale o início MAIS ANTIGO: outro commit no
+    meio da espera só troca o `sha` (informativo), e uma checagem que falha não o apaga, senão uma
+    TV usada o tempo todo nunca deixaria o teto de 24 h chegar. Só se apaga com a versão atual em
+    dia, depois da troca, ou quando a TV está parada no começo de uma checagem (`start_of_check`)
+    e a anterior não terminou com a TV voltando a ser usada (ver `mark_tv_busy_again`): nesse caso
+    a TV precisou ficar parada pela janela inteira antes de a nova tentativa começar, e o relógio
+    segue valendo até a troca. Se o relógio não puder ser gravado (disco), não espera: sem como
+    contar, o teto não se faria valer."""
     path = source.parent / "runtime" / TV_WAIT_FILE
-    since: float | None = None
-    try:
-        saved_sha, _, saved_at = path.read_text(encoding="utf-8").strip().partition("|")
-        if saved_sha == sha:
-            since = float(saved_at)
-    except OSError, ValueError:
-        since = None
-    if since is None or since > now:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(f"{sha}|{now:.0f}\n", encoding="utf-8")
-        except OSError:
+    state = _read_tv_wait(path)
+    if not in_use or max_defer_seconds <= 0:
+        if start_of_check and state is not None:
+            if state[2]:
+                _write_tv_wait(path, state[0], state[1], again=False)
+            else:
+                _clear_tv_wait(source)
+        return False
+    since = state[1] if state is not None and state[1] <= now else now
+    if state is None or state[1] > now or state[0] != sha:
+        if not _write_tv_wait(path, sha, since, again=state is not None and state[2]):
             return False
-        return True
     return now - since < max_defer_seconds
+
+
+def mark_tv_busy_again(source: Path, sha: str) -> None:
+    """A TV voltou a ser usada enquanto a candidata era preparada: a próxima checagem não pode
+    apagar o relógio só porque a TV já estava parada quando ela começou."""
+    path = source.parent / "runtime" / TV_WAIT_FILE
+    state = _read_tv_wait(path)
+    if state is not None:
+        _write_tv_wait(path, sha, state[1], again=True)
 
 
 class _TvBusyAgain(SelfUpdateError):  # noqa: N818 - não é um erro: é o adiamento
@@ -812,17 +843,15 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         )
     sha: str | None = None
     started = monotonic()
-    # Só a espera pela TV mantém o relógio dela: qualquer outro desfecho o apaga (a próxima espera
-    # recomeça do zero, em vez de herdar um relógio velho).
-    waiting_for_tv = False
 
-    def tv_must_wait(candidate: str) -> bool:
+    def tv_must_wait(candidate: str, *, start_of_check: bool) -> bool:
         return not ignore_deferral and should_wait_for_tv(
             source,
             wall(),
             sha=candidate,
             in_use=tv_in_use(source, wall(), tv_idle_seconds),
             max_defer_seconds=tv_max_defer_seconds,
+            start_of_check=start_of_check,
         )
 
     def within_budget() -> None:
@@ -833,6 +862,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         sha = (fetch_latest or (lambda: latest_commit(channel)))()
         within_budget()
         if read_version(source) == sha:
+            _clear_tv_wait(source)
             return UpdateResult(
                 False, "o agente já está na versão mais recente", "up_to_date", latest=sha
             )
@@ -858,8 +888,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         low = _low_disk_result(free, min_free_bytes, sha)
         if low is not None:
             return low
-        if tv_must_wait(sha):
-            waiting_for_tv = True
+        if tv_must_wait(sha, start_of_check=True):
             _log.info("atualização adiada: a TV foi usada há pouco; espero ela ficar parada")
             return UpdateResult(
                 False,
@@ -890,9 +919,10 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 run_check(new)
                 within_budget()
                 # Baixar e montar leva minutos: a TV pode ter voltado a ser usada nesse intervalo.
-                if tv_must_wait(sha):
+                if tv_must_wait(sha, start_of_check=False):
                     raise _TvBusyAgain("a TV voltou a ser usada; a troca fica para quando parar")
                 promote(source, new, sha, record_trial)
+                _clear_tv_wait(source)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
                 raise
@@ -901,7 +931,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
     except _TvBusyAgain:
-        waiting_for_tv = True
+        mark_tv_busy_again(source, sha or "")
         _log.info("atualização adiada: a TV voltou a ser usada enquanto eu preparava a versão nova")
         return UpdateResult(
             False,
@@ -915,8 +945,5 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     except (SelfUpdateError, OSError) as exc:
         _log.warning("auto-atualização adiada: %s", exc)
         return UpdateResult(False, f"não atualizei agora: {exc}", "failed", latest=sha)
-    finally:
-        if not waiting_for_tv:
-            _clear_tv_wait(source)
     _log.info("agente atualizado")
     return UpdateResult(True, "agente atualizado", "updated", latest=sha)
