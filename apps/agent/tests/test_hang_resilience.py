@@ -910,7 +910,7 @@ def test_an_ancestor_supervisor_takes_its_other_children_with_it(tmp_path: Path)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="mata processos do Windows")
-def test_an_empty_only_list_kills_nobody(tmp_path: Path) -> None:
+def test_an_empty_only_list_is_refused_in_python_and_kills_nobody(tmp_path: Path) -> None:
     runner = tmp_path / "UniOver" / "app" / "tools" / "run-agent.ps1"
     marker = tmp_path / "child.pid"
     supervisor = spawn_fake_supervisor(runner, marker)
@@ -1018,3 +1018,40 @@ def test_an_ancestor_supervisor_named_in_only_dies_with_its_other_children_and_t
                 check=False,
                 creationflags=0x08000000,
             )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="roda o PowerShell do Windows")
+def test_the_descendants_script_follows_parent_and_date_and_skips_a_reused_pid_orphan() -> None:
+    """O script que o reparo usa, com uma lista de processos FALSA: o filho com o pai certo e a
+    data posterior entra; o órfão cujo pai morto tinha o mesmo PID (data anterior) fica de fora."""
+    import subprocess  # noqa: PLC0415
+
+    from uniover_agent.adapters.self_care_checks import DESCENDANTS_SCRIPT  # noqa: PLC0415
+
+    fake = (
+        "function P($id,$parent,$day){[pscustomobject]@{ProcessId=$id;ParentProcessId=$parent;"
+        "CreationDate=([datetime]'2026-01-01').AddDays($day)}};"
+        "$all=@((P 100 1 10),(P 101 100 11),(P 102 100 5),(P 103 101 12),(P 104 999 13));"
+        "$root=$all[0];"
+        "((Get-Descendants $all $root)|ForEach-Object{$_.ProcessId}) -join ','"
+    )
+    done = subprocess.run(  # noqa: S603 - PowerShell do sistema, script do próprio teste
+        [
+            os.path.join(
+                os.environ.get("SystemRoot", r"C:\Windows"),
+                "System32",
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe",
+            ),
+            "-NoProfile",
+            "-Command",
+            DESCENDANTS_SCRIPT + fake,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+        creationflags=0x08000000,
+    )
+    assert done.stdout.strip() == "101,103"

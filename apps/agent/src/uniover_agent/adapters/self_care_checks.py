@@ -257,6 +257,20 @@ def startup_task_check(
 # supervisor que está na cadeia de ancestrais de quem chama morre sozinho (sem `/T`: quem chama e
 # os irmãos ficam, e o supervisor novo os recolhe na varredura da partida); os outros morrem com
 # toda a árvore.
+# Os filhos e descendentes por pai E por data: um processo cujo pai morreu e cujo PID foi
+# reaproveitado pelo supervisor (o `explorer.exe`, por exemplo) tem `ParentProcessId` igual, mas é
+# MAIS ANTIGO que ele.
+DESCENDANTS_SCRIPT = (
+    "function Get-Kids($all,$p){@($all|"
+    "Where-Object{[int]$_.ParentProcessId -eq [int]$p.ProcessId -and "
+    "$_.CreationDate -gt $p.CreationDate})};"
+    "function Get-Descendants($all,$root){$out=New-Object System.Collections.ArrayList;"
+    "$queue=New-Object System.Collections.ArrayList;[void]$queue.Add($root);"
+    "while($queue.Count -gt 0){$cur=$queue[0];$queue.RemoveAt(0);"
+    "foreach($kid in (Get-Kids $all $cur)){[void]$out.Add($kid);[void]$queue.Add($kid)}};"
+    ",$out};"
+)
+
 _FIND_SUPERVISORS = (
     "$ErrorActionPreference='SilentlyContinue';"
     "$all=@(Get-CimInstance Win32_Process -OperationTimeoutSec 30);"
@@ -270,20 +284,21 @@ _LIST_SUPERVISORS_SCRIPT = _FIND_SUPERVISORS + "$found|ForEach-Object{[string]$_
 # diretos que não estão na cadeia (ícone, `uv` de um `self-update` em curso) morrem com a árvore
 # e só então o próprio ancestral, sem `/T`.
 _KILL_SUPERVISOR_SCRIPT = (
-    _FIND_SUPERVISORS + "$mine=@{};$id=[int]$env:UNIOVER_SELF_PID;"
+    DESCENDANTS_SCRIPT + _FIND_SUPERVISORS + "$mine=@{};$id=[int]$env:UNIOVER_SELF_PID;"
     "while($id -and -not $mine.ContainsKey($id)){$mine[$id]=1;"
     "$row=$all|Where-Object{$_.ProcessId -eq $id}|Select-Object -First 1;"
     "if($row){$id=[int]$row.ParentProcessId}else{$id=0}};"
     "$only=$null;if($null -ne $env:UNIOVER_ONLY_PIDS){"
     "$only=@($env:UNIOVER_ONLY_PIDS.Split(',')|Where-Object{$_}|ForEach-Object{[int]$_})};"
     "$found|Where-Object{$null -eq $only -or $only -contains [int]$_.ProcessId}|"
-    "ForEach-Object{$sup=[int]$_.ProcessId;$supDate=$_.CreationDate;"
+    "ForEach-Object{$sup=[int]$_.ProcessId;"
     "if($mine.ContainsKey($sup)){"
-    "$all|Where-Object{[int]$_.ParentProcessId -eq $sup -and $_.CreationDate -gt $supDate -and "
-    "-not $mine.ContainsKey([int]$_.ProcessId)}|"
-    "ForEach-Object{& taskkill.exe /PID $_.ProcessId /T /F *> $null};"
+    "foreach($kid in (Get-Kids $all $_)){if(-not $mine.ContainsKey([int]$kid.ProcessId)){"
+    "foreach($d in (@($kid)+(Get-Descendants $all $kid))){"
+    "& taskkill.exe /PID $d.ProcessId /F *> $null}}};"
     "Stop-Process -Id $sup -Force}"
-    "else{& taskkill.exe /PID $sup /T /F *> $null};'killed'}"
+    "else{foreach($d in (Get-Descendants $all $_)){& taskkill.exe /PID $d.ProcessId /F *> $null};"
+    "& taskkill.exe /PID $sup /F *> $null};'killed'}"
 )
 
 
