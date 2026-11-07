@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.42.17](https://github.com/n33miaz/uniover/compare/v0.42.16...v0.42.17) (2026-11-07)
+
+
+### Web 0.43.1
+
+#### Bug Fixes
+
+* **web:** show page skeleton under boot cover
+
 ## [0.42.16](https://github.com/n33miaz/uniover/compare/v0.42.15...v0.42.16) (2026-11-07)
 
 
