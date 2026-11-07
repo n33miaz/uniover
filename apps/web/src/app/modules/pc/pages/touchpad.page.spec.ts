@@ -123,6 +123,107 @@ describe('TouchpadPage', () => {
   it('leaving the screen while dragging releases the button', () => {
     store.dragging.set(true);
     fixture.destroy();
-    expect(store.toggleDrag).toHaveBeenCalledTimes(1);
+    expect(store.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('scrolling passes the time of each step, so a faster swipe can scroll farther', () => {
+    pointer('pointerdown', 1, 100, 100, 0);
+    pointer('pointerdown', 2, 140, 100, 0);
+    pointer('pointermove', 1, 100, 130, 40);
+    pointer('pointermove', 2, 140, 130, 40);
+    // O centro anda 15 px a cada dedo que se mexe; o primeiro passo leva os 40 ms desde o toque.
+    expect(store.scrollPointer.mock.calls.map(([, dy, elapsed]) => [dy, elapsed])).toEqual([
+      [15, 40],
+      [15, 0],
+    ]);
+  });
+
+  describe('long press', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+    afterEach(() => vi.useRealTimers());
+
+    it('a finger held still presses the left button and lifting it releases, with no click', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(449);
+      expect(store.startDrag).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(store.startDrag).toHaveBeenCalledTimes(1);
+      expect(store.release).not.toHaveBeenCalled();
+      pointer('pointerup', 1, 100, 100, 700);
+      expect(store.release).toHaveBeenCalledTimes(1);
+      expect(store.click).not.toHaveBeenCalled();
+    });
+
+    it('moving while pressed drags: the pointer follows the finger', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(500);
+      pointer('pointermove', 1, 130, 110, 520);
+      expect(store.movePointer).toHaveBeenCalledWith(30, 10, expect.any(Number));
+      pointer('pointerup', 1, 130, 110, 560);
+      expect(store.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('a system cancel while pressed releases the button', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(500);
+      pointer('pointercancel', 1, 100, 100, 520);
+      expect(store.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaving the screen while pressed releases the button', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(500);
+      fixture.destroy();
+      expect(store.release).toHaveBeenCalled();
+    });
+
+    it('when the Drag button already holds the left button, a long press does not take it over', () => {
+      store.dragging.set(true);
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(500);
+      pointer('pointerup', 1, 100, 100, 600);
+      expect(store.startDrag).not.toHaveBeenCalled();
+      expect(store.release).not.toHaveBeenCalled();
+    });
+
+    it('a quick tap still clicks and starts no drag', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerup', 1, 100, 100, 90);
+      vi.advanceTimersByTime(1_000);
+      expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+      expect(store.startDrag).not.toHaveBeenCalled();
+    });
+
+    it('shows the held state on the surface', () => {
+      store.dragging.set(true);
+      fixture.detectChanges();
+      expect(pad().classList.contains('holding')).toBe(true);
+    });
+  });
+
+  describe('settings', () => {
+    const gear = () => root.querySelector<HTMLButtonElement>('.settings')!;
+    const sheet = () => root.querySelector<HTMLDialogElement>('dialog');
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('the corner button is outside the surface, so touching it never starts a gesture', () => {
+      expect(gear().getAttribute('aria-label')).toBe('Ajustes do touchpad');
+      expect(pad().contains(gear())).toBe(false);
+      gear().dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      expect(store.beginGesture).not.toHaveBeenCalled();
+    });
+
+    it('opens the sheet and closes it again', async () => {
+      expect(sheet()).toBeNull();
+      gear().click();
+      await settle();
+      expect(sheet()?.hasAttribute('open')).toBe(true);
+      root.querySelector<HTMLButtonElement>('dialog .footer button')!.click();
+      await settle();
+      expect(sheet()).toBeNull();
+    });
   });
 });
