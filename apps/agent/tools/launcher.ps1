@@ -246,6 +246,8 @@ function Stop-SupervisorTree($Process) {
 }
 
 function Invoke-Supervisor([string]$Script) {
+    $alive = Join-Path $runtimeDir 'supervisor-alive'
+
     # Roda o supervisor e o VIGIA, em vez de so esperar por ele: um supervisor vivo mas travado (preso numa atualizacao, com
     # o disco cheio) deixava o lancador esperando para sempre e ninguem reiniciava o agente. Se o sinal de vida para por
     # mais de $staleSeconds, a arvore dele morre e devolve $staleCode. Um supervisor que acabou de subir tem o prazo
@@ -257,11 +259,18 @@ function Invoke-Supervisor([string]$Script) {
     $info.CreateNoWindow = $true
     $process = [System.Diagnostics.Process]::Start($info)
     $startedAt = Get-WatchNow
-    $alive = Join-Path $runtimeDir 'supervisor-alive'
     $limit = $staleSeconds
     $oldStyle = $true
     try { $oldStyle = -not (Select-String -LiteralPath $Script -SimpleMatch 'Invoke-Bounded' -Quiet -ErrorAction Stop) } catch { }
     if ($oldStyle -and $legacyStaleSeconds -gt $limit) { $limit = $legacyStaleSeconds }
+    # Um script que nem sabe do `supervisor-alive` (um fallback ou legado de uma instalacao antiga) nunca o grava: o silencio
+    # dele nao diz nada, e vigia-lo pelo pulso o mataria a cada prazo mesmo sadio. Esse e esperado como antes da vigia.
+    $writesPulse = $true
+    try { $writesPulse = [bool](Select-String -LiteralPath $Script -Pattern 'supervisor-alive|Touch-Alive|Invoke-Bounded' -Quiet -ErrorAction Stop) } catch { }
+    if (-not $writesPulse) { $limit = [double]::MaxValue }
+    # O arquivo do pulso existe antes do supervisor subir: com o disco cheio o `Touch-Alive` dele so consegue mudar a data de
+    # um arquivo que ja existe, e sem ele um supervisor sadio pareceria mudo.
+    try { if (-not (Test-Path -LiteralPath $alive)) { New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null; [System.IO.File]::WriteAllText($alive, 'x', [System.Text.Encoding]::ASCII) } } catch { }
     $previous = $startedAt
     $resumedAt = $startedAt
     while (-not $process.WaitForExit($pollMs)) {
@@ -325,14 +334,15 @@ while ($true) {
             $stamp = $null
             try { $stamp = (Get-Item -LiteralPath (Join-Path $runtimeDir 'supervisor-alive') -ErrorAction Stop).LastWriteTimeUtc } catch { }
             $silentFor = [double]::MaxValue
-            if ($null -ne $stamp) { $silentFor = ([DateTime]::UtcNow - $stamp).TotalSeconds }
-            if ($silentFor -gt $staleSeconds -and $busySeenStamp -eq $stamp) {
+            $stampKey = 'missing'
+            if ($null -ne $stamp) { $silentFor = ([DateTime]::UtcNow - $stamp).TotalSeconds; $stampKey = [string]$stamp.Ticks }
+            if ($silentFor -gt $staleSeconds -and $busySeenStamp -eq $stampKey) {
                 Write-LauncherLog 'o supervisor que segura a instalacao esta sem sinal; refaco a varredura' 'ERROR'
                 Add-LauncherDiagnostic 'supervisor.unresponsive' 'error' 'o supervisor que segurava a instalacao estava sem sinal; o lancador refez a varredura'
                 Stop-Leftovers
                 $busySeenStamp = $null
             }
-            elseif ($silentFor -gt $staleSeconds) { $busySeenStamp = $stamp }
+            elseif ($silentFor -gt $staleSeconds) { $busySeenStamp = $stampKey }
             else { $busySeenStamp = $null }
             Start-Sleep -Seconds $busyWait
             continue
