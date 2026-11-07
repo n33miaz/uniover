@@ -62,6 +62,11 @@ const DEVICES_ACTIONS = [
   'pc_shutdown',
   'pc_shutdown_cancelled',
   'pc_app_launch',
+  'pc_lock_failed',
+  'pc_sleep_failed',
+  'pc_shutdown_failed',
+  'pc_shutdown_cancel_failed',
+  'pc_app_launch_failed',
 ];
 const TV_ACTIONS = [
   'tv.add',
@@ -201,6 +206,17 @@ describe('actorLabel', () => {
 });
 
 describe('describeTarget', () => {
+  it.each([
+    'pc_lock',
+    'pc_lock_failed',
+    'pc_sleep_failed',
+    'pc_shutdown_failed',
+    'pc_shutdown_cancel_failed',
+    'pc_app_launch_failed',
+  ])('shows the device name as the target of %s', (action) => {
+    expect(describeTarget(item({ action, target: 'PC da sala' }))).toBe('PC da sala');
+  });
+
   it('names the account the action was about, or says it was deleted', () => {
     expect(
       describeTarget(

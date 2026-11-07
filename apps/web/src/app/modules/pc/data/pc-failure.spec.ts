@@ -23,6 +23,25 @@ describe('pcFailureOf', () => {
     expect(pcFailureOf(http(status)).kind).toBe(kind);
   });
 
+  it('tells a PC that is reconnecting apart from one that is offline', () => {
+    const reconnecting = pcFailureOf(
+      http(503, { type: 'https://uniover.dev/problems/agent-reconnecting', title: 'x' }),
+    );
+    expect(reconnecting.kind).toBe('reconnecting');
+    expect(reconnecting.message).toBe('O PC está reconectando.');
+    const offline = pcFailureOf(
+      http(503, { type: 'https://uniover.dev/problems/agent-offline', title: 'x' }),
+    );
+    expect(offline.kind).toBe('offline');
+    expect(offline.message).toBe('O PC está desconectado.');
+  });
+
+  it('only a 503 can be a reconnecting PC', () => {
+    expect(
+      pcFailureOf(http(502, { type: 'https://uniover.dev/problems/agent-reconnecting' })).kind,
+    ).toBe('failed');
+  });
+
   it('tells a missing permission apart from other 403 answers', () => {
     const forbidden = http(403, { type: 'https://uniover.dev/problems/forbidden', title: 'x' });
     expect(pcFailureOf(forbidden).kind).toBe('forbidden');
@@ -45,6 +64,7 @@ describe('pcFailureOf', () => {
 
   it('accepts an already-read problem and survives something that is not an HTTP error', () => {
     expect(pcFailureOf(new ApiProblem(503, 'agent-offline', 'x')).kind).toBe('offline');
+    expect(pcFailureOf(new ApiProblem(503, 'agent-reconnecting', 'x')).kind).toBe('reconnecting');
     expect(pcFailureOf(new Error('boom')).kind).toBe('unknown');
   });
 });

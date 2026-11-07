@@ -99,6 +99,16 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.pc-shutdown-cancelled:Desligamento do PC cancelado`;
     case 'pc_app_launch':
       return $localize`:@@settings.audit.action.pc-app-launch:App aberto no PC`;
+    case 'pc_lock_failed':
+      return $localize`:@@settings.audit.action.pc-lock-failed:Bloqueio do PC falhou`;
+    case 'pc_sleep_failed':
+      return $localize`:@@settings.audit.action.pc-sleep-failed:Suspensão do PC falhou`;
+    case 'pc_shutdown_failed':
+      return $localize`:@@settings.audit.action.pc-shutdown-failed:Desligamento do PC falhou`;
+    case 'pc_shutdown_cancel_failed':
+      return $localize`:@@settings.audit.action.pc-shutdown-cancel-failed:Cancelamento do desligamento falhou`;
+    case 'pc_app_launch_failed':
+      return $localize`:@@settings.audit.action.pc-app-launch-failed:Abertura de app no PC falhou`;
     // TV
     case 'tv.add':
       return $localize`:@@settings.audit.action.tv-add:TV criada`;
@@ -331,6 +341,11 @@ function describeBaseTarget(action: string, target: string): string | null {
     case 'pc_shutdown':
     case 'pc_shutdown_cancelled':
     case 'pc_app_launch':
+    case 'pc_lock_failed':
+    case 'pc_sleep_failed':
+    case 'pc_shutdown_failed':
+    case 'pc_shutdown_cancel_failed':
+    case 'pc_app_launch_failed':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;
     default:

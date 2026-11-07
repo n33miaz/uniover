@@ -7,12 +7,16 @@ export type PcFailureKind =
   | 'forbidden'
   | 'unavailable'
   | 'offline'
+  | 'reconnecting'
   | 'timeout'
   | 'rate-limited'
   | 'failed'
   | 'not-found'
   | 'invalid'
   | 'unknown';
+
+/** `type` (sufixo) do 503 que a API dá quando o agente caiu agora há pouco e ainda está dentro da janela de reconexão. */
+export const RECONNECTING_PROBLEM = 'agent-reconnecting';
 
 export interface PcFailure {
   readonly kind: PcFailureKind;
@@ -72,6 +76,12 @@ export function pcFailureOf(error: unknown): PcFailure {
     return {
       kind: 'unavailable',
       message: $localize`:@@pc.error.unavailable:Nenhum PC com o controle ligado.`,
+    };
+  }
+  if (problem.status === 503 && problem.kind === RECONNECTING_PROBLEM) {
+    return {
+      kind: 'reconnecting',
+      message: $localize`:@@pc.error.reconnecting:O PC está reconectando.`,
     };
   }
   if (problem.status === 503) {
