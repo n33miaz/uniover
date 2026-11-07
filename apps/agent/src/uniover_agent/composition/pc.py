@@ -34,8 +34,8 @@ class PcSetup:
     apps: list[PcApp]
     # Solta os botões do mouse que o PC ficou segurando (conexão caída, agente encerrando).
     release_all: Callable[[], None]
-    # Estimativa da diferença de relógio com a API: `ProcessMessage` a alimenta com o `ts` de cada
-    # mensagem e os comandos medem a idade por ela.
+    # Referência de idade dos comandos: `ProcessMessage` a alimenta só com o `ts` dos batimentos da
+    # API, e os comandos medem a idade por ela.
     clock: ClockOffset
 
 

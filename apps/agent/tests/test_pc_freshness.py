@@ -70,19 +70,21 @@ class FakeLauncher:
 class Lab:
     """Handlers do PC com relógios falsos, que só andam quando se manda.
 
-    `elapsed` é o tempo real decorrido: o relógio da API é `NOW + elapsed - drift` e o monotônico
-    do agente é `mono_origin + elapsed` (a origem é arbitrária, como a de `time.monotonic`). O
-    relógio de parede do PC fica `pc_ahead` segundos à frente do da API.
+    `elapsed` é o tempo real decorrido. O relógio da API é `NOW + elapsed - drift - api_step` e o
+    monotônico do agente é `mono_origin + elapsed` (a origem é arbitrária, como a de
+    `time.monotonic`). O relógio de parede do PC acompanha a API (`drift`) e fica `pc_ahead`
+    segundos à frente dela. `api_step` é um salto só do relógio da API.
     """
 
     def __init__(self, *, pc_ahead: float = 0.0, mono_origin: float = 5000.0) -> None:
         self.elapsed = 0.0
         self.drift = 0.0
+        self.api_step = 0.0
         self.pc_ahead = pc_ahead
         self.skews: list[float] = []
         self.refusals: list[float] = []
         self.clock = ClockOffset(
-            now=lambda: NOW + timedelta(seconds=self.elapsed + self.pc_ahead),
+            now=lambda: NOW + timedelta(seconds=self.elapsed - self.drift + self.pc_ahead),
             monotonic=lambda: mono_origin + self.elapsed,
             on_skew=self.skews.append,
             on_refused=self.refusals.append,
@@ -103,25 +105,29 @@ class Lab:
 
     def stamp(self, in_flight: float) -> str:
         """O `ts` de uma mensagem que a API montou `in_flight` s antes de chegar."""
-        return (NOW + timedelta(seconds=self.elapsed - self.drift - in_flight)).isoformat()
+        seconds = self.elapsed - self.drift - self.api_step - in_flight
+        return (NOW + timedelta(seconds=seconds)).isoformat()
 
     def heartbeat(self, in_flight: float = 0.2) -> None:
-        """Um batimento da API, que `ProcessMessage` conta como amostra."""
+        """Um batimento da API: o único que `ProcessMessage` conta como amostra."""
         self.clock.observe(self.stamp(in_flight))
 
+    def beats(self, count: int, in_flight: float = 0.2, every: float = 25.0) -> None:
+        for _ in range(count):
+            self.elapsed += every
+            self.heartbeat(in_flight)
+
     def suspend(self, seconds: float, *, monotonic_counts: bool) -> None:
-        """O PC dorme `seconds`; a API segue. O monotônico pode ou não contar o tempo dormido."""
-        self.elapsed += seconds
-        if not monotonic_counts:
-            # O relógio da API andou `seconds` a mais que o monotônico do agente.
-            self.elapsed -= seconds
+        """O PC dorme `seconds`; a API e o relógio de parede seguem. O monotônico pode parar."""
+        if monotonic_counts:
+            self.elapsed += seconds
+        else:
             self.drift -= seconds
 
     async def run(
         self, handler: str, body: dict[str, object], in_flight: float | None
     ) -> tuple[str, str]:
         sent_at = None if in_flight is None else self.stamp(in_flight)
-        self.clock.observe(sent_at)  # como `ProcessMessage`, ao receber
         result = await self.handlers[handler](Command("1", handler, body, sent_at=sent_at))
         return result.status.value, result.code
 
@@ -133,11 +139,28 @@ async def test_a_fresh_command_runs() -> None:
     assert lab.pc.calls == [("click", "LEFT", "CLICK")]
 
 
-async def test_with_no_estimate_yet_even_an_old_command_runs_as_it_arrived() -> None:
-    lab = Lab()
-    command = Command("1", "pc.key.v1", {"key": "A"}, sent_at=lab.stamp(60))
-    assert (await lab.handlers["pc.key.v1"](command)).status is ResultStatus.OK
+async def test_with_an_empty_window_the_wall_clock_rule_applies() -> None:
+    lab = Lab()  # os relógios de parede concordam
     assert lab.clock.offset is None
+    assert (await lab.run("pc.key.v1", {"key": "A"}, 0.5))[0] == "ok"
+    # Um comando de 25 s (o que a API segurou) não passa só porque ainda não há referência.
+    assert await lab.run("pc.key.v1", {"key": "B"}, 25.0) == ("rejected", EXPIRED)
+    assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 25.0) == ("rejected", EXPIRED)
+    assert [call[1] for call in lab.pc.calls] == ["A"]
+
+
+async def test_with_an_empty_window_a_clock_a_little_behind_is_tolerated_but_not_a_lot() -> None:
+    lab = Lab(pc_ahead=-3.0)
+    assert (await lab.run("pc.key.v1", {"key": "A"}, 0.5))[0] == "ok"
+    lab = Lab(pc_ahead=-30.0)
+    assert await lab.run("pc.key.v1", {"key": "B"}, 0.5) == ("rejected", EXPIRED)
+
+
+async def test_a_command_never_seeds_the_estimate() -> None:
+    lab = Lab()
+    await lab.run("pc.key.v1", {"key": "A"}, 0.5)
+    await lab.run("pc.key.v1", {"key": "B"}, 25.0)
+    assert lab.clock.offset is None  # só o batimento da API a inaugura
 
 
 async def test_a_command_without_a_usable_timestamp_runs_as_it_arrived() -> None:
@@ -265,28 +288,31 @@ async def test_the_pc_wall_clock_jumping_backward_changes_nothing_either() -> No
     assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
 
 
-@pytest.mark.parametrize("monotonic_counts", [True, False])
-async def test_suspending_the_pc_does_not_make_commands_look_old(monotonic_counts: bool) -> None:
+async def test_after_a_long_suspend_with_the_monotonic_counting_the_window_is_empty() -> None:
     lab = Lab()
     lab.heartbeat(0.2)
-    # Uma hora suspenso, com ou sem o monotônico contar esse tempo; depois chega o batimento.
-    lab.suspend(3600, monotonic_counts=monotonic_counts)
-    lab.heartbeat(0.2)
-    assert (await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 0.3))[0] == "ok"
+    lab.suspend(3600, monotonic_counts=True)
+    assert lab.clock.offset is None  # as amostras saíram da janela
+    # Sem referência, vale o relógio de parede: o comando de 25 s é recusado, o novo passa.
+    assert await lab.run("pc.click.v1", {"button": "LEFT"}, 25.0) == ("rejected", EXPIRED)
     assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
-    # E a recusa do que foi segurado tempo demais continua valendo depois de acordar.
+    lab.beats(1)
+    assert (await lab.run("pc.click.v1", {"button": "RIGHT"}, 0.5))[0] == "ok"
     assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 12.0) == ("rejected", EXPIRED)
 
 
-@pytest.mark.parametrize("monotonic_counts", [True, False])
-async def test_the_first_command_after_a_suspend_is_accepted_even_before_a_new_heartbeat(
-    monotonic_counts: bool,
-) -> None:
+async def test_after_a_suspend_where_the_monotonic_stops_three_heartbeats_rebase_the_estimate() -> (
+    None
+):
     lab = Lab()
     lab.heartbeat(0.2)
-    lab.suspend(3600, monotonic_counts=monotonic_counts)
-    # O comando é a própria amostra nova (`ProcessMessage` a conta ao receber).
+    lab.suspend(3600, monotonic_counts=False)
+    # A API andou uma hora que o monotônico não viu: os batimentos saem MUITO abaixo do mínimo.
+    lab.beats(2)
     assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    lab.beats(1)  # o terceiro seguido refaz a estimativa
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 12.0) == ("rejected", EXPIRED)
 
 
 async def test_the_estimate_follows_the_api_clock_once_old_samples_leave_the_window() -> None:
@@ -299,6 +325,77 @@ async def test_the_estimate_follows_the_api_clock_once_old_samples_leave_the_win
     lab.heartbeat(0.2)
     assert lab.clock.offset == pytest.approx(first + 7.0)
     assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+
+
+async def test_when_the_api_clock_steps_back_commands_are_accepted_again_after_three_beats() -> (
+    None
+):
+    lab = Lab()
+    lab.beats(2)
+    assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 0.3))[0] == "ok"
+    lab.api_step = 4.0  # o relógio da API recuou 4 s
+    lab.beats(1)
+    # O mínimo antigo ainda vale: tudo parece 4 s mais velho.
+    assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 0.3) == ("rejected", EXPIRED)
+    assert await lab.run("pc.click.v1", {"button": "LEFT"}, 1.5) == ("rejected", EXPIRED)
+    lab.beats(1)
+    assert await lab.run("pc.click.v1", {"button": "LEFT"}, 1.5) == ("rejected", EXPIRED)
+    lab.beats(1)  # o terceiro seguido
+    assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 0.3))[0] == "ok"
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 1.5))[0] == "ok"
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
+
+
+async def test_a_slow_beat_now_and_then_does_not_move_the_estimate() -> None:
+    lab = Lab()
+    lab.beats(1)
+    base = lab.clock.offset
+    for in_flight in (3.0, 3.0, 0.2, 3.0, 3.0, 0.2):  # nunca três seguidos
+        lab.beats(1, in_flight)
+    assert lab.clock.offset == pytest.approx(base)
+
+
+async def test_a_single_future_stamped_beat_does_not_make_later_commands_look_old() -> None:
+    lab = Lab()
+    lab.beats(2)
+    base = lab.clock.offset
+    lab.heartbeat(-30.0)  # um carimbo 30 s no futuro
+    assert lab.clock.offset == pytest.approx(base)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    # Nem cinco minutos depois: sem o envenenamento, a idade segue certa.
+    lab.beats(10)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
+
+
+async def test_a_real_forward_step_of_the_api_clock_is_followed_after_three_beats() -> None:
+    lab = Lab()
+    lab.beats(2)
+    lab.api_step = -30.0  # a API avançou 30 s: os carimbos passam a vir 30 s à frente
+    lab.beats(3)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
+
+
+async def test_dropping_pointer_moves_for_age_over_and_over_is_reported_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lab = Lab()
+    lab.heartbeat(0.2)
+    with caplog.at_level("WARNING"):
+        for _ in range(20):
+            await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 8.0)
+        assert caplog.text == ""  # vinte seguidos ainda não é "sem parar"
+        for _ in range(30):
+            await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 8.0)
+        assert caplog.text.count("descartado por idade") == 1
+        assert len(lab.refusals) == 1
+        # Um movimento aceito encerra a sequência; a próxima, se vier, avisa de novo.
+        assert (await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 0.3))[0] == "ok"
+        for _ in range(21):
+            await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 8.0)
+    assert caplog.text.count("descartado por idade") == 2
+    assert len(lab.refusals) == 2
 
 
 async def test_a_large_difference_is_reported_once_not_per_command(

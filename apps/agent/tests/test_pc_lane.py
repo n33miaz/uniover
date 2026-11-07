@@ -3,6 +3,8 @@
 import asyncio
 from datetime import UTC, datetime
 
+import pytest
+
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.core import (
     Command,
@@ -25,6 +27,7 @@ class Lab:
     def __init__(self) -> None:
         self.tv_gate = asyncio.Event()
         self.pc_gate = asyncio.Event()
+        self.down_started = asyncio.Event()
         self.log: list[str] = []
 
     async def tv(self, command: Command) -> CommandResult:
@@ -45,6 +48,7 @@ class Lab:
         action = command.body["action"]
         if action == "DOWN":
             # O DOWN é o lento: sem a ordem garantida, o UP chegaria antes dele.
+            self.down_started.set()
             try:
                 await self.pc_gate.wait()
             except asyncio.CancelledError:
@@ -99,6 +103,14 @@ async def settle() -> None:
         await asyncio.sleep(0)
 
 
+async def start_blocked_down(lab: Lab, process: ProcessMessage) -> None:
+    """Manda um DOWN e só segue quando o handler dele já está de fato parado esperando."""
+    await process(click("DOWN"))
+    await asyncio.wait_for(lab.down_started.wait(), 1)
+    assert not lab.pc_gate.is_set()
+    assert lab.log == []
+
+
 async def test_the_pointer_is_not_held_up_by_a_slow_tv_key() -> None:
     lab = Lab()
     process, _ = build(lab)
@@ -118,8 +130,7 @@ async def test_the_pointer_is_not_held_up_by_a_slow_tv_key() -> None:
 async def test_a_tv_key_is_not_held_up_by_a_slow_pc_command() -> None:
     lab = Lab()
     process, _ = build(lab, tv=lab.tv_quick)
-    await process(click("DOWN"))  # preso até o teste soltar
-    await settle()
+    await start_blocked_down(lab, process)  # preso até o teste soltar
     await process(dump(tv_key("HOME")))
     await settle()
     assert lab.log == ["tv:quick"]
@@ -132,7 +143,7 @@ async def test_a_tv_key_is_not_held_up_by_a_slow_pc_command() -> None:
 async def test_pc_commands_keep_their_order_even_when_the_first_is_slow() -> None:
     lab = Lab()
     process, _ = build(lab)
-    await process(click("DOWN"))
+    await start_blocked_down(lab, process)
     await process(pointer(1))
     await process(pointer(2))
     await process(click("UP"))
@@ -158,7 +169,7 @@ async def test_pc_commands_are_answered_without_the_tv_timeout() -> None:
 async def test_losing_the_connection_drops_what_was_waiting_and_releases_the_buttons() -> None:
     lab = Lab()
     process, _ = build(lab)
-    await process(click("DOWN"))  # em andamento, preso
+    await start_blocked_down(lab, process)  # em andamento, preso
     await process(pointer(5))  # esperando a vez
     await settle()
     process.connection_lost()
@@ -176,9 +187,8 @@ async def test_losing_the_connection_drops_what_was_waiting_and_releases_the_but
 async def test_closing_the_agent_stops_the_lane_and_only_then_releases() -> None:
     lab = Lab()
     process, _ = build(lab)
-    await process(click("DOWN"))
+    await start_blocked_down(lab, process)
     await process(pointer(3))
-    await settle()
     await process.aclose()
     # A tarefa foi cancelada e terminou ANTES de soltar; nada rodou depois.
     assert lab.log == ["click:cancelled", "release"]
@@ -187,7 +197,7 @@ async def test_closing_the_agent_stops_the_lane_and_only_then_releases() -> None
     assert lab.log == ["click:cancelled", "release"]
 
 
-async def test_the_timestamp_of_every_message_from_the_api_is_observed() -> None:
+async def test_only_the_api_heartbeat_feeds_the_clock_estimate() -> None:
     lab = Lab()
     seen: list[str | None] = []
     clock = FakeClock()
@@ -206,7 +216,8 @@ async def test_the_timestamp_of_every_message_from_the_api_is_observed() -> None
         dump(envelope("pc.pointer.v1", {"dx": 1, "dy": 0}, ts="2026-11-07T12:00:01.000Z"))
     )
     await process.aclose()
-    assert seen == ["2026-11-07T12:00:00.000Z", "2026-11-07T12:00:01.000Z"]
+    # O comando do PC (que a API poderia ter segurado) não entra: só o batimento.
+    assert seen == ["2026-11-07T12:00:00.000Z"]
 
 
 async def test_a_failing_release_never_breaks_the_shutdown() -> None:
@@ -230,7 +241,7 @@ async def test_a_failing_release_never_breaks_the_shutdown() -> None:
 async def test_a_backlog_drops_the_oldest_pointer_moves_and_keeps_the_newest() -> None:
     lab = Lab()
     process, _ = build(lab)
-    await process(click("DOWN"))  # trava a faixa
+    await start_blocked_down(lab, process)  # trava a faixa: o DOWN está em execução, fora da fila
     total = MAX_PENDING_PC + 72
     for step in range(total):
         await process(pointer(step))
@@ -238,7 +249,51 @@ async def test_a_backlog_drops_the_oldest_pointer_moves_and_keeps_the_newest() -
     await settle()
     await asyncio.sleep(0.05)
     moved = [int(entry.split(":")[1]) for entry in lab.log if entry.startswith("pointer")]
-    # O DOWN ocupa uma vaga do teto; os movimentos que sobram são os mais novos, na ordem.
+    # A fila guarda no máximo `MAX_PENDING_PC` movimentos: ficam exatamente os mais novos, em ordem.
     assert lab.log[0] == "click:DOWN"
-    assert moved == list(range(total - (MAX_PENDING_PC - 1), total))
+    assert moved == list(range(total - MAX_PENDING_PC, total))
     await process.aclose()
+
+
+async def test_a_backlog_warns_once_per_overflow(caplog: pytest.LogCaptureFixture) -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    await start_blocked_down(lab, process)
+    with caplog.at_level("WARNING"):
+        for step in range(MAX_PENDING_PC + 50):
+            await process(pointer(step))
+    assert caplog.text.count("faixa do PC cheia") == 1
+    await process.aclose()
+
+
+async def test_a_backlog_never_drops_a_command_that_has_an_answer() -> None:
+    lab = Lab()
+    process, transport = build(lab)
+    await start_blocked_down(lab, process)
+    await process(click("UP"))
+    for step in range(MAX_PENDING_PC + 20):
+        await process(pointer(step))
+    lab.pc_gate.set()
+    await settle()
+    await asyncio.sleep(0.05)
+    assert "click:UP" in lab.log
+    assert lab.log.index("click:DOWN") < lab.log.index("click:UP")
+    assert len(transport.sent) == 2  # as respostas do DOWN e do UP; o movimento é silencioso
+    await process.aclose()
+
+
+async def test_finished_pointer_moves_leave_nothing_behind() -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    for step in range(500):
+        await process(pointer(step))
+        if step % 50 == 0:
+            await settle()
+    await settle()
+    await asyncio.sleep(0.05)
+    assert len([entry for entry in lab.log if entry.startswith("pointer")]) == 500
+    # Fila vazia e só o consumidor único vivo: nada acumula com o uso do mouse.
+    assert len(process._pc_queue) == 0
+    assert len(process._tasks) == 1
+    await process.aclose()
+    assert len(process._tasks) == 0

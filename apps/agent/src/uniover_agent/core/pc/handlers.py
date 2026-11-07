@@ -75,8 +75,8 @@ def pc_pointer_handler(pc: PcInput) -> Handler:
                 pc.move(dx, dy)
             pc.scroll(scroll_x, scroll_y)
         else:
-            # Mesmo sem deslocamento: a mensagem vazia (o app a manda para manter um arrasto vivo)
-            # chega ao adaptador, que a conta como tráfego sem enviar evento nenhum.
+            # Mesmo sem deslocamento: a mensagem vazia (o app a manda a cada 10 s enquanto segura
+            # um arrasto) chega ao adaptador, que a conta como tráfego sem enviar evento nenhum.
             pc.move(dx, dy)
         return _ok(command)
 
@@ -198,8 +198,9 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
     Cada um só roda dentro da sua validade (ver `freshness`); o UP de um clique e o cancelamento de
-    um desligamento passam sempre. `clock` é a estimativa da diferença de relógio com a API: quem
-    monta o agente a compartilha com `ProcessMessage`, que a alimenta.
+    um desligamento passam sempre. `clock` é a referência de idade (relógio da API contra o
+    monotônico do agente): quem monta o agente a compartilha com `ProcessMessage`, que a alimenta
+    com os batimentos da API.
     """
     offset = clock or ClockOffset()
 

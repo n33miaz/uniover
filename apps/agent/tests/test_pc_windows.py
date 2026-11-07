@@ -459,3 +459,34 @@ def test_a_drag_held_still_for_the_whole_dead_man_time_is_released() -> None:
     now[0] = 30  # nenhuma mensagem do PC em 30 s
     timers.fire_last()
     assert sent.batches[-1] == [LEFT_UP]
+
+
+def test_a_stuck_key_is_released_at_the_start_of_the_next_dispatch_not_after_the_idle_wait() -> (
+    None
+):
+    flaky = Flaky()
+    timers = Timers()
+    pc = WindowsPcInput(flaky, start_timer=timers)
+    flaky.accept = [2, 0]  # CTRL e T entram apertados e a soltura que segue é recusada
+    with pytest.raises(PartialSendError):
+        pc.key("T", ["CTRL"])
+    assert [(e.vk, e.flags) for e in flaky.batches[-1]] == [(0x11, 0), (ord("T"), 0)]
+    pc.move(3, 3)  # o próximo comando, bem antes dos 30 s
+    release, move = flaky.batches[-2:]
+    assert [(e.vk, e.flags) for e in release] == [(ord("T"), KEY_UP), (0x11, KEY_UP)]
+    assert [(e.dx, e.dy) for e in move] == [(3, 3)]
+    # Soltou: nada fica pendente nem armado.
+    assert timers.live() == []
+    pc.release_all()
+    assert len(flaky.batches) == 3
+
+
+def test_a_stuck_key_that_is_still_refused_does_not_stop_the_next_dispatch() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [2, 0]
+    with pytest.raises(PartialSendError):
+        pc.key("T", ["CTRL"])
+    flaky.accept = [0]  # a soltura de novo recusada...
+    pc.move(1, 1)  # ...mas o comando novo segue o seu caminho
+    assert [(e.dx, e.dy) for e in flaky.batches[-1]] == [(1, 1)]

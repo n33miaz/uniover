@@ -25,8 +25,11 @@ Sender = Callable[[Sequence[RawInput]], None]
 
 # Sem nenhuma mensagem `pc.*` por este tempo, o que ainda está apertado é solto sozinho: o app
 # fechou, a rede caiu ou o telefone dormiu no meio de um arrasto, e o botão não pode ficar preso no
-# PC. Vale também para um arrasto parado, com o dedo quieto, por 30 s sem nenhuma mensagem: ele é
-# solto. Qualquer `pc.*` que chegue conta como tráfego, até um movimento vazio (dx = dy = 0).
+# PC. Um arrasto com o dedo quieto por 30 s sem nenhuma chamada ao adaptador é solto. Contam como
+# tráfego as chamadas ao adaptador (mover, rolar, clicar, tecla, texto, mídia), inclusive o
+# movimento vazio (dx = dy = 0) que o app manda a cada 10 s enquanto segura um arrasto. Não
+# contam as mensagens que o agente descarta por idade, nem energia e abrir programa, que não
+# passam por aqui.
 DEAD_MAN_SECONDS: Final = 30.0
 
 
@@ -133,10 +136,11 @@ class WindowsPcInput:
 
     Guarda quais botões do mouse estão apertados (DOWN ainda sem UP) para poder soltá-los: por
     `release_all`, depois de um lote que o Windows aceitou só em parte, e sozinho quando passam
-    `dead_man_seconds` sem nenhuma mensagem `pc.*` (um arrasto parado, sem nem um movimento vazio
-    para mantê-lo vivo, é solto). Num lote parcial também solta as teclas que entraram apertadas
-    (um modificador não pode ficar preso). O relógio e o temporizador também são trocáveis. Os
-    comandos chegam pelo laço do agente e o temporizador roda em outra thread, daí a trava.
+    `dead_man_seconds` sem nenhuma chamada a este adaptador (um arrasto parado, sem nem o movimento
+    vazio que o app manda para mantê-lo vivo, é solto). Num lote parcial também solta as teclas que
+    entraram apertadas (um modificador não pode ficar preso). O relógio e o temporizador também são
+    trocáveis. Os comandos chegam pelo laço do agente e o temporizador roda em outra thread, daí
+    a trava.
     """
 
     def __init__(
@@ -197,6 +201,10 @@ class WindowsPcInput:
     def _dispatch(self, inputs: Sequence[RawInput]) -> None:
         with self._lock:
             self._last_activity = self._monotonic()
+            if self._stuck:
+                # Uma tecla que um lote parcial deixou apertada não espera o temporizador: tenta-se
+                # soltar antes de enviar o próximo lote (que, sem isso, sairia com ela apertada).
+                self._release(frozenset(), self._stuck, quiet=True)
             before = self._held
             try:
                 self._send(inputs)
@@ -214,13 +222,18 @@ class WindowsPcInput:
             self._held = pc_inputs.held_after(self._held, inputs)
             self._sync_timer()
 
-    def _release(self, buttons: frozenset[str], keys: tuple[RawInput, ...]) -> None:
+    def _release(
+        self, buttons: frozenset[str], keys: tuple[RawInput, ...], *, quiet: bool = False
+    ) -> None:
         """Manda a soltura de `buttons` e `keys`. Se o Windows recusar, eles seguem pendentes (o
         temporizador tenta de novo)."""
         try:
             self._send([*pc_inputs.release_inputs(buttons), *keys])
         except OSError as exc:
-            _log.warning("não foi possível soltar o que ficou apertado: %s", exc)
+            # Na repetição a cada comando o aviso iria ao registro 30 vezes por segundo.
+            (_log.debug if quiet else _log.warning)(
+                "não foi possível soltar o que ficou apertado: %s", exc
+            )
             self._stuck = tuple(dict.fromkeys((*self._stuck, *keys)))
             return
         self._held -= buttons
