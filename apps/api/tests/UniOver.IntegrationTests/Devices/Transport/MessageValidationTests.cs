@@ -54,8 +54,13 @@ public sealed class MessageValidationTests(PostgresFixture postgres)
             () => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("transport.keepalive.v1") == true,
             "capacidade de batimento processada");
 
-        // O relógio do Host é falso: adiantar prova o batimento da API sem esperar 25 segundos reais.
-        var incoming = agent.ReceiveAsync();
+        // O primeiro batimento sai logo depois do hello, sem esperar o período.
+        var first = (await agent.ReceiveAnyAsync())!.Value;
+        first.GetProperty("type").GetString().Should().Be("api.keepalive.v1");
+        first.GetProperty("body").EnumerateObject().Should().BeEmpty();
+
+        // O relógio do Host é falso: adiantar prova o batimento seguinte sem esperar 25 segundos reais.
+        var incoming = agent.ReceiveAnyAsync();
         app.App.Time.Advance(TimeSpan.FromSeconds(25));
         var heartbeat = (await incoming)!.Value;
         heartbeat.GetProperty("type").GetString().Should().Be("api.keepalive.v1");
@@ -68,6 +73,37 @@ public sealed class MessageValidationTests(PostgresFixture postgres)
             () => app.Presence.Get(app.Agent.Slug)!.LastMessageAt > before,
             "batimento do agente processado");
         agent.State.Should().Be(WebSocketState.Open);
+    }
+
+    [Fact]
+    public async Task TheFirstKeepAlive_LeavesRightAfterTheHelloIsAccepted_WithoutWaitingAPeriod()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+        var before = app.App.Time.GetUtcNow();
+
+        await agent.SendHelloAsync("2.5.0", "transport.keepalive.v1");
+        var first = (await agent.ReceiveAnyAsync())!.Value;
+
+        // O relógio é falso e não andou: o batimento não veio do temporizador do período.
+        app.App.Time.GetUtcNow().Should().Be(before);
+        first.GetProperty("type").GetString().Should().Be("api.keepalive.v1");
+        first.GetProperty("target").GetString().Should().Be($"agent:{app.Agent.Slug}");
+    }
+
+    [Fact]
+    public async Task AnAgentWithoutTheKeepAliveCapability_NeverGetsAKeepAlive()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+
+        await agent.SendHelloAsync("0.1.0", "tv.remote");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "0.1.0", "hello processado");
+        var next = agent.ReceiveAnyAsync();
+        app.App.Time.Advance(TimeSpan.FromSeconds(60));
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        next.IsCompleted.Should().BeFalse("versões sem a capacidade não recebem tipos novos");
     }
 
     [Fact]

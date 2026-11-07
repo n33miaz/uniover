@@ -61,7 +61,8 @@ internal sealed partial class AgentHub(
         }
         await persistedPresence.RecordConnectedAsync(agentId, connectedAt, cancellationToken);
         using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var heartbeat = SendKeepAlivesAsync(session, heartbeatStop.Token);
+        var helloAccepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var heartbeat = SendKeepAlivesAsync(session, helloAccepted.Task, heartbeatStop.Token);
         LogConnected(agentId);
         try
         {
@@ -82,7 +83,7 @@ internal sealed partial class AgentHub(
                     break;
                 }
 
-                if (!await ProcessAsync(session, frame, refusals, cancellationToken))
+                if (!await ProcessAsync(session, frame, refusals, helloAccepted, cancellationToken))
                 {
                     closeReason = AgentCloseReason.PolicyViolation;
                     break;
@@ -123,7 +124,7 @@ internal sealed partial class AgentHub(
 
     /// <summary>Devolve <c>false</c> quando a sessão deve ser fechada por insistência em mensagens recusadas.</summary>
     private async Task<bool> ProcessAsync(
-        IAgentSession session, byte[] frame, Queue<DateTimeOffset> refusals, CancellationToken cancellationToken)
+        IAgentSession session, byte[] frame, Queue<DateTimeOffset> refusals, TaskCompletionSource helloAccepted, CancellationToken cancellationToken)
     {
         var agentId = session.AgentId;
 
@@ -189,6 +190,9 @@ internal sealed partial class AgentHub(
                     await persistedPresence.RecordHelloAsync(agentId, version, host, update, now, cancellationToken);
                     await ClearHelloRefusalAsync(agentId, cancellationToken);
                 }
+
+                // Com o hello aceito a capacidade é conhecida: o primeiro batimento da API pode sair já.
+                helloAccepted.TrySetResult();
 
                 break;
             }
@@ -454,25 +458,36 @@ internal sealed partial class AgentHub(
         }
     }
 
-    private async Task SendKeepAlivesAsync(IAgentSession session, CancellationToken cancellationToken)
+    /// <summary>
+    /// Batimento da API para o agente. O primeiro sai assim que o <c>hello</c> é aceito (é por ele que o agente estima o relógio
+    /// da API, e esperar um período inteiro o deixaria sem referência); depois, um a cada <c>ApplicationKeepAliveSeconds</c>.
+    /// Agente que nunca diz o <c>hello</c> cai no ritmo de antes: o primeiro só depois de um período.
+    /// </summary>
+    private async Task SendKeepAlivesAsync(IAgentSession session, Task helloAccepted, CancellationToken cancellationToken)
     {
         try
         {
+            using (var firstWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                var period = Task.Delay(options.Value.ApplicationKeepAlive, time, firstWait.Token);
+                await Task.WhenAny(helloAccepted, period);
+                await firstWait.CancelAsync();
+            }
+
             while (true)
             {
-                await Task.Delay(options.Value.ApplicationKeepAlive, time, cancellationToken);
-                if (!connections.Supports(session, KeepAliveCapability))
+                if (connections.Supports(session, KeepAliveCapability))
                 {
-                    continue;
+                    var heartbeat = factory.Create(
+                        ApiKeepAliveType, session.AgentId, correlationId: null,
+                        JsonSerializer.SerializeToElement(new JsonObject()));
+                    if (heartbeat.IsFailure || !await session.SendAsync(heartbeat.Value.Json, cancellationToken))
+                    {
+                        return;
+                    }
                 }
 
-                var heartbeat = factory.Create(
-                    ApiKeepAliveType, session.AgentId, correlationId: null,
-                    JsonSerializer.SerializeToElement(new JsonObject()));
-                if (heartbeat.IsFailure || !await session.SendAsync(heartbeat.Value.Json, cancellationToken))
-                {
-                    return;
-                }
+                await Task.Delay(options.Value.ApplicationKeepAlive, time, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
