@@ -38,9 +38,29 @@ export interface StartupLine {
   readonly verified: boolean;
 }
 
-/** O que impediu a partida, em poucas palavras. Um código novo do agente cai no texto neutro. */
-export function codeReason(code: string): string | null {
+/**
+ * O que impediu a partida, em poucas palavras. Um código novo do agente cai no texto neutro (`null`).
+ * A etapa só desempata o que o mesmo código quer dizer em lugares diferentes (`crash_loop`, `exit_N`).
+ */
+export function codeReason(code: string, stage?: string | null): string | null {
+  const exit = /^exit_(-?\d+)$/.exec(code);
+  if (exit) {
+    const exitCode = Number(exit[1]);
+    return stage === 'supervisor'
+      ? $localize`:@@devices.startup.code.supervisor-exit:o supervisor fechou (código ${exitCode}:code:)`
+      : $localize`:@@devices.startup.code.agent-exit:o agente fechou (código ${exitCode}:code:)`;
+  }
   switch (code) {
+    case 'no_app':
+      return $localize`:@@devices.startup.code.no-app:faltam os arquivos do agente`;
+    case 'no_uv':
+      return $localize`:@@devices.startup.code.no-uv:faltou o uv no PC`;
+    case 'sync_failed':
+      return $localize`:@@devices.startup.code.sync-failed:falhou ao preparar o ambiente`;
+    case 'stale':
+      return $localize`:@@devices.startup.code.stale:o supervisor travou e foi reiniciado`;
+    case 'unresponsive':
+      return $localize`:@@devices.startup.code.unresponsive:o agente parou de responder`;
     case 'no_config':
       return $localize`:@@devices.startup.code.no-config:falta a configuração`;
     case 'vault_unreadable':
@@ -48,7 +68,9 @@ export function codeReason(code: string): string | null {
     case 'net_unreachable':
       return $localize`:@@devices.startup.code.net:sem acesso à rede`;
     case 'crash_loop':
-      return $localize`:@@devices.startup.code.crash-loop:o agente fecha ao abrir`;
+      return stage === 'child_exit'
+        ? $localize`:@@devices.startup.code.crash-loop-repeated:o agente caiu várias vezes seguidas`
+        : $localize`:@@devices.startup.code.crash-loop:o agente fecha ao abrir`;
     case 'blocked_sac':
       return $localize`:@@devices.startup.code.blocked-sac:o Windows bloqueou o programa`;
     case 'blocked_av':
@@ -95,7 +117,7 @@ export function rejectionText(reason: string): string {
 
 function startupText(beacon: AgentBeacon): string {
   if (beacon.code !== null && beacon.code !== 'ok') {
-    const reason = codeReason(beacon.code);
+    const reason = codeReason(beacon.code, beacon.stage);
     return reason
       ? $localize`:@@devices.startup.failed:Não conseguiu iniciar: ${reason}:reason:`
       : $localize`:@@devices.startup.failed-unknown:Não conseguiu iniciar`;

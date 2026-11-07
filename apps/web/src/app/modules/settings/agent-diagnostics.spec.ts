@@ -22,6 +22,14 @@ describe('agent diagnostics', () => {
     expect(kindLabel('diagnostics.dropped')).toBe('Eventos descartados');
   });
 
+  it('names the disk and PC clock occurrences', () => {
+    expect(kindLabel('disk.low')).toBe('Pouco espaço em disco');
+    expect(kindLabel('disk.recovered')).toBe('Espaço em disco normalizado');
+    expect(kindLabel('pc.clock_skew')).toBe('Relógio do PC fora de hora');
+    expect(kindLabel('pc.clock_unstable')).toBe('Conexão instável para medir o tempo');
+    expect(kindLabel('pc.command_expired')).toBe('Comando do PC chegou atrasado');
+  });
+
   it('shows an unknown kind neutrally, with the raw text', () => {
     expect(kindLabel('future.thing')).toBe('Ocorrência (future.thing)');
   });

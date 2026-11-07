@@ -69,6 +69,53 @@ describe('startupLine', () => {
     expect(codeReason('ok')).toBeNull();
   });
 
+  it('gives each new agent code a plain reason', () => {
+    expect(codeReason('no_app')).toBe('faltam os arquivos do agente');
+    expect(codeReason('no_uv', 'supervisor')).toBe('faltou o uv no PC');
+    expect(codeReason('sync_failed', 'supervisor')).toBe('falhou ao preparar o ambiente');
+    expect(codeReason('disk_full', 'supervisor')).toBe('o disco está cheio');
+    expect(codeReason('stale', 'supervisor')).toBe('o supervisor travou e foi reiniciado');
+    expect(codeReason('crash_loop', 'child_exit')).toBe('o agente caiu várias vezes seguidas');
+    expect(codeReason('crash_loop')).toBe('o agente fecha ao abrir');
+    expect(codeReason('unresponsive', 'child_exit')).toBe('o agente parou de responder');
+  });
+
+  it('reads the exit code out of exit_N, by who exited', () => {
+    expect(codeReason('exit_3', 'child_exit')).toBe('o agente fechou (código 3)');
+    expect(codeReason('exit_1', 'supervisor')).toBe('o supervisor fechou (código 1)');
+    expect(codeReason('exit_-1', 'child_exit')).toBe('o agente fechou (código -1)');
+    expect(codeReason('exit_')).toBeNull();
+    expect(codeReason('exit_abc')).toBeNull();
+    expect(codeReason('exit_1x')).toBeNull();
+  });
+
+  it('keeps the unverified clue line for the new codes, and an unknown one stays generic', () => {
+    const line = startupLine(
+      false,
+      SEEN,
+      beacon({ stage: 'child_exit', code: 'exit_7', at: LATER }),
+    );
+    expect(line).toEqual({
+      text: 'Não conseguiu iniciar: o agente fechou (código 7)',
+      failed: true,
+      at: LATER,
+      verified: false,
+    });
+    expect(
+      startupLine(false, SEEN, beacon({ stage: 'supervisor', code: 'no_uv', at: LATER }))?.text,
+    ).toBe('Não conseguiu iniciar: faltou o uv no PC');
+    expect(
+      startupLine(false, SEEN, beacon({ stage: 'child_exit', code: 'exit_', at: LATER }))?.text,
+    ).toBe('Não conseguiu iniciar');
+  });
+
+  it('does not treat child_spawn ok or bootstrap ok as a failure', () => {
+    for (const stage of ['child_spawn', 'bootstrap']) {
+      const line = startupLine(false, SEEN, beacon({ stage, code: 'ok', at: LATER }));
+      expect(line?.failed, stage).toBe(false);
+    }
+  });
+
   it('shows the last stage reached when the start itself went fine', () => {
     const line = startupLine(false, SEEN, beacon({ stage: 'supervisor', code: 'ok', at: LATER }));
     expect(line).toEqual({
