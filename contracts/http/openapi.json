@@ -2511,13 +2511,20 @@
               "string"
             ]
           },
+          "modules": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "version": {
             "type": "string"
           }
         },
         "required": [
           "commit",
-          "version"
+          "version",
+          "modules"
         ],
         "type": "object"
       },

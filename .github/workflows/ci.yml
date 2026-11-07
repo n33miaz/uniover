@@ -42,6 +42,7 @@ jobs:
           filters: |
             api:
               - 'apps/api/**'
+              - 'modules.json'
               - '.github/workflows/ci.yml'
               - '.github/scripts/**'
             web:
@@ -61,6 +62,7 @@ jobs:
               - '.github/workflows/ci.yml'
             image:
               - 'Dockerfile'
+              - 'modules.json'
               - 'apps/api/**'
               - 'apps/web/**'
               - '.github/workflows/ci.yml'

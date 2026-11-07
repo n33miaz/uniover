@@ -11908,6 +11908,9 @@ export interface components {
     };
     DeploymentVersion: {
       commit: null | string;
+      modules: {
+        [key: string]: string;
+      };
       version: string;
     };
     DevicesModuleInfo: {
