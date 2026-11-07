@@ -185,4 +185,60 @@ describe('PointerBatcher', () => {
     expect(send).toHaveBeenCalledTimes(1);
     await batcher.drain();
   });
+
+  it('hold buffers the movement and sends nothing until resume, which then flushes it as one request', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, OPTIONS, clock);
+    batcher.hold();
+    batcher.addMove(5, 1);
+    batcher.addMove(5, 2);
+    batcher.addScroll(0, 120);
+    clock.advance(1_000);
+    expect(send).not.toHaveBeenCalled();
+    expect(batcher.busy).toBe(true);
+
+    batcher.resume();
+    expect(batches).toEqual([{ dx: 10, dy: 3, scrollX: 0, scrollY: 120 }]);
+    finish();
+    await flush();
+  });
+
+  it('hold also stops the timer of a send that was only waiting for the rate', () => {
+    const clock = fakeClock();
+    const { send } = controlledSend();
+    const batcher = new PointerBatcher(send, OPTIONS, clock);
+    batcher.addMove(1, 0);
+    batcher.hold();
+    batcher.addMove(1, 0);
+    clock.advance(1_000);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('what piles up during a held flight does not leave until resume', async () => {
+    const clock = fakeClock();
+    const { send, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, OPTIONS, clock);
+    batcher.addMove(1, 0);
+    batcher.hold();
+    batcher.addMove(2, 0);
+    finish();
+    await flush();
+    clock.advance(1_000);
+    expect(send).toHaveBeenCalledTimes(1);
+    batcher.resume();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('drain still sends what is held (a click never passes in front of a movement)', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, OPTIONS, clock);
+    batcher.hold();
+    batcher.addMove(4, 0);
+    const draining = batcher.drain();
+    expect(batches).toEqual([{ dx: 4, dy: 0, scrollX: 0, scrollY: 0 }]);
+    finish();
+    await draining;
+  });
 });

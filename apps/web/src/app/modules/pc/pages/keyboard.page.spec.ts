@@ -177,14 +177,46 @@ describe('KeyboardPage', () => {
       expect(armed()).toEqual([]);
     });
 
-    it('longer text goes as text and keeps the modifier armed for the next key', async () => {
+    it('longer text goes as text, and any send spends the armed modifiers', async () => {
       mod('Ctrl').click();
+      mod('Shift').click();
       type('oi');
       submit().click();
       await fixture.whenStable();
       fixture.detectChanges();
       expect(store.sendText).toHaveBeenCalledExactlyOnceWith('oi');
+      expect(store.sendKey).not.toHaveBeenCalled();
+      expect(armed()).toEqual([]);
+    });
+
+    it('a failed send still spends them (it was attempted)', async () => {
+      store.sendText.mockResolvedValueOnce(FAILURE);
+      mod('Alt').click();
+      type('oi');
+      submit().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(armed()).toEqual([]);
+    });
+
+    it('keeps them when the send never left: nothing to type, or no connection', () => {
+      mod('Ctrl').click();
+      root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+      fixture.detectChanges();
+      expect(store.sendText).not.toHaveBeenCalled();
       expect(armed()).toEqual(['Ctrl']);
+
+      store.phase.set('offline');
+      fixture.detectChanges();
+      (fixture.componentInstance as unknown as { press(item: unknown): void }).press({
+        key: 'ENTER',
+      });
+      expect(store.sendKey).not.toHaveBeenCalled();
+      store.phase.set('ready');
+      fixture.detectChanges();
+      expect(armed()).toEqual(['Ctrl']);
+      named('Enter').click();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('ENTER', ['CTRL']);
     });
 
     it('is disabled with the rest while the PC is not connected', () => {

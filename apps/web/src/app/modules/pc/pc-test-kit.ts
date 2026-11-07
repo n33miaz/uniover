@@ -35,7 +35,8 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     click: vi.fn<(button: PcClickButton, action?: string) => Outcome>(() => Promise.resolve(null)),
     toggleDrag: vi.fn<() => Outcome>(() => Promise.resolve(null)),
     startDrag: vi.fn<() => Outcome>(() => Promise.resolve(null)),
-    release: vi.fn<() => Outcome>(() => Promise.resolve(null)),
+    release: vi.fn<(options?: { persistent?: boolean }) => Outcome>(() => Promise.resolve(null)),
+    buttonBusy: false,
     sendKey: vi.fn<(key: PcKey, modifiers?: readonly PcModifier[]) => Outcome>(() =>
       Promise.resolve(null),
     ),

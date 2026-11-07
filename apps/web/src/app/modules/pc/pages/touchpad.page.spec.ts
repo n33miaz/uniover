@@ -144,19 +144,20 @@ describe('TouchpadPage', () => {
 
     it('a finger held still presses the left button and lifting it releases, with no click', () => {
       pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(449);
+      vi.advanceTimersByTime(599);
       expect(store.startDrag).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
       expect(store.startDrag).toHaveBeenCalledTimes(1);
       expect(store.release).not.toHaveBeenCalled();
       pointer('pointerup', 1, 100, 100, 700);
-      expect(store.release).toHaveBeenCalledTimes(1);
+      // O dedo não vai mais tentar de novo: o soltar insiste.
+      expect(store.release).toHaveBeenCalledExactlyOnceWith({ persistent: true });
       expect(store.click).not.toHaveBeenCalled();
     });
 
     it('moving while pressed drags: the pointer follows the finger', () => {
       pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(700);
       pointer('pointermove', 1, 130, 110, 520);
       expect(store.movePointer).toHaveBeenCalledWith(30, 10, expect.any(Number));
       pointer('pointerup', 1, 130, 110, 560);
@@ -165,14 +166,14 @@ describe('TouchpadPage', () => {
 
     it('a system cancel while pressed releases the button', () => {
       pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(700);
       pointer('pointercancel', 1, 100, 100, 520);
       expect(store.release).toHaveBeenCalledTimes(1);
     });
 
     it('leaving the screen while pressed releases the button', () => {
       pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(700);
       fixture.destroy();
       expect(store.release).toHaveBeenCalled();
     });
@@ -180,10 +181,43 @@ describe('TouchpadPage', () => {
     it('when the Drag button already holds the left button, a long press does not take it over', () => {
       store.dragging.set(true);
       pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(500);
+      vi.advanceTimersByTime(700);
       pointer('pointerup', 1, 100, 100, 600);
       expect(store.startDrag).not.toHaveBeenCalled();
       expect(store.release).not.toHaveBeenCalled();
+    });
+
+    it('when the Drag button press is still on its way, a long press does not take it over or release it', () => {
+      store.buttonBusy = true;
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(700);
+      pointer('pointerup', 1, 100, 100, 800);
+      expect(store.startDrag).not.toHaveBeenCalled();
+      expect(store.release).not.toHaveBeenCalled();
+    });
+
+    it('shows the grab at once (before the PC answers) and takes it away when the finger leaves', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(700);
+      fixture.detectChanges();
+      expect(pad().classList.contains('holding')).toBe(true);
+      expect(root.querySelector('.holding-label')?.textContent?.trim()).toBe('Arrastando');
+      expect(root.querySelector('.hint.second')).toBeNull();
+      pointer('pointerup', 1, 100, 100, 800);
+      fixture.detectChanges();
+      expect(pad().classList.contains('holding')).toBe(false);
+      expect(root.querySelector('.holding-label')).toBeNull();
+    });
+
+    it('two fingers landing before the time is up scroll as before and press nothing', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(590);
+      pointer('pointerdown', 2, 140, 100, 590);
+      vi.advanceTimersByTime(1_000);
+      pointer('pointermove', 1, 100, 130, 1_600);
+      pointer('pointermove', 2, 140, 130, 1_600);
+      expect(store.startDrag).not.toHaveBeenCalled();
+      expect(store.scrollPointer).toHaveBeenCalled();
     });
 
     it('a quick tap still clicks and starts no drag', () => {
@@ -198,6 +232,25 @@ describe('TouchpadPage', () => {
       store.dragging.set(true);
       fixture.detectChanges();
       expect(pad().classList.contains('holding')).toBe(true);
+    });
+  });
+
+  describe('Drag button while the PC goes away', () => {
+    const dragButton = () => button('Arrastar');
+
+    it('is never disabled while the button is held, so the release is always reachable', () => {
+      store.dragging.set(true);
+      store.phase.set('offline');
+      fixture.detectChanges();
+      expect(dragButton().disabled).toBe(false);
+      dragButton().click();
+      expect(store.toggleDrag).toHaveBeenCalledTimes(1);
+    });
+
+    it('is disabled when nothing is held and the PC is away, like the other buttons', () => {
+      store.phase.set('offline');
+      fixture.detectChanges();
+      expect(dragButton().disabled).toBe(true);
     });
   });
 
