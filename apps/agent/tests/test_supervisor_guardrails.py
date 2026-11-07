@@ -574,6 +574,8 @@ def test_three_sync_timeouts_roll_back_without_blocking_the_version(pc: Pc) -> N
     blocked = pc.runtime / ".blocked-versions"
     assert not blocked.exists() or CURRENT not in blocked.read_text(encoding="ascii")
     assert (pc.base / "app" / ".version").read_text(encoding="ascii").strip() == "c" * 40
+    # Não bloqueada, mas adiada por 24 h (o self-update não a reinstala a cada checagem).
+    assert CURRENT in (pc.runtime / ".deferred-versions").read_text(encoding="ascii")
 
 
 def test_the_update_only_skips_the_sync_once_the_environment_was_synced_for_this_version(
@@ -593,7 +595,70 @@ def test_the_update_only_skips_the_sync_once_the_environment_was_synced_for_this
         (pc.runtime / "update-now").write_text("", encoding="ascii")
         assert wait_for(lambda: len(seen.read_text("ascii").split()) >= 2, 60), pc.supervisor_log()
     lines = seen.read_text("ascii").split()
-    # Primeira volta: o update roda antes de qualquer sync (o `uv run` sincroniza sozinho).
-    assert lines[0] == "[]"
+    # O sync da primeira volta vem ANTES do update: já nela o `self-update` roda com UV_NO_SYNC.
+    assert lines[0] == "[1]"
     # Depois do sync desta versão, o update não re-sincroniza o ambiente do agente em execução.
     assert lines[1] == "[1]"
+
+
+def trial_with_previous(pc: Pc) -> None:
+    previous = pc.base / "app.previous"
+    (previous / "tools").mkdir(parents=True)
+    (previous / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (previous / "tools" / "run-agent.ps1").write_text("exit 0\n", encoding="ascii")
+    (previous / ".version").write_text("c" * 40 + "\n", encoding="ascii")
+    (pc.runtime / "update-trial.txt").write_text(CURRENT + "|0", encoding="ascii")
+
+
+def test_the_first_lap_syncs_before_it_updates(pc: Pc, tmp_path: Path) -> None:
+    order = tmp_path / "order.txt"
+    pc.uv(
+        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        sync_lines=['echo sync>>"%UNIOVER_TEST_ORDER%"', "exit /b 0"],
+        update_lines=['echo update>>"%UNIOVER_TEST_ORDER%"', "exit /b 0"],
+    )
+    with heartbeat(pc.alive), pc.running(UNIOVER_TEST_ORDER=str(order)):
+        assert wait_for(lambda: order.exists() and "update" in order.read_text("ascii"), 40), (
+            pc.supervisor_log()
+        )
+    assert order.read_text("ascii").split()[:2] == ["sync", "update"]
+
+
+def test_a_sync_that_times_out_on_a_full_disk_still_starts_the_agent(pc: Pc) -> None:
+    # O incidente: disco cheio e `uv sync` preso. Havendo um ambiente que já rodou (versão estável),
+    # o agente sobe com ele em vez de esperar o disco para sempre.
+    python = pc.runtime / "venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="ascii")
+    pc.uv(
+        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"],
+    )
+    with pc.running(
+        UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2", UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999"
+    ):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        assert wait_for(lambda: any(i["kind"] == "update.low_disk" for i in pc.diagnostics()), 10)
+
+
+def test_three_sync_failures_from_a_full_disk_roll_back_without_blocking(pc: Pc) -> None:
+    trial_with_previous(pc)
+    pc.uv(["exit /b 0"], sync_lines=["echo sem espaco 1>&2", "exit /b 1"])
+    with pc.running(UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999"):
+        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+            pc.supervisor_log()
+        )
+    blocked = pc.runtime / ".blocked-versions"
+    assert not blocked.exists() or CURRENT not in blocked.read_text(encoding="ascii")
+    assert CURRENT in (pc.runtime / ".deferred-versions").read_text(encoding="ascii")
+
+
+def test_three_real_sync_errors_roll_back_and_block_the_version(pc: Pc) -> None:
+    trial_with_previous(pc)
+    pc.uv(["exit /b 0"], sync_lines=["echo erro de dependencia 1>&2", "exit /b 1"])
+    with pc.running(UNIOVER_SUPERVISOR_MIN_FREE_MB="1"):
+        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+            pc.supervisor_log()
+        )
+    assert CURRENT in (pc.runtime / ".blocked-versions").read_text(encoding="ascii")
+    assert not (pc.runtime / ".deferred-versions").exists()
