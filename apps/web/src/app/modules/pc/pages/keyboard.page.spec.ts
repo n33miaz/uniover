@@ -31,9 +31,9 @@ describe('KeyboardPage', () => {
 
   afterEach(() => fixture.destroy());
 
-  it('has a labelled field, limited to what the contract accepts', () => {
+  it('has a labelled field; the HTML limit is the worst case in UTF-16 units, the real one is by code points', () => {
     expect(root.querySelector('label[for=pc-text]')).not.toBeNull();
-    expect(field().maxLength).toBe(200);
+    expect(field().maxLength).toBe(400);
     // 16px: abaixo disso o Safari do iPhone dá zoom ao focar o campo.
     expect(field().getAttribute('autocomplete')).toBe('off');
   });
@@ -104,5 +104,133 @@ describe('KeyboardPage', () => {
     expect([...root.querySelectorAll<HTMLButtonElement>('button')].every((b) => b.disabled)).toBe(
       true,
     );
+  });
+
+  describe('armed modifiers', () => {
+    const mod = (name: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('.mods button')].find(
+        (b) => b.textContent?.trim() === name,
+      )!;
+    const armed = () =>
+      [...root.querySelectorAll<HTMLButtonElement>('.mods button')]
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')
+        .map((b) => b.textContent?.trim());
+
+    it('has Ctrl, Shift, Alt and Win as toggle buttons, none armed at first', () => {
+      const buttons = [...root.querySelectorAll<HTMLButtonElement>('.mods button')];
+      expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Ctrl', 'Shift', 'Alt', 'Win']);
+      expect(buttons.every((b) => b.getAttribute('aria-pressed') === 'false')).toBe(true);
+      expect(root.querySelector('.mods')?.getAttribute('aria-label')).toBe('Teclas armadas');
+    });
+
+    it('tapping arms it (shown pressed) and tapping again disarms it, sending nothing', () => {
+      mod('Ctrl').click();
+      fixture.detectChanges();
+      expect(armed()).toEqual(['Ctrl']);
+      expect(mod('Ctrl').classList.contains('armed')).toBe(true);
+      mod('Ctrl').click();
+      fixture.detectChanges();
+      expect(armed()).toEqual([]);
+      expect(store.sendKey).not.toHaveBeenCalled();
+    });
+
+    it('goes with the next key and disarms by itself', () => {
+      mod('Ctrl').click();
+      named('Enter').click();
+      fixture.detectChanges();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('ENTER', ['CTRL']);
+      expect(armed()).toEqual([]);
+      named('Enter').click();
+      expect(store.sendKey).toHaveBeenLastCalledWith('ENTER', []);
+    });
+
+    it('several can be armed at once and all go together, in the usual order', () => {
+      mod('Alt').click();
+      mod('Ctrl').click();
+      mod('Shift').click();
+      named('Del (Delete)').click();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('DELETE', ['CTRL', 'SHIFT', 'ALT']);
+    });
+
+    it('joins what a shortcut already has, without repeating a modifier', () => {
+      mod('Shift').click();
+      mod('Ctrl').click();
+      named('Copiar').click();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('C', ['CTRL', 'SHIFT']);
+    });
+
+    it('Win armed goes with a function key', () => {
+      mod('Win').click();
+      named('F5').click();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('F5', ['WIN']);
+    });
+
+    it('a single letter typed in the field becomes the key (Ctrl armed and "c" is Ctrl+C)', async () => {
+      mod('Ctrl').click();
+      type('c');
+      submit().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('C', ['CTRL']);
+      expect(store.sendText).not.toHaveBeenCalled();
+      expect(field().value).toBe('');
+      expect(armed()).toEqual([]);
+    });
+
+    it('longer text goes as text and keeps the modifier armed for the next key', async () => {
+      mod('Ctrl').click();
+      type('oi');
+      submit().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.sendText).toHaveBeenCalledExactlyOnceWith('oi');
+      expect(armed()).toEqual(['Ctrl']);
+    });
+
+    it('is disabled with the rest while the PC is not connected', () => {
+      store.phase.set('offline');
+      fixture.detectChanges();
+      expect(
+        [...root.querySelectorAll<HTMLButtonElement>('.mods button')].every((b) => b.disabled),
+      ).toBe(true);
+    });
+  });
+
+  it('has the function keys F1 to F12', () => {
+    const labels = [...root.querySelectorAll<HTMLButtonElement>('.fkeys button')].map((b) =>
+      b.textContent?.trim(),
+    );
+    expect(labels).toEqual(Array.from({ length: 12 }, (_, i) => `F${i + 1}`));
+    named('F11').click();
+    expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('F11', []);
+  });
+
+  describe('text limit', () => {
+    it('counts code points: 200 emoji go through whole, although they are 400 UTF-16 units', () => {
+      const text = '😀'.repeat(200);
+      type(text);
+      expect(field().value).toBe(text);
+      expect(submit().disabled).toBe(false);
+    });
+
+    it('never cuts an emoji in half at the limit', () => {
+      type('a'.repeat(199) + '😀' + 'b');
+      expect(field().value).toBe('a'.repeat(199) + '😀');
+      type('a'.repeat(200) + '😀');
+      expect(field().value).toBe('a'.repeat(200));
+    });
+
+    it('drops half an emoji left by a paste that the browser cut', () => {
+      type('abc' + '😀'.slice(0, 1));
+      expect(field().value).toBe('abc');
+    });
+
+    it('sends the whole text in one request, emoji and accents included', async () => {
+      const text = 'olá 😀 ação';
+      type(text);
+      submit().click();
+      await fixture.whenStable();
+      expect(store.sendText).toHaveBeenCalledExactlyOnceWith(text);
+    });
   });
 });

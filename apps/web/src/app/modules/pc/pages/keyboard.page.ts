@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { PcStore } from '../data/pc-store';
 import { tick } from '../input/haptics';
-import type { PcKey, PcModifier } from '../data/pc-types';
+import { clampText } from '../input/text-limit';
+import { PC_MODIFIERS, type PcKey, type PcLetter, type PcModifier } from '../data/pc-types';
 
 interface KeyButton {
   readonly key: PcKey;
@@ -11,13 +12,25 @@ interface KeyButton {
   readonly aria?: string;
 }
 
-/** O limite do contrato para o texto de uma vez. */
+/** O limite do contrato para o texto de uma vez, em pontos de código (um emoji vale um). */
 const MAX_TEXT = 200;
+
+/** O pior caso do limite em unidades de 16 bits do HTML (cada ponto de código vale até duas); o corte certo é o do `clampText`. */
+const MAX_UNITS = MAX_TEXT * 2;
+
+/** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
+const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
+  CTRL: 'Ctrl',
+  SHIFT: 'Shift',
+  ALT: 'Alt',
+  WIN: 'Win',
+};
 
 /**
  * Teclado do PC: um campo para digitar texto (vai inteiro, com acentos, para onde o cursor do PC estiver) e as teclas e os
  * atalhos que o teclado do celular não tem. Cada toque é um comando; o texto digitado nunca fica guardado na tela depois
- * de enviado (pode ser uma senha).
+ * de enviado (pode ser uma senha). Ctrl, Shift, Alt e Win são teclas "armadas": ficam marcadas e valem só para a próxima
+ * tecla, que sai como um atalho (com o campo, uma letra sozinha vira a tecla, por exemplo Ctrl armado e "c" é Ctrl+C).
  */
 @Component({
   selector: 'app-pc-keyboard-page',
@@ -36,7 +49,7 @@ const MAX_TEXT = 200;
         [attr.autocorrect]="'off'"
         spellcheck="false"
         [attr.enterkeyhint]="'send'"
-        [maxLength]="max"
+        [maxLength]="maxUnits"
         [value]="text()"
         [disabled]="!store.canSend()"
         placeholder="Digite aqui"
@@ -55,6 +68,26 @@ const MAX_TEXT = 200;
     @if (error(); as message) {
       <p class="error" role="alert">{{ message }}</p>
     }
+
+    <div
+      class="mods"
+      role="group"
+      aria-label="Teclas armadas"
+      i18n-aria-label="@@pc.keyboard.modifiers"
+    >
+      @for (mod of modifiers; track mod) {
+        <button
+          type="button"
+          class="key mod"
+          [class.armed]="isArmed(mod)"
+          [attr.aria-pressed]="isArmed(mod)"
+          [disabled]="!store.canSend()"
+          (click)="toggle(mod)"
+        >
+          {{ label(mod) }}
+        </button>
+      }
+    </div>
 
     <div class="keys main" role="group" aria-labelledby="keys-title">
       <h2 id="keys-title" class="sr-only" i18n="@@pc.keyboard.keys">Teclas</h2>
@@ -100,12 +133,28 @@ const MAX_TEXT = 200;
         </button>
       }
     </div>
+
+    <div
+      class="keys fkeys"
+      role="group"
+      aria-label="F1 a F12"
+      i18n-aria-label="@@pc.keyboard.fkeys"
+    >
+      @for (item of functionKeys; track item.key) {
+        <button type="button" class="key" [disabled]="!store.canSend()" (click)="press(item)">
+          {{ item.label }}
+        </button>
+      }
+    </div>
   `,
   styleUrl: './keyboard.page.css',
 })
 export class KeyboardPage {
   protected readonly store = inject(PcStore);
-  protected readonly max = MAX_TEXT;
+  protected readonly maxUnits = MAX_UNITS;
+  protected readonly modifiers = PC_MODIFIERS;
+  /** As teclas armadas: valem para a próxima tecla e então se soltam sozinhas. */
+  protected readonly armed = signal<ReadonlySet<PcModifier>>(new Set());
   protected readonly text = signal('');
   protected readonly sending = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -146,17 +195,44 @@ export class KeyboardPage {
     { key: 'F4', modifiers: ['ALT'], label: $localize`:@@pc.shortcut.close:Fechar Janela` },
   ]);
 
+  protected readonly functionKeys: readonly KeyButton[] = (
+    ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'] as const
+  ).map((key) => ({ key, label: key }));
+
+  protected label(modifier: PcModifier): string {
+    return MODIFIER_LABEL[modifier];
+  }
+
+  protected isArmed(modifier: PcModifier): boolean {
+    return this.armed().has(modifier);
+  }
+
+  protected toggle(modifier: PcModifier): void {
+    tick();
+    const next = new Set(this.armed());
+    if (!next.delete(modifier)) next.add(modifier);
+    this.armed.set(next);
+  }
+
   protected onInput(event: Event): void {
-    this.text.set((event.target as HTMLInputElement).value);
+    const input = event.target as HTMLInputElement;
+    // O limite é em pontos de código: o do HTML contaria um emoji como dois e poderia cortá-lo ao meio.
+    const clamped = clampText(input.value, MAX_TEXT);
+    if (clamped !== input.value) {
+      const caret = Math.min(input.selectionStart ?? clamped.length, clamped.length);
+      input.value = clamped;
+      input.setSelectionRange?.(caret, caret);
+    }
+    this.text.set(clamped);
     this.error.set(null);
   }
 
   protected async send(): Promise<void> {
-    const value = this.text();
+    const value = clampText(this.text(), MAX_TEXT);
     if (!value || this.sending() || !this.store.canSend()) return;
     this.sending.set(true);
     tick();
-    const failure = await this.store.sendText(value);
+    const failure = await this.sendValue(value);
     this.sending.set(false);
     if (failure) {
       this.error.set(failure.message);
@@ -168,6 +244,22 @@ export class KeyboardPage {
 
   protected press(item: KeyButton): void {
     tick();
-    void this.store.sendKey(item.key, item.modifiers ?? []);
+    void this.store.sendKey(item.key, this.takeModifiers(item.modifiers));
+  }
+
+  /** Com tecla armada, uma letra sozinha no campo é o atalho; qualquer outro texto vai inteiro, como texto. */
+  private sendValue(value: string) {
+    if (this.armed().size > 0 && /^[a-z]$/i.test(value)) {
+      return this.store.sendKey(value.toUpperCase() as PcLetter, this.takeModifiers());
+    }
+    return this.store.sendText(value);
+  }
+
+  /** Junta o que está armado ao do atalho e solta tudo: as teclas armadas valem uma vez só. */
+  private takeModifiers(base: readonly PcModifier[] = []): readonly PcModifier[] {
+    const armed = this.armed();
+    if (armed.size === 0) return base;
+    this.armed.set(new Set());
+    return PC_MODIFIERS.filter((mod) => armed.has(mod) || base.includes(mod));
   }
 }
