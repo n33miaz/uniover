@@ -39,6 +39,14 @@ class PcInput(Protocol):
         """Tecla de mídia do contrato; `steps` repete (volume)."""
         ...
 
+    def release_all(self) -> None:
+        """Solta todo botão do mouse que ficou apertado (DOWN sem UP). Sem nenhum, não faz nada.
+
+        Nunca levanta erro: é chamado quando a conexão cai e ao encerrar, momentos em que não há
+        a quem reportar a falha.
+        """
+        ...
+
 
 class PcPower(Protocol):
     """Energia do PC."""

@@ -7,8 +7,20 @@ from collections.abc import Callable, Sequence
 import pytest
 
 from uniover_agent.adapters import pc_windows
-from uniover_agent.adapters.pc_inputs import MOUSE_MOVE, RawInput
-from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher, WindowsPcPower
+from uniover_agent.adapters.pc_inputs import (
+    MOUSE_LEFTDOWN,
+    MOUSE_LEFTUP,
+    MOUSE_MOVE,
+    MOUSE_RIGHTDOWN,
+    MOUSE_RIGHTUP,
+    RawInput,
+)
+from uniover_agent.adapters.pc_windows import (
+    PartialSendError,
+    WindowsPcInput,
+    WindowsPcLauncher,
+    WindowsPcPower,
+)
 from uniover_agent.ports.pc import PcUnsupported
 
 
@@ -142,3 +154,233 @@ def test_native_structures_match_the_windows_layout_without_sending_anything() -
         assert wheel.union.mi.mouseData == 0xFFFFFF88
         key = pc_windows.to_native(RawInput("keyboard", 0x0004, scan=0x00E7))
         assert (key.type, key.union.ki.wScan, key.union.ki.dwFlags) == (1, 0xE7, 4)
+
+
+LEFT_DOWN = RawInput("mouse", MOUSE_LEFTDOWN)
+LEFT_UP = RawInput("mouse", MOUSE_LEFTUP)
+RIGHT_DOWN = RawInput("mouse", MOUSE_RIGHTDOWN)
+RIGHT_UP = RawInput("mouse", MOUSE_RIGHTUP)
+
+
+class Handle:
+    def __init__(self) -> None:
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class Timers:
+    """Temporizador falso: guarda o que foi armado e só dispara quando o teste manda."""
+
+    def __init__(self) -> None:
+        self.armed: list[tuple[float, Callable[[], None], Handle]] = []
+
+    def __call__(self, delay: float, callback: Callable[[], None]) -> Handle:
+        handle = Handle()
+        self.armed.append((delay, callback, handle))
+        return handle
+
+    def live(self) -> list[tuple[float, Callable[[], None]]]:
+        return [(delay, call) for delay, call, handle in self.armed if not handle.cancelled]
+
+    def fire_last(self) -> None:
+        *_, (_, callback, handle) = (a for a in self.armed if not a[2].cancelled)
+        handle.cancelled = True  # um temporizador que disparou não fica mais pendente
+        callback()
+
+
+class Flaky:
+    """`SendInput` falso que aceita só parte de certos lotes e pode recusar tudo."""
+
+    def __init__(self) -> None:
+        self.batches: list[list[RawInput]] = []
+        self.accept: list[int | None] = []  # por lote: quantos aceita (None = todos)
+        self.refuse_all = False
+
+    def __call__(self, inputs: Sequence[RawInput]) -> None:
+        batch = list(inputs)
+        if self.refuse_all:
+            raise OSError("recusou tudo")
+        limit = self.accept.pop(0) if self.accept else None
+        if limit is not None and limit < len(batch):
+            if limit:
+                self.batches.append(batch[:limit])
+            raise PartialSendError(limit, len(batch))
+        self.batches.append(batch)
+
+
+def test_release_all_lifts_the_button_that_was_put_down() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.click("LEFT", "DOWN")
+    pc.release_all()
+    assert sent.batches[-1] == [LEFT_UP]
+    # Já solto: chamar de novo não envia mais nada.
+    pc.release_all()
+    assert len(sent.batches) == 2
+
+
+def test_release_all_with_nothing_held_sends_nothing() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.release_all()
+    pc.click("LEFT", "CLICK")
+    pc.move(1, 1)
+    batches = len(sent.batches)
+    pc.release_all()
+    assert len(sent.batches) == batches
+
+
+def test_a_button_put_down_and_then_up_is_not_held() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.click("LEFT", "DOWN")
+    pc.click("LEFT", "UP")
+    pc.release_all()
+    assert len(sent.batches) == 2
+
+
+def test_release_all_lifts_every_held_button() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.click("RIGHT", "DOWN")
+    pc.click("LEFT", "DOWN")
+    pc.release_all()
+    assert sent.batches[-1] == [LEFT_UP, RIGHT_UP]
+
+
+def test_a_partial_batch_releases_what_went_in() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    # Um duplo clique em que só 3 dos 4 eventos entraram: o terceiro é um DOWN sem UP.
+    flaky.accept = [3]
+    with pytest.raises(PartialSendError):
+        pc.click("LEFT", "DOUBLE")
+    assert flaky.batches[-1] == [LEFT_UP]
+    pc.release_all()
+    assert len(flaky.batches) == 2  # nada mais a soltar
+
+
+def test_a_batch_the_system_took_none_of_leaves_nothing_to_release() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.refuse_all = True
+    with pytest.raises(OSError, match="recusou"):
+        pc.click("LEFT", "DOWN")
+    flaky.refuse_all = False
+    pc.release_all()
+    assert flaky.batches == []
+
+
+def test_a_partial_batch_does_not_drop_a_drag_already_in_progress() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    pc.click("LEFT", "DOWN")
+    flaky.accept = [0]
+    with pytest.raises(PartialSendError):
+        pc.move(5, 5)
+    # O arrasto continua: o botão segue apertado até o app soltar ou o agente soltar tudo.
+    assert flaky.batches == [[LEFT_DOWN]]
+    pc.release_all()
+    assert flaky.batches[-1] == [LEFT_UP]
+
+
+def test_a_refused_release_keeps_the_button_held_for_a_new_attempt() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    pc.click("LEFT", "DOWN")
+    flaky.refuse_all = True
+    pc.release_all()  # não levanta erro
+    flaky.refuse_all = False
+    pc.release_all()
+    assert flaky.batches[-1] == [LEFT_UP]
+
+
+def test_the_dead_man_timer_releases_a_button_left_down_without_traffic() -> None:
+    now = [100.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    ((delay, _),) = timers.live()
+    assert delay == 30
+    now[0] += 30
+    timers.fire_last()
+    assert sent.batches[-1] == [LEFT_UP]
+    assert timers.live() == []  # nada mais apertado: o temporizador não fica armado
+
+
+def test_traffic_postpones_the_dead_man_timer() -> None:
+    now = [0.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    now[0] = 20
+    pc.move(2, 2)  # o arrasto segue vivo
+    now[0] = 30
+    timers.fire_last()
+    # Passaram só 10 s desde o último comando: não solta, rearma para os 20 s que faltam.
+    assert len(sent.batches) == 2
+    ((delay, _),) = timers.live()
+    assert delay == 20
+    now[0] = 50
+    timers.fire_last()
+    assert sent.batches[-1] == [LEFT_UP]
+
+
+def test_the_dead_man_timer_is_cancelled_when_the_button_is_let_go() -> None:
+    timers = Timers()
+    pc = WindowsPcInput(Recorder(), start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    pc.click("LEFT", "UP")
+    assert timers.live() == []
+
+
+def test_a_late_firing_of_a_replaced_timer_does_nothing() -> None:
+    now = [0.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    stale = timers.armed[0][1]
+    pc.click("LEFT", "UP")
+    pc.click("RIGHT", "DOWN")
+    now[0] = 100
+    stale()  # o disparo do primeiro temporizador, que já tinha sido cancelado
+    assert sent.batches[-1] == [RIGHT_DOWN]
+    assert len(timers.live()) == 1
+
+
+def test_the_dead_man_timer_tries_again_when_the_release_was_refused() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    flaky.refuse_all = True
+    now[0] = 30
+    timers.fire_last()
+    ((delay, _),) = timers.live()
+    assert delay == 30
+    flaky.refuse_all = False
+    now[0] = 60
+    timers.fire_last()
+    assert flaky.batches[-1] == [LEFT_UP]
+
+
+def test_typed_text_with_an_emoji_goes_out_as_a_single_batch() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.type_text("oi \U0001f600")
+    (batch,) = sent.batches
+    assert [event.scan for event in batch[::2]] == [ord("o"), ord("i"), ord(" "), 0xD83D, 0xDE00]
+
+
+def test_a_lone_surrogate_is_refused_and_nothing_is_sent() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    with pytest.raises(ValueError, match="par substituto"):
+        pc.type_text("senha\ud800")
+    assert sent.batches == []

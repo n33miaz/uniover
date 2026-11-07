@@ -8,7 +8,11 @@ testes montarem o agente) e recusam com `PcUnsupported`. Os eventos já chegam p
 import logging
 import os
 import sys
+import threading
+import time
 from collections.abc import Callable, Sequence
+from functools import partial
+from typing import Final, Protocol
 
 from uniover_agent.adapters import pc_inputs
 from uniover_agent.adapters.pc_inputs import RawInput
@@ -18,6 +22,33 @@ from uniover_agent.ports.pc import PcUnsupported
 _log = logging.getLogger(__name__)
 
 Sender = Callable[[Sequence[RawInput]], None]
+
+# Sem nenhum comando do PC por este tempo, um botão ainda apertado é solto sozinho: o app fechou,
+# a rede caiu ou o telefone dormiu no meio de um arrasto, e o botão não pode ficar preso no PC.
+DEAD_MAN_SECONDS: Final = 30.0
+
+
+class PartialSendError(OSError):
+    """O Windows aceitou só parte dos eventos de um lote (`sent` deles, os primeiros)."""
+
+    def __init__(self, sent: int, requested: int) -> None:
+        super().__init__(f"o Windows aceitou {sent} de {requested} eventos de entrada")
+        self.sent = sent
+
+
+class _Cancelable(Protocol):
+    def cancel(self) -> None: ...
+
+
+TimerStarter = Callable[[float, Callable[[], None]], _Cancelable]
+
+
+def _start_timer(delay: float, callback: Callable[[], None]) -> _Cancelable:
+    timer = threading.Timer(delay, callback)
+    timer.daemon = True  # um temporizador pendente não pode segurar o encerramento do agente
+    timer.start()
+    return timer
+
 
 IS_WINDOWS = sys.platform == "win32"
 _UNSUPPORTED = "o controle do PC só existe no Windows"
@@ -74,7 +105,7 @@ if sys.platform == "win32":
         sent = ctypes.windll.user32.SendInput(len(inputs), array, ctypes.sizeof(_Input))
         if sent != len(inputs):
             # O Windows recusa quando outra janela com mais privilégio (UAC) tem o foco.
-            raise OSError(f"o Windows aceitou {sent} de {len(inputs)} eventos de entrada")
+            raise PartialSendError(sent, len(inputs))
 
     def _lock_workstation() -> bool:
         return bool(ctypes.windll.user32.LockWorkStation())
@@ -96,28 +127,117 @@ else:
 
 
 class WindowsPcInput:
-    """Mouse e teclado do PC. `send` é trocável: os testes registram, em vez de enviar."""
+    """Mouse e teclado do PC. `send` é trocável: os testes registram, em vez de enviar.
 
-    def __init__(self, send: Sender | None = None) -> None:
+    Guarda quais botões do mouse estão apertados (DOWN ainda sem UP) para poder soltá-los: por
+    `release_all`, depois de um lote que o Windows aceitou só em parte, e sozinho quando passam
+    `dead_man_seconds` sem nenhum comando. O relógio e o temporizador também são trocáveis. Os
+    comandos chegam pelo laço do agente e o temporizador roda em outra thread, daí a trava.
+    """
+
+    def __init__(
+        self,
+        send: Sender | None = None,
+        *,
+        monotonic: Callable[[], float] = time.monotonic,
+        dead_man_seconds: float = DEAD_MAN_SECONDS,
+        start_timer: TimerStarter = _start_timer,
+    ) -> None:
         self._send = send or _send_input
+        self._monotonic = monotonic
+        self._dead_man = dead_man_seconds
+        self._start_timer = start_timer
+        self._lock = threading.RLock()
+        self._held: frozenset[str] = frozenset()
+        self._last_activity = monotonic()
+        self._timer: _Cancelable | None = None
+        # Cada armação ganha um número: um disparo atrasado de um temporizador já trocado se ignora.
+        self._generation = 0
 
     def move(self, dx: int, dy: int) -> None:
-        self._send(pc_inputs.move_inputs(dx, dy))
+        self._dispatch(pc_inputs.move_inputs(dx, dy))
 
     def scroll(self, horizontal: int, vertical: int) -> None:
-        self._send(pc_inputs.scroll_inputs(horizontal, vertical))
+        self._dispatch(pc_inputs.scroll_inputs(horizontal, vertical))
 
     def click(self, button: str, action: str) -> None:
-        self._send(pc_inputs.click_inputs(button, action))
+        self._dispatch(pc_inputs.click_inputs(button, action))
 
     def key(self, key: str, modifiers: Sequence[str]) -> None:
-        self._send(pc_inputs.key_inputs(key, modifiers))
+        self._dispatch(pc_inputs.key_inputs(key, modifiers))
 
     def type_text(self, text: str) -> None:
-        self._send(pc_inputs.text_inputs(text))
+        self._dispatch(pc_inputs.text_inputs(text))
 
     def media(self, action: str, steps: int) -> None:
-        self._send(pc_inputs.media_inputs(action, steps))
+        self._dispatch(pc_inputs.media_inputs(action, steps))
+
+    def release_all(self) -> None:
+        with self._lock:
+            if not self._held:
+                return
+            _log.warning("soltando à força o botão do mouse que ficou apertado")
+            self._release(self._held)
+            self._sync_timer()
+
+    def _dispatch(self, inputs: Sequence[RawInput]) -> None:
+        with self._lock:
+            self._last_activity = self._monotonic()
+            before = self._held
+            try:
+                self._send(inputs)
+            except OSError as exc:
+                # Num lote parcial só os primeiros eventos entraram: o que eles apertaram é solto.
+                accepted = exc.sent if isinstance(exc, PartialSendError) else 0
+                self._held = pc_inputs.held_after(self._held, inputs[:accepted])
+                pressed_now = self._held - before
+                if pressed_now:
+                    self._release(pressed_now)
+                self._sync_timer()
+                raise
+            self._held = pc_inputs.held_after(self._held, inputs)
+            self._sync_timer()
+
+    def _release(self, buttons: frozenset[str]) -> None:
+        """Manda o UP de `buttons`. Se o Windows recusar, eles seguem como apertados (o
+        temporizador tenta de novo)."""
+        try:
+            self._send(pc_inputs.release_inputs(buttons))
+        except OSError as exc:
+            _log.warning("não foi possível soltar o botão do mouse: %s", exc)
+            return
+        self._held -= buttons
+
+    def _sync_timer(self) -> None:
+        if not self._held:
+            self._cancel_timer()
+        elif self._timer is None:
+            self._arm(self._dead_man)
+
+    def _arm(self, delay: float) -> None:
+        self._generation += 1
+        self._timer = self._start_timer(delay, partial(self._on_timer, self._generation))
+
+    def _cancel_timer(self) -> None:
+        self._generation += 1
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+
+    def _on_timer(self, generation: int) -> None:
+        with self._lock:
+            if generation != self._generation:
+                return
+            self._timer = None
+            if not self._held:
+                return
+            idle = self._monotonic() - self._last_activity
+            if idle < self._dead_man:
+                self._arm(self._dead_man - idle)  # houve comando no meio do caminho
+                return
+            _log.warning("botão do mouse apertado sem comandos há %.0f s: soltando", idle)
+            self._release(self._held)
+            self._sync_timer()
 
 
 # `ERROR_NO_SHUTDOWN_IN_PROGRESS`: o `shutdown /a` não tinha contagem para cancelar.

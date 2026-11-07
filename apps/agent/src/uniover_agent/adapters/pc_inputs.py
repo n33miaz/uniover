@@ -4,7 +4,7 @@ Aqui só há dados e funções puras: nada toca no sistema, então a tabela de t
 eventos são testadas em qualquer máquina. O envio de verdade fica em `pc_windows.py`.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -33,6 +33,12 @@ _BUTTONS: Final = {
     "LEFT": (MOUSE_LEFTDOWN, MOUSE_LEFTUP),
     "RIGHT": (MOUSE_RIGHTDOWN, MOUSE_RIGHTUP),
     "MIDDLE": (MOUSE_MIDDLEDOWN, MOUSE_MIDDLEUP),
+}
+# Flag do evento para (botão, apertado?): é o que diz que botões o Windows acha que estão apertados.
+_BUTTON_OF_FLAG: Final = {
+    flag: (name, pressed)
+    for name, (down, up) in _BUTTONS.items()
+    for flag, pressed in ((down, True), (up, False))
 }
 
 # Teclas do contrato para o código virtual do Windows e se são "estendidas" (setas, Home...).
@@ -133,6 +139,29 @@ def click_inputs(button: str, action: str) -> list[RawInput]:
     raise UnknownKey(f"ação de clique fora do contrato: {action}")
 
 
+def held_after(held: Iterable[str], events: Iterable[RawInput]) -> frozenset[str]:
+    """Botões do mouse que ficam apertados depois de `events`, partindo de `held`.
+
+    Segue a ordem dos eventos (um CLICK aperta e solta; um DOWN sozinho deixa o botão apertado).
+    """
+    state = set(held)
+    for event in events:
+        effect = _BUTTON_OF_FLAG.get(event.flags) if event.kind == "mouse" else None
+        if effect is None:
+            continue
+        name, pressed = effect
+        if pressed:
+            state.add(name)
+        else:
+            state.discard(name)
+    return frozenset(state)
+
+
+def release_inputs(buttons: Iterable[str]) -> list[RawInput]:
+    """Os eventos que soltam `buttons` (numa ordem fixa, para o teste conferir)."""
+    return [event for name in sorted(buttons) for event in click_inputs(name, "UP")]
+
+
 def key_inputs(key: str, modifiers: Sequence[str] = ()) -> list[RawInput]:
     """Modificadores apertados, a tecla apertada e solta, modificadores soltos na ordem inversa.
 
@@ -152,8 +181,18 @@ def key_inputs(key: str, modifiers: Sequence[str] = ()) -> list[RawInput]:
 
 
 def text_inputs(text: str) -> list[RawInput]:
-    """Cada unidade UTF-16 do texto, apertada e solta como Unicode (não depende do layout)."""
-    units = text.encode("utf-16-le", errors="replace")
+    """Cada unidade UTF-16 do texto, apertada e solta como Unicode (não depende do layout).
+
+    O Windows espera um caractere fora do plano básico (emoji) como as duas unidades do par
+    substituto, na ordem, cada uma apertada e solta; ele monta o caractere. Tudo vai no mesmo lote
+    de quem chama. Uma unidade substituta sozinha (metade de um par) não forma caractere: é
+    recusada em vez de digitar "?" no lugar, e a mensagem de erro não repete o texto (pode ser
+    uma senha).
+    """
+    try:
+        units = text.encode("utf-16-le")
+    except UnicodeEncodeError:
+        raise UnknownKey("texto com metade de um caractere (par substituto incompleto)") from None
     inputs: list[RawInput] = []
     for index in range(0, len(units), 2):
         unit = int.from_bytes(units[index : index + 2], "little")
@@ -180,9 +219,11 @@ __all__ = [
     "RawInput",
     "UnknownKey",
     "click_inputs",
+    "held_after",
     "key_inputs",
     "media_inputs",
     "move_inputs",
+    "release_inputs",
     "scroll_inputs",
     "text_inputs",
     "virtual_key",

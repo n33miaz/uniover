@@ -16,6 +16,11 @@ from uniover_agent.ports import Transport, TransportError
 _log = logging.getLogger(__name__)
 
 _KEEPALIVE_TYPE = "api.keepalive.v1"
+# Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
+_PC_PREFIX = "pc."
+# Teto de comandos do PC esperando a vez: acima disso o movimento do mouse (silencioso, o app manda
+# outro logo) é descartado em vez de acumular se algo travar.
+_MAX_PENDING_PC = 128
 
 
 class ProcessMessage:
@@ -25,6 +30,11 @@ class ProcessMessage:
     handler confere a idade rodam em tarefa própria: a recepção não espera a TV abrir a sessão.
     Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos. Comandos em
     `silent_types` são executados mas não respondidos.
+
+    Os comandos `pc.*` correm numa faixa à parte: um após o outro, na ordem de chegada (apertar,
+    mover, soltar), sem esperar as teclas da TV e sem que elas esperem por eles.
+    `release_inputs` solta os botões do mouse que o PC ficou segurando; é chamado quando a conexão
+    cai e ao encerrar, depois de parar a faixa.
     """
 
     def __init__(  # noqa: PLR0913 - dependências injetadas, todas necessárias
@@ -41,6 +51,7 @@ class ProcessMessage:
         on_command: Callable[[Command], None] | None = None,
         command_timeout_seconds: float | None = None,
         uncapped_types: Collection[str] = (),
+        release_inputs: Callable[[], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -55,7 +66,10 @@ class ProcessMessage:
         # texto e o POWER que esperam por ela. Os tipos longos por natureza ficam de fora.
         self._command_timeout = command_timeout_seconds
         self._uncapped_types = frozenset(uncapped_types)
+        self._release_inputs = release_inputs
         self._tasks: set[asyncio.Task[None]] = set()
+        self._pc_tasks: set[asyncio.Task[None]] = set()
+        self._last_pc_task: asyncio.Task[None] | None = None
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -98,6 +112,9 @@ class ProcessMessage:
             task.add_done_callback(self._tasks.discard)
             task.add_done_callback(self._key_tasks.discard)
             return
+        if command.type.startswith(_PC_PREFIX):
+            self._enqueue_pc(command)
+            return
         if command.type in self._background_types:
             task = asyncio.create_task(self._execute_detached(command))
             self._tasks.add(task)
@@ -106,6 +123,23 @@ class ProcessMessage:
         # Texto e POWER preservam a ordem que tinham no laço serial com as teclas anteriores.
         await asyncio.gather(*tuple(self._key_tasks))
         await self._execute(command)
+
+    def _enqueue_pc(self, command: Command) -> None:
+        if command.type in self._silent_types and len(self._pc_tasks) >= _MAX_PENDING_PC:
+            return
+        task = asyncio.create_task(self._execute_pc(command, self._last_pc_task))
+        self._last_pc_task = task
+        self._tasks.add(task)
+        self._pc_tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(self._pc_tasks.discard)
+
+    async def _execute_pc(self, command: Command, previous: asyncio.Task[None] | None) -> None:
+        # Só espera quem veio antes na faixa do PC (nunca as teclas da TV). `wait` não propaga o
+        # cancelamento do anterior: o cancelamento desta tarefa, sim.
+        if previous is not None and not previous.done():
+            await asyncio.wait({previous})
+        await self._execute_detached(command)
 
     def _newest_press(self, key: str) -> Callable[[], bool]:
         self._latest_key[key] = self._latest_key.get(key, 0) + 1
@@ -131,6 +165,23 @@ class ProcessMessage:
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
+        self._release_held_inputs()
+
+    def connection_lost(self) -> None:
+        """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado
+        tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
+        for task in tuple(self._pc_tasks):
+            task.cancel()
+        self._last_pc_task = None
+        self._release_held_inputs()
+
+    def _release_held_inputs(self) -> None:
+        if self._release_inputs is None:
+            return
+        try:
+            self._release_inputs()
+        except Exception:
+            _log.exception("falha ao soltar os botões do mouse")
 
     async def _execute(self, command: Command) -> None:
         result = await self._handle_command(command)
@@ -152,7 +203,11 @@ class ProcessMessage:
     async def _execute_detached(self, command: Command) -> None:
         # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
         try:
-            if self._command_timeout is None or command.type in self._uncapped_types:
+            if (
+                self._command_timeout is None
+                or command.type in self._uncapped_types
+                or command.type.startswith(_PC_PREFIX)  # o teto é das teclas da TV
+            ):
                 await self._execute(command)
             else:
                 await self._execute_capped(command, self._command_timeout)

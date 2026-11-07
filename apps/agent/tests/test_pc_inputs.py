@@ -109,3 +109,49 @@ def test_media_keys_and_volume_steps() -> None:
     assert len(pc_inputs.media_inputs("VOLUME_DOWN", 99)) == 20
     with pytest.raises(UnknownKey):
         pc_inputs.media_inputs("EJECT")
+
+
+def test_an_emoji_is_both_surrogate_units_each_pressed_and_released_in_order() -> None:
+    events = pc_inputs.text_inputs("a\U0001f600b")
+    assert [(e.scan, e.flags) for e in events] == [
+        (ord("a"), KEY_UNICODE),
+        (ord("a"), KEY_UNICODE | KEY_UP),
+        (0xD83D, KEY_UNICODE),
+        (0xD83D, KEY_UNICODE | KEY_UP),
+        (0xDE00, KEY_UNICODE),
+        (0xDE00, KEY_UNICODE | KEY_UP),
+        (ord("b"), KEY_UNICODE),
+        (ord("b"), KEY_UNICODE | KEY_UP),
+    ]
+
+
+@pytest.mark.parametrize("text", ["\ud800", "ab\udc00", "\ud83d x"])
+def test_half_of_a_character_is_refused_instead_of_typing_a_question_mark(text: str) -> None:
+    with pytest.raises(UnknownKey) as refused:
+        pc_inputs.text_inputs(text)
+    # A mensagem não repete o texto: ele pode ser uma senha.
+    assert "ab" not in str(refused.value)
+
+
+def test_held_buttons_follow_the_order_of_the_events() -> None:
+    down = pc_inputs.click_inputs("LEFT", "DOWN")
+    up = pc_inputs.click_inputs("LEFT", "UP")
+    assert pc_inputs.held_after([], down) == {"LEFT"}
+    assert pc_inputs.held_after({"LEFT"}, up) == frozenset()
+    assert pc_inputs.held_after([], pc_inputs.click_inputs("LEFT", "DOUBLE")) == frozenset()
+    # Só o que foi apertado e não solto fica: o direito é um clique inteiro, o do meio ficou.
+    events = [
+        *pc_inputs.click_inputs("RIGHT", "CLICK"),
+        *pc_inputs.click_inputs("MIDDLE", "DOWN"),
+        *pc_inputs.move_inputs(3, 3),
+        *pc_inputs.key_inputs("A"),
+    ]
+    assert pc_inputs.held_after([], events) == {"MIDDLE"}
+
+
+def test_release_inputs_lifts_each_button_in_a_fixed_order() -> None:
+    assert pc_inputs.release_inputs({"RIGHT", "LEFT"}) == [
+        *pc_inputs.click_inputs("LEFT", "UP"),
+        *pc_inputs.click_inputs("RIGHT", "UP"),
+    ]
+    assert pc_inputs.release_inputs(()) == []
