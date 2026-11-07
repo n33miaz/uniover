@@ -14,6 +14,7 @@ from uniover_agent.core.pair_agent import PairAgent, PairedAgent
 from uniover_agent.core.pc import (
     PC_CONTROL_CAPABILITY,
     PC_SILENT_TYPES,
+    ClockOffset,
     PcApp,
     parse_favorites,
     pc_apps_announcer,
@@ -120,6 +121,7 @@ __all__ = [
     "Backoff",
     "BackoffPolicy",
     "CleanupReport",
+    "ClockOffset",
     "Command",
     "CommandResult",
     "ConnectionSupervisor",
