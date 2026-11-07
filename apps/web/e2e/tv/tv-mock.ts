@@ -183,7 +183,7 @@ function requiredPermission(method: string, path: string): string | null {
   if (method === 'GET' && path === '/permission') return 'module:tv';
   if (method === 'POST' && path === '/permission/request') return 'tv:control';
   if (method === 'GET' && path === '/cleanup/latest') return 'tv:control';
-  if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
+  if (method === 'POST' && ['/wake', '/presence', '/keys', '/text', '/cleanup'].includes(path))
     return 'tv:control';
   if (method === 'POST' && path === '/power/off') return 'tv:power';
   if (path === '/power/schedule' && ['GET', 'PUT', 'DELETE'].includes(method)) return 'tv:power';
@@ -492,6 +492,12 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
 
     if (method === 'POST' && path === '/wake') {
       if (mock.wakeFailure) return problem(route, mock.wakeFailure);
+      return route.fulfill({ status: 202 });
+    }
+
+    // O sinal de presença ("alguém tocou na tela"): a API o exige com a permissão de controlar e responde 202 sem corpo,
+    // sempre (o espaçamento e a entrega ao agente são dela). Fica em `requests`, para os testes afirmarem quem o manda.
+    if (method === 'POST' && path === '/presence') {
       return route.fulfill({ status: 202 });
     }
 
