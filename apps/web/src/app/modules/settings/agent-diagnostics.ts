@@ -70,6 +70,16 @@ export function kindLabel(kind: string): string {
       return $localize`:@@settings.system.agent-errors.kind.startup-task-missing:Início automático refeito`;
     case 'agent.started':
       return $localize`:@@settings.system.agent-errors.kind.agent-started:Agente iniciado`;
+    case 'disk.low':
+      return $localize`:@@settings.system.agent-errors.kind.disk-low:Pouco espaço em disco`;
+    case 'disk.recovered':
+      return $localize`:@@settings.system.agent-errors.kind.disk-recovered:Espaço em disco normalizado`;
+    case 'pc.clock_skew':
+      return $localize`:@@settings.system.agent-errors.kind.clock-skew:Relógio do PC fora de hora`;
+    case 'pc.clock_unstable':
+      return $localize`:@@settings.system.agent-errors.kind.clock-unstable:Conexão instável para medir o tempo`;
+    case 'pc.command_expired':
+      return $localize`:@@settings.system.agent-errors.kind.command-expired:Comando do PC chegou atrasado`;
     case 'diagnostics.dropped':
       return $localize`:@@settings.system.agent-errors.kind.dropped:Eventos descartados`;
     default:
