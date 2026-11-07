@@ -907,3 +907,114 @@ def test_an_ancestor_supervisor_takes_its_other_children_with_it(tmp_path: Path)
                 check=False,
                 creationflags=0x08000000,
             )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="mata processos do Windows")
+def test_an_empty_only_list_kills_nobody(tmp_path: Path) -> None:
+    runner = tmp_path / "UniOver" / "app" / "tools" / "run-agent.ps1"
+    marker = tmp_path / "child.pid"
+    supervisor = spawn_fake_supervisor(runner, marker)
+    try:
+        end = time.monotonic() + 60
+        while not marker.exists() and time.monotonic() < end:
+            time.sleep(0.2)
+        # Lista vazia é "ninguém", não "todos" (uma variável de ambiente vazia some no Windows).
+        assert kill_wedged_supervisor(runner, only=[]) is False
+        assert supervisor.poll() is None
+    finally:
+        if supervisor.poll() is None:
+            supervisor.kill()
+        if marker.exists():
+            import subprocess  # noqa: PLC0415
+
+            subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
+                [
+                    os.path.join(
+                        os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
+                    ),
+                    "/PID",
+                    marker.read_text(encoding="ascii").strip(),
+                    "/F",
+                ],
+                capture_output=True,
+                check=False,
+                creationflags=0x08000000,
+            )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="mata processos do Windows")
+def test_an_ancestor_supervisor_named_in_only_dies_with_its_other_children_and_the_killer_lives(
+    tmp_path: Path,
+) -> None:
+    """O ramo do ancestral com `only=`: o supervisor listado (ancestral de quem mata) morre sem
+    levar o agente, e os filhos dele fora da cadeia morrem com a árvore."""
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    runner = tmp_path / "UniOver" / "app" / "tools" / "run-agent.ps1"
+    pid_file = tmp_path / "supervisor.pid"
+    result = tmp_path / "result.txt"
+    survived = tmp_path / "survived.txt"
+    sibling = tmp_path / "sibling.pid"
+    code = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from uniover_agent.adapters.self_care_checks import kill_wedged_supervisor\n"
+        f"pid = int(Path(r'{pid_file}').read_text())\n"
+        f"done = kill_wedged_supervisor(Path(r'{runner}'), only=[pid])\n"
+        f"Path(r'{result}').write_text(str(done))\n"
+        "time.sleep(1.5)\n"
+        f"Path(r'{survived}').write_text('vivo')\n"
+    )
+    script = tmp_path / "killer.py"
+    script.write_text(code, encoding="utf-8")
+    runner.parent.mkdir(parents=True)
+    runner.write_text(
+        f"Set-Content -LiteralPath '{pid_file}' -Value $PID\n"
+        "$other = Start-Process -PassThru -WindowStyle Hidden ping "
+        "-ArgumentList '-n','120','127.0.0.1'\n"
+        f"Set-Content -LiteralPath '{sibling}' -Value $other.Id\n"
+        f"& '{sys.executable}' '{script}'\n"
+        "Start-Sleep -Seconds 120\n",
+        encoding="ascii",
+    )
+    powershell = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+    supervisor = subprocess.Popen(  # noqa: S603 - PowerShell do sistema; script do próprio teste
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
+        creationflags=0x08000000,
+    )
+    try:
+        end = time.monotonic() + 90
+        while not survived.exists() and time.monotonic() < end:
+            time.sleep(0.3)
+        assert result.exists() and result.read_text() == "True", "o reparo não terminou"
+        assert survived.exists(), "quem mata morreu junto"
+        assert supervisor.wait(timeout=30) is not None
+        pid = int(sibling.read_text(encoding="ascii").strip())
+        end = time.monotonic() + 20
+        while alive_pid(pid) and time.monotonic() < end:
+            time.sleep(0.3)
+        assert not alive_pid(pid), "o filho do supervisor (fora da cadeia) ficou órfão"
+    finally:
+        if supervisor.poll() is None:
+            supervisor.kill()
+        if sibling.exists():
+            subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
+                [
+                    os.path.join(
+                        os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
+                    ),
+                    "/PID",
+                    sibling.read_text(encoding="ascii").strip(),
+                    "/F",
+                ],
+                capture_output=True,
+                check=False,
+                creationflags=0x08000000,
+            )
