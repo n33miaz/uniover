@@ -5,12 +5,18 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
+  MODULE_NAMES,
   baseRevision,
   bumpVersion,
   changelogSection,
+  commitLevel,
+  commitModules,
   compareVersions,
   highestTag,
+  moduleBumps,
+  modulesForFile,
   prepare,
+  readModules,
   run,
   verify,
 } from './release-version.mjs';
@@ -31,9 +37,16 @@ function read(root, path) {
   return readFileSync(join(root, path), 'utf8');
 }
 
+/** O modules.json com a mesma versão em todos os módulos, ou com as trocas pedidas. */
+function modulesJson(version, overrides = {}) {
+  const modules = Object.fromEntries(MODULE_NAMES.map((name) => [name, overrides[name] ?? version]));
+  return `${JSON.stringify(modules, null, 2)}\n`;
+}
+
 /** Escreve a versão em todos os arquivos que a repetem, como o repositório de verdade. */
 function writeVersions(root, version) {
   put(root, 'VERSION', `${version}\n`);
+  put(root, 'modules.json', modulesJson(version));
   put(root, 'apps/web/package.json', `{\n  "name": "web",\n  "version": "${version}",\n  "scripts": {}\n}\n`);
   put(
     root,
@@ -53,6 +66,16 @@ function commit(root, subject) {
   git(root, 'commit', '--allow-empty', '-q', '-m', subject);
   return git(root, 'rev-parse', 'HEAD');
 }
+
+/** Um commit que de fato mexe em arquivos (os caminhos decidem quais módulos sobem). */
+function commitFiles(root, subject, ...paths) {
+  for (const path of paths) put(root, path, `${path} ${subject}\n`);
+  git(root, 'add', '-A');
+  git(root, 'commit', '-q', '-m', subject);
+  return git(root, 'rev-parse', 'HEAD');
+}
+
+const API = 'apps/api/src/Modules';
 
 /** Repositório de teste: v0.4.0 numa base, depois VERSION em `version`. */
 function fixture(version = '0.4.0') {
@@ -317,3 +340,228 @@ test('a linha de comando recusa argumentos inválidos', () =>
     assert.throws(() => run(['--prepare', 'patch', '--nada'], root), /uso:/);
     assert.match(run(['--verify'], root), /0\.5\.0/);
   }));
+
+test('cada arquivo pertence ao módulo dos seus caminhos', () => {
+  assert.deepEqual(modulesForFile(`${API}/Tv/UniOver.Modules.Tv/TvModule.cs`), ['tv']);
+  assert.deepEqual(modulesForFile(`${API}/Tv/UniOver.Modules.Tv.Contracts/ITvModule.cs`), ['tv']);
+  assert.deepEqual(modulesForFile(`${API}/Devices/UniOver.Modules.Devices.Transport.WebSocket/Hub.cs`), ['devices']);
+  assert.deepEqual(modulesForFile(`${API}/Identity/UniOver.Modules.Identity/IdentityModule.cs`), ['identity']);
+  assert.deepEqual(modulesForFile(`${API}/Training/UniOver.Modules.Training/X.cs`), ['training']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/tv/tv.page.ts'), ['tv']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/settings/system.page.ts'), ['identity']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/pc/pc-page.ts'), ['devices']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/training/x.ts'), ['training']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/tv.key.v3.schema.json'), ['tv']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/pc.key.v1.schema.json'), ['devices']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/agent.hello.v1.schema.json'), ['devices']);
+  assert.deepEqual(modulesForFile('apps/agent/src/uniover_agent/main.py'), ['agent']);
+});
+
+test('o web é o app menos as pastas de módulo; o que não tem dono não conta', () => {
+  assert.deepEqual(modulesForFile('apps/web/src/app/core/auth/auth-api.ts'), ['web']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/home/home.page.ts'), ['web']);
+  assert.deepEqual(modulesForFile('apps/web/package.json'), ['web']);
+  for (const free of [
+    'apps/api/src/UniOver.Host/Program.cs',
+    'apps/api/src/UniOver.BuildingBlocks.Web/X.cs',
+    'apps/api/tests/UniOver.Modules.Tv.Tests/X.cs',
+    'modules.json',
+    'CHANGELOG.md',
+    'VERSION',
+    'scripts/release-version.mjs',
+    'contracts/http/openapi.json',
+  ]) {
+    assert.deepEqual(modulesForFile(free), [], free);
+  }
+});
+
+test('um commit com arquivos de dois módulos conta nos dois, na ordem do modules.json', () => {
+  assert.deepEqual(
+    commitModules(['apps/agent/a.py', 'apps/web/src/app/modules/tv/a.ts', `${API}/Tv/UniOver.Modules.Tv/a.cs`]),
+    ['tv', 'agent'],
+  );
+  assert.deepEqual(commitModules([]), []);
+});
+
+test('o tipo do commit decide o quanto o módulo sobe', () => {
+  assert.equal(commitLevel('feat(web): algo'), 'minor');
+  assert.equal(commitLevel('fix(api): algo'), 'patch');
+  assert.equal(commitLevel('perf: algo'), 'patch');
+  assert.equal(commitLevel('chore: algo'), 'patch', 'arquivo do módulo mudou: sobe o patch');
+  assert.equal(commitLevel('mensagem sem tipo'), 'patch');
+  assert.equal(commitLevel('feat(api)!: muda o contrato'), 'major');
+  assert.equal(commitLevel('refactor!: troca tudo'), 'major');
+  assert.equal(commitLevel('fix: algo', 'detalhe\n\nBREAKING CHANGE: remove o campo'), 'major');
+  assert.equal(commitLevel('fix: algo', 'BREAKING-CHANGE: remove o campo'), 'major');
+  assert.equal(commitLevel('fix: algo', 'isto não é BREAKING CHANGE: no meio da linha'), 'patch');
+});
+
+test('cada módulo sobe pelo maior tipo entre os commits que o tocaram', () => {
+  const bumps = moduleBumps([
+    { subject: 'fix(api): a', body: '', modules: ['tv'] },
+    { subject: 'feat(web): b', body: '', modules: ['tv', 'web'] },
+    { subject: 'chore: c', body: '', modules: ['agent'] },
+    { subject: 'feat: sem arquivos de módulo', body: '', modules: [] },
+    { subject: 'fix(api)!: d', body: '', modules: ['devices'] },
+  ]);
+  assert.deepEqual(
+    [...bumps],
+    [
+      ['tv', 'minor'],
+      ['web', 'minor'],
+      ['agent', 'patch'],
+      ['devices', 'major'],
+    ],
+  );
+});
+
+test('readModules aceita o arquivo certo e descreve o que está errado', () =>
+  withFixture('0.5.0', (root) => {
+    assert.deepEqual(readModules(root).problems, []);
+    put(root, 'modules.json', '{ nao e json');
+    assert.match(readModules(root).problems[0], /JSON válido/);
+    put(root, 'modules.json', '[]\n');
+    assert.match(readModules(root).problems[0], /objeto/);
+    put(root, 'modules.json', JSON.stringify({ tv: '0.5', web: 5, devices: '0.5.0', extra: '1.0.0' }));
+    const problems = readModules(root).problems.join('\n');
+    assert.match(problems, /não tem o módulo 'identity'/);
+    assert.match(problems, /'tv' não é SemVer/);
+    assert.match(problems, /'web' não é SemVer/);
+    assert.match(problems, /desconhecido 'extra'/);
+    rmSync(join(root, 'modules.json'));
+    assert.match(readModules(root).problems[0], /não existe/);
+  }));
+
+test('verify recusa modules.json ausente, inválido ou com módulo atrás da tag', () => {
+  withFixture('0.5.0', (root) => {
+    rmSync(join(root, 'modules.json'));
+    assert.throws(() => verify(root), /modules\.json não existe/);
+  });
+  withFixture('0.5.0', (root) => {
+    put(root, 'modules.json', modulesJson('0.5.0', { tv: 'x' }));
+    assert.throws(() => verify(root), /'tv' não é SemVer/);
+  });
+  withFixture('0.5.0', (root) => {
+    put(root, 'modules.json', modulesJson('0.5.0', { tv: '0.6.0' }));
+    git(root, 'add', '-A');
+    commit(root, 'chore: modulos');
+    git(root, 'tag', 'v0.5.0');
+    put(root, 'VERSION', '0.5.1\n');
+    put(root, 'modules.json', modulesJson('0.5.0', { tv: '0.5.9' }));
+    assert.throws(() => verify(root), /'tv' está em 0\.5\.9, menor que 0\.6\.0 da tag v0\.5\.0/);
+  });
+});
+
+test('verify aceita módulos iguais ou maiores que os da tag, e tag sem modules.json', () => {
+  withFixture('0.5.0', (root) => {
+    git(root, 'tag', 'v0.4.0'); // o arquivo já existia na tag e não mudou
+    assert.match(verify(root), /0\.5\.0/);
+  });
+  withFixture('0.5.0', (root) => {
+    git(root, 'rm', '-q', 'modules.json');
+    commit(root, 'chore: sem modules.json');
+    git(root, 'tag', 'v0.4.0'); // tag antiga, de antes das versões por módulo
+    put(root, 'modules.json', modulesJson('0.5.0'));
+    assert.match(verify(root), /0\.5\.0/);
+  });
+});
+
+test('prepare sobe só os módulos cujos arquivos mudaram, pelo tipo dos commits', () =>
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    commitFiles(root, 'feat(api): nova tecla', `${API}/Tv/UniOver.Modules.Tv/Keys.cs`, 'contracts/agent/messages/tv.key.v9.schema.json');
+    commitFiles(root, 'fix(web): tela da tv', 'apps/web/src/app/modules/tv/tv.page.ts');
+    commitFiles(root, 'fix(agent): reabrir a sessão', 'apps/agent/src/uniover_agent/session.py');
+    commitFiles(root, 'chore: so o host', 'apps/api/src/UniOver.Host/Program.cs');
+    commitFiles(root, 'feat(api)!: muda o treino', `${API}/Training/UniOver.Modules.Training/Plan.cs`);
+
+    const message = prepare(root, 'patch', '2026-10-28');
+
+    assert.deepEqual(JSON.parse(read(root, 'modules.json')), {
+      identity: '0.4.0',
+      devices: '0.4.0',
+      tv: '0.5.0',
+      training: '1.0.0',
+      web: '0.4.0',
+      agent: '0.4.1',
+    });
+    assert.match(message, /tv 0\.5\.0, training 1\.0\.0, agent 0\.4\.1/);
+    assert.equal(read(root, 'VERSION'), '0.4.1\n', 'o app segue o tipo pedido na linha de comando');
+    assert.ok(read(root, 'modules.json').endsWith('}\n'));
+
+    const top = read(root, 'CHANGELOG.md').split('## [0.4.0]')[0];
+    assert.match(top, /### TV 0\.5\.0\n\n#### Features\n\n\* \*\*api:\*\* nova tecla\n\n#### Bug Fixes\n\n\* \*\*web:\*\* tela da tv\n/);
+    assert.match(top, /### Training 1\.0\.0\n\n#### Features\n\n\* \*\*api:\*\* muda o treino\n/);
+    assert.match(top, /### Agent 0\.4\.1\n\n#### Bug Fixes\n\n\* \*\*agent:\*\* reabrir a sessão\n/);
+    assert.doesNotMatch(top, /### (Identity|Devices|Web) /);
+    assert.equal((top.match(/^## /gm) ?? []).length, 1, 'nenhum ## dentro da entrada: o release corta nele');
+
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'chore: release 0.4.1');
+    assert.match(verify(root), /0\.4\.1/);
+  }));
+
+test('prepare: commit que toca dois módulos aparece nos dois; módulo só de manutenção ganha a linha', () =>
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    commitFiles(root, 'feat: em dois', 'apps/agent/a.py', 'apps/web/src/app/core/a.ts');
+    commitFiles(root, 'docs: so a pasta do identity', `${API}/Identity/UniOver.Modules.Identity/README.md`);
+    commitFiles(root, 'feat: sem dono', 'scripts/algo.mjs');
+
+    prepare(root, 'patch', '2026-10-28');
+
+    const top = read(root, 'CHANGELOG.md').split('## [0.4.0]')[0];
+    assert.match(top, /### Features\n\n\* sem dono\n\n\n### Identity 0\.4\.1\n\n#### Maintenance\n\n\* no user-facing changes/);
+    assert.match(top, /### Web 0\.5\.0\n\n#### Features\n\n\* em dois\n/);
+    assert.match(top, /### Agent 0\.5\.0\n\n#### Features\n\n\* em dois\n/);
+    assert.ok(top.indexOf('### Identity') < top.indexOf('### Web') && top.indexOf('### Web') < top.indexOf('### Agent'));
+  }));
+
+test('prepare não mexe em módulo que nada tocou, e parte da versão da tag se o arquivo ficou para trás', () => {
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    commit(root, 'feat: sem arquivos');
+    prepare(root, 'patch', '2026-10-28');
+    assert.equal(read(root, 'modules.json'), modulesJson('0.4.0'));
+  });
+  withFixture('0.4.0', (root) => {
+    put(root, 'modules.json', modulesJson('0.4.0', { tv: '0.9.0' }));
+    git(root, 'add', '-A');
+    commit(root, 'chore: tv adiantado');
+    git(root, 'tag', 'v0.4.3');
+    put(root, 'modules.json', modulesJson('0.4.0')); // o arquivo voltou atrás da tag
+    git(root, 'add', '-A');
+    commit(root, 'chore: arquivo atrasado');
+    commitFiles(root, 'fix(api): tv', `${API}/Tv/UniOver.Modules.Tv/X.cs`);
+    prepare(root, 'patch', '2026-10-28');
+    assert.equal(JSON.parse(read(root, 'modules.json')).tv, '0.9.1');
+  });
+});
+
+test('prepare recusa modules.json inválido antes de mexer em qualquer arquivo', () =>
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    commit(root, 'feat: algo');
+    put(root, 'modules.json', '{}');
+    assert.throws(() => prepare(root, 'patch', '2026-10-28'), /não tem o módulo 'identity'/);
+    assert.equal(read(root, 'VERSION'), '0.4.0\n');
+  }));
+
+test('a entrada do changelog traz os módulos que subiram, em ### com tipos em ####', () => {
+  const commits = [
+    { sha: 'a'.repeat(40), subject: 'feat(web): show the version', modules: ['web'] },
+    { sha: 'b'.repeat(40), subject: 'fix(api): keep the TV on', modules: ['tv', 'agent'] },
+  ];
+  const section = changelogSection('0.5.0', '0.4.3', commits, '2026-10-27', [
+    { name: 'tv', version: '0.4.4' },
+    { name: 'web', version: '0.5.0' },
+    { name: 'agent', version: '0.4.4' },
+  ]);
+  assert.equal(
+    section,
+    '## [0.5.0](https://github.com/n33miaz/uniover/compare/v0.4.3...v0.5.0) (2026-10-27)\n\n\n' +
+      '### TV 0.4.4\n\n#### Bug Fixes\n\n* **api:** keep the TV on\n\n\n' +
+      '### Web 0.5.0\n\n#### Features\n\n* **web:** show the version\n\n\n' +
+      '### Agent 0.4.4\n\n#### Bug Fixes\n\n* **api:** keep the TV on\n\n',
+  );
+});
