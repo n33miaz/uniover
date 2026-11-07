@@ -315,16 +315,27 @@ class TvSessionManager:
         """Liga a leitura de volume depois da criação (a Android a lê pelo ADB em segundo plano)."""
         self._volume_reader = reader
 
-    def touch(self) -> None:
-        """Renova o relógio de hibernação (e anota o instante do uso)."""
+    def touch(self, *, use: bool = True) -> None:
+        """Renova o relógio de hibernação; com `use`, anota também que a TV foi usada de verdade."""
         self._last_activity = self._clock.monotonic()
-        self._last_use_at = self._last_activity
+        if use:
+            self._last_use_at = self._last_activity
 
     def seconds_since_use(self) -> float | None:
-        """Há quantos segundos a TV foi usada por aqui; `None` se não foi desde que o agente subiu.
+        """Há quantos segundos a TV está em uso por aqui (0 enquanto o modo foco a segura aberta).
 
-        Só conta uso de verdade: comando, aquecimento pedido pelo app. A reabertura sozinha e o modo
-        foco (que segura a sessão aberta) não contam."""
+        Quem lê é a atualização do agente, que reinicia o processo e derruba o controle por alguns
+        segundos: ela espera a TV ficar parada. O que conta como uso:
+
+        - sim: comando de verdade (tecla, texto, app, desligar, ligar), e o modo foco, que só
+          segura a sessão aberta enquanto a mídia comprovadamente toca;
+        - não: a tela do controle aberta no app (o `wake` periódico só pré-aquece a sessão e nunca
+          envia tecla, então uma tela esquecida aberta não pode adiar a atualização), a reabertura
+          sozinha (`unattended`) e a recuperação em segundo plano quando a TV volta.
+
+        `None`: nada a usou desde que o agente subiu."""
+        if self._keep_hot:
+            return 0.0
         if self._last_use_at is None:
             return None
         return max(0.0, self._clock.monotonic() - self._last_use_at)
@@ -585,7 +596,8 @@ class TvSessionManager:
         enquanto a tela do controle está aberta, inclusive com a TV recém-desligada, e uma tecla
         aqui a ligaria de volta. Abrir a sessão só troca a configuração do protocolo com a TV.
         """
-        self.touch()
+        # Mantém a sessão aberta (relógio de hibernação), mas não conta como uso da TV.
+        self.touch(use=False)
         self._reopened_unattended = False
         await self._ensure_hot(interactive=False)
 
@@ -887,7 +899,9 @@ class TvSessionManager:
             # Reabertura sem ninguém ter pedido: só mostra o estado. Não conta como uso (a sessão
             # hiberna no prazo de sempre), nem como abertura para a limpeza e a leitura de volume.
             return
-        self.touch()
+        # Aberta por um comando conta como uso; a abertura do `wake` e a recuperação em segundo
+        # plano (`interactive` falso) só renovam a hibernação.
+        self.touch(use=interactive)
         for callback in self._session_opened:
             try:
                 callback(elapsed)
