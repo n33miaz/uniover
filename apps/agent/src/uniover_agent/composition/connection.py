@@ -338,6 +338,13 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             "comando do PC recusado por chegar velho demais (rede lenta ou reconexão)",
             component="pc",
         ),
+        on_clock_unstable=lambda pairs: kit.recorder.record(
+            "pc.clock_unstable",
+            "warn",
+            "os batimentos da API oscilam demais para medir a idade dos comandos do PC "
+            "(enlace instável); eles valem como chegaram",
+            component="pc",
+        ),
     )
     if tv is not None:
         # Um sinal de presença recusado por idade (relógio do PC fora de hora) vai ao diagnóstico; o

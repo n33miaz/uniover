@@ -50,6 +50,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     launcher: PcLauncher | None = None,
     on_clock_skew: Callable[[float], None] | None = None,
     on_expired: Callable[[float], None] | None = None,
+    on_clock_unstable: Callable[[int], None] | None = None,
 ) -> PcSetup | None:
     """O controle do PC só existe quando a pessoa o ligou neste PC (`pc_control`) e o sistema é o
     Windows. Sem isso nenhum comando `pc.*` é aceito e a capacidade não é declarada: a API nem
@@ -61,7 +62,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         return None
     apps = parse_favorites(settings.pc_apps)
     pc_input = pc_input or WindowsPcInput()
-    clock = ClockOffset(on_skew=on_clock_skew, on_refused=on_expired)
+    clock = ClockOffset(on_skew=on_clock_skew, on_refused=on_expired, on_unstable=on_clock_unstable)
     handlers = pc_handlers(
         pc_input,
         power or WindowsPcPower(),

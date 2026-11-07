@@ -48,6 +48,9 @@ HIGH_MARGIN_SECONDS: Final = 0.5
 LOW_MARGIN_SECONDS: Final = 5.0
 # Recusas seguidas de movimento do mouse por idade que merecem aviso (nada morre calado).
 POINTER_DROP_WARNING: Final = 20
+# Pares de batimentos que não concordaram, um depois do outro, sem a estimativa se formar: o enlace
+# oscila demais e fica visível no diagnóstico.
+UNSTABLE_AFTER: Final = 10
 
 _log = logging.getLogger(__name__)
 
@@ -80,13 +83,15 @@ class ClockOffset:
         large_seconds: float = LARGE_OFFSET_SECONDS,
         on_skew: Callable[[float], None] | None = None,
         on_refused: Callable[[float], None] | None = None,
+        on_unstable: Callable[[int], None] | None = None,
     ) -> None:
-        self._now = now  # só para o aviso e para a regra sem amostras
+        self._now = now  # só para o aviso de relógio fora de hora
         self._monotonic = monotonic
         self._window = window_seconds
         self._large = large_seconds
         self._on_skew = on_skew
         self._on_refused = on_refused
+        self._on_unstable = on_unstable
         # Cada balde: (início em tempo monotônico, menor `monotônico - ts`, menor `agora - ts`).
         self._buckets: deque[tuple[float, float, float]] = deque()
         # Batimentos seguidos fora do esperado: (monotônico - ts, agora - ts) de cada um.
@@ -95,6 +100,7 @@ class ClockOffset:
         # O primeiro batimento de uma janela vazia espera um segundo que concorde: (início,
         # monotônico - ts, agora - ts).
         self._candidate: tuple[float, float, float] | None = None
+        self._rejected_pairs = 0
         self._large_now = False
         self._warned = False
         self._pointer_drops = 0
@@ -121,6 +127,10 @@ class ClockOffset:
         wall = (self._now() - sent).total_seconds()
         offset = self.offset  # já sem as amostras fora da janela
         if offset is None:
+            # Janela vazia: uma sequência de fora-do-esperado de antes não vale mais, senão um só
+            # batimento depois da confirmação completaria os três e refaria a estimativa.
+            self._off_high.clear()
+            self._off_low.clear()
             self._confirm(at, mono, wall)
             return
         if self._is_outlier(mono, wall, offset):
@@ -170,10 +180,22 @@ class ClockOffset:
             start, first_mono, first_wall = candidate
             if abs(mono - first_mono) <= HIGH_MARGIN_SECONDS:
                 self._candidate = None
+                self._rejected_pairs = 0
                 self._add(start, first_mono, first_wall)
                 self._add(at, mono, wall)
                 self._check_large()
                 return
+            self._rejected_pairs += 1
+            if self._rejected_pairs == UNSTABLE_AFTER:
+                _log.debug(
+                    "os batimentos da API não concordam (%d pares seguidos): enlace instável, "
+                    "a idade dos comandos do PC segue desconhecida",
+                    self._rejected_pairs,
+                )
+                if self._on_unstable is not None:
+                    self._on_unstable(self._rejected_pairs)
+        else:
+            self._rejected_pairs = 0
         self._candidate = (at, mono, wall)
 
     def _is_outlier(self, mono: float, wall: float, offset: float) -> bool:

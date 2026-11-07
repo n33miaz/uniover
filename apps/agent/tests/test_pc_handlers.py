@@ -16,6 +16,7 @@ from uniover_agent.core.pc import (
     pc_power_handler,
     slugify,
 )
+from uniover_agent.core.pc.handlers import merge_pointer_commands
 from uniover_agent.ports.pc import PcUnsupported
 
 
@@ -236,3 +237,60 @@ async def test_a_failing_pointer_is_quiet_in_the_log(caplog: pytest.LogCaptureFi
         result = await handlers["pc.pointer.v1"](Command("1", "pc.pointer.v1", {"dx": 1, "dy": 1}))
     assert result.status is ResultStatus.FAILED
     assert caplog.text == ""
+
+
+def _move(dx: int, dy: int = 0, **extra: int) -> Command:
+    return Command("n", "pc.pointer.v1", {"dx": dx, "dy": dy, **extra}, sent_at="ts-novo")
+
+
+def test_two_moves_are_summed_and_keep_the_id_and_timestamp_of_the_newer() -> None:
+    merged = merge_pointer_commands(
+        Command("a", "pc.pointer.v1", {"dx": 3, "dy": -1}, sent_at="ts-velho"), _move(4, 5)
+    )
+    assert merged is not None
+    assert (merged.id, merged.sent_at) == ("n", "ts-novo")
+    assert merged.body == {"dx": 7, "dy": 4, "scrollX": 0, "scrollY": 0}
+
+
+def test_two_scrolls_are_summed() -> None:
+    merged = merge_pointer_commands(_move(0, scrollY=120), _move(0, scrollY=-240))
+    assert merged is not None
+    assert merged.body["scrollY"] == -120
+
+
+def test_an_empty_move_merges_into_a_move() -> None:
+    merged = merge_pointer_commands(_move(0, 0), _move(9, 9))
+    assert merged is not None
+    assert (merged.body["dx"], merged.body["dy"]) == (9, 9)
+
+
+def test_a_move_and_a_scroll_are_not_merged_in_either_direction() -> None:
+    assert merge_pointer_commands(_move(5), _move(0, scrollY=120)) is None
+    assert merge_pointer_commands(_move(0, scrollY=120), _move(5)) is None
+
+
+def test_a_command_with_both_move_and_scroll_is_not_merged_with_anything() -> None:
+    mixed = _move(5, scrollY=120)
+    assert merge_pointer_commands(mixed, _move(1)) is None
+    assert merge_pointer_commands(_move(1), mixed) is None
+    assert merge_pointer_commands(mixed, mixed) is None
+
+
+@pytest.mark.parametrize(
+    ("older", "newer"),
+    [
+        (_move(1500), _move(600)),
+        (_move(-1500), _move(-600)),
+        (_move(0, 1500), _move(0, 600)),
+        (_move(0, scrollY=700), _move(0, scrollY=600)),
+        (_move(0, scrollX=-700), _move(0, scrollX=-600)),
+    ],
+)
+def test_a_sum_past_the_adapter_limits_is_not_merged(older: Command, newer: Command) -> None:
+    assert merge_pointer_commands(older, newer) is None
+
+
+def test_a_sum_exactly_at_the_limit_is_merged() -> None:
+    merged = merge_pointer_commands(_move(1000), _move(1000))
+    assert merged is not None
+    assert merged.body["dx"] == 2000
