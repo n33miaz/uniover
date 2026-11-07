@@ -213,9 +213,9 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     await expect.poll(() => tv.count('/cleanup')).toBe(1);
     await expect(options.getByText('Fechou 6 apps e liberou cerca de 380 MB.')).toBeVisible();
 
-    // Só o que a permissão cobre saiu: ler, aquecer e limpar. Nada recusado foi chamado.
+    // Só o que a permissão cobre saiu: ler, aquecer, avisar a presença (o toque no painel) e limpar. Nada recusado foi chamado.
     const paths = new Set(writes().map((request) => `${request.method} ${request.path}`));
-    expect([...paths].sort()).toEqual(['POST /cleanup', 'POST /wake']);
+    expect([...paths].sort()).toEqual(['POST /cleanup', 'POST /presence', 'POST /wake']);
     expect(tv.denied).toEqual([]);
   });
 
@@ -229,8 +229,9 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     await page.getByRole('button', { name: 'Mudo', exact: true }).click();
     await expect.poll(() => tv.keysSent()).toEqual(['MUTE']);
 
+    // A presença (o toque que mandou a tecla) é do mesmo `tv:control`: sai junto com a tecla.
     const paths = new Set(writes().map((request) => `${request.method} ${request.path}`));
-    expect([...paths].sort()).toEqual(['POST /keys', 'POST /wake']);
+    expect([...paths].sort()).toEqual(['POST /keys', 'POST /presence', 'POST /wake']);
     expect(tv.denied).toEqual([]);
   });
 

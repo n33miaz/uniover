@@ -582,10 +582,13 @@ test.describe('controle: fileira de atalhos', () => {
     await expect(page.locator('.shortcuts .shortcut.suggestion').first()).toBeVisible();
     await expect(page.locator('.shortcuts .shortcut:not(.suggestion)')).toHaveCount(0);
     await expect(page.getByText('Fixe apps aqui: abra o menu, no topo.')).toHaveCount(0);
-    // Tocar numa sugestão só abre o painel dela: nada vai à TV nem à lista de atalhos.
+    // Tocar numa sugestão só abre o painel dela: nada vai à TV nem à lista de atalhos. O aquecimento e o sinal de presença
+    // (o toque em si) não são comandos para a TV, e por isso ficam de fora da conta.
     await page.getByRole('button', { name: 'Sugestão: Netflix', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Netflix' })).toBeVisible();
-    expect(tv.requests.filter((r) => r.method !== 'GET' && r.path !== '/wake')).toEqual([]);
+    expect(
+      tv.requests.filter((r) => r.method !== 'GET' && r.path !== '/wake' && r.path !== '/presence'),
+    ).toEqual([]);
     await expectNoVerticalScroll(page);
   });
 
