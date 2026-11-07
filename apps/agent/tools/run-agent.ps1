@@ -348,6 +348,22 @@ function Get-UpdateOutcome {
 
 $script:lowDiskNotedAt = [DateTime]::MinValue
 $script:lowDiskDiagAt = @{}
+$script:lastSyncCycleAt = [DateTime]::MinValue
+$script:lastCureAt = [DateTime]::MinValue
+function Test-SyncCycleAllowed([bool]$Forced) {
+    # Reiniciar a volta so para o sync completo custa o agente fora do ar enquanto ele roda (ate o prazo do sync): no maximo
+    # um ciclo desses a cada $syncCycleSeconds (4 h); um `update-now` do dono o pede a cada $syncCycleForcedSeconds (30 min,
+    # para que um sync que nunca passa nao vire um laco de reinicios).
+    $interval = $syncCycleSeconds
+    if ($Forced) { $interval = $syncCycleForcedSeconds }
+    return ((((Get-Date) - $script:lastSyncCycleAt).TotalSeconds) -ge $interval)
+}
+
+function Set-UpdateWaitingReason {
+    # Sem isto o painel continuaria com o estado antigo e o "Atualizar agora" pareceria ignorado.
+    Set-UpdateState @{ reason = 'a atualizacao espera o ambiente Python ser preparado (disco cheio ou sync lento)' } | Out-Null
+}
+
 function Test-EnvironmentSynced {
     # O ambiente passou num `uv sync --frozen` completo para a versao instalada agora (so o sync real o afirma).
     return [bool]($script:syncedVersion -and $script:syncedVersion -eq (Get-Version))
@@ -839,6 +855,9 @@ $updateTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS' 
 $syncTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS' 900
 # Abaixo disto de espaco livre (MB) nenhuma atualizacao comeca e o ambiente Python nunca e apagado.
 $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
+$syncCycleSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_CYCLE_SECONDS' 14400
+$syncCycleForcedSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_CYCLE_FORCED_SECONDS' 1800
+$envUnusableWait = Get-Setting 'UNIOVER_SUPERVISOR_ENV_UNUSABLE_WAIT_SECONDS' 60
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
@@ -906,10 +925,19 @@ while ($true) {
     $updated = $false
     $forceUpdate = Test-Path (Join-Path $runtime 'update-now')
     $updateDue = ((Get-Date) -ge $nextUpdate -or $forceUpdate)
-    if ($synced -and -not (Test-EnvironmentSynced) -and $updateDue) {
+    # O mesmo vale para o proprio horario: o update que foi adiado (+30 min) por causa do ambiente mantido volta a ser devido
+    # na hora quando o ambiente e que esta derrubando o agente, mas no maximo uma tentativa a cada 10 min.
+    if ($script:keptCrashes -ge 4 -and ((Get-Date) - $script:lastCureAt).TotalMinutes -ge 10) {
+        $updateDue = $true
+        $script:lastCureAt = Get-Date
+    }
+    # Depois de 3 `agent.env_unusable` seguidos (4 quedas rapidas) o ambiente mantido e o proprio defeito: o update (que sincroniza
+    # sozinho) volta a ser a cura, em vez de esperar um sync que nunca passa.
+    if ($synced -and -not (Test-EnvironmentSynced) -and $updateDue -and $script:keptCrashes -lt 4) {
         # Ambiente apenas MANTIDO (o sync estourou o prazo ou faltou espaco): o `self-update` rodaria um sync implicito, sem
         # --frozen e sem prazo proprio alem dos 40 min, com o agente fora do ar por tras. Nesta volta o agente sobe primeiro e
         # o update fica para daqui a 30 min (um `update-now` do dono continua la, para quando o ambiente estiver sincronizado).
+        Set-UpdateWaitingReason
         if ((Get-Date) -ge $nextUpdate) {
             Write-SupLog 'INFO' 'o ambiente foi apenas mantido (sem sync completo); o update fica para daqui a 30 minutos e o agente sobe primeiro'
             $nextUpdate = (Get-Date).AddMinutes(30)
@@ -1011,9 +1039,24 @@ while ($true) {
             }
         }
         $forceUpdate = Test-Path (Join-Path $runtime 'update-now')
-        if (-not (Test-EnvironmentSynced) -and ((Get-Date) -ge $nextUpdate -or $forceUpdate)) {
-            # Ambiente apenas mantido: o update rodaria um sync implicito sobre o venv que o agente em execucao usa.
-            if ((Get-Date) -ge $nextUpdate) { $nextUpdate = (Get-Date).AddMinutes(30) }
+        if ($restartForUpdate) {
+            # A volta ja esta acabando (reinicio, volta atras ou ciclo de sync): nada de update agora.
+        }
+        elseif (-not (Test-EnvironmentSynced) -and ((Get-Date) -ge $nextUpdate -or $forceUpdate)) {
+            # Ambiente apenas mantido: o update rodaria um sync implicito sobre o venv que o agente em execucao usa. Sem espaco
+            # nada muda (o sync nao cabe); com espaco, termina a volta (reinicio) para o sync completo rodar e o update vir na
+            # volta seguinte, no maximo uma vez a cada poucas horas (a cada 30 min para um `update-now`).
+            if (-not (Test-LowDisk) -and (Test-SyncCycleAllowed $forceUpdate)) {
+                Write-SupLog 'INFO' 'ha uma atualizacao e o ambiente nao esta sincronizado; termino a volta para o sync completo e atualizo na seguinte'
+                $script:lastSyncCycleAt = Get-Date
+                Set-StopReason 'restart'
+                & taskkill.exe /PID $process.Id /T /F *> $null
+                $restartForUpdate = $true
+            }
+            else {
+                Set-UpdateWaitingReason
+                if ((Get-Date) -ge $nextUpdate) { $nextUpdate = (Get-Date).AddMinutes(30) }
+            }
         }
         elseif ((Get-Date) -ge $nextUpdate -or $forceUpdate) {
             Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
@@ -1086,9 +1129,10 @@ while ($true) {
     $script:ownedElsewhere = $false
     $script:ownerReported = $null
     # Quedas rapidas e seguidas sobre um ambiente apenas MANTIDO (nunca passou num sync completo: por exemplo, o da versao
-    # rejeitada logo depois de uma volta atras, com o disco cheio) quase sempre sao o venv inutilizavel. Dai em diante: um
-    # unico diagnostico claro em vez de um `process.exited` por volta, e a espera entre as tentativas nao fica abaixo de 1 min.
-    $keptEnvironment = ($script:noSyncLaunch -and -not $script:syncReal -and -not $script:ownedElsewhere)
+    # rejeitada logo depois de uma volta atras, com o disco cheio) quase sempre sao o venv inutilizavel. Dai em diante: o
+    # diagnostico claro `agent.env_unusable` (um a cada 10 min, pela deduplicacao do Add-Diagnostic) no lugar de um
+    # `process.exited` por volta, e a espera entre as tentativas nao fica abaixo de $envUnusableWait.
+    $keptEnvironment = ($script:noSyncLaunch -and -not $script:syncReal)
     if ($seconds -gt 600 -or $script:syncReal) { $script:keptCrashes = 0 }
     elseif ($keptEnvironment -and -not $restartForUpdate -and -not $hung -and $seconds -lt 60) { $script:keptCrashes++ }
     $envUnusable = ($script:keptCrashes -ge 2)
@@ -1096,7 +1140,7 @@ while ($true) {
         Write-SupLog 'WARNING' ('o agente terminou (codigo ' + $code + ') depois de ' + [int]$seconds + ' s')
         if ($envUnusable) {
             Add-Diagnostic 'agent.env_unusable' 'error' 'o agente cai ao subir sobre o ambiente Python mantido (sem sync completo); espero para tentar de novo'
-            $wait = [Math]::Max($wait, 60)
+            $wait = [Math]::Max($wait, $envUnusableWait)
         }
         elseif (-not $hung) {
             Add-Diagnostic 'process.exited' 'warn' ('o agente terminou sozinho (codigo ' + $code + ') depois de ' + [int]$seconds + ' segundos')
