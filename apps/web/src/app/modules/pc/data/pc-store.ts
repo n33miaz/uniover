@@ -31,6 +31,9 @@ export const HOLD_HEARTBEAT_MS = 10_000;
  */
 export const UP_RETRY_BACKOFF_MS: readonly number[] = [300, 1_000];
 
+/** Um pedido do botão que desistiu porque a conta mudou: não é falha do PC e não aparece para ninguém. */
+class AccountChanged extends Error {}
+
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const ignore = () => undefined;
 
@@ -142,7 +145,10 @@ export class PcStore {
       if (document.visibilityState !== 'hidden') void this.availability.refresh();
     }, PC_POLL_MS);
     // Fechar o PWA ou ir para o segundo plano não pode deixar o botão apertado no PC (o iOS nem avisa o componente).
-    const onHide = () => this.releaseOnHide();
+    const onHide = () => this.releaseOnHide(false);
+    // `pagehide` com `persisted === false`: a página morre de verdade (não vai para o cache de volta e avance).
+    const onPageHide = (event: Event) =>
+      this.releaseOnHide((event as PageTransitionEvent).persisted === false);
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         void this.availability.refresh();
@@ -152,11 +158,11 @@ export class PcStore {
       } else onHide();
     };
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pagehide', onPageHide);
     const stop = () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pagehide', onPageHide);
       this.endGesture();
       this.heartbeatAllowed = false;
       this.stopHeartbeat();
@@ -342,6 +348,8 @@ export class PcStore {
       await call();
       return null;
     } catch (error) {
+      // O pedido desistiu porque a conta mudou: nada de aviso nem de releitura do estado para a conta nova.
+      if (error instanceof AccountChanged) return this.blocked();
       const failure = pcFailureOf(error);
       this.noteFailure(failure);
       return failure;
@@ -399,6 +407,8 @@ export class PcStore {
   /** Movimento zerado: não mexe o ponteiro, só mostra ao agente que o botão apertado é de propósito. */
   private async beat(): Promise<void> {
     if (!this.heartbeatAllowed || !this.dragging() || this.batcher.busy) return;
+    // O botão apertado é de uma conta; o sinal de vida de outra sessão iria para o PC errado.
+    if (this.session.accountId() !== this.account) return;
     try {
       await this.api.pointer(0, 0);
     } catch {
@@ -415,7 +425,7 @@ export class PcStore {
 
   /** Quando um pedido do botão chega a sua vez, a conta pode ter mudado: o pedido era dela, e desiste. */
   private assertAccount(owner: string | null): void {
-    if (this.session.accountId() !== owner) throw new HttpErrorResponse({ status: 409 });
+    if (this.session.accountId() !== owner) throw new AccountChanged();
   }
 
   /** O `UP` da fila, só se a conta que apertou ainda é a da sessão (senão iria ao PC de outra pessoa). */
@@ -487,9 +497,9 @@ export class PcStore {
   /**
    * A página vai sumir (`pagehide`) ou foi para o segundo plano: solta o botão agora, com `keepalive` para o navegador
    * terminar o pedido mesmo se a página morrer. Síncrono de propósito: não há tempo de esperar o movimento pendente. Com o
-   * `DOWN` ainda em voo o `UP` espera a vez dele na fila.
+   * `DOWN` ainda em voo o `UP` espera a vez dele na fila (e, se a página morre de vez, sai também um imediato).
    */
-  private releaseOnHide(): void {
+  private releaseOnHide(dying: boolean): void {
     this.syncAccount();
     this.heartbeatAllowed = false;
     this.stopHeartbeat();
@@ -498,6 +508,9 @@ export class PcStore {
       // fila, assim que o `DOWN` terminar.
       this.releaseWanted = true;
       this.releaseKeepalive = true;
+      // A página morre agora: o `UP` da fila pode nunca sair. Um `UP` imediato com `keepalive` vai também (o agente
+      // rejeita um `DOWN` com mais de 5 s, e o `UP` a mais é inofensivo). Só no `pagehide` definitivo.
+      if (dying && this.maybeHeld) void this.quietUpNow();
       return;
     }
     if (!this.maybeHeld && !this.dragging()) return;
