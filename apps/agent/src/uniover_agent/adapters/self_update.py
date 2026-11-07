@@ -740,36 +740,48 @@ def _write_tv_wait(path: Path, sha: str, since: float, *, again: bool) -> bool:
     return True
 
 
-def should_wait_for_tv(  # noqa: PLR0913 - limites e relógio nomeados, todos necessários
+def settle_tv_wait(source: Path, *, in_use: bool, max_defer_seconds: float) -> None:
+    """Começo de toda checagem: a TV parada fecha ou mantém o relógio da espera.
+
+    Aplicada uma vez, ANTES de qualquer desfecho antecipado da checagem (consulta que falha, versão
+    bloqueada ou adiada, pouco espaço), senão uma TV que já parou deixaria o relógio velho para
+    sempre. Com a TV em uso nada muda. Parada, o relógio é apagado, salvo se a checagem anterior
+    terminou com a TV voltando a ser usada durante a preparação (`mark_tv_busy_again`): então só a
+    marca `again` cai, o início continua valendo até a troca, e a TV já precisou ficar parada pela
+    janela inteira (`tv_in_use`) para este ponto ser alcançado."""
+    if in_use and max_defer_seconds > 0:
+        return
+    path = source.parent / "runtime" / TV_WAIT_FILE
+    state = _read_tv_wait(path)
+    if state is None:
+        return
+    if state[2]:
+        _write_tv_wait(path, state[0], state[1], again=False)
+    else:
+        _clear_tv_wait(source)
+
+
+def should_wait_for_tv(
     source: Path,
     now: float,
     *,
     sha: str,
     in_use: bool,
     max_defer_seconds: float = TV_MAX_DEFER_SECONDS,
-    start_of_check: bool = True,
 ) -> bool:
     """A atualização para `sha` deve esperar a TV parar? Espera no máximo `max_defer_seconds`.
 
     O relógio da espera começa na primeira checagem em que havia atualização e a TV estava em uso,
-    e fica em `runtime\\.update-waiting-for-tv` (`sha|epoch`; um reinício do agente não o zera,
-    senão reinícios seguidos adiariam para sempre). Vale o início MAIS ANTIGO: outro commit no
-    meio da espera só troca o `sha` (informativo), e uma checagem que falha não o apaga, senão uma
-    TV usada o tempo todo nunca deixaria o teto de 24 h chegar. Só se apaga com a versão atual em
-    dia, depois da troca, ou quando a TV está parada no começo de uma checagem (`start_of_check`)
-    e a anterior não terminou com a TV voltando a ser usada (ver `mark_tv_busy_again`): nesse caso
-    a TV precisou ficar parada pela janela inteira antes de a nova tentativa começar, e o relógio
-    segue valendo até a troca. Se o relógio não puder ser gravado (disco), não espera: sem como
-    contar, o teto não se faria valer."""
+    e fica em `runtime\\.update-waiting-for-tv` (`sha|epoch[|again]`; um reinício do agente não o
+    zera, senão reinícios seguidos adiariam para sempre). Vale o início MAIS ANTIGO: outro commit
+    no meio da espera só troca o `sha` (informativo), e uma checagem que falha não o apaga, senão
+    uma TV usada o tempo todo nunca deixaria o teto de 24 h chegar. Só se apaga com a versão atual
+    em dia, depois da troca ou pela regra de `settle_tv_wait`. Se o relógio não puder ser gravado
+    (disco), não espera: sem como contar, o teto não se faria valer."""
+    if not in_use or max_defer_seconds <= 0:
+        return False
     path = source.parent / "runtime" / TV_WAIT_FILE
     state = _read_tv_wait(path)
-    if not in_use or max_defer_seconds <= 0:
-        if start_of_check and state is not None:
-            if state[2]:
-                _write_tv_wait(path, state[0], state[1], again=False)
-            else:
-                _clear_tv_wait(source)
-        return False
     since = state[1] if state is not None and state[1] <= now else now
     if state is None or state[1] > now or state[0] != sha:
         if not _write_tv_wait(path, sha, since, again=state is not None and state[2]):
@@ -844,14 +856,13 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     sha: str | None = None
     started = monotonic()
 
-    def tv_must_wait(candidate: str, *, start_of_check: bool) -> bool:
+    def tv_must_wait(candidate: str) -> bool:
         return not ignore_deferral and should_wait_for_tv(
             source,
             wall(),
             sha=candidate,
             in_use=tv_in_use(source, wall(), tv_idle_seconds),
             max_defer_seconds=tv_max_defer_seconds,
-            start_of_check=start_of_check,
         )
 
     def within_budget() -> None:
@@ -859,6 +870,12 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
             raise SelfUpdateError("a atualização passou do tempo máximo; fica para a próxima vez")
 
     try:
+        if not ignore_deferral:
+            settle_tv_wait(
+                source,
+                in_use=tv_in_use(source, wall(), tv_idle_seconds),
+                max_defer_seconds=tv_max_defer_seconds,
+            )
         sha = (fetch_latest or (lambda: latest_commit(channel)))()
         within_budget()
         if read_version(source) == sha:
@@ -888,7 +905,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         low = _low_disk_result(free, min_free_bytes, sha)
         if low is not None:
             return low
-        if tv_must_wait(sha, start_of_check=True):
+        if tv_must_wait(sha):
             _log.info("atualização adiada: a TV foi usada há pouco; espero ela ficar parada")
             return UpdateResult(
                 False,
@@ -919,7 +936,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 run_check(new)
                 within_budget()
                 # Baixar e montar leva minutos: a TV pode ter voltado a ser usada nesse intervalo.
-                if tv_must_wait(sha, start_of_check=False):
+                if tv_must_wait(sha):
                     raise _TvBusyAgain("a TV voltou a ser usada; a troca fica para quando parar")
                 promote(source, new, sha, record_trial)
                 _clear_tv_wait(source)

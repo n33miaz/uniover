@@ -128,27 +128,26 @@ function Get-BeaconExitCode($Code) {
     return ('exit_' + $number)
 }
 
+# Devolve $true so quando o processo do POST foi iniciado ($false: desligada, sem destino, dentro da janela ou falha ao iniciar).
 function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool]$IgnoreSpacing = $false) {
     try {
-        if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return }
-        if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return }
+        if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return $false }
+        if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return $false }
         $spacing = 600.0
         $forced = 0.0
         if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_BEACON_MIN_INTERVAL_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $spacing = $forced }
         $key = $Stage + '.' + $Code
         $now = [DateTime]::UtcNow
-        if (-not $IgnoreSpacing -and $script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
+        if (-not $IgnoreSpacing -and $script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return $false }
         $stamp = Join-Path (Join-Path $base 'runtime') ('beacon.' + $key)
         if (-not $IgnoreSpacing) {
             try {
                 $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
-                if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
+                if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return $false }
             } catch { }
         }
         $target = Get-BeaconTarget
-        if (-not $target) { return }
-        $script:beaconSent[$key] = $now
-        try { [System.IO.File]::WriteAllText($stamp, 'x', [System.Text.Encoding]::ASCII) } catch { }
+        if (-not $target) { return $false }
         $body = '{"v":1,"stage":"' + $Stage + '","code":"' + $Code + '"'
         if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
         $body += ',"os":"windows"}'
@@ -164,8 +163,13 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool
         $info.EnvironmentVariables['UNIOVER_BEACON_URI'] = $target
         $info.EnvironmentVariables['UNIOVER_BEACON_BODY'] = $body
         $child = [System.Diagnostics.Process]::Start($info)
-        if ($null -ne $child) { $child.Dispose() }
-    } catch { }
+        if ($null -eq $child) { return $false }
+        $child.Dispose()
+        # So agora (o processo existe) a baliza conta como enviada: memoria e arquivo de estado.
+        $script:beaconSent[$key] = $now
+        try { [System.IO.File]::WriteAllText($stamp, 'x', [System.Text.Encoding]::ASCII) } catch { }
+        return $true
+    } catch { return $false }
 }
 # --- Fim da baliza de partida -------------------------------------------------------------------------------------------
 
@@ -177,7 +181,20 @@ function Set-BeaconNeedsOk {
 }
 
 function Test-BeaconNeedsOk {
-    return ($script:beaconNeedsOk -or (Test-Path -LiteralPath (Join-Path $runtime 'beacon-needs-ok')))
+    # Ha uma falha avisada que o "abriu" ainda nao apagou? Vale o aviso deste supervisor (memoria e arquivo) e tambem qualquer
+    # arquivo de estado de baliza de falha (`beacon.<estagio>.<codigo>`, codigo diferente de `ok`) mais novo que o do
+    # `child_spawn.ok`: cobre o que o lancador avisou (stale, saida do supervisor, sem app), mesmo um lancador mais antigo.
+    if ($script:beaconNeedsOk -or (Test-Path -LiteralPath (Join-Path $runtime 'beacon-needs-ok'))) { return $true }
+    try {
+        $okAt = [DateTime]::MinValue
+        $okStamp = Join-Path $runtime 'beacon.child_spawn.ok'
+        if (Test-Path -LiteralPath $okStamp) { $okAt = (Get-Item -LiteralPath $okStamp).LastWriteTimeUtc }
+        foreach ($item in @(Get-ChildItem -LiteralPath $runtime -Filter 'beacon.*' -File -ErrorAction Stop)) {
+            if ($item.Name -notmatch '^beacon\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$' -or $item.Name -match '\.ok$') { continue }
+            if ($item.LastWriteTimeUtc -gt $okAt) { return $true }
+        }
+    } catch { }
+    return $false
 }
 
 function Clear-BeaconNeedsOk {
@@ -1047,7 +1064,7 @@ while ($true) {
     $uv = Find-Uv
     if (-not $uv -or -not (Test-Path -LiteralPath $source)) {
         Write-SupLog 'WARNING' 'sem uv ou sem a pasta do agente; espero 5 minutos'
-        if (-not $uv) { Send-Beacon 'supervisor' 'no_uv' ([string](Get-Version)) } else { Send-Beacon 'bootstrap' 'no_app' }
+        if (-not $uv) { $null = Send-Beacon 'supervisor' 'no_uv' ([string](Get-Version)) } else { $null = Send-Beacon 'bootstrap' 'no_app' }
         Set-BeaconNeedsOk
         Sleep-Beating 300; continue
     }
@@ -1094,7 +1111,7 @@ while ($true) {
         # O servidor fica sabendo por que o agente nao sobe (disco cheio e o motivo que a tela do dono ja sabe nomear).
         $syncCode = 'sync_failed'
         if ($script:lastSyncCause -eq 'lowdisk') { $syncCode = 'disk_full' }
-        Send-Beacon 'supervisor' $syncCode ([string](Get-Version))
+        $null = Send-Beacon 'supervisor' $syncCode ([string](Get-Version))
         Set-BeaconNeedsOk
         # Versao em prova que nao consegue preparar o proprio ambiente nunca chegaria a rodar, nem a cair: sem esta conta o
         # laco esperaria para sempre. Na terceira falha seguida volta para a anterior, pela mesma rotina do pedido do dono. So
@@ -1130,8 +1147,9 @@ while ($true) {
     # Uma partida normal respeita a janela de 10 minutos; so a que vem depois de uma falha avisada fura a janela, para apagar a falha.
     if ($script:fastExits -lt 1) {
         $clearsFailure = Test-BeaconNeedsOk
-        Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $clearsFailure
-        if ($clearsFailure) { Clear-BeaconNeedsOk }
+        $launched = Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $clearsFailure
+        # So se o POST saiu de fato a falha avisada deixa de estar pendente (senao a proxima partida tenta de novo).
+        if ($clearsFailure -and $launched) { Clear-BeaconNeedsOk }
     }
     $restartForUpdate = $false
     $hung = $false
@@ -1149,8 +1167,8 @@ while ($true) {
         # Depois de quedas rapidas, o agente que se firmou conta como recuperado: o "abriu" apaga no servidor a falha antiga.
         if ($script:fastExits -gt 0 -and (($lap - $started).TotalSeconds -ge $stableSeconds)) {
             $script:fastExits = 0
-            Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $true
-            Clear-BeaconNeedsOk
+            $launched = Send-Beacon 'child_spawn' 'ok' ([string](Get-Version)) $true
+            if ($launched) { Clear-BeaconNeedsOk }
         }
         $slow = (($lap - $previousLap).TotalSeconds -gt $slowLapSeconds)
         $previousLap = $lap
@@ -1285,7 +1303,7 @@ while ($true) {
         $exitBeacon = Get-BeaconExitCode $code
         if ($hung) { $exitBeacon = 'unresponsive' }
         elseif ($script:fastExits -ge 3) { $exitBeacon = 'crash_loop' }
-        Send-Beacon 'child_exit' $exitBeacon ([string](Get-Version))
+        $null = Send-Beacon 'child_exit' $exitBeacon ([string](Get-Version))
         Set-BeaconNeedsOk
         if ($envUnusable) {
             Add-Diagnostic 'agent.env_unusable' 'error' 'o agente cai ao subir sobre o ambiente Python mantido (sem sync completo); espero para tentar de novo'
