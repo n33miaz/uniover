@@ -85,6 +85,53 @@ describe('SystemHealthSection', () => {
     expect(version.querySelector('strong')?.textContent?.trim()).toBe('abcdef0');
   });
 
+  it('lists the module versions in the order the API sends them, named in Portuguese', async () => {
+    system.deploymentVersion.mockResolvedValue({
+      commit: 'abc1234',
+      modules: {
+        identity: '0.43.0',
+        devices: '0.42.15',
+        tv: '0.44.2',
+        training: '0.42.15',
+        web: '0.43.1',
+        agent: '0.42.16',
+        novo: '1.0.0',
+      },
+    });
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.modules-title')?.textContent?.trim()).toBe('Módulos');
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('.modules-list li')).map((row) =>
+      Array.from(row.querySelectorAll('span')).map((cell) => cell.textContent?.trim()),
+    );
+    expect(rows).toEqual([
+      ['Identidade', '0.43.0'],
+      ['Dispositivos', '0.42.15'],
+      ['TV', '0.44.2'],
+      ['Treino', '0.42.15'],
+      ['Site', '0.43.1'],
+      ['Agente', '0.42.16'],
+      ['novo', '1.0.0'],
+    ]);
+    // Os cinco cartões de leitura continuam sendo só cinco: os módulos são uma lista à parte.
+    expect(root.querySelectorAll('.metric')).toHaveLength(5);
+  });
+
+  it('omits the module list when the API does not send versions yet', async () => {
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.modules')).toBeNull();
+  });
+
   it('lists the events that exhausted their attempts, without the payload', async () => {
     system.deadLetters.mockResolvedValue({
       total: 3,

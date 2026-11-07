@@ -90,3 +90,42 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* As versões por módulo: uma lista pequena, no mesmo painel das demais leituras, com a versão alinhada à direita. */
+.modules {
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  padding: var(--space-3);
+}
+
+.modules-title {
+  margin: 0 0 var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.modules-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modules-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.module-version {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
