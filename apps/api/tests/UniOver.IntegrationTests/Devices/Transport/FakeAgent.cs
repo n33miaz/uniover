@@ -80,8 +80,24 @@ internal sealed class FakeAgent : IAsyncDisposable
         await _socket.SendAsync(data, WebSocketMessageType.Binary, true, timeout.Token);
     }
 
-    /// <summary>Próxima mensagem de texto do servidor; nulo se o servidor fechou (o fechamento fica em <see cref="Closed"/>).</summary>
+    /// <summary>
+    /// Próxima mensagem do servidor que não seja o batimento da API (<c>api.keepalive.v1</c>, que sai sozinho logo depois do
+    /// hello e depois a cada período); nulo se o servidor fechou (o fechamento fica em <see cref="Closed"/>).
+    /// </summary>
     public async Task<JsonElement?> ReceiveAsync()
+    {
+        while (true)
+        {
+            var message = await ReceiveAnyAsync();
+            if (message is null || message.Value.GetProperty("type").GetString() != "api.keepalive.v1")
+            {
+                return message;
+            }
+        }
+    }
+
+    /// <summary>Próxima mensagem de texto do servidor, batimentos inclusos; nulo se o servidor fechou (o fechamento fica em <see cref="Closed"/>).</summary>
+    public async Task<JsonElement?> ReceiveAnyAsync()
     {
         using var timeout = new CancellationTokenSource(Patience);
         var buffer = new byte[16 * 1024];
