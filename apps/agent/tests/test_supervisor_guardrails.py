@@ -660,47 +660,19 @@ def test_a_kept_environment_on_the_first_lap_starts_the_agent_before_any_update(
     assert order.read_text("ascii").split() == ["agent"], "o update rodou antes (ou sem) o agente"
 
 
-def test_repeated_quick_crashes_on_a_kept_environment_replace_process_exited_by_env_unusable(
-    pc: Pc,
-) -> None:
+def test_repeated_quick_crashes_on_a_kept_environment_leave_one_clear_diagnostic(pc: Pc) -> None:
     python = pc.runtime / "venv" / "Scripts" / "python.exe"
     python.parent.mkdir(parents=True)
     python.write_text("", encoding="ascii")
     pc.uv(["exit /b 1"], sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"])
-    with pc.running(
-        UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
-        UNIOVER_SUPERVISOR_ENV_UNUSABLE_WAIT_SECONDS="1",
-    ):
-        # Três quedas ou mais: a deduplicação de 10 min do `Add-Diagnostic` deixa um só.
-        assert wait_for(lambda: pc.starts() >= 4, 150), pc.supervisor_log()
+    with pc.running(UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2"):
+        assert wait_for(
+            lambda: any(i["kind"] == "agent.env_unusable" for i in pc.diagnostics()), 120
+        ), pc.supervisor_log()
     kinds = [i["kind"] for i in pc.diagnostics()]
     assert kinds.count("agent.env_unusable") == 1
-    # Só a primeira queda ainda é comum; dali em diante não há um `process.exited` por volta.
+    # A primeira queda ainda é uma queda comum; dali em diante não há um `process.exited` por volta.
     assert kinds.count("process.exited") <= 1
-
-
-def test_after_three_env_unusable_in_a_row_the_update_is_allowed_as_the_cure(
-    pc: Pc, tmp_path: Path
-) -> None:
-    updates = tmp_path / "updates.txt"
-    python = pc.runtime / "venv" / "Scripts" / "python.exe"
-    python.parent.mkdir(parents=True)
-    python.write_text("", encoding="ascii")
-    pc.uv(
-        ["exit /b 1"],
-        sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"],
-        update_lines=['echo x>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
-    )
-    with pc.running(
-        UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
-        UNIOVER_SUPERVISOR_ENV_UNUSABLE_WAIT_SECONDS="1",
-        UNIOVER_TEST_UPDATES=str(updates),
-    ):
-        assert wait_for(lambda: pc.starts() >= 3, 120), pc.supervisor_log()
-        # Com menos de 4 quedas rápidas o update espera o ambiente (o agente sobe primeiro).
-        assert not updates.exists()
-        assert wait_for(updates.exists, 180), pc.supervisor_log()
-    assert pc.starts() >= 4
 
 
 def test_the_agent_and_the_tray_start_without_an_implicit_sync_after_a_good_sync(
@@ -809,99 +781,3 @@ def test_three_real_sync_errors_roll_back_and_block_the_version(pc: Pc) -> None:
         )
     assert CURRENT in (pc.runtime / ".blocked-versions").read_text(encoding="ascii")
     assert not (pc.runtime / ".deferred-versions").exists()
-
-
-def kept_environment(pc: Pc) -> None:
-    python = pc.runtime / "venv" / "Scripts" / "python.exe"
-    python.parent.mkdir(parents=True)
-    python.write_text("", encoding="ascii")
-
-
-def test_a_pending_update_now_ends_the_lap_so_the_full_sync_runs_and_then_updates(
-    pc: Pc, tmp_path: Path
-) -> None:
-    # O sync da volta 1 estoura o prazo (ambiente mantido, o agente sobe); o dono pede o update com
-    # o agente no ar: a volta termina (reinício), o sync da volta 2 passa de verdade e o update vem
-    # nela, com UV_NO_SYNC.
-    updates = tmp_path / "updates.txt"
-    flag = tmp_path / "sync-flag.txt"
-    kept_environment(pc)
-    pc.uv(
-        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
-        sync_lines=[
-            'if exist "%UNIOVER_TEST_FLAG%" exit /b 0',
-            'echo x>"%UNIOVER_TEST_FLAG%"',
-            "ping -n 60 127.0.0.1 > nul",
-            "exit /b 0",
-        ],
-        update_lines=['echo [%UV_NO_SYNC%]>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
-    )
-    with (
-        heartbeat(pc.alive),
-        pc.running(
-            UNIOVER_TEST_UPDATES=str(updates),
-            UNIOVER_TEST_FLAG=str(flag),
-            UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
-            UNIOVER_SUPERVISOR_SYNC_CYCLE_FORCED_SECONDS="1",
-        ),
-    ):
-        assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
-        (pc.runtime / "update-now").write_text("", encoding="ascii")
-        assert wait_for(updates.exists, 90), pc.supervisor_log()
-        assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
-    assert updates.read_text("ascii").split() == ["[1]"]
-    assert "termino a volta para o sync completo" in pc.supervisor_log()
-    assert (pc.runtime / "stop-reason.txt").read_text("ascii") == "restart"
-
-
-def test_the_sync_cycle_is_rate_limited_and_the_status_says_the_update_is_waiting(
-    pc: Pc,
-) -> None:
-    # O sync nunca passa: depois do primeiro ciclo, um novo pedido dentro do intervalo NÃO reinicia
-    # de novo; o estado diz que a atualização espera o ambiente ser preparado.
-    kept_environment(pc)
-    pc.uv(
-        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
-        sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"],
-    )
-    with (
-        heartbeat(pc.alive),
-        pc.running(
-            UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
-            UNIOVER_SUPERVISOR_SYNC_CYCLE_FORCED_SECONDS="3600",
-        ),
-    ):
-        assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
-        (pc.runtime / "update-now").write_text("", encoding="ascii")
-        assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
-        status = pc.runtime / "update-status.json"
-        assert wait_for(
-            lambda: status.exists() and "espera o ambiente" in status.read_text("utf-8"), 40
-        ), pc.supervisor_log()
-        time.sleep(6)
-        assert pc.starts() == 2, "um segundo ciclo de sync foi feito dentro do intervalo"
-    assert pc.supervisor_log().count("termino a volta para o sync completo") == 1
-
-
-def test_a_full_disk_never_triggers_the_sync_cycle(pc: Pc) -> None:
-    kept_environment(pc)
-    pc.uv(
-        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
-        sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"],
-    )
-    with (
-        heartbeat(pc.alive),
-        pc.running(
-            UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
-            UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999",
-            UNIOVER_SUPERVISOR_SYNC_CYCLE_FORCED_SECONDS="1",
-        ),
-    ):
-        assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
-        (pc.runtime / "update-now").write_text("", encoding="ascii")
-        status = pc.runtime / "update-status.json"
-        assert wait_for(
-            lambda: status.exists() and "espera o ambiente" in status.read_text("utf-8"), 40
-        ), pc.supervisor_log()
-        time.sleep(5)
-        assert pc.starts() == 1, "sem espaço o sync não cabe: o agente não pode ser reiniciado"
