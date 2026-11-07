@@ -11,6 +11,7 @@ from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
 from uniover_agent.core import (
     PC_CONTROL_CAPABILITY,
+    ClockOffset,
     EnvelopeFactory,
     Handler,
     PcApp,
@@ -33,6 +34,9 @@ class PcSetup:
     apps: list[PcApp]
     # Solta os botões do mouse que o PC ficou segurando (conexão caída, agente encerrando).
     release_all: Callable[[], None]
+    # Estimativa da diferença de relógio com a API: `ProcessMessage` a alimenta com o `ts` de cada
+    # mensagem e os comandos medem a idade por ela.
+    clock: ClockOffset
 
 
 def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
@@ -44,6 +48,8 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     pc_input: PcInput | None = None,
     power: PcPower | None = None,
     launcher: PcLauncher | None = None,
+    on_clock_skew: Callable[[float], None] | None = None,
+    on_expired: Callable[[float], None] | None = None,
 ) -> PcSetup | None:
     """O controle do PC só existe quando a pessoa o ligou neste PC (`pc_control`) e o sistema é o
     Windows. Sem isso nenhum comando `pc.*` é aceito e a capacidade não é declarada: a API nem
@@ -55,12 +61,14 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         return None
     apps = parse_favorites(settings.pc_apps)
     pc_input = pc_input or WindowsPcInput()
+    clock = ClockOffset(on_skew=on_clock_skew, on_refused=on_expired)
     handlers = pc_handlers(
         pc_input,
         power or WindowsPcPower(),
         launcher or WindowsPcLauncher(),
         apps,
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
+        clock=clock,
     )
     return PcSetup(
         handlers,
@@ -68,6 +76,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         [pc_apps_announcer(apps, transport, envelopes)],
         apps,
         pc_input.release_all,
+        clock,
     )
 
 

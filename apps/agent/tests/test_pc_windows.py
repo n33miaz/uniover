@@ -8,6 +8,8 @@ import pytest
 
 from uniover_agent.adapters import pc_windows
 from uniover_agent.adapters.pc_inputs import (
+    KEY_UNICODE,
+    KEY_UP,
     MOUSE_LEFTDOWN,
     MOUSE_LEFTUP,
     MOUSE_MOVE,
@@ -384,3 +386,76 @@ def test_a_lone_surrogate_is_refused_and_nothing_is_sent() -> None:
     with pytest.raises(ValueError, match="par substituto"):
         pc.type_text("senha\ud800")
     assert sent.batches == []
+
+
+def test_a_partial_key_batch_releases_every_key_that_went_down() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    # CTRL+SHIFT+T: só os três apertos entraram, as três soluturas ficaram de fora.
+    flaky.accept = [3]
+    with pytest.raises(PartialSendError):
+        pc.key("T", ["CTRL", "SHIFT"])
+    assert [(e.vk, e.flags) for e in flaky.batches[-1]] == [
+        (ord("T"), KEY_UP),
+        (0x10, KEY_UP),
+        (0x11, KEY_UP),
+    ]
+    pc.release_all()
+    assert len(flaky.batches) == 2  # nada mais preso
+
+
+def test_a_partial_batch_of_typed_text_releases_the_unicode_key_that_went_down() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [3]  # "a" inteiro e o aperto de "b"
+    with pytest.raises(PartialSendError):
+        pc.type_text("ab")
+    (up,) = flaky.batches[-1]
+    assert (up.scan, up.flags) == (ord("b"), KEY_UNICODE | KEY_UP)
+
+
+def test_a_key_release_the_system_refused_is_retried_by_the_dead_man_timer() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    flaky.accept = [2, 0]  # o lote entra em parte e a soltura que segue também é recusada
+    with pytest.raises(PartialSendError):
+        pc.key("T", ["CTRL"])
+    ((delay, _),) = timers.live()
+    assert delay == 30
+    now[0] = 30
+    timers.fire_last()
+    assert [e.vk for e in flaky.batches[-1]] == [ord("T"), 0x11]
+    assert timers.live() == []
+
+
+def test_an_empty_move_sends_nothing_but_keeps_a_drag_alive() -> None:
+    now = [0.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    now[0] = 20
+    pc.move(0, 0)  # o app manda uma mensagem vazia para dizer que segue vivo
+    assert len(sent.batches) == 1  # nenhum evento a mais no sistema
+    now[0] = 30
+    timers.fire_last()
+    # Só 10 s desde a última mensagem: não solta, rearma para os 20 s que faltam.
+    assert len(sent.batches) == 1
+    ((delay, _),) = timers.live()
+    assert delay == 20
+    now[0] = 50
+    timers.fire_last()
+    assert sent.batches[-1] == [LEFT_UP]
+
+
+def test_a_drag_held_still_for_the_whole_dead_man_time_is_released() -> None:
+    now = [0.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.click("LEFT", "DOWN")
+    now[0] = 30  # nenhuma mensagem do PC em 30 s
+    timers.fire_last()
+    assert sent.batches[-1] == [LEFT_UP]

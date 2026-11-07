@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import time
+from collections import deque
 from collections.abc import Callable, Collection
+from typing import Final
 
 from uniover_agent.core.domain import Command
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
@@ -18,9 +20,10 @@ _log = logging.getLogger(__name__)
 _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
-# Teto de comandos do PC esperando a vez: acima disso o movimento do mouse (silencioso, o app manda
-# outro logo) é descartado em vez de acumular se algo travar.
-_MAX_PENDING_PC = 128
+# Teto de comandos do PC esperando a vez. Acima disso, cada movimento novo do mouse (silencioso: o
+# app manda outro logo) descarta o movimento pendente MAIS ANTIGO, e o posicionamento mais recente
+# é o que sobrevive se algo travar.
+MAX_PENDING_PC: Final = 128
 
 
 class ProcessMessage:
@@ -52,6 +55,7 @@ class ProcessMessage:
         command_timeout_seconds: float | None = None,
         uncapped_types: Collection[str] = (),
         release_inputs: Callable[[], None] | None = None,
+        observe_timestamp: Callable[[str | None], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -67,9 +71,13 @@ class ProcessMessage:
         self._command_timeout = command_timeout_seconds
         self._uncapped_types = frozenset(uncapped_types)
         self._release_inputs = release_inputs
+        # Recebe o `ts` de toda mensagem aceita da API (batimento e comandos): é daí que o PC estima
+        # a diferença entre o relógio dele e o da API.
+        self._observe_timestamp = observe_timestamp
         self._tasks: set[asyncio.Task[None]] = set()
         self._pc_tasks: set[asyncio.Task[None]] = set()
         self._last_pc_task: asyncio.Task[None] | None = None
+        self._pending_silent: deque[asyncio.Task[None]] = deque()
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -83,6 +91,8 @@ class ProcessMessage:
         command = outcome.command
         if self._on_command is not None:
             self._on_command(command)
+        if self._observe_timestamp is not None:
+            self._observe_timestamp(command.sent_at)
         if command.type == _KEEPALIVE_TYPE:
             # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
             return
@@ -125,14 +135,28 @@ class ProcessMessage:
         await self._execute(command)
 
     def _enqueue_pc(self, command: Command) -> None:
-        if command.type in self._silent_types and len(self._pc_tasks) >= _MAX_PENDING_PC:
-            return
+        silent = command.type in self._silent_types
+        if len(self._pc_tasks) >= MAX_PENDING_PC and not self._drop_oldest_silent() and silent:
+            return  # fila cheia só de comandos com resposta: este movimento novo é que cai
         task = asyncio.create_task(self._execute_pc(command, self._last_pc_task))
         self._last_pc_task = task
         self._tasks.add(task)
         self._pc_tasks.add(task)
+        if silent:
+            self._pending_silent.append(task)
         task.add_done_callback(self._tasks.discard)
         task.add_done_callback(self._pc_tasks.discard)
+
+    def _drop_oldest_silent(self) -> bool:
+        """Cancela o movimento pendente mais antigo; devolve se havia algum."""
+        while self._pending_silent:
+            oldest = self._pending_silent.popleft()
+            if oldest.done():
+                continue
+            oldest.cancel()
+            self._pc_tasks.discard(oldest)  # já não conta para o teto
+            return True
+        return False
 
     async def _execute_pc(self, command: Command, previous: asyncio.Task[None] | None) -> None:
         # Só espera quem veio antes na faixa do PC (nunca as teclas da TV). `wait` não propaga o
@@ -173,6 +197,7 @@ class ProcessMessage:
         for task in tuple(self._pc_tasks):
             task.cancel()
         self._last_pc_task = None
+        self._pending_silent.clear()
         self._release_held_inputs()
 
     def _release_held_inputs(self) -> None:

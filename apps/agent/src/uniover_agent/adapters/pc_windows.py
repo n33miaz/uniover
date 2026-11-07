@@ -23,8 +23,10 @@ _log = logging.getLogger(__name__)
 
 Sender = Callable[[Sequence[RawInput]], None]
 
-# Sem nenhum comando do PC por este tempo, um botão ainda apertado é solto sozinho: o app fechou,
-# a rede caiu ou o telefone dormiu no meio de um arrasto, e o botão não pode ficar preso no PC.
+# Sem nenhuma mensagem `pc.*` por este tempo, o que ainda está apertado é solto sozinho: o app
+# fechou, a rede caiu ou o telefone dormiu no meio de um arrasto, e o botão não pode ficar preso no
+# PC. Vale também para um arrasto parado, com o dedo quieto, por 30 s sem nenhuma mensagem: ele é
+# solto. Qualquer `pc.*` que chegue conta como tráfego, até um movimento vazio (dx = dy = 0).
 DEAD_MAN_SECONDS: Final = 30.0
 
 
@@ -131,7 +133,9 @@ class WindowsPcInput:
 
     Guarda quais botões do mouse estão apertados (DOWN ainda sem UP) para poder soltá-los: por
     `release_all`, depois de um lote que o Windows aceitou só em parte, e sozinho quando passam
-    `dead_man_seconds` sem nenhum comando. O relógio e o temporizador também são trocáveis. Os
+    `dead_man_seconds` sem nenhuma mensagem `pc.*` (um arrasto parado, sem nem um movimento vazio
+    para mantê-lo vivo, é solto). Num lote parcial também solta as teclas que entraram apertadas
+    (um modificador não pode ficar preso). O relógio e o temporizador também são trocáveis. Os
     comandos chegam pelo laço do agente e o temporizador roda em outra thread, daí a trava.
     """
 
@@ -149,12 +153,19 @@ class WindowsPcInput:
         self._start_timer = start_timer
         self._lock = threading.RLock()
         self._held: frozenset[str] = frozenset()
+        # Soltura de teclas que um lote parcial deixou apertadas e ainda não foi aceita.
+        self._stuck: tuple[RawInput, ...] = ()
         self._last_activity = monotonic()
         self._timer: _Cancelable | None = None
         # Cada armação ganha um número: um disparo atrasado de um temporizador já trocado se ignora.
         self._generation = 0
 
     def move(self, dx: int, dy: int) -> None:
+        if dx == 0 and dy == 0:
+            # Movimento vazio: só prova que o app está vivo (mantém um arrasto), sem evento algum.
+            with self._lock:
+                self._last_activity = self._monotonic()
+            return
         self._dispatch(pc_inputs.move_inputs(dx, dy))
 
     def scroll(self, horizontal: int, vertical: int) -> None:
@@ -174,11 +185,14 @@ class WindowsPcInput:
 
     def release_all(self) -> None:
         with self._lock:
-            if not self._held:
+            if not self._holding():
                 return
-            _log.warning("soltando à força o botão do mouse que ficou apertado")
-            self._release(self._held)
+            _log.warning("soltando à força o que ficou apertado no mouse e no teclado")
+            self._release(self._held, self._stuck)
             self._sync_timer()
+
+    def _holding(self) -> bool:
+        return bool(self._held or self._stuck)
 
     def _dispatch(self, inputs: Sequence[RawInput]) -> None:
         with self._lock:
@@ -187,29 +201,33 @@ class WindowsPcInput:
             try:
                 self._send(inputs)
             except OSError as exc:
-                # Num lote parcial só os primeiros eventos entraram: o que eles apertaram é solto.
-                accepted = exc.sent if isinstance(exc, PartialSendError) else 0
-                self._held = pc_inputs.held_after(self._held, inputs[:accepted])
+                # Num lote parcial só os primeiros eventos entraram: o que eles apertaram (botões
+                # e teclas) é solto.
+                accepted = inputs[: exc.sent if isinstance(exc, PartialSendError) else 0]
+                self._held = pc_inputs.held_after(self._held, accepted)
                 pressed_now = self._held - before
-                if pressed_now:
-                    self._release(pressed_now)
+                keys = tuple(pc_inputs.dangling_key_ups(accepted))
+                if pressed_now or keys:
+                    self._release(pressed_now, keys)
                 self._sync_timer()
                 raise
             self._held = pc_inputs.held_after(self._held, inputs)
             self._sync_timer()
 
-    def _release(self, buttons: frozenset[str]) -> None:
-        """Manda o UP de `buttons`. Se o Windows recusar, eles seguem como apertados (o
+    def _release(self, buttons: frozenset[str], keys: tuple[RawInput, ...]) -> None:
+        """Manda a soltura de `buttons` e `keys`. Se o Windows recusar, eles seguem pendentes (o
         temporizador tenta de novo)."""
         try:
-            self._send(pc_inputs.release_inputs(buttons))
+            self._send([*pc_inputs.release_inputs(buttons), *keys])
         except OSError as exc:
-            _log.warning("não foi possível soltar o botão do mouse: %s", exc)
+            _log.warning("não foi possível soltar o que ficou apertado: %s", exc)
+            self._stuck = tuple(dict.fromkeys((*self._stuck, *keys)))
             return
         self._held -= buttons
+        self._stuck = tuple(event for event in self._stuck if event not in keys)
 
     def _sync_timer(self) -> None:
-        if not self._held:
+        if not self._holding():
             self._cancel_timer()
         elif self._timer is None:
             self._arm(self._dead_man)
@@ -229,14 +247,14 @@ class WindowsPcInput:
             if generation != self._generation:
                 return
             self._timer = None
-            if not self._held:
+            if not self._holding():
                 return
             idle = self._monotonic() - self._last_activity
             if idle < self._dead_man:
-                self._arm(self._dead_man - idle)  # houve comando no meio do caminho
+                self._arm(self._dead_man - idle)  # houve mensagem no meio do caminho
                 return
-            _log.warning("botão do mouse apertado sem comandos há %.0f s: soltando", idle)
-            self._release(self._held)
+            _log.warning("algo ficou apertado sem mensagens do PC há %.0f s: soltando", idle)
+            self._release(self._held, self._stuck)
             self._sync_timer()
 
 

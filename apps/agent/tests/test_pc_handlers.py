@@ -99,10 +99,11 @@ async def test_pointer_moves_and_scrolls_in_one_command() -> None:
     assert pc.calls == [("move", 3, -2), ("scroll", 0, 120)]
 
 
-async def test_pointer_with_nothing_to_do_touches_nothing() -> None:
+async def test_an_empty_pointer_message_still_reaches_the_input_as_traffic() -> None:
+    # O app a manda para manter um arrasto vivo: o adaptador a conta sem enviar evento nenhum.
     handlers, pc, _, _ = build()
     await run(handlers["pc.pointer.v1"], {"dx": 0, "dy": 0})
-    assert pc.calls == []
+    assert pc.calls == [("move", 0, 0)]
 
 
 async def test_click_defaults_to_a_single_click() -> None:

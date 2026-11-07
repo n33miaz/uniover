@@ -7,13 +7,13 @@ não é conferido de novo; o que depende do PC (um favorito que sumiu da configu
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from datetime import UTC, datetime
 from typing import Any, Final
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.pc.apps import PcApp
+from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.freshness import (
     MAX_COMMAND_AGE_SECONDS,
     MAX_POINTER_AGE_SECONDS,
@@ -70,10 +70,14 @@ def pc_pointer_handler(pc: PcInput) -> Handler:
         body = command.body
         dx, dy = int(body.get("dx", 0)), int(body.get("dy", 0))
         scroll_x, scroll_y = int(body.get("scrollX", 0)), int(body.get("scrollY", 0))
-        if dx or dy:
-            pc.move(dx, dy)
         if scroll_x or scroll_y:
+            if dx or dy:
+                pc.move(dx, dy)
             pc.scroll(scroll_x, scroll_y)
+        else:
+            # Mesmo sem deslocamento: a mensagem vazia (o app a manda para manter um arrasto vivo)
+            # chega ao adaptador, que a conta como tráfego sem enviar evento nenhum.
+            pc.move(dx, dy)
         return _ok(command)
 
     return _guarded(handle, noisy=False)
@@ -189,12 +193,15 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     apps: Sequence[PcApp],
     *,
     shutdown_delay_seconds: int,
-    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    clock: ClockOffset | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
-    Cada um só roda dentro da sua validade (ver `freshness`); o UP de um clique passa sempre.
+    Cada um só roda dentro da sua validade (ver `freshness`); o UP de um clique e o cancelamento de
+    um desligamento passam sempre. `clock` é a estimativa da diferença de relógio com a API: quem
+    monta o agente a compartilha com `ProcessMessage`, que a alimenta.
     """
+    offset = clock or ClockOffset()
 
     def fresh(
         handle: Handler,
@@ -203,7 +210,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         exempt: Callable[[Command], bool] | None = None,
         quiet: bool = False,
     ) -> Handler:
-        return fresh_only(handle, max_age_seconds=max_age, now=now, exempt=exempt, quiet=quiet)
+        return fresh_only(handle, max_age_seconds=max_age, clock=offset, exempt=exempt, quiet=quiet)
 
     return {
         "pc.pointer.v1": fresh(pc_pointer_handler(pc), MAX_POINTER_AGE_SECONDS, quiet=True),
@@ -218,6 +225,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         "pc.power.v1": fresh(
             pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds),
             MAX_POWER_AGE_SECONDS,
+            exempt=lambda command: command.body.get("action") == "CANCEL_SHUTDOWN",
         ),
         "pc.app.launch.v1": fresh(pc_app_launch_handler(launcher, apps), MAX_COMMAND_AGE_SECONDS),
     }

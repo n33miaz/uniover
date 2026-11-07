@@ -320,7 +320,25 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         user_agent=f"uniover-agent/{agent_version()}",
     )
     tv = build_tv(settings, clock, transport, envelopes, secrets)
-    pc = build_pc(settings, transport, envelopes)
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        # Diferença de relógio com a API e comandos recusados por idade vão ao diagnóstico; o
+        # registrador junta as repetições, então os textos são fixos.
+        on_clock_skew=lambda offset: kit.recorder.record(
+            "pc.clock_skew",
+            "warn",
+            "o relógio do PC difere do da API; os comandos do PC são medidos por essa diferença",
+            component="pc",
+        ),
+        on_expired=lambda age: kit.recorder.record(
+            "pc.command_expired",
+            "warn",
+            "comando do PC recusado por chegar velho demais (rede lenta ou reconexão)",
+            component="pc",
+        ),
+    )
     if tv is not None:
         # Um sinal de presença recusado por idade (relógio do PC fora de hora) vai ao diagnóstico; o
         # registrador junta as repetições, então o texto é fixo (sem a idade exata).
@@ -350,6 +368,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         command_timeout_seconds=settings.tv_command_timeout_seconds if tv is not None else None,
         uncapped_types=tv.background_commands if tv is not None else (),
         release_inputs=pc.release_all if pc is not None else None,
+        observe_timestamp=pc.clock.observe if pc is not None else None,
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
