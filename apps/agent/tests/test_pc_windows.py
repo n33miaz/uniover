@@ -490,3 +490,15 @@ def test_a_stuck_key_that_is_still_refused_does_not_stop_the_next_dispatch() -> 
     flaky.accept = [0]  # a soltura de novo recusada...
     pc.move(1, 1)  # ...mas o comando novo segue o seu caminho
     assert [(e.dx, e.dy) for e in flaky.batches[-1]] == [(1, 1)]
+
+
+def test_an_empty_move_also_retries_a_stuck_key() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [2, 0]  # CTRL e T entram apertados e a soltura que segue é recusada
+    with pytest.raises(PartialSendError):
+        pc.key("T", ["CTRL"])
+    pc.move(0, 0)  # o movimento vazio do app, bem antes dos 30 s
+    assert [(e.vk, e.flags) for e in flaky.batches[-1]] == [(ord("T"), KEY_UP), (0x11, KEY_UP)]
+    pc.release_all()
+    assert len(flaky.batches) == 2  # nada mais preso

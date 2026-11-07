@@ -167,8 +167,11 @@ class WindowsPcInput:
     def move(self, dx: int, dy: int) -> None:
         if dx == 0 and dy == 0:
             # Movimento vazio: só prova que o app está vivo (mantém um arrasto), sem evento algum.
+            # Também tenta soltar uma tecla pendente, como o início de qualquer envio.
             with self._lock:
                 self._last_activity = self._monotonic()
+                self._retry_stuck()
+                self._sync_timer()
             return
         self._dispatch(pc_inputs.move_inputs(dx, dy))
 
@@ -198,13 +201,16 @@ class WindowsPcInput:
     def _holding(self) -> bool:
         return bool(self._held or self._stuck)
 
+    def _retry_stuck(self) -> None:
+        if self._stuck:
+            # Uma tecla que um lote parcial deixou apertada não espera o temporizador: tenta-se
+            # soltar antes do próximo envio (que, sem isso, sairia com ela apertada).
+            self._release(frozenset(), self._stuck, quiet=True)
+
     def _dispatch(self, inputs: Sequence[RawInput]) -> None:
         with self._lock:
             self._last_activity = self._monotonic()
-            if self._stuck:
-                # Uma tecla que um lote parcial deixou apertada não espera o temporizador: tenta-se
-                # soltar antes de enviar o próximo lote (que, sem isso, sairia com ela apertada).
-                self._release(frozenset(), self._stuck, quiet=True)
+            self._retry_stuck()
             before = self._held
             try:
                 self._send(inputs)

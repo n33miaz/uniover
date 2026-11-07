@@ -1,11 +1,12 @@
 """Validade dos comandos do PC: um clique ou texto entregue tarde cai em outra janela.
 
-A API segura um comando enquanto o agente reconecta (até 25 s) e o entrega de uma vez. Para o
-movimento do mouse isso é um salto; para um clique, tecla ou texto, é uma ação na janela errada. A
-idade vem do `ts` do envelope medido contra o relógio monotônico deste agente, descontada a
-referência dos batimentos da API (`ClockOffset`); um PC com o relógio adiantado não faz tudo parecer
-velho, e sem referência ainda vale a regra do relógio de parede. Soltar um botão (UP) e
-cancelar um desligamento nunca expiram: são sempre seguros.
+A API não segura comando `pc.*` enquanto o agente reconecta: sem conexão ela falha na hora. Esta
+checagem é defesa em profundidade para o que mesmo assim chegar tarde (rede lenta, fila do agente):
+um movimento atrasado é um salto, e um clique, tecla ou texto atrasado é uma ação na janela
+errada. A idade vem do `ts` do envelope medido contra o relógio monotônico deste agente,
+descontada a referência dos batimentos da API (`ClockOffset`); um PC com o relógio adiantado não
+faz tudo parecer velho, e sem referência ainda (logo depois de conectar) o comando vale como
+chegou. Soltar um botão (UP) e cancelar um desligamento nunca expiram: são sempre seguros.
 """
 
 import logging

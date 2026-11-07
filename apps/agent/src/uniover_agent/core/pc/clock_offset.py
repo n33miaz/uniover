@@ -11,22 +11,22 @@ Só o batimento da API (`api.keepalive.v1`, que ela nunca segura) alimenta a est
 `pc.*` nunca a alimenta: se tivesse sido segurado e entregue tarde, viraria a referência de
 "agora" e passaria como novo.
 
-Sem amostra nenhuma na janela (o agente acabou de iniciar, ou ficou mais de 5 minutos sem batimento,
-por exemplo depois de suspender) não há referência: vale a regra do relógio de parede, `agora - ts`,
-com folga para o relógio do PC estar um pouco atrás da API. O primeiro batimento (até 25 s depois de
-conectar) inaugura a estimativa.
+A estimativa só vale depois de DOIS batimentos que concordam entre si (diferença menor que a margem
+alta): um primeiro batimento ruim sozinho não vira a referência. Sem estimativa (o agente acabou de
+conectar, ou ficou mais de 5 minutos sem batimento, por exemplo depois de suspender) a idade é
+desconhecida e o comando vale como chegou. A API manda um batimento logo depois do `hello`, então a
+janela se enche em instantes; e ela já não segura comando `pc.*` durante uma reconexão, de modo que
+esta checagem é defesa em profundidade, não a guarda principal.
 
 A estimativa se corrige sozinha: se vários batimentos seguidos saem todos bem ACIMA do mínimo (o
 relógio da API recuou, ou o mínimo antigo veio de uma amostra boa demais), ou bem ABAIXO dele (a API
 avançou, ou o monotônico parou durante a suspensão), a estimativa é refeita a partir deles. Um
 batimento isolado fora do esperado não conta.
 
-A hora do relógio do PC só entra no AVISO de relógio fora de hora (diagnóstico) e na regra sem
-amostras.
+A hora do relógio do PC só entra no AVISO de relógio fora de hora (diagnóstico).
 """
 
 import logging
-import math
 import time
 from collections import deque
 from collections.abc import Callable
@@ -39,13 +39,12 @@ WINDOW_SECONDS: Final = 300.0
 _BUCKET_SECONDS: Final = 10.0
 # Diferença de relógio (PC contra API) que merece aviso; a latência real é bem menor que isto.
 LARGE_OFFSET_SECONDS: Final = 5.0
-# Sem amostras: o relógio do PC pode estar até isto atrás do da API (idade negativa) sem recusa.
-MAX_CLOCK_SKEW_SECONDS: Final = 5.0
 # Batimentos seguidos fora do esperado que bastam para refazer a estimativa.
 REBASE_AFTER: Final = 3
-# Quanto um batimento acima do mínimo precisa estar para contar como "alto demais" (latência
-# normal fica abaixo disto) e quanto abaixo para contar como "baixo demais" (um carimbo no futuro).
-HIGH_MARGIN_SECONDS: Final = 1.5
+# Quanto um batimento acima do mínimo precisa estar para contar como "alto demais" (também é a
+# diferença máxima entre os dois batimentos que confirmam a estimativa) e quanto abaixo para contar
+# como "baixo demais" (um carimbo no futuro).
+HIGH_MARGIN_SECONDS: Final = 0.5
 LOW_MARGIN_SECONDS: Final = 5.0
 # Recusas seguidas de movimento do mouse por idade que merecem aviso (nada morre calado).
 POINTER_DROP_WARNING: Final = 20
@@ -93,6 +92,9 @@ class ClockOffset:
         # Batimentos seguidos fora do esperado: (monotônico - ts, agora - ts) de cada um.
         self._off_high: list[tuple[float, float]] = []
         self._off_low: list[tuple[float, float]] = []
+        # O primeiro batimento de uma janela vazia espera um segundo que concorde: (início,
+        # monotônico - ts, agora - ts).
+        self._candidate: tuple[float, float, float] | None = None
         self._large_now = False
         self._warned = False
         self._pointer_drops = 0
@@ -118,7 +120,10 @@ class ClockOffset:
         mono = at - sent.timestamp()
         wall = (self._now() - sent).total_seconds()
         offset = self.offset  # já sem as amostras fora da janela
-        if offset is not None and self._is_outlier(mono, wall, offset):
+        if offset is None:
+            self._confirm(at, mono, wall)
+            return
+        if self._is_outlier(mono, wall, offset):
             if self._rebase_due():
                 self._rebase(at)
                 self._check_large()
@@ -129,21 +134,16 @@ class ClockOffset:
         self._check_large()
 
     def age(self, sent_at: str | None) -> float | None:
-        """Quanto o comando passou além da referência; `None` se o `ts` não presta (vale como veio).
+        """Quanto o comando passou além da referência: `(monotônico - ts)` menos a estimativa.
 
-        Com amostras: `(monotônico - ts)` menos a estimativa. Sem elas: `agora - ts`, e um `ts`
-        adiantado além da folga (relógio do PC muito atrás) conta como velho demais (`inf`).
+        `None` quando não dá para saber (o `ts` não presta, ou ainda não há estimativa confirmada):
+        o comando vale como veio.
         """
         sent = _parse(sent_at)
-        if sent is None:
-            return None
         offset = self.offset
-        if offset is not None:
-            return max(0.0, (self._monotonic() - sent.timestamp()) - offset)
-        wall_age = (self._now() - sent).total_seconds()
-        if wall_age < -MAX_CLOCK_SKEW_SECONDS:
-            return math.inf
-        return max(0.0, wall_age)
+        if sent is None or offset is None:
+            return None
+        return max(0.0, (self._monotonic() - sent.timestamp()) - offset)
 
     def refused(self, age: float) -> None:
         if self._on_refused is not None:
@@ -162,6 +162,19 @@ class ClockOffset:
                 self._pointer_drops,
             )
             self.refused(age)
+
+    def _confirm(self, at: float, mono: float, wall: float) -> None:
+        """Janela vazia: o batimento espera outro que concorde; só então a estimativa existe."""
+        candidate = self._candidate
+        if candidate is not None and at - candidate[0] <= self._window:
+            start, first_mono, first_wall = candidate
+            if abs(mono - first_mono) <= HIGH_MARGIN_SECONDS:
+                self._candidate = None
+                self._add(start, first_mono, first_wall)
+                self._add(at, mono, wall)
+                self._check_large()
+                return
+        self._candidate = (at, mono, wall)
 
     def _is_outlier(self, mono: float, wall: float, offset: float) -> bool:
         if mono > offset + HIGH_MARGIN_SECONDS:
