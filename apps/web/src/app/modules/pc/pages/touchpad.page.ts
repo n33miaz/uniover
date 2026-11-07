@@ -1,40 +1,61 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { PcStore } from '../data/pc-store';
+import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 import { tick } from '../input/haptics';
 import { PadButton, PadGesture } from '../input/pad-gesture';
 
 /**
- * Touchpad de toque: um dedo move o ponteiro (com aceleração), um toque clica, dois dedos rolam e um toque de dois dedos
- * clica com o botão direito. Embaixo, os botões esquerdo e direito e o "Arrastar", que segura o esquerdo até soltar. Para
- * quem usa teclado ou leitor de tela, a superfície explica o que faz e os botões fazem o mesmo que os toques.
+ * Touchpad de toque: um dedo move o ponteiro, um toque clica, um dedo parado por um instante segura o botão esquerdo (o
+ * arrasto termina quando o dedo sai), dois dedos rolam e um toque de dois dedos clica com o botão direito. Embaixo, os
+ * botões esquerdo e direito e o "Arrastar", que segura o esquerdo até soltar. Para quem usa teclado ou leitor de tela, a
+ * superfície explica o que faz e os botões fazem o mesmo que os toques. O ajuste de sensibilidade e da rolagem fica numa
+ * folha aberta pelo botão do canto.
  */
 @Component({
   selector: 'app-pc-touchpad-page',
+  imports: [PcPadSettingsSheet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div
-      class="pad"
-      role="group"
-      aria-labelledby="pad-help"
-      [class.active]="active()"
-      tabindex="0"
-      (pointerdown)="onDown($event)"
-      (pointermove)="onMove($event)"
-      (pointerup)="onUp($event)"
-      (pointercancel)="onCancel()"
-      (contextmenu)="$event.preventDefault()"
-      (keydown)="onKey($event)"
-    >
-      <span class="hint" aria-hidden="true" i18n="@@pc.pad.hint"
-        >Deslize para mover · toque para clicar</span
+    <div class="surface">
+      <div
+        class="pad"
+        role="group"
+        aria-labelledby="pad-help"
+        [class.active]="active()"
+        [class.holding]="store.dragging()"
+        tabindex="0"
+        (pointerdown)="onDown($event)"
+        (pointermove)="onMove($event)"
+        (pointerup)="onUp($event)"
+        (pointercancel)="onCancel()"
+        (contextmenu)="$event.preventDefault()"
+        (keydown)="onKey($event)"
       >
-      <span class="hint second" aria-hidden="true" i18n="@@pc.pad.hint-scroll"
-        >Dois dedos rolam</span
+        <span class="hint" aria-hidden="true" i18n="@@pc.pad.hint"
+          >Deslize para mover · toque para clicar</span
+        >
+        <span class="hint second" aria-hidden="true" i18n="@@pc.pad.hint-scroll"
+          >Dois dedos rolam</span
+        >
+      </div>
+      <button
+        type="button"
+        class="settings"
+        aria-label="Ajustes do touchpad"
+        i18n-aria-label="@@pc.pad.settings"
+        (click)="settingsOpen.set(true)"
       >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path [attr.d]="'M4 7h9M17 7h3M4 17h3M11 17h9'" />
+          <circle cx="15" cy="7" r="2" />
+          <circle cx="9" cy="17" r="2" />
+        </svg>
+      </button>
     </div>
     <p id="pad-help" class="sr-only" i18n="@@pc.pad.help">
-      Touchpad: deslize um dedo para mover o ponteiro do PC, toque para clicar, deslize dois dedos
-      para rolar e toque com dois dedos para o botão direito. Use os botões abaixo se preferir.
+      Touchpad: deslize um dedo para mover o ponteiro do PC, toque para clicar, mantenha o dedo
+      parado para arrastar, deslize dois dedos para rolar e toque com dois dedos para o botão
+      direito. Use os botões abaixo se preferir.
     </p>
 
     <div class="buttons">
@@ -68,24 +89,34 @@ import { PadButton, PadGesture } from '../input/pad-gesture';
         Direito
       </button>
     </div>
+
+    @if (settingsOpen()) {
+      <app-pc-pad-settings-sheet (closed)="settingsOpen.set(false)" />
+    }
   `,
   styleUrl: './touchpad.page.css',
 })
 export class TouchpadPage {
   protected readonly store = inject(PcStore);
   protected readonly active = signal(false);
+  protected readonly settingsOpen = signal(false);
+  /** O botão está apertado por uma pressão longa (e então é o fim do dedo que solta; o "Arrastar" é do botão). */
+  private pressHold = false;
 
   private readonly gesture = new PadGesture({
     move: (dx, dy, elapsedMs) => this.store.movePointer(dx, dy, elapsedMs),
-    scroll: (dx, dy) => this.store.scrollPointer(dx, dy),
+    scroll: (dx, dy, elapsedMs) => this.store.scrollPointer(dx, dy, elapsedMs),
     tap: (button) => this.press(button),
+    dragStart: () => this.startHold(),
+    dragEnd: () => this.endHold(),
   });
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
+      // Cancelar solta o que uma pressão longa segurava; o resto (o "Arrastar") o store solta aqui.
       this.gesture.cancel();
       // Largar a tela com o botão apertado deixaria o PC arrastando para sempre.
-      if (this.store.dragging()) void this.store.toggleDrag();
+      void this.store.release();
     });
   }
 
@@ -146,6 +177,20 @@ export class TouchpadPage {
   protected drag(): void {
     tick();
     void this.store.toggleDrag();
+  }
+
+  /** Um dedo parado apertou o botão esquerdo; se o "Arrastar" já o segurava, o fim do dedo não o solta. */
+  private startHold(): void {
+    if (this.store.dragging()) return;
+    tick(20);
+    this.pressHold = true;
+    void this.store.startDrag();
+  }
+
+  private endHold(): void {
+    if (!this.pressHold) return;
+    this.pressHold = false;
+    void this.store.release();
   }
 
   private finish(): void {

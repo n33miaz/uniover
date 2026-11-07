@@ -26,8 +26,22 @@ export class PcApi {
     await firstValueFrom(this.http.post(`${BASE}/pointer`, body));
   }
 
-  async click(button: PcClickButton, action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP'): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/click`, action ? { button, action } : { button }));
+  /**
+   * `keepalive` deixa o navegador terminar o pedido mesmo com a página fechando (é o que solta o botão apertado em
+   * `pagehide`). Só tem efeito com o `fetch`, que é o que o app usa; sem ele o pedido segue como qualquer outro.
+   */
+  async click(
+    button: PcClickButton,
+    action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
+    options: { readonly keepalive?: boolean } = {},
+  ): Promise<void> {
+    await firstValueFrom(
+      this.http.post(
+        `${BASE}/click`,
+        action ? { button, action } : { button },
+        options.keepalive ? { keepalive: true } : {},
+      ),
+    );
   }
 
   async key(key: PcKey, modifiers: readonly PcModifier[] = []): Promise<void> {

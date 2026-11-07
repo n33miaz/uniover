@@ -5,7 +5,8 @@ import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availabi
 import { SessionState } from '../../../core/session/session-state';
 import { status } from '../pc-test-kit';
 import { PcApi } from './pc-api';
-import { PC_POLL_MS, PcStore } from './pc-store';
+import { PcPrefs } from './pc-prefs';
+import { DOWN_TIMEOUT_MS, HOLD_HEARTBEAT_MS, PC_POLL_MS, PcStore } from './pc-store';
 
 function setup(initial: PcStatus | null = status()) {
   const current = signal<PcStatus | null>(initial);
@@ -152,6 +153,366 @@ describe('PcStore commands', () => {
   });
 });
 
+describe('PcStore holding the button', () => {
+  const failing = (status: number) => new HttpErrorResponse({ status });
+
+  /** Um pedido que só termina quando o teste manda. */
+  function hanging(mock: { mockImplementationOnce: (fn: () => Promise<void>) => unknown }) {
+    let finish: () => void = () => undefined;
+    mock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    return () => finish();
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a failed DOWN is followed by an UP right away, and the button is not shown as held', async () => {
+    const { store, api } = setup();
+    api.click.mockRejectedValueOnce(failing(504));
+    expect((await store.toggleDrag())?.kind).toBe('timeout');
+    expect(api.click.mock.calls).toEqual([
+      ['LEFT', 'DOWN'],
+      ['LEFT', 'UP'],
+    ]);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('a DOWN that never answers is given up after the timeout and released', async () => {
+    vi.useFakeTimers();
+    try {
+      const { store, api } = setup();
+      hanging(api.click);
+      const asking = store.toggleDrag();
+      await vi.advanceTimersByTimeAsync(DOWN_TIMEOUT_MS);
+      expect((await asking)?.kind).toBe('timeout');
+      expect(api.click.mock.calls).toEqual([
+        ['LEFT', 'DOWN'],
+        ['LEFT', 'UP'],
+      ]);
+      expect(store.dragging()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a second tap on Drag while the DOWN is on its way does not send another DOWN', async () => {
+    const { store, api } = setup();
+    const finish = hanging(api.click);
+    const first = store.toggleDrag();
+    const second = store.toggleDrag();
+    const third = store.toggleDrag();
+    await flush();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'DOWN']]);
+    finish();
+    await Promise.all([first, second, third]);
+    expect(store.dragging()).toBe(true);
+    expect(api.click).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tap while the UP is on its way is ignored too, and the next one starts again', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    api.click.mockClear();
+    const finish = hanging(api.click);
+    const releasing = store.toggleDrag();
+    await flush();
+    await store.toggleDrag();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'UP']]);
+    finish();
+    await releasing;
+    expect(store.dragging()).toBe(false);
+    await store.toggleDrag();
+    expect(api.click.mock.calls.at(-1)).toEqual(['LEFT', 'DOWN']);
+  });
+
+  it('a release asked while the DOWN is still leaving goes out as soon as the DOWN answers', async () => {
+    const { store, api } = setup();
+    const finish = hanging(api.click);
+    const starting = store.startDrag();
+    await flush();
+    expect(await store.release()).toBeNull();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'DOWN']]);
+    finish();
+    await starting;
+    expect(api.click.mock.calls).toEqual([
+      ['LEFT', 'DOWN'],
+      ['LEFT', 'UP'],
+    ]);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('a release asked before the DOWN even left (the movement was still going) cancels it in effect', async () => {
+    const { store, api } = setup();
+    const finishMove = hanging(api.pointer);
+    store.movePointer(10, 0, 16);
+    const starting = store.startDrag();
+    await flush();
+    await store.release();
+    finishMove();
+    await starting;
+    expect(store.dragging()).toBe(false);
+    expect(api.click.mock.calls.at(-1)).toEqual(['LEFT', 'UP']);
+  });
+
+  it('release does nothing when no button is held', async () => {
+    const { store, api } = setup();
+    expect(await store.release()).toBeNull();
+    expect(api.click).not.toHaveBeenCalled();
+  });
+
+  it('release works even when the PC is shown as disconnected (an extra UP is harmless)', async () => {
+    const { store, api, current } = setup();
+    await store.toggleDrag();
+    current.set(status({ online: false }));
+    api.click.mockClear();
+    await store.release();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'UP']]);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('a release that fails keeps the button shown as held, so the person can try again', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    api.click.mockRejectedValueOnce(failing(503));
+    expect((await store.release())?.kind).toBe('offline');
+    expect(store.dragging()).toBe(true);
+    await store.release();
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('pagehide releases the button with a keepalive request', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockClear();
+    window.dispatchEvent(new Event('pagehide'));
+    await flush();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'UP', { keepalive: true }]]);
+    expect(store.dragging()).toBe(false);
+    stop();
+  });
+
+  it('going to the background (the page turns hidden) releases it too', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockClear();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'UP', { keepalive: true }]]);
+    expect(store.dragging()).toBe(false);
+    stop();
+  });
+
+  it('hiding the page with nothing held sends nothing', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    window.dispatchEvent(new Event('pagehide'));
+    await flush();
+    expect(api.click).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('hiding the page while the DOWN is on its way releases it when the DOWN answers', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    const finish = hanging(api.click);
+    const starting = store.startDrag();
+    await flush();
+    window.dispatchEvent(new Event('pagehide'));
+    await flush();
+    finish();
+    await starting;
+    await flush();
+    expect((api.click.mock.calls as unknown[][]).map(([, action]) => action)).toEqual([
+      'DOWN',
+      'UP',
+      'UP',
+    ]);
+    expect(store.dragging()).toBe(false);
+    stop();
+  });
+
+  it('if the release on hide does not get through, the button stays shown as held', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockRejectedValueOnce(failing(503));
+    window.dispatchEvent(new Event('pagehide'));
+    await flush();
+    expect(store.dragging()).toBe(true);
+    stop();
+  });
+
+  it('closing the watch (leaving the module) releases the button', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockClear();
+    stop();
+    await flush();
+    expect(api.click.mock.calls).toEqual([['LEFT', 'UP']]);
+    expect(store.dragging()).toBe(false);
+  });
+
+  it('stops listening once the watch is closed', async () => {
+    const { store, api } = setup();
+    store.watch()();
+    await store.toggleDrag();
+    api.click.mockClear();
+    window.dispatchEvent(new Event('pagehide'));
+    await flush();
+    expect(api.click).not.toHaveBeenCalled();
+  });
+});
+
+describe('PcStore pointer preferences', () => {
+  it('moves the pointer one for one by default, at any speed', async () => {
+    const { store, api } = setup();
+    store.beginGesture();
+    store.movePointer(40, 0, 4);
+    await flush();
+    expect(api.pointer).toHaveBeenCalledWith(40, 0, 0, 0);
+  });
+
+  it('uses the gain the person chose', async () => {
+    const { store, api } = setup();
+    TestBed.inject(PcPrefs).set({ sensitivity: 'high' });
+    store.beginGesture();
+    store.movePointer(10, 0, 16);
+    await flush();
+    expect(api.pointer).toHaveBeenCalledWith(16, 0, 0, 0);
+  });
+
+  it('scrolls the Windows way by default and the other way when inverted', async () => {
+    const { store, api } = setup();
+    store.beginGesture();
+    store.scrollPointer(0, 20, 400);
+    await flush();
+    const natural = (api.pointer.mock.calls[0] as unknown as number[])[3];
+    expect(natural).toBeLessThan(0);
+
+    TestBed.inject(PcPrefs).set({ invertScroll: true });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    store.beginGesture();
+    store.scrollPointer(0, 20, 400);
+    await flush();
+    const inverted = (api.pointer.mock.calls[1] as unknown as number[])[3];
+    expect(inverted).toBe(-natural);
+  });
+
+  it('a faster swipe scrolls farther than the same swipe done slowly', async () => {
+    const { store, api } = setup();
+    store.beginGesture();
+    store.scrollPointer(0, 40, 400);
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    store.beginGesture();
+    store.scrollPointer(0, 40, 20);
+    await flush();
+    const slow = (api.pointer.mock.calls[0] as unknown as number[])[3];
+    const fast = (api.pointer.mock.calls[1] as unknown as number[])[3];
+    expect(Math.abs(fast)).toBeGreaterThan(Math.abs(slow));
+  });
+});
+
+describe('PcStore sign of life while the button is held', () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+  afterEach(() => vi.useRealTimers());
+
+  const beats = (api: ReturnType<typeof setup>['api']) =>
+    (api.pointer.mock.calls as unknown[][]).filter(([dx, dy]) => dx === 0 && dy === 0).length;
+
+  it('sends a zero movement every 10 s while the button is held, and nothing before it is', async () => {
+    const { store, api } = setup();
+    vi.advanceTimersByTime(HOLD_HEARTBEAT_MS * 2);
+    expect(api.pointer).not.toHaveBeenCalled();
+    await store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS - 1);
+    expect(beats(api)).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(api.pointer).toHaveBeenCalledWith(0, 0);
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 2);
+    expect(beats(api)).toBe(3);
+  });
+
+  it('the beat carries no scroll and moves nothing', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(api.pointer.mock.calls).toEqual([[0, 0]]);
+  });
+
+  it('stops when the button is released', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    await store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 3);
+    expect(api.pointer).not.toHaveBeenCalled();
+  });
+
+  it('stops when the page is hidden, and comes back if the button is still held when it shows again', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 2);
+    expect(beats(api)).toBe(0);
+    expect(store.dragging()).toBe(true);
+
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(beats(api)).toBe(1);
+    stop();
+  });
+
+  it('stops when the module is left', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    stop();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 3);
+    expect(beats(api)).toBe(0);
+  });
+
+  it('stops when the account changes', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    await store.toggleDrag();
+    signIn('conta-b');
+    TestBed.tick();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 3);
+    expect(beats(api)).toBe(0);
+  });
+
+  it('stays quiet when a beat fails and tries again at the next one', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    api.pointer.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(store.notice()).toBeNull();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(beats(api)).toBe(2);
+  });
+
+  it('does not add a beat while real pointer traffic is on its way', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    api.pointer.mockImplementationOnce(() => new Promise<void>(() => undefined));
+    store.movePointer(10, 0, 16);
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('PcStore pointer', () => {
   it('accelerates the swipe and sends it as one request', async () => {
     const { store, api } = setup();
@@ -166,9 +527,11 @@ describe('PcStore pointer', () => {
 
   it('turns a two-finger swipe into wheel units (down scrolls down)', async () => {
     const { store, api } = setup();
-    store.scrollPointer(0, 40);
+    store.scrollPointer(0, 40, 4_000);
     await flush();
-    expect(api.pointer).toHaveBeenCalledWith(0, 0, 0, -120);
+    const [, , , scrollY] = api.pointer.mock.calls[0] as unknown as number[];
+    expect(scrollY).toBeLessThanOrEqual(-120);
+    expect(scrollY).toBeGreaterThan(-130);
   });
 
   it('sends nothing while the PC is not connected', async () => {
@@ -270,7 +633,7 @@ describe('PcStore when the account changes', () => {
     expect(api.pointer).toHaveBeenCalledTimes(1);
   });
 
-  it('an active drag does not carry over: the next toggle presses, it does not release', async () => {
+  it('an active drag does not carry over: the next toggle presses, and an UP goes out for the old one', async () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
@@ -284,6 +647,7 @@ describe('PcStore when the account changes', () => {
     await store.toggleDrag();
     expect(api.click.mock.calls).toEqual([
       ['LEFT', 'DOWN'],
+      ['LEFT', 'UP'],
       ['LEFT', 'DOWN'],
     ]);
     expect(store.dragging()).toBe(true);
