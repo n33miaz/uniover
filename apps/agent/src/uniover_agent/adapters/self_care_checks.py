@@ -277,9 +277,9 @@ _KILL_SUPERVISOR_SCRIPT = (
     "$only=$null;if($null -ne $env:UNIOVER_ONLY_PIDS){"
     "$only=@($env:UNIOVER_ONLY_PIDS.Split(',')|Where-Object{$_}|ForEach-Object{[int]$_})};"
     "$found|Where-Object{$null -eq $only -or $only -contains [int]$_.ProcessId}|"
-    "ForEach-Object{$sup=[int]$_.ProcessId;"
+    "ForEach-Object{$sup=[int]$_.ProcessId;$supDate=$_.CreationDate;"
     "if($mine.ContainsKey($sup)){"
-    "$all|Where-Object{[int]$_.ParentProcessId -eq $sup -and "
+    "$all|Where-Object{[int]$_.ParentProcessId -eq $sup -and $_.CreationDate -gt $supDate -and "
     "-not $mine.ContainsKey([int]$_.ProcessId)}|"
     "ForEach-Object{& taskkill.exe /PID $_.ProcessId /T /F *> $null};"
     "Stop-Process -Id $sup -Force}"
@@ -322,7 +322,8 @@ def kill_wedged_supervisor(runner: Path, only: Collection[int] | None = None) ->
 
     Ele estar vivo e mudo é o caso em que `Start-ScheduledTask` não adianta: o lançador está vivo e
     o mutex dele recusa um segundo."""
-    if not runner.is_file():
+    if not runner.is_file() or (only is not None and not only):
+        # Lista vazia é "ninguém", não "todos" (uma variável de ambiente vazia some no Windows).
         return False
     try:
         done = run_hidden(
