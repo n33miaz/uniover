@@ -19,7 +19,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -257,22 +257,66 @@ def startup_task_check(
 # supervisor que está na cadeia de ancestrais de quem chama morre sozinho (sem `/T`: quem chama e
 # os irmãos ficam, e o supervisor novo os recolhe na varredura da partida); os outros morrem com
 # toda a árvore.
-_KILL_SUPERVISOR_SCRIPT = (
+_FIND_SUPERVISORS = (
     "$ErrorActionPreference='SilentlyContinue';"
     "$all=@(Get-CimInstance Win32_Process -OperationTimeoutSec 30);"
-    "$mine=@{};$id=[int]$env:UNIOVER_SELF_PID;"
+    "$found=@($all|Where-Object{$_.ProcessId -ne $PID -and $_.Name -eq 'powershell.exe' -and "
+    "$_.CommandLine -and "
+    "$_.CommandLine.IndexOf($env:UNIOVER_RUNNER,[StringComparison]::OrdinalIgnoreCase) -ge 0});"
+)
+_LIST_SUPERVISORS_SCRIPT = _FIND_SUPERVISORS + "$found|ForEach-Object{[string]$_.ProcessId}"
+# Com `UNIOVER_ONLY_PIDS` só esses morrem: um supervisor NOVO (subido pelo lançador entre a
+# observação do silêncio e a morte) tem outro PID e fica. Dos ancestrais de quem chama, os filhos
+# diretos que não estão na cadeia (ícone, `uv` de um `self-update` em curso) morrem com a árvore
+# e só então o próprio ancestral, sem `/T`.
+_KILL_SUPERVISOR_SCRIPT = (
+    _FIND_SUPERVISORS + "$mine=@{};$id=[int]$env:UNIOVER_SELF_PID;"
     "while($id -and -not $mine.ContainsKey($id)){$mine[$id]=1;"
     "$row=$all|Where-Object{$_.ProcessId -eq $id}|Select-Object -First 1;"
     "if($row){$id=[int]$row.ParentProcessId}else{$id=0}};"
-    "$all|Where-Object{$_.ProcessId -ne $PID -and $_.Name -eq 'powershell.exe' -and "
-    "$_.CommandLine -and "
-    "$_.CommandLine.IndexOf($env:UNIOVER_RUNNER,[StringComparison]::OrdinalIgnoreCase) -ge 0}|"
-    "ForEach-Object{if($mine.ContainsKey([int]$_.ProcessId)){Stop-Process -Id $_.ProcessId -Force}"
-    "else{& taskkill.exe /PID $_.ProcessId /T /F *> $null};'killed'}"
+    "$only=$null;if($null -ne $env:UNIOVER_ONLY_PIDS){"
+    "$only=@($env:UNIOVER_ONLY_PIDS.Split(',')|Where-Object{$_}|ForEach-Object{[int]$_})};"
+    "$found|Where-Object{$null -eq $only -or $only -contains [int]$_.ProcessId}|"
+    "ForEach-Object{$sup=[int]$_.ProcessId;"
+    "if($mine.ContainsKey($sup)){"
+    "$all|Where-Object{[int]$_.ParentProcessId -eq $sup -and "
+    "-not $mine.ContainsKey([int]$_.ProcessId)}|"
+    "ForEach-Object{& taskkill.exe /PID $_.ProcessId /T /F *> $null};"
+    "Stop-Process -Id $sup -Force}"
+    "else{& taskkill.exe /PID $sup /T /F *> $null};'killed'}"
 )
 
 
-def kill_wedged_supervisor(runner: Path) -> bool:
+def supervisor_pids(runner: Path) -> list[int]:
+    """Os PIDs dos supervisores desta instalação vivos agora (pelo caminho do `run-agent.ps1`)."""
+    if not runner.is_file():
+        return []
+    try:
+        done = run_hidden(
+            [
+                _powershell(),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                _LIST_SUPERVISORS_SCRIPT,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60.0,
+            env={**os.environ, "UNIOVER_RUNNER": str(runner)},
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return []
+    return [int(line) for line in done.stdout.split() if line.isdigit()]
+
+
+def kill_wedged_supervisor(runner: Path, only: Collection[int] | None = None) -> bool:
     """Encerra o PowerShell do supervisor (só ele, pelo caminho completo do `run-agent.ps1` desta
     instalação); o lançador, que o vigia, sobe outro. `True` se encerrou algum.
 
@@ -298,7 +342,12 @@ def kill_wedged_supervisor(runner: Path) -> bool:
             encoding="utf-8",
             errors="replace",
             timeout=60.0,
-            env={**os.environ, "UNIOVER_RUNNER": str(runner), "UNIOVER_SELF_PID": str(os.getpid())},
+            env={
+                **os.environ,
+                "UNIOVER_RUNNER": str(runner),
+                "UNIOVER_SELF_PID": str(os.getpid()),
+                **({} if only is None else {"UNIOVER_ONLY_PIDS": ",".join(str(p) for p in only)}),
+            },
         )
     except OSError, subprocess.TimeoutExpired:
         return False
@@ -326,7 +375,6 @@ def supervisor_check(  # noqa: PLR0913 - dependências injetadas deixam o teste 
         return done.returncode == 0
 
     do_start = start_task or launch
-    do_kill = kill_supervisor or (lambda: kill_wedged_supervisor(runner))
 
     def age_of_signal() -> float:
         return now() - alive.stat().st_mtime
@@ -353,13 +401,23 @@ def supervisor_check(  # noqa: PLR0913 - dependências injetadas deixam o teste 
                 return None
         except OSError:
             pass
+        # Os PIDs vistos AGORA são os únicos que morrem: um supervisor novo, subido pelo lançador
+        # que o pedido abaixo traz de volta, tem outro PID e fica.
+        seen = (
+            None
+            if kill_supervisor is not None
+            else await _in_thread(lambda: supervisor_pids(runner))
+        )
         # Primeiro pede o lançador: com um vivo o mutex dele recusa o segundo e nada acontece; com
         # o lançador morto este sobe e a varredura inicial dele resolve. Só depois tira de cena um
         # supervisor vivo e mudo (travado), que serve ao lançador antigo, síncrono: enquanto o
         # supervisor existir esse lançador espera por ele. A ordem importa: quem mata costuma
         # estar dentro da árvore que morre e não chegaria a pedir o lançador.
         started = await _in_thread(lambda: do_start(name))
-        await _in_thread(do_kill)
+        if kill_supervisor is not None:
+            await _in_thread(kill_supervisor)
+        elif seen:
+            await _in_thread(lambda: kill_wedged_supervisor(runner, only=seen))
         return None if started else "não consegui pedir ao Agendador que inicie o lançador"
 
     return Check("supervisor", run, repair, "lançador iniciado de novo pelo Agendador")
