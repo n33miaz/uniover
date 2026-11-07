@@ -29,6 +29,7 @@ export class UnsavedWork {
   private readonly sources = new Map<() => boolean, UnsavedReason>();
   /** As escritas em voo desta aba e quando cada uma começou. */
   private readonly inFlight = new Map<symbol, number>();
+  private readonly afterWritesCallbacks = new Set<() => void>();
 
   /** Registra uma fonte; devolve a função que a retira (chame ao destruir quem registrou). */
   register(source: () => boolean, reason: UnsavedReason = 'form'): () => void {
@@ -40,7 +41,21 @@ export class UnsavedWork {
   beginRequest(): () => void {
     const token = Symbol('request');
     this.inFlight.set(token, Date.now());
-    return () => void this.inFlight.delete(token);
+    return () => {
+      this.inFlight.delete(token);
+      if (!this.hasLiveRequest(AUTO_REQUEST_MAX_AGE_MS)) this.flushAfterWrites();
+    };
+  }
+
+  /** Chama `callback` uma vez, quando a última escrita em voo terminar (quem esperava só por elas pode tentar de novo). */
+  afterWrites(callback: () => void): void {
+    this.afterWritesCallbacks.add(callback);
+  }
+
+  private flushAfterWrites(): void {
+    const callbacks = [...this.afterWritesCallbacks];
+    this.afterWritesCallbacks.clear();
+    for (const callback of callbacks) callback();
   }
 
   private hasLiveRequest(maxAgeMs: number): boolean {

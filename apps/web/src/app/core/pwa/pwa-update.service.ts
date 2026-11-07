@@ -113,6 +113,10 @@ export class PwaUpdateService {
   private watchdogTimer: number | undefined;
   /** Recarga automática adiada por trabalho não salvo (`undefined`: nada adiado); a guarda de laço só é gravada quando ela acontece. */
   private deferred: { key: string; escalate: boolean } | undefined;
+  /** O aviso de versão nova foi aceso só por um adiamento (nenhum worker novo o pediu). */
+  private noticeFromDeferral = false;
+  /** Já há uma espera pelo fim das escritas para tentar a recarga adiada de novo. */
+  private waitingForWrites = false;
   /** Conferindo se há outra aba antes do último recurso. */
   private checking = false;
   /** Decidindo o que fazer com o toque (esperando escritas, perguntando às outras abas). */
@@ -317,18 +321,26 @@ export class PwaUpdateService {
       // Outra tentativa de navegar, vinda da pessoa: é um momento seguro para conferir. Se ainda assim há trabalho, a
       // navegação não vai acontecer e o aviso diz por quê.
       void this.runDeferred().then(() => {
-        if (this.deferred !== undefined) this.navigationBlocked.set(true);
+        if (this.deferred !== undefined) this.explainBlockedNavigation();
       });
       return true;
     }
     void this.reloadAutomatically(CHUNK_RECOVERY_KEY, false).then((started) => {
-      if (!started) this.navigationBlocked.set(true);
+      if (!started) this.explainBlockedNavigation();
     });
     return true;
   }
 
   /** A primeira página real da casca nova apareceu: o esqueleto pode sair e o vigia da carga é desarmado. */
   markContentReady(): void {
+    // O vigia adiou (outra aba aberta, trabalho não salvo) e o conteúdo apareceu mesmo assim: não há mais o que recuperar. O
+    // adiamento cai, e o aviso cai com ele se foi só ele que o acendeu.
+    if (this.deferred?.key === UPDATE_WATCHDOG_KEY) {
+      this.deferred = undefined;
+      this.navigationBlocked.set(false);
+      if (this.noticeFromDeferral) this.updateReady.set(false);
+      this.noticeFromDeferral = false;
+    }
     if (!this.bootRefreshing()) return;
     if (this.watchdogTimer !== undefined) this.win?.clearTimeout(this.watchdogTimer);
     this.watchdogTimer = undefined;
@@ -365,7 +377,7 @@ export class PwaUpdateService {
     if (!wasControlled || this.applying || this.reloading) return;
     if (guardActive(win, CONTROLLER_CHANGE_KEY, AUTO_RECOVERY_GUARD_MS)) {
       // Dois deploys seguidos: não recarrega de novo dentro da janela, mas a aba está com a casca velha, então avisa.
-      this.updateReady.set(true);
+      this.raiseForNewWorker();
       return;
     }
     void this.reloadAutomatically(CONTROLLER_CHANGE_KEY, false);
@@ -411,6 +423,8 @@ export class PwaUpdateService {
    * aba), nunca no meio de uma digitação. Nada disso liga o esqueleto.
    */
   private deferReload(win: Window, key: string, escalate: boolean): void {
+    // Se o aviso só aparece por causa deste adiamento, ele sai junto com o adiamento.
+    if (!this.updateReady()) this.noticeFromDeferral = true;
     this.updateReady.set(true);
     if (this.deferred !== undefined) {
       this.deferred = { key, escalate: this.deferred.escalate || escalate };
@@ -431,6 +445,29 @@ export class PwaUpdateService {
     if (this.unsaved.hasUnsaved()) return;
     this.deferred = undefined;
     await this.reloadAutomatically(deferred.key, deferred.escalate);
+  }
+
+  /** Um worker novo (ou uma troca de worker) acendeu o aviso: ele não depende mais de nenhum adiamento. */
+  private raiseForNewWorker(): void {
+    this.noticeFromDeferral = false;
+    this.updateReady.set(true);
+  }
+
+  /**
+   * Depois de uma navegação que falhou com a recarga adiada: se a tela tem algo a salvar ou descartar, o aviso diz por quê. Se
+   * só há uma escrita em voo, não há nada a salvar: a recarga é tentada de novo quando ela terminar.
+   */
+  private explainBlockedNavigation(): void {
+    if (this.unsaved.needsConfirmation()) {
+      this.navigationBlocked.set(true);
+      return;
+    }
+    if (!this.unsaved.hasUnsaved() || this.waitingForWrites) return;
+    this.waitingForWrites = true;
+    this.unsaved.afterWrites(() => {
+      this.waitingForWrites = false;
+      void this.runDeferred();
+    });
   }
 
   private cancelDeferral(): void {
@@ -497,7 +534,8 @@ export class PwaUpdateService {
     // Último recurso: o worker novo não assumiu. Recarregar sob o worker antigo só devolve a casca antiga (ele a serve do
     // próprio precache) e o aviso voltaria; então o registro é desfeito para a recarga vir da rede e a página nova
     // registrar o worker de novo.
-    if (!tookOver) await this.dropStaleWorker();
+    // Desfazer o registro e o precache quebra os pedaços das outras abas: só com uma aba aberta (ver `otherTabsMayBeOpen`).
+    if (!tookOver && !(await this.otherTabsMayBeOpen())) await this.dropStaleWorker();
     this.reload();
   }
 
@@ -633,6 +671,9 @@ export class PwaUpdateService {
     const registration = this.registration;
     if (!win || !registration || typeof win.fetch !== 'function') return;
     try {
+      // Sem nenhum worker mais novo (esperando, instalando ou achado agora) não há o que desfazer: o worker atual é o certo e
+      // o precache dele é o que abre o app sem rede.
+      if (!(await this.newerWorkerExists(registration))) return;
       const reachable = await this.withTimeout(
         win
           .fetch('/health/version', { cache: 'no-store', credentials: 'same-origin' })
@@ -648,6 +689,16 @@ export class PwaUpdateService {
     } catch {
       // Sem desfazer o worker a recarga ainda acontece.
     }
+  }
+
+  /** Há um worker esperando ou instalando, ou uma busca nova (`update()`) acabou de achar um. */
+  private async newerWorkerExists(registration: ServiceWorkerRegistration): Promise<boolean> {
+    if (registration.waiting || registration.installing) return true;
+    await this.withTimeout(
+      registration.update().catch(() => undefined),
+      UPDATE_CACHE_CLEAR_TIMEOUT_MS,
+    );
+    return Boolean(registration.waiting || registration.installing);
   }
 
   private async register(win: Window): Promise<void> {
@@ -668,14 +719,14 @@ export class PwaUpdateService {
 
     // Sem controlador ainda é a primeira instalação: não há "versão nova" para oferecer.
     const checkWaiting = () => {
-      if (registration.waiting && container.controller) this.updateReady.set(true);
+      if (registration.waiting && container.controller) this.raiseForNewWorker();
     };
     const watchInstalling = () => {
       const incoming = registration.installing;
       if (!incoming || this.watchedWorkers.has(incoming)) return;
       this.watchedWorkers.add(incoming);
       const checkInstalled = () => {
-        if (incoming.state === 'installed' && container.controller) this.updateReady.set(true);
+        if (incoming.state === 'installed' && container.controller) this.raiseForNewWorker();
       };
       incoming.addEventListener('statechange', checkInstalled);
       // The installing worker can finish before updatefound listeners are attached.

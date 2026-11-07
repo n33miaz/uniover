@@ -869,6 +869,7 @@ describe('PwaUpdateService', () => {
         stubLocks(1);
         lateFirstPaint();
         const { service, registration } = setup({});
+        registration.waiting = new FakeWorker();
         await vi.advanceTimersByTimeAsync(0);
         const caches = stubCaches(['runtime-x']);
         const reload = stubReload();
@@ -880,6 +881,88 @@ describe('PwaUpdateService', () => {
         expect(caches.delete).toHaveBeenCalled();
         expect(reload).toHaveBeenCalledTimes(1);
         expect(service.showSkeleton()).toBe(true);
+      });
+
+      it('does not undo the worker or the precache when there is nothing newer, but still reloads', async () => {
+        stubFetch();
+        stubLocks(1);
+        lateFirstPaint();
+        const { registration } = setup({});
+        await vi.advanceTimersByTimeAsync(0);
+        const caches = stubCaches(['runtime-x', 'workbox-precache-v1']);
+        const reload = stubReload();
+
+        await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+        await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+
+        // A busca por versão nova não achou nada: o worker atual é o certo e o precache dele abre o app sem rede.
+        expect(registration.update).toHaveBeenCalled();
+        expect(registration.unregister).not.toHaveBeenCalled();
+        expect(caches.delete).not.toHaveBeenCalledWith('workbox-precache-v1');
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+
+      it('undoes the worker when the fresh check finds a newer one installing', async () => {
+        stubFetch();
+        stubLocks(1);
+        lateFirstPaint();
+        const { registration } = setup({});
+        registration.update.mockImplementation(async () => {
+          registration.installing = new FakeWorker();
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        stubCaches(['workbox-precache-v1']);
+        stubReload();
+
+        await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+        await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+
+        expect(registration.unregister).toHaveBeenCalledTimes(1);
+      });
+
+      it('drops a deferral from the watchdog once the content shows up, and the notice it alone raised', async () => {
+        stubLocks(2);
+        lateFirstPaint();
+        const { service } = setup({});
+        await vi.advanceTimersByTimeAsync(0);
+        const reload = stubReload();
+        await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+        // Outra aba aberta: o vigia adiou e acendeu o aviso.
+        expect(service.updateReady()).toBe(true);
+        expect(reload).not.toHaveBeenCalled();
+
+        // O conteúdo aparece mesmo assim (a API só demorou a acordar).
+        service.markContentReady();
+        expect(service.updateReady()).toBe(false);
+        expect(service.navigationBlocked()).toBe(false);
+
+        // A outra aba fecha: nada recarrega nem desfaz o worker, porque já não há o que recuperar.
+        stubLocks(1);
+        (TestBed.inject(Router).events as unknown as Subject<unknown>).next(
+          new NavigationEnd(1, '/a', '/a'),
+        );
+        await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+        expect(reload).not.toHaveBeenCalled();
+      });
+
+      it('keeps the notice when a real new worker is the reason for it, even after the content shows up', async () => {
+        stubLocks(2);
+        lateFirstPaint();
+        const { service, registration } = setup({});
+        await vi.advanceTimersByTimeAsync(0);
+        stubReload();
+        await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+        expect(service.updateReady()).toBe(true);
+
+        // Um worker novo chega depois do adiamento: o aviso passa a ser dele.
+        const incoming = new FakeWorker();
+        registration.installing = incoming;
+        registration.dispatchEvent(new Event('updatefound'));
+        incoming.state = 'installed';
+        incoming.dispatchEvent(new Event('statechange'));
+
+        service.markContentReady();
+        expect(service.updateReady()).toBe(true);
       });
 
       it('is deferred, with nothing deleted, when another tab may be open', async () => {
@@ -958,7 +1041,8 @@ describe('PwaUpdateService', () => {
         stubFetch();
         stubLocks(1);
         lateFirstPaint();
-        const { container } = setup({});
+        const { container, registration } = setup({});
+        registration.waiting = new FakeWorker();
         await vi.advanceTimersByTimeAsync(0);
         vi.spyOn(window, 'location', 'get').mockReturnValue({
           ...window.location,
@@ -1154,6 +1238,26 @@ describe('PwaUpdateService', () => {
         expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
         expect(reload).toHaveBeenCalledTimes(1);
       });
+    });
+
+    it('does not undo the registration or the precache on a tap when another tab may be open', async () => {
+      stubFetch();
+      stubLocks(2);
+      const { service, registration } = setupWaiting();
+      await flush();
+      const caches = stubCaches(['workbox-precache-v1']);
+      const reload = stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      // O worker novo aceita o pedido mas nunca assume: sem a outra aba o último recurso desfaria o registro.
+      const decided = service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+      await decided;
+      await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS + UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+
+      expect(registration.unregister).not.toHaveBeenCalled();
+      expect(caches.delete).not.toHaveBeenCalledWith('workbox-precache-v1');
+      expect(reload).toHaveBeenCalledTimes(1);
     });
 
     it('treats a tab that is open but does not answer within ~500 ms as clean, so a frozen tab never blocks the tap', async () => {
@@ -1398,6 +1502,40 @@ describe('PwaUpdateService', () => {
     });
 
     describe('when a navigation fails while the reload is deferred', () => {
+      it('does not say "save or discard" when only a write is in flight, and reloads once it finishes', async () => {
+        const { service } = setupWaiting(false);
+        await flush();
+        const { assign, reload } = stubAssign();
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+
+        expect(service.recoverFromStaleShell('/treino/rotinas')).toBe(true);
+        await flush();
+        expect(service.navigationBlocked()).toBe(false);
+        expect(reload).not.toHaveBeenCalled();
+
+        // Nenhuma outra tentativa de navegar: a própria volta da escrita dispara a recarga adiada.
+        end();
+        await flush();
+        // A recarga vai direto à rota que falhou, como se a pessoa tivesse tentado de novo.
+        expect(assign).toHaveBeenCalledWith('/treino/rotinas');
+        expect(reload).not.toHaveBeenCalled();
+      });
+
+      it('does not pile up waits when several navigations fail during the same write', async () => {
+        const { service } = setupWaiting(false);
+        await flush();
+        const reload = stubReload();
+        const end = TestBed.inject(UnsavedWork).beginRequest();
+
+        service.recoverFromStaleShell();
+        await flush();
+        service.recoverFromStaleShell();
+        await flush();
+        end();
+        await flush();
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+
       it('says so instead of swallowing it, and clears the message once a navigation works again', async () => {
         const { service } = setupWaiting(true);
         await flush();
