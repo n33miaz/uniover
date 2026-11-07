@@ -38,9 +38,9 @@ import { PadButton, PadGesture } from '../input/pad-gesture';
         (contextmenu)="$event.preventDefault()"
         (keydown)="onKey($event)"
       >
-        @if (holding()) {
-          <span class="hint holding-label" role="status" i18n="@@pc.pad.dragging">Arrastando</span>
-        } @else {
+        <!-- A região fica sempre no DOM e só o texto muda: o leitor de tela anuncia a mudança, não o elemento novo. -->
+        <span class="hint holding-label" role="status">{{ holding() ? draggingLabel : '' }}</span>
+        @if (!holding()) {
           <span class="hint" aria-hidden="true" i18n="@@pc.pad.hint"
             >Deslize para mover · toque para clicar</span
           >
@@ -114,6 +114,7 @@ export class TouchpadPage {
   /** Uma pressão longa apertou o botão (vale na hora, antes de a resposta do PC chegar: o iOS não vibra). */
   private readonly pressing = signal(false);
   /** O botão está apertado (ou acabou de ser apertado pelo dedo): a superfície mostra isso com força. */
+  protected readonly draggingLabel = $localize`:@@pc.pad.dragging:Arrastando`;
   protected readonly holding = computed(() => this.pressing() || this.store.dragging());
   /** O botão está apertado por uma pressão longa (e então é o fim do dedo que solta; o "Arrastar" é do botão). */
   private pressHold = false;
@@ -203,7 +204,13 @@ export class TouchpadPage {
     tick(20);
     this.pressHold = true;
     this.pressing.set(true);
-    void this.store.startDrag();
+    void this.store.startDrag().then((failure) => {
+      // O aperto não passou (o store já soltou por segurança): a superfície deixa de dizer que está arrastando.
+      if (failure) {
+        this.pressHold = false;
+        this.pressing.set(false);
+      }
+    });
   }
 
   private endHold(): void {

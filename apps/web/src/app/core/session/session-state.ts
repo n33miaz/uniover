@@ -159,7 +159,6 @@ export class SessionState {
   private readonly _legacyOwner = signal<string | null>(readLegacyOwner());
   /** A dica da conta está mesmo gravada neste aparelho (sem isso não há como saber se outra aba trocou de conta). */
   #accountHintStored = this._accountHint() !== null;
-  #beforeEnd = new Set<() => unknown>();
 
   readonly status = this._status.asReadonly();
   /** O dono pausou o acesso desta conta: a última renovação foi recusada por isso. */
@@ -340,40 +339,6 @@ export class SessionState {
   /** Marca que a sessão acabou porque o dono pausou o acesso (a tela de entrada avisa; `setToken` desfaz). */
   markPaused(): void {
     this._paused.set(true);
-  }
-
-  /**
-   * Registra algo a fazer enquanto o token ainda é desta conta, logo antes de a sessão acabar (sair, entrar com outra
-   * conta). É para desfazer estado que ficou no outro lado e que só a conta que o criou alcança, como um botão do mouse
-   * apertado no PC. Devolve a função que cancela o registro.
-   */
-  onBeforeEnd(callback: () => unknown): () => void {
-    this.#beforeEnd.add(callback);
-    return () => void this.#beforeEnd.delete(callback);
-  }
-
-  /**
-   * Roda o que foi registrado em `onBeforeEnd` e espera, no máximo `maxWaitMs`: sair nunca fica preso a um pedido lento.
-   * Uma falha de quem foi chamado não impede os outros nem a saída.
-   */
-  async beforeEnd(maxWaitMs = 2_000): Promise<void> {
-    if (this.#beforeEnd.size === 0) return;
-    const calls = [...this.#beforeEnd].map(async (callback) => {
-      try {
-        await callback();
-      } catch {
-        // quem pediu o gancho lida com a própria falha; a sessão acaba do mesmo jeito
-      }
-    });
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const limit = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, maxWaitMs);
-    });
-    try {
-      await Promise.race([Promise.all(calls), limit]);
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   /** Esquece token e usuário da memória (e a dica da conta). Não toca em IndexedDB nem em filas locais. */

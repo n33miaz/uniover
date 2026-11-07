@@ -86,8 +86,6 @@ export class PcStore {
    * erro ou tempo esgotado). São pedidos HTTP independentes, e um `UP` que passasse na frente do `DOWN` o deixaria apertado.
    */
   private buttonTail: Promise<unknown> = Promise.resolve();
-  /** O aperto em andamento (para quem precisa esperá-lo terminar, como a saída da conta). */
-  private startTask: Promise<unknown> = Promise.resolve();
   /** Cada aperto tem o seu número: um `DOWN` atrasado só pede mais um `UP` se ainda é o último. */
   private downEpoch = 0;
   /** Depois de sair da tela ou esconder a página o sinal de vida não volta (só a próxima visita o liga). */
@@ -101,6 +99,8 @@ export class PcStore {
   private heartbeat: number | null = null;
   /** Pediram para soltar enquanto o `DOWN` saía: assim que ele termina, o `UP` segue. */
   private releaseWanted = false;
+  /** A página foi escondida nesse meio tempo: o `UP` que segue o `DOWN` leva `keepalive`. */
+  private releaseKeepalive = false;
 
   /** A última falha de um movimento (os cliques e teclas devolvem a própria falha). Some ao próximo sucesso. */
   readonly notice = signal<PcFailure | null>(null);
@@ -122,8 +122,6 @@ export class PcStore {
       this.session.accountId();
       untracked(() => this.syncAccount());
     });
-    // Sair ou trocar de conta: o botão apertado se solta com o token de agora, que ainda é o da conta dona dele.
-    this.session.onBeforeEnd(() => this.releaseBeforeSessionEnds());
   }
 
   /** Há um `DOWN` ou um `UP` a caminho: quem quer apertar o botão por outro caminho (a pressão longa) espera. */
@@ -138,6 +136,8 @@ export class PcStore {
   watch(destroy?: DestroyRef): () => void {
     void this.availability.refresh();
     this.heartbeatAllowed = true;
+    // O botão continua apertado de uma visita anterior (o soltar não passou): o sinal de vida volta com a tela.
+    if (this.dragging()) this.startHeartbeat();
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'hidden') void this.availability.refresh();
     }, PC_POLL_MS);
@@ -240,8 +240,7 @@ export class PcStore {
     if (!this.canSend()) return Promise.resolve(this.blocked());
     this.dragBusy = true;
     this.starting = true;
-    this.startTask = this.runStart(this.account);
-    return this.startTask as Promise<PcFailure | null>;
+    return this.runStart(this.account);
   }
 
   private async runStart(asked: string | null): Promise<PcFailure | null> {
@@ -250,10 +249,12 @@ export class PcStore {
       await this.batcher.drain();
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return this.blocked();
+      // Pediram para soltar enquanto o movimento saía: apertar agora só para soltar é desperdício, e arriscado.
+      if (this.releaseWanted) return null;
       this.batcher.hold();
       this.maybeHeld = true;
       const failure = await this.run(async () => {
-        const timedOut = await this.queueButton(() => this.downRequest(epoch));
+        const timedOut = await this.queueButton(() => this.downRequest(epoch, asked));
         if (timedOut) throw new HttpErrorResponse({ status: 504 });
       });
       if (this.session.accountId() !== asked) return failure;
@@ -261,7 +262,12 @@ export class PcStore {
       let released = false;
       if (failure !== null || wanted) {
         // Pediram para soltar: insiste um pouco (a pessoa já saiu; ninguém mais vai tentar de novo).
-        released = (await this.upWithRetry(wanted ? UP_RETRY_BACKOFF_MS.length + 1 : 1)) === null;
+        released =
+          (await this.upWithRetry(
+            asked,
+            wanted ? UP_RETRY_BACKOFF_MS.length + 1 : 1,
+            this.releaseKeepalive,
+          )) === null;
       }
       if (released) this.maybeHeld = false;
       // Apertou e ninguém pediu para soltar: a tela mostra o botão apertado. Se pediram e o `UP` não passou, ele NÃO volta a
@@ -270,6 +276,7 @@ export class PcStore {
       return failure;
     } finally {
       this.releaseWanted = false;
+      this.releaseKeepalive = false;
       this.starting = false;
       this.dragBusy = false;
       this.batcher.resume();
@@ -292,8 +299,8 @@ export class PcStore {
     this.dragBusy = true;
     try {
       const failure = options.persistent
-        ? await this.upWithRetry(UP_RETRY_BACKOFF_MS.length + 1)
-        : await this.run(() => this.queueButton(() => this.api.click('LEFT', 'UP')));
+        ? await this.upWithRetry(asked, UP_RETRY_BACKOFF_MS.length + 1)
+        : await this.run(() => this.queueButton(() => this.upRequest(asked)));
       if (!failure && this.session.accountId() === asked) {
         this.maybeHeld = false;
         this.setDragging(false);
@@ -352,15 +359,17 @@ export class PcStore {
 
   /**
    * Se a conta mudou desde que o estado daqui foi guardado, joga fora a fila e o aguardo da taxa do movimento, a fração
-   * do acelerador, o aviso e o "Arrastar" ligado. O botão apertado era no PC da conta anterior: o `UP` dele saiu antes, com o
-   * token dela (`onBeforeEnd`); daqui o pedido sairia com a sessão nova, para o PC errado. O estado é zerado para o próximo
-   * toque apertar, não soltar. Não esvazia a fila: o que esperava nunca deve sair.
+   * do acelerador, o aviso e o "Arrastar" ligado. O botão apertado era no PC da conta anterior, que daqui já não se alcança
+   * (um pedido sairia com a sessão nova, para o PC errado): nada é enviado, o estado é zerado para o próximo toque apertar,
+   * não soltar, e o agente solta sozinho o botão que ficar sem comandos. Todo `UP` em fila, repetido ou atrasado confere a
+   * conta e desiste se ela mudou. Não esvazia a fila: o que esperava nunca deve sair.
    */
   private syncAccount(): void {
     const current = this.session.accountId();
     if (current === this.account) return;
     this.maybeHeld = false;
     this.releaseWanted = false;
+    this.releaseKeepalive = false;
     this.account = current;
     this.batcher.discard();
     this.accelerator.reset();
@@ -404,35 +413,62 @@ export class PcStore {
     return run;
   }
 
+  /** Quando um pedido do botão chega a sua vez, a conta pode ter mudado: o pedido era dela, e desiste. */
+  private assertAccount(owner: string | null): void {
+    if (this.session.accountId() !== owner) throw new HttpErrorResponse({ status: 409 });
+  }
+
+  /** O `UP` da fila, só se a conta que apertou ainda é a da sessão (senão iria ao PC de outra pessoa). */
+  private upRequest(owner: string | null, keepalive = false): Promise<void> {
+    this.assertAccount(owner);
+    return keepalive
+      ? this.api.click('LEFT', 'UP', { keepalive: true })
+      : this.api.click('LEFT', 'UP');
+  }
+
   /** O `DOWN`, com tempo limite; devolve se o tempo acabou. Se ele ainda responder depois, solta de novo (uma vez). */
-  private async downRequest(epoch: number): Promise<boolean> {
+  private async downRequest(epoch: number, owner: string | null): Promise<boolean> {
+    this.assertAccount(owner);
     const call = this.api.click('LEFT', 'DOWN');
     const timedOut = await raceTimeout(call, DOWN_TIMEOUT_MS);
     if (timedOut) {
       call.then(() => {
-        // O botão chegou a apertar depois de a tela ter desistido: só solta se nenhum aperto novo começou desde então.
-        if (epoch === this.downEpoch && !this.dragging() && !this.starting) void this.tryUp();
+        // O botão chegou a apertar depois de a tela ter desistido: só solta se nenhum aperto novo começou desde então e a
+        // conta ainda é a mesma (`upRequest` confere de novo na vez do pedido).
+        if (epoch === this.downEpoch && !this.dragging() && !this.starting) {
+          void this.tryUp(owner);
+        }
       }, ignore);
     }
     return timedOut;
   }
 
   /** `UP` do botão esquerdo, na fila e sem aviso na tela; devolve a falha, se houve. Nunca lança. */
-  private async tryUp(): Promise<PcFailure | null> {
+  private async tryUp(owner: string | null, keepalive = false): Promise<PcFailure | null> {
     try {
-      await this.queueButton(() => this.api.click('LEFT', 'UP'));
+      await this.queueButton(() => this.upRequest(owner, keepalive));
       return null;
     } catch (error) {
       return pcFailureOf(error);
     }
   }
 
-  /** Tenta o `UP` até `attempts` vezes, com as esperas de `UP_RETRY_BACKOFF_MS`; devolve a última falha ou `null`. */
-  private async upWithRetry(attempts: number): Promise<PcFailure | null> {
+  /**
+   * Tenta o `UP` até `attempts` vezes, com as esperas de `UP_RETRY_BACKOFF_MS`; devolve a última falha ou `null`. Para de
+   * tentar assim que a conta deixa de ser a que apertou o botão.
+   */
+  private async upWithRetry(
+    owner: string | null,
+    attempts: number,
+    keepalive = false,
+  ): Promise<PcFailure | null> {
     let failure: PcFailure | null = null;
     for (let attempt = 0; attempt < attempts; attempt++) {
-      if (attempt > 0) await pause(UP_RETRY_BACKOFF_MS[attempt - 1] ?? 0);
-      failure = await this.tryUp();
+      if (attempt > 0) {
+        await pause(UP_RETRY_BACKOFF_MS[attempt - 1] ?? 0);
+        if (this.session.accountId() !== owner) return failure;
+      }
+      failure = await this.tryUp(owner, keepalive);
       if (failure === null) return null;
     }
     return failure;
@@ -448,24 +484,22 @@ export class PcStore {
     }
   }
 
-  /** Antes de a sessão acabar (sair, entrar com outra conta): solta o botão com o token que ainda é o da conta dona dele. */
-  private async releaseBeforeSessionEnds(): Promise<void> {
-    if (this.starting) {
-      this.releaseWanted = true;
-      await this.startTask.catch(ignore);
-      return;
-    }
-    if (this.maybeHeld || this.dragging()) await this.release({ persistent: true });
-  }
-
   /**
    * A página vai sumir (`pagehide`) ou foi para o segundo plano: solta o botão agora, com `keepalive` para o navegador
-   * terminar o pedido mesmo se a página morrer. Síncrono de propósito: não há tempo de esperar o movimento pendente.
+   * terminar o pedido mesmo se a página morrer. Síncrono de propósito: não há tempo de esperar o movimento pendente. Com o
+   * `DOWN` ainda em voo o `UP` espera a vez dele na fila.
    */
   private releaseOnHide(): void {
-    if (this.starting) this.releaseWanted = true;
+    this.syncAccount();
     this.heartbeatAllowed = false;
     this.stopHeartbeat();
+    if (this.starting) {
+      // O `DOWN` ainda está saindo: um `UP` agora poderia passar na frente dele. O `UP` (com `keepalive`) é o próximo da
+      // fila, assim que o `DOWN` terminar.
+      this.releaseWanted = true;
+      this.releaseKeepalive = true;
+      return;
+    }
     if (!this.maybeHeld && !this.dragging()) return;
     void this.quietUpNow().then((ok) => {
       if (!ok || this.starting) return;

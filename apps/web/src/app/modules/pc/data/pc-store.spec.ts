@@ -251,7 +251,7 @@ describe('PcStore holding the button', () => {
     expect(store.dragging()).toBe(false);
   });
 
-  it('a release asked before the DOWN even left (the movement was still going) cancels it in effect', async () => {
+  it('a release asked while the movement was still going out means the DOWN is not sent at all', async () => {
     const { store, api } = setup();
     const finishMove = hanging(api.pointer);
     store.movePointer(10, 0, 16);
@@ -259,9 +259,9 @@ describe('PcStore holding the button', () => {
     await flush();
     await store.release();
     finishMove();
-    await starting;
+    expect(await starting).toBeNull();
     expect(store.dragging()).toBe(false);
-    expect(api.click.mock.calls.at(-1)).toEqual(['LEFT', 'UP']);
+    expect(api.click).not.toHaveBeenCalled();
   });
 
   it('release does nothing when no button is held', async () => {
@@ -324,7 +324,7 @@ describe('PcStore holding the button', () => {
     stop();
   });
 
-  it('hiding the page while the DOWN is on its way sends the keepalive UP at once (the page is dying), and the queued UP only after the DOWN settled', async () => {
+  it('hiding the page while the DOWN is on its way sends no UP out of the queue: the keepalive UP follows right after the DOWN settled', async () => {
     const { store, api } = setup();
     const stop = store.watch();
     const log: string[] = [];
@@ -346,11 +346,11 @@ describe('PcStore holding the button', () => {
     await flush();
     window.dispatchEvent(new Event('pagehide'));
     await flush();
-    expect(log).toEqual(['DOWN sent', 'UP sent (keepalive)']);
+    expect(log).toEqual(['DOWN sent']);
     finish();
     await starting;
     await flush();
-    expect(log).toEqual(['DOWN sent', 'UP sent (keepalive)', 'DOWN settled', 'UP sent']);
+    expect(log).toEqual(['DOWN sent', 'DOWN settled', 'UP sent (keepalive)']);
     expect(store.dragging()).toBe(false);
     stop();
   });
@@ -736,77 +736,113 @@ describe('PcStore after leaving the screen', () => {
   });
 });
 
-describe('PcStore releasing with the token of the account that pressed', () => {
-  /** O que cada pedido de botão levou: a ação e a conta cuja sessão estava em vigor. */
-  function recordAccounts(api: ReturnType<typeof setup>['api']) {
-    const sent: [string, string | null][] = [];
-    const session = TestBed.inject(SessionState);
-    api.click.mockImplementation(((_button?: string, action?: string) => {
-      sent.push([String(action), session.accountId()]);
-      return Promise.resolve();
-    }) as never);
-    return sent;
-  }
+describe('PcStore when the account changes while a button is held', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
 
-  afterEach(() => localStorage.clear());
+  const actions = (api: ReturnType<typeof setup>['api']) =>
+    (api.click.mock.calls as unknown[][]).map(([, action]) => action);
 
-  it('before the session ends the UP goes with the old account, and nothing is sent to the new one', async () => {
+  it('forgets the held button locally and sends nothing at all (the agent releases it by itself)', async () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
-    const sent = recordAccounts(api);
     await store.toggleDrag();
     expect(store.dragging()).toBe(true);
+    api.click.mockClear();
 
-    await TestBed.inject(SessionState).beforeEnd();
     signIn('conta-b');
     TestBed.tick();
-    await flush();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 6);
 
-    expect(sent).toEqual([
-      ['DOWN', 'conta-a'],
-      ['UP', 'conta-a'],
-    ]);
     expect(store.dragging()).toBe(false);
+    expect(api.click).not.toHaveBeenCalled();
+    expect(api.pointer).not.toHaveBeenCalled();
   });
 
-  it('with the DOWN still on its way, the session end waits for it and the UP goes with the old account', async () => {
+  it('a release retrying a failing UP gives up when the account changes during the wait', async () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
-    const sent = recordAccounts(api);
+    await store.toggleDrag();
+    api.click.mockClear();
+    api.click.mockRejectedValue(new HttpErrorResponse({ status: 503 }));
+
+    const releasing = store.release({ persistent: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions(api)).toEqual(['UP']);
+    signIn('conta-b');
+    TestBed.tick();
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0));
+    await releasing;
+    expect(actions(api)).toEqual(['UP']);
+  });
+
+  it('the UP that follows a DOWN gives up when the account changed meanwhile', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
     let finish: () => void = () => undefined;
-    api.click.mockImplementationOnce(((_button?: string, action?: string) => {
-      sent.push([String(action), TestBed.inject(SessionState).accountId()]);
-      return new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-    }) as never);
+    api.click.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
     const starting = store.startDrag();
-    await flush();
-    const ending = TestBed.inject(SessionState).beforeEnd();
-    await flush();
-    finish();
-    await ending;
-    await starting;
+    await vi.advanceTimersByTimeAsync(0);
+    await store.release();
     signIn('conta-b');
     TestBed.tick();
-    await flush();
-    expect(sent).toEqual([
-      ['DOWN', 'conta-a'],
-      ['UP', 'conta-a'],
-    ]);
-    expect(store.dragging()).toBe(false);
+    finish();
+    await starting;
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0));
+    expect(actions(api)).toEqual(['DOWN']);
   });
 
-  it('with nothing held the session end sends nothing', async () => {
+  it('the extra UP after a late DOWN is not sent once the account is another', async () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
-    const sent = recordAccounts(api);
-    void store;
-    await TestBed.inject(SessionState).beforeEnd();
-    expect(sent).toEqual([]);
+    let finish: () => void = () => undefined;
+    api.click.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const starting = store.toggleDrag();
+    await vi.advanceTimersByTimeAsync(DOWN_TIMEOUT_MS);
+    await starting;
+    expect(actions(api)).toEqual(['DOWN', 'UP']);
+    signIn('conta-b');
+    TestBed.tick();
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions(api)).toEqual(['DOWN', 'UP']);
+  });
+});
+
+describe('PcStore heartbeat when coming back to the screen', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('a button still held when the screen opens again gets its sign of life back', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.toggleDrag();
+    api.click.mockRejectedValue(new HttpErrorResponse({ status: 503 }));
+    stop();
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0));
+    expect(store.dragging()).toBe(true);
+    api.pointer.mockClear();
+
+    store.watch();
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(api.pointer).toHaveBeenCalledWith(0, 0);
   });
 });
 

@@ -36,13 +36,16 @@ export interface PadGestureConfig {
   readonly longPressRadiusPx: number;
 }
 
+/** O quanto o dedo pode andar sem que isso seja movimento (e sem que deixe de ser um toque ou uma pressão parada). */
+export const PAD_SLOP_PX = 8;
+
 /** Quanto tempo o dedo fica parado até apertar o botão (um toque lento de propósito não pode virar arrasto). */
 export const LONG_PRESS_MS = 600;
 /** O quanto o dedo pode tremer durante a espera. */
-export const LONG_PRESS_RADIUS_PX = 4;
+export const LONG_PRESS_RADIUS_PX = PAD_SLOP_PX;
 
 export const DEFAULT_PAD_GESTURE: PadGestureConfig = {
-  slopPx: 6,
+  slopPx: PAD_SLOP_PX,
   tapMaxMs: 260,
   longPressMs: LONG_PRESS_MS,
   longPressRadiusPx: LONG_PRESS_RADIUS_PX,
