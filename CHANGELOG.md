@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.42.18](https://github.com/n33miaz/uniover/compare/v0.42.17...v0.42.18) (2026-11-07)
+
+
+### Agent 0.42.16
+
+#### Bug Fixes
+
+* **agent:** keep the event loop unblocked
+* **agent:** deadlines and full-disk guards
+* **agent:** a wedged channel can't look alive
+* **agent:** watchdogs survive a pc suspend
+* **agent:** derive the update ceiling from limits
+* **agent:** retry a crash dump that failed
+* **agent:** bound channel open, drop stale tasks
+* **agent:** one supervisor and a safe pulse
+* **agent:** write the trial before the swap
+* **agent:** drain the log queue at shutdown
+* **agent:** keep the exception in the log queue
+* **agent:** safer supervisor kill, suspend grace
+* **agent:** enforce the update time budget
+* **agent:** launcher backoff, old-supervisor limit
+* **agent:** supervisor exit 43, exit 42, trial
+* **agent:** bound the startup failure hook
+* **agent:** read the newest pulse mark at start
+* **agent:** ask for the launcher before the kill
+* **agent:** launcher sweep, watched fallback, utc
+* **agent:** suspend-safe deadline, keep the venv
+* **agent:** keep Stop-VenvUsers first in sync
+* **agent:** defer a version the PC returned
+* **agent:** sync first, keep the agent up
+* **agent:** kill only the supervisor seen silent
+* **agent:** launcher skips pulse-less scripts
+* **agent:** growing, neutral version deferral
+* **agent:** safer ancestor kill filters
+* **agent:** no implicit uv sync at launch
+* **agent:** future-proof deferral, show its reason
+* **agent:** date-filter the whole supervisor kill
+* **agent:** no update on a kept environment
+* **agent:** drop only bogus future deferral stamps
+* **agent:** kill the supervisor before its tree
+
 ## [0.42.17](https://github.com/n33miaz/uniover/compare/v0.42.16...v0.42.17) (2026-11-07)
 
 
