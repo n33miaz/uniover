@@ -13,10 +13,17 @@ export type PcFailureKind =
   | 'failed'
   | 'not-found'
   | 'invalid'
+  | 'cancelled'
   | 'unknown';
 
 /** `type` (sufixo) do 503 que a API dá quando o agente caiu agora há pouco e ainda está dentro da janela de reconexão. */
 export const RECONNECTING_PROBLEM = 'agent-reconnecting';
+
+/**
+ * O que um pedido devolve quando desistiu por conta própria (a conta mudou antes da vez dele): não é falha do PC, não tem
+ * texto e nunca é mostrado. Quem recebe só precisa saber que nada foi enviado.
+ */
+export const CANCELLED: PcFailure = { kind: 'cancelled', message: '' };
 
 export interface PcFailure {
   readonly kind: PcFailureKind;

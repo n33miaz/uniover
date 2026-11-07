@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
+import { LONG_PRESS_MS } from '../input/pad-gesture';
 import { TouchpadPage } from './touchpad.page';
 
 describe('TouchpadPage', () => {
@@ -239,6 +240,34 @@ describe('TouchpadPage', () => {
       expect(store.release).not.toHaveBeenCalled();
       pointer('pointerup', 1, 100, 100, 800);
       expect(store.release).toHaveBeenCalledExactlyOnceWith({ persistent: true });
+    });
+
+    it('two fingers landing before the long-press time scroll as before and press nothing', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(LONG_PRESS_MS - 10);
+      pointer('pointerdown', 2, 140, 100, LONG_PRESS_MS - 10);
+      vi.advanceTimersByTime(1_000);
+      pointer('pointermove', 1, 100, 130, 1_600);
+      pointer('pointermove', 2, 140, 130, 1_600);
+      expect(store.startDrag).not.toHaveBeenCalled();
+      expect(store.scrollPointer).toHaveBeenCalled();
+      expect(store.movePointer).not.toHaveBeenCalled();
+    });
+
+    it('a failed long press does not release a newer press (the Drag button pressed meanwhile) when the finger lifts', async () => {
+      store.startDrag.mockImplementationOnce(() => {
+        store.pressEpoch += 1;
+        return Promise.resolve({ kind: 'timeout', message: 'O PC não respondeu a tempo.' });
+      });
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+      await Promise.resolve();
+      // O "Arrastar" é tocado com o dedo ainda na tela e começa um aperto mais novo.
+      store.pressEpoch += 1;
+      store.dragging.set(true);
+      pointer('pointerup', 1, 100, 100, 800);
+      expect(store.release).not.toHaveBeenCalled();
     });
 
     it('a quick tap still clicks and starts no drag', () => {

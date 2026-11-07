@@ -118,6 +118,8 @@ export class TouchpadPage {
   protected readonly holding = computed(() => this.pressing() || this.store.dragging());
   /** O botão está apertado por uma pressão longa (e então é o fim do dedo que solta; o "Arrastar" é do botão). */
   private pressHold = false;
+  /** O número do aperto que este dedo começou: o fim do dedo só solta esse (não um mais novo, do botão "Arrastar"). */
+  private holdEpoch = 0;
 
   private readonly gesture = new PadGesture({
     move: (dx, dy, elapsedMs) => this.store.movePointer(dx, dy, elapsedMs),
@@ -204,7 +206,9 @@ export class TouchpadPage {
     tick(20);
     this.pressHold = true;
     this.pressing.set(true);
-    void this.store.startDrag().then((failure) => {
+    const started = this.store.startDrag();
+    this.holdEpoch = this.store.pressEpoch;
+    void started.then((failure) => {
       // O aperto não passou: a superfície deixa de dizer que está arrastando. O `pressHold` fica: se o `UP` de segurança do
       // store também falhou, o botão pode estar apertado, e o fim do dedo ainda precisa soltar (sem botão é um não-fazer).
       if (failure) this.pressing.set(false);
@@ -215,6 +219,8 @@ export class TouchpadPage {
     if (!this.pressHold) return;
     this.pressHold = false;
     this.pressing.set(false);
+    // Um aperto mais novo (o botão "Arrastar" tocado enquanto o dedo ainda estava na tela) não é deste dedo.
+    if (this.store.pressEpoch !== this.holdEpoch) return;
     void this.store.release({ persistent: true });
   }
 
