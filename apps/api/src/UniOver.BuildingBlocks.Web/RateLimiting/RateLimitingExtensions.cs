@@ -52,6 +52,13 @@ public static class RateLimitPolicies
     /// </summary>
     public const string PcPointer = "pc-pointer";
 
+    /// <summary>
+    /// Cliques, teclas, texto e mídia do controle do PC: o volume segurado repete a cada 190 ms (uns 316 por minuto, acima dos
+    /// 300 dos comandos comuns) e teclas repetidas somam mais. O teto de 600 (10 por segundo, o que um dedo faz) cobre isso com
+    /// folga e continua baixo perto do movimento do mouse; por conta.
+    /// </summary>
+    public const string PcInput = "pc-input";
+
     /// <summary>Energia e favoritos do PC (bloquear, suspender, desligar, abrir programa): por conta e baixo, pois cada pedido age no PC de alguém.</summary>
     public const string PcPower = "pc-power";
 
@@ -61,7 +68,7 @@ public static class RateLimitPolicies
     /// </summary>
     public const string Beacon = "beacon";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcPower, Beacon];
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcPower, Beacon];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -78,7 +85,7 @@ public sealed class RateLimitPolicyOptions
 public static class RateLimitingExtensions
 {
     // Padrões ajustáveis por configuração. Comandos é alto de propósito: segurar "volume +" no PWA repete
-    // a tecla umas 4 vezes por segundo.
+    // a tecla umas 4 vezes por segundo (no PC, volume e teclas têm o balde próprio PcInput).
     private static readonly Dictionary<string, RateLimitPolicyOptions> Defaults = new(StringComparer.Ordinal)
     {
         [RateLimitPolicies.Login] = new() { Permitted = 5, WindowSeconds = 60, Partition = "ip" },
@@ -95,6 +102,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.Capacity] = new() { Permitted = 6, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Siri] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.PcPointer] = new() { Permitted = 2400, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.PcInput] = new() { Permitted = 600, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Beacon] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
     };

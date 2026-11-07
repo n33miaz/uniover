@@ -76,12 +76,12 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         // Ordem de um atalho do iPhone: rota anônima, a chave do atalho é a credencial; o limite é por IP.
         ("POST", "/api/v1/shortcuts/tv", RateLimitPolicies.Siri),
-        // Controle do PC: o movimento do mouse tem balde próprio e largo (dezenas por segundo); energia e favoritos, um baixo; o resto, o dos comandos.
+        // Controle do PC: o movimento do mouse tem balde próprio e largo (dezenas por segundo); cliques, teclas, texto e mídia, um de 600 por minuto (o volume segurado passa dos 300 dos comandos); energia e favoritos, um baixo; o estado, o dos comandos.
         ("POST", "/api/v1/pc/pointer", RateLimitPolicies.PcPointer),
-        ("POST", "/api/v1/pc/click", RateLimitPolicies.Commands),
-        ("POST", "/api/v1/pc/key", RateLimitPolicies.Commands),
-        ("POST", "/api/v1/pc/text", RateLimitPolicies.Commands),
-        ("POST", "/api/v1/pc/media", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/click", RateLimitPolicies.PcInput),
+        ("POST", "/api/v1/pc/key", RateLimitPolicies.PcInput),
+        ("POST", "/api/v1/pc/text", RateLimitPolicies.PcInput),
+        ("POST", "/api/v1/pc/media", RateLimitPolicies.PcInput),
         ("POST", "/api/v1/pc/power", RateLimitPolicies.PcPower),
         ("POST", "/api/v1/pc/apps/{appId}/launch", RateLimitPolicies.PcPower),
         ("GET", "/api/v1/pc/status", RateLimitPolicies.Commands),
