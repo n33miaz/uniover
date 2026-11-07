@@ -572,7 +572,9 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
 ) -> None:
     seen: dict[str, object] = {}
 
-    def fake(source: Path, *, sync: bool, channel: str) -> UpdateResult:
+    def fake(
+        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+    ) -> UpdateResult:
         seen.update(source=source, sync=sync, channel=channel)
         return UpdateResult(False, "não atualizei agora: sem rede")
 
@@ -669,11 +671,40 @@ def test_a_version_returned_for_the_pcs_sake_is_deferred_for_24_hours(
     now = 1_800_000_000.0
     (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now) - 3600}\n", encoding="ascii")
     result = installed.update(NEW, wall=lambda: now)
-    assert not result.updated and result.outcome == "failed" and result.latest == NEW
-    assert "24 h" in result.message
+    # Resultado neutro (`deferred`, interno): não é falha e não aparece como tal ao dono.
+    assert not result.updated and result.outcome == "deferred" and result.latest == NEW
     assert installed.downloads == []
     # Passadas 24 h ela volta a ser tentada.
     assert installed.update(NEW, wall=lambda: now + 24 * 3600 + 1).updated
+
+
+def test_the_deferral_grows_with_each_return_24h_72h_a_week(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    base = 1_800_000_000.0
+    day = 24 * 3600
+    marks = runtime / ".deferred-versions"
+    marks.write_text(f"{NEW}|{int(base)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, base + day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + day + 1) == set()
+    # Segunda devolução: 72 h a partir dela.
+    marks.write_text(f"{NEW}|{int(base)}\n{NEW}|{int(base)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, base + 3 * day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + 3 * day + 1) == set()
+    # Terceira em diante: uma semana.
+    marks.write_text(f"{NEW}|{int(base)}\n" * 3, encoding="ascii")
+    assert module.deferred_versions(installed.source, base + 7 * day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + 7 * day + 1) == set()
+    marks.write_text(f"{NEW}|{int(base)}\n" * 9, encoding="ascii")
+    assert module.deferred_versions(installed.source, base + 7 * day + 1) == set()
+
+
+def test_the_owners_explicit_request_bypasses_the_deferral(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now) - 60}\n", encoding="ascii")
+    assert installed.update(NEW, wall=lambda: now, ignore_deferral=True).updated
 
 
 def test_a_newer_commit_is_not_held_back_by_a_deferred_one(installed: Installation) -> None:
