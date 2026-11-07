@@ -1,6 +1,7 @@
 """Controle do PC: mouse, teclado, mídia, energia e favoritos."""
 
 from uniover_agent.core.pc.apps import MAX_FAVORITES, PcApp, parse_favorites, slugify
+from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.handlers import (
     PC_CONTROL_CAPABILITY,
     PC_SILENT_TYPES,
@@ -25,6 +26,7 @@ __all__ = [
     "SLEEP_DELAY_SECONDS",
     "UNKNOWN_APP",
     "UNSUPPORTED",
+    "ClockOffset",
     "PcApp",
     "parse_favorites",
     "pc_app_launch_handler",
