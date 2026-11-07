@@ -54,6 +54,9 @@
   color: var(--a-accent-ink);
   animation: pad-grab var(--dur-base) var(--ease-out);
 }
+.holding-label:empty {
+  display: none;
+}
 .holding-label {
   font-size: var(--fs-title);
   font-weight: 700;

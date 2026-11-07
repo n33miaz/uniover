@@ -206,7 +206,38 @@ describe('TouchpadPage', () => {
       pointer('pointerup', 1, 100, 100, 800);
       fixture.detectChanges();
       expect(pad().classList.contains('holding')).toBe(false);
-      expect(root.querySelector('.holding-label')).toBeNull();
+      expect(root.querySelector('.holding-label')?.textContent?.trim()).toBe('');
+      expect(root.querySelector('.hint.second')).not.toBeNull();
+    });
+
+    it('keeps one live region in the DOM and only its text changes', () => {
+      const region = () => root.querySelector('.holding-label')!;
+      const before = region();
+      expect(before.getAttribute('role')).toBe('status');
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(700);
+      fixture.detectChanges();
+      expect(region()).toBe(before);
+      expect(region().textContent?.trim()).toBe('Arrastando');
+      pointer('pointerup', 1, 100, 100, 800);
+      fixture.detectChanges();
+      expect(region()).toBe(before);
+    });
+
+    it('if the press could not be made, the surface stops saying it is dragging and the lift releases nothing', async () => {
+      store.startDrag.mockResolvedValueOnce({
+        kind: 'timeout',
+        message: 'O PC não respondeu a tempo.',
+      });
+      pointer('pointerdown', 1, 100, 100, 0);
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+      await Promise.resolve();
+      fixture.detectChanges();
+      expect(pad().classList.contains('holding')).toBe(false);
+      expect(root.querySelector('.holding-label')?.textContent?.trim()).toBe('');
+      pointer('pointerup', 1, 100, 100, 800);
+      expect(store.release).not.toHaveBeenCalled();
     });
 
     it('two fingers landing before the time is up scroll as before and press nothing', () => {

@@ -253,10 +253,11 @@ describe('PadGesture long press', () => {
     expect(LONG_PRESS_MS).toBe(600);
     expect(DEFAULT_PAD_GESTURE.longPressMs).toBe(LONG_PRESS_MS);
     expect(DEFAULT_PAD_GESTURE.longPressRadiusPx).toBe(LONG_PRESS_RADIUS_PX);
-    expect(LONG_PRESS_RADIUS_PX).toBeLessThan(DEFAULT_PAD_GESTURE.slopPx);
+    expect(LONG_PRESS_RADIUS_PX).toBe(8);
+    expect(LONG_PRESS_RADIUS_PX).toBe(DEFAULT_PAD_GESTURE.slopPx);
   });
 
-  it('a finger that drifts past the radius during the wait is not a press, even inside the movement slop', () => {
+  it('a finger that drifts past the radius during the wait is not a press', () => {
     const { gesture, handlers, clock } = setup();
     gesture.down(1, 100, 100, 0);
     gesture.move(1, 100 + LONG_PRESS_RADIUS_PX + 1, 100, 100);
