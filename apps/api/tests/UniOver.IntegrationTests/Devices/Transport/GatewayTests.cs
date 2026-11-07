@@ -179,4 +179,53 @@ public sealed class GatewayTests(PostgresFixture postgres)
         _ = app.Gateway.SendAsync(app.Agent.Slug, Key("MUTE"), TestContext.Current.CancellationToken);
         (await agent.ReceiveAsync())!.Value.GetProperty("body").GetProperty("key").GetString().Should().Be("MUTE");
     }
+
+    // ---- entrega ao vivo (comandos do PC): sem sessão agora, nada de esperar a reconexão ----
+
+    private static OutboundMessage Live(string key = "VOLUME_UP") => Key(key) with { Delivery = AgentDelivery.Immediate };
+
+    [Fact]
+    public async Task LiveMessages_ToAnAgentWithoutASession_FailAtOnce_WithoutWaitingTheReconnectGrace()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var before = app.App.Time.GetUtcNow();
+
+        // O relógio é falso e ninguém o avança: quem esperasse a janela de 25 s ficaria pendurado até o teste estourar.
+        var send = await Within(app.Gateway.SendAsync(app.Agent.Slug, Live(), TestContext.Current.CancellationToken));
+        var request = await Within(app.Gateway.RequestAsync(app.Agent.Slug, Live(), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+
+        send.Error.Code.Should().Be("agent_offline");
+        request.Error.Code.Should().Be("agent_offline");
+        app.App.Time.GetUtcNow().Should().Be(before);
+    }
+
+    [Fact]
+    public async Task ALiveMessageSentDuringAnOutage_IsNotDeliveredWhenTheAgentComesBack()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+
+        var lost = await Within(app.Gateway.SendAsync(app.Agent.Slug, Live("MUTE"), TestContext.Current.CancellationToken));
+        lost.IsFailure.Should().BeTrue();
+
+        await using var agent = await app.ConnectAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == true, "conectado");
+        (await Within(app.Gateway.SendAsync(app.Agent.Slug, Live("HOME"), TestContext.Current.CancellationToken))).IsSuccess.Should().BeTrue();
+
+        // A primeira coisa que o agente recebe é a mensagem de depois da volta: a de durante a queda se perdeu de vez.
+        (await agent.ReceiveAsync())!.Value.GetProperty("body").GetProperty("key").GetString().Should().Be("HOME");
+    }
+
+    [Fact]
+    public async Task ALiveMessage_ToAConnectedAgent_IsDeliveredAsAlways()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == true, "conectado");
+
+        var request = app.Gateway.RequestAsync(app.Agent.Slug, Live(), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var command = (await agent.ReceiveAsync())!.Value;
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", Result(true), command.GetProperty("id").GetGuid()));
+
+        (await Within(request)).Value.Ok.Should().BeTrue();
+    }
 }

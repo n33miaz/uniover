@@ -29,7 +29,7 @@ internal sealed partial class AgentGateway(
             return Result.Failure(envelope.Error);
         }
 
-        return await DeliverAsync(agentId, envelope.Value.Json, cancellationToken)
+        return await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, cancellationToken)
             ? Result.Success()
             : Result.Failure(AgentErrors.Offline);
     }
@@ -50,7 +50,7 @@ internal sealed partial class AgentGateway(
 
         // A espera entra no dicionário antes do envio: o agente pode responder antes do SendAsync voltar.
         using var pending = correlator.Expect(agentId, commandId);
-        if (!await DeliverAsync(agentId, envelope.Value.Json, cancellationToken))
+        if (!await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, cancellationToken))
         {
             return Result.Failure<AgentReply>(AgentErrors.Offline);
         }
@@ -88,11 +88,18 @@ internal sealed partial class AgentGateway(
         return created;
     }
 
-    private async Task<bool> DeliverAsync(string agentId, byte[] json, CancellationToken cancellationToken)
+    private async Task<bool> DeliverAsync(string agentId, byte[] json, AgentDelivery delivery, CancellationToken cancellationToken)
     {
         if (connections.TryGet(agentId, out var connected) && await connected.SendAsync(json, cancellationToken))
         {
             return true;
+        }
+
+        // Quem age no PC ao vivo (mouse, teclado, energia) nunca espera a volta do agente: o que fosse enviado depois da
+        // queda chegaria junto, mais tarde, e cairia em outra janela.
+        if (delivery == AgentDelivery.Immediate)
+        {
+            return false;
         }
 
         // Deploys e quedas breves do socket levam o agente a reconectar em cerca de dois segundos. Esperar esta

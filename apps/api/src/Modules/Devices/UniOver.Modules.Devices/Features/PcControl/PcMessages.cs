@@ -34,7 +34,7 @@ internal static class PcMessages
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
 
     public static OutboundMessage Pointer(int dx, int dy, int scrollX, int scrollY) =>
-        new(AgentMessageTypes.PcPointerV1, BodyOf(new PcPointerV1Message
+        Live(AgentMessageTypes.PcPointerV1, BodyOf(new PcPointerV1Message
         {
             Body = new PcPointerV1Body
             {
@@ -46,31 +46,37 @@ internal static class PcMessages
         }.ToJson()));
 
     public static OutboundMessage Click(PcClickV1BodyButton button, PcClickV1BodyAction action) =>
-        new(AgentMessageTypes.PcClickV1, BodyOf(new PcClickV1Message
+        Live(AgentMessageTypes.PcClickV1, BodyOf(new PcClickV1Message
         {
             Body = new PcClickV1Body { Button = button, Action = action },
         }.ToJson()));
 
     public static OutboundMessage Key(PcKeyV1BodyKey key, IReadOnlyList<PcKeyV1BodyModifiersItem> modifiers) =>
-        new(AgentMessageTypes.PcKeyV1, BodyOf(new PcKeyV1Message
+        Live(AgentMessageTypes.PcKeyV1, BodyOf(new PcKeyV1Message
         {
             Body = new PcKeyV1Body { Key = key, Modifiers = modifiers.Count == 0 ? null : [.. modifiers] },
         }.ToJson()));
 
     public static OutboundMessage Text(string text) =>
-        new(AgentMessageTypes.PcTextV1, BodyOf(new PcTextV1Message { Body = new PcTextV1Body { Text = text } }.ToJson()));
+        Live(AgentMessageTypes.PcTextV1, BodyOf(new PcTextV1Message { Body = new PcTextV1Body { Text = text } }.ToJson()));
 
     public static OutboundMessage Media(PcMediaV1BodyAction action, int steps) =>
-        new(AgentMessageTypes.PcMediaV1, BodyOf(new PcMediaV1Message
+        Live(AgentMessageTypes.PcMediaV1, BodyOf(new PcMediaV1Message
         {
             Body = new PcMediaV1Body { Action = action, Steps = steps == 1 ? null : steps },
         }.ToJson()));
 
     public static OutboundMessage Power(PcPowerV1BodyAction action) =>
-        new(AgentMessageTypes.PcPowerV1, BodyOf(new PcPowerV1Message { Body = new PcPowerV1Body { Action = action } }.ToJson()));
+        Live(AgentMessageTypes.PcPowerV1, BodyOf(new PcPowerV1Message { Body = new PcPowerV1Body { Action = action } }.ToJson()));
 
     public static OutboundMessage AppLaunch(string appId) =>
-        new(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
+        Live(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
+
+    /// <summary>
+    /// Todo comando do PC é ao vivo: sem sessão viva agora, falha na hora em vez de esperar a reconexão do agente (ver
+    /// <see cref="AgentDelivery.Immediate"/>).
+    /// </summary>
+    private static OutboundMessage Live(string type, JsonElement body) => new(type, body, AgentDelivery.Immediate);
 
     private static string WireName(PcClickV1BodyButton button) =>
         BodyOf(new PcClickV1Message { Body = new PcClickV1Body { Button = button } }.ToJson()).GetProperty("button").GetString()!;
