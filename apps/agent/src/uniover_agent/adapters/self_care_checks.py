@@ -293,12 +293,11 @@ _KILL_SUPERVISOR_SCRIPT = (
     "$found|Where-Object{$null -eq $only -or $only -contains [int]$_.ProcessId}|"
     "ForEach-Object{$sup=[int]$_.ProcessId;"
     "if($mine.ContainsKey($sup)){"
-    "foreach($kid in (Get-Kids $all $_)){if(-not $mine.ContainsKey([int]$kid.ProcessId)){"
-    "foreach($d in (@($kid)+(Get-Descendants $all $kid))){"
-    "& taskkill.exe /PID $d.ProcessId /F *> $null}}};"
+    "$victims=@(foreach($kid in (Get-Kids $all $_)){"
+    "if(-not $mine.ContainsKey([int]$kid.ProcessId)){@($kid)+(Get-Descendants $all $kid)}});"
     "Stop-Process -Id $sup -Force}"
-    "else{foreach($d in (Get-Descendants $all $_)){& taskkill.exe /PID $d.ProcessId /F *> $null};"
-    "& taskkill.exe /PID $sup /F *> $null};'killed'}"
+    "else{$victims=Get-Descendants $all $_;& taskkill.exe /PID $sup /F *> $null};"
+    "foreach($d in $victims){& taskkill.exe /PID $d.ProcessId /F *> $null};'killed'}"
 )
 
 
