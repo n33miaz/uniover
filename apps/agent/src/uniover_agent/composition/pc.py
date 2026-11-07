@@ -31,6 +31,8 @@ class PcSetup:
     capabilities: list[str]
     after_hello: list[Callable[[], Awaitable[None]]]
     apps: list[PcApp]
+    # Solta os botões do mouse que o PC ficou segurando (conexão caída, agente encerrando).
+    release_all: Callable[[], None]
 
 
 def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
@@ -52,8 +54,9 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         _log.warning("controle do PC ligado, mas só o Windows o suporta; nada foi habilitado")
         return None
     apps = parse_favorites(settings.pc_apps)
+    pc_input = pc_input or WindowsPcInput()
     handlers = pc_handlers(
-        pc_input or WindowsPcInput(),
+        pc_input,
         power or WindowsPcPower(),
         launcher or WindowsPcLauncher(),
         apps,
@@ -64,6 +67,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         [PC_CONTROL_CAPABILITY],
         [pc_apps_announcer(apps, transport, envelopes)],
         apps,
+        pc_input.release_all,
     )
 
 

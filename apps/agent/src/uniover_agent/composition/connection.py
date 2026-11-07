@@ -349,6 +349,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
         command_timeout_seconds=settings.tv_command_timeout_seconds if tv is not None else None,
         uncapped_types=tv.background_commands if tv is not None else (),
+        release_inputs=pc.release_all if pc is not None else None,
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
@@ -406,6 +407,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     await delivery.prepare()
 
     def on_disconnected() -> None:
+        process.connection_lost()
         tray.disconnected()
         diary.disconnected()
         watch.disconnected_now()
