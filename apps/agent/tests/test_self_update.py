@@ -714,3 +714,30 @@ def test_a_newer_commit_is_not_held_back_by_a_deferred_one(installed: Installati
     now = 1_800_000_000.0
     (runtime / ".deferred-versions").write_text(f"{other}|{int(now) - 60}\n", encoding="ascii")
     assert installed.update(NEW, wall=lambda: now).updated
+
+
+def test_the_deferral_counts_from_the_last_return_not_the_first(installed: Installation) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    base = 1_800_000_000.0
+    day = 24 * 3600
+    # Duas devoluções, a segunda 5 dias depois da primeira: 72 h contadas da SEGUNDA.
+    (runtime / ".deferred-versions").write_text(
+        f"{NEW}|{int(base)}\n{NEW}|{int(base + 5 * day)}\n", encoding="ascii"
+    )
+    assert module.deferred_versions(installed.source, base + 8 * day - 1) == {NEW}
+    assert module.deferred_versions(installed.source, base + 8 * day + 1) == set()
+
+
+def test_a_return_stamped_in_the_future_after_the_clock_went_back_is_still_deferred(
+    installed: Installation,
+) -> None:
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    now = 1_800_000_000.0
+    day = 24 * 3600
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now + 3600)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, now) == {NEW}
+    # Um carimbo absurdo (anos à frente) é falso: não adia para sempre.
+    (runtime / ".deferred-versions").write_text(f"{NEW}|{int(now + 400 * day)}\n", encoding="ascii")
+    assert module.deferred_versions(installed.source, now) == set()

@@ -453,7 +453,9 @@ def deferred_versions(source: Path, now: float) -> set[str]:
     deferred: set[str] = set()
     for sha, stamps in returns.items():
         period = DEFER_STEPS_SECONDS[min(len(stamps), len(DEFER_STEPS_SECONDS)) - 1]
-        if 0 <= now - max(stamps) < period:
+        # Um carimbo no futuro (o relógio voltou) conta como adiado, até um período à frente: sem
+        # isso a versão seria reinstalada na hora e voltaria em laço. Mais que isso é carimbo falso.
+        if -period < now - max(stamps) < period:
             deferred.add(sha)
     return deferred
 
