@@ -125,12 +125,48 @@ def test_an_emoji_is_both_surrogate_units_each_pressed_and_released_in_order() -
     ]
 
 
-@pytest.mark.parametrize("text", ["\ud800", "ab\udc00", "\ud83d x"])
-def test_half_of_a_character_is_refused_instead_of_typing_a_question_mark(text: str) -> None:
+@pytest.mark.parametrize("text", ["\ud800", "senha\udc00", "\ud83d x", "\ude00\ud83d", "ok \ud83d"])
+def test_half_of_a_character_is_refused_and_no_event_is_produced(text: str) -> None:
+    produced: list[RawInput] = []
+    with pytest.raises(UnknownKey, match="par substituto incompleto"):
+        produced = pc_inputs.text_inputs(text)
+    assert produced == []
+
+
+def test_the_refusal_of_half_a_character_never_repeats_the_text() -> None:
     with pytest.raises(UnknownKey) as refused:
-        pc_inputs.text_inputs(text)
-    # A mensagem não repete o texto: ele pode ser uma senha.
-    assert "ab" not in str(refused.value)
+        pc_inputs.text_inputs("senha-secreta\ud800")
+    assert "senha" not in str(refused.value)
+    assert "secreta" not in str(refused.value)
+
+
+def test_a_whole_emoji_is_not_mistaken_for_half_a_character() -> None:
+    # `\U0001f600` é um só caractere (o par substituto só existe na codificação UTF-16).
+    assert len(pc_inputs.text_inputs("\U0001f600")) == 4
+
+
+def test_dangling_key_ups_release_what_a_partial_batch_left_pressed() -> None:
+    events = pc_inputs.key_inputs("T", ["CTRL", "SHIFT"])
+    # Só CTRL e SHIFT entraram: soltam-se na ordem inversa.
+    ups = pc_inputs.dangling_key_ups(events[:2])
+    assert [(e.vk, e.flags) for e in ups] == [(0x10, KEY_UP), (0x11, KEY_UP)]
+    # Entrou também o T apertado: ele é solto primeiro.
+    ups = pc_inputs.dangling_key_ups(events[:3])
+    assert [(e.vk, e.flags) for e in ups] == [(ord("T"), KEY_UP), (0x10, KEY_UP), (0x11, KEY_UP)]
+    # O T já foi solto dentro do que entrou: sobram só os modificadores.
+    ups = pc_inputs.dangling_key_ups(events[:4])
+    assert [e.vk for e in ups] == [0x10, 0x11]
+    # Um lote inteiro não deixa nada para soltar.
+    assert pc_inputs.dangling_key_ups(events) == []
+    # Evento do mouse não é tecla.
+    assert pc_inputs.dangling_key_ups(pc_inputs.click_inputs("LEFT", "DOWN")) == []
+
+
+def test_dangling_key_ups_keep_extended_and_unicode_flags() -> None:
+    (up,) = pc_inputs.dangling_key_ups(pc_inputs.key_inputs("LEFT")[:1])
+    assert up.flags == KEY_EXTENDED | KEY_UP
+    unicode_up = pc_inputs.dangling_key_ups(pc_inputs.text_inputs("a")[:1])
+    assert [(e.scan, e.flags) for e in unicode_up] == [(ord("a"), KEY_UNICODE | KEY_UP)]
 
 
 def test_held_buttons_follow_the_order_of_the_events() -> None:

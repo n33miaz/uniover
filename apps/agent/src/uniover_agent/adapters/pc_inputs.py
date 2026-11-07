@@ -157,6 +157,28 @@ def held_after(held: Iterable[str], events: Iterable[RawInput]) -> frozenset[str
     return frozenset(state)
 
 
+def dangling_key_ups(events: Iterable[RawInput]) -> list[RawInput]:
+    """Os eventos que soltam cada tecla apertada em `events` e não solta ali mesmo.
+
+    Serve para um lote que o Windows aceitou só em parte: o que entrou apertou teclas (um
+    modificador, uma letra) cuja soltura ficou de fora. A ordem é a inversa da de apertar.
+    """
+    pressed: dict[tuple[int, int, int], RawInput] = {}
+    for event in events:
+        if event.kind != "keyboard":
+            continue
+        # A mesma tecla é a mesma `vk`/`scan` e a mesma flag de tecla estendida ou Unicode.
+        identity = (event.vk, event.scan, event.flags & ~KEY_UP)
+        if event.flags & KEY_UP:
+            pressed.pop(identity, None)
+        else:
+            pressed[identity] = event
+    return [
+        RawInput("keyboard", flags=event.flags | KEY_UP, vk=event.vk, scan=event.scan)
+        for event in reversed(pressed.values())
+    ]
+
+
 def release_inputs(buttons: Iterable[str]) -> list[RawInput]:
     """Os eventos que soltam `buttons` (numa ordem fixa, para o teste conferir)."""
     return [event for name in sorted(buttons) for event in click_inputs(name, "UP")]
@@ -219,6 +241,7 @@ __all__ = [
     "RawInput",
     "UnknownKey",
     "click_inputs",
+    "dangling_key_ups",
     "held_after",
     "key_inputs",
     "media_inputs",

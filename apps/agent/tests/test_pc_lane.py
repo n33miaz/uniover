@@ -14,6 +14,7 @@ from uniover_agent.core import (
     ResultStatus,
 )
 from uniover_agent.core.handle_command import FreshKeyHandler, Handler
+from uniover_agent.core.process_message import MAX_PENDING_PC
 
 from .support import AGENT_ID, dump, envelope, tv_key
 
@@ -25,7 +26,6 @@ class Lab:
         self.tv_gate = asyncio.Event()
         self.pc_gate = asyncio.Event()
         self.log: list[str] = []
-        self.released = 0
 
     async def tv(self, command: Command) -> CommandResult:
         self.log.append("tv:start")
@@ -45,12 +45,17 @@ class Lab:
         action = command.body["action"]
         if action == "DOWN":
             # O DOWN é o lento: sem a ordem garantida, o UP chegaria antes dele.
-            await self.pc_gate.wait()
+            try:
+                await self.pc_gate.wait()
+            except asyncio.CancelledError:
+                self.log.append("click:cancelled")
+                raise
         self.log.append(f"click:{action}")
         return CommandResult(command.id, ResultStatus.OK)
 
     def release(self) -> None:
-        self.released += 1
+        # No mesmo registro ordenado dos handlers: prova o que veio antes e depois da soltura.
+        self.log.append("release")
 
 
 def build(
@@ -157,28 +162,51 @@ async def test_losing_the_connection_drops_what_was_waiting_and_releases_the_but
     await process(pointer(5))  # esperando a vez
     await settle()
     process.connection_lost()
-    assert lab.released == 1
     lab.pc_gate.set()
     await settle()
-    # Nada do que estava na faixa roda depois de soltar tudo.
-    assert lab.log == []
+    # A soltura saiu e o que estava na faixa foi cancelado: nem o DOWN nem o movimento rodaram.
+    assert sorted(lab.log) == ["click:cancelled", "release"]
     # E a faixa segue servindo comandos novos depois da reconexão.
     await process(pointer(9))
     await settle()
-    assert lab.log == ["pointer:9"]
+    assert lab.log[-1] == "pointer:9"
     await process.aclose()
 
 
-async def test_closing_the_agent_releases_the_buttons_after_stopping_the_lane() -> None:
+async def test_closing_the_agent_stops_the_lane_and_only_then_releases() -> None:
     lab = Lab()
     process, _ = build(lab)
     await process(click("DOWN"))
+    await process(pointer(3))
     await settle()
     await process.aclose()
-    assert lab.released == 1
+    # A tarefa foi cancelada e terminou ANTES de soltar; nada rodou depois.
+    assert lab.log == ["click:cancelled", "release"]
     lab.pc_gate.set()
     await settle()
-    assert lab.log == []
+    assert lab.log == ["click:cancelled", "release"]
+
+
+async def test_the_timestamp_of_every_message_from_the_api_is_observed() -> None:
+    lab = Lab()
+    seen: list[str | None] = []
+    clock = FakeClock()
+    gate = EnvelopeGate(AGENT_ID)
+    process = ProcessMessage(
+        AGENT_ID,
+        gate,
+        HandleCommand({"pc.pointer.v1": lab.pointer}, clock),
+        EnvelopeFactory(AGENT_ID, gate, clock),
+        FakeTransport(),
+        silent_types={"pc.pointer.v1"},
+        observe_timestamp=seen.append,
+    )
+    await process(dump(envelope("api.keepalive.v1", {}, ts="2026-11-07T12:00:00.000Z")))
+    await process(
+        dump(envelope("pc.pointer.v1", {"dx": 1, "dy": 0}, ts="2026-11-07T12:00:01.000Z"))
+    )
+    await process.aclose()
+    assert seen == ["2026-11-07T12:00:00.000Z", "2026-11-07T12:00:01.000Z"]
 
 
 async def test_a_failing_release_never_breaks_the_shutdown() -> None:
@@ -199,17 +227,18 @@ async def test_a_failing_release_never_breaks_the_shutdown() -> None:
     await process.aclose()
 
 
-async def test_a_backlog_of_pointer_moves_is_capped_when_the_lane_is_stuck() -> None:
+async def test_a_backlog_drops_the_oldest_pointer_moves_and_keeps_the_newest() -> None:
     lab = Lab()
     process, _ = build(lab)
     await process(click("DOWN"))  # trava a faixa
-    for step in range(300):
+    total = MAX_PENDING_PC + 72
+    for step in range(total):
         await process(pointer(step))
     lab.pc_gate.set()
     await settle()
     await asyncio.sleep(0.05)
-    moved = [entry for entry in lab.log if entry.startswith("pointer")]
-    assert 0 < len(moved) < 300
-    # O que ficou é o começo da fila, na ordem.
-    assert moved == [f"pointer:{n}" for n in range(len(moved))]
+    moved = [int(entry.split(":")[1]) for entry in lab.log if entry.startswith("pointer")]
+    # O DOWN ocupa uma vaga do teto; os movimentos que sobram são os mais novos, na ordem.
+    assert lab.log[0] == "click:DOWN"
+    assert moved == list(range(total - (MAX_PENDING_PC - 1), total))
     await process.aclose()

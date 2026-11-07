@@ -236,8 +236,9 @@ async def test_run_serves_the_pc_commands_without_any_tv(
     assert results[ids[5]]["error"]["code"] == "unknown_app"
     assert results[ids[6]]["ok"] is False
     assert pc_input.calls[:3] == [("move", 4, -3), ("click", "LEFT", "CLICK"), ("text", "olá")]
-    # A conexão caiu e o agente encerrou: os botões apertados (se houvesse) foram soltos.
-    assert ("release_all",) in pc_input.calls[3:]
+    # Duas soltaduras: uma quando a conexão caiu (`on_disconnected`) e outra ao encerrar o agente
+    # (`aclose`). Só a segunda existiria se a queda da conexão não chegasse ao PC.
+    assert pc_input.calls.count(("release_all",)) == 2
     assert power.calls == [("lock",)]
     assert launcher.opened == ["notepad"]
 
