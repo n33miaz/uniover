@@ -4,4 +4,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- As versões por módulo viajam dentro do assembly: nada de arquivo em disco no container. -->
+    <EmbeddedResource Include="..\..\..\..\modules.json" LogicalName="modules.json" />
+  </ItemGroup>
 </Project>

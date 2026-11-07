@@ -14,6 +14,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84d
 WORKDIR /src
 # Os esquemas do agente são embutidos no assembly do protocolo.
 COPY contracts/agent/ contracts/agent/
+# As versões por módulo são embutidas no assembly (GET /health/version).
+COPY modules.json modules.json
 COPY apps/api/ apps/api/
 RUN dotnet publish apps/api/src/UniOver.Host -c Release -o /out \
     && rm -rf /out/wwwroot
