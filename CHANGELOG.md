@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.42.16](https://github.com/n33miaz/uniover/compare/v0.42.15...v0.42.16) (2026-11-07)
+
+
+### Features
+
+* **release:** version modules by changed paths
+
+
+### Bug Fixes
+
+* **release:** refine module ownership and git log
+* **api:** tolerate an invalid modules file
+
+
+### Web 0.43.0
+
+#### Features
+
+* **api:** expose module versions on health
+* **web:** list module versions on the system page
+
 ## [0.42.15](https://github.com/n33miaz/uniover/compare/v0.42.14...v0.42.15) (2026-11-07)
 
 
