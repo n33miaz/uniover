@@ -76,7 +76,9 @@ class Lab:
     segundos à frente dela. `api_step` é um salto só do relógio da API.
     """
 
-    def __init__(self, *, pc_ahead: float = 0.0, mono_origin: float = 5000.0) -> None:
+    def __init__(
+        self, *, pc_ahead: float = 0.0, mono_origin: float = 5000.0, seeded: bool = True
+    ) -> None:
         self.elapsed = 0.0
         self.drift = 0.0
         self.api_step = 0.0
@@ -102,6 +104,10 @@ class Lab:
                 clock=self.clock,
             )
         )
+        if seeded:
+            # A estimativa só existe depois de dois batimentos que concordam.
+            self.heartbeat(0.2)
+            self.heartbeat(0.2)
 
     def stamp(self, in_flight: float) -> str:
         """O `ts` de uma mensagem que a API montou `in_flight` s antes de chegar."""
@@ -139,25 +145,51 @@ async def test_a_fresh_command_runs() -> None:
     assert lab.pc.calls == [("click", "LEFT", "CLICK")]
 
 
-async def test_with_an_empty_window_the_wall_clock_rule_applies() -> None:
-    lab = Lab()  # os relógios de parede concordam
+async def test_with_an_empty_window_the_age_is_unknown_and_the_command_is_accepted() -> None:
+    lab = Lab(seeded=False)
     assert lab.clock.offset is None
     assert (await lab.run("pc.key.v1", {"key": "A"}, 0.5))[0] == "ok"
-    # Um comando de 25 s (o que a API segurou) não passa só porque ainda não há referência.
-    assert await lab.run("pc.key.v1", {"key": "B"}, 25.0) == ("rejected", EXPIRED)
-    assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 25.0) == ("rejected", EXPIRED)
-    assert [call[1] for call in lab.pc.calls] == ["A"]
+    # Sem referência não se recusa por idade: a API já não segura comando durante a reconexão.
+    assert (await lab.run("pc.key.v1", {"key": "B"}, 25.0))[0] == "ok"
+    assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 25.0))[0] == "ok"
+    assert [call[0] for call in lab.pc.calls] == ["key", "key", "move"]
 
 
-async def test_with_an_empty_window_a_clock_a_little_behind_is_tolerated_but_not_a_lot() -> None:
-    lab = Lab(pc_ahead=-3.0)
-    assert (await lab.run("pc.key.v1", {"key": "A"}, 0.5))[0] == "ok"
-    lab = Lab(pc_ahead=-30.0)
-    assert await lab.run("pc.key.v1", {"key": "B"}, 0.5) == ("rejected", EXPIRED)
+@pytest.mark.parametrize("pc_ahead", [3.0, 60.0, -30.0])
+async def test_with_an_empty_window_a_pc_clock_that_is_off_does_not_matter(pc_ahead: float) -> None:
+    lab = Lab(seeded=False, pc_ahead=pc_ahead)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert (await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 0.5))[0] == "ok"
+
+
+async def test_a_single_beat_is_not_enough_to_make_an_estimate() -> None:
+    lab = Lab(seeded=False)
+    lab.heartbeat(0.2)
+    assert lab.clock.offset is None
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 30.0))[0] == "ok"
+
+
+async def test_a_bad_first_beat_does_not_become_the_reference() -> None:
+    lab = Lab(seeded=False)
+    lab.heartbeat(-30.0)  # o primeiro batimento tem um carimbo 30 s no futuro
+    lab.heartbeat(0.2)  # o segundo não concorda com o primeiro: nenhum dos dois vale ainda
+    assert lab.clock.offset is None
+    lab.heartbeat(0.2)  # este concorda com o segundo
+    assert lab.clock.offset is not None
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
+
+
+async def test_two_beats_that_agree_within_the_margin_confirm_the_estimate() -> None:
+    lab = Lab(seeded=False)
+    lab.heartbeat(0.2)
+    lab.heartbeat(0.5)
+    assert lab.clock.offset is not None
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
 
 
 async def test_a_command_never_seeds_the_estimate() -> None:
-    lab = Lab()
+    lab = Lab(seeded=False)
     await lab.run("pc.key.v1", {"key": "A"}, 0.5)
     await lab.run("pc.key.v1", {"key": "B"}, 25.0)
     assert lab.clock.offset is None  # só o batimento da API a inaugura
@@ -290,13 +322,12 @@ async def test_the_pc_wall_clock_jumping_backward_changes_nothing_either() -> No
 
 async def test_after_a_long_suspend_with_the_monotonic_counting_the_window_is_empty() -> None:
     lab = Lab()
-    lab.heartbeat(0.2)
     lab.suspend(3600, monotonic_counts=True)
     assert lab.clock.offset is None  # as amostras saíram da janela
-    # Sem referência, vale o relógio de parede: o comando de 25 s é recusado, o novo passa.
-    assert await lab.run("pc.click.v1", {"button": "LEFT"}, 25.0) == ("rejected", EXPIRED)
+    # O primeiro comando depois de acordar vale como chegou, ainda que o `ts` seja de 25 s atrás.
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 25.0))[0] == "ok"
     assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
-    lab.beats(1)
+    lab.beats(2)
     assert (await lab.run("pc.click.v1", {"button": "RIGHT"}, 0.5))[0] == "ok"
     assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 12.0) == ("rejected", EXPIRED)
 
@@ -323,6 +354,7 @@ async def test_the_estimate_follows_the_api_clock_once_old_samples_leave_the_win
     lab.elapsed = 400  # fora da janela de 5 minutos
     lab.drift = 7.0  # o relógio da API ficou 7 s para trás do monotônico do agente
     lab.heartbeat(0.2)
+    lab.heartbeat(0.2)  # dois batimentos que concordam inauguram a estimativa
     assert lab.clock.offset == pytest.approx(first + 7.0)
     assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
 
@@ -408,6 +440,19 @@ async def test_a_large_difference_is_reported_once_not_per_command(
             await lab.run("pc.key.v1", {"key": "A"}, 0.3)
     assert lab.skews == [pytest.approx(60.2)]
     assert caplog.text.count("relógio deste PC difere") == 1
+
+
+async def test_a_small_api_clock_step_back_is_rebased_after_three_beats() -> None:
+    lab = Lab()
+    assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 1.2))[0] == "ok"
+    lab.api_step = 1.2  # o relógio da API recuou 1,2 s
+    lab.beats(1)
+    assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 1.2) == ("rejected", EXPIRED)
+    lab.beats(1)
+    assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 1.2) == ("rejected", EXPIRED)
+    lab.beats(1)  # o terceiro seguido refaz a estimativa
+    assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 1.2))[0] == "ok"
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
 
 
 async def test_a_small_difference_is_not_reported() -> None:

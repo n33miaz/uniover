@@ -238,20 +238,46 @@ async def test_a_failing_release_never_breaks_the_shutdown() -> None:
     await process.aclose()
 
 
-async def test_a_backlog_drops_the_oldest_pointer_moves_and_keeps_the_newest() -> None:
+async def test_a_backlog_merges_the_oldest_moves_and_keeps_the_whole_path() -> None:
     lab = Lab()
     process, _ = build(lab)
     await start_blocked_down(lab, process)  # trava a faixa: o DOWN está em execução, fora da fila
     total = MAX_PENDING_PC + 72
     for step in range(total):
-        await process(pointer(step))
+        await process(pointer(step + 1))
+        assert len(process._pc_queue) <= MAX_PENDING_PC
     lab.pc_gate.set()
     await settle()
     await asyncio.sleep(0.05)
     moved = [int(entry.split(":")[1]) for entry in lab.log if entry.startswith("pointer")]
-    # A fila guarda no máximo `MAX_PENDING_PC` movimentos: ficam exatamente os mais novos, em ordem.
+    # A fila guardou no máximo `MAX_PENDING_PC` movimentos e a soma do caminho não se perdeu.
     assert lab.log[0] == "click:DOWN"
-    assert moved == list(range(total - MAX_PENDING_PC, total))
+    assert len(moved) == MAX_PENDING_PC
+    assert sum(moved) == sum(range(1, total + 1))
+    assert moved[-1] == total  # o movimento mais novo segue inteiro, no fim
+    await process.aclose()
+
+
+@pytest.mark.parametrize(("before", "after"), [(94, 100), (5, 200)])
+async def test_merging_moves_never_carries_motion_across_a_click(before: int, after: int) -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    await start_blocked_down(lab, process)
+    for _ in range(before):
+        await process(pointer(1))
+    await process(click("UP"))
+    for _ in range(after):
+        await process(pointer(1000))
+    lab.pc_gate.set()
+    await settle()
+    await asyncio.sleep(0.05)
+    up = lab.log.index("click:UP")
+    moved_before = [int(e.split(":")[1]) for e in lab.log[:up] if e.startswith("pointer")]
+    moved_after = [int(e.split(":")[1]) for e in lab.log[up:] if e.startswith("pointer")]
+    # Tudo o que veio antes do UP ainda roda antes dele, e tudo o que veio depois, depois.
+    assert sum(moved_before) == before
+    assert sum(moved_after) == after * 1000
+    assert len(moved_before) + 1 + len(moved_after) <= MAX_PENDING_PC
     await process.aclose()
 
 

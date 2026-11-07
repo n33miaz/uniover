@@ -11,6 +11,7 @@ from uniover_agent.core.domain import Command
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand
+from uniover_agent.core.pc.handlers import POINTER_TYPE, merge_pointer_commands
 from uniover_agent.core.tv.handlers import TimedKeyCommand
 from uniover_agent.core.tv.session import TV_UNREACHABLE
 from uniover_agent.ports import Transport, TransportError
@@ -20,10 +21,9 @@ _log = logging.getLogger(__name__)
 _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
-# Teto de comandos do PC esperando a vez. Acima disso, cada movimento novo do mouse (silencioso: o
-# app manda outro logo) descarta o movimento pendente MAIS ANTIGO. O movimento é relativo, então
-# descartar os antigos faz o cursor parar aquém de onde o dedo foi (a soma deles se perde); só
-# acontece com a faixa travada, e ficar com os mais novos evita um salto atrasado e longo.
+# Teto de comandos do PC esperando a vez. Acima disso, os dois movimentos pendentes mais antigos
+# que estão lado a lado são somados num só: o movimento é relativo, então o caminho (a soma) se
+# preserva, e nada que veio antes de um clique ou tecla passa para depois dele.
 MAX_PENDING_PC: Final = 128
 
 
@@ -141,30 +141,36 @@ class ProcessMessage:
         await self._execute(command)
 
     def _enqueue_pc(self, command: Command) -> None:
-        silent = command.type in self._silent_types
-        if len(self._pc_queue) >= MAX_PENDING_PC and not self._drop_oldest_silent() and silent:
-            return  # fila cheia só de comandos com resposta: este movimento novo é que cai
         self._pc_queue.append(command)
+        if len(self._pc_queue) > MAX_PENDING_PC:
+            self._merge_oldest_moves()
         if self._pc_consumer is None or self._pc_consumer.done():
             self._pc_consumer = asyncio.create_task(self._consume_pc())
             self._tasks.add(self._pc_consumer)
             self._pc_consumer.add_done_callback(self._tasks.discard)
         self._pc_wakeup.set()
 
-    def _drop_oldest_silent(self) -> bool:
-        """Tira da fila o movimento mais antigo; devolve se havia algum. Avisa uma vez."""
-        for index, queued in enumerate(self._pc_queue):
-            if queued.type in self._silent_types:
-                del self._pc_queue[index]
+    def _merge_oldest_moves(self) -> None:
+        """Soma o par de movimentos vizinhos mais antigo da fila (o mais velho entra no seguinte).
+
+        Só vizinhos: entre dois movimentos não há clique, tecla nem texto, então somar não muda o
+        que acontece antes de nenhum deles. Sem nenhum par assim (movimentos separados por
+        comandos com resposta, o que o app não produz) a fila passa do teto por esta vez.
+        """
+        queue = self._pc_queue
+        for index in range(len(queue) - 1):
+            older, newer = queue[index], queue[index + 1]
+            if older.type == POINTER_TYPE == newer.type and older.type in self._silent_types:
+                queue[index + 1] = merge_pointer_commands(older, newer)
+                del queue[index]
                 if not self._pc_overflowing:
                     self._pc_overflowing = True
                     _log.warning(
-                        "faixa do PC cheia (%d comandos esperando): descartando os movimentos "
-                        "mais antigos do mouse",
+                        "faixa do PC cheia (%d comandos esperando): somando os movimentos mais "
+                        "antigos do mouse",
                         MAX_PENDING_PC,
                     )
-                return True
-        return False
+                return
 
     async def _consume_pc(self) -> None:
         # Um único consumidor: a ordem da faixa não depende de tarefas encadeadas, e cancelar este

@@ -31,6 +31,7 @@ PC_CONTROL_CAPABILITY: Final = "pc.control.v1"
 # Comandos executados sem resposta: a API manda o movimento do mouse sem esperar por ela.
 PC_SILENT_TYPES: Final = frozenset({"pc.pointer.v1"})
 
+POINTER_TYPE: Final = "pc.pointer.v1"
 UNSUPPORTED: Final = "unsupported"
 UNKNOWN_APP: Final = "unknown_app"
 # Tempo entre responder à API e suspender: o resultado precisa sair antes de o PC adormecer.
@@ -61,6 +62,20 @@ def _guarded(handle: Callable[[Command], CommandResult], *, noisy: bool = True) 
             return CommandResult(command.id, ResultStatus.FAILED, str(exc), "failed")
 
     return run
+
+
+def merge_pointer_commands(older: Command, newer: Command) -> Command:
+    """Junta dois movimentos seguidos num só: as somas de deslocamento e de rolagem.
+
+    O caminho é o mesmo (movimento é relativo e a soma é a mesma, desde que nada fique entre eles).
+    O resultado leva o `id` e o `ts` do mais novo, que dita a idade.
+    """
+
+    def total(key: str) -> int:
+        return int(older.body.get(key, 0)) + int(newer.body.get(key, 0))
+
+    body = {key: total(key) for key in ("dx", "dy", "scrollX", "scrollY")}
+    return Command(newer.id, newer.type, body, newer.correlation_id, newer.sent_at)
 
 
 def pc_pointer_handler(pc: PcInput) -> Handler:
