@@ -5,7 +5,7 @@ import { SessionState } from '../../../core/session/session-state';
 import { PointerAccelerator, ScrollAccelerator, accelerationFor } from '../input/pc-acceleration';
 import { PointerBatch, PointerBatcher } from '../input/pointer-batcher';
 import { PcApi } from './pc-api';
-import { PcFailure, pcFailureOf } from './pc-failure';
+import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import type { PcClickButton, PcKey, PcMediaAction, PcModifier, PcPowerAction } from './pc-types';
 
@@ -133,6 +133,14 @@ export class PcStore {
   }
 
   /**
+   * O número do último aperto do botão pedido. Quem aperta por um caminho (o dedo) o guarda para só soltar o aperto que
+   * ele mesmo começou, e não um mais novo que veio de outro caminho (o botão "Arrastar").
+   */
+  get pressEpoch(): number {
+    return this.downEpoch;
+  }
+
+  /**
    * A tela chama ao abrir: relê o estado já e depois a cada `PC_POLL_MS` (só com a aba visível). Devolve a função que
    * encerra o acompanhamento.
    */
@@ -254,7 +262,7 @@ export class PcStore {
     try {
       await this.batcher.drain();
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
-      if (this.session.accountId() !== asked) return this.blocked();
+      if (this.session.accountId() !== asked) return CANCELLED;
       // Pediram para soltar enquanto o movimento saía: apertar agora só para soltar é desperdício, e arriscado.
       if (this.releaseWanted) return null;
       this.batcher.hold();
@@ -349,7 +357,7 @@ export class PcStore {
       return null;
     } catch (error) {
       // O pedido desistiu porque a conta mudou: nada de aviso nem de releitura do estado para a conta nova.
-      if (error instanceof AccountChanged) return this.blocked();
+      if (error instanceof AccountChanged) return CANCELLED;
       const failure = pcFailureOf(error);
       this.noteFailure(failure);
       return failure;
@@ -459,7 +467,8 @@ export class PcStore {
       await this.queueButton(() => this.upRequest(owner, keepalive));
       return null;
     } catch (error) {
-      return pcFailureOf(error);
+      // A conta mudou antes da vez do `UP`: desistência calada, não uma falha.
+      return error instanceof AccountChanged ? CANCELLED : pcFailureOf(error);
     }
   }
 
@@ -480,6 +489,8 @@ export class PcStore {
       }
       failure = await this.tryUp(owner, keepalive);
       if (failure === null) return null;
+      // Desistiu porque a conta mudou: tentar de novo (e esperar para isso) seria inútil.
+      if (failure === CANCELLED) return failure;
     }
     return failure;
   }
@@ -508,8 +519,10 @@ export class PcStore {
       // fila, assim que o `DOWN` terminar.
       this.releaseWanted = true;
       this.releaseKeepalive = true;
-      // A página morre agora: o `UP` da fila pode nunca sair. Um `UP` imediato com `keepalive` vai também (o agente
-      // rejeita um `DOWN` com mais de 5 s, e o `UP` a mais é inofensivo). Só no `pagehide` definitivo.
+      // A página morre agora: o `UP` da fila pode nunca sair. Um `UP` imediato com `keepalive` vai também, sabendo que
+      // ele pode passar na frente do `DOWN` (são pedidos independentes). O pior caso é um `DOWN` que chega depois do `UP`
+      // e deixa o botão apertado; ele é limitado pela soltura automática do agente (30 s sem comandos) e, se a rede
+      // demorar mais de 5 s, o agente rejeita o `DOWN` velho. Só no `pagehide` definitivo.
       if (dying && this.maybeHeld) void this.quietUpNow();
       return;
     }

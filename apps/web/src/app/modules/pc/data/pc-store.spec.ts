@@ -5,6 +5,7 @@ import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availabi
 import { SessionState } from '../../../core/session/session-state';
 import { status } from '../pc-test-kit';
 import { PcApi } from './pc-api';
+import { CANCELLED } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
   DOWN_TIMEOUT_MS,
@@ -1028,9 +1029,72 @@ describe('PcStore heartbeat and the account', () => {
     signIn('conta-a');
     TestBed.tick();
     await store.toggleDrag();
-    signIn('conta-b'); // sem TestBed.tick(): quem barra é a conferência do próprio sinal
-    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    // Sem esperar o efeito da troca de conta: logo depois de entrar com a outra, o botão ainda consta como apertado, e é a
+    // conferência do próprio sinal que o impede de ir para o PC errado.
+    signIn('conta-b');
+    expect(store.dragging()).toBe(true);
+    await (store as unknown as { beat(): Promise<void> }).beat();
     expect(api.pointer).not.toHaveBeenCalled();
+  });
+});
+
+describe('PcStore giving up quietly', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('an UP that gives up because the account changed leaves the retry loop at once, with a neutral value and no wait', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    await store.toggleDrag();
+    api.click.mockClear();
+
+    // O primeiro UP está na fila atrás de algo em voo; a conta muda antes de a vez dele chegar.
+    let finishHead: () => void = () => undefined;
+    void (
+      store as unknown as { queueButton(task: () => Promise<void>): Promise<void> }
+    ).queueButton(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHead = resolve;
+        }),
+    );
+    const releasing = store.release({ persistent: true });
+    await vi.advanceTimersByTimeAsync(0);
+    signIn('conta-b');
+    TestBed.tick();
+    finishHead();
+    // Nenhuma espera de retry: a promessa resolve sem avançar o relógio.
+    const result = await releasing;
+    expect(result?.kind).toBe('cancelled');
+    expect(result?.message).toBe('');
+    expect(api.click).not.toHaveBeenCalled();
+    expect(store.notice()).toBeNull();
+  });
+
+  it('a command that gives up reports the neutral value, never a misleading message', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    let finishHead: () => void = () => undefined;
+    void (
+      store as unknown as { queueButton(task: () => Promise<void>): Promise<void> }
+    ).queueButton(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHead = resolve;
+        }),
+    );
+    const starting = store.startDrag();
+    await vi.advanceTimersByTimeAsync(0);
+    signIn('conta-b');
+    TestBed.tick();
+    finishHead();
+    expect(await starting).toBe(CANCELLED);
+    expect(api.click).not.toHaveBeenCalled();
   });
 });
 
