@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.43.0](https://github.com/n33miaz/uniover/compare/v0.42.18...v0.43.0) (2026-11-07)
+
+
+### Bug Fixes
+
+* **api:** own rate limit for pc input
+
+
+### Devices 0.43.0
+
+#### Features
+
+* **api:** audit failed pc power and launches
+* **api:** send the first keepalive at once
+* **web:** pc touchpad sensitivity and drag
+* **web:** armed modifier keys on the pc
+* **web:** label failed pc actions, reconnecting
+
+#### Bug Fixes
+
+* **api:** fail pc commands fast when offline
+* **api:** tell a reconnecting pc from offline
+* **web:** always release a held pc button
+* **web:** serialize pc button commands
+* **web:** pc release without touching the session
+* **web:** lift releases a failed pc press
+* **web:** pc press owns its release
+
+
+### Training 0.42.16
+
+#### Maintenance
+
+* no user-facing changes
+
+
+### Web 0.44.0
+
+#### Features
+
+* **web:** label failed pc actions, reconnecting
+
+#### Bug Fixes
+
+* **web:** serialize pc button commands
+* **web:** pc release without touching the session
+
+
+### Agent 0.42.17
+
+#### Bug Fixes
+
+* **agent:** drop stale pc commands
+* **agent:** release held pc input, own lane
+* **agent:** measure pc command age by offset
+* **agent:** release stuck keys, keep newest move
+* **agent:** serial pc lane, safer age estimate
+* **agent:** accept pc commands until clock known
+* **agent:** bounded pc move merge, clock notes
+
 ## [0.42.18](https://github.com/n33miaz/uniover/compare/v0.42.17...v0.42.18) (2026-11-07)
 
 
