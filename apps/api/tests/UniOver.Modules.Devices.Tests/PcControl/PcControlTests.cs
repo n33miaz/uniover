@@ -4,6 +4,8 @@ using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Features.PcControl;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace UniOver.Modules.Devices.Tests.PcControl;
 
@@ -107,6 +109,30 @@ public sealed class PcMessagesTests
 
     [Fact]
     public void Capability_IsTheOneTheHelloDeclares() => PcMessages.Capability.Should().Be("pc.control.v1");
+}
+
+public sealed class PcProblemsTests
+{
+    [Fact]
+    public void NoLiveSession_IsAnswered503Reconnecting_BecauseTheHandlerOnlyGetsHereWithThePcShownAsConnected()
+    {
+        var result = (ProblemHttpResult)PcProblems.FromGateway(AgentErrors.Offline);
+
+        result.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        result.ProblemDetails.Type.Should().EndWith("/agent-reconnecting");
+        result.ProblemDetails.Title.Should().Be("O PC está reconectando. Tente de novo em instantes.");
+    }
+
+    [Fact]
+    public void OtherGatewayFailures_KeepTheirOwnAnswers()
+    {
+        var timeout = (ProblemHttpResult)PcProblems.FromGateway(AgentErrors.Timeout);
+        var invalid = (ProblemHttpResult)PcProblems.FromGateway(AgentErrors.InvalidMessage("x"));
+
+        timeout.StatusCode.Should().Be(StatusCodes.Status504GatewayTimeout);
+        timeout.ProblemDetails.Type.Should().EndWith("/agent-timeout");
+        invalid.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+    }
 }
 
 public sealed class PcValidatorTests
