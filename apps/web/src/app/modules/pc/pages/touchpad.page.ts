@@ -205,11 +205,9 @@ export class TouchpadPage {
     this.pressHold = true;
     this.pressing.set(true);
     void this.store.startDrag().then((failure) => {
-      // O aperto não passou (o store já soltou por segurança): a superfície deixa de dizer que está arrastando.
-      if (failure) {
-        this.pressHold = false;
-        this.pressing.set(false);
-      }
+      // O aperto não passou: a superfície deixa de dizer que está arrastando. O `pressHold` fica: se o `UP` de segurança do
+      // store também falhou, o botão pode estar apertado, e o fim do dedo ainda precisa soltar (sem botão é um não-fazer).
+      if (failure) this.pressing.set(false);
     });
   }
 

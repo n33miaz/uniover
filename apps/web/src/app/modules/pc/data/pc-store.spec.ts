@@ -826,6 +826,176 @@ describe('PcStore when the account changes while a button is held', () => {
   });
 });
 
+describe('PcStore after a press that failed', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('DOWN fails and the safety UP fails too: the release when the finger lifts retries the UP until it gets through', async () => {
+    const { store, api } = setup();
+    api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 504 })); // DOWN
+    api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 })); // UP de segurança
+    expect((await store.startDrag())?.kind).toBe('timeout');
+    expect(store.dragging()).toBe(false);
+    expect((api.click.mock.calls as unknown[][]).map(([, action]) => action)).toEqual([
+      'DOWN',
+      'UP',
+    ]);
+
+    // O dedo sobe: o botão pode estar apertado, então o soltar insiste (a primeira tentativa falha, a segunda passa).
+    api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    const releasing = store.release({ persistent: true });
+    await vi.advanceTimersByTimeAsync(UP_RETRY_BACKOFF_MS[0]);
+    expect(await releasing).toBeNull();
+    expect((api.click.mock.calls as unknown[][]).map(([, action]) => action)).toEqual([
+      'DOWN',
+      'UP',
+      'UP',
+      'UP',
+    ]);
+    // Agora nada pode estar apertado: soltar de novo não manda nada.
+    await store.release({ persistent: true });
+    expect(api.click).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('PcStore pagehide with the DOWN still in flight', () => {
+  /** O DOWN fica no ar; tudo que sai é anotado na ordem. */
+  function setupInFlight() {
+    const ctx = setup();
+    const log: string[] = [];
+    let finish: () => void = () => undefined;
+    ctx.api.click.mockImplementation(((_button?: string, action?: string, options?: unknown) => {
+      if (action === 'DOWN') {
+        log.push('DOWN sent');
+        return new Promise<void>((resolve) => {
+          finish = () => {
+            log.push('DOWN settled');
+            resolve();
+          };
+        });
+      }
+      log.push(options ? 'UP sent (keepalive)' : 'UP sent');
+      return Promise.resolve();
+    }) as never);
+    return { ...ctx, log, settle: () => finish() };
+  }
+
+  const pageHide = (persisted: boolean) =>
+    window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted }));
+
+  it('a page that really dies (persisted false) also sends an immediate keepalive UP, besides the queued one', async () => {
+    const { store, log, settle } = setupInFlight();
+    const stop = store.watch();
+    const starting = store.startDrag();
+    await flush();
+    pageHide(false);
+    await flush();
+    expect(log).toEqual(['DOWN sent', 'UP sent (keepalive)']);
+    settle();
+    await starting;
+    await flush();
+    expect(log).toEqual([
+      'DOWN sent',
+      'UP sent (keepalive)',
+      'DOWN settled',
+      'UP sent (keepalive)',
+    ]);
+    stop();
+  });
+
+  it('a page that goes to the cache (persisted true) only queues the UP after the DOWN', async () => {
+    const { store, log, settle } = setupInFlight();
+    const stop = store.watch();
+    const starting = store.startDrag();
+    await flush();
+    pageHide(true);
+    await flush();
+    expect(log).toEqual(['DOWN sent']);
+    settle();
+    await starting;
+    expect(log).toEqual(['DOWN sent', 'DOWN settled', 'UP sent (keepalive)']);
+    stop();
+  });
+
+  it('going to the background (visibilitychange) keeps only the queued UP', async () => {
+    const { store, log, settle } = setupInFlight();
+    const stop = store.watch();
+    const starting = store.startDrag();
+    await flush();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(log).toEqual(['DOWN sent']);
+    settle();
+    await starting;
+    expect(log).toEqual(['DOWN sent', 'DOWN settled', 'UP sent (keepalive)']);
+    vi.restoreAllMocks();
+    stop();
+  });
+});
+
+describe('PcStore commands that give up because the account changed', () => {
+  afterEach(() => localStorage.clear());
+
+  it('an UP already waiting in the queue is dropped when the account changed before its turn, with no notice and no re-read of the state', async () => {
+    const { store, api, availability } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    await store.toggleDrag();
+    expect(store.dragging()).toBe(true);
+    api.click.mockClear();
+    availability.refresh.mockClear();
+
+    // Algo na frente da fila segura a vez do UP (um pedido anterior ainda em voo).
+    let finishHead: () => void = () => undefined;
+    void (
+      store as unknown as { queueButton(task: () => Promise<void>): Promise<void> }
+    ).queueButton(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHead = resolve;
+        }),
+    );
+    const releasing = store.release();
+    await flush();
+    signIn('conta-b');
+    TestBed.tick();
+    finishHead();
+    await releasing;
+    await flush();
+
+    expect(api.click).not.toHaveBeenCalled();
+    expect(store.notice()).toBeNull();
+    expect(availability.refresh).not.toHaveBeenCalled();
+  });
+
+  it('a DOWN waiting in the queue gives up the same way', async () => {
+    const { store, api, availability } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    let finishHead: () => void = () => undefined;
+    void (
+      store as unknown as { queueButton(task: () => Promise<void>): Promise<void> }
+    ).queueButton(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHead = resolve;
+        }),
+    );
+    const starting = store.startDrag();
+    await flush();
+    signIn('conta-b');
+    TestBed.tick();
+    finishHead();
+    await starting;
+    await flush();
+    expect(api.click).not.toHaveBeenCalled();
+    expect(store.notice()).toBeNull();
+    expect(availability.refresh).not.toHaveBeenCalled();
+    expect(store.dragging()).toBe(false);
+  });
+});
+
 describe('PcStore heartbeat when coming back to the screen', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -843,6 +1013,24 @@ describe('PcStore heartbeat when coming back to the screen', () => {
     store.watch();
     await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
     expect(api.pointer).toHaveBeenCalledWith(0, 0);
+  });
+});
+
+describe('PcStore heartbeat and the account', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('a tick never goes out when the session is already another account (before the store noticed)', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    await store.toggleDrag();
+    signIn('conta-b'); // sem TestBed.tick(): quem barra é a conferência do próprio sinal
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(api.pointer).not.toHaveBeenCalled();
   });
 });
 

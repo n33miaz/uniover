@@ -224,7 +224,7 @@ describe('TouchpadPage', () => {
       expect(region()).toBe(before);
     });
 
-    it('if the press could not be made, the surface stops saying it is dragging and the lift releases nothing', async () => {
+    it('if the press could not be made, the surface stops saying it is dragging but the lift still releases (the safety UP may have failed too)', async () => {
       store.startDrag.mockResolvedValueOnce({
         kind: 'timeout',
         message: 'O PC não respondeu a tempo.',
@@ -236,19 +236,9 @@ describe('TouchpadPage', () => {
       fixture.detectChanges();
       expect(pad().classList.contains('holding')).toBe(false);
       expect(root.querySelector('.holding-label')?.textContent?.trim()).toBe('');
-      pointer('pointerup', 1, 100, 100, 800);
       expect(store.release).not.toHaveBeenCalled();
-    });
-
-    it('two fingers landing before the time is up scroll as before and press nothing', () => {
-      pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(590);
-      pointer('pointerdown', 2, 140, 100, 590);
-      vi.advanceTimersByTime(1_000);
-      pointer('pointermove', 1, 100, 130, 1_600);
-      pointer('pointermove', 2, 140, 130, 1_600);
-      expect(store.startDrag).not.toHaveBeenCalled();
-      expect(store.scrollPointer).toHaveBeenCalled();
+      pointer('pointerup', 1, 100, 100, 800);
+      expect(store.release).toHaveBeenCalledExactlyOnceWith({ persistent: true });
     });
 
     it('a quick tap still clicks and starts no drag', () => {

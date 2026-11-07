@@ -54,8 +54,17 @@
   color: var(--a-accent-ink);
   animation: pad-grab var(--dur-base) var(--ease-out);
 }
+/* Vazia, a região segue na árvore de acessibilidade (o leitor de tela só anuncia o texto novo), mas não ocupa lugar. */
 .holding-label:empty {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .holding-label {
   font-size: var(--fs-title);
