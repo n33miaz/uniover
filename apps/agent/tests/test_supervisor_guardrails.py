@@ -604,11 +604,11 @@ def test_the_update_uses_no_sync_after_a_real_sync_and_update_now_forces_it(
     assert lines[1] == "[1][1]"
 
 
-def test_a_sync_that_only_kept_the_environment_does_not_license_no_sync_for_the_update(
+def test_a_lap_whose_environment_was_only_kept_runs_no_update_at_all(
     pc: Pc, tmp_path: Path
 ) -> None:
-    # Volta 1: sync de verdade (UV_NO_SYNC no update). Volta 2: o sync estoura o prazo e o ambiente
-    # existente é só mantido: o update NÃO pode rodar com UV_NO_SYNC sobre um ambiente sem sync.
+    # Volta 1: sync de verdade (o update roda com UV_NO_SYNC). Volta 2: o sync estoura o prazo e o
+    # ambiente existente é só mantido: o update NÃO roda (nem com UV_NO_SYNC, nem com sync implícito).
     seen = tmp_path / "update-env.txt"
     flag = tmp_path / "sync-flag.txt"
     python = pc.runtime / "venv" / "Scripts" / "python.exe"
@@ -631,12 +631,48 @@ def test_a_sync_that_only_kept_the_environment_does_not_license_no_sync_for_the_
         assert wait_for(lambda: "o agente terminou" in pc.supervisor_log(), 60), pc.supervisor_log()
         # Só agora (a volta 1 acabou) o dono pede o update da volta 2.
         (pc.runtime / "update-now").write_text("", encoding="ascii")
-        assert wait_for(lambda: len(seen.read_text("ascii").split()) >= 2, 90), pc.supervisor_log()
-    lines = seen.read_text("ascii").split()
-    assert lines[0] == "[1]"
-    assert lines[1] == "[]", (
-        "o update rodou com UV_NO_SYNC sobre um ambiente que não foi sincronizado"
+        assert wait_for(lambda: pc.starts() >= 2, 90), pc.supervisor_log()
+        time.sleep(4)
+        # O pedido do dono continua lá, para quando o ambiente estiver sincronizado.
+        assert (pc.runtime / "update-now").exists()
+    assert seen.read_text("ascii").split() == ["[1]"], "a volta de ambiente mantido rodou um update"
+
+
+def test_a_kept_environment_on_the_first_lap_starts_the_agent_before_any_update(
+    pc: Pc, tmp_path: Path
+) -> None:
+    order = tmp_path / "order.txt"
+    python = pc.runtime / "venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="ascii")
+    pc.uv(
+        ['echo agent>>"%UNIOVER_TEST_ORDER%"', "ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"],
+        update_lines=['echo update>>"%UNIOVER_TEST_ORDER%"', "exit /b 0"],
     )
+    with (
+        heartbeat(pc.alive),
+        pc.running(UNIOVER_TEST_ORDER=str(order), UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2"),
+    ):
+        assert wait_for(order.exists, 60), pc.supervisor_log()
+        time.sleep(6)
+        assert "apenas mantido" in pc.supervisor_log()
+    assert order.read_text("ascii").split() == ["agent"], "o update rodou antes (ou sem) o agente"
+
+
+def test_repeated_quick_crashes_on_a_kept_environment_leave_one_clear_diagnostic(pc: Pc) -> None:
+    python = pc.runtime / "venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="ascii")
+    pc.uv(["exit /b 1"], sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"])
+    with pc.running(UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2"):
+        assert wait_for(
+            lambda: any(i["kind"] == "agent.env_unusable" for i in pc.diagnostics()), 120
+        ), pc.supervisor_log()
+    kinds = [i["kind"] for i in pc.diagnostics()]
+    assert kinds.count("agent.env_unusable") == 1
+    # A primeira queda ainda é uma queda comum; dali em diante não há um `process.exited` por volta.
+    assert kinds.count("process.exited") <= 1
 
 
 def test_the_agent_and_the_tray_start_without_an_implicit_sync_after_a_good_sync(
