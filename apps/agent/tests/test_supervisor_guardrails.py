@@ -578,16 +578,19 @@ def test_three_sync_timeouts_roll_back_without_blocking_the_version(pc: Pc) -> N
     assert CURRENT in (pc.runtime / ".deferred-versions").read_text(encoding="ascii")
 
 
-def test_the_update_only_skips_the_sync_once_the_environment_was_synced_for_this_version(
+def test_the_update_uses_no_sync_after_a_real_sync_and_update_now_forces_it(
     pc: Pc, tmp_path: Path
 ) -> None:
-    seen = tmp_path / "no-sync.txt"
+    seen = tmp_path / "update-env.txt"
     venv_python = pc.runtime / "venv" / "Scripts" / "python.exe"
     venv_python.parent.mkdir(parents=True)
     venv_python.write_text("", encoding="ascii")
     pc.uv(
         ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
-        update_lines=['echo [%UV_NO_SYNC%]>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
+        update_lines=[
+            'echo [%UV_NO_SYNC%][%UNIOVER_UPDATE_FORCE%]>>"%UNIOVER_TEST_UPDATES%"',
+            "exit /b 0",
+        ],
     )
     with heartbeat(pc.alive), pc.running(UNIOVER_TEST_UPDATES=str(seen)):
         assert wait_for(seen.exists, 40), pc.supervisor_log()
@@ -595,10 +598,67 @@ def test_the_update_only_skips_the_sync_once_the_environment_was_synced_for_this
         (pc.runtime / "update-now").write_text("", encoding="ascii")
         assert wait_for(lambda: len(seen.read_text("ascii").split()) >= 2, 60), pc.supervisor_log()
     lines = seen.read_text("ascii").split()
-    # O sync da primeira volta vem ANTES do update: já nela o `self-update` roda com UV_NO_SYNC.
+    # O sync da primeira volta vem ANTES do update: já nela o `self-update` roda com UV_NO_SYNC,
+    # sem forçar nada; o pedido do dono (`update-now`) passa a ordem de ignorar o adiamento.
+    assert lines[0] == "[1][]"
+    assert lines[1] == "[1][1]"
+
+
+def test_a_sync_that_only_kept_the_environment_does_not_license_no_sync_for_the_update(
+    pc: Pc, tmp_path: Path
+) -> None:
+    # Volta 1: sync de verdade (UV_NO_SYNC no update). Volta 2: o sync estoura o prazo e o ambiente
+    # existente é só mantido: o update NÃO pode rodar com UV_NO_SYNC sobre um ambiente sem sync.
+    seen = tmp_path / "update-env.txt"
+    flag = tmp_path / "sync-flag.txt"
+    python = pc.runtime / "venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="ascii")
+    pc.uv(
+        ["ping -n 3 127.0.0.1 > nul", "exit /b 0"],
+        sync_lines=[
+            'if exist "%UNIOVER_TEST_FLAG%" ping -n 60 127.0.0.1 > nul',
+            'echo x>"%UNIOVER_TEST_FLAG%"',
+            "exit /b 0",
+        ],
+        update_lines=['echo [%UV_NO_SYNC%]>>"%UNIOVER_TEST_UPDATES%"', "exit /b 0"],
+    )
+    with pc.running(
+        UNIOVER_TEST_UPDATES=str(seen),
+        UNIOVER_TEST_FLAG=str(flag),
+        UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
+    ):
+        assert wait_for(lambda: "o agente terminou" in pc.supervisor_log(), 60), pc.supervisor_log()
+        # Só agora (a volta 1 acabou) o dono pede o update da volta 2.
+        (pc.runtime / "update-now").write_text("", encoding="ascii")
+        assert wait_for(lambda: len(seen.read_text("ascii").split()) >= 2, 90), pc.supervisor_log()
+    lines = seen.read_text("ascii").split()
     assert lines[0] == "[1]"
-    # Depois do sync desta versão, o update não re-sincroniza o ambiente do agente em execução.
-    assert lines[1] == "[1]"
+    assert lines[1] == "[]", (
+        "o update rodou com UV_NO_SYNC sobre um ambiente que não foi sincronizado"
+    )
+
+
+def test_the_agent_and_the_tray_start_without_an_implicit_sync_after_a_good_sync(
+    pc: Pc, tmp_path: Path
+) -> None:
+    # `uv run` sem UV_NO_SYNC faria um sync implícito (sem prazo nem --frozen): o `uv` falso o
+    # simula.
+    agent_env = tmp_path / "agent-env.txt"
+    tray_env = tmp_path / "tray-env.txt"
+    note = 'if "%UV_NO_SYNC%"=="1" (echo nosync>>"{f}") else (echo implicit-sync>>"{f}")'
+    pc.uv(
+        [note.format(f="%UNIOVER_TEST_AGENT_ENV%"), "ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        tray_lines=[note.format(f="%UNIOVER_TEST_TRAY_ENV%"), "ping -n 300 127.0.0.1 > nul"],
+    )
+    with (
+        heartbeat(pc.alive),
+        pc.running(UNIOVER_TEST_AGENT_ENV=str(agent_env), UNIOVER_TEST_TRAY_ENV=str(tray_env)),
+    ):
+        assert wait_for(agent_env.exists, 40), pc.supervisor_log()
+        assert wait_for(tray_env.exists, 40), pc.supervisor_log()
+    assert agent_env.read_text("ascii").split() == ["nosync"]
+    assert tray_env.read_text("ascii").split() == ["nosync"]
 
 
 def trial_with_previous(pc: Pc) -> None:
@@ -624,21 +684,44 @@ def test_the_first_lap_syncs_before_it_updates(pc: Pc, tmp_path: Path) -> None:
     assert order.read_text("ascii").split()[:2] == ["sync", "update"]
 
 
-def test_a_sync_that_times_out_on_a_full_disk_still_starts_the_agent(pc: Pc) -> None:
+def test_a_sync_that_times_out_on_a_full_disk_still_starts_the_agent_without_a_new_sync(
+    pc: Pc, tmp_path: Path
+) -> None:
     # O incidente: disco cheio e `uv sync` preso. Havendo um ambiente que já rodou (versão estável),
-    # o agente sobe com ele em vez de esperar o disco para sempre.
+    # o agente sobe com ele, e sem UV_NO_SYNC o `uv run` dele refaria o mesmo sync, sem prazo: o
+    # `uv` falso simula esse sync implícito e o teste confere o que o `run` recebe.
+    agent_env = tmp_path / "agent-env.txt"
     python = pc.runtime / "venv" / "Scripts" / "python.exe"
     python.parent.mkdir(parents=True)
     python.write_text("", encoding="ascii")
+    target = '"%UNIOVER_TEST_AGENT_ENV%"'
+    note = f'if "%UV_NO_SYNC%"=="1" (echo nosync>>{target}) else (echo implicit-sync>>{target})'
     pc.uv(
-        ["ping -n 300 127.0.0.1 > nul", "exit /b 0"],
+        [note, "ping -n 300 127.0.0.1 > nul", "exit /b 0"],
         sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"],
     )
     with pc.running(
+        UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2",
+        UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999",
+        UNIOVER_TEST_AGENT_ENV=str(agent_env),
+    ):
+        assert wait_for(agent_env.exists, 60), pc.supervisor_log()
+        assert wait_for(lambda: any(i["kind"] == "update.low_disk" for i in pc.diagnostics()), 10)
+    assert agent_env.read_text("ascii").split() == ["nosync"]
+
+
+def test_the_low_disk_diagnostic_is_not_repeated_on_every_lap(pc: Pc) -> None:
+    python = pc.runtime / "venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="ascii")
+    pc.uv(["exit /b 0"], sync_lines=["ping -n 60 127.0.0.1 > nul", "exit /b 0"])
+    with pc.running(
         UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2", UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999"
     ):
-        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
-        assert wait_for(lambda: any(i["kind"] == "update.low_disk" for i in pc.diagnostics()), 10)
+        # O agente sai logo e o laço volta várias vezes no intervalo.
+        assert wait_for(lambda: pc.starts() >= 3, 90), pc.supervisor_log()
+    low = [i for i in pc.diagnostics() if i["kind"] == "update.low_disk"]
+    assert len(low) == 1, "o diagnóstico de pouco espaço foi repetido a cada volta"
 
 
 def test_three_sync_failures_from_a_full_disk_roll_back_without_blocking(pc: Pc) -> None:

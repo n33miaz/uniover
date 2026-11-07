@@ -265,6 +265,8 @@ function Invoke-Supervisor([string]$Script) {
     if ($oldStyle -and $legacyStaleSeconds -gt $limit) { $limit = $legacyStaleSeconds }
     # Um script que nem sabe do `supervisor-alive` (um fallback ou legado de uma instalacao antiga) nunca o grava: o silencio
     # dele nao diz nada, e vigia-lo pelo pulso o mataria a cada prazo mesmo sadio. Esse e esperado como antes da vigia.
+    # Troca consciente: se um desses travar de fato, volta a ser esperado sem prazo, como antes da vigia (e o autocuidado do
+    # agente tambem nao o pega: ele procura o `app\tools\run-agent.ps1`). O preco e menor que o de mata-lo estando sadio.
     $writesPulse = $true
     try { $writesPulse = [bool](Select-String -LiteralPath $Script -Pattern 'supervisor-alive|Touch-Alive|Invoke-Bounded' -Quiet -ErrorAction Stop) } catch { }
     if (-not $writesPulse) { $limit = [double]::MaxValue }

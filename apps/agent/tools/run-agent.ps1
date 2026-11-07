@@ -266,11 +266,13 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     # A causa da ultima falha (error, timeout, lowdisk): so `error` e defeito da versao; a volta atras por qualquer das
     # outras nao a bloqueia (a falha foi do PC).
     $script:lastSyncCause = 'error'
+    # `syncReal`: o sync passou de fato (e nao so o ambiente existente foi mantido): so ele autoriza o UV_NO_SYNC do update.
+    $script:syncReal = $false
     # --frozen: o uv.lock manda (dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha), sem que
     # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC. Com prazo: um uv preso nao prende o supervisor.
     $arguments = 'sync --frozen --project "' + $source + '" --quiet'
     $run = Invoke-Bounded $Uv $arguments $syncTimeoutSeconds
-    if (-not $run.TimedOut -and $run.ExitCode -eq 0) { return $true }
+    if (-not $run.TimedOut -and $run.ExitCode -eq 0) { $script:syncReal = $true; return $true }
     Write-SupLog 'WARNING' ('uv sync falhou (' + (Get-RunDescription $run $syncTimeoutSeconds) + '): ' + (Get-Tail $run.Output))
     # Um sync que so passou do prazo (rede lenta, antivirus) nao e um ambiente estragado: apagar o venv jogaria fora o
     # que o cache do uv ja andou e pioraria a proxima tentativa. O ambiente fica e a proxima volta continua dele.
@@ -283,7 +285,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
         # estoura o prazo (disco cheio, rede lenta) nao pode manter o agente fora do ar enquanto ha um ambiente bom no lugar.
         # Em prova a versao precisa do ambiente novo: continua contando como falha (e volta para a anterior).
         if (-not $KeepEnvironment -and (Test-Path -LiteralPath (Join-Path (Join-Path $runtime 'venv') 'Scripts\python.exe'))) {
-            if ($lowDisk) { Add-Diagnostic 'update.low_disk' 'error' 'pouco espaco em disco: o sync estourou o prazo e o agente subiu com o ambiente atual' }
+            if ($lowDisk) { Note-LowDiskDiagnostic 'error' 'pouco espaco em disco: o sync estourou o prazo e o agente subiu com o ambiente atual' }
             Write-SupLog 'WARNING' 'subo o agente com o ambiente Python que ja existe'
             return $true
         }
@@ -301,7 +303,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     # Disco quase cheio: refazer o ambiente (centenas de MB) so pioraria. O ambiente que existe e mantido e o agente sobe
     # com ele; sem ambiente nenhum nao ha o que subir e a volta seguinte tenta de novo quando houver espaco.
     if ($lowDisk) {
-        Add-Diagnostic 'update.low_disk' 'error' 'pouco espaco em disco: o ambiente Python nao foi refeito'
+        Note-LowDiskDiagnostic 'error' 'pouco espaco em disco: o ambiente Python nao foi refeito'
         if (Test-Path -LiteralPath (Join-Path $venv 'Scripts\python.exe')) {
             Write-SupLog 'WARNING' 'pouco espaco em disco; mantenho o ambiente Python e subo o agente com ele'
             return $true
@@ -317,6 +319,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
         return $false
     }
     Write-SupLog 'INFO' 'o ambiente Python foi refeito'
+    $script:syncReal = $true
     return $true
 }
 
@@ -344,7 +347,16 @@ function Get-UpdateOutcome {
 }
 
 $script:lowDiskNotedAt = [DateTime]::MinValue
-function Invoke-Update([string]$Uv) {
+$script:lowDiskDiagAt = [DateTime]::MinValue
+function Note-LowDiskDiagnostic([string]$Severity, [string]$Detail) {
+    # No maximo um diagnostico de pouco espaco a cada 30 min (como o aviso no registro): com o disco cheio o supervisor
+    # voltaria a ele a cada volta e encheria a fila justamente onde nao ha espaco.
+    if (((Get-Date) - $script:lowDiskDiagAt).TotalMinutes -lt 30) { return }
+    $script:lowDiskDiagAt = Get-Date
+    Add-Diagnostic 'update.low_disk' $Severity $Detail
+}
+
+function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
     $before = Get-Version
     # O supervisor reabre logo apos a troca; uma versao em prova ainda nao deve iniciar outra checagem.
     if (Test-Path -LiteralPath $trial) {
@@ -360,7 +372,7 @@ function Invoke-Update([string]$Uv) {
             $script:lowDiskNotedAt = Get-Date
             Write-SupLog 'WARNING' ('pouco espaco em disco (' + $free + ' MB livres); nao atualizo agora')
         }
-        Add-Diagnostic 'update.low_disk' 'warn' ('pouco espaco em disco (' + $free + ' MB livres); a atualizacao foi adiada')
+        Note-LowDiskDiagnostic 'warn' ('pouco espaco em disco (' + $free + ' MB livres); a atualizacao foi adiada')
         return $false
     }
     $env:UV = $Uv
@@ -373,8 +385,13 @@ function Invoke-Update([string]$Uv) {
     # sincroniza sozinho, como sempre fez.
     $venvPython = Join-Path $runtime 'venv\Scripts\python.exe'
     if ($script:syncedVersion -and $script:syncedVersion -eq $before -and (Test-Path -LiteralPath $venvPython)) { $env:UV_NO_SYNC = '1' }
+    # Um pedido explicito do dono (`update-now`) vale mais que o adiamento de 24 h de uma versao devolvida por culpa do PC.
+    if ($Forced) { $env:UNIOVER_UPDATE_FORCE = '1' }
     try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" uniover-agent self-update') $updateTimeoutSeconds }
-    finally { Remove-Item -LiteralPath 'Env:UV_NO_SYNC' -ErrorAction SilentlyContinue }
+    finally {
+        Remove-Item -LiteralPath 'Env:UV_NO_SYNC' -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath 'Env:UNIOVER_UPDATE_FORCE' -ErrorAction SilentlyContinue
+    }
     $exitCode = $run.ExitCode
     $output = $run.Output
     $after = Get-Version
@@ -477,18 +494,21 @@ function Note-Run([double]$Seconds) {
 # Nenhum processo novo pode abrir (nem piscar) uma janela. Este script ja roda num console oculto, e os filhos
 # chamados direto (`& $Uv ...`, `& taskkill.exe ...`) herdam esse console. Para o que precisa ficar vivo em paralelo
 # usamos a classe Process com CreateNoWindow: o Start-Process cria um console novo e so depois o esconde (pisca).
-function Start-Hidden([string]$File, [string]$Arguments) {
+function Start-Hidden([string]$File, [string]$Arguments, [bool]$NoSync = $false) {
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $File
     $info.Arguments = $Arguments
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
+    # So no filho (o ambiente do supervisor nao muda): o `uv run` do agente e do icone nao faz sync implicito, sem prazo e sem
+    # --frozen, num ambiente que este supervisor acabou de preparar (ou de manter) com prazo.
+    if ($NoSync) { $info.EnvironmentVariables['UV_NO_SYNC'] = '1' }
     return [System.Diagnostics.Process]::Start($info)
 }
 
 function Start-Tray([string]$Uv) {
     $arguments = 'run --project "' + $source + '" uniover-agent tray'
-    return Start-Hidden $Uv $arguments
+    return Start-Hidden $Uv $arguments ([bool]$script:noSyncLaunch)
 }
 
 function Get-LogonTime {
@@ -868,14 +888,19 @@ while ($true) {
     $synced = $true
     if (-not $script:ownedElsewhere) {
         $synced = Sync-Agent $uv $rollbackReady
-        if ($synced) { $script:syncedVersion = Get-Version }
+        # `syncedVersion` (UV_NO_SYNC do update) so com sync real desta versao: falha ou ambiente apenas mantido o limpam.
+        # `noSyncLaunch` (agente e icone) vale tambem com o ambiente mantido: o sync acabou de rodar, com prazo.
+        $script:syncedVersion = $null
+        if ($synced -and $script:syncReal) { $script:syncedVersion = Get-Version }
+        $script:noSyncLaunch = $synced
     }
     # O update roda mesmo com o sync falho: uma versao nova pode ser a cura de um ambiente que a atual nao consegue preparar
     # (sem o sync bom, sem UV_NO_SYNC: o `uv run` sincroniza sozinho, com prazo).
     $updated = $false
-    if ((Get-Date) -ge $nextUpdate -or (Test-Path (Join-Path $runtime 'update-now'))) {
+    $forceUpdate = Test-Path (Join-Path $runtime 'update-now')
+    if ((Get-Date) -ge $nextUpdate -or $forceUpdate) {
         Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
-        $updated = Invoke-Update $uv
+        $updated = Invoke-Update $uv $forceUpdate
         $updateFailures = if ((Get-UpdateOutcome) -eq 'failed') { $updateFailures + 1 } else { 0 }
         $nextUpdate = Schedule-NextUpdate $updateFailures
         if ($updated) {
@@ -904,12 +929,11 @@ while ($true) {
     }
     $syncFalls = 0
     $syncErrorFalls = 0
-    $script:syncedVersion = Get-Version
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
     Update-Tray $uv
     Ensure-AgentPulse
     $arguments = 'run --project "' + $source + '" uniover-agent run'
-    $process = Start-Hidden $uv $arguments
+    $process = Start-Hidden $uv $arguments ([bool]$script:noSyncLaunch)
     $started = Get-Date
     Write-SupLog 'INFO' ('agente iniciado (pid ' + $process.Id + ')')
     $restartForUpdate = $false
@@ -969,9 +993,10 @@ while ($true) {
                 if (Invoke-Rollback) { exit 42 }
             }
         }
-        if ((Get-Date) -ge $nextUpdate -or (Test-Path (Join-Path $runtime 'update-now'))) {
+        $forceUpdate = Test-Path (Join-Path $runtime 'update-now')
+        if ((Get-Date) -ge $nextUpdate -or $forceUpdate) {
             Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
-            if (Invoke-Update $uv) {
+            if (Invoke-Update $uv $forceUpdate) {
                 Set-StopReason 'update'
                 & taskkill.exe /PID $process.Id /T /F *> $null
                 $restartForUpdate = $true
