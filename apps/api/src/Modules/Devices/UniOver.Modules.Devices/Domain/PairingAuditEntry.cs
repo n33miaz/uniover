@@ -39,6 +39,29 @@ public static class PairingEvents
     public const string PcShutdown = "pc_shutdown";
     public const string PcShutdownCancelled = "pc_shutdown_cancelled";
     public const string PcAppLaunch = "pc_app_launch";
+
+    // A tentativa das mesmas ações que o agente recusou, não conseguiu ou não respondeu a tempo (pode ter agido mesmo assim).
+    // A tabela não tem coluna de resultado: o sufixo é o resultado, e a trilha unificada o lê como falha. Nunca leva texto digitado.
+    public const string PcLockFailed = "pc_lock_failed";
+    public const string PcSleepFailed = "pc_sleep_failed";
+    public const string PcShutdownFailed = "pc_shutdown_failed";
+    public const string PcShutdownCancelFailed = "pc_shutdown_cancel_failed";
+    public const string PcAppLaunchFailed = "pc_app_launch_failed";
+
+    /// <summary>As linhas de tentativa que não deu certo (a falha do controle do PC).</summary>
+    public static readonly string[] PcFailures =
+        [PcLockFailed, PcSleepFailed, PcShutdownFailed, PcShutdownCancelFailed, PcAppLaunchFailed];
+
+    /// <summary>A linha de tentativa que corresponde a uma ação do PC auditada no sucesso; nulo para o que não é dessas.</summary>
+    public static string? PcFailureOf(string succeededEvent) => succeededEvent switch
+    {
+        PcLock => PcLockFailed,
+        PcSleep => PcSleepFailed,
+        PcShutdown => PcShutdownFailed,
+        PcShutdownCancelled => PcShutdownCancelFailed,
+        PcAppLaunch => PcAppLaunchFailed,
+        _ => null,
+    };
 }
 
 /// <summary>

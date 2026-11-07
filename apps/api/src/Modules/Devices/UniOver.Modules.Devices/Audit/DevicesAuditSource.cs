@@ -33,6 +33,11 @@ internal static class DevicesAuditActions
         (PairingEvents.PcShutdown, "pc_shutdown"),
         (PairingEvents.PcShutdownCancelled, "pc_shutdown_cancelled"),
         (PairingEvents.PcAppLaunch, "pc_app_launch"),
+        (PairingEvents.PcLockFailed, "pc_lock_failed"),
+        (PairingEvents.PcSleepFailed, "pc_sleep_failed"),
+        (PairingEvents.PcShutdownFailed, "pc_shutdown_failed"),
+        (PairingEvents.PcShutdownCancelFailed, "pc_shutdown_cancel_failed"),
+        (PairingEvents.PcAppLaunchFailed, "pc_app_launch_failed"),
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. Map.Select(m => m.Action)];
@@ -53,6 +58,9 @@ internal static class DevicesAuditNormalizer
         // Um pedido que o administrador recusou, e um que venceu sem ser aprovado, não foram um sucesso.
         PairingEvents.Denied => AuditOutcome.Denied,
         PairingEvents.Expired => AuditOutcome.Failure,
+
+        // A tentativa do controle do PC que o agente recusou, não conseguiu ou não respondeu a tempo.
+        _ when PairingEvents.PcFailures.Contains(storedEvent) => AuditOutcome.Failure,
         _ => AuditOutcome.Success,
     };
 
@@ -110,11 +118,12 @@ internal sealed class DevicesAuditSource(DevicesDbContext db) : IAuditSource
         {
             var denied = PairingEvents.Denied;
             var expired = PairingEvents.Expired;
+            var pcFailures = PairingEvents.PcFailures;
             rows = outcome switch
             {
                 AuditOutcome.Denied => rows.Where(r => r.Event == denied),
-                AuditOutcome.Failure => rows.Where(r => r.Event == expired),
-                _ => rows.Where(r => r.Event != denied && r.Event != expired),
+                AuditOutcome.Failure => rows.Where(r => r.Event == expired || pcFailures.Contains(r.Event)),
+                _ => rows.Where(r => r.Event != denied && r.Event != expired && !pcFailures.Contains(r.Event)),
             };
         }
 

@@ -29,6 +29,11 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.PcShutdown, "pc_shutdown", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcShutdownCancelled, "pc_shutdown_cancelled", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcAppLaunch, "pc_app_launch", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcLockFailed, "pc_lock_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcSleepFailed, "pc_sleep_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcShutdownFailed, "pc_shutdown_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcShutdownCancelFailed, "pc_shutdown_cancel_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcAppLaunchFailed, "pc_app_launch_failed", AuditOutcome.Failure)]
     public void EachStoredEvent_BecomesAnUnambiguousActionWithAnOutcome(string stored, string action, AuditOutcome outcome)
     {
         var record = DevicesAuditNormalizer.Normalize(
@@ -86,5 +91,26 @@ public class DevicesAuditNormalizerTests
     {
         DevicesAuditActions.ToAction("algo_novo").Should().Be("algo_novo");
         DevicesAuditActions.ToStored("algo_novo").Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(PairingEvents.PcLock, PairingEvents.PcLockFailed)]
+    [InlineData(PairingEvents.PcSleep, PairingEvents.PcSleepFailed)]
+    [InlineData(PairingEvents.PcShutdown, PairingEvents.PcShutdownFailed)]
+    [InlineData(PairingEvents.PcShutdownCancelled, PairingEvents.PcShutdownCancelFailed)]
+    [InlineData(PairingEvents.PcAppLaunch, PairingEvents.PcAppLaunchFailed)]
+    public void EveryAuditedPcAction_HasATryThatFailedCounterpart_ThatFitsTheColumn(string succeeded, string failed)
+    {
+        PairingEvents.PcFailureOf(succeeded).Should().Be(failed);
+        PairingEvents.PcFailures.Should().Contain(failed);
+        failed.Length.Should().BeLessThanOrEqualTo(40, "a coluna do evento tem 40 caracteres");
+    }
+
+    [Fact]
+    public void ActionsThatAreNotAuditedOnSuccess_HaveNoFailedCounterpart()
+    {
+        PairingEvents.PcFailureOf(PairingEvents.Approved).Should().BeNull();
+        PairingEvents.PcFailureOf("pc_text").Should().BeNull();
+        PairingEvents.PcFailures.Should().HaveCount(5).And.OnlyHaveUniqueItems();
     }
 }
