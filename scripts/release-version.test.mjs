@@ -348,7 +348,7 @@ test('cada arquivo pertence ao módulo dos seus caminhos', () => {
   assert.deepEqual(modulesForFile(`${API}/Identity/UniOver.Modules.Identity/IdentityModule.cs`), ['identity']);
   assert.deepEqual(modulesForFile(`${API}/Training/UniOver.Modules.Training/X.cs`), ['training']);
   assert.deepEqual(modulesForFile('apps/web/src/app/modules/tv/tv.page.ts'), ['tv']);
-  assert.deepEqual(modulesForFile('apps/web/src/app/modules/settings/system.page.ts'), ['identity']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/settings/profile.page.ts'), ['identity']);
   assert.deepEqual(modulesForFile('apps/web/src/app/modules/pc/pc-page.ts'), ['devices']);
   assert.deepEqual(modulesForFile('apps/web/src/app/modules/training/x.ts'), ['training']);
   assert.deepEqual(modulesForFile('contracts/agent/messages/tv.key.v3.schema.json'), ['tv']);
@@ -455,6 +455,8 @@ test('verify recusa modules.json ausente, inválido ou com módulo atrás da tag
 test('verify aceita módulos iguais ou maiores que os da tag, e tag sem modules.json', () => {
   withFixture('0.5.0', (root) => {
     git(root, 'tag', 'v0.4.0'); // o arquivo já existia na tag e não mudou
+    assert.match(verify(root), /0\.5\.0/);
+    put(root, 'modules.json', modulesJson('0.5.0', { tv: '0.5.4' })); // maior que o da tag
     assert.match(verify(root), /0\.5\.0/);
   });
   withFixture('0.5.0', (root) => {
@@ -565,3 +567,122 @@ test('a entrada do changelog traz os módulos que subiram, em ### com tipos em #
       '### Agent 0.4.4\n\n#### Bug Fixes\n\n* **api:** keep the TV on\n\n',
   );
 });
+
+test('settings: só os arquivos de conta são do identity; o resto da pasta é do web', () => {
+  const settings = 'apps/web/src/app/modules/settings/';
+  for (const file of [
+    'profile.page.ts',
+    'password-section.ts',
+    'sessions-section.html',
+    'security-section.ts',
+    'security.page.ts',
+    'totp-section.ts',
+    'recovery-code-section.ts',
+    'guests-section.ts',
+    'people-api.ts',
+    'people-permissions-sheet.css',
+    'people.page.ts',
+  ]) {
+    assert.deepEqual(modulesForFile(settings + file), ['identity'], file);
+  }
+  for (const file of [
+    'system.page.ts',
+    'system-health-section.ts',
+    'system-api.ts',
+    'audit.page.ts',
+    'siri.page.ts',
+    'appearance.page.ts',
+    'about.page.ts',
+    'settings.page.ts',
+    'agent-diagnostics.ts',
+  ]) {
+    assert.deepEqual(modulesForFile(settings + file), ['web'], file);
+  }
+});
+
+test('o launcher da TV é do tv; o envelope é do devices; as mensagens do agente em si são do agent', () => {
+  assert.deepEqual(modulesForFile('apps/tv-launcher/app/src/Main.kt'), ['tv']);
+  assert.deepEqual(modulesForFile('contracts/tv-launcher/config.v1.schema.json'), ['tv']);
+  assert.deepEqual(modulesForFile('contracts/agent/envelope.schema.json'), ['devices']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/agent.update.status.v1.schema.json'), ['agent']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/agent.diagnostics.v1.schema.json'), ['agent']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/agent.hello.v1.schema.json'), ['devices']);
+  assert.deepEqual(modulesForFile('contracts/agent/messages/agent.logs.v1.schema.json'), ['devices']);
+});
+
+test('prepare conta o commit de corpo com BREAKING CHANGE lido do git de verdade', () =>
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    put(root, `${API}/Training/UniOver.Modules.Training/Plan.cs`, 'x\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'fix(api): troca o plano', '-m', 'BREAKING CHANGE: o plano muda de forma');
+    prepare(root, 'patch', '2026-10-28');
+    assert.equal(JSON.parse(read(root, 'modules.json')).training, '1.0.0');
+  }));
+
+test('prepare conta os dois lados de uma renomeação', () =>
+  withFixture('0.4.0', (root) => {
+    commitFiles(root, 'feat(api): arquivo da tv', `${API}/Tv/UniOver.Modules.Tv/Moved.cs`);
+    git(root, 'tag', 'v0.4.0');
+    mkdirSync(join(root, 'apps/api/src/UniOver.Host'), { recursive: true });
+    git(root, 'mv', `${API}/Tv/UniOver.Modules.Tv/Moved.cs`, 'apps/api/src/UniOver.Host/Moved.cs');
+    git(root, 'commit', '-q', '-m', 'refactor: move para o host');
+
+    prepare(root, 'patch', '2026-10-28');
+
+    // O host não é de módulo nenhum; o tv perdeu o arquivo e sobe.
+    assert.deepEqual(JSON.parse(read(root, 'modules.json')), {
+      ...JSON.parse(modulesJson('0.4.0')),
+      tv: '0.4.1',
+    });
+  }));
+
+test('prepare conta a resolução de conflito de um merge, e ignora um merge limpo', () => {
+  withFixture('0.4.0', (root) => {
+    const conflict = `${API}/Tv/UniOver.Modules.Tv/Conflict.cs`;
+    commitFiles(root, 'chore: base do tv', conflict);
+    git(root, 'tag', 'v0.4.0');
+    git(root, 'checkout', '-q', '-b', 'lado');
+    put(root, conflict, 'lado\n');
+    git(root, 'commit', '-q', '-am', 'chore: lado');
+    git(root, 'checkout', '-q', 'develop');
+    put(root, conflict, 'develop\n');
+    git(root, 'commit', '-q', '-am', 'chore: develop');
+    assert.throws(() => git(root, 'merge', '--no-ff', 'lado'));
+    put(root, conflict, 'resolvido\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'Merge branch lado');
+
+    prepare(root, 'patch', '2026-10-28');
+
+    const modules = JSON.parse(read(root, 'modules.json'));
+    assert.equal(modules.tv, '0.4.1');
+    assert.equal(modules.agent, '0.4.0');
+  });
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    git(root, 'checkout', '-q', '-b', 'lado');
+    commit(root, 'chore: lado sem arquivos');
+    git(root, 'checkout', '-q', 'develop');
+    commit(root, 'chore: develop sem arquivos');
+    git(root, 'merge', '--no-ff', '-q', '-m', 'Merge branch lado', 'lado');
+    prepare(root, 'patch', '2026-10-28');
+    assert.equal(read(root, 'modules.json'), modulesJson('0.4.0'));
+  });
+});
+
+test('prepare aguenta um log grande (maxBuffer)', () =>
+  withFixture('0.4.0', (root) => {
+    git(root, 'tag', 'v0.4.0');
+    for (let i = 0; i < 600; i += 1) put(root, `apps/agent/src/${'d'.repeat(120)}/arquivo-${i}.py`, 'x\n');
+    git(root, 'add', '-A');
+    const message = join(tmpdir(), `release-version-msg-${process.pid}.txt`);
+    writeFileSync(message, `feat(agent): muitos arquivos
+
+${'corpo '.repeat(200000)}
+`, 'utf8');
+    git(root, 'commit', '-q', '-F', message);
+    rmSync(message, { force: true });
+    prepare(root, 'patch', '2026-10-28');
+    assert.equal(JSON.parse(read(root, 'modules.json')).agent, '0.5.0');
+  }));

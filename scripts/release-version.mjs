@@ -25,24 +25,54 @@ const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:/m;
 export const MODULE_NAMES = ['identity', 'devices', 'tv', 'training', 'web', 'agent'];
 const MODULE_LABELS = { identity: 'Identity', devices: 'Devices', tv: 'TV', training: 'Training', web: 'Web', agent: 'Agent' };
 
-// Os caminhos de cada módulo (prefixos, com a barra final nas pastas). O módulo de API traz a pasta inteira (o projeto,
-// os Contracts e o transporte), a pasta de tela com o mesmo assunto e as mensagens do agente que ele atende. Testes não
-// contam: não mudam o que é publicado. `web` é o app Angular menos as pastas de módulo acima (evita subir duas vezes).
+// Os caminhos de cada módulo (prefixos, com a barra final nas pastas). Regras:
+//  - O módulo de API traz a pasta inteira (o projeto, os Contracts e o transporte), a pasta de tela com o mesmo assunto e
+//    as mensagens do agente que ele atende. Testes não contam: não mudam o que é publicado.
+//  - identity: só os arquivos de conta da pasta de ajustes (perfil, senha, sessões, segurança, pessoas e convidados). O
+//    resto de settings/ (Sistema, auditoria, Siri, aparência, sobre...) é do `web`.
+//  - devices: as mensagens pc.*, agent.*, api.* e command.* e o envelope, porque o módulo é dono da conexão do agente.
+//  - agent: as mensagens agent.update.status.* e agent.diagnostics.*, que só o programa do agente produz (valem em vez
+//    de devices, ver OVERRIDES), e apps/agent/.
+//  - tv: o módulo de API e de tela, as mensagens tv.* e o launcher da TV (apps/tv-launcher e contracts/tv-launcher).
+//  - web: o app Angular menos tudo que as regras acima reivindicam (evita subir duas vezes).
+const SETTINGS = 'apps/web/src/app/modules/settings/';
 const MODULE_PATHS = {
-  identity: ['apps/api/src/Modules/Identity/', 'apps/web/src/app/modules/settings/'],
+  identity: [
+    'apps/api/src/Modules/Identity/',
+    `${SETTINGS}profile.`,
+    `${SETTINGS}password-section.`,
+    `${SETTINGS}sessions-section.`,
+    `${SETTINGS}security`,
+    `${SETTINGS}totp-section.`,
+    `${SETTINGS}recovery-code-section.`,
+    `${SETTINGS}guests-section.`,
+    `${SETTINGS}people`,
+  ],
   devices: [
     'apps/api/src/Modules/Devices/',
     'apps/web/src/app/modules/devices/',
     'apps/web/src/app/modules/pc/',
+    'contracts/agent/envelope.schema.json',
     'contracts/agent/messages/pc.',
     'contracts/agent/messages/agent.',
     'contracts/agent/messages/api.',
     'contracts/agent/messages/command.',
   ],
-  tv: ['apps/api/src/Modules/Tv/', 'apps/web/src/app/modules/tv/', 'contracts/agent/messages/tv.'],
+  tv: [
+    'apps/api/src/Modules/Tv/',
+    'apps/web/src/app/modules/tv/',
+    'contracts/agent/messages/tv.',
+    'apps/tv-launcher/',
+    'contracts/tv-launcher/',
+  ],
   training: ['apps/api/src/Modules/Training/', 'apps/web/src/app/modules/training/'],
   agent: ['apps/agent/'],
 };
+// Prefixos que valem em vez dos de MODULE_PATHS (o arquivo é só do módulo indicado).
+const OVERRIDES = [
+  ['contracts/agent/messages/agent.update.status.', 'agent'],
+  ['contracts/agent/messages/agent.diagnostics.', 'agent'],
+];
 const WEB_PREFIX = 'apps/web/';
 
 // Cada lugar onde a versão aparece além de VERSION: como ler, e como trocar.
@@ -121,6 +151,8 @@ export function commitLevel(subject, body = '') {
 
 /** Os módulos a que um arquivo (caminho relativo à raiz, com `/`) pertence. Pode ser mais de um, ou nenhum. */
 export function modulesForFile(file) {
+  const override = OVERRIDES.find(([prefix]) => file.startsWith(prefix));
+  if (override) return [override[1]];
   const found = new Set();
   for (const [name, prefixes] of Object.entries(MODULE_PATHS)) {
     if (prefixes.some((prefix) => file.startsWith(prefix))) found.add(name);
@@ -194,7 +226,13 @@ export function changelogSection(version, previousVersion, commits, date, module
 }
 
 function git(root, args) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  // maxBuffer folgado: o log traz corpo e arquivos de cada commit, e muitos commits estouravam o 1 MB padrão (ENOBUFS).
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 512 * 1024 * 1024,
+  }).trim();
 }
 
 function gitSucceeds(root, args) {
@@ -339,15 +377,18 @@ export function baseRevision(root, tag) {
 
 /** Os commits depois de `base`, cada um com o corpo, os arquivos que tocou e os módulos a que eles pertencem. */
 function commitsSince(root, base) {
-  // Depois do último \x1f vêm os nomes dos arquivos do commit (--name-only), um por linha.
+  // Depois do último \x1f vêm os arquivos do commit (--name-status), um por linha: `M\tcaminho`, e `R100\tantigo\tnovo`
+  // nas renomeações, em que os dois lados contam (o módulo que perdeu o arquivo também mudou). Os merges entram com a
+  // diferença combinada (--cc): só o que o próprio merge mudou, como a resolução de um conflito; um merge limpo não lista
+  // arquivo nenhum, e o que veio da outra ponta já conta pelos commits dela.
   const output = git(root, [
     '-c',
     'core.quotepath=off',
     'log',
     `${base}..HEAD`,
-    '--no-merges',
+    '--diff-merges=dense-combined',
     '--reverse',
-    '--name-only',
+    '--name-status',
     '--format=%x1e%H%x1f%s%x1f%b%x1f',
   ]);
   return output
@@ -356,7 +397,10 @@ function commitsSince(root, base) {
     .filter(Boolean)
     .map((record) => {
       const [sha, subject, body, names] = record.split('\x1f');
-      const files = names.split(/\r?\n/).filter(Boolean);
+      const files = names
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .flatMap((line) => line.split('\t').slice(1));
       return { sha, subject, body: body.trim(), files, modules: commitModules(files) };
     });
 }
