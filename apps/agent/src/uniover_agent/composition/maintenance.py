@@ -1,6 +1,7 @@
 """Manutenção do agente: `diagnose` e `self-update`."""
 
 import logging
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -59,7 +60,14 @@ def update_agent(
     channel = settings.update_channel if settings is not None else DEFAULT_CHANNEL
     _safely(record_updating, status_file, datetime.now(UTC))
     try:
-        result = self_update(agent_source_dir(), sync=sync, channel=channel)
+        # Um pedido explícito do dono (`update-now`), que o supervisor passa por esta variável, vale
+        # mais que o adiamento de uma versão devolvida por culpa do PC.
+        result = self_update(
+            agent_source_dir(),
+            sync=sync,
+            channel=channel,
+            ignore_deferral=os.environ.get("UNIOVER_UPDATE_FORCE") == "1",
+        )
     except Exception as exc:
         # Não devia acontecer (a atualização devolve o motivo); se ocorrer, o estado diz que falhou.
         _log.exception("a auto-atualização falhou de forma inesperada")

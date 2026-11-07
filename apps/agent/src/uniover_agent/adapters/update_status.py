@@ -118,6 +118,21 @@ def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
     """O que a checagem concluiu. Atualizar com sucesso encerra a volta atrás e o bloqueio."""
     if result.outcome is None:
         return
+    if result.outcome == "deferred":
+        # Neutro: nada mudou. `record_updating` trocou o resultado por "atualizando"; devolve o
+        # que havia (a volta atrás que acabou de acontecer, ou "em dia"), sem o rótulo de falha.
+        state = _load(path)
+        previous = "rolled_back" if state.get("rolledBack") is True else "up_to_date"
+        record_status(
+            path,
+            {
+                "outcome": previous,
+                "checkedAt": format_time(now),
+                "reason": None,
+                **({"latestSha": result.latest} if result.latest is not None else {}),
+            },
+        )
+        return
     changes: dict[str, Any] = {
         "outcome": result.outcome,
         "checkedAt": format_time(now),

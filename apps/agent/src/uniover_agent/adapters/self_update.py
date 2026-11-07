@@ -425,27 +425,35 @@ def extract_agent(archive: Path, destination: Path) -> None:
 
 
 DEFERRED_VERSIONS_FILE = ".deferred-versions"
-DEFER_SECONDS = 24 * 3600.0
+# O adiamento cresce a cada devolução do mesmo commit: 24 h, 72 h, uma semana. Num PC que segue
+# lento, tentar de novo todo dia custaria uns 50 min fora do ar por dia (o sync em prova, 3 vezes).
+DEFER_STEPS_SECONDS = (24 * 3600.0, 72 * 3600.0, 7 * 24 * 3600.0)
 
 
 def deferred_versions(source: Path, now: float) -> set[str]:
     """Commits que o supervisor devolveu por culpa do PC (demora, disco) e não por defeito deles.
 
     Não são bloqueados, mas voltar a instalar o mesmo commit a cada checagem seria um laço de
-    atualizar e voltar: ficam adiados por 24 h (`sha|epoch`, uma linha por devolução)."""
+    atualizar e voltar: ficam adiados (`sha|epoch`, uma linha por devolução), cada vez por mais
+    tempo (`DEFER_STEPS_SECONDS`), contado da última devolução."""
     try:
         path = source.parent / "runtime" / DEFERRED_VERSIONS_FILE
         entries = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return set()
-    deferred: set[str] = set()
+    returns: dict[str, list[float]] = {}
     for line in entries:
         sha, _, stamp = line.strip().partition("|")
         try:
             since = float(stamp)
         except ValueError:
             continue
-        if _SHA.fullmatch(sha) and 0 <= now - since < DEFER_SECONDS:
+        if _SHA.fullmatch(sha):
+            returns.setdefault(sha, []).append(since)
+    deferred: set[str] = set()
+    for sha, stamps in returns.items():
+        period = DEFER_STEPS_SECONDS[min(len(stamps), len(DEFER_STEPS_SECONDS)) - 1]
+        if 0 <= now - max(stamps) < period:
             deferred.add(sha)
     return deferred
 
@@ -665,6 +673,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     record_trial: Callable[[Path, str], None] = write_trial_marker,
     monotonic: Callable[[], float] = time.monotonic,
     wall: Callable[[], float] = time.time,
+    ignore_deferral: bool = False,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -702,11 +711,13 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 latest=sha,
                 blocked=sha,
             )
-        if sha in deferred_versions(source, wall()):
+        if not ignore_deferral and sha in deferred_versions(source, wall()):
+            # "deferred" é interno (não existe no contrato): quem grava o estado devolve o que
+            # havia.
             return UpdateResult(
                 False,
-                "esta versão voltou por demora ou disco do PC; tento de novo em até 24 h",
-                "failed",
+                "esta versão voltou por demora ou disco do PC; tento de novo mais tarde",
+                "deferred",
                 latest=sha,
             )
         low = _low_disk_result(free_bytes(source.parent), min_free_bytes, sha)
