@@ -214,6 +214,8 @@ export interface DeadLetterReport {
 /** Identificação pública da versão da API em execução. */
 export interface DeploymentVersion {
   readonly commit: string | null;
+  /** Versão informativa de cada módulo (identity, devices, tv, training, web, agent). Uma API mais antiga não a manda. */
+  readonly modules?: Readonly<Record<string, string>>;
 }
 
 function readTv(value: unknown): TvItem | null {

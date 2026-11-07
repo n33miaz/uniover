@@ -60,6 +60,21 @@
         }
       </article>
     </div>
+    @if (modules().length > 0) {
+      <section class="modules" aria-labelledby="health-modules-title">
+        <h3 id="health-modules-title" class="modules-title" i18n="@@settings.system.health.modules">
+          Módulos
+        </h3>
+        <ul class="modules-list">
+          @for (module of modules(); track module.key) {
+            <li>
+              <span>{{ module.label }}</span>
+              <span class="module-version">{{ module.version }}</span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
     @if (deadLetters(); as dead) {
       @if (dead.total > 0) {
         <details class="dead">

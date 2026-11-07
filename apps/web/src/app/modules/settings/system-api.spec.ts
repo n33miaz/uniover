@@ -402,7 +402,7 @@ describe('SystemApi', () => {
     const read = api.deploymentVersion();
     const request = http.expectOne('/health/version');
     expect(request.request.method).toBe('GET');
-    request.flush({ commit: 'abc', version: '0.33.0' });
-    expect(await read).toEqual({ commit: 'abc', version: '0.33.0' });
+    request.flush({ commit: 'abc', version: '0.33.0', modules: { tv: '0.33.1' } });
+    expect(await read).toEqual({ commit: 'abc', version: '0.33.0', modules: { tv: '0.33.1' } });
   });
 });

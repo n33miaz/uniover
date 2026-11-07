@@ -3,6 +3,13 @@ import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { DeadLetterEntry, DeadLetterReport, HealthAgent, SystemApi, TvItem } from './system-api';
 
+/** Um módulo e a versão dele, como a lista de Módulos mostra. */
+export interface ModuleRow {
+  readonly key: string;
+  readonly label: string;
+  readonly version: string;
+}
+
 /**
  * Leitura resumida do que já existe: a presença mais recente do agente, a TV vinculada e o commit da API. Não cria
  * telemetria nem tenta consultar a TV diretamente.
@@ -19,6 +26,7 @@ export class SystemHealthSection {
   protected readonly agents = signal<readonly HealthAgent[] | null>(null);
   protected readonly tvs = signal<readonly TvItem[] | null>(null);
   protected readonly commit = signal<string | null>(null);
+  protected readonly modules = signal<readonly ModuleRow[]>([]);
   protected readonly failed = signal(false);
   /** Os eventos internos que esgotaram as tentativas. `null` até chegar; fica `null` se a leitura falhar (o resto da Saúde segue). */
   protected readonly deadLetters = signal<DeadLetterReport | null>(null);
@@ -53,6 +61,7 @@ export class SystemHealthSection {
       this.agents.set(agents);
       this.tvs.set(tvs);
       this.commit.set(version.commit);
+      this.modules.set(moduleRows(version.modules));
     } catch {
       this.failed.set(true);
     }
@@ -151,4 +160,33 @@ export class SystemHealthSection {
     // O identificador completo do commit não cabe no cartão: os sete primeiros caracteres bastam para reconhecê-lo.
     return this.commit()?.slice(0, 7) ?? $localize`:@@settings.system.health.version-none:—`;
   }
+}
+
+/** O nome de cada módulo em português. Um módulo que a tela não conhece aparece com o próprio identificador. */
+function moduleLabel(key: string): string {
+  switch (key) {
+    case 'identity':
+      return $localize`:@@settings.system.health.module-identity:Identidade`;
+    case 'devices':
+      return $localize`:@@settings.system.health.module-devices:Dispositivos`;
+    case 'tv':
+      return $localize`:@@settings.system.health.module-tv:TV`;
+    case 'training':
+      return $localize`:@@settings.system.health.module-training:Treino`;
+    case 'web':
+      return $localize`:@@settings.system.health.module-web:Site`;
+    case 'agent':
+      return $localize`:@@settings.system.health.module-agent:Agente`;
+    default:
+      return key;
+  }
+}
+
+/** As versões por módulo na ordem em que a API as manda; vazio quando a API ainda não as manda. */
+function moduleRows(modules: Readonly<Record<string, string>> | undefined): readonly ModuleRow[] {
+  return Object.entries(modules ?? {}).map(([key, version]) => ({
+    key,
+    label: moduleLabel(key),
+    version,
+  }));
 }
