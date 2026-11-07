@@ -27,6 +27,9 @@ STATUS_FILE: Final = "update-status.json"
 DEFERRED_REASON: Final = (
     "uma versão nova voltou por demora ou disco deste PC; fica adiada (Atualizar agora tenta já)"
 )
+BUSY_REASON: Final = (
+    "a TV foi usada há pouco; a atualização espera ela ficar parada (Atualizar agora atualiza já)"
+)
 # Um arquivo de estado maior que isto não foi escrito por nós.
 _MAX_BYTES: Final = 16 * 1024
 
@@ -121,7 +124,7 @@ def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
     """O que a checagem concluiu. Atualizar com sucesso encerra a volta atrás e o bloqueio."""
     if result.outcome is None:
         return
-    if result.outcome == "deferred":
+    if result.outcome in {"deferred", "deferred_busy"}:
         # Neutro: nada mudou. `record_updating` trocou o resultado por "atualizando"; devolve o
         # que havia (a volta atrás que acabou de acontecer, ou "em dia"), sem o rótulo de falha.
         state = _load(path)
@@ -132,7 +135,7 @@ def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
                 "outcome": previous,
                 "checkedAt": format_time(now),
                 # Neutro, mas o dono vê por que não há atualização ("Atualizar agora" a força).
-                "reason": DEFERRED_REASON,
+                "reason": BUSY_REASON if result.outcome == "deferred_busy" else DEFERRED_REASON,
                 **({"latestSha": result.latest} if result.latest is not None else {}),
             },
         )

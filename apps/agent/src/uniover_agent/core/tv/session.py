@@ -215,6 +215,9 @@ class TvSessionManager:
         self._remote_volume_seen = False
         self._app: str | None = None
         self._last_activity = clock.monotonic()
+        # O último uso de verdade (comando, toque na tela do controle): ao contrário de
+        # `_last_activity`, não nasce com a sessão e não é renovado pela reabertura sozinha.
+        self._last_use_at: float | None = None
         # O modo foco só segura a sessão enquanto a mídia está comprovadamente tocando. Não renova
         # atividade: ao sair, a sessão volta a obedecer o mesmo relógio de antes.
         self._keep_hot = False
@@ -313,8 +316,18 @@ class TvSessionManager:
         self._volume_reader = reader
 
     def touch(self) -> None:
-        """Renova o relógio de hibernação."""
+        """Renova o relógio de hibernação (e anota o instante do uso)."""
         self._last_activity = self._clock.monotonic()
+        self._last_use_at = self._last_activity
+
+    def seconds_since_use(self) -> float | None:
+        """Há quantos segundos a TV foi usada por aqui; `None` se não foi desde que o agente subiu.
+
+        Só conta uso de verdade: comando, aquecimento pedido pelo app. A reabertura sozinha e o modo
+        foco (que segura a sessão aberta) não contam."""
+        if self._last_use_at is None:
+            return None
+        return max(0.0, self._clock.monotonic() - self._last_use_at)
 
     def mark_repairing(self) -> None:
         """O vigia assumiu: novos comandos devolvem `tv_unreachable` até `clear_repairing`."""
