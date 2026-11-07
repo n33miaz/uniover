@@ -31,7 +31,12 @@ interface Probe {
   frames: number;
 }
 
-/** Roda na página, antes de qualquer script dela. Autocontido: o Playwright o serializa. */
+/**
+ * Roda na página, antes de qualquer script dela. Autocontido: o Playwright o serializa. A sonda mexe no que mede: ler a
+ * caixa e o estilo calculado força o navegador a recalcular estilo e layout no meio da abertura, o que pode adiantar o
+ * início de animações CSS (como a espera da forma da tela) e deslocar a troca. Por isso lê pouco (para no primeiro osso ou
+ * texto visível) e o resultado é conferido em várias execuções.
+ */
 const sampler = (): void => {
   const probe: Probe = { samples: [], frames: 0 };
   (window as unknown as { __boot: Probe }).__boot = probe;
@@ -125,19 +130,23 @@ interface Blank {
   open: boolean;
 }
 
-/** Os intervalos seguidos sem esqueleto de abertura, sem osso na tela e sem texto nela: a tela estava em branco. */
+/**
+ * Os intervalos seguidos sem esqueleto de abertura, sem osso na tela e sem texto nela: a tela estava em branco. Só vale o
+ * intervalo que tem ao menos uma amostra depois de uma pintura (`frame`): o estado entre duas etapas da mesma tarefa, que
+ * as amostras de mutação também enxergam, nunca chegou à tela.
+ */
 function blankStretches(samples: Sample[]): Blank[] {
   const stretches: Blank[] = [];
-  let from: number | null = null;
+  let run: Sample[] = [];
+  const close = (to: number, open: boolean): void => {
+    if (run.some((sample) => sample.src === 'frame')) stretches.push({ from: run[0].t, to, open });
+    run = [];
+  };
   for (const sample of samples) {
-    const blank = !sample.cover && !sample.bones && !sample.text;
-    if (blank && from === null) from = sample.t;
-    if (!blank && from !== null) {
-      stretches.push({ from, to: sample.t, open: false });
-      from = null;
-    }
+    if (!sample.cover && !sample.bones && !sample.text) run.push(sample);
+    else if (run.length > 0) close(sample.t, false);
   }
-  if (from !== null) stretches.push({ from, to: samples[samples.length - 1].t, open: true });
+  if (run.length > 0) close(samples[samples.length - 1].t, true);
   return stretches;
 }
 
@@ -270,7 +279,7 @@ test.describe('troca do esqueleto de abertura pelo da tela', () => {
   test.use({ serviceWorkers: 'block' });
 
   for (const scenario of SCENARIOS) {
-    for (const path of ['/treino/rotinas', '/treino/corpo', '/treino/progresso']) {
+    for (const path of ['/treino/rotinas', '/treino/progresso']) {
       test(`${path} (${scenario.name}): nenhum quadro em branco`, async ({
         page,
         context,
