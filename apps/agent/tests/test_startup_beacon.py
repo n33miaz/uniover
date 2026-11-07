@@ -290,6 +290,99 @@ def test_the_started_beacon_after_a_reported_failure_breaks_the_window_and_only_
     assert api.codes()[-1] == "child_spawn.ok"
 
 
+def stamp(pc: Pc, name: str, seconds_ago: float) -> None:
+    path = pc.runtime / name
+    path.write_text("x", encoding="ascii")
+    moment = time.time() - seconds_ago
+    os.utime(path, (moment, moment))
+
+
+def test_a_failure_reported_by_the_launcher_makes_the_next_started_beacon_go_out(
+    pc: Pc, api: FakeApi
+) -> None:
+    configure(pc.base, api.url)
+    stamp(pc, "beacon.child_spawn.ok", 300)  # o último "abriu" foi há 5 min (dentro da janela)
+    stamp(pc, "beacon.supervisor.stale", 60)  # o lançador avisou a falha depois dele
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: api.count("child_spawn.ok") >= 1, 40), pc.supervisor_log()
+
+
+def test_a_failure_older_than_the_last_started_beacon_keeps_the_window(
+    pc: Pc, api: FakeApi
+) -> None:
+    configure(pc.base, api.url)
+    stamp(pc, "beacon.supervisor.stale", 300)
+    stamp(pc, "beacon.child_spawn.ok", 60)  # o "abriu" veio depois da falha: nada a apagar
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with heartbeat(pc.alive), pc.running():
+        assert wait_for(lambda: pc.starts() >= 1, 30)
+        settle_beacons(pc)
+    assert api.requests == []
+
+
+def test_a_pending_failure_stays_pending_when_the_started_beacon_was_not_launched(
+    pc: Pc, api: FakeApi
+) -> None:
+    configure(pc.base, api.url)
+    (pc.runtime / "beacon-needs-ok").write_text("x", encoding="ascii")
+    pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    with heartbeat(pc.alive), pc.running(UNIOVER_BEACON_DISABLED="1"):
+        assert wait_for(lambda: pc.starts() >= 1, 30)
+        settle_beacons(pc)
+    assert (pc.runtime / "beacon-needs-ok").is_file()
+    assert api.requests == []
+
+
+def test_the_beacon_function_says_whether_it_launched_the_post(tmp_path: Path) -> None:
+    configure(tmp_path, "http://127.0.0.1:9")
+    (tmp_path / "runtime").mkdir()
+    block = tmp_path / "block.ps1"
+    block.write_text(beacon_block(RUNNER), encoding="ascii")
+    script = (
+        f"$base = '{tmp_path}'; . '{block}'; "
+        "$env:UNIOVER_BEACON_DISABLED = '1'; 'disabled=' + (Send-Beacon 'bootstrap' 'ok'); "
+        "$env:UNIOVER_BEACON_DISABLED = ''; "
+        "'badstage=' + (Send-Beacon 'X' 'ok'); "
+        "'sent=' + (Send-Beacon 'bootstrap' 'ok'); "
+        "'repeat=' + (Send-Beacon 'bootstrap' 'ok'); "
+        "'forced=' + (Send-Beacon 'bootstrap' 'ok' '' $true)"
+    )
+    result = subprocess.run(  # noqa: S603 - Windows PowerShell do sistema; trecho do repositório
+        [str(POWERSHELL), "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
+        creationflags=0x08000000,
+    )
+    assert result.stdout.split() == [
+        "disabled=False",
+        "badstage=False",
+        "sent=True",
+        "repeat=False",
+        "forced=True",
+    ]
+    wait_for(lambda: beacon_children() == 0, 40)
+    # Sem destino (config ausente) também é falso.
+    (tmp_path / "config" / "agent.toml").unlink()
+    (tmp_path / "runtime" / "beacon.bootstrap.ok").unlink()
+    again = subprocess.run(  # noqa: S603 - Windows PowerShell do sistema; trecho do repositório
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-Command",
+            f"$base = '{tmp_path}'; . '{block}'; Send-Beacon 'bootstrap' 'ok'",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
+        creationflags=0x08000000,
+    )
+    assert again.stdout.strip() == "False"
+
+
 def test_the_url_and_body_travel_by_environment_not_inside_the_child_code(
     pc: Pc, api: FakeApi
 ) -> None:

@@ -384,6 +384,60 @@ def test_after_the_tv_returned_during_preparation_the_clock_survives_the_next_id
     assert not clock_file(installed).exists()
 
 
+def fetch_fails() -> str:
+    raise module.SelfUpdateError("sem rede")
+
+
+def early_outcome(pc: Installation, kind: str, now: float) -> str:
+    """Uma checagem com a TV parada que termina antes da espera pela TV; devolve o desfecho."""
+    runtime = pc.base / "runtime"
+    if kind == "fetch":
+        result = module.self_update(
+            pc.source,
+            fetch_latest=fetch_fails,
+            wall=lambda: now,
+            free_bytes=lambda _f: 50 * GIB,
+        )
+        return result.outcome or ""
+    if kind == "blocked":
+        (runtime / module.BLOCKED_VERSIONS_FILE).write_text(NEW + "\n", encoding="ascii")
+        return update(pc, now=now).outcome or ""
+    if kind == "deferred":
+        defer(pc, False, ago=60)
+        return update(pc, now=now).outcome or ""
+    return update(pc, now=now, free=100 * 1024 * 1024).outcome or ""  # pouco espaço
+
+
+@pytest.mark.parametrize(
+    ("kind", "outcome"),
+    [("fetch", "failed"), ("blocked", "blocked"), ("deferred", "deferred"), ("lowdisk", "failed")],
+)
+def test_an_idle_tv_clears_the_clock_even_when_the_check_ends_early(
+    installed: Installation, kind: str, outcome: str
+) -> None:
+    mark_use(installed, 0)
+    assert update(installed).outcome == "deferred_busy"
+    assert clock_file(installed).is_file()
+    assert early_outcome(installed, kind, NOW + 3600) == outcome  # a TV parou há 1 h
+    assert not clock_file(installed).exists()
+
+
+def test_the_return_mark_is_settled_even_when_the_check_ends_early(
+    installed: Installation,
+) -> None:
+    def used_meanwhile(_candidate: Path) -> None:
+        mark_use(installed, 1)
+
+    assert update(installed, run_check=used_meanwhile).outcome == "deferred_busy"
+    started = clock_start(installed)
+    assert early_outcome(installed, "fetch", NOW + 20 * 60) == "failed"
+    # O relógio segue (a checagem anterior terminou com a TV voltando) e a marca caiu.
+    assert clock_start(installed) == started
+    assert not clock_file(installed).read_text(encoding="ascii").strip().endswith("|again")
+    assert early_outcome(installed, "fetch", NOW + 40 * 60) == "failed"
+    assert not clock_file(installed).exists()
+
+
 def test_the_tv_is_not_released_before_the_whole_idle_window_after_a_return(
     installed: Installation,
 ) -> None:

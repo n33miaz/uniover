@@ -143,27 +143,26 @@ function Get-BeaconExitCode($Code) {
     return ('exit_' + $number)
 }
 
+# Devolve $true so quando o processo do POST foi iniciado ($false: desligada, sem destino, dentro da janela ou falha ao iniciar).
 function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool]$IgnoreSpacing = $false) {
     try {
-        if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return }
-        if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return }
+        if ([Environment]::GetEnvironmentVariable('UNIOVER_BEACON_DISABLED') -eq '1') { return $false }
+        if ($Stage -notmatch '^[a-z][a-z0-9_]{1,31}$' -or $Code -notmatch '^[a-z][a-z0-9_]{1,31}$') { return $false }
         $spacing = 600.0
         $forced = 0.0
         if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_BEACON_MIN_INTERVAL_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forced) -and $forced -gt 0) { $spacing = $forced }
         $key = $Stage + '.' + $Code
         $now = [DateTime]::UtcNow
-        if (-not $IgnoreSpacing -and $script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return }
+        if (-not $IgnoreSpacing -and $script:beaconSent.ContainsKey($key) -and ($now - $script:beaconSent[$key]).TotalSeconds -lt $spacing) { return $false }
         $stamp = Join-Path (Join-Path $base 'runtime') ('beacon.' + $key)
         if (-not $IgnoreSpacing) {
             try {
                 $age = ($now - (Get-Item -LiteralPath $stamp -ErrorAction Stop).LastWriteTimeUtc).TotalSeconds
-                if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return }
+                if ($age -lt $spacing -and $age -gt (0 - $spacing)) { $script:beaconSent[$key] = $now; return $false }
             } catch { }
         }
         $target = Get-BeaconTarget
-        if (-not $target) { return }
-        $script:beaconSent[$key] = $now
-        try { [System.IO.File]::WriteAllText($stamp, 'x', [System.Text.Encoding]::ASCII) } catch { }
+        if (-not $target) { return $false }
         $body = '{"v":1,"stage":"' + $Stage + '","code":"' + $Code + '"'
         if ($Version -match '^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$') { $body += ',"ver":"' + $Version + '"' }
         $body += ',"os":"windows"}'
@@ -179,8 +178,13 @@ function Send-Beacon([string]$Stage, [string]$Code, [string]$Version = '', [bool
         $info.EnvironmentVariables['UNIOVER_BEACON_URI'] = $target
         $info.EnvironmentVariables['UNIOVER_BEACON_BODY'] = $body
         $child = [System.Diagnostics.Process]::Start($info)
-        if ($null -ne $child) { $child.Dispose() }
-    } catch { }
+        if ($null -eq $child) { return $false }
+        $child.Dispose()
+        # So agora (o processo existe) a baliza conta como enviada: memoria e arquivo de estado.
+        $script:beaconSent[$key] = $now
+        try { [System.IO.File]::WriteAllText($stamp, 'x', [System.Text.Encoding]::ASCII) } catch { }
+        return $true
+    } catch { return $false }
 }
 # --- Fim da baliza de partida -------------------------------------------------------------------------------------------
 
@@ -386,7 +390,7 @@ function Invoke-Supervisor([string]$Script) {
 }
 
 # Primeiro marco: o lancador subiu (a tarefa agendada funcionou). Nao atrasa nada: o POST roda em outro processo.
-Send-Beacon 'bootstrap' 'ok' ([string](Get-FolderVersion $appDir))
+$null = Send-Beacon 'bootstrap' 'ok' ([string](Get-FolderVersion $appDir))
 
 while ($true) {
     Restore-AppFolder
@@ -405,7 +409,7 @@ while ($true) {
             $pause = [Math]::Min($baseWait * [Math]::Pow(2, $staleRestarts), 300.0)
             $staleRestarts++
             Write-LauncherLog ('novo supervisor em ' + [int]$pause + ' s (reinicio seguido numero ' + $staleRestarts + ')') 'INFO'
-            Send-Beacon 'supervisor' 'stale' ([string](Get-FolderVersion $appDir))
+            $null = Send-Beacon 'supervisor' 'stale' ([string](Get-FolderVersion $appDir))
             Start-Sleep -Seconds $pause
             continue
         }
@@ -436,7 +440,7 @@ while ($true) {
             continue
         }
         Write-LauncherLog ('o supervisor terminou (codigo ' + $code + ') depois de ' + [int]((Get-Date) - $started).TotalSeconds + ' s')
-        Send-Beacon 'supervisor' (Get-BeaconExitCode $code) ([string](Get-FolderVersion $appDir))
+        $null = Send-Beacon 'supervisor' (Get-BeaconExitCode $code) ([string](Get-FolderVersion $appDir))
         if (((Get-Date) - $started).TotalSeconds -ge 30) { Start-Sleep -Seconds 5; continue }
     }
     # Durante a primeira migracao, a tarefa ja aponta para este lancador antes de `agent-src`
@@ -451,6 +455,6 @@ while ($true) {
     if (Test-Path -LiteralPath $fallback) {
         try { [void](Invoke-Supervisor $fallback) } catch { Write-LauncherLog ('nao consegui vigiar o fallback (' + $_.Exception.GetType().Name + ')') }
     }
-    elseif (-not (Test-Path -LiteralPath $current)) { Send-Beacon 'bootstrap' 'no_app' }
+    elseif (-not (Test-Path -LiteralPath $current)) { $null = Send-Beacon 'bootstrap' 'no_app' }
     Start-Sleep -Seconds 30
 }
