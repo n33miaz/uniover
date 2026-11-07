@@ -274,11 +274,23 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     Write-SupLog 'WARNING' ('uv sync falhou (' + (Get-RunDescription $run $syncTimeoutSeconds) + '): ' + (Get-Tail $run.Output))
     # Um sync que so passou do prazo (rede lenta, antivirus) nao e um ambiente estragado: apagar o venv jogaria fora o
     # que o cache do uv ja andou e pioraria a proxima tentativa. O ambiente fica e a proxima volta continua dele.
+    $lowDisk = Test-LowDisk
     if ($run.TimedOut) {
         $script:lastSyncCause = 'timeout'
+        if ($lowDisk) { $script:lastSyncCause = 'lowdisk' }
         Write-SupLog 'WARNING' 'o sync passou do prazo; o ambiente foi mantido e a proxima volta continua de onde parou'
+        # Versao estavel (sem prova) com um ambiente que ja rodou: sobe com ele, como no ramo de pouco espaco. O sync que
+        # estoura o prazo (disco cheio, rede lenta) nao pode manter o agente fora do ar enquanto ha um ambiente bom no lugar.
+        # Em prova a versao precisa do ambiente novo: continua contando como falha (e volta para a anterior).
+        if (-not $KeepEnvironment -and (Test-Path -LiteralPath (Join-Path (Join-Path $runtime 'venv') 'Scripts\python.exe'))) {
+            if ($lowDisk) { Add-Diagnostic 'update.low_disk' 'error' 'pouco espaco em disco: o sync estourou o prazo e o agente subiu com o ambiente atual' }
+            Write-SupLog 'WARNING' 'subo o agente com o ambiente Python que ja existe'
+            return $true
+        }
         return $false
     }
+    # A causa conta mesmo em prova: a volta atras so bloqueia a versao se TODAS as falhas foram defeito dela.
+    if ($lowDisk) { $script:lastSyncCause = 'lowdisk' }
     # Com uma versao em prova e a anterior guardada para onde voltar, o ambiente nao e apagado: se a segunda tentativa
     # tambem falhasse, nenhuma das duas versoes teria como rodar. Quem chama conta a falha e reverte ao chegar a tres.
     if ($KeepEnvironment) {
@@ -288,8 +300,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     $venv = Join-Path $runtime 'venv'
     # Disco quase cheio: refazer o ambiente (centenas de MB) so pioraria. O ambiente que existe e mantido e o agente sobe
     # com ele; sem ambiente nenhum nao ha o que subir e a volta seguinte tenta de novo quando houver espaco.
-    if (Test-LowDisk) {
-        $script:lastSyncCause = 'lowdisk'
+    if ($lowDisk) {
         Add-Diagnostic 'update.low_disk' 'error' 'pouco espaco em disco: o ambiente Python nao foi refeito'
         if (Test-Path -LiteralPath (Join-Path $venv 'Scripts\python.exe')) {
             Write-SupLog 'WARNING' 'pouco espaco em disco; mantenho o ambiente Python e subo o agente com ele'
@@ -762,6 +773,11 @@ function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedi
         Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
         $blockedValue = $null
         if ($Block) { $blockedValue = $bad }
+        elseif ($bad) {
+            # Devolvida por culpa do PC (demora, disco) e nao por defeito dela: nao e bloqueada, mas o self-update a adia por
+            # 24 h (`.deferred-versions`, "sha|epoch"), senao atualizaria e voltaria em laco a cada checagem.
+            try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-versions') -Value ($bad + '|' + [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII } catch { }
+        }
         Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $blockedValue; checkedAt = (Get-UtcStamp (Get-Date)); reason = $Reason } | Out-Null
         Write-SupLog 'WARNING' ('voltei para a versao anterior: ' + $Reason)
         Add-Diagnostic 'update.rolled_back' 'warn' $Reason
@@ -819,6 +835,7 @@ Ensure-TrayShortcut
 Touch-Alive
 $wait = 5
 $syncFalls = 0
+$syncErrorFalls = 0
 # Se o ultimo update estourou o prazo (e o lancador reiniciou tudo), a primeira volta nao o repete antes de subir o agente: o
 # agente ficaria ate 40 min fora do ar a cada reinicio. A marca vale por 2 h; a proxima checagem sai meia hora depois.
 $timedOutFlag = Join-Path $runtime 'update-timed-out'
@@ -843,6 +860,18 @@ while ($true) {
         Write-SupLog 'WARNING' 'sem uv ou sem a pasta do agente; espero 5 minutos'
         Sleep-Beating 300; continue
     }
+    $rollbackReady = Test-RollbackReady
+    # O sync vem ANTES do update: com o ambiente ja preparado para esta versao o `self-update` roda com UV_NO_SYNC e o `uv run` nao
+    # faz sync implicito (sem --frozen e sem encerrar quem usa o ambiente), que foi onde o incidente travou. Com outro dono da
+    # instalacao (codigo 5) o ambiente acabou de ser preparado e o sync (que antes encerra quem usa o ambiente) nao roda a cada
+    # tentativa: so mataria o dono que esta vivo e bem.
+    $synced = $true
+    if (-not $script:ownedElsewhere) {
+        $synced = Sync-Agent $uv $rollbackReady
+        if ($synced) { $script:syncedVersion = Get-Version }
+    }
+    # O update roda mesmo com o sync falho: uma versao nova pode ser a cura de um ambiente que a atual nao consegue preparar
+    # (sem o sync bom, sem UV_NO_SYNC: o `uv run` sincroniza sozinho, com prazo).
     $updated = $false
     if ((Get-Date) -ge $nextUpdate -or (Test-Path (Join-Path $runtime 'update-now'))) {
         Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
@@ -855,26 +884,26 @@ while ($true) {
             exit 42
         }
     }
-    $rollbackReady = Test-RollbackReady
-    # Com outro dono da instalacao (codigo 5) o ambiente acabou de ser preparado e o sync (que antes encerra quem usa o
-    # ambiente) nao roda a cada tentativa: so mataria o dono que esta vivo e bem.
-    if (-not $script:ownedElsewhere -and -not (Sync-Agent $uv $rollbackReady)) {
+    if (-not $synced) {
         # Versao em prova que nao consegue preparar o proprio ambiente nunca chegaria a rodar, nem a cair: sem esta conta o
-        # laco esperaria para sempre. Na terceira falha seguida volta para a anterior, pela mesma rotina do pedido do dono.
+        # laco esperaria para sempre. Na terceira falha seguida volta para a anterior, pela mesma rotina do pedido do dono. So
+        # bloqueia a versao se TODAS as falhas foram defeito dela (erro do uv): demora e disco cheio sao do PC.
         if ($rollbackReady) {
             $syncFalls++
+            if ($script:lastSyncCause -eq 'error') { $syncErrorFalls++ }
             if ($syncFalls -ge 3) {
                 if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
-                if (Invoke-Rollback 'a versao nova nao conseguiu preparar o ambiente (3 falhas seguidas); voltei para a anterior' ($script:lastSyncCause -eq 'error')) {
+                if (Invoke-Rollback 'a versao nova nao conseguiu preparar o ambiente (3 falhas seguidas); voltei para a anterior' ($syncErrorFalls -ge $syncFalls)) {
                     Set-StopReason 'rollback'
                     exit 42
                 }
             }
         }
-        else { $syncFalls = 0 }
+        else { $syncFalls = 0; $syncErrorFalls = 0 }
         Sleep-Beating $wait; $wait = [Math]::Min($wait * 2, 300); continue
     }
     $syncFalls = 0
+    $syncErrorFalls = 0
     $script:syncedVersion = Get-Version
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
     Update-Tray $uv
@@ -1004,7 +1033,8 @@ while ($true) {
             $script:ownerSeenStamp = $null
             continue
         }
-        Start-Sleep -Seconds $ownedElsewhereWait
+        # Com pulso: o lancador (e o autocuidado) leem o `supervisor-alive` e nao distinguem uma espera calma de um travamento.
+        Sleep-Beating $ownedElsewhereWait
         continue
     }
     $script:ownedElsewhere = $false
