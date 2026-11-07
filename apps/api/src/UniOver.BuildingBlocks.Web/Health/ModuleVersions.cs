@@ -11,7 +11,7 @@ public static class ModuleVersions
 {
     internal const string ResourceName = "modules.json";
 
-    /// <summary>Módulo para versão, na ordem do arquivo. Vazio se o recurso não existir; entrada que não é texto é ignorada.</summary>
+    /// <summary>Módulo para versão, na ordem do arquivo. Vazio se o recurso não existir ou não for JSON; entrada que não é texto é ignorada.</summary>
     public static IReadOnlyDictionary<string, string> Load()
     {
         using var stream = typeof(ModuleVersions).Assembly.GetManifestResourceStream(ResourceName);
@@ -20,8 +20,19 @@ public static class ModuleVersions
 
     internal static Dictionary<string, string> Parse(Stream json)
     {
-        using var document = JsonDocument.Parse(json);
         var versions = new Dictionary<string, string>();
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            // Um arquivo informativo quebrado não derruba o Host: a lista sai vazia e o --verify da esteira acusa o erro.
+            return versions;
+        }
+
+        using var _ = document;
         if (document.RootElement.ValueKind != JsonValueKind.Object)
         {
             return versions;
