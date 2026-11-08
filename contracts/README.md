@@ -64,6 +64,13 @@ teclas e de ações são fechadas: nada fora delas chega ao Windows, e o corpo n
 | `pc.power.v1` | API para agente | `action`: `LOCK`, `SLEEP`, `SHUTDOWN` (contagem do Windows, com o aviso na tela do PC) ou `CANCEL_SHUTDOWN`. A confirmação com a pessoa é do app e da API. |
 | `pc.app.launch.v1` | API para agente | `appId`: o identificador de um favorito que o próprio agente publicou. |
 | `pc.apps.v1` | agente para API | `apps`: lista de `{ id, label }` (até 24) dos favoritos configurados no PC, e `at`. A lista é sempre completa; o agente a manda logo depois do `hello`. |
+| `pc.rtc.offer.v1` | API para agente | `sessionId`, `sdp` (a oferta WebRTC do app, até 16 KB) e `token` (uso único, que a primeira mensagem do canal precisa apresentar) e `tokenTtlSeconds` (a vida dele, contada pelo agente a partir do recebimento). Só vai a quem declara `pc.rtc.v1`, e a API só a envia ao agente do próprio dono do PC. Responde com `pc.rtc.answer.v1` (mesmo `correlationId`) e `command.result.v1`. |
+| `pc.rtc.answer.v1` | agente para API | `sessionId` e `sdp` (a resposta, com a impressão digital DTLS do agente). A API a devolve ao app pela rota autenticada e não a guarda. |
+| `pc.rtc.candidate.v1` | API para agente | `sessionId` e um candidato ICE tardio (`candidate`, `sdpMid`, `sdpMLineIndex`). Reservado: o app espera a coleta terminar antes de oferecer. |
+| `pc.rtc.close.v1` | API para agente | `sessionId` e `reason` opcional (`requested`, `replaced`...): fechar o canal da sessão e soltar o que o PC segurava. Sem resposta. |
+| `pc.rtc.closed.v1` | agente para API | `sessionId` e `reason` (`requested`, `connect_timeout`, `idle`, `failed`, `replaced`, `shutdown`, `disconnected`): o canal da sessão fechou (a API grava a trilha). Sem resposta. |
+
+O canal direto (`pc.rtc.v1`) é um acelerador opcional: o app e o PC trocam o mesmo conjunto de comandos por um canal de dados WebRTC, sem passar pela API. A capacidade só é declarada depois de a API listar `pc.rtc.v1` em `features`, e o agente só a declara se a biblioteca está instalada e a configuração `pc_direct` está ligada. Sem o canal, tudo segue pela nuvem.
 
 Falhas voltam em `command.result.v1` com `error.code` estável: `unsupported` (sistema sem suporte), `unknown_app` (favorito
 que não existe mais) e `failed` (o Windows recusou).

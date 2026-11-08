@@ -1,0 +1,1 @@
+{"v":1,"id":"0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f","type":"pc.rtc.candidate.v1","source":"api","target":"agent:pc-casa","ts":"2026-11-08T14:00:00Z","correlationId":null,"body":{"sessionId":"0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e01","candidate":"candidate:1 1 udp 2113937151 192.168.1.20 54321 typ host","sdpMid":"0","sdpMLineIndex":0}}

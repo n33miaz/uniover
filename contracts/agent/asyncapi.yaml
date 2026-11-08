@@ -170,6 +170,21 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.app.launch.v1.schema.json'
+      pcRtcOffer:
+        name: pc.rtc.offer.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.offer.v1.schema.json'
+      pcRtcCandidate:
+        name: pc.rtc.candidate.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.candidate.v1.schema.json'
+      pcRtcClose:
+        name: pc.rtc.close.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.close.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -251,6 +266,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.apps.v1.schema.json'
+      pcRtcAnswer:
+        name: pc.rtc.answer.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.answer.v1.schema.json'
+      pcRtcClosed:
+        name: pc.rtc.closed.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.closed.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -544,3 +569,38 @@ operations:
     summary: A API recebe a lista de apps favoritos que o PC deixa abrir pelo app.
     messages:
       - $ref: '#/channels/agentEvents/messages/pcApps'
+  sendPcRtcOffer:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API entrega a oferta do canal direto (WebRTC) do app, com o token de uso único.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcRtcOffer'
+  sendPcRtcCandidate:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API repassa um candidato ICE tardio do app.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcRtcCandidate'
+  sendPcRtcClose:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede fechar o canal direto da sessão.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcRtcClose'
+  receivePcRtcAnswer:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe a resposta SDP do agente à oferta do canal direto.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcRtcAnswer'
+  receivePcRtcClosed:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o aviso de que o canal direto da sessão fechou, com o motivo.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcRtcClosed'

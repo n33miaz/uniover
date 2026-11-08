@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.rtc.close.v1.schema.json",
+  "title": "pc.rtc.close.v1",
+  "description": "API para agente: o app (ou a API) fecha o canal direto da sessão; o agente solta o que o PC ficou segurando e não responde. O agente avisa o próprio fechamento com pc.rtc.closed.v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.rtc.close.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        "reason": {
+          "enum": [
+            "requested",
+            "connect_timeout",
+            "idle",
+            "failed",
+            "replaced",
+            "shutdown",
+            "disconnected"
+          ]
+        }
+      }
+    }
+  }
+}
