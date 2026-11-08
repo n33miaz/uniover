@@ -17,7 +17,7 @@ import {
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
-/** Onde vão os prints do revisor (o orquestrador aponta uma pasta); sem a variável, ficam em `test-results`. */
+/** Onde vão os prints do revisor (quem roda o teste aponta uma pasta); sem a variável, ficam em `test-results`. */
 const SHOTS = process.env['TV_MENU_SHOTS'] ?? 'test-results';
 
 /** As duas telas de referência: o iPhone 12 instalado e um Android comum (retrato). */

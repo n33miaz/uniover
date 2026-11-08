@@ -15,7 +15,7 @@ import {
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
-/** Onde vão os prints (o orquestrador aponta uma pasta); sem a variável, ficam em `test-results`. */
+/** Onde vão os prints (quem roda o teste aponta uma pasta); sem a variável, ficam em `test-results`. */
 const SHOTS = process.env['TV_MULTI_SHOTS'] ?? 'test-results';
 
 const ANDROID_CAPS = ['tv.remote', 'tv.kind.android', 'tv.adb'];

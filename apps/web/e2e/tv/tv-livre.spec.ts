@@ -9,7 +9,7 @@ import { MockTv, TvMock, installFakeEventSource, mockTvApi } from './tv-mock';
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
-/** Onde vão os prints (o orquestrador aponta uma pasta); sem a variável, nenhum print é feito. */
+/** Onde vão os prints (quem roda o teste aponta uma pasta); sem a variável, nenhum print é feito. */
 const SHOTS = process.env['TV_LIVRE_SHOTS'];
 
 const SALA: MockTv = {
