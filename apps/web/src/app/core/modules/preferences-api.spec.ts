@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { PreferencesApi } from './preferences-api';
 
 const URL = '/api/v1/identity/me/preferences';
+const HINT_URL = '/api/v1/identity/me/install-hint';
 
 describe('PreferencesApi', () => {
   describe('with the HTTP client', () => {
@@ -33,6 +34,55 @@ describe('PreferencesApi', () => {
         updatedAt: '2026-10-31T12:00:00Z',
         home: [{ id: 'tv', enabled: true }],
       });
+    });
+
+    it('reads the install hint answers of the account from its own route, dropping anything that is not the expected shape', async () => {
+      const done = api.getInstallHint();
+      const request = http.expectOne(HINT_URL);
+      expect(request.request.method).toBe('GET');
+      request.flush({
+        root: { installed: true, dismissedAt: 5, extra: 'x' },
+        tv: { never: 'sim', dismissedAt: 'ontem' },
+        treino: 'texto',
+      });
+      expect(await done).toEqual({
+        root: { installed: true, dismissedAt: 5, never: undefined },
+        tv: { installed: undefined, dismissedAt: undefined, never: undefined },
+      });
+    });
+
+    it('an account that never answered reads an empty object, and a body that is not an object fails', async () => {
+      const empty = api.getInstallHint();
+      http.expectOne(HINT_URL).flush({});
+      expect(await empty).toEqual({});
+
+      const bad = api.getInstallHint();
+      http.expectOne(HINT_URL).flush([1, 2]);
+      await expect(bad).rejects.toThrow();
+    });
+
+    it('does not touch the preferences route to read the install hint', async () => {
+      const done = api.get();
+      http.expectOne(URL).flush({ version: 0, updatedAt: null, home: null });
+      expect(await done).toEqual({ version: 0, updatedAt: null, home: null });
+    });
+
+    it('saves the install hint answer on its own route, without version or home', async () => {
+      const done = api.saveInstallHint({ root: { installed: true } });
+      const request = http.expectOne(HINT_URL);
+      expect(request.request.method).toBe('PUT');
+      expect(request.request.body).toEqual({ scopes: { root: { installed: true } } });
+      request.flush({ root: { installed: true }, tv: { never: true } });
+      expect(await done).toEqual({
+        root: { installed: true, dismissedAt: undefined, never: undefined },
+        tv: { never: true, dismissedAt: undefined, installed: undefined },
+      });
+    });
+
+    it('fails the install hint save on a refusal, so the caller can keep the answer local', async () => {
+      const done = api.saveInstallHint({ root: { installed: true } });
+      http.expectOne(HINT_URL).flush({ title: 'x' }, { status: 403, statusText: 'Forbidden' });
+      await expect(done).rejects.toBeDefined();
     });
 
     it('rejects an answer that does not look like preferences', async () => {
@@ -105,5 +155,7 @@ describe('PreferencesApi', () => {
     const api = TestBed.inject(PreferencesApi);
     await expect(api.get()).rejects.toThrow();
     await expect(api.save(0, null)).rejects.toThrow();
+    await expect(api.saveInstallHint({ root: { installed: true } })).rejects.toThrow();
+    await expect(api.getInstallHint()).rejects.toThrow();
   });
 });

@@ -291,7 +291,7 @@ describe('InstallHintSheet', () => {
       expect(closed()).toBe(1);
     });
 
-    it('recusado no pedido do navegador, a folha sai e o adiamento de 14 dias vale', async () => {
+    it('recusado no pedido do navegador, a folha sai e o adiamento de 30 dias vale', async () => {
       const { button, fixture, closed } = await renderNative('dismissed');
       button('Instalar').click();
       await fixture.whenStable();
@@ -301,7 +301,7 @@ describe('InstallHintSheet', () => {
   });
 
   describe('as saídas', () => {
-    it('"Agora não" adia por 14 dias, desce a folha e avisa uma única vez', async () => {
+    it('"Agora não" adia por 30 dias, desce a folha e avisa uma única vez', async () => {
       const { button, fixture, dialog, closed } = await render({ userAgent: UA.safari });
       button('Agora não').click();
       button('Agora não').click(); // toque repetido

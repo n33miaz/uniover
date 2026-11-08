@@ -113,7 +113,7 @@ export class InstallHintSheet {
     });
   }
 
-  /** "Agora não" e Esc: não volta sozinha por 14 dias. Aberta pela pessoa, só fecha. */
+  /** "Agora não" e Esc: não volta sozinha por 30 dias. Aberta pela pessoa, só fecha. */
   protected later(event?: Event): void {
     event?.preventDefault(); // quem tira a folha do DOM é o hospedeiro; evita o fechamento duplo do navegador
     if (this.leaving() || this.installing()) return;

@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { Component, effect, inject } from '@angular/core';
+import { Component, effect, inject, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { SessionState } from '../session/session-state';
 import { InstallHintSheet } from './install-hint-sheet';
@@ -12,8 +12,10 @@ export const INSTALL_HINT_DELAY_MS = 3000;
 export const INSTALL_HINT_MAX_ATTEMPTS = 10;
 
 /**
- * Hospeda a folha "Atalho na tela de início" na casca e a abre sozinha uma vez, para quem entrou (dono ou
- * convidado) num celular, fora do app instalado. Nada fica fixo na tela: sem a folha aberta este componente não
+ * Hospeda a folha "Atalho na tela de início" na casca e a abre sozinha no máximo uma vez por sessão, para quem entrou (dono
+ * ou convidado) num celular, no navegador: dentro do app instalado nunca. Antes de abrir espera a resposta da conta
+ * (`InstallHintService.syncAccount`), para não perguntar o que a pessoa já respondeu em outro aparelho ou antes de o
+ * Safari apagar os dados do site. Nada fica fixo na tela: sem a folha aberta este componente não
  * desenha nada, então o controle da TV (apertado) não ganha elemento algum.
  *
  * Abre sozinha com a sessão confirmada e ~3 s depois da tela pronta; o prazo é cancelável (sair da sessão, mudar
@@ -43,8 +45,30 @@ export class InstallHint {
     // O pedido do navegador (Chromium) chega uma vez, cedo: o ouvinte precisa estar de pé antes de qualquer tela.
     this.hint.start();
 
+    // Casa a memória do aparelho com a da conta assim que a sessão é desta conta. O efeito que arma a abertura, abaixo, só
+    // arma depois disso (`syncedFor`).
+    effect(() => {
+      const accountId = this.session.accountId();
+      this.session.sessionAccountId();
+      if (!this.session.isAuthenticated() || !accountId || !this.session.isSessionOf(accountId))
+        return;
+      untracked(
+        () =>
+          void this.hint.syncAccount(
+            accountId,
+            () =>
+              this.session.isAuthenticated() &&
+              this.session.accountId() === accountId &&
+              this.session.isSessionOf(accountId),
+          ),
+      );
+    });
+
     effect((onCleanup) => {
       if (!this.session.isAuthenticated() || !this.hint.autoEligible() || this.hint.sheet()) return;
+      // Conta conhecida: só depois de casar a memória do aparelho com a dela (ver `syncAccount`).
+      const accountId = this.session.accountId();
+      if (accountId !== null && this.hint.syncedFor() !== accountId) return;
       let attempts = 0;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const arm = () => {

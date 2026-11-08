@@ -2,7 +2,8 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, InjectionToken, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
-import { ScopedModuleSlug } from '../modules/module-slugs';
+import { SCOPED_MODULE_SLUGS, ScopedModuleSlug } from '../modules/module-slugs';
+import { InstallHintAnswer, InstallHintAnswers, PreferencesApi } from '../modules/preferences-api';
 import {
   InstallEnvInput,
   isAndroid,
@@ -90,13 +91,38 @@ export const INSTALL_ENV = new InjectionToken<InstallEnvInput>('INSTALL_ENV', {
  */
 export const INSTALL_HINT_KEY = 'uniover.install-hint.v1';
 
-/** Chave da memória de um escopo: a antiga para a raiz, `<antiga>.<módulo>` para cada módulo. */
-export function installHintKey(scope: InstallScope): string {
+/** Prefixo da memória por conta: o que uma conta respondeu nunca é lido nem enviado por outra neste aparelho. */
+const ACCOUNT_KEY_PREFIX = 'uniover.install-hint.v2';
+
+/**
+ * Chave da memória de um escopo. Sem conta (antes de a sessão ser confirmada, e o que versões antigas gravaram) é a do
+ * aparelho: a antiga para a raiz, `<antiga>.<módulo>` para cada módulo. Com conta, `uniover.install-hint.v2.<conta>.<app>`.
+ */
+export function installHintKey(scope: InstallScope, accountId: string | null = null): string {
+  if (accountId !== null) return `${ACCOUNT_KEY_PREFIX}.${encodeURIComponent(accountId)}.${scope}`;
   return scope === 'root' ? INSTALL_HINT_KEY : `${INSTALL_HINT_KEY}.${scope}`;
 }
 
-/** Depois de "Agora não" a folha não volta sozinha por este tempo (14 dias). */
-export const INSTALL_HINT_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
+/** O endereço de partida de cada app, sem a barra final: a janela que abre nele sem marcador é, com segurança, deste app. */
+function isStartPath(scope: InstallScope, pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  return path === (scope === 'root' ? '/' : `/${scope}`);
+}
+
+/**
+ * Depois de "Agora não" (ou de a folha automática abrir, ver `openAuto`) ela não volta sozinha por este tempo (30 dias), e só
+ * no navegador: dentro do app instalado nunca abre sozinha.
+ */
+export const INSTALL_HINT_SNOOZE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Chave da sessão (some ao fechar a aba): a folha automática já abriu, em qualquer app, e não repete até a sessão acabar. */
+export const INSTALL_HINT_SESSION_KEY = 'uniover.install-hint.session';
+
+/** Quanto esperar a resposta da conta antes de seguir só com a memória do aparelho (ms). */
+export const INSTALL_HINT_SYNC_TIMEOUT_MS = 6000;
+
+/** Os apps que a dica conhece: a raiz e cada módulo com manifest próprio. */
+const ALL_SCOPES: readonly InstallScope[] = ['root', ...SCOPED_MODULE_SLUGS];
 
 interface HintMemory {
   /** Instante (ms desde 1970) do último "Agora não". */
@@ -107,9 +133,9 @@ interface HintMemory {
   readonly installed?: boolean;
 }
 
-function readMemory(scope: InstallScope): HintMemory {
+function readMemory(scope: InstallScope, accountId: string | null): HintMemory {
   try {
-    const raw = globalThis.localStorage?.getItem(installHintKey(scope));
+    const raw = globalThis.localStorage?.getItem(installHintKey(scope, accountId));
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return {};
@@ -125,9 +151,53 @@ function readMemory(scope: InstallScope): HintMemory {
   }
 }
 
-function writeMemory(scope: InstallScope, memory: HintMemory): void {
+/** Junta duas respostas sem nunca desfazer uma: "instalado" e "nunca" só viram verdadeiros e vale o "Agora não" mais novo. */
+function mergeMemory(a: HintMemory, b: HintMemory): HintMemory {
+  const dismissedAt =
+    a.dismissedAt === undefined || b.dismissedAt === undefined
+      ? (a.dismissedAt ?? b.dismissedAt)
+      : Math.max(a.dismissedAt, b.dismissedAt);
+  return {
+    dismissedAt,
+    never: a.never || b.never ? true : undefined,
+    installed: a.installed || b.installed ? true : undefined,
+  };
+}
+
+function sameMemory(a: HintMemory, b: HintMemory): boolean {
+  return a.dismissedAt === b.dismissedAt && !a.never === !b.never && !a.installed === !b.installed;
+}
+
+function readRemoteMemory(answer: InstallHintAnswer | undefined): HintMemory {
+  return {
+    dismissedAt:
+      typeof answer?.dismissedAt === 'number' && Number.isFinite(answer.dismissedAt)
+        ? answer.dismissedAt
+        : undefined,
+    never: answer?.never === true ? true : undefined,
+    installed: answer?.installed === true ? true : undefined,
+  };
+}
+
+function readSessionShown(win: Window | null): boolean {
   try {
-    globalThis.localStorage?.setItem(installHintKey(scope), JSON.stringify(memory));
+    return win?.sessionStorage?.getItem(INSTALL_HINT_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function removeMemory(scope: InstallScope, accountId: string | null): void {
+  try {
+    globalThis.localStorage?.removeItem(installHintKey(scope, accountId));
+  } catch {
+    // Sem armazenamento: não há o que apagar.
+  }
+}
+
+function writeMemory(scope: InstallScope, memory: HintMemory, accountId: string | null): void {
+  try {
+    globalThis.localStorage?.setItem(installHintKey(scope, accountId), JSON.stringify(memory));
   } catch {
     // Sem armazenamento (modo privado, dados bloqueados): a memória vale só até recarregar a página.
   }
@@ -151,6 +221,8 @@ export class InstallHintService {
   // Alguns consumidores isolados da dica não precisam de rotas; na aplicação o Router sempre está presente.
   private readonly router = inject(Router, { optional: true });
   private readonly navigate = inject(INSTALL_NAVIGATE);
+  // Sem HttpClient (teste isolado) toda chamada falha, e a resposta fica só no aparelho.
+  private readonly api = inject(PreferencesApi);
 
   /**
    * De qual app é este documento: o escopo do endereço com que ele foi CARREGADO (o servidor escolhe o manifest pelo
@@ -174,17 +246,39 @@ export class InstallHintService {
   /** Resultado verificável do Chrome Android para o manifest deste documento. */
   private readonly installedRelated = signal<boolean | null>(null);
   private readonly memories = signal<Readonly<Partial<Record<InstallScope, HintMemory>>>>({});
-  /** A memória do escopo aberto; lê o armazenamento só na primeira vez de cada escopo. */
-  private readonly memory = computed(
-    () => this.memories()[this.scope()] ?? readMemory(this.scope()),
-  );
+  /**
+   * De quem é a memória local: a da conta da sessão depois de `syncAccount`; antes disso (ou sem sessão) é a do aparelho,
+   * que `syncAccount` entrega à primeira conta que se confirmar e esvazia.
+   */
+  private readonly account = signal<string | null>(null);
+  /** A memória do escopo aberto. */
+  private readonly memory = computed(() => this.recall(this.scope()));
   /**
    * A tela aberta é de outro app que não o do documento carregado: o pedido guardado (se houver) é do app errado e a
    * instalação só dá certo depois de uma carga completa no escopo certo.
    */
   private readonly crossScope = computed(() => this.scope() !== this.loadScope);
-  /** A folha automática já abriu nesta página para este app (cada módulo tem a sua vez): mesmo sem armazenamento ela não repete. */
-  private readonly autoShown = signal<ReadonlySet<InstallScope>>(new Set());
+  /**
+   * A folha automática já abriu nesta sessão (em qualquer app): não repete ao recarregar nem ao trocar de módulo. Fica na
+   * sessão do navegador e, sem ela (armazenamento bloqueado), pelo menos nesta página.
+   */
+  private readonly autoShown = signal(readSessionShown(this.win));
+  /** A conta cuja resposta já foi casada com a do aparelho (ou que não respondeu a tempo): ver `syncAccount`. */
+  private readonly _syncedFor = signal<string | null>(null);
+  private syncingAccount: string | null = null;
+  private accountGuard: () => boolean = () => true;
+  /** Quem hospeda a folha espera isto ser a conta da sessão antes de abrir sozinha, para não perguntar o que a conta já sabe. */
+  readonly syncedFor = this._syncedFor.asReadonly();
+  /**
+   * O último "Agora não" (ou abertura automática) de QUALQUER app: o prazo de 30 dias vale para a folha automática de todos
+   * juntos, para ela não pedir uma vez por app. "Instalado" e "nunca" seguem por app (cada módulo é outro app).
+   */
+  private readonly lastDismissedAt = computed(() =>
+    ALL_SCOPES.reduce<number | undefined>(
+      (latest, scope) => mergeMemory({ dismissedAt: latest }, this.recall(scope)).dismissedAt,
+      undefined,
+    ),
+  );
   /** Quantas telas pediram para a folha automática esperar (o treino ao vivo, por exemplo). */
   private readonly holds = signal(0);
   private readonly _sheet = signal<'auto' | 'manual' | null>(null);
@@ -253,24 +347,35 @@ export class InstallHintService {
   readonly autoHeld = computed(() => this.holds() > 0);
 
   /**
-   * Se a folha pode abrir sozinha: há o que oferecer, é um celular, a pessoa não pediu para parar, o último
-   * "Agora não" tem mais de 14 dias, ela ainda não abriu nesta página e nenhuma tela pediu para esperar. Não olha o
-   * relógio: quem decide a hora é `autoOpenAllowed`. Quando o pedido de espera termina, isto volta a ser verdadeiro e o
-   * prazo de abertura recomeça do zero.
+   * Se a folha pode abrir sozinha: há o que oferecer, é um celular, o app NÃO está aberto como instalado (nem o geral nem
+   * o de um módulo: dentro do atalho da tela de início ela nunca abre sozinha), a pessoa não disse "nunca" nem "já
+   * instalei" para o app da tela, ela ainda não abriu nesta sessão (em app algum) e nenhuma tela pediu para esperar. Quem
+   * hospeda a folha espera também a resposta da conta (`syncedFor`). Não olha o relógio: quem decide a hora é
+   * `autoOpenAllowed`. Quando o pedido de espera termina, isto volta a ser verdadeiro e o prazo de abertura recomeça do
+   * zero.
    */
   readonly autoEligible = computed(
     () =>
       this.mobile &&
+      !this.standalone() &&
       this.mode() !== 'none' &&
       !this.memory().never &&
-      (!this.memory().installed || this.foreignAppWindow()) &&
-      !this.autoShown().has(this.scope()) &&
+      !this.memory().installed &&
+      !this.autoShown() &&
       !this.autoHeld(),
   );
 
   constructor() {
-    // Só o marcador de lançamento comprova qual atalho abriu esta janela. A URL atual não comprova isso.
-    if (this.standalone() && this.windowScope !== null) this.acknowledgeInstalled(this.windowScope);
+    // Janela instalada: grava (local e na conta) que este app está instalado. Com o marcador de lançamento sabemos qual
+    // atalho abriu a janela; sem ele (o iOS reabre o endereço de quando o atalho foi criado) vale o app do documento só no
+    // iOS (sem a consulta do Chrome para confirmar) e só se a janela abriu no endereço de partida desse app: um endereço
+    // mais fundo pode ser um link dentro do atalho de outro app, e nesse caso nada se grava.
+    if (this.standalone()) {
+      const launchedAtStart = isStartPath(this.loadScope, this.win?.location.pathname ?? '/');
+      const installedScope =
+        this.windowScope ?? (isIos(this.env) && launchedAtStart ? this.loadScope : null);
+      if (installedScope !== null) this.acknowledgeInstalled(installedScope);
+    }
     inject(DestroyRef).onDestroy(() => this.stop());
   }
 
@@ -348,7 +453,10 @@ export class InstallHintService {
       const mql = this.win?.matchMedia?.('(display-mode: standalone)');
       if (!mql?.addEventListener) return null;
       const onChange = () => {
-        if (mql.matches && this.windowScope !== null) this.acknowledgeInstalled(this.windowScope);
+        if (!mql.matches) return;
+        // Virou app instalado sem recarregar: a folha automática para já, saiba-se ou não qual atalho abriu a janela.
+        this.standalone.set(true);
+        if (this.windowScope !== null) this.acknowledgeInstalled(this.windowScope);
       };
       mql.addEventListener('change', onChange);
       return () => mql.removeEventListener('change', onChange);
@@ -358,12 +466,14 @@ export class InstallHintService {
   }
 
   /**
-   * Hora de abrir sozinha: `autoEligible` e o último "Agora não" fora dos 14 dias. Separada do signal porque depende
-   * do relógio, que não é reativo.
+   * Hora de abrir sozinha: `autoEligible`, a janela de fato fora do app instalado (relida agora, não a do início) e o
+   * último "Agora não" ou abertura fora dos 30 dias. Separada do signal porque depende do relógio e do navegador, que não
+   * são reativos.
    */
   autoOpenAllowed(now: number = Date.now()): boolean {
     if (!this.autoEligible()) return false;
-    const dismissedAt = this.memory().dismissedAt;
+    if (isStandalone(readInstallEnv(this.win))) return false;
+    const dismissedAt = this.lastDismissedAt();
     if (dismissedAt === undefined) return true;
     // Relógio que andou para trás: na dúvida, não insiste.
     return now - dismissedAt >= INSTALL_HINT_SNOOZE_MS;
@@ -385,13 +495,22 @@ export class InstallHintService {
   }
 
   private markShown(): void {
-    this.autoShown.update((shown) => new Set(shown).add(this.scope()));
+    this.autoShown.set(true);
+    try {
+      this.win?.sessionStorage?.setItem(INSTALL_HINT_SESSION_KEY, '1');
+    } catch {
+      // Sem armazenamento na sessão: vale só nesta página.
+    }
   }
 
-  /** Abre a folha sozinha; conta como "já mostrada nesta página". */
-  openAuto(): void {
+  /**
+   * Abre a folha sozinha. Conta como mostrada na sessão e como respondida: grava já o "Agora não", para que fechar o app, o
+   * iOS matar a página ou uma atualização recarregá-la com a folha aberta não faça ela voltar na carga seguinte.
+   */
+  openAuto(now: number = Date.now()): void {
     if (this._sheet() !== null) return;
     this.markShown();
+    this.remember(this.scope(), { ...this.memory(), dismissedAt: now });
     this._sheet.set('auto');
   }
 
@@ -410,7 +529,7 @@ export class InstallHintService {
     this._sheet.set(null);
   }
 
-  /** "Agora não" (ou Esc): não volta sozinha por 14 dias. */
+  /** "Agora não" (ou Esc): não volta sozinha por 30 dias. */
   dismiss(now: number = Date.now()): void {
     this.remember(this.scope(), { ...this.memory(), dismissedAt: now });
   }
@@ -475,8 +594,92 @@ export class InstallHintService {
   }
 
   private remember(scope: InstallScope, memory: HintMemory): void {
+    this.storeLocal(scope, memory);
+    this.pushToAccount({ [scope]: memory });
+  }
+
+  private storeLocal(scope: InstallScope, memory: HintMemory): void {
     this.memories.update((all) => ({ ...all, [scope]: memory }));
-    writeMemory(scope, memory);
+    writeMemory(scope, memory, this.account());
+  }
+
+  private pushToAccount(answers: InstallHintAnswers): void {
+    if (this._syncedFor() === null || !this.accountGuard()) return;
+    // Melhoria, nunca obrigação: sem rede a resposta fica no aparelho e sobe na próxima carga (`syncAccount`).
+    this.api.saveInstallHint(answers).catch(() => undefined);
+  }
+
+  /**
+   * Casa a memória do aparelho com a da conta, uma vez por conta e por página. A conta vale como a memória de qualquer
+   * aparelho (o "Agora não" e o "já instalei" dados no iPhone valem no Safari, mesmo que o Safari tenha apagado o que
+   * guardava), e o que o aparelho sabe e a conta não sobe. Quem hospeda a folha espera até isto acabar (`syncedFor`), com um
+   * prazo: se a conta não responde, segue só com o aparelho. `isCurrent` diz se a sessão ainda é desta conta quando a resposta chega.
+   */
+  async syncAccount(accountId: string, isCurrent: () => boolean = () => true): Promise<void> {
+    if (this._syncedFor() === accountId || this.syncingAccount === accountId) return;
+    this.syncingAccount = accountId;
+    // Outra conta no mesmo aparelho: o que a anterior respondeu não é lido nem enviado por esta.
+    if (this.account() !== null && this.account() !== accountId) this.switchAccount(null);
+    try {
+      const remote = await this.fetchRemote();
+      if (!isCurrent()) return;
+      this.accountGuard = isCurrent;
+      this.adoptDeviceMemory(accountId);
+      this._syncedFor.set(accountId);
+      if (remote === null) return;
+      const ahead: Partial<Record<InstallScope, HintMemory>> = {};
+      for (const scope of ALL_SCOPES) {
+        const local = this.recall(scope);
+        const theirs = readRemoteMemory(remote[scope]);
+        const merged = mergeMemory(local, theirs);
+        if (!sameMemory(merged, local)) this.storeLocal(scope, merged);
+        if (!sameMemory(merged, theirs)) ahead[scope] = merged;
+      }
+      if (Object.keys(ahead).length > 0) this.pushToAccount(ahead);
+    } finally {
+      if (this.syncingAccount === accountId) this.syncingAccount = null;
+    }
+  }
+
+  /** A memória de um escopo no balde atual; lê o armazenamento só na primeira vez de cada escopo. */
+  private recall(scope: InstallScope): HintMemory {
+    return this.memories()[scope] ?? readMemory(scope, this.account());
+  }
+
+  private switchAccount(accountId: string | null): void {
+    this.account.set(accountId);
+    this.memories.set({});
+  }
+
+  /**
+   * A primeira conta que se confirma neste aparelho herda o que o aparelho sabia sem conta (as chaves antigas e o que a
+   * janela instalada gravou antes de a sessão existir), e o aparelho fica sem esse balde: a conta seguinte começa limpa.
+   */
+  private adoptDeviceMemory(accountId: string): void {
+    for (const scope of ALL_SCOPES) {
+      const device = readMemory(scope, null);
+      const own = readMemory(scope, accountId);
+      const merged = mergeMemory(own, device);
+      if (!sameMemory(merged, {}) && !sameMemory(merged, own))
+        writeMemory(scope, merged, accountId);
+      removeMemory(scope, null);
+    }
+    this.switchAccount(accountId);
+  }
+
+  /** A resposta da conta, ou nulo se a API não respondeu a tempo ou falhou (a dica segue com a memória do aparelho). */
+  private async fetchRemote(): Promise<InstallHintAnswers | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), INSTALL_HINT_SYNC_TIMEOUT_MS);
+      });
+      return await Promise.race([this.api.getInstallHint(), timeout]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private readWindowScope(): InstallScope | null {
@@ -509,7 +712,7 @@ export class InstallHintService {
       this.installedRelated.set(installed);
       // Corrige memórias antigas gravadas ao abrir Treino dentro do PWA da raiz.
       if (!installed && !this.ackedScopes().has(this.loadScope)) {
-        const old = readMemory(this.loadScope);
+        const old = this.recall(this.loadScope);
         if (old.installed) this.remember(this.loadScope, { ...old, installed: undefined });
       }
     } catch {
