@@ -2,13 +2,24 @@
   display: block;
 }
 
-/* A tela cabe entre o topo e a barra de abas: o conteúdo cresce, e o touchpad ocupa o que sobra. */
+/*
+ * A tela cabe entre o topo e a barra de abas. `--pc-h` é a altura medida (o aviso de versão nova empurra a página, e uma
+ * conta fixa não o enxerga); antes da primeira medida vale uma estimativa. A tela do mouse (`.fill`) tem exatamente essa
+ * altura; as outras abas têm no mínimo essa e crescem com o conteúdo.
+ */
 .pc {
+  --pc-bar: 52px;
+  position: relative;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  min-height: calc(100dvh - 170px - var(--safe-bottom));
-  padding: var(--space-1) var(--gutter) var(--space-4);
+  gap: var(--space-2);
+  min-height: var(--pc-h, calc(100dvh - 170px - var(--safe-bottom)));
+}
+/* A tela do mouse toma a largura toda e puxa um pouco do respiro do `main` (a superfície vale cada pixel). */
+.pc.fill {
+  height: var(--pc-h, calc(100dvh - 170px - var(--safe-bottom)));
+  margin-block: calc(var(--space-2) * -1);
 }
 
 /* Verde primeiro: o estado é a primeira coisa da tela, com cor e forma (o ponto cheio ou vazado). */
@@ -40,6 +51,28 @@
 .status[data-phase='ready'] .dot {
   background: var(--a-ok);
 }
+/*
+ * Conectado, o estado vira só o ponto (a palavra segue na tela para o leitor de tela). Ele fica no canto de cima da
+ * superfície, ao lado do botão de ajustes do mouse, para não gastar uma linha da tela.
+ */
+.status[data-phase='ready'] {
+  position: absolute;
+  top: calc(var(--space-1) + 17px);
+  right: 54px;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.status[data-phase='ready'] .label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .status[data-phase='offline'] .dot,
 .status[data-phase='unavailable'] .dot {
   background: none;
@@ -69,12 +102,12 @@
 .pad-skeleton {
   display: block;
   flex: 1;
-  min-height: 220px;
+  min-height: 120px;
   border-radius: 24px;
 }
 .row-skeleton {
   display: block;
-  height: 52px;
+  height: var(--pc-bar);
   border-radius: var(--radius);
 }
 
@@ -130,4 +163,16 @@
   font-size: var(--fs-small);
   font-weight: 650;
   text-align: center;
+}
+/* Na tela do mouse o aviso flutua sobre a superfície, logo acima da barra de ações: em linha, empurraria a barra para baixo. */
+.notice.float {
+  position: absolute;
+  right: var(--space-3);
+  bottom: calc(var(--pc-bar) + var(--space-2) + var(--space-3));
+  left: var(--space-3);
+  z-index: 2;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--a-bad);
+  border-radius: var(--radius);
+  background: var(--a-surface);
 }

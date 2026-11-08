@@ -13,6 +13,10 @@ describe('PcPadSettingsSheet', () => {
       .find((item) => item.textContent?.trim() === label)!
       .querySelector('input')!;
   const invert = () => root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+  const switchOf = (label: string) =>
+    [...root.querySelectorAll<HTMLLabelElement>('label.row')]
+      .find((row) => row.textContent?.trim() === label)!
+      .querySelector('input')!;
 
   beforeEach(async () => {
     localStorage.clear();
@@ -54,6 +58,19 @@ describe('PcPadSettingsSheet', () => {
     expect(prefs.invertScroll()).toBe(true);
     invert().click();
     expect(prefs.invertScroll()).toBe(false);
+  });
+
+  it('the click buttons are off and the screen stays awake by default, and each switch applies at once', () => {
+    expect(switchOf('Botões de clique').checked).toBe(false);
+    expect(switchOf('Manter a tela acesa').checked).toBe(true);
+    switchOf('Botões de clique').click();
+    switchOf('Manter a tela acesa').click();
+    expect(prefs.clickButtons()).toBe(true);
+    expect(prefs.keepAwake()).toBe(false);
+  });
+
+  it('is titled Settings', () => {
+    expect(root.querySelector('h2')?.textContent).toBe('Ajustes');
   });
 
   it('Close asks the page to take the sheet away', () => {

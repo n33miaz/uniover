@@ -2,7 +2,12 @@ import { join } from 'node:path';
 import { Page } from '@playwright/test';
 import { GUEST, IdentityMock, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
-import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-helpers';
+import {
+  afterFrames,
+  expectNoA11yViolations,
+  settle,
+  smallTargets,
+} from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { PcMock, mockPcApi } from './pc-mock';
 
@@ -39,6 +44,22 @@ async function tap(page: Page, x: number, y: number) {
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.up();
+}
+
+/** O botão esquerdo apertado pelo dedo parado: a superfície avisa na hora (sem esperar a resposta do PC). */
+async function longPress(page: Page, x: number, y: number) {
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await expect(page.locator('.pad.holding')).toBeVisible();
+}
+
+/** Liga os botões Esquerdo, Arrastar e Direito pelos ajustes (vêm desligados). */
+async function turnOnClickButtons(page: Page) {
+  await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+  await sheet.getByRole('switch', { name: 'Botões de clique' }).check();
+  await sheet.getByRole('button', { name: 'Fechar' }).click();
+  await expect(sheet).toHaveCount(0);
 }
 
 async function padCenter(page: Page) {
@@ -83,9 +104,12 @@ test.describe('Início', () => {
   });
 });
 
-test.describe('Touchpad', () => {
-  test('um dedo move o ponteiro, um toque clica e os botões fazem o mesmo', async ({ page }) => {
+test.describe('Mouse', () => {
+  test('um dedo move o ponteiro, um toque clica e os botões (quando ligados) fazem o mesmo', async ({
+    page,
+  }) => {
     await openPc(page);
+    await expect(page.getByRole('button', { name: 'Esquerdo' })).toHaveCount(0);
     const { x, y } = await padCenter(page);
 
     await page.mouse.move(x, y);
@@ -108,6 +132,7 @@ test.describe('Touchpad', () => {
     await tap(page, x, y);
     await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }]);
 
+    await turnOnClickButtons(page);
     await page.getByRole('button', { name: 'Direito' }).click();
     await page.getByRole('button', { name: 'Esquerdo' }).click();
     await expect
@@ -117,6 +142,7 @@ test.describe('Touchpad', () => {
 
   test('Arrastar segura o botão esquerdo até soltar', async ({ page }) => {
     await openPc(page);
+    await turnOnClickButtons(page);
     const drag = page.getByRole('button', { name: 'Arrastar' });
     await drag.click();
     await expect(drag).toHaveAttribute('aria-pressed', 'true');
@@ -133,17 +159,14 @@ test.describe('Touchpad', () => {
   }) => {
     await openPc(page);
     const { x, y } = await padCenter(page);
-    const drag = page.getByRole('button', { name: 'Arrastar' });
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    await longPress(page, x, y);
     // O aviso é forte e inconfundível: contorno cheio e a palavra, não só uma cor.
     await expect(page.locator('.pad.holding')).toBeVisible();
     await expect(page.getByText('Arrastando', { exact: true })).toBeVisible();
     expect(pc.sent('/click')).toEqual([{ button: 'LEFT', action: 'DOWN' }]);
     await page.mouse.move(x + 60, y + 20, { steps: 4 });
     await page.mouse.up();
-    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.pad.holding')).toHaveCount(0);
     expect(pc.sent('/click')).toEqual([
       { button: 'LEFT', action: 'DOWN' },
       { button: 'LEFT', action: 'UP' },
@@ -153,9 +176,8 @@ test.describe('Touchpad', () => {
 
   test('esconder a página com o botão apertado solta o botão (pagehide)', async ({ page }) => {
     await openPc(page);
-    const drag = page.getByRole('button', { name: 'Arrastar' });
-    await drag.click();
-    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    const { x, y } = await padCenter(page);
+    await longPress(page, x, y);
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
     await expect
       .poll(() => pc.sent('/click'))
@@ -163,14 +185,15 @@ test.describe('Touchpad', () => {
         { button: 'LEFT', action: 'DOWN' },
         { button: 'LEFT', action: 'UP' },
       ]);
-    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    // O dedo ainda está na tela: a superfície segue dizendo que arrasta até ele sair.
+    await page.mouse.up();
+    await expect(page.locator('.pad.holding')).toHaveCount(0);
   });
 
   test('ir para o segundo plano com o botão apertado também solta', async ({ page }) => {
     await openPc(page);
-    const drag = page.getByRole('button', { name: 'Arrastar' });
-    await drag.click();
-    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    const { x, y } = await padCenter(page);
+    await longPress(page, x, y);
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -178,18 +201,20 @@ test.describe('Touchpad', () => {
     await expect
       .poll(() => pc.sent('/click').map((body) => body['action']))
       .toEqual(['DOWN', 'UP']);
-    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    await page.mouse.up();
+    await expect(page.locator('.pad.holding')).toHaveCount(0);
   });
 
   test('trocar de aba com o botão apertado solta o botão', async ({ page }) => {
     await openPc(page);
+    await turnOnClickButtons(page);
     await page.getByRole('button', { name: 'Arrastar' }).click();
     await expect(page.getByRole('button', { name: 'Arrastar' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
-    await tabs(page).getByRole('link', { name: 'Teclado' }).click();
-    await expect(page).toHaveURL(/\/pc\/teclado$/);
+    await tabs(page).getByRole('link', { name: 'Atalhos' }).click();
+    await expect(page).toHaveURL(/\/pc\/atalhos$/);
     await expect
       .poll(() => pc.sent('/click').map((body) => body['action']))
       .toEqual(['DOWN', 'UP']);
@@ -202,12 +227,14 @@ test.describe('Touchpad', () => {
     // Só o aperto falha: o soltar tem de passar, e é isso que prova que nada ficou apertado.
     pc.commandFailure = { status: 504, kind: 'timeout' };
     pc.failOnly = (request) => request.body?.['action'] === 'DOWN';
-    const drag = page.getByRole('button', { name: 'Arrastar' });
-    await drag.click();
+    const { x, y } = await padCenter(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
     await expect
       .poll(() => pc.sent('/click').map((body) => body['action']))
       .toEqual(['DOWN', 'UP']);
-    await expect(drag).toHaveAttribute('aria-pressed', 'false');
+    await page.mouse.up();
+    await expect(page.locator('.pad.holding')).toHaveCount(0);
     // O soltar passou (só o aperto falhou): a página ao esconder não tem mais nada a soltar, então nenhum pedido novo sai.
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
     await page.waitForTimeout(300);
@@ -218,7 +245,7 @@ test.describe('Touchpad', () => {
   test('os ajustes mudam a sensibilidade e ficam guardados neste aparelho', async ({ page }) => {
     await openPc(page);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Touchpad' });
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole('radio', { name: 'Normal' })).toBeChecked();
     await sheet.getByRole('radio', { name: 'Alta' }).check();
@@ -239,7 +266,7 @@ test.describe('Touchpad', () => {
     await page.reload();
     await expect(status(page)).toHaveText('Conectado');
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
-    const again = page.getByRole('dialog', { name: 'Touchpad' });
+    const again = page.getByRole('dialog', { name: 'Ajustes' });
     await expect(again.getByRole('radio', { name: 'Alta' })).toBeChecked();
     await expect(again.getByRole('switch', { name: 'Inverter rolagem' })).toBeChecked();
   });
@@ -251,18 +278,208 @@ test.describe('Touchpad', () => {
     await expectNoHorizontalScroll(page);
     expect(await smallTargets(page)).toEqual([]);
     await expectNoA11yViolations(page);
-    await expect(tabs(page).getByRole('link')).toHaveText([
-      'Touchpad',
-      'Teclado',
-      'Mídia',
-      'Energia',
-    ]);
+    await expect(tabs(page).getByRole('link')).toHaveText(['Mouse', 'Atalhos', 'Mídia', 'Mais']);
   });
 
-  test('print do Touchpad', async ({ page }, info) => {
+  test('print do Mouse', async ({ page }, info) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await openPc(page);
-    await screenshot(page, join(SHOTS, `pc-touchpad-${info.project.name}.png`));
+    await screenshot(page, join(SHOTS, `pc-mouse-${info.project.name}.png`));
+  });
+});
+
+/** Simula o aviso "Nova versão disponível" (que mora fora do módulo e empurra a página): uma faixa de 60 px no topo. */
+async function pushPageDown(page: Page, height = 60) {
+  await page.evaluate((px) => {
+    const banner = document.createElement('div');
+    banner.id = 'fake-update-banner';
+    banner.style.height = `${px}px`;
+    document.body.prepend(banner);
+  }, height);
+  // A medida acontece no próximo quadro depois do aviso do corpo da página.
+  await afterFrames(page, 3);
+}
+
+/** Os controles da tela que ficam atrás da barra de abas ou fora da janela (não deve haver nenhum). */
+async function hiddenControls(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const tabs = document.querySelector('app-tab-bar')!.getBoundingClientRect();
+    const found: string[] = [];
+    for (const element of document.querySelectorAll<HTMLElement>(
+      'app-pc-page button, app-pc-page a',
+    )) {
+      const box = element.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) continue;
+      if (box.bottom > tabs.top + 0.5 || box.top < 0 || box.right > window.innerWidth + 0.5) {
+        const label = element.getAttribute('aria-label') ?? element.textContent?.trim() ?? '';
+        found.push(`${label} bottom=${Math.round(box.bottom)} tabs=${Math.round(tabs.top)}`);
+      }
+    }
+    return found;
+  });
+}
+
+test.describe('Tela do mouse', () => {
+  test('a superfície ocupa o que sobra e nenhum controle fica atrás da barra de abas', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const pad = async () => (await page.locator('.pad').boundingBox())!;
+    const barBottom = async () =>
+      (await page.locator('app-pc-action-bar').boundingBox())!.y +
+      (await page.locator('app-pc-action-bar').boundingBox())!.height;
+    const tabsTop = async () => (await page.locator('app-tab-bar').boundingBox())!.y;
+
+    // Sem o aviso de versão: pelo menos 430 px de superfície.
+    expect((await pad()).height).toBeGreaterThanOrEqual(430);
+    expect(await hiddenControls(page)).toEqual([]);
+    expect(await barBottom()).toBeLessThanOrEqual((await tabsTop()) + 0.5);
+
+    // Com o aviso aberto: ainda 380 px, a barra de ações inteira à vista e a página sem rolagem a mais.
+    await pushPageDown(page);
+    expect((await pad()).height).toBeGreaterThanOrEqual(380);
+    expect(await hiddenControls(page)).toEqual([]);
+    expect(await barBottom()).toBeLessThanOrEqual((await tabsTop()) + 0.5);
+    // A superfície acompanha a janela: não passa do que cabe nem encolhe à toa quando o aviso some.
+    await page.evaluate(() => document.getElementById('fake-update-banner')?.remove());
+    await afterFrames(page, 3);
+    expect((await pad()).height).toBeGreaterThanOrEqual(430);
+    expect(await hiddenControls(page)).toEqual([]);
+  });
+
+  test('os sete botões da barra cabem lado a lado e têm 44 px', async ({ page }) => {
+    await openPc(page);
+    const buttons = page.locator('app-pc-action-bar button');
+    await expect(buttons).toHaveCount(7);
+    for (const box of await buttons.evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().toJSON()),
+    )) {
+      expect(box.width).toBeGreaterThanOrEqual(43.5);
+      expect(box.height).toBeGreaterThanOrEqual(43.5);
+      expect(box.right).toBeLessThanOrEqual((page.viewportSize()?.width ?? 0) + 0.5);
+    }
+  });
+
+  test('Enter, apagar, Esc e Tab saem da própria tela do mouse', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Enter', exact: true }).click();
+    await page.getByRole('button', { name: 'Apagar', exact: true }).click();
+    await page.getByRole('button', { name: 'Esc (Escape)', exact: true }).click();
+    await page.getByRole('button', { name: 'Tab', exact: true }).click();
+    await expect
+      .poll(() => pc.sent('/key'))
+      .toEqual([{ key: 'ENTER' }, { key: 'BACKSPACE' }, { key: 'ESCAPE' }, { key: 'TAB' }]);
+  });
+
+  test('segurar apagar repete, e soltar para (nunca fica apagando)', async ({ page }) => {
+    await openPc(page);
+    const erase = page.getByRole('button', { name: 'Apagar', exact: true });
+    const box = (await erase.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect.poll(() => pc.sent('/key').length).toBeGreaterThanOrEqual(3);
+    await page.mouse.up();
+    // Passado o que já estava a caminho, nada mais sai.
+    await page.waitForTimeout(400);
+    const settled = pc.sent('/key').length;
+    await page.waitForTimeout(500);
+    expect(pc.sent('/key')).toHaveLength(settled);
+    expect(pc.sent('/key').every((body) => body['key'] === 'BACKSPACE')).toBe(true);
+  });
+
+  test('o painel de teclas arma Ctrl, e a próxima tecla leva a combinação e solta', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    const panel = page.getByRole('group', { name: 'Mais teclas' }).last();
+    await expect(panel).toBeVisible();
+    await panel.getByRole('button', { name: 'Ctrl', exact: true }).click();
+    await expect(page.locator('.armed')).toContainText('Ctrl');
+    await page.getByRole('button', { name: 'Tab', exact: true }).click();
+    await expect(page.locator('.armed')).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Seta para a direita' }).click();
+    await panel.getByRole('button', { name: 'Fn' }).click();
+    await panel.getByRole('button', { name: 'F5', exact: true }).click();
+    await expect
+      .poll(() => pc.sent('/key'))
+      .toEqual([{ key: 'TAB', modifiers: ['CTRL'] }, { key: 'RIGHT' }, { key: 'F5' }]);
+    expect(await hiddenControls(page)).toEqual([]);
+  });
+
+  test('o painel aberto não deixa nenhum controle atrás da barra de abas', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    await page.getByRole('button', { name: 'Fn' }).click();
+    await pushPageDown(page);
+    expect(await hiddenControls(page)).toEqual([]);
+    expect(await smallTargets(page)).toEqual([]);
+  });
+
+  test('Energia mora dentro de Mais, e a aba segue marcada nela', async ({ page }) => {
+    await openPc(page, '/pc/mais');
+    await expect(page.getByRole('link', { name: 'Energia' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Ajustes' })).toBeVisible();
+    await page.getByRole('link', { name: 'Energia' }).click();
+    await expect(page).toHaveURL(/\/pc\/energia$/);
+    await expect(tabs(page).getByRole('link', { name: 'Mais' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.getByRole('button', { name: 'Bloquear' })).toBeVisible();
+  });
+
+  test('o endereço antigo do teclado leva à tela que o substituiu', async ({ page }) => {
+    await page.goto('/pc/teclado');
+    await expect(status(page)).toHaveText('Conectado');
+    await expect(page).toHaveURL(/\/pc\/atalhos$/);
+  });
+
+  test('com o PC desconectado a barra some junto com a tela e volta quando ele volta', async ({
+    page,
+  }) => {
+    pc.status = { available: true, online: false, apps: [] };
+    await page.goto('/pc');
+    await expect(page.getByRole('heading', { name: 'PC Desconectado' })).toBeVisible();
+    await expect(page.locator('app-pc-action-bar')).toHaveCount(0);
+  });
+
+  test('mantém a tela acesa enquanto está aberta e solta ao sair', async ({ page }) => {
+    await page.addInitScript(() => {
+      const log: string[] = [];
+      (window as unknown as { wakeLog: string[] }).wakeLog = log;
+      Object.defineProperty(navigator, 'wakeLock', {
+        configurable: true,
+        value: {
+          request: (type: string) => {
+            log.push(`request:${type}`);
+            return Promise.resolve({
+              release: () => {
+                log.push('release');
+                return Promise.resolve();
+              },
+              addEventListener: () => undefined,
+            });
+          },
+        },
+      });
+    });
+    await openPc(page);
+    const log = () => page.evaluate(() => (window as unknown as { wakeLog: string[] }).wakeLog);
+    await expect.poll(log).toEqual(['request:screen']);
+    await tabs(page).getByRole('link', { name: 'Mídia' }).click();
+    await expect.poll(log).toEqual(['request:screen', 'release']);
+  });
+
+  test('a dica de primeiro uso some ao primeiro toque e não volta', async ({ page }) => {
+    await openPc(page);
+    await expect(page.locator('.hints svg')).toHaveCount(3);
+    const { x, y } = await padCenter(page);
+    await tap(page, x, y);
+    await expect(page.locator('.hints')).toHaveCount(0);
+    await page.reload();
+    await expect(status(page)).toHaveText('Conectado');
+    await expect(page.locator('.hints')).toHaveCount(0);
   });
 });
 
@@ -270,7 +487,7 @@ test.describe('Teclado', () => {
   test('digita o texto inteiro (com acento), esvazia o campo e manda as teclas e os atalhos', async ({
     page,
   }) => {
-    await openPc(page, '/pc/teclado');
+    await openPc(page, '/pc/atalhos');
     const field = page.getByLabel('Texto para digitar no PC');
     await field.fill('olá, mundo');
     await page.getByRole('button', { name: 'Digitar' }).click();
@@ -291,7 +508,7 @@ test.describe('Teclado', () => {
   });
 
   test('as teclas armadas valem para a próxima tecla e se soltam sozinhas', async ({ page }) => {
-    await openPc(page, '/pc/teclado');
+    await openPc(page, '/pc/atalhos');
     const key = (name: string) => page.getByRole('button', { name, exact: true });
     const shift = key('Shift');
     await expect(shift).toHaveAttribute('aria-pressed', 'false');
@@ -321,13 +538,13 @@ test.describe('Teclado', () => {
   });
 
   test('as teclas F1 a F12 existem', async ({ page }) => {
-    await openPc(page, '/pc/teclado');
+    await openPc(page, '/pc/atalhos');
     await page.getByRole('button', { name: 'F5', exact: true }).click();
     await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'F5' }]);
   });
 
   test('o texto com emoji vai inteiro, e o limite conta pontos de código', async ({ page }) => {
-    await openPc(page, '/pc/teclado');
+    await openPc(page, '/pc/atalhos');
     const field = page.getByLabel('Texto para digitar no PC');
     await field.fill('oi 😀 ação');
     await page.getByRole('button', { name: 'Digitar' }).click();
@@ -338,7 +555,7 @@ test.describe('Teclado', () => {
   });
 
   test('cabe na tela e não tem falha de acessibilidade', async ({ page }) => {
-    await openPc(page, '/pc/teclado');
+    await openPc(page, '/pc/atalhos');
     await expectNoHorizontalScroll(page);
     expect(await smallTargets(page)).toEqual([]);
     await expectNoA11yViolations(page);
@@ -513,7 +730,8 @@ test.describe('Estados', () => {
       permissions: ['module:pc'],
     });
     await openPc(page);
-    await page.getByRole('button', { name: 'Esquerdo' }).click();
+    const { x, y } = await padCenter(page);
+    await tap(page, x, y);
     await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }]);
     expect(pc.denied).toEqual([]);
   });

@@ -31,12 +31,46 @@ describe('PcPrefs', () => {
     const prefs = fresh();
     prefs.set({ sensitivity: 'high' });
     prefs.set({ invertScroll: true });
-    expect(saved()).toEqual({ sensitivity: 'high', invertScroll: true });
+    expect(saved()).toMatchObject({ sensitivity: 'high', invertScroll: true });
     expect(prefs.customized()).toBe(true);
 
     const next = fresh();
     expect(next.sensitivity()).toBe('high');
     expect(next.invertScroll()).toBe(true);
+  });
+
+  it('shows the click buttons off and keeps the screen awake by default, and keeps what is chosen', () => {
+    const prefs = fresh();
+    expect(prefs.clickButtons()).toBe(false);
+    expect(prefs.keepAwake()).toBe(true);
+    prefs.set({ clickButtons: true, keepAwake: false });
+    const next = fresh();
+    expect(next.clickButtons()).toBe(true);
+    expect(next.keepAwake()).toBe(false);
+    expect(next.customized()).toBe(true);
+  });
+
+  it('a value stored by the previous version still reads, with the new fields at their defaults', () => {
+    localStorage.setItem(
+      pcPrefsStorageKey('pc-user'),
+      JSON.stringify({ sensitivity: 'high', invertScroll: true }),
+    );
+    const prefs = fresh();
+    expect(prefs.sensitivity()).toBe('high');
+    expect(prefs.invertScroll()).toBe(true);
+    expect(prefs.clickButtons()).toBe(false);
+    expect(prefs.keepAwake()).toBe(true);
+    expect(prefs.hintSeen()).toBe(false);
+  });
+
+  it('the first-use hint, once seen, stays seen and is not a choice', () => {
+    const prefs = fresh();
+    prefs.set({ hintSeen: true });
+    expect(prefs.customized()).toBe(false);
+    prefs.set({ sensitivity: 'low' });
+    prefs.reset();
+    expect(prefs.hintSeen()).toBe(true);
+    expect(fresh().hintSeen()).toBe(true);
   });
 
   it('keeps one choice per person on this device', () => {

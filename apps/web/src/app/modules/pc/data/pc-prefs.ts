@@ -8,9 +8,21 @@ export interface PcPrefsValue {
   readonly sensitivity: PointerSensitivity;
   /** Rolagem "natural" (como no celular): o conteúdo acompanha o dedo. */
   readonly invertScroll: boolean;
+  /** Mostra os botões Esquerdo, Arrastar e Direito embaixo da superfície (para quem não usa os gestos). */
+  readonly clickButtons: boolean;
+  /** Mantém a tela do aparelho acesa enquanto o touchpad está aberto. */
+  readonly keepAwake: boolean;
+  /** A dica de primeiro uso (os três gestos) já foi vista: some ao primeiro toque e não volta. */
+  readonly hintSeen: boolean;
 }
 
-export const PC_PREFS_DEFAULTS: PcPrefsValue = { sensitivity: 'normal', invertScroll: false };
+export const PC_PREFS_DEFAULTS: PcPrefsValue = {
+  sensitivity: 'normal',
+  invertScroll: false,
+  clickButtons: false,
+  keepAwake: true,
+  hintSeen: false,
+};
 
 export const PC_PREFS_KEY = 'uniover.pc.prefs.v1';
 
@@ -19,18 +31,33 @@ export function pcPrefsStorageKey(accountId: string): string {
   return `${PC_PREFS_KEY}.${encodeURIComponent(accountId)}`;
 }
 
-/** Valida o que veio do armazenamento campo a campo: um valor estragado volta ao padrão sem derrubar o outro. */
+/**
+ * Valida o que veio do armazenamento campo a campo: um valor estragado, ou um campo que a versão guardada ainda não
+ * tinha, volta ao padrão sem derrubar o outro.
+ */
 function parsePrefs(raw: unknown): PcPrefsValue {
   const stored = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const flag = (name: Exclude<keyof PcPrefsValue, 'sensitivity'>): boolean => {
+    const found = stored[name];
+    return typeof found === 'boolean' ? found : PC_PREFS_DEFAULTS[name];
+  };
   const sensitivity = POINTER_SENSITIVITIES.find((item) => item === stored['sensitivity']);
   return {
     sensitivity: sensitivity ?? PC_PREFS_DEFAULTS.sensitivity,
-    invertScroll:
-      typeof stored['invertScroll'] === 'boolean'
-        ? stored['invertScroll']
-        : PC_PREFS_DEFAULTS.invertScroll,
+    invertScroll: flag('invertScroll'),
+    clickButtons: flag('clickButtons'),
+    keepAwake: flag('keepAwake'),
+    hintSeen: flag('hintSeen'),
   };
 }
+
+/** As escolhas que a pessoa faz de propósito (a dica já vista não conta como escolha). */
+const CHOICES = [
+  'sensitivity',
+  'invertScroll',
+  'clickButtons',
+  'keepAwake',
+] as const satisfies readonly (keyof PcPrefsValue)[];
 
 /**
  * Preferências do touchpad do PC. Valem só neste aparelho (a mesma pessoa pode querer outro ritmo no iPhone e no
@@ -48,11 +75,12 @@ export class PcPrefs {
 
   readonly sensitivity = computed(() => this.value().sensitivity);
   readonly invertScroll = computed(() => this.value().invertScroll);
+  readonly clickButtons = computed(() => this.value().clickButtons);
+  readonly keepAwake = computed(() => this.value().keepAwake);
+  readonly hintSeen = computed(() => this.value().hintSeen);
   /** Alguma escolha difere do padrão. */
-  readonly customized = computed(
-    () =>
-      this.value().sensitivity !== PC_PREFS_DEFAULTS.sensitivity ||
-      this.value().invertScroll !== PC_PREFS_DEFAULTS.invertScroll,
+  readonly customized = computed(() =>
+    CHOICES.some((name) => this.value()[name] !== PC_PREFS_DEFAULTS[name]),
   );
 
   set(patch: Partial<PcPrefsValue>): void {
@@ -61,8 +89,9 @@ export class PcPrefs {
     this.write(next);
   }
 
+  /** Volta as escolhas ao padrão; a dica vista continua vista. */
   reset(): void {
-    this.set(PC_PREFS_DEFAULTS);
+    this.set({ ...PC_PREFS_DEFAULTS, hintSeen: this.value().hintSeen });
   }
 
   private openStorage(): Storage | null {

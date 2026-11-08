@@ -78,4 +78,46 @@ describe('PcPage', () => {
     expect(root.querySelector('.notice')?.textContent).toContain('O PC está desconectado.');
     expect(root.querySelector('router-outlet')).not.toBeNull();
   });
+
+  it('connected, the state is a dot with the word kept for the screen reader', () => {
+    open('ready');
+    expect(status().dataset['phase']).toBe('ready');
+    expect(status().querySelector('.dot')).not.toBeNull();
+    expect(status().querySelector('.label')?.textContent).toBe('Conectado');
+  });
+
+  it('measures the height that is left, so the screen never sits behind the tab bar', () => {
+    open('ready');
+    const section = root.querySelector<HTMLElement>('.pc')!;
+    expect(section.style.getPropertyValue('--pc-h')).toMatch(/^[0-9]+px$/);
+  });
+
+  it('the mouse screen takes the whole height; other tabs grow with their content', () => {
+    open('ready');
+    const section = root.querySelector<HTMLElement>('.pc')!;
+    const page = fixture.componentInstance as unknown as {
+      onActivate(page: object): void;
+    };
+    expect(section.classList.contains('fill')).toBe(false);
+    page.onActivate({ fillsScreen: true });
+    fixture.detectChanges();
+    expect(section.classList.contains('fill')).toBe(true);
+    page.onActivate({});
+    fixture.detectChanges();
+    expect(section.classList.contains('fill')).toBe(false);
+  });
+
+  it('while loading, the skeleton also fills the height (the screen does not jump)', () => {
+    open('loading');
+    expect(root.querySelector('.pc')?.classList.contains('fill')).toBe(true);
+  });
+
+  it('floats the failure over the surface on the mouse screen instead of pushing the bar down', () => {
+    open('ready');
+    const page = fixture.componentInstance as unknown as { onActivate(page: object): void };
+    page.onActivate({ fillsScreen: true });
+    store.notice.set(FAILURE);
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')?.classList.contains('float')).toBe(true);
+  });
 });
