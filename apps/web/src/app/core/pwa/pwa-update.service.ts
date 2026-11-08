@@ -36,6 +36,11 @@ export const FIRST_CONTENT_WATCHDOG_MS = 10_000;
 export const UPDATE_FLAG_MAX_AGE_MS = 60_000;
 /** Depois de uma recuperação automática, outra só vale passada esta janela: nunca há laço de recarga. */
 export const AUTO_RECOVERY_GUARD_MS = 60_000;
+/**
+ * Depois do `beforeunload`, uma falha de pedaço de código ainda pode ser só a navegação abortando a importação: a
+ * recuperação espera este prazo pelo `pagehide` antes de valer (a saída pode ter sido desistida).
+ */
+export const LEAVING_GRACE_MS = 5000;
 /** O toque espera, no máximo, este tempo as escritas em voo terminarem antes de recarregar (sem perguntar à pessoa). */
 export const UPDATE_WRITES_WAIT_MS = 5_000;
 const WRITES_POLL_MS = 100;
@@ -124,6 +129,10 @@ export class PwaUpdateService {
   /** A página já tinha um worker no comando (a primeira instalação, que assume a página, não é troca). */
   private controlled = false;
   private visibilityBound = false;
+  /** A página já saiu de cena (`pagehide`): a pessoa está indo para outro endereço, então nenhuma recuperação a segura aqui. */
+  private leaving = false;
+  /** Quando a saída começou (`beforeunload`, que pode ser desistida): vale como saída só por `LEAVING_GRACE_MS`. */
+  private leavingSince: number | null = null;
   private readonly router = inject(Router);
   /** Para onde a recarga vai quando a recuperação nasceu de uma navegação que falhou (senão, recarrega onde está). */
   private resumeUrl: string | undefined;
@@ -155,6 +164,7 @@ export class PwaUpdateService {
       if (event instanceof NavigationEnd) this.onNavigated();
     });
     this.destroyRef.onDestroy(() => navigations.unsubscribe());
+    this.watchLeaving(win);
     const at = readStamp(win, UPDATE_REFRESHING_KEY);
     removeKey(win, UPDATE_REFRESHING_KEY);
     if (at !== null && Date.now() - at < UPDATE_FLAG_MAX_AGE_MS) {
@@ -164,6 +174,31 @@ export class PwaUpdateService {
         FIRST_CONTENT_WATCHDOG_MS,
       );
     }
+  }
+
+  /**
+   * Quando a pessoa sai da página (endereço novo, recarga), o navegador aborta os pedaços de código ainda em voo e eles
+   * falham com a mesma mensagem de um arquivo que sumiu, antes mesmo do `pagehide` (o `beforeunload` vem primeiro). Isso
+   * não é casca velha: recuperar nesse momento mandaria a página de volta ao endereço de antes e atropelaria a navegação
+   * da pessoa. Se a página volta do cache de voltar/avançar (`persisted`), ela está viva de novo.
+   */
+  private watchLeaving(win: Window): void {
+    const starting = () => (this.leavingSince = Date.now());
+    const left = () => (this.leaving = true);
+    const back = (event: Event) => {
+      if ((event as PageTransitionEvent).persisted) {
+        this.leaving = false;
+        this.leavingSince = null;
+      }
+    };
+    win.addEventListener('beforeunload', starting);
+    win.addEventListener('pagehide', left);
+    win.addEventListener('pageshow', back);
+    this.destroyRef.onDestroy(() => {
+      win.removeEventListener('beforeunload', starting);
+      win.removeEventListener('pagehide', left);
+      win.removeEventListener('pageshow', back);
+    });
   }
 
   /** Chamado na inicialização do app; não bloqueia a primeira tela. */
@@ -306,13 +341,23 @@ export class PwaUpdateService {
    * com a tela limpa: nunca por cima de trabalho não salvo (adia e deixa o aviso à vista). Não ativa worker, não desfaz
    * registro e não apaga cache: com o worker antigo ainda no comando, o precache antigo serve os pedaços antigos. `target` é a
    * rota que o usuário tentava abrir: o roteador volta ao endereço anterior quando a navegação falha, então a recarga vai
-   * direto ao alvo em vez de largá-lo na tela de antes. Devolve `true` se há uma recuperação em curso (ou começou agora) e
+   * direto ao alvo em vez de largá-lo na tela de antes. Com a página saindo (`pagehide`), não faz nada (a falha é só a
+   * importação abortada pela navegação); com a saída só começada (`beforeunload`), espera `LEAVING_GRACE_MS` e confere de
+   * novo. Devolve `true` se há uma recuperação em curso (ou começou agora) e
    * `false` se a guarda a negou, para o erro seguir o caminho normal.
    */
   recoverFromStaleShell(target?: string): boolean {
     if (this.applying || this.checking || this.reloading) return true;
     const win = this.win;
     if (!win) return false;
+    // A página está saindo: o pedaço que falhou foi abortado pela navegação da pessoa, não perdido pelo deploy.
+    if (this.leaving) return true;
+    const waiting = this.leavingGraceLeft();
+    if (waiting > 0) {
+      // Saída ainda sem `pagehide` (pode ter sido desistida): confere de novo quando o prazo acabar.
+      win.setTimeout(() => this.recoverFromStaleShell(target), waiting);
+      return true;
+    }
     if (this.deferred === undefined && guardActive(win, CHUNK_RECOVERY_KEY, AUTO_RECOVERY_GUARD_MS))
       return false;
     // Só caminhos do próprio app: nada de `//host` nem de esquema.
@@ -329,6 +374,12 @@ export class PwaUpdateService {
       if (!started) this.explainBlockedNavigation();
     });
     return true;
+  }
+
+  /** Quanto falta do prazo em que uma saída começada (`beforeunload`) ainda conta como saída. */
+  private leavingGraceLeft(): number {
+    if (this.leavingSince === null) return 0;
+    return Math.max(0, this.leavingSince + LEAVING_GRACE_MS - Date.now());
   }
 
   /** A primeira página real da casca nova apareceu: o esqueleto pode sair e o vigia da carga é desarmado. */
