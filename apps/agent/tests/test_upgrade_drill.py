@@ -314,6 +314,67 @@ def test_a_child_older_than_the_drill_is_never_adopted_even_by_a_live_parent() -
     assert drill.drill_pids(table, {(10, T0 + 1_000)}, T0) == {10}
 
 
+def test_a_live_child_of_a_tracked_parent_that_already_exited_is_still_the_drills() -> None:
+    # O lançador abre o beacon (powershell escondido) com Process.Start e sai.
+    seeds = {(10, T0 + 10_000_000)}
+    child = {20: (10, "powershell.exe", T0 + 30_000_000)}
+    assert drill.drill_pids(child, seeds, T0) == {20}
+    # O PID do pai agora é de outro processo vivo, nascido depois do filho: o filho segue do ensaio.
+    reused_later = {**child, 10: (1, "notepad.exe", T0 + 90_000_000)}
+    assert drill.drill_pids(reused_later, seeds, T0) == {20}
+    # O novo dono nasceu antes do filho: o filho é de outro programa.
+    reused_earlier = {**child, 10: (1, "notepad.exe", T0 + 20_000_000)}
+    assert drill.drill_pids(reused_earlier, seeds, T0) == set()
+    # Filho nascido antes do pai, ou antes do ensaio, nunca é adotado.
+    assert drill.drill_pids({20: (10, "x.exe", T0 + 5_000_000)}, seeds, T0) == set()
+    assert drill.drill_pids({20: (10, "x.exe", T0 - 1)}, {(10, T0 - 50_000_000)}, T0) == set()
+
+
+def test_a_child_of_an_exited_tracked_parent_takes_its_own_descendants_along() -> None:
+    table = {
+        20: (10, "powershell.exe", T0 + 3_000),
+        21: (20, "conhost.exe", T0 + 4_000),
+    }
+    assert drill.drill_pids(table, {(10, T0 + 1_000)}, T0) == {20, 21}
+
+
+def test_the_window_watch_flags_a_window_of_the_beacon_whose_launcher_already_exited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = {20: (10, "powershell.exe", T0 + 3_000)}  # o lançador (PID 10) não existe mais
+    monkeypatch.setattr(drill, "visible_windows", lambda: [])
+    watch = drill.WindowWatch(T0)
+    watch.track({(10, T0 + 1_000)})
+    watch.track(set())  # o rastreador já não o vê vivo; a lembrança fica
+    monkeypatch.setattr(drill, "process_table", lambda: table)
+    monkeypatch.setattr(drill, "visible_windows", lambda: [(1, 20, "ConsoleWindowClass", "beacon")])
+    watch.sample()
+    assert watch.offenders == {(20, "ConsoleWindowClass", "beacon"): "powershell.exe"}
+    assert watch.lost_reference == []
+
+
+def test_the_watch_records_a_lost_reference_only_when_tracked_pids_exist_without_a_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(drill, "visible_windows", lambda: [])
+    watch = drill.WindowWatch(T0)
+    watch.track({(10, T0 + 1_000)})
+    monkeypatch.setattr(drill, "process_table", lambda: {10: (1, "powershell.exe", T0 + 1_001)})
+    watch.sample()
+    assert watch.lost_reference == []  # casou
+    monkeypatch.setattr(drill, "process_table", lambda: {})
+    watch.sample()
+    assert watch.lost_reference == []  # saiu: não é perda de referência
+    reused = {10: (1, "notepad.exe", T0 + 90_000_000)}
+    monkeypatch.setattr(drill, "process_table", lambda: reused)
+    watch.sample()  # o PID foi reaproveitado por um processo mais novo: o rastreado saiu
+    assert watch.lost_reference == []
+    monkeypatch.setattr(drill, "process_table", lambda: {10: (1, "powershell.exe", 0)})
+    watch.sample()  # o PID existe, mas a criação ficou ilegível
+    assert len(watch.lost_reference) == 1
+    assert "pid 10" in watch.lost_reference[0]
+
+
 def test_the_window_watch_flags_the_supervisor_window_but_not_the_owners_program(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

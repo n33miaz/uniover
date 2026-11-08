@@ -448,7 +448,8 @@ def visible_windows() -> list[tuple[int, int, str, str]]:
 
 
 # O CIM guarda a criação em microssegundos e o sistema em 100 ns: a mesma criação difere por menos
-# de 1 µs. Um PID reaproveitado nasce muito depois (no mínimo milissegundos).
+# de 1 µs. A tolerância de 1 ms cobre isso e fica muito abaixo do tempo em que um PID reaproveitado
+# nasce depois do dono anterior (no mínimo milissegundos, na prática segundos).
 SAME_CREATION_TICKS = 10_000
 
 
@@ -456,27 +457,48 @@ def same_process(created_a: int, created_b: int) -> bool:
     return created_a > 0 and created_b > 0 and abs(created_a - created_b) <= SAME_CREATION_TICKS
 
 
-def drill_pids(
-    table: dict[int, tuple[int, str, int]], seeds: set[tuple[int, int]], started: int
-) -> set[int]:
-    """PIDs que são, sem dúvida, do ensaio: os já identificados pelo rastreador (PID e criação) e
-    os descendentes por uma cadeia viva de pais do ensaio. Um filho só conta se nasceu depois do
-    início do ensaio e depois do pai (um pai morto cujo PID foi reaproveitado por um processo do
-    ensaio não adota os filhos antigos de outro programa, como o do dono)."""
-    tree = {
+def live_seeds(table: dict[int, tuple[int, str, int]], seeds: set[tuple[int, int]]) -> set[int]:
+    """PIDs da tabela que são, por PID e criação, processos já identificados pelo rastreador."""
+    return {
         pid
         for pid, (_, _, created) in table.items()
         if any(pid == seed_pid and same_process(created, seed) for seed_pid, seed in seeds)
+    }
+
+
+def drill_pids(
+    table: dict[int, tuple[int, str, int]], seeds: set[tuple[int, int]], started: int
+) -> set[int]:
+    """PIDs que são, sem dúvida, do ensaio: os processos vivos já identificados pelo rastreador
+    (PID e criação) e os descendentes deles. Um filho só conta se nasceu depois do início do ensaio
+    e depois do pai. Se o pai identificado já saiu (o lançador que abre o beacon e termina), os
+    filhos vivos dele continuam do ensaio: filho com `ppid` igual ao PID do pai, nascido depois
+    dele e do início; e, se esse PID já pertence a outro processo vivo, só se o filho nasceu antes
+    desse novo dono (o Command Palette do dono, anterior ao ensaio, fica de fora)."""
+    tree = live_seeds(table, seeds)
+    dead = {
+        seed
+        for seed in seeds
+        if seed[0] not in tree or not same_process(table.get(seed[0], (0, "", 0))[2], seed[1])
     }
     grew = True
     while grew:
         grew = False
         for pid, (ppid, _, created) in table.items():
-            if pid in tree or ppid not in tree or created <= 0 or created < started:
+            if pid in tree or created <= 0 or created < started:
                 continue
-            if created >= table[ppid][2]:
+            if ppid in tree and created >= table[ppid][2]:
                 tree.add(pid)
                 grew = True
+                continue
+            for spid, screated in dead:
+                if ppid != spid or created < screated:
+                    continue
+                if spid in table and created >= table[spid][2]:
+                    continue  # o PID já é de outro processo, nascido antes deste: não é o pai
+                tree.add(pid)
+                grew = True
+                break
     return tree
 
 
@@ -488,12 +510,19 @@ class WindowWatch:
 
     def __init__(self, started: int = 0) -> None:
         self.started = started
-        self.seeds: set[tuple[int, int]] = set()
+        self.seeds: set[tuple[int, int]] = set()  # todos os já vistos (inclusive os que saíram)
+        self.live: set[tuple[int, int]] = set()  # os vivos na última leitura do rastreador
+        self.lost_reference: list[str] = []
         self.offenders: dict[tuple[int, str, str], str] = {}
         self.suspects: dict[tuple[int, str, str], str] = {}
         self._baseline = {w[0] for w in visible_windows()}
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def track(self, keys: set[tuple[int, int]]) -> None:
+        """Recebe os processos vivos do ensaio (PID e criação) segundo o rastreador."""
+        self.live = set(keys)
+        self.seeds = self.seeds | self.live
 
     def start(self) -> None:
         self._thread.start()
@@ -508,9 +537,26 @@ class WindowWatch:
                 self.sample()
             self._stop.wait(0.4)
 
+    def check_reference(self, table: dict[int, tuple[int, str, int]]) -> None:
+        """O vigia só fica sem referência quando o PID de um processo rastreado existe e a criação
+        dele não bate nem com um processo mais novo: ilegível (0) ou mais antiga que a rastreada.
+        Aí ele não enxerga mais a árvore, e isso reprova o ensaio em vez de passar em silêncio.
+        PID reaproveitado por um processo mais novo é o rastreado que saiu (não é perda)."""
+        present = {key for key in self.live if key[0] in table}
+        if not present or live_seeds(table, present):
+            return
+        broken = [
+            f"pid {pid} {table[pid][1]} criacao lida {table[pid][2]} rastreada {created}"
+            for pid, created in sorted(present)
+            if table[pid][2] <= 0 or table[pid][2] < created - SAME_CREATION_TICKS
+        ]
+        if broken:
+            self.lost_reference.append("; ".join(broken))
+
     def sample(self) -> None:
         table = process_table()
         tree = drill_pids(table, self.seeds, self.started)
+        self.check_reference(table)
         for hwnd, pid, klass, title in visible_windows():
             name = table.get(pid, (0, "?", 0))[1]
             key = (pid, klass, title)
@@ -738,7 +784,7 @@ class Drill:
             self.tracker.protected = ancestors_of(os.getpid(), procs)
         current = self.tracker.current(procs)
         if self.watch is not None:
-            self.watch.seeds = {p.key for p in current}
+            self.watch.track({p.key for p in current})
         return current
 
     def alive(self, key: tuple[int, int], procs: list[Proc]) -> bool:
@@ -1420,6 +1466,11 @@ class Drill:
         seen = [f"{n} pid {k[0]} '{k[2]}' ({k[1]})" for k, n in self.watch.offenders.items()]
         self.verdict.check(
             "nenhuma janela visivel em nenhum processo do ensaio", not seen, str(seen)
+        )
+        self.verdict.check(
+            "o vigia de janelas manteve a referencia dos processos do ensaio",
+            not self.watch.lost_reference,
+            f"vigia sem referencia: {self.watch.lost_reference[:3]}",
         )
         for key, name in self.watch.suspects.items():
             say(f"  [AVISO] janela de console nova fora da arvore: {name} pid {key[0]} ({key[1]})")
