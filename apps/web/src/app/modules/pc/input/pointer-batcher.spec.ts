@@ -39,16 +39,22 @@ function controlledSend() {
 }
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-const OPTIONS: BatcherOptions = { minIntervalMs: 32, maxMove: 2000, maxScroll: 1200 };
+/** Uma vaga só: o comportamento antigo (um pedido em voo), que a maioria dos testes abaixo prova. */
+const OPTIONS: BatcherOptions = {
+  minIntervalMs: 32,
+  maxInFlight: 1,
+  maxMove: 2000,
+  maxScroll: 1200,
+};
 
 describe('PointerBatcher', () => {
   it('sends the first movement right away', () => {
     const { send, batches } = controlledSend();
     new PointerBatcher(send, OPTIONS, fakeClock()).addMove(3, -2);
-    expect(batches).toEqual([{ dx: 3, dy: -2, scrollX: 0, scrollY: 0 }]);
+    expect(batches).toMatchObject([{ dx: 3, dy: -2, scrollX: 0, scrollY: 0 }]);
   });
 
-  it('keeps ONE request in flight and sums what the finger does meanwhile', async () => {
+  it('with a limit of one, keeps ONE request in flight and sums what the finger does meanwhile', async () => {
     const clock = fakeClock();
     const { send, batches, finish } = controlledSend();
     const batcher = new PointerBatcher(send, OPTIONS, clock);
@@ -62,7 +68,7 @@ describe('PointerBatcher', () => {
     finish();
     await flush();
     expect(send).toHaveBeenCalledTimes(2);
-    expect(batches[1]).toEqual({ dx: 5, dy: 2, scrollX: 0, scrollY: 120 });
+    expect(batches[1]).toMatchObject({ dx: 5, dy: 2, scrollX: 0, scrollY: 120 });
     finish();
     await flush();
     expect(batcher.busy).toBe(false);
@@ -90,17 +96,17 @@ describe('PointerBatcher', () => {
     const { send, batches, finish } = controlledSend();
     const batcher = new PointerBatcher(
       send,
-      { minIntervalMs: 0, maxMove: 100, maxScroll: 50 },
+      { minIntervalMs: 0, maxInFlight: 1, maxMove: 100, maxScroll: 50 },
       clock,
     );
     batcher.addMove(250, -30);
-    expect(batches[0]).toEqual({ dx: 100, dy: -30, scrollX: 0, scrollY: 0 });
+    expect(batches[0]).toMatchObject({ dx: 100, dy: -30, scrollX: 0, scrollY: 0 });
     finish();
     await flush();
-    expect(batches[1]).toEqual({ dx: 100, dy: 0, scrollX: 0, scrollY: 0 });
+    expect(batches[1]).toMatchObject({ dx: 100, dy: 0, scrollX: 0, scrollY: 0 });
     finish();
     await flush();
-    expect(batches[2]).toEqual({ dx: 50, dy: 0, scrollX: 0, scrollY: 0 });
+    expect(batches[2]).toMatchObject({ dx: 50, dy: 0, scrollX: 0, scrollY: 0 });
     finish();
     await flush();
   });
@@ -145,7 +151,7 @@ describe('PointerBatcher', () => {
     finish();
     await flush();
     // O resto não esperou o intervalo mínimo: quem pede para esvaziar quer tudo já.
-    expect(batches[1]).toEqual({ dx: 4, dy: 0, scrollX: 0, scrollY: 0 });
+    expect(batches[1]).toMatchObject({ dx: 4, dy: 0, scrollX: 0, scrollY: 0 });
     finish();
     await draining;
     expect(drained).toBe(true);
@@ -166,7 +172,7 @@ describe('PointerBatcher', () => {
     expect(batcher.busy).toBe(false);
 
     batcher.addMove(7, 7);
-    expect(batches[1]).toEqual({ dx: 7, dy: 7, scrollX: 0, scrollY: 0 });
+    expect(batches[1]).toMatchObject({ dx: 7, dy: 7, scrollX: 0, scrollY: 0 });
     finish();
     await flush();
   });
@@ -199,7 +205,7 @@ describe('PointerBatcher', () => {
     expect(batcher.busy).toBe(true);
 
     batcher.resume();
-    expect(batches).toEqual([{ dx: 10, dy: 3, scrollX: 0, scrollY: 120 }]);
+    expect(batches).toMatchObject([{ dx: 10, dy: 3, scrollX: 0, scrollY: 120 }]);
     finish();
     await flush();
   });
@@ -237,8 +243,155 @@ describe('PointerBatcher', () => {
     batcher.hold();
     batcher.addMove(4, 0);
     const draining = batcher.drain();
-    expect(batches).toEqual([{ dx: 4, dy: 0, scrollX: 0, scrollY: 0 }]);
+    expect(batches).toMatchObject([{ dx: 4, dy: 0, scrollX: 0, scrollY: 0 }]);
     finish();
     await draining;
+  });
+});
+
+describe('PointerBatcher pipelined', () => {
+  const PIPELINED: BatcherOptions = { ...OPTIONS, maxInFlight: 4 };
+
+  it('keeps several requests in flight, one per interval, without waiting for any answer', () => {
+    const clock = fakeClock();
+    const { send, batches } = controlledSend();
+    const batcher = new PointerBatcher(send, PIPELINED, clock);
+    batcher.addMove(1, 0);
+    clock.advance(32);
+    batcher.addMove(2, 0);
+    clock.advance(32);
+    batcher.addMove(3, 0);
+    // Nenhuma resposta voltou, e mesmo assim os três já saíram.
+    expect(batches.map((b) => b.dx)).toEqual([1, 2, 3]);
+    expect(batcher.busy).toBe(true);
+  });
+
+  it('still respects the minimum interval between two requests', () => {
+    const clock = fakeClock();
+    const { send } = controlledSend();
+    const batcher = new PointerBatcher(send, PIPELINED, clock);
+    batcher.addMove(1, 0);
+    batcher.addMove(1, 0);
+    expect(send).toHaveBeenCalledTimes(1);
+    clock.advance(31);
+    expect(send).toHaveBeenCalledTimes(1);
+    clock.advance(1);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('numbers the requests in strictly increasing order and never reuses a number', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...PIPELINED, minIntervalMs: 0 }, clock);
+    batcher.addMove(1, 0);
+    batcher.addScroll(0, 120);
+    batcher.addMove(1, 0);
+    finish();
+    await flush();
+    batcher.discard();
+    batcher.addMove(5, 0);
+    const seqs = batches.map((b) => b.seq);
+    expect(seqs.length).toBeGreaterThanOrEqual(3);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect(seqs[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('at the in-flight limit it sums what the finger does and sends it all on the first free slot', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...OPTIONS, maxInFlight: 2 }, clock);
+    batcher.addMove(1, 0);
+    clock.advance(32);
+    batcher.addMove(2, 0);
+    clock.advance(32);
+    batcher.addMove(3, 0);
+    batcher.addMove(4, 0);
+    batcher.addMove(5, 0);
+    clock.advance(500);
+    expect(send).toHaveBeenCalledTimes(2); // cheio: nada mais sai, só soma
+
+    finish();
+    await flush();
+    expect(batches[2]).toMatchObject({ dx: 12, dy: 0 });
+    finish();
+    finish();
+    await flush();
+    expect(batcher.busy).toBe(false);
+  });
+
+  it('a failure of one request drops what was waiting but leaves the others in flight alone', async () => {
+    const clock = fakeClock();
+    const { send, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...PIPELINED, maxInFlight: 2 }, clock);
+    batcher.addMove(1, 0);
+    clock.advance(32);
+    batcher.addMove(2, 0);
+    batcher.addMove(9, 9); // espera: o limite está cheio
+    finish(false);
+    await flush();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(batcher.busy).toBe(true); // o segundo ainda voa
+    finish();
+    await flush();
+    expect(batcher.busy).toBe(false);
+  });
+
+  it('flush sends what is waiting at once (past the rate and the limit) without waiting for any answer', () => {
+    const clock = fakeClock();
+    const { send, batches } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...OPTIONS, maxInFlight: 1 }, clock);
+    batcher.addMove(1, 0);
+    batcher.addMove(6, 0); // espera o voo e a taxa
+    batcher.flush();
+    expect(batches.map((b) => b.dx)).toEqual([1, 6]);
+    expect(batcher.busy).toBe(true); // o voo segue; o clique que vem atrás não espera por ele
+  });
+
+  it('flush also sends what is held, and does nothing when nothing waits', () => {
+    const clock = fakeClock();
+    const { send, batches } = controlledSend();
+    const batcher = new PointerBatcher(send, PIPELINED, clock);
+    batcher.flush();
+    expect(send).not.toHaveBeenCalled();
+    batcher.hold();
+    batcher.addMove(3, 0);
+    batcher.flush();
+    expect(batches).toHaveLength(1);
+  });
+
+  it('drain waits for ALL the requests in flight', async () => {
+    const clock = fakeClock();
+    const { send, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...PIPELINED, minIntervalMs: 0 }, clock);
+    batcher.addMove(1, 0);
+    batcher.addMove(2, 0);
+    batcher.addMove(3, 0);
+    expect(send).toHaveBeenCalledTimes(3);
+    let drained = false;
+    const draining = batcher.drain().then(() => {
+      drained = true;
+    });
+    finish();
+    finish();
+    await flush();
+    expect(drained).toBe(false);
+    finish();
+    await draining;
+    expect(drained).toBe(true);
+  });
+
+  it('busy covers the whole set of requests in flight', async () => {
+    const clock = fakeClock();
+    const { send, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...PIPELINED, minIntervalMs: 0 }, clock);
+    batcher.addMove(1, 0);
+    batcher.addMove(2, 0);
+    finish();
+    await flush();
+    expect(batcher.busy).toBe(true);
+    finish();
+    await flush();
+    expect(batcher.busy).toBe(false);
   });
 });

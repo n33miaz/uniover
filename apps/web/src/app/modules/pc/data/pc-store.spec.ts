@@ -114,7 +114,7 @@ describe('PcStore commands', () => {
     expect(availability.refresh).not.toHaveBeenCalled();
   });
 
-  it('a click goes after the movement that was already on its way', async () => {
+  it('a click goes right behind the movement that was on its way, without waiting for the answer', async () => {
     const { store, api } = setup();
     const order: string[] = [];
     let release = () => undefined;
@@ -134,10 +134,74 @@ describe('PcStore commands', () => {
     store.movePointer(10, 0, 16);
     const clicking = store.click('LEFT');
     await flush();
-    expect(order).toEqual([]);
+    // O movimento ainda não foi respondido (a rede é lenta) e o clique já partiu: a ida e volta não se soma a ele.
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['click']);
     release();
     await clicking;
-    expect(order).toEqual(['pointer done', 'click']);
+    expect(order).toEqual(['click', 'pointer done']);
+  });
+
+  it('a click sends the movement that was still waiting for its slot before itself', async () => {
+    const { store, api } = setup();
+    const order: string[] = [];
+    api.pointer.mockImplementation(((dx: number) => {
+      order.push(`pointer ${dx}`);
+      return new Promise<void>(() => undefined);
+    }) as never);
+    api.click.mockImplementationOnce(() => {
+      order.push('click');
+      return Promise.resolve();
+    });
+    store.movePointer(10, 0, 16); // sai já
+    store.movePointer(7, 0, 16); // espera a taxa
+    await store.click('LEFT');
+    expect(order).toEqual(['pointer 10', 'pointer 7', 'click']);
+  });
+
+  it('a second text only leaves after the first one settled, so they never swap on the way', async () => {
+    const { store, api } = setup();
+    let finishFirst: () => void = () => undefined;
+    api.text.mockImplementationOnce(() => new Promise<void>((resolve) => (finishFirst = resolve)));
+    const first = store.sendText('abc');
+    const second = store.sendText('def');
+    await flush();
+    expect(api.text.mock.calls).toEqual([['abc']]);
+    finishFirst();
+    expect(await first).toBeNull();
+    expect(await second).toBeNull();
+    expect(api.text.mock.calls).toEqual([['abc'], ['def']]);
+  });
+
+  it('a text that failed does not hold the next one back', async () => {
+    const { store, api } = setup();
+    api.text.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    const first = store.sendText('abc');
+    const second = store.sendText('def');
+    expect((await first)?.kind).toBeDefined();
+    expect(await second).toBeNull();
+    expect(api.text.mock.calls).toEqual([['abc'], ['def']]);
+  });
+
+  it('numbers each movement request with a growing sequence', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      api.pointer.mockImplementation((() => new Promise<void>(() => undefined)) as never);
+      store.movePointer(10, 0, 16);
+      await vi.advanceTimersByTimeAsync(40);
+      store.movePointer(10, 0, 16);
+      await vi.advanceTimersByTimeAsync(40);
+      store.movePointer(10, 0, 16);
+      await vi.advanceTimersByTimeAsync(40);
+      const seqs = (api.pointer.mock.calls as unknown as number[][]).map((call) => call[4]);
+      expect(seqs).toHaveLength(3);
+      expect(seqs.every((seq) => typeof seq === 'number')).toBe(true);
+      expect(seqs).toEqual([...seqs].sort((a, b) => (a ?? 0) - (b ?? 0)));
+      expect(new Set(seqs).size).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('drag holds the left button and the next call releases it', async () => {
@@ -395,7 +459,7 @@ describe('PcStore pointer preferences', () => {
     store.beginGesture();
     store.movePointer(40, 0, 4);
     await flush();
-    expect(api.pointer).toHaveBeenCalledWith(40, 0, 0, 0);
+    expect(api.pointer).toHaveBeenCalledWith(40, 0, 0, 0, expect.any(Number));
   });
 
   it('uses the gain the person chose', async () => {
@@ -404,7 +468,7 @@ describe('PcStore pointer preferences', () => {
     store.beginGesture();
     store.movePointer(10, 0, 16);
     await flush();
-    expect(api.pointer).toHaveBeenCalledWith(16, 0, 0, 0);
+    expect(api.pointer).toHaveBeenCalledWith(16, 0, 0, 0, expect.any(Number));
   });
 
   it('scrolls the Windows way by default and the other way when inverted', async () => {
@@ -1237,20 +1301,18 @@ describe('PcStore when the account changes', () => {
     expect(store.dragging()).toBe(true);
   });
 
-  it('a click that was waiting for the movement of another account is not sent', async () => {
+  it('what was waiting of another account is dropped, not flushed in front of the new click', async () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
-    const finish = hangingPointer(api);
-    store.movePointer(10, 0, 16);
-
-    const clicking = store.click('LEFT');
-    await flush();
+    api.pointer.mockImplementation((() => new Promise<void>(() => undefined)) as never);
+    store.movePointer(10, 0, 16); // sai já
+    store.movePointer(20, 0, 16); // espera a taxa
     signIn('conta-b');
-    finish();
 
-    expect((await clicking)?.kind).toBe('unavailable');
-    expect(api.click).not.toHaveBeenCalled();
+    expect(await store.click('LEFT')).toBeNull();
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+    expect(api.click).toHaveBeenCalledTimes(1);
   });
 
   it('a drag that finished after the change does not mark the new account as dragging', async () => {

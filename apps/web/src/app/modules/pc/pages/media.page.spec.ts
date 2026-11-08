@@ -65,6 +65,14 @@ describe('MediaPage', () => {
     expect(store.sendMedia).toHaveBeenCalledTimes(held);
   });
 
+  it('keeps repeating while a step is still waiting for the PC, up to three at once', async () => {
+    store.sendMedia.mockImplementation(() => new Promise<never>(() => undefined));
+    press('Aumentar o volume');
+    await vi.advanceTimersByTimeAsync(420 + 190 * 8);
+    // A resposta lenta não para a repetição (cada passo não espera a ida e volta do anterior), mas ela tem teto.
+    expect(store.sendMedia).toHaveBeenCalledTimes(3);
+  });
+
   it('keyboard and screen reader activation (a click with no pointer) also change the volume', () => {
     named('Aumentar o volume').click();
     expect(store.sendMedia).toHaveBeenCalledExactlyOnceWith('VOLUME_UP');

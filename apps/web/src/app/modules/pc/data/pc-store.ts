@@ -67,7 +67,7 @@ export type PcPhase = 'loading' | 'unavailable' | 'offline' | 'ready';
 
 /**
  * O estado e os comandos do controle do PC. O estado vem da API (`PcAvailability`, o mesmo que decide o cartão da Início);
- * o movimento do dedo passa pela aceleração e pelo `PointerBatcher` (um pedido em voo por vez); os demais comandos são um
+ * o movimento do dedo passa pela aceleração e pelo `PointerBatcher` (vários pedidos numerados em voo ao mesmo tempo); os demais comandos são um
  * pedido cada e devolvem a falha, quando há, para quem os chamou mostrar onde faz sentido.
  *
  * O botão esquerdo apertado (arrastar) é o único estado que fica preso no PC se a tela sumir: por isso ele é solto ao sair
@@ -89,6 +89,12 @@ export class PcStore {
    * erro ou tempo esgotado). São pedidos HTTP independentes, e um `UP` que passasse na frente do `DOWN` o deixaria apertado.
    */
   private buttonTail: Promise<unknown> = Promise.resolve();
+  /**
+   * Os textos saem em fila: o seguinte só parte depois que o anterior terminou. São pedidos HTTP independentes e dois em
+   * paralelo podem se ultrapassar na API (uma senha digitada em dois pedaços chegaria embaralhada). A tela não espera:
+   * o campo esvazia na hora, e só o início do pedido seguinte é adiado.
+   */
+  private textTail: Promise<unknown> = Promise.resolve();
   /** Cada aperto tem o seu número: um `DOWN` atrasado só pede mais um `UP` se ainda é o último. */
   private downEpoch = 0;
   /** Depois de sair da tela ou esconder a página o sinal de vida não volta (só a próxima visita o liga). */
@@ -222,17 +228,18 @@ export class PcStore {
     }
   }
 
-  /** Clique depois de todo movimento que já saiu (a ordem do que o dedo fez é a do que o PC recebe). */
+  /**
+   * Clique logo atrás de todo movimento do dedo: o que estava esperando sai já, e o clique parte em seguida sem esperar a
+   * resposta dos movimentos (os pedidos partem na ordem em que foram feitos, e o PC os executa na ordem em que chegam). A
+   * tela não espera o resultado: quem chama recebe a falha, quando há, sem atrasar o toque seguinte.
+   */
   async click(
     button: PcClickButton,
     action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
   ): Promise<PcFailure | null> {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
-    const asked = this.account;
-    await this.batcher.drain();
-    // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
-    if (this.session.accountId() !== asked) return this.blocked();
+    this.batcher.flush();
     return this.run(() => this.api.click(button, action));
   }
 
@@ -260,6 +267,8 @@ export class PcStore {
   private async runStart(asked: string | null): Promise<PcFailure | null> {
     const epoch = ++this.downEpoch;
     try {
+      // O aperto espera o movimento já enviado terminar (o dedo ficou parado até a pressão longa, então quase sempre já
+      // terminou): o botão nunca é apertado antes de o ponteiro chegar onde o dedo parou.
       await this.batcher.drain();
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return CANCELLED;
@@ -330,7 +339,14 @@ export class PcStore {
   }
 
   sendText(text: string): Promise<PcFailure | null> {
-    return this.command(() => this.api.text(text));
+    return this.command(() => {
+      const run = this.textTail.then(
+        () => this.api.text(text),
+        () => this.api.text(text),
+      );
+      this.textTail = run.then(ignore, ignore);
+      return run;
+    });
   }
 
   sendMedia(action: PcMediaAction, steps = 1): Promise<PcFailure | null> {
@@ -541,7 +557,7 @@ export class PcStore {
       return false;
     }
     try {
-      await this.api.pointer(batch.dx, batch.dy, batch.scrollX, batch.scrollY);
+      await this.api.pointer(batch.dx, batch.dy, batch.scrollX, batch.scrollY, batch.seq);
       this.notice.set(null);
       return true;
     } catch (error) {

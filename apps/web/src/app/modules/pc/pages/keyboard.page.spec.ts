@@ -63,6 +63,35 @@ describe('KeyboardPage', () => {
     expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
   });
 
+  it('empties the field at once and does not wait for the answer before the next text', async () => {
+    store.sendText.mockImplementation(() => new Promise<never>(() => undefined));
+    type('um');
+    submit().click();
+    fixture.detectChanges();
+    expect(field().value).toBe('');
+    expect(submit().disabled).toBe(true);
+    type('dois');
+    expect(submit().disabled).toBe(false);
+    submit().click();
+    fixture.detectChanges();
+    expect(store.sendText.mock.calls).toEqual([['um'], ['dois']]);
+  });
+
+  it('gives the text back when it failed, unless something else was typed meanwhile', async () => {
+    let fail: (value: typeof FAILURE) => void = () => undefined;
+    store.sendText.mockImplementationOnce(
+      () => new Promise<typeof FAILURE>((resolve) => (fail = resolve)),
+    );
+    type('primeiro');
+    submit().click();
+    type('segundo');
+    fail(FAILURE);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(field().value).toBe('segundo');
+    expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
+  });
+
   it('special keys send the key with no modifiers', () => {
     named('Enter').click();
     named('Apagar').click();
