@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
+import { tick } from '../input/haptics';
 import { PC_PREFS_DEFAULTS, PcPrefs, pcPrefsStorageKey } from './pc-prefs';
 
 describe('PcPrefs', () => {
@@ -71,6 +72,61 @@ describe('PcPrefs', () => {
     prefs.reset();
     expect(prefs.hintSeen()).toBe(true);
     expect(fresh().hintSeen()).toBe(true);
+  });
+
+  it('the gesture choices start the way the owner asked and are kept', () => {
+    const prefs = fresh();
+    expect(prefs.scrollSensitivity()).toBe('normal');
+    expect(prefs.doubleTapDrag()).toBe(false);
+    expect(prefs.middleClick()).toBe(true);
+    expect(prefs.haptics()).toBe(true);
+    prefs.set({
+      scrollSensitivity: 'high',
+      doubleTapDrag: true,
+      middleClick: false,
+      haptics: false,
+    });
+    const next = fresh();
+    expect(next.scrollSensitivity()).toBe('high');
+    expect(next.doubleTapDrag()).toBe(true);
+    expect(next.middleClick()).toBe(false);
+    expect(next.haptics()).toBe(false);
+    expect(next.customized()).toBe(true);
+  });
+
+  it('a scroll sensitivity that makes no sense goes back to normal', () => {
+    localStorage.setItem(
+      pcPrefsStorageKey('pc-user'),
+      JSON.stringify({ scrollSensitivity: 'ludicrous', middleClick: 'yes' }),
+    );
+    const prefs = fresh();
+    expect(prefs.scrollSensitivity()).toBe('normal');
+    expect(prefs.middleClick()).toBe(true);
+  });
+
+  it('turning the vibration off switches it off in the whole module', () => {
+    const prefs = fresh();
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
+    // O jsdom não tem `matchMedia` (o `tick` o consulta para respeitar "reduzir movimento").
+    Object.defineProperty(window, 'matchMedia', {
+      value: () => ({ matches: false }),
+      configurable: true,
+    });
+    try {
+      TestBed.tick();
+      tick();
+      expect(vibrate).toHaveBeenCalledTimes(1);
+      prefs.set({ haptics: false });
+      TestBed.tick();
+      tick();
+      expect(vibrate).toHaveBeenCalledTimes(1);
+      prefs.set({ haptics: true });
+      TestBed.tick();
+    } finally {
+      Reflect.deleteProperty(navigator, 'vibrate');
+      Reflect.deleteProperty(window, 'matchMedia');
+    }
   });
 
   it('keeps one choice per person on this device', () => {

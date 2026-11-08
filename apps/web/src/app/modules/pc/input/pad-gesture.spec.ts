@@ -1,53 +1,5 @@
-import {
-  DEFAULT_PAD_GESTURE,
-  LONG_PRESS_MS,
-  LONG_PRESS_RADIUS_PX,
-  PadGesture,
-  PadHandlers,
-  PadTimers,
-} from './pad-gesture';
-
-/** Relógio de mentira: o teste avança o tempo e o disparo da pressão longa acontece quando ele manda. */
-function fakeTimers() {
-  let now = 0;
-  let next = 1;
-  const pending = new Map<number, { at: number; handler: () => void }>();
-  const timers: PadTimers = {
-    set: (handler, ms) => {
-      const id = next++;
-      pending.set(id, { at: now + ms, handler });
-      return id;
-    },
-    clear: (handle) => void pending.delete(handle as number),
-  };
-  return {
-    timers,
-    get pending() {
-      return pending.size;
-    },
-    advance(ms: number) {
-      now += ms;
-      for (const [id, entry] of [...pending]) {
-        if (entry.at <= now) {
-          pending.delete(id);
-          entry.handler();
-        }
-      }
-    },
-  };
-}
-
-function setup() {
-  const handlers = {
-    move: vi.fn<PadHandlers['move']>(),
-    scroll: vi.fn<PadHandlers['scroll']>(),
-    tap: vi.fn<PadHandlers['tap']>(),
-    dragStart: vi.fn<PadHandlers['dragStart']>(),
-    dragEnd: vi.fn<PadHandlers['dragEnd']>(),
-  };
-  const clock = fakeTimers();
-  return { handlers, clock, gesture: new PadGesture(handlers, DEFAULT_PAD_GESTURE, clock.timers) };
-}
+import { DEFAULT_PAD_GESTURE, LONG_PRESS_MS, LONG_PRESS_RADIUS_PX } from './pad-gesture';
+import { setup } from './pad-gesture-test-kit';
 
 describe('PadGesture', () => {
   it('a short and still touch is a left click', () => {
@@ -55,7 +7,7 @@ describe('PadGesture', () => {
     gesture.down(1, 100, 100, 0);
     gesture.move(1, 102, 101, 40);
     gesture.up(1, 120);
-    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT');
+    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT', expect.anything());
     expect(handlers.move).not.toHaveBeenCalled();
   });
 
@@ -108,7 +60,7 @@ describe('PadGesture', () => {
     gesture.down(2, 140, 100, 10);
     gesture.up(1, 80);
     gesture.up(2, 90);
-    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('RIGHT');
+    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('RIGHT', expect.anything());
   });
 
   it('lifting one finger during a scroll never turns into pointer movement', () => {
@@ -131,7 +83,7 @@ describe('PadGesture', () => {
     gesture.up(1, 20);
     gesture.down(1, 200, 200, 1000);
     gesture.up(1, 1050);
-    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT');
+    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT', expect.anything());
   });
 
   it('cancel drops the fingers and fires nothing', () => {
@@ -206,7 +158,7 @@ describe('PadGesture long press', () => {
     expect(clock.pending).toBe(0);
     clock.advance(1_000);
     expect(handlers.dragStart).not.toHaveBeenCalled();
-    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT');
+    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT', expect.anything());
   });
 
   it('a second finger cancels the press (that is a scroll or a right click)', () => {
@@ -249,8 +201,8 @@ describe('PadGesture long press', () => {
     expect(handlers.dragStart).not.toHaveBeenCalled();
   });
 
-  it('needs 600 ms and a finger within a small radius (named constants)', () => {
-    expect(LONG_PRESS_MS).toBe(600);
+  it('needs 450 ms and a finger within a small radius (named constants)', () => {
+    expect(LONG_PRESS_MS).toBe(450);
     expect(DEFAULT_PAD_GESTURE.longPressMs).toBe(LONG_PRESS_MS);
     expect(DEFAULT_PAD_GESTURE.longPressRadiusPx).toBe(LONG_PRESS_RADIUS_PX);
     expect(LONG_PRESS_RADIUS_PX).toBe(8);

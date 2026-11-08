@@ -1,11 +1,34 @@
 import {
   DEFAULT_ACCELERATION,
   PointerAccelerator,
+  SCROLL_SENSITIVITIES,
   ScrollAccelerator,
   WHEEL_UNIT,
   accelerationFor,
   gainFor,
+  scrollGainFor,
 } from './pc-acceleration';
+
+describe('scroll sensitivity', () => {
+  it('offers three levels, normal being the neutral one', () => {
+    expect(SCROLL_SENSITIVITIES).toEqual(['low', 'normal', 'high']);
+    expect(scrollGainFor('normal')).toBe(1);
+    expect(scrollGainFor('low')).toBeLessThan(1);
+    expect(scrollGainFor('high')).toBeGreaterThan(1);
+  });
+
+  it('scales the wheel steps of the same swipe', () => {
+    const wheel = (gain: number) => new ScrollAccelerator().apply(0, 80, 100, false, gain).scrollY;
+    expect(Math.abs(wheel(scrollGainFor('low')))).toBeLessThan(Math.abs(wheel(1)));
+    expect(Math.abs(wheel(scrollGainFor('high')))).toBeGreaterThan(Math.abs(wheel(1)));
+  });
+
+  it('keeps the direction (and the inversion) at any level', () => {
+    const accelerator = new ScrollAccelerator();
+    expect(accelerator.apply(0, 80, 100, false, 1.6).scrollY).toBeLessThan(0);
+    expect(new ScrollAccelerator().apply(0, 80, 100, true, 1.6).scrollY).toBeGreaterThan(0);
+  });
+});
 
 describe('gainFor', () => {
   it('never goes below the base gain, even for a stopped or invalid speed', () => {
