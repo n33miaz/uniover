@@ -5,6 +5,7 @@ import { Subject } from 'rxjs';
 import { ConnectivityService, ServerState } from '../../../core/connectivity/connectivity.service';
 import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
+import { TvAdbPermission } from './tv-adb-permission';
 import { TvApi } from './tv-api';
 import { TvSelection } from './tv-selection';
 import {
@@ -1332,6 +1333,87 @@ describe('TvStore', () => {
       await expect(store.renameShortcut('s1', 'Sala')).resolves.toBe(false);
       expect(api.updateShortcut).not.toHaveBeenCalled();
       expect(store.notice()?.kind).toBe('error');
+    });
+  });
+
+  describe('missing ADB permission', () => {
+    const unauthorized = () =>
+      new HttpErrorResponse({
+        status: 502,
+        error: { type: PROBLEM + 'command-failed', status: 502, agentError: 'adb_unauthorized' },
+      });
+    let permission: TvAdbPermission;
+
+    beforeEach(() => {
+      permission = TestBed.inject(TvAdbPermission);
+      permission.attach(); // a tela do controle hospeda a folha
+    });
+
+    afterEach(() => permission.detach());
+
+    it('opens the permission sheet instead of only showing the error when a shortcut is refused', async () => {
+      await started();
+      api.launch.mockRejectedValueOnce(unauthorized());
+      await expect(store.launch(shortcut(1))).resolves.toBe(false);
+      expect(permission.sheetOpen()).toBe(true);
+      expect(permission.needs()).toBe(true);
+      expect(store.notice()).toBeNull(); // o erro não aparece em cima da folha
+    });
+
+    it('opens it for the other ADB actions too (cleanup), and after "Agora não" shows only the short error', async () => {
+      await started();
+      api.cleanup.mockRejectedValueOnce(unauthorized());
+      await store.cleanup();
+      expect(permission.sheetOpen()).toBe(true);
+      permission.dismiss();
+      api.launch.mockRejectedValueOnce(unauthorized());
+      await store.launch(shortcut(1));
+      // Depois de "Agora não": só o aviso curto, e a folha não volta.
+      expect(permission.sheetOpen()).toBe(false);
+      expect(store.notice()?.kind).toBe('error');
+      expect(store.notice()?.text).toBe(
+        'A TV ainda não liberou o UniOver. Toque em Atualizar lista.',
+      );
+    });
+
+    it('keeps the plain error for failures that are not about the permission', async () => {
+      await started();
+      api.launch.mockRejectedValueOnce(problem(502, 'command-failed'));
+      await store.launch(shortcut(1));
+      expect(permission.sheetOpen()).toBe(false);
+      expect(permission.needs()).toBe(false);
+      expect(store.notice()?.kind).toBe('error');
+    });
+
+    it('Atualizar lista is the request that shows the prompt: it waits for the accept, with no sheet', async () => {
+      await started();
+      api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
+      await expect(store.refreshShortcuts()).resolves.toBe(false);
+      expect(permission.waiting()).toBe(true);
+      expect(permission.sheetOpen()).toBe(false);
+      expect(store.notice()).toBeNull();
+    });
+
+    it('with no screen to host the sheet, the short error shows instead of nothing', async () => {
+      permission.detach();
+      await started();
+      api.launch.mockRejectedValueOnce(unauthorized());
+      await store.launch(shortcut(1));
+      expect(store.notice()?.text).toBe(
+        'A TV ainda não liberou o UniOver. Toque em Atualizar lista.',
+      );
+      api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
+      await store.refreshShortcuts();
+      expect(store.notice()?.kind).toBe('error');
+      permission.attach();
+    });
+
+    it('a refresh that works clears the need', async () => {
+      await started();
+      permission.denied();
+      await expect(store.refreshShortcuts()).resolves.toBe(true);
+      expect(permission.needs()).toBe(false);
+      expect(permission.sheetOpen()).toBe(false);
     });
   });
 

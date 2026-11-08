@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
+import { TvAdbPermission } from '../data/tv-adb-permission';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TV_SUGGESTED_APPS } from '../data/tv-suggestions';
@@ -362,5 +363,19 @@ describe('ShortcutRow', () => {
       expect(suggestions()).toHaveLength(0);
       expect(root.querySelector('.hint')).toBeNull();
     });
+  });
+
+  it('marks the tiles with a quiet sign while the TV asks for the ADB permission, and keeps them tappable', () => {
+    TestBed.inject(TvAdbPermission).needs.set(true);
+    fixture.detectChanges();
+    expect(tiles().every((el) => el.classList.contains('needs-permission'))).toBe(true);
+    expect(names()).toEqual(['Atalho 1, precisa de permissão', 'Sala, precisa de permissão']);
+    expect(tiles().some((el) => el.getAttribute('aria-disabled') === 'true')).toBe(false);
+    tiles()[0]!.click();
+    expect(opened).toHaveBeenCalledTimes(1);
+    TestBed.inject(TvAdbPermission).needs.set(false);
+    fixture.detectChanges();
+    expect(tiles().some((el) => el.classList.contains('needs-permission'))).toBe(false);
+    expect(names()).toEqual(['Atalho 1', 'Sala']);
   });
 });

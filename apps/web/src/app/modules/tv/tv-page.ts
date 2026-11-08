@@ -19,6 +19,7 @@ import { TvPrefs } from './data/tv-prefs';
 import { TvRoundKeys } from './data/tv-round-keys';
 import { TvStore } from './data/tv-store';
 import { AppsPanel } from './panels/apps-panel';
+import { AdbPermissionNotice } from './ui/adb-permission';
 import { KeyboardPanel } from './panels/keyboard-panel';
 import { MoreKeysPanel } from './panels/more-keys-panel';
 import { CustomizeSheet } from './ui/customize-sheet';
@@ -64,6 +65,7 @@ const TITLE_MEDIUM_MAX = 12;
     PcOffSeal,
     PairingNotice,
     TvToast,
+    AdbPermissionNotice,
     ControlPage,
     ViewOnlyPage,
     StatusIndicator,

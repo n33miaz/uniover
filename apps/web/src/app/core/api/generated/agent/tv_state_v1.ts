@@ -3,6 +3,7 @@
 export type TvStateV1BodyPower = 'on' | 'off' | 'unknown';
 export type TvStateV1BodyConnection =
   'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking';
+export type TvStateV1BodyAdbPermission = 'granted' | 'missing' | 'pending';
 
 /**
  * Agente para API: estado atual da TV.
@@ -22,4 +23,5 @@ export interface TvStateV1Body {
   volume: number | null;
   app: string | null;
   connection: TvStateV1BodyConnection;
+  adbPermission?: TvStateV1BodyAdbPermission;
 }

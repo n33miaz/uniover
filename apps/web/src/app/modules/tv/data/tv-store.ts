@@ -10,6 +10,7 @@ import { TvPresence } from './tv-presence';
 import type { TvCleanupReport, TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
+import { TvAdbPermission } from './tv-adb-permission';
 import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
 import { ReadWatch } from './tv-read-watch';
 import { withOrder } from './tv-order';
@@ -159,6 +160,8 @@ export class TvStore {
   private readonly presenceSignal = inject(TvPresence);
   private readonly selection = inject(TvSelection);
   private readonly session = inject(SessionState);
+  /** A falta de permissão do ADB abre a folha que a pede, em vez de só mostrar o erro. */
+  private readonly adbPermission = inject(TvAdbPermission);
 
   private readonly _state = signal<TvState | null>(null);
   private readonly _seenAt = signal<number | null>(null);
@@ -862,6 +865,7 @@ export class TvStore {
     await this.presence();
     try {
       await this.api.openSettings(screen);
+      this.adbPermission.confirmed();
       if (this.live(epoch)) {
         this.showNotice(
           'info',
@@ -898,6 +902,7 @@ export class TvStore {
     await this.presence();
     try {
       const result = await this.api.cleanup();
+      this.adbPermission.confirmed();
       if (this.live(epoch)) {
         this._lastCleanup.set({
           at: new Date(),
@@ -926,12 +931,17 @@ export class TvStore {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
       const list = await this.api.shortcuts();
+      this.adbPermission.confirmed();
       if (!this.live(epoch)) return true;
       this.receiveShortcuts(list);
       this.showNotice('info', $localize`:@@tv.apps.refreshed:Lista de apps atualizada.`);
       return true;
     } catch (error) {
-      if (this.live(epoch)) this.fail(error);
+      if (!this.live(epoch)) return false;
+      // Atualizar lista é o pedido da pessoa que faz a TV mostrar o aviso: aceitar lá é o próximo passo.
+      if (describeFailure(error).kind !== 'adb-permission' || !this.adbPermission.prompted()) {
+        this.fail(error);
+      }
       return false;
     }
   }
@@ -1308,7 +1318,10 @@ export class TvStore {
   private fail(error: unknown, context?: TvFailureContext): TvFailure {
     const failure = describeFailure(error, context);
     this.absorb(failure);
-    this.showNotice('error', failure.message);
+    // Falta de permissão do ADB: a folha "Liberar na TV" abre (ou o aviso já está na TV) e o erro não se repete em cima;
+    // se a pessoa disse "Agora não", fica só o aviso curto.
+    const handled = failure.kind === 'adb-permission' && this.adbPermission.denied();
+    if (!handled) this.showNotice('error', failure.message);
     return failure;
   }
 

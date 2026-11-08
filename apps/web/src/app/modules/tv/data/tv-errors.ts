@@ -10,6 +10,7 @@ export type TvFailureKind =
   | 'not-configured'
   | 'timeout'
   | 'command-failed'
+  | 'adb-permission'
   | 'rate-limited'
   | 'cleanup-busy'
   | 'shortcut-disabled'
@@ -66,6 +67,11 @@ function powerOffFailedMessage(code: string | null): string | null {
   }
 }
 
+/** Texto curto da falta de permissão do ADB; Atualizar lista (no painel Apps) faz o mesmo pedido da folha "Liberar na TV". */
+export function adbPermissionMessage(): string {
+  return $localize`:@@tv.error.adb-unauthorized:A TV ainda não liberou o UniOver. Toque em Atualizar lista.`;
+}
+
 function commandFailedMessage(code: string | null, context?: TvFailureContext): string {
   const powerOff = context === 'power-off' ? powerOffFailedMessage(code) : null;
   if (powerOff) return powerOff;
@@ -74,9 +80,6 @@ function commandFailedMessage(code: string | null, context?: TvFailureContext): 
   }
   if (code !== null && ADB_UNREACHABLE_CODES.has(code)) {
     return $localize`:@@tv.error.adb-unreachable:A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.`;
-  }
-  if (code === 'adb_unauthorized') {
-    return $localize`:@@tv.error.adb-unauthorized:A TV ainda não deu a permissão do ADB ao computador do agente. Toque em Atualizar lista, aceite o aviso na tela da TV e marque Sempre permitir neste computador. Depois toque em Atualizar lista de novo.`;
   }
   if (code === 'adb_idle') {
     return $localize`:@@tv.error.adb-idle:O ADB só conecta enquanto você usa a tela da TV. Toque de novo, ou em Atualizar lista.`;
@@ -174,8 +177,12 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
         seconds,
       );
     }
-    case 502:
-      return make('command-failed', commandFailedMessage(agentErrorOf(error), context));
+    case 502: {
+      const code = agentErrorOf(error);
+      // Falta a permissão do ADB na TV: a tela abre a folha que a pede (e não só um erro).
+      if (code === 'adb_unauthorized') return make('adb-permission', adbPermissionMessage());
+      return make('command-failed', commandFailedMessage(code, context));
+    }
     case 503:
       return problem.kind === 'agent-not-configured'
         ? make(

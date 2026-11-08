@@ -21,6 +21,12 @@ export type TvConnection =
   'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking' | 'unknown';
 export type TvPower = 'on' | 'off' | 'unknown';
 
+/**
+ * A permissão do ADB na TV, como o agente a conta (`tv.state.v1`): `granted` (a TV aceitou o UniOver), `missing` (o agente
+ * não usa o ADB sem a pessoa pedir) ou `pending` (o aviso está na tela da TV esperando o aceite).
+ */
+export type AdbPermission = 'granted' | 'missing' | 'pending';
+
 /** O estado já normalizado: o gerador tipa `volume` como número ou texto e `connection`/`power` como texto livre. */
 export interface TvState {
   readonly power: TvPower;
@@ -31,6 +37,8 @@ export interface TvState {
   readonly updatedAt: string | null;
   /** Desde quando o agente está fora (a API sabe; vem só com ele fora). */
   readonly offlineSince?: string | null;
+  /** A permissão do ADB; `null` quando o agente não diz (Samsung, agente antigo, ADB ainda sem resposta). */
+  readonly adbPermission?: AdbPermission | null;
 }
 
 /** Tipo da TV, como o agente a declara: muda o que o controle oferece (a Samsung não tem teclado nem limpeza). */
@@ -167,6 +175,12 @@ function toVolume(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function toAdbPermission(value: unknown, agentOnline: boolean): AdbPermission | null {
+  // Sem agente conectado não há o que dizer; um valor que esta versão não conhece é "não se sabe", nunca "falta".
+  if (!agentOnline) return null;
+  return value === 'granted' || value === 'missing' || value === 'pending' ? value : null;
+}
+
 function toPower(value: unknown): TvPower {
   return value === 'on' || value === 'off' ? value : 'unknown';
 }
@@ -197,6 +211,7 @@ export function parseState(value: unknown): TvState | null {
     agentOnline,
     updatedAt: typeof dto.updatedAt === 'string' ? dto.updatedAt : null,
     offlineSince: !agentOnline && typeof dto.offlineSince === 'string' ? dto.offlineSince : null,
+    adbPermission: toAdbPermission(dto.adbPermission, agentOnline),
   };
 }
 

@@ -87,9 +87,11 @@ describe('describeFailure', () => {
     const unauthorized = describeFailure(
       http(502, 'command-failed', { agentError: 'adb_unauthorized' }),
     );
-    expect(unauthorized.message).toContain('aceite o aviso na tela da TV');
-    expect(unauthorized.message).toContain('Sempre permitir neste computador');
-    expect(unauthorized.message).toContain('de novo');
+    // Falta de permissão não é "comando falhou": a tela abre a folha que pede a permissão.
+    expect(unauthorized.kind).toBe('adb-permission');
+    expect(unauthorized.message).toBe(
+      'A TV ainda não liberou o UniOver. Toque em Atualizar lista.',
+    );
     const idle = describeFailure(http(502, 'command-failed', { agentError: 'adb_idle' }));
     expect(idle.message).toContain('enquanto você usa a tela da TV');
     expect(idle.message).not.toContain('ainda não deu a permissão');

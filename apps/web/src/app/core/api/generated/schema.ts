@@ -13095,6 +13095,7 @@ export interface components {
       tvLabel: null | string;
     };
     TvState: {
+      adbPermission?: null | string;
       /** @default true */
       agentLinked: boolean;
       agentOnline: boolean;

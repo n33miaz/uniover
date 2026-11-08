@@ -12,6 +12,7 @@ import { LoadingFrame } from '../../../shared/ui/skeleton/loading-frame';
 import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 import { TvLivreStore } from './data/livre-store';
 import { LivreBackgroundTab } from './ui/livre-background-tab';
+import { AdbPermissionNotice } from '../ui/adb-permission';
 import { LivreHomeTab } from './ui/livre-home-tab';
 import { LivreInstallTab } from './ui/livre-install-tab';
 import { LivreSleepTab } from './ui/livre-sleep-tab';
@@ -28,6 +29,7 @@ type LivreTab = 'home' | 'background' | 'sleep' | 'install';
   selector: 'app-livre-page',
   imports: [
     NgTemplateOutlet,
+    AdbPermissionNotice,
     LoadingFrame,
     Skeleton,
     LivreHomeTab,
