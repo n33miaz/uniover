@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.48.0](https://github.com/n33miaz/uniover/compare/v0.47.0...v0.48.0) (2026-11-08)
+
+
+### Devices 0.47.0
+
+#### Features
+
+* **web:** new pc mouse screen and action bar
+* **web:** live typing on the pc keyboard
+* **web:** smarter pc touchpad gestures
+* **web:** pc shortcut catalog and sheet
+
+#### Bug Fixes
+
+* **web:** pc keyboard, modifiers and taps polish
+* **web:** pc taps, click timeout, keyboard focus
+
+
+### TV 0.45.0
+
+#### Features
+
+* **web:** new pc mouse screen and action bar
+
+
+### Web 0.48.0
+
+#### Features
+
+* **web:** new pc mouse screen and action bar
+* **web:** live typing on the pc keyboard
+* **web:** smarter pc touchpad gestures
+* **web:** pc shortcut catalog and sheet
+
+#### Bug Fixes
+
+* **web:** pc keyboard, modifiers and taps polish
+* **web:** pc taps, click timeout, keyboard focus
+
 ## [0.47.0](https://github.com/n33miaz/uniover/compare/v0.46.0...v0.47.0) (2026-11-08)
 
 
