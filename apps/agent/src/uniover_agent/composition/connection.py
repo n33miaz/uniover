@@ -69,6 +69,7 @@ from uniover_agent.core import (
     LOGS_REQUEST_TYPE,
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
+    PC_KEY_V2_CAPABILITY,
     PC_SILENT_TYPES,
     PRESENCE_CAPABILITY,
     SETTINGS_OPEN_CAPABILITY,
@@ -112,14 +113,14 @@ TIDY_TIMEOUT_SECONDS = 60.0
 # Capacidades que uma API anterior recusaria no `hello` (ela não as conhece): só vão depois de a API
 # listá-las em `features`.
 API_LISTED_CAPABILITIES = frozenset(
-    {PAIR_CAPABILITY, PRESENCE_CAPABILITY, SETTINGS_OPEN_CAPABILITY}
+    {PAIR_CAPABILITY, PRESENCE_CAPABILITY, SETTINGS_OPEN_CAPABILITY, PC_KEY_V2_CAPABILITY}
 )
 
 
 def declarable_capabilities(
     capabilities: Iterable[str], api_supports: Callable[[str], bool]
 ) -> tuple[str, ...]:
-    """As capacidades da TV que podem ir ao `hello` agora.
+    """As capacidades da TV e do PC que podem ir ao `hello` agora.
 
     Uma API anterior recusa o `hello` com capacidade que não conhece: as de
     `API_LISTED_CAPABILITIES` só vão depois de a API listá-las em `features`; as demais vão sempre.
@@ -535,7 +536,11 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
                 if tv is not None
                 else ()
             ),
-            *(tuple(pc.capabilities) if pc is not None else ()),
+            *(
+                declarable_capabilities(pc.capabilities, features.supports)
+                if pc is not None
+                else ()
+            ),
         ),
         on_connected=on_connected,
         on_disconnected=on_disconnected,

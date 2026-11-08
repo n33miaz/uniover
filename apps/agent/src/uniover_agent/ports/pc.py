@@ -27,8 +27,12 @@ class PcInput(Protocol):
         """`button`: LEFT, RIGHT ou MIDDLE. `action`: CLICK, DOUBLE, DOWN ou UP."""
         ...
 
-    def key(self, key: str, modifiers: Sequence[str]) -> None:
-        """Aperta e solta uma tecla do contrato, com os modificadores seguros enquanto isso."""
+    def key(
+        self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
+    ) -> None:
+        """Aperta e solta uma tecla do contrato `repeat` vezes, com os modificadores seguros
+        enquanto isso. `action` `DOWN` ou `UP` só aperta ou só solta um modificador (segurar entre
+        toques, como o Alt do Alt+Tab): o que ficar apertado é solto por `release_all`."""
         ...
 
     def type_text(self, text: str) -> None:
@@ -40,7 +44,8 @@ class PcInput(Protocol):
         ...
 
     def release_all(self) -> None:
-        """Solta todo botão do mouse que ficou apertado (DOWN sem UP). Sem nenhum, não faz nada.
+        """Solta todo botão do mouse e toda tecla que ficou apertado (DOWN sem UP). Sem nenhum, não
+        faz nada.
 
         Nunca levanta erro: é chamado quando a conexão cai e ao encerrar, momentos em que não há
         a quem reportar a falha.

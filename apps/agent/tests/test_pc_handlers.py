@@ -39,8 +39,13 @@ class FakeInput:
     def click(self, button: str, action: str) -> None:
         self._record("click", button, action)
 
-    def key(self, key: str, modifiers: Sequence[str]) -> None:
-        self._record("key", key, tuple(modifiers))
+    def key(
+        self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
+    ) -> None:
+        if repeat == 1 and action == "PRESS":
+            self._record("key", key, tuple(modifiers))
+        else:
+            self._record("key", key, tuple(modifiers), repeat, action)
 
     def type_text(self, text: str) -> None:
         self._record("text", text)
@@ -112,6 +117,37 @@ async def test_click_defaults_to_a_single_click() -> None:
     await run(handlers["pc.click.v1"], {"button": "RIGHT"})
     await run(handlers["pc.click.v1"], {"button": "LEFT", "action": "DOWN"})
     assert pc.calls == [("click", "RIGHT", "CLICK"), ("click", "LEFT", "DOWN")]
+
+
+async def test_key_v2_passes_the_repeat_and_the_action_to_the_input() -> None:
+    handlers, pc, _, _ = build()
+    await run(handlers["pc.key.v2"], {"key": "BACKSPACE", "repeat": 12})
+    await run(handlers["pc.key.v2"], {"key": "ALT", "action": "DOWN"})
+    await run(handlers["pc.key.v2"], {"key": "TAB", "modifiers": ["SHIFT"]})
+    await run(handlers["pc.key.v2"], {"key": "ALT", "action": "UP"})
+    await run(handlers["pc.key.v2"], {"key": "D0", "modifiers": ["CTRL"]})
+    assert pc.calls == [
+        ("key", "BACKSPACE", (), 12, "PRESS"),
+        ("key", "ALT", (), 1, "DOWN"),
+        ("key", "TAB", ("SHIFT",)),
+        ("key", "ALT", (), 1, "UP"),
+        ("key", "D0", ("CTRL",)),
+    ]
+
+
+async def test_key_v1_is_untouched_by_the_v2_and_ignores_nothing_it_never_had() -> None:
+    # Compatibilidade: o handler antigo segue servido, com o mesmo corpo de antes.
+    handlers, pc, _, _ = build()
+    assert "pc.key.v1" in handlers
+    await run(handlers["pc.key.v1"], {"key": "C", "modifiers": ["CTRL"]})
+    assert pc.calls == [("key", "C", ("CTRL",))]
+
+
+async def test_key_v2_refused_by_the_input_is_reported_not_raised() -> None:
+    handlers, pc, _, _ = build()
+    pc.error = ValueError("só um modificador pode ser segurado ou solto: A")
+    result = await handlers["pc.key.v2"](Command("1", "pc.key.v2", {"key": "A", "action": "DOWN"}))
+    assert (result.status, result.code) == (ResultStatus.REJECTED, "invalid_message")
 
 
 async def test_key_text_and_media() -> None:

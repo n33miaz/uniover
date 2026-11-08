@@ -28,6 +28,9 @@ _log = logging.getLogger(__name__)
 
 # Declarada no `agent.hello.v1`: a API só manda `pc.*` a quem a tem.
 PC_CONTROL_CAPABILITY: Final = "pc.control.v1"
+# Também no `hello`, mas só depois de a API listá-la em `features` (uma API anterior recusaria o
+# `hello` com capacidade que não conhece): teclas novas, repetição e segurar modificador.
+PC_KEY_V2_CAPABILITY: Final = "pc.key.v2"
 
 # Comandos executados sem resposta: a API manda o movimento do mouse sem esperar por ela.
 PC_SILENT_TYPES: Final = frozenset({"pc.pointer.v1"})
@@ -145,6 +148,24 @@ def pc_key_handler(pc: PcInput) -> Handler:
     def handle(command: Command) -> CommandResult:
         modifiers: Sequence[str] = command.body.get("modifiers") or ()
         pc.key(str(command.body["key"]), modifiers)
+        return _ok(command)
+
+    return _guarded(handle)
+
+
+def pc_key_v2_handler(pc: PcInput) -> Handler:
+    """`pc.key.v2`: a tecla da v1 mais `repeat` (várias vezes num lote só) e `action` (`DOWN` e `UP`
+    seguram e soltam um modificador; o adaptador solta o que ficar apertado)."""
+
+    def handle(command: Command) -> CommandResult:
+        body = command.body
+        modifiers: Sequence[str] = body.get("modifiers") or ()
+        pc.key(
+            str(body["key"]),
+            modifiers,
+            repeat=int(body.get("repeat") or 1),
+            action=str(body.get("action") or "PRESS"),
+        )
         return _ok(command)
 
     return _guarded(handle)
@@ -272,6 +293,13 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
             exempt=lambda command: command.body.get("action") == "UP",
         ),
         "pc.key.v1": fresh(noted(pc_key_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        # Soltar nunca é recusado por idade (como o UP de um clique): uma soltura atrasada ainda é
+        # a que impede o modificador de ficar preso.
+        "pc.key.v2": fresh(
+            noted(pc_key_v2_handler(pc)),
+            MAX_COMMAND_AGE_SECONDS,
+            exempt=lambda command: command.body.get("action") == "UP",
+        ),
         "pc.text.v1": fresh(noted(pc_text_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         "pc.media.v1": fresh(noted(pc_media_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         "pc.power.v1": fresh(

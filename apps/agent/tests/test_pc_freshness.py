@@ -29,8 +29,13 @@ class FakeInput:
     def click(self, button: str, action: str) -> None:
         self.calls.append(("click", button, action))
 
-    def key(self, key: str, modifiers: Sequence[str]) -> None:
-        self.calls.append(("key", key, tuple(modifiers)))
+    def key(
+        self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
+    ) -> None:
+        if repeat == 1 and action == "PRESS":
+            self.calls.append(("key", key, tuple(modifiers)))
+        else:
+            self.calls.append(("key", key, tuple(modifiers), repeat, action))
 
     def type_text(self, text: str) -> None:
         self.calls.append(("text", text))
@@ -253,6 +258,28 @@ async def test_a_stale_up_is_still_executed_because_letting_go_is_always_safe() 
     status = await lab.run("pc.click.v1", {"button": "LEFT", "action": "UP"}, 60)
     assert status == ("ok", "")
     assert lab.pc.calls == [("click", "LEFT", "UP")]
+
+
+async def test_a_stale_key_up_is_still_executed_so_a_held_modifier_is_never_stuck() -> None:
+    lab = Lab()
+    lab.heartbeat()
+    status = await lab.run("pc.key.v2", {"key": "ALT", "action": "UP"}, 60)
+    assert status == ("ok", "")
+    assert lab.pc.calls == [("key", "ALT", (), 1, "UP")]
+
+
+async def test_a_stale_key_v2_that_presses_or_holds_is_rejected_as_expired() -> None:
+    lab = Lab()
+    lab.heartbeat(0.2)
+    assert await lab.run("pc.key.v2", {"key": "BACKSPACE", "repeat": 9}, 6.5) == (
+        "rejected",
+        EXPIRED,
+    )
+    assert await lab.run("pc.key.v2", {"key": "ALT", "action": "DOWN"}, 6.5) == (
+        "rejected",
+        EXPIRED,
+    )
+    assert lab.pc.calls == []
 
 
 async def test_a_stale_pointer_is_dropped_without_a_word(

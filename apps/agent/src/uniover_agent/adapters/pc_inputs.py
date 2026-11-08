@@ -4,7 +4,7 @@ Aqui só há dados e funções puras: nada toca no sistema, então a tabela de t
 eventos são testadas em qualquer máquina. O envio de verdade fica em `pc_windows.py`.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -25,6 +25,8 @@ KEY_UP: Final = 0x0002
 KEY_UNICODE: Final = 0x0004
 
 WHEEL_DELTA: Final = 120
+# Quantas vezes uma só mensagem aperta a mesma tecla (o contrato limita; isto protege o adaptador).
+MAX_KEY_REPEAT: Final = 50
 # Limite de segurança de um único toque do sistema: o contrato já limita, isto protege o adaptador.
 MAX_POINTER: Final = 2000
 MAX_SCROLL: Final = 1200
@@ -57,8 +59,29 @@ _NAMED_KEYS: Final[dict[str, tuple[int, bool]]] = {
     "END": (0x23, True),
     "PAGE_UP": (0x21, True),
     "PAGE_DOWN": (0x22, True),
+    # Teclas que só a mensagem v2 traz. Insert, Print Screen e a tecla de menu são "estendidas".
+    "INSERT": (0x2D, True),
+    "PRINT_SCREEN": (0x2C, True),
+    "APPS": (0x5D, True),
+    "CAPS_LOCK": (0x14, False),
+    "WIN": (0x5B, False),
+    "CTRL": (0x11, False),
+    "ALT": (0x12, False),
+    "SHIFT": (0x10, False),
+    # Pontuação: só as quatro que o Windows mantém no mesmo código em qualquer layout (VK_OEM_PLUS
+    # é o "=" e o "+" do teclado americano, VK_OEM_MINUS o "-"). Atenção ao ABNT2: lá a tecla do
+    # "/" e do "?" e a do "'" e do '"' ganham códigos próprios, e por isso (como todo o resto da
+    # pontuação) saem pelo `pc.text`, que digita Unicode e não depende do layout.
+    "MINUS": (0xBD, False),
+    "EQUALS": (0xBB, False),
+    "COMMA": (0xBC, False),
+    "PERIOD": (0xBE, False),
 }
 _MODIFIERS: Final = {"CTRL": 0x11, "ALT": 0x12, "SHIFT": 0x10, "WIN": 0x5B}
+# O que dá para segurar (DOWN) e soltar (UP): só os modificadores. Uma letra presa não teria uso e
+# deixaria o PC repetindo caractere.
+HOLDABLE_KEYS: Final = frozenset(_MODIFIERS)
+KEY_ACTIONS: Final = ("PRESS", "DOWN", "UP")
 _MEDIA: Final = {
     "PLAY_PAUSE": 0xB3,
     "NEXT": 0xB0,
@@ -99,6 +122,8 @@ def virtual_key(key: str) -> tuple[int, bool]:
         return _NAMED_KEYS[key]
     if len(key) == 1 and "A" <= key <= "Z":
         return ord(key), False
+    if len(key) == 2 and key[0] == "D" and "0" <= key[1] <= "9":  # noqa: PLR2004 - D0 a D9
+        return 0x30 + int(key[1]), False  # VK_0..VK_9: a fileira de cima, não o teclado numérico
     if key.startswith("F") and key[1:].isdigit() and 1 <= int(key[1:]) <= 12:  # noqa: PLR2004
         return 0x70 + int(key[1:]) - 1, False
     raise UnknownKey(f"tecla fora do contrato: {key}")
@@ -168,7 +193,7 @@ def dangling_key_ups(events: Iterable[RawInput]) -> list[RawInput]:
         if event.kind != "keyboard":
             continue
         # A mesma tecla é a mesma `vk`/`scan` e a mesma flag de tecla estendida ou Unicode.
-        identity = (event.vk, event.scan, event.flags & ~KEY_UP)
+        identity = key_identity(event)
         if event.flags & KEY_UP:
             pressed.pop(identity, None)
         else:
@@ -179,25 +204,67 @@ def dangling_key_ups(events: Iterable[RawInput]) -> list[RawInput]:
     ]
 
 
+def key_identity(event: RawInput) -> tuple[int, int, int]:
+    """Quem é a tecla de um evento: a mesma `vk`/`scan` e a mesma flag de estendida ou Unicode."""
+    return (event.vk, event.scan, event.flags & ~KEY_UP)
+
+
+def held_keys_after(
+    held: Mapping[tuple[int, int, int], RawInput], events: Iterable[RawInput]
+) -> dict[tuple[int, int, int], RawInput]:
+    """As teclas apertadas depois de `events`, partindo de `held` (tecla -> evento que a solta).
+
+    Segue a ordem dos eventos: apertar entra, soltar sai. Um lote completo de `key_inputs` não
+    deixa nada apertado; só um `DOWN` sozinho deixa, e o valor guardado é o evento que o solta.
+    """
+    state = dict(held)
+    for event in events:
+        if event.kind != "keyboard":
+            continue
+        identity = key_identity(event)
+        if event.flags & KEY_UP:
+            state.pop(identity, None)
+        else:
+            state.pop(identity, None)  # reaperta: passa para o fim, a soltura segue a ordem inversa
+            state[identity] = RawInput(
+                "keyboard", flags=event.flags | KEY_UP, vk=event.vk, scan=event.scan
+            )
+    return state
+
+
 def release_inputs(buttons: Iterable[str]) -> list[RawInput]:
     """Os eventos que soltam `buttons` (numa ordem fixa, para o teste conferir)."""
     return [event for name in sorted(buttons) for event in click_inputs(name, "UP")]
 
 
-def key_inputs(key: str, modifiers: Sequence[str] = ()) -> list[RawInput]:
-    """Modificadores apertados, a tecla apertada e solta, modificadores soltos na ordem inversa.
+def key_inputs(
+    key: str, modifiers: Sequence[str] = (), repeat: int = 1, action: str = "PRESS"
+) -> list[RawInput]:
+    """Modificadores apertados, a tecla apertada e solta `repeat` vezes, modificadores soltos na
+    ordem inversa. Tudo num lote só: os modificadores valem para todas as repetições.
 
-    Os modificadores sempre são soltos: uma tecla presa no PC atrapalharia tudo o que a pessoa
-    fizer.
+    Nesse caminho os modificadores sempre são soltos: uma tecla presa no PC atrapalharia tudo o
+    que a pessoa fizer. Só `action` `DOWN` ou `UP` deixa uma tecla apertada de propósito, e só
+    para um modificador, sozinho (sem outros modificadores nem repetição): quem chama (o
+    adaptador) guarda o que ficou apertado e o solta ao desconectar, ao encerrar e sem tráfego.
     """
+    if action not in KEY_ACTIONS:
+        raise UnknownKey(f"ação de tecla fora do contrato: {action}")
     vk, extended = virtual_key(key)
+    if action != "PRESS":
+        if key not in HOLDABLE_KEYS:
+            raise UnknownKey(f"só um modificador pode ser segurado ou solto: {key}")
+        if modifiers:
+            raise UnknownKey("segurar ou soltar uma tecla não leva modificadores")
+        return [_key(vk, extended=extended, up=action == "UP")]
     held = []
     for name in modifiers:
         if name not in _MODIFIERS:
             raise UnknownKey(f"modificador fora do contrato: {name}")
         held.append(_MODIFIERS[name])
+    times = max(1, min(MAX_KEY_REPEAT, repeat))
     inputs = [_key(code) for code in held]
-    inputs += [_key(vk, extended=extended), _key(vk, extended=extended, up=True)]
+    inputs += [_key(vk, extended=extended), _key(vk, extended=extended, up=True)] * times
     inputs += [_key(code, up=True) for code in reversed(held)]
     return inputs
 
@@ -232,9 +299,12 @@ def media_inputs(action: str, steps: int = 1) -> list[RawInput]:
 
 
 __all__ = [
+    "HOLDABLE_KEYS",
+    "KEY_ACTIONS",
     "KEY_EXTENDED",
     "KEY_UNICODE",
     "KEY_UP",
+    "MAX_KEY_REPEAT",
     "MOUSE_HWHEEL",
     "MOUSE_MOVE",
     "MOUSE_WHEEL",
@@ -243,6 +313,8 @@ __all__ = [
     "click_inputs",
     "dangling_key_ups",
     "held_after",
+    "held_keys_after",
+    "key_identity",
     "key_inputs",
     "media_inputs",
     "move_inputs",

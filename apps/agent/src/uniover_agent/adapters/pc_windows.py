@@ -25,8 +25,9 @@ Sender = Callable[[Sequence[RawInput]], None]
 
 # Sem nenhuma mensagem `pc.*` por este tempo, o que ainda está apertado é solto sozinho: o app
 # fechou, a rede caiu ou o telefone dormiu no meio de um arrasto, e o botão não pode ficar preso no
-# PC. Um arrasto com o dedo quieto por 30 s sem nenhuma chamada ao adaptador é solto. Contam como
-# tráfego as chamadas ao adaptador (mover, rolar, clicar, tecla, texto, mídia), inclusive o
+# PC (o mesmo vale para um modificador segurado, como o Alt do Alt+Tab). Um arrasto com o dedo
+# quieto por 30 s sem nenhuma chamada ao adaptador é solto. Contam como tráfego as chamadas ao
+# adaptador (mover, rolar, clicar, tecla, texto, mídia), inclusive o
 # movimento vazio (dx = dy = 0) que o app manda a cada 10 s enquanto segura um arrasto. Não
 # contam as mensagens que o agente descarta por idade, nem energia e abrir programa, que não
 # passam por aqui.
@@ -134,13 +135,13 @@ else:
 class WindowsPcInput:
     """Mouse e teclado do PC. `send` é trocável: os testes registram, em vez de enviar.
 
-    Guarda quais botões do mouse estão apertados (DOWN ainda sem UP) para poder soltá-los: por
-    `release_all`, depois de um lote que o Windows aceitou só em parte, e sozinho quando passam
-    `dead_man_seconds` sem nenhuma chamada a este adaptador (um arrasto parado, sem nem o movimento
-    vazio que o app manda para mantê-lo vivo, é solto). Num lote parcial também solta as teclas que
-    entraram apertadas (um modificador não pode ficar preso). O relógio e o temporizador também são
-    trocáveis. Os comandos chegam pelo laço do agente e o temporizador roda em outra thread, daí
-    a trava.
+    Guarda quais botões do mouse e quais teclas (um modificador segurado por `DOWN`) estão
+    apertados, para poder soltá-los: por `release_all`, depois de um lote que o Windows aceitou só
+    em parte, e sozinho quando passam `dead_man_seconds` sem nenhuma chamada a este adaptador (um
+    arrasto parado, sem nem o movimento vazio que o app manda para mantê-lo vivo, é solto). Num
+    lote parcial também solta as teclas que entraram apertadas (um modificador não pode ficar
+    preso). O relógio e o temporizador também são trocáveis. Os comandos chegam pelo laço do
+    agente e o temporizador roda em outra thread, daí a trava.
     """
 
     def __init__(
@@ -157,6 +158,9 @@ class WindowsPcInput:
         self._start_timer = start_timer
         self._lock = threading.RLock()
         self._held: frozenset[str] = frozenset()
+        # Teclas apertadas de propósito (`DOWN` sem `UP`): tecla -> evento que a solta, na ordem em
+        # que foram apertadas.
+        self._held_keys: dict[tuple[int, int, int], RawInput] = {}
         # Soltura de teclas que um lote parcial deixou apertadas e ainda não foi aceita.
         self._stuck: tuple[RawInput, ...] = ()
         self._last_activity = monotonic()
@@ -181,8 +185,10 @@ class WindowsPcInput:
     def click(self, button: str, action: str) -> None:
         self._dispatch(pc_inputs.click_inputs(button, action))
 
-    def key(self, key: str, modifiers: Sequence[str]) -> None:
-        self._dispatch(pc_inputs.key_inputs(key, modifiers))
+    def key(
+        self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
+    ) -> None:
+        self._dispatch(pc_inputs.key_inputs(key, modifiers, repeat, action))
 
     def type_text(self, text: str) -> None:
         self._dispatch(pc_inputs.text_inputs(text))
@@ -195,11 +201,16 @@ class WindowsPcInput:
             if not self._holding():
                 return
             _log.warning("soltando à força o que ficou apertado no mouse e no teclado")
-            self._release(self._held, self._stuck)
+            self._release(self._held, self._pending_key_ups())
             self._sync_timer()
 
     def _holding(self) -> bool:
-        return bool(self._held or self._stuck)
+        return bool(self._held or self._stuck or self._held_keys)
+
+    def _pending_key_ups(self) -> tuple[RawInput, ...]:
+        """A soltura de tudo o que o teclado tem apertado: o que um lote parcial deixou e o que um
+        `DOWN` segurou (este na ordem inversa de apertar)."""
+        return tuple(dict.fromkeys((*self._stuck, *reversed(self._held_keys.values()))))
 
     def _retry_stuck(self) -> None:
         if self._stuck:
@@ -221,11 +232,20 @@ class WindowsPcInput:
                 self._held = pc_inputs.held_after(self._held, accepted)
                 pressed_now = self._held - before
                 keys = tuple(pc_inputs.dangling_key_ups(accepted))
+                # O que o lote parcial apertou passa a ser da soltura abaixo (e, se ela falhar, do
+                # `_stuck`); o que já estava segurado de antes continua segurado.
+                gone = {pc_inputs.key_identity(event) for event in keys}
+                self._held_keys = {
+                    identity: up
+                    for identity, up in pc_inputs.held_keys_after(self._held_keys, accepted).items()
+                    if identity not in gone
+                }
                 if pressed_now or keys:
                     self._release(pressed_now, keys)
                 self._sync_timer()
                 raise
             self._held = pc_inputs.held_after(self._held, inputs)
+            self._held_keys = pc_inputs.held_keys_after(self._held_keys, inputs)
             self._sync_timer()
 
     def _release(
@@ -240,10 +260,13 @@ class WindowsPcInput:
             (_log.debug if quiet else _log.warning)(
                 "não foi possível soltar o que ficou apertado: %s", exc
             )
+            # O que não soltou vira pendência (deixa de ser "segurado"): a soltura se repete.
             self._stuck = tuple(dict.fromkeys((*self._stuck, *keys)))
+            self._held_keys = {i: up for i, up in self._held_keys.items() if up not in keys}
             return
         self._held -= buttons
         self._stuck = tuple(event for event in self._stuck if event not in keys)
+        self._held_keys = {i: up for i, up in self._held_keys.items() if up not in keys}
 
     def _sync_timer(self) -> None:
         if not self._holding():
@@ -273,7 +296,7 @@ class WindowsPcInput:
                 self._arm(self._dead_man - idle)  # houve mensagem no meio do caminho
                 return
             _log.warning("algo ficou apertado sem mensagens do PC há %.0f s: soltando", idle)
-            self._release(self._held, self._stuck)
+            self._release(self._held, self._pending_key_ups())
             self._sync_timer()
 
 
