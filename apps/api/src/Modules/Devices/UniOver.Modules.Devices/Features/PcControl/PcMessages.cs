@@ -33,7 +33,7 @@ internal static class PcMessages
     public static FrozenDictionary<string, PcPowerV1BodyAction> PowerActions { get; } = Enum.GetValues<PcPowerV1BodyAction>()
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
 
-    public static OutboundMessage Pointer(int dx, int dy, int scrollX, int scrollY, int? seq = null) =>
+    public static OutboundMessage Pointer(int dx, int dy, int scrollX, int scrollY) =>
         Live(AgentMessageTypes.PcPointerV1, BodyOf(new PcPointerV1Message
         {
             Body = new PcPointerV1Body
@@ -42,7 +42,6 @@ internal static class PcMessages
                 Dy = dy,
                 ScrollX = scrollX == 0 ? null : scrollX,
                 ScrollY = scrollY == 0 ? null : scrollY,
-                Seq = seq,
             },
         }.ToJson()));
 

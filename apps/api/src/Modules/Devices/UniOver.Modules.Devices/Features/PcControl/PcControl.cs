@@ -17,8 +17,10 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps);
 
 /// <summary>
-/// <c>Seq</c> é opcional e só serve ao diagnóstico: o app numera os pedidos de movimento em ordem crescente e manda vários
-/// ao mesmo tempo, e o agente reconhece o que chega fora de ordem. O movimento é relativo, então todos são aplicados.
+/// <c>Seq</c> é opcional: o app numera os pedidos de movimento em ordem crescente (diagnóstico). A API o aceita e o valida,
+/// mas NÃO o repassa ao agente: o esquema do <c>pc.pointer.v1</c> de um agente anterior é fechado e recusaria a mensagem
+/// inteira (o touchpad ficaria morto até ele atualizar). Quando a API passar a listar uma capacidade do agente para isso,
+/// o repasse volta, condicionado a ela.
 /// </summary>
 internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? ScrollY, int? Seq = null);
 
@@ -211,7 +213,7 @@ internal sealed class PcControlHandler(
             return target.Failure;
         }
 
-        var sent = await gateway.SendAsync(target.Slug, PcMessages.Pointer(dx, dy, scrollX, scrollY, request.Seq), cancellationToken);
+        var sent = await gateway.SendAsync(target.Slug, PcMessages.Pointer(dx, dy, scrollX, scrollY), cancellationToken);
         return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
 

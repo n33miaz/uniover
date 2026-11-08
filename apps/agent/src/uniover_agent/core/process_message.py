@@ -1,6 +1,7 @@
 """Caso de uso de uma mensagem recebida: valida, executa só o que passou e responde."""
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections import deque
@@ -32,6 +33,10 @@ MAX_PENDING_PC: Final = 128
 # aviso: um ou outro é a reordenação normal de pedidos paralelos; uma sequência longa indica um
 # caminho que embaralha. Eles são aplicados de qualquer jeito (o deslocamento é relativo).
 LATE_POINTER_WARNING: Final = 20
+# Envios de resultado de comandos do PC ainda em andamento (cada um é uma tarefa). Rede parada não
+# pode acumular tarefas sem fim: acima disto o resultado mais antigo é abandonado (a API o dá como
+# sem resposta pelo prazo dela).
+MAX_PENDING_RESULTS: Final = 64
 
 
 class ProcessMessage:
@@ -94,6 +99,9 @@ class ProcessMessage:
         # Movimentos numerados chegam em pedidos paralelos; a ordem só alimenta o diagnóstico.
         self._pointer_order = PointerSequence()
         self._late_pointers = 0
+        # Envios de resultado da faixa do PC em andamento, do mais antigo ao mais novo.
+        self._result_tasks: deque[asyncio.Task[None]] = deque()
+        self._results_overflowing = False
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -230,7 +238,24 @@ class ProcessMessage:
             return
         task = asyncio.create_task(self._send_result(command, result))
         self._tasks.add(task)
+        self._result_tasks.append(task)
         task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(self._forget_result_task)
+        while len(self._result_tasks) > MAX_PENDING_RESULTS:
+            oldest = self._result_tasks.popleft()
+            oldest.cancel()
+            if not self._results_overflowing:
+                self._results_overflowing = True
+                _log.warning(
+                    "envio de resultados do PC acumulado (%d): abandonando o mais antigo",
+                    MAX_PENDING_RESULTS,
+                )
+
+    def _forget_result_task(self, task: asyncio.Task[None]) -> None:
+        with contextlib.suppress(ValueError):  # já saiu da fila (abandonada ou cancelada na queda)
+            self._result_tasks.remove(task)
+        if not self._result_tasks:
+            self._results_overflowing = False
 
     async def _send_result(self, command: Command, result: CommandResult) -> None:
         # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
@@ -279,6 +304,9 @@ class ProcessMessage:
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
         self._pc_queue.clear()
         self._pointer_order.reset()
+        # Resultado de uma conexão que caiu não serve a ninguém: não fica tentando sair pela nova.
+        while self._result_tasks:
+            self._result_tasks.popleft().cancel()
         if self._pc_consumer is not None:
             self._pc_consumer.cancel()  # o próximo comando cria outro consumidor
             self._pc_consumer = None

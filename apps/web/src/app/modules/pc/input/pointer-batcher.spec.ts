@@ -337,29 +337,6 @@ describe('PointerBatcher pipelined', () => {
     expect(batcher.busy).toBe(false);
   });
 
-  it('flush sends what is waiting at once (past the rate and the limit) without waiting for any answer', () => {
-    const clock = fakeClock();
-    const { send, batches } = controlledSend();
-    const batcher = new PointerBatcher(send, { ...OPTIONS, maxInFlight: 1 }, clock);
-    batcher.addMove(1, 0);
-    batcher.addMove(6, 0); // espera o voo e a taxa
-    batcher.flush();
-    expect(batches.map((b) => b.dx)).toEqual([1, 6]);
-    expect(batcher.busy).toBe(true); // o voo segue; o clique que vem atrás não espera por ele
-  });
-
-  it('flush also sends what is held, and does nothing when nothing waits', () => {
-    const clock = fakeClock();
-    const { send, batches } = controlledSend();
-    const batcher = new PointerBatcher(send, PIPELINED, clock);
-    batcher.flush();
-    expect(send).not.toHaveBeenCalled();
-    batcher.hold();
-    batcher.addMove(3, 0);
-    batcher.flush();
-    expect(batches).toHaveLength(1);
-  });
-
   it('drain waits for ALL the requests in flight', async () => {
     const clock = fakeClock();
     const { send, finish } = controlledSend();

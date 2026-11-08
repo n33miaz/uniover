@@ -104,17 +104,6 @@ export class PointerBatcher {
   }
 
   /**
-   * Manda já o que está esperando, sem esperar a taxa nem uma vaga, e NÃO espera a resposta. É o que o clique e o aperto do
-   * botão usam: saem logo atrás do último movimento (os pedidos partem na ordem em que foram feitos, e o agente executa
-   * na ordem em que chegam) sem somar a ida e volta da rede ao clique.
-   */
-  flush(): void {
-    this.cancelTimer();
-    while (this.hasPending() && !this.stopped) this.dispatch();
-    if (this.stopped) this.pending = { dx: 0, dy: 0, scrollX: 0, scrollY: 0 };
-  }
-
-  /**
    * Manda já o que está esperando e devolve quando tudo chegou ao servidor (todas as respostas). Para quem precisa saber
    * que o movimento foi entregue, não só enviado.
    */

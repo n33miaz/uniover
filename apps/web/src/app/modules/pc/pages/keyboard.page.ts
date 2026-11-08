@@ -26,6 +26,9 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
   WIN: 'Win',
 };
 
+/** Falhas em que não se sabe se o PC recebeu o texto: o campo não o recebe de volta (ver `send`). */
+const UNCERTAIN_FAILURES: ReadonlySet<string> = new Set(['timeout', 'network', 'unknown']);
+
 /**
  * Teclado do PC: um campo para digitar texto (vai inteiro, com acentos, para onde o cursor do PC estiver) e as teclas e os
  * atalhos que o teclado do celular não tem. Cada toque é um comando; o texto digitado nunca fica guardado na tela depois
@@ -157,6 +160,7 @@ export class KeyboardPage {
   protected readonly armed = signal<ReadonlySet<PcModifier>>(new Set());
   protected readonly text = signal('');
   protected readonly error = signal<string | null>(null);
+  private readonly maybeTyped = $localize`:@@pc.keyboard.maybe-typed:O texto pode ter sido digitado no PC.`;
 
   protected readonly mainKeys: readonly KeyButton[] = [
     { key: 'ESCAPE', label: 'Esc', aria: $localize`:@@pc.key.escape:Esc (Escape)` },
@@ -228,7 +232,9 @@ export class KeyboardPage {
 
   /**
    * O campo esvazia na hora e o PC recebe em segundo plano: o próximo texto não espera a resposta do anterior (uma ida e
-   * volta até o PC). Se não passou, o texto volta ao campo (se a pessoa ainda não digitou outra coisa) junto com o motivo.
+   * volta até o PC; a fila do `PcStore` só garante a ordem). Se não passou, o texto volta ao campo (se a pessoa ainda não
+   * digitou outra coisa) junto com o motivo. Se o resultado é incerto (sem resposta a tempo, rede caída no meio), o texto
+   * NÃO volta: pode ter sido digitado, e reenviá-lo duplicaria (ou repetiria uma senha); o aviso diz isso.
    */
   protected send(): void {
     const value = clampText(this.text(), MAX_TEXT);
@@ -238,6 +244,15 @@ export class KeyboardPage {
     this.error.set(null);
     void this.sendValue(value).then((failure) => {
       if (!failure) return;
+      // Cancelado por uma falha anterior da fila: nada saiu. A falha de antes já está na tela.
+      if (failure.kind === 'cancelled') {
+        if (this.text() === '') this.text.set(value);
+        return;
+      }
+      if (UNCERTAIN_FAILURES.has(failure.kind)) {
+        this.error.set(`${failure.message} ${this.maybeTyped}`);
+        return;
+      }
       this.error.set(failure.message);
       if (this.text() === '') this.text.set(value);
     });

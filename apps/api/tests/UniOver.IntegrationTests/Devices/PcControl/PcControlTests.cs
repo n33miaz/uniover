@@ -3,6 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity.Guests;
@@ -173,20 +176,17 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Pointer_ForwardsTheSequenceOfTheRequest_AndOmitsItWhenThereIsNone()
+    public async Task Pointer_AcceptsTheSequenceButNeverForwardsItToTheAgent()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
 
+        // Um agente anterior tem o esquema fechado e recusaria a mensagem com `seq`: o campo não sai da API.
         using var numbered = await PostAsync(app, "pointer", new { dx = 3, dy = 1, seq = 4821 });
-        var first = (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body");
-        using var plain = await PostAsync(app, "pointer", new { dx = 0, dy = 0 });
-        var second = (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body");
+        var body = (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body");
 
         numbered.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        plain.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        first.GetProperty("seq").GetInt32().Should().Be(4821);
-        second.TryGetProperty("seq", out _).Should().BeFalse();
+        body.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["dx", "dy"]);
     }
 
     [Fact]
@@ -196,11 +196,11 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await using var agent = await ConnectPcAsync(app);
 
         var responses = await Task.WhenAll(Enumerable.Range(1, 20)
-            .Select(i => PostAsync(app, "pointer", new { dx = 1, dy = 0, seq = i })));
+            .Select(i => PostAsync(app, "pointer", new { dx = i, dy = 0, seq = i })));
         var received = new List<int>();
         for (var i = 0; i < 20; i++)
         {
-            received.Add((await Within(agent.ReceiveAsync()))!.Value.GetProperty("body").GetProperty("seq").GetInt32());
+            received.Add((await Within(agent.ReceiveAsync()))!.Value.GetProperty("body").GetProperty("dx").GetInt32());
         }
 
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
@@ -212,19 +212,55 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Pointer_AfterTheAgentIsRevoked_IsNeverDelivered_EvenWithTheCacheWarm()
+    public async Task PointerLimit_AllowsTwoDevicesOfTheSameAccountDrivingAtFullRate()
     {
         await using var app = await TransportApp.StartAsync(postgres);
+
+        // Dois aparelhos a ~31 pedidos por segundo cada somam ~3 700 por minuto: o teto precisa passar disso com folga.
+        var policy = app.App.Services.GetRequiredService<IOptionsMonitor<RateLimitPolicyOptions>>().Get(RateLimitPolicies.PcPointer);
+
+        policy.Permitted.Should().BeGreaterThanOrEqualTo(6000);
+        policy.WindowSeconds.Should().Be(60);
+        policy.Partition.Should().Be("user");
+    }
+
+    [Fact]
+    public async Task Pointer_AfterTheAgentIsRevoked_IsNeverDelivered_EvenWithTheCacheWarm()
+    {
+        var outbox = new OutboxClaimBarrier();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = outbox });
         await using var agent = await ConnectPcAsync(app);
+        await app.App.WaitForOutboxAsync(expectedProcessed: 1);
         using var warm = await PostAsync(app, "pointer", new { dx = 1, dy = 1 });
         (await Within(agent.ReceiveAsync()))!.Value.GetProperty("type").GetString().Should().Be("pc.pointer.v1");
         warm.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
+        // A sessão é fechada pelo próprio pedido de revogação, antes do evento: o evento só é tratado depois que a barreira
+        // solta. Com ele travado, a sessão já caiu (e o cache ainda está quente); depois de solto, o cache é esquecido.
+        outbox.Arm();
         using var revoke = await app.App.RevokeRawAsync(app.Login, app.Agent.Id, "teste");
         revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+        await outbox.WaitForClaimAsync(Ct);
 
+        // Nada chegou ao agente depois da revogação: só o fechamento da sessão, sem nenhuma mensagem de movimento.
+        var leftovers = new List<string>();
+        while (await agent.ReceiveAsync() is { } message)
+        {
+            leftovers.Add(message.GetProperty("type").GetString()!);
+        }
+
+        leftovers.Should().NotContain("pc.pointer.v1");
+        agent.Closed!.Description.Should().Be("revoked");
+
+        outbox.Release();
+        await app.App.WaitForOutboxAsync(expectedProcessed: 2);
+
+        // O evento de revogação foi tratado: o invalidador esqueceu o cache, então o resolvedor lê o banco e não acha o
+        // agente. Sem a invalidação a resposta seria "desconectado" (a lista guardada ainda o traria), e não "nenhum PC".
         using var after = await PostAsync(app, "pointer", new { dx = 2, dy = 2 });
-        after.StatusCode.Should().NotBe(HttpStatusCode.NoContent);
+
+        after.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(after)).GetProperty("type").GetString().Should().EndWith("/pc-unavailable");
     }
 
     [Theory]
