@@ -25,7 +25,7 @@ não sabe fazer rede: tudo vem por injeção, e os testes andam o tempo à mão.
 import asyncio
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 
 from uniover_agent.ports import Clock
@@ -45,6 +45,10 @@ DEFAULT_SWEEP_DEADLINE_SECONDS = 90.0
 MAX_SSDP_CANDIDATES = 24
 # Tamanho de um /24 sem o próprio PC: a unidade do prazo da varredura.
 SWEEP_NETWORK_HOSTS = 253
+# Varreduras TCP vazias numa mesma rede antes de parar de varrê-la (até a rede mudar); o
+# registro das varreduras de uma rede expira em um dia.
+DEFAULT_SWEEP_LIMIT_PER_NETWORK = 6
+SWEEP_LIMIT_WINDOW_SECONDS = 86400.0
 
 _MAC = re.compile(r"(?:[0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}")
 
@@ -132,6 +136,7 @@ Identify = Callable[[str], Awaitable[TvIdentity | None]]
 Probe = Callable[[str], Awaitable[bool]]
 Authenticate = Callable[[str], Awaitable[bool]]
 Hosts = Callable[[], list[str]]
+NetworkKey = Callable[[], Awaitable[Collection[str]]]
 
 
 @dataclass(slots=True)
@@ -168,6 +173,8 @@ class TvLocator:
         concurrency: int = DEFAULT_CONCURRENCY,
         spacing_seconds: float = DEFAULT_SPACING_SECONDS,
         sweep_deadline_seconds: float = DEFAULT_SWEEP_DEADLINE_SECONDS,
+        network_key: NetworkKey | None = None,
+        sweep_limit: int = DEFAULT_SWEEP_LIMIT_PER_NETWORK,
     ) -> None:
         self._clock = clock
         self.known = known
@@ -189,6 +196,10 @@ class TvLocator:
         self._spacing = spacing_seconds
         self._sweep_deadline = sweep_deadline_seconds
         self._schedule = _Schedule()
+        # Teto por rede: `network_key` diz em que rede o PC está; sem ele não há teto.
+        self._network_key = network_key
+        self._sweep_limit = sweep_limit
+        self._empty_sweeps: dict[frozenset[str], tuple[int, float]] = {}
         # A tabela ARP ainda mostra a TV no endereço de sempre (a última procura concluiu isso).
         self._at_same_place = False
         # A última `find` rodou alguma etapa cara (SSDP, mDNS ou varredura)?
@@ -373,6 +384,11 @@ class TvLocator:
         last = self._schedule.last_sweep
         if last is not None and now - last < self._sweep_seconds:
             return None
+        key = await self._current_network()
+        if key is not None and self._empty_sweeps_on(key, now) >= self._sweep_limit:
+            # Já varreu esta rede em vão vezes demais: só o ARP, o SSDP e o mDNS seguem, no
+            # espaçamento lento. Uma rede diferente (outra assinatura) tem a própria conta.
+            return None
         self._schedule.last_sweep = now
         self._schedule.ran_expensive_stage = True
         self._schedule.sweeps += 1
@@ -419,7 +435,36 @@ class TvLocator:
         if needs_unique and (pending or failed):
             return None
         _log.info("varredura limitada da rede terminou: %s", "achou" if result else "não achou")
+        if not result and key is not None:
+            self._count_empty_sweep(key, now)
         return result[0] if result else None
+
+    async def _current_network(self) -> frozenset[str] | None:
+        """A assinatura da rede do PC agora; `None` sem leitor ou se a leitura falhou."""
+        if self._network_key is None:
+            return None
+        try:
+            return frozenset(await self._network_key())
+        except Exception:
+            _log.debug("não consegui ler a rede do PC para o teto de varreduras", exc_info=True)
+            return None
+
+    def _empty_sweeps_on(self, key: frozenset[str], now: float) -> int:
+        entry = self._empty_sweeps.get(key)
+        if entry is None:
+            return 0
+        count, since = entry
+        if now - since >= SWEEP_LIMIT_WINDOW_SECONDS:
+            del self._empty_sweeps[key]
+            return 0
+        return count
+
+    def _count_empty_sweep(self, key: frozenset[str], now: float) -> None:
+        count = self._empty_sweeps_on(key, now)
+        since = self._empty_sweeps[key][1] if key in self._empty_sweeps else now
+        self._empty_sweeps[key] = (count + 1, since)
+        if count + 1 == self._sweep_limit:
+            _log.info("%d varreduras vazias nesta rede; paro de varrê-la até ela mudar", count + 1)
 
     async def _inspect(self, host: str) -> Located | None:
         try:

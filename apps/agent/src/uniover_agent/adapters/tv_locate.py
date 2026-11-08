@@ -22,6 +22,7 @@ from uniover_agent.adapters.arp import arp_mac, arp_table
 from uniover_agent.adapters.local_networks import (
     LocalInterface,
     local_interfaces,
+    network_signature,
     sweep_networks,
 )
 from uniover_agent.adapters.tv_discovery import (
@@ -171,7 +172,7 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         first = interface()
         if first:
             addresses.append(first)
-        for item in local_interfaces():
+        for item in local_interfaces() or []:
             if item.address not in addresses:
                 addresses.append(item.address)
         return addresses[:MAX_SSDP_INTERFACES]
@@ -206,7 +207,8 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
             base: str | None = str(ipaddress.IPv4Address(tv_host))
         except ValueError:
             base = None
-        interfaces = local_interfaces()
+        read = local_interfaces()  # `None`: a leitura falhou (o /24 velho entra como antes)
+        interfaces = read or []
         if base is None and not interfaces:
             fallback = local_ipv4()
             interfaces = [LocalInterface(fallback)] if fallback else []
@@ -215,7 +217,9 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         if own:
             mine.add(own)
         found: dict[str, None] = {}
-        for network in sweep_networks(base, interfaces):
+        for network in sweep_networks(
+            base, None if read is None and not interfaces else interfaces
+        ):
             for host in subnet_hosts(
                 str(network.ip), exclude=own, prefix=network.network.prefixlen
             ):
@@ -234,6 +238,7 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         authenticate=authenticate if kind == "android" else None,
         mdns=mdns if kind == "android" else None,
         answers=answers,
+        network_key=network_signature,
         empty_searches_limit=empty_searches_limit,
         slow_search_seconds=slow_search_seconds,
     )

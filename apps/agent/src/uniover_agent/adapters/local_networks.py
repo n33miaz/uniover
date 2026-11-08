@@ -124,8 +124,10 @@ def usable_interfaces(rows: Iterable[AdapterRow]) -> list[LocalInterface]:
     return found
 
 
-def _read_adapters() -> list[AdapterRow]:
-    """`GetAdaptersAddresses` do Windows: placas, estado, tipo e endereços IPv4 com o prefixo."""
+def _read_adapters() -> list[AdapterRow] | None:
+    """`GetAdaptersAddresses` do Windows: placas, estado, tipo e endereços IPv4 com o prefixo.
+
+    `None` quando a leitura falha (lista vazia é uma leitura que deu certo e não achou nada)."""
     import ctypes  # noqa: PLC0415 - a DLL só existe no Windows
     from ctypes import wintypes  # noqa: PLC0415
 
@@ -185,7 +187,7 @@ def _read_adapters() -> list[AdapterRow]:
             break
         buffer = ctypes.create_string_buffer(size.value)
     if result != 0:
-        return []
+        return None
     rows: list[AdapterRow] = []
     adapter = ctypes.cast(buffer, ctypes.POINTER(Adapter))
     while adapter:
@@ -211,27 +213,27 @@ def _read_adapters() -> list[AdapterRow]:
     return rows
 
 
-def local_interfaces() -> list[LocalInterface]:
+def local_interfaces() -> list[LocalInterface] | None:
     """As placas reais e ligadas deste PC com endereço IPv4 (a da rota padrão primeiro).
 
-    Fora do Windows (ou se a leitura falhar) cai na lista de endereços do nome da máquina, com /24.
+    `None` quando **a leitura falhou** (não se sabe onde o PC está); lista vazia quando a leitura
+    deu certo e os filtros descartaram tudo (o PC não está em rede nenhuma que valha).
+    Fora do Windows (ou se a leitura das placas falhar) cai na lista de endereços do nome da
+    máquina, com /24.
     """
-    rows: list[AdapterRow] = []
+    rows: list[AdapterRow] | None = None
     if sys.platform == "win32":
         try:
             rows = _read_adapters()
         except OSError, AttributeError, ValueError:
             _log.debug("não consegui listar as placas de rede", exc_info=True)
-    if rows:
-        interfaces = usable_interfaces(rows)
-    else:
+    if rows is None:
         try:
             listed = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
         except OSError:
-            listed = []
-        interfaces = usable_interfaces(
-            AdapterRow(str(entry[4][0]), 24, "", "", _IF_ETHERNET, True) for entry in listed
-        )
+            return None
+        rows = [AdapterRow(str(entry[4][0]), 24, "", "", _IF_ETHERNET, True) for entry in listed]
+    interfaces = usable_interfaces(rows)
     default = local_ipv4()
     interfaces.sort(key=lambda interface: interface.address != default)
     return interfaces
@@ -240,7 +242,7 @@ def local_interfaces() -> list[LocalInterface]:
 def _networks_now() -> frozenset[str]:
     return frozenset(
         str(ipaddress.IPv4Interface(f"{item.address}/{item.prefix}").network)
-        for item in local_interfaces()
+        for item in local_interfaces() or []  # leitura falha: sem rede, o vigia ignora
     )
 
 
@@ -259,18 +261,19 @@ def _clamped(interface: ipaddress.IPv4Interface) -> ipaddress.IPv4Interface:
 
 def sweep_networks(
     old_host: str | None,
-    interfaces: Iterable[LocalInterface],
+    interfaces: Iterable[LocalInterface] | None,
     limit: int = MAX_SWEEP_NETWORKS,
 ) -> list[ipaddress.IPv4Interface]:
     """As redes a varrer: a de cada placa (no máximo /24 cada) e, por último, a do endereço velho.
 
     Sem repetir rede e com no máximo `limit` redes. O /24 do endereço velho só entra se alguma
     placa do PC está numa rede que o contém; senão os pacotes sairiam pela rota padrão (o roteador
-    de casa caiu), à toa. Sem nenhuma placa conhecida (a lista falhou), ele entra como antes.
+    de casa caiu), à toa. Só quando a leitura das placas **falhou** (`None`) ele entra como antes;
+    lista vazia (os filtros descartaram tudo) não varre rede nenhuma.
     """
     chosen: list[ipaddress.IPv4Interface] = []
     seen: set[ipaddress.IPv4Network] = set()
-    listed = list(interfaces)
+    listed = list(interfaces or [])
     real = [ipaddress.IPv4Interface(f"{item.address}/{item.prefix}") for item in listed]
     candidates = [_clamped(item) for item in real]
     if old_host:
@@ -279,7 +282,7 @@ def sweep_networks(
         except ValueError:
             _log.debug("o endereço velho da TV não é um IP; só as placas contam")
         else:
-            if not real or any(old.ip in item.network for item in real):
+            if interfaces is None or any(old.ip in item.network for item in real):
                 candidates.append(old)
     for candidate in candidates:
         if candidate.network in seen:
