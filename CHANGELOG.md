@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.46.0](https://github.com/n33miaz/uniover/compare/v0.45.0...v0.46.0) (2026-11-08)
+
+
+### Identity 0.42.16
+
+#### Performance Improvements
+
+* **api:** cache hashed web assets
+
+
+### Devices 0.46.0
+
+#### Features
+
+* **contracts:** optional seq on pc pointer
+* **devices:** pair your own pc with pc access
+
+#### Bug Fixes
+
+* **pc:** keep input order and old agents working
+* **web:** click waits only for moves before it
+* **web:** hold moves while a click goes out
+
+#### Performance Improvements
+
+* **api:** cache the pc target briefly
+* **web:** pipeline pc pointer and input
+
+
+### TV 0.44.0
+
+#### Features
+
+* **devices:** pair your own pc with pc access
+
+#### Bug Fixes
+
+* **tv:** never send a blind power when unsure
+* **tv:** wait while reconnecting, retry schedules
+
+
+### Training 0.42.18
+
+#### Bug Fixes
+
+* **training:** keep unsaved input on app update
+* **web:** honest dirty state, strict asset cache
+
+
+### Web 0.47.0
+
+#### Features
+
+* **devices:** pair your own pc with pc access
+
+#### Bug Fixes
+
+* **training:** keep unsaved input on app update
+* **web:** fluid one-line page titles
+* **web:** honest dirty state, strict asset cache
+
+#### Performance Improvements
+
+* **web:** pipeline pc pointer and input
+
+
+### Agent 0.44.1
+
+#### Bug Fixes
+
+* **pc:** keep input order and old agents working
+* **agent:** safer cleanup, pc use defers update
+* **tv:** wait while reconnecting, retry schedules
+
+#### Performance Improvements
+
+* **agent:** pc results off the input lane
+
 ## [0.45.0](https://github.com/n33miaz/uniover/compare/v0.44.0...v0.45.0) (2026-11-08)
 
 
