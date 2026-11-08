@@ -201,6 +201,12 @@ class Settings(BaseSettings):
     pc_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Contagem do desligamento (o Windows avisa na tela durante ela); o app pode cancelar antes.
     pc_shutdown_delay_seconds: int = Field(default=30, ge=10, le=300)
+    # Canal direto (WebRTC) entre o app e este PC: um acelerador opcional, com a nuvem como reserva.
+    # Só vale com o controle do PC ligado e a biblioteca instalada. Desligado, a capacidade nem é
+    # declarada. O prazo é o do app abrir o canal e autenticar; sem mensagens por `idle`, fecha.
+    pc_direct: bool = True
+    pc_direct_connect_timeout_seconds: float = Field(default=15.0, ge=3, le=60)
+    pc_direct_idle_seconds: float = Field(default=20.0, ge=5, le=300)
 
     @model_validator(mode="after")
     def _command_timeout_covers_two_openings(self) -> Self:

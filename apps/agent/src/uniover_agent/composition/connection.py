@@ -71,8 +71,11 @@ from uniover_agent.core import (
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
     PC_KEY_V2_CAPABILITY,
+    PC_RTC_CAPABILITY,
     PC_SILENT_TYPES,
     PRESENCE_CAPABILITY,
+    RTC_SILENT_TYPES,
+    RTC_TYPES,
     SETTINGS_OPEN_CAPABILITY,
     ConnectionSupervisor,
     EnvelopeFactory,
@@ -121,6 +124,7 @@ API_LISTED_CAPABILITIES = frozenset(
         SETTINGS_OPEN_CAPABILITY,
         ADB_REBIND_CAPABILITY,
         PC_KEY_V2_CAPABILITY,
+        PC_RTC_CAPABILITY,
     }
 )
 
@@ -403,6 +407,14 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         settings,
         transport,
         envelopes,
+        gate=gate,
+        agent_id=agent_id,
+        record=lambda kind, severity, detail: kit.recorder.record(
+            kind,
+            "warn" if severity == "warn" else "info",
+            detail,
+            component="pc",
+        ),
         # Diferença de relógio com a API e comandos recusados por idade vão ao diagnóstico; o
         # registrador junta as repetições, então os textos são fixos.
         on_clock_skew=lambda offset: kit.recorder.record(
@@ -453,9 +465,14 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         ),
         envelopes,
         transport,
-        background_types=tv.background_commands if tv is not None else (),
+        background_types=(
+            *(tv.background_commands if tv is not None else ()),
+            # A sinalização do canal direto corre em tarefa própria (a oferta espera a biblioteca).
+            *(RTC_TYPES if pc is not None and pc.direct is not None else ()),
+        ),
         silent_types=(
             *(PC_SILENT_TYPES if pc is not None else ()),
+            *(RTC_SILENT_TYPES if pc is not None and pc.direct is not None else ()),
             *(tv.silent_commands if tv is not None else ()),
         ),
         # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
@@ -471,6 +488,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             )
         ),
     )
+    if pc is not None and pc.direct is not None:
+        # O canal direto usa a mesma faixa do PC e, ao fechar, solta o que ele segurava.
+        pc.direct.bind(process.submit_direct, process.direct_lost)
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []
     if tv is not None:
@@ -527,6 +547,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
 
     def on_disconnected() -> None:
         process.connection_lost()
+        if pc is not None and pc.direct is not None:
+            # O canal direto não sobrevive à sessão que o autorizou.
+            pc.direct.api_disconnected()
         tray.disconnected()
         diary.disconnected()
         watch.disconnected_now()
@@ -622,7 +645,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             on_critical=lambda outcome: roll_back_if_in_trial(outcome, kit),
         )
         jobs = [*jobs, care.run, shipper.run]
-    if settings.self_care or tv is not None:
+    if settings.self_care or tv is not None or (pc is not None and pc.direct is not None):
         # O pareamento pelo app e o estado "não pareada" também dependem do que a API aceita.
         jobs = [*jobs, features.run]
     # Cada tarefa de fundo é supervisionada: erro vira registro e ocorrência, e ela recomeça.
@@ -659,6 +682,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         for task in background:
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
+        if pc is not None and pc.direct is not None:
+            await pc.direct.aclose()
         await process.aclose()
         if tv is not None:
             await tv.manager.aclose()

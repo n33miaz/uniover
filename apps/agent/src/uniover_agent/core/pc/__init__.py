@@ -2,6 +2,16 @@
 
 from uniover_agent.core.pc.apps import MAX_FAVORITES, PcApp, parse_favorites, slugify
 from uniover_agent.core.pc.clock_offset import ClockOffset
+from uniover_agent.core.pc.direct import (
+    CANDIDATE_TYPE,
+    CLOSE_TYPE,
+    PC_RTC_CAPABILITY,
+    RTC_SILENT_TYPES,
+    RTC_TYPES,
+    DirectSettings,
+    PcDirectService,
+    pc_rtc_handlers,
+)
 from uniover_agent.core.pc.handlers import (
     PC_CONTROL_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
@@ -23,15 +33,22 @@ from uniover_agent.core.pc.handlers import (
 from uniover_agent.core.pc.use import PcUseTracker
 
 __all__ = [
+    "CANDIDATE_TYPE",
+    "CLOSE_TYPE",
     "MAX_FAVORITES",
     "PC_CONTROL_CAPABILITY",
     "PC_KEY_V2_CAPABILITY",
+    "PC_RTC_CAPABILITY",
     "PC_SILENT_TYPES",
+    "RTC_SILENT_TYPES",
+    "RTC_TYPES",
     "SLEEP_DELAY_SECONDS",
     "UNKNOWN_APP",
     "UNSUPPORTED",
     "ClockOffset",
+    "DirectSettings",
     "PcApp",
+    "PcDirectService",
     "PcUseTracker",
     "parse_favorites",
     "pc_app_launch_handler",
@@ -43,6 +60,7 @@ __all__ = [
     "pc_media_handler",
     "pc_pointer_handler",
     "pc_power_handler",
+    "pc_rtc_handlers",
     "pc_text_handler",
     "slugify",
 ]

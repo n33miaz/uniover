@@ -23,6 +23,9 @@ _log = logging.getLogger(__name__)
 _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
+# O canal direto (`pc.rtc.*`) é sinalização, não comando de entrada: a oferta espera a biblioteca
+# carregar e não pode ficar atrás do mouse da nuvem (nem segurá-lo).
+_RTC_PREFIX = "pc.rtc."
 # Teto de comandos do PC esperando a vez. Acima disso, os dois movimentos pendentes mais NOVOS que
 # estão lado a lado e podem ser somados viram um só: o movimento é relativo, então o caminho (a
 # soma) se preserva, e nada que veio antes de um clique ou tecla passa para depois dele. Sem par
@@ -102,6 +105,9 @@ class ProcessMessage:
         # Envios de resultado da faixa do PC em andamento, do mais antigo ao mais novo.
         self._result_tasks: deque[asyncio.Task[None]] = deque()
         self._results_overflowing = False
+        # Comandos que vieram pelo canal direto e esperam a vez (id -> quem recebe o resultado). O
+        # resultado deles volta pelo canal, nunca pela API (que não os pediu).
+        self._direct: dict[str, Callable[[CommandResult], None]] = {}
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -146,7 +152,7 @@ class ProcessMessage:
             task.add_done_callback(self._tasks.discard)
             task.add_done_callback(self._key_tasks.discard)
             return
-        if command.type.startswith(_PC_PREFIX):
+        if command.type.startswith(_PC_PREFIX) and not command.type.startswith(_RTC_PREFIX):
             self._enqueue_pc(command)
             return
         if command.type in self._background_types:
@@ -157,6 +163,30 @@ class ProcessMessage:
         # Texto e POWER preservam a ordem que tinham no laço serial com as teclas anteriores.
         await asyncio.gather(*tuple(self._key_tasks))
         await self._execute(command)
+
+    def submit_direct(
+        self, command: Command, on_result: Callable[[CommandResult], None] | None
+    ) -> None:
+        """Põe na faixa do PC um comando que veio pelo canal direto (já validado pelo portão).
+
+        Entra na mesma fila, na mesma ordem e nos mesmos handlers dos da API. O resultado vai para
+        `on_result` (o canal), não para a API; `None` não espera resposta.
+        """
+        if on_result is not None:
+            # Só quem espera resposta fica registrado: o movimento (sem resposta) pode ser somado ou
+            # descartado pela fila cheia, e um registro dele nunca sairia daqui.
+            self._direct[command.id] = on_result
+        self._enqueue_pc(command)
+
+    def direct_lost(self) -> None:
+        """O canal direto fechou: os comandos dele que esperavam resposta saem da faixa e o que o PC
+        segurava é solto (como na queda da API, sem mexer no que veio pela nuvem)."""
+        if self._direct:
+            keep = [queued for queued in self._pc_queue if queued.id not in self._direct]
+            self._pc_queue.clear()
+            self._pc_queue.extend(keep)
+            self._direct.clear()
+        self._release_held_inputs()
 
     def _enqueue_pc(self, command: Command) -> None:
         if command.type == POINTER_TYPE:
@@ -233,6 +263,13 @@ class ProcessMessage:
             result = await self._handle_command(command)
         except Exception:
             _log.exception("falha ao executar %s (id=%s)", command.type, command.id)
+            self._direct.pop(command.id, None)
+            return
+        if command.id in self._direct:
+            try:
+                self._direct.pop(command.id)(result)
+            except Exception:
+                _log.exception("falha ao responder pelo canal direto (%s)", command.type)
             return
         if command.type in self._silent_types:
             return
@@ -303,6 +340,7 @@ class ProcessMessage:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
         self._pc_queue.clear()
+        self._direct.clear()
         self._pointer_order.reset()
         # Resultado de uma conexão que caiu não serve a ninguém: não fica tentando sair pela nova.
         while self._result_tasks:

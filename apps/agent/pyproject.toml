@@ -6,6 +6,7 @@ readme = "README.md"
 license = "LicenseRef-Proprietary"
 requires-python = ">=3.14"
 dependencies = [
+    "aiortc==1.16.0",
     "androidtvremote2==0.3.2",
     "cryptography>=50.0.2,<51",
     "httpx>=0.28",
@@ -24,6 +25,12 @@ dependencies = [
 
 [project.scripts]
 uniover-agent = "uniover_agent.main:main"
+
+[tool.uv]
+# O canal direto usa só o canal de dados do WebRTC: o `av` (FFmpeg, ~70 MB, com x264 e x265 sob GPL) não é usado.
+# O que o `aiortc` importa dele é trocado por um módulo mínimo (`adapters/pc_direct_stub_av.py`). Atualizar o
+# `aiortc` exige revalidar isto (há um teste que abre o canal contra o próprio `aiortc`).
+exclude-dependencies = ["av"]
 
 [build-system]
 requires = ["uv_build>=0.11.19,<0.14.0"]
@@ -59,6 +66,10 @@ python_version = "3.14"
 files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
 exclude = ["src/uniover_agent/contracts/"]
+
+[[tool.mypy.overrides]]
+module = ["aiortc", "aiortc.*", "aioice", "aioice.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -99,5 +110,7 @@ forbidden_modules = [
     "paho",
     "androidtvremote2",
     "adb_shell",
+    "aiortc",
+    "aioice",
 ]
 allow_indirect_imports = true
