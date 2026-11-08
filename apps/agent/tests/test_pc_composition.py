@@ -193,6 +193,64 @@ def test_the_cli_turns_the_control_on_and_off_in_the_config_file(
     assert tomllib.loads(isolated_env.read_text(encoding="utf-8"))["pc_control"] is True
 
 
+async def test_run_registers_the_pc_use_marker_job_fed_by_the_pc_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    created: list[tuple[Path, object]] = []
+    running: list[Path] = []
+
+    class RecordingMarker:
+        def __init__(self, path: Path, seconds_since_use: object, _clock: object) -> None:
+            self.path = path
+            created.append((path, seconds_since_use))
+
+        async def run(self) -> None:
+            running.append(self.path)
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(connection_module, "TvUseMarker", RecordingMarker)
+    monkeypatch.setattr(connection_module, "installation_base", lambda: tmp_path)
+    monkeypatch.setattr(
+        connection_module,
+        "build_pc",
+        partial(
+            build_pc,
+            platform="win32",
+            pc_input=FakeInput(),
+            power=FakePower(),
+            launcher=FakeLauncher(),
+        ),
+    )
+
+    async def script(connection: ServerConnection) -> None:
+        now = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        await connection.send(
+            dump(
+                envelope(
+                    "pc.key.v1", {"key": "A"}, ts=now, id="0192f1e4-0000-7000-8000-0000000000c0"
+                )
+            )
+        )
+        await asyncio.sleep(0.4)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    silence_noisy_loggers()
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=True
+        )
+        assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
+
+    # Sem TV neste agente: a única marca é a do controle do PC, e o job dela foi posto para rodar.
+    assert [path for path, _ in created] == [tmp_path / "runtime" / "pc-last-use"]
+    assert running == [tmp_path / "runtime" / "pc-last-use"]
+    since = created[0][1]
+    assert callable(since)
+    assert since() is not None, "o comando executado alimentou o relógio que a marca lê"
+
+
 async def test_run_serves_the_pc_commands_without_any_tv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

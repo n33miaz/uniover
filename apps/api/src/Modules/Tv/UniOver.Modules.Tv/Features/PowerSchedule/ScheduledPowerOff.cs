@@ -156,8 +156,8 @@ internal sealed class ScheduledPowerOffDispatcher(
     /// </summary>
     internal static readonly TimeSpan MaxLateness = TimeSpan.FromMinutes(10);
 
-    /// <summary>Quanto o pedido espera antes de ser tentado de novo quando o agente ainda não declarou as capacidades.</summary>
-    internal static readonly TimeSpan CapabilityRetryAfter = TimeSpan.FromSeconds(15);
+    /// <summary>Quanto o pedido espera antes de ser tentado de novo quando o agente ainda não está pronto (sem sessão ou sem hello).</summary>
+    internal static readonly TimeSpan NotReadyRetryAfter = TimeSpan.FromSeconds(15);
 
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
@@ -209,16 +209,13 @@ internal sealed class ScheduledPowerOffDispatcher(
             reason = "agent_revoked";
             result = "cancelled";
         }
-        else if (presence.Get(schedule.AgentSlug) is not { Connected: true } agent)
+        else if (presence.Get(schedule.AgentSlug) is not { Connected: true, Capabilities.Count: > 0 } agent)
         {
-            result = "offline";
-        }
-        else if (agent.Capabilities.Count == 0)
-        {
-            // O agente conta como conectado mas o hello ainda não chegou (a API acabou de subir): não se sabe se há o desligar
-            // seguro. Nada é enviado nem encerrado; o pedido volta à fila e é tentado de novo daqui a pouco, até o
-            // prazo. Devolve 1 (houve trabalho) para a rodada seguir com os pedidos das outras TVs.
-            schedule.ReleaseDispatch(time.GetUtcNow(), CapabilityRetryAfter);
+            // Sem sessão (um deploy no minuto combinado, uma queda de poucos segundos) ou conectado sem o hello (a API
+            // acabou de subir): não se sabe se o agente está ali nem se há o desligar seguro. Nada é enviado nem encerrado;
+            // o pedido volta à fila e é tentado de novo daqui a pouco, até o teto de atraso (aí fecha como `missed`).
+            // Devolve 1 (houve trabalho) para a rodada seguir com os pedidos das outras TVs.
+            schedule.ReleaseDispatch(time.GetUtcNow(), NotReadyRetryAfter);
             await db.SaveChangesAsync(CancellationToken.None);
             return 1;
         }

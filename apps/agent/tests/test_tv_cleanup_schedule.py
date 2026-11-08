@@ -1,6 +1,7 @@
 """Agendamento da limpeza automática só com relógio e ADB falsos."""
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport, FakeTvAdb
@@ -35,6 +36,7 @@ def make(
     *,
     pressure: bool = True,
     day_store: CleanupDayStore | None = None,
+    foreground_of: Callable[[], str | None] | None = None,
 ) -> tuple[TvCleanupScheduler, FakeTvAdb, FakeTransport, FakeClock]:
     """`pressure`: memória livre abaixo do limite de 160 MB (só assim a limpeza leve roda)."""
     clock = FakeClock()
@@ -49,7 +51,7 @@ def make(
         clock,
         transport,
         EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
-        lambda: foreground,
+        foreground_of or (lambda: foreground),
         day_store=day_store,
     )
     return scheduler, adb, transport, clock
@@ -432,6 +434,38 @@ async def test_light_cleanup_waits_for_the_foreground_app_to_arrive_after_the_se
     # Agora há o que reduzir: o outro app recebe o pedido, o da frente não.
     assert "trim-memory:com.example.other" in adb.cleanup_log
     assert f"trim-memory:{FOREGROUND}" not in adb.cleanup_log
+
+
+async def test_deep_cleanup_waits_for_the_foreground_app_after_a_first_unknown() -> None:
+    answers: list[str | None] = [None, None, HOME]
+    scheduler, adb, transport, clock = make(
+        foreground_of=lambda: answers.pop(0) if len(answers) > 1 else answers[0]
+    )
+    scheduler.configure(False, True, 500, True)
+    adb.media_playing_value = False
+    clock.advance(20 * 60)
+    scheduler.note_session_opened(11)
+
+    await scheduler.run_pending()
+
+    body = transport.sent[-1]["body"]
+    assert (body["kind"], body["result"]) == ("deep", "completed")
+    assert clock.sleeps[:2] == [1.0, 1.0], "esperou o app da frente chegar"
+    assert "kill-background" in adb.cleanup_log
+
+
+async def test_deep_cleanup_that_never_learns_the_foreground_app_waits_and_then_skips() -> None:
+    scheduler, adb, transport, clock = make(foreground=None)
+    scheduler.configure(False, True, 500, True)
+    adb.media_playing_value = False
+    clock.advance(20 * 60)
+    scheduler.note_session_opened(11)
+
+    await scheduler.run_pending()
+
+    assert transport.sent[-1]["body"]["reason"] == "app-in-use"
+    assert clock.sleeps.count(1.0) == 5, "esperou o app da frente antes de desistir"
+    assert "kill-background" not in adb.cleanup_log
 
 
 async def test_light_cleanup_without_any_foreground_app_is_reported_as_skipped_not_completed() -> (

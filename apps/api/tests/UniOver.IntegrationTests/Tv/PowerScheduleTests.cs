@@ -112,21 +112,68 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task DueWhileOffline_FinishesOnceWithoutSending()
+    public async Task DueWhileOffline_IsRetriedInsteadOfClosed_AndEndsAsMissedOncePastTheCeiling()
     {
         await using var app = await TvApp.StartAsync(postgres);
         var tvId = await ConfigureAsync(app);
         await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
         app.Time.Advance(TimeSpan.FromSeconds(2));
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var worker = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
+            (await worker.RunOnceAsync(Ct)).Should().Be(1, "o pedido voltou à fila, e a rodada segue");
+            (await worker.RunOnceAsync(Ct)).Should().Be(0, "em espera até a próxima tentativa");
+        }
+        await using (var db = app.Db())
+        {
+            (await db.PowerSchedules.SingleAsync(Ct)).Status.Should().Be(Schedule.Pending, "deploy no minuto combinado não perde o agendamento");
+            (await db.CommandAudit.CountAsync(x => x.Command == TvCommandNames.PowerOff, Ct)).Should().Be(0);
+        }
+
+        app.Time.Advance(ScheduledPowerOffDispatcher.NotReadyRetryAfter + TimeSpan.FromSeconds(1));
+        await SetDueAgoAsync(app, ScheduledPowerOffDispatcher.MaxLateness + TimeSpan.FromMinutes(1));
+        await using var nextRound = app.Services.CreateAsyncScope();
+        await nextRound.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>().RunOnceAsync(Ct);
+
+        await WaitForResultAsync(app, "missed");
+        await using var check = app.Db();
+        (await check.CommandAudit.CountAsync(x => x.Command == TvCommandNames.PowerOff, Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AgentThatDroppedForAMoment_IsRetriedAndThenReceivesTheSafePowerOff()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvId = await ConfigureAsync(app);
+        await using (var first = await app.ConnectAndWaitAsync())
+        {
+            await first.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+            await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+                "capacidade de desligamento seguro");
+        }
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda do agente");
+        await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
+        app.Time.Advance(TimeSpan.FromSeconds(2));
         await using var scope = app.Services.CreateAsyncScope();
         var worker = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
-        (await worker.RunOnceAsync(Ct)).Should().Be(1);
-        (await worker.RunOnceAsync(Ct)).Should().Be(0);
-        await using var db = app.Db();
-        var schedule = await db.PowerSchedules.SingleAsync(Ct);
-        schedule.Status.Should().Be(Schedule.Completed);
-        schedule.Result.Should().Be("offline");
-        (await db.CommandAudit.CountAsync(x => x.Command == TvCommandNames.PowerOff, Ct)).Should().Be(1);
+        await worker.RunOnceAsync(Ct);
+        await using (var db = app.Db())
+        {
+            (await db.PowerSchedules.SingleAsync(Ct)).Status.Should().Be(Schedule.Pending, "a queda curta não encerra o pedido");
+        }
+
+        await using var back = await app.ConnectAndWaitAsync();
+        await back.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+            "capacidade depois da volta");
+        app.Time.Advance(ScheduledPowerOffDispatcher.NotReadyRetryAfter + TimeSpan.FromSeconds(1));
+        var run = worker.RunOnceAsync(Ct);
+        var command = await TvApp.NextCommandAsync(back);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(back, command);
+        await run;
+
+        await WaitForResultAsync(app, "off");
     }
 
     [Fact]
@@ -303,6 +350,15 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
         audit.ErrorCode.Should().Be("missed");
         audit.Detail.Should().Be("scheduled");
         audit.LatencyMs.Should().BeNull("nada foi enviado ao agente");
+
+        // O agente não recebeu nada: a primeira coisa que chega é a tecla de prova, não o desligar.
+        var key = app.PostAsync("/api/v1/tv/keys", new { key = "MUTE" });
+        var received = await TvApp.NextCommandAsync(agent);
+        received.GetProperty("type").GetString().Should().Be("tv.key.v2");
+        received.GetProperty("body").GetProperty("key").GetString().Should().Be("MUTE");
+        await TvApp.ReplyAsync(agent, received);
+        using var response = await key.WaitAsync(TimeSpan.FromSeconds(15), Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -353,7 +409,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
         await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
             "capacidade de desligamento seguro");
-        app.Time.Advance(ScheduledPowerOffDispatcher.CapabilityRetryAfter + TimeSpan.FromSeconds(1));
+        app.Time.Advance(ScheduledPowerOffDispatcher.NotReadyRetryAfter + TimeSpan.FromSeconds(1));
         var run = worker.RunOnceAsync(Ct);
         var command = await TvApp.NextCommandAsync(agent);
         command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
@@ -423,7 +479,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
         var worker = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
         (await worker.RunOnceAsync(Ct)).Should().Be(1);
 
-        app.Time.Advance(ScheduledPowerOffDispatcher.CapabilityRetryAfter + TimeSpan.FromSeconds(1));
+        app.Time.Advance(ScheduledPowerOffDispatcher.NotReadyRetryAfter + TimeSpan.FromSeconds(1));
         await SetDueAgoAsync(app, ScheduledPowerOffDispatcher.MaxLateness + TimeSpan.FromMinutes(1));
         await using var nextRound = app.Services.CreateAsyncScope();
         await nextRound.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>().RunOnceAsync(Ct);
