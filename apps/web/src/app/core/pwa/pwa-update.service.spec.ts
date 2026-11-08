@@ -6,6 +6,7 @@ import {
   CHUNK_RECOVERY_KEY,
   CONTROLLER_CHANGE_KEY,
   FIRST_CONTENT_WATCHDOG_MS,
+  LEAVING_GRACE_MS,
   PWA_ENABLED,
   PwaUpdateService,
   TAB_LOCK_NAME,
@@ -532,6 +533,55 @@ describe('PwaUpdateService', () => {
       await flush();
       expect(assign).toHaveBeenCalledTimes(1);
       expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not hijack the navigation of a page that is already leaving', async () => {
+      const { service } = setup({});
+      await flush();
+      const { assign, reload } = stubAssign();
+      // O navegador aborta a importação em voo ao sair da página: a falha chega depois do `pagehide`.
+      window.dispatchEvent(new Event('pagehide'));
+      expect(service.recoverFromStaleShell('/')).toBe(true);
+      await flush();
+      expect(assign).not.toHaveBeenCalled();
+      expect(reload).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
+    });
+
+    it('waits for the pagehide after a beforeunload, and recovers only if the page stayed', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] });
+      const { service } = setup({});
+      const { assign } = stubAssign();
+      // A navegação da pessoa aborta a importação em voo antes do `pagehide`: a falha não é casca velha.
+      window.dispatchEvent(new Event('beforeunload'));
+      expect(service.recoverFromStaleShell('/')).toBe(true);
+      await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS - 1);
+      expect(assign).not.toHaveBeenCalled();
+      window.dispatchEvent(new Event('pagehide'));
+      await vi.advanceTimersByTimeAsync(5);
+      expect(assign).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
+    });
+
+    it('recovers after the grace period when the leave was given up (no pagehide)', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] });
+      const { service } = setup({});
+      const { assign } = stubAssign();
+      window.dispatchEvent(new Event('beforeunload'));
+      expect(service.recoverFromStaleShell('/treino')).toBe(true);
+      await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+      expect(assign).toHaveBeenCalledWith('/treino');
+    });
+
+    it('recovers again when a page restored from the back/forward cache fails to load a chunk', async () => {
+      const { service } = setup({});
+      await flush();
+      const { assign } = stubAssign();
+      window.dispatchEvent(new Event('pagehide'));
+      window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+      expect(service.recoverFromStaleShell('/treino')).toBe(true);
+      await flush();
+      expect(assign).toHaveBeenCalledWith('/treino');
     });
 
     it('allows a new recovery once the guard window has passed', async () => {
