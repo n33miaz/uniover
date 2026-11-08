@@ -140,20 +140,24 @@ def test_a_version_returned_for_a_real_sync_error_is_not_marked_as_lack_of_space
     assert not (pc.runtime / ".deferred-lowdisk").exists()
 
 
-def test_the_supervisor_creates_the_tv_use_marker_with_an_old_date_and_keeps_an_existing_one(
+def test_the_supervisor_creates_the_use_markers_with_an_old_date_and_keeps_an_existing_one(
     pc: Pc,
 ) -> None:
     marker = pc.runtime / "tv-last-use"
+    pc_marker = pc.runtime / "pc-last-use"
     pc.uv(["ping -n 300 127.0.0.1 > nul", "exit /b 0"])
     with heartbeat(pc.alive), pc.running():
-        assert wait_for(marker.exists, 30), pc.supervisor_log()
-    # Nunca usada: a data é antiga (a TV conta como parada), mas o arquivo já existe para o agente.
-    assert datetime.fromtimestamp(marker.stat().st_mtime, UTC).year == 2000
+        assert wait_for(lambda: marker.exists() and pc_marker.exists(), 30), pc.supervisor_log()
+    # Nunca usadas: a data é antiga (conta como parado), mas os arquivos já existem para o agente.
+    for created in (marker, pc_marker):
+        assert datetime.fromtimestamp(created.stat().st_mtime, UTC).year == 2000
     used = time.time() - 30
     os.utime(marker, (used, used))
+    os.utime(pc_marker, (used, used))
     with heartbeat(pc.alive), pc.running():
         assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
     assert marker.stat().st_mtime == pytest.approx(used, abs=1)
+    assert pc_marker.stat().st_mtime == pytest.approx(used, abs=1)
 
 
 def rollback_after_an_unwritable_trial(

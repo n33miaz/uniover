@@ -235,14 +235,17 @@ function Ensure-TvUseMarker {
     # A marca de "a TV foi usada" (a DATA de `runtime\tv-last-use`, que o agente atualiza): ela nasce aqui, com data antiga
     # (nunca usada), pela mesma razao do `last-alive`: com o disco cheio o agente so consegue mudar a data de um arquivo que
     # ja existe. Um arquivo que ja existe fica como esta (o agente pode ter gravado um uso).
-    $path = Join-Path $runtime 'tv-last-use'
-    try {
-        if (-not (Test-Path -LiteralPath $path)) {
-            $stream = New-Object System.IO.FileStream($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
-            $stream.Dispose()
-            [System.IO.File]::SetLastWriteTimeUtc($path, (New-Object DateTime(2000, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)))
-        }
-    } catch { }
+    # O controle do PC tem a sua (`pc-last-use`), pela mesma razao: sem ela, o disco cheio desligaria o adiamento da atualizacao.
+    foreach ($name in @('tv-last-use', 'pc-last-use')) {
+        $path = Join-Path $runtime $name
+        try {
+            if (-not (Test-Path -LiteralPath $path)) {
+                $stream = New-Object System.IO.FileStream($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
+                $stream.Dispose()
+                [System.IO.File]::SetLastWriteTimeUtc($path, (New-Object DateTime(2000, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)))
+            }
+        } catch { }
+    }
 }
 
 function Sleep-Beating([double]$Seconds) {

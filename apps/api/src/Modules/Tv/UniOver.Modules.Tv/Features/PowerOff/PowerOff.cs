@@ -66,7 +66,7 @@ internal static class PowerOffValidator
 }
 
 internal sealed class PowerOffHandler(
-    TvCommandRunner runner, IAgentPresenceReader presence, IOptions<TvModuleOptions> options)
+    TvCommandRunner runner, IAgentPresenceReader presence, ITvAgentPresence liveness, IOptions<TvModuleOptions> options)
 {
     /// <summary>Código de falha de quem exigiu o desligamento com leitura (<see cref="PowerOffCommand.RequireSafe"/>) e o agente não o conhece.</summary>
     public const string UnsafePowerOffCode = "power_off_unsafe";
@@ -85,11 +85,12 @@ internal sealed class PowerOffHandler(
         var capabilities = KnownCapabilities(target.AgentSlug);
         if (capabilities is null && !string.IsNullOrWhiteSpace(target.AgentSlug))
         {
-            // Sem capacidade conhecida (a API acabou de subir e o hello do agente ainda não chegou) não dá para saber se existe
-            // o desligar seguro: mandar POWER agora seria um palpite. A tela diz "reconectando" e o pedido pode ser repetido.
+            // Sem capacidade conhecida (a API acabou de subir e o hello do agente ainda não chegou, ou o agente está na janela
+            // de reconexão e pode voltar já atualizado) não dá para saber se existe o desligar seguro: mandar POWER agora
+            // seria um palpite. A tela diz "reconectando" e o pedido pode ser repetido.
             var unknown = TvSendOutcome.Failed(
                 TvSendStatus.AgentOffline,
-                presence.Get(target.AgentSlug) is { Connected: true } ? TvCommandRunner.AgentReconnectingCode : AgentErrors.OfflineCode);
+                liveness.IsOfflineBeyondReconnectGrace(target.AgentSlug) ? AgentErrors.OfflineCode : TvCommandRunner.AgentReconnectingCode);
             await runner.RecordAsync(command.Origin, TvCommandNames.PowerOff, "POWER", unknown);
             return (unknown, PowerOffOutcomes.Sent);
         }
@@ -119,11 +120,12 @@ internal sealed class PowerOffHandler(
     }
 
     /// <summary>
-    /// As capacidades que o agente declarou no <c>hello</c>, ou nulo se ainda não se sabe (sem
-    /// presença, ou presença sem <c>hello</c>, que é a lista vazia). Um agente que já falou sempre declara alguma capacidade.
+    /// As capacidades que o agente declarou no <c>hello</c> da sessão atual, ou nulo se ainda não se sabe: sem presença,
+    /// sem sessão (a janela de reconexão: ele pode voltar já atualizado, com outras capacidades) ou sem <c>hello</c>
+    /// (a lista vazia). Um agente que já falou sempre declara alguma capacidade.
     /// </summary>
     private IReadOnlyList<string>? KnownCapabilities(string agentSlug) =>
-        !string.IsNullOrWhiteSpace(agentSlug) && presence.Get(agentSlug)?.Capabilities is { Count: > 0 } known ? known : null;
+        !string.IsNullOrWhiteSpace(agentSlug) && presence.Get(agentSlug) is { Connected: true, Capabilities: { Count: > 0 } known } ? known : null;
 }
 
 internal static class PowerOffEndpoint

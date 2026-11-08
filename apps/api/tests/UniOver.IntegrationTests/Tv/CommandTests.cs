@@ -486,6 +486,37 @@ public sealed class CommandTests(PostgresFixture postgres)
         (await db.CommandAudit.CountAsync(Ct)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task PowerOff_WhileTheAgentIsInTheReconnectWindow_AnswersReconnecting_AndSendsNoBlindPower()
+    {
+        // Um agente antigo que cai para se atualizar pode voltar já novo: a tecla POWER entregue na volta ligaria a TV.
+        await using var app = await TvApp.StartAsync(postgres);
+        await using (var old = await app.ConnectAndWaitAsync())
+        {
+            await app.DeclareLegacyAgentAsync(old);
+        }
+
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Connected == false, "queda do agente");
+        var request = app.PostAsync("/api/v1/tv/power/off");
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await TvApp.JsonAsync(response);
+        body.GetProperty("type").GetString().Should().EndWith("/agent-offline");
+        body.GetProperty("reconnecting").GetBoolean().Should().BeTrue();
+        await using var db = app.Db();
+        (await db.CommandAudit.SingleAsync(Ct)).ErrorCode.Should().Be("agent_reconnecting");
+
+        // Quando ele volta, o mesmo pedido segue pelo desligar seguro.
+        await using var back = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, back);
+        var retry = app.PostAsync("/api/v1/tv/power/off");
+        var command = await TvApp.NextCommandAsync(back);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(back, command);
+        (await Within(retry)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static async Task DeclarePowerOffAsync(TvApp app, FakeAgent agent)
     {
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.kind.android", "tv.power.off.v1");

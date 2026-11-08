@@ -311,7 +311,9 @@ class TvCleanupScheduler:
 
     async def _deep_blocker(self) -> str | None:
         """O motivo de a TV poder estar em uso (ou de não dar para saber); `None` se está ociosa."""
-        foreground = self._foreground()
+        # Espera um pouco pelo app da frente logo depois de a sessão abrir (como a leve): sem isso
+        # isso o "desconhecido" de um instante contaria como "em uso" sem motivo.
+        foreground = await self._foreground_when_known()
         try:
             homes = await self._adb.home_packages()
             media_playing = await self._adb.media_playing()

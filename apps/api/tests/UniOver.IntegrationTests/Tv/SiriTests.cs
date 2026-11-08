@@ -348,13 +348,31 @@ public sealed class SiriTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task PowerOff_WhileTheCapabilitiesAreUnknown_AnswersReconnecting_AndSendsNothing()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var setup = await SetUpAsync(app);
+        var token = await NewTokenAsync(app, setup);
+        await using var agent = await app.ConnectAndWaitAsync(); // sem hello: a presença logo depois de um deploy
+
+        using var response = await Within(TriggerAsync(app, token, new { tv = setup.TvId, action = "power_off" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await TvApp.JsonAsync(response);
+        body.GetProperty("type").GetString().Should().EndWith("/agent-offline");
+        body.GetProperty("reconnecting").GetBoolean().Should().BeTrue();
+        await using var db = app.Db();
+        (await db.CommandAudit.AsNoTracking().SingleAsync(a => a.Command == TvCommandNames.PowerOff, Ct)).ErrorCode.Should().Be("agent_reconnecting");
+    }
+
+    [Fact]
     public async Task PowerOff_ToAnAgentThatCannotReadThePower_SendsNothing_BecauseThePowerKeyCouldTurnTheTvOn()
     {
         await using var app = await TvApp.StartAsync(postgres);
         var setup = await SetUpAsync(app);
         var token = await NewTokenAsync(app, setup);
         await using var agent = await app.ConnectAndWaitAsync();
-        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.kind.android");
+        await app.DeclareLegacyAgentAsync(agent);
 
         using var response = await Within(TriggerAsync(app, token, new { tv = setup.TvId, action = "power_off" }));
 
