@@ -16,7 +16,11 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 
 internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps);
 
-internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? ScrollY);
+/// <summary>
+/// <c>Seq</c> é opcional e só serve ao diagnóstico: o app numera os pedidos de movimento em ordem crescente e manda vários
+/// ao mesmo tempo, e o agente reconhece o que chega fora de ordem. O movimento é relativo, então todos são aplicados.
+/// </summary>
+internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? ScrollY, int? Seq = null);
 
 internal sealed record PcClickRequest(string? Button, string? Action);
 
@@ -44,6 +48,11 @@ internal static class PcValidator
         Range(errors, "dy", request?.Dy, MaxPointer, required: true);
         Range(errors, "scrollX", request?.ScrollX, MaxScroll, required: false);
         Range(errors, "scrollY", request?.ScrollY, MaxScroll, required: false);
+        if (request?.Seq is < 0)
+        {
+            errors["seq"] = ["Use um número inteiro maior ou igual a zero."];
+        }
+
         return errors;
     }
 
@@ -202,7 +211,7 @@ internal sealed class PcControlHandler(
             return target.Failure;
         }
 
-        var sent = await gateway.SendAsync(target.Slug, PcMessages.Pointer(dx, dy, scrollX, scrollY), cancellationToken);
+        var sent = await gateway.SendAsync(target.Slug, PcMessages.Pointer(dx, dy, scrollX, scrollY, request.Seq), cancellationToken);
         return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
 
