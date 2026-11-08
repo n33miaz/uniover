@@ -219,6 +219,19 @@ describe('TvAccess with the capabilities of the TV in use', () => {
     expect(access.settings()).toBe(false);
   });
 
+  it('offers the inputs list only with control and the INPUT key declared by the agent', () => {
+    owner();
+    const access = TestBed.inject(TvAccess);
+    show(tv({ capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.key.INPUT'] }));
+    expect(access.inputs()).toBe(true);
+    show(tv({}));
+    expect(access.inputs()).toBe(false);
+    show(tv({ kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] }));
+    expect(access.inputs()).toBe(false);
+    show(tv({ kind: null, capabilities: [], online: false }));
+    expect(access.inputs()).toBe(false);
+  });
+
   it('still needs the permission: the capability alone gives nothing', () => {
     TestBed.inject(SessionState).setUser({
       id: '2',

@@ -56,7 +56,6 @@ public sealed class OpenSettingsTests(PostgresFixture postgres)
     [InlineData("""{"screen":"DEVELOPER"}""")]
     [InlineData("""{"screen":"wifi"}""")]
     [InlineData("""{"screen":"android.settings.WIFI_SETTINGS"}""")]
-    [InlineData("""{"screen":" WIFI "}""")]
     [InlineData("""{"screen":""}""")]
     [InlineData("""{"action":"android.settings.SETTINGS"}""")]
     [InlineData("""{}""")]

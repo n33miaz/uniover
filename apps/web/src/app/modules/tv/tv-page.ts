@@ -235,7 +235,11 @@ export class TvPage {
     effect(() => {
       if (!this.access.power()) this.powerOpen.set(false);
       if (!this.access.control()) this.customizeOpen.set(false);
-      if (!this.hasMenu()) this.menuOpen.set(false);
+      if (!this.hasMenu()) {
+        this.menuOpen.set(false);
+        // Uma escolha que ficou pendente não pode sobreviver ao menu que a fez: ela dispararia no próximo fechamento.
+        this.pendingChoice = null;
+      }
       if (!this.store.multiple()) this.switchOpen.set(false);
       if (!this.access.editShortcuts()) this.suggestion.set(null);
       const apps = this.access.apps();
@@ -280,6 +284,8 @@ export class TvPage {
   }
 
   protected openMenu(opener: HTMLElement): void {
+    // Cada menu aberto começa sem escolha: um Esc ou um toque fora nunca dispara a de um menu anterior.
+    this.pendingChoice = null;
     this.menuOpener.set(opener);
     this.menuOpen.set(true);
   }

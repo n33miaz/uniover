@@ -55,7 +55,7 @@ internal static class TvMessages
     /// Abre na TV uma tela da lista fechada (<c>WIFI</c> ou <c>SETTINGS</c>, os nomes do contrato). A API só a manda a agente
     /// que declarou <c>tv.settings.open.v1</c>, e só por toque da pessoa.
     /// </summary>
-    public static TvMessage OpenSettings(string screen) =>
+    public static TvMessage OpenSettings(TvSettingsScreen screen) =>
         new(AgentMessageTypes.TvSettingsOpenV1, BodyOf(
             new TvSettingsOpenV1Message
             {
@@ -63,8 +63,8 @@ internal static class TvMessages
                 {
                     Screen = screen switch
                     {
-                        "WIFI" => TvSettingsOpenV1BodyScreen.Wifi,
-                        "SETTINGS" => TvSettingsOpenV1BodyScreen.Settings,
+                        TvSettingsScreen.Wifi => TvSettingsOpenV1BodyScreen.Wifi,
+                        TvSettingsScreen.Settings => TvSettingsOpenV1BodyScreen.Settings,
                         _ => throw new ArgumentOutOfRangeException(nameof(screen), "Tela fora da lista fechada."),
                     },
                 },
