@@ -58,7 +58,7 @@ export type PcKeyV1 =
   | PcLetter;
 
 /**
- * As teclas que só a `pc.key.v2` traz: a fileira de dígitos, as quatro pontuações iguais em qualquer layout (as demais
+ * As teclas que só a `pc.key.v2` traz: a fileira de dígitos, as quatro pontuações estáveis só nos layouts americano e ABNT2 (as demais
  * saem pelo texto), Insert, Print Screen, a tecla de menu, Caps Lock, a tecla Windows sozinha e os modificadores como
  * tecla (para segurar entre toques). Um agente de antes dela não as entende: a API recusa com `pc-key-unsupported`.
  */
@@ -91,6 +91,15 @@ export type PcKey = PcKeyV1 | PcKeyV2Only;
 
 /** `PRESS` aperta e solta (padrão); `DOWN` e `UP` seguram e soltam um modificador entre toques (só `CTRL`, `ALT`, `SHIFT`, `WIN`). */
 export type PcKeyAction = 'PRESS' | 'DOWN' | 'UP';
+
+/** Os modificadores que dá para segurar entre toques (`DOWN`) e soltar (`UP`). */
+export type PcHoldableKey = 'CTRL' | 'ALT' | 'SHIFT' | 'WIN';
+
+const HOLDABLE_KEYS: ReadonlySet<string> = new Set<PcHoldableKey>(['CTRL', 'ALT', 'SHIFT', 'WIN']);
+
+export function isHoldableKey(key: string): key is PcHoldableKey {
+  return HOLDABLE_KEYS.has(key);
+}
 
 /** O que um toque de tecla pode pedir além da tecla e dos modificadores. */
 export interface PcKeyOptions {

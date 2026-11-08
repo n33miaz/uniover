@@ -31,6 +31,7 @@ function setup(initial: PcStatus | null = status()) {
     pointer: vi.fn(() => Promise.resolve()),
     click: vi.fn(() => Promise.resolve()),
     key: vi.fn(() => Promise.resolve()),
+    keyRelease: vi.fn<(key: string, options?: unknown) => Promise<void>>(() => Promise.resolve()),
     text: vi.fn(() => Promise.resolve()),
     media: vi.fn(() => Promise.resolve()),
     power: vi.fn(() => Promise.resolve()),
@@ -939,6 +940,203 @@ describe('PcStore press after a click', () => {
     await store.startDrag();
     expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual(['DOWN']);
     await store.release();
+  });
+});
+
+describe('PcStore held modifiers', () => {
+  const pageHide = () =>
+    window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }));
+
+  it('holds with a DOWN through the API and lets go through its own release path, never the input queue', async () => {
+    const { store, api } = setup();
+    expect(await store.holdKey('ALT')).toBeNull();
+    expect(store.heldKeys()).toEqual(['ALT']);
+    expect(api.key).toHaveBeenCalledExactlyOnceWith('ALT', [], { action: 'DOWN' });
+
+    expect(await store.releaseKey('ALT')).toBeNull();
+    expect(store.heldKeys()).toEqual([]);
+    expect(api.keyRelease).toHaveBeenCalledExactlyOnceWith('ALT');
+    expect(api.key).toHaveBeenCalledTimes(1);
+  });
+
+  it('sendKey with DOWN and UP goes to the same paths', async () => {
+    const { store, api } = setup();
+    await store.sendKey('ALT', [], { action: 'DOWN' });
+    expect(store.heldKeys()).toEqual(['ALT']);
+    await store.sendKey('ALT', [], { action: 'UP' });
+    expect(store.heldKeys()).toEqual([]);
+    expect(api.keyRelease).toHaveBeenCalledWith('ALT');
+    expect(api.key).toHaveBeenCalledTimes(1);
+  });
+
+  it('letting go without holding sends nothing', async () => {
+    const { store, api } = setup();
+    expect(await store.releaseKey('ALT')).toBeNull();
+    expect(api.keyRelease).not.toHaveBeenCalled();
+  });
+
+  it('a failure of the input queue never cancels the release of a held modifier', async () => {
+    const { store, api } = setup();
+    await store.holdKey('ALT');
+    api.key.mockRejectedValueOnce(new HttpErrorResponse({ status: 502 }));
+    expect((await store.sendKey('TAB'))?.kind).toBe('failed');
+    // A fila cancelou o que vinha atrás dela, mas o soltar tem caminho próprio.
+    expect(await store.releaseKey('ALT')).toBeNull();
+    expect(api.keyRelease).toHaveBeenCalledWith('ALT');
+    expect(store.heldKeys()).toEqual([]);
+  });
+
+  it('waits only briefly for what is already in flight, and then sends the release anyway', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api } = setup();
+      await store.holdKey('ALT');
+      api.key.mockImplementationOnce(() => new Promise<void>(() => undefined)); // um toque que nunca responde
+      void store.sendKey('TAB');
+      await vi.advanceTimersByTimeAsync(0);
+      const releasing = store.releaseKey('ALT');
+      await vi.advanceTimersByTimeAsync(UP_DRAIN_MS - 1);
+      expect(api.keyRelease).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await releasing).toBeNull();
+      expect(api.keyRelease).toHaveBeenCalledWith('ALT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a hold whose request never went out (the queue was cancelled) is not left marked as held', async () => {
+    const { store, api } = setup();
+    let fail: (error: unknown) => void = () => undefined;
+    api.key.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const first = store.sendKey('A');
+    const hold = store.holdKey('ALT');
+    expect(store.heldKeys()).toEqual(['ALT']);
+    await flush(); // o primeiro toque já saiu e está no ar
+    fail(new HttpErrorResponse({ status: 502 }));
+    await first;
+    expect((await hold)?.kind).toBe('cancelled');
+    expect(store.heldKeys()).toEqual([]);
+    expect(api.key).toHaveBeenCalledTimes(1);
+  });
+
+  it('a DOWN whose answer was lost may have arrived: it is let go at once', async () => {
+    const { store, api } = setup();
+    api.key.mockRejectedValueOnce(new HttpErrorResponse({ status: 504 }));
+    expect((await store.holdKey('ALT'))?.kind).toBe('timeout');
+    await flush();
+    await flush();
+    expect(api.keyRelease).toHaveBeenCalledWith('ALT');
+    expect(store.heldKeys()).toEqual([]);
+  });
+
+  it('a plain release that fails keeps the modifier marked as held, so it can be tried again', async () => {
+    const { store, api } = setup();
+    await store.holdKey('ALT');
+    api.keyRelease.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    expect((await store.releaseKey('ALT'))?.kind).toBe('offline');
+    expect(store.heldKeys()).toEqual(['ALT']);
+  });
+
+  it('leaving the module lets go of what is held, retrying while it fails', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.holdKey('ALT');
+    api.keyRelease.mockRejectedValueOnce(new HttpErrorResponse({ status: 502 }));
+    stop();
+    await new Promise((resolve) => setTimeout(resolve, (UP_RETRY_BACKOFF_MS[0] ?? 0) + 100));
+    expect(api.keyRelease).toHaveBeenCalledTimes(2);
+    expect(store.heldKeys()).toEqual([]);
+  });
+
+  it('hiding the page lets go at once with keepalive, without waiting for any queue', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.holdKey('ALT');
+    api.key.mockImplementationOnce(() => new Promise<void>(() => undefined)); // fila presa
+    void store.sendKey('TAB');
+    pageHide();
+    expect(api.keyRelease).toHaveBeenCalledExactlyOnceWith('ALT', { keepalive: true });
+    await flush();
+    expect(store.heldKeys()).toEqual([]);
+    stop();
+  });
+
+  it('a hide whose release failed keeps it marked, so the screen can try again', async () => {
+    const { store, api } = setup();
+    const stop = store.watch();
+    await store.holdKey('SHIFT');
+    api.keyRelease.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+    pageHide();
+    await flush();
+    expect(store.heldKeys()).toEqual(['SHIFT']);
+    stop();
+  });
+
+  it('switching accounts forgets what was held and sends nothing to the new account', async () => {
+    const { store, api } = setup();
+    signIn('a');
+    await store.holdKey('ALT');
+    signIn('b');
+    TestBed.tick();
+    expect(store.heldKeys()).toEqual([]);
+    expect(await store.releaseKey('ALT')).toBeNull();
+    expect(api.keyRelease).not.toHaveBeenCalled();
+  });
+
+  it('a PC that went away forgets what was held (the agent let go when it lost the connection)', async () => {
+    const { store, api, current } = setup();
+    await store.holdKey('ALT');
+    current.set(status({ online: false }));
+    TestBed.tick();
+    expect(store.heldKeys()).toEqual([]);
+    expect(api.keyRelease).not.toHaveBeenCalled();
+  });
+
+  it('several modifiers are held and let go independently', async () => {
+    const { store, api } = setup();
+    await store.holdKey('CTRL');
+    await store.holdKey('SHIFT');
+    await store.holdKey('CTRL'); // já segurado: nada vai
+    expect(store.heldKeys()).toEqual(['CTRL', 'SHIFT']);
+    expect(api.key).toHaveBeenCalledTimes(2);
+    await store.releaseHeldKeys();
+    expect(store.heldKeys()).toEqual([]);
+    expect(api.keyRelease.mock.calls.map(([key]) => key).sort()).toEqual(['CTRL', 'SHIFT']);
+  });
+});
+
+describe('PcStore sign of life while a modifier is held', () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+  afterEach(() => vi.useRealTimers());
+
+  const beats = (api: ReturnType<typeof setup>['api']) =>
+    (api.pointer.mock.calls as unknown[][]).filter(([dx, dy]) => dx === 0 && dy === 0).length;
+
+  it('reuses the 10 s zero movement while a modifier is held, and stops when it is let go', async () => {
+    const { store, api } = setup();
+    await store.holdKey('ALT');
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(beats(api)).toBe(1);
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(beats(api)).toBe(2);
+    await store.releaseKey('ALT');
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS * 3);
+    expect(beats(api)).toBe(2);
+  });
+
+  it('keeps beating while either the mouse button or a modifier is held', async () => {
+    const { store, api } = setup();
+    await store.toggleDrag();
+    await store.holdKey('ALT');
+    await store.toggleDrag(); // solta o mouse: o Alt ainda precisa do sinal de vida
+    await vi.advanceTimersByTimeAsync(HOLD_HEARTBEAT_MS);
+    expect(beats(api)).toBe(1);
   });
 });
 

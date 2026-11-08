@@ -6,6 +6,7 @@ import type { PcFailure } from './data/pc-failure';
 import type { PcPhase } from './data/pc-store';
 import type {
   PcClickButton,
+  PcHoldableKey,
   PcKey,
   PcKeyOptions,
   PcMediaAction,
@@ -23,11 +24,20 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
   const phase = signal<PcPhase>(initial);
   const apps = signal<readonly PcFavorite[]>([]);
   const capabilities = signal<readonly string[]>([]);
+  const heldKeys = signal<readonly PcHoldableKey[]>([]);
   const store = {
     phase,
     canSend: computed(() => phase() === 'ready'),
     apps,
     capabilities,
+    heldKeys,
+    holdKey: vi.fn<(key: PcHoldableKey) => Outcome>(() => Promise.resolve(null)),
+    releaseKey: vi.fn<(key: PcHoldableKey, options?: { persistent?: boolean }) => Outcome>(() =>
+      Promise.resolve(null),
+    ),
+    releaseHeldKeys: vi.fn<(options?: { persistent?: boolean }) => Promise<void>>(() =>
+      Promise.resolve(),
+    ),
     supportsKeyV2: computed(() => capabilities().includes(PC_KEY_V2_CAPABILITY)),
     supportsKey: (key: PcKey, options?: PcKeyOptions) =>
       !keyNeedsV2(key, options) || capabilities().includes(PC_KEY_V2_CAPABILITY),

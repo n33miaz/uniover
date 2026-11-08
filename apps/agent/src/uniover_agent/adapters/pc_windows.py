@@ -27,7 +27,7 @@ Sender = Callable[[Sequence[RawInput]], None]
 # fechou, a rede caiu ou o telefone dormiu no meio de um arrasto, e o botão não pode ficar preso no
 # PC (o mesmo vale para um modificador segurado, como o Alt do Alt+Tab). Um arrasto com o dedo
 # quieto por 30 s sem nenhuma chamada ao adaptador é solto. Contam como tráfego as chamadas ao
-# adaptador (mover, rolar, clicar, tecla, texto, mídia), inclusive o
+# adaptador que o Windows aceita (mover, rolar, clicar, tecla, texto, mídia), inclusive o
 # movimento vazio (dx = dy = 0) que o app manda a cada 10 s enquanto segura um arrasto. Não
 # contam as mensagens que o agente descarta por idade, nem energia e abrir programa, que não
 # passam por aqui.
@@ -188,7 +188,10 @@ class WindowsPcInput:
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
     ) -> None:
-        self._dispatch(pc_inputs.key_inputs(key, modifiers, repeat, action))
+        with self._lock:
+            # O que já está segurado (o Alt do Alt+Tab) não é apertado nem solto por esta tecla.
+            held = frozenset(identity[0] for identity in self._held_keys)
+            self._dispatch(pc_inputs.key_inputs(key, modifiers, repeat, action, held))
 
     def type_text(self, text: str) -> None:
         self._dispatch(pc_inputs.text_inputs(text))
@@ -220,7 +223,6 @@ class WindowsPcInput:
 
     def _dispatch(self, inputs: Sequence[RawInput]) -> None:
         with self._lock:
-            self._last_activity = self._monotonic()
             self._retry_stuck()
             before = self._held
             try:
@@ -240,10 +242,24 @@ class WindowsPcInput:
                     for identity, up in pc_inputs.held_keys_after(self._held_keys, accepted).items()
                     if identity not in gone
                 }
+                # Um `UP` explícito que o Windows recusou (janela elevada) deixa de ser "segurado" e
+                # vira soltura pendente, tentada no começo do próximo envio (como no lote parcial).
+                refused_ups = tuple(
+                    self._held_keys.pop(identity)
+                    for event in inputs[len(accepted) :]
+                    if event.kind == "keyboard"
+                    and event.flags & pc_inputs.KEY_UP
+                    and (identity := pc_inputs.key_identity(event)) in self._held_keys
+                )
+                if refused_ups:
+                    self._stuck = tuple(dict.fromkeys((*self._stuck, *refused_ups)))
                 if pressed_now or keys:
                     self._release(pressed_now, keys)
                 self._sync_timer()
                 raise
+            # Só um envio que o Windows aceitou conta como tráfego: um recusado (janela elevada) não
+            # adia a soltura automática do que está apertado.
+            self._last_activity = self._monotonic()
             self._held = pc_inputs.held_after(self._held, inputs)
             self._held_keys = pc_inputs.held_keys_after(self._held_keys, inputs)
             self._sync_timer()

@@ -14,8 +14,10 @@ import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
   PC_KEY_V2_CAPABILITY,
+  isHoldableKey,
   keyNeedsV2,
   type PcClickButton,
+  type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
   type PcMediaAction,
@@ -157,6 +159,11 @@ export class PcStore {
   readonly notice = signal<PcFailure | null>(null);
   /** O botão esquerdo está apertado (arrastar). */
   readonly dragging = signal(false);
+  /**
+   * Os modificadores que a tela segurou (`holdKey`) e ainda não soltou, ou que podem estar apertados no PC (o `DOWN` pode ter
+   * chegado mesmo sem resposta). O sinal de vida e a soltura automática valem para eles como para o botão do mouse.
+   */
+  readonly heldKeys = signal<readonly PcHoldableKey[]>([]);
 
   readonly phase = computed<PcPhase>(() => {
     const status = this.availability.status();
@@ -176,6 +183,12 @@ export class PcStore {
     effect(() => {
       this.session.accountId();
       untracked(() => this.syncAccount());
+    });
+    // O PC caiu ou deixou de ter o controle: o agente solta o que estava apertado ao perder a conexão, e daqui já não há como
+    // soltar. O estado é zerado (sem ele, o sinal de vida seguiria para um PC que não está).
+    effect(() => {
+      const phase = this.phase();
+      if (phase === 'offline' || phase === 'unavailable') untracked(() => this.dropHeldKeys());
     });
   }
 
@@ -200,7 +213,7 @@ export class PcStore {
     void this.availability.refresh();
     this.heartbeatAllowed = true;
     // O botão continua apertado de uma visita anterior (o soltar não passou): o sinal de vida volta com a tela.
-    if (this.dragging()) this.startHeartbeat();
+    if (this.holding()) this.startHeartbeat();
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'hidden') void this.availability.refresh();
     }, PC_POLL_MS);
@@ -214,7 +227,7 @@ export class PcStore {
         void this.availability.refresh();
         // O botão continua apertado (o soltar ao esconder não passou): o sinal de vida volta.
         this.heartbeatAllowed = true;
-        if (this.dragging()) this.startHeartbeat();
+        if (this.holding()) this.startHeartbeat();
       } else onHide();
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -227,6 +240,7 @@ export class PcStore {
       this.heartbeatAllowed = false;
       this.stopHeartbeat();
       void this.release({ persistent: true });
+      void this.releaseHeldKeys({ persistent: true });
     };
     destroy?.onDestroy(stop);
     return stop;
@@ -460,7 +474,101 @@ export class PcStore {
     modifiers: readonly PcModifier[] = [],
     options: PcKeyOptions = {},
   ): Promise<PcFailure | null> {
+    // Segurar e soltar têm caminho próprio: a soltura nunca pode ser cancelada pela fila de entrada.
+    if (options.action === 'UP' && isHoldableKey(key)) return this.releaseKey(key);
+    if (options.action === 'DOWN' && isHoldableKey(key)) return this.holdKey(key);
     return this.queueInput(() => this.api.key(key, modifiers, options));
+  }
+
+  /**
+   * Segura um modificador (o Alt do Alt+Tab) até `releaseKey`. Entra na fila de entrada, na ordem dos toques. A tecla conta
+   * como segurada já daqui: se a resposta se perde, o `DOWN` pode ter chegado, e a saída segura é soltar. Se o pedido nem
+   * saiu (a fila foi cancelada), ela volta a não estar segurada.
+   */
+  async holdKey(key: PcHoldableKey): Promise<PcFailure | null> {
+    this.syncAccount();
+    if (!this.canSend()) return this.blocked();
+    if (this.heldKeys().includes(key)) return null;
+    const asked = this.account;
+    this.setKeyHeld(key, true);
+    const failure = await this.queueInput(() => this.api.key(key, [], { action: 'DOWN' }));
+    if (this.session.accountId() !== asked) return failure;
+    if (failure === CANCELLED) this.setKeyHeld(key, false);
+    else if (failure !== null) void this.releaseKey(key, { persistent: true });
+    return failure;
+  }
+
+  /**
+   * Solta um modificador segurado; sem ele segurado não faz nada. Rota e caminho próprios: nunca passa pela fila de entrada
+   * (uma falha dela não o cancela) e funciona mesmo com o PC marcado como desconectado (um `UP` a mais é inofensivo). Espera
+   * o que já saiu por até `UP_DRAIN_MS` (para não passar na frente do próprio `DOWN`) e sai de qualquer jeito. Com
+   * `persistent` (ninguém mais vai tentar: saiu da tela) repete se falhar e, se nada passar, desiste do estado: o agente solta
+   * o que ficar 30 s sem comandos.
+   */
+  async releaseKey(
+    key: PcHoldableKey,
+    options: { readonly persistent?: boolean } = {},
+  ): Promise<PcFailure | null> {
+    this.syncAccount();
+    if (!this.heldKeys().includes(key)) return null;
+    const asked = this.account;
+    await raceTimeout(this.inputTail.then(ignore, ignore), UP_DRAIN_MS);
+    if (this.session.accountId() !== asked) return CANCELLED;
+    const failure = options.persistent
+      ? await this.keyUpWithRetry(key, asked, UP_RETRY_BACKOFF_MS.length + 1)
+      : await this.run(() => this.keyUpRequest(key, asked));
+    if (this.session.accountId() === asked && (failure === null || options.persistent)) {
+      this.setKeyHeld(key, false);
+    }
+    return failure;
+  }
+
+  /** Solta tudo o que está segurado (sair da tela, o dedo saiu). */
+  async releaseHeldKeys(options: { readonly persistent?: boolean } = {}): Promise<void> {
+    await Promise.all(this.heldKeys().map((key) => this.releaseKey(key, options)));
+  }
+
+  /** O `UP` de um modificador, só se a conta que o segurou ainda é a da sessão (senão iria ao PC de outra pessoa). */
+  private keyUpRequest(key: PcHoldableKey, owner: string | null, keepalive = false): Promise<void> {
+    this.assertAccount(owner);
+    return keepalive ? this.api.keyRelease(key, { keepalive: true }) : this.api.keyRelease(key);
+  }
+
+  /** Tenta o `UP` do modificador até `attempts` vezes, sem aviso na tela; devolve a última falha ou `null`. Nunca lança. */
+  private async keyUpWithRetry(
+    key: PcHoldableKey,
+    owner: string | null,
+    attempts: number,
+  ): Promise<PcFailure | null> {
+    let failure: PcFailure | null = null;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) {
+        await pause(UP_RETRY_BACKOFF_MS[attempt - 1] ?? 0);
+        if (this.session.accountId() !== owner) return failure;
+      }
+      try {
+        await this.keyUpRequest(key, owner);
+        return null;
+      } catch (error) {
+        if (error instanceof AccountChanged) return CANCELLED;
+        failure = pcFailureOf(error);
+      }
+    }
+    return failure;
+  }
+
+  private setKeyHeld(key: PcHoldableKey, held: boolean): void {
+    const current = this.heldKeys();
+    if (held === current.includes(key)) return;
+    this.heldKeys.set(held ? [...current, key] : current.filter((item) => item !== key));
+    this.syncHeartbeat();
+  }
+
+  /** Esquece o que estava segurado, sem enviar nada (o PC se foi, a conta mudou, ou ninguém mais vai soltar). */
+  private dropHeldKeys(): void {
+    if (this.heldKeys().length === 0) return;
+    this.heldKeys.set([]);
+    this.syncHeartbeat();
   }
 
   sendText(text: string): Promise<PcFailure | null> {
@@ -601,13 +709,24 @@ export class PcStore {
     this.accelerator.reset();
     this.scroller.reset();
     this.setDragging(false);
+    // O modificador segurado era no PC da conta anterior: nada é enviado para o desta; o agente o solta sozinho.
+    this.dropHeldKeys();
     this.notice.set(null);
   }
 
   /** Marca o botão como apertado (ou solto) na tela e liga (ou desliga) o sinal de vida que o mantém. */
   private setDragging(value: boolean): void {
     this.dragging.set(value);
-    if (value) this.startHeartbeat();
+    this.syncHeartbeat();
+  }
+
+  /** O botão do mouse apertado ou um modificador segurado: o que o sinal de vida mantém. */
+  private holding(): boolean {
+    return this.dragging() || this.heldKeys().length > 0;
+  }
+
+  private syncHeartbeat(): void {
+    if (this.holding()) this.startHeartbeat();
     else this.stopHeartbeat();
   }
 
@@ -624,7 +743,7 @@ export class PcStore {
 
   /** Movimento zerado: não mexe o ponteiro, só mostra ao agente que o botão apertado é de propósito. */
   private async beat(): Promise<void> {
-    if (!this.heartbeatAllowed || !this.dragging() || this.batcher.busy) return;
+    if (!this.heartbeatAllowed || !this.holding() || this.batcher.busy) return;
     // O botão apertado é de uma conta; o sinal de vida de outra sessão iria para o PC errado.
     if (this.session.accountId() !== this.account) return;
     try {
@@ -705,6 +824,16 @@ export class PcStore {
     return failure;
   }
 
+  /** `UP` de um modificador com `keepalive`, fora de qualquer fila (a página está sumindo); devolve se passou. Nunca lança. */
+  private async keyUpNowKeepalive(key: PcHoldableKey): Promise<boolean> {
+    try {
+      await this.api.keyRelease(key, { keepalive: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** `UP` imediato com `keepalive`, fora da fila (a página está morrendo); devolve se passou. Nunca lança. */
   private async quietUpNow(): Promise<boolean> {
     try {
@@ -724,6 +853,12 @@ export class PcStore {
     this.syncAccount();
     this.heartbeatAllowed = false;
     this.stopHeartbeat();
+    // Os modificadores segurados saem já, cada um com o seu `keepalive` (nada espera a fila de entrada).
+    for (const key of this.heldKeys()) {
+      void this.keyUpNowKeepalive(key).then((ok) => {
+        if (ok) this.setKeyHeld(key, false);
+      });
+    }
     if (this.starting) {
       // O `DOWN` ainda está saindo: um `UP` agora poderia passar na frente dele. O `UP` (com `keepalive`) é o próximo da
       // fila, assim que o `DOWN` terminar.

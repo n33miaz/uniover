@@ -10,6 +10,7 @@ using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Devices.Features.PcControl;
 
 namespace UniOver.IntegrationTests.Devices.PcControl;
 
@@ -395,6 +396,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
 
         using var response = await PostAsync(app, "key", JsonNode.Parse(json));
 
@@ -407,6 +409,123 @@ public sealed class PcControlTests(PostgresFixture postgres)
         using var nextResponse = await Within(next);
         nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
         command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+    }
+
+    [Fact]
+    public async Task Key_ThatNeedsTheV2_JustAfterTheHelloWithoutIt_AsksToTryAgain_NotToUpdateTheAgent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        // O agente novo manda um segundo `hello` com a capacidade assim que a API a lista: nos primeiros segundos a falta dela
+        // não quer dizer agente antigo.
+        using var early = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 5 });
+
+        early.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await DevicesApp.JsonAsync(early)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting");
+
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+        using var late = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 5 });
+        late.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Key_ThatNeedsTheV2_NeverUsesTheCapabilitiesOfAPreviousHello_WhileTheAgentIsOnlyExpectedBack()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+        // A presença o dá como esperado de volta, com as capacidades do `hello` de antes (que podem não ser as de agora).
+        var presence = app.App.Services.GetRequiredService<UniOver.Modules.Devices.Ports.IPresenceStore>();
+        presence.MarkExpectedBack(app.Agent.Slug, app.App.Time.GetUtcNow(), "0.1.0+3f2a9c1d4e5b");
+        app.Presence.Get(app.Agent.Slug)!.Capabilities.Should().Contain(KeyV2, "é o que a presença guardou");
+
+        using var v2 = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 5 });
+        using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+
+        v2.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await DevicesApp.JsonAsync(v2)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting");
+        (await DevicesApp.JsonAsync(status)).GetProperty("capabilities").GetArrayLength().Should().Be(0, "capacidade de outra sessão não vale");
+    }
+
+    [Fact]
+    public async Task Key_Repeat_MustBeAJsonInteger_NotText()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        using var asText = await PostAsync(app, "key", JsonNode.Parse("{\"key\":\"BACKSPACE\",\"repeat\":\"5\"}"));
+        using var asFraction = await PostAsync(app, "key", JsonNode.Parse("{\"key\":\"BACKSPACE\",\"repeat\":5.5}"));
+
+        asText.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        asFraction.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Key_Repeat_CountsEveryPress_AgainstAPerAccountBudget_AndReleasingIsNeverCharged()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        // Cada pedido aperta 50 vezes: 120 pedidos são 6000 apertos, o teto do minuto; o 121º passa do teto.
+        var budget = app.App.Services.GetRequiredService<PcKeyBudget>();
+        budget.TryTake(await UserIdAsync(app), PcKeyBudget.PressesPerMinute - 50).Should().BeTrue();
+
+        var within = PostAsync(app, "key", new { key = "BACKSPACE", repeat = 50 });
+        await AnswerAsync(agent);
+        using var okResponse = await Within(within);
+        using var over = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 2 });
+
+        okResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        over.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+
+        // Soltar um modificador segurado nunca entra na conta, nem pela rota própria nem como `action: UP`.
+        var release = PostAsync(app, "key/release", new { key = "ALT" });
+        var releaseCommand = await AnswerAsync(agent);
+        using var released = await Within(release);
+        var up = PostAsync(app, "key", new { key = "ALT", action = "UP" });
+        await AnswerAsync(agent);
+        using var upResponse = await Within(up);
+
+        released.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        upResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        releaseCommand.GetProperty("type").GetString().Should().Be("pc.key.v2");
+        SameJson(releaseCommand.GetProperty("body"), "{\"key\":\"ALT\",\"action\":\"UP\"}");
+    }
+
+    private static async Task<Guid> UserIdAsync(TransportApp app)
+    {
+        await using var db = app.App.Db();
+        return await db.Agents.Where(a => a.Slug == app.Agent.Slug).Select(a => a.PairedBy).SingleAsync(Ct);
+    }
+
+    [Theory]
+    [InlineData("{\"key\":\"A\"}")]
+    [InlineData("{\"key\":\"TAB\"}")]
+    [InlineData("{}")]
+    public async Task KeyRelease_OnlyReleasesAModifier(string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        using var response = await PostAsync(app, "key/release", JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task KeyRelease_ToAnOlderAgent_IsRefusedLikeAnyV2Key()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, "key/release", new { key = "ALT" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact]

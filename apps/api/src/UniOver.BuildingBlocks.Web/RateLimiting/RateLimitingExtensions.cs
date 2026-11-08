@@ -60,6 +60,12 @@ public static class RateLimitPolicies
     /// </summary>
     public const string PcInput = "pc-input";
 
+    /// <summary>
+    /// Soltar um modificador que o app segurou (<c>/pc/key/release</c>): balde próprio, para a soltura não esperar o dos apertos
+    /// (um 429 deixaria a tecla presa até o agente soltar sozinho). Só solta, então o teto é por conta e curto.
+    /// </summary>
+    public const string PcKeyRelease = "pc-key-release";
+
     /// <summary>Energia e favoritos do PC (bloquear, suspender, desligar, abrir programa): por conta e baixo, pois cada pedido age no PC de alguém.</summary>
     public const string PcPower = "pc-power";
 
@@ -69,7 +75,7 @@ public static class RateLimitPolicies
     /// </summary>
     public const string Beacon = "beacon";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcPower, Beacon];
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcKeyRelease, PcPower, Beacon];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -104,6 +110,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.Siri] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.PcPointer] = new() { Permitted = 6000, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcInput] = new() { Permitted = 600, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.PcKeyRelease] = new() { Permitted = 120, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Beacon] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
     };

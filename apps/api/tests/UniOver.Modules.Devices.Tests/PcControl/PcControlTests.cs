@@ -485,3 +485,34 @@ public sealed class PcAgentResolverTests
         PcAgentResolver.Choose(all.Where(c => c.Slug == "velho-desligado"), Alice)!.Slug.Should().Be("velho-desligado");
     }
 }
+
+public sealed class PcKeyBudgetTests
+{
+    private static readonly Guid Alice = Guid.Parse("22222222-2222-7222-8222-222222222222");
+    private static readonly Guid Bruno = Guid.Parse("33333333-3333-7333-8333-333333333333");
+
+    [Fact]
+    public void EveryRepeatCountsAsAPress_AndThePerMinuteCeilingIsPerAccount()
+    {
+        var budget = new PcKeyBudget(new FakeTimeProvider(DateTimeOffset.UnixEpoch));
+
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute - 1).Should().BeTrue();
+        budget.TryTake(Alice, 1).Should().BeTrue();
+        budget.TryTake(Alice, 1).Should().BeFalse();
+        budget.TryTake(Bruno, 50).Should().BeTrue("o teto é de cada conta");
+    }
+
+    [Fact]
+    public void ARefusedRequestSpendsNothing_AndTheWindowOpensAgainAfterAMinute()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var budget = new PcKeyBudget(time);
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute - 10).Should().BeTrue();
+
+        budget.TryTake(Alice, 11).Should().BeFalse();
+        budget.TryTake(Alice, 10).Should().BeTrue("o pedido recusado não gastou nada");
+
+        time.Advance(TimeSpan.FromMinutes(1));
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute).Should().BeTrue();
+    }
+}

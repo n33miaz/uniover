@@ -41,13 +41,22 @@ internal sealed class PcAppsStore
 
 /// <summary>
 /// O computador que atende o pedido: o agente, se está conectado agora e o que ele declarou no último <c>hello</c> (a
-/// presença é lida a cada pedido: a lista acompanha uma atualização do agente sem esperar nada).
+/// presença é lida a cada pedido: a lista acompanha uma atualização do agente sem esperar nada). <c>HelloAt</c> é quando
+/// chegou o <c>hello</c> da sessão de agora; nulo = as capacidades não são desta sessão (agente "esperado de volta" depois de
+/// uma queda ou de a API reiniciar guarda as de antes), e nada se decide por elas.
 /// </summary>
-internal sealed record PcTarget(Guid AgentId, string Slug, bool Connected, IReadOnlyList<string> Capabilities);
+internal sealed record PcTarget(
+    Guid AgentId, string Slug, bool Connected, IReadOnlyList<string> Capabilities, DateTimeOffset? HelloAt);
 
 /// <summary>Um agente ativo com a capacidade do controle do PC, como o resolvedor o vê.</summary>
 internal sealed record PcCandidate(
-    Guid AgentId, string Slug, Guid PairedBy, DateTimeOffset CreatedAt, bool Connected, IReadOnlyList<string> Capabilities);
+    Guid AgentId,
+    string Slug,
+    Guid PairedBy,
+    DateTimeOffset CreatedAt,
+    bool Connected,
+    IReadOnlyList<string> Capabilities,
+    DateTimeOffset? HelloAt = null);
 
 /// <summary>Um agente ativo de uma pessoa, como o banco o devolve (a presença nunca entra aqui: é lida a cada pedido).</summary>
 internal sealed record PcAgentRow(Guid Id, string Slug, Guid PairedBy, DateTimeOffset CreatedAt);
@@ -145,7 +154,9 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
         var candidates = agents
             .Select(a => (Agent: a, Info: presence.Get(a.Slug)))
             .Where(x => x.Info is not null && x.Info.Capabilities.Contains(PcMessages.Capability, StringComparer.Ordinal))
-            .Select(x => new PcCandidate(x.Agent.Id, x.Agent.Slug, x.Agent.PairedBy, x.Agent.CreatedAt, x.Info!.Connected, x.Info.Capabilities));
+            .Select(x => new PcCandidate(x.Agent.Id, x.Agent.Slug, x.Agent.PairedBy, x.Agent.CreatedAt, x.Info!.Connected, x.Info.Capabilities,
+                // Só vale o `hello` de uma sessão viva: quem está "esperado de volta" ainda não mandou o desta conexão.
+                x.Info.Connected && x.Info.ConnectedSince is not null ? x.Info.HelloAt : null));
 
         return Choose(candidates, userId);
     }
@@ -160,7 +171,7 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
             .OrderByDescending(c => c.Connected)
             .ThenBy(c => c.CreatedAt)
             .FirstOrDefault();
-        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected, chosen.Capabilities);
+        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected, chosen.Capabilities, chosen.HelloAt);
     }
 }
 
@@ -187,6 +198,15 @@ internal static class PcProblems
         title: "O agente deste PC é antigo demais para esta tecla. Atualize o agente do PC.",
         type: ProblemDetailsExtensions.TypeBase + KeyUnsupportedType);
 
+    /// <summary>
+    /// As repetições de teclas num minuto passaram do teto da conta: <c>repeat</c> conta cada aperto, e não um por pedido.
+    /// Soltar um modificador nunca entra na conta.
+    /// </summary>
+    public static IResult KeyBudgetExceeded() => Results.Problem(
+        statusCode: StatusCodes.Status429TooManyRequests,
+        title: "Muitas teclas seguidas. Espere um instante.",
+        type: ProblemDetailsExtensions.TypeBase + ProblemDetailsExtensions.RateLimited);
+
     public const string ReconnectingType = "agent-reconnecting";
 
     /// <summary>
@@ -206,6 +226,42 @@ internal static class PcProblems
     {
         ArgumentNullException.ThrowIfNull(error);
         return error.Code == AgentErrors.OfflineCode ? Reconnecting() : RemoteCareProblems.FromGateway(error);
+    }
+}
+
+/// <summary>
+/// O teto de apertos de tecla por conta num minuto, contando cada repetição de <c>repeat</c> (o limite de pedidos por minuto
+/// do <c>pc-input</c> conta um por pedido, e um pedido pode apertar 50 vezes). Janela fixa, em memória e da instância (como
+/// o limite de pedidos). Só quem aperta paga; soltar um modificador não entra aqui.
+/// </summary>
+internal sealed class PcKeyBudget(TimeProvider time)
+{
+    /// <summary>100 apertos por segundo: o dobro do que uma tecla segurada faz, com folga para dois aparelhos.</summary>
+    public const int PressesPerMinute = 6000;
+
+    private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
+    private readonly object _gate = new();
+    private readonly Dictionary<Guid, (DateTimeOffset Start, int Used)> _windows = [];
+
+    public bool TryTake(Guid userId, int presses)
+    {
+        lock (_gate)
+        {
+            var now = time.GetUtcNow();
+            foreach (var expired in _windows.Where(w => now - w.Value.Start >= Window).Select(w => w.Key).ToList())
+            {
+                _windows.Remove(expired);
+            }
+
+            var (start, used) = _windows.GetValueOrDefault(userId, (now, 0));
+            if (used + presses > PressesPerMinute)
+            {
+                return false;
+            }
+
+            _windows[userId] = (start, used + presses);
+            return true;
+        }
     }
 }
 

@@ -84,6 +84,38 @@ describe('PcApi key', () => {
   });
 });
 
+describe('PcApi keyRelease', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('releases a modifier on its own route, as a plain request by default', async () => {
+    const sending = api.keyRelease('ALT');
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key/release'));
+    expect(request.request.body).toEqual({ key: 'ALT' });
+    expect(request.request.keepalive).toBe(false);
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+  });
+
+  it('keepalive is passed to the request, so the browser finishes it even if the page goes away', async () => {
+    const sending = api.keyRelease('SHIFT', { keepalive: true });
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key/release'));
+    expect(request.request.keepalive).toBe(true);
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+  });
+});
+
 describe('PcApi pointer', () => {
   let api: PcApi;
   let http: HttpTestingController;

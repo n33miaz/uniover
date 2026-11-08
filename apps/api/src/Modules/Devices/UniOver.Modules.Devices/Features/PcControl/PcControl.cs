@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -34,7 +35,15 @@ internal sealed record PcClickRequest(string? Button, string? Action);
 /// <c>Repeat</c> (1 a 50) aperta a tecla várias vezes num pedido só; <c>Action</c> (<c>PRESS</c>, padrão, <c>DOWN</c>, <c>UP</c>)
 /// segura e solta um modificador entre toques. Os dois só existem na <c>pc.key.v2</c>.
 /// </summary>
-internal sealed record PcKeyRequest(string? Key, string[]? Modifiers, int? Repeat = null, string? Action = null);
+/// <remarks><c>Repeat</c> só é número JSON (nada de texto como "5"): a rota não herda a leitura frouxa de números do resto.</remarks>
+internal sealed record PcKeyRequest(
+    string? Key,
+    string[]? Modifiers,
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Repeat = null,
+    string? Action = null);
+
+/// <summary>Soltar um modificador que o app segurou (<c>CTRL</c>, <c>ALT</c>, <c>SHIFT</c> ou <c>WIN</c>).</summary>
+internal sealed record PcKeyReleaseRequest(string? Key);
 
 internal sealed record PcTextRequest(string? Text);
 
@@ -133,6 +142,17 @@ internal static class PcValidator
         return errors;
     }
 
+    public static Dictionary<string, string[]> KeyRelease(PcKeyReleaseRequest? request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (request?.Key is null || !PcMessages.HoldableKeys.Contains(request.Key))
+        {
+            errors["key"] = ["Escolha CTRL, ALT, SHIFT ou WIN."];
+        }
+
+        return errors;
+    }
+
     public static Dictionary<string, string[]> Text(PcTextRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
@@ -218,8 +238,16 @@ internal sealed class PcControlHandler(
     PcAppsStore apps,
     IAgentGateway gateway,
     PairingAuditWriter audit,
-    DevicesDbContext db)
+    DevicesDbContext db,
+    TimeProvider time)
 {
+    /// <summary>
+    /// Quanto tempo depois do <c>hello</c> a falta de uma capacidade ainda pode ser só o agente acabando de subir: ele manda um
+    /// segundo <c>hello</c> assim que a API lista a capacidade nova. Antes disso o pedido volta como "tente de novo", e não
+    /// como "atualize o agente".
+    /// </summary>
+    public static readonly TimeSpan CapabilitySettle = TimeSpan.FromSeconds(10);
+
     /// <summary>O agente só executa uma chamada de sistema e responde.</summary>
     public static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
 
@@ -259,7 +287,9 @@ internal sealed class PcControlHandler(
 
     /// <summary>As capacidades <c>pc.*</c> além da base (<see cref="PcMessages.Capability"/>), na ordem em que o agente as declarou.</summary>
     private static IReadOnlyList<string> OptionalCapabilities(PcTarget target) =>
-        [.. target.Capabilities.Where(c => c.StartsWith("pc.", StringComparison.Ordinal) && c != PcMessages.Capability)];
+        target.HelloAt is null
+            ? []
+            : [.. target.Capabilities.Where(c => c.StartsWith("pc.", StringComparison.Ordinal) && c != PcMessages.Capability)];
 
     /// <summary>
     /// <paramref name="requiredCapability"/>: a capacidade que o agente precisa ter declarado para entender a mensagem (a v2 de
@@ -281,9 +311,9 @@ internal sealed class PcControlHandler(
             return target.Failure;
         }
 
-        if (requiredCapability is not null && !target.Capabilities.Contains(requiredCapability, StringComparer.Ordinal))
+        if (requiredCapability is not null && CapabilityProblem(target, requiredCapability) is { } problem)
         {
-            return PcProblems.KeyUnsupported();
+            return problem;
         }
 
         var reply = await gateway.RequestAsync(target.Slug, message, timeout, cancellationToken);
@@ -314,6 +344,26 @@ internal sealed class PcControlHandler(
         }
 
         return TypedResults.NoContent();
+    }
+
+    /// <summary>
+    /// Se o agente não puder receber a mensagem que precisa de <paramref name="capability"/>: sem o <c>hello</c> da sessão de
+    /// agora (queda recente, API reiniciada) nada se sabe, e a resposta é "reconectando"; com o <c>hello</c> sem a capacidade,
+    /// "atualize o agente" só depois de <see cref="CapabilitySettle"/>, pois antes pode ser um agente novo ainda declarando.
+    /// </summary>
+    private IResult? CapabilityProblem(ReadyTarget target, string capability)
+    {
+        if (target.HelloAt is not { } helloAt)
+        {
+            return PcProblems.Reconnecting();
+        }
+
+        if (target.Capabilities.Contains(capability, StringComparer.Ordinal))
+        {
+            return null;
+        }
+
+        return time.GetUtcNow() - helloAt < CapabilitySettle ? PcProblems.Reconnecting() : PcProblems.KeyUnsupported();
     }
 
     /// <summary>Grava a tentativa que o agente recusou ou deixou sem resposta; só as ações auditadas têm linha.</summary>
@@ -352,15 +402,16 @@ internal sealed class PcControlHandler(
         var target = await resolver.ResolveAsync(userId, cancellationToken);
         if (target is null)
         {
-            return new ReadyTarget(Guid.Empty, string.Empty, [], PcProblems.Unavailable());
+            return new ReadyTarget(Guid.Empty, string.Empty, [], null, PcProblems.Unavailable());
         }
 
         return target.Connected
-            ? new ReadyTarget(target.AgentId, target.Slug, target.Capabilities, null)
-            : new ReadyTarget(target.AgentId, target.Slug, target.Capabilities, RemoteCareProblems.Offline());
+            ? new ReadyTarget(target.AgentId, target.Slug, target.Capabilities, target.HelloAt, null)
+            : new ReadyTarget(target.AgentId, target.Slug, target.Capabilities, target.HelloAt, RemoteCareProblems.Offline());
     }
 
-    private readonly record struct ReadyTarget(Guid AgentId, string Slug, IReadOnlyList<string> Capabilities, IResult? Failure);
+    private readonly record struct ReadyTarget(
+        Guid AgentId, string Slug, IReadOnlyList<string> Capabilities, DateTimeOffset? HelloAt, IResult? Failure);
 }
 
 internal static class PcControlEndpoints
@@ -394,6 +445,13 @@ internal static class PcControlEndpoints
         group.MapPost("/key", KeyAsync)
             .RequireAuthorization(ModulePolicy)
             .RequireRateLimiting(RateLimitPolicies.PcInput)
+            .WithCommonProblems();
+
+        // Soltar um modificador segurado: balde próprio, para a soltura nunca esperar na fila dos apertos (um 429 aqui
+        // deixaria o Alt preso até o agente soltar sozinho, 30 s depois).
+        group.MapPost("/key/release", KeyReleaseAsync)
+            .RequireAuthorization(ModulePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcKeyRelease)
             .WithCommonProblems();
 
         group.MapPost("/text", TextAsync)
@@ -468,7 +526,12 @@ internal static class PcControlEndpoints
     }
 
     private static async Task<IResult> KeyAsync(
-        PcKeyRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+        PcKeyRequest? request,
+        ICurrentUser current,
+        HttpContext http,
+        PcControlHandler handler,
+        PcKeyBudget budget,
+        CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId)
         {
@@ -481,6 +544,13 @@ internal static class PcControlEndpoints
             return ProblemDetailsExtensions.ValidationProblem(errors);
         }
 
+        // Cada repetição é um aperto: o limite de pedidos do `pc-input` conta um por pedido. Soltar não paga.
+        var isUp = request!.Action is not null && PcMessages.KeyActions[request.Action] == PcKeyV2BodyAction.Up;
+        if (!isUp && !budget.TryTake(userId, Math.Max(1, request.Repeat ?? 1)))
+        {
+            return PcProblems.KeyBudgetExceeded();
+        }
+
         // A v1 sempre que o pedido cabe nela; a v2 só para o que ela diz, e só para o agente que a declarou.
         return await handler.RunAsync(
             userId,
@@ -490,6 +560,27 @@ internal static class PcControlEndpoints
             ClientInfo.From(http),
             cancellationToken,
             PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability);
+    }
+
+    private static async Task<IResult> KeyReleaseAsync(
+        PcKeyReleaseRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        var errors = PcValidator.KeyRelease(request);
+        return errors.Count > 0
+            ? ProblemDetailsExtensions.ValidationProblem(errors)
+            : await handler.RunAsync(
+                userId,
+                PcMessages.KeyFor(new PcKeyRequest(request!.Key, null, null, "UP")),
+                PcControlHandler.CommandTimeout,
+                null,
+                ClientInfo.From(http),
+                cancellationToken,
+                PcMessages.KeyV2Capability);
     }
 
     private static async Task<IResult> TextAsync(

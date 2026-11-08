@@ -99,6 +99,7 @@ public static class DevicesModule
         services.AddSingleton<PcAppsStore>();
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();
         services.AddSingleton<PcTargetCache>();
+        services.AddSingleton<PcKeyBudget>();
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, PcAgentRevokedInvalidator>();
         services.AddScoped<PcAgentResolver>();
         services.AddScoped<PcControlHandler>();

@@ -5,6 +5,7 @@ import { APP_CONFIG } from '../../../core/config/app-config';
 import {
   clampKeyRepeat,
   type PcClickButton,
+  type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
   type PcMediaAction,
@@ -72,6 +73,19 @@ export class PcApi {
     if (repeat > 1) body['repeat'] = repeat;
     if (options.action !== undefined && options.action !== 'PRESS') body['action'] = options.action;
     await firstValueFrom(this.http.post(`${BASE}/key`, body));
+  }
+
+  /**
+   * Solta um modificador que o app segurou (`DOWN`). Rota própria, com limite próprio: a soltura nunca espera na fila dos
+   * apertos nem é recusada por eles. `keepalive` deixa o navegador terminar o pedido mesmo com a página fechando.
+   */
+  async keyRelease(
+    key: PcHoldableKey,
+    options: { readonly keepalive?: boolean } = {},
+  ): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${BASE}/key/release`, { key }, options.keepalive ? { keepalive: true } : {}),
+    );
   }
 
   async text(text: string): Promise<void> {

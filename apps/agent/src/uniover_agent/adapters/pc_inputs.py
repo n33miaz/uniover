@@ -4,7 +4,7 @@ Aqui só há dados e funções puras: nada toca no sistema, então a tabela de t
 eventos são testadas em qualquer máquina. O envio de verdade fica em `pc_windows.py`.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -68,10 +68,10 @@ _NAMED_KEYS: Final[dict[str, tuple[int, bool]]] = {
     "CTRL": (0x11, False),
     "ALT": (0x12, False),
     "SHIFT": (0x10, False),
-    # Pontuação: só as quatro que o Windows mantém no mesmo código em qualquer layout (VK_OEM_PLUS
-    # é o "=" e o "+" do teclado americano, VK_OEM_MINUS o "-"). Atenção ao ABNT2: lá a tecla do
-    # "/" e do "?" e a do "'" e do '"' ganham códigos próprios, e por isso (como todo o resto da
-    # pontuação) saem pelo `pc.text`, que digita Unicode e não depende do layout.
+    # Pontuação: só as quatro que dão o mesmo caractere nos layouts americano e ABNT2 (VK_OEM_PLUS
+    # é a tecla do "=" e do "+", VK_OEM_MINUS a do "-"; em outros layouts o caractere muda). No
+    # ABNT2 a tecla do "/" e do "?" e a do "'" e do '"' ganham códigos próprios, e por isso (como
+    # todo o resto da pontuação) saem pelo `pc.text`, que digita Unicode e não depende do layout.
     "MINUS": (0xBD, False),
     "EQUALS": (0xBB, False),
     "COMMA": (0xBC, False),
@@ -126,7 +126,8 @@ def virtual_key(key: str) -> tuple[int, bool]:
         return 0x30 + int(key[1]), False  # VK_0..VK_9: a fileira de cima, não o teclado numérico
     if key.startswith("F") and key[1:].isdigit() and 1 <= int(key[1:]) <= 12:  # noqa: PLR2004
         return 0x70 + int(key[1:]) - 1, False
-    raise UnknownKey(f"tecla fora do contrato: {key}")
+    # A mensagem vai à API no resultado do comando: nunca leva a tecla (pode ser senha).
+    raise UnknownKey("tecla fora do contrato")
 
 
 def _key(vk: int, *, extended: bool = False, up: bool = False) -> RawInput:
@@ -238,7 +239,11 @@ def release_inputs(buttons: Iterable[str]) -> list[RawInput]:
 
 
 def key_inputs(
-    key: str, modifiers: Sequence[str] = (), repeat: int = 1, action: str = "PRESS"
+    key: str,
+    modifiers: Sequence[str] = (),
+    repeat: int = 1,
+    action: str = "PRESS",
+    already_held: Collection[int] = (),
 ) -> list[RawInput]:
     """Modificadores apertados, a tecla apertada e solta `repeat` vezes, modificadores soltos na
     ordem inversa. Tudo num lote só: os modificadores valem para todas as repetições.
@@ -247,21 +252,26 @@ def key_inputs(
     que a pessoa fizer. Só `action` `DOWN` ou `UP` deixa uma tecla apertada de propósito, e só
     para um modificador, sozinho (sem outros modificadores nem repetição): quem chama (o
     adaptador) guarda o que ficou apertado e o solta ao desconectar, ao encerrar e sem tráfego.
+
+    `already_held` são os códigos virtuais que já estão apertados (o Alt do Alt+Tab): um modificador
+    que já está apertado não é apertado de novo nem solto no fim, senão a tecla seguinte o
+    soltaria.
     """
     if action not in KEY_ACTIONS:
         raise UnknownKey(f"ação de tecla fora do contrato: {action}")
     vk, extended = virtual_key(key)
     if action != "PRESS":
         if key not in HOLDABLE_KEYS:
-            raise UnknownKey(f"só um modificador pode ser segurado ou solto: {key}")
+            raise UnknownKey("só um modificador pode ser segurado ou solto")
         if modifiers:
             raise UnknownKey("segurar ou soltar uma tecla não leva modificadores")
         return [_key(vk, extended=extended, up=action == "UP")]
     held = []
     for name in modifiers:
         if name not in _MODIFIERS:
-            raise UnknownKey(f"modificador fora do contrato: {name}")
-        held.append(_MODIFIERS[name])
+            raise UnknownKey("modificador fora do contrato")
+        if _MODIFIERS[name] not in already_held:
+            held.append(_MODIFIERS[name])
     times = max(1, min(MAX_KEY_REPEAT, repeat))
     inputs = [_key(code) for code in held]
     inputs += [_key(vk, extended=extended), _key(vk, extended=extended, up=True)] * times
