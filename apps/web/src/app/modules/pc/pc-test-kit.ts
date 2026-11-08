@@ -1,11 +1,13 @@
 import { vi } from 'vitest';
 import { computed, signal } from '@angular/core';
 import type { PcFavorite, PcStatus } from '../../core/modules/pc-availability';
+import { PC_KEY_V2_CAPABILITY, keyNeedsV2 } from './data/pc-types';
 import type { PcFailure } from './data/pc-failure';
 import type { PcPhase } from './data/pc-store';
 import type {
   PcClickButton,
   PcKey,
+  PcKeyOptions,
   PcMediaAction,
   PcModifier,
   PcPowerAction,
@@ -20,10 +22,15 @@ type Outcome = Promise<PcFailure | null>;
 export function createFakePcStore(initial: PcPhase = 'ready') {
   const phase = signal<PcPhase>(initial);
   const apps = signal<readonly PcFavorite[]>([]);
+  const capabilities = signal<readonly string[]>([]);
   const store = {
     phase,
     canSend: computed(() => phase() === 'ready'),
     apps,
+    capabilities,
+    supportsKeyV2: computed(() => capabilities().includes(PC_KEY_V2_CAPABILITY)),
+    supportsKey: (key: PcKey, options?: PcKeyOptions) =>
+      !keyNeedsV2(key, options) || capabilities().includes(PC_KEY_V2_CAPABILITY),
     notice: signal<PcFailure | null>(null),
     dragging: signal(false),
     watch: vi.fn(() => () => undefined),
@@ -38,9 +45,9 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     release: vi.fn<(options?: { persistent?: boolean }) => Outcome>(() => Promise.resolve(null)),
     buttonBusy: false,
     pressEpoch: 0,
-    sendKey: vi.fn<(key: PcKey, modifiers?: readonly PcModifier[]) => Outcome>(() =>
-      Promise.resolve(null),
-    ),
+    sendKey: vi.fn<
+      (key: PcKey, modifiers?: readonly PcModifier[], options?: PcKeyOptions) => Outcome
+    >(() => Promise.resolve(null)),
     sendText: vi.fn<(text: string) => Outcome>(() => Promise.resolve(null)),
     sendMedia: vi.fn<(action: PcMediaAction, steps?: number) => Outcome>(() =>
       Promise.resolve(null),
@@ -58,5 +65,5 @@ export type FakePcStore = ReturnType<typeof createFakePcStore>;
 export const FAILURE: PcFailure = { kind: 'offline', message: 'O PC está desconectado.' };
 
 export function status(overrides: Partial<PcStatus> = {}): PcStatus {
-  return { available: true, online: true, apps: [], ...overrides };
+  return { available: true, online: true, apps: [], capabilities: [], ...overrides };
 }

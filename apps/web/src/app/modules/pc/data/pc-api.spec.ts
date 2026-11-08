@@ -36,6 +36,54 @@ describe('PcApi click', () => {
   });
 });
 
+describe('PcApi key', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  async function body(sending: Promise<void>) {
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key'));
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+    return request.request.body;
+  }
+
+  it('a plain key goes out exactly as it always did, so the API can send the v1', async () => {
+    expect(await body(api.key('ENTER'))).toEqual({ key: 'ENTER' });
+    expect(await body(api.key('C', ['CTRL']))).toEqual({ key: 'C', modifiers: ['CTRL'] });
+    expect(await body(api.key('C', [], { repeat: 1, action: 'PRESS' }))).toEqual({ key: 'C' });
+  });
+
+  it('carries the repeat and the action only when they change something', async () => {
+    expect(await body(api.key('BACKSPACE', [], { repeat: 12 }))).toEqual({
+      key: 'BACKSPACE',
+      repeat: 12,
+    });
+    expect(await body(api.key('ALT', [], { action: 'DOWN' }))).toEqual({
+      key: 'ALT',
+      action: 'DOWN',
+    });
+    expect(await body(api.key('ALT', [], { action: 'UP' }))).toEqual({ key: 'ALT', action: 'UP' });
+    expect(await body(api.key('D0', ['CTRL']))).toEqual({ key: 'D0', modifiers: ['CTRL'] });
+  });
+
+  it('keeps the repeat inside what the contract allows', async () => {
+    expect(await body(api.key('DOWN', [], { repeat: 500 }))).toEqual({ key: 'DOWN', repeat: 50 });
+    expect(await body(api.key('DOWN', [], { repeat: 7.9 }))).toEqual({ key: 'DOWN', repeat: 7 });
+    expect(await body(api.key('DOWN', [], { repeat: 0 }))).toEqual({ key: 'DOWN' });
+    expect(await body(api.key('DOWN', [], { repeat: Number.NaN }))).toEqual({ key: 'DOWN' });
+  });
+});
+
 describe('PcApi pointer', () => {
   let api: PcApi;
   let http: HttpTestingController;

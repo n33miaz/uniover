@@ -23,6 +23,24 @@ describe('pcFailureOf', () => {
     expect(pcFailureOf(http(status)).kind).toBe(kind);
   });
 
+  it('tells a key the agent is too old for apart from a PC that is not available', () => {
+    const unsupported = pcFailureOf(
+      http(409, { type: 'https://uniover.dev/problems/pc-key-unsupported', title: 'x' }),
+    );
+    expect(unsupported.kind).toBe('key-unsupported');
+    expect(unsupported.message).toBe('Atualize o agente do PC para usar esta tecla.');
+    expect(
+      pcFailureOf(http(409, { type: 'https://uniover.dev/problems/pc-unavailable', title: 'x' }))
+        .kind,
+    ).toBe('unavailable');
+  });
+
+  it('only a 409 can be a key the agent is too old for', () => {
+    expect(
+      pcFailureOf(http(400, { type: 'https://uniover.dev/problems/pc-key-unsupported' })).kind,
+    ).toBe('invalid');
+  });
+
   it('tells a PC that is reconnecting apart from one that is offline', () => {
     const reconnecting = pcFailureOf(
       http(503, { type: 'https://uniover.dev/problems/agent-reconnecting', title: 'x' }),

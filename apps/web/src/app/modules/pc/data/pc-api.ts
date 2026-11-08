@@ -2,7 +2,15 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, Injector, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { APP_CONFIG } from '../../../core/config/app-config';
-import type { PcClickButton, PcKey, PcMediaAction, PcModifier, PcPowerAction } from './pc-types';
+import {
+  clampKeyRepeat,
+  type PcClickButton,
+  type PcKey,
+  type PcKeyOptions,
+  type PcMediaAction,
+  type PcModifier,
+  type PcPowerAction,
+} from './pc-types';
 
 const BASE = `${APP_CONFIG.apiBase}/v1/pc`;
 
@@ -49,10 +57,21 @@ export class PcApi {
     );
   }
 
-  async key(key: PcKey, modifiers: readonly PcModifier[] = []): Promise<void> {
-    await firstValueFrom(
-      this.http.post(`${BASE}/key`, modifiers.length ? { key, modifiers } : { key }),
-    );
+  /**
+   * O corpo só leva `repeat` e `action` quando mudam alguma coisa: um toque comum sai igual ao de sempre, e a API manda a v1
+   * ao agente. `repeat` e `action` são da `pc.key.v2`; com um agente anterior a ela a API responde 409 `pc-key-unsupported`.
+   */
+  async key(
+    key: PcKey,
+    modifiers: readonly PcModifier[] = [],
+    options: PcKeyOptions = {},
+  ): Promise<void> {
+    const body: Record<string, unknown> = { key };
+    if (modifiers.length) body['modifiers'] = modifiers;
+    const repeat = clampKeyRepeat(options.repeat);
+    if (repeat > 1) body['repeat'] = repeat;
+    if (options.action !== undefined && options.action !== 'PRESS') body['action'] = options.action;
+    await firstValueFrom(this.http.post(`${BASE}/key`, body));
   }
 
   async text(text: string): Promise<void> {

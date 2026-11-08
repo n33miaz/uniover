@@ -27,8 +27,8 @@ export type PcLetter =
   | 'Y'
   | 'Z';
 
-/** As teclas que a tela envia: as do contrato `pc.key.v1` (a lista é fechada; dígitos e pontuação não existem nela). */
-export type PcKey =
+/** As teclas que todo agente do PC entende: as do contrato `pc.key.v1` (a lista é fechada). */
+export type PcKeyV1 =
   | 'ENTER'
   | 'BACKSPACE'
   | 'DELETE'
@@ -56,6 +56,97 @@ export type PcKey =
   | 'F11'
   | 'F12'
   | PcLetter;
+
+/**
+ * As teclas que só a `pc.key.v2` traz: a fileira de dígitos, as quatro pontuações iguais em qualquer layout (as demais
+ * saem pelo texto), Insert, Print Screen, a tecla de menu, Caps Lock, a tecla Windows sozinha e os modificadores como
+ * tecla (para segurar entre toques). Um agente de antes dela não as entende: a API recusa com `pc-key-unsupported`.
+ */
+export type PcKeyV2Only =
+  | 'D0'
+  | 'D1'
+  | 'D2'
+  | 'D3'
+  | 'D4'
+  | 'D5'
+  | 'D6'
+  | 'D7'
+  | 'D8'
+  | 'D9'
+  | 'MINUS'
+  | 'EQUALS'
+  | 'COMMA'
+  | 'PERIOD'
+  | 'INSERT'
+  | 'PRINT_SCREEN'
+  | 'APPS'
+  | 'WIN'
+  | 'CAPS_LOCK'
+  | 'CTRL'
+  | 'ALT'
+  | 'SHIFT';
+
+/** As teclas que a tela envia. */
+export type PcKey = PcKeyV1 | PcKeyV2Only;
+
+/** `PRESS` aperta e solta (padrão); `DOWN` e `UP` seguram e soltam um modificador entre toques (só `CTRL`, `ALT`, `SHIFT`, `WIN`). */
+export type PcKeyAction = 'PRESS' | 'DOWN' | 'UP';
+
+/** O que um toque de tecla pode pedir além da tecla e dos modificadores. */
+export interface PcKeyOptions {
+  /** Quantas vezes apertar, de 1 a `PC_KEY_MAX_REPEAT`, num pedido só (Backspace e setas seguradas). */
+  readonly repeat?: number;
+  readonly action?: PcKeyAction;
+}
+
+/** O limite de repetições de um pedido (o da API e do agente). */
+export const PC_KEY_MAX_REPEAT = 50;
+
+/** A capacidade que o PC declara quando o agente entende `pc.key.v2` (vem em `capabilities` do estado do PC). */
+export const PC_KEY_V2_CAPABILITY = 'pc.key.v2';
+
+const V2_ONLY_KEYS: ReadonlySet<string> = new Set<PcKeyV2Only>([
+  'D0',
+  'D1',
+  'D2',
+  'D3',
+  'D4',
+  'D5',
+  'D6',
+  'D7',
+  'D8',
+  'D9',
+  'MINUS',
+  'EQUALS',
+  'COMMA',
+  'PERIOD',
+  'INSERT',
+  'PRINT_SCREEN',
+  'APPS',
+  'WIN',
+  'CAPS_LOCK',
+  'CTRL',
+  'ALT',
+  'SHIFT',
+]);
+
+/** A repetição que vai ao pedido: inteiro de 1 a `PC_KEY_MAX_REPEAT` (o que passar é cortado, o que não for número vale 1). */
+export function clampKeyRepeat(repeat: number | undefined): number {
+  if (repeat === undefined || !Number.isFinite(repeat)) return 1;
+  return Math.max(1, Math.min(PC_KEY_MAX_REPEAT, Math.trunc(repeat)));
+}
+
+/**
+ * O pedido só cabe na `pc.key.v2`? Tecla nova, repetição ou segurar/soltar. Quando não, a API manda a v1 e qualquer agente
+ * serve. É o que a tela usa para esconder o que o PC conectado não entende.
+ */
+export function keyNeedsV2(key: PcKey, options: PcKeyOptions = {}): boolean {
+  return (
+    V2_ONLY_KEYS.has(key) ||
+    clampKeyRepeat(options.repeat) > 1 ||
+    (options.action !== undefined && options.action !== 'PRESS')
+  );
+}
 
 export type PcModifier = 'CTRL' | 'ALT' | 'SHIFT' | 'WIN';
 
