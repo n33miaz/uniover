@@ -16,6 +16,7 @@ import {
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 import { PcArmed } from './data/pc-armed';
+import { PcDirect } from './data/pc-direct';
 import { PcStore } from './data/pc-store';
 import { PcSwitcherBar } from './ui/switcher-bar';
 import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
@@ -42,7 +43,13 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
       [attr.data-phase]="store.phase()"
       [style.--pc-h]="height() === null ? null : height() + 'px'"
     >
-      <p class="status" role="status" [attr.data-phase]="store.phase()">
+      <p
+        class="status"
+        role="status"
+        [attr.data-phase]="store.phase()"
+        [attr.data-transport]="store.phase() === 'ready' ? direct.mode() : null"
+        [attr.title]="statusHint()"
+      >
         <span class="dot" aria-hidden="true"></span>
         <span class="label">{{ statusLabel() }}</span>
       </p>
@@ -101,6 +108,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 })
 export class PcPage {
   protected readonly store = inject(PcStore);
+  protected readonly direct = inject(PcDirect);
   private readonly doc = inject(DOCUMENT);
   private readonly injector = inject(Injector);
   private watch: ViewportWatch | null = null;
@@ -115,7 +123,9 @@ export class PcPage {
   protected readonly statusLabel = computed(() => {
     switch (this.store.phase()) {
       case 'ready':
-        return $localize`:@@pc.status.ready:Conectado`;
+        return this.direct.mode() === 'direct'
+          ? $localize`:@@pc.status.direct:Conectado, direto`
+          : $localize`:@@pc.status.ready:Conectado`;
       case 'offline':
         return $localize`:@@pc.status.offline:Sem Conexão`;
       case 'unavailable':
@@ -123,6 +133,14 @@ export class PcPage {
       default:
         return $localize`:@@pc.status.loading:Conectando`;
     }
+  });
+
+  /** Pela dica do ponto: o caminho que os comandos fazem agora (o leitor de tela já lê a palavra do estado). */
+  protected readonly statusHint = computed(() => {
+    if (this.store.phase() !== 'ready') return null;
+    return this.direct.mode() === 'direct'
+      ? $localize`:@@pc.status.direct-hint:Conexão direta com o PC`
+      : $localize`:@@pc.status.cloud-hint:Pela nuvem`;
   });
 
   constructor() {

@@ -51,6 +51,10 @@
 .status[data-phase='ready'] .dot {
   background: var(--a-ok);
 }
+/* Com o canal direto aberto o ponto ganha um anel: o mesmo verde, só mais firme (a palavra do estado já diz "direto"). */
+.status[data-transport='direct'] .dot {
+  box-shadow: 0 0 0 2px var(--a-ok-soft);
+}
 /*
  * Conectado, o estado vira só o ponto (a palavra segue na tela para o leitor de tela). Ele fica no canto de cima da
  * superfície, ao lado do botão de ajustes do mouse, para não gastar uma linha da tela.
