@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.49.0](https://github.com/n33miaz/uniover/compare/v0.48.0...v0.49.0) (2026-11-08)
+
+
+### Devices 0.48.0
+
+#### Features
+
+* **contracts:** pc key v2 with repeat and hold
+* **api:** send pc key v2 to capable agents
+* **web:** pc key v2 in the data layer
+* **web:** key repeat, window switcher, more keys
+
+#### Bug Fixes
+
+* **pc:** held keys always released
+* **pc:** release after a late key down
+* **web:** bounded repeat, safe window switcher
+
+
+### Web 0.49.0
+
+#### Features
+
+* **web:** pc key v2 in the data layer
+* **web:** key repeat, window switcher, more keys
+
+#### Bug Fixes
+
+* **pc:** held keys always released
+* **web:** bounded repeat, safe window switcher
+
+
+### Agent 0.45.0
+
+#### Features
+
+* **agent:** more pc keys, repeat, held keys
+
+#### Bug Fixes
+
+* **pc:** held keys always released
+* **pc:** release after a late key down
+
 ## [0.48.0](https://github.com/n33miaz/uniover/compare/v0.47.0...v0.48.0) (2026-11-08)
 
 
