@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.44.0](https://github.com/n33miaz/uniover/compare/v0.43.0...v0.44.0) (2026-11-08)
+
+
+### Devices 0.44.0
+
+#### Features
+
+* **web:** name beacon and disk clues
+
+
+### TV 0.42.16
+
+#### Maintenance
+
+* no user-facing changes
+
+
+### Training 0.42.17
+
+#### Maintenance
+
+* no user-facing changes
+
+
+### Web 0.45.0
+
+#### Features
+
+* **web:** name beacon and disk clues
+
+#### Bug Fixes
+
+* **web:** no stale-shell reload while leaving
+* **web:** confirm a stale shell before reload
+* **web:** stale check only on boot scripts
+
+
+### Agent 0.43.0
+
+#### Features
+
+* **agent:** warn when the disk runs low
+* **agent:** startup beacon from the launcher
+* **agent:** update only when the tv is idle
+* **agent:** pc control on by default
+
+#### Bug Fixes
+
+* **agent:** bounded disk exemption, safer beacon
+* **agent:** keep the tv wait clock on failures
+* **agent:** clear beacon failures after recovery
+
 ## [0.43.0](https://github.com/n33miaz/uniover/compare/v0.42.18...v0.43.0) (2026-11-07)
 
 
