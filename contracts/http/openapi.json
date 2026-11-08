@@ -3085,6 +3085,37 @@
         ],
         "type": "object"
       },
+      "InstallHintScope": {
+        "properties": {
+          "dismissedAt": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "installed": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "never": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "dismissedAt",
+          "never",
+          "installed"
+        ],
+        "type": "object"
+      },
       "JsonElement": {},
       "LivreAppView": {
         "properties": {
@@ -4956,6 +4987,23 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "SaveInstallHintRequest": {
+        "properties": {
+          "scopes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstallHintScope"
+            },
+            "type": [
+              "null",
+              "object"
+            ]
+          }
+        },
+        "required": [
+          "scopes"
         ],
         "type": "object"
       },
@@ -10621,6 +10669,114 @@
         },
         "tags": [
           "UpdateProfileEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/me/install-hint": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/InstallHintScope"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "InstallHintEndpoint"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SaveInstallHintRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/InstallHintScope"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "InstallHintEndpoint"
         ]
       }
     },
@@ -18893,6 +19049,9 @@
     },
     {
       "name": "PreferencesEndpoint"
+    },
+    {
+      "name": "InstallHintEndpoint"
     },
     {
       "name": "AuditEndpoints"
