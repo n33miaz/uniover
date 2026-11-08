@@ -80,13 +80,35 @@ public sealed class PcMessagesTests
         PcMessages.Pointer(0, 0, -240, 120).Body.GetRawText().Should().Be("{\"dx\":0,\"dy\":0,\"scrollX\":-240,\"scrollY\":120}");
     }
 
-    [Fact]
-    public void Pointer_CarriesTheSequenceWhenThereIsOne_AndTheBodyStaysValidForTheContract()
+    /// <summary>
+    /// O corpo do <c>pc.pointer.v1</c> como um agente anterior (0.44) o aceita: o esquema dele é FECHADO, então um campo a
+    /// mais (como <c>seq</c>) faria o agente recusar a mensagem inteira e o touchpad ficaria morto até ele atualizar.
+    /// </summary>
+    private const string PointerBodySchemaOfAgent044 = """
+        {"type":"object","additionalProperties":false,"required":["dx","dy"],"properties":{
+          "dx":{"type":"integer","minimum":-2000,"maximum":2000},
+          "dy":{"type":"integer","minimum":-2000,"maximum":2000},
+          "scrollX":{"type":"integer","minimum":-1200,"maximum":1200},
+          "scrollY":{"type":"integer","minimum":-1200,"maximum":1200}}}
+        """;
+
+    [Theory]
+    [InlineData(3, -2, 0, 0)]
+    [InlineData(0, 0, -240, 120)]
+    [InlineData(2000, -2000, 1200, -1200)]
+    public void Pointer_BodyIsAcceptedByTheClosedSchemaOfAnOlderAgent(int dx, int dy, int scrollX, int scrollY)
     {
-        PcMessages.Pointer(3, -2, 0, 0, 4821).Body.GetRawText().Should().Be("{\"dx\":3,\"dy\":-2,\"seq\":4821}");
-        PcMessages.Pointer(3, -2, 0, 0).Body.GetRawText().Should().NotContain("seq");
-        IsValidForTheContract(PcMessages.Pointer(12, -4, 0, 120, int.MaxValue)).Should().BeTrue();
+        var schema = Json.Schema.JsonSchema.FromText(PointerBodySchemaOfAgent044);
+
+        var body = PcMessages.Pointer(dx, dy, scrollX, scrollY).Body;
+
+        schema.Evaluate(body).IsValid.Should().BeTrue();
+        body.EnumerateObject().Select(p => p.Name).Should().NotContain("seq");
     }
+
+    [Fact]
+    public void Pointer_IsStillValidForTheCurrentContract() =>
+        IsValidForTheContract(PcMessages.Pointer(12, -4, 0, 120)).Should().BeTrue();
 
     [Fact]
     public void Media_LeavesOutTheStepsThatAreTheDefault()

@@ -47,8 +47,9 @@ public static class RateLimitPolicies
     public const string Siri = "siri";
 
     /// <summary>
-    /// Movimento do mouse do controle do PC: o app manda até uns 30 toques por segundo (vários pedidos em voo ao mesmo tempo, um a cada 32 ms, somando o
-    /// que o dedo andou enquanto o limite de voo está cheio), então o balde é largo e por conta. É o único com teto assim.
+    /// Movimento do mouse do controle do PC: o app manda até uns 31 pedidos por segundo (vários em voo ao mesmo tempo, um a cada 32 ms, somando o
+    /// que o dedo andou enquanto o limite de voo está cheio), mais o sinal de vida. O teto de 6000 por minuto (100 por segundo)
+    /// dá folga para dois aparelhos da mesma conta e retentativas; o balde é largo e por conta. É o único com teto assim.
     /// </summary>
     public const string PcPointer = "pc-pointer";
 
@@ -101,7 +102,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.HealthReady] = new() { Permitted = 12, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.Capacity] = new() { Permitted = 6, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Siri] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
-        [RateLimitPolicies.PcPointer] = new() { Permitted = 2400, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.PcPointer] = new() { Permitted = 6000, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcInput] = new() { Permitted = 600, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Beacon] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },

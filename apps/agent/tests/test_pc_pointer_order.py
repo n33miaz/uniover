@@ -24,7 +24,7 @@ from uniover_agent.core.pc.pointer_order import (
     RESTART_GAP,
     PointerSequence,
 )
-from uniover_agent.core.process_message import LATE_POINTER_WARNING
+from uniover_agent.core.process_message import LATE_POINTER_WARNING, MAX_PENDING_RESULTS
 
 from .support import AGENT_ID, dump, envelope
 
@@ -234,4 +234,37 @@ async def test_a_long_run_of_out_of_order_moves_is_warned_once_and_all_are_appli
     assert len(warnings) == 1
     await settle()
     assert len(rec.moved) == 1 + LATE_POINTER_WARNING * 2
+    await process.aclose()
+
+
+async def test_result_sends_are_bounded_and_the_oldest_is_abandoned(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    rec = Recorder()
+    transport = SlowSendTransport(rec.send_gate)
+    process = build(rec, transport)
+    with caplog.at_level(logging.WARNING):
+        for _ in range(MAX_PENDING_RESULTS + 10):
+            await process(click())
+        await settle()
+        await settle()
+    assert len(process._result_tasks) == MAX_PENDING_RESULTS
+    assert len([r for r in caplog.records if "acumulado" in r.getMessage()]) == 1
+    rec.send_gate.set()
+    await settle()
+    assert len(transport.sent) == MAX_PENDING_RESULTS
+    assert not process._result_tasks
+    await process.aclose()
+
+
+async def test_losing_the_connection_cancels_the_result_sends_still_going_out() -> None:
+    rec = Recorder()
+    transport = SlowSendTransport(rec.send_gate)
+    process = build(rec, transport)
+    await process(click())
+    await settle()
+    process.connection_lost()
+    rec.send_gate.set()
+    await settle()
+    assert transport.sent == []
     await process.aclose()

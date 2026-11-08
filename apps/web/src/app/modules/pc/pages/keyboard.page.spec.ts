@@ -92,6 +92,30 @@ describe('KeyboardPage', () => {
     expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
   });
 
+  it('does not give the text back when the result is uncertain (it may have been typed), and says so', async () => {
+    store.sendText.mockResolvedValueOnce({
+      kind: 'timeout',
+      message: 'O PC não respondeu a tempo.',
+    });
+    type('minha senha');
+    submit().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(field().value).toBe('');
+    expect(root.querySelector('.error')?.textContent).toContain('O PC não respondeu a tempo.');
+    expect(root.querySelector('.error')?.textContent).toContain('pode ter sido digitado');
+  });
+
+  it('gives back a text that a failure ahead in the queue cancelled, without a second error', async () => {
+    store.sendText.mockResolvedValueOnce({ kind: 'cancelled', message: '' });
+    type('def');
+    submit().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(field().value).toBe('def');
+    expect(root.querySelector('.error')).toBeNull();
+  });
+
   it('special keys send the key with no modifiers', () => {
     named('Enter').click();
     named('Apagar').click();

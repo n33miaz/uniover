@@ -31,6 +31,9 @@ export const HOLD_HEARTBEAT_MS = 10_000;
  */
 export const UP_RETRY_BACKOFF_MS: readonly number[] = [300, 1_000];
 
+/** O `UP` normal espera os movimentos em voo por até isto; passou, solta mesmo assim (botão preso é pior que um passo curto). */
+export const UP_DRAIN_MS = 1_500;
+
 /** Um pedido do botão que desistiu porque a conta mudou: não é falha do PC e não aparece para ninguém. */
 class AccountChanged extends Error {}
 
@@ -90,11 +93,15 @@ export class PcStore {
    */
   private buttonTail: Promise<unknown> = Promise.resolve();
   /**
-   * Os textos saem em fila: o seguinte só parte depois que o anterior terminou. São pedidos HTTP independentes e dois em
-   * paralelo podem se ultrapassar na API (uma senha digitada em dois pedaços chegaria embaralhada). A tela não espera:
-   * o campo esvazia na hora, e só o início do pedido seguinte é adiado.
+   * Textos e teclas saem numa fila só: o seguinte só parte depois que o anterior terminou. São pedidos HTTP independentes e
+   * dois em paralelo podem se ultrapassar na API (um Enter passaria na frente do texto, uma senha digitada em dois pedaços
+   * chegaria embaralhada). A tela não espera: o campo esvazia na hora, e só o início do pedido seguinte é adiado (o custo é
+   * que teclas seguidas saem no ritmo de uma por ida e volta). Uma falha cancela o que já esperava atrás dela: não se
+   * digita "def" depois de "abc" ter falhado.
    */
-  private textTail: Promise<unknown> = Promise.resolve();
+  private inputTail: Promise<unknown> = Promise.resolve();
+  /** Sobe a cada falha da fila de entrada (e a cada troca de conta): o que foi pedido antes disso é cancelado. */
+  private inputGeneration = 0;
   /** Cada aperto tem o seu número: um `DOWN` atrasado só pede mais um `UP` se ainda é o último. */
   private downEpoch = 0;
   /** Depois de sair da tela ou esconder a página o sinal de vida não volta (só a próxima visita o liga). */
@@ -229,9 +236,8 @@ export class PcStore {
   }
 
   /**
-   * Clique logo atrás de todo movimento do dedo: o que estava esperando sai já, e o clique parte em seguida sem esperar a
-   * resposta dos movimentos (os pedidos partem na ordem em que foram feitos, e o PC os executa na ordem em que chegam). A
-   * tela não espera o resultado: quem chama recebe a falha, quando há, sem atrasar o toque seguinte.
+   * Clique depois de todo movimento que já saiu: espera as respostas dos pedidos de movimento em voo (são pedidos HTTP
+   * independentes, e um clique que os ultrapassasse cairia no lugar errado). A espera só custa o clique, nunca o movimento.
    */
   async click(
     button: PcClickButton,
@@ -239,7 +245,10 @@ export class PcStore {
   ): Promise<PcFailure | null> {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
-    this.batcher.flush();
+    const asked = this.account;
+    await this.batcher.drain();
+    // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
+    if (this.session.accountId() !== asked) return this.blocked();
     return this.run(() => this.api.click(button, action));
   }
 
@@ -321,6 +330,10 @@ export class PcStore {
     const asked = this.account;
     this.dragBusy = true;
     try {
+      // O `UP` só sai depois de o último movimento chegar: o botão é solto onde o dedo terminou, não onde o ponteiro estava
+      // quando o `UP` partiu. A espera tem teto para um pedido de movimento preso nunca deixar o botão apertado.
+      await this.drainBeforeUp();
+      if (this.session.accountId() !== asked) return CANCELLED;
       const failure = options.persistent
         ? await this.upWithRetry(asked, UP_RETRY_BACKOFF_MS.length + 1)
         : await this.run(() => this.queueButton(() => this.upRequest(asked)));
@@ -335,18 +348,11 @@ export class PcStore {
   }
 
   sendKey(key: PcKey, modifiers: readonly PcModifier[] = []): Promise<PcFailure | null> {
-    return this.command(() => this.api.key(key, modifiers));
+    return this.queueInput(() => this.api.key(key, modifiers));
   }
 
   sendText(text: string): Promise<PcFailure | null> {
-    return this.command(() => {
-      const run = this.textTail.then(
-        () => this.api.text(text),
-        () => this.api.text(text),
-      );
-      this.textTail = run.then(ignore, ignore);
-      return run;
-    });
+    return this.queueInput(() => this.api.text(text));
   }
 
   sendMedia(action: PcMediaAction, steps = 1): Promise<PcFailure | null> {
@@ -360,6 +366,36 @@ export class PcStore {
 
   launch(appId: string): Promise<PcFailure | null> {
     return this.command(() => this.api.launch(appId));
+  }
+
+  /**
+   * Põe um texto ou uma tecla na fila de entrada (ver `inputTail`). Devolve a falha do próprio pedido, ou `CANCELLED` se uma
+   * falha anterior da fila (ou a troca de conta) o cancelou antes de sair: nesse caso nada foi enviado.
+   */
+  private queueInput(call: () => Promise<void>): Promise<PcFailure | null> {
+    if (!this.canSend()) return Promise.resolve(this.blocked());
+    const generation = this.inputGeneration;
+    const run = this.inputTail.then(async (): Promise<PcFailure | null> => {
+      if (generation !== this.inputGeneration) return CANCELLED;
+      const failure = await this.run(call);
+      if (failure !== null) this.inputGeneration++;
+      return failure;
+    });
+    this.inputTail = run.then(ignore, ignore);
+    return run;
+  }
+
+  /** Espera os movimentos em voo terminarem, por no máximo `UP_DRAIN_MS`. */
+  private async drainBeforeUp(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const giveUp = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, UP_DRAIN_MS);
+    });
+    try {
+      await Promise.race([this.batcher.drain(), giveUp]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async command(call: () => Promise<void>): Promise<PcFailure | null> {
@@ -402,6 +438,7 @@ export class PcStore {
     this.maybeHeld = false;
     this.releaseWanted = false;
     this.releaseKeepalive = false;
+    this.inputGeneration++;
     this.account = current;
     this.batcher.discard();
     this.accelerator.reset();
