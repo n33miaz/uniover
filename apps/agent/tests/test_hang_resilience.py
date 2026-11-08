@@ -924,7 +924,16 @@ def test_an_empty_only_list_is_refused_in_python_and_kills_nobody(tmp_path: Path
     finally:
         if supervisor.poll() is None:
             supervisor.kill()
-        if marker.exists():
+        # O filho pode ainda estar gravando o arquivo do PID (o Windows recusa a leitura nesse
+        # instante): tenta por alguns segundos em vez de falhar na limpeza.
+        child_pid = ""
+        end = time.monotonic() + 5
+        while marker.exists() and not child_pid and time.monotonic() < end:
+            try:
+                child_pid = marker.read_text(encoding="ascii").strip()
+            except PermissionError:
+                time.sleep(0.2)
+        if child_pid:
             import subprocess  # noqa: PLC0415
 
             subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
@@ -933,7 +942,7 @@ def test_an_empty_only_list_is_refused_in_python_and_kills_nobody(tmp_path: Path
                         os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
                     ),
                     "/PID",
-                    marker.read_text(encoding="ascii").strip(),
+                    child_pid,
                     "/F",
                 ],
                 capture_output=True,
