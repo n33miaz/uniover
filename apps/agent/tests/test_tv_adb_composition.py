@@ -298,7 +298,11 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
     store.set(AGENT_ID, TOKEN)
     async with FakeApi(script) as api:
         settings = Settings(
-            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, tv_host=TV_HOST
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            tv_host=TV_HOST,
+            pc_control=False,
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 

@@ -361,7 +361,11 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
     silence_noisy_loggers()
     async with FakeApi(script) as api:
         settings = Settings(
-            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, tv_host=TV_HOST
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            tv_host=TV_HOST,
+            pc_control=False,
         )
         with caplog.at_level(logging.DEBUG):
             assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
@@ -425,7 +429,11 @@ async def test_run_without_certificate_declares_no_capability(
     store.set(AGENT_ID, TOKEN)
     async with FakeApi(script) as api:
         settings = Settings(
-            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, tv_host=TV_HOST
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            tv_host=TV_HOST,
+            pc_control=False,
         )
         await run(settings, lambda: store)
     assert [m["body"]["capabilities"] for m in api.received if m["type"] == "agent.hello.v1"] == [
@@ -483,7 +491,11 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
     store.set(AGENT_ID, TOKEN)
     async with FakeApi(script) as api:
         settings = Settings(
-            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, tv_host=TV_HOST
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            tv_host=TV_HOST,
+            pc_control=False,
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 
