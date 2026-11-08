@@ -21,6 +21,9 @@ internal static class PcMessages
     /// </summary>
     public const string KeyV2Capability = "pc.key.v2";
 
+    /// <summary>Capacidade do canal direto (WebRTC): o agente só a declara depois de a API a listar em <c>features</c>.</summary>
+    public const string RtcCapability = "pc.rtc.v1";
+
     public static FrozenDictionary<string, PcClickV1BodyButton> Buttons { get; } = Enum.GetValues<PcClickV1BodyButton>()
         .ToFrozenDictionary(WireName, button => button, StringComparer.Ordinal);
 
@@ -126,6 +129,25 @@ internal static class PcMessages
 
     public static OutboundMessage AppLaunch(string appId) =>
         Live(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
+
+    /// <summary>A oferta do canal direto, com o token de uso único que a primeira mensagem do canal precisa apresentar.</summary>
+    public static OutboundMessage RtcOffer(Guid sessionId, string sdp, string token, int tokenTtlSeconds) =>
+        Live(AgentMessageTypes.PcRtcOfferV1, BodyOf(new PcRtcOfferV1Message
+        {
+            Body = new PcRtcOfferV1Body { SessionId = sessionId, Sdp = sdp, Token = token, TokenTtlSeconds = tokenTtlSeconds },
+        }.ToJson()));
+
+    public static OutboundMessage RtcCandidate(Guid sessionId, string candidate, string? sdpMid, long? sdpMLineIndex) =>
+        Live(AgentMessageTypes.PcRtcCandidateV1, BodyOf(new PcRtcCandidateV1Message
+        {
+            Body = new PcRtcCandidateV1Body { SessionId = sessionId, Candidate = candidate, SdpMid = sdpMid, SdpMLineIndex = sdpMLineIndex },
+        }.ToJson()));
+
+    public static OutboundMessage RtcClose(Guid sessionId, PcRtcCloseV1BodyReason reason) =>
+        Live(AgentMessageTypes.PcRtcCloseV1, BodyOf(new PcRtcCloseV1Message
+        {
+            Body = new PcRtcCloseV1Body { SessionId = sessionId, Reason = reason },
+        }.ToJson()));
 
     /// <summary>
     /// Todo comando do PC é ao vivo: sem sessão viva agora, falha na hora em vez de esperar a reconexão do agente (ver

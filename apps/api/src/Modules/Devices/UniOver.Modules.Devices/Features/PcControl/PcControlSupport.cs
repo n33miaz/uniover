@@ -207,6 +207,22 @@ internal static class PcProblems
         title: "Muitas teclas seguidas. Espere um instante.",
         type: ProblemDetailsExtensions.TypeBase + ProblemDetailsExtensions.RateLimited);
 
+    public const string DirectUnavailableType = "pc-direct-unavailable";
+
+    /// <summary>O PC não declara o canal direto (agente anterior, ou a biblioteca não está instalada): o app segue pela nuvem.</summary>
+    public static IResult DirectUnavailable() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "Este computador não oferece o canal direto.",
+        type: ProblemDetailsExtensions.TypeBase + DirectUnavailableType);
+
+    public const string DirectExpiredType = "pc-direct-expired";
+
+    /// <summary>A sessão do canal direto não existe mais (venceu a janela de negociação, ou nunca foi desta pessoa).</summary>
+    public static IResult DirectExpired() => Results.Problem(
+        statusCode: StatusCodes.Status410Gone,
+        title: "A sessão do canal direto acabou.",
+        type: ProblemDetailsExtensions.TypeBase + DirectExpiredType);
+
     public const string ReconnectingType = "agent-reconnecting";
 
     /// <summary>
@@ -300,19 +316,32 @@ internal sealed class PcKeyBudget(TimeProvider time)
 }
 
 /// <summary>Guarda a lista de favoritos que o agente anuncia (<c>pc.apps.v1</c>), na ordem em que ele a mandou.</summary>
-internal sealed class PcAgentMessageHandler(PcAppsStore store) : IAgentMessageHandler
+internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answers, PcRtcClosures closures) : IAgentMessageHandler
 {
-    public IReadOnlyCollection<string> HandledTypes { get; } = [AgentMessageTypes.PcAppsV1];
+    public IReadOnlyCollection<string> HandledTypes { get; } =
+        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1];
 
-    public Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
+    public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
+
+        // O canal direto: a resposta à oferta (o SDP só passa por aqui, nunca é guardado) e o aviso de que ele fechou.
+        if (string.Equals(message.Type, AgentMessageTypes.PcRtcAnswerV1, StringComparison.Ordinal))
+        {
+            answers.Complete(message.AgentId, message.Body.GetProperty("sessionId").GetGuid(), message.Body.GetProperty("sdp").GetString()!);
+            return;
+        }
+
+        if (string.Equals(message.Type, AgentMessageTypes.PcRtcClosedV1, StringComparison.Ordinal))
+        {
+            await closures.AgentClosedAsync(message.AgentId, message.Body.GetProperty("sessionId").GetGuid(), cancellationToken);
+            return;
+        }
 
         // O gateway já validou a mensagem contra o contrato: os campos existem e têm o tipo certo.
         var apps = message.Body.GetProperty("apps").EnumerateArray()
             .Select(a => new PcApp(a.GetProperty("id").GetString()!, a.GetProperty("label").GetString()!))
             .ToList();
         store.Set(message.AgentId, apps);
-        return Task.CompletedTask;
     }
 }

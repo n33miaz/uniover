@@ -58,6 +58,21 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.power.v1</c>.</summary>
     public const string PcPowerV1 = "pc.power.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.rtc.answer.v1</c>.</summary>
+    public const string PcRtcAnswerV1 = "pc.rtc.answer.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.rtc.candidate.v1</c>.</summary>
+    public const string PcRtcCandidateV1 = "pc.rtc.candidate.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.rtc.close.v1</c>.</summary>
+    public const string PcRtcCloseV1 = "pc.rtc.close.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.rtc.closed.v1</c>.</summary>
+    public const string PcRtcClosedV1 = "pc.rtc.closed.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.rtc.offer.v1</c>.</summary>
+    public const string PcRtcOfferV1 = "pc.rtc.offer.v1";
+
     /// <summary>Tipo de mensagem <c>pc.text.v1</c>.</summary>
     public const string PcTextV1 = "pc.text.v1";
 
@@ -159,6 +174,11 @@ public static class AgentMessageTypes
         PcMediaV1,
         PcPointerV1,
         PcPowerV1,
+        PcRtcAnswerV1,
+        PcRtcCandidateV1,
+        PcRtcCloseV1,
+        PcRtcClosedV1,
+        PcRtcOfferV1,
         PcTextV1,
         TvAdbRebindV1,
         TvAppLaunchV1,

@@ -370,12 +370,12 @@ public sealed class PcAppsStoreTests
     public async Task TheAgentMessageHandler_StoresTheIdsAndNamesTheAgentSent()
     {
         var store = new PcAppsStore();
-        var handler = new PcAgentMessageHandler(store);
+        var handler = new PcAgentMessageHandler(store, new PcRtcAnswers(TimeProvider.System), new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!));
         var body = JsonDocument.Parse(
             "{\"apps\":[{\"id\":\"navegador\",\"label\":\"Navegador\"},{\"id\":\"notas\",\"label\":\"Notas\"}],\"at\":\"2026-11-01T14:00:00Z\"}")
             .RootElement.Clone();
 
-        handler.HandledTypes.Should().Equal(AgentMessageTypes.PcAppsV1);
+        handler.HandledTypes.Should().Contain(AgentMessageTypes.PcAppsV1);
         await handler.HandleAsync(
             new InboundMessage("pc-casa", Guid.CreateVersion7(), AgentMessageTypes.PcAppsV1, null, DateTimeOffset.UtcNow, body),
             TestContext.Current.CancellationToken);

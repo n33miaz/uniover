@@ -89,6 +89,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/pc/power", RateLimitPolicies.PcPower),
         ("POST", "/api/v1/pc/apps/{appId}/launch", RateLimitPolicies.PcPower),
         ("GET", "/api/v1/pc/status", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/rtc/offer", RateLimitPolicies.PcRtc),
+        ("POST", "/api/v1/pc/rtc/{sessionId:guid}/candidates", RateLimitPolicies.PcRtc),
+        ("POST", "/api/v1/pc/rtc/{sessionId:guid}/close", RateLimitPolicies.PcRtc),
 
         // TV Livre: cada rota que escreve ou fala com a TV leva o limite de comandos.
         ("POST", "/api/v1/tv/livre/refresh", RateLimitPolicies.Commands),

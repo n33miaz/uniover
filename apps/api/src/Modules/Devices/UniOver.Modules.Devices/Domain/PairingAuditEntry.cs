@@ -40,6 +40,10 @@ public static class PairingEvents
     public const string PcShutdownCancelled = "pc_shutdown_cancelled";
     public const string PcAppLaunch = "pc_app_launch";
 
+    // Canal direto (WebRTC) do controle do PC: negociado e entregue ao app, e fechado (por quem pediu ou pelo agente). Sem SDP e sem token.
+    public const string PcDirectOpened = "pc_direct_opened";
+    public const string PcDirectClosed = "pc_direct_closed";
+
     // A tentativa das mesmas ações que o agente recusou, não conseguiu ou não respondeu a tempo (pode ter agido mesmo assim).
     // A tabela não tem coluna de resultado: o sufixo é o resultado, e a trilha unificada o lê como falha. Nunca leva texto digitado.
     public const string PcLockFailed = "pc_lock_failed";
