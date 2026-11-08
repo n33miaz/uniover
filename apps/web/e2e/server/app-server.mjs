@@ -82,12 +82,13 @@ async function sendPage(root, pathname, res, head) {
 /**
  * Cria o servidor (sem ligar a porta). `resolveRoot(req)` diz de qual pasta de build a resposta sai (o e2e de
  * atualização troca de versão no meio do teste); `transformSw(body, req)` pode alterar os bytes do `/sw.js`; `beforeApi(req)` pode atrasar as respostas da API;
- * `api(req, res, pathname)` pode responder no lugar do 404 padrão (devolve `true` quando respondeu).
+ * `beforeAsset(req, pathname)` pode atrasar a entrega de um arquivo estático; `api(req, res, pathname)` pode responder no lugar do 404 padrão (devolve `true` quando respondeu).
  */
 export function createAppServer({
   resolveRoot,
   transformSw = (body) => body,
   beforeApi = async () => undefined,
+  beforeAsset = async () => undefined,
   api = async () => false,
   assetCache = 'public, max-age=31536000, immutable',
 }) {
@@ -106,6 +107,7 @@ export function createAppServer({
       if (ext && ext !== '.html') {
         const file = join(root, pathname);
         if (!file.startsWith(root)) throw new Error('fora da raiz');
+        await beforeAsset(req, pathname);
         let body = await readFile(file);
         if (pathname === '/sw.js') body = transformSw(body, req);
         const cache = pathname === '/sw.js' ? 'no-cache' : assetCache;

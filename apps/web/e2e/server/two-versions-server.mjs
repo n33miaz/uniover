@@ -8,6 +8,7 @@
 //   /sw-delay?ms=N             a versão b só obedece ao SKIP_WAITING depois de N ms (um aparelho lento)
 //   /api-delay?ms=N            a API (que no teste responde 404) demora N ms para responder
 //   /me-delay?ms=N             com /owner, só a leitura da conta (/me) demora N ms a mais
+//   /install-delay?ms=N        o worker demora N ms por arquivo para baixar o precache (pedidos dele, não os da página)
 //   /owner?on=1                a API passa a responder como o dono já conectado (sessão, conta e estado da TV)
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,14 @@ const tmp = await mkdtemp(join(tmpdir(), 'uniover-next-'));
 const rootB = join(tmp, 'browser');
 await createNextVersion(rootA, rootB);
 
-const state = { version: 'a', swDelayMs: 0, apiDelayMs: 0, meDelayMs: 0, owner: false };
+const state = {
+  version: 'a',
+  swDelayMs: 0,
+  apiDelayMs: 0,
+  meDelayMs: 0,
+  installDelayMs: 0,
+  owner: false,
+};
 
 // `/health/version` responde como a API de verdade: o app o usa de sonda de rede antes de desfazer um worker travado.
 const ownerApi = (() => {
@@ -51,6 +59,11 @@ const app = createAppServer({
   // Sem cache HTTP: o navegador pode ter tirado do disco os arquivos da versão antiga (o iOS o faz cedo); o que o worker
   // não guarda, vem da rede, e a rede só tem a versão nova.
   assetCache: 'no-store',
+  // Os arquivos que o worker baixa para o precache (`fetch` sem destino) demoram: uma primeira visita num aparelho lento.
+  beforeAsset: (req) =>
+    req.headers['sec-fetch-dest'] === 'empty' && state.installDelayMs > 0
+      ? new Promise((done) => setTimeout(done, state.installDelayMs))
+      : undefined,
   beforeApi: () => new Promise((done) => setTimeout(done, state.apiDelayMs)),
   api: ownerApi,
 });
@@ -66,6 +79,8 @@ const control = (await import('node:http')).createServer((req, res) => {
   if (url.pathname === '/sw-delay') state.swDelayMs = Number(url.searchParams.get('ms') ?? 0);
   if (url.pathname === '/api-delay') state.apiDelayMs = Number(url.searchParams.get('ms') ?? 0);
   if (url.pathname === '/me-delay') state.meDelayMs = Number(url.searchParams.get('ms') ?? 0);
+  if (url.pathname === '/install-delay')
+    state.installDelayMs = Number(url.searchParams.get('ms') ?? 0);
   if (url.pathname === '/owner') state.owner = url.searchParams.get('on') === '1';
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state));
 });
