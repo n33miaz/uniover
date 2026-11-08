@@ -35,3 +35,39 @@ describe('PcApi click', () => {
     await sending;
   });
 });
+
+describe('PcApi pointer', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  async function body(sending: Promise<void>) {
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/pointer'));
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+    return request.request.body;
+  }
+
+  it('sends only the axes (no sequence) for the heartbeat of a held button', async () => {
+    expect(await body(api.pointer(0, 0))).toEqual({ dx: 0, dy: 0 });
+  });
+
+  it('carries the sequence of the request when there is one, zero included', async () => {
+    expect(await body(api.pointer(3, -2, 0, 120, 4821))).toEqual({
+      dx: 3,
+      dy: -2,
+      scrollY: 120,
+      seq: 4821,
+    });
+    expect(await body(api.pointer(1, 1, 0, 0, 0))).toEqual({ dx: 1, dy: 1, seq: 0 });
+  });
+});

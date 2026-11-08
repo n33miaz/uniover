@@ -59,7 +59,7 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
       <button
         type="submit"
         class="ui-btn primary"
-        [disabled]="!store.canSend() || text().length === 0 || sending()"
+        [disabled]="!store.canSend() || text().length === 0"
         i18n="@@pc.keyboard.send"
       >
         Digitar
@@ -156,7 +156,6 @@ export class KeyboardPage {
   /** As teclas armadas: valem para a próxima tecla e então se soltam sozinhas. */
   protected readonly armed = signal<ReadonlySet<PcModifier>>(new Set());
   protected readonly text = signal('');
-  protected readonly sending = signal(false);
   protected readonly error = signal<string | null>(null);
 
   protected readonly mainKeys: readonly KeyButton[] = [
@@ -227,19 +226,21 @@ export class KeyboardPage {
     this.error.set(null);
   }
 
-  protected async send(): Promise<void> {
+  /**
+   * O campo esvazia na hora e o PC recebe em segundo plano: o próximo texto não espera a resposta do anterior (uma ida e
+   * volta até o PC). Se não passou, o texto volta ao campo (se a pessoa ainda não digitou outra coisa) junto com o motivo.
+   */
+  protected send(): void {
     const value = clampText(this.text(), MAX_TEXT);
-    if (!value || this.sending() || !this.store.canSend()) return;
-    this.sending.set(true);
+    if (!value || !this.store.canSend()) return;
     tick();
-    const failure = await this.sendValue(value);
-    this.sending.set(false);
-    if (failure) {
-      this.error.set(failure.message);
-      return;
-    }
-    // Enviado: o campo esvazia, e nada do que foi digitado fica na tela.
     this.text.set('');
+    this.error.set(null);
+    void this.sendValue(value).then((failure) => {
+      if (!failure) return;
+      this.error.set(failure.message);
+      if (this.text() === '') this.text.set(value);
+    });
   }
 
   protected press(item: KeyButton): void {

@@ -12325,6 +12325,8 @@ export interface components {
       scrollX: null | number | string;
       /** Format: int32 */
       scrollY: null | number | string;
+      /** Format: int32 */
+      seq?: null | number | string;
     };
     PcPowerRequest: {
       action: null | string;

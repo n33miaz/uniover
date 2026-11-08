@@ -19,10 +19,15 @@ export class PcApi {
     return this.injector.get(HttpClient);
   }
 
-  async pointer(dx: number, dy: number, scrollX = 0, scrollY = 0): Promise<void> {
+  /**
+   * `seq` numera os pedidos de movimento (crescente): vários saem ao mesmo tempo e o agente usa o número para reconhecer
+   * o que chega fora de ordem (diagnóstico; o movimento é relativo e todos são aplicados). O sinal de vida não leva.
+   */
+  async pointer(dx: number, dy: number, scrollX = 0, scrollY = 0, seq?: number): Promise<void> {
     const body: Record<string, number> = { dx, dy };
     if (scrollX !== 0) body['scrollX'] = scrollX;
     if (scrollY !== 0) body['scrollY'] = scrollY;
+    if (seq !== undefined) body['seq'] = seq;
     await firstValueFrom(this.http.post(`${BASE}/pointer`, body));
   }
 

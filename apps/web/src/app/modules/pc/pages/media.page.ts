@@ -6,6 +6,8 @@ import type { PcMediaAction } from '../data/pc-types';
 /** Segurar o volume repete: espera um pouco antes da primeira repetição e depois segue neste ritmo. */
 const REPEAT_AFTER_MS = 420;
 const REPEAT_EVERY_MS = 190;
+/** Passos do volume sem resposta que a repetição tolera (com a rede lenta, o pedido seguinte não espera o anterior). */
+const MAX_VOLUME_IN_FLIGHT = 3;
 
 /**
  * Mídia do PC: tocar e pausar, faixa anterior e seguinte, volume (segurar repete) e mudo. Embaixo, os favoritos que o
@@ -137,7 +139,8 @@ export class MediaPage {
 
   private startTimer: number | null = null;
   private repeatTimer: number | null = null;
-  private busy = false;
+  /** Passos do volume ainda sem resposta: a repetição não espera a ida e volta do anterior, mas não se acumula sem fim. */
+  private inFlight = 0;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.release());
@@ -148,7 +151,7 @@ export class MediaPage {
     void this.store.sendMedia(action);
   }
 
-  /** Aperta uma vez já e, se o dedo ficar, repete o volume até soltar (um pedido por vez). */
+  /** Aperta uma vez já e, se o dedo ficar, repete o volume até soltar (no máximo `MAX_VOLUME_IN_FLIGHT` sem resposta). */
   protected hold(action: 'VOLUME_UP' | 'VOLUME_DOWN', event: PointerEvent): void {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     this.release();
@@ -176,11 +179,11 @@ export class MediaPage {
   }
 
   private step(action: PcMediaAction): void {
-    if (this.busy) return;
-    this.busy = true;
+    if (this.inFlight >= MAX_VOLUME_IN_FLIGHT) return;
+    this.inFlight++;
     tick(5);
     void this.store.sendMedia(action).finally(() => {
-      this.busy = false;
+      this.inFlight--;
     });
   }
 }
