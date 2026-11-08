@@ -60,6 +60,126 @@ describe('PcShortcutGrid', () => {
     expect(root.querySelectorAll('.cell').length).toBeGreaterThan(40);
   });
 
+  describe('what needs pc.key.v2', () => {
+    const NEWER = [
+      'print-screen',
+      'context-menu',
+      'zoom-in',
+      'zoom-out',
+      'zoom-reset',
+      'slides-goto',
+    ];
+
+    it('is not shown on a PC that did not declare the capability (an old agent never gets a dead button)', () => {
+      for (const id of NEWER) expect(cell(id), id).toBeNull();
+      expect(cell('screenshot')).not.toBeNull();
+    });
+
+    it('appears when the PC declares it, in its own group', () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      for (const id of NEWER) expect(cell(id), id).not.toBeNull();
+      expect(cell('zoom-in').querySelector('.keys')?.textContent?.trim()).toBe('Ctrl+=');
+      expect(cell('zoom-out').querySelector('.keys')?.textContent?.trim()).toBe('Ctrl+-');
+      expect(cell('zoom-reset').querySelector('.keys')?.textContent?.trim()).toBe('Ctrl+0');
+      expect(cell('print-screen').querySelector('.name')?.textContent?.trim()).toBe('Print Screen');
+    });
+
+    it('a pinned one is hidden too on a PC without it, and comes back with it', () => {
+      TestBed.inject(PcPinned).toggle('zoom-in');
+      fixture.detectChanges();
+      expect(root.querySelectorAll('[data-shortcut="zoom-in"]')).toHaveLength(0);
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      expect(root.querySelectorAll('[data-shortcut="zoom-in"]')).toHaveLength(2);
+    });
+
+    it('tapping sends the new keys with their modifiers', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      for (const id of ['zoom-in', 'zoom-out', 'zoom-reset', 'print-screen', 'context-menu']) {
+        cell(id).click();
+        await flush();
+      }
+      expect(store.sendKey.mock.calls).toEqual([
+        ['EQUALS', ['CTRL']],
+        ['MINUS', ['CTRL']],
+        ['D0', ['CTRL']],
+        ['PRINT_SCREEN', []],
+        ['APPS', []],
+      ]);
+    });
+
+    it('go to slide N opens a number field and sends the digits and Enter', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      expect(root.querySelector('.goto')).toBeNull();
+      cell('slides-goto').click();
+      fixture.detectChanges();
+      const field = root.querySelector<HTMLInputElement>('.goto-input')!;
+      field.value = '12';
+      root
+        .querySelector<HTMLFormElement>('.goto')!
+        .dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+      expect(store.sendKey.mock.calls).toEqual([
+        ['D1', []],
+        ['D2', []],
+        ['ENTER', []],
+      ]);
+      expect(field.value).toBe('');
+    });
+
+    it('go to slide refuses what is not a number from 1 to 999 and sends nothing', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      cell('slides-goto').click();
+      fixture.detectChanges();
+      const field = root.querySelector<HTMLInputElement>('.goto-input')!;
+      for (const bad of ['', '0', 'abc', '1234', '-3']) {
+        field.value = bad;
+        root
+          .querySelector<HTMLFormElement>('.goto')!
+          .dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+      await flush();
+      fixture.detectChanges();
+      expect(store.sendKey).not.toHaveBeenCalled();
+      expect(root.querySelector('.note')?.textContent).toContain('1 a 999');
+    });
+  });
+
+  describe('"Trocar janela"', () => {
+    it('on a PC without pc.key.v2 it stays a one-tap Alt+Tab', async () => {
+      cell('switch-window').click();
+      await flush();
+      expect(store.sendKey.mock.calls).toEqual([['TAB', ['ALT']]]);
+    });
+
+    it('on a PC with it, it holds the Alt, gives the first Tab and asks the sheet to close', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      let began = 0;
+      fixture.componentInstance.began.subscribe(() => began++);
+      cell('switch-window').click();
+      await flush();
+      expect(store.sendKey.mock.calls).toEqual([
+        ['ALT', [], { action: 'DOWN' }],
+        ['TAB', []],
+      ]);
+      expect(began).toBe(1);
+    });
+
+    it('with the PC away it does nothing', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      store.phase.set('offline');
+      fixture.detectChanges();
+      cell('switch-window').click();
+      await flush();
+      expect(store.sendKey).not.toHaveBeenCalled();
+    });
+  });
+
   it('the armed keys add to the shortcut and let go', async () => {
     TestBed.inject(PcArmed).toggle('SHIFT');
     cell('reload').click();

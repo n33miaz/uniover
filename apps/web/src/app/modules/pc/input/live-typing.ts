@@ -1,5 +1,5 @@
 import type { PcFailure } from '../data/pc-failure';
-import type { PcKey, PcModifier } from '../data/pc-types';
+import type { PcKey, PcKeyOptions, PcModifier } from '../data/pc-types';
 import { clampText } from './text-limit';
 
 /** O limite do contrato para o texto de um pedido, em pontos de código (um emoji vale um). */
@@ -123,7 +123,12 @@ export function textSteps(insert: string): TextStep[] {
 
 /** O que a digitação ao vivo pede ao PC (o `PcStore` já guarda a ordem e o prazo de cada pedido). */
 export interface TyperSender {
-  key(key: PcKey, modifiers: readonly PcModifier[]): Promise<PcFailure | null>;
+  /** `options` só vai quando a tecla leva `repeat` ou `action` (um toque comum chama como sempre). */
+  key(
+    key: PcKey,
+    modifiers: readonly PcModifier[],
+    options?: PcKeyOptions,
+  ): Promise<PcFailure | null>;
   text(text: string): Promise<PcFailure | null>;
 }
 
@@ -140,7 +145,12 @@ export interface TyperEvents {
 
 type Op =
   | { readonly kind: 'edit'; readonly diff: TextDiff }
-  | { readonly kind: 'key'; readonly key: PcKey; readonly modifiers: readonly PcModifier[] };
+  | {
+      readonly kind: 'key';
+      readonly key: PcKey;
+      readonly modifiers: readonly PcModifier[];
+      readonly options?: PcKeyOptions;
+    };
 
 /**
  * Ordena tudo o que vai ao PC pela digitação ao vivo e pelas teclas da tela. Um passo por vez em voo; enquanto ele não
@@ -178,8 +188,16 @@ export class LiveTyper {
     void this.pump();
   }
 
-  key(key: PcKey, modifiers: readonly PcModifier[] = []): void {
-    this.queue.push({ kind: 'key', key, modifiers });
+  /**
+   * Uma tecla na ordem da fila. `options.repeat` aperta várias vezes num pedido só; `options.action` `DOWN` segura um
+   * modificador (o `DOWN` entra na fila para nunca passar na frente do texto digitado antes dele).
+   */
+  key(key: PcKey, modifiers: readonly PcModifier[] = [], options?: PcKeyOptions): void {
+    this.queue.push(
+      options === undefined
+        ? { kind: 'key', key, modifiers }
+        : { kind: 'key', key, modifiers, options },
+    );
     void this.pump();
   }
 
@@ -217,7 +235,11 @@ export class LiveTyper {
   }
 
   private async run(op: Op, generation: number): Promise<PcFailure | null> {
-    if (op.kind === 'key') return this.sender.key(op.key, op.modifiers);
+    if (op.kind === 'key') {
+      return op.options === undefined
+        ? this.sender.key(op.key, op.modifiers)
+        : this.sender.key(op.key, op.modifiers, op.options);
+    }
     for (let erased = 0; erased < op.diff.erase; erased++) {
       if (generation !== this.generation) return null;
       const failure = await this.sender.key('BACKSPACE', []);

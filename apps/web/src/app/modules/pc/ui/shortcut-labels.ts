@@ -43,6 +43,8 @@ const LABELS: Readonly<Record<string, () => string>> = {
   search: () => $localize`:@@pc.sc.search:Pesquisar`,
   project: () => $localize`:@@pc.sc.project:Projetar`,
   'quick-menu': () => $localize`:@@pc.sc.quick-menu:Menu Rápido`,
+  'print-screen': () => $localize`:@@pc.sc.print-screen:Print Screen`,
+  'context-menu': () => $localize`:@@pc.sc.context-menu:Menu de Contexto`,
 
   'new-tab': () => $localize`:@@pc.sc.new-tab:Nova Aba`,
   'close-tab': () => $localize`:@@pc.sc.close-tab:Fechar Aba`,
@@ -55,6 +57,9 @@ const LABELS: Readonly<Record<string, () => string>> = {
   address: () => $localize`:@@pc.sc.address:Endereço`,
   'new-window': () => $localize`:@@pc.sc.new-window:Nova Janela`,
   'browser-fullscreen': () => $localize`:@@pc.sc.browser-fullscreen:Tela Cheia`,
+  'zoom-in': () => $localize`:@@pc.sc.zoom-in:Ampliar`,
+  'zoom-out': () => $localize`:@@pc.sc.zoom-out:Reduzir`,
+  'zoom-reset': () => $localize`:@@pc.sc.zoom-reset:Zoom Normal`,
 
   'play-pause': () => $localize`:@@pc.sc.play-pause:Tocar ou Pausar`,
   'video-fullscreen': () => $localize`:@@pc.sc.video-fullscreen:Tela Cheia do Vídeo`,
@@ -74,6 +79,7 @@ const LABELS: Readonly<Record<string, () => string>> = {
   'slides-black': () => $localize`:@@pc.sc.slides-black:Tela Preta`,
   'slides-white': () => $localize`:@@pc.sc.slides-white:Tela Branca`,
   'slides-end': () => $localize`:@@pc.sc.slides-end:Encerrar`,
+  'slides-goto': () => $localize`:@@pc.sc.slides-goto:Ir ao Slide`,
 };
 
 /** O rótulo do atalho; o id (em inglês, só para dentro) é o único recurso se faltar o texto. */

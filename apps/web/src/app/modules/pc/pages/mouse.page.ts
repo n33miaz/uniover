@@ -17,6 +17,7 @@ import { MAX_KEYS_IN_FLIGHT, PcInput } from '../data/pc-input';
 import { PcPrefs } from '../data/pc-prefs';
 import { SessionState } from '../../../core/session/session-state';
 import { PcStore } from '../data/pc-store';
+import { PcSwitcher } from '../data/pc-switcher';
 import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { PadButton, PadGesture, PadPoint } from '../input/pad-gesture';
@@ -136,7 +137,12 @@ interface Ring {
           (click)="keepKeyboard()"
           [disabled]="!store.canSend()"
           [busy]="keysBusy"
+          [moreKeys]="moreKeys()"
+          [batched]="store.supportsKeyV2()"
+          [switching]="switcher.active()"
           (key)="sendKey($event)"
+          (keyRepeat)="sendKeyRepeat($event.key, $event.count)"
+          (switchWindow)="toggleSwitcher()"
         />
       }
       @if (error(); as message) {
@@ -197,7 +203,9 @@ interface Ring {
       [panelOpen]="panelOpen()"
       [shortcutsOpen]="shortcutsOpen()"
       [busy]="keysBusy"
+      [batched]="store.supportsKeyV2()"
       (key)="sendKey($event)"
+      (keyRepeat)="sendKeyRepeat($event.key, $event.count)"
       (keyboard)="openKeyboard()"
       (panel)="panelOpen.set(!panelOpen())"
       (shortcuts)="openSheet('shortcuts')"
@@ -220,6 +228,9 @@ export class MousePage {
   protected readonly prefs = inject(PcPrefs);
   private readonly armed = inject(PcArmed);
   private readonly input = inject(PcInput);
+  protected readonly switcher = inject(PcSwitcher);
+  /** O PC entende as teclas novas (`pc.key.v2`): o painel mostra os dígitos e o "Trocar janela". */
+  protected readonly moreKeys = computed(() => this.store.supportsKey('D0'));
   private readonly route = inject(ActivatedRoute);
   private readonly session = inject(SessionState);
   private readonly doc = inject(DOCUMENT);
@@ -289,6 +300,10 @@ export class MousePage {
     // vale dentro de um toque, então a pessoa toca no botão do teclado.
     afterNextRender(() => {
       if (this.route.snapshot.queryParamMap.has('teclado')) this.keyboard().open();
+    });
+    // A barra do "Trocar janela" ocuparia o lugar do painel: ele fecha quando o Alt é segurado.
+    effect(() => {
+      if (this.switcher.active()) this.panelOpen.set(false);
     });
     effect(() => {
       if (this.prefs.keepAwake()) this.wakeLock.start();
@@ -415,6 +430,20 @@ export class MousePage {
    */
   protected sendKey(key: PcKey, modifiers: readonly PcModifier[] = []): void {
     this.keyboard().press(key, modifiers);
+  }
+
+  /**
+   * Segurar uma tecla num PC que entende `pc.key.v2`: um pedido com `count` repetições (a tela manda um por rodada). Sem esse
+   * suporte a repetição é a de sempre, uma tecla por vez (`sendKey`).
+   */
+  protected sendKeyRepeat(key: PcKey, count: number): void {
+    this.keyboard().pressRepeat(key, count);
+  }
+
+  /** O botão "Alt+Tab" do painel: segura o Alt e dá o primeiro Tab; com o Alt segurado, solta. */
+  protected toggleSwitcher(): void {
+    if (this.switcher.active()) void this.switcher.release();
+    else this.switcher.begin();
   }
 
   /** O botão do teclado abre e fecha o teclado do celular; o foco tem de nascer neste toque (regra do iOS). */

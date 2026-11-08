@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { BATCH_EVERY_MS, BATCH_MAX } from '../input/repeat-batcher';
 import { PcRepeat, REPEAT_AFTER_MS, REPEAT_EVERY_MS } from './pc-repeat';
 
 @Component({
@@ -16,6 +17,109 @@ class Host {
   skipping = false;
   readonly skip = () => this.skipping;
 }
+
+@Component({
+  imports: [PcRepeat],
+  template: `<button
+    type="button"
+    [attr.aria-label]="'teste'"
+    (appPcRepeat)="taps.set(taps() + 1)"
+    [batched]="batched()"
+    (repeatMany)="batches.update((list) => [...list, $event])"
+    [repeatSkip]="skip"
+  ></button>`,
+})
+class BatchedHost {
+  readonly taps = signal(0);
+  readonly batches = signal<readonly number[]>([]);
+  readonly batched = signal(true);
+  busy = false;
+  readonly skip = () => this.busy;
+}
+
+describe('PcRepeat in batches (the PC understands pc.key.v2)', () => {
+  let fixture: ReturnType<typeof TestBed.createComponent<BatchedHost>>;
+  let button: HTMLButtonElement;
+  let host: BatchedHost;
+
+  const press = () => button.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+  const release = (type = 'pointerup') =>
+    button.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    fixture = TestBed.createComponent(BatchedHost);
+    fixture.detectChanges();
+    host = fixture.componentInstance;
+    button = fixture.nativeElement.querySelector('button');
+  });
+  afterEach(() => {
+    fixture.destroy();
+    vi.useRealTimers();
+  });
+
+  it('the touch acts once, then after the delay each round is one request with several repeats', () => {
+    press();
+    expect(host.taps()).toBe(1);
+    vi.advanceTimersByTime(REPEAT_AFTER_MS + BATCH_EVERY_MS * 3);
+    expect(host.taps()).toBe(1);
+    expect(host.batches().length).toBe(3);
+    expect(host.batches().every((count) => count >= 2 && count <= BATCH_MAX)).toBe(true);
+    release();
+  });
+
+  it.each(['pointerup', 'pointercancel', 'pointerleave'])(
+    '%s stops it, and nothing goes out later',
+    (type) => {
+      press();
+      vi.advanceTimersByTime(REPEAT_AFTER_MS + BATCH_EVERY_MS * 2);
+      release(type);
+      const sent = host.batches().length;
+      vi.advanceTimersByTime(5_000);
+      expect(host.batches().length).toBe(sent);
+    },
+  );
+
+  it('lifting the finger before the delay sends no repeat at all, only the touch', () => {
+    press();
+    vi.advanceTimersByTime(REPEAT_AFTER_MS - 1);
+    release();
+    vi.advanceTimersByTime(5_000);
+    expect(host.taps()).toBe(1);
+    expect(host.batches()).toEqual([]);
+  });
+
+  it('with the queue busy the repeats are kept, and the next free round sends them together', () => {
+    press();
+    vi.advanceTimersByTime(REPEAT_AFTER_MS);
+    host.busy = true;
+    vi.advanceTimersByTime(BATCH_EVERY_MS * 6);
+    expect(host.batches()).toEqual([]);
+    host.busy = false;
+    vi.advanceTimersByTime(BATCH_EVERY_MS);
+    expect(host.batches()).toEqual([BATCH_MAX]);
+    release();
+  });
+
+  it('leaving the screen stops it', () => {
+    press();
+    vi.advanceTimersByTime(REPEAT_AFTER_MS + BATCH_EVERY_MS);
+    fixture.destroy();
+    const sent = host.batches().length;
+    vi.advanceTimersByTime(5_000);
+    expect(host.batches().length).toBe(sent);
+  });
+
+  it('is decided at the touch: a PC that does not declare the capability keeps one action per round', () => {
+    host.batched.set(false);
+    fixture.detectChanges();
+    press();
+    vi.advanceTimersByTime(REPEAT_AFTER_MS + REPEAT_EVERY_MS * 2);
+    expect(host.batches()).toEqual([]);
+    expect(host.taps()).toBe(1 + 1 + 2);
+    release();
+  });
+});
 
 describe('PcRepeat', () => {
   let fixture: ReturnType<typeof TestBed.createComponent<Host>>;

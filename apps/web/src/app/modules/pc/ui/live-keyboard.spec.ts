@@ -175,6 +175,42 @@ describe('PcLiveKeyboard', () => {
     expect(TestBed.inject(PcArmed).armed().size).toBe(0);
   });
 
+  describe('keys held down on a PC with pc.key.v2', () => {
+    it('Backspace in a batch sends one request with the count and takes that many characters out of the field', async () => {
+      type(SENTINEL + 'abcd');
+      await flush();
+      store.sendKey.mockClear();
+      fixture.componentInstance.pressRepeat('BACKSPACE', 3);
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('BACKSPACE', [], { repeat: 3 });
+      expect(field.value).toBe(SENTINEL + 'a');
+    });
+
+    it('an arrow in a batch sends the count and leaves the field alone', async () => {
+      type(SENTINEL + 'abc');
+      await flush();
+      store.sendKey.mockClear();
+      fixture.componentInstance.pressRepeat('LEFT', 4);
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('LEFT', [], { repeat: 4 });
+      expect(field.value).toBe(SENTINEL + 'abc');
+    });
+
+    it('the armed keys go with the batch and the field starts over (the PC text changed by the shortcut)', async () => {
+      type(SENTINEL + 'abc');
+      await flush();
+      store.sendKey.mockClear();
+      TestBed.inject(PcArmed).toggle('CTRL');
+      fixture.componentInstance.pressRepeat('BACKSPACE', 2);
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('BACKSPACE', ['CTRL'], { repeat: 2 });
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('sends nothing with the PC away', () => {
+      store.phase.set('offline');
+      fixture.componentInstance.pressRepeat('BACKSPACE', 3);
+      expect(store.sendKey).not.toHaveBeenCalled();
+    });
+  });
+
   describe('keys from the screen', () => {
     it('go through the same line, after the text typed before them', async () => {
       let finish!: () => void;

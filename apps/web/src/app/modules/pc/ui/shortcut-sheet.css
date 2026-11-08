@@ -19,6 +19,11 @@
   margin: 0;
   font-size: 1.15rem;
 }
+/* O título só recebe o foco por código (para o leitor de tela começar nele): nenhum contorno, nem no WebKit, que conta o foco
+   por código como "do teclado". Quem usa o teclado não chega nele com Tab (tabindex -1). */
+.head h2[tabindex='-1']:focus {
+  outline: none;
+}
 
 .icon {
   display: grid;

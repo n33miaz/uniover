@@ -29,6 +29,13 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   grid-template-rows: repeat(2, auto);
 }
+.more {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+/* Com o botão dos dígitos, a fileira das teclas armadas tem seis espaços. */
+.mods:has(.key:nth-child(6)) {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
 .nav .key {
   font-size: 1.1rem;
 }

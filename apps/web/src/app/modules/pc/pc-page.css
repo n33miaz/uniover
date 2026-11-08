@@ -163,6 +163,18 @@
   text-decoration: none;
 }
 
+/* A barra do "Trocar janela": na tela do mouse flutua logo acima da barra de ações; nas outras abas acompanha o fim da tela. */
+.switcher {
+  position: sticky;
+  bottom: var(--space-2);
+  z-index: 3;
+}
+.switcher.float {
+  position: absolute;
+  right: var(--space-3);
+  bottom: calc(var(--pc-bar) + var(--space-2) + var(--space-3));
+  left: var(--space-3);
+}
 .notice {
   margin: 0;
   color: var(--a-bad);

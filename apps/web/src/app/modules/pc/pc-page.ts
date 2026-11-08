@@ -17,6 +17,7 @@ import { RouterLink, RouterOutlet } from '@angular/router';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 import { PcArmed } from './data/pc-armed';
 import { PcStore } from './data/pc-store';
+import { PcSwitcherBar } from './ui/switcher-bar';
 import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 
 /**
@@ -31,7 +32,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 @Component({
   selector: 'app-pc-page',
   host: { 'data-screen-ready': 'pc' },
-  imports: [RouterLink, RouterOutlet, Skeleton],
+  imports: [RouterLink, RouterOutlet, Skeleton, PcSwitcherBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section
@@ -87,6 +88,9 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
           <router-outlet (activate)="onActivate($event)" (deactivate)="fill.set(false)" />
         }
       }
+
+      <!-- Com o Alt segurado a barra do "Trocar janela" acompanha qualquer aba: ninguém fica sem como soltá-lo. -->
+      <app-pc-switcher-bar class="switcher" [class.float]="fill()" />
 
       @if (store.notice(); as notice) {
         <p class="notice" role="alert" [class.float]="fill()">{{ notice.message }}</p>

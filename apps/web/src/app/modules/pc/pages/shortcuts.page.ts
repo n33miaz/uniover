@@ -46,6 +46,10 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
       margin: 0;
       font-size: var(--fs-title);
     }
+    /* Só recebe o foco por código (o leitor de tela começa nele): sem contorno, nem no WebKit. */
+    h2[tabindex='-1']:focus {
+      outline: none;
+    }
     .icon {
       display: grid;
       place-items: center;
