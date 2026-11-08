@@ -3,7 +3,7 @@ import type {
   PcKeyV1BodyModifiersItem,
 } from '../../../core/api/generated/agent/pc_key_v1';
 import { LABELLED_SHORTCUTS, shortcutLabel } from '../ui/shortcut-labels';
-import { PC_KEYS, PC_MODIFIERS, type PcKey, type PcModifier } from './pc-types';
+import { PC_KEYS, PC_MODIFIERS, type PcKeyV1, type PcModifier } from './pc-types';
 import {
   DEFAULT_PINNED,
   MAX_PINNED,
@@ -19,7 +19,7 @@ type Same<A, B> =
 
 // O contrato é a fonte: estes tipos vêm do esquema `pc.key.v1`, gerado. Se o esquema ganhar ou perder uma tecla, ou um
 // modificador, a tela e o catálogo precisam ser revistos, e isto deixa de compilar até serem.
-const keysAreTheContractKeys: Same<PcKey, PcKeyV1BodyKey> = true;
+const keysAreTheContractKeys: Same<PcKeyV1, PcKeyV1BodyKey> = true;
 const modifiersAreTheContractModifiers: Same<PcModifier, PcKeyV1BodyModifiersItem> = true;
 
 describe('shortcut catalog', () => {

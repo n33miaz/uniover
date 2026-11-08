@@ -98,7 +98,7 @@ internal sealed class InMemoryPresenceStore(TimeProvider time, IOptions<DevicesT
                 return null;
             }
 
-            var info = current with { AgentVersion = agentVersion, Capabilities = [.. capabilities], LastMessageAt = now, Host = host, Update = update, HelloAt = now };
+            var info = current with { AgentVersion = agentVersion, Capabilities = [.. capabilities], LastMessageAt = now, Host = host, Update = update, HelloAt = current.HelloAt ?? now };
             _agents[agentId] = info;
             return info;
         }

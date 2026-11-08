@@ -190,6 +190,9 @@ class WindowsPcInput:
     ) -> None:
         with self._lock:
             # O que já está segurado (o Alt do Alt+Tab) não é apertado nem solto por esta tecla.
+            # Se a pessoa soltou o Alt no teclado físico do PC, o agente ainda o dá por segurado e
+            # o próximo atalho sai sem ele, até o `UP` do app (ou a soltura automática) limpar o
+            # estado; nada fica preso.
             held = frozenset(identity[0] for identity in self._held_keys)
             self._dispatch(pc_inputs.key_inputs(key, modifiers, repeat, action, held))
 

@@ -969,9 +969,72 @@ describe('PcStore held modifiers', () => {
     expect(api.key).toHaveBeenCalledTimes(1);
   });
 
-  it('letting go without holding sends nothing', async () => {
+  it('an explicit release always goes out, even when the key is not marked as held', async () => {
     const { store, api } = setup();
     expect(await store.releaseKey('ALT')).toBeNull();
+    expect(api.keyRelease).toHaveBeenCalledExactlyOnceWith('ALT');
+  });
+
+  it('a release that overtook its own DOWN is sent again once the DOWN settles', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api } = setup();
+      let finishDown: () => void = () => undefined;
+      api.key.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishDown = resolve;
+          }),
+      );
+      const holding = store.holdKey('ALT');
+      await vi.advanceTimersByTimeAsync(0);
+      const releasing = store.releaseKey('ALT');
+      await vi.advanceTimersByTimeAsync(UP_DRAIN_MS);
+      await releasing;
+      // O `UP` saiu enquanto o `DOWN` seguia no ar (ele pode demorar até `INPUT_TIMEOUT_MS`).
+      expect(api.keyRelease).toHaveBeenCalledTimes(1);
+      expect(store.heldKeys()).toEqual([]);
+
+      finishDown();
+      await vi.advanceTimersByTimeAsync(0);
+      await holding;
+      expect(api.keyRelease).toHaveBeenCalledTimes(2);
+      expect(api.keyRelease).toHaveBeenLastCalledWith('ALT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a DOWN that times out may still arrive: the release is sent again when it finally settles', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api } = setup();
+      let finishDown: () => void = () => undefined;
+      api.key.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishDown = resolve;
+          }),
+      );
+      const holding = store.holdKey('ALT');
+      await vi.advanceTimersByTimeAsync(INPUT_TIMEOUT_MS);
+      expect((await holding)?.kind).toBe('timeout');
+      await vi.advanceTimersByTimeAsync(0);
+      const before = api.keyRelease.mock.calls.length;
+      expect(before).toBeGreaterThanOrEqual(1);
+
+      finishDown();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.keyRelease.mock.calls.length).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a DOWN that settles while the key is still held asks for nothing more', async () => {
+    const { store, api } = setup();
+    await store.holdKey('ALT');
+    await flush();
     expect(api.keyRelease).not.toHaveBeenCalled();
   });
 
