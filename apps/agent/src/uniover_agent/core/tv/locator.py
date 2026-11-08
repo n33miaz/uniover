@@ -8,9 +8,10 @@ TV confirmada:
 2. **SSDP**: uma única consulta multicast; as TVs respondem com o próprio endereço.
 3. **mDNS** (só a Android TV, que anuncia `_androidtvremote2._tcp`): uma escuta curta antes da
    varredura, com o mesmo espaçamento do SSDP.
-4. **Varredura do /24**, devagar: poucas conexões ao mesmo tempo, com pausa entre os endereços, e
-   no máximo uma a cada `sweep_seconds` (dez minutos). Uma TV com a pilha de rede travada não
-   aguenta rajada de conexões.
+4. **Varredura das redes do PC** (um /24 no máximo por placa, mais o /24 do endereço velho),
+   devagar: poucas conexões ao mesmo tempo, com pausa entre os endereços, e no máximo uma a cada
+   `sweep_seconds` (dez minutos). Uma TV com a pilha de rede travada não aguenta rajada de
+   conexões.
 
 Depois de `empty_searches_limit` buscas seguidas sem achar nada (TV desligada por horas), as
 etapas caras (SSDP, mDNS e varredura) passam a rodar no máximo uma vez a cada `slow_search_seconds`
@@ -42,6 +43,8 @@ DEFAULT_SPACING_SECONDS = 0.05
 DEFAULT_SWEEP_DEADLINE_SECONDS = 90.0
 # O SSDP pode ser respondido por dezenas de aparelhos da casa: só os primeiros são conferidos.
 MAX_SSDP_CANDIDATES = 24
+# Tamanho de um /24 sem o próprio PC: a unidade do prazo da varredura.
+SWEEP_NETWORK_HOSTS = 253
 
 _MAC = re.compile(r"(?:[0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}")
 
@@ -187,6 +190,15 @@ class TvLocator:
         self._sweep_deadline = sweep_deadline_seconds
         self._schedule = _Schedule()
         # A tabela ARP ainda mostra a TV no endereço de sempre (a última procura concluiu isso).
+        self._at_same_place = False
+
+    def reset_schedule(self) -> None:
+        """Esquece os espaçamentos: a próxima procura roda todas as etapas na hora.
+
+        Chamado quando o PC mudou de rede (a TV, se ainda está ligada, também foi para outra): o
+        que valia para a rede de antes (varredura há pouco, procura lenta) não vale mais.
+        """
+        self._schedule = _Schedule()
         self._at_same_place = False
 
     async def is_at(self, host: str) -> bool:
@@ -372,7 +384,9 @@ class TvLocator:
         pending: set[asyncio.Task[None]] = set()
         failed = False
         if workers:
-            _, pending = await asyncio.wait(workers, timeout=self._sweep_deadline)
+            # Mais de uma rede (placas do PC) pede mais prazo: um /24 por vez, não tudo no mesmo.
+            deadline = self._sweep_deadline * max(1, -(-len(hosts) // SWEEP_NETWORK_HOSTS))
+            _, pending = await asyncio.wait(workers, timeout=deadline)
             for task in pending:
                 task.cancel()
             outcomes = await asyncio.gather(*workers, return_exceptions=True)

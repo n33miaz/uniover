@@ -15,6 +15,7 @@ from uniover_agent.adapters.crash_trace import install_crash_trace, loop_excepti
 from uniover_agent.adapters.housekeeping import tidy
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.local_config import ConfigValue, update_config
+from uniover_agent.adapters.local_networks import network_signature, same_network
 from uniover_agent.adapters.loop_watchdog import LoopWatchdog
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import fetch_api_features
@@ -91,7 +92,11 @@ from uniover_agent.core.api_features import (
     WAKING_FEATURE,
     ApiFeatures,
 )
-from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
+from uniover_agent.core.diagnostics import (
+    DIAGNOSTICS_CAPABILITY,
+    DiagnosticsRecorder,
+    DiagnosticsShipper,
+)
 from uniover_agent.core.disk_alarm import DiskAlarm
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
@@ -183,6 +188,8 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     on_refused: Callable[[], None] | None = None,
     is_paused: Callable[[], bool] = lambda: False,
     on_recovered: Callable[[], Awaitable[None]] | None = None,
+    *,
+    recorder: DiagnosticsRecorder | None = None,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -193,6 +200,11 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     `known` é compartilhado com o resto do agente, que aprende o MAC na primeira conexão.
     `on_refused` é avisado quando a Android TV está na rede e **recusa** a porta do controle (o
     serviço morreu): a conferência é a mesma de sempre, o vigia do serviço só aproveita o resultado.
+    A procura cobre a rede de cada placa real do PC, não só a do endereço velho da TV: com o
+    roteador de casa fora e o PC e a TV no ponto de acesso do celular, a TV está em outra faixa.
+    A troca de rede do PC dispara a procura na hora. Um candidato só vale confirmado pelo MAC, pelo
+    `duid` ou pela sessão com o certificado já pareado: nenhum pareamento novo é pedido à TV.
+    `recorder` recebe, sem endereços, a TV achada em outra rede e a TV não achada.
     """
     host = settings.tv_host
     if not host:
@@ -241,7 +253,32 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         if identity.hint is not None:
             values["tv_id_hint"] = identity.hint
         update_config(config_path(), values)
+        if same_network(host, located.host) is False:
+            _log.info("a TV foi achada em outra rede")
+            if recorder is not None:
+                recorder.record(
+                    "tv.found_other_network",
+                    "info",
+                    "TV encontrada em outra rede (o PC e a TV trocaram de rede)",
+                    component="tv",
+                )
         return located.host
+
+    def not_found(attempts: int, network_changed: bool) -> None:
+        _log.warning("a TV não foi achada depois de %d procuras", attempts)
+        if recorder is not None:
+            recorder.record(
+                "tv.not_found",
+                "warn" if network_changed else "info",
+                "TV não encontrada depois de várias procuras"
+                + (
+                    " (o PC mudou de rede nesse meio tempo: ela pode estar em uma rede que o PC "
+                    "não alcança, ou desligada)"
+                    if network_changed
+                    else " (desligada, ou em uma rede que o PC não alcança)"
+                ),
+                component="tv",
+            )
 
     learned_at: list[float] = []
 
@@ -268,6 +305,9 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         on_alive=learn_arp_mac,
         on_recovered=on_recovered,
         is_paused=is_paused,
+        network_signature=network_signature,
+        on_network_change=locator.reset_schedule,
+        on_not_found=not_found,
     )
 
 
@@ -570,6 +610,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             tv.watchdog.request if tv.watchdog is not None else None,
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
             tv.manager.reopen_unattended,
+            recorder=kit.recorder,
         )
         if tv is not None
         else None

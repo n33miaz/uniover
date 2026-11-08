@@ -6,6 +6,10 @@ e os identificadores nunca vão para o registro.
 O SSDP e o Wake-on-LAN precisam sair pela placa certa: com Wi-Fi, cabo sem rede e adaptadores
 virtuais, o multicast segue a rota padrão, que pode não ser a da TV. Por isso o socket é preso ao
 endereço desta máquina **na rede da TV** (`local_address_for`).
+
+A varredura cobre as redes de cada placa real deste PC (até um /24 por placa) e a do endereço
+velho da TV: com a TV no ponto de acesso do celular, ela está numa faixa que o endereço velho
+não diz.
 """
 
 import asyncio
@@ -15,6 +19,11 @@ import socket
 from collections.abc import Awaitable, Callable
 
 from uniover_agent.adapters.arp import arp_mac, arp_table
+from uniover_agent.adapters.local_networks import (
+    LocalInterface,
+    local_interfaces,
+    sweep_networks,
+)
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
     REFUSAL_WAIT_SECONDS,
@@ -51,6 +60,8 @@ SSDP_TARGETS: dict[TvKindName, str] = {
     "android": "urn:dial-multiscreen-org:service:dial:1",
 }
 PROBE_TIMEOUT_SECONDS = 1.5
+# O SSDP sai por no máximo tantas placas (cada consulta espera `SSDP_WAIT_SECONDS`, em paralelo).
+MAX_SSDP_INTERFACES = 3
 SAMSUNG_WS_PORT = 8002
 
 
@@ -147,15 +158,29 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
     empty_searches_limit: int = DEFAULT_EMPTY_SEARCHES_LIMIT,
     slow_search_seconds: float = DEFAULT_SLOW_SEARCH_SECONDS,
 ) -> TvLocator:
-    """O `TvLocator` ligado à rede real, preso ao /24 da TV (o do `tv_host`)."""
+    """O `TvLocator` ligado à rede real: as redes das placas do PC e o /24 do `tv_host`."""
     port = SAMSUNG_REST_PORT if kind == "samsung" else ANDROID_REMOTE_PORT
 
     def interface() -> str | None:
         return local_address_for(tv_host) or local_ipv4()
 
+    def ssdp_interfaces() -> list[str]:
+        # Além da placa que leva ao endereço velho, a de cada rede onde o PC está agora (a TV pode
+        # ter mudado de faixa junto com ele).
+        addresses: list[str] = []
+        first = interface()
+        if first:
+            addresses.append(first)
+        for item in local_interfaces():
+            if item.address not in addresses:
+                addresses.append(item.address)
+        return addresses[:MAX_SSDP_INTERFACES]
+
     async def ssdp() -> list[str]:
-        address = interface()
-        return await ssdp_search(kind, address) if address else []
+        replies = await asyncio.gather(
+            *(ssdp_search(kind, address) for address in ssdp_interfaces())
+        )
+        return list(dict.fromkeys(host for hosts_ in replies for host in hosts_))
 
     async def answers(host: str) -> bool:
         # Recusar a conexão também é resposta: a TV está no endereço, só o serviço caiu.
@@ -172,12 +197,28 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         return await tcp_open(host, port, wait=PROBE_TIMEOUT_SECONDS)
 
     def hosts() -> list[str]:
-        # O /24 da TV; se o `tv_host` é um nome (e não um IP), o da placa que leva à rede.
+        # A rede de cada placa real do PC (até um /24 cada) e, por último, o /24 da TV; se o
+        # `tv_host` é um nome (e não um IP), vale o da placa que leva à rede.
         try:
-            base = str(ipaddress.IPv4Address(tv_host))
+            base: str | None = str(ipaddress.IPv4Address(tv_host))
         except ValueError:
-            base = local_ipv4() or ""
-        return subnet_hosts(base, exclude=interface()) if base else []
+            base = None
+        interfaces = local_interfaces()
+        if base is None and not interfaces:
+            fallback = local_ipv4()
+            interfaces = [LocalInterface(fallback)] if fallback else []
+        mine = {item.address for item in interfaces}
+        own = interface()
+        if own:
+            mine.add(own)
+        found: dict[str, None] = {}
+        for network in sweep_networks(base, interfaces):
+            for host in subnet_hosts(
+                str(network.ip), exclude=own, prefix=network.network.prefixlen
+            ):
+                if host not in mine:
+                    found.setdefault(host)
+        return list(found)
 
     return TvLocator(
         clock,
