@@ -13,14 +13,24 @@ import {
   restoreDialogFocus,
 } from '../../../shared/ui/dialog-motion';
 import { PcPrefs, type PcPrefsValue } from '../data/pc-prefs';
-import { POINTER_SENSITIVITIES, type PointerSensitivity } from '../input/pc-acceleration';
+import { canVibrate } from '../input/haptics';
+import {
+  POINTER_SENSITIVITIES,
+  SCROLL_SENSITIVITIES,
+  type PointerSensitivity,
+  type ScrollSensitivity,
+} from '../input/pc-acceleration';
 
-const LABELS: Readonly<Record<PointerSensitivity, () => string>> = {
+const LABELS: Readonly<Record<PointerSensitivity | ScrollSensitivity, () => string>> = {
   low: () => $localize`:@@pc.settings.low:Baixa`,
   normal: () => $localize`:@@pc.settings.normal:Normal`,
   high: () => $localize`:@@pc.settings.high:Alta`,
   boosted: () => $localize`:@@pc.settings.boosted:Acelerada`,
 };
+
+/** Os interruptores da folha, na ordem em que aparecem. */
+type SwitchName =
+  'invertScroll' | 'doubleTapDrag' | 'middleClick' | 'clickButtons' | 'haptics' | 'keepAwake';
 
 /**
  * Ajustes do mouse numa folha que sobe de baixo: a sensibilidade do ponteiro, a rolagem invertida, os botões de clique e
@@ -50,38 +60,34 @@ const LABELS: Readonly<Record<PointerSensitivity, () => string>> = {
         }
       </fieldset>
 
-      <label class="row">
-        <span i18n="@@pc.settings.invert">Inverter rolagem</span>
-        <input
-          type="checkbox"
-          role="switch"
-          class="ui-switch"
-          [checked]="prefs.invertScroll()"
-          (change)="onSwitch('invertScroll', $event)"
-        />
-      </label>
+      <fieldset class="segment three">
+        <legend class="legend" i18n="@@pc.settings.scroll">Rolagem</legend>
+        @for (choice of scrollChoices; track choice.value) {
+          <label class="option">
+            <input
+              type="radio"
+              name="scroll-sensitivity"
+              [value]="choice.value"
+              [checked]="prefs.scrollSensitivity() === choice.value"
+              (change)="prefs.set({ scrollSensitivity: choice.value })"
+            />
+            <span class="option-label">{{ choice.label }}</span>
+          </label>
+        }
+      </fieldset>
 
-      <label class="row">
-        <span i18n="@@pc.settings.click-buttons">Botões de clique</span>
-        <input
-          type="checkbox"
-          role="switch"
-          class="ui-switch"
-          [checked]="prefs.clickButtons()"
-          (change)="onSwitch('clickButtons', $event)"
-        />
-      </label>
-
-      <label class="row">
-        <span i18n="@@pc.settings.keep-awake">Manter a tela acesa</span>
-        <input
-          type="checkbox"
-          role="switch"
-          class="ui-switch"
-          [checked]="prefs.keepAwake()"
-          (change)="onSwitch('keepAwake', $event)"
-        />
-      </label>
+      @for (item of switches; track item.name) {
+        <label class="row">
+          <span>{{ item.label }}</span>
+          <input
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="prefs[item.name]()"
+            (change)="onSwitch(item.name, $event)"
+          />
+        </label>
+      }
 
       <div class="footer">
         <button type="button" class="ui-btn" (click)="dismiss()" i18n="@@pc.settings.close">
@@ -102,6 +108,9 @@ const LABELS: Readonly<Record<PointerSensitivity, () => string>> = {
       border: 1px solid var(--a-line);
       border-radius: var(--radius);
       background: var(--a-surface);
+    }
+    .segment.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
     .legend {
       grid-column: 1 / -1;
@@ -164,6 +173,28 @@ export class PcPadSettingsSheet {
 
   protected readonly choices: readonly { value: PointerSensitivity; label: string }[] =
     POINTER_SENSITIVITIES.map((value) => ({ value, label: LABELS[value]() }));
+  protected readonly scrollChoices: readonly { value: ScrollSensitivity; label: string }[] =
+    SCROLL_SENSITIVITIES.map((value) => ({ value, label: LABELS[value]() }));
+
+  protected readonly switches: readonly { name: SwitchName; label: string }[] = (
+    [
+      { name: 'invertScroll', label: $localize`:@@pc.settings.invert:Inverter rolagem` },
+      {
+        name: 'doubleTapDrag',
+        label: $localize`:@@pc.settings.double-tap-drag:Toque duplo arrasta`,
+      },
+      {
+        name: 'middleClick',
+        label: $localize`:@@pc.settings.middle-click:Clique do meio com três dedos`,
+      },
+      { name: 'clickButtons', label: $localize`:@@pc.settings.click-buttons:Botões de clique` },
+      // O iPhone não vibra: o ajuste só aparece onde existe.
+      ...(canVibrate()
+        ? [{ name: 'haptics' as const, label: $localize`:@@pc.settings.haptics:Vibração` }]
+        : []),
+      { name: 'keepAwake', label: $localize`:@@pc.settings.keep-awake:Manter a tela acesa` },
+    ] as const
+  ).map((item) => ({ ...item }));
 
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private opener: Element | null = null;
@@ -178,7 +209,7 @@ export class PcPadSettingsSheet {
     });
   }
 
-  protected onSwitch(name: 'invertScroll' | 'clickButtons' | 'keepAwake', event: Event): void {
+  protected onSwitch(name: SwitchName, event: Event): void {
     const patch: Partial<PcPrefsValue> = { [name]: (event.target as HTMLInputElement).checked };
     this.prefs.set(patch);
   }

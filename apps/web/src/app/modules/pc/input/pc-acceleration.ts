@@ -87,6 +87,17 @@ export function accelerationFor(sensitivity: PointerSensitivity): AccelerationCo
   return SENSITIVITY_CONFIG[sensitivity];
 }
 
+/** O quanto a rolagem rende por pixel do dedo, separado da sensibilidade do ponteiro. */
+export type ScrollSensitivity = 'low' | 'normal' | 'high';
+
+export const SCROLL_SENSITIVITIES: readonly ScrollSensitivity[] = ['low', 'normal', 'high'];
+
+const SCROLL_GAIN: Readonly<Record<ScrollSensitivity, number>> = { low: 0.6, normal: 1, high: 1.6 };
+
+export function scrollGainFor(sensitivity: ScrollSensitivity): number {
+  return SCROLL_GAIN[sensitivity];
+}
+
 /** Um clique da roda do Windows, em unidades de roda. */
 export const WHEEL_UNIT = 120;
 
@@ -115,9 +126,14 @@ export class ScrollAccelerator {
     swipeY: number,
     elapsedMs: number,
     invert = false,
+    sensitivity = 1,
   ): { scrollX: number; scrollY: number } {
     const speed = Math.hypot(swipeX, swipeY) / Math.max(1, elapsedMs);
-    const unit = (WHEEL_UNIT / this.pxPerNotch) * gainFor(speed, this.config) * (invert ? -1 : 1);
+    const unit =
+      (WHEEL_UNIT / this.pxPerNotch) *
+      gainFor(speed, this.config) *
+      sensitivity *
+      (invert ? -1 : 1);
     const wantedX = swipeX * unit + this.remainderX;
     const wantedY = -swipeY * unit + this.remainderY;
     const stepX = Math.trunc(wantedX);

@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   afterNextRender,
   computed,
   effect,
@@ -13,10 +14,12 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
 import { PcPrefs } from '../data/pc-prefs';
+import { SessionState } from '../../../core/session/session-state';
 import { PcStore } from '../data/pc-store';
 import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
-import { PadButton, PadGesture } from '../input/pad-gesture';
+import { PadButton, PadGesture, PadPoint } from '../input/pad-gesture';
+import { ScrollInertia } from '../input/scroll-inertia';
 import { PcActionBar } from '../ui/action-bar';
 import { PcLiveKeyboard } from '../ui/live-keyboard';
 import { PcKeyPanel } from '../ui/key-panel';
@@ -37,6 +40,16 @@ const MAX_KEYS_IN_FLIGHT = 2;
 /** Quanto tempo a falha de uma tecla fica na tela. */
 const ERROR_MS = 4_000;
 
+/** Quanto tempo o anel de um toque fica na tela. */
+const RING_MS = 450;
+
+interface Ring {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  readonly kind: 'left' | 'right' | 'middle';
+}
+
 /**
  * A tela principal do controle do PC: a superfície do touchpad enche tudo o que sobra, e embaixo fica a barra de ações
  * (teclado, Enter, apagar, Esc, Tab, o painel de teclas e os atalhos), sempre à vista. Um dedo move o ponteiro, um toque
@@ -51,6 +64,7 @@ const ERROR_MS = 4_000;
   template: `
     <div class="stage">
       <div
+        #pad
         class="pad"
         role="group"
         aria-labelledby="pad-help"
@@ -83,6 +97,16 @@ const ERROR_MS = 4_000;
               <circle cx="12" cy="12" r="7.5" />
             </svg>
           </span>
+        }
+        @for (ring of rings(); track ring.id) {
+          <!-- O iPhone não vibra: todo toque reconhecido nasce como um anel no ponto do dedo (decorativo). -->
+          <span
+            class="ring"
+            aria-hidden="true"
+            [attr.data-kind]="ring.kind"
+            [style.left.px]="ring.x"
+            [style.top.px]="ring.y"
+          ></span>
         }
         @if (armedList().length > 0) {
           <span class="armed" role="status" [attr.aria-label]="armedLabel">
@@ -192,6 +216,12 @@ export class MousePage {
   private readonly armed = inject(PcArmed);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly session = inject(SessionState);
+  private readonly doc = inject(DOCUMENT);
+  private readonly padRef = viewChild.required<ElementRef<HTMLElement>>('pad');
+  protected readonly rings = signal<readonly Ring[]>([]);
+  private ringId = 0;
+  private readonly ringTimers = new Set<ReturnType<typeof setTimeout>>();
   protected readonly active = signal(false);
   protected readonly settingsOpen = signal(false);
   protected readonly panelOpen = signal(false);
@@ -217,14 +247,33 @@ export class MousePage {
   /** Devolve `true` quando já há teclas demais sem resposta (a repetição pula a rodada em vez de empilhar). */
   protected readonly keysBusy = () => this.keyboard().pending >= MAX_KEYS_IN_FLIGHT;
 
-  private readonly wakeLock = new ScreenWakeLock(inject(DOCUMENT));
+  private readonly wakeLock = new ScreenWakeLock(this.doc);
+
+  /**
+   * A rolagem que segue depois dos dedos saírem. Para num toque novo, ao esconder a página, ao sair da tela, ao trocar de conta
+   * e quando o PC some: depois de o dedo sair, nada pode continuar mandando entrada sem ninguém olhar.
+   */
+  private readonly inertia = new ScrollInertia({
+    frames: {
+      request: (callback) => requestAnimationFrame(callback),
+      cancel: (handle) => cancelAnimationFrame(handle),
+    },
+    scroll: (dx, dy, dt) => this.store.scrollPointer(dx, dy, dt),
+    canRun: () => this.store.canSend() && this.doc.visibilityState !== 'hidden',
+    reducedMotion: () =>
+      this.doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+  });
 
   private readonly gesture = new PadGesture({
     move: (dx, dy, elapsedMs) => this.store.movePointer(dx, dy, elapsedMs),
     scroll: (dx, dy, elapsedMs) => this.store.scrollPointer(dx, dy, elapsedMs),
-    tap: (button) => this.press(button),
+    tap: (button, at) => {
+      this.press(button);
+      this.showRing(button, at);
+    },
     dragStart: () => this.startHold(),
     dragEnd: () => this.endHold(),
+    scrollEnd: (vx, vy) => this.inertia.start(vx, vy),
   });
 
   constructor() {
@@ -237,7 +286,32 @@ export class MousePage {
       if (this.prefs.keepAwake()) this.wakeLock.start();
       else this.wakeLock.stop();
     });
+    // Os ajustes de gesto valem do próximo toque em diante, sem recarregar a tela.
+    effect(() =>
+      this.gesture.configure({
+        doubleTapDrag: this.prefs.doubleTapDrag(),
+        middleClick: this.prefs.middleClick(),
+      }),
+    );
+    // Com outra conta, ou sem PC, a rolagem que seguia sozinha para.
+    effect(() => {
+      this.session.accountId();
+      this.inertia.stop();
+    });
+    effect(() => {
+      if (!this.store.canSend()) this.inertia.stop();
+    });
+    const hide = () => this.inertia.stop();
+    const onVisibility = () => {
+      if (this.doc.visibilityState === 'hidden') hide();
+    };
+    this.doc.addEventListener('visibilitychange', onVisibility);
+    this.doc.defaultView?.addEventListener('pagehide', hide);
     inject(DestroyRef).onDestroy(() => {
+      this.doc.removeEventListener('visibilitychange', onVisibility);
+      this.doc.defaultView?.removeEventListener('pagehide', hide);
+      this.inertia.stop();
+      this.ringTimers.forEach((timer) => clearTimeout(timer));
       this.wakeLock.stop();
       clearTimeout(this.errorTimer);
       // Cancelar solta o que uma pressão longa segurava; o resto (o "Arrastar") o store solta aqui.
@@ -253,7 +327,13 @@ export class MousePage {
 
   protected onDown(event: PointerEvent): void {
     if (!this.store.canSend()) return;
-    (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+    // Um toque novo para a rolagem que seguia sozinha, na hora.
+    this.inertia.stop();
+    try {
+      (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+    } catch {
+      // o ponteiro já acabou (ou não é um dedo de verdade): o gesto segue sem a captura
+    }
     if (!this.prefs.hintSeen()) this.prefs.set({ hintSeen: true });
     if (!this.gesture.active) this.store.beginGesture();
     this.active.set(true);
@@ -276,6 +356,7 @@ export class MousePage {
    * depois de cada dedo que sai, e cancelaria o segundo dedo no meio do toque de dois dedos.
    */
   protected onCancel(): void {
+    this.inertia.stop();
     this.gesture.cancel();
     this.finish();
   }
@@ -359,6 +440,23 @@ export class MousePage {
     // Um aperto mais novo (o botão "Arrastar" tocado enquanto o dedo ainda estava na tela) não é deste dedo.
     if (this.store.pressEpoch !== this.holdEpoch) return;
     void this.store.release({ persistent: true });
+  }
+
+  /** O anel do toque: aparece no ponto do dedo e some sozinho (o iOS não vibra, então é a resposta de todo toque). */
+  private showRing(button: PadButton, at: PadPoint): void {
+    const box = this.padRef().nativeElement.getBoundingClientRect();
+    const ring: Ring = {
+      id: ++this.ringId,
+      x: at.x - box.left,
+      y: at.y - box.top,
+      kind: button === 'RIGHT' ? 'right' : button === 'MIDDLE' ? 'middle' : 'left',
+    };
+    this.rings.update((current) => [...current, ring]);
+    const timer = setTimeout(() => {
+      this.ringTimers.delete(timer);
+      this.rings.update((current) => current.filter((item) => item.id !== ring.id));
+    }, RING_MS);
+    this.ringTimers.add(timer);
   }
 
   private finish(): void {

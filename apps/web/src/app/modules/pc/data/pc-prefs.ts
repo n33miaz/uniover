@@ -1,13 +1,27 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, computed, inject, linkedSignal } from '@angular/core';
+import { Injectable, computed, effect, inject, linkedSignal } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
-import { POINTER_SENSITIVITIES, type PointerSensitivity } from '../input/pc-acceleration';
+import { setHapticsEnabled } from '../input/haptics';
+import {
+  POINTER_SENSITIVITIES,
+  SCROLL_SENSITIVITIES,
+  type PointerSensitivity,
+  type ScrollSensitivity,
+} from '../input/pc-acceleration';
 
 export interface PcPrefsValue {
   /** Quanto o ponteiro anda por pixel do dedo; o padrão é 1 para 1, sem curva própria (o Windows já acelera). */
   readonly sensitivity: PointerSensitivity;
+  /** O quanto a rolagem de dois dedos rende por pixel (separado da sensibilidade do ponteiro). */
+  readonly scrollSensitivity: ScrollSensitivity;
   /** Rolagem "natural" (como no celular): o conteúdo acompanha o dedo. */
   readonly invertScroll: boolean;
+  /** Arrastar com toque duplo: tocar de novo logo depois de um toque e andar segura o botão esquerdo. */
+  readonly doubleTapDrag: boolean;
+  /** Um toque curto de três dedos é o clique do meio. */
+  readonly middleClick: boolean;
+  /** Vibração curta nos toques (só onde o aparelho vibra). */
+  readonly haptics: boolean;
   /** Mostra os botões Esquerdo, Arrastar e Direito embaixo da superfície (para quem não usa os gestos). */
   readonly clickButtons: boolean;
   /** Mantém a tela do aparelho acesa enquanto o touchpad está aberto. */
@@ -18,7 +32,11 @@ export interface PcPrefsValue {
 
 export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   sensitivity: 'normal',
+  scrollSensitivity: 'normal',
   invertScroll: false,
+  doubleTapDrag: false,
+  middleClick: true,
+  haptics: true,
   clickButtons: false,
   keepAwake: true,
   hintSeen: false,
@@ -35,16 +53,27 @@ export function pcPrefsStorageKey(accountId: string): string {
  * Valida o que veio do armazenamento campo a campo: um valor estragado, ou um campo que a versão guardada ainda não
  * tinha, volta ao padrão sem derrubar o outro.
  */
+type BooleanPref = {
+  [K in keyof PcPrefsValue]: PcPrefsValue[K] extends boolean ? K : never;
+}[keyof PcPrefsValue];
+
 function parsePrefs(raw: unknown): PcPrefsValue {
   const stored = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const flag = (name: Exclude<keyof PcPrefsValue, 'sensitivity'>): boolean => {
+  const flag = (name: BooleanPref): boolean => {
     const found = stored[name];
     return typeof found === 'boolean' ? found : PC_PREFS_DEFAULTS[name];
   };
   const sensitivity = POINTER_SENSITIVITIES.find((item) => item === stored['sensitivity']);
+  const scrollSensitivity = SCROLL_SENSITIVITIES.find(
+    (item) => item === stored['scrollSensitivity'],
+  );
   return {
     sensitivity: sensitivity ?? PC_PREFS_DEFAULTS.sensitivity,
+    scrollSensitivity: scrollSensitivity ?? PC_PREFS_DEFAULTS.scrollSensitivity,
     invertScroll: flag('invertScroll'),
+    doubleTapDrag: flag('doubleTapDrag'),
+    middleClick: flag('middleClick'),
+    haptics: flag('haptics'),
     clickButtons: flag('clickButtons'),
     keepAwake: flag('keepAwake'),
     hintSeen: flag('hintSeen'),
@@ -54,7 +83,11 @@ function parsePrefs(raw: unknown): PcPrefsValue {
 /** As escolhas que a pessoa faz de propósito (a dica já vista não conta como escolha). */
 const CHOICES = [
   'sensitivity',
+  'scrollSensitivity',
   'invertScroll',
+  'doubleTapDrag',
+  'middleClick',
+  'haptics',
   'clickButtons',
   'keepAwake',
 ] as const satisfies readonly (keyof PcPrefsValue)[];
@@ -74,7 +107,11 @@ export class PcPrefs {
   });
 
   readonly sensitivity = computed(() => this.value().sensitivity);
+  readonly scrollSensitivity = computed(() => this.value().scrollSensitivity);
   readonly invertScroll = computed(() => this.value().invertScroll);
+  readonly doubleTapDrag = computed(() => this.value().doubleTapDrag);
+  readonly middleClick = computed(() => this.value().middleClick);
+  readonly haptics = computed(() => this.value().haptics);
   readonly clickButtons = computed(() => this.value().clickButtons);
   readonly keepAwake = computed(() => this.value().keepAwake);
   readonly hintSeen = computed(() => this.value().hintSeen);
@@ -82,6 +119,11 @@ export class PcPrefs {
   readonly customized = computed(() =>
     CHOICES.some((name) => this.value()[name] !== PC_PREFS_DEFAULTS[name]),
   );
+
+  constructor() {
+    // A vibração é um interruptor do módulo (os toques chamam `tick()` de todo lado): o ajuste o liga e desliga.
+    effect(() => setHapticsEnabled(this.haptics()));
+  }
 
   set(patch: Partial<PcPrefsValue>): void {
     const next = parsePrefs({ ...this.value(), ...patch });

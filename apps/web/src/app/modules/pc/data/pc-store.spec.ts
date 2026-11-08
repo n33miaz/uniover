@@ -736,6 +736,26 @@ describe('PcStore pointer preferences', () => {
     expect(inverted).toBe(-natural);
   });
 
+  it('the scroll sensitivity scales how far the same swipe scrolls', async () => {
+    const { store, api } = setup();
+    const prefs = TestBed.inject(PcPrefs);
+    const scrolled = async (index: number) => {
+      store.beginGesture();
+      store.scrollPointer(0, 40, 400);
+      await flush();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return Math.abs((api.pointer.mock.calls[index] as unknown as number[])[3]);
+    };
+    prefs.set({ scrollSensitivity: 'low' });
+    const low = await scrolled(0);
+    prefs.set({ scrollSensitivity: 'normal' });
+    const normal = await scrolled(1);
+    prefs.set({ scrollSensitivity: 'high' });
+    const high = await scrolled(2);
+    expect(low).toBeLessThan(normal);
+    expect(normal).toBeLessThan(high);
+  });
+
   it('a faster swipe scrolls farther than the same swipe done slowly', async () => {
     const { store, api } = setup();
     store.beginGesture();
@@ -748,6 +768,58 @@ describe('PcStore pointer preferences', () => {
     const slow = (api.pointer.mock.calls[0] as unknown as number[])[3];
     const fast = (api.pointer.mock.calls[1] as unknown as number[])[3];
     expect(Math.abs(fast)).toBeGreaterThan(Math.abs(slow));
+  });
+});
+
+describe('PcStore press after a click', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('the press of the button waits for the click that was already on its way (a double-tap drag never lets the click land after the DOWN)', async () => {
+    const { store, api } = setup();
+    let answerClick: () => void = () => undefined;
+    api.click.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          answerClick = resolve;
+        }),
+    );
+    void store.click('LEFT');
+    await flush();
+    expect(api.click).toHaveBeenCalledTimes(1);
+    const started = store.startDrag();
+    await flush();
+    // O DOWN ainda espera: o clique não respondeu.
+    expect(api.click).toHaveBeenCalledTimes(1);
+    answerClick();
+    await started;
+    expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual([undefined, 'DOWN']);
+    await store.release();
+  });
+
+  it('a click that never answers does not hold the press forever', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api } = setup();
+      api.click.mockImplementationOnce(() => new Promise<void>(() => undefined));
+      void store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(0);
+      const started = store.startDrag();
+      await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS + 10);
+      await started;
+      expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+        undefined,
+        'DOWN',
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('with no click in flight the press goes out at once', async () => {
+    const { store, api } = setup();
+    await store.startDrag();
+    expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual(['DOWN']);
+    await store.release();
   });
 });
 

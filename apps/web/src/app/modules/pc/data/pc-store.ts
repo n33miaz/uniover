@@ -2,7 +2,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { PcAvailability } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
-import { PointerAccelerator, ScrollAccelerator, accelerationFor } from '../input/pc-acceleration';
+import {
+  PointerAccelerator,
+  ScrollAccelerator,
+  accelerationFor,
+  scrollGainFor,
+} from '../input/pc-acceleration';
 import { PointerBatch, PointerBatcher } from '../input/pointer-batcher';
 import { PcApi } from './pc-api';
 import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
@@ -133,6 +138,9 @@ export class PcStore {
   /** A página foi escondida nesse meio tempo: o `UP` que segue o `DOWN` leva `keepalive`. */
   private releaseKeepalive = false;
 
+  /** Os cliques pedidos e ainda sem resposta (o aperto do botão não passa na frente deles). */
+  private readonly clicks = new Set<Promise<unknown>>();
+
   /** Aviso de toque abandonado ainda na tela: um movimento que dá certo não o apaga (só o tempo ou uma falha mais nova). */
   private stickyNotice: PcFailure | null = null;
 
@@ -242,12 +250,18 @@ export class PcStore {
 
   /**
    * Deslize de dois dedos em pixels do centro; `elapsedMs` é o tempo desde o passo anterior (com o dedo veloz rola mais).
-   * O sentido segue a escolha "inverter rolagem".
+   * O sentido segue a escolha "inverter rolagem" e o quanto rende, a "sensibilidade da rolagem".
    */
   scrollPointer(dx: number, dy: number, elapsedMs = 16): void {
     this.syncAccount();
     if (!this.canSend()) return;
-    const wheel = this.scroller.apply(dx, dy, elapsedMs, this.prefs.invertScroll());
+    const wheel = this.scroller.apply(
+      dx,
+      dy,
+      elapsedMs,
+      this.prefs.invertScroll(),
+      scrollGainFor(this.prefs.scrollSensitivity()),
+    );
     if (wheel.scrollX !== 0 || wheel.scrollY !== 0) {
       this.batcher.addScroll(wheel.scrollX, wheel.scrollY);
     }
@@ -258,7 +272,20 @@ export class PcStore {
    * HTTP independentes, e um clique que os ultrapassasse cairia no lugar errado), por até `MOVE_SETTLE_MS`. Passou disso o
    * clique é abandonado com um aviso, e nunca sai tarde. A espera só custa o clique, nunca o movimento.
    */
-  async click(
+  click(
+    button: PcClickButton,
+    action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
+  ): Promise<PcFailure | null> {
+    // O aperto do botão (arrastar) espera os cliques que já saíram: um toque e, logo depois, o arrasto do toque duplo são
+    // pedidos independentes, e um clique que chegasse depois do `DOWN` soltaria o botão.
+    const sending = this.sendClick(button, action);
+    this.clicks.add(sending);
+    const forget = () => void this.clicks.delete(sending);
+    void sending.then(forget, forget);
+    return sending;
+  }
+
+  private async sendClick(
     button: PcClickButton,
     action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
   ): Promise<PcFailure | null> {
@@ -317,6 +344,8 @@ export class PcStore {
       // O movimento feito depois fica retido já daqui (e até o aperto confirmar): o ponteiro só anda com o botão apertado.
       this.batcher.hold();
       if (!(await this.settleMoves())) return this.abandoned();
+      // Os cliques que já saíram terminam antes do aperto (por até o mesmo prazo): o botão nunca é apertado por trás deles.
+      await this.settleClicks();
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return CANCELLED;
       // Pediram para soltar enquanto o movimento saía: apertar agora só para soltar é desperdício, e arriscado.
@@ -442,6 +471,20 @@ export class PcStore {
     });
     try {
       return await Promise.race([this.batcher.settleNow().then(() => true), giveUp]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Espera os cliques que existem agora terminarem, por no máximo `MOVE_SETTLE_MS`. */
+  private async settleClicks(): Promise<void> {
+    if (this.clicks.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const giveUp = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, MOVE_SETTLE_MS);
+    });
+    try {
+      await Promise.race([Promise.allSettled([...this.clicks]), giveUp]);
     } finally {
       clearTimeout(timer);
     }

@@ -247,8 +247,9 @@ test.describe('Mouse', () => {
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole('radio', { name: 'Normal' })).toBeChecked();
-    await sheet.getByRole('radio', { name: 'Alta' }).check();
+    const pointerLevels = sheet.getByRole('group', { name: 'Sensibilidade' });
+    await expect(pointerLevels.getByRole('radio', { name: 'Normal' })).toBeChecked();
+    await pointerLevels.getByRole('radio', { name: 'Alta' }).check();
     await sheet.getByRole('switch', { name: 'Inverter rolagem' }).check();
     await sheet.getByRole('button', { name: 'Fechar' }).click();
     await expect(sheet).toHaveCount(0);
@@ -267,7 +268,9 @@ test.describe('Mouse', () => {
     await expect(status(page)).toHaveText('Conectado');
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const again = page.getByRole('dialog', { name: 'Ajustes' });
-    await expect(again.getByRole('radio', { name: 'Alta' })).toBeChecked();
+    await expect(
+      again.getByRole('group', { name: 'Sensibilidade' }).getByRole('radio', { name: 'Alta' }),
+    ).toBeChecked();
     await expect(again.getByRole('switch', { name: 'Inverter rolagem' })).toBeChecked();
   });
 
@@ -483,6 +486,284 @@ test.describe('Tela do mouse', () => {
     await page.reload();
     await expect(status(page)).toHaveText('Conectado');
     await expect(page.locator('.hints')).toHaveCount(0);
+  });
+});
+
+/** Um passo de dedo sintético: `down`, `move` ou `up` do dedo `id`, na posição dada, depois de `wait` ms. */
+interface FingerStep {
+  readonly type: 'down' | 'move' | 'up';
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  readonly wait?: number;
+}
+
+/**
+ * Dedos de verdade são eventos de ponteiro com números diferentes; o Playwright só tem um mouse. Isto manda os mesmos
+ * eventos que o navegador mandaria para dois ou três dedos no touchpad.
+ */
+async function fingers(page: Page, steps: readonly FingerStep[]) {
+  await page.evaluate(async (list) => {
+    const pad = document.querySelector('.pad')!;
+    for (const step of list) {
+      if (step.wait) await new Promise((resolve) => setTimeout(resolve, step.wait));
+      pad.dispatchEvent(
+        new PointerEvent(`pointer${step.type}`, {
+          pointerId: step.id,
+          pointerType: 'touch',
+          isPrimary: step.id === 1,
+          clientX: step.x,
+          clientY: step.y,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+  }, steps);
+}
+
+test.describe('Gestos', () => {
+  const clicks = () => pc.sent('/click');
+
+  test('um toque clica e deixa um anel onde o dedo estava; o anel some sozinho', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    await tap(page, x, y);
+    await expect.poll(clicks).toEqual([{ button: 'LEFT' }]);
+    await expect(page.locator('.ring[data-kind="left"]')).toBeVisible();
+    await expect(page.locator('.ring')).toHaveCount(0);
+  });
+
+  test('o toque de dois dedos é o clique direito, e o de três é o do meio', async ({ page }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x: x - 30, y },
+      { type: 'down', id: 2, x: x + 30, y },
+      { type: 'up', id: 1, x: x - 30, y, wait: 40 },
+      { type: 'up', id: 2, x: x + 30, y },
+    ]);
+    await expect.poll(clicks).toEqual([{ button: 'RIGHT' }]);
+    await expect(page.locator('.ring[data-kind="right"]')).toBeVisible();
+
+    await fingers(page, [
+      { type: 'down', id: 1, x: x - 50, y },
+      { type: 'down', id: 2, x, y },
+      { type: 'down', id: 3, x: x + 50, y },
+      { type: 'up', id: 1, x: x - 50, y, wait: 40 },
+      { type: 'up', id: 2, x, y },
+      { type: 'up', id: 3, x: x + 50, y },
+    ]);
+    await expect.poll(clicks).toEqual([{ button: 'RIGHT' }, { button: 'MIDDLE' }]);
+    await expect(page.locator('.ring[data-kind="middle"]')).toBeVisible();
+  });
+
+  test('o clique do meio com três dedos se desliga nos ajustes', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('switch', { name: 'Clique do meio com três dedos' }).uncheck();
+    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x: x - 50, y },
+      { type: 'down', id: 2, x, y },
+      { type: 'down', id: 3, x: x + 50, y },
+      { type: 'up', id: 1, x: x - 50, y, wait: 40 },
+      { type: 'up', id: 2, x, y },
+      { type: 'up', id: 3, x: x + 50, y },
+    ]);
+    await page.waitForTimeout(200);
+    expect(clicks()).toEqual([]);
+  });
+
+  test('o dedo parado aperta o botão só depois de 450 ms, e antes disso nada sai', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(300);
+    expect(clicks()).toEqual([]);
+    await expect(page.locator('.pad.holding')).toBeVisible();
+    await expect.poll(clicks).toEqual([{ button: 'LEFT', action: 'DOWN' }]);
+    await page.mouse.up();
+    await expect.poll(() => clicks().map((body) => body['action'])).toEqual(['DOWN', 'UP']);
+  });
+
+  test('arrastar com toque duplo: o toque clica, o segundo toque andando aperta, e soltar solta', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('switch', { name: 'Toque duplo arrasta' }).check();
+    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await expect(sheet).toHaveCount(0);
+
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x, y },
+      { type: 'up', id: 1, x, y, wait: 50 },
+      { type: 'down', id: 1, x: x + 2, y, wait: 120 },
+      { type: 'move', id: 1, x: x + 30, y, wait: 16 },
+      { type: 'move', id: 1, x: x + 60, y: y + 10, wait: 16 },
+      { type: 'move', id: 1, x: x + 90, y: y + 20, wait: 16 },
+      { type: 'up', id: 1, x: x + 90, y: y + 20, wait: 16 },
+    ]);
+    await expect
+      .poll(() => clicks())
+      .toEqual([
+        { button: 'LEFT' },
+        { button: 'LEFT', action: 'DOWN' },
+        { button: 'LEFT', action: 'UP' },
+      ]);
+    const moved = pc.sent('/pointer').reduce((sum, body) => sum + Number(body['dx']), 0);
+    expect(moved).toBeGreaterThanOrEqual(80);
+  });
+
+  test('sem a opção ligada, o segundo toque andando só move o ponteiro', async ({ page }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x, y },
+      { type: 'up', id: 1, x, y, wait: 50 },
+      { type: 'down', id: 1, x: x + 2, y, wait: 120 },
+      { type: 'move', id: 1, x: x + 40, y, wait: 16 },
+      { type: 'up', id: 1, x: x + 40, y, wait: 16 },
+    ]);
+    await expect.poll(() => pc.sent('/pointer').length).toBeGreaterThan(0);
+    expect(clicks()).toEqual([{ button: 'LEFT' }]);
+  });
+
+  test('a rolagem de dois dedos trava no eixo: só sobe e desce, mesmo com o dedo torto', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - 30, y },
+      { type: 'down', id: 2, x: x + 30, y },
+    ];
+    for (let step = 1; step <= 8; step++) {
+      // Principalmente vertical, com uma deriva para o lado.
+      const dx = step * 3;
+      const dy = step * 14;
+      steps.push({ type: 'move', id: 1, x: x - 30 + dx, y: y + dy, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + 30 + dx, y: y + dy });
+    }
+    steps.push({ type: 'up', id: 1, x: x - 30, y: y + 112, wait: 200 });
+    steps.push({ type: 'up', id: 2, x: x + 30, y: y + 112 });
+    await fingers(page, steps);
+    await expect.poll(() => pc.sent('/pointer').length).toBeGreaterThan(0);
+    const bodies = pc.sent('/pointer');
+    expect(bodies.some((body) => Number(body['scrollY']) !== 0)).toBe(true);
+    expect(bodies.every((body) => body['scrollX'] === undefined)).toBe(true);
+    // Rolagem não move o ponteiro.
+    expect(bodies.every((body) => Number(body['dx']) === 0 && Number(body['dy']) === 0)).toBe(true);
+  });
+
+  test('um gesto rápido segue rolando depois dos dedos saírem, e um toque novo para', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - 30, y: y - 150 },
+      { type: 'down', id: 2, x: x + 30, y: y - 150 },
+    ];
+    for (let step = 1; step <= 8; step++) {
+      steps.push({ type: 'move', id: 1, x: x - 30, y: y - 150 + step * 32, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + 30, y: y - 150 + step * 32 });
+    }
+    steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
+    steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
+    await fingers(page, steps);
+    const scrolled = () =>
+      pc.sent('/pointer').reduce((sum, body) => sum + Math.abs(Number(body['scrollY'] ?? 0)), 0);
+    await page.waitForTimeout(60);
+    const atRelease = scrolled();
+    // Os dedos já saíram, e a rolagem continua.
+    await expect.poll(scrolled).toBeGreaterThan(atRelease);
+    await page.waitForTimeout(150);
+    // Um toque novo para na hora: depois dele nada mais rola.
+    await fingers(page, [{ type: 'down', id: 1, x, y }]);
+    await page.waitForTimeout(80);
+    const afterTouch = scrolled();
+    await page.waitForTimeout(300);
+    expect(scrolled()).toBe(afterTouch);
+    await fingers(page, [{ type: 'up', id: 1, x, y }]);
+  });
+
+  test('a rolagem que segue sozinha para quando a página vai para o segundo plano', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - 30, y: y - 150 },
+      { type: 'down', id: 2, x: x + 30, y: y - 150 },
+    ];
+    for (let step = 1; step <= 8; step++) {
+      steps.push({ type: 'move', id: 1, x: x - 30, y: y - 150 + step * 32, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + 30, y: y - 150 + step * 32 });
+    }
+    steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
+    steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
+    await fingers(page, steps);
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await page.waitForTimeout(100);
+    const scrolled = () => pc.sent('/pointer').length;
+    const after = scrolled();
+    await page.waitForTimeout(400);
+    expect(scrolled()).toBe(after);
+  });
+
+  test('com "reduzir movimento" a rolagem não segue sozinha', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - 30, y: y - 150 },
+      { type: 'down', id: 2, x: x + 30, y: y - 150 },
+    ];
+    for (let step = 1; step <= 8; step++) {
+      steps.push({ type: 'move', id: 1, x: x - 30, y: y - 150 + step * 32, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + 30, y: y - 150 + step * 32 });
+    }
+    steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
+    steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
+    await fingers(page, steps);
+    await page.waitForTimeout(150);
+    const settled = pc.sent('/pointer').length;
+    await page.waitForTimeout(400);
+    expect(pc.sent('/pointer').length).toBe(settled);
+  });
+
+  test('os ajustes novos ficam guardados neste aparelho', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet
+      .getByRole('group', { name: 'Rolagem' })
+      .getByRole('radio', { name: 'Alta' })
+      .check();
+    await sheet.getByRole('switch', { name: 'Toque duplo arrasta' }).check();
+    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await page.reload();
+    await expect(status(page)).toHaveText('Conectado');
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const again = page.getByRole('dialog', { name: 'Ajustes' });
+    await expect(
+      again.getByRole('group', { name: 'Rolagem' }).getByRole('radio', { name: 'Alta' }),
+    ).toBeChecked();
+    await expect(again.getByRole('switch', { name: 'Toque duplo arrasta' })).toBeChecked();
+    await expect(
+      again.getByRole('switch', { name: 'Clique do meio com três dedos' }),
+    ).toBeChecked();
   });
 });
 

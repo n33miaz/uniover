@@ -155,7 +155,7 @@ describe('MousePage', () => {
 
     it('a finger held still presses the left button and lifting it releases, with no click', () => {
       pointer('pointerdown', 1, 100, 100, 0);
-      vi.advanceTimersByTime(599);
+      vi.advanceTimersByTime(LONG_PRESS_MS - 1);
       expect(store.startDrag).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
       expect(store.startDrag).toHaveBeenCalledTimes(1);
@@ -552,6 +552,227 @@ describe('MousePage', () => {
 
     it('fills the screen: the shell reads this from the page', () => {
       expect(fixture.componentInstance.fillsScreen).toBe(true);
+    });
+  });
+
+  describe('smart gestures', () => {
+    let frames: Map<number, FrameRequestCallback>;
+    let nextFrame: number;
+
+    beforeEach(() => {
+      frames = new Map();
+      nextFrame = 1;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(nextFrame, callback);
+        return nextFrame++;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (handle: number) => {
+        frames.delete(handle);
+      });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      Reflect.deleteProperty(window, 'matchMedia');
+    });
+
+    /**
+     * Roda os quadros de animação pedidos até agora, 16 ms depois uns dos outros. O Angular também pede quadros: o que conta é
+     * se a rolagem foi enviada ao PC (ou não).
+     */
+    let clock = 1_000;
+    function runFrames(rounds = 1) {
+      for (let round = 0; round < rounds; round++) {
+        clock += 16;
+        const due = [...frames];
+        frames.clear();
+        for (const [, callback] of due) callback(clock);
+      }
+    }
+
+    /** Dois dedos que sobem andando rápido: a rolagem sai com velocidade. */
+    function flick() {
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerdown', 2, 140, 100, 0);
+      let y = 100;
+      let time = 0;
+      for (let step = 0; step < 6; step++) {
+        y += 32;
+        time += 16;
+        pointer('pointermove', 1, 100, y, time);
+        pointer('pointermove', 2, 140, y, time);
+      }
+      pointer('pointerup', 1, 100, y, time + 4);
+      pointer('pointerup', 2, 140, y, time + 4);
+    }
+
+    it('a quick flick of two fingers keeps scrolling after they leave, a frame at a time', () => {
+      flick();
+      store.scrollPointer.mockClear();
+      runFrames(2);
+      expect(store.scrollPointer).toHaveBeenCalledTimes(2);
+      const [dx, dy, dt] = store.scrollPointer.mock.calls[0];
+      expect(dx).toBe(0);
+      expect(dy).toBeGreaterThan(0);
+      expect(dt).toBe(16);
+    });
+
+    it('a slow exit does not glide', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerdown', 2, 140, 100, 0);
+      pointer('pointermove', 1, 100, 120, 100);
+      pointer('pointermove', 2, 140, 120, 100);
+      pointer('pointerup', 1, 100, 120, 104);
+      pointer('pointerup', 2, 140, 120, 104);
+      store.scrollPointer.mockClear();
+      runFrames(3);
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('a new touch stops the glide at once', () => {
+      flick();
+      store.scrollPointer.mockClear();
+      pointer('pointerdown', 1, 100, 100, 5_000);
+      runFrames(3);
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('hiding the page stops it', () => {
+      flick();
+      store.scrollPointer.mockClear();
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      runFrames(3);
+      Reflect.deleteProperty(document, 'visibilityState');
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('pagehide stops it', () => {
+      flick();
+      store.scrollPointer.mockClear();
+      window.dispatchEvent(new Event('pagehide'));
+      runFrames(3);
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('leaving the screen stops it', () => {
+      flick();
+      store.scrollPointer.mockClear();
+      fixture.destroy();
+      runFrames(3);
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('the PC going away stops it, and no frame sends anything', () => {
+      flick();
+      store.scrollPointer.mockClear();
+      store.phase.set('offline');
+      fixture.detectChanges();
+      TestBed.tick();
+      runFrames(3);
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('does not exist for someone who asked to reduce motion', () => {
+      Object.defineProperty(window, 'matchMedia', {
+        value: () => ({ matches: true }),
+        configurable: true,
+      });
+      flick();
+      store.scrollPointer.mockClear();
+      runFrames(3);
+      expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    it('three fingers tapping click with the middle button', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerdown', 2, 140, 100, 5);
+      pointer('pointerdown', 3, 180, 100, 10);
+      pointer('pointerup', 1, 100, 100, 70);
+      pointer('pointerup', 2, 140, 100, 75);
+      pointer('pointerup', 3, 180, 100, 80);
+      expect(store.click).toHaveBeenCalledExactlyOnceWith('MIDDLE');
+    });
+
+    it('the middle click can be turned off in the settings', () => {
+      prefs.set({ middleClick: false });
+      TestBed.tick();
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerdown', 2, 140, 100, 5);
+      pointer('pointerdown', 3, 180, 100, 10);
+      pointer('pointerup', 1, 100, 100, 70);
+      pointer('pointerup', 2, 140, 100, 75);
+      pointer('pointerup', 3, 180, 100, 80);
+      expect(store.click).not.toHaveBeenCalled();
+    });
+
+    it('a tap draws a ring where the finger was, and it goes away by itself', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        vi.spyOn(pad(), 'getBoundingClientRect').mockReturnValue({
+          left: 10,
+          top: 20,
+        } as DOMRect);
+        pointer('pointerdown', 1, 110, 220, 0);
+        pointer('pointerup', 1, 110, 220, 60);
+        fixture.detectChanges();
+        const ring = root.querySelector<HTMLElement>('.ring')!;
+        expect(ring.dataset['kind']).toBe('left');
+        expect(ring.getAttribute('aria-hidden')).toBe('true');
+        expect(ring.style.left).toBe('100px');
+        expect(ring.style.top).toBe('200px');
+        vi.advanceTimersByTime(600);
+        fixture.detectChanges();
+        expect(root.querySelector('.ring')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('two fingers draw the right ring, three the middle one', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerdown', 2, 140, 100, 5);
+      pointer('pointerup', 1, 100, 100, 60);
+      pointer('pointerup', 2, 140, 100, 65);
+      fixture.detectChanges();
+      expect(root.querySelector<HTMLElement>('.ring')?.dataset['kind']).toBe('right');
+    });
+
+    it('a scroll or a move draws no ring', () => {
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointermove', 1, 160, 100, 16);
+      pointer('pointerup', 1, 160, 100, 32);
+      fixture.detectChanges();
+      expect(root.querySelector('.ring')).toBeNull();
+    });
+
+    describe('double tap and drag', () => {
+      beforeEach(() => {
+        prefs.set({ doubleTapDrag: true });
+        TestBed.tick();
+      });
+
+      it('the first tap clicks, the second touch walking presses the button, and lifting releases', () => {
+        pointer('pointerdown', 1, 100, 100, 0);
+        pointer('pointerup', 1, 100, 100, 60);
+        expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+        pointer('pointerdown', 1, 102, 100, 200);
+        pointer('pointermove', 1, 150, 100, 230);
+        expect(store.startDrag).toHaveBeenCalledTimes(1);
+        expect(store.movePointer).toHaveBeenCalledWith(48, 0, 30);
+        pointer('pointerup', 1, 150, 100, 260);
+        expect(store.release).toHaveBeenCalledExactlyOnceWith({ persistent: true });
+        expect(store.click).toHaveBeenCalledTimes(1);
+      });
+
+      it('is off by default', () => {
+        prefs.set({ doubleTapDrag: false });
+        TestBed.tick();
+        pointer('pointerdown', 1, 100, 100, 0);
+        pointer('pointerup', 1, 100, 100, 60);
+        pointer('pointerdown', 1, 102, 100, 200);
+        pointer('pointermove', 1, 150, 100, 230);
+        expect(store.startDrag).not.toHaveBeenCalled();
+      });
     });
   });
 });

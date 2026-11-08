@@ -39,7 +39,9 @@ describe('PcPadSettingsSheet', () => {
 
   it('opens as a modal and offers the four sensitivities, Normal being the one on', () => {
     expect(root.querySelector('dialog')?.hasAttribute('open')).toBe(true);
-    const labels = [...root.querySelectorAll('.option')].map((item) => item.textContent?.trim());
+    const labels = [...root.querySelectorAll('.segment:not(.three) .option')].map((item) =>
+      item.textContent?.trim(),
+    );
     expect(labels).toEqual(['Baixa', 'Normal', 'Alta', 'Acelerada']);
     expect(option('Normal').checked).toBe(true);
     expect(invert().checked).toBe(false);
@@ -67,6 +69,29 @@ describe('PcPadSettingsSheet', () => {
     switchOf('Manter a tela acesa').click();
     expect(prefs.clickButtons()).toBe(true);
     expect(prefs.keepAwake()).toBe(false);
+  });
+
+  it('the scroll has its own three levels, separate from the pointer', () => {
+    const scroll = [...root.querySelectorAll<HTMLInputElement>('input[name="scroll-sensitivity"]')];
+    expect(scroll).toHaveLength(3);
+    expect(scroll[1].checked).toBe(true);
+    scroll[2].click();
+    expect(prefs.scrollSensitivity()).toBe('high');
+    expect(prefs.sensitivity()).toBe('normal');
+  });
+
+  it('the gesture switches apply at once: double-tap drag is off, the middle click is on', () => {
+    expect(switchOf('Toque duplo arrasta').checked).toBe(false);
+    expect(switchOf('Clique do meio com três dedos').checked).toBe(true);
+    switchOf('Toque duplo arrasta').click();
+    switchOf('Clique do meio com três dedos').click();
+    expect(prefs.doubleTapDrag()).toBe(true);
+    expect(prefs.middleClick()).toBe(false);
+  });
+
+  it('has no vibration switch where the device cannot vibrate (iPhone)', () => {
+    const labels = [...root.querySelectorAll('label.row')].map((row) => row.textContent?.trim());
+    expect(labels).not.toContain('Vibração');
   });
 
   it('is titled Settings', () => {
