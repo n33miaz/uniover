@@ -1,0 +1,47 @@
+<div class="guide" [attr.data-screen-ready]="'tv-offline-guide'">
+  <section class="case ui-card ui-rise" aria-labelledby="offline-a">
+    <h2 id="offline-a" i18n="@@tv.offline.a.title">Só a internet caiu</h2>
+    <p class="when" i18n="@@tv.offline.a.when">O Wi-Fi de casa funciona, mas sem internet.</p>
+    <ol class="lines">
+      <li i18n="@@tv.offline.a.step1">Ligue o celular ao PC por cabo USB.</li>
+      <li i18n="@@tv.offline.a.step2">No celular, ative o compartilhamento de internet por USB.</li>
+      <li i18n="@@tv.offline.a.step3">Deixe o PC no Wi-Fi de casa.</li>
+    </ol>
+  </section>
+
+  <section class="case ui-card ui-rise" aria-labelledby="offline-b">
+    <h2 id="offline-b" i18n="@@tv.offline.b.title">O roteador desligou</h2>
+    <p class="when" i18n="@@tv.offline.b.when">A TV e o PC ficam sem Wi-Fi.</p>
+    <ol class="lines">
+      <li i18n="@@tv.offline.b.step1">
+        Crie no celular uma rede com o mesmo nome e a mesma senha do Wi-Fi de casa.
+      </li>
+      <li i18n="@@tv.offline.b.step2">A TV e o PC entram sozinhos.</li>
+      <li i18n="@@tv.offline.b.step3">Quando o roteador voltar, desligue a rede do celular.</li>
+    </ol>
+    <p class="phone">
+      <strong i18n="@@tv.offline.b.iphone-label">iPhone:</strong>
+      <span i18n="@@tv.offline.b.iphone"
+        >o nome da rede é o nome do aparelho (Ajustes, Geral, Sobre, Nome). A senha fica em
+        Compartilhamento de Internet.</span
+      >
+    </p>
+    <p class="phone">
+      <strong i18n="@@tv.offline.b.android-label">Android:</strong>
+      <span i18n="@@tv.offline.b.android">Configurações, Ponto de acesso, nome e senha.</span>
+    </p>
+  </section>
+
+  <section class="case ui-card ui-rise" aria-labelledby="offline-prep">
+    <h2 id="offline-prep" i18n="@@tv.offline.prep.title">Deixe preparado</h2>
+    <ul class="lines">
+      <li i18n="@@tv.offline.prep.name">Anote o nome e a senha do Wi-Fi de casa.</li>
+      <li i18n="@@tv.offline.prep.test">Teste o cabo USB e o compartilhamento uma vez.</li>
+      <li i18n="@@tv.offline.prep.auto">
+        No Android, desmarque desligar o ponto de acesso sozinho.
+      </li>
+    </ul>
+  </section>
+
+  <a class="back ui-btn secondary" routerLink="/tv" i18n="@@tv.offline.back">Voltar ao Controle</a>
+</div>
