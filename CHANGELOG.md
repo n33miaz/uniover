@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.45.0](https://github.com/n33miaz/uniover/compare/v0.44.0...v0.45.0) (2026-11-08)
+
+
+### Devices 0.45.0
+
+#### Features
+
+* **tv:** open tv network and settings screens
+
+
+### TV 0.43.0
+
+#### Features
+
+* **web:** guide for when the internet drops
+* **tv:** open tv network and settings screens
+* **web:** tv status dot near power, blinks
+
+#### Bug Fixes
+
+* **tv:** settings shortcuts follow the tv keys
+
+
+### Web 0.46.0
+
+#### Features
+
+* **tv:** open tv network and settings screens
+* **web:** tv status dot near power, blinks
+
+#### Bug Fixes
+
+* **tv:** settings shortcuts follow the tv keys
+
+
+### Agent 0.44.0
+
+#### Features
+
+* **tv:** open tv network and settings screens
+
 ## [0.44.0](https://github.com/n33miaz/uniover/compare/v0.43.0...v0.44.0) (2026-11-08)
 
 
