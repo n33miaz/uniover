@@ -18,6 +18,7 @@ class PcPointerV1Body(BaseModel):
     dy: Annotated[int, Field(ge=-2000, le=2000)]
     scrollX: Annotated[int | None, Field(ge=-1200, le=1200)] = None
     scrollY: Annotated[int | None, Field(ge=-1200, le=1200)] = None
+    seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
 
 
 class PcPointerV1Message(BaseModel):

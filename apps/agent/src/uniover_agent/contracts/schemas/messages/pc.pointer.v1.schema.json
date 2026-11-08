@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://uniover.dev/contracts/agent/messages/pc.pointer.v1.schema.json",
   "title": "pc.pointer.v1",
-  "description": "API para agente: movimento do mouse e rolagem já somados pelo app (vários toques do dedo viram uma mensagem). `dx`/`dy` são pixels relativos (positivo: direita e baixo); `scrollX`/`scrollY` estão em unidades de roda (120 = um clique da roda) e têm o sinal do Windows (positivo: direita e cima). O agente limita cada valor e executa sem responder (a API manda o movimento sem esperar resposta).",
+  "description": "API para agente: movimento do mouse e rolagem já somados pelo app (vários toques do dedo viram uma mensagem). `dx`/`dy` são pixels relativos (positivo: direita e baixo); `scrollX`/`scrollY` estão em unidades de roda (120 = um clique da roda) e têm o sinal do Windows (positivo: direita e cima). O agente limita cada valor e executa sem responder (a API manda o movimento sem esperar resposta). `seq` é opcional e só serve ao diagnóstico: o app numera os pedidos de movimento em ordem crescente durante a vida da página e manda vários ao mesmo tempo, então o agente reconhece o que chega fora de ordem (e uma sessão nova, quando o contador recomeça). O movimento é relativo e a soma não depende da ordem: o agente aplica também o que chega depois de um mais novo; só a idade descarta um movimento.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -71,6 +71,11 @@
           "type": "integer",
           "minimum": -1200,
           "maximum": 1200
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
         }
       }
     }
