@@ -101,6 +101,7 @@ from uniover_agent.core.disk_alarm import DiskAlarm
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
+from uniover_agent.core.tv.relocator import DEFAULT_FAILURES
 from uniover_agent.ports import Clock, SecretStore, Transport, TvNotPaired, TvUnreachable
 
 _log = logging.getLogger("uniover_agent")
@@ -190,6 +191,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     on_recovered: Callable[[], Awaitable[None]] | None = None,
     *,
     recorder: DiagnosticsRecorder | None = None,
+    failures: int = DEFAULT_FAILURES,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -309,6 +311,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         on_network_change=lambda new: locator.reset_schedule(full=new),
         searched=lambda: locator.searched,
         on_not_found=not_found,
+        failures=failures,
     )
 
 

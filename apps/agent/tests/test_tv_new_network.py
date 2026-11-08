@@ -50,11 +50,15 @@ class Pc:
     """As placas do PC, que o teste muda para simular a troca de rede."""
 
     def __init__(self, *interfaces: LocalInterface) -> None:
-        self.interfaces = list(interfaces)
+        # `None`: a leitura das placas falhou (diferente de lista vazia).
+        self.interfaces: list[LocalInterface] | None = list(interfaces)
+
+    def read(self) -> list[LocalInterface] | None:
+        return None if self.interfaces is None else list(self.interfaces)
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(tv_locate, "local_interfaces", lambda: list(self.interfaces))
-        monkeypatch.setattr(local_networks, "local_interfaces", lambda: list(self.interfaces))
+        monkeypatch.setattr(tv_locate, "local_interfaces", self.read)
+        monkeypatch.setattr(local_networks, "local_interfaces", self.read)
         monkeypatch.setattr(
             tv_locate,
             "local_address_for",
@@ -109,7 +113,7 @@ async def test_the_tv_on_the_hotspot_subnet_is_found_and_saved(
     assert HOTSPOT_TV not in recorder.events[0][2]  # nada de endereço no diagnóstico
 
 
-async def test_the_stable_network_change_searches_at_once_instead_of_waiting_for_three_failures(
+async def test_the_stable_network_change_searches_at_once_instead_of_waiting_for_the_failures(
     monkeypatch: pytest.MonkeyPatch, isolated_env: Path
 ) -> None:
     lan = Lan()
@@ -119,15 +123,17 @@ async def test_the_stable_network_change_searches_at_once_instead_of_waiting_for
     pc = Pc(HOME_PC)
     pc.install(monkeypatch)
     clock = FakeClock()
-    relocator = build_relocator(settings_old_host(), clock, lambda: False)
+    # Limiar de falhas bem alto: nada além da troca de rede pode disparar a procura.
+    relocator = build_relocator(settings_old_host(), clock, lambda: False, failures=50)
     assert relocator is not None
-    assert await relocator.step() is None  # só a primeira falha: sem a troca, ainda não procura
-    assert lan.contacted == [OLD_HOST]  # a conferência do endereço de sempre, nada mais
+    for _ in range(3):
+        assert await relocator.step() is None
+    assert lan.contacted == [OLD_HOST] * 3  # só a conferência do endereço de sempre
     pc.interfaces = [HOTSPOT_PC]
     assert await relocator.step() is None  # vista agora: ainda pode ser uma oscilação
     assert not any(host.startswith("172.20.10.") for host in lan.contacted)
     clock.advance(40)
-    # Estável: a terceira conferência (só a segunda falha seguida) já procura, por causa da troca.
+    # Estável: a procura roda por causa da troca, com só 5 falhas seguidas de 50.
     assert await relocator.step() == HOTSPOT_TV
 
 
@@ -324,6 +330,20 @@ async def test_a_network_that_flaps_with_stable_stretches_makes_at_most_one_burs
     assert scene.wakes[3:4] == [False]
 
 
+async def test_an_unseen_network_two_minutes_after_a_burst_is_a_new_burst_with_new_true() -> None:
+    scene = NetworkScene()
+    relocator = scene.build(network_attempts=3)
+    await relocator.step()
+    await scene.settle(relocator, scene.HOTSPOT)  # rajada na rede A (o ponto de acesso)
+    for _ in range(3):
+        await relocator.step()
+    assert scene.wakes == [True, True, True]
+    scene.clock.advance(120)
+    await scene.settle(relocator, ("10.9.0.0/24",))  # rede C, nunca vista, dois minutos depois
+    assert len(scene.wakes) > 3
+    assert scene.wakes[3] is True  # nova: passa pelo limite de 15 min e acorda tudo
+
+
 async def test_a_network_not_seen_for_an_hour_is_new_again() -> None:
     scene = NetworkScene()
     relocator = scene.build(network_attempts=1)
@@ -460,6 +480,44 @@ async def test_find_says_whether_a_costly_stage_really_ran() -> None:
     assert locator.searched is False
 
 
+async def test_after_six_empty_sweeps_on_a_network_the_tcp_sweep_stops_until_it_changes() -> None:
+    lan = world()
+    lan.hosts = ["172.20.10.5", "172.20.10.6"]
+    network: list[str] = ["172.20.10.0/28"]
+
+    async def key() -> list[str]:
+        return network
+
+    locator = lan.locator(network_key=key, sweep_limit=6)  # type: ignore[arg-type]
+
+    async def search() -> int:
+        lan.clock.advance(2000)  # além da procura lenta e do espaçamento da varredura
+        before = len(lan.probed)
+        await locator.find("192.168.1.20")
+        return len(lan.probed) - before
+
+    for _ in range(6):
+        assert await search() == 2  # cada varredura confere os dois endereços
+    ssdp_before = lan.calls.count("ssdp")
+    assert await search() == 0  # o teto: nada de TCP nesta rede
+    assert lan.calls.count("ssdp") == ssdp_before + 1  # o SSDP segue, no espaçamento lento
+    # Outra rede tem a própria conta; voltar à primeira (oscilação) não zera a dela.
+    network = ["192.168.43.0/24"]
+    assert await search() == 2
+    network = ["172.20.10.0/28"]
+    assert await search() == 0
+
+
+async def test_without_a_network_key_there_is_no_sweep_cap() -> None:
+    lan = world()
+    lan.hosts = ["172.20.10.5"]
+    locator = lan.locator(sweep_limit=1)
+    for _ in range(3):
+        lan.clock.advance(2000)
+        await locator.find("192.168.1.20")
+    assert lan.probed == ["172.20.10.5"] * 3
+
+
 async def test_without_a_saved_identity_only_the_paired_session_can_confirm_a_new_host() -> None:
     lan = world()
     lan.hosts = ["172.20.10.5", "172.20.10.6"]
@@ -554,8 +612,39 @@ def test_the_old_tv_network_comes_last_when_an_adapter_network_contains_it() -> 
     ]
 
 
-def test_without_any_known_adapter_the_old_tv_network_is_kept_as_before() -> None:
-    assert [str(item.network) for item in sweep_networks("192.168.1.20", [])] == ["192.168.1.0/24"]
+def test_the_old_tv_network_is_kept_only_when_the_adapter_read_failed() -> None:
+    # `None`: a leitura das placas falhou, não se sabe onde o PC está: vale o /24 velho, como antes.
+    assert [str(item.network) for item in sweep_networks("192.168.1.20", None)] == [
+        "192.168.1.0/24"
+    ]
+    # Lista vazia: a leitura deu certo e os filtros descartaram tudo; nada a varrer.
+    assert sweep_networks("192.168.1.20", []) == []
+
+
+async def test_a_failed_adapter_read_keeps_the_old_slash_24_but_an_empty_list_sweeps_nothing(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+) -> None:
+    lan = Lan()
+    lan.open = {}
+    lan.install(monkeypatch)
+    pc = Pc()
+    pc.install(monkeypatch)
+    monkeypatch.setattr(tv_locate, "local_address_for", lambda host: None)
+    monkeypatch.setattr(tv_locate, "local_ipv4", lambda: None)
+
+    async def sweep(interfaces: list[LocalInterface] | None) -> list[str]:
+        pc.interfaces = interfaces
+        lan.contacted.clear()
+        relocator = build_relocator(settings_old_host(), FakeClock(), lambda: False)
+        assert relocator is not None
+        for _ in range(3):
+            await relocator.step()
+        return [host for host in lan.contacted if host != OLD_HOST]
+
+    swept_when_read_failed = await sweep(None)
+    assert len(set(swept_when_read_failed)) > 200  # o /24 velho inteiro, como antes
+    assert all(host.startswith("192.168.1.") for host in swept_when_read_failed)
+    assert await sweep([]) == []
 
 
 def test_a_slash_28_subnet_has_only_its_own_hosts_and_never_more_than_a_slash_24() -> None:
@@ -585,6 +674,7 @@ async def test_the_signature_is_the_set_of_networks_not_addresses(
 def test_the_real_adapter_list_is_readable_and_has_no_loopback_or_link_local() -> None:
     """Só lê as placas do Windows (nada sai pela rede)."""
     rows = local_networks._read_adapters()
+    assert rows is not None
     assert all(isinstance(item, AdapterRow) for item in rows)
     for interface in usable_interfaces(rows):
         assert not interface.address.startswith(("127.", "169.254."))
