@@ -507,6 +507,29 @@ describe('TodayPage', () => {
       expect(TestBed.inject(RestTimerService).active()).toBe(false);
     });
 
+    it('does not hold back the automatic reload after the last set of the exercise, when no card is left on screen', async () => {
+      const kit = await started();
+      const { el, fixture } = kit;
+      const unsaved = TestBed.inject(UnsavedWork);
+      await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
+      kit.runtime.advance(DOUBLE_TAP_MS + 100);
+      button(el, 'Concluir Série').click();
+      await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
+      await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
+
+      // A última série: a pessoa muda a carga e conclui; o cartão deixa de existir, e o rascunho velho não vale mais nada.
+      const load = el.querySelector<HTMLInputElement>('app-live-stepper input')!;
+      load.value = '47,5';
+      load.dispatchEvent(new Event('input', { bubbles: true }));
+      await eventually(fixture, () => expect(unsaved.needsConfirmation()).toBe(true));
+      const back = vi.spyOn(TestBed.inject(Location), 'back');
+      kit.runtime.advance(DOUBLE_TAP_MS + 100);
+      button(el, 'Concluir Série').click();
+
+      await eventually(fixture, () => expect(back).toHaveBeenCalledOnce());
+      await eventually(fixture, () => expect(unsaved.hasUnsaved()).toBe(false));
+    });
+
     it('ending the exercise from the rest card stops the clock, so the next exercise does not open resting', async () => {
       const kit = await started();
       const { el, fixture } = kit;

@@ -175,6 +175,36 @@ test.describe('Título do topo: uma linha, sem corte', () => {
     }
   }
 
+  test('com duas ações no canto (anel e "•••") o título continua inteiro e sem passar delas', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('/ajustes/aparencia');
+    await expect(page.getByRole('heading', { level: 1, name: 'Aparência' })).toBeVisible();
+    await page.evaluate(() => {
+      const actions = document.querySelector('app-page-top-bar .actions')!;
+      const pill = document.createElement('div');
+      pill.setAttribute('pageTopBarActions', '');
+      pill.className = 'pill pair';
+      for (const label of ['a', 'b']) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.style.cssText = 'width:44px;height:44px';
+        pill.append(button);
+      }
+      actions.append(pill);
+      const h1 = document.querySelector('app-page-top-bar h1') as HTMLElement;
+      h1.textContent = 'Pessoas e Permissões';
+      h1.style.setProperty('--title-len', String(h1.textContent.length));
+    });
+    const fit = await titleFit(page);
+    expect(fit.lines).toBe(1);
+    expect(fit.clipped).toBeLessThanOrEqual(0);
+    expect(fit.right).toBeLessThanOrEqual(fit.circleRight + 0.5);
+    expect(fit.left).toBeGreaterThanOrEqual(fit.circleLeft - 0.5);
+  });
+
   test('um título longo demais encolhe até caber, em vez de ganhar reticências', async ({
     page,
   }) => {

@@ -26,9 +26,15 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
         File.WriteAllText(
             Path.Combine(_webRoot, "index.html"),
             "<!doctype html><html lang=\"pt-BR\"><head><meta name=\"csp-nonce\" content=\"__CSP_NONCE__\"><!--uniover:manifest--></head><body></body></html>");
-        File.WriteAllText(Path.Combine(_webRoot, "chunk-NOVO123.js"), "export const ok = true;");
-        File.WriteAllText(Path.Combine(_webRoot, "styles-NOVO123.css"), "body{margin:0}");
+        File.WriteAllText(Path.Combine(_webRoot, "chunk-NOVO1234.js"), "export const ok = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "styles-NOVO1234.css"), "body{margin:0}");
         File.WriteAllText(Path.Combine(_webRoot, "main-NOVO1234.js"), "export const main = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "chunk-B-ZYueZf.js"), "export const dash = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "polyfills-NOVO1234.js"), "export const poly = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "main-legacy.js"), "export const legacy = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "styles-legacy.css"), "body{margin:1px}");
+        File.WriteAllText(Path.Combine(_webRoot, "chunk-curto.js"), "export const short = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "main-abcd1234.js"), "export const lower = true;");
         File.WriteAllText(Path.Combine(_webRoot, "sw.js"), "self.skipWaiting();");
         File.WriteAllText(Path.Combine(_webRoot, "boot-skeleton.js"), "document.title;");
         File.WriteAllText(Path.Combine(_webRoot, "manifest.webmanifest"), "{}");
@@ -77,8 +83,8 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("/chunk-NOVO123.js", "javascript")]
-    [InlineData("/styles-NOVO123.css", "css")]
+    [InlineData("/chunk-NOVO1234.js", "javascript")]
+    [InlineData("/styles-NOVO1234.css", "css")]
     public async Task ExistingHashedAsset_IsServedAsTheFile(string path, string mediaTypePart)
     {
         using var client = _factory.CreateClient();
@@ -107,9 +113,11 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("/chunk-NOVO123.js")]
-    [InlineData("/styles-NOVO123.css")]
+    [InlineData("/chunk-NOVO1234.js")]
+    [InlineData("/styles-NOVO1234.css")]
     [InlineData("/main-NOVO1234.js")]
+    [InlineData("/polyfills-NOVO1234.js")]
+    [InlineData("/chunk-B-ZYueZf.js")]
     public async Task HashedAssets_AreCachedForAYearAsImmutable(string path)
     {
         using var client = _factory.CreateClient();
@@ -169,7 +177,11 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
     [Theory]
     [InlineData("/treino/chunk-ZZ99zz99.js")]
     [InlineData("/chunk-ZZ99zz99.js.map")]
-    public async Task ALookalikeOutsideTheBuildOutput_DoesNotGetAYearOfCache(string path)
+    [InlineData("/main-legacy.js")]
+    [InlineData("/styles-legacy.css")]
+    [InlineData("/chunk-curto.js")]
+    [InlineData("/main-abcd1234.js")]
+    public async Task ALookalikeThatIsNotAnAngularHashedName_DoesNotGetAYearOfCache(string path)
     {
         using var client = _factory.CreateClient();
 

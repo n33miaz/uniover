@@ -2,6 +2,7 @@ import { signal, type WritableSignal } from '@angular/core';
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { UnsavedWork } from '../../../core/pwa/unsaved-work';
 import { FoodRepository } from '../data/foods/food-repository';
 import { MealRepository } from '../data/meals/meal-repository';
 import { localFood } from '../data/foods/food-data-test-kit';
@@ -347,5 +348,90 @@ describe('FoodDiaryPage', () => {
       'Confira os campos',
     );
     expect(fixture.nativeElement.textContent).toContain('Iogurte natural');
+  });
+
+  describe('unsaved work', () => {
+    const type = (fixture: ComponentFixture<FoodDiaryPage>, selector: string, value: string) => {
+      const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    };
+
+    async function openWithEntry() {
+      const fixture = await open();
+      meals.entriesOf.mockResolvedValue([entry]);
+      mealRevision.update((value) => value + 1);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    it('is clean when untouched, dirty once a note is typed, and clean again after cancelling', async () => {
+      const fixture = await open();
+      const unsaved = TestBed.inject(UnsavedWork);
+      expect(unsaved.hasUnsaved()).toBe(false);
+
+      type(fixture, '#entry-note', 'sem açúcar');
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      // Dia seguinte (ou anterior) recomeça o formulário: o texto digitado não vale mais nada.
+      await (
+        fixture.componentInstance as unknown as { moveDay(offset: number): Promise<void> }
+      ).moveDay(-1);
+      fixture.detectChanges();
+      expect(unsaved.hasUnsaved()).toBe(false);
+    });
+
+    it('does not count opening "Editar" on an existing entry as unsaved work, but counts a change to it', async () => {
+      const fixture = await openWithEntry();
+      const unsaved = TestBed.inject(UnsavedWork);
+      fixture.nativeElement.querySelector('.entry-actions .text-button')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await vi.waitFor(() => expect(foods.searchLocal).toHaveBeenCalled());
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#entry-title')?.textContent).toContain('Editar');
+      expect(unsaved.hasUnsaved()).toBe(false);
+
+      type(fixture, '#entry-note', 'mudei');
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      button(fixture, 'Cancelar').click();
+      fixture.detectChanges();
+      expect(unsaved.hasUnsaved()).toBe(false);
+    });
+
+    it('is clean again after an edited entry is saved', async () => {
+      const fixture = await openWithEntry();
+      const unsaved = TestBed.inject(UnsavedWork);
+      fixture.nativeElement.querySelector('.entry-actions .text-button')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      type(fixture, '#entry-note', 'mudei');
+      expect(unsaved.hasUnsaved()).toBe(true);
+
+      button(fixture, 'Salvar Alterações').click();
+      await vi.waitFor(() => expect(meals.editEntry).toHaveBeenCalled());
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(unsaved.hasUnsaved()).toBe(false);
+    });
+
+    it('counts a food picked from the results as unsaved, and the own-food fields typed in the details', async () => {
+      const fixture = await open();
+      const unsaved = TestBed.inject(UnsavedWork);
+      (fixture.nativeElement.querySelector('.own-food summary') as HTMLElement).click();
+      fixture.detectChanges();
+      type(fixture, '#own-name', 'Pão caseiro');
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      button(fixture, 'Salvar Alimento').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // Salvou o alimento: os campos do cadastro limpam, mas o alimento ficou escolhido para o lançamento.
+      expect(unsaved.hasUnsaved()).toBe(true);
+    });
   });
 });

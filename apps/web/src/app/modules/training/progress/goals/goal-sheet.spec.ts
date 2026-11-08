@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
+import { UnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { GoalRepository } from '../../data/goals/goal-repository';
 import type { GoalKind } from '../../domain/progress/goal-model';
 import { eventually } from '../../shell/screen-test-kit';
@@ -127,5 +128,32 @@ describe('GoalSheet', () => {
       value: null,
     });
     fixture.detectChanges();
+  });
+
+  describe('unsaved work', () => {
+    it('is clean when opened with a goal, dirty once changed, clean when the value goes back, clean when closed', async () => {
+      const { type, fixture } = await open('exercise_e1rm', 60);
+      const unsaved = TestBed.inject(UnsavedWork);
+      expect(unsaved.hasUnsaved()).toBe(false);
+
+      type('62,5');
+      expect(unsaved.needsConfirmation()).toBe(true);
+
+      type('60');
+      expect(unsaved.hasUnsaved()).toBe(false);
+
+      type('70');
+      expect(unsaved.hasUnsaved()).toBe(true);
+      fixture.destroy();
+      expect(unsaved.hasUnsaved()).toBe(false);
+    });
+
+    it('is clean on an empty sheet and dirty as soon as something is typed', async () => {
+      const { type } = await open('weekly_sessions');
+      const unsaved = TestBed.inject(UnsavedWork);
+      expect(unsaved.hasUnsaved()).toBe(false);
+      type('4');
+      expect(unsaved.hasUnsaved()).toBe(true);
+    });
   });
 });
