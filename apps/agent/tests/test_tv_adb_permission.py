@@ -311,10 +311,13 @@ async def test_without_a_record_the_agent_never_connects_by_itself(home: Home) -
     assert runner.calls == [GET_STATE]  # só leitura: nenhum `adb connect`, nenhum aviso na TV
 
 
-async def test_a_record_for_another_address_never_connects(home: Home) -> None:
+async def test_a_record_for_another_address_and_another_device_never_connects(
+    home: Home,
+) -> None:
     home.verify()
+    home.mac = OTHER_MAC  # o `tv_host` mudou e quem responde nele não é a TV anotada
     runner = runner_with(state=UNKNOWN)
-    other = home.authorization("192.168.1.99:5555")  # o `tv_host` mudou
+    other = home.authorization("192.168.1.99:5555")
     with pytest.raises(AdbUnauthorized):
         await home.adb(runner, authorization=other).connect()
     assert runner.calls == [GET_STATE]

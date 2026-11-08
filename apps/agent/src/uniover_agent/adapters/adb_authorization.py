@@ -61,6 +61,16 @@ _PEM_BEGIN: Final = b"-----BEGIN"
 _PEM_END: Final = b"-----END"
 MAC_PROBE_SECONDS: Final = 1.5
 
+# Por que o agente se recusa a conectar sozinho (só o nome do motivo vai ao diagnóstico e ao log):
+GATE_NEVER: Final = "never"  # esta TV nunca deu a permissão a este agente
+GATE_TV_REFUSED: Final = "tv_refused"  # a TV recusou a chave (reset, revogação, outra chave)
+GATE_UNPROVEN: Final = "unproven"  # a TV aceitou, mas nenhum toque da pessoa provou que gravou
+GATE_KEY_CHANGED: Final = "key_changed"  # a chave `adbkey` de agora não é a registrada
+GATE_ADDRESS_CHANGED: Final = "address_changed"  # o IP mudou e o MAC não confirma a mesma TV
+GATE_DEVICE_CHANGED: Final = "device_changed"  # o MAC de agora é de outro aparelho
+GATE_MAC_UNKNOWN: Final = "mac_unknown"  # a ARP não mostra o MAC: a identidade não se confirma
+GATE_OTHER: Final = "other"
+
 
 def default_android_dir() -> Path:
     """A pasta `.android` do usuário, onde o `adb` guarda a chave."""
@@ -374,6 +384,65 @@ class AdbAuthorization:
             and record.endpoint == self._endpoint
             and mac_ok
         )
+
+    def endpoint_moved(self) -> bool:
+        """Há um registro de permissão para **outro** endereço (a TV pode ter trocado de IP)?"""
+        self._sync()
+        return bool(self._record.endpoint) and self._record.endpoint != self._endpoint
+
+    def adopt_endpoint(self, mac: str | None) -> bool:
+        """A mesma TV mudou de IP: leva o registro para o endereço de agora, sem falar com ela.
+
+        O roteador reatribui o IP depois de uma queda de luz, mas a permissão do ADB é da **chave**
+        na TV, não do endereço. O que identifica o aparelho é o MAC: só com o registro de uma
+        permissão dada, a mesma chave e **dois MACs lidos e iguais** o endereço novo herda tudo
+        (serial, ajuste do vencimento, prova). MAC vazio de qualquer lado, ou diferente, nunca
+        adota: outro aparelho no endereço novo (ou antigo) continua barrado.
+        """
+        self._sync()
+        record = self._record
+        fingerprint = self._keys.fingerprint()
+        if (
+            not record.endpoint
+            or record.endpoint == self._endpoint
+            or record.state not in (GRANTED, VERIFIED)
+            or fingerprint is None
+            or fingerprint != record.fingerprint
+            or not mac
+            or not record.mac
+            or mac != record.mac
+        ):
+            return False
+        self._save(_replace(record, endpoint=self._endpoint))
+        _log.info(
+            "a TV mudou de endereço, mas é o mesmo aparelho (MAC): a permissão do ADB foi mantida"
+        )
+        return True
+
+    def gate_reason(self, mac: str | None = None) -> str:  # noqa: PLR0911 - uma saída por motivo
+        """Por que o agente não conecta sozinho agora (um motivo curto e fixo, para o diagnóstico).
+
+        Só lê o registro: não fala com a TV. `mac` é o lido agora (`None`: não lido).
+        """
+        self._sync()
+        record = self._record
+        fingerprint = self._keys.fingerprint()
+        if record.state == _NONE:
+            return GATE_NEVER
+        if fingerprint is None or fingerprint != record.fingerprint:
+            return GATE_KEY_CHANGED
+        if record.state == NEEDS_USER:
+            return GATE_TV_REFUSED
+        if record.endpoint != self._endpoint:
+            # MAC `""` (lido e vazio): a ARP não o mostra, então não há como confirmar a mesma TV.
+            return GATE_MAC_UNKNOWN if mac == "" else GATE_ADDRESS_CHANGED
+        if mac and record.mac and mac != record.mac:
+            return GATE_DEVICE_CHANGED
+        if record.state == GRANTED:
+            return GATE_UNPROVEN
+        if record.state == VERIFIED and (not mac or not record.mac):
+            return GATE_MAC_UNKNOWN
+        return GATE_OTHER
 
     def forget_device(self) -> None:
         """O aparelho que responde não é o anotado: esquece serial e ajuste e exige nova prova.
