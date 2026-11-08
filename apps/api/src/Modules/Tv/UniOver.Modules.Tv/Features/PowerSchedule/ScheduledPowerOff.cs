@@ -150,6 +150,15 @@ internal sealed class ScheduledPowerOffDispatcher(
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
 
+    /// <summary>
+    /// Quanto depois da hora combinada ainda vale enviar o desligamento. Passado esse prazo (a API estava fora do ar, o banco
+    /// dormia) a TV pode estar sendo usada: o agendamento termina como <c>missed</c>, com auditoria, e nada é enviado.
+    /// </summary>
+    internal static readonly TimeSpan MaxLateness = TimeSpan.FromMinutes(10);
+
+    /// <summary>Quanto o pedido espera antes de ser tentado de novo quando o agente ainda não declarou as capacidades.</summary>
+    internal static readonly TimeSpan CapabilityRetryAfter = TimeSpan.FromSeconds(15);
+
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -169,7 +178,7 @@ internal sealed class ScheduledPowerOffDispatcher(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var schedule = await db.PowerSchedules.FromSqlInterpolated($"SELECT * FROM tv.power_schedules WHERE status = 'pending' AND due_at_utc <= {now} ORDER BY due_at_utc LIMIT 1 FOR UPDATE SKIP LOCKED")
+        var schedule = await db.PowerSchedules.FromSqlInterpolated($"SELECT * FROM tv.power_schedules WHERE status = 'pending' AND due_at_utc <= {now} AND (lease_until IS NULL OR lease_until <= {now}) ORDER BY due_at_utc LIMIT 1 FOR UPDATE SKIP LOCKED")
             .FirstOrDefaultAsync(ct);
         if (schedule is null) return 0;
         schedule.BeginDispatch(now, Lease);
@@ -180,7 +189,11 @@ internal sealed class ScheduledPowerOffDispatcher(
         string? reason = null;
         TvSendOutcome? send = null;
         var tv = await db.Tvs.AsNoTracking().SingleOrDefaultAsync(x => x.Id == schedule.TvId, ct);
-        if (tv is null || tv.AgentSlug != schedule.AgentSlug)
+        if (now - schedule.DueAtUtc > MaxLateness)
+        {
+            result = "missed";
+        }
+        else if (tv is null || tv.AgentSlug != schedule.AgentSlug)
         {
             reason = "tv_changed";
             result = "cancelled";
@@ -199,6 +212,15 @@ internal sealed class ScheduledPowerOffDispatcher(
         else if (presence.Get(schedule.AgentSlug) is not { Connected: true } agent)
         {
             result = "offline";
+        }
+        else if (agent.Capabilities.Count == 0)
+        {
+            // O agente conta como conectado mas o hello ainda não chegou (a API acabou de subir): não se sabe se há o desligar
+            // seguro. Nada é enviado nem encerrado; o pedido volta à fila e é tentado de novo daqui a pouco, até o
+            // prazo. Devolve 1 (houve trabalho) para a rodada seguir com os pedidos das outras TVs.
+            schedule.ReleaseDispatch(time.GetUtcNow(), CapabilityRetryAfter);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return 1;
         }
         else if (!agent.Capabilities.Contains(TvCapabilities.PowerOffV1, StringComparer.Ordinal))
         {

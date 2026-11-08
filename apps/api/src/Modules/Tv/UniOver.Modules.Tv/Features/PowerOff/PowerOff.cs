@@ -17,7 +17,8 @@ namespace UniOver.Modules.Tv.Features.PowerOff;
 /// <summary>
 /// Corpo opcional do pedido de desligar. <paramref name="Mode"/> <c>safe</c> pede o desligamento com leitura (o agente só
 /// aperta <c>POWER</c> com a TV lida como ligada e confirma o resultado). Se a capacidade sumiu, nada é enviado. Sem o
-/// corpo vale o comportamento de antes, que manda a tecla <c>POWER</c>.
+/// corpo o desligar com leitura vale do mesmo jeito para o agente que o declara; só o agente antigo (capacidades
+/// conhecidas, sem ele) recebe a tecla <c>POWER</c> avulsa, e sem capacidade conhecida nada é enviado.
 /// </summary>
 internal sealed record PowerOffRequest(string? Mode);
 
@@ -78,10 +79,22 @@ internal sealed class PowerOffHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        // O desligamento com leitura só vai a quem declarou saber fazê-lo: um agente que não o conhece recusaria o tipo de
-        // mensagem, e a tecla sozinha (o comportamento de antes) é o que ele entende.
+        // O desligamento com leitura vale para todo agente que o declara, mesmo que o corpo do pedido venha vazio (um app
+        // antigo em cache, uma chamada direta): a tecla POWER avulsa é um interruptor e ligaria uma TV desligada.
         var target = await runner.ResolveTargetAsync(cancellationToken);
-        var safe = command.Safe && SupportsSafePowerOff(target.AgentSlug);
+        var capabilities = KnownCapabilities(target.AgentSlug);
+        if (capabilities is null && !string.IsNullOrWhiteSpace(target.AgentSlug))
+        {
+            // Sem capacidade conhecida (a API acabou de subir e o hello do agente ainda não chegou) não dá para saber se existe
+            // o desligar seguro: mandar POWER agora seria um palpite. A tela diz "reconectando" e o pedido pode ser repetido.
+            var unknown = TvSendOutcome.Failed(
+                TvSendStatus.AgentOffline,
+                presence.Get(target.AgentSlug) is { Connected: true } ? TvCommandRunner.AgentReconnectingCode : AgentErrors.OfflineCode);
+            await runner.RecordAsync(command.Origin, TvCommandNames.PowerOff, "POWER", unknown);
+            return (unknown, PowerOffOutcomes.Sent);
+        }
+
+        var safe = capabilities?.Contains(TvCapabilities.PowerOffV1, StringComparer.Ordinal) == true;
         if (command.RequireSafe && !safe)
         {
             return (TvSendOutcome.Failed(TvSendStatus.CommandFailed, UnsafePowerOffCode), PowerOffOutcomes.Sent);
@@ -105,9 +118,12 @@ internal sealed class PowerOffHandler(
             : (send, PowerOffOutcomes.Off);
     }
 
-    private bool SupportsSafePowerOff(string agentSlug) =>
-        !string.IsNullOrWhiteSpace(agentSlug)
-        && presence.Get(agentSlug)?.Capabilities.Contains(TvCapabilities.PowerOffV1, StringComparer.Ordinal) == true;
+    /// <summary>
+    /// As capacidades que o agente declarou no <c>hello</c>, ou nulo se ainda não se sabe (sem
+    /// presença, ou presença sem <c>hello</c>, que é a lista vazia). Um agente que já falou sempre declara alguma capacidade.
+    /// </summary>
+    private IReadOnlyList<string>? KnownCapabilities(string agentSlug) =>
+        !string.IsNullOrWhiteSpace(agentSlug) && presence.Get(agentSlug)?.Capabilities is { Count: > 0 } known ? known : null;
 }
 
 internal static class PowerOffEndpoint

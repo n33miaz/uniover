@@ -157,12 +157,13 @@ internal static class TvPermissionMap
             if (!pattern.StartsWith(TvPrefix, StringComparison.Ordinal))
             {
                 // Única exceção, declarada: o convidado que pareia o PC como a própria TV. A rota mora no módulo de aparelhos,
-                // exige só 'module:tv' e, junto, a reconfirmação da senha dessa ação; qualquer outra combinação é violação.
+                // exige 'module:tv' ou 'module:pc' e, junto, a reconfirmação da senha dessa ação; qualquer outra combinação é violação.
                 // Em Development com a confirmação desligada (como nos hosts de teste da TV) vale só a permissão; que a senha é
                 // exigida no host de produção quem prova é o GuestSelfApprovalTests.
                 var stepUps = policy?.Requirements.OfType<StepUpRequirement>().Select(r => r.Action).ToList() ?? [];
                 var isOwnPairing = pattern == OwnPairingRoute
                     && permissions.SequenceEqual([AccessPermissions.TvModule])
+                    && policy!.Requirements.OfType<PermissionRequirement>().Single().Alternatives.SequenceEqual([AccessPermissions.PcModule])
                     && (stepUps.Count == 0 || stepUps.SequenceEqual([GuestStepUpActions.PairSelf]));
                 if (isOwnPairing)
                 {

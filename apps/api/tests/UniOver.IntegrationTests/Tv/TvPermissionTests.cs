@@ -251,6 +251,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
+        await app.DeclareLegacyAgentAsync(agent);
         var guest = await app.NewGuestAsync("Desligar", WithPower, 13);
         var token = guest.Login.AccessToken;
 
