@@ -91,21 +91,6 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task PhotosCannotBeEnabledWithoutBucketCredentials()
-    {
-        await using var app = await PasskeyApp.StartAsync(postgres);
-        var owner = await app.LoginAsync();
-        using var authenticator = new VirtualAuthenticator();
-        await app.RegisterAsync(owner, authenticator);
-        using var confirm = await app.ConfirmAsync(owner, authenticator, StepUpActions.SystemSettingsChange);
-        confirm.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var response = await app.SendAsync(HttpMethod.Put, Route + "/" + SystemSettingKeys.PhotoStorageEnabled,
-            new { value = true }, owner.AccessToken);
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await PasskeyApp.JsonAsync(response)).GetProperty("title").GetString().Should().Contain("bucket");
-    }
-
-    [Fact]
     public async Task GuestLimitUsesEnvironmentUntilTheOwnerSavesANewValue()
     {
         await using var app = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
@@ -154,65 +139,27 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task PhotoSwitchTakesEffectWithBucketConfiguration()
+    public async Task RetiredCloudPhotoSetting_IsNotListedNorWritableNorResettable_AndItsBucketRouteIsGone()
     {
-        await using var app = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
-        {
-            Extra = new Dictionary<string, string?>
-            {
-                ["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test",
-                ["Modules:Training:Photos:Storage:Region"] = "us-east-2",
-                ["Modules:Training:Photos:Storage:Bucket"] = "private-test",
-                ["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access",
-                ["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret",
-            },
-        });
-        var settings = app.Services.GetRequiredService<ISystemSettings>();
-        (await settings.PhotoStorageEnabledAsync(Ct)).Should().BeFalse();
+        const string retiredKey = "training.photo-storage-enabled";
+        await using var app = await PasskeyApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
         using var authenticator = new VirtualAuthenticator();
         await app.RegisterAsync(owner, authenticator);
+
+        using var listed = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        (await PasskeyApp.JsonAsync(listed)).EnumerateArray()
+            .Select(item => item.GetProperty("key").GetString()).Should().NotContain(retiredKey);
+
         using var confirm = await app.ConfirmAsync(owner, authenticator, StepUpActions.SystemSettingsChange);
         confirm.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var response = await app.SendAsync(HttpMethod.Put, Route + "/" + SystemSettingKeys.PhotoStorageEnabled,
-            new { value = true }, owner.AccessToken);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await settings.PhotoStorageEnabledAsync(Ct)).Should().BeTrue();
-    }
+        using var write = await app.SendAsync(HttpMethod.Put, Route + "/" + retiredKey, new { value = true }, owner.AccessToken);
+        write.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var reset = await app.SendAsync(HttpMethod.Delete, Route + "/" + retiredKey, bearer: owner.AccessToken);
+        reset.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-    [Fact]
-    public async Task PhotoBucketStatus_ReportsWhetherTheServerBucketIsComplete_AndHidesItsDetails()
-    {
-        await using var without = await PasskeyApp.StartAsync(postgres);
-        var ownerWithout = await without.LoginAsync();
-        using var missing = await without.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: ownerWithout.AccessToken);
-        missing.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await PasskeyApp.JsonAsync(missing)).GetProperty("configured").GetBoolean().Should().BeFalse();
-
-        await using var with = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
-        {
-            Extra = new Dictionary<string, string?>
-            {
-                ["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test",
-                ["Modules:Training:Photos:Storage:Bucket"] = "private-test",
-                ["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access",
-                ["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret",
-            },
-        });
-        var ownerWith = await with.LoginAsync();
-        using var present = await with.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: ownerWith.AccessToken);
-        var body = await present.Content.ReadAsStringAsync(Ct);
-        present.StatusCode.Should().Be(HttpStatusCode.OK);
-        body.Should().Contain("true").And.NotContain("private-test").And.NotContain("synthetic");
-    }
-
-    [Fact]
-    public async Task GuestCannotReadThePhotoBucketStatus()
-    {
-        await using var app = await PasskeyApp.StartAsync(postgres);
-        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
-        using var read = await app.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: guest.Login.AccessToken);
-        read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var bucket = await app.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: owner.AccessToken);
+        bucket.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

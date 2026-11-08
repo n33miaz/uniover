@@ -28,6 +28,15 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
             "<!doctype html><html lang=\"pt-BR\"><head><meta name=\"csp-nonce\" content=\"__CSP_NONCE__\"><!--uniover:manifest--></head><body></body></html>");
         File.WriteAllText(Path.Combine(_webRoot, "chunk-NOVO123.js"), "export const ok = true;");
         File.WriteAllText(Path.Combine(_webRoot, "styles-NOVO123.css"), "body{margin:0}");
+        File.WriteAllText(Path.Combine(_webRoot, "main-NOVO1234.js"), "export const main = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "sw.js"), "self.skipWaiting();");
+        File.WriteAllText(Path.Combine(_webRoot, "boot-skeleton.js"), "document.title;");
+        File.WriteAllText(Path.Combine(_webRoot, "manifest.webmanifest"), "{}");
+        Directory.CreateDirectory(Path.Combine(_webRoot, "treino"));
+        File.WriteAllText(Path.Combine(_webRoot, "treino", "manifest.webmanifest"), "{}");
+        File.WriteAllText(Path.Combine(_webRoot, "treino", "chunk-ZZ99zz99.js"), "export const x = 1;");
+        File.WriteAllText(Path.Combine(_webRoot, "chunk-ZZ99zz99.js.map"), "{}");
+        File.WriteAllText(Path.Combine(_webRoot, "favicon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
         _factory = new EdgeFactory("Production", Production, webRoot: _webRoot);
         return ValueTask.CompletedTask;
     }
@@ -95,5 +104,78 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
         (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Contain("csp-nonce");
+    }
+
+    [Theory]
+    [InlineData("/chunk-NOVO123.js")]
+    [InlineData("/styles-NOVO123.css")]
+    [InlineData("/main-NOVO1234.js")]
+    public async Task HashedAssets_AreCachedForAYearAsImmutable(string path)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cacheControl = response.Headers.CacheControl!;
+        cacheControl.Public.Should().BeTrue();
+        cacheControl.MaxAge.Should().Be(TimeSpan.FromDays(365));
+        cacheControl.NoCache.Should().BeFalse();
+        cacheControl.Extensions.Select(extension => extension.Name).Should().Contain("immutable");
+    }
+
+    [Theory]
+    [InlineData("/sw.js")]
+    [InlineData("/boot-skeleton.js")]
+    [InlineData("/manifest.webmanifest")]
+    [InlineData("/treino/manifest.webmanifest")]
+    [InlineData("/")]
+    [InlineData("/index.html")]
+    [InlineData("/treino")]
+    public async Task ServiceWorker_Manifests_BootScript_AndTheIndex_MustRevalidateOnEveryUse(string path)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoCache.Should().BeTrue();
+        response.Headers.CacheControl.MaxAge.Should().BeNull();
+        response.Headers.CacheControl.ToString().Should().NotContain("immutable");
+    }
+
+    [Fact]
+    public async Task OtherStaticFiles_KeepTheirDefaults_WithoutAnImmutableHeader()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/favicon.svg", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AMissingHashedAsset_IsNeverCachedAsImmutable()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/chunk-ANTIGO999.js", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (response.Headers.CacheControl?.ToString() ?? string.Empty).Should().NotContain("immutable");
+    }
+
+    [Theory]
+    [InlineData("/treino/chunk-ZZ99zz99.js")]
+    [InlineData("/chunk-ZZ99zz99.js.map")]
+    public async Task ALookalikeOutsideTheBuildOutput_DoesNotGetAYearOfCache(string path)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl.Should().BeNull();
     }
 }

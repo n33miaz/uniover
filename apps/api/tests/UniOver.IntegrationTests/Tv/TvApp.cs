@@ -212,9 +212,6 @@ internal sealed class TvApp : IAsyncDisposable
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
 
-        // As varreduras de permissão do convidado olham o Treino inteiro, fotos de progresso incluídas.
-        Training.TrainingApp.EnablePhotoStorage(settings);
-
         if (options.LegacyAgentSlug is { } legacy)
         {
             settings["Modules:Tv:AgentId"] = legacy;
