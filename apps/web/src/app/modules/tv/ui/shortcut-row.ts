@@ -11,6 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { TvAccess } from '../data/tv-access';
+import { TvAdbPermission } from '../data/tv-adb-permission';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import {
@@ -65,6 +66,8 @@ export class ShortcutRow {
   readonly suggest = output<TvSuggestionRequest>();
 
   private readonly store = inject(TvStore);
+  /** O ADB da TV pede permissão: os azulejos mostram um sinal discreto (a folha pede, e "Agora não" não esconde isto). */
+  protected readonly needsPermission = inject(TvAdbPermission).needs;
   private readonly prefs = inject(TvPrefs);
   private readonly top = viewChild.required<ElementRef<HTMLElement>>('top');
   /** Só quem edita os atalhos fixa apps: para os outros a dica não manda abrir o painel para fixar. */
@@ -113,6 +116,14 @@ export class ShortcutRow {
 
   protected label(shortcut: TvShortcut): string {
     return shortcutLabel(shortcut);
+  }
+
+  /** O nome acessível do azulejo: com a TV pedindo permissão, ele diz isso também. */
+  protected accessibleName(shortcut: TvShortcut): string {
+    const name = shortcutLabel(shortcut);
+    return this.needsPermission()
+      ? $localize`:@@tv.shortcuts.needs-permission:${name}:name:, precisa de permissão`
+      : name;
   }
 
   /** O nome acessível da sugestão diz o que ela é e o que o toque faz: abre um painel, não o app. */

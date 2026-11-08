@@ -18,7 +18,8 @@
             <button
               type="button"
               class="shortcut"
-              [attr.aria-label]="name"
+              [class.needs-permission]="needsPermission()"
+              [attr.aria-label]="accessibleName(shortcut)"
               [attr.title]="name"
               [attr.aria-disabled]="canSend() ? null : 'true'"
               (click)="open.emit(shortcut)"

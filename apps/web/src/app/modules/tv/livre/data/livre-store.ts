@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { SessionState } from '../../../../core/session/session-state';
+import { TvAdbPermission } from '../../data/tv-adb-permission';
 import { TvApi } from '../../data/tv-api';
 import { TvPresence } from '../../data/tv-presence';
 import { TvSelection } from '../../data/tv-selection';
@@ -69,6 +70,7 @@ export class TvLivreStore {
   private readonly api = inject(TvLivreApi);
   private readonly tvApi = inject(TvApi);
   private readonly presence = inject(TvPresence);
+  private readonly adbPermission = inject(TvAdbPermission);
   private readonly doc = inject(DOCUMENT);
   private readonly session = inject(SessionState);
   private readonly selection = inject(TvSelection);
@@ -200,7 +202,7 @@ export class TvLivreStore {
       this.adopt(view, epoch);
     } catch (error) {
       if (epoch !== this.epoch) return;
-      const text = describeLivreFailure(error).message;
+      const text = this.describe(error, false);
       if (this._view() === null) this._loadFailure.set(text);
       else this._notice.set({ kind: 'error', text });
     } finally {
@@ -236,7 +238,7 @@ export class TvLivreStore {
         this.adopt(await this.live(epoch, this.api.apply()), epoch);
       } catch (error) {
         if (error instanceof StaleRequest) throw error;
-        const reason = describeLivreFailure(error).message;
+        const reason = this.describe(error, true);
         throw new LocalFailure(
           $localize`:@@tv-livre.notice.saved-not-applied:Salvo, mas a TV não aplicou. ${reason}:reason:`,
         );
@@ -426,13 +428,28 @@ export class TvLivreStore {
     } catch (error) {
       if (epoch === this.epoch && !(error instanceof StaleRequest)) {
         const text =
-          error instanceof LocalFailure ? error.message : describeLivreFailure(error).message;
+          error instanceof LocalFailure
+            ? error.message
+            : this.describe(error, action !== 'refresh');
         this._notice.set({ kind: 'error', text });
       }
       return false;
     } finally {
       if (epoch === this.epoch) this._busy.set(null);
     }
+  }
+
+  /**
+   * A frase da falha. A falta de permissão do ADB também leva a pessoa ao pedido (sem tirar a frase daqui): numa ação dela
+   * (`byPerson`: tudo, menos ler o estado) o agente já conectou e o aviso está na TV, então o celular espera o aceite;
+   * ao ler o estado, abre a folha que oferece pedir.
+   */
+  private describe(error: unknown, byPerson: boolean): string {
+    const failure = describeLivreFailure(error);
+    if (failure.code === 'adb_unauthorized') {
+      if (!byPerson || !this.adbPermission.prompted()) this.adbPermission.denied();
+    }
+    return failure.message;
   }
 
   private reset(): void {

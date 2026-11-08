@@ -1,0 +1,68 @@
+@if (permission.waiting()) {
+  <p class="notice" role="status" [animate.leave]="'notice-leave'">
+    <span class="ui-spinner" aria-hidden="true"></span>
+    <span i18n="@@tv.adb.waiting">Aceite na TV e marque Sempre permitir</span>
+  </p>
+} @else if (permission.done()) {
+  <p class="notice done" role="status" [animate.leave]="'notice-leave'">
+    <span i18n="@@tv.adb.done">Pronto: a TV liberou o UniOver</span>
+  </p>
+}
+
+@if (permission.sheetOpen()) {
+  <section
+    class="sheet"
+    role="region"
+    aria-labelledby="adb-permission-title"
+    aria-describedby="adb-permission-text"
+    [animate.leave]="'notice-leave'"
+  >
+    <h2 id="adb-permission-title" class="ui-visually-hidden" i18n="@@tv.adb.title">
+      Liberar na TV
+    </h2>
+    @switch (permission.phase()) {
+      @case ('expired') {
+        <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.expired">
+          Ninguém aceitou na TV. Pedir de novo?
+        </p>
+      }
+      @case ('unreachable') {
+        <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.unreachable">
+          A TV não respondeu. Ligue-a e tente de novo.
+        </p>
+      }
+      @case ('failed') {
+        <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.failed">
+          Não deu certo agora. Tente de novo.
+        </p>
+      }
+      @default {
+        <p id="adb-permission-text" class="text" i18n="@@tv.adb.text">
+          A TV precisa liberar o UniOver.
+        </p>
+      }
+    }
+    <div class="actions">
+      <button
+        type="button"
+        class="ui-btn secondary"
+        [disabled]="permission.asking()"
+        (click)="permission.dismiss()"
+        i18n="@@tv.adb.later"
+      >
+        Agora não
+      </button>
+      <button
+        type="button"
+        class="ui-btn primary"
+        [disabled]="permission.asking()"
+        (click)="permission.ask()"
+      >
+        @if (permission.asking()) {
+          <span class="ui-spinner" aria-hidden="true"></span>
+        }
+        <span i18n="@@tv.adb.ask">Pedir na TV</span>
+      </button>
+    </div>
+  </section>
+}

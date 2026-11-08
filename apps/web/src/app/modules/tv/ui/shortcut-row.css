@@ -91,6 +91,28 @@ button {
   line-height: 1;
 }
 
+/*
+ * A TV pede permissão do ADB: um ponto discreto no canto (sem mudar o tamanho do azulejo) e o ícone um pouco apagado. O azulejo
+ * continua tocável: o toque abre a folha (ou o aviso curto, se a pessoa disse "Agora não").
+ */
+.shortcut.needs-permission {
+  position: relative;
+}
+.shortcut.needs-permission app-tv-app-icon {
+  opacity: 0.7;
+}
+.shortcut.needs-permission::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--a-surface);
+  border-radius: 50%;
+  background: var(--a-warn);
+}
+
 /* Resposta imediata ao toque: o azulejo afunda um pouco. Quem pediu menos movimento não vê a animação. */
 @media (prefers-reduced-motion: no-preference) {
   .shortcut {

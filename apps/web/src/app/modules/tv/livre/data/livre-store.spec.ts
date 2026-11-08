@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../../core/session/session-state';
+import { TvAdbPermission } from '../../data/tv-adb-permission';
 import { TvApi } from '../../data/tv-api';
 import { TvSelection } from '../../data/tv-selection';
 import { makeShortcut, makeTv } from '../../tv-test-kit';
@@ -67,7 +68,8 @@ describe('TvLivreStore', () => {
 
   beforeEach(() => {
     calls.length = 0;
-    for (const fn of [...Object.values(api), tvApi.shortcuts, tvApi.presence, reducer]) fn.mockReset();
+    for (const fn of [...Object.values(api), tvApi.shortcuts, tvApi.presence, reducer])
+      fn.mockReset();
     tvApi.presence.mockResolvedValue(undefined);
     api.get.mockResolvedValue(view());
     api.photo.mockResolvedValue(null);
@@ -339,6 +341,44 @@ describe('TvLivreStore', () => {
       api.restore.mockRejectedValue(failure(502, { agentError: 'uninstall_failed' }));
       expect(await store.restore()).toBe(false);
       expect(store.notice()?.text).toBe('Não deu para desinstalar o TV Livre.');
+    });
+
+    describe('when the ADB permission is missing', () => {
+      const unauthorized = () => failure(502, { agentError: 'adb_unauthorized' });
+      let permission: TvAdbPermission;
+
+      beforeEach(() => {
+        permission = TestBed.inject(TvAdbPermission);
+        permission.attach(); // a tela do TV Livre hospeda a folha
+      });
+
+      afterEach(() => permission.detach());
+
+      it('an action of the person already left the prompt on the TV: the phone waits for the accept', async () => {
+        await open();
+        api.install.mockRejectedValue(unauthorized());
+        expect(await store.install()).toBe(false);
+        expect(permission.waiting()).toBe(true);
+        expect(permission.sheetOpen()).toBe(false);
+        // A frase própria do TV Livre continua na tela.
+        expect(store.notice()?.text).toContain('Sempre permitir neste computador');
+      });
+
+      it('reading the state opens the sheet that offers to ask instead', async () => {
+        await open();
+        api.refresh.mockRejectedValue(unauthorized());
+        expect(await store.refresh()).toBe(false);
+        expect(permission.sheetOpen()).toBe(true);
+        expect(permission.waiting()).toBe(false);
+      });
+
+      it('other failures do not touch the permission', async () => {
+        await open();
+        api.install.mockRejectedValue(failure(502, { agentError: 'install_failed' }));
+        await store.install();
+        expect(permission.waiting()).toBe(false);
+        expect(permission.needs()).toBe(false);
+      });
     });
 
     it('sends the sleep command and says so', async () => {

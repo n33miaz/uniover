@@ -1,0 +1,98 @@
+:host {
+  display: contents;
+}
+
+/*
+ * A folha e o recado flutuam logo abaixo do cabeçalho (sobre a fileira de atalhos, que é o que falhou) e não chegam ao
+ * volume nem às teclas de baixo; das direções cobrem só a borda de cima: o controle segue usável. Nada aqui é modal.
+ */
+.sheet,
+.notice {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + var(--gutter) + var(--tap) + 10px);
+  right: var(--gutter);
+  left: var(--gutter);
+  z-index: 6;
+  box-sizing: border-box;
+  max-width: 34rem;
+  margin: 0 auto;
+  border: 1px solid var(--a-line);
+  border-left: 4px solid var(--a-accent);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-2);
+  color: var(--a-ink);
+}
+
+/* Compacta de propósito: cobre o cabeçalho e a fileira de atalhos, e deixa as direções e as teclas de baixo livres. */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.sheet h2,
+.sheet p {
+  margin: 0;
+}
+.text {
+  color: var(--a-ink);
+  font-size: 0.95rem;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.actions .ui-btn {
+  flex: 1 1 0;
+  gap: 8px;
+  max-width: 11rem;
+}
+
+/* O recado não pega o toque: quem aceita na TV continua usando o controle por baixo dele. */
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  pointer-events: none;
+  text-align: center;
+}
+.notice.done {
+  border-left-color: var(--a-accent);
+}
+
+.sheet,
+.notice {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+@starting-style {
+  .sheet,
+  .notice {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.notice-leave {
+  animation: notice-out var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes notice-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .notice {
+    transition: none;
+  }
+  .notice-leave {
+    animation: none;
+  }
+}

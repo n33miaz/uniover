@@ -93,6 +93,8 @@ export interface MockTvState {
   updatedAt: string | null;
   /** Desde quando o agente está fora (a API só manda com ele fora): é o que confirma o "PC Desligado". */
   offlineSince?: string | null;
+  /** A permissão do ADB que o agente conta (`granted`, `missing` ou `pending`); ausente: o agente não diz. */
+  adbPermission?: string | null;
 }
 
 /** Falha que a próxima chamada de comando devolve (e que se repete até o teste limpar). */

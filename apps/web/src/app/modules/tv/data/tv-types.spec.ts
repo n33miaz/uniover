@@ -47,7 +47,20 @@ describe('parseState', () => {
       agentOnline: true,
       updatedAt: '2026-10-19T14:02:00Z',
       offlineSince: null,
+      adbPermission: null,
     });
+  });
+
+  it('reads the ADB permission only from a connected agent and only the known values', () => {
+    for (const value of ['granted', 'missing', 'pending']) {
+      expect(parseState({ ...base, adbPermission: value })?.adbPermission).toBe(value);
+    }
+    // Sem agente, ou com um valor de uma API mais nova, "não se sabe": nunca "falta".
+    expect(
+      parseState({ ...base, agentOnline: false, adbPermission: 'missing' })?.adbPermission,
+    ).toBeNull();
+    expect(parseState({ ...base, adbPermission: 'revoked' })?.adbPermission).toBeNull();
+    expect(parseState({ ...base, adbPermission: 7 })?.adbPermission).toBeNull();
   });
 
   it('carries the offline instant only while the agent is off', () => {
