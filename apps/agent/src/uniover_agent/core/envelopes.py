@@ -270,6 +270,18 @@ class EnvelopeFactory:
         }
         return self._build("pc.apps.v1", body, None)
 
+    def pc_rtc_answer(
+        self, session_id: str, sdp: str, correlation_id: str | None
+    ) -> dict[str, Any]:
+        """`pc.rtc.answer.v1`: a resposta à oferta do canal direto (`correlationId` da oferta)."""
+        return self._build(
+            "pc.rtc.answer.v1", {"sessionId": session_id, "sdp": sdp}, correlation_id
+        )
+
+    def pc_rtc_closed(self, session_id: str, reason: str) -> dict[str, Any]:
+        """`pc.rtc.closed.v1`: o canal direto da sessão fechou (o agente avisa a API)."""
+        return self._build("pc.rtc.closed.v1", {"sessionId": session_id, "reason": reason}, None)
+
     def tv_apps_v2(
         self,
         apps: Sequence[tuple[str, str, AppIcon | None]],

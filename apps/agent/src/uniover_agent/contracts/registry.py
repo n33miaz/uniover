@@ -25,6 +25,11 @@ from .pc_key_v2 import PcKeyV2Message
 from .pc_media_v1 import PcMediaV1Message
 from .pc_pointer_v1 import PcPointerV1Message
 from .pc_power_v1 import PcPowerV1Message
+from .pc_rtc_answer_v1 import PcRtcAnswerV1Message
+from .pc_rtc_candidate_v1 import PcRtcCandidateV1Message
+from .pc_rtc_close_v1 import PcRtcCloseV1Message
+from .pc_rtc_closed_v1 import PcRtcClosedV1Message
+from .pc_rtc_offer_v1 import PcRtcOfferV1Message
 from .pc_text_v1 import PcTextV1Message
 from .tv_adb_rebind_v1 import TvAdbRebindV1Message
 from .tv_app_launch_v1 import TvAppLaunchV1Message
@@ -73,6 +78,11 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.media.v1": PcMediaV1Message,
     "pc.pointer.v1": PcPointerV1Message,
     "pc.power.v1": PcPowerV1Message,
+    "pc.rtc.answer.v1": PcRtcAnswerV1Message,
+    "pc.rtc.candidate.v1": PcRtcCandidateV1Message,
+    "pc.rtc.close.v1": PcRtcCloseV1Message,
+    "pc.rtc.closed.v1": PcRtcClosedV1Message,
+    "pc.rtc.offer.v1": PcRtcOfferV1Message,
     "pc.text.v1": PcTextV1Message,
     "tv.adb.rebind.v1": TvAdbRebindV1Message,
     "tv.app.launch.v1": TvAppLaunchV1Message,

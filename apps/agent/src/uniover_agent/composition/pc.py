@@ -6,22 +6,35 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from uniover_agent.adapters.local_config import update_config
+from uniover_agent.adapters.pc_direct_aiortc import aiortc_installed, build_peer
 from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher, WindowsPcPower
 from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
 from uniover_agent.core import (
     PC_CONTROL_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
+    PC_RTC_CAPABILITY,
     ClockOffset,
+    DirectSettings,
     EnvelopeFactory,
+    EnvelopeGate,
     Handler,
     PcApp,
+    PcDirectService,
     PcUseTracker,
     parse_favorites,
     pc_apps_announcer,
     pc_handlers,
+    pc_rtc_handlers,
 )
-from uniover_agent.ports import PcInput, PcLauncher, PcPower, Transport
+from uniover_agent.ports import (
+    DirectPeerFactory,
+    PcInput,
+    PcLauncher,
+    PcPower,
+    Transport,
+    TransportError,
+)
 
 _log = logging.getLogger("uniover_agent")
 
@@ -42,6 +55,8 @@ class PcSetup:
     clock: ClockOffset
     # Quando o controle foi usado pela última vez (a atualização do agente espera por ele).
     use: PcUseTracker
+    # O canal direto (WebRTC), quando este PC o oferece; `None` sem a biblioteca ou desligado.
+    direct: PcDirectService | None = None
 
 
 def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
@@ -56,6 +71,11 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     on_clock_skew: Callable[[float], None] | None = None,
     on_expired: Callable[[float], None] | None = None,
     on_clock_unstable: Callable[[int], None] | None = None,
+    gate: EnvelopeGate | None = None,
+    agent_id: str = "",
+    direct_factory: DirectPeerFactory | None = None,
+    direct_available: Callable[[], bool] = aiortc_installed,
+    record: Callable[[str, str, str], None] | None = None,
 ) -> PcSetup | None:
     """O controle do PC só existe quando está ligado neste PC (`pc_control`, ligado por padrão) e o
     sistema é o Windows. Desligado, nenhum comando `pc.*` é aceito e a capacidade não é declarada: a
@@ -78,16 +98,55 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         clock=clock,
         use=use,
     )
+    # `pc.key.v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só os declara
+    # depois de a API listá-los (`declarable_capabilities`).
+    capabilities = [PC_CONTROL_CAPABILITY, PC_KEY_V2_CAPABILITY]
+    direct: PcDirectService | None = None
+    if settings.pc_direct and gate is not None and direct_available():
+        direct = _build_direct(
+            settings, transport, envelopes, gate, agent_id, clock, direct_factory, record
+        )
+        handlers.update(pc_rtc_handlers(direct, transport, envelopes))
+        capabilities.append(PC_RTC_CAPABILITY)
     return PcSetup(
         handlers,
-        # `pc.key.v2` aqui é só o que este agente sabe; o `hello` só o declara depois de a API
-        # listá-lo (`declarable_capabilities`).
-        [PC_CONTROL_CAPABILITY, PC_KEY_V2_CAPABILITY],
+        capabilities,
         [pc_apps_announcer(apps, transport, envelopes)],
         apps,
         pc_input.release_all,
         clock,
         use,
+        direct,
+    )
+
+
+def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
+    settings: Settings,
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    gate: EnvelopeGate,
+    agent_id: str,
+    clock: ClockOffset,
+    factory: DirectPeerFactory | None,
+    record: Callable[[str, str, str], None] | None,
+) -> PcDirectService:
+    async def notify_closed(session_id: str, reason: str) -> None:
+        try:
+            await transport.send(envelopes.pc_rtc_closed(session_id, reason))
+        except TransportError as exc:
+            _log.debug("aviso de canal direto fechado não enviado (%s)", exc)
+
+    return PcDirectService(
+        factory=factory or build_peer,
+        agent_id=agent_id,
+        gate=gate,
+        api_clock=clock,
+        notify_closed=notify_closed,
+        record=record,
+        settings=DirectSettings(
+            connect_timeout_seconds=settings.pc_direct_connect_timeout_seconds,
+            idle_seconds=settings.pc_direct_idle_seconds,
+        ),
     )
 
 

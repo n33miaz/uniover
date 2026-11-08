@@ -83,6 +83,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_PC_CONTROL` | `1` liga o controle deste PC pelo app (mouse, teclado, mídia, energia, favoritos). **Desligado por padrão**: sem isto o agente nem declara a capacidade `pc.control.v1` e recusa todo `pc.*`. Mais fácil: `uv run uniover-agent pc-control on` (grava no `agent.toml`; `off` desliga, `status` mostra) e reiniciar o agente |
 | `UNIOVER_PC_APPS` | favoritos que o app pode abrir, `Nome=destino` (programa, documento ou endereço), separados por `;`. No `agent.toml`, `pc_apps` como lista (`["Navegador=C:\...\chrome.exe", "Notas=notepad"]`). O app só recebe o nome e um identificador; o destino nunca sai do PC |
 | `UNIOVER_PC_SHUTDOWN_DELAY_SECONDS` | contagem do desligamento pedido pelo app, de 10 a 300 (padrão `30`); o Windows avisa na tela durante ela e o app pode cancelar antes do fim |
+| `UNIOVER_PC_DIRECT` | `0` desliga o canal direto (WebRTC) deste PC (padrão ligado; ver "Canal direto"). `UNIOVER_PC_DIRECT_CONNECT_TIMEOUT_SECONDS` (padrão `15`) e `UNIOVER_PC_DIRECT_IDLE_SECONDS` (padrão `20`) são o prazo para o app abrir e autenticar o canal e o silêncio que o fecha |
 | `UNIOVER_TV_LIVRE` | `0` desliga o módulo TV Livre neste PC (padrão: ligado, sempre opt-in por comando do dono; ver "TV Livre") |
 | `UNIOVER_TV_LIVRE_APK_URL` | pasta HTTPS da publicação com `uniover-launcher.apk` e `uniover-launcher.apk.sha256` (padrão: a última publicação do repositório) |
 | `UNIOVER_TV_LIVRE_SIGNER_SHA256` | SHA-256 do certificado de assinatura do APK do TV Livre (hexadecimal, com ou sem `:`; vários separados por vírgula). O padrão é o certificado público da chave fixa do projeto; lista vazia = **nada é instalado**, porque o hash da publicação não prova quem assinou. Conferido com o `apksigner` do Android SDK (`UNIOVER_TV_LIVRE_APKSIGNER_PATH` para indicar outro caminho) |
@@ -170,6 +171,32 @@ favoritos de `pc_apps`. Tudo é a API do Windows pelo `ctypes` (`SendInput`, `Lo
   suspensão (só para o desligamento): quem confirma é o app.
 - O Windows recusa a entrada simulada quando a janela em foco tem mais privilégio (UAC, um app como administrador): o
   comando volta como `failed`.
+
+### Canal direto (WebRTC)
+
+Um acelerador **opcional** do controle do PC: o app e este PC trocam os mesmos comandos por um canal de dados WebRTC, sem
+passar pela API (que só faz a sinalização, autenticada). A nuvem segue sendo o caminho de sempre e a reserva automática:
+qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o app perceba além de um ponto de estado.
+
+- **Só o dono.** A oferta chega pelo canal autenticado com a API, e a API só a entrega ao agente de quem pareou o PC (a
+  mesma regra do controle). A impressão digital DTLS da oferta e da resposta passa por ela. A primeira mensagem do canal
+  leva um token de uso único e vida curta (30 s, contados aqui) emitido pela API; sem ele o canal fecha e o ponteiro não passa.
+- **Os mesmos comandos.** Cliques, teclas, texto e mídia passam pelo mesmo esquema, pela mesma faixa e pelos mesmos
+  handlers da nuvem (idade, soltura de botão, texto fora do registro). Energia e favoritos só existem pela nuvem.
+  O ponteiro viaja como total acumulado com número de sequência; cada comando leva o total do instante em que foi dado, e
+  o clique nunca passa na frente do movimento que o antecedeu.
+- **Fechar solta.** O canal fechado, por qualquer motivo (queda, silêncio de `pc_direct_idle_seconds`, troca por outra
+  oferta, a conexão com a API perdida, o agente encerrando), solta o que o PC segurava, como a queda da conexão com a API.
+  No máximo um canal por vez.
+- **Sem porta fixa e sem terceiros.** O porto UDP é efêmero e fecha com a sessão; nenhum STUN ou TURN, nenhum IP público.
+  Em Wi-Fi com isolamento de clientes, 5G ou rede marcada como Pública sem regra de entrada no Firewall o canal não abre e
+  o app usa a nuvem. O Firewall do Windows pode perguntar uma vez se o `python.exe` pode receber conexões: "Redes
+  privadas" basta na rede de casa.
+- **Dependência.** `aiortc` (versão exata), sem o `av` (FFmpeg, ~70 MB, com x264 e x265 sob GPL), que o `uv` exclui; um
+  módulo pequeno (`adapters/pc_direct_stub_av.py`) faz o papel dele para o `aiortc` poder ser importado. A
+  biblioteca só é carregada na primeira oferta, e a capacidade `pc.rtc.v1` só é declarada se ela está instalada, a
+  configuração `pc_direct` está ligada e a API a listou em `features`. Atualizar o `aiortc` exige rodar os testes
+  (`tests/test_pc_direct_aiortc.py` abre o canal contra o próprio `aiortc`).
 
 ## TV Samsung (Tizen)
 

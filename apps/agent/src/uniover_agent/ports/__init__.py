@@ -28,6 +28,14 @@ from uniover_agent.ports.pairing import (
     PollSlowDown,
 )
 from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
+from uniover_agent.ports.pc_direct import (
+    INPUT_CHANNEL,
+    POINTER_CHANNEL,
+    DirectPeer,
+    DirectPeerFactory,
+    DirectUnavailable,
+    PeerCallbacks,
+)
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
@@ -95,6 +103,8 @@ class SecretStore(Protocol):
 
 __all__ = [
     "ADB_USER_INITIATED",
+    "INPUT_CHANNEL",
+    "POINTER_CHANNEL",
     "AdbCommandFailed",
     "AdbDeviceChanged",
     "AdbError",
@@ -116,6 +126,9 @@ __all__ = [
     "Clock",
     "ConnectionReplaced",
     "CredentialRejected",
+    "DirectPeer",
+    "DirectPeerFactory",
+    "DirectUnavailable",
     "IconCache",
     "IconToolError",
     "LaunchableApp",
@@ -132,6 +145,7 @@ __all__ = [
     "PcLauncher",
     "PcPower",
     "PcUnsupported",
+    "PeerCallbacks",
     "PollApproved",
     "PollPending",
     "PollResult",
