@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
 import { PcPrefs } from '../data/pc-prefs';
 import { PcStore } from '../data/pc-store';
@@ -35,7 +35,9 @@ describe('MousePage', () => {
   beforeEach(() => {
     localStorage.clear();
     store = createFakePcStore();
-    TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: PcStore, useValue: store }],
+    });
     // Os botões de clique são opcionais (desligados por padrão): os testes dos botões os ligam.
     prefs = TestBed.inject(PcPrefs);
     prefs.set({ clickButtons: true });
@@ -344,11 +346,18 @@ describe('MousePage', () => {
         (b) => b.textContent?.trim() === name || b.getAttribute('aria-label') === name,
       )!;
     const settle = () => fixture.detectChanges();
+    /** As teclas saem em fila, uma por vez: deixa a resposta de cada uma voltar. */
+    const flush = async () => {
+      for (let round = 0; round < 8; round++) await Promise.resolve();
+    };
 
-    it('Enter, Esc and Tab are one touch away from the surface', () => {
+    it('Enter, Esc and Tab are one touch away from the surface', async () => {
       bar('Enter').click();
+      await flush();
       bar('Esc (Escape)').click();
+      await flush();
       bar('Tab').click();
+      await flush();
       expect(store.sendKey.mock.calls).toEqual([
         ['ENTER', []],
         ['ESCAPE', []],
@@ -364,18 +373,24 @@ describe('MousePage', () => {
       expect(store.sendKey).toHaveBeenCalledTimes(1);
     });
 
-    it('holding Backspace repeats, but stops adding keys while two are still unanswered', () => {
+    it('holding Backspace repeats, but never queues more than two keys while none is answered', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
       try {
-        store.sendKey.mockReturnValue(new Promise(() => undefined));
+        let answer!: () => void;
+        store.sendKey.mockImplementation(
+          () => new Promise((resolve) => (answer = () => resolve(null))),
+        );
         bar('Apagar').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
         expect(store.sendKey).toHaveBeenCalledTimes(1);
         vi.advanceTimersByTime(420);
-        expect(store.sendKey).toHaveBeenCalledTimes(2);
-        vi.advanceTimersByTime(2_000);
-        // Nenhuma resposta voltou: o PC não fica apagando depois de o dedo sair.
-        expect(store.sendKey).toHaveBeenCalledTimes(2);
+        vi.advanceTimersByTime(3_000);
         bar('Apagar').dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+        // Uma tecla em voo e uma na fila: o resto das repetições pulou a rodada.
+        answer();
+        await flush();
+        answer();
+        await flush();
+        expect(store.sendKey).toHaveBeenCalledTimes(2);
       } finally {
         vi.useRealTimers();
       }
@@ -398,15 +413,17 @@ describe('MousePage', () => {
       expect(panelKey('Ctrl').getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('the panel has navigation keys and the function row opens on Fn', () => {
+    it('the panel has navigation keys and the function row opens on Fn', async () => {
       bar('Mais teclas').click();
       settle();
       panelKey('Seta para cima').dispatchEvent(
         new MouseEvent('click', { detail: 0, bubbles: true }),
       );
+      await flush();
       panelKey('Home (início da linha)').dispatchEvent(
         new MouseEvent('click', { detail: 0, bubbles: true }),
       );
+      await flush();
       expect(store.sendKey.mock.calls).toEqual([
         ['UP', []],
         ['HOME', []],
@@ -415,6 +432,7 @@ describe('MousePage', () => {
       panelKey('Fn').click();
       settle();
       panelKey('F5').click();
+      await flush();
       expect(store.sendKey).toHaveBeenLastCalledWith('F5', []);
       bar('Mais teclas').click();
       settle();
@@ -431,21 +449,26 @@ describe('MousePage', () => {
       expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('F4', ['ALT']);
     });
 
-    it('shows the failure of a key for a moment, and a cancelled key says nothing', async () => {
-      store.sendKey.mockResolvedValueOnce({ kind: 'cancelled', message: '' });
-      bar('Enter').click();
-      await Promise.resolve();
-      await Promise.resolve();
-      settle();
-      expect(root.querySelector('.toast')).toBeNull();
-
+    it('shows the failure of a key for a moment', async () => {
       store.sendKey.mockResolvedValueOnce({ kind: 'offline', message: 'O PC está desconectado.' });
       bar('Enter').click();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flush();
       settle();
       expect(root.querySelector('.toast')?.getAttribute('role')).toBe('alert');
       expect(root.querySelector('.toast')?.textContent).toContain('O PC está desconectado.');
+    });
+
+    it('a text that may have been lost says so', async () => {
+      store.sendKey.mockResolvedValueOnce({
+        kind: 'timeout',
+        message: 'O PC não respondeu a tempo.',
+      });
+      bar('Enter').click();
+      await flush();
+      settle();
+      expect(root.querySelector('.toast')?.textContent).toContain(
+        'Parte do texto pode não ter chegado.',
+      );
     });
 
     it('with the PC away the bar stays drawn but off, and sends nothing', () => {
@@ -456,12 +479,55 @@ describe('MousePage', () => {
       expect(buttons.every((b) => b.disabled)).toBe(true);
     });
 
-    it('the keyboard and shortcuts buttons lead to the Shortcuts tab for now', () => {
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    it('the keyboard button opens the phone keyboard on the hidden field and closes it again', () => {
+      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('false');
       bar('Teclado').click();
+      expect(document.activeElement).toBe(field);
+      settle();
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('true');
+      bar('Teclado').click();
+      settle();
+      expect(document.activeElement).not.toBe(field);
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('touching a key of the bar keeps the phone keyboard open', () => {
+      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      bar('Teclado').click();
+      field.blur();
+      bar('Tab').click();
+      expect(document.activeElement).toBe(field);
+      // Fechado de propósito, tocar numa tecla não o reabre.
+      bar('Teclado').click();
+      expect(document.activeElement).not.toBe(field);
+      bar('Tab').click();
+      expect(document.activeElement).not.toBe(field);
+    });
+
+    it('with the keyboard open, the armed keys get a row above the bar', () => {
+      expect(root.querySelector('app-pc-action-bar .mods')).toBeNull();
+      bar('Teclado').click();
+      settle();
+      const mods = [...root.querySelectorAll<HTMLButtonElement>('app-pc-action-bar .mods button')];
+      expect(mods.map((b) => b.textContent?.trim())).toEqual(['Ctrl', 'Shift', 'Alt', 'Win']);
+      mods[0].click();
+      settle();
+      expect(mods[0].getAttribute('aria-pressed')).toBe('true');
+      expect(root.querySelector('.armed')?.textContent).toContain('Ctrl');
+    });
+
+    it('typing on the phone keyboard reaches the PC at once', () => {
+      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      field.value += 'ok';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(store.sendText).toHaveBeenCalledExactlyOnceWith('ok');
+    });
+
+    it('the shortcuts button leads to the Shortcuts tab for now', () => {
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
       bar('Atalhos').click();
-      expect(navigate).toHaveBeenCalledTimes(2);
-      expect(navigate).toHaveBeenCalledWith('/pc/atalhos');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/pc/atalhos');
     });
   });
 

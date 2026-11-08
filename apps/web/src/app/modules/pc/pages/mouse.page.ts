@@ -3,12 +3,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  afterNextRender,
   computed,
   effect,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
 import { PcPrefs } from '../data/pc-prefs';
 import { PcStore } from '../data/pc-store';
@@ -16,6 +18,7 @@ import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { PadButton, PadGesture } from '../input/pad-gesture';
 import { PcActionBar } from '../ui/action-bar';
+import { PcLiveKeyboard } from '../ui/live-keyboard';
 import { PcKeyPanel } from '../ui/key-panel';
 import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 import { ScreenWakeLock } from '../ui/wake-lock';
@@ -43,7 +46,7 @@ const ERROR_MS = 4_000;
  */
 @Component({
   selector: 'app-pc-mouse-page',
-  imports: [PcActionBar, PcKeyPanel, PcPadSettingsSheet],
+  imports: [PcActionBar, PcKeyPanel, PcLiveKeyboard, PcPadSettingsSheet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -106,6 +109,7 @@ const ERROR_MS = 4_000;
       @if (panelOpen()) {
         <app-pc-key-panel
           class="overlay"
+          (click)="keepKeyboard()"
           [disabled]="!store.canSend()"
           [busy]="keysBusy"
           (key)="sendKey($event)"
@@ -155,8 +159,16 @@ const ERROR_MS = 4_000;
       </div>
     }
 
-    <app-pc-action-bar
+    <app-pc-live-keyboard
       [disabled]="!store.canSend()"
+      (typing)="typing.set($event)"
+      (failed)="fail($event)"
+    />
+
+    <app-pc-action-bar
+      (click)="keepKeyboard()"
+      [disabled]="!store.canSend()"
+      [typing]="typing()"
       [panelOpen]="panelOpen()"
       [busy]="keysBusy"
       (key)="sendKey($event)"
@@ -179,9 +191,13 @@ export class MousePage {
   protected readonly prefs = inject(PcPrefs);
   private readonly armed = inject(PcArmed);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   protected readonly active = signal(false);
   protected readonly settingsOpen = signal(false);
   protected readonly panelOpen = signal(false);
+  /** O teclado do celular está aberto (o campo escondido tem o foco). */
+  protected readonly typing = signal(false);
+  private readonly keyboard = viewChild.required(PcLiveKeyboard);
   protected readonly error = signal<string | null>(null);
   /** Uma pressão longa apertou o botão (vale na hora, antes de a resposta do PC chegar: o iOS não vibra). */
   private readonly pressing = signal(false);
@@ -196,12 +212,10 @@ export class MousePage {
   private pressHold = false;
   /** O número do aperto que este dedo começou: o fim do dedo só solta esse (não um mais novo, do botão "Arrastar"). */
   private holdEpoch = 0;
-  /** Teclas pedidas e ainda sem resposta (a repetição de apagar e das setas espera por elas). */
-  private pendingKeys = 0;
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Devolve `true` quando já há teclas demais sem resposta (a repetição pula a rodada em vez de empilhar). */
-  protected readonly keysBusy = () => this.pendingKeys >= MAX_KEYS_IN_FLIGHT;
+  protected readonly keysBusy = () => this.keyboard().pending >= MAX_KEYS_IN_FLIGHT;
 
   private readonly wakeLock = new ScreenWakeLock(inject(DOCUMENT));
 
@@ -214,6 +228,11 @@ export class MousePage {
   });
 
   constructor() {
+    // O endereço antigo do teclado chega aqui com `?teclado`: onde o navegador deixa, o teclado já abre. No iOS o foco só
+    // vale dentro de um toque, então a pessoa toca no botão do teclado.
+    afterNextRender(() => {
+      if (this.route.snapshot.queryParamMap.has('teclado')) this.keyboard().open();
+    });
     effect(() => {
       if (this.prefs.keepAwake()) this.wakeLock.start();
       else this.wakeLock.stop();
@@ -297,21 +316,18 @@ export class MousePage {
    * na tela por alguns segundos.
    */
   protected sendKey(key: PcKey, modifiers: readonly PcModifier[] = []): void {
-    if (!this.store.canSend()) return;
-    tick();
-    const taken = this.armed.take(modifiers);
-    this.pendingKeys++;
-    void this.store
-      .sendKey(key, taken)
-      .then((failure) => {
-        if (failure && failure.kind !== 'cancelled') this.fail(failure.message);
-      })
-      .finally(() => this.pendingKeys--);
+    this.keyboard().press(key, modifiers);
   }
 
-  /** O teclado do celular ainda vive na aba Atalhos; a digitação ao vivo o substitui. */
+  /** O botão do teclado abre e fecha o teclado do celular; o foco tem de nascer neste toque (regra do iOS). */
   protected openKeyboard(): void {
-    void this.router.navigateByUrl('/pc/atalhos');
+    if (this.keyboard().focused) this.keyboard().close();
+    else this.keyboard().open();
+  }
+
+  /** Tocar numa tecla da tela tira o foco do campo: no modo teclado ele volta (o teclado do celular não fecha). */
+  protected keepKeyboard(): void {
+    this.keyboard().restore();
   }
 
   protected openShortcuts(): void {
@@ -350,7 +366,7 @@ export class MousePage {
     this.store.endGesture();
   }
 
-  private fail(message: string): void {
+  protected fail(message: string): void {
     this.error.set(message);
     clearTimeout(this.errorTimer);
     this.errorTimer = setTimeout(() => this.error.set(null), ERROR_MS);

@@ -1,0 +1,25 @@
+/*
+ * O campo é invisível e não recebe toque (só o foco vindo do botão do teclado). Tem 44 px para ser um alvo inteiro e
+ * 16 px de fonte: abaixo disso o Safari do iPhone dá zoom ao focar.
+ */
+:host {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
+  opacity: 0;
+  pointer-events: none;
+}
+.field {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font: inherit;
+  font-size: 16px;
+}
