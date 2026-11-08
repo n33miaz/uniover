@@ -155,7 +155,7 @@ export class BodyProfileSheet {
       const sex = this.sexDraft();
       const factor = this.factorDraft();
       return (
-        (height !== null && height !== (saved ? toFieldText(saved.heightCm) : '')) ||
+        (height !== null && parseDecimal(height) !== (saved?.heightCm ?? null)) ||
         (birth !== null && birth !== (saved?.birthDate ?? '')) ||
         (sex !== null && sex !== (saved?.sex ?? 'male')) ||
         (factor !== null && factor !== (saved?.activityFactor ?? 1.55))

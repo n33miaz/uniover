@@ -143,26 +143,42 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     h1:focus {
       outline: none;
     }
+    /* Duas ações juntas (anel de sincronia e "•••" do Treino) ocupam o dobro: os dois lados reservam o mesmo espaço, o título
+       continua no centro real e a conta do tamanho dele enxerga a largura certa. */
+    :host ::ng-deep .head:has([pageTopBarActions].pair) {
+      --side: calc(var(--tap) * 2 + 4px);
+    }
     /*
-     * Título numa linha, com tipografia fluida: cresce com a largura da tela até 1,35 rem e encolhe para o espaço que sobra
-     * entre os dois círculos conforme o tamanho do texto (0,6 em de largura média por letra, folga para o negrito). O
-     * primeiro font-size é o de reserva para quem não entende cqw; as reticências ficam só como rede de segurança para um
-     * texto fora do normal, nenhum título de tela chega nelas.
+     * Título numa linha, com tipografia fluida. Sem unidades de contêiner (cqw), o tamanho cresce só com a largura da tela
+     * até 1,35 rem (5vw: o mais longo dos títulos reais cabe em 360 px). Com elas, o título mede o espaço que sobra entre os
+     * dois lados (largura do topo, menos a margem ou a área segura de cada borda, menos os dois lados reservados e as folgas)
+     * e encolhe conforme o tamanho do texto: 0,6 em de largura média por letra, com folga para o negrito. As reticências
+     * ficam só como rede de segurança para um texto fora do normal; nenhum título de tela chega nelas.
      */
     h1 {
-      --title-room: calc(100cqw - 2 * var(--gutter) - 2 * (var(--tap) + 4px));
       margin: 0;
       min-width: 0;
       overflow: hidden;
-      font-size: clamp(1rem, 5.6vw, 1.35rem);
-      font-size: clamp(
-        0.9rem,
-        min(5.6vw, var(--title-room) / (var(--title-len, 20) * 0.6)),
-        1.35rem
-      );
+      font-size: clamp(1rem, 5vw, 1.35rem);
       text-align: center;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    @supports (width: 1cqw) {
+      h1 {
+        --title-room: calc(
+          100cqw - max(var(--gutter), env(safe-area-inset-left)) - max(
+              var(--gutter),
+              env(safe-area-inset-right)
+            ) -
+            2 * (var(--side) + 4px)
+        );
+        font-size: clamp(
+          0.9rem,
+          min(5.6vw, var(--title-room) / (var(--title-len, 20) * 0.6)),
+          1.35rem
+        );
+      }
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

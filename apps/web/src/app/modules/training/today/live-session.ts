@@ -310,7 +310,13 @@ export class LiveSession {
     let appliedKey = '';
     let appliedFill = '';
     // Cartão com carga, repetições ou nota digitadas e ainda sem "Concluir série": a recarga automática de atualização espera.
-    registerUnsavedWork(() => this.applied !== null && !sameSetFields(this.draft(), this.applied));
+    // Sem cartão na tela (o plano acabou, ou o exercício ainda não chegou) não há campo a perder, mesmo com o rascunho velho.
+    registerUnsavedWork(
+      () =>
+        this.live.defaults() !== null &&
+        this.applied !== null &&
+        !sameSetFields(this.draft(), this.applied),
+    );
     // O cartão recomeça (preenchido com a última vez) quando muda o exercício, a série ou o que há de gravado; e, se a
     // pessoa ainda não mexeu nele, também quando o histórico chega depois (primeira leitura do servidor).
     effect(() => {

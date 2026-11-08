@@ -505,27 +505,14 @@ export class FoodDiaryPage {
   private pendingOnlineQuery: string | null = null;
   private onlineResultsQuery: string | null = null;
   private savingOwnFoodQuery: string | null = null;
+  /** O estado do formulário quando ele estava "limpo": vazio, ou como "Editar" o preencheu. */
+  private baseline = '';
 
   constructor() {
-    // Lançamento com texto digitado e ainda não registrado: a recarga automática de atualização espera.
-    registerUnsavedWork(
-      () =>
-        [
-          this.time(),
-          this.note(),
-          this.freeName(),
-          this.freeKcal(),
-          this.freeProtein(),
-          this.freeCarbs(),
-          this.freeFat(),
-          this.ownName(),
-          this.ownBrand(),
-          this.ownKcal(),
-          this.ownProtein(),
-          this.ownCarbs(),
-          this.ownFat(),
-        ].some((text) => text.trim() !== '') || this.grams() !== '100',
-    );
+    // Lançamento com algo digitado ou escolhido que ainda não foi registrado: a recarga automática de atualização espera.
+    // O ponto de partida é o formulário vazio, ou os valores que "Editar" carregou (abrir sem mudar nada não é trabalho a perder).
+    this.baseline = this.snapshot();
+    registerUnsavedWork(() => this.snapshot() !== this.baseline);
     effect(() => {
       this.meals.revision();
       void this.loadDay();
@@ -569,6 +556,28 @@ export class FoodDiaryPage {
     } finally {
       if (request === this.dayLoad && day === this.day()) this.loaded.set(true);
     }
+  }
+
+  /** Tudo o que a pessoa digita ou escolhe no lançamento, num texto só, para comparar com o ponto de partida. */
+  private snapshot(): string {
+    return JSON.stringify([
+      this.mealType(),
+      this.selectedFood()?.id ?? null,
+      this.grams(),
+      this.time(),
+      this.note(),
+      this.freeName(),
+      this.freeKcal(),
+      this.freeProtein(),
+      this.freeCarbs(),
+      this.freeFat(),
+      this.ownName(),
+      this.ownBrand(),
+      this.ownKcal(),
+      this.ownProtein(),
+      this.ownCarbs(),
+      this.ownFat(),
+    ]);
   }
 
   protected async changeDay(event: Event): Promise<void> {
@@ -713,21 +722,28 @@ export class FoodDiaryPage {
         .searchLocal(entry.name)
         .then((found) => {
           if (request !== this.editRequest || this.editingId() !== entry.id) return;
+          // Só vira o novo ponto de partida se a pessoa ainda não mexeu: o que ela digitou nesse meio-tempo continua a perder.
+          const untouched = this.snapshot() === this.baseline;
           const match = found.find((item) => item.id === entry.foodId);
           if (match) {
             this.selectFood(match);
             this.grams.set(String(entry.quantityGrams));
           } else this.useFreeEntry(entry);
+          if (untouched) this.baseline = this.snapshot();
         })
         .catch(() => {
-          if (request === this.editRequest && this.editingId() === entry.id)
+          if (request === this.editRequest && this.editingId() === entry.id) {
+            const untouched = this.snapshot() === this.baseline;
             this.useFreeEntry(entry);
+            if (untouched) this.baseline = this.snapshot();
+          }
         });
       if (food) {
         this.selectFood(food);
         this.grams.set(String(entry.quantityGrams));
       }
     } else this.useFreeEntry(entry);
+    this.baseline = this.snapshot();
     document.getElementById('entry-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -829,7 +845,14 @@ export class FoodDiaryPage {
     this.freeProtein.set('');
     this.freeCarbs.set('');
     this.freeFat.set('');
+    this.ownName.set('');
+    this.ownBrand.set('');
+    this.ownKcal.set('');
+    this.ownProtein.set('');
+    this.ownCarbs.set('');
+    this.ownFat.set('');
     this.formError.set('');
+    this.baseline = this.snapshot();
   }
 
   private scaled(field: 'kcal' | 'proteinG' | 'carbsPer100g' | 'fatPer100g'): string {

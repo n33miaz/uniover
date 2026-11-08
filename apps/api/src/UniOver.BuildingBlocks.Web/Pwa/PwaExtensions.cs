@@ -101,8 +101,12 @@ internal static partial class PwaCachePolicy
     public const string Immutable = "public, max-age=31536000, immutable";
     public const string Revalidate = "no-cache";
 
-    /// <summary>O nome que o build gera para o JavaScript e o CSS com hash, só na raiz de <c>wwwroot</c>.</summary>
-    [GeneratedRegex(@"^/(?:chunk|main|polyfills|styles)-[A-Za-z0-9_-]{6,}\.(?:js|css)$", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// O nome exato que o build do Angular gera, só na raiz de <c>wwwroot</c>: <c>main</c>, <c>polyfills</c> e <c>styles</c>
+    /// com 8 letras maiúsculas ou dígitos, e <c>chunk</c> com 8 caracteres de base64 de URL. Um arquivo parecido sem esse
+    /// hash (<c>main-legacy.js</c>) não é imutável, porque o nome não garante que o conteúdo nunca muda.
+    /// </summary>
+    [GeneratedRegex(@"^/(?:(?:main|polyfills|styles)-[A-Z0-9]{8}|chunk-[A-Za-z0-9_-]{8})\.(?:js|css)$", RegexOptions.CultureInvariant)]
     private static partial Regex HashedAsset();
 
     /// <summary>O valor para o caminho pedido, ou <c>null</c> quando o arquivo segue sem cabeçalho explícito.</summary>
