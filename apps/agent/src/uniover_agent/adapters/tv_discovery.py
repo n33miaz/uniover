@@ -150,9 +150,12 @@ def local_ipv4() -> str | None:
     return None if address.startswith("0.") else address
 
 
-def subnet_hosts(local: str, exclude: str | None = None) -> list[str]:
-    """Os outros 253 endereços do /24 de `local` (e sem `exclude`, quando dado)."""
-    network = ipaddress.ip_network(f"{local}/24", strict=False)
+def subnet_hosts(local: str, exclude: str | None = None, prefix: int = 24) -> list[str]:
+    """Os outros 253 endereços do /24 de `local` (e sem `exclude`, quando dado).
+
+    `prefix` só pode **diminuir** a rede (o /28 do ponto de acesso do celular): nunca passa de /24.
+    """
+    network = ipaddress.ip_network(f"{local}/{max(24, min(prefix, 30))}", strict=False)
     skip = {local, exclude}
     return [str(host) for host in network.hosts() if str(host) not in skip]
 

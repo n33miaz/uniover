@@ -12,6 +12,7 @@ from websockets.asyncio.server import ServerConnection
 from uniover_agent.adapters import tv_locate
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTvRemote
 from uniover_agent.adapters.local_config import update_config
+from uniover_agent.adapters.local_networks import LocalInterface
 from uniover_agent.adapters.tv_discovery import PortState
 from uniover_agent.composition import connection as connection_module
 from uniover_agent.composition import tv as tv_module
@@ -256,6 +257,9 @@ class Lan:
         # A placa com rota padrão é a do cabo sem rede (link-local); a TV está no Wi-Fi.
         monkeypatch.setattr(tv_locate, "local_ipv4", lambda: "169.254.190.176")
         monkeypatch.setattr(tv_locate, "local_address_for", lambda host: "192.168.0.12")
+        monkeypatch.setattr(
+            tv_locate, "local_interfaces", lambda: [LocalInterface("192.168.0.12", 24)]
+        )
 
 
 def read_saved(path: Path) -> dict[str, Any]:
@@ -393,7 +397,7 @@ async def test_android_without_saved_identity_uses_the_paired_session_and_saves_
     monkeypatch.setattr(
         tv_locate,
         "subnet_hosts",
-        lambda base, exclude=None: [OLD_HOST, NEW_HOST, "192.168.0.20"],
+        lambda base, exclude=None, prefix=24: [OLD_HOST, NEW_HOST, "192.168.0.20"],
     )
 
     async def silent(host: str, port: int, wait: float) -> PortState:

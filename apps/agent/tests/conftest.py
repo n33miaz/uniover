@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters import crash_trace, startup_trace
+from uniover_agent.adapters import crash_trace, local_networks, startup_trace
 from uniover_agent.adapters import wol as _wol
 
 # O envio real do pacote mágico (os testes trocam `wol._send`; o do próprio WOL o usa de volta).
@@ -89,6 +89,10 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(self_update_module, "fetch_git_tree", lambda sha: None)
     monkeypatch.setattr("uniover_agent.adapters.tv_samsung_volume.ssdp_locations", lambda host: [])
     monkeypatch.setattr(tv_locate, "arp_table", no_arp)
+    # Nenhum teste lista as placas reais do PC (a varredura e a vigia da rede só enxergam o que o
+    # teste põe ali): sem isto uma varredura de teste cairia na rede de verdade.
+    monkeypatch.setattr(tv_locate, "local_interfaces", lambda: [])
+    monkeypatch.setattr(local_networks, "local_interfaces", lambda: [])
 
 
 @pytest.fixture(autouse=True)
