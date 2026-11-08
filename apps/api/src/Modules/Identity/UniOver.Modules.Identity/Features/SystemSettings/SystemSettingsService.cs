@@ -14,13 +14,12 @@ public static class SystemSettingKeys
     public const string OffContact = "training.off-contact";
     public const string MaxComputersPerGuest = "devices.max-per-guest";
     public const string AgentOfflineMinutes = "devices.agent-offline-minutes";
-    public const string PhotoStorageEnabled = "training.photo-storage-enabled";
     public const string TvLightCleanupEnabled = "tv.light-cleanup-enabled";
     public const string TvDeepCleanupEnabled = "tv.deep-cleanup-enabled";
     public const string TvDeepCleanupMemoryThresholdMb = "tv.deep-cleanup-memory-threshold-mb";
     public static IReadOnlyList<string> All { get; } =
     [
-        OffContact, MaxComputersPerGuest, AgentOfflineMinutes, PhotoStorageEnabled,
+        OffContact, MaxComputersPerGuest, AgentOfflineMinutes,
         TvLightCleanupEnabled, TvDeepCleanupEnabled, TvDeepCleanupMemoryThresholdMb,
     ];
 }
@@ -58,9 +57,6 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
     public async Task<int> AgentOfflineMinutesAsync(CancellationToken cancellationToken = default) =>
         (await ReadAsync(SystemSettingKeys.AgentOfflineMinutes, cancellationToken)).Value.GetInt32();
 
-    public async Task<bool> PhotoStorageEnabledAsync(CancellationToken cancellationToken = default) =>
-        (await ReadAsync(SystemSettingKeys.PhotoStorageEnabled, cancellationToken)).Value.GetBoolean();
-
     public async Task<bool> TvLightCleanupEnabledAsync(CancellationToken cancellationToken = default) =>
         (await ReadAsync(SystemSettingKeys.TvLightCleanupEnabled, cancellationToken)).Value.GetBoolean();
 
@@ -86,7 +82,7 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
                 configuration["Modules:Tv:LightCleanupEnabled"], out var lightEnabled) || lightEnabled,
             SystemSettingKeys.TvDeepCleanupEnabled => !bool.TryParse(
                 configuration["Modules:Tv:DeepCleanupEnabled"], out var deepEnabled) || deepEnabled,
-            _ => bool.TryParse(configuration["Modules:Training:Photos:Storage:Enabled"], out var enabled) && enabled,
+            _ => throw new ArgumentOutOfRangeException(nameof(key)),
         };
         return JsonSerializer.SerializeToElement(value);
     }

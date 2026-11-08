@@ -88,6 +88,41 @@ internal sealed partial class PwaIndexRenderer(IWebHostEnvironment environment, 
     }
 }
 
+/// <summary>
+/// Cabeçalho <c>Cache-Control</c> dos arquivos estáticos do PWA. Os pedaços de código gerados pelo build levam o hash do
+/// conteúdo no nome (<c>chunk-AB12cd34.js</c>), então um nome nunca muda de conteúdo e pode ficar em cache por um ano
+/// (<c>immutable</c>). Os arquivos de nome fixo que decidem qual versão a pessoa roda (service worker, manifestos e o
+/// esqueleto de abertura) precisam ser conferidos a cada uso: <c>no-cache</c> não proíbe guardar, obriga a revalidar
+/// (ETag, resposta 304 sem corpo), e é o que deixa a atualização do service worker chegar logo depois de um deploy.
+/// Os demais arquivos (ícones, artes, o conector do PC) ficam sem cabeçalho, como antes.
+/// </summary>
+internal static partial class PwaCachePolicy
+{
+    public const string Immutable = "public, max-age=31536000, immutable";
+    public const string Revalidate = "no-cache";
+
+    /// <summary>O nome que o build gera para o JavaScript e o CSS com hash, só na raiz de <c>wwwroot</c>.</summary>
+    [GeneratedRegex(@"^/(?:chunk|main|polyfills|styles)-[A-Za-z0-9_-]{6,}\.(?:js|css)$", RegexOptions.CultureInvariant)]
+    private static partial Regex HashedAsset();
+
+    /// <summary>O valor para o caminho pedido, ou <c>null</c> quando o arquivo segue sem cabeçalho explícito.</summary>
+    public static string? For(PathString path)
+    {
+        var value = path.Value ?? string.Empty;
+        if (HashedAsset().IsMatch(value))
+        {
+            return Immutable;
+        }
+
+        var name = value[(value.LastIndexOf('/') + 1)..];
+        return name.Equals("sw.js", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("boot-skeleton.js", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase)
+            ? Revalidate
+            : null;
+    }
+}
+
 public static class PwaExtensions
 {
     public static IServiceCollection AddUniOverPwa(this IServiceCollection services, IConfiguration configuration)
@@ -113,6 +148,13 @@ public static class PwaExtensions
         {
             FileProvider = new IndexHidingFileProvider(app.Environment.WebRootFileProvider),
             ContentTypeProvider = types,
+            OnPrepareResponse = context =>
+            {
+                if (PwaCachePolicy.For(context.Context.Request.Path) is { } cacheControl)
+                {
+                    context.Context.Response.Headers.CacheControl = cacheControl;
+                }
+            },
         });
     }
 

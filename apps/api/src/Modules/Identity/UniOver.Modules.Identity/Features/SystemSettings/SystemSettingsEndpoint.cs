@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Contracts;
@@ -18,18 +17,13 @@ namespace UniOver.Modules.Identity.Features.SystemSettings;
 
 internal sealed record SaveSystemSettingRequest(JsonElement Value);
 
-/// <summary>Se o servidor tem o bucket de fotos completo; nunca devolve endereço, nome nem credenciais.</summary>
-internal sealed record PhotoBucketStatus(bool Configured);
-
 internal static class SystemSettingsEndpoint
 {
     public static void MapSystemSettings(this IEndpointRouteBuilder group)
     {
-        // Só o dono lê: o contato e o estado do bucket não são assunto de convidado.
+        // Só o dono lê: o contato e os limites do sistema não são assunto de convidado.
         group.MapGet("/system-settings", ReadAsync).RequireAuthorization(UniOverAuth.OwnerPolicy)
             .Produces<IReadOnlyList<SystemSettingValue>>().ProducesProblem(401).ProducesProblem(403);
-        group.MapGet("/system-settings/photo-bucket", ReadPhotoBucket).RequireAuthorization(UniOverAuth.OwnerPolicy)
-            .Produces<PhotoBucketStatus>().ProducesProblem(401).ProducesProblem(403);
         group.MapPut("/system-settings/{key}", SaveAsync)
             .RequireAuthorization(StepUp.Policy(StepUpActions.SystemSettingsChange))
             .RequireRateLimiting(RateLimitPolicies.Login)
@@ -48,14 +42,10 @@ internal static class SystemSettingsEndpoint
         return TypedResults.Ok(values);
     }
 
-    // Deixa a tela dizer se ligar as fotos vai funcionar antes de a pessoa tentar (e confirmar a passkey à toa).
-    private static Ok<PhotoBucketStatus> ReadPhotoBucket(IConfiguration configuration) =>
-        TypedResults.Ok(new PhotoBucketStatus(HasPhotoBucket(configuration)));
-
     private static async Task<IResult> SaveAsync(
         string key, SaveSystemSettingRequest? request, HttpContext http, ICurrentUser current,
         IdentityDbContext db, SystemSettingsService settings, LoginAuditWriter audit,
-        IConfiguration configuration, TimeProvider time, ITvCleanupSettingsPublisher? cleanupPublisher,
+        TimeProvider time, ITvCleanupSettingsPublisher? cleanupPublisher,
         CancellationToken cancellationToken)
     {
         if (current.UserId is not { } ownerId) return IdentityProblems.Unauthenticated();
@@ -64,11 +54,6 @@ internal static class SystemSettingsEndpoint
             {
                 ["value"] = ["Valor inválido para esta configuração."],
             });
-
-        if (key == SystemSettingKeys.PhotoStorageEnabled && valueJson == "true" && !HasPhotoBucket(configuration))
-            return Results.Problem(statusCode: 409,
-                title: "O bucket de fotos precisa de endereço, região, nome e credenciais no servidor antes de ser ligado.",
-                type: ProblemDetailsExtensions.TypeBase + "photo-bucket-not-configured");
 
         var row = await db.SystemSettings.SingleOrDefaultAsync(s => s.Key == key, cancellationToken);
         if (row is null)
@@ -113,7 +98,6 @@ internal static class SystemSettingsEndpoint
                 if (!value.TryGetInt32(out var minutes) || minutes is < 1 or > 1440) return false;
                 json = minutes.ToString(CultureInfo.InvariantCulture);
                 return true;
-            case SystemSettingKeys.PhotoStorageEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
             case SystemSettingKeys.TvLightCleanupEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
             case SystemSettingKeys.TvDeepCleanupEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                 json = value.GetBoolean() ? "true" : "false";
@@ -149,17 +133,4 @@ internal static class SystemSettingsEndpoint
 
     private static bool IsTvCleanupKey(string key) => key is SystemSettingKeys.TvLightCleanupEnabled
         or SystemSettingKeys.TvDeepCleanupEnabled or SystemSettingKeys.TvDeepCleanupMemoryThresholdMb;
-
-    // A região fica de fora: o Treino tem um padrão para ela (us-east-2), então "sem região no ambiente" ainda é um bucket
-    // completo para ele, e exigi-la aqui travaria quem usa o padrão.
-    private static readonly string[] BucketFields = ["Bucket", "AccessKey", "SecretKey"];
-
-    /// <summary>Mesma regra do módulo de Treino para "bucket completo"; o Identity não o referencia, então lê a configuração.</summary>
-    private static bool HasPhotoBucket(IConfiguration configuration)
-    {
-        var prefix = "Modules:Training:Photos:Storage:";
-        return Uri.TryCreate(configuration[prefix + "ServiceUrl"], UriKind.Absolute, out var url)
-            && url.Scheme == Uri.UriSchemeHttps
-            && BucketFields.All(name => !string.IsNullOrWhiteSpace(configuration[prefix + name]));
-    }
 }
