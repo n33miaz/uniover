@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
-import { MAX_KEYS_IN_FLIGHT, PcInput } from '../data/pc-input';
+import { MAX_BATCHES_IN_FLIGHT, MAX_KEYS_IN_FLIGHT, PcInput } from '../data/pc-input';
 import { PcPrefs } from '../data/pc-prefs';
 import { SessionState } from '../../../core/session/session-state';
 import { PcStore } from '../data/pc-store';
@@ -136,7 +136,7 @@ interface Ring {
           (pointerdown)="holdKeyboard()"
           (click)="keepKeyboard()"
           [disabled]="!store.canSend()"
-          [busy]="keysBusy"
+          [busy]="repeatBusy()"
           [moreKeys]="moreKeys()"
           [batched]="store.supportsKeyV2()"
           [switching]="switcher.active()"
@@ -201,13 +201,14 @@ interface Ring {
       [disabled]="!store.canSend()"
       [typing]="typing()"
       [panelOpen]="panelOpen()"
+      [panelDisabled]="switcher.active()"
       [shortcutsOpen]="shortcutsOpen()"
-      [busy]="keysBusy"
+      [busy]="repeatBusy()"
       [batched]="store.supportsKeyV2()"
       (key)="sendKey($event)"
       (keyRepeat)="sendKeyRepeat($event.key, $event.count)"
       (keyboard)="openKeyboard()"
-      (panel)="panelOpen.set(!panelOpen())"
+      (panel)="togglePanel()"
       (shortcuts)="openSheet('shortcuts')"
     />
 
@@ -264,7 +265,13 @@ export class MousePage {
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Devolve `true` quando já há teclas demais sem resposta (a repetição pula a rodada em vez de empilhar). */
-  protected readonly keysBusy = () => this.input.pending >= MAX_KEYS_IN_FLIGHT;
+  private readonly keysBusy = () => this.input.pending >= MAX_KEYS_IN_FLIGHT;
+  /** O mesmo para a repetição em lotes: cada pedido leva vários apertos, então só um por vez. */
+  private readonly batchesBusy = () => this.input.pending >= MAX_BATCHES_IN_FLIGHT;
+  /** A rodada que a barra e o painel usam: a de lotes num PC com `pc.key.v2`, a de sempre nos outros. */
+  protected readonly repeatBusy = computed(() =>
+    this.store.supportsKeyV2() ? this.batchesBusy : this.keysBusy,
+  );
 
   private readonly wakeLock = new ScreenWakeLock(this.doc);
 
@@ -438,6 +445,12 @@ export class MousePage {
    */
   protected sendKeyRepeat(key: PcKey, count: number): void {
     this.keyboard().pressRepeat(key, count);
+  }
+
+  /** O painel de teclas não abre com o Alt segurado: a barra do "Trocar janela" ficaria por cima dele. */
+  protected togglePanel(): void {
+    if (this.switcher.active()) return;
+    this.panelOpen.set(!this.panelOpen());
   }
 
   /** O botão "Alt+Tab" do painel: segura o Alt e dá o primeiro Tab; com o Alt segurado, solta. */

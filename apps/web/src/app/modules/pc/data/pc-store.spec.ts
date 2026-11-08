@@ -1106,6 +1106,80 @@ describe('PcStore held modifiers', () => {
     expect(store.heldKeys()).toEqual(['ALT']);
   });
 
+  describe('a hold still waiting in the queue when the screen goes away', () => {
+    /** Um toque lento na frente: o `DOWN` do Alt espera atrás dele. */
+    function queuedBehindSlowKey() {
+      const ctx = setup();
+      let finish: () => void = () => undefined;
+      ctx.api.key.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      void ctx.store.sendKey('TAB');
+      return { ...ctx, finishSlow: () => finish() };
+    }
+
+    it('leaving the module: the queued DOWN never goes out, and the Alt is let go', async () => {
+      const { store, api, finishSlow } = queuedBehindSlowKey();
+      const stop = store.watch();
+      await flush();
+      const holding = store.holdKey('ALT');
+      expect(store.heldKeys()).toEqual(['ALT']);
+      stop();
+      finishSlow();
+      expect((await holding)?.kind).toBe('cancelled');
+      await flush();
+      expect((api.key.mock.calls as unknown[][]).map(([key]) => key)).toEqual(['TAB']);
+      expect(api.keyRelease).toHaveBeenCalledWith('ALT');
+      expect(store.heldKeys()).toEqual([]);
+    });
+
+    it('hiding the page: the queued DOWN never goes out either', async () => {
+      const { store, api, finishSlow } = queuedBehindSlowKey();
+      const stop = store.watch();
+      await flush();
+      const holding = store.holdKey('ALT');
+      window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }));
+      finishSlow();
+      expect((await holding)?.kind).toBe('cancelled');
+      await flush();
+      expect((api.key.mock.calls as unknown[][]).map(([key]) => key)).toEqual(['TAB']);
+      expect(api.keyRelease).toHaveBeenCalledWith('ALT', { keepalive: true });
+      stop();
+    });
+
+    it('a hold asked after the screen is gone is refused and sends nothing', async () => {
+      const { store, api } = setup();
+      const stop = store.watch();
+      stop();
+      expect((await store.holdKey('ALT'))?.kind).toBe('cancelled');
+      expect(api.key).not.toHaveBeenCalled();
+      expect(store.heldKeys()).toEqual([]);
+    });
+
+    it('a hold let go while it waited (the release did not wait for a stuck queue) does not go out later', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const { store, api, finishSlow } = queuedBehindSlowKey();
+        await vi.advanceTimersByTimeAsync(0); // o toque lento já saiu e está no ar
+        const holding = store.holdKey('ALT');
+        const releasing = store.releaseKey('ALT');
+        await vi.advanceTimersByTimeAsync(UP_DRAIN_MS);
+        await releasing;
+        expect(api.keyRelease).toHaveBeenCalledTimes(1);
+        finishSlow();
+        await vi.advanceTimersByTimeAsync(0);
+        expect((await holding)?.kind).toBe('cancelled');
+        expect((api.key.mock.calls as unknown[][]).map(([key]) => key)).toEqual(['TAB']);
+        expect(store.heldKeys()).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('leaving the module lets go of what is held, retrying while it fails', async () => {
     const { store, api } = setup();
     const stop = store.watch();

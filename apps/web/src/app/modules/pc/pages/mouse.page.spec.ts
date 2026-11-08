@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
+import { PcInput } from '../data/pc-input';
 import { PcPrefs } from '../data/pc-prefs';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
@@ -48,7 +49,86 @@ describe('MousePage', () => {
 
   afterEach(() => fixture.destroy());
 
+  describe('Backspace held down on a PC with pc.key.v2 (real pending counts)', () => {
+    const erase = () =>
+      root.querySelector<HTMLButtonElement>('app-pc-action-bar [aria-label="Apagar"]')!;
+    const down = () => erase().dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    const up = () => erase().dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+    const flushAll = async () => {
+      for (let round = 0; round < 8; round++) await Promise.resolve();
+    };
+
+    beforeEach(() =>
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }),
+    );
+    afterEach(() => vi.useRealTimers());
+
+    it('sends no batch while a request is still pending, so at most one batch is left to run after the finger lifts', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      let answer: () => void = () => undefined;
+      // O primeiro toque fica sem resposta: há um pedido pendente.
+      store.sendKey.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answer = () => resolve(null);
+          }),
+      );
+      down();
+      await vi.advanceTimersByTimeAsync(420 + 120 * 20);
+      // Vinte rodadas se passaram e nenhum lote saiu: nada empilhou atrás do pedido pendente.
+      expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+
+      // O pedido responde; o que foi devido sai em UM lote, de no máximo oito.
+      store.sendKey.mockImplementation(() => new Promise(() => undefined)); // o lote também fica pendente
+      answer();
+      await vi.advanceTimersByTimeAsync(120);
+      await flushAll();
+      expect(store.sendKey.mock.calls).toHaveLength(2);
+      const [, , options] = store.sendKey.mock.calls[1] as unknown as [
+        string,
+        unknown,
+        { repeat: number },
+      ];
+      expect(options.repeat).toBeGreaterThanOrEqual(2);
+      expect(options.repeat).toBeLessThanOrEqual(8);
+
+      // O lote não responde: nada mais sai, e soltar o dedo encerra tudo.
+      await vi.advanceTimersByTimeAsync(120 * 20);
+      expect(store.sendKey.mock.calls).toHaveLength(2);
+      up();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(store.sendKey.mock.calls).toHaveLength(2);
+    });
+
+    it('on a PC without the capability the old rule stays: up to two keys pending', async () => {
+      store.sendKey.mockImplementation(() => new Promise(() => undefined));
+      down();
+      await vi.advanceTimersByTimeAsync(420 + 140 * 10);
+      up();
+      // O toque e uma repetição: com duas pendentes a rodada pula, como sempre, e nenhum pedido leva `repeat`.
+      expect(TestBed.inject(PcInput).pending).toBe(2);
+      expect(store.sendKey.mock.calls.every((call) => call.length === 2)).toBe(true);
+    });
+  });
+
   describe('the panel of keys and the switcher', () => {
+    it('the panel button is off while the Alt is held, and the panel does not reopen over the switcher bar', () => {
+      store.capabilities.set(['pc.key.v2']);
+      store.heldKeys.set(['ALT']);
+      fixture.detectChanges();
+      const more = root.querySelector<HTMLButtonElement>(
+        'app-pc-action-bar [aria-label="Mais teclas"]',
+      )!;
+      expect(more.disabled).toBe(true);
+      more.click();
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-key-panel')).toBeNull();
+      store.heldKeys.set([]);
+      fixture.detectChanges();
+      expect(more.disabled).toBe(false);
+    });
+
     const bar = (name: string) =>
       root.querySelector<HTMLButtonElement>(`app-pc-action-bar [aria-label="${name}"]`)!;
     const panelButton = (selector: string) => root.querySelector<HTMLButtonElement>(selector);

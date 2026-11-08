@@ -54,8 +54,13 @@
   background: var(--a-accent);
   color: var(--a-on-accent, #fff);
 }
-.step:active,
-.release:active {
+.step:disabled,
+.release:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.step:active:not(:disabled),
+.release:active:not(:disabled) {
   transform: scale(0.97);
 }
 .step:focus-visible,

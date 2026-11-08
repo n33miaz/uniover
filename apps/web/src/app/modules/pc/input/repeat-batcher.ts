@@ -2,7 +2,10 @@
 export const BATCH_EVERY_MS = 120;
 /** Quantas repetições por segundo o dedo parado pede (abaixo das 30 do Windows: o PC nunca fica correndo atrás do dedo). */
 export const BATCH_RATE_PER_SECOND = 24;
-/** O maior lote de um pedido: é também o máximo que o PC ainda executa depois de o dedo sair. */
+/**
+ * O maior lote de um pedido. Quem usa os lotes só manda um quando nada está em voo (a tela passa `busy` = "há algum pedido de
+ * tecla pendente"), então depois de o dedo sair o PC ainda executa, no máximo, um lote: no pior caso `BATCH_MAX` apagadas.
+ */
 export const BATCH_MAX = 8;
 
 /**

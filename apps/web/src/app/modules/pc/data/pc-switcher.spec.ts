@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
-import { RELEASE_SETTLE_MS } from './pc-input';
+import { PcInput, RELEASE_SETTLE_MS } from './pc-input';
 import { PcStore } from './pc-store';
 import { PcSwitcher } from './pc-switcher';
 import type { PcHoldableKey } from './pc-types';
@@ -114,6 +114,78 @@ describe('PcSwitcher', () => {
     answerTab();
     await releasing;
     expect(log).toEqual(['DOWN ALT', 'TAB', 'TAB', 'UP ALT']);
+  });
+
+  it('no Tab goes out once Soltar was asked, and the buttons know it is releasing', async () => {
+    setup();
+    switcher.begin();
+    await flush();
+    let answerTab!: () => void;
+    store.sendKey.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerTab = () => {
+            log.push('TAB');
+            resolve(null);
+          };
+        }),
+    );
+    switcher.next();
+    const releasing = switcher.release();
+    expect(switcher.releasing()).toBe(true);
+    switcher.next();
+    switcher.previous();
+    expect(switcher.begin()).toBe(false);
+    answerTab();
+    await releasing;
+    expect(switcher.releasing()).toBe(false);
+    expect(log).toEqual(['DOWN ALT', 'TAB', 'TAB', 'UP ALT']);
+  });
+
+  it('asking to release twice at once lets go once', async () => {
+    setup();
+    switcher.begin();
+    await flush();
+    await Promise.all([switcher.release(), switcher.release()]);
+    expect(log.filter((entry) => entry === 'UP ALT')).toHaveLength(1);
+  });
+
+  it('beginning asks the field to start over, like any shortcut that changes the PC text', async () => {
+    setup();
+    const diverged = vi.fn();
+    TestBed.inject(PcInput).onDiverge(diverged);
+    switcher.begin();
+    expect(diverged).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tabs a stuck queue never delivered are dropped after the wait, never sent after the release', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      setup();
+      switcher.begin();
+      await vi.advanceTimersByTimeAsync(0);
+      let unstick!: () => void;
+      store.sendKey.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            unstick = () => resolve(null);
+          }),
+      );
+      switcher.next(); // fica em voo e preso
+      switcher.next(); // fica na fila atrás dele
+      switcher.next();
+      await vi.advanceTimersByTimeAsync(0);
+      const releasing = switcher.release();
+      await vi.advanceTimersByTimeAsync(RELEASE_SETTLE_MS);
+      await releasing;
+      expect(log).toContain('UP ALT');
+      unstick();
+      await vi.advanceTimersByTimeAsync(0);
+      // Os dois Tab da fila foram descartados: nada sai depois do Alt solto.
+      expect(log.at(-1)).toBe('UP ALT');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a queue that never answers does not keep the Alt held for ever: the release goes after the wait', async () => {

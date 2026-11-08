@@ -22,15 +22,33 @@ import { tick } from '../input/haptics';
           <span class="held">{{ altText }}</span>
           <span i18n="@@pc.switch.held">segurado</span>
         </span>
-        <button type="button" class="step" [attr.data-switch]="'previous'" (click)="previous()">
+        <button
+          type="button"
+          class="step"
+          [attr.data-switch]="'previous'"
+          [disabled]="switcher.releasing()"
+          (click)="previous()"
+        >
           <span aria-hidden="true">←</span>
           <span i18n="@@pc.switch.previous">Anterior</span>
         </button>
-        <button type="button" class="step" [attr.data-switch]="'next'" (click)="next()">
+        <button
+          type="button"
+          class="step"
+          [attr.data-switch]="'next'"
+          [disabled]="switcher.releasing()"
+          (click)="next()"
+        >
           <span i18n="@@pc.switch.next">Próxima</span>
           <span aria-hidden="true">→</span>
         </button>
-        <button type="button" class="release" [attr.data-switch]="'release'" (click)="release()">
+        <button
+          type="button"
+          class="release"
+          [attr.data-switch]="'release'"
+          [disabled]="switcher.releasing()"
+          (click)="release()"
+        >
           <span i18n="@@pc.switch.release">Soltar</span>
         </button>
       </div>

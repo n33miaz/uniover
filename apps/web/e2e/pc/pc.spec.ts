@@ -1651,6 +1651,30 @@ test.describe('Teclas do pc.key.v2', () => {
       await expect(sheet).toBeVisible();
     });
 
+    test('com o Alt segurado o botão do painel de teclas fica desligado: o painel não abre por cima da barra', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await holdAlt(page);
+      const more = page.getByRole('button', { name: 'Mais teclas', exact: true });
+      await expect(more).toBeDisabled();
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect(more).toBeEnabled();
+    });
+
+    test('depois de Soltar os botões da barra ficam desligados até terminar, e nenhum Tab sai depois', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await holdAlt(page);
+      pc.commandDelayMs = 300;
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect(bar(page).getByRole('button', { name: /Próxima/ })).toBeDisabled();
+      await expect(bar(page).getByRole('button', { name: /Anterior/ })).toBeDisabled();
+      await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+      expect(keyBodies().filter((body) => body['key'] === 'TAB')).toHaveLength(1);
+    });
+
     test.describe('o Alt nunca fica preso', () => {
       test('esconder a página (pagehide) solta o Alt', async ({ page }) => {
         await openPc(page);
@@ -1742,12 +1766,32 @@ test.describe('Teclas do pc.key.v2', () => {
         ]);
     });
 
-    test('ir ao slide N manda os dígitos e o Enter', async ({ page }) => {
+    test('ir ao slide N: o botão anuncia que abriu, o campo recebe o foco e manda os dígitos e o Enter', async ({
+      page,
+    }) => {
       await openPc(page, '/pc/atalhos');
-      await page.locator('[data-shortcut="slides-goto"]').click();
-      await page.getByLabel('Número do slide').fill('12');
+      const cell = page.locator('[data-shortcut="slides-goto"]');
+      await expect(cell).toHaveAttribute('aria-expanded', 'false');
+      await cell.click();
+      await expect(cell).toHaveAttribute('aria-expanded', 'true');
+      const field = page.getByLabel('Número do slide');
+      await expect(field).toBeFocused();
+      await field.fill('12');
       await page.getByRole('button', { name: 'Ir', exact: true }).click();
       await expect.poll(keyBodies).toEqual([{ key: 'D1' }, { key: 'D2' }, { key: 'ENTER' }]);
+    });
+
+    test('ir ao slide N com um valor inválido mostra o nosso aviso (não o do navegador) e não manda nada', async ({
+      page,
+    }) => {
+      await openPc(page, '/pc/atalhos');
+      await page.locator('[data-shortcut="slides-goto"]').click();
+      for (const bad of ['abc', '0', '']) {
+        await page.getByLabel('Número do slide').fill(bad);
+        await page.getByRole('button', { name: 'Ir', exact: true }).click();
+        await expect(page.getByRole('alert')).toContainText('de 1 a 999');
+      }
+      expect(keyBodies()).toEqual([]);
     });
   });
 

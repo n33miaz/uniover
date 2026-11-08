@@ -115,7 +115,7 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
         class="key"
         [class.on]="panelOpen()"
         [attr.aria-expanded]="panelOpen()"
-        [disabled]="disabled()"
+        [disabled]="disabled() || panelDisabled()"
         aria-label="Mais teclas"
         i18n-aria-label="@@pc.bar.more-keys"
         (click)="panel.emit()"
@@ -156,6 +156,8 @@ export class PcActionBar {
   /** O teclado do celular está aberto (a barra o mostra ligado). */
   readonly typing = input(false);
   readonly panelOpen = input(false);
+  /** O painel não abre agora (a barra do "Trocar janela" ocupa o lugar dele). */
+  readonly panelDisabled = input(false);
   readonly shortcutsOpen = input(false);
   /** Devolve `true` quando já há teclas demais sem resposta: a repetição de apagar pula a rodada. */
   readonly busy = input<() => boolean>(() => false);
