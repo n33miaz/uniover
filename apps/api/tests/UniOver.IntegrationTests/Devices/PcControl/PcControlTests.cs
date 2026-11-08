@@ -172,8 +172,64 @@ public sealed class PcControlTests(PostgresFixture postgres)
         (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task Pointer_ForwardsTheSequenceOfTheRequest_AndOmitsItWhenThereIsNone()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        using var numbered = await PostAsync(app, "pointer", new { dx = 3, dy = 1, seq = 4821 });
+        var first = (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body");
+        using var plain = await PostAsync(app, "pointer", new { dx = 0, dy = 0 });
+        var second = (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body");
+
+        numbered.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        plain.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        first.GetProperty("seq").GetInt32().Should().Be(4821);
+        second.TryGetProperty("seq", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Pointer_ManyRequestsAtOnce_AllReachTheAgent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        var responses = await Task.WhenAll(Enumerable.Range(1, 20)
+            .Select(i => PostAsync(app, "pointer", new { dx = 1, dy = 0, seq = i })));
+        var received = new List<int>();
+        for (var i = 0; i < 20; i++)
+        {
+            received.Add((await Within(agent.ReceiveAsync()))!.Value.GetProperty("body").GetProperty("seq").GetInt32());
+        }
+
+        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+        received.Should().BeEquivalentTo(Enumerable.Range(1, 20));
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Pointer_AfterTheAgentIsRevoked_IsNeverDelivered_EvenWithTheCacheWarm()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        using var warm = await PostAsync(app, "pointer", new { dx = 1, dy = 1 });
+        (await Within(agent.ReceiveAsync()))!.Value.GetProperty("type").GetString().Should().Be("pc.pointer.v1");
+        warm.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var revoke = await app.App.RevokeRawAsync(app.Login, app.Agent.Id, "teste");
+        revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var after = await PostAsync(app, "pointer", new { dx = 2, dy = 2 });
+        after.StatusCode.Should().NotBe(HttpStatusCode.NoContent);
+    }
+
     [Theory]
     [InlineData("{\"dx\":2001,\"dy\":0}")]
+    [InlineData("{\"dx\":1,\"dy\":1,\"seq\":-1}")]
     [InlineData("{\"dx\":0,\"dy\":-2001}")]
     [InlineData("{\"dx\":1}")]
     [InlineData("{\"dx\":1,\"dy\":1,\"scrollY\":1201}")]

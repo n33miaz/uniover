@@ -81,6 +81,14 @@ public sealed class PcMessagesTests
     }
 
     [Fact]
+    public void Pointer_CarriesTheSequenceWhenThereIsOne_AndTheBodyStaysValidForTheContract()
+    {
+        PcMessages.Pointer(3, -2, 0, 0, 4821).Body.GetRawText().Should().Be("{\"dx\":3,\"dy\":-2,\"seq\":4821}");
+        PcMessages.Pointer(3, -2, 0, 0).Body.GetRawText().Should().NotContain("seq");
+        IsValidForTheContract(PcMessages.Pointer(12, -4, 0, 120, int.MaxValue)).Should().BeTrue();
+    }
+
+    [Fact]
     public void Media_LeavesOutTheStepsThatAreTheDefault()
     {
         PcMessages.Media(PcMediaV1BodyAction.Mute, 1).Body.GetRawText().Should().Be("{\"action\":\"MUTE\"}");
@@ -154,6 +162,15 @@ public sealed class PcValidatorTests
         PcValidator.Pointer(new PcPointerRequest(1, 1, null, -1201)).Should().ContainKey("scrollY");
         PcValidator.Pointer(new PcPointerRequest(1, 1, 1200, -1200)).Should().BeEmpty();
         PcValidator.Pointer(null).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Pointer_AcceptsAnOptionalSequenceThatIsNotNegative()
+    {
+        PcValidator.Pointer(new PcPointerRequest(1, 1, null, null, 0)).Should().BeEmpty();
+        PcValidator.Pointer(new PcPointerRequest(1, 1, null, null, int.MaxValue)).Should().BeEmpty();
+        PcValidator.Pointer(new PcPointerRequest(1, 1, null, null, null)).Should().BeEmpty();
+        PcValidator.Pointer(new PcPointerRequest(1, 1, null, null, -1)).Should().ContainKey("seq");
     }
 
     [Fact]
@@ -257,6 +274,49 @@ public sealed class PcAppsStoreTests
             TestContext.Current.CancellationToken);
 
         store.Get("pc-casa").Should().Equal(new PcApp("navegador", "Navegador"), new PcApp("notas", "Notas"));
+    }
+}
+
+public sealed class PcTargetCacheTests
+{
+    private static readonly Guid Alice = Guid.Parse("22222222-2222-7222-8222-222222222222");
+
+    private static PcAgentRow Row(string slug) => new(Guid.CreateVersion7(), slug, Alice, DateTimeOffset.UnixEpoch);
+
+    [Fact]
+    public void KeepsTheRowsOnlyForAFewSeconds()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var cache = new PcTargetCache(time);
+        cache.Set(Alice, [Row("pc-alice")]);
+
+        time.Advance(PcTargetCache.Lifetime - TimeSpan.FromMilliseconds(1));
+        cache.TryGet(Alice, out var rows).Should().BeTrue();
+        rows.Should().ContainSingle().Which.Slug.Should().Be("pc-alice");
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        cache.TryGet(Alice, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void NeverKeepsAnEmptyList_SoANewlyPairedPcShowsUpAtOnce()
+    {
+        var cache = new PcTargetCache(new FakeTimeProvider(DateTimeOffset.UnixEpoch));
+        cache.Set(Alice, []);
+        cache.TryGet(Alice, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ARevokedAgentMakesTheNextRequestReadTheDatabase()
+    {
+        var cache = new PcTargetCache(new FakeTimeProvider(DateTimeOffset.UnixEpoch));
+        cache.Set(Alice, [Row("pc-alice")]);
+
+        await new PcAgentRevokedInvalidator(cache).HandleAsync(
+            new UniOver.Modules.Devices.Contracts.Pairing.AgentRevoked(Guid.CreateVersion7(), DateTimeOffset.UtcNow, Guid.CreateVersion7(), "pc-alice"),
+            TestContext.Current.CancellationToken);
+
+        cache.TryGet(Alice, out _).Should().BeFalse();
     }
 }
 

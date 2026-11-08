@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Persistence;
 
@@ -43,6 +45,79 @@ internal sealed record PcTarget(Guid AgentId, string Slug, bool Connected);
 /// <summary>Um agente ativo com a capacidade do controle do PC, como o resolvedor o vê.</summary>
 internal sealed record PcCandidate(Guid AgentId, string Slug, Guid PairedBy, DateTimeOffset CreatedAt, bool Connected);
 
+/// <summary>Um agente ativo de uma pessoa, como o banco o devolve (a presença nunca entra aqui: é lida a cada pedido).</summary>
+internal sealed record PcAgentRow(Guid Id, string Slug, Guid PairedBy, DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Guarda por poucos segundos a lista dos agentes ativos de cada pessoa, a única leitura de banco do caminho do movimento
+/// do mouse (uns 30 pedidos por segundo). Só as linhas do banco ficam aqui: se o PC está conectado e se declarou o controle
+/// continua vindo da presença, ao vivo, a cada pedido. Lista vazia nunca é guardada (um PC recém-pareado aparece na hora)
+/// e a revogação de um agente esquece tudo (<see cref="PcAgentRevokedInvalidator"/>); mesmo sem isso, um agente revogado
+/// perde a sessão e a presença, então o pedido falharia como "desconectado". Em memória e da instância.
+/// </summary>
+internal sealed class PcTargetCache(TimeProvider time)
+{
+    /// <summary>Curto de propósito: o ganho vem de muitos pedidos seguidos, não de guardar por muito tempo.</summary>
+    public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(5);
+
+    private readonly Dictionary<Guid, (IReadOnlyList<PcAgentRow> Rows, DateTimeOffset Expires)> _entries = [];
+    private readonly object _gate = new();
+
+    public bool TryGet(Guid userId, out IReadOnlyList<PcAgentRow> rows)
+    {
+        lock (_gate)
+        {
+            if (_entries.TryGetValue(userId, out var entry) && entry.Expires > time.GetUtcNow())
+            {
+                rows = entry.Rows;
+                return true;
+            }
+        }
+
+        rows = [];
+        return false;
+    }
+
+    public void Set(Guid userId, IReadOnlyList<PcAgentRow> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            // Poda o que já venceu: o dicionário nunca passa de umas poucas contas.
+            var now = time.GetUtcNow();
+            foreach (var expired in _entries.Where(e => e.Value.Expires <= now).Select(e => e.Key).ToList())
+            {
+                _entries.Remove(expired);
+            }
+
+            _entries[userId] = (rows, now + Lifetime);
+        }
+    }
+
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _entries.Clear();
+        }
+    }
+}
+
+/// <summary>Esquece a lista guardada quando um agente é revogado: o próximo pedido lê o banco.</summary>
+internal sealed class PcAgentRevokedInvalidator(PcTargetCache cache) : IIntegrationEventHandler<AgentRevoked>
+{
+    public Task HandleAsync(AgentRevoked integrationEvent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+        cache.Clear();
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>
 /// Qual computador o controle do PC usa. Só conta agente ativo que declarou <c>pc.control.v1</c> (a pessoa ligou o controle
 /// naquele PC) E que foi pareado pela própria pessoa. Nunca há reserva no PC de outra pessoa, nem do dono para o
@@ -50,14 +125,18 @@ internal sealed record PcCandidate(Guid AgentId, string Slug, Guid PairedBy, Dat
 /// o computador de ninguém. Quem não tem PC próprio com o controle ligado recebe "nenhum PC". Com vários próprios, o
 /// conectado vence, e depois o mais antigo.
 /// </summary>
-internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader presence)
+internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader presence, PcTargetCache cache)
 {
     public async Task<PcTarget?> ResolveAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var agents = await db.Agents.AsNoTracking()
-            .Where(a => a.RevokedAt == null && a.PairedBy == userId)
-            .Select(a => new { a.Id, a.Slug, a.PairedBy, a.CreatedAt })
-            .ToListAsync(cancellationToken);
+        if (!cache.TryGet(userId, out var agents))
+        {
+            agents = await db.Agents.AsNoTracking()
+                .Where(a => a.RevokedAt == null && a.PairedBy == userId)
+                .Select(a => new PcAgentRow(a.Id, a.Slug, a.PairedBy, a.CreatedAt))
+                .ToListAsync(cancellationToken);
+            cache.Set(userId, agents);
+        }
 
         var candidates = agents
             .Select(a => (Agent: a, Info: presence.Get(a.Slug)))

@@ -47,8 +47,8 @@ public static class RateLimitPolicies
     public const string Siri = "siri";
 
     /// <summary>
-    /// Movimento do mouse do controle do PC: o app manda até uns 30 toques por segundo (um pedido por vez, somando o
-    /// que o dedo andou enquanto esperava), então o balde é largo e por conta. É o único com teto assim.
+    /// Movimento do mouse do controle do PC: o app manda até uns 30 toques por segundo (vários pedidos em voo ao mesmo tempo, um a cada 32 ms, somando o
+    /// que o dedo andou enquanto o limite de voo está cheio), então o balde é largo e por conta. É o único com teto assim.
     /// </summary>
     public const string PcPointer = "pc-pointer";
 
