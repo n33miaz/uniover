@@ -43,6 +43,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.PcAppLaunchV1,
         AgentMessageTypes.PcClickV1,
         AgentMessageTypes.PcKeyV1,
+        AgentMessageTypes.PcKeyV2,
         AgentMessageTypes.PcMediaV1,
         AgentMessageTypes.PcPointerV1,
         AgentMessageTypes.PcPowerV1,

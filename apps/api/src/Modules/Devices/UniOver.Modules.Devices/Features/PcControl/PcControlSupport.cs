@@ -39,11 +39,15 @@ internal sealed class PcAppsStore
     }
 }
 
-/// <summary>O computador que atende o pedido: o agente, e se está conectado agora.</summary>
-internal sealed record PcTarget(Guid AgentId, string Slug, bool Connected);
+/// <summary>
+/// O computador que atende o pedido: o agente, se está conectado agora e o que ele declarou no último <c>hello</c> (a
+/// presença é lida a cada pedido: a lista acompanha uma atualização do agente sem esperar nada).
+/// </summary>
+internal sealed record PcTarget(Guid AgentId, string Slug, bool Connected, IReadOnlyList<string> Capabilities);
 
 /// <summary>Um agente ativo com a capacidade do controle do PC, como o resolvedor o vê.</summary>
-internal sealed record PcCandidate(Guid AgentId, string Slug, Guid PairedBy, DateTimeOffset CreatedAt, bool Connected);
+internal sealed record PcCandidate(
+    Guid AgentId, string Slug, Guid PairedBy, DateTimeOffset CreatedAt, bool Connected, IReadOnlyList<string> Capabilities);
 
 /// <summary>Um agente ativo de uma pessoa, como o banco o devolve (a presença nunca entra aqui: é lida a cada pedido).</summary>
 internal sealed record PcAgentRow(Guid Id, string Slug, Guid PairedBy, DateTimeOffset CreatedAt);
@@ -141,7 +145,7 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
         var candidates = agents
             .Select(a => (Agent: a, Info: presence.Get(a.Slug)))
             .Where(x => x.Info is not null && x.Info.Capabilities.Contains(PcMessages.Capability, StringComparer.Ordinal))
-            .Select(x => new PcCandidate(x.Agent.Id, x.Agent.Slug, x.Agent.PairedBy, x.Agent.CreatedAt, x.Info!.Connected));
+            .Select(x => new PcCandidate(x.Agent.Id, x.Agent.Slug, x.Agent.PairedBy, x.Agent.CreatedAt, x.Info!.Connected, x.Info.Capabilities));
 
         return Choose(candidates, userId);
     }
@@ -156,7 +160,7 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
             .OrderByDescending(c => c.Connected)
             .ThenBy(c => c.CreatedAt)
             .FirstOrDefault();
-        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected);
+        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected, chosen.Capabilities);
     }
 }
 
@@ -170,6 +174,18 @@ internal static class PcProblems
         statusCode: StatusCodes.Status409Conflict,
         title: "Nenhum computador está com o controle do PC ligado.",
         type: ProblemDetailsExtensions.TypeBase + UnavailableType);
+
+    public const string KeyUnsupportedType = "pc-key-unsupported";
+
+    /// <summary>
+    /// O pedido de tecla precisa da <c>pc.key.v2</c> (repetição, segurar modificador, tecla nova) e o agente deste PC é de antes
+    /// dela: nada é enviado (o esquema fechado dele recusaria a mensagem e o toque morreria sem explicação). A tela mostra
+    /// "atualize o agente do PC".
+    /// </summary>
+    public static IResult KeyUnsupported() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "O agente deste PC é antigo demais para esta tecla. Atualize o agente do PC.",
+        type: ProblemDetailsExtensions.TypeBase + KeyUnsupportedType);
 
     public const string ReconnectingType = "agent-reconnecting";
 

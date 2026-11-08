@@ -14,7 +14,11 @@ using UniOver.Modules.Devices.Security;
 
 namespace UniOver.Modules.Devices.Features.PcControl;
 
-internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps);
+/// <summary>
+/// <c>Capabilities</c>: as capacidades <c>pc.*</c> opcionais que o agente declarou (hoje <c>pc.key.v2</c>), para a tela
+/// esconder o que o PC não entende. Vazio com agente antigo, sem PC ou sem conexão ainda.
+/// </summary>
+internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps, IReadOnlyList<string> Capabilities);
 
 /// <summary>
 /// <c>Seq</c> é opcional: o app numera os pedidos de movimento em ordem crescente (diagnóstico). A API o aceita e o valida,
@@ -26,7 +30,11 @@ internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? Scr
 
 internal sealed record PcClickRequest(string? Button, string? Action);
 
-internal sealed record PcKeyRequest(string? Key, string[]? Modifiers);
+/// <summary>
+/// <c>Repeat</c> (1 a 50) aperta a tecla várias vezes num pedido só; <c>Action</c> (<c>PRESS</c>, padrão, <c>DOWN</c>, <c>UP</c>)
+/// segura e solta um modificador entre toques. Os dois só existem na <c>pc.key.v2</c>.
+/// </summary>
+internal sealed record PcKeyRequest(string? Key, string[]? Modifiers, int? Repeat = null, string? Action = null);
 
 internal sealed record PcTextRequest(string? Text);
 
@@ -42,6 +50,7 @@ internal static class PcValidator
     public const int MaxTextLength = 200;
     public const int MaxModifiers = 4;
     public const int MaxSteps = 10;
+    public const int MaxKeyRepeat = 50;
 
     public static Dictionary<string, string[]> Pointer(PcPointerRequest? request)
     {
@@ -77,7 +86,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Key(PcKeyRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        if (request?.Key is null || !PcMessages.Keys.ContainsKey(request.Key))
+        if (request?.Key is null || !PcMessages.KeysV2.ContainsKey(request.Key))
         {
             errors["key"] = ["Escolha uma tecla da lista."];
         }
@@ -88,6 +97,37 @@ internal static class PcValidator
             || modifiers.Distinct(StringComparer.Ordinal).Count() != modifiers.Length)
         {
             errors["modifiers"] = ["Use CTRL, ALT, SHIFT ou WIN, sem repetir."];
+        }
+
+        if (request?.Repeat is { } repeat && (repeat < 1 || repeat > MaxKeyRepeat))
+        {
+            errors["repeat"] = [$"Use de 1 a {MaxKeyRepeat} repetições."];
+        }
+
+        if (request?.Action is not null)
+        {
+            if (!PcMessages.KeyActions.TryGetValue(request.Action, out var action))
+            {
+                errors["action"] = ["Escolha PRESS, DOWN ou UP."];
+            }
+            else if (action != PcKeyV2BodyAction.Press)
+            {
+                // Segurar e soltar só valem para os modificadores, sozinhos: o agente nunca prende uma letra.
+                if (request.Key is not null && !PcMessages.HoldableKeys.Contains(request.Key))
+                {
+                    errors["action"] = ["Só dá para segurar ou soltar CTRL, ALT, SHIFT ou WIN."];
+                }
+
+                if (modifiers.Length > 0 && !errors.ContainsKey("modifiers"))
+                {
+                    errors["modifiers"] = ["Ao segurar ou soltar uma tecla, não use modificadores."];
+                }
+
+                if (request.Repeat is > 1 && !errors.ContainsKey("repeat"))
+                {
+                    errors["repeat"] = ["Ao segurar ou soltar uma tecla, não repita."];
+                }
+            }
         }
 
         return errors;
@@ -190,8 +230,8 @@ internal sealed class PcControlHandler(
     {
         var target = await resolver.ResolveAsync(userId, cancellationToken);
         return TypedResults.Ok(target is null
-            ? new PcStatusResponse(false, false, [])
-            : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug)));
+            ? new PcStatusResponse(false, false, [], [])
+            : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug), OptionalCapabilities(target)));
     }
 
     /// <summary>
@@ -217,18 +257,33 @@ internal sealed class PcControlHandler(
         return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
 
+    /// <summary>As capacidades <c>pc.*</c> além da base (<see cref="PcMessages.Capability"/>), na ordem em que o agente as declarou.</summary>
+    private static IReadOnlyList<string> OptionalCapabilities(PcTarget target) =>
+        [.. target.Capabilities.Where(c => c.StartsWith("pc.", StringComparison.Ordinal) && c != PcMessages.Capability)];
+
+    /// <summary>
+    /// <paramref name="requiredCapability"/>: a capacidade que o agente precisa ter declarado para entender a mensagem (a v2 de
+    /// uma tecla). Sem ela nada é enviado e o pedido volta como 409 <c>pc-key-unsupported</c>; PC ausente e desconectado
+    /// continuam sendo a resposta de antes.
+    /// </summary>
     public async Task<IResult> RunAsync(
         Guid userId,
         OutboundMessage message,
         TimeSpan timeout,
         string? auditEvent,
         ClientInfo client,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requiredCapability = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
         {
             return target.Failure;
+        }
+
+        if (requiredCapability is not null && !target.Capabilities.Contains(requiredCapability, StringComparer.Ordinal))
+        {
+            return PcProblems.KeyUnsupported();
         }
 
         var reply = await gateway.RequestAsync(target.Slug, message, timeout, cancellationToken);
@@ -297,15 +352,15 @@ internal sealed class PcControlHandler(
         var target = await resolver.ResolveAsync(userId, cancellationToken);
         if (target is null)
         {
-            return new ReadyTarget(Guid.Empty, string.Empty, PcProblems.Unavailable());
+            return new ReadyTarget(Guid.Empty, string.Empty, [], PcProblems.Unavailable());
         }
 
         return target.Connected
-            ? new ReadyTarget(target.AgentId, target.Slug, null)
-            : new ReadyTarget(target.AgentId, target.Slug, RemoteCareProblems.Offline());
+            ? new ReadyTarget(target.AgentId, target.Slug, target.Capabilities, null)
+            : new ReadyTarget(target.AgentId, target.Slug, target.Capabilities, RemoteCareProblems.Offline());
     }
 
-    private readonly record struct ReadyTarget(Guid AgentId, string Slug, IResult? Failure);
+    private readonly record struct ReadyTarget(Guid AgentId, string Slug, IReadOnlyList<string> Capabilities, IResult? Failure);
 }
 
 internal static class PcControlEndpoints
@@ -426,9 +481,15 @@ internal static class PcControlEndpoints
             return ProblemDetailsExtensions.ValidationProblem(errors);
         }
 
-        var modifiers = (request!.Modifiers ?? []).Select(m => PcMessages.Modifiers[m]).ToList();
+        // A v1 sempre que o pedido cabe nela; a v2 só para o que ela diz, e só para o agente que a declarou.
         return await handler.RunAsync(
-            userId, PcMessages.Key(PcMessages.Keys[request.Key!], modifiers), PcControlHandler.CommandTimeout, null, ClientInfo.From(http), cancellationToken);
+            userId,
+            PcMessages.KeyFor(request!),
+            PcControlHandler.CommandTimeout,
+            null,
+            ClientInfo.From(http),
+            cancellationToken,
+            PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability);
     }
 
     private static async Task<IResult> TextAsync(

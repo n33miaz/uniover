@@ -46,6 +46,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.key.v1</c>.</summary>
     public const string PcKeyV1 = "pc.key.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.key.v2</c>.</summary>
+    public const string PcKeyV2 = "pc.key.v2";
+
     /// <summary>Tipo de mensagem <c>pc.media.v1</c>.</summary>
     public const string PcMediaV1 = "pc.media.v1";
 
@@ -149,6 +152,7 @@ public static class AgentMessageTypes
         PcAppsV1,
         PcClickV1,
         PcKeyV1,
+        PcKeyV2,
         PcMediaV1,
         PcPointerV1,
         PcPowerV1,

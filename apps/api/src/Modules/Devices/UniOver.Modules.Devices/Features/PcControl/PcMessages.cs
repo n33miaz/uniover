@@ -15,6 +15,12 @@ internal static class PcMessages
     /// <summary>Capacidade do <c>hello</c> de quem tem o controle do PC ligado.</summary>
     public const string Capability = "pc.control.v1";
 
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.key.v2</c> (teclas novas, repetição e segurar modificador). Só o
+    /// agente que a declara recebe a v2; a API manda a v1 sempre que o pedido cabe nela.
+    /// </summary>
+    public const string KeyV2Capability = "pc.key.v2";
+
     public static FrozenDictionary<string, PcClickV1BodyButton> Buttons { get; } = Enum.GetValues<PcClickV1BodyButton>()
         .ToFrozenDictionary(WireName, button => button, StringComparer.Ordinal);
 
@@ -26,6 +32,18 @@ internal static class PcMessages
 
     public static FrozenDictionary<string, PcKeyV1BodyModifiersItem> Modifiers { get; } = Enum.GetValues<PcKeyV1BodyModifiersItem>()
         .ToFrozenDictionary(WireName, modifier => modifier, StringComparer.Ordinal);
+
+    public static FrozenDictionary<string, PcKeyV2BodyKey> KeysV2 { get; } = Enum.GetValues<PcKeyV2BodyKey>()
+        .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
+
+    public static FrozenDictionary<string, PcKeyV2BodyModifiersItem> ModifiersV2 { get; } = Enum.GetValues<PcKeyV2BodyModifiersItem>()
+        .ToFrozenDictionary(WireName, modifier => modifier, StringComparer.Ordinal);
+
+    public static FrozenDictionary<string, PcKeyV2BodyAction> KeyActions { get; } = Enum.GetValues<PcKeyV2BodyAction>()
+        .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
+
+    /// <summary>As teclas que dá para segurar (<c>DOWN</c>) e soltar (<c>UP</c>): só os modificadores.</summary>
+    public static FrozenSet<string> HoldableKeys { get; } = new[] { "CTRL", "ALT", "SHIFT", "WIN" }.ToFrozenSet(StringComparer.Ordinal);
 
     public static FrozenDictionary<string, PcMediaV1BodyAction> MediaActions { get; } = Enum.GetValues<PcMediaV1BodyAction>()
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
@@ -56,6 +74,43 @@ internal static class PcMessages
         {
             Body = new PcKeyV1Body { Key = key, Modifiers = modifiers.Count == 0 ? null : [.. modifiers] },
         }.ToJson()));
+
+    /// <summary>
+    /// A v1 serve todo pedido que ela sabe exprimir (tecla da v1, uma vez, apertada e solta): o agente anterior à v2 segue
+    /// servido. Só o que a v1 não diz precisa da v2 (e da capacidade <see cref="KeyV2Capability"/>).
+    /// </summary>
+    public static bool KeyFitsV1(PcKeyRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Keys.ContainsKey(request.Key!)
+            && (request.Repeat ?? 1) == 1
+            && (request.Action is null || KeyActions[request.Action] == PcKeyV2BodyAction.Press);
+    }
+
+    /// <summary>Monta a mensagem da tecla (v1 quando cabe, v2 quando não) de um pedido já validado.</summary>
+    public static OutboundMessage KeyFor(PcKeyRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (KeyFitsV1(request))
+        {
+            return Key(Keys[request.Key!], (request.Modifiers ?? []).Select(m => Modifiers[m]).ToList());
+        }
+
+        var modifiers = (request.Modifiers ?? []).Select(m => ModifiersV2[m]).ToList();
+        var repeat = request.Repeat is > 1 ? request.Repeat : null;
+        var action = request.Action is null ? PcKeyV2BodyAction.Press : KeyActions[request.Action];
+        return Live(AgentMessageTypes.PcKeyV2, BodyOf(new PcKeyV2Message
+        {
+            Body = new PcKeyV2Body
+            {
+                Key = KeysV2[request.Key!],
+                Modifiers = modifiers.Count == 0 ? null : [.. modifiers],
+                Repeat = repeat,
+                // PRESS é o padrão do contrato: só vai quando muda alguma coisa.
+                Action = action == PcKeyV2BodyAction.Press ? null : action,
+            },
+        }.ToJson()));
+    }
 
     public static OutboundMessage Text(string text) =>
         Live(AgentMessageTypes.PcTextV1, BodyOf(new PcTextV1Message { Body = new PcTextV1Body { Text = text } }.ToJson()));
@@ -91,6 +146,17 @@ internal static class PcMessages
     private static string WireName(PcKeyV1BodyModifiersItem modifier) =>
         BodyOf(new PcKeyV1Message { Body = new PcKeyV1Body { Key = PcKeyV1BodyKey.A, Modifiers = [modifier] } }.ToJson())
             .GetProperty("modifiers")[0].GetString()!;
+
+    private static string WireName(PcKeyV2BodyKey key) =>
+        BodyOf(new PcKeyV2Message { Body = new PcKeyV2Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
+
+    private static string WireName(PcKeyV2BodyModifiersItem modifier) =>
+        BodyOf(new PcKeyV2Message { Body = new PcKeyV2Body { Key = PcKeyV2BodyKey.A, Modifiers = [modifier] } }.ToJson())
+            .GetProperty("modifiers")[0].GetString()!;
+
+    private static string WireName(PcKeyV2BodyAction action) =>
+        BodyOf(new PcKeyV2Message { Body = new PcKeyV2Body { Key = PcKeyV2BodyKey.Alt, Action = action } }.ToJson())
+            .GetProperty("action").GetString()!;
 
     private static string WireName(PcMediaV1BodyAction action) =>
         BodyOf(new PcMediaV1Message { Body = new PcMediaV1Body { Action = action } }.ToJson()).GetProperty("action").GetString()!;
