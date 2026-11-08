@@ -319,6 +319,45 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
     expect(shape.height, 'na vertical').toBeGreaterThan(shape.width * 4);
   });
 
+  test('o ponto de estado fica perto do desligar, sem encostar nele nem sobrepor o alvo', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const dot = await box(statusDot(page));
+    const power = await box(powerButton(page));
+    // O alvo do ponto tem 44 px e o desenho 24: a folga vista entre o desenho e o desligar é de uns 7 px (era 14).
+    const drawn = await box(statusDot(page).locator('app-status-dot'));
+    const gap = power.x - (drawn.x + drawn.width);
+    expect(gap, 'folga vista entre o ponto e o desligar').toBeGreaterThanOrEqual(5);
+    expect(gap, 'mais perto do que os 14 px de antes').toBeLessThanOrEqual(9);
+    expect(dot.width, 'o alvo do ponto segue com 44 px').toBeGreaterThanOrEqual(44);
+    expect(power.x - (dot.x + dot.width), 'os alvos não se sobrepõem').toBeGreaterThanOrEqual(-0.5);
+    await expectTitleCentered(page);
+  });
+
+  test('o ponto de estado pisca ao mandar uma tecla, sem mudar de lugar nem ganhar texto', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const before = await box(statusDot(page));
+    const label = await statusDot(page).getAttribute('aria-label');
+    await expect(statusDot(page)).not.toHaveAttribute('data-sent', /./);
+    await keyButton(page, 'OK').click();
+    await expect(statusDot(page)).toHaveAttribute('data-sent', 'a');
+    await keyButton(page, 'OK').click();
+    await expect(statusDot(page)).toHaveAttribute('data-sent', 'b');
+    expect(await box(statusDot(page))).toEqual(before);
+    expect(await statusDot(page).getAttribute('aria-label')).toBe(label);
+  });
+
+  test('quem pediu menos movimento não vê o ponto piscar', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openTv(page);
+    await keyButton(page, 'OK').click();
+    await expect.poll(() => tv.keysSent()).toContain('OK');
+    await expect(statusDot(page)).not.toHaveAttribute('data-sent', /./);
+  });
+
   test('a tabulação segue da esquerda para a direita', async ({ page }) => {
     await openTv(page);
     await backLink(page).focus();

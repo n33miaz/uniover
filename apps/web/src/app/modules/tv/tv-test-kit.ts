@@ -145,6 +145,7 @@ export function createFakeTvStore() {
     notConfigured: signal(false),
     inFlightKeys: signal(0),
     volumeNudge: signal(0),
+    sentCount: signal(0),
     cleaning: signal(false),
     lastCleanup: signal<{
       at: Date;

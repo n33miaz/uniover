@@ -182,6 +182,7 @@ export class TvStore {
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
   private readonly _volumeNudge = signal(0);
+  private readonly _sent = signal(0);
   private readonly _cleaning = signal(false);
   private readonly _lastCleanup = signal<TvLastCleanup | null>(null);
   private readonly _powerSchedule = signal<TvPowerSchedule | null>(null);
@@ -232,6 +233,12 @@ export class TvStore {
    * Quantos passos de volume a TV confirmou desde o último toque (mais menos menos), por poucos segundos. Só serve à
    * pílula de volume quando o agente não consegue ler o nível: é o retorno do toque, nunca um número do volume.
    */
+  /**
+   * Quantos comandos o controle já despachou (tecla, atalho de app, limpeza, desligar), desde que a página nasceu. Só
+   * cresce (a troca de conta não o zera): quem olha compara com o valor de quando começou, e o ponto de estado do
+   * cabeçalho dá uma piscada curta a cada mudança. Conta o pedido saindo, não a resposta: a falha tem o aviso dela.
+   */
+  readonly sentCount = this._sent.asReadonly();
   readonly volumeNudge = computed(() => (this.currentAccount() ? this._volumeNudge() : 0));
   /** Há uma limpeza da TV em andamento (leva alguns segundos): um pedido por vez, e o resto do controle segue. */
   readonly cleaning = computed(() => this.currentAccount() && this._cleaning());
@@ -681,6 +688,7 @@ export class TvStore {
       return false;
     }
     this._inFlightKeys.update((count) => count + 1);
+    this._sent.update((count) => count + 1);
     try {
       await this.api.sendKey(key);
       if (this.live(epoch) && this._notice()?.kind === 'error') this.clearNotice();
@@ -747,6 +755,7 @@ export class TvStore {
       };
     }
     const safe = this.safePowerOff();
+    this._sent.update((count) => count + 1);
     try {
       const outcome = await this.api.powerOff(safe);
       if (this.live(epoch)) this.showNotice('info', powerOffNotice(outcome));
@@ -825,6 +834,7 @@ export class TvStore {
       return false;
     }
     // Abrir um app usa o ADB: o sinal de presença vai antes, para o agente poder reconectar se precisar.
+    this._sent.update((count) => count + 1);
     await this.presence();
     try {
       await this.api.launch(shortcut.id);
@@ -884,6 +894,7 @@ export class TvStore {
       return false;
     }
     this._cleaning.set(true);
+    this._sent.update((count) => count + 1);
     await this.presence();
     try {
       const result = await this.api.cleanup();

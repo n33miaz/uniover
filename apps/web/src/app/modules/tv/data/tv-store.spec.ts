@@ -342,6 +342,23 @@ describe('TvStore', () => {
       expect(store.inFlightKeys()).toBe(0);
     });
 
+    it('counts every key that goes out, failed or not, for the header dot to blink', async () => {
+      await started();
+      expect(store.sentCount()).toBe(0);
+      await store.sendKey('OK');
+      expect(store.sentCount()).toBe(1);
+      api.sendKey.mockRejectedValueOnce(problem(500));
+      await store.sendKey('OK');
+      expect(store.sentCount()).toBe(2);
+    });
+
+    it('counts nothing when the key is not sent at all', async () => {
+      await started();
+      online.set(false);
+      await store.sendKey('OK');
+      expect(store.sentCount()).toBe(0);
+    });
+
     it('counts the volume steps the TV confirmed and forgets them after a while', async () => {
       vi.useFakeTimers();
       try {

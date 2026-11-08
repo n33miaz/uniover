@@ -21,6 +21,10 @@ import { StatusDot } from './status-dot';
 
 let nextIndicatorId = 0;
 
+function prefersLessMotion(): boolean {
+  return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
 /** Folga mínima (px) entre o painelzinho e a borda da tela. */
 const PANEL_MARGIN_PX = 12;
 
@@ -46,6 +50,8 @@ export class StatusIndicator {
   private readonly access = inject(TvAccess);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
+  /** Quantos comandos já tinham saído quando o ponto nasceu: só os de depois o fazem piscar. */
+  private readonly sentAtStart = this.store.sentCount();
   private readonly trigger = viewChild.required<ElementRef<HTMLButtonElement>>('trigger');
 
   protected readonly panelId = `tv-status-panel-${nextIndicatorId++}`;
@@ -56,6 +62,16 @@ export class StatusIndicator {
   protected readonly indicator = computed(() =>
     deriveIndicator(this.store.status(), this.store.watchdog()?.kind ?? null),
   );
+  /**
+   * A piscada de quando um botão do controle manda um comando. `a` e `b` se alternam a cada comando: o CSS tem uma
+   * animação para cada, então trocar de uma para a outra a reinicia mesmo com toques seguidos. Quem pediu menos
+   * movimento não vê piscada nenhuma (lido a cada comando, que é quando este cálculo roda de novo).
+   */
+  protected readonly sent = computed<'a' | 'b' | null>(() => {
+    const count = this.store.sentCount() - this.sentAtStart;
+    if (count <= 0 || prefersLessMotion()) return null;
+    return count % 2 === 1 ? 'a' : 'b';
+  });
   protected readonly phase = computed(() => indicatorPhase(this.indicator()));
   protected readonly text = computed(() =>
     indicatorText(
