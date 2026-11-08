@@ -70,7 +70,7 @@ import { PcShortcutGrid } from './shortcut-grid';
         Arrastar
       </button>
 
-      <app-pc-shortcut-grid [editing]="editing()" />
+      <app-pc-shortcut-grid [editing]="editing()" (began)="dismiss()" />
     </dialog>
   `,
   styleUrls: ['./confirm-sheet.css', './shortcut-sheet.css'],

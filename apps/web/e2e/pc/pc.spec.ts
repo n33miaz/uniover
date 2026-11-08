@@ -9,7 +9,7 @@ import {
   smallTargets,
 } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
-import { PcMock, mockPcApi } from './pc-mock';
+import { PcMock, READY, mockPcApi } from './pc-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -1445,5 +1445,321 @@ test.describe('Estados', () => {
     await tap(page, x, y);
     await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }]);
     expect(pc.denied).toEqual([]);
+  });
+});
+
+test.describe('Teclas do pc.key.v2', () => {
+  /** O agente declarou `pc.key.v2`: a tela repete em lotes, segura o Alt e mostra as teclas novas. */
+  test.beforeEach(() => {
+    pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.key.v2'] };
+  });
+
+  const keyBodies = () => pc.sent('/key');
+  const releases = () => pc.sent('/key/release');
+  const bar = (page: Page) => page.getByRole('group', { name: 'Trocando de janela' });
+
+  async function openSheet(page: Page) {
+    await page.getByRole('button', { name: 'Atalhos', exact: true }).first().click();
+    const sheet = page.getByRole('dialog', { name: 'Atalhos' });
+    await expect(sheet).toBeVisible();
+    return sheet;
+  }
+
+  /** Trocar janela pela folha de atalhos: o Alt fica segurado e a folha fecha, dando lugar à barra. */
+  async function holdAlt(page: Page) {
+    const sheet = await openSheet(page);
+    await sheet.locator('[data-shortcut="switch-window"]').first().click();
+    await expect(bar(page)).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Atalhos' })).toHaveCount(0);
+  }
+
+  async function holdDown(page: Page, locator: ReturnType<Page['locator']>) {
+    const box = (await locator.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+  }
+
+  test.describe('apagar segurado', () => {
+    test('manda lotes com repeat: o primeiro toque é uma tecla só, e soltar para tudo', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await holdDown(page, page.getByRole('button', { name: 'Apagar', exact: true }));
+      await expect.poll(() => keyBodies().length).toBeGreaterThanOrEqual(3);
+      await page.mouse.up();
+      await page.waitForTimeout(400);
+      const settled = keyBodies().length;
+      await page.waitForTimeout(500);
+      expect(keyBodies()).toHaveLength(settled);
+      const [first, ...batches] = keyBodies();
+      expect(first).toEqual({ key: 'BACKSPACE' });
+      expect(batches.length).toBeGreaterThanOrEqual(2);
+      for (const body of batches) {
+        expect(body['key']).toBe('BACKSPACE');
+        expect(Number(body['repeat'])).toBeGreaterThanOrEqual(2);
+        expect(Number(body['repeat'])).toBeLessThanOrEqual(8);
+      }
+      // Menos pedidos do que apagadas: é o ponto dos lotes.
+      const erased = keyBodies().reduce((sum, body) => sum + Number(body['repeat'] ?? 1), 0);
+      expect(erased).toBeGreaterThan(keyBodies().length);
+    });
+
+    test('uma seta segurada no painel também repete em lotes', async ({ page }) => {
+      await openPc(page);
+      await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+      const panel = page.getByRole('group', { name: 'Mais teclas' }).last();
+      await holdDown(page, panel.getByRole('button', { name: 'Seta para a direita' }));
+      await expect.poll(() => keyBodies().length).toBeGreaterThanOrEqual(3);
+      await page.mouse.up();
+      expect(keyBodies().every((body) => body['key'] === 'RIGHT')).toBe(true);
+      expect(
+        keyBodies()
+          .slice(1)
+          .every((body) => Number(body['repeat']) >= 2),
+      ).toBe(true);
+    });
+
+    test('um agente antigo segue com uma tecla por pedido, sem nenhum repeat', async ({ page }) => {
+      pc.status = { ...READY, apps: [...READY.apps] };
+      await openPc(page);
+      await holdDown(page, page.getByRole('button', { name: 'Apagar', exact: true }));
+      await expect.poll(() => keyBodies().length).toBeGreaterThanOrEqual(3);
+      await page.mouse.up();
+      expect(keyBodies().every((body) => body['key'] === 'BACKSPACE' && !('repeat' in body))).toBe(
+        true,
+      );
+    });
+  });
+
+  test.describe('as teclas novas do painel', () => {
+    test('um agente antigo não vê o botão dos dígitos', async ({ page }) => {
+      pc.status = { ...READY, apps: [...READY.apps] };
+      await openPc(page);
+      await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+      await expect(page.getByRole('group', { name: 'Mais teclas' }).last()).toBeVisible();
+      await expect(page.locator('[data-more-toggle]')).toHaveCount(0);
+    });
+
+    test('com pc.key.v2 o painel mostra os dígitos, a pontuação e as especiais, e cada uma sai com o seu código', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+      await page.locator('[data-more-toggle]').click();
+      await expect(
+        page.getByRole('group', { name: 'Dígitos e outras teclas' }).last(),
+      ).toBeVisible();
+      const codes = [
+        'D1',
+        'D0',
+        'MINUS',
+        'EQUALS',
+        'COMMA',
+        'PERIOD',
+        'INSERT',
+        'PRINT_SCREEN',
+        'WIN',
+        'CAPS_LOCK',
+        'APPS',
+      ];
+      for (const code of codes) await page.locator(`[data-key="${code}"]`).click();
+      await expect.poll(keyBodies).toEqual(codes.map((key) => ({ key })));
+      // Nenhum controle atrás da barra de abas, e todos com 44 px.
+      expect(await hiddenControls(page)).toEqual([]);
+      expect(await smallTargets(page)).toEqual([]);
+    });
+  });
+
+  test.describe('Trocar janela com o Alt segurado', () => {
+    test('segura o Alt, cada toque é um Tab (Shift+Tab volta) e Soltar solta', async ({ page }) => {
+      await openPc(page);
+      await holdAlt(page);
+      await expect.poll(keyBodies).toEqual([{ key: 'ALT', action: 'DOWN' }, { key: 'TAB' }]);
+      await expect(bar(page).locator('.held')).toHaveText('Alt');
+      await bar(page)
+        .getByRole('button', { name: /Próxima/ })
+        .click();
+      await bar(page)
+        .getByRole('button', { name: /Anterior/ })
+        .click();
+      await expect
+        .poll(keyBodies)
+        .toEqual([
+          { key: 'ALT', action: 'DOWN' },
+          { key: 'TAB' },
+          { key: 'TAB' },
+          { key: 'TAB', modifiers: ['SHIFT'] },
+        ]);
+      // Nada solta o Alt até a pessoa mandar.
+      expect(releases()).toEqual([]);
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+      await expect(bar(page)).toHaveCount(0);
+    });
+
+    test('Soltar logo depois de Próxima só solta depois do último Tab', async ({ page }) => {
+      await openPc(page);
+      await holdAlt(page);
+      pc.commandDelayMs = 250;
+      await bar(page)
+        .getByRole('button', { name: /Próxima/ })
+        .click();
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+      expect(keyBodies().filter((body) => body['key'] === 'TAB')).toHaveLength(2);
+      const order = pc.requests.filter((r) => r.path === '/key' || r.path === '/key/release');
+      expect(order.at(-1)?.path).toBe('/key/release');
+    });
+
+    test('o painel de teclas tem o botão "Alt+Tab", e a barra que aparece solta', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+      await page.locator('[data-more-toggle]').click();
+      await page.locator('[data-switch-window]').click();
+      await expect(bar(page)).toBeVisible();
+      // O painel dá o lugar à barra.
+      await expect(page.locator('app-pc-key-panel')).toHaveCount(0);
+      await expect.poll(keyBodies).toEqual([{ key: 'ALT', action: 'DOWN' }, { key: 'TAB' }]);
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+    });
+
+    test('a barra acompanha a pessoa pelas abas do módulo, e Soltar funciona em qualquer uma', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await holdAlt(page);
+      await tabs(page).getByRole('link', { name: 'Mídia' }).click();
+      await expect(page).toHaveURL(/\/pc\/midia$/);
+      await expect(bar(page)).toBeVisible();
+      expect(await hiddenControls(page)).toEqual([]);
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+    });
+
+    test('em um agente antigo "Trocar janela" segue sendo um Alt+Tab de um toque, sem barra', async ({
+      page,
+    }) => {
+      pc.status = { ...READY, apps: [...READY.apps] };
+      await openPc(page);
+      const sheet = await openSheet(page);
+      await sheet.locator('[data-shortcut="switch-window"]').first().click();
+      await expect.poll(keyBodies).toEqual([{ key: 'TAB', modifiers: ['ALT'] }]);
+      await expect(bar(page)).toHaveCount(0);
+      await expect(sheet).toBeVisible();
+    });
+
+    test.describe('o Alt nunca fica preso', () => {
+      test('esconder a página (pagehide) solta o Alt', async ({ page }) => {
+        await openPc(page);
+        await holdAlt(page);
+        await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+        await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+        await expect(bar(page)).toHaveCount(0);
+      });
+
+      test('ir para o segundo plano solta o Alt', async ({ page }) => {
+        await openPc(page);
+        await holdAlt(page);
+        await page.evaluate(() => {
+          Object.defineProperty(document, 'visibilityState', {
+            value: 'hidden',
+            configurable: true,
+          });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+      });
+
+      test('sair do módulo solta o Alt', async ({ page }) => {
+        await openPc(page);
+        await holdAlt(page);
+        // Navegação de dentro do app (o roteador escuta o popstate): a tela do PC é destruída, sem recarregar a página.
+        await page.evaluate(() => {
+          history.pushState({}, '', '/');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        });
+        await expect(page).not.toHaveURL(/\/pc/);
+        await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+      });
+
+      test('se o aperto do Alt falha, um soltar vai logo em seguida e a barra não fica', async ({
+        page,
+      }) => {
+        await openPc(page);
+        pc.commandFailure = { status: 504, kind: 'timeout' };
+        pc.failOnly = (request) => request.path === '/key' && request.body?.['action'] === 'DOWN';
+        const sheet = await openSheet(page);
+        await sheet.locator('[data-shortcut="switch-window"]').first().click();
+        await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+        await expect(bar(page)).toHaveCount(0);
+        // O Tab que vinha atrás do aperto que falhou nunca sai sozinho.
+        expect(keyBodies().filter((body) => body['key'] === 'TAB')).toEqual([]);
+      });
+
+      test('com o Alt segurado o sinal de vida do mouse segue (o agente não o solta por inatividade)', async ({
+        page,
+      }) => {
+        await openPc(page);
+        await holdAlt(page);
+        await expect.poll(() => pc.sent('/pointer').length, { timeout: 15_000 }).toBeGreaterThan(0);
+        expect(pc.sent('/pointer').every((body) => body['dx'] === 0 && body['dy'] === 0)).toBe(
+          true,
+        );
+      });
+    });
+  });
+
+  test.describe('o catálogo de atalhos novos', () => {
+    const newer = ['zoom-in', 'zoom-out', 'zoom-reset', 'print-screen', 'context-menu'];
+
+    test('um agente antigo não vê zoom, captura de tela, menu de contexto nem ir ao slide', async ({
+      page,
+    }) => {
+      pc.status = { ...READY, apps: [...READY.apps] };
+      await openPc(page, '/pc/atalhos');
+      for (const id of [...newer, 'slides-goto']) {
+        await expect(page.locator(`[data-shortcut="${id}"]`)).toHaveCount(0);
+      }
+      await expect(page.locator('[data-shortcut="screenshot"]')).toBeVisible();
+    });
+
+    test('com pc.key.v2 aparecem, e tocar manda a tecla nova com os modificadores', async ({
+      page,
+    }) => {
+      await openPc(page, '/pc/atalhos');
+      for (const id of newer) await page.locator(`[data-shortcut="${id}"]`).click();
+      await expect
+        .poll(keyBodies)
+        .toEqual([
+          { key: 'EQUALS', modifiers: ['CTRL'] },
+          { key: 'MINUS', modifiers: ['CTRL'] },
+          { key: 'D0', modifiers: ['CTRL'] },
+          { key: 'PRINT_SCREEN' },
+          { key: 'APPS' },
+        ]);
+    });
+
+    test('ir ao slide N manda os dígitos e o Enter', async ({ page }) => {
+      await openPc(page, '/pc/atalhos');
+      await page.locator('[data-shortcut="slides-goto"]').click();
+      await page.getByLabel('Número do slide').fill('12');
+      await page.getByRole('button', { name: 'Ir', exact: true }).click();
+      await expect.poll(keyBodies).toEqual([{ key: 'D1' }, { key: 'D2' }, { key: 'ENTER' }]);
+    });
+  });
+
+  test('o título da folha de atalhos, focado por código, não mostra contorno', async ({ page }) => {
+    await openPc(page);
+    const sheet = await openSheet(page);
+    const title = sheet.getByRole('heading', { name: 'Atalhos', exact: true });
+    await expect(title).toBeFocused();
+    const outline = await title.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { style: style.outlineStyle, width: style.outlineWidth };
+    });
+    expect(outline.style === 'none' || outline.width === '0px').toBe(true);
   });
 });

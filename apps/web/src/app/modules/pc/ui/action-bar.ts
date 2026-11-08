@@ -80,6 +80,8 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
         aria-label="Apagar"
         i18n-aria-label="@@pc.key.backspace"
         (appPcRepeat)="key.emit('BACKSPACE')"
+        [batched]="batched()"
+        (repeatMany)="keyRepeat.emit({ key: 'BACKSPACE', count: $event })"
         [repeatSkip]="busy()"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -158,7 +160,12 @@ export class PcActionBar {
   /** Devolve `true` quando já há teclas demais sem resposta: a repetição de apagar pula a rodada. */
   readonly busy = input<() => boolean>(() => false);
 
+  /** Segurar repete em lotes (`pc.key.v2`); sem isso, uma repetição por pedido, como sempre. */
+  readonly batched = input(false);
+
   readonly key = output<PcKey>();
+  /** Apagar segurado num PC que entende `pc.key.v2`: um pedido com `count` repetições. */
+  readonly keyRepeat = output<{ readonly key: PcKey; readonly count: number }>();
   readonly keyboard = output<void>();
 
   protected label(modifier: PcModifier): string {

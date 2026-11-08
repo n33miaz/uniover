@@ -11,6 +11,8 @@ export interface PcStatusBody {
   available: boolean;
   online: boolean;
   apps: { id: string; label: string }[];
+  /** O que o agente do PC declarou além do básico (ex.: `pc.key.v2`); sem isso, é um agente antigo. */
+  capabilities?: string[];
 }
 
 export interface PcFailure {

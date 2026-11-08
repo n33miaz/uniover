@@ -1,0 +1,65 @@
+:host {
+  display: block;
+}
+
+/* Alt segurado: contorno e cor (não só a cor), com os três botões a um toque. */
+.bar {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--a-accent);
+  border-radius: var(--radius-lg, 20px);
+  background: var(--a-surface);
+  box-shadow:
+    0 -4px 18px color-mix(in srgb, var(--a-ink) 14%, transparent),
+    inset 0 0 0 1px var(--a-accent);
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+.held {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--a-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--a-accent);
+}
+.step,
+.release {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.release {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent, #fff);
+}
+.step:active,
+.release:active {
+  transform: scale(0.97);
+}
+.step:focus-visible,
+.release:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}

@@ -268,6 +268,19 @@ export class PcLiveKeyboard {
   }
 
   /**
+   * `count` apertos de uma tecla da tela num pedido só (segurar apagar ou uma seta num PC que entende `pc.key.v2`). Apagar tira
+   * do campo `count` pontos de código, para o campo e o PC seguirem iguais. Sem vibração: o toque que começou já vibrou.
+   */
+  pressRepeat(key: PcKey, count: number): void {
+    if (!this.store.canSend()) return;
+    const modifiers = this.armed.take();
+    if (key === 'BACKSPACE' && modifiers.length === 0) {
+      for (let erased = 0; erased < count; erased++) this.dropLast();
+    } else if (modifiers.length > 0) this.reset();
+    this.input.sendKeyRepeat(key, count, modifiers);
+  }
+
+  /**
    * O Backspace do teclado do celular: o mesmo da tecla da barra (as armadas valem para ele; com modificador o campo
    * recomeça). Segurar repete, e a repetição pula a rodada com teclas demais sem resposta, como na barra.
    */

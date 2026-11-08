@@ -48,6 +48,46 @@ describe('MousePage', () => {
 
   afterEach(() => fixture.destroy());
 
+  describe('the panel of keys and the switcher', () => {
+    const bar = (name: string) =>
+      root.querySelector<HTMLButtonElement>(`app-pc-action-bar [aria-label="${name}"]`)!;
+    const panelButton = (selector: string) => root.querySelector<HTMLButtonElement>(selector);
+
+    it('a PC without pc.key.v2 has no button for the new keys in the panel', () => {
+      bar('Mais teclas').click();
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-key-panel')).not.toBeNull();
+      expect(panelButton('[data-more-toggle]')).toBeNull();
+    });
+
+    it('a PC with it has the button, and the panel offers the digits and "Alt+Tab"', () => {
+      store.capabilities.set(['pc.key.v2']);
+      bar('Mais teclas').click();
+      fixture.detectChanges();
+      panelButton('[data-more-toggle]')!.click();
+      fixture.detectChanges();
+      expect(panelButton('[data-key="D5"]')).not.toBeNull();
+      expect(panelButton('[data-switch-window]')).not.toBeNull();
+    });
+
+    it('"Alt+Tab" holds the Alt and gives the first Tab, and the panel closes when the Alt is held (the bar takes its place)', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      bar('Mais teclas').click();
+      fixture.detectChanges();
+      panelButton('[data-more-toggle]')!.click();
+      fixture.detectChanges();
+      panelButton('[data-switch-window]')!.click();
+      for (let round = 0; round < 8; round++) await Promise.resolve();
+      expect(store.sendKey.mock.calls).toEqual([
+        ['ALT', [], { action: 'DOWN' }],
+        ['TAB', []],
+      ]);
+      store.heldKeys.set(['ALT']); // o store segurou
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-key-panel')).toBeNull();
+    });
+  });
+
   it('explains itself to a screen reader and points to the buttons', () => {
     expect(pad().getAttribute('aria-labelledby')).toBe('pad-help');
     const help = root.querySelector('#pad-help')!.textContent ?? '';

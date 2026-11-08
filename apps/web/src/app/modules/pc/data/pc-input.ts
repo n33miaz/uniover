@@ -5,13 +5,16 @@ import { LiveTyper, type TextDiff } from '../input/live-typing';
 import { PcArmed } from './pc-armed';
 import { CANCELLED, type PcFailure } from './pc-failure';
 import { PcStore } from './pc-store';
-import type { PcKey, PcModifier } from './pc-types';
+import type { PcHoldableKey, PcKey, PcModifier } from './pc-types';
 
 /** O que falhou: `edit` foi o texto do teclado do celular (apagar e digitar), `key` uma tecla da tela. */
 export type InputKind = 'edit' | 'key';
 
 /** Teclas na fila a partir das quais a repetição (da tela ou do teclado do celular) pula a rodada em vez de empilhar. */
 export const MAX_KEYS_IN_FLIGHT = 2;
+
+/** Quanto o "Soltar" espera as teclas que a fila ainda não entregou ao PC. */
+export const RELEASE_SETTLE_MS = 1_500;
 
 /**
  * A fila de tudo o que se digita no PC: o teclado do celular (ao vivo), as teclas da barra, o painel de teclas, os atalhos.
@@ -34,7 +37,12 @@ export class PcInput {
 
   private readonly typer = new LiveTyper(
     {
-      key: (key, modifiers) => this.sameAccount(() => this.store.sendKey(key, modifiers)),
+      key: (key, modifiers, options) =>
+        this.sameAccount(() =>
+          options === undefined
+            ? this.store.sendKey(key, modifiers)
+            : this.store.sendKey(key, modifiers, options),
+        ),
       text: (text) => this.sameAccount(() => this.store.sendText(text)),
     },
     {
@@ -87,6 +95,49 @@ export class PcInput {
     // Uma tecla com modificador (Ctrl+Z, Ctrl+Backspace...) mexe no texto do PC sem o campo saber.
     if (modifiers.length > 0) this.diverge();
     return true;
+  }
+
+  /**
+   * `count` apertos da mesma tecla num pedido só (Backspace e setas seguradas); os modificadores são os que quem chama já
+   * gastou. Só para PC que entende `pc.key.v2`: quem chama confere (`store.supportsKeyV2`).
+   */
+  sendKeyRepeat(key: PcKey, count: number, modifiers: readonly PcModifier[] = []): void {
+    this.typer.key(key, modifiers, { repeat: count });
+  }
+
+  /**
+   * Segura um modificador (`DOWN`) na ordem da fila: o que se digitou antes sai antes. O `UP` NÃO entra na fila (ver
+   * `release`). Devolve `false` quando nada foi enviado.
+   */
+  hold(key: PcHoldableKey): boolean {
+    if (!this.store.canSend()) return false;
+    tick();
+    this.typer.key(key, [], { action: 'DOWN' });
+    return true;
+  }
+
+  /**
+   * Solta um modificador segurado. Espera, por pouco tempo, as teclas que a fila ainda não entregou ao PC (um "Próxima, Soltar"
+   * rápido não pode soltar o Alt antes do último Tab) e então solta pelo caminho próprio do store, que nunca é cancelado pela
+   * fila. Passado o prazo, solta mesmo assim.
+   */
+  async release(key: PcHoldableKey): Promise<PcFailure | null> {
+    await this.settle(RELEASE_SETTLE_MS);
+    return this.store.releaseKey(key);
+  }
+
+  /** Espera a fila esvaziar, por no máximo `maxMs`. */
+  private settle(maxMs: number): Promise<void> {
+    if (this.pending === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        off();
+        resolve();
+      };
+      const off = this.onIdle(done);
+      const timer = setTimeout(done, maxMs);
+    });
   }
 
   /** Um atalho do catálogo: a tecla com os modificadores dele e os armados. Qualquer atalho pode mexer no texto do PC. */

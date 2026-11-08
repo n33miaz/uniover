@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { PcArmed } from '../data/pc-armed';
 import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
@@ -19,6 +27,33 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
   ALT: 'Alt',
   WIN: 'Win',
 };
+
+/** As teclas que só a `pc.key.v2` traz, na grade de cinco colunas (a ordem é a da leitura: dígitos, pontuação, especiais). */
+const MORE_KEYS: readonly PanelKey[] = [
+  ...(['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D0'] as const).map(
+    (key): PanelKey => ({ key, label: key.slice(1), aria: key.slice(1), cell: '' }),
+  ),
+  { key: 'MINUS', label: '-', aria: $localize`:@@pc.key.minus:Hífen (menos)`, cell: '' },
+  { key: 'EQUALS', label: '=', aria: $localize`:@@pc.key.equals:Igual`, cell: '' },
+  { key: 'COMMA', label: ',', aria: $localize`:@@pc.key.comma:Vírgula`, cell: '' },
+  { key: 'PERIOD', label: '.', aria: $localize`:@@pc.key.period:Ponto`, cell: '' },
+  { key: 'INSERT', label: 'Ins', aria: $localize`:@@pc.key.insert:Insert`, cell: '' },
+  {
+    key: 'PRINT_SCREEN',
+    label: 'PrtSc',
+    aria: $localize`:@@pc.key.print-screen:Print Screen (captura de tela)`,
+    cell: '',
+  },
+  // "Win" já é o botão que arma o modificador: esta é a tecla sozinha (abre o menu Iniciar).
+  { key: 'WIN', label: '⊞', aria: $localize`:@@pc.key.win:Tecla Windows (sozinha)`, cell: '' },
+  {
+    key: 'CAPS_LOCK',
+    label: 'Caps',
+    aria: $localize`:@@pc.key.caps-lock:Caps Lock (maiúsculas)`,
+    cell: '',
+  },
+  { key: 'APPS', label: 'Menu', aria: $localize`:@@pc.key.apps:Menu de contexto`, cell: '' },
+];
 
 const FUNCTION_KEYS = [
   'F1',
@@ -73,6 +108,21 @@ const FUNCTION_KEYS = [
         >
           {{ fnText }}
         </button>
+        @if (moreKeys()) {
+          <!-- Só com um PC que entende pc.key.v2: um PC antigo nem vê o botão. -->
+          <button
+            type="button"
+            class="key"
+            data-more-toggle
+            [class.on]="showMore()"
+            [attr.aria-expanded]="showMore()"
+            aria-label="Dígitos e outras teclas"
+            i18n-aria-label="@@pc.panel.more-toggle"
+            (click)="view.set(showMore() ? 'nav' : 'more')"
+          >
+            {{ moreText }}
+          </button>
+        }
       </div>
 
       @if (functionRow()) {
@@ -90,27 +140,64 @@ const FUNCTION_KEYS = [
         </div>
       }
 
-      <div
-        class="row nav"
-        role="group"
-        aria-label="Navegação"
-        i18n-aria-label="@@pc.panel.navigation"
-      >
-        @for (item of navKeys; track item.key) {
+      @if (showMore()) {
+        <div
+          class="row more"
+          role="group"
+          aria-label="Dígitos e outras teclas"
+          i18n-aria-label="@@pc.panel.more-toggle"
+        >
+          @for (item of moreKeyList; track item.key) {
+            <button
+              type="button"
+              class="key"
+              [attr.data-key]="item.key"
+              [disabled]="disabled()"
+              [attr.aria-label]="item.aria"
+              (click)="press(item.key)"
+            >
+              {{ item.label }}
+            </button>
+          }
           <button
             type="button"
             class="key"
-            [attr.data-key]="item.key"
-            [style.grid-area]="item.cell"
-            [disabled]="disabled()"
-            [attr.aria-label]="item.aria"
-            (appPcRepeat)="press(item.key)"
-            [repeatSkip]="busy()"
+            data-switch-window
+            [class.on]="switching()"
+            [attr.aria-pressed]="switching()"
+            [disabled]="disabled() && !switching()"
+            aria-label="Trocar janela (segura o Alt)"
+            i18n-aria-label="@@pc.panel.switch-window"
+            (click)="switchWindow.emit()"
           >
-            {{ item.label }}
+            {{ switchText }}
           </button>
-        }
-      </div>
+        </div>
+      } @else {
+        <div
+          class="row nav"
+          role="group"
+          aria-label="Navegação"
+          i18n-aria-label="@@pc.panel.navigation"
+        >
+          @for (item of navKeys; track item.key) {
+            <button
+              type="button"
+              class="key"
+              [attr.data-key]="item.key"
+              [style.grid-area]="item.cell"
+              [disabled]="disabled()"
+              [attr.aria-label]="item.aria"
+              (appPcRepeat)="press(item.key)"
+              [batched]="batched()"
+              (repeatMany)="keyRepeat.emit({ key: item.key, count: $event })"
+              [repeatSkip]="busy()"
+            >
+              {{ item.label }}
+            </button>
+          }
+        </div>
+      }
     </div>
   `,
   styleUrls: ['./key-button.css', './key-panel.css'],
@@ -121,8 +208,23 @@ export class PcKeyPanel {
   /** Devolve `true` quando já há teclas demais sem resposta: a repetição pula a rodada. */
   readonly busy = input<() => boolean>(() => false);
   readonly key = output<PcKey>();
+  /** Segurar uma tecla de navegação num PC que entende `pc.key.v2`: um pedido com `count` repetições. */
+  readonly keyRepeat = output<{ readonly key: PcKey; readonly count: number }>();
+  /** O botão "Trocar janela" (segura o Alt e dá o primeiro Tab). */
+  readonly switchWindow = output<void>();
+  /** O PC entende `pc.key.v2`: aparecem os dígitos e as teclas novas. */
+  readonly moreKeys = input(false);
+  /** Segurar repete em lotes (`pc.key.v2`); sem isso, uma repetição por pedido, como sempre. */
+  readonly batched = input(false);
+  /** O Alt está segurado pelo "Trocar janela". */
+  readonly switching = input(false);
 
   protected readonly modifiers = PC_MODIFIERS;
+  protected readonly view = signal<'nav' | 'more'>('nav');
+  protected readonly showMore = computed(() => this.view() === 'more' && this.moreKeys());
+  protected readonly moreText = '123';
+  protected readonly switchText = 'Alt+Tab';
+  protected readonly moreKeyList = MORE_KEYS;
   protected readonly functionRow = signal(false);
   protected readonly fnText = 'Fn';
   protected readonly functionKeys = FUNCTION_KEYS;

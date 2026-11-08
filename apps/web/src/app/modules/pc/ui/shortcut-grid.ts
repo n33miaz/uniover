@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { PcInput } from '../data/pc-input';
 import { PcPinned } from '../data/pc-pinned';
 import {
@@ -10,6 +18,8 @@ import {
   type ShortcutGroup,
 } from '../data/pc-shortcuts';
 import { PcStore } from '../data/pc-store';
+import { PcSwitcher } from '../data/pc-switcher';
+import type { PcKey } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { GROUP_LABEL, shortcutLabel } from './shortcut-labels';
 
@@ -54,6 +64,26 @@ let nextGrid = 0;
         </div>
       </section>
     }
+    @if (gotoOpen()) {
+      <form class="goto" (submit)="goto($event, slide)">
+        <label class="goto-label" for="{{ prefix }}slide" i18n="@@pc.sc.goto-label">
+          Número do slide
+        </label>
+        <input
+          #slide
+          id="{{ prefix }}slide"
+          class="goto-input"
+          type="text"
+          [attr.inputmode]="'numeric'"
+          pattern="[0-9]*"
+          maxlength="3"
+          autocomplete="off"
+        />
+        <button type="submit" class="goto-go" [disabled]="!store.canSend()" i18n="@@pc.sc.goto-go">
+          Ir
+        </button>
+      </form>
+    }
     @if (note(); as message) {
       <p class="note" role="alert">{{ message }}</p>
     }
@@ -66,8 +96,14 @@ export class PcShortcutGrid {
   private readonly input = inject(PcInput);
   protected readonly prefix = `sc-${nextGrid++}-`;
 
+  private readonly switcher = inject(PcSwitcher);
+
   /** Modo de edição: tocar fixa e solta, em vez de enviar. */
   readonly editing = input(false);
+  /** O atalho começou algo que continua depois do toque (o "Trocar janela" segurou o Alt): quem tem a grade pode fechá-la. */
+  readonly began = output<void>();
+  /** O campo do número do slide está aberto. */
+  protected readonly gotoOpen = signal(false);
 
   /** Um aviso curto (a lista de fixados está cheia; a falha de bloquear). */
   protected readonly note = signal<string | null>(null);
@@ -75,7 +111,9 @@ export class PcShortcutGrid {
 
   protected readonly sections = computed<readonly Section[]>(() => {
     const sections: Section[] = [];
-    const fixed = this.pinned.shortcuts();
+    // Um atalho que precisa da `pc.key.v2` não aparece para um PC que não a declarou (nem entre os fixados).
+    const supported = (shortcut: PcShortcut) => !shortcut.needs || this.store.supportsKeyV2();
+    const fixed = this.pinned.shortcuts().filter(supported);
     // Fora da edição, sem nenhum fixado a seção nem aparece; na edição ela aparece vazia para dizer onde eles ficam.
     if (fixed.length > 0 || this.editing()) {
       sections.push({ id: 'pinned', title: GROUP_LABEL.pinned(), items: fixed });
@@ -84,7 +122,7 @@ export class PcShortcutGrid {
       sections.push({
         id: group,
         title: GROUP_LABEL[group](),
-        items: SHORTCUTS.filter((shortcut) => shortcut.group === group),
+        items: SHORTCUTS.filter((shortcut) => shortcut.group === group && supported(shortcut)),
       });
     }
     return sections;
@@ -105,6 +143,16 @@ export class PcShortcutGrid {
       return;
     }
     if (!this.store.canSend()) return;
+    if (item.action.kind === 'goto-slide') {
+      this.gotoOpen.set(!this.gotoOpen());
+      return;
+    }
+    if (item.switcher && this.switcher.available()) {
+      tick();
+      this.input.diverge();
+      if (this.switcher.begin()) this.began.emit();
+      return;
+    }
     if (item.action.kind === 'lock') {
       tick();
       this.input.diverge();
@@ -114,5 +162,21 @@ export class PcShortcutGrid {
       return;
     }
     this.input.shortcut(item.action.key, item.action.modifiers);
+  }
+
+  /** "Ir ao slide N": os dígitos e o Enter, pelo que o PowerPoint e os leitores de PDF entendem. */
+  protected goto(event: Event, field: HTMLInputElement): void {
+    event.preventDefault();
+    const text = field.value.trim();
+    if (!/^[0-9]{1,3}$/.test(text) || Number(text) < 1 || !this.store.canSend()) {
+      this.note.set($localize`:@@pc.sc.goto-invalid:Digite o número do slide, de 1 a 999.`);
+      return;
+    }
+    this.note.set(null);
+    tick();
+    for (const digit of text) this.input.sendKey(`D${digit}` as PcKey);
+    this.input.sendKey('ENTER');
+    this.input.diverge();
+    field.value = '';
   }
 }

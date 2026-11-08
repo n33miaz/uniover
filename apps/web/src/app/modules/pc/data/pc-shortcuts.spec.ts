@@ -2,8 +2,20 @@ import type {
   PcKeyV1BodyKey,
   PcKeyV1BodyModifiersItem,
 } from '../../../core/api/generated/agent/pc_key_v1';
+import type {
+  PcKeyV2BodyKey,
+  PcKeyV2BodyModifiersItem,
+} from '../../../core/api/generated/agent/pc_key_v2';
 import { LABELLED_SHORTCUTS, shortcutLabel } from '../ui/shortcut-labels';
-import { PC_KEYS, PC_MODIFIERS, type PcKeyV1, type PcModifier } from './pc-types';
+import {
+  PC_KEYS,
+  PC_MODIFIERS,
+  keyNeedsV2,
+  type PcKey,
+  type PcKeyV1,
+  type PcKeyV2Only,
+  type PcModifier,
+} from './pc-types';
 import {
   DEFAULT_PINNED,
   MAX_PINNED,
@@ -21,26 +33,79 @@ type Same<A, B> =
 // modificador, a tela e o catálogo precisam ser revistos, e isto deixa de compilar até serem.
 const keysAreTheContractKeys: Same<PcKeyV1, PcKeyV1BodyKey> = true;
 const modifiersAreTheContractModifiers: Same<PcModifier, PcKeyV1BodyModifiersItem> = true;
+// O mesmo para a v2: as teclas dela são as da v1 mais as `PcKeyV2Only`, e os modificadores são os mesmos.
+const v2KeysAreTheContractKeys: Same<PcKeyV1 | PcKeyV2Only, PcKeyV2BodyKey> = true;
+const v2ModifiersAreTheContractModifiers: Same<PcModifier, PcKeyV2BodyModifiersItem> = true;
+const everyKeyIsOneOfTheTwoContracts: Same<PcKey, PcKeyV2BodyKey> = true;
 
 describe('shortcut catalog', () => {
   it('uses exactly the keys and modifiers of the current key contract', () => {
     expect(keysAreTheContractKeys).toBe(true);
     expect(modifiersAreTheContractModifiers).toBe(true);
+    expect(v2KeysAreTheContractKeys).toBe(true);
+    expect(v2ModifiersAreTheContractModifiers).toBe(true);
+    expect(everyKeyIsOneOfTheTwoContracts).toBe(true);
   });
 
-  it('every key shortcut is a key and modifiers the contract accepts, with no modifier twice', () => {
+  it('every key shortcut is valid for the contract version it needs, with no modifier twice', () => {
     for (const shortcut of SHORTCUTS) {
       if (shortcut.action.kind !== 'keys') continue;
       const { key, modifiers } = shortcut.action;
-      // Compila só se a tecla e cada modificador são os do contrato gerado.
-      const contractKey: PcKeyV1BodyKey = key;
-      const contractModifiers: PcKeyV1BodyModifiersItem[] = [...modifiers];
-      expect(PC_KEYS, shortcut.id).toContain(contractKey);
-      expect(contractModifiers.length, shortcut.id).toBeLessThanOrEqual(4);
-      expect(new Set(contractModifiers).size, shortcut.id).toBe(contractModifiers.length);
-      for (const modifier of contractModifiers)
-        expect(PC_MODIFIERS, shortcut.id).toContain(modifier);
+      if (shortcut.needs === undefined) {
+        // Sem `needs`, qualquer agente serve: a tecla e os modificadores são os da v1 (compila só se forem).
+        const contractKey: PcKeyV1BodyKey = key as PcKeyV1;
+        expect(PC_KEYS, shortcut.id).toContain(contractKey);
+        expect(keyNeedsV2(key), shortcut.id).toBe(false);
+        const v1Modifiers: PcKeyV1BodyModifiersItem[] = [...modifiers];
+        expect(new Set(v1Modifiers).size, shortcut.id).toBe(v1Modifiers.length);
+      } else {
+        // Com `needs`, a tecla é uma das que só a v2 traz.
+        const contractKey: PcKeyV2BodyKey = key;
+        expect(PC_KEYS as readonly string[], shortcut.id).not.toContain(contractKey);
+        expect(keyNeedsV2(key), shortcut.id).toBe(true);
+        const v2Modifiers: PcKeyV2BodyModifiersItem[] = [...modifiers];
+        expect(new Set(v2Modifiers).size, shortcut.id).toBe(v2Modifiers.length);
+      }
+      expect(modifiers.length, shortcut.id).toBeLessThanOrEqual(4);
+      for (const modifier of modifiers) expect(PC_MODIFIERS, shortcut.id).toContain(modifier);
     }
+  });
+
+  it('marks as needing pc.key.v2 exactly the shortcuts whose key only that version has', () => {
+    for (const shortcut of SHORTCUTS) {
+      const needsV2 = shortcut.action.kind === 'keys' ? keyNeedsV2(shortcut.action.key) : false;
+      if (shortcut.action.kind === 'goto-slide') expect(shortcut.needs, shortcut.id).toBe('key-v2');
+      else expect(shortcut.needs === 'key-v2', shortcut.id).toBe(needsV2);
+    }
+    expect(SHORTCUTS.filter((shortcut) => shortcut.needs).map((shortcut) => shortcut.id)).toEqual([
+      'print-screen',
+      'context-menu',
+      'zoom-in',
+      'zoom-out',
+      'zoom-reset',
+      'slides-goto',
+    ]);
+  });
+
+  it('what was left out for lack of keys is here, but only behind pc.key.v2: zoom, print screen, menu, slide N', () => {
+    const text = (id: string) => keysText(shortcutById(id)!);
+    expect(text('zoom-in')).toBe('Ctrl+=');
+    expect(text('zoom-out')).toBe('Ctrl+-');
+    expect(text('zoom-reset')).toBe('Ctrl+0');
+    expect(text('print-screen')).toBe('PrtSc');
+    expect(text('context-menu')).toBe('Menu');
+    expect(shortcutById('slides-goto')!.action).toEqual({ kind: 'goto-slide' });
+    expect(shortcutById('screenshot')!.needs).toBeUndefined();
+    expect(text('screenshot')).toBe('Win+Shift+S');
+  });
+
+  it('only "Trocar janela" holds the Alt, and it stays a one-tap Alt+Tab for old agents', () => {
+    expect(
+      SHORTCUTS.filter((shortcut) => shortcut.switcher).map((shortcut) => shortcut.id),
+    ).toEqual(['switch-window']);
+    const shortcut = shortcutById('switch-window')!;
+    expect(shortcut.needs).toBeUndefined();
+    expect(shortcut.action).toEqual({ kind: 'keys', key: 'TAB', modifiers: ['ALT'] });
   });
 
   it('lists every key of the contract once, at run time, for the check above', () => {
@@ -112,15 +177,15 @@ describe('shortcut catalog', () => {
     expect(lock.action).toEqual({ kind: 'lock' });
     expect(keysText(lock)).toBe('');
     const nonKeys = SHORTCUTS.filter((shortcut) => shortcut.action.kind !== 'keys');
-    expect(nonKeys.map((shortcut) => shortcut.id)).toEqual(['lock']);
+    expect(nonKeys.map((shortcut) => shortcut.id)).toEqual(['lock', 'slides-goto']);
     // Nenhum atalho de teclas é Win+L.
     expect(SHORTCUTS.map(keysText)).not.toContain('Win+L');
   });
 
-  it('leaves out what the current contract cannot say (digits, punctuation, Win alone, zoom)', () => {
-    const texts = SHORTCUTS.map(keysText);
-    expect(texts).not.toContain('Win');
-    for (const text of texts) expect(text).not.toMatch(/[+-]$|\+0$|\+\d$/);
+  it('never puts Win alone behind a shortcut that works on any agent', () => {
+    const v1Texts = SHORTCUTS.filter((shortcut) => !shortcut.needs).map(keysText);
+    expect(v1Texts).not.toContain('Win');
+    for (const text of v1Texts) expect(text).not.toMatch(/[+-]$|\+0$|\+\d$/);
   });
 
   it('has a label for every shortcut, and none for one that does not exist', () => {

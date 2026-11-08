@@ -1,5 +1,6 @@
 import { DestroyRef, Directive, inject, input, output } from '@angular/core';
 import { HoldRepeater } from '../../../shared/input/hold-repeater';
+import { RepeatBatcher } from '../input/repeat-batcher';
 
 /** Depois de quanto tempo segurando a tecla começa a repetir, e de quanto em quanto tempo repete. */
 export const REPEAT_AFTER_MS = 420;
@@ -27,6 +28,13 @@ export class PcRepeat {
   readonly appPcRepeat = output<void>();
   /** Quando devolve `true`, a repetição daquela rodada não age. */
   readonly repeatSkip = input<() => boolean>(() => false);
+  /**
+   * Em lotes: o PC entende `pc.key.v2`, então segurar manda um pedido a cada rodada com `repeat` (`repeatMany`) em vez de um
+   * por repetição. Decidido no toque. Sem isso, a repetição é a de sempre (`appPcRepeat`, uma por rodada).
+   */
+  readonly batched = input(false);
+  /** Quantas repetições juntas saem neste pedido (só no modo em lotes). */
+  readonly repeatMany = output<number>();
 
   private readonly repeater = new HoldRepeater(
     () => this.appPcRepeat.emit(),
@@ -35,18 +43,36 @@ export class PcRepeat {
     () => this.repeatSkip()(),
   );
 
+  private readonly batcher = new RepeatBatcher(
+    (count) => this.repeatMany.emit(count),
+    () => this.repeatSkip()(),
+  );
+  private delayTimer: ReturnType<typeof setTimeout> | undefined;
+
   constructor() {
-    inject(DestroyRef).onDestroy(() => this.repeater.stop());
+    inject(DestroyRef).onDestroy(() => this.stop());
   }
 
   protected down(event: PointerEvent): void {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    this.stop();
     this.appPcRepeat.emit();
-    this.repeater.start();
+    if (this.batched()) {
+      // A primeira ação é do toque; depois do atraso, um pedido por rodada com as repetições devidas.
+      this.delayTimer = setTimeout(() => {
+        this.delayTimer = undefined;
+        this.batcher.start();
+      }, REPEAT_AFTER_MS);
+    } else {
+      this.repeater.start();
+    }
   }
 
   protected stop(): void {
     this.repeater.stop();
+    this.batcher.stop();
+    clearTimeout(this.delayTimer);
+    this.delayTimer = undefined;
   }
 
   /** `detail === 0` é a ativação sem ponteiro (teclado, leitor de tela); o clique do dedo já agiu no `pointerdown`. */

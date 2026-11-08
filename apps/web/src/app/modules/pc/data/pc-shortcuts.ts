@@ -1,4 +1,4 @@
-import type { PcKey, PcKeyV1, PcModifier } from './pc-types';
+import type { PcKey, PcKeyV1, PcKeyV2Only, PcModifier } from './pc-types';
 
 /** Os grupos da folha de atalhos, na ordem em que aparecem (depois dos fixados). */
 export type ShortcutGroup = 'edit' | 'window' | 'system' | 'browser' | 'video' | 'slides';
@@ -12,20 +12,34 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   'slides',
 ];
 
-/** O que um atalho faz: uma tecla com modificadores (o contrato `pc.key.v1`) ou uma ação de energia do PC. */
+/**
+ * O que um atalho faz: uma tecla com modificadores (do contrato `pc.key.v1` ou, com `needs`, do `pc.key.v2`), uma ação de
+ * energia do PC ou "ir ao slide N" (dígitos e Enter, que só a `pc.key.v2` traz).
+ */
 export type ShortcutAction =
-  | { readonly kind: 'keys'; readonly key: PcKeyV1; readonly modifiers: readonly PcModifier[] }
-  | { readonly kind: 'lock' };
+  | { readonly kind: 'keys'; readonly key: PcKey; readonly modifiers: readonly PcModifier[] }
+  | { readonly kind: 'lock' }
+  | { readonly kind: 'goto-slide' };
+
+/** O que o PC conectado precisa entender para o atalho aparecer. */
+export type ShortcutNeeds = 'key-v2';
 
 /**
  * Um atalho do catálogo: dados, sem texto. O rótulo (que descreve o que o atalho faz, não as teclas) mora em
- * `shortcut-labels`. Todo atalho de teclas só usa teclas e modificadores que o contrato **atual** aceita: nenhum botão que
- * dá erro. Fica de fora o que o contrato ainda não tem (dígitos e pontuação: zoom do navegador, ir ao slide N, Win sozinho).
+ * `shortcut-labels`. Todo atalho de teclas só usa teclas e modificadores de um contrato: sem `needs` são os da `pc.key.v1` (servem a
+ * qualquer agente); com `needs: 'key-v2'` precisam da `pc.key.v2` e só aparecem para um PC que a declarou, para nunca haver
+ * um botão que dá erro.
  */
 export interface PcShortcut {
   readonly id: string;
   readonly group: ShortcutGroup;
   readonly action: ShortcutAction;
+  readonly needs?: ShortcutNeeds;
+  /**
+   * "Trocar janela": num PC que entende `pc.key.v2` o atalho segura o Alt e abre a barra de troca (um toque, um Tab); nos
+   * outros segue sendo o Alt+Tab de um toque.
+   */
+  readonly switcher?: true;
 }
 
 const keys = (
@@ -34,6 +48,14 @@ const keys = (
   key: PcKeyV1,
   ...modifiers: PcModifier[]
 ): PcShortcut => ({ id, group, action: { kind: 'keys', key, modifiers } });
+
+/** Um atalho que só a `pc.key.v2` serve: a tecla é uma das novas (o compilador recusa uma da v1 aqui). */
+const keysV2 = (
+  id: string,
+  group: ShortcutGroup,
+  key: PcKeyV2Only,
+  ...modifiers: PcModifier[]
+): PcShortcut => ({ id, group, action: { kind: 'keys', key, modifiers }, needs: 'key-v2' });
 
 export const SHORTCUTS: readonly PcShortcut[] = [
   // Edição
@@ -47,7 +69,7 @@ export const SHORTCUTS: readonly PcShortcut[] = [
   keys('find', 'edit', 'F', 'CTRL'),
 
   // Janela
-  keys('switch-window', 'window', 'TAB', 'ALT'),
+  { ...keys('switch-window', 'window', 'TAB', 'ALT'), switcher: true },
   keys('close-window', 'window', 'F4', 'ALT'),
   keys('show-desktop', 'window', 'D', 'WIN'),
   keys('task-view', 'window', 'TAB', 'WIN'),
@@ -68,6 +90,8 @@ export const SHORTCUTS: readonly PcShortcut[] = [
   keys('search', 'system', 'S', 'WIN'),
   keys('project', 'system', 'P', 'WIN'),
   keys('quick-menu', 'system', 'X', 'WIN'),
+  keysV2('print-screen', 'system', 'PRINT_SCREEN'),
+  keysV2('context-menu', 'system', 'APPS'),
 
   // Navegador
   keys('new-tab', 'browser', 'T', 'CTRL'),
@@ -81,6 +105,9 @@ export const SHORTCUTS: readonly PcShortcut[] = [
   keys('address', 'browser', 'L', 'CTRL'),
   keys('new-window', 'browser', 'N', 'CTRL'),
   keys('browser-fullscreen', 'browser', 'F11'),
+  keysV2('zoom-in', 'browser', 'EQUALS', 'CTRL'),
+  keysV2('zoom-out', 'browser', 'MINUS', 'CTRL'),
+  keysV2('zoom-reset', 'browser', 'D0', 'CTRL'),
 
   // Vídeo (os atalhos do YouTube e dos players comuns; o player precisa estar em foco)
   keys('play-pause', 'video', 'SPACE'),
@@ -102,6 +129,7 @@ export const SHORTCUTS: readonly PcShortcut[] = [
   keys('slides-black', 'slides', 'B'),
   keys('slides-white', 'slides', 'W'),
   keys('slides-end', 'slides', 'ESCAPE'),
+  { id: 'slides-goto', group: 'slides', action: { kind: 'goto-slide' }, needs: 'key-v2' },
 ];
 
 /** Quantos atalhos cabem em "Fixados". */
@@ -140,6 +168,25 @@ const KEY_NAME: Readonly<Partial<Record<PcKey, string>>> = {
   RIGHT: '→',
   PAGE_UP: 'PgUp',
   PAGE_DOWN: 'PgDn',
+  INSERT: 'Ins',
+  PRINT_SCREEN: 'PrtSc',
+  APPS: 'Menu',
+  CAPS_LOCK: 'Caps',
+  WIN: 'Win',
+  MINUS: '-',
+  EQUALS: '=',
+  COMMA: ',',
+  PERIOD: '.',
+  D0: '0',
+  D1: '1',
+  D2: '2',
+  D3: '3',
+  D4: '4',
+  D5: '5',
+  D6: '6',
+  D7: '7',
+  D8: '8',
+  D9: '9',
 };
 
 const MODIFIER_NAME: Readonly<Record<PcModifier, string>> = {
