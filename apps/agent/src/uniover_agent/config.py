@@ -195,9 +195,10 @@ class Settings(BaseSettings):
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.
     tv_cleanup_keep: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    # Controle do PC pelo app (mouse, teclado, mídia, energia). Desligado por padrão: só o dono
-    # liga, neste PC (`uniover-agent pc-control on`). Sem isto o agente nem declara a capacidade.
-    pc_control: bool = False
+    # Controle do PC pelo app (mouse, teclado, mídia, energia). Ligado por padrão (pedido do
+    # dono): quem usa ainda precisa da permissão do módulo e só controla o próprio PC. Desliga
+    # neste PC com `uniover-agent pc-control off`; desligado, nem declara a capacidade.
+    pc_control: bool = True
     # Favoritos que o app pode abrir: `Nome=destino` (programa, documento ou endereço). Só o nome e
     # um identificador viajam; o destino fica neste PC. Na variável de ambiente, separados por `;`.
     pc_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)

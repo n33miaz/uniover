@@ -52,9 +52,9 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     on_expired: Callable[[float], None] | None = None,
     on_clock_unstable: Callable[[int], None] | None = None,
 ) -> PcSetup | None:
-    """O controle do PC só existe quando a pessoa o ligou neste PC (`pc_control`) e o sistema é o
-    Windows. Sem isso nenhum comando `pc.*` é aceito e a capacidade não é declarada: a API nem
-    oferece o módulo (mover o mouse e digitar à distância é poder demais para valer por padrão)."""
+    """O controle do PC só existe quando está ligado neste PC (`pc_control`, ligado por padrão) e o
+    sistema é o Windows. Desligado, nenhum comando `pc.*` é aceito e a capacidade não é declarada: a
+    API nem oferece o módulo. Quem usa ainda precisa da permissão do módulo na API."""
     if not settings.pc_control:
         return None
     if platform != "win32":
