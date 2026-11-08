@@ -103,6 +103,12 @@ export function installHintKey(scope: InstallScope, accountId: string | null = n
   return scope === 'root' ? INSTALL_HINT_KEY : `${INSTALL_HINT_KEY}.${scope}`;
 }
 
+/**
+ * Marca (no aparelho) que as chaves do aparelho (`v1`) já foram entregues a uma conta: só a primeira conta que se confirma as
+ * herda, uma vez. As chaves `v1` ficam onde estão, para um pacote antigo (ou um recuo de versão) ainda achar a memória.
+ */
+const ADOPTED_KEY = 'uniover.install-hint.v2.adopted';
+
 /** O endereço de partida de cada app, sem a barra final: a janela que abre nele sem marcador é, com segurança, deste app. */
 function isStartPath(scope: InstallScope, pathname: string): boolean {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
@@ -124,6 +130,17 @@ export const INSTALL_HINT_SYNC_TIMEOUT_MS = 6000;
 /** Os apps que a dica conhece: a raiz e cada módulo com manifest próprio. */
 const ALL_SCOPES: readonly InstallScope[] = ['root', ...SCOPED_MODULE_SLUGS];
 
+/** Um "Agora não" no futuro (relógio errado) travaria a dica por muito tempo: passando de agora + 1 dia, não vale. */
+const MAX_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
+
+function sane(dismissedAt: unknown, now: number = Date.now()): number | undefined {
+  return typeof dismissedAt === 'number' &&
+    Number.isFinite(dismissedAt) &&
+    dismissedAt <= now + MAX_CLOCK_SKEW_MS
+    ? dismissedAt
+    : undefined;
+}
+
 interface HintMemory {
   /** Instante (ms desde 1970) do último "Agora não". */
   readonly dismissedAt?: number;
@@ -141,8 +158,7 @@ function readMemory(scope: InstallScope, accountId: string | null): HintMemory {
     if (typeof parsed !== 'object' || parsed === null) return {};
     const { dismissedAt, never, installed } = parsed as Record<string, unknown>;
     return {
-      dismissedAt:
-        typeof dismissedAt === 'number' && Number.isFinite(dismissedAt) ? dismissedAt : undefined,
+      dismissedAt: sane(dismissedAt),
       never: never === true ? true : undefined,
       installed: installed === true ? true : undefined,
     };
@@ -168,15 +184,40 @@ function sameMemory(a: HintMemory, b: HintMemory): boolean {
   return a.dismissedAt === b.dismissedAt && !a.never === !b.never && !a.installed === !b.installed;
 }
 
+/**
+ * O que a conta sabe de um app: só "Agora não" e "nunca". Se o app está instalado é um fato do aparelho: nunca vem da
+ * conta (um `installed` que chegue é ignorado) e nunca vai para ela.
+ */
 function readRemoteMemory(answer: InstallHintAnswer | undefined): HintMemory {
   return {
-    dismissedAt:
-      typeof answer?.dismissedAt === 'number' && Number.isFinite(answer.dismissedAt)
-        ? answer.dismissedAt
-        : undefined,
+    dismissedAt: sane(answer?.dismissedAt),
     never: answer?.never === true ? true : undefined,
-    installed: answer?.installed === true ? true : undefined,
   };
+}
+
+/** A parte da memória que a conta guarda (sem "instalado"). */
+function accountPart(memory: HintMemory): HintMemory {
+  return { dismissedAt: memory.dismissedAt, never: memory.never };
+}
+
+function sameAccountPart(a: HintMemory, b: HintMemory): boolean {
+  return a.dismissedAt === b.dismissedAt && !a.never === !b.never;
+}
+
+function readAdopter(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(ADOPTED_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function markAdopter(accountId: string): void {
+  try {
+    globalThis.localStorage?.setItem(ADOPTED_KEY, accountId);
+  } catch {
+    // Sem armazenamento: nada se grava, e a herança acontece de novo na próxima carga (só vale para a primeira conta).
+  }
 }
 
 function readSessionShown(win: Window | null): boolean {
@@ -187,17 +228,10 @@ function readSessionShown(win: Window | null): boolean {
   }
 }
 
-function removeMemory(scope: InstallScope, accountId: string | null): void {
-  try {
-    globalThis.localStorage?.removeItem(installHintKey(scope, accountId));
-  } catch {
-    // Sem armazenamento: não há o que apagar.
-  }
-}
-
 function writeMemory(scope: InstallScope, memory: HintMemory, accountId: string | null): void {
   try {
-    globalThis.localStorage?.setItem(installHintKey(scope, accountId), JSON.stringify(memory));
+    const clean = { ...memory, dismissedAt: sane(memory.dismissedAt) };
+    globalThis.localStorage?.setItem(installHintKey(scope, accountId), JSON.stringify(clean));
   } catch {
     // Sem armazenamento (modo privado, dados bloqueados): a memória vale só até recarregar a página.
   }
@@ -266,6 +300,15 @@ export class InstallHintService {
   /** A conta cuja resposta já foi casada com a do aparelho (ou que não respondeu a tempo): ver `syncAccount`. */
   private readonly _syncedFor = signal<string | null>(null);
   private syncingAccount: string | null = null;
+  /** A conta cuja resposta foi lida de verdade (sem falha nem prazo): enquanto não for, uma nova chamada tenta de novo. */
+  private syncedOk: string | null = null;
+  /**
+   * O que foi dito antes de se saber de que conta é (a janela instalada que se reconhece ao abrir, uma resposta durante a
+   * troca de conta): fica só aqui e entra na memória da conta que se confirmar. Nunca vai para o balde do aparelho.
+   */
+  private pending: Partial<Record<InstallScope, HintMemory>> = {};
+  /** Uma troca de conta está em curso (a anterior saiu, a nova ainda não foi confirmada): nada vai para o balde do aparelho. */
+  private buffering = false;
   private accountGuard: () => boolean = () => true;
   /** Quem hospeda a folha espera isto ser a conta da sessão antes de abrir sozinha, para não perguntar o que a conta já sabe. */
   readonly syncedFor = this._syncedFor.asReadonly();
@@ -550,7 +593,7 @@ export class InstallHintService {
       this.promptEvent.set(null);
     }
     this.ackedScopes.update((acked) => new Set(acked).add(scope));
-    this.remember(scope, { installed: true });
+    this.remember(scope, mergeMemory(this.recall(scope), { installed: true }));
   }
 
   /**
@@ -594,46 +637,69 @@ export class InstallHintService {
   }
 
   private remember(scope: InstallScope, memory: HintMemory): void {
-    this.storeLocal(scope, memory);
-    this.pushToAccount({ [scope]: memory });
-  }
-
-  private storeLocal(scope: InstallScope, memory: HintMemory): void {
-    this.memories.update((all) => ({ ...all, [scope]: memory }));
-    writeMemory(scope, memory, this.account());
-  }
-
-  private pushToAccount(answers: InstallHintAnswers): void {
-    if (this._syncedFor() === null || !this.accountGuard()) return;
-    // Melhoria, nunca obrigação: sem rede a resposta fica no aparelho e sobe na próxima carga (`syncAccount`).
-    this.api.saveInstallHint(answers).catch(() => undefined);
+    const clean = { ...memory, dismissedAt: sane(memory.dismissedAt) };
+    this.storeLocal(scope, clean);
+    this.pushToAccount({ [scope]: clean });
   }
 
   /**
-   * Casa a memória do aparelho com a da conta, uma vez por conta e por página. A conta vale como a memória de qualquer
-   * aparelho (o "Agora não" e o "já instalei" dados no iPhone valem no Safari, mesmo que o Safari tenha apagado o que
-   * guardava), e o que o aparelho sabe e a conta não sobe. Quem hospeda a folha espera até isto acabar (`syncedFor`), com um
-   * prazo: se a conta não responde, segue só com o aparelho. `isCurrent` diz se a sessão ainda é desta conta quando a resposta chega.
+   * Grava no balde da conta. Sem conta conhecida: antes de qualquer sessão (a janela instalada se reconhece ao abrir) vai
+   * para o balde do aparelho, que a primeira conta herda; entre trocar de conta e a resposta da nova chegar nada vai para
+   * o armazenamento, fica na página (`pending`) até a conta se confirmar, para uma conta nunca escrever no balde de outra.
+   */
+  private storeLocal(scope: InstallScope, memory: HintMemory): void {
+    const clean = { ...memory, dismissedAt: sane(memory.dismissedAt) };
+    this.memories.update((all) => ({ ...all, [scope]: clean }));
+    const account = this.account();
+    if (account !== null) writeMemory(scope, clean, account);
+    else if (this.buffering) this.pending = { ...this.pending, [scope]: clean };
+    else writeMemory(scope, clean, null); // sem sessão ainda (a janela instalada se reconhece ao abrir): fato do aparelho
+  }
+
+  /** Só sobe o que a conta guarda ("Agora não" e "nunca"), nunca "instalado", e só o que não está vazio. */
+  private pushToAccount(answers: Partial<Record<InstallScope, HintMemory>>): void {
+    if (this._syncedFor() === null || this.buffering || !this.accountGuard()) return;
+    const body: Record<string, InstallHintAnswer> = {};
+    for (const [scope, memory] of Object.entries(answers)) {
+      const part = accountPart(memory);
+      if (part.dismissedAt !== undefined || part.never) body[scope] = part;
+    }
+    if (Object.keys(body).length === 0) return;
+    // Melhoria, nunca obrigação: sem rede a resposta fica no aparelho e sobe na próxima leitura bem-sucedida da conta.
+    this.api.saveInstallHint(body).catch(() => undefined);
+  }
+
+  /**
+   * Casa a memória do aparelho com a da conta. A conta vale como a memória de qualquer aparelho (o "Agora não" e o "nunca"
+   * dados no iPhone valem no Safari, mesmo que o Safari tenha apagado o que guardava), e o que o aparelho sabe e a conta
+   * não sobe. "Instalado" nunca passa pela conta: é do aparelho. Quem hospeda a folha espera até isto acabar
+   * (`syncedFor`), com um prazo: se a conta não responde, segue só com o aparelho, e uma chamada seguinte tenta de novo
+   * (e então sobe o que ficou para trás). `isCurrent` diz se a sessão ainda é desta conta quando a resposta chega.
    */
   async syncAccount(accountId: string, isCurrent: () => boolean = () => true): Promise<void> {
-    if (this._syncedFor() === accountId || this.syncingAccount === accountId) return;
+    if (this.syncedOk === accountId || this.syncingAccount === accountId) return;
     this.syncingAccount = accountId;
     // Outra conta no mesmo aparelho: o que a anterior respondeu não é lido nem enviado por esta.
-    if (this.account() !== null && this.account() !== accountId) this.switchAccount(null);
+    if (this.account() !== null && this.account() !== accountId) {
+      this.buffering = true;
+      this.switchAccount(null);
+    }
     try {
       const remote = await this.fetchRemote();
       if (!isCurrent()) return;
       this.accountGuard = isCurrent;
-      this.adoptDeviceMemory(accountId);
+      if (this.account() !== accountId) this.adoptDeviceMemory(accountId);
       this._syncedFor.set(accountId);
+      this.correctInstalledMemory();
       if (remote === null) return;
+      this.syncedOk = accountId;
       const ahead: Partial<Record<InstallScope, HintMemory>> = {};
       for (const scope of ALL_SCOPES) {
         const local = this.recall(scope);
         const theirs = readRemoteMemory(remote[scope]);
         const merged = mergeMemory(local, theirs);
         if (!sameMemory(merged, local)) this.storeLocal(scope, merged);
-        if (!sameMemory(merged, theirs)) ahead[scope] = merged;
+        if (!sameAccountPart(accountPart(merged), theirs)) ahead[scope] = merged;
       }
       if (Object.keys(ahead).length > 0) this.pushToAccount(ahead);
     } finally {
@@ -643,7 +709,11 @@ export class InstallHintService {
 
   /** A memória de um escopo no balde atual; lê o armazenamento só na primeira vez de cada escopo. */
   private recall(scope: InstallScope): HintMemory {
-    return this.memories()[scope] ?? readMemory(scope, this.account());
+    const cached = this.memories()[scope];
+    if (cached) return cached;
+    const account = this.account();
+    const stored = readMemory(scope, account);
+    return account === null ? mergeMemory(stored, this.pending[scope] ?? {}) : stored;
   }
 
   private switchAccount(accountId: string | null): void {
@@ -652,19 +722,35 @@ export class InstallHintService {
   }
 
   /**
-   * A primeira conta que se confirma neste aparelho herda o que o aparelho sabia sem conta (as chaves antigas e o que a
-   * janela instalada gravou antes de a sessão existir), e o aparelho fica sem esse balde: a conta seguinte começa limpa.
+   * A conta que se confirma passa a ter o seu balde. A primeira conta neste aparelho herda, uma vez, o que o aparelho
+   * sabia sem conta (as chaves `v1`, que ficam onde estão para um pacote antigo ainda as achar) e todas herdam o que a
+   * página guardou em `pending` antes de saber quem era. Uma conta que entra depois não herda as chaves `v1`.
    */
   private adoptDeviceMemory(accountId: string): void {
+    const firstAccount = readAdopter() === null;
     for (const scope of ALL_SCOPES) {
-      const device = readMemory(scope, null);
       const own = readMemory(scope, accountId);
-      const merged = mergeMemory(own, device);
+      let merged = mergeMemory(own, this.pending[scope] ?? {});
+      if (firstAccount) merged = mergeMemory(merged, readMemory(scope, null));
       if (!sameMemory(merged, {}) && !sameMemory(merged, own))
         writeMemory(scope, merged, accountId);
-      removeMemory(scope, null);
     }
+    if (firstAccount) markAdopter(accountId);
+    this.pending = {};
+    this.buffering = false;
     this.switchAccount(accountId);
+  }
+
+  /**
+   * No Chrome Android o ID instalado do manifest vale mais que a memória: se ele diz que o app NÃO está instalado, o
+   * "instalado" que o aparelho guardava (um Treino aberto dentro do PWA da raiz, por exemplo) sai. Roda quando a memória
+   * da conta já é a lida e quando a consulta termina, o que vier por último.
+   */
+  private correctInstalledMemory(): void {
+    if (this.installedRelated() !== false || this.account() === null) return;
+    if (this.ackedScopes().has(this.loadScope)) return;
+    const old = this.recall(this.loadScope);
+    if (old.installed) this.storeLocal(this.loadScope, { ...old, installed: undefined });
   }
 
   /** A resposta da conta, ou nulo se a API não respondeu a tempo ou falhou (a dica segue com a memória do aparelho). */
@@ -710,11 +796,8 @@ export class InstallHintService {
       ).href;
       const installed = apps.some((app) => app.platform === 'webapp' && app.id === id);
       this.installedRelated.set(installed);
-      // Corrige memórias antigas gravadas ao abrir Treino dentro do PWA da raiz.
-      if (!installed && !this.ackedScopes().has(this.loadScope)) {
-        const old = this.recall(this.loadScope);
-        if (old.installed) this.remember(this.loadScope, { ...old, installed: undefined });
-      }
+      // Corrige memórias antigas gravadas ao abrir Treino dentro do PWA da raiz (depois de a conta ser casada).
+      this.correctInstalledMemory();
     } catch {
       // Safari, Firefox e navegadores que recusam a consulta conservam a identidade da janela.
     }

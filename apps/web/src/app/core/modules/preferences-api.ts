@@ -9,11 +9,13 @@ export interface HomeEntry {
   readonly enabled: boolean;
 }
 
-/** O que a pessoa respondeu à dica "adicionar à tela de início" para um app: "Agora não" (instante em ms), "nunca" e "já instalei". */
+/**
+ * O que a conta guarda da dica "adicionar à tela de início" para um app: "Agora não" (instante em ms) e "nunca". Se o app está
+ * instalado é um fato do aparelho: não passa pela conta.
+ */
 export interface InstallHintAnswer {
   readonly dismissedAt?: number;
   readonly never?: boolean;
-  readonly installed?: boolean;
 }
 
 /** A resposta da dica por app (`root`, `tv`, `treino`); vale em qualquer aparelho e sobrevive à limpeza de dados do Safari. */
@@ -45,18 +47,17 @@ function isPreferences(value: unknown): value is AccountPreferences {
   );
 }
 
-/** Só o que a dica entende: um objeto de apps, cada um com os três campos no tipo certo; o resto é descartado. */
+/** Só o que a dica entende: um objeto de apps, cada um com os dois campos no tipo certo; o resto (inclusive `installed`) é descartado. */
 export function readInstallHint(value: unknown): InstallHintAnswers | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const result: Record<string, InstallHintAnswer> = {};
   for (const [scope, raw] of Object.entries(value)) {
     if (typeof raw !== 'object' || raw === null) continue;
-    const { dismissedAt, never, installed } = raw as Record<string, unknown>;
+    const { dismissedAt, never } = raw as Record<string, unknown>;
     result[scope] = {
       dismissedAt:
         typeof dismissedAt === 'number' && Number.isFinite(dismissedAt) ? dismissedAt : undefined,
       never: never === true ? true : undefined,
-      installed: installed === true ? true : undefined,
     };
   }
   return result;

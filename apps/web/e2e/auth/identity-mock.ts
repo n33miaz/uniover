@@ -187,7 +187,6 @@ export interface MockSession {
 export interface MockInstallHintAnswer {
   dismissedAt?: number;
   never?: boolean;
-  installed?: boolean;
 }
 
 export interface MockHomePreferences {
@@ -619,7 +618,6 @@ export async function mockIdentityApi(
         merged[scope] = {
           ...(dismissedAt >= 0 ? { dismissedAt } : {}),
           ...(old.never || answer.never ? { never: true } : {}),
-          ...(old.installed || answer.installed ? { installed: true } : {}),
         };
       }
       mock.installHints[account] = merged;

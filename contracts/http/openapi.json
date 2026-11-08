@@ -3096,12 +3096,6 @@
               "string"
             ]
           },
-          "installed": {
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
           "never": {
             "type": [
               "null",
@@ -3111,8 +3105,7 @@
         },
         "required": [
           "dismissedAt",
-          "never",
-          "installed"
+          "never"
         ],
         "type": "object"
       },

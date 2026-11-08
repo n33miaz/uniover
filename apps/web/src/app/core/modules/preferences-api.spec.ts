@@ -41,13 +41,13 @@ describe('PreferencesApi', () => {
       const request = http.expectOne(HINT_URL);
       expect(request.request.method).toBe('GET');
       request.flush({
-        root: { installed: true, dismissedAt: 5, extra: 'x' },
+        root: { installed: true, never: true, dismissedAt: 5, extra: 'x' },
         tv: { never: 'sim', dismissedAt: 'ontem' },
         treino: 'texto',
       });
       expect(await done).toEqual({
-        root: { installed: true, dismissedAt: 5, never: undefined },
-        tv: { installed: undefined, dismissedAt: undefined, never: undefined },
+        root: { dismissedAt: 5, never: true },
+        tv: { dismissedAt: undefined, never: undefined },
       });
     });
 
@@ -68,19 +68,19 @@ describe('PreferencesApi', () => {
     });
 
     it('saves the install hint answer on its own route, without version or home', async () => {
-      const done = api.saveInstallHint({ root: { installed: true } });
+      const done = api.saveInstallHint({ root: { never: true } });
       const request = http.expectOne(HINT_URL);
       expect(request.request.method).toBe('PUT');
-      expect(request.request.body).toEqual({ scopes: { root: { installed: true } } });
-      request.flush({ root: { installed: true }, tv: { never: true } });
+      expect(request.request.body).toEqual({ scopes: { root: { never: true } } });
+      request.flush({ root: { never: true }, tv: { dismissedAt: 9 } });
       expect(await done).toEqual({
-        root: { installed: true, dismissedAt: undefined, never: undefined },
-        tv: { never: true, dismissedAt: undefined, installed: undefined },
+        root: { never: true, dismissedAt: undefined },
+        tv: { dismissedAt: 9, never: undefined },
       });
     });
 
     it('fails the install hint save on a refusal, so the caller can keep the answer local', async () => {
-      const done = api.saveInstallHint({ root: { installed: true } });
+      const done = api.saveInstallHint({ root: { never: true } });
       http.expectOne(HINT_URL).flush({ title: 'x' }, { status: 403, statusText: 'Forbidden' });
       await expect(done).rejects.toBeDefined();
     });
@@ -155,7 +155,7 @@ describe('PreferencesApi', () => {
     const api = TestBed.inject(PreferencesApi);
     await expect(api.get()).rejects.toThrow();
     await expect(api.save(0, null)).rejects.toThrow();
-    await expect(api.saveInstallHint({ root: { installed: true } })).rejects.toThrow();
+    await expect(api.saveInstallHint({ root: { never: true } })).rejects.toThrow();
     await expect(api.getInstallHint()).rejects.toThrow();
   });
 });

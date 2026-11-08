@@ -32,13 +32,16 @@ public sealed class InstallHintAnswers
     }
 }
 
-/// <summary>O que se sabe de um app: quando disse "Agora não", se pediu para parar e se instalou.</summary>
+/// <summary>
+/// O que a conta guarda de um app: quando disse "Agora não" e se pediu para parar ("não quero"). Se o app está instalado é
+/// um fato do aparelho, não da conta: nunca é guardado aqui (um campo <c>installed</c> que chegue no corpo é ignorado).
+/// </summary>
 /// <param name="DismissedAt">Instante (ms desde 1970) do último "Agora não".</param>
-public sealed record InstallHintScope(long? DismissedAt, bool? Never, bool? Installed);
+public sealed record InstallHintScope(long? DismissedAt, bool? Never);
 
 /// <summary>
-/// Forma e fusão da resposta da dica de instalação. A fusão é monotônica: "instalado" e "nunca" só viram verdadeiros e o
-/// "Agora não" fica no instante mais novo. Assim dois aparelhos gravando ao mesmo tempo, ou um aparelho com a memória
+/// Forma e fusão da resposta da dica de instalação. A fusão é monotônica: "nunca" só vira verdadeiro e o "Agora não" fica no
+/// instante mais novo. Assim dois aparelhos gravando ao mesmo tempo, ou um aparelho com a memória
 /// local apagada, nunca desfazem uma resposta que a pessoa já deu.
 /// </summary>
 public static partial class InstallHintRules
@@ -99,8 +102,7 @@ public static partial class InstallHintRules
             result.TryGetValue(scope, out var old);
             result[scope] = new InstallHintScope(
                 Max(old?.DismissedAt, value.DismissedAt is { } at ? Math.Min(at, ceiling) : null),
-                value.Never == true || old?.Never == true ? true : null,
-                value.Installed == true || old?.Installed == true ? true : null);
+                value.Never == true || old?.Never == true ? true : null);
         }
 
         return result;
