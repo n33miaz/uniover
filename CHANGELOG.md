@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.47.0](https://github.com/n33miaz/uniover/compare/v0.46.0...v0.47.0) (2026-11-08)
+
+
+### TV 0.44.1
+
+#### Bug Fixes
+
+* **web:** own icon for the offline guide
+
+
+### Web 0.47.1
+
+#### Bug Fixes
+
+* **web:** first install is not a new version
+
+
+### Agent 0.44.2
+
+#### Bug Fixes
+
+* **agent:** find the tv on a new network
+* **agent:** calm network watch, real searches only
+* **agent:** cap sweeps on a network without tv
+
 ## [0.46.0](https://github.com/n33miaz/uniover/compare/v0.45.0...v0.46.0) (2026-11-08)
 
 
