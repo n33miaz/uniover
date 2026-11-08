@@ -13,11 +13,18 @@ export type PcFailureKind =
   | 'failed'
   | 'not-found'
   | 'invalid'
+  | 'key-unsupported'
   | 'cancelled'
   | 'unknown';
 
 /** `type` (sufixo) do 503 que a API dá quando o agente caiu agora há pouco e ainda está dentro da janela de reconexão. */
 export const RECONNECTING_PROBLEM = 'agent-reconnecting';
+
+/**
+ * `type` (sufixo) do 409 que a API dá quando o toque precisa da `pc.key.v2` (tecla nova, repetição, segurar) e o agente
+ * deste PC é de antes dela. Nada foi enviado: a pessoa precisa atualizar o agente.
+ */
+export const KEY_UNSUPPORTED_PROBLEM = 'pc-key-unsupported';
 
 /**
  * O que um pedido devolve quando desistiu por conta própria (a conta mudou antes da vez dele): não é falha do PC, não tem
@@ -77,6 +84,12 @@ export function pcFailureOf(error: unknown): PcFailure {
     return {
       kind: 'not-found',
       message: $localize`:@@pc.error.not-found:Esse atalho não existe mais neste PC.`,
+    };
+  }
+  if (problem.status === 409 && problem.kind === KEY_UNSUPPORTED_PROBLEM) {
+    return {
+      kind: 'key-unsupported',
+      message: $localize`:@@pc.error.key-unsupported:Atualize o agente do PC para usar esta tecla.`,
     };
   }
   if (problem.status === 409) {

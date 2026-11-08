@@ -12255,8 +12255,11 @@ export interface components {
       button: null | string;
     };
     PcKeyRequest: {
+      action?: null | string;
       key: null | string;
       modifiers: null | string[];
+      /** Format: int32 */
+      repeat?: null | number | string;
     };
     PcMediaRequest: {
       action: null | string;
@@ -12282,6 +12285,7 @@ export interface components {
     PcStatusResponse: {
       apps: components['schemas']['PcApp'][];
       available: boolean;
+      capabilities: string[];
       online: boolean;
     };
     PcTextRequest: {

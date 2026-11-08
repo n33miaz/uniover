@@ -17,6 +17,11 @@ export interface PcStatus {
   /** Esse computador está conectado agora. */
   readonly online: boolean;
   readonly apps: readonly PcFavorite[];
+  /**
+   * O que o agente do PC declarou além do controle básico (hoje `pc.key.v2`), para a tela esconder o que ele não entende.
+   * Vazio com um agente anterior a elas.
+   */
+  readonly capabilities: readonly string[];
 }
 
 export const PC_STATUS_PATH = `${APP_CONFIG.apiBase}/v1/pc/status`;
@@ -36,6 +41,10 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
         ? [{ id: app['id'], label: app['label'] }]
         : [];
     }),
+    // Uma API de antes não manda a lista: sem ela, o PC não declarou nada além do básico.
+    capabilities: Array.isArray(body['capabilities'])
+      ? body['capabilities'].filter((item): item is string => typeof item === 'string')
+      : [],
   };
 }
 
@@ -57,6 +66,7 @@ export class PcAvailability {
   readonly available = computed(() => this.current()?.available === true);
   readonly online = computed(() => this.current()?.online === true);
   readonly apps = computed(() => this.current()?.apps ?? []);
+  readonly capabilities = computed(() => this.current()?.capabilities ?? []);
   /** `null` até a primeira leitura bem-sucedida. */
   readonly status = this.current.asReadonly();
 

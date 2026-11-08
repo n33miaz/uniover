@@ -8,7 +8,30 @@ describe('parsePcStatus', () => {
   it('reads a well-formed answer', () => {
     expect(
       parsePcStatus({ available: true, online: false, apps: [{ id: 'notas', label: 'Notas' }] }),
-    ).toEqual({ available: true, online: false, apps: [{ id: 'notas', label: 'Notas' }] });
+    ).toEqual({
+      available: true,
+      online: false,
+      apps: [{ id: 'notas', label: 'Notas' }],
+      capabilities: [],
+    });
+  });
+
+  it('reads the optional capabilities of the agent, ignoring anything that is not text', () => {
+    const status = parsePcStatus({
+      available: true,
+      online: true,
+      apps: [],
+      capabilities: ['pc.key.v2', 5, null, 'pc.other'],
+    });
+    expect(status?.capabilities).toEqual(['pc.key.v2', 'pc.other']);
+  });
+
+  it('an API from before the capabilities, or a malformed list, means the PC declared none', () => {
+    expect(parsePcStatus({ available: true, online: true, apps: [] })?.capabilities).toEqual([]);
+    expect(
+      parsePcStatus({ available: true, online: true, apps: [], capabilities: 'pc.key.v2' })
+        ?.capabilities,
+    ).toEqual([]);
   });
 
   it('never invents a computer from a malformed body', () => {

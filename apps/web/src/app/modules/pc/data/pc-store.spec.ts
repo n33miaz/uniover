@@ -24,6 +24,7 @@ function setup(initial: PcStatus | null = status()) {
   const availability = {
     status: current.asReadonly(),
     apps: () => current()?.apps ?? [],
+    capabilities: () => current()?.capabilities ?? [],
     refresh: vi.fn(() => Promise.resolve(true)),
   };
   const api = {
@@ -75,6 +76,48 @@ describe('PcStore phase', () => {
   });
 });
 
+describe('PcStore capabilities', () => {
+  it('has none until the agent declares them', () => {
+    const { store } = setup(status());
+    expect(store.capabilities()).toEqual([]);
+    expect(store.supportsKeyV2()).toBe(false);
+  });
+
+  it('knows the agent understands pc.key.v2 once it declares it, and follows a change', () => {
+    const { store, current } = setup(status());
+    current.set(status({ capabilities: ['pc.key.v2'] }));
+    expect(store.supportsKeyV2()).toBe(true);
+    current.set(status({ capabilities: [] }));
+    expect(store.supportsKeyV2()).toBe(false);
+  });
+
+  it('shows what fits the v1 to any PC, and the v2 keys only to one that declared it', () => {
+    const old = setup(status());
+    for (const key of ['ENTER', 'C', 'F5', 'PAGE_DOWN'] as const)
+      expect(old.store.supportsKey(key)).toBe(true);
+    for (const key of [
+      'D0',
+      'MINUS',
+      'PRINT_SCREEN',
+      'INSERT',
+      'APPS',
+      'WIN',
+      'CAPS_LOCK',
+    ] as const)
+      expect(old.store.supportsKey(key)).toBe(false);
+    expect(old.store.supportsKey('BACKSPACE', { repeat: 1 })).toBe(true);
+    expect(old.store.supportsKey('BACKSPACE', { repeat: 2 })).toBe(false);
+    expect(old.store.supportsKey('ALT', { action: 'DOWN' })).toBe(false);
+    expect(old.store.supportsKey('C', { action: 'PRESS' })).toBe(true);
+
+    TestBed.resetTestingModule();
+    const current = setup(status({ capabilities: ['pc.key.v2'] }));
+    expect(current.store.supportsKey('D0')).toBe(true);
+    expect(current.store.supportsKey('BACKSPACE', { repeat: 30 })).toBe(true);
+    expect(current.store.supportsKey('ALT', { action: 'DOWN' })).toBe(true);
+  });
+});
+
 describe('PcStore commands', () => {
   it('sends text, keys, media, power and launches through the API and reports success as null', async () => {
     const { store, api } = setup();
@@ -84,10 +127,39 @@ describe('PcStore commands', () => {
     expect(await store.power('SLEEP', true)).toBeNull();
     expect(await store.launch('notas')).toBeNull();
     expect(api.text).toHaveBeenCalledWith('olá');
-    expect(api.key).toHaveBeenCalledWith('C', ['CTRL']);
+    expect(api.key).toHaveBeenCalledWith('C', ['CTRL'], {});
     expect(api.media).toHaveBeenCalledWith('VOLUME_UP', 2);
     expect(api.power).toHaveBeenCalledWith('SLEEP', true);
     expect(api.launch).toHaveBeenCalledWith('notas');
+  });
+
+  it('hands the repeat and the action of a key to the API', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.key.v2'] }));
+    expect(await store.sendKey('BACKSPACE', [], { repeat: 12 })).toBeNull();
+    expect(await store.sendKey('ALT', [], { action: 'DOWN' })).toBeNull();
+    expect(api.key).toHaveBeenNthCalledWith(1, 'BACKSPACE', [], { repeat: 12 });
+    expect(api.key).toHaveBeenNthCalledWith(2, 'ALT', [], { action: 'DOWN' });
+  });
+
+  it('still asks the API for a key the PC did not declare: the API decides, and refuses if it must', async () => {
+    const { store, api } = setup();
+    expect(store.supportsKey('BACKSPACE', { repeat: 12 })).toBe(false);
+    expect(await store.sendKey('BACKSPACE', [], { repeat: 12 })).toBeNull();
+    expect(api.key).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps the refusal of an agent that is too old and re-reads what the PC declared', async () => {
+    const { store, api, availability } = setup();
+    api.key.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 409,
+        error: { type: 'https://uniover.dev/problems/pc-key-unsupported', title: 'x' },
+      }),
+    );
+    const failure = await store.sendKey('PRINT_SCREEN');
+    expect(failure?.kind).toBe('key-unsupported');
+    expect(store.notice()?.kind).toBe('key-unsupported');
+    expect(availability.refresh).toHaveBeenCalledTimes(1);
   });
 
   it('sends nothing while the PC is not connected, and says why', async () => {

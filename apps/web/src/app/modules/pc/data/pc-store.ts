@@ -12,7 +12,16 @@ import { PointerBatch, PointerBatcher } from '../input/pointer-batcher';
 import { PcApi } from './pc-api';
 import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
-import type { PcClickButton, PcKey, PcMediaAction, PcModifier, PcPowerAction } from './pc-types';
+import {
+  PC_KEY_V2_CAPABILITY,
+  keyNeedsV2,
+  type PcClickButton,
+  type PcKey,
+  type PcKeyOptions,
+  type PcMediaAction,
+  type PcModifier,
+  type PcPowerAction,
+} from './pc-types';
 
 /** De quanto em quanto tempo o estado do PC é relido enquanto a tela está aberta. */
 export const PC_POLL_MS = 15_000;
@@ -157,6 +166,10 @@ export class PcStore {
   });
   readonly canSend = computed(() => this.phase() === 'ready');
   readonly apps = this.availability.apps;
+  /** O que o agente do PC declarou além do básico; vazio com um agente anterior ou antes da primeira leitura. */
+  readonly capabilities = this.availability.capabilities;
+  /** O agente entende `pc.key.v2` (teclas novas, repetição, segurar modificador). */
+  readonly supportsKeyV2 = computed(() => this.capabilities().includes(PC_KEY_V2_CAPABILITY));
 
   constructor() {
     // Trocar de conta (sair e entrar como outra pessoa, sem recarregar) descarta o que era da anterior, mesmo sem uso.
@@ -428,8 +441,26 @@ export class PcStore {
     }
   }
 
-  sendKey(key: PcKey, modifiers: readonly PcModifier[] = []): Promise<PcFailure | null> {
-    return this.queueInput(() => this.api.key(key, modifiers));
+  /**
+   * A tela usa para esconder o que o PC conectado não entende: o toque que cabe na `pc.key.v1` serve a qualquer agente; o que
+   * precisa da v2 só aparece quando o agente a declarou. Não barra o envio (quem decide é a API, que enxerga o agente de agora,
+   * e responde `key-unsupported` se ele não a entende): é só o que mostrar.
+   */
+  supportsKey(key: PcKey, options: PcKeyOptions = {}): boolean {
+    return !keyNeedsV2(key, options) || this.supportsKeyV2();
+  }
+
+  /**
+   * `options.repeat` aperta várias vezes num pedido só (Backspace e setas seguradas); `options.action` `DOWN` e `UP` seguram e
+   * soltam um modificador entre toques. Um modificador segurado é solto pelo agente se a conexão cair ou se ficar 30 s sem
+   * nenhum comando; quem segura precisa soltar com o `UP` e, enquanto isso, mandar o sinal de vida (um movimento zerado).
+   */
+  sendKey(
+    key: PcKey,
+    modifiers: readonly PcModifier[] = [],
+    options: PcKeyOptions = {},
+  ): Promise<PcFailure | null> {
+    return this.queueInput(() => this.api.key(key, modifiers, options));
   }
 
   sendText(text: string): Promise<PcFailure | null> {
@@ -733,7 +764,12 @@ export class PcStore {
   private noteFailure(failure: PcFailure): void {
     this.stickyNotice = null; // uma falha mais nova substitui o aviso que estava preso
     this.notice.set(failure);
-    if (failure.kind === 'offline' || failure.kind === 'unavailable')
+    // Também quando o agente foi atualizado (ou trocado) depois da última leitura: as capacidades que a tela mostra vêm dela.
+    if (
+      failure.kind === 'offline' ||
+      failure.kind === 'unavailable' ||
+      failure.kind === 'key-unsupported'
+    )
       void this.availability.refresh();
   }
 }
