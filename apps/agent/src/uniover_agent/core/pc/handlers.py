@@ -20,6 +20,7 @@ from uniover_agent.core.pc.freshness import (
     MAX_POWER_AGE_SECONDS,
     fresh_only,
 )
+from uniover_agent.core.pc.use import PcUseTracker
 from uniover_agent.ports import Transport, TransportError
 from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
 
@@ -239,15 +240,20 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     *,
     shutdown_delay_seconds: int,
     clock: ClockOffset | None = None,
+    use: PcUseTracker | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
     Cada um só roda dentro da sua validade (ver `freshness`); o UP de um clique e o cancelamento de
     um desligamento passam sempre. `clock` é a referência de idade (relógio da API contra o
     monotônico do agente): quem monta o agente a compartilha com `ProcessMessage`, que a alimenta
-    com os batimentos da API.
+    com os batimentos da API. `use` anota cada comando que chega a ser executado (não os recusados
+    por idade): a atualização do agente o lê para não reiniciar no meio de uma sessão do touchpad.
     """
     offset = clock or ClockOffset()
+
+    def noted(handle: Handler) -> Handler:
+        return use.noting(handle) if use is not None else handle
 
     def fresh(
         handle: Handler,
@@ -259,21 +265,23 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         return fresh_only(handle, max_age_seconds=max_age, clock=offset, exempt=exempt, quiet=quiet)
 
     return {
-        "pc.pointer.v1": fresh(pc_pointer_handler(pc), MAX_POINTER_AGE_SECONDS, quiet=True),
+        "pc.pointer.v1": fresh(noted(pc_pointer_handler(pc)), MAX_POINTER_AGE_SECONDS, quiet=True),
         "pc.click.v1": fresh(
-            pc_click_handler(pc),
+            noted(pc_click_handler(pc)),
             MAX_COMMAND_AGE_SECONDS,
             exempt=lambda command: command.body.get("action") == "UP",
         ),
-        "pc.key.v1": fresh(pc_key_handler(pc), MAX_COMMAND_AGE_SECONDS),
-        "pc.text.v1": fresh(pc_text_handler(pc), MAX_COMMAND_AGE_SECONDS),
-        "pc.media.v1": fresh(pc_media_handler(pc), MAX_COMMAND_AGE_SECONDS),
+        "pc.key.v1": fresh(noted(pc_key_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        "pc.text.v1": fresh(noted(pc_text_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        "pc.media.v1": fresh(noted(pc_media_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         "pc.power.v1": fresh(
-            pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds),
+            noted(pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds)),
             MAX_POWER_AGE_SECONDS,
             exempt=lambda command: command.body.get("action") == "CANCEL_SHUTDOWN",
         ),
-        "pc.app.launch.v1": fresh(pc_app_launch_handler(launcher, apps), MAX_COMMAND_AGE_SECONDS),
+        "pc.app.launch.v1": fresh(
+            noted(pc_app_launch_handler(launcher, apps)), MAX_COMMAND_AGE_SECONDS
+        ),
     }
 
 

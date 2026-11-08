@@ -5,7 +5,7 @@ import os
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -25,6 +25,7 @@ def test_host_state_keeps_the_menu_model_and_attention(tmp_path: Path) -> None:
 
     data = json.loads(state.read_text(encoding="utf-8"))
     assert data["status"] == "Sem conexão · Atenção"
+    assert data["code"] == "error"
     assert data["icon"].endswith("error-attention.ico")
     assert [item["action"] for item in data["menu"] if item] == [
         "open",
@@ -35,6 +36,28 @@ def test_host_state_keeps_the_menu_model_and_attention(tmp_path: Path) -> None:
         "quit",
     ]
     assert data["balloon"]["message"] == "Veja o registro"
+
+
+@pytest.mark.parametrize("state", ["connected", "reconnecting", "error", "updating"])
+def test_host_state_carries_an_ascii_code_the_script_compares_instead_of_the_text(
+    tmp_path: Path, state: str
+) -> None:
+    state_file = tmp_path / "state.json"
+    tray_host._write_state(state_file, TrayView(cast(Any, state), False, "UniOver"), tmp_path)
+
+    assert json.loads(state_file.read_text(encoding="utf-8"))["code"] == state
+
+
+def test_the_host_script_is_ascii_only_and_picks_the_dot_color_by_state_code() -> None:
+    # O Windows PowerShell 5.1 le o arquivo na pagina de codigo ANSI: um literal acentuado (como o
+    # "Sem conexão" do estado) viraria outro texto e o ramo nunca casaria.
+    script = tray_host.host_script().read_bytes()
+    assert all(byte < 0x80 for byte in script), "tray-host.ps1 deve ser ASCII puro"
+    text = script.decode("ascii")
+    for code in ("reconnecting", "error", "updating"):
+        assert f"$script:stateCode -eq '{code}'" in text
+    assert "StartsWith(" not in text
+    assert "$script:stateCode = [string]$view.code" in text
 
 
 def test_host_state_recovers_when_windows_briefly_locks_the_file(

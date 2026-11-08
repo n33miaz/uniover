@@ -12,6 +12,7 @@ from uniover_agent.ports import AdbError, CleanupDayStore, LaunchableApp
 
 AGENT_ID = "pc-tv"
 FOREGROUND = "com.example.video"
+HOME = "com.google.android.tvlauncher"  # o launcher que o `FakeTvAdb` declara como tela inicial
 
 
 class MemoryDayStore:
@@ -96,7 +97,7 @@ async def test_deep_cleanup_is_skipped_when_media_is_playing() -> None:
 
 
 async def test_deep_cleanup_records_recent_command_before_waiting_the_quiet_window() -> None:
-    scheduler, _, transport, _ = make(foreground=None)
+    scheduler, _, transport, _ = make(foreground=HOME)
     scheduler.configure(False, True, 500, True)
     scheduler.note_session_opened(11)
     scheduler.note_command()
@@ -132,7 +133,7 @@ async def test_deep_cleanup_without_the_tv_option_is_skipped_and_touches_no_app(
 
 
 async def test_deep_cleanup_with_the_tv_option_on_closes_apps_when_nobody_is_using_the_tv() -> None:
-    scheduler, adb, transport, clock = make(foreground=None)
+    scheduler, adb, transport, clock = make(foreground=HOME)
     scheduler.configure(False, True, 500, True)
     adb.media_playing_value = False
     # Passou da janela sem comando do usuário.
@@ -144,6 +145,23 @@ async def test_deep_cleanup_with_the_tv_option_on_closes_apps_when_nobody_is_usi
     body = transport.sent[-1]["body"]
     assert (body["kind"], body["result"]) == ("deep", "completed")
     assert "kill-background" in adb.cleanup_log
+
+
+async def test_deep_cleanup_sends_no_home_or_kill_while_the_foreground_app_is_unknown() -> None:
+    scheduler, adb, transport, clock = make(foreground=None)
+    scheduler.configure(False, True, 500, True)
+    adb.media_playing_value = False
+    clock.advance(20 * 60)  # passou da janela quieta: só o app da frente desconhecido segura
+    scheduler.note_session_opened(11)
+
+    await scheduler.run_pending()
+
+    body = transport.sent[-1]["body"]
+    assert (body["kind"], body["result"], body["reason"]) == ("deep", "skipped", "app-in-use")
+    assert not any(
+        step in {"go-home", "kill-background"} or step.startswith("force-stop:")
+        for step in adb.cleanup_log
+    )
 
 
 async def test_a_new_configuration_without_the_option_turns_app_closing_off_again() -> None:
@@ -174,7 +192,7 @@ def test_only_messages_that_mean_somebody_is_using_the_tv_open_the_quiet_window(
 
 
 async def test_a_keepalive_never_moves_the_quiet_window() -> None:
-    scheduler, _, transport, clock = make(foreground=None)
+    scheduler, _, transport, clock = make(foreground=HOME)
     scheduler.configure(False, True, 500, True)
     scheduler.note_session_opened(11)
     clock.advance(20 * 60)

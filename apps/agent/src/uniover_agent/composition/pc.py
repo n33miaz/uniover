@@ -15,6 +15,7 @@ from uniover_agent.core import (
     EnvelopeFactory,
     Handler,
     PcApp,
+    PcUseTracker,
     parse_favorites,
     pc_apps_announcer,
     pc_handlers,
@@ -37,6 +38,8 @@ class PcSetup:
     # Referência de idade dos comandos: `ProcessMessage` a alimenta só com o `ts` dos batimentos da
     # API, e os comandos medem a idade por ela.
     clock: ClockOffset
+    # Quando o controle foi usado pela última vez (a atualização do agente espera por ele).
+    use: PcUseTracker
 
 
 def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
@@ -63,6 +66,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     apps = parse_favorites(settings.pc_apps)
     pc_input = pc_input or WindowsPcInput()
     clock = ClockOffset(on_skew=on_clock_skew, on_refused=on_expired, on_unstable=on_clock_unstable)
+    use = PcUseTracker()
     handlers = pc_handlers(
         pc_input,
         power or WindowsPcPower(),
@@ -70,6 +74,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         apps,
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
         clock=clock,
+        use=use,
     )
     return PcSetup(
         handlers,
@@ -78,6 +83,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         apps,
         pc_input.release_all,
         clock,
+        use,
     )
 
 

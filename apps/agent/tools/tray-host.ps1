@@ -227,11 +227,13 @@ function Apply-Theme {
     $stateLabel.BackColor = $statusSurface
     $stateLabel.ForeColor = $statusInk
     $dot = $accent
-    if ($stateLabel.Text.StartsWith('Reconectando')) {
+    # O estado vem como codigo ASCII (`code`), nao pelo texto acentuado: o Windows PowerShell 5.1 le este arquivo
+    # na pagina de codigo ANSI e um literal com acento nunca casaria com o texto UTF-8 do JSON.
+    if ($script:stateCode -eq 'reconnecting') {
         $dot = if ($high) { [System.Drawing.SystemColors]::Highlight } else { [System.Drawing.ColorTranslator]::FromHtml('#b7791f') }
-    } elseif ($stateLabel.Text.StartsWith('Sem conexão')) {
+    } elseif ($script:stateCode -eq 'error') {
         $dot = if ($high) { [System.Drawing.SystemColors]::Highlight } else { [System.Drawing.ColorTranslator]::FromHtml('#b3261e') }
-    } elseif ($stateLabel.Text.StartsWith('Atualizando')) {
+    } elseif ($script:stateCode -eq 'updating') {
         $dot = if ($high) { [System.Drawing.SystemColors]::Highlight } else { [System.Drawing.ColorTranslator]::FromHtml('#4776a6') }
     }
     $glyphSize = [int][Math]::Ceiling(18 * [Math]::Max(96, $script:lastDpi) / 96.0)
@@ -295,6 +297,7 @@ $icon.add_MouseClick({ param($sender, $eventArgs)
 })
 
 $lastState = ''
+$script:stateCode = ''
 $lastTheme = ''
 $lastDpi = 0
 $timer = New-Object System.Windows.Forms.Timer
@@ -309,6 +312,7 @@ $timer.add_Tick({
         $script:lastState = $raw
         $view = $raw | ConvertFrom-Json
         if ($view.exit) { $context.ExitThread(); return }
+        $script:stateCode = [string]$view.code
         $stateLabel.Text = [string]$view.status
         $stateLabel.AccessibleName = 'Estado do agente: ' + [string]$view.status
         Apply-Theme

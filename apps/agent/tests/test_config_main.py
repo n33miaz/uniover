@@ -53,14 +53,16 @@ def test_typing_by_keys_is_off_by_default_and_read_from_env(
         Settings()
 
 
-def test_ime_text_options_keep_the_library_cursor_and_protect_echo_values(
+def test_ime_text_options_keep_the_library_cursor_and_have_no_switch_to_log_echo_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings()
-    assert (settings.tv_text_cursor, settings.tv_text_debug_values) == ("library", False)
+    assert settings.tv_text_cursor == "library"
+    assert not hasattr(settings, "tv_text_debug_values")
     assert settings.tv_text_trace is False
     assert settings.tv_text_counters == "library"
     monkeypatch.setenv("UNIOVER_TV_TEXT_CURSOR", "field_end")
+    # A chave removida não quebra um agent.toml ou ambiente antigo, e também não liga nada.
     monkeypatch.setenv("UNIOVER_TV_TEXT_DEBUG_VALUES", "true")
     monkeypatch.setenv("UNIOVER_TV_TEXT_TRACE", "true")
     settings = Settings()
@@ -71,7 +73,8 @@ def test_ime_text_options_keep_the_library_cursor_and_protect_echo_values(
     with pytest.raises(ValueError, match="tv_text_counters"):
         Settings()
     monkeypatch.delenv("UNIOVER_TV_TEXT_COUNTERS")
-    assert (settings.tv_text_cursor, settings.tv_text_debug_values) == ("field_end", True)
+    assert settings.tv_text_cursor == "field_end"
+    assert not hasattr(settings, "tv_text_debug_values")
     monkeypatch.setenv("UNIOVER_TV_TEXT_CURSOR", "invalid")
     with pytest.raises(ValueError, match="tv_text_cursor"):
         Settings()

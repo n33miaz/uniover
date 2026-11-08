@@ -53,6 +53,39 @@ def test_the_tv_counts_as_in_use_only_inside_the_window(installed: Installation)
     assert not module.tv_in_use(installed.source, NOW, idle_seconds=0)
 
 
+def mark_pc_use(pc: Installation, seconds_ago: float, *, now: float = NOW) -> Path:
+    marker = pc.base / "runtime" / module.PC_LAST_USE_FILE
+    marker.write_text("x", encoding="ascii")
+    os.utime(marker, (now - seconds_ago, now - seconds_ago))
+    return marker
+
+
+def test_the_pc_control_counts_as_in_use_only_inside_the_window(installed: Installation) -> None:
+    assert not module.control_in_use(installed.source, NOW)  # sem nenhuma marca: parado
+    mark_pc_use(installed, 30)
+    assert module.pc_in_use(installed.source, NOW)
+    assert module.control_in_use(installed.source, NOW)
+    assert not module.tv_in_use(installed.source, NOW), "a marca da TV continua só da TV"
+    mark_pc_use(installed, 601)
+    assert not module.control_in_use(installed.source, NOW)
+
+
+def test_an_update_waits_while_the_pc_is_being_controlled_and_goes_ahead_after(
+    installed: Installation,
+) -> None:
+    mark_pc_use(installed, 20)
+    result = update(installed)
+    assert not result.updated and result.outcome == "deferred_busy"
+    assert installed.downloads == []
+    assert read_version(installed) == OLD
+    assert update(installed, now=NOW + 20 * 60).updated
+
+
+def test_update_now_does_not_wait_for_the_pc_control(installed: Installation) -> None:
+    mark_pc_use(installed, 5)
+    assert update(installed, ignore_deferral=True).updated
+
+
 def test_a_use_stamp_in_the_future_beyond_the_window_proves_nothing(
     installed: Installation,
 ) -> None:

@@ -14,6 +14,8 @@ from uniover_agent.adapters.process import popen_hidden, run_hidden
 LAUNCHER_TASK_VERSION = "wscript-3-startup-names"
 # Versão do ajuste de energia sem administrador; subir o número aplica de novo.
 POWER_SETTINGS_VERSION = "ac-never-sleep-1"
+# Quantas inicializações tentam o ajuste de energia se o `powercfg` falhar; depois o agente desiste.
+POWER_SETTINGS_MAX_ATTEMPTS = 3
 # Depois de uma tentativa que falhou, espera isto antes de tentar de novo (custa segundos).
 RETRY_AFTER_SECONDS = 24 * 3600
 LEGACY_TASK_NAME = "UniOver agente"
@@ -456,6 +458,7 @@ def _apply_power_settings(root: Path) -> None:
     só para a instalação nova pelo conectar; o que ficou de fora vai para o registro.
     """
     marker = root / "runtime" / "power-settings"
+    failures = root / "runtime" / "power-settings.failures"
     try:
         if marker.read_text(encoding="ascii").strip() == POWER_SETTINGS_VERSION:
             return
@@ -476,6 +479,7 @@ def _apply_power_settings(root: Path) -> None:
     if failed:
         _note(root, "energia: não consegui aplicar " + ", ".join(failed) + " sem administrador")
     else:
+        failures.unlink(missing_ok=True)
         _note(root, "energia: na tomada o PC não suspende nem hiberna (a tela pode apagar)")
     _note(
         root,
@@ -483,9 +487,25 @@ def _apply_power_settings(root: Path) -> None:
         " firewall da descoberta; só valem numa instalação nova pelo conectar",
     )
     try:
+        if failed:
+            # Falhou: a marca de "feito" não é gravada e a próxima partida tenta outra vez. O teto
+            # de tentativas evita repetir para sempre num PC onde o `powercfg` nunca vai funcionar.
+            attempts = _power_failures(failures) + 1
+            if attempts < POWER_SETTINGS_MAX_ATTEMPTS:
+                failures.write_text(str(attempts), encoding="ascii")
+                return
+            _note(root, "energia: desisti depois de várias tentativas")
+        failures.unlink(missing_ok=True)
         marker.write_text(POWER_SETTINGS_VERSION, encoding="ascii")
     except OSError:
         return
+
+
+def _power_failures(path: Path) -> int:
+    try:
+        return max(0, int(path.read_text(encoding="ascii").strip()))
+    except OSError, ValueError:
+        return 0
 
 
 def _prepare_legacy_takeover(root: Path, legacy_source: Path, *, register_task: bool) -> bool:

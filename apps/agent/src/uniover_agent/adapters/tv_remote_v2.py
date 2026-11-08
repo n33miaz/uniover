@@ -266,7 +266,6 @@ class AndroidTvRemoteV2:
         client_factory: ClientFactory | None = None,
         on_connected: Callable[[], Awaitable[None]] | None = None,
         text_cursor: TextCursor = "library",
-        text_debug_values: bool = False,
         text_trace: bool = False,
         text_counters: TextCounters = "library",
     ) -> None:
@@ -278,13 +277,12 @@ class AndroidTvRemoteV2:
         self._factory = client_factory or self._default_factory
         self._on_connected = on_connected
         self._text_cursor = text_cursor
-        self._text_debug_values = text_debug_values
         # `library`: o lote usa os contadores que a própria biblioteca guarda (comportamento
         # anterior, o seguro). `echo`: usa os do último eco/lote que a TV mandou.
         self._text_counters = text_counters
         # As linhas por eco/lote enchem o registro rotativo durante a digitação e mostram o
-        # tamanho do texto: só vão para INFO no teste acompanhado (o valor também as liga).
-        self._trace_level = logging.INFO if text_trace or text_debug_values else logging.DEBUG
+        # tamanho do texto: só vão para INFO no teste acompanhado. O texto em si nunca é registrado.
+        self._trace_level = logging.INFO if text_trace else logging.DEBUG
         self._client: RemoteClient | None = None
         self._connected = False
         self._watcher: asyncio.Task[None] | None = None
@@ -538,17 +536,15 @@ class AndroidTvRemoteV2:
             and previous_echo_field_counter != field.counter
             else ""
         )
-        suffix = f" valor={field.value!r}" if self._text_debug_values else ""
         _log.log(
             self._trace_level,
-            "tv ime eco app=%s campo=%s tam=%s cursor=%s-%s%s%s",
+            "tv ime eco app=%s campo=%s tam=%s cursor=%s-%s%s",
             field.ime_counter if field.ime_counter is not None else "-",
             field.counter,
             len(field.value),
             field.start,
             field.end,
             ime_origin,
-            suffix,
         )
         self._fan_out(self._text_field, field)
 

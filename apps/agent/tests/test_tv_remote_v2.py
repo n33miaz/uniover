@@ -922,7 +922,7 @@ async def test_the_keyboard_request_also_carries_the_text_field_state(tmp_path: 
     assert fields == [TextFieldStatus("", 0, 0, "Pesquisar", 3)]
 
 
-async def test_text_echo_logs_only_metadata_unless_value_debugging_is_enabled(
+async def test_text_echo_logs_only_metadata_with_the_trace_on(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     async with FakeTvServer(tmp_path) as server:
@@ -940,19 +940,20 @@ async def test_text_echo_logs_only_metadata_unless_value_debugging_is_enabled(
     assert "segredo de teste" not in caplog.text
 
 
-async def test_text_echo_can_log_its_value_only_when_enabled(
+async def test_text_echo_never_logs_its_value_even_with_the_full_trace_on(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     async with FakeTvServer(tmp_path) as server:
-        adapter = make_adapter(tmp_path, server.port, text_debug_values=True)
+        adapter = make_adapter(tmp_path, server.port, text_trace=True)
         await adapter.connect()
         try:
-            with caplog.at_level("INFO"):
+            with caplog.at_level("DEBUG"):
                 server.push_text_field("teste acompanhado", counter=4, app_counter=9)
-                await eventually(lambda: "valor='teste acompanhado'" in caplog.text)
+                await eventually(lambda: "tv ime eco" in caplog.text)
         finally:
             await adapter.disconnect()
-    assert "valor='teste acompanhado'" in caplog.text
+    assert "teste acompanhado" not in caplog.text
+    assert "valor=" not in caplog.text
 
 
 async def test_the_real_library_still_exposes_the_private_ime_api_the_adapter_uses(

@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from uniover_agent.core import Command, ResultStatus
-from uniover_agent.core.pc import ClockOffset, PcApp, pc_handlers
+from uniover_agent.core.pc import ClockOffset, PcApp, PcUseTracker, pc_handlers
 from uniover_agent.core.pc.freshness import EXPIRED
 
 NOW = datetime(2026, 11, 7, 12, 0, 0, tzinfo=UTC)
@@ -96,6 +96,7 @@ class Lab:
         self.pc = FakeInput()
         self.power = FakePower()
         self.launcher = FakeLauncher()
+        self.use = PcUseTracker(lambda: mono_origin + self.elapsed)
         self.handlers = dict(
             pc_handlers(
                 self.pc,
@@ -104,6 +105,7 @@ class Lab:
                 [PcApp("notas", "Notas", "notepad")],
                 shutdown_delay_seconds=30,
                 clock=self.clock,
+                use=self.use,
             )
         )
         if seeded:
@@ -138,6 +140,19 @@ class Lab:
         sent_at = None if in_flight is None else self.stamp(in_flight)
         result = await self.handlers[handler](Command("1", handler, body, sent_at=sent_at))
         return result.status.value, result.code
+
+
+async def test_only_a_command_that_runs_counts_as_use_of_the_pc() -> None:
+    lab = Lab()
+    assert lab.use.seconds_since_use() is None  # nada foi controlado desde que o agente subiu
+    assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
+    assert lab.use.seconds_since_use() is None, "recusado por idade: não chegou ao adaptador"
+
+    assert (await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 0.5))[0] == "ok"
+    lab.elapsed += 40
+    assert lab.use.seconds_since_use() == pytest.approx(40)
+    assert (await lab.run("pc.key.v1", {"key": "A"}, 0.5))[0] == "ok"
+    assert lab.use.seconds_since_use() == pytest.approx(0)
 
 
 async def test_a_fresh_command_runs() -> None:
