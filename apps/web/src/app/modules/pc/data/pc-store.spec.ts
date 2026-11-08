@@ -819,6 +819,49 @@ describe('PcStore press after a click', () => {
     }
   });
 
+  it('a click that never answers times out by itself, and then the press is no longer held back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api } = setup();
+      api.click.mockImplementationOnce(() => new Promise<void>(() => undefined));
+      const clicking = store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(INPUT_TIMEOUT_MS + 10);
+      const failure = await clicking;
+      expect(failure?.kind).toBe('timeout');
+      // Um aperto agora sai: o clique preso já não barra nenhum.
+      const started = store.startDrag();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await started).toBeNull();
+      expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+        undefined,
+        'DOWN',
+      ]);
+      await store.release();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a hung click gives up one press (after the settle time) but not every press for ever', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api } = setup();
+      api.click.mockImplementationOnce(() => new Promise<void>(() => undefined));
+      void store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(0);
+      const first = store.startDrag();
+      await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS + 10);
+      expect((await first)?.kind).toBe('timeout');
+      await vi.advanceTimersByTimeAsync(INPUT_TIMEOUT_MS);
+      const second = store.startDrag();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await second).toBeNull();
+      await store.release();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('with no click in flight the press goes out at once', async () => {
     const { store, api } = setup();
     await store.startDrag();

@@ -83,7 +83,7 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
       (keydown)="onKeydown($event)"
       (beforeinput)="onBeforeInput($event)"
       (compositionstart)="composing = true"
-      (compositionend)="composing = false"
+      (compositionend)="onCompositionEnd()"
       (focus)="onFocus()"
       (blur)="onBlur()"
     ></textarea>
@@ -113,8 +113,15 @@ export class PcLiveKeyboard {
    * instante (ver `holdFocus`) e não conta.
    */
   private wanted = false;
-  /** Até quando uma perda de foco vem de um toque nas teclas da tela (e o campo ganha o foco de volta no clique). */
-  private ignoreBlurUntil = 0;
+  /**
+   * Um toque nas teclas da tela está em curso (do `pointerdown` ao fim do toque ou ao clique): a perda de foco que vem junto
+   * não é o sistema. Segurar Apagar ou uma seta por muito tempo não pode fechar o teclado.
+   */
+  private holding = false;
+  /** Pediram para recomeçar o campo durante uma composição: espera o fim dela (recomeçar no meio a corromperia). */
+  private resetPending = false;
+  /** A largura da janela na última medida (mudou: o aparelho girou). */
+  private lastWidth = 0;
   /** A maior altura da janela vista sem o teclado: a base para saber que o teclado do sistema abriu e fechou. */
   private fullHeight = 0;
   /** A janela já encolheu com o teclado aberto: a próxima volta ao tamanho cheio é o sistema fechando o teclado. */
@@ -149,11 +156,28 @@ export class PcLiveKeyboard {
     this.fullHeight = viewport?.height ?? 0;
     const onViewport = () => this.watchViewport(viewport!.height);
     viewport?.addEventListener('resize', onViewport);
+    const win = this.doc.defaultView;
+    this.lastWidth = win?.innerWidth ?? 0;
+    // Girar o aparelho muda a altura "cheia": a base é medida de novo (a janela cresce ou encolhe sem teclado nenhum).
+    let rotation: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      if ((win?.innerWidth ?? 0) !== this.lastWidth) this.recalibrate();
+    };
+    const onRotate = () => {
+      clearTimeout(rotation);
+      rotation = setTimeout(() => this.recalibrate(), 350);
+    };
+    win?.addEventListener('resize', onResize);
+    win?.addEventListener('orientationchange', onRotate);
     inject(DestroyRef).onDestroy(() => {
       stopFailure();
       stopIdle();
       stopDiverge();
       viewport?.removeEventListener('resize', onViewport);
+      win?.removeEventListener('resize', onResize);
+      win?.removeEventListener('orientationchange', onRotate);
+      clearTimeout(rotation);
+      this.releaseHold();
     });
   }
 
@@ -164,10 +188,33 @@ export class PcLiveKeyboard {
 
   /**
    * Chamar no começo de um toque nas teclas da tela: a perda de foco que vem junto não é o sistema fechando o teclado, e o
-   * foco volta no clique (`restore`).
+   * foco volta no clique (`restore`). Vale até o toque terminar (soltar ou cancelar) ou o clique, e não por um tempo fixo.
    */
   holdFocus(): void {
-    this.ignoreBlurUntil = Date.now() + 700;
+    if (this.holding) return;
+    this.holding = true;
+    const win = this.doc.defaultView;
+    const end = () => {
+      win?.removeEventListener('pointerup', end, true);
+      win?.removeEventListener('pointercancel', end, true);
+      // O clique vem logo depois de soltar: ele devolve o foco antes de a proteção acabar.
+      setTimeout(() => this.releaseHold(), 0);
+    };
+    this.stopHolding = end;
+    win?.addEventListener('pointerup', end, true);
+    win?.addEventListener('pointercancel', end, true);
+  }
+
+  private stopHolding: (() => void) | null = null;
+
+  private releaseHold(): void {
+    this.holding = false;
+    const win = this.doc.defaultView;
+    if (this.stopHolding) {
+      win?.removeEventListener('pointerup', this.stopHolding, true);
+      win?.removeEventListener('pointercancel', this.stopHolding, true);
+    }
+    this.stopHolding = null;
   }
 
   /** Teclas pedidas e ainda sem resposta (a repetição de apagar e das setas espera por este número). */
@@ -202,6 +249,8 @@ export class PcLiveKeyboard {
    */
   restore(): void {
     if (this.wanted && !this.focused) this.field().nativeElement.focus();
+    // O clique é o fim do toque nas teclas da tela.
+    this.releaseHold();
   }
 
   /**
@@ -244,15 +293,34 @@ export class PcLiveKeyboard {
   /** A janela encolheu (o teclado do sistema abriu) e voltou ao tamanho cheio (o sistema o fechou): o modo teclado acaba. */
   private watchViewport(height: number): void {
     if (!this.wanted) {
-      this.fullHeight = Math.max(this.fullHeight, height);
+      this.fullHeight = height;
       return;
     }
-    if (height < this.fullHeight - 120) this.shrunk = true;
-    else if (this.shrunk && height >= this.fullHeight - 80) {
+    if (height < this.fullHeight - 120) {
+      this.shrunk = true;
+    } else if (
+      (this.shrunk && height >= this.fullHeight - 80) ||
+      // A base ficou baixa (o aparelho girou com o teclado aberto) e a janela cresceu: o teclado fechou.
+      height > this.fullHeight + 120
+    ) {
       this.shrunk = false;
+      this.fullHeight = height;
       this.endMode();
       this.field().nativeElement.blur();
     }
+  }
+
+  /** O aparelho girou (ou a janela mudou de largura): a altura "cheia" de antes não vale mais. */
+  private recalibrate(): void {
+    const win = this.doc.defaultView;
+    if (!win) return;
+    this.lastWidth = win.innerWidth;
+    this.shrunk = false;
+    const viewport = win.visualViewport;
+    // Sem teclado, a base é a altura de agora; com ele aberto, a maior das duas que o navegador informa.
+    this.fullHeight = this.wanted
+      ? Math.max(viewport?.height ?? 0, win.innerHeight)
+      : (viewport?.height ?? win.innerHeight);
   }
 
   /**
@@ -331,7 +399,7 @@ export class PcLiveKeyboard {
 
   /** O foco saiu do campo: se não foi um toque nas teclas da tela, o teclado do celular foi fechado (ou o foco foi para outro lugar). */
   protected onBlur(): void {
-    if (this.wanted && Date.now() > this.ignoreBlurUntil) this.endMode();
+    if (this.wanted && !this.holding) this.endMode();
   }
 
   private caretAtStart(): boolean {
@@ -351,9 +419,26 @@ export class PcLiveKeyboard {
     this.setValue(points.join(''));
   }
 
-  /** O campo volta ao preenchimento e à base que o PC tem. */
+  /**
+   * O campo volta ao preenchimento e à base que o PC tem. Durante uma composição (o teclado do celular montando uma palavra)
+   * espera o fim dela: trocar o valor no meio a estragaria.
+   */
   private reset(): void {
+    if (this.composing) {
+      this.resetPending = true;
+      return;
+    }
+    this.resetPending = false;
     this.setValue(SENTINEL);
+  }
+
+  protected onCompositionEnd(): void {
+    this.composing = false;
+    if (!this.resetPending) return;
+    // O `input` final da composição pode chegar depois deste evento: ele é processado primeiro e só então o campo recomeça.
+    setTimeout(() => {
+      if (this.resetPending && !this.composing) this.reset();
+    }, 0);
   }
 
   private setValue(value: string): void {

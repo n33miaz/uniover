@@ -10,6 +10,14 @@ export const INERTIA_MIN_SPEED = 0.4;
 export const INERTIA_STOP_SPEED = 0.04;
 /** O tempo (ms) em que a velocidade cai a 1/e: quanto maior, mais longe a rolagem desliza. */
 export const INERTIA_TIME_CONSTANT_MS = 260;
+/**
+ * O toque que para a rolagem que seguia sozinha só é engolido (não clica) enquanto a rolagem ainda é visível: acima desta
+ * velocidade (px/ms) ou nos primeiros `INERTIA_SWALLOW_MS` do gesto. Depois disso a página já parou aos olhos da pessoa, e
+ * um toque ali é um toque comum.
+ */
+export const INERTIA_SWALLOW_SPEED = 0.3;
+export const INERTIA_SWALLOW_MS = 400;
+
 /** Teto da velocidade com que a rolagem parte (um gesto muito brusco não vira uma rolagem sem fim). */
 export const INERTIA_MAX_SPEED = 4;
 
@@ -56,6 +64,8 @@ export interface InertiaDeps {
   readonly canRun: () => boolean;
   /** Quem pediu para reduzir o movimento não recebe rolagem que segue sozinha. */
   readonly reducedMotion: () => boolean;
+  /** O relógio em milissegundos (o mesmo dos quadros); troca-se nos testes. */
+  readonly now?: () => number;
 }
 
 /** O maior passo de tempo de um quadro: um quadro atrasado (aba ocupada) não vira um salto de rolagem. */
@@ -70,11 +80,31 @@ export class ScrollInertia {
   private velocity: ScrollVelocity | null = null;
   private handle: number | null = null;
   private lastTime: number | null = null;
+  private startedAt = 0;
 
   constructor(private readonly deps: InertiaDeps) {}
 
   get active(): boolean {
     return this.velocity !== null;
+  }
+
+  /** A velocidade de agora em px/ms (0 parada). */
+  get speed(): number {
+    return this.velocity ? speedOf(this.velocity) : 0;
+  }
+
+  /** Há quanto tempo a rolagem segue sozinha, em ms (0 parada). */
+  get age(): number {
+    return this.velocity ? this.now() - this.startedAt : 0;
+  }
+
+  /** Um toque agora pararia uma rolagem que a pessoa ainda vê andar: esse toque é só "pare", não um clique. */
+  get visible(): boolean {
+    return this.active && (this.speed >= INERTIA_SWALLOW_SPEED || this.age < INERTIA_SWALLOW_MS);
+  }
+
+  private now(): number {
+    return (this.deps.now ?? (() => performance.now()))();
   }
 
   /** Começa a seguir com a velocidade dos dedos ao sair (px/ms). Sem velocidade que valha, ou sem permissão, não faz nada. */
@@ -84,6 +114,7 @@ export class ScrollInertia {
     const velocity = inertiaStart(vx, vy);
     if (!velocity) return;
     this.velocity = velocity;
+    this.startedAt = this.now();
     this.schedule();
   }
 

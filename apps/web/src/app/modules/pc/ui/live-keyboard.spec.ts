@@ -427,17 +427,65 @@ describe('PcLiveKeyboard: round two', () => {
       expect(document.activeElement).toBe(field);
     });
 
-    it('the hold does not last: a later blur is the system again', () => {
-      vi.useFakeTimers({ toFake: ['Date'] });
-      try {
+    describe('the hold lasts as long as the touch', () => {
+      beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] }));
+      afterEach(() => vi.useRealTimers());
+
+      it('a long hold (Backspace held down for half a minute) never closes the keyboard', () => {
         fixture.componentInstance.open();
         fixture.componentInstance.holdFocus();
-        vi.advanceTimersByTime(2_000);
+        vi.advanceTimersByTime(30_000);
+        field.blur();
+        expect(fixture.componentInstance.active).toBe(true);
+        fixture.componentInstance.restore();
+        expect(document.activeElement).toBe(field);
+      });
+
+      it('after the finger lifts, a blur is the system again', () => {
+        fixture.componentInstance.open();
+        fixture.componentInstance.holdFocus();
+        window.dispatchEvent(new Event('pointerup'));
+        vi.advanceTimersByTime(1);
         field.blur();
         expect(fixture.componentInstance.active).toBe(false);
-      } finally {
-        vi.useRealTimers();
-      }
+      });
+
+      it('a cancelled touch ends it too', () => {
+        fixture.componentInstance.open();
+        fixture.componentInstance.holdFocus();
+        window.dispatchEvent(new Event('pointercancel'));
+        vi.advanceTimersByTime(1);
+        field.blur();
+        expect(fixture.componentInstance.active).toBe(false);
+      });
+
+      it('the click that follows the lift still finds the hold, so it can give the focus back', () => {
+        fixture.componentInstance.open();
+        fixture.componentInstance.holdFocus();
+        field.blur();
+        window.dispatchEvent(new Event('pointerup'));
+        // O clique vem na mesma tarefa, antes de o fim do toque valer.
+        fixture.componentInstance.restore();
+        expect(document.activeElement).toBe(field);
+        expect(fixture.componentInstance.active).toBe(true);
+      });
+
+      it('the click is the end of the touch: a blur right after it is the system', () => {
+        fixture.componentInstance.open();
+        fixture.componentInstance.holdFocus();
+        fixture.componentInstance.restore();
+        field.blur();
+        expect(fixture.componentInstance.active).toBe(false);
+      });
+
+      it('leaving the screen drops the hold and the listeners', () => {
+        fixture.componentInstance.open();
+        fixture.componentInstance.holdFocus();
+        fixture.destroy();
+        window.dispatchEvent(new Event('pointerup'));
+        vi.advanceTimersByTime(1);
+        expect(typingStates).toEqual([true]);
+      });
     });
 
     it('the window growing back after the keyboard shrank it (Back on Android) ends the mode', () => {
@@ -635,6 +683,170 @@ describe('PcLiveKeyboard: round two', () => {
       await flush();
       expect(store.sendText.mock.calls.map(([text]) => text)).toEqual(['um', 'dois', 'três']);
       expect(store.sendKey.mock.calls.map(([name]) => name)).toEqual(['ENTER', 'ENTER']);
+    });
+  });
+});
+
+describe('PcLiveKeyboard: rotation and composition', () => {
+  let store: FakePcStore;
+  let fixture: ReturnType<typeof TestBed.createComponent<PcLiveKeyboard>>;
+  let field: HTMLTextAreaElement;
+  const listeners: (() => void)[] = [];
+  const viewport = {
+    height: 800,
+    addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+    removeEventListener: (_: string, listener: () => void) => {
+      const at = listeners.indexOf(listener);
+      if (at >= 0) listeners.splice(at, 1);
+    },
+  };
+  const resizeViewport = (height: number) => {
+    viewport.height = height;
+    [...listeners].forEach((listener) => listener());
+  };
+  const setWindow = (width: number, height: number) => {
+    Object.defineProperty(window, 'innerWidth', { value: width, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: height, configurable: true });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    localStorage.clear();
+    listeners.length = 0;
+    viewport.height = 800;
+    setWindow(400, 800);
+    Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
+    store = createFakePcStore();
+    TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
+    fixture = TestBed.createComponent(PcLiveKeyboard);
+    fixture.detectChanges();
+    field = fixture.nativeElement.querySelector('textarea');
+  });
+  afterEach(() => {
+    fixture.destroy();
+    vi.useRealTimers();
+    Reflect.deleteProperty(window, 'visualViewport');
+    Reflect.deleteProperty(window, 'innerWidth');
+    Reflect.deleteProperty(window, 'innerHeight');
+  });
+
+  describe('the height without the keyboard follows the device when it turns', () => {
+    it('after a turn (width changes), the keyboard that opens and closes at the new height is still noticed', () => {
+      // Em pé: 800 de altura. De lado: 400, e o teclado cobre metade.
+      setWindow(800, 400);
+      resizeViewport(400);
+      window.dispatchEvent(new Event('resize'));
+      fixture.componentInstance.open();
+      resizeViewport(180);
+      expect(fixture.componentInstance.active).toBe(true);
+      resizeViewport(400);
+      expect(fixture.componentInstance.active).toBe(false);
+    });
+
+    it('turning with the keyboard open does not end the mode by itself', () => {
+      fixture.componentInstance.open();
+      resizeViewport(450);
+      expect(fixture.componentInstance.active).toBe(true);
+      // De lado, com o teclado ainda aberto: o navegador já informa as medidas novas.
+      setWindow(800, 400);
+      window.dispatchEvent(new Event('resize'));
+      resizeViewport(200);
+      expect(fixture.componentInstance.active).toBe(true);
+    });
+
+    it('turning with the keyboard open and then the keyboard closing at the new size is noticed', () => {
+      fixture.componentInstance.open();
+      resizeViewport(450);
+      setWindow(800, 400);
+      window.dispatchEvent(new Event('resize'));
+      resizeViewport(200);
+      // O teclado fecha: a janela volta aos 400 do novo tamanho cheio.
+      resizeViewport(400);
+      expect(fixture.componentInstance.active).toBe(false);
+    });
+
+    it('orientationchange recalibrates after the browser settles', () => {
+      setWindow(800, 400);
+      viewport.height = 400;
+      window.dispatchEvent(new Event('orientationchange'));
+      // Antes de assentar a base ainda é a de antes.
+      vi.advanceTimersByTime(400);
+      fixture.componentInstance.open();
+      resizeViewport(180);
+      resizeViewport(400);
+      expect(fixture.componentInstance.active).toBe(false);
+    });
+
+    it('a window that only changes height (the keyboard of Android) is not a turn', () => {
+      fixture.componentInstance.open();
+      setWindow(400, 450);
+      window.dispatchEvent(new Event('resize'));
+      resizeViewport(450);
+      expect(fixture.componentInstance.active).toBe(true);
+      resizeViewport(800);
+      expect(fixture.componentInstance.active).toBe(false);
+    });
+
+    it('stops listening to the window when the screen goes away', () => {
+      fixture.destroy();
+      setWindow(800, 400);
+      expect(() => {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('orientationchange'));
+        vi.advanceTimersByTime(500);
+      }).not.toThrow();
+    });
+  });
+
+  describe('restarting the field while a word is being composed', () => {
+    const composing = () => field.dispatchEvent(new Event('compositionstart'));
+    const composed = () => field.dispatchEvent(new Event('compositionend'));
+
+    it('waits for the end of the composition', () => {
+      field.value = SENTINEL + 'ol';
+      composing();
+      fixture.componentInstance.press('ENTER');
+      // Recomeçar agora estragaria a palavra que o teclado está montando.
+      expect(field.value).toBe(SENTINEL + 'ol');
+      composed();
+      vi.advanceTimersByTime(1);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('a shortcut from outside the field also waits', () => {
+      field.value = SENTINEL + 'ol';
+      composing();
+      TestBed.inject(PcInput).shortcut('V', ['CTRL']);
+      expect(field.value).toBe(SENTINEL + 'ol');
+      composed();
+      vi.advanceTimersByTime(1);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('the final input of the composition that comes after its end is handled before the restart', async () => {
+      composing();
+      fixture.componentInstance.press('TAB');
+      composed();
+      field.value = SENTINEL + 'oi';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      for (let round = 0; round < 8; round++) await Promise.resolve();
+      expect(store.sendText).toHaveBeenCalledWith('oi');
+      vi.advanceTimersByTime(1);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('nothing is restarted at the end of a composition when nothing was asked', () => {
+      composing();
+      field.value = SENTINEL + 'ola';
+      composed();
+      vi.advanceTimersByTime(10);
+      expect(field.value).toBe(SENTINEL + 'ola');
+    });
+
+    it('outside a composition the restart is at once', () => {
+      field.value = SENTINEL + 'ola';
+      fixture.componentInstance.press('ENTER');
+      expect(field.value).toBe(SENTINEL);
     });
   });
 });

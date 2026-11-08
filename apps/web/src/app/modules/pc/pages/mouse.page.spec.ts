@@ -753,6 +753,33 @@ describe('MousePage', () => {
         expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
       });
 
+      it('a touch on a glide that has almost stopped (old and slow) is an ordinary tap', () => {
+        const now = vi.spyOn(performance, 'now');
+        now.mockReturnValue(1_000);
+        flick();
+        store.click.mockClear();
+        // Passado o começo e já devagar: a página parou aos olhos da pessoa.
+        now.mockReturnValue(1_000 + 900);
+        for (let step = 0; step < 60; step++) runFrames();
+        pointer('pointerdown', 1, 100, 100, 9_000);
+        pointer('pointerup', 1, 100, 100, 9_050);
+        expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+        now.mockRestore();
+      });
+
+      it('a touch on a glide that is still fast, even after the first moments, is only a stop', () => {
+        const now = vi.spyOn(performance, 'now');
+        now.mockReturnValue(1_000);
+        flick();
+        store.click.mockClear();
+        now.mockReturnValue(1_000 + 900);
+        runFrames();
+        pointer('pointerdown', 1, 100, 100, 9_000);
+        pointer('pointerup', 1, 100, 100, 9_050);
+        expect(store.click).not.toHaveBeenCalled();
+        now.mockRestore();
+      });
+
       it('a touch when nothing was gliding is an ordinary tap', () => {
         pointer('pointerdown', 1, 100, 100, 0);
         pointer('pointerup', 1, 100, 100, 50);
