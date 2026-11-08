@@ -131,13 +131,18 @@ export class PwaUpdateService {
   private visibilityBound = false;
   /** A página já saiu de cena (`pagehide`): a pessoa está indo para outro endereço, então nenhuma recuperação a segura aqui. */
   private leaving = false;
-  /** Quando a saída começou (`beforeunload`, que pode ser desistida): vale como saída só por `LEAVING_GRACE_MS`. */
+  /**
+   * Quando a saída começou (`beforeunload`, que pode ser desistida). Enquanto não vier `pagehide` nem `pageshow`, toda
+   * falha de pedaço passa pela confirmação da casca velha; nos primeiros `LEAVING_GRACE_MS` ela ainda espera pelo `pagehide`.
+   */
   private leavingSince: number | null = null;
-  /** Único relógio da espera pelo `pagehide`: várias falhas na mesma saída compartilham ele (e a rota da última vale). */
-  private graceTimer: number | undefined;
-  private gracePending: { target: string | undefined } | undefined;
-  /** Quantas navegações terminaram: uma que termine durante a espera mostra que a pessoa seguiu em frente. */
-  private navigations = 0;
+  /**
+   * A confirmação em andamento (uma só, compartilhada pelas falhas da mesma saída; a rota da última vale). Fica de pé
+   * até o `pagehide`, o `pageshow` ou uma navegação concluída a derrubarem; quem a perdeu não age mais.
+   */
+  private grace: { target: string | undefined; timer: number | undefined } | undefined;
+  /** Os scripts de módulo que estavam no HTML ao abrir: a casca. Os que entram depois não dizem nada sobre ela. */
+  private readonly bootScripts: readonly string[];
   private readonly router = inject(Router);
   /** Para onde a recarga vai quando a recuperação nasceu de uma navegação que falhou (senão, recarrega onde está). */
   private resumeUrl: string | undefined;
@@ -164,7 +169,13 @@ export class PwaUpdateService {
 
   constructor() {
     const win = this.win;
-    if (!win) return;
+    if (!win) {
+      this.bootScripts = [];
+      return;
+    }
+    this.bootScripts = Array.from(
+      win.document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]'),
+    ).map((script) => script.src);
     const navigations = this.router.events.subscribe((event) => {
       if (event instanceof NavigationEnd) this.onNavigated();
     });
@@ -211,55 +222,61 @@ export class PwaUpdateService {
   }
 
   private cancelGrace(): void {
-    if (this.graceTimer !== undefined) this.win?.clearTimeout(this.graceTimer);
-    this.graceTimer = undefined;
-    this.gracePending = undefined;
+    if (this.grace?.timer !== undefined) this.win?.clearTimeout(this.grace.timer);
+    this.grace = undefined;
   }
 
   /**
-   * Uma falha de pedaço durante uma saída só começada (`beforeunload`): espera o prazo pelo `pagehide` e, se a página ficou,
-   * só recupera depois de confirmar que a casca está mesmo velha. Chamadas repetidas reaproveitam o mesmo relógio.
+   * Uma falha de pedaço com uma saída só começada (`beforeunload`): nos primeiros `LEAVING_GRACE_MS` espera o `pagehide`;
+   * passado o prazo (ou se ele já passou), só recupera depois de confirmar com a rede que a casca está mesmo velha, para
+   * uma saída lenta nunca ser atropelada. Várias falhas reaproveitam a mesma confirmação.
    */
-  private holdForLeaving(win: Window, target: string | undefined): void {
-    this.gracePending = { target };
-    if (this.graceTimer !== undefined) return;
-    const seen = this.navigations;
-    const arm = () => {
-      this.graceTimer = win.setTimeout(() => {
-        this.graceTimer = undefined;
-        const left = this.leavingGraceLeft();
-        if (left > 0) return arm();
-        const pending = this.gracePending;
-        this.gracePending = undefined;
-        if (!pending || this.leaving || this.navigations !== seen) return;
-        void this.shellIsStale(win).then((stale) => {
-          if (stale && !this.leaving && this.navigations === seen)
-            this.recoverFromStaleShell(pending.target);
-        });
-      }, this.leavingGraceLeft());
+  private confirmBeforeRecovering(win: Window, target: string | undefined): void {
+    if (this.grace) {
+      this.grace.target = target;
+      return;
+    }
+    const grace = { target, timer: undefined as number | undefined };
+    this.grace = grace;
+    const run = () => {
+      grace.timer = undefined;
+      if (this.grace !== grace) return;
+      const left = this.leavingGraceLeft();
+      if (left > 0) {
+        grace.timer = win.setTimeout(run, left);
+        return;
+      }
+      void this.shellIsStale(win).then((stale) => {
+        if (stale && this.grace === grace && !this.leaving) {
+          this.grace = undefined;
+          this.recoverNow(grace.target);
+        } else if (this.grace === grace) {
+          this.grace = undefined;
+        }
+      });
     };
-    arm();
+    run();
   }
 
   /**
-   * Confirma, com a rede, que a casca aberta é velha: o arquivo de entrada dela (cujo nome carrega o hash de todo o
-   * resto) já não existe no servidor. Barato (um HEAD por script, com prazo curto); sem resposta (sem rede, prazo, erro do
-   * servidor) não há confirmação e a página não recarrega: uma saída lenta nunca é atropelada por um palpite.
+   * Confirma, com a rede, que a casca aberta é velha: algum script de módulo do HTML original (o nome dele carrega o hash
+   * de todo o resto) já não existe no servidor. Barato (um HEAD por script, com prazo curto); sem resposta (sem rede,
+   * prazo, erro do servidor, método recusado) não há confirmação e a página não recarrega: nunca por palpite.
    */
   private async shellIsStale(win: Window): Promise<boolean> {
-    if (typeof win.fetch !== 'function') return false;
-    const scripts = Array.from(
-      win.document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]'),
-    ).map((script) => script.src);
-    if (scripts.length === 0) return false;
+    if (typeof win.fetch !== 'function' || this.bootScripts.length === 0) return false;
     const gone = async (src: string): Promise<boolean> => {
-      const response = await win.fetch(src, { method: 'HEAD', cache: 'no-store' });
-      if (response.status === 404 || response.status === 410) return true;
-      // Servidor que devolve a página para qualquer endereço: um script que vira HTML também sumiu.
-      return response.ok && (response.headers.get('content-type') ?? '').startsWith('text/html');
+      try {
+        const response = await win.fetch(src, { method: 'HEAD', cache: 'no-store' });
+        if (response.status === 404 || response.status === 410) return true;
+        // Servidor que devolve a página para qualquer endereço: um script que vira HTML também sumiu.
+        return response.ok && (response.headers.get('content-type') ?? '').startsWith('text/html');
+      } catch {
+        return false;
+      }
     };
     const verdict = await this.withTimeout(
-      Promise.all(scripts.map(gone)).then((all) => all.some(Boolean)),
+      Promise.all(this.bootScripts.map(gone)).then((all) => all.some(Boolean)),
       UPDATE_CACHE_CLEAR_TIMEOUT_MS,
     );
     return verdict === true;
@@ -394,7 +411,6 @@ export class PwaUpdateService {
    * já não vale; é também um momento seguro. Com uma recarga adiada, ela dispara se a tela estiver limpa.
    */
   onNavigated(): void {
-    this.navigations++;
     this.cancelGrace();
     this.resumeUrl = undefined;
     this.navigationBlocked.set(false);
@@ -408,9 +424,10 @@ export class PwaUpdateService {
    * registro e não apaga cache: com o worker antigo ainda no comando, o precache antigo serve os pedaços antigos. `target` é a
    * rota que o usuário tentava abrir: o roteador volta ao endereço anterior quando a navegação falha, então a recarga vai
    * direto ao alvo em vez de largá-lo na tela de antes. Com a página saindo (`pagehide`), não faz nada (a falha é só a
-   * importação abortada pela navegação); com a saída só começada (`beforeunload`), espera `LEAVING_GRACE_MS` (um relógio só, desfeito por
-   * `pagehide`, `pageshow` e navegação concluída) e só recarrega se a casca estiver confirmadamente velha. Devolve `true` se há uma recuperação em curso (ou começou agora) e
-   * `false` se a guarda a negou, para o erro seguir o caminho normal.
+   * importação abortada pela navegação). Com a saída só começada (`beforeunload`, sem `pagehide` nem `pageshow` depois),
+   * espera `LEAVING_GRACE_MS` pelo `pagehide` e, em qualquer caso, só recarrega se a casca estiver confirmadamente velha (uma
+   * confirmação só, desfeita por `pagehide`, `pageshow` e navegação concluída). Devolve `true` se há uma recuperação em
+   * curso (ou começou agora) e `false` se a guarda a negou, para o erro seguir o caminho normal.
    */
   recoverFromStaleShell(target?: string): boolean {
     if (this.applying || this.checking || this.reloading) return true;
@@ -418,11 +435,18 @@ export class PwaUpdateService {
     if (!win) return false;
     // A página está saindo: o pedaço que falhou foi abortado pela navegação da pessoa, não perdido pelo deploy.
     if (this.leaving) return true;
-    if (this.leavingGraceLeft() > 0) {
-      // Saída ainda sem `pagehide` (pode ter sido desistida): espera o prazo e confirma a casca velha antes de recarregar.
-      this.holdForLeaving(win, target);
+    if (this.leavingSince !== null) {
+      this.confirmBeforeRecovering(win, target);
       return true;
     }
+    return this.recoverNow(target);
+  }
+
+  /** A recuperação em si, já sem dúvida de que a página fica: guarda de laço, trabalho não salvo e recarga. */
+  private recoverNow(target: string | undefined): boolean {
+    if (this.applying || this.checking || this.reloading) return true;
+    const win = this.win;
+    if (!win) return false;
     if (this.deferred === undefined && guardActive(win, CHUNK_RECOVERY_KEY, AUTO_RECOVERY_GUARD_MS))
       return false;
     // Só caminhos do próprio app: nada de `//host` nem de esquema.
@@ -441,7 +465,7 @@ export class PwaUpdateService {
     return true;
   }
 
-  /** Quanto falta do prazo em que uma saída começada (`beforeunload`) ainda conta como saída. */
+  /** Quanto falta dos primeiros `LEAVING_GRACE_MS` de uma saída começada (`beforeunload`), em que o `pagehide` ainda é esperado. */
   private leavingGraceLeft(): number {
     if (this.leavingSince === null) return 0;
     return Math.max(0, this.leavingSince + LEAVING_GRACE_MS - Date.now());

@@ -567,7 +567,10 @@ describe('PwaUpdateService', () => {
         ({ assign } = stubAssign());
       });
 
-      afterEach(() => script.remove());
+      afterEach(() => {
+        script.remove();
+        Object.defineProperty(window, 'fetch', { value: realFetch, configurable: true });
+      });
 
       it('does nothing once the pagehide has happened', async () => {
         const { service } = setup({});
@@ -695,6 +698,86 @@ describe('PwaUpdateService', () => {
         expect(vi.getTimerCount()).toBe(timers + 1);
         TestBed.resetTestingModule();
         expect(vi.getTimerCount()).toBe(timers);
+      });
+
+      it('still confirms with a HEAD when the failure comes long after the beforeunload', async () => {
+        const head = stubEntry({ status: 200 });
+        const { service } = setup({});
+        leave();
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS * 3);
+        // A saída foi desistida (nunca veio `pagehide`), mas a casca só recarrega se estiver mesmo velha.
+        expect(service.recoverFromStaleShell('/treino')).toBe(true);
+        await vi.advanceTimersByTimeAsync(10);
+        expect(head).toHaveBeenCalledTimes(1);
+        expect(assign).not.toHaveBeenCalled();
+
+        stubEntry({ status: 404 });
+        service.recoverFromStaleShell('/treino');
+        await vi.advanceTimersByTimeAsync(10);
+        expect(assign).toHaveBeenCalledWith('/treino');
+      });
+
+      it('does not reload when the HEAD takes longer than its time limit', async () => {
+        const head = vi.fn().mockReturnValue(new Promise(() => undefined));
+        Object.defineProperty(window, 'fetch', { value: head, configurable: true });
+        const { service } = setup({});
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(head).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS + 1);
+        expect(assign).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
+      });
+
+      it('does not reload when the server refuses HEAD (405)', async () => {
+        stubEntry({ status: 405 });
+        const { service } = setup({});
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(assign).not.toHaveBeenCalled();
+      });
+
+      it('reloads when only one of two entry files is gone', async () => {
+        const other = document.createElement('script');
+        other.type = 'module';
+        other.src = '/polyfills-OLD.js';
+        document.head.appendChild(other);
+        const head = vi.fn().mockImplementation(async (url: string) => ({
+          status: url.endsWith('/polyfills-OLD.js') ? 404 : 200,
+          ok: !url.endsWith('/polyfills-OLD.js'),
+          headers: new Headers({ 'content-type': 'text/javascript' }),
+        }));
+        Object.defineProperty(window, 'fetch', { value: head, configurable: true });
+        const { service } = setup({});
+        leave();
+        service.recoverFromStaleShell('/treino');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        other.remove();
+        expect(head).toHaveBeenCalledTimes(2);
+        expect(assign).toHaveBeenCalledWith('/treino');
+      });
+
+      it('only checks the scripts that were in the page at boot, not ones injected later', async () => {
+        const head = vi.fn().mockImplementation(async (url: string) => ({
+          status: url.endsWith('/injected.js') ? 404 : 200,
+          ok: !url.endsWith('/injected.js'),
+          headers: new Headers({ 'content-type': 'text/javascript' }),
+        }));
+        Object.defineProperty(window, 'fetch', { value: head, configurable: true });
+        const { service } = setup({});
+        const late = document.createElement('script');
+        late.type = 'module';
+        late.src = '/injected.js';
+        document.head.appendChild(late);
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        late.remove();
+        expect(head).toHaveBeenCalledTimes(1);
+        expect(head.mock.calls[0][0]).toBe(new URL(entry, document.baseURI).href);
+        expect(assign).not.toHaveBeenCalled();
       });
 
       it('recovers again after a back/forward cache round trip (pagehide and pageshow persisted)', async () => {
