@@ -36,6 +36,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     public DbSet<QrLoginRequest> QrLoginRequests => Set<QrLoginRequest>();
 
     public DbSet<AccountPreferences> AccountPreferences => Set<AccountPreferences>();
+    public DbSet<InstallHintAnswers> InstallHintAnswers => Set<InstallHintAnswers>();
     public DbSet<CapacitySample> CapacitySamples => Set<CapacitySample>();
 
     public DbSet<CapacityAlert> CapacityAlerts => Set<CapacityAlert>();
@@ -273,6 +274,17 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.Property(x => x.HomeJson).HasColumnType("jsonb");
 
             // Apagar a conta (recuperação manual) leva as preferências junto, dentro do mesmo schema.
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InstallHintAnswers>(e =>
+        {
+            e.ToTable("install_hint_answers");
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).ValueGeneratedNever();
+            e.Property(x => x.AnswersJson).HasColumnType("jsonb").IsRequired();
+
+            // Apagar a conta (recuperação manual) leva as respostas junto, dentro do mesmo schema.
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 

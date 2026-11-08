@@ -24,6 +24,7 @@ using UniOver.Modules.Identity.Features.ListGuestInvites;
 using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Features.PeopleUsage;
 using UniOver.Modules.Identity.Features.PasswordRecovery;
+using UniOver.Modules.Identity.Features.InstallHint;
 using UniOver.Modules.Identity.Features.Preferences;
 using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.Login;
@@ -133,6 +134,7 @@ public static class IdentityModule
         services.AddScoped<UpdateProfileHandler>();
         services.AddScoped<SessionHandler>();
         services.AddScoped<PreferencesHandler>();
+        services.AddScoped<InstallHintHandler>();
 
         // Revogação imediata na TV: o status do convidado (cache curto) é uma porta usada pelas políticas dos módulos.
         services.AddSingleton<GuestAccountStatus>();
@@ -182,6 +184,7 @@ public static class IdentityModule
         group.MapGetMe();
         group.MapUpdateProfile();
         group.MapPreferences();
+        group.MapInstallHint();
         group.MapListAudit();
         group.MapCreateGuestInvite();
         group.MapListGuestInvites();

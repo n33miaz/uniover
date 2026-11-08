@@ -297,6 +297,27 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.InstallHintAnswers", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("AnswersJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("answers_json");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_install_hint_answers");
+
+                    b.ToTable("install_hint_answers", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.LoginAuditEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -951,6 +972,16 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_account_recovery_codes_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.InstallHintAnswers", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_install_hint_answers_users_user_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.Passkey", b =>
