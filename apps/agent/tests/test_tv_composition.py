@@ -140,14 +140,13 @@ def test_text_ime_options_are_passed_to_the_android_adapter(
         Settings(
             tv_host=TV_HOST,
             tv_text_cursor="field_end",
-            tv_text_debug_values=True,
             tv_text_trace=True,
             tv_text_counters="echo",
         )
     )
     assert setup is not None
     assert options[0]["text_cursor"] == "field_end"
-    assert options[0]["text_debug_values"] is True
+    assert "text_debug_values" not in options[0]
     assert options[0]["text_trace"] is True
     assert options[0]["text_counters"] == "echo"
 

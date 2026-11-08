@@ -127,12 +127,9 @@ class Settings(BaseSettings):
     # Contadores do lote IME. `library` usa os que a biblioteca guarda (comportamento anterior, o
     # padrão e o caminho de volta); `echo` usa os que a TV empurra no último eco ou lote.
     tv_text_counters: Literal["library", "echo"] = "library"
-    # Só para o roteiro acompanhado pelo dono: registra o valor que a TV ecoa. Pode expor texto
-    # digitado, por isso fica desligado e não deve ser usado fora de um teste controlado.
-    tv_text_debug_values: bool = False
     # Linhas por eco/lote do texto da TV (contadores, tamanho, cursor). Desligado, vão para DEBUG:
     # no INFO encheriam o registro durante a digitação e revelariam o tamanho de uma senha.
-    # Ligar para a medição acompanhada pelo dono; `tv_text_debug_values` também as liga.
+    # Ligar para a medição acompanhada pelo dono. O texto digitado nunca entra no registro.
     tv_text_trace: bool = False
     # Vigia do serviço do controle da Android TV: religa por ADB quando as portas 6466/6467 fecham.
     # Só age com `adb` neste PC; desligue se outra coisa (o vigia antigo do PC) já faz isso.

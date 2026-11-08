@@ -95,6 +95,8 @@ DISK_RESUME_BYTES = 2 * 1024 * 1024 * 1024
 TV_IDLE_SECONDS = 600.0
 TV_MAX_DEFER_SECONDS = 24 * 3600.0
 TV_LAST_USE_FILE = "tv-last-use"
+# A mesma marca para o controle do PC (ver `pc_in_use`): a atualização espera por qualquer uma.
+PC_LAST_USE_FILE = "pc-last-use"
 TV_WAIT_FILE = ".update-waiting-for-tv"
 TV_AGAIN_FLAG = "again"
 # Limites de cada passo (usados por quem os executa e somados em `WORST_CASE_SECONDS`).
@@ -697,6 +699,29 @@ def promote(source: Path, new: Path, sha: str, record_trial: Callable[[Path, str
         raise
 
 
+def _used_within(path: Path, now: float, idle_seconds: float) -> bool:
+    if idle_seconds <= 0:
+        return False
+    try:
+        stamp = path.stat().st_mtime
+    except OSError:
+        return False
+    return -idle_seconds < now - stamp < idle_seconds
+
+
+def pc_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -> bool:
+    r"""Alguém controlou o PC (touchpad, teclado, mídia) há menos de `idle_seconds`?
+
+    O agente em execução grava o instante do último comando `pc.*` executado como a data de
+    `runtime\pc-last-use`, do mesmo jeito que faz com a TV. Sem o arquivo conta como parado."""
+    return _used_within(source.parent / "runtime" / PC_LAST_USE_FILE, now, idle_seconds)
+
+
+def control_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -> bool:
+    """A TV ou o controle do PC foram usados há pouco? É o que adia a atualização do agente."""
+    return tv_in_use(source, now, idle_seconds) or pc_in_use(source, now, idle_seconds)
+
+
 def tv_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -> bool:
     """Alguém usou a TV há menos de `idle_seconds`?
 
@@ -861,7 +886,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
             source,
             wall(),
             sha=candidate,
-            in_use=tv_in_use(source, wall(), tv_idle_seconds),
+            in_use=control_in_use(source, wall(), tv_idle_seconds),
             max_defer_seconds=tv_max_defer_seconds,
         )
 
@@ -873,7 +898,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         if not ignore_deferral:
             settle_tv_wait(
                 source,
-                in_use=tv_in_use(source, wall(), tv_idle_seconds),
+                in_use=control_in_use(source, wall(), tv_idle_seconds),
                 max_defer_seconds=tv_max_defer_seconds,
             )
         sha = (fetch_latest or (lambda: latest_commit(channel)))()

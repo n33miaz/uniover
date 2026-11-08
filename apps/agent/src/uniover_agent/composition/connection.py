@@ -33,6 +33,7 @@ from uniover_agent.adapters.tv_discovery import (
 from uniover_agent.adapters.tv_locate import build_locator
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.adapters.tv_use_marker import MARKER_FILE as TV_USE_MARKER_FILE
+from uniover_agent.adapters.tv_use_marker import PC_MARKER_FILE as PC_USE_MARKER_FILE
 from uniover_agent.adapters.tv_use_marker import TvUseMarker
 from uniover_agent.adapters.update_status import FileUpdateStatus, default_status_path
 from uniover_agent.care_setup import (
@@ -530,6 +531,12 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             root / "runtime" / TV_USE_MARKER_FILE, tv.manager.seconds_since_use, clock
         )
         jobs = [*jobs, tv.manager.watch, marker.run, *tv.background]
+    if pc is not None:
+        # Uma sessão do touchpad também adia a atualização: reiniciar o agente a cortaria no meio.
+        pc_marker = TvUseMarker(
+            root / "runtime" / PC_USE_MARKER_FILE, pc.use.seconds_since_use, clock
+        )
+        jobs = [*jobs, pc_marker.run]
     if settings.self_care:
         care = SelfCare(
             build_checks(

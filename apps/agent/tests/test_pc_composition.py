@@ -99,6 +99,23 @@ def test_it_stays_off_outside_windows_even_when_turned_on(
     assert "só o Windows" in caplog.text
 
 
+async def test_the_built_handlers_feed_the_use_tracker_the_update_waits_on() -> None:
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(),
+        launcher=FakeLauncher(),
+    )
+    assert pc is not None
+    assert pc.use.seconds_since_use() is None
+    await pc.handlers["pc.key.v1"](Command("1", "pc.key.v1", {"key": "A"}))
+    assert pc.use.seconds_since_use() is not None
+
+
 def test_turned_on_declares_the_capability_and_every_command() -> None:
     settings, transport, envelopes = parts(Settings(pc_control=True, pc_apps=["Notas=notepad"]))
     pc = build_pc(

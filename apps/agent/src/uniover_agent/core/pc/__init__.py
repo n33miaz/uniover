@@ -18,6 +18,7 @@ from uniover_agent.core.pc.handlers import (
     pc_power_handler,
     pc_text_handler,
 )
+from uniover_agent.core.pc.use import PcUseTracker
 
 __all__ = [
     "MAX_FAVORITES",
@@ -28,6 +29,7 @@ __all__ = [
     "UNSUPPORTED",
     "ClockOffset",
     "PcApp",
+    "PcUseTracker",
     "parse_favorites",
     "pc_app_launch_handler",
     "pc_apps_announcer",

@@ -319,7 +319,9 @@ class TvCleanupScheduler:
             return "state-unavailable"
         if media_playing is not False:
             return "media-in-use"
-        if foreground is not None and foreground not in homes:
+        # Sem saber qual app está na frente (a sessão acabou de abrir, a leitura falhou) a TV conta
+        # como em uso: HOME e `am kill-all` só rodam com a prova de que ela está na tela inicial.
+        if foreground is None or foreground not in homes:
             return "app-in-use"
         return None
 

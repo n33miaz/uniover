@@ -92,6 +92,8 @@ def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
         "icon": str(assets / view.icon_file),
         "title": view.title,
         "status": _STATE_TEXT[view.state] + (" · Atenção" if view.attention else ""),
+        # Codigo ASCII do estado: o host o compara no lugar do texto acentuado (`tray-host.ps1`).
+        "code": view.state,
         "menu": [
             None if entry is None else {"action": entry.action, "label": entry.label}
             for entry in MENU

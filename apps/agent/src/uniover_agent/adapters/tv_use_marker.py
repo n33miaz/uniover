@@ -1,4 +1,5 @@
-r"""A marca de "alguém usou a TV há pouco": a data de `runtime\tv-last-use`.
+r"""A marca de "alguém usou a TV (ou o controle do PC) há pouco": a data de `runtime\tv-last-use`
+(ou de `runtime\pc-last-use`, que segue o mesmo desenho com o uso do controle do PC).
 
 A atualização do agente reinicia o processo, e isso derruba por alguns segundos o controle da TV.
 Quem decide atualizar (o `self-update`, outro processo) precisa saber se a TV está sendo usada, e a
@@ -28,6 +29,8 @@ from uniover_agent.ports import Clock
 _log = logging.getLogger(__name__)
 
 MARKER_FILE: Final = "tv-last-use"
+# A mesma marca para o controle do PC (touchpad, teclado, mídia): quem atualiza lê as duas.
+PC_MARKER_FILE: Final = "pc-last-use"
 # De quanto em quanto tempo olha se houve uso novo; a marca atrasa, no máximo, isto.
 POLL_SECONDS: Final = 15.0
 # Diferença menor que isto entre dois usos não vale uma gravação.

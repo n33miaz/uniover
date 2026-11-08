@@ -211,6 +211,48 @@ def test_power_settings_that_need_admin_are_skipped_quietly_and_logged(
     assert (base / "app" / "tools" / "run-agent.ps1").exists()
 
 
+def test_a_failed_powercfg_does_not_mark_the_adjustment_as_done_and_is_retried_next_start(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    base = installed_pc(tmp_path, monkeypatch)
+    system = FakeSystem(power_code=1)
+    forbid_real_system(monkeypatch, system)
+    marker = base / "runtime" / "power-settings"
+
+    migrate_layout()
+
+    assert not marker.exists(), "o ajuste falhou: não pode constar como feito"
+    system.calls.clear()
+    system.power_code = 0  # na próxima inicialização o powercfg funciona
+
+    migrate_layout()
+
+    assert system.names().count("powercfg.exe") == 2, "tentou de novo"
+    assert marker.read_text(encoding="ascii") == installation.POWER_SETTINGS_VERSION
+    assert not (base / "runtime" / "power-settings.failures").exists()
+    system.calls.clear()
+    migrate_layout()
+    assert "powercfg.exe" not in system.names(), "feito de verdade: não repete"
+
+
+def test_a_powercfg_that_never_works_stops_being_retried_after_a_few_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    base = installed_pc(tmp_path, monkeypatch)
+    system = FakeSystem(power_code=1)
+    forbid_real_system(monkeypatch, system)
+
+    for _ in range(installation.POWER_SETTINGS_MAX_ATTEMPTS):
+        migrate_layout()
+
+    attempts = system.names().count("powercfg.exe")
+    assert attempts == 2 * installation.POWER_SETTINGS_MAX_ATTEMPTS
+    assert "desisti" in (base / "logs" / "agent.log").read_text(encoding="utf-8")
+    system.calls.clear()
+    migrate_layout()
+    assert "powercfg.exe" not in system.names(), "o teto de tentativas foi atingido"
+
+
 def test_the_real_launcher_swap_works_in_task_scheduler_and_rolls_back_on_failure(
     tmp_path: Path,
 ) -> None:
