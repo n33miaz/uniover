@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.GetModuleInfo;
 using UniOver.Modules.Devices.Features.PcControl;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -12,6 +13,11 @@ namespace UniOver.Modules.Devices.Tests.PcControl;
 public sealed class PcMessagesTests
 {
     private static readonly AgentEnvelopeValidator Validator = new();
+
+    /// <summary>Compara o JSON pelo conteúdo: a ordem das propriedades é a do gerador, não do contrato.</summary>
+    private static void SameJson(JsonElement actual, string expected) =>
+        System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(actual.GetRawText()), System.Text.Json.Nodes.JsonNode.Parse(expected))
+            .Should().BeTrue($"o corpo devia ser {expected} e foi {actual.GetRawText()}");
 
     /// <summary>O envelope que o gateway monta em volta do corpo, para provar que o corpo cumpre o esquema do contrato.</summary>
     private static bool IsValidForTheContract(OutboundMessage message)
@@ -139,6 +145,47 @@ public sealed class PcMessagesTests
 
     [Fact]
     public void Capability_IsTheOneTheHelloDeclares() => PcMessages.Capability.Should().Be("pc.control.v1");
+
+    [Fact]
+    public void KeyFitsV1_OnlyForV1KeysPressedOnce()
+    {
+        PcMessages.KeyFitsV1(new PcKeyRequest("C", ["CTRL"])).Should().BeTrue();
+        PcMessages.KeyFitsV1(new PcKeyRequest("C", null, 1, "PRESS")).Should().BeTrue();
+        PcMessages.KeyFitsV1(new PcKeyRequest("BACKSPACE", null, 2)).Should().BeFalse();
+        PcMessages.KeyFitsV1(new PcKeyRequest("D1", null)).Should().BeFalse();
+        PcMessages.KeyFitsV1(new PcKeyRequest("ALT", null, null, "DOWN")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void KeyFor_BuildsTheV1WhenTheRequestFitsAndTheV2OnlyWhenItNeedsIt()
+    {
+        var v1 = PcMessages.KeyFor(new PcKeyRequest("C", ["CTRL"], 1, "PRESS"));
+        v1.Type.Should().Be(AgentMessageTypes.PcKeyV1);
+        SameJson(v1.Body, "{\"key\":\"C\",\"modifiers\":[\"CTRL\"]}");
+        IsValidForTheContract(v1).Should().BeTrue();
+
+        var repeated = PcMessages.KeyFor(new PcKeyRequest("BACKSPACE", null, 12));
+        repeated.Type.Should().Be(AgentMessageTypes.PcKeyV2);
+        SameJson(repeated.Body, "{\"key\":\"BACKSPACE\",\"repeat\":12}");
+        IsValidForTheContract(repeated).Should().BeTrue();
+
+        var held = PcMessages.KeyFor(new PcKeyRequest("ALT", null, null, "DOWN"));
+        held.Type.Should().Be(AgentMessageTypes.PcKeyV2);
+        SameJson(held.Body, "{\"key\":\"ALT\",\"action\":\"DOWN\"}");
+        IsValidForTheContract(held).Should().BeTrue();
+
+        var digit = PcMessages.KeyFor(new PcKeyRequest("D0", ["CTRL"]));
+        digit.Type.Should().Be(AgentMessageTypes.PcKeyV2);
+        SameJson(digit.Body, "{\"key\":\"D0\",\"modifiers\":[\"CTRL\"]}");
+        IsValidForTheContract(digit).Should().BeTrue();
+    }
+
+    [Fact]
+    public void KeyV2Capability_IsTheOneTheHelloDeclares_AndTheApiListsItAsAFeature()
+    {
+        PcMessages.KeyV2Capability.Should().Be("pc.key.v2");
+        GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.key.v2");
+    }
 }
 
 public sealed class PcProblemsTests
@@ -210,12 +257,50 @@ public sealed class PcValidatorTests
     {
         PcValidator.Key(new PcKeyRequest("C", ["CTRL"])).Should().BeEmpty();
         PcValidator.Key(new PcKeyRequest("ENTER", null)).Should().BeEmpty();
-        PcValidator.Key(new PcKeyRequest("PRINT_SCREEN", null)).Should().ContainKey("key");
+        PcValidator.Key(new PcKeyRequest("F13", null)).Should().ContainKey("key");
         PcValidator.Key(new PcKeyRequest("c", null)).Should().ContainKey("key");
         PcValidator.Key(new PcKeyRequest("C", ["CTRL", "CTRL"])).Should().ContainKey("modifiers");
         PcValidator.Key(new PcKeyRequest("C", ["META"])).Should().ContainKey("modifiers");
         PcValidator.Key(new PcKeyRequest("C", [null!])).Should().ContainKey("modifiers");
         PcValidator.Key(new PcKeyRequest("C", ["CTRL", "ALT", "SHIFT", "WIN", "CTRL"])).Should().ContainKey("modifiers");
+    }
+
+    [Theory]
+    [InlineData("D0")]
+    [InlineData("D9")]
+    [InlineData("MINUS")]
+    [InlineData("EQUALS")]
+    [InlineData("COMMA")]
+    [InlineData("PERIOD")]
+    [InlineData("INSERT")]
+    [InlineData("PRINT_SCREEN")]
+    [InlineData("APPS")]
+    [InlineData("WIN")]
+    [InlineData("CAPS_LOCK")]
+    public void Key_AcceptsTheKeysOnlyTheV2Has(string key) =>
+        PcValidator.Key(new PcKeyRequest(key, null)).Should().BeEmpty();
+
+    [Fact]
+    public void Key_RepeatIsBetweenOneAndFifty()
+    {
+        PcValidator.Key(new PcKeyRequest("BACKSPACE", null, 1)).Should().BeEmpty();
+        PcValidator.Key(new PcKeyRequest("BACKSPACE", null, 50)).Should().BeEmpty();
+        PcValidator.Key(new PcKeyRequest("BACKSPACE", null, 0)).Should().ContainKey("repeat");
+        PcValidator.Key(new PcKeyRequest("BACKSPACE", null, 51)).Should().ContainKey("repeat");
+        PcValidator.Key(new PcKeyRequest("BACKSPACE", null, -3)).Should().ContainKey("repeat");
+    }
+
+    [Fact]
+    public void Key_HoldingAndReleasingOnlyWorksForAloneModifiers()
+    {
+        PcValidator.Key(new PcKeyRequest("ALT", null, null, "DOWN")).Should().BeEmpty();
+        PcValidator.Key(new PcKeyRequest("WIN", null, null, "UP")).Should().BeEmpty();
+        PcValidator.Key(new PcKeyRequest("ALT", null, null, "PRESS")).Should().BeEmpty();
+        PcValidator.Key(new PcKeyRequest("ALT", null, null, "HOLD")).Should().ContainKey("action");
+        PcValidator.Key(new PcKeyRequest("A", null, null, "DOWN")).Should().ContainKey("action");
+        PcValidator.Key(new PcKeyRequest("TAB", null, null, "UP")).Should().ContainKey("action");
+        PcValidator.Key(new PcKeyRequest("ALT", ["SHIFT"], null, "DOWN")).Should().ContainKey("modifiers");
+        PcValidator.Key(new PcKeyRequest("ALT", null, 3, "DOWN")).Should().ContainKey("repeat");
     }
 
     [Theory]
@@ -350,7 +435,7 @@ public sealed class PcAgentResolverTests
     private static readonly DateTimeOffset T0 = new(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
 
     private static PcCandidate Pc(string slug, Guid pairedBy, bool connected, int ageMinutes = 0) =>
-        new(Guid.CreateVersion7(), slug, pairedBy, T0.AddMinutes(ageMinutes), connected);
+        new(Guid.CreateVersion7(), slug, pairedBy, T0.AddMinutes(ageMinutes), connected, ["pc.control.v1"]);
 
     [Fact]
     public void APersonOnlyDrivesThePcsSheHerselfPaired()

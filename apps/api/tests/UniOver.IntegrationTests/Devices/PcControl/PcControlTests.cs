@@ -22,10 +22,16 @@ namespace UniOver.IntegrationTests.Devices.PcControl;
 public sealed class PcControlTests(PostgresFixture postgres)
 {
     private const string Capability = "pc.control.v1";
+    private const string KeyV2 = "pc.key.v2";
 
     private static readonly string[] Ctrl = ["CTRL"];
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>Compara o JSON pelo conteúdo: a ordem das propriedades é a do gerador, não do contrato.</summary>
+    private static void SameJson(JsonElement actual, string expected) =>
+        System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(actual.GetRawText()), System.Text.Json.Nodes.JsonNode.Parse(expected))
+            .Should().BeTrue($"o corpo devia ser {expected} e foi {actual.GetRawText()}");
 
     private static async Task<T> Within<T>(Task<T> task) => await task.WaitAsync(FakeAgent.Patience, Ct);
 
@@ -133,6 +139,29 @@ public sealed class PcControlTests(PostgresFixture postgres)
 
         body.GetProperty("available").GetBoolean().Should().BeTrue();
         body.GetProperty("online").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Status_ListsTheOptionalPcCapabilitiesTheAgentDeclared_AndNeverTheBaseOne()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        var body = await DevicesApp.JsonAsync(response);
+
+        body.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).Should().Equal(KeyV2);
+    }
+
+    [Fact]
+    public async Task Status_OfAnAgentFromBeforeTheV2_HasNoCapabilities()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+
+        (await DevicesApp.JsonAsync(response)).GetProperty("capabilities").GetArrayLength().Should().Be(0);
     }
 
     // ---- comandos ----
@@ -316,10 +345,92 @@ public sealed class PcControlTests(PostgresFixture postgres)
         mediaCommand.GetProperty("body").GetProperty("steps").GetInt32().Should().Be(3);
     }
 
+    [Fact]
+    public async Task Key_ThatFitsTheV1_GoesAsV1_EvenToAnAgentThatKnowsTheV2()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        var http = PostAsync(app, "key", new { key = "C", modifiers = Ctrl, repeat = 1, action = "PRESS" });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+        SameJson(command.GetProperty("body"), "{\"key\":\"C\",\"modifiers\":[\"CTRL\"]}");
+    }
+
+    [Fact]
+    public async Task Key_ThatNeedsTheV2_GoesAsV2_ToAnAgentThatDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        var repeated = PostAsync(app, "key", new { key = "BACKSPACE", repeat = 12 });
+        var repeatedCommand = await AnswerAsync(agent);
+        using var repeatedResponse = await Within(repeated);
+
+        var held = PostAsync(app, "key", new { key = "ALT", action = "DOWN" });
+        var heldCommand = await AnswerAsync(agent);
+        using var heldResponse = await Within(held);
+
+        var digit = PostAsync(app, "key", new { key = "D0", modifiers = Ctrl });
+        var digitCommand = await AnswerAsync(agent);
+        using var digitResponse = await Within(digit);
+
+        new[] { repeatedResponse, heldResponse, digitResponse }.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+        repeatedCommand.GetProperty("type").GetString().Should().Be("pc.key.v2");
+        SameJson(repeatedCommand.GetProperty("body"), "{\"key\":\"BACKSPACE\",\"repeat\":12}");
+        heldCommand.GetProperty("type").GetString().Should().Be("pc.key.v2");
+        SameJson(heldCommand.GetProperty("body"), "{\"key\":\"ALT\",\"action\":\"DOWN\"}");
+        SameJson(digitCommand.GetProperty("body"), "{\"key\":\"D0\",\"modifiers\":[\"CTRL\"]}");
+    }
+
+    [Theory]
+    [InlineData("{\"key\":\"BACKSPACE\",\"repeat\":5}")]
+    [InlineData("{\"key\":\"ALT\",\"action\":\"DOWN\"}")]
+    [InlineData("{\"key\":\"PRINT_SCREEN\"}")]
+    [InlineData("{\"key\":\"D1\"}")]
+    public async Task Key_ThatNeedsTheV2_Returns409KeyUnsupported_ForAnOlderAgent_AndNothingIsSent(string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        using var response = await PostAsync(app, "key", JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+
+        // O agente antigo segue servido pela v1: a primeira coisa que ele recebe é a próxima tecla, e não a recusada.
+        var next = PostAsync(app, "key", new { key = "ENTER" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+    }
+
+    [Fact]
+    public async Task Key_ThatNeedsTheV2_ToAnOfflineAgent_StillAnswersOfflineNotUnsupported()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectPcAsync(app);
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+
+        using var response = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 5 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
+
     [Theory]
     [InlineData("click", "{\"button\":\"BACK\"}")]
     [InlineData("click", "{\"button\":\"LEFT\",\"action\":\"TRIPLE\"}")]
-    [InlineData("key", "{\"key\":\"PRINT_SCREEN\"}")]
+    [InlineData("key", "{\"key\":\"F13\"}")]
+    [InlineData("key", "{\"key\":\"BACKSPACE\",\"repeat\":0}")]
+    [InlineData("key", "{\"key\":\"BACKSPACE\",\"repeat\":51}")]
+    [InlineData("key", "{\"key\":\"ALT\",\"action\":\"HOLD\"}")]
+    [InlineData("key", "{\"key\":\"A\",\"action\":\"DOWN\"}")]
+    [InlineData("key", "{\"key\":\"ALT\",\"action\":\"DOWN\",\"modifiers\":[\"SHIFT\"]}")]
     [InlineData("key", "{\"key\":\"C\",\"modifiers\":[\"CTRL\",\"CTRL\"]}")]
     [InlineData("key", "{\"key\":\"C\",\"modifiers\":[\"META\"]}")]
     [InlineData("text", "{\"text\":\"\"}")]
