@@ -9,6 +9,16 @@ export interface HomeEntry {
   readonly enabled: boolean;
 }
 
+/** O que a pessoa respondeu à dica "adicionar à tela de início" para um app: "Agora não" (instante em ms), "nunca" e "já instalei". */
+export interface InstallHintAnswer {
+  readonly dismissedAt?: number;
+  readonly never?: boolean;
+  readonly installed?: boolean;
+}
+
+/** A resposta da dica por app (`root`, `tv`, `treino`); vale em qualquer aparelho e sobrevive à limpeza de dados do Safari. */
+export type InstallHintAnswers = Readonly<Record<string, InstallHintAnswer>>;
+
 /** As preferências da conta como a API as entrega; `home` nulo é a Início padrão e `version` zero é "nunca gravou". */
 export interface AccountPreferences {
   readonly version: number;
@@ -23,6 +33,7 @@ export interface SaveOutcome {
 }
 
 const PREFERENCES_URL = `${APP_CONFIG.apiBase}/v1/identity/me/preferences`;
+const INSTALL_HINT_URL = `${APP_CONFIG.apiBase}/v1/identity/me/install-hint`;
 
 function isPreferences(value: unknown): value is AccountPreferences {
   const body = value as Partial<AccountPreferences> | null;
@@ -32,6 +43,23 @@ function isPreferences(value: unknown): value is AccountPreferences {
     typeof body.version === 'number' &&
     (body.home === null || Array.isArray(body.home))
   );
+}
+
+/** Só o que a dica entende: um objeto de apps, cada um com os três campos no tipo certo; o resto é descartado. */
+export function readInstallHint(value: unknown): InstallHintAnswers | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const result: Record<string, InstallHintAnswer> = {};
+  for (const [scope, raw] of Object.entries(value)) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const { dismissedAt, never, installed } = raw as Record<string, unknown>;
+    result[scope] = {
+      dismissedAt:
+        typeof dismissedAt === 'number' && Number.isFinite(dismissedAt) ? dismissedAt : undefined,
+      never: never === true ? true : undefined,
+      installed: installed === true ? true : undefined,
+    };
+  }
+  return result;
 }
 
 /**
@@ -47,6 +75,14 @@ export class PreferencesApi {
     const body = await this.request(() => this.http!.get<unknown>(PREFERENCES_URL));
     if (!isPreferences(body)) throw new Error('Resposta de preferências inesperada.');
     return body;
+  }
+
+  /** A resposta da conta à dica de instalação (vazia se nunca respondeu). Rota e tabela próprias: não toca na Início. */
+  async getInstallHint(): Promise<InstallHintAnswers> {
+    const body = await this.request(() => this.http!.get<unknown>(INSTALL_HINT_URL));
+    const answers = readInstallHint(body);
+    if (answers === null) throw new Error('Resposta da dica de instalação inesperada.');
+    return answers;
   }
 
   /**
@@ -73,6 +109,15 @@ export class PreferencesApi {
       }
       throw error;
     }
+  }
+
+  /**
+   * Grava a resposta da dica de instalação. A API funde com a que a conta já tem (nada que valia se desfaz), então não há
+   * versão nem conflito. Devolve a resposta da conta como ela ficou.
+   */
+  async saveInstallHint(scopes: InstallHintAnswers): Promise<InstallHintAnswers> {
+    const body = await this.request(() => this.http!.put<unknown>(INSTALL_HINT_URL, { scopes }));
+    return readInstallHint(body) ?? {};
   }
 
   private request<T>(call: () => Observable<T>): Promise<T> {

@@ -21,6 +21,7 @@ describe('InstallHint', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     navigation.set(null);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   });
@@ -29,6 +30,7 @@ describe('InstallHint', () => {
     vi.restoreAllMocks();
     document.querySelectorAll('dialog[open]').forEach((d) => d.remove());
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   function setup(env: InstallEnvInput = { userAgent: SAFARI }, signedIn = true) {
@@ -151,10 +153,10 @@ describe('InstallHint', () => {
     expect(never.sheet()).toBeNull();
   });
 
-  it('com "Agora não" de mais de 14 dias, volta a abrir', async () => {
+  it('com "Agora não" de mais de 30 dias, volta a abrir', async () => {
     localStorage.setItem(
       INSTALL_HINT_KEY,
-      JSON.stringify({ dismissedAt: Date.now() - 15 * 24 * 60 * 60 * 1000 }),
+      JSON.stringify({ dismissedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 }),
     );
     const { sheet, tick } = setup();
     await tick(INSTALL_HINT_DELAY_MS);

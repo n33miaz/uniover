@@ -233,11 +233,30 @@ async function expectSheetClosed(page: Page) {
   await expect(sheetOf(page)).toHaveCount(0);
 }
 
-async function storedMemory(page: Page): Promise<Record<string, unknown> | null> {
-  return page.evaluate(() => {
-    const raw = localStorage.getItem('uniover.install-hint.v1');
-    return raw ? JSON.parse(raw) : null;
+/** O que o Safari faz depois de 7 dias sem uso (e o modo privado ao fechar): some tudo que o site guardou. */
+async function wipeSiteData(page: Page) {
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
   });
+}
+
+/**
+ * O que o aparelho guardou de um app (a raiz, por padrão). Depois de a sessão ser confirmada a memória é da conta
+ * (`uniover.install-hint.v2.<conta>.<app>`); antes disso, e nas versões antigas, é a chave do aparelho.
+ */
+async function storedMemory(
+  page: Page,
+  scope: 'root' | 'tv' | 'treino' = 'root',
+): Promise<Record<string, unknown> | null> {
+  return page.evaluate((app) => {
+    const own = Object.keys(localStorage).find(
+      (key) => key.startsWith('uniover.install-hint.v2.') && key.endsWith(`.${app}`),
+    );
+    const device = app === 'root' ? 'uniover.install-hint.v1' : `uniover.install-hint.v1.${app}`;
+    const raw = localStorage.getItem(own ?? device);
+    return raw ? JSON.parse(raw) : null;
+  }, scope);
 }
 
 test.describe('no ambiente de fábrica do projeto', () => {
@@ -316,13 +335,24 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expectSheetClosed(page);
     expect(await storedMemory(page)).toEqual({ dismissedAt: expect.any(Number) });
 
-    // Troca o "Agora não" por "Não mostrar de novo": a memória vira só `never`.
-    await page.evaluate(() => localStorage.removeItem('uniover.install-hint.v1'));
+    // O Safari apagou os dados do site (memória do aparelho e da sessão): a conta lembra o "Agora não" e a folha não volta.
+    await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
+    await wipeSiteData(page);
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
+    await page.clock.fastForward(AFTER_DELAY_MS);
+    await expectSheetClosed(page);
+    await expect.poll(() => storedMemory(page)).toEqual({ dismissedAt: expect.any(Number) });
+
+    // Uma conta sem nenhuma resposta (e sem memória no aparelho): troca o "Agora não" por "Não mostrar de novo".
+    await wipeSiteData(page);
+    for (const account of Object.keys(identity.installHints)) delete identity.installHints[account];
     await page.reload();
     await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
     await sheetOf(page).getByRole('button', { name: 'Não mostrar de novo' }).click();
     await expectSheetClosed(page);
-    expect(await storedMemory(page)).toEqual({ never: true });
+    // A folha que abre sozinha já gravou o "Agora não" (ver `openAuto`); o "nunca" vem por cima.
+    expect(await storedMemory(page)).toEqual({ dismissedAt: expect.any(Number), never: true });
 
     await page.reload();
     await page.clock.fastForward(AFTER_DELAY_MS);
@@ -651,7 +681,6 @@ test.describe('modo ios-in-app: copiar o endereço', () => {
 test.describe('cada módulo é um app: a memória e o pedido de instalação são por escopo', () => {
   test.use({ userAgent: UA.android });
 
-  const TRAINING_KEY = 'uniover.install-hint.v1.treino';
   const trainingHeading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Treino' });
 
   /** Como `simulateInstallPrompt`, mas lembra (na sessão, que sobrevive à troca de página) em que endereço o pedido foi usado. */
@@ -688,13 +717,11 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
     await expectSheetClosed(page);
     // O "Agora não" do Treino fica na chave do Treino; a da raiz continua como estava.
-    expect(
-      await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), TRAINING_KEY),
-    ).toEqual({ dismissedAt: expect.any(Number) });
+    expect(await storedMemory(page, 'treino')).toEqual({ dismissedAt: expect.any(Number) });
     expect(await storedMemory(page)).toEqual({ installed: true, never: true });
   });
 
-  test('Treino aberto dentro do app geral no Android oferece o próprio atalho', async ({
+  test('Treino aberto dentro do app geral no Android não abre a folha sozinha (dentro do app instalado nunca)', async ({
     page,
   }) => {
     await simulateStandalone(page);
@@ -705,55 +732,65 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     await page.goto('/?uniover_app=root');
     await page.getByRole('link', { name: 'Ver treino' }).click();
     await expect(trainingHeading(page)).toBeVisible();
-    const sheet = sheetOf(page);
-    await expect(sheet).toBeVisible({ timeout: 10_000 });
-    await expect(sheet).toContainText('Abra o endereço do Treino no navegador');
-    await expect(sheet.getByRole('button', { name: 'Copiar endereço' })).toBeVisible();
+    await page.clock.fastForward(AFTER_DELAY_MS);
+    await expectSheetClosed(page);
   });
 
-  test('pedir para instalar o Treino num documento carregado na raiz faz carga completa em /treino/ e usa o pedido do Treino', async ({
+  test('pedir para instalar a TV num documento carregado na raiz faz carga completa em /tv/ e usa o pedido da TV', async ({
     page,
   }) => {
     await simulateRecordingPrompt(page);
+    await installFakeEventSource(page);
     await signInAsOwner();
     await showHome(page);
     await sheetOf(page).getByRole('button', { name: 'Agora não' }).click({ timeout: 10_000 });
     await expectSheetClosed(page);
 
-    // Navegação por dentro do app até o Treino: continua o mesmo documento (sem recarregar).
+    // Navegação por dentro do app até a TV: continua o mesmo documento (sem recarregar). A folha automática já foi
+    // mostrada nesta sessão e não repete por app: o pedido da TV vem da linha de Personalizar, que a pessoa toca.
     await page.evaluate(
       () => ((window as unknown as { sameDocument: boolean }).sameDocument = true),
     );
-    await page.getByRole('link', { name: 'Ver treino' }).click();
-    await expect(trainingHeading(page)).toBeVisible();
+    await page.getByRole('link', { name: 'Abrir controle' }).first().click();
+    await settleTv(page);
     expect(
       await page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument),
     ).toBe(true);
+    await page.clock.fastForward(AFTER_DELAY_MS);
+    await expectSheetClosed(page);
+    await page
+      .locator('header.head')
+      .getByRole('button', { name: /, personalizar$/ })
+      .click();
+    await page
+      .getByRole('dialog', { name: 'Personalizar' })
+      .getByRole('button', { name: /^Adicionar à tela de início/ })
+      .click();
 
-    // A dica do Treino é dele (a raiz já dispensou a sua) e o pedido guardado ainda é o da raiz.
+    // O pedido guardado ainda é o da raiz: instalar a TV recarrega a página inteira no escopo dela.
     const sheet = sheetOf(page);
-    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet).toBeVisible();
     await sheet.getByRole('button', { name: 'Instalar' }).click();
 
-    // Carga completa: o documento mudou, o marcador saiu do endereço e a folha reabre com o pedido do Treino.
+    // Carga completa: o documento mudou, o marcador saiu do endereço e a folha reabre com o pedido da TV.
     await expect
       .poll(() =>
         page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument),
       )
       .toBeUndefined();
-    await expect(page).toHaveURL(/\/treino\/?$/);
+    await expect(page).toHaveURL(/\/tv\/?$/);
     expect(new URL(page.url()).search).toBe('');
     await expect(page.locator('head link[rel="manifest"]')).toHaveAttribute(
       'href',
-      '/treino/manifest.webmanifest',
+      '/tv/manifest.webmanifest',
     );
     await expect(sheet).toBeVisible({ timeout: 10_000 });
     await sheet.getByRole('button', { name: 'Instalar' }).click();
     await expectSheetClosed(page);
-    // O pedido do navegador só foi usado depois da carga em /treino/.
+    // O pedido do navegador só foi usado depois da carga em /tv/.
     expect(
       await page.evaluate(() => JSON.parse(sessionStorage.getItem('promptUsedAt') ?? '[]')),
-    ).toEqual([expect.stringMatching(/^\/treino\/?$/)]);
+    ).toEqual([expect.stringMatching(/^\/tv\/?$/)]);
   });
 
   test('no app do Treino já instalado a folha nunca abre sozinha, mesmo com a memória vazia', async ({
@@ -767,3 +804,196 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     await expectSheetClosed(page);
   });
 });
+
+/** Faz a janela se achar em `display-mode: standalone` (o padrão), sem `navigator.standalone`: o outro sinal de app instalado. */
+async function simulateDisplayModeStandalone(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'standalone', {
+      get: () => false,
+      configurable: true,
+    });
+    const original = window.matchMedia.bind(window);
+    window.matchMedia = (query: string) =>
+      query === '(display-mode: standalone)'
+        ? ({
+            matches: true,
+            media: query,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+          } as unknown as MediaQueryList)
+        : original(query);
+  });
+}
+
+/**
+ * O relato da Alice (iPhone, app na tela de início havia muito tempo, respondeu várias vezes): a dica não pode voltar para
+ * quem já instalou nem para quem já respondeu, nem depois de o Safari apagar os dados do site, atualizar a conta ou recarregar.
+ */
+test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de novo', () => {
+  test.beforeEach(async ({}, info) => {
+    test.skip(
+      info.project.name !== 'iphone-12',
+      'o relato é do iPhone (Safari e app da tela de início)',
+    );
+  });
+
+  const HOME = /Bom dia|Boa tarde|Boa noite/;
+  const homeReady = (page: Page) =>
+    expect(page.getByRole('heading', { level: 1 })).toHaveText(HOME);
+
+  test.describe('dentro do app instalado', () => {
+    for (const [name, simulate] of [
+      ['navigator.standalone', simulateStandalone],
+      ['display-mode: standalone', simulateDisplayModeStandalone],
+    ] as const) {
+      test(`(${name}) nunca abre: nem na carga, nem depois de recarregar, nem ao renovar a sessão`, async ({
+        page,
+      }) => {
+        await simulate(page);
+        await signInAsOwner();
+        await page.goto('/');
+        await homeReady(page);
+        await page.clock.fastForward(AFTER_DELAY_MS * 3);
+        await expectSheetClosed(page);
+
+        // O app foi reaberto várias vezes (o iOS o encerra em segundo plano).
+        for (let i = 0; i < 3; i++) {
+          await page.reload();
+          await homeReady(page);
+          await page.clock.fastForward(AFTER_DELAY_MS * 3);
+          await expectSheetClosed(page);
+        }
+
+        // "Atualizar a conta": o token vence e o app renova a sessão sozinho; a folha não reaparece por isso.
+        const tokensBefore = identity.issuedTokens.length;
+        await page.clock.fastForward(11 * 60 * 1000);
+        await expect.poll(() => identity.issuedTokens.length).toBeGreaterThan(tokensBefore);
+        await page.clock.fastForward(AFTER_DELAY_MS * 3);
+        await expectSheetClosed(page);
+        await homeReady(page);
+      });
+    }
+
+    test('o atalho do UniOver geral aberto em /treino e na TV (outros apps para o navegador) não abre a folha sozinha', async ({
+      page,
+    }) => {
+      await simulateStandalone(page);
+      await signInAsOwner();
+      await page.goto('/?uniover_app=root');
+      await homeReady(page);
+      await page.getByRole('link', { name: 'Ver treino' }).click();
+      await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+
+      await installFakeEventSource(page);
+      await page.goto('/tv');
+      await settleTv(page);
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+    });
+
+    test('grava na conta que o app está instalado: o Safari, com os dados apagados, não pergunta', async ({
+      context,
+      page,
+    }) => {
+      await simulateStandalone(page);
+      await signInAsOwner();
+      await page.goto('/');
+      await homeReady(page);
+      await expect
+        .poll(() => Object.values(identity.installHints).map((hints) => hints['root']))
+        .toEqual([{ installed: true }]);
+      await page.close();
+
+      // A mesma conta, agora no Safari (armazenamento separado: o do atalho não chega até ele).
+      const safari = await context.newPage();
+      await safari.clock.install();
+      await safari.goto('/');
+      await homeReady(safari);
+      await wipeSiteData(safari);
+      await safari.reload();
+      await homeReady(safari);
+      await safari.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expect(sheetOf(safari)).toHaveCount(0);
+    });
+  });
+
+  test.describe('no Safari', () => {
+    test('a folha que abriu e foi ignorada não volta ao recarregar, nem na sessão, nem com os dados apagados', async ({
+      page,
+    }) => {
+      await signInAsOwner();
+      await showHome(page);
+      await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
+      // Sem responder: o iOS mata a página ou a atualização a recarrega com a folha aberta.
+      await page.reload();
+      await homeReady(page);
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+
+      // O Safari apaga o que o site guardou (7 dias sem uso): só a conta se lembra.
+      await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
+      await wipeSiteData(page);
+      await page.reload();
+      await homeReady(page);
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+    });
+
+    test('"Agora não" vale 30 dias: a conta o repassa, e só depois disso a folha volta uma vez', async ({
+      page,
+    }) => {
+      await signInAsOwner();
+      await showHome(page);
+      await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
+      await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+      await expectSheetClosed(page);
+      await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
+
+      // 29 dias depois, com os dados do site apagados: ainda não.
+      await jumpDays(page, 29);
+      await wipeSiteData(page);
+      await page.reload();
+      await homeReady(page);
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+
+      // Passados os 30 dias, volta uma vez (um lembrete gentil) e não mais nessa sessão.
+      await jumpDays(page, 2);
+      await wipeSiteData(page);
+      await page.reload();
+      await homeReady(page);
+      await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
+      await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+      await page.reload();
+      await homeReady(page);
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+    });
+
+    test('"Já instalei" fica para sempre, em qualquer tempo e depois de apagar os dados do site', async ({
+      page,
+    }) => {
+      await signInAsOwner();
+      await showHome(page);
+      await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
+      await sheetOf(page).getByRole('button', { name: 'Já instalei' }).click();
+      await expectSheetClosed(page);
+      await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
+
+      await jumpDays(page, 400);
+      await wipeSiteData(page);
+      await page.reload();
+      await homeReady(page);
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+    });
+  });
+});
+
+/** Avança o relógio da página por dias (o `fastForward` do Playwright não aceita mais que ~24 dias de uma vez). */
+async function jumpDays(page: Page, days: number) {
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.setSystemTime(now + days * 24 * 60 * 60 * 1000);
+}

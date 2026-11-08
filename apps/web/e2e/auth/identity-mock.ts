@@ -161,6 +161,10 @@ export interface IdentityMock {
   readonly peopleHome: Record<string, MockPersonHome>;
   /** Quantos `PUT /me/preferences` chegaram (aceitos ou recusados por versão). */
   preferenceWrites: number;
+  /** O que cada conta respondeu à dica "adicionar à tela de início", por app (como a API: só funde, nunca desfaz). */
+  readonly installHints: Record<string, Record<string, MockInstallHintAnswer>>;
+  /** Quantos `PUT /me/install-hint` chegaram. */
+  installHintWrites: number;
   /** Cria um convite pendente já pronto (o segredo do link é o devolvido). */
   seedInvite(displayName?: string, permissions?: string[]): MockInvite;
   /** Tokens emitidos (todos começam com "eyJ", como um JWT). */
@@ -180,6 +184,12 @@ export interface MockSession {
 }
 
 /** A Início de uma conta como a API a guarda: versão e lista (`null` é o padrão). */
+export interface MockInstallHintAnswer {
+  dismissedAt?: number;
+  never?: boolean;
+  installed?: boolean;
+}
+
 export interface MockHomePreferences {
   version: number;
   home: { id: string; enabled: boolean }[] | null;
@@ -324,6 +334,8 @@ export async function mockIdentityApi(
     preferences: {},
     peopleHome: {},
     preferenceWrites: 0,
+    installHints: {},
+    installHintWrites: 0,
     seedInvite: (displayName = GUEST.displayName, permissions) => {
       const invite: MockInvite = {
         id: '00000000-0000-4000-8000-0000000000' + String(mock.invites.length + 10),
@@ -416,7 +428,11 @@ export async function mockIdentityApi(
     const method = request.method();
     const headers = request.headers();
     const body = request.postDataJSON() as Record<string, unknown> | null;
-    mock.requests.push({ method, url: request.url(), path, headers, body });
+    // A resposta da dica de instalação sobe sozinha em segundo plano, em qualquer página (o app grava o que o aparelho já
+    // sabia): fica fora do registro de pedidos, que os testes conferem por quantidade, e é contada à parte (`installHintWrites`).
+    if (path !== '/me/install-hint') {
+      mock.requests.push({ method, url: request.url(), path, headers, body });
+    }
 
     if (mock.offline) return route.abort('internetdisconnected');
 
@@ -587,6 +603,28 @@ export async function mockIdentityApi(
 
     // Tudo abaixo exige o token no cabeçalho.
     if (!authorized) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+
+    // A resposta da dica de instalação: funde com a da conta (instalado e nunca só viram verdadeiros; vale o instante mais novo).
+    if (path === '/me/install-hint' && method === 'GET') {
+      return json(route, 200, mock.installHints[sessionAccountId()] ?? {});
+    }
+    if (path === '/me/install-hint' && method === 'PUT') {
+      mock.installHintWrites++;
+      const account = sessionAccountId();
+      const merged = { ...(mock.installHints[account] ?? {}) };
+      const incoming = (body?.['scopes'] ?? {}) as Record<string, MockInstallHintAnswer>;
+      for (const [scope, answer] of Object.entries(incoming)) {
+        const old = merged[scope] ?? {};
+        const dismissedAt = Math.max(old.dismissedAt ?? -1, answer.dismissedAt ?? -1);
+        merged[scope] = {
+          ...(dismissedAt >= 0 ? { dismissedAt } : {}),
+          ...(old.never || answer.never ? { never: true } : {}),
+          ...(old.installed || answer.installed ? { installed: true } : {}),
+        };
+      }
+      mock.installHints[account] = merged;
+      return json(route, 200, merged);
+    }
 
     // As preferências da própria conta (a Início): a versão decide quem grava, como na API.
     if (path === '/me/preferences') {

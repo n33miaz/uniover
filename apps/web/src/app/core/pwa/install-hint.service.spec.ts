@@ -44,10 +44,14 @@ function installPromptEvent(outcome: 'accepted' | 'dismissed' = 'accepted'): Pro
 const stored = () => JSON.parse(localStorage.getItem(INSTALL_HINT_KEY) ?? 'null');
 
 describe('InstallHintService', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   function create(env: InstallEnvInput): InstallHintService {
@@ -120,7 +124,7 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.android }).autoOpenAllowed()).toBe(false);
     });
 
-    it('recusar o pedido conta como "Agora não": a folha não volta sozinha por 14 dias', async () => {
+    it('recusar o pedido conta como "Agora não": a folha não volta sozinha por 30 dias', async () => {
       const service = create({ userAgent: UA.android });
       window.dispatchEvent(installPromptEvent('dismissed'));
       expect(await service.prompt()).toBe('dismissed');
@@ -172,7 +176,7 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.desktop }).autoOpenAllowed()).toBe(false);
     });
 
-    it('"Agora não" adia por 14 dias, e só então volta', () => {
+    it('"Agora não" adia por 30 dias, e só então volta', () => {
       const service = create({ userAgent: UA.safari });
       const t0 = Date.UTC(2026, 9, 20);
       service.dismiss(t0);
@@ -205,10 +209,15 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.safari }).autoOpenAllowed()).toBe(false);
     });
 
-    it('janela antiga sem identidade não marca o módulo atual como instalado', () => {
+    it('janela antiga sem identidade, fora do iOS, não marca o módulo atual como instalado', () => {
       localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ never: true, dismissedAt: 5 }));
-      create({ userAgent: UA.safari, standalone: true });
+      create({ userAgent: UA.android, standalone: true });
       expect(stored()).toEqual({ never: true, dismissedAt: 5 });
+    });
+
+    it('no iOS, a janela instalada sem marcador (o iOS reabre o endereço de quando o atalho foi criado) grava o app do documento', () => {
+      create({ userAgent: UA.safari, standalone: true });
+      expect(stored()).toEqual({ installed: true });
     });
 
     it('no iOS, o marcador do atalho confirma apenas o app que abriu a janela', () => {
@@ -387,7 +396,7 @@ describe('InstallHintService', () => {
       expect(service.autoEligible()).toBe(true);
     });
 
-    it('"nunca" e "agora não" de um módulo não valem para a raiz', () => {
+    it('"nunca" de um módulo não vale para a raiz', () => {
       const service = createAt('/treino/', { userAgent: UA.safari });
       service.never();
       expect(JSON.parse(localStorage.getItem(`${INSTALL_HINT_KEY}.treino`)!)).toEqual({
@@ -396,6 +405,16 @@ describe('InstallHintService', () => {
       expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
       goTo('/');
       expect(service.autoEligible()).toBe(true);
+    });
+
+    it('o "agora não" de um app adia a folha automática de todos (um pedido só a cada 30 dias, não um por app)', () => {
+      const service = createAt('/treino/', { userAgent: UA.safari });
+      const t0 = Date.UTC(2026, 10, 1);
+      service.dismiss(t0);
+      goTo('/');
+      expect(service.autoEligible()).toBe(true);
+      expect(service.autoOpenAllowed(t0 + 1000)).toBe(false);
+      expect(service.autoOpenAllowed(t0 + INSTALL_HINT_SNOOZE_MS)).toBe(true);
     });
 
     it('instalar marca só o app do documento', () => {
@@ -414,7 +433,7 @@ describe('InstallHintService', () => {
       expect(service.autoOpenAllowed()).toBe(false);
     });
 
-    it('janela da raiz não confunde Treino com o app instalado no Android', () => {
+    it('janela da raiz não confunde Treino com o app instalado no Android, mas dentro dela a folha nunca abre sozinha', () => {
       localStorage.setItem(`${INSTALL_HINT_KEY}.treino`, JSON.stringify({ installed: true }));
       const service = createAt(`/?${APP_LAUNCH_PARAM}=root`, {
         userAgent: UA.android,
@@ -423,7 +442,9 @@ describe('InstallHintService', () => {
       goTo('/treino/hoje');
       expect(service.foreignAppWindow()).toBe(true);
       expect(service.mode()).toBe('android-manual');
-      expect(service.autoOpenAllowed()).toBe(true);
+      expect(service.autoOpenAllowed()).toBe(false);
+      service.open();
+      expect(service.sheet()).toBe('manual');
     });
 
     it('janela antiga da raiz ainda oferece Treino após navegação interna', () => {
@@ -526,13 +547,14 @@ describe('InstallHintService', () => {
       }
     });
 
-    it('a folha automática abre uma vez por app: depois da raiz, o Treino ganha a sua vez', () => {
+    it('a folha automática abre uma vez por sessão, não uma por app: depois da raiz, o Treino não ganha a sua vez', () => {
       const service = createAt('/', { userAgent: UA.safari });
       service.openAuto();
       service.closeSheet();
       expect(service.autoEligible()).toBe(false);
       goTo('/treino');
-      expect(service.autoEligible()).toBe(true);
+      expect(service.autoEligible()).toBe(false);
+      expect(service.autoOpenAllowed(Date.now() + 10 * INSTALL_HINT_SNOOZE_MS)).toBe(false);
     });
 
     it('navegar entre módulos continua sendo navegação interna (sem recarregar)', () => {
