@@ -246,6 +246,14 @@ test.describe('atualização com a casca antiga já aberta', () => {
   }) => {
     const before = await openVersionA(page);
 
+    // Um worker que assume a aba por pedido de outra a recarrega na hora (tela limpa), então a casca antiga só
+    // sobrevive à troca quando essa recarga é negada: aqui, pela guarda de dois deploys seguidos na mesma janela. Sem
+    // ela a aba recarregava em `/` no `controllerchange`, e a recarga em curso engolia a navegação abaixo (o roteador
+    // falhava com a recuperação já em andamento, sem alvo), terminando na Início em vez de em `/conectar`.
+    await page.evaluate(() =>
+      sessionStorage.setItem('uniover.update.controller-change', String(Date.now())),
+    );
+
     // O deploy chega e o worker novo assume (como se outra aba tivesse tocado em Atualizar): o cache da versão
     // antiga some, e esta aba ainda roda a casca antiga.
     await setControl('/use?v=b');

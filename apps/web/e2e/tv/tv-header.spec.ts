@@ -1070,7 +1070,8 @@ test.describe('folha de desligar', () => {
     expect(tv.count('/power/off')).toBe(0);
   });
 
-  test('confirma a hora local, altera e cancela o agendamento', async ({ page }) => {
+  /** Uma TV com agendamento seguro, para a folha oferecer os tempos prontos. */
+  const schedulableTv = () => {
     tv.tvs = [
       {
         id: '11111111-1111-4111-8111-111111111111',
@@ -1082,6 +1083,13 @@ test.describe('folha de desligar', () => {
         capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
       },
     ];
+  };
+
+  test('confirma a hora local, altera e cancela o agendamento', async ({ page }) => {
+    // Relógio fixo no meio da tarde (hora do aparelho): o teste não pode depender de a execução cair perto da meia-noite,
+    // quando "daqui a 30 min" já é amanhã e o texto ganha a data (ver o teste de virada de dia abaixo).
+    await page.clock.setFixedTime(new Date(2026, 10, 7, 15, 10, 0));
+    schedulableTv();
     await openTv(page);
     await powerButton(page).click();
     const sheet = powerDialog(page);
@@ -1101,8 +1109,10 @@ test.describe('folha de desligar', () => {
       'true',
     );
     await sheet.getByRole('button', { name: /^Agendar para \d{2}:\d{2}$/ }).click();
+    // Mesmo dia: só a hora, sem data.
     await expect(sheet.locator('.schedule-active')).toContainText(/Desliga às \d{2}:\d{2}/);
-    await expect(sheet.locator('.schedule-active .left')).toContainText(/^em (29|30) min$/);
+    await expect(sheet.locator('.schedule-active')).not.toContainText(/\d{2}\/\d{2}/);
+    await expect(sheet.locator('.schedule-active .left')).toHaveText('em 30 min');
     // O botão de energia ganha o relógio miúdo; a hora e o tempo que falta ficam só dentro da folha.
     await expect(powerButton(page).locator('.scheduled')).toHaveCount(1);
     await sheet.getByRole('button', { name: '1 h' }).click();
@@ -1122,6 +1132,27 @@ test.describe('folha de desligar', () => {
     expect(await smallTargets(page)).toEqual([]);
     await expectNoHorizontalScroll(page);
     await expectNoA11yViolations(page);
+  });
+
+  test('virando o dia, o agendamento mostra a data e o tempo que falta em elementos separados', async ({
+    page,
+  }) => {
+    // 23:50 + 30 min = 00:20 de amanhã: a hora vem com a data (dd/mm/aaaa), e "em 30 min" é outro elemento, afastado pelo
+    // espaçamento do flex (no texto corrido não há espaço entre os dois, por isso a checagem é por elemento).
+    await page.clock.setFixedTime(new Date(2026, 10, 7, 23, 50, 0));
+    schedulableTv();
+    await openTv(page);
+    await powerButton(page).click();
+    const sheet = powerDialog(page);
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('button', { name: '30 min' }).click();
+    await sheet.getByRole('button', { name: /^Agendar para / }).click();
+    const active = sheet.locator('.schedule-active');
+    await expect(active.locator('> span').first()).toHaveText(/^Desliga às 08\/11\/2026, 00:20$/);
+    await expect(active.locator('.left')).toHaveText('em 30 min');
+    await sheet.getByRole('button', { name: 'Cancelar Agendamento' }).click();
+    await expect(sheet).not.toContainText('Desliga às');
+    expect(tv.count('/power/off')).toBe(0);
   });
 
   test('o botão Desligar fica visível sem rolar, mesmo com o agendamento aberto', async ({
