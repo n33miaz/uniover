@@ -431,6 +431,12 @@ jobs:
           printf '%s' "$TV_KEYSTORE_BASE64" | base64 -d > "$keystore"
           export UNIOVER_TV_STORE_FILE="$keystore" UNIOVER_TV_STORE_PASSWORD="$TV_KEYSTORE_PASSWORD"
           export UNIOVER_TV_KEY_ALIAS="$TV_KEY_ALIAS" UNIOVER_TV_KEY_PASSWORD="$TV_KEY_PASSWORD"
+          # O download da distribuição do Gradle às vezes devolve 504 por minutos: tenta de novo com espera crescente.
+          for wait in 0 30 90 180; do
+            sleep "$wait"
+            ./gradlew --no-daemon --version >/dev/null && break
+            [ "$wait" = 180 ] && { echo "::error::a distribuição do Gradle não baixou depois de 4 tentativas."; exit 1; }
+          done
           ./gradlew --no-daemon assembleRelease
           apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
           got="$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1)"
