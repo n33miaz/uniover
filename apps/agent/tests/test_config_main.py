@@ -315,7 +315,10 @@ async def test_run_connects_with_vault_token_and_stops_on_revocation(
     store.set(AGENT_ID, TOKEN)
     silence_noisy_loggers()
     async with FakeApi(script) as api:
-        settings = Settings(api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True)
+        # Sem o controle do PC (ligado por padrão): aqui só interessam o hello e o resultado.
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=False
+        )
         with caplog.at_level(logging.DEBUG):
             exit_code = await run(settings, lambda: store)
 

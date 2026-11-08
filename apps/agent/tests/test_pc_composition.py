@@ -82,8 +82,12 @@ def parts(settings: Settings) -> tuple[Settings, FakeTransport, EnvelopeFactory]
     return settings, FakeTransport(), EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
 
 
-def test_it_is_off_by_default() -> None:
-    settings, transport, envelopes = parts(Settings())
+def test_it_is_on_by_default() -> None:
+    assert Settings().pc_control is True
+
+
+def test_turned_off_it_builds_nothing() -> None:
+    settings, transport, envelopes = parts(Settings(pc_control=False))
     assert build_pc(settings, transport, envelopes, platform="win32") is None
 
 
@@ -162,13 +166,14 @@ def test_the_cli_turns_the_control_on_and_off_in_the_config_file(
     isolated_env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["pc-control", "status"]) == EXIT_OK
+    assert capsys.readouterr().out.strip() == "ligado"
+    assert main(["pc-control", "off"]) == EXIT_OK
+    assert tomllib.loads(isolated_env.read_text(encoding="utf-8"))["pc_control"] is False
+    capsys.readouterr()
+    assert main(["pc-control", "status"]) == EXIT_OK
     assert capsys.readouterr().out.strip() == "desligado"
     assert main(["pc-control", "on"]) == EXIT_OK
     assert tomllib.loads(isolated_env.read_text(encoding="utf-8"))["pc_control"] is True
-    assert main(["pc-control", "status"]) == EXIT_OK
-    assert "ligado" in capsys.readouterr().out
-    assert main(["pc-control", "off"]) == EXIT_OK
-    assert tomllib.loads(isolated_env.read_text(encoding="utf-8"))["pc_control"] is False
 
 
 async def test_run_serves_the_pc_commands_without_any_tv(
@@ -251,7 +256,9 @@ async def test_run_declares_nothing_when_the_control_is_off() -> None:
     store = FakeSecretStore()
     store.set(AGENT_ID, TOKEN)
     async with FakeApi(script) as api:
-        settings = Settings(api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True)
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=False
+        )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
     assert "pc.control.v1" not in api.received[0]["body"]["capabilities"]
     assert all(m["type"] != "pc.apps.v1" for m in api.received)
