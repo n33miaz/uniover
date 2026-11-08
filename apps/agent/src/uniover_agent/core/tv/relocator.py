@@ -34,6 +34,12 @@ DEFAULT_NETWORK_POLL_SECONDS = 5.0
 DEFAULT_NETWORK_ATTEMPTS = 3
 # Procuras sem achar a TV antes de registrar que ela não foi encontrada.
 DEFAULT_NOT_FOUND_ATTEMPTS = 10
+# Uma rede nova só vale depois de estável por este tempo: placa que oscila (doca com cabo e
+# Wi-Fi, tethering USB que cai com a tela do celular) não é troca de rede.
+DEFAULT_NETWORK_STABLE_SECONDS = 30.0
+# No máximo uma rajada de procuras por este tempo, salvo rede nunca vista na última hora.
+DEFAULT_NETWORK_BURST_INTERVAL_SECONDS = 900.0
+DEFAULT_NETWORK_MEMORY_SECONDS = 3600.0
 
 
 class TvRelocator:
@@ -50,9 +56,13 @@ class TvRelocator:
         on_alive: Callable[[], Awaitable[None]] | None = None,
         on_recovered: Callable[[], Awaitable[None]] | None = None,
         is_paused: Callable[[], bool] = lambda: False,
-        network_signature: Callable[[], Collection[str]] | None = None,
-        on_network_change: Callable[[], None] | None = None,
+        network_signature: Callable[[], Awaitable[Collection[str]]] | None = None,
+        on_network_change: Callable[[bool], None] | None = None,
         on_not_found: Callable[[int, bool], None] | None = None,
+        searched: Callable[[], bool] = lambda: True,
+        network_stable_seconds: float = DEFAULT_NETWORK_STABLE_SECONDS,
+        network_burst_interval_seconds: float = DEFAULT_NETWORK_BURST_INTERVAL_SECONDS,
+        network_memory_seconds: float = DEFAULT_NETWORK_MEMORY_SECONDS,
         network_poll_seconds: float = DEFAULT_NETWORK_POLL_SECONDS,
         network_attempts: int = DEFAULT_NETWORK_ATTEMPTS,
         not_found_attempts: int = DEFAULT_NOT_FOUND_ATTEMPTS,
@@ -62,11 +72,13 @@ class TvRelocator:
         Ele é chamado a cada conferência depois de `failures` falhas seguidas e limita sozinho o
         que custa caro.
 
-        `network_signature` devolve os endereços do PC (vazio: sem rede agora, não conta); quando
-        o conjunto muda, `on_network_change` é avisado (o localizador esquece os espaçamentos) e as
-        próximas `network_attempts` conferências procuram sem esperar as falhas seguidas.
+        `network_signature` devolve as redes do PC (vazio: sem rede agora, não conta). Quando o
+        conjunto muda e **fica igual por `network_stable_seconds`**, `on_network_change(nova)` é
+        avisado (o localizador esquece os espaçamentos; `nova` diz que a rede não foi vista na
+        última hora) e as próximas `network_attempts` conferências procuram sem esperar as
+        falhas seguidas. Uma rajada por `network_burst_interval_seconds`, salvo rede nova.
         `on_not_found(procuras, rede_mudou)` é avisado uma vez, depois de `not_found_attempts`
-        procuras sem achar a TV.
+        procuras **de verdade** (`searched` diz se a última procura rodou alguma etapa).
         """
         self._clock = clock
         self._is_hot = is_hot
@@ -85,7 +97,16 @@ class TvRelocator:
         self._network_poll_seconds = max(0.1, network_poll_seconds)
         self._network_attempts = network_attempts
         self._not_found_attempts = not_found_attempts
+        self._searched = searched
+        self._network_stable_seconds = network_stable_seconds
+        self._network_burst_interval = network_burst_interval_seconds
+        self._network_memory = network_memory_seconds
         self._last_network: frozenset[str] | None = None
+        self._candidate: tuple[frozenset[str], float] | None = None
+        self._seen: dict[frozenset[str], float] = {}
+        self._last_burst: float | None = None
+        self._burst_is_new = False
+        self._signature_failed = False
         self._network_changed = False
         self._network_burst = 0
         self._network_changed_in_outage = False
@@ -97,7 +118,7 @@ class TvRelocator:
         """Uma conferência. Devolve o novo endereço quando a TV mudou de lugar."""
         if self._is_paused():
             return None
-        if self._take_network_change():
+        if await self._take_network_change():
             self._network_burst = self._network_attempts
             self._network_changed_in_outage = True
             self._wake_locator()
@@ -134,7 +155,7 @@ class TvRelocator:
         if moved is not None:
             _log.info("a TV mudou de endereço na rede")
             self._empty_searches = 0
-        else:
+        elif self._searched():
             self._note_empty_search()
         return moved
 
@@ -156,28 +177,60 @@ class TvRelocator:
             slice_seconds = min(self._network_poll_seconds, self._check_seconds - waited)
             await self._clock.sleep(slice_seconds)
             waited += slice_seconds
-            if self._poll_network():
+            if await self._poll_network():
                 return
 
-    def _poll_network(self) -> bool:
-        """Lê os endereços do PC; devolve `True` se a rede mudou e a troca ainda não foi tratada."""
+    async def _poll_network(self) -> bool:
+        """Lê as redes do PC; devolve `True` se houve troca estável ainda não tratada."""
         if self._network_signature is None:
             return False
         try:
-            current = frozenset(self._network_signature())
+            current = frozenset(await self._network_signature())
         except Exception:
-            _log.exception("falha ao ler a rede do PC")
+            # Uma vez só: a leitura roda a cada poucos segundos e não pode encher o registro.
+            if not self._signature_failed:
+                _log.exception("falha ao ler a rede do PC")
+            self._signature_failed = True
             return self._network_changed
-        # Sem endereço nenhum a placa está caindo ou subindo: espera a rede voltar para comparar.
-        if current:
-            previous = self._last_network
-            self._last_network = current
-            if previous is not None and previous != current:
-                self._network_changed = True
+        self._signature_failed = False
+        # Sem rede nenhuma a placa está caindo ou subindo: espera a rede voltar para comparar.
+        if not current:
+            return self._network_changed
+        now = self._clock.monotonic()
+        if self._last_network is None:
+            self._accept_network(current, now)  # a primeira leitura é só a base
+        elif current == self._last_network:
+            self._candidate = None  # a oscilação voltou ao que era: não houve troca
+            self._seen[current] = now
+        elif self._candidate is None or self._candidate[0] != current:
+            self._candidate = (current, now)
+        elif now - self._candidate[1] >= self._network_stable_seconds:
+            self._settle_network(current, now)
         return self._network_changed
 
-    def _take_network_change(self) -> bool:
-        changed = self._poll_network()
+    def _accept_network(self, current: frozenset[str], now: float) -> None:
+        self._last_network = current
+        self._candidate = None
+        self._seen[current] = now
+        for network, seen_at in list(self._seen.items()):
+            if now - seen_at > self._network_memory:
+                del self._seen[network]
+
+    def _settle_network(self, current: frozenset[str], now: float) -> None:
+        """A rede nova ficou estável: vale uma rajada, se é nova ou se faz tempo da última."""
+        seen_at = self._seen.get(current)
+        is_new = seen_at is None or now - seen_at > self._network_memory
+        self._accept_network(current, now)
+        recent = (
+            self._last_burst is not None and now - self._last_burst < self._network_burst_interval
+        )
+        if is_new or not recent:
+            self._network_changed = True
+            self._burst_is_new = is_new
+            self._last_burst = now
+
+    async def _take_network_change(self) -> bool:
+        changed = await self._poll_network()
         self._network_changed = False
         if changed:
             _log.info("o PC mudou de rede; procurando a TV já")
@@ -187,7 +240,7 @@ class TvRelocator:
         if self._on_network_change is None:
             return
         try:
-            self._on_network_change()
+            self._on_network_change(self._burst_is_new)
         except Exception:
             _log.exception("falha ao reiniciar a procura da TV")
 

@@ -177,10 +177,13 @@ def build_locator(  # noqa: PLR0913 - tipo, endereço, identidade, relógio e os
         return addresses[:MAX_SSDP_INTERFACES]
 
     async def ssdp() -> list[str]:
+        addresses = await asyncio.to_thread(ssdp_interfaces)
+        # Uma placa que falha não descarta as respostas das outras.
         replies = await asyncio.gather(
-            *(ssdp_search(kind, address) for address in ssdp_interfaces())
+            *(ssdp_search(kind, address) for address in addresses), return_exceptions=True
         )
-        return list(dict.fromkeys(host for hosts_ in replies for host in hosts_))
+        found = [host for reply in replies if isinstance(reply, list) for host in reply]
+        return list(dict.fromkeys(found))
 
     async def answers(host: str) -> bool:
         # Recusar a conexão também é resposta: a TV está no endereço, só o serviço caiu.
