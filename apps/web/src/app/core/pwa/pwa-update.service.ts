@@ -857,16 +857,22 @@ export class PwaUpdateService {
     this.registration = registration;
     const container = win.navigator.serviceWorker;
 
-    // Sem controlador ainda é a primeira instalação: não há "versão nova" para oferecer.
+    // "Versão nova" é um worker que não é o que comanda a página, com outro já no comando. Sem controlador é a primeira
+    // instalação (não há versão anterior a trocar); e o worker que já assumiu a página (`controller === worker`) é a
+    // versão atual, mesmo que o aviso da instalação dele chegue depois de ele ter assumido.
+    const isNewer = (worker: ServiceWorker): boolean => {
+      const controller = container.controller;
+      return controller !== null && controller !== worker;
+    };
     const checkWaiting = () => {
-      if (registration.waiting && container.controller) this.raiseForNewWorker();
+      if (registration.waiting && isNewer(registration.waiting)) this.raiseForNewWorker();
     };
     const watchInstalling = () => {
       const incoming = registration.installing;
       if (!incoming || this.watchedWorkers.has(incoming)) return;
       this.watchedWorkers.add(incoming);
       const checkInstalled = () => {
-        if (incoming.state === 'installed' && container.controller) this.raiseForNewWorker();
+        if (incoming.state === 'installed' && isNewer(incoming)) this.raiseForNewWorker();
       };
       incoming.addEventListener('statechange', checkInstalled);
       // The installing worker can finish before updatefound listeners are attached.

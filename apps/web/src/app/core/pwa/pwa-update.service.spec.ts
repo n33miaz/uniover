@@ -167,6 +167,56 @@ describe('PwaUpdateService', () => {
     expect(service.updateReady()).toBe(false);
   });
 
+  it('does not offer an update when the first worker already took the page before its installed event is seen', async () => {
+    const { registration, container, service } = setup(null);
+    await flush();
+    const incoming = new FakeWorker();
+    registration.installing = incoming;
+    registration.dispatchEvent(new Event('updatefound'));
+    // A primeira instalação já assumiu a página (`clients.claim()`) quando o aviso de "instalado" chega: ela é a versão atual.
+    container.controller = incoming;
+    container.dispatchEvent(new Event('controllerchange'));
+    incoming.state = 'installed';
+    incoming.dispatchEvent(new Event('statechange'));
+    expect(service.updateReady()).toBe(false);
+  });
+
+  it('does not offer an update for a first worker that is already waiting and in control when registration resolves', async () => {
+    const registration = new FakeRegistration();
+    const incoming = new FakeWorker();
+    incoming.state = 'installed';
+    registration.waiting = incoming;
+    const container = stubServiceWorker(registration, incoming);
+    stubLocks(1);
+    TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: true }] });
+    const service = TestBed.inject(PwaUpdateService);
+    service.start();
+    expect(container.controller).toBe(incoming);
+    await flush();
+    expect(service.updateReady()).toBe(false);
+  });
+
+  it('offers an update only for a second worker after the first one took over the first visit', async () => {
+    const { registration, container, service } = setup(null);
+    await flush();
+    const first = new FakeWorker();
+    registration.installing = first;
+    registration.dispatchEvent(new Event('updatefound'));
+    first.state = 'installed';
+    first.dispatchEvent(new Event('statechange'));
+    container.controller = first;
+    container.dispatchEvent(new Event('controllerchange'));
+    registration.installing = null;
+    expect(service.updateReady()).toBe(false);
+
+    const second = new FakeWorker();
+    registration.installing = second;
+    registration.dispatchEvent(new Event('updatefound'));
+    second.state = 'installed';
+    second.dispatchEvent(new Event('statechange'));
+    expect(service.updateReady()).toBe(true);
+  });
+
   it('offers an update when a new worker finishes installing under a controller', async () => {
     const { registration, service } = setup({});
     await flush();
