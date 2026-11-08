@@ -535,53 +535,196 @@ describe('PwaUpdateService', () => {
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it('does not hijack the navigation of a page that is already leaving', async () => {
-      const { service } = setup({});
-      await flush();
-      const { assign, reload } = stubAssign();
-      // O navegador aborta a importação em voo ao sair da página: a falha chega depois do `pagehide`.
-      window.dispatchEvent(new Event('pagehide'));
-      expect(service.recoverFromStaleShell('/')).toBe(true);
-      await flush();
-      expect(assign).not.toHaveBeenCalled();
-      expect(reload).not.toHaveBeenCalled();
-      expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
-    });
+    describe('while the page is leaving', () => {
+      const entry = '/main-OLD.js';
+      let script: HTMLScriptElement;
+      let assign: ReturnType<typeof vi.fn>;
 
-    it('waits for the pagehide after a beforeunload, and recovers only if the page stayed', async () => {
-      vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] });
-      const { service } = setup({});
-      const { assign } = stubAssign();
-      // A navegação da pessoa aborta a importação em voo antes do `pagehide`: a falha não é casca velha.
-      window.dispatchEvent(new Event('beforeunload'));
-      expect(service.recoverFromStaleShell('/')).toBe(true);
-      await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS - 1);
-      expect(assign).not.toHaveBeenCalled();
-      window.dispatchEvent(new Event('pagehide'));
-      await vi.advanceTimersByTimeAsync(5);
-      expect(assign).not.toHaveBeenCalled();
-      expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
-    });
+      /** Resposta do HEAD ao arquivo de entrada da casca. */
+      function stubEntry(response: { status: number; type?: string } | 'offline') {
+        const head = vi.fn().mockImplementation(async () => {
+          if (response === 'offline') throw new TypeError('sem rede');
+          return {
+            status: response.status,
+            ok: response.status >= 200 && response.status < 300,
+            headers: new Headers({ 'content-type': response.type ?? 'text/javascript' }),
+          };
+        });
+        Object.defineProperty(window, 'fetch', { value: head, configurable: true });
+        return head;
+      }
 
-    it('recovers after the grace period when the leave was given up (no pagehide)', async () => {
-      vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] });
-      const { service } = setup({});
-      const { assign } = stubAssign();
-      window.dispatchEvent(new Event('beforeunload'));
-      expect(service.recoverFromStaleShell('/treino')).toBe(true);
-      await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
-      expect(assign).toHaveBeenCalledWith('/treino');
-    });
+      function leave() {
+        window.dispatchEvent(new Event('beforeunload'));
+      }
 
-    it('recovers again when a page restored from the back/forward cache fails to load a chunk', async () => {
-      const { service } = setup({});
-      await flush();
-      const { assign } = stubAssign();
-      window.dispatchEvent(new Event('pagehide'));
-      window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
-      expect(service.recoverFromStaleShell('/treino')).toBe(true);
-      await flush();
-      expect(assign).toHaveBeenCalledWith('/treino');
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+        script = document.createElement('script');
+        script.type = 'module';
+        script.src = entry;
+        document.head.appendChild(script);
+        ({ assign } = stubAssign());
+      });
+
+      afterEach(() => script.remove());
+
+      it('does nothing once the pagehide has happened', async () => {
+        const { service } = setup({});
+        leave();
+        window.dispatchEvent(new Event('pagehide'));
+        expect(service.recoverFromStaleShell('/')).toBe(true);
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS * 2);
+        expect(assign).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
+      });
+
+      it('drops the wait when the pagehide arrives inside the grace period', async () => {
+        const head = stubEntry({ status: 404 });
+        const { service } = setup({});
+        leave();
+        expect(service.recoverFromStaleShell('/')).toBe(true);
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS - 1);
+        window.dispatchEvent(new Event('pagehide'));
+        await vi.advanceTimersByTimeAsync(10);
+        expect(head).not.toHaveBeenCalled();
+        expect(assign).not.toHaveBeenCalled();
+      });
+
+      it('reloads after the grace period only when the entry file is really gone', async () => {
+        const head = stubEntry({ status: 404 });
+        const { service } = setup({});
+        leave();
+        expect(service.recoverFromStaleShell('/treino')).toBe(true);
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS - 1);
+        expect(head).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2);
+        expect(head).toHaveBeenCalledWith(new URL(entry, document.baseURI).href, {
+          method: 'HEAD',
+          cache: 'no-store',
+        });
+        expect(assign).toHaveBeenCalledWith('/treino');
+      });
+
+      it('treats an HTML answer for the entry file as gone', async () => {
+        stubEntry({ status: 200, type: 'text/html; charset=utf-8' });
+        const { service } = setup({});
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(assign).toHaveBeenCalledWith('/');
+      });
+
+      it('does not reload a slow outgoing navigation when the entry file still exists', async () => {
+        const head = stubEntry({ status: 200 });
+        const { service } = setup({});
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(head).toHaveBeenCalledTimes(1);
+        expect(assign).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).toBeNull();
+      });
+
+      it('does not reload when the check cannot be made (offline or a server error)', async () => {
+        const { service } = setup({});
+        stubEntry('offline');
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(assign).not.toHaveBeenCalled();
+
+        stubEntry({ status: 503 });
+        leave();
+        service.recoverFromStaleShell('/');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(assign).not.toHaveBeenCalled();
+      });
+
+      it('keeps a single grace timer for several failures and sends the last route', async () => {
+        const head = stubEntry({ status: 404 });
+        const { service } = setup({});
+        const timers = vi.getTimerCount();
+        leave();
+        service.recoverFromStaleShell('/um');
+        service.recoverFromStaleShell('/dois');
+        service.recoverFromStaleShell('/tres');
+        expect(vi.getTimerCount()).toBe(timers + 1);
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(head).toHaveBeenCalledTimes(1);
+        expect(assign).toHaveBeenCalledTimes(1);
+        expect(assign).toHaveBeenCalledWith('/tres');
+      });
+
+      it('drops the retry when a navigation ended after it was scheduled', async () => {
+        const head = stubEntry({ status: 404 });
+        const { service } = setup({});
+        const router = TestBed.inject(Router);
+        leave();
+        service.recoverFromStaleShell('/velho');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS / 2);
+        (router.events as Subject<unknown>).next(new NavigationEnd(1, '/novo', '/novo'));
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS);
+        expect(head).not.toHaveBeenCalled();
+        expect(assign).not.toHaveBeenCalled();
+      });
+
+      it('drops a verdict that arrives after the person navigated elsewhere', async () => {
+        let answer!: (value: unknown) => void;
+        const pending = new Promise((resolve) => (answer = resolve));
+        Object.defineProperty(window, 'fetch', {
+          value: vi.fn().mockReturnValue(pending),
+          configurable: true,
+        });
+        const { service } = setup({});
+        const router = TestBed.inject(Router);
+        leave();
+        service.recoverFromStaleShell('/velho');
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        (router.events as Subject<unknown>).next(new NavigationEnd(1, '/novo', '/novo'));
+        answer({ status: 404, ok: false, headers: new Headers() });
+        await vi.advanceTimersByTimeAsync(10);
+        expect(assign).not.toHaveBeenCalled();
+      });
+
+      it('cancels the timer when the service is destroyed', () => {
+        const { service } = setup({});
+        const timers = vi.getTimerCount();
+        leave();
+        service.recoverFromStaleShell('/');
+        expect(vi.getTimerCount()).toBe(timers + 1);
+        TestBed.resetTestingModule();
+        expect(vi.getTimerCount()).toBe(timers);
+      });
+
+      it('recovers again after a back/forward cache round trip (pagehide and pageshow persisted)', async () => {
+        stubEntry({ status: 404 });
+        const { service } = setup({});
+        leave();
+        window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }));
+        // Dentro do cache de voltar/avançar a página não recupera nada.
+        expect(service.recoverFromStaleShell('/treino')).toBe(true);
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(assign).not.toHaveBeenCalled();
+
+        window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+        expect(service.recoverFromStaleShell('/treino')).toBe(true);
+        await vi.advanceTimersByTimeAsync(10);
+        expect(assign).toHaveBeenCalledWith('/treino');
+      });
+
+      it('cancels the timer on a persisted pageshow', async () => {
+        const head = stubEntry({ status: 404 });
+        const { service } = setup({});
+        const timers = vi.getTimerCount();
+        leave();
+        service.recoverFromStaleShell('/');
+        expect(vi.getTimerCount()).toBe(timers + 1);
+        window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+        expect(vi.getTimerCount()).toBe(timers);
+        await vi.advanceTimersByTimeAsync(LEAVING_GRACE_MS + 1);
+        expect(head).not.toHaveBeenCalled();
+      });
     });
 
     it('allows a new recovery once the guard window has passed', async () => {
