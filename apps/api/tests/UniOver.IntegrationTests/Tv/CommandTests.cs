@@ -320,10 +320,11 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task PowerOff_NeedsOnlyTheLogin_AndTheAgentReceivesPower()
+    public async Task PowerOff_NeedsOnlyTheLogin_AndALegacyAgentReceivesPower()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
+        await app.DeclareLegacyAgentAsync(agent);
 
         // Sem confirmação por passkey: o dono decidiu que desligar a TV não a exige.
         var request = app.PostAsync("/api/v1/tv/power/off");
@@ -383,7 +384,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task PowerOff_WithoutTheSafeMode_KeepsSendingThePowerKey_EvenToAnAgentWithTheCapability()
+    public async Task PowerOff_WithAnEmptyBody_ToAnAgentWithTheCapability_UsesTheSafeShutdown_NeverThePowerKey()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
@@ -391,12 +392,45 @@ public sealed class CommandTests(PostgresFixture postgres)
 
         var request = app.PostAsync("/api/v1/tv/power/off");
         var command = await TvApp.NextCommandAsync(agent);
-        command.GetProperty("type").GetString().Should().Be("tv.key.v2");
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
         await TvApp.ReplyAsync(agent, command);
 
         using var response = await Within(request);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await TvApp.JsonAsync(response)).GetProperty("outcome").GetString().Should().Be("sent");
+        (await TvApp.JsonAsync(response)).GetProperty("outcome").GetString().Should().Be("off");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PowerOff_WhileTheCapabilitiesAreUnknown_AnswersReconnecting_AndSendsNothing(bool safeMode)
+    {
+        // Conectado, mas sem o hello: é a presença logo depois de a API subir. POWER às cegas ligaria uma TV desligada.
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        app.Presence.Get(TvApp.AgentSlug)!.Capabilities.Should().BeEmpty();
+
+        using var response = await Within(safeMode
+            ? app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" })
+            : app.PostAsync("/api/v1/tv/power/off"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await TvApp.JsonAsync(response);
+        body.GetProperty("type").GetString().Should().EndWith("/agent-offline");
+        body.GetProperty("reconnecting").GetBoolean().Should().BeTrue();
+        await using var db = app.Db();
+        var row = await db.CommandAudit.SingleAsync(Ct);
+        row.Ok.Should().BeFalse();
+        row.ErrorCode.Should().Be("agent_reconnecting");
+
+        // Nada chegou ao agente: depois do hello o mesmo pedido já segue pelo desligar seguro.
+        await DeclarePowerOffAsync(app, agent);
+        var retry = app.PostAsync("/api/v1/tv/power/off");
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(agent, command);
+        using var retried = await Within(retry);
+        retried.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

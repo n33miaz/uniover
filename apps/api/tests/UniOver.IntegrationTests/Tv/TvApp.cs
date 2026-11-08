@@ -283,6 +283,17 @@ internal sealed class TvApp : IAsyncDisposable
         return agent;
     }
 
+    /// <summary>
+    /// O agente já mandou o hello e declara só o que um agente antigo declara (sem o desligar com leitura). Sem o hello a
+    /// presença não tem capacidade nenhuma, e a API não manda <c>POWER</c> às cegas nesse estado.
+    /// </summary>
+    public async Task DeclareLegacyAgentAsync(FakeAgent agent)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.kind.android");
+        await WaitUntilAsync(() => Presence.Get(Agent.Slug)?.Capabilities.Contains("tv.remote") == true, "capacidades do agente");
+    }
+
     public async Task<HttpResponseMessage> SendAsync(
         HttpMethod method, string url, object? body = null, string? bearer = "", string? forwardedFor = ClientIp, string? userAgent = UserAgentText,
         Guid? idempotencyKey = null)

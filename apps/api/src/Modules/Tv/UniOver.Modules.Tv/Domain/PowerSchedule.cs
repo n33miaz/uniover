@@ -61,6 +61,18 @@ public sealed class PowerSchedule
         Version++;
     }
 
+    /// <summary>
+    /// Devolve a reserva à fila: nada foi enviado e o pedido volta a valer depois de <paramref name="retryAfter"/>. Até lá
+    /// <see cref="LeaseUntil"/> segura o pedido fora da fila (não bloqueia os das outras TVs).
+    /// </summary>
+    public void ReleaseDispatch(DateTimeOffset now, TimeSpan retryAfter)
+    {
+        Status = Pending;
+        LeaseUntil = now + retryAfter;
+        UpdatedAt = now;
+        Version++;
+    }
+
     public void Finish(string result, DateTimeOffset now)
     {
         Status = Completed;

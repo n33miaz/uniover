@@ -270,6 +270,169 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
         (await db.PowerSchedules.SingleAsync(Ct)).Result.Should().Be("unsupported");
     }
 
+    // Muda a hora combinada direto no banco: avançar o relógio em minutos faria o worker do próprio host agir no meio do caminho.
+    private static Task SetDueAgoAsync(TvApp app, TimeSpan ago) =>
+        app.ExecuteSqlAsync($"UPDATE tv.power_schedules SET due_at_utc = '{app.Time.GetUtcNow().Subtract(ago):O}'");
+
+    private static Task WaitForResultAsync(TvApp app, string result) =>
+        TvApp.WaitUntilAsync(async () =>
+        {
+            await using var db = app.Db();
+            return await db.PowerSchedules.AnyAsync(x => x.Status == Schedule.Completed && x.Result == result, Ct);
+        }, $"agendamento encerrado como {result}");
+
+    [Fact]
+    public async Task DueLongerAgoThanTheCeiling_FinishesAsMissedWithAudit_AndSendsNothing()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvId = await ConfigureAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+            "capacidade de desligamento seguro");
+        await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddHours(1));
+        await SetDueAgoAsync(app, ScheduledPowerOffDispatcher.MaxLateness + TimeSpan.FromMinutes(1));
+
+        await using var scope = app.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>().RunOnceAsync(Ct);
+
+        await WaitForResultAsync(app, "missed");
+        await using var db = app.Db();
+        var audit = await db.CommandAudit.SingleAsync(x => x.Command == TvCommandNames.PowerOff, Ct);
+        audit.Ok.Should().BeFalse();
+        audit.ErrorCode.Should().Be("missed");
+        audit.Detail.Should().Be("scheduled");
+        audit.LatencyMs.Should().BeNull("nada foi enviado ao agente");
+    }
+
+    [Fact]
+    public async Task DueJustInsideTheCeiling_StillSendsTheSafePowerOff()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvId = await ConfigureAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+            "capacidade de desligamento seguro");
+        await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddHours(1));
+        await SetDueAgoAsync(app, ScheduledPowerOffDispatcher.MaxLateness - TimeSpan.FromMinutes(1));
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var run = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>().RunOnceAsync(Ct);
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(agent, command);
+        await run;
+
+        await WaitForResultAsync(app, "off");
+    }
+
+    [Fact]
+    public async Task ConnectedAgentWithoutCapabilitiesYet_IsRetriedNextRound_InsteadOfClosedAsUnsupported()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvId = await ConfigureAsync(app);
+        // Conectado, mas o hello ainda não chegou: é a presença logo depois de a API subir.
+        await using var agent = await app.ConnectAndWaitAsync();
+        app.Presence.Get(app.Agent.Slug)!.Capabilities.Should().BeEmpty();
+        await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
+        app.Time.Advance(TimeSpan.FromSeconds(2));
+        await using var scope = app.Services.CreateAsyncScope();
+        var worker = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
+
+        (await worker.RunOnceAsync(Ct)).Should().Be(1, "o pedido foi devolvido à fila, e a rodada segue");
+
+        await using (var db = app.Db())
+        {
+            var schedule = await db.PowerSchedules.SingleAsync(Ct);
+            schedule.Status.Should().NotBe(Schedule.Completed);
+            (await db.CommandAudit.CountAsync(x => x.Command == TvCommandNames.PowerOff, Ct)).Should().Be(0);
+        }
+
+        // O hello chega: na rodada seguinte o desligamento seguro sai.
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+            "capacidade de desligamento seguro");
+        app.Time.Advance(ScheduledPowerOffDispatcher.CapabilityRetryAfter + TimeSpan.FromSeconds(1));
+        var run = worker.RunOnceAsync(Ct);
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(agent, command);
+        await run;
+
+        await WaitForResultAsync(app, "off");
+    }
+
+    [Fact]
+    public async Task AnAgentWithoutCapabilitiesYet_DoesNotHoldBackTheScheduleOfAnotherTv()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvA = await ConfigureAsync(app);
+        await using var agentA = await app.ConnectAndWaitAsync(); // sem hello: capacidades ainda desconhecidas
+        var pairedB = await app.PairAsync("PC da outra TV", keepTv: true);
+        await using var agentB = await app.ConnectAsync(pairedB);
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(pairedB.Slug)?.Connected == true, "segundo agente conectado");
+        await agentB.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(pairedB.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+            "capacidade do segundo agente");
+        Guid tvB, ownerId;
+        await using (var identity = app.Identity())
+            ownerId = await identity.Users.Where(u => u.Email == app.OwnerEmail).Select(u => u.Id).SingleAsync(Ct);
+        var now = app.Time.GetUtcNow();
+        await using (var db = app.Db())
+        {
+            tvB = await db.Tvs.Where(t => t.AgentSlug == pairedB.Slug).Select(t => t.Id).SingleAsync(Ct);
+            // A da TV A é a mais antiga: sozinha na frente da fila, travaria a da TV B.
+            db.PowerSchedules.Add(Schedule.Create(tvA, app.Agent.Slug, ownerId, true, now.AddSeconds(1), "UTC", now));
+            db.PowerSchedules.Add(Schedule.Create(tvB, pairedB.Slug, ownerId, true, now.AddSeconds(2), "UTC", now));
+            await db.SaveChangesAsync(Ct);
+        }
+        app.Time.Advance(TimeSpan.FromSeconds(3));
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var worker = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
+        var round = Task.Run(async () =>
+        {
+            while (await worker.RunOnceAsync(Ct) != 0)
+            {
+            }
+        }, Ct);
+        var command = await TvApp.NextCommandAsync(agentB);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(agentB, command);
+        await round;
+
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            await using var check = app.Db();
+            return await check.PowerSchedules.AnyAsync(x => x.TvId == tvB && x.Status == Schedule.Completed && x.Result == "off", Ct);
+        }, "agendamento da TV B encerrado");
+        await using var final = app.Db();
+        (await final.PowerSchedules.SingleAsync(x => x.TvId == tvA, Ct)).Status.Should().Be(Schedule.Pending, "a TV A segue esperando o hello");
+    }
+
+    [Fact]
+    public async Task ConnectedAgentThatNeverDeclaresCapabilities_EndsAsMissedWhenTheCeilingPasses()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvId = await ConfigureAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
+        app.Time.Advance(TimeSpan.FromSeconds(2));
+        await using var scope = app.Services.CreateAsyncScope();
+        var worker = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
+        (await worker.RunOnceAsync(Ct)).Should().Be(1);
+
+        app.Time.Advance(ScheduledPowerOffDispatcher.CapabilityRetryAfter + TimeSpan.FromSeconds(1));
+        await SetDueAgoAsync(app, ScheduledPowerOffDispatcher.MaxLateness + TimeSpan.FromMinutes(1));
+        await using var nextRound = app.Services.CreateAsyncScope();
+        await nextRound.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>().RunOnceAsync(Ct);
+
+        await WaitForResultAsync(app, "missed");
+        await using var db = app.Db();
+        (await db.CommandAudit.CountAsync(x => x.Command == TvCommandNames.PowerOff, Ct)).Should().Be(1);
+    }
+
     [Fact]
     public async Task ConcurrentWorkers_ClaimOneScheduleOnly()
     {
