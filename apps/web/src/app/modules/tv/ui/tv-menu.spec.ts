@@ -5,6 +5,7 @@ import { TvPrefs } from '../data/tv-prefs';
 import { TvSelection } from '../data/tv-selection';
 import { TvStore } from '../data/tv-store';
 import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
+import { TvIcon, TvIconName } from './tv-icon';
 import { TvMenu, TvMenuChoice } from './tv-menu';
 
 describe('TvMenu', () => {
@@ -206,6 +207,29 @@ describe('TvMenu', () => {
       mount();
       const link = root.querySelector<HTMLAnchorElement>('a[href="/tv/internet"]')!;
       expect(link.querySelector('.ui-row-title')?.textContent?.trim()).toBe('Se a internet cair');
+    });
+
+    const iconPath = (name: TvIconName): string => {
+      const icon = TestBed.createComponent(TvIcon);
+      icon.componentRef.setInput('name', name);
+      icon.detectChanges();
+      return icon.nativeElement.querySelector('path')?.getAttribute('d') ?? '';
+    };
+
+    it('keeps the wifi drawing for Rede and gives the guide another one, so the two rows are told apart', () => {
+      mount();
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
+      ]);
+      fixture.detectChanges();
+      const drawing = (row: Element | undefined) =>
+        row?.querySelector('.ui-tile path')?.getAttribute('d') ?? '';
+      const network = drawing(button('Rede'));
+      const guide = drawing(root.querySelector('a[href="/tv/internet"]')!);
+      expect(network).toBe(iconPath('wifi'));
+      expect(guide).toBe(iconPath('info'));
+      expect(guide).not.toBe('');
+      expect(guide).not.toBe(network);
     });
   });
 
