@@ -8,6 +8,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import { GoalRepository } from '../../data/goals/goal-repository';
 import { GOAL_LIMITS, type GoalIssue, type GoalKind } from '../../domain/progress/goal-model';
 import { TrainingSheet } from '../../shell/training-sheet';
@@ -82,13 +83,22 @@ export class GoalSheet {
     return $localize`:@@training.progress.goal.hint-e1rm:A meta aparece como uma linha tracejada no gráfico de 1RM. Use quilos, como 55 ou 42,5.`;
   });
 
-  /** O texto do campo: o que a pessoa digitou, ou o valor atual (com vírgula) na primeira vez. */
-  protected readonly text = computed(() => {
-    const typed = this.draft();
-    if (typed !== null) return typed;
+  /** O texto do campo antes de a pessoa mexer: o valor atual (com vírgula), ou vazio sem meta. */
+  private readonly savedText = computed(() => {
     const current = this.current();
     return current === null ? '' : String(current).replace('.', ',');
   });
+
+  /** O texto do campo: o que a pessoa digitou, ou o valor atual (com vírgula) na primeira vez. */
+  protected readonly text = computed(() => this.draft() ?? this.savedText());
+
+  constructor() {
+    // Folha com texto ainda não salvo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => {
+      const typed = this.draft();
+      return typed !== null && typed !== this.savedText();
+    });
+  }
 
   protected async save(): Promise<void> {
     const kind = this.kind();

@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UnsavedWork } from '../../../core/pwa/unsaved-work';
 import { setupBody } from '../data/body/body-data-test-kit';
 import type { LocalBodyProfile } from '../data/body/body-profile';
 import { navyBodyFat } from '../domain/body/navy-body-fat';
@@ -51,6 +52,18 @@ describe('BodyMeasurementsSheet', () => {
       { title: 'Pernas (cm)', labels: ['Coxa D', 'Coxa E', 'Panturrilha D', 'Panturrilha E'] },
       { title: 'Dobras (mm)', labels: ['Peitoral', 'Abdominal', 'Coxa'] },
     ]);
+  });
+
+  it('counts as unsaved work only once something is typed, and stops counting when the sheet is destroyed', async () => {
+    await open();
+    const unsaved = TestBed.inject(UnsavedWork);
+    expect(unsaved.hasUnsaved()).toBe(false);
+
+    type('Tórax', '98,5');
+    expect(unsaved.needsConfirmation()).toBe(true);
+
+    fixture.destroy();
+    expect(unsaved.hasUnsaved()).toBe(false);
   });
 
   it('asks for the hip only when the profile needs it', async () => {

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { UnsavedWork } from '../../../core/pwa/unsaved-work';
 import { RestTimerService } from '../data/session-live/rest-timer.service';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { setupSessions } from '../data/sessions/session-data-test-kit';
@@ -561,6 +562,25 @@ describe('TodayPage', () => {
 
       button(el, 'Pular Descanso').click();
       await eventually(fixture, () => expect(el.querySelector('.rest')).toBeNull());
+    });
+
+    it('holds back the automatic reload while the set card has typed values, and lets it go once the set is concluded', async () => {
+      const kit = await started();
+      const { el, fixture } = kit;
+      const unsaved = TestBed.inject(UnsavedWork);
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
+      // O cartão chega preenchido com a última vez: sem a pessoa mexer, não há nada a perder.
+      expect(unsaved.hasUnsaved()).toBe(false);
+
+      const load = el.querySelector<HTMLInputElement>('app-live-stepper input')!;
+      load.value = '45';
+      load.dispatchEvent(new Event('input', { bubbles: true }));
+      await eventually(fixture, () => expect(unsaved.needsConfirmation()).toBe(true));
+
+      kit.runtime.advance(DOUBLE_TAP_MS + 100);
+      button(el, 'Concluir Série').click();
+      await eventually(fixture, () => expect(text(el)).toContain('Descanso'));
+      await eventually(fixture, () => expect(unsaved.hasUnsaved()).toBe(false));
     });
 
     it('keeps the effort (RPE) optional: the same number again clears it, and a chosen one is saved', async () => {

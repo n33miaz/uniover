@@ -8,6 +8,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import type { GoalWriteResult } from '../data/goals/goal-repository';
 import { GoalRepository } from '../data/goals/goal-repository';
 import type { EnergyState } from './body-store';
@@ -239,6 +240,13 @@ export class BodyEnergyPanel {
     this.editing.set(true);
   }
   constructor() {
+    // Meta de energia editada e ainda não salva: a recarga automática de atualização espera.
+    registerUnsavedWork(() => {
+      const ready = this.readyState();
+      return (
+        this.editing() && ready !== null && this.draft() !== String(ready.chosen ?? ready.target)
+      );
+    });
     effect(() => {
       this.meals.revision();
       const day = this.meals.today();

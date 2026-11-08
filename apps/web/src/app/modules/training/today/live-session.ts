@@ -15,6 +15,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import type { LocalExercise } from '../data/catalog/exercise';
 import { RestTimerService } from '../data/session-live/rest-timer.service';
 import { WakeLockService } from '../data/session-live/wake-lock.service';
@@ -32,7 +33,7 @@ import { LiveRecordBanner } from './live-record-banner';
 import { LiveStore } from './live-store';
 import { PlanSheet } from './plan-sheet';
 import { RestCard } from './rest-card';
-import { EMPTY_FIELDS, type SetFields } from './set-draft';
+import { EMPTY_FIELDS, type SetFields, sameSetFields } from './set-draft';
 import { SetEditSheet } from './set-edit-sheet';
 import { LiveSetExtras, LiveSetFields } from './set-fields';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
@@ -112,6 +113,8 @@ export class LiveSession {
   protected readonly sheet = signal<Sheet>(null);
   protected readonly editing = signal<LocalSet | null>(null);
   protected readonly draft = signal<SetFields>(EMPTY_FIELDS);
+  /** O que o cartão recebeu por último (a sugestão do histórico); o que difere disso é o que a pessoa digitou. */
+  private applied: SetFields | null = null;
   /** A pessoa está saindo do treino (terminar ou cancelar): a tela não mostra o vazio que sobra no meio do caminho. */
   protected readonly leaving = signal(false);
 
@@ -306,7 +309,8 @@ export class LiveSession {
     void this.timer.restore();
     let appliedKey = '';
     let appliedFill = '';
-    let applied: SetFields | null = null;
+    // Cartão com carga, repetições ou nota digitadas e ainda sem "Concluir série": a recarga automática de atualização espera.
+    registerUnsavedWork(() => this.applied !== null && !sameSetFields(this.draft(), this.applied));
     // O cartão recomeça (preenchido com a última vez) quando muda o exercício, a série ou o que há de gravado; e, se a
     // pessoa ainda não mexeu nele, também quando o histórico chega depois (primeira leitura do servidor).
     effect(() => {
@@ -314,11 +318,11 @@ export class LiveSession {
       untracked(() => {
         if (defaults === null) return;
         const newCard = defaults.key !== appliedKey;
-        const untouched = applied !== null && this.draft() === applied;
+        const untouched = this.applied !== null && this.draft() === this.applied;
         if (newCard || (defaults.fill !== appliedFill && untouched)) {
           appliedKey = defaults.key;
           appliedFill = defaults.fill;
-          applied = defaults.fields;
+          this.applied = defaults.fields;
           this.draft.set(defaults.fields);
         }
       });

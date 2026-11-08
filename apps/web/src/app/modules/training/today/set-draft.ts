@@ -26,6 +26,18 @@ export const EMPTY_FIELDS: SetFields = {
   note: '',
 };
 
+/** Os dois jogos de campos têm os mesmos valores? (A igualdade por valor: um objeto novo com o mesmo conteúdo é igual.) */
+export function sameSetFields(a: SetFields, b: SetFields): boolean {
+  return (
+    a.weightKg === b.weightKg &&
+    a.reps === b.reps &&
+    a.durationS === b.durationS &&
+    a.rpe === b.rpe &&
+    a.warmup === b.warmup &&
+    a.note === b.note
+  );
+}
+
 /** Botões do esforço percebido: de 6 a 10 (abaixo disso o esforço é leve demais para anotar). Tocar de novo limpa. */
 export const RPE_CHOICES: readonly number[] = [6, 7, 8, 9, 10];
 

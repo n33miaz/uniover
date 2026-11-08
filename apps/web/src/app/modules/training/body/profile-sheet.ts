@@ -8,6 +8,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import type { LocalBodyProfile } from '../data/body/body-profile';
 import { ProfileRepository } from '../data/body/profile-repository';
 import type { BodyProfileIssue } from '../domain/body/body-limits';
@@ -144,6 +145,23 @@ export class BodyProfileSheet {
   protected readonly heightText = computed(
     () => this.heightDraft() ?? (this.profile() ? toFieldText(this.profile()!.heightCm) : ''),
   );
+
+  constructor() {
+    // Folha com texto ainda não salvo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => {
+      const saved = this.profile();
+      const height = this.heightDraft();
+      const birth = this.birthDraft();
+      const sex = this.sexDraft();
+      const factor = this.factorDraft();
+      return (
+        (height !== null && height !== (saved ? toFieldText(saved.heightCm) : '')) ||
+        (birth !== null && birth !== (saved?.birthDate ?? '')) ||
+        (sex !== null && sex !== (saved?.sex ?? 'male')) ||
+        (factor !== null && factor !== (saved?.activityFactor ?? 1.55))
+      );
+    });
+  }
 
   protected async save(): Promise<void> {
     const heightCm = parseDecimal(this.heightText());

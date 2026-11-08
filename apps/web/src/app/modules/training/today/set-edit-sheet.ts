@@ -9,12 +9,13 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import type { LocalExercise } from '../data/catalog/exercise';
 import type { LocalSet } from '../data/sessions/session';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { TrainingSheet } from '../shell/training-sheet';
 import { LiveStore } from './live-store';
-import type { SetFields } from './set-draft';
+import { type SetFields, sameSetFields } from './set-draft';
 import { LiveSetFields } from './set-fields';
 import { setText } from './today-text';
 
@@ -104,7 +105,7 @@ export class SetEditSheet {
   protected readonly confirmLabel = $localize`:@@training.edit.confirm-label:Confirmar apagar a série`;
 
   /** Os campos começam com o que a série tem hoje; a folha só existe enquanto ela está aberta. */
-  protected readonly fields = linkedSignal<SetFields>(() => {
+  private readonly savedFields = computed<SetFields>(() => {
     const set = this.set();
     return {
       weightKg: set.weightKg,
@@ -115,12 +116,18 @@ export class SetEditSheet {
       note: set.note,
     };
   });
+  protected readonly fields = linkedSignal<SetFields>(() => this.savedFields());
   protected readonly confirming = signal(false);
   protected readonly error = signal('');
   protected readonly was = computed(() => {
     const exercise = this.exercise();
     return exercise ? setText(this.set(), exercise.recordType) : '';
   });
+
+  constructor() {
+    // Série com valor mudado e ainda não salvo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => !sameSetFields(this.fields(), this.savedFields()));
+  }
 
   protected async save(): Promise<void> {
     const failure = await this.live.editSet(this.set(), this.fields());

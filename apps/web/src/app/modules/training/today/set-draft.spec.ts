@@ -4,6 +4,7 @@ import {
   formatField,
   loadStepFor,
   parseField,
+  sameSetFields,
   toRepositoryDraft,
 } from './set-draft';
 
@@ -101,6 +102,16 @@ describe('set fields', () => {
       expect(
         toRepositoryDraft({ id: 'e', recordType: 'weight_reps' }, { ...fields, warmup: true }),
       ).toMatchObject({ setType: 'warmup' });
+    });
+  });
+
+  describe('comparing two sets of fields', () => {
+    it('is equal by value and different as soon as any field changes', () => {
+      const base = { ...EMPTY_FIELDS, weightKg: 40, reps: 10 };
+      expect(sameSetFields(base, { ...base })).toBe(true);
+      expect(sameSetFields(base, { ...base, weightKg: 42.5 })).toBe(false);
+      expect(sameSetFields(base, { ...base, note: 'ombro' })).toBe(false);
+      expect(sameSetFields(base, { ...base, warmup: true })).toBe(false);
     });
   });
 });
