@@ -270,6 +270,72 @@ def test_the_tracker_never_includes_system_or_old_or_reused_processes() -> None:
     assert [p.pid for p in tracker.current(procs)] == [20, 21]
 
 
+T0 = 100_000_000_000  # início do ensaio, em FILETIME
+
+
+def test_a_process_whose_dead_parent_pid_was_reused_by_the_drill_is_not_the_drills() -> None:
+    # O Command Palette do dono nasceu antes do ensaio e seu pai (PID 10680) morreu; depois o
+    # Windows deu o PID 10680 a um processo do ensaio. Pela tabela de PID/pai, parecia filho dele.
+    table = {
+        10680: (1, "powershell.exe", T0 + 5_000_000),  # o PID reaproveitado, já do ensaio
+        4772: (10680, "microsoft.cmdpal.ui.exe", T0 - 9_000_000_000),  # do dono, anterior
+    }
+    assert drill.drill_pids(table, {(10680, T0 + 5_000_000)}, T0) == {10680}
+    # Mesmo que o dono abra o programa depois do início, o pai ainda é mais novo que o filho.
+    table[4772] = (10680, "microsoft.cmdpal.ui.exe", T0 + 1_000_000)
+    assert drill.drill_pids(table, {(10680, T0 + 5_000_000)}, T0) == {10680}
+
+
+def test_the_agent_supervisor_and_launcher_descendants_are_still_the_drills() -> None:
+    table = {
+        10: (1, "powershell.exe", T0 + 1_000),  # lançador, achado pelo rastreador
+        11: (10, "powershell.exe", T0 + 2_000),  # supervisor
+        12: (11, "python.exe", T0 + 3_000),  # agente
+        13: (12, "conhost.exe", T0 + 4_000),
+        40: (1, "notepad.exe", T0 + 2_500),  # de fora
+    }
+    assert drill.drill_pids(table, {(10, T0 + 1_000)}, T0) == {10, 11, 12, 13}
+
+
+def test_a_seed_is_matched_by_pid_and_creation_and_tolerates_the_cim_rounding() -> None:
+    table = {10: (1, "powershell.exe", T0 + 1_005)}
+    assert drill.drill_pids(table, {(10, T0 + 1_000)}, T0) == {10}  # 0,5 µs de arredondamento
+    # Outro processo com o mesmo PID, criado bem depois, não é o semente.
+    assert drill.drill_pids(table, {(10, T0 - 50_000_000)}, T0) == set()
+    # Sem como ler a criação, nada é presumido.
+    assert drill.drill_pids({10: (1, "powershell.exe", 0)}, {(10, T0 + 1_000)}, T0) == set()
+
+
+def test_a_child_older_than_the_drill_is_never_adopted_even_by_a_live_parent() -> None:
+    table = {
+        10: (1, "powershell.exe", T0 + 1_000),
+        11: (10, "python.exe", T0 - 1),  # anterior ao ensaio: só pode ser de outro
+    }
+    assert drill.drill_pids(table, {(10, T0 + 1_000)}, T0) == {10}
+
+
+def test_the_window_watch_flags_the_supervisor_window_but_not_the_owners_program(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = {
+        10680: (1, "powershell.exe", T0 + 5_000_000),
+        11: (10680, "powershell.exe", T0 + 6_000_000),  # supervisor do ensaio
+        4772: (10680, "microsoft.cmdpal.ui.exe", T0 - 9_000_000_000),
+    }
+    windows = [
+        (1, 11, "ConsoleWindowClass", "supervisor"),
+        (2, 4772, "WinUIDesktopWin32WindowClass", "Paleta de Comandos"),
+    ]
+    monkeypatch.setattr(drill, "visible_windows", lambda: [])
+    watch = drill.WindowWatch(T0)
+    watch.seeds = {(10680, T0 + 5_000_000)}
+    monkeypatch.setattr(drill, "process_table", lambda: table)
+    monkeypatch.setattr(drill, "visible_windows", lambda: windows)
+    watch.sample()
+    assert watch.offenders == {(11, "ConsoleWindowClass", "supervisor"): "powershell.exe"}
+    assert watch.suspects == {}
+
+
 def test_the_child_environment_points_everything_at_the_temporary_folder(tmp_path: Path) -> None:
     base = {
         "LOCALAPPDATA": r"C:\real\Local",
