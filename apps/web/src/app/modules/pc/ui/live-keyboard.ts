@@ -11,16 +11,12 @@ import {
   viewChild,
 } from '@angular/core';
 import { PcArmed } from '../data/pc-armed';
+import type { PcFailure } from '../data/pc-failure';
+import { PcInput, type InputKind } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
 import type { PcKey, PcLetter, PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
-import {
-  LiveTyper,
-  PADDING_CHAR,
-  fieldDiff,
-  fieldState,
-  type FieldState,
-} from '../input/live-typing';
+import { PADDING_CHAR, fieldDiff, fieldState, type FieldState } from '../input/live-typing';
 
 /**
  * O que o campo escondido guarda antes de qualquer coisa digitada: alguns espaços de largura zero. Sem eles, apagar com o
@@ -94,6 +90,7 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
 })
 export class PcLiveKeyboard {
   private readonly store = inject(PcStore);
+  private readonly input = inject(PcInput);
   private readonly armed = inject(PcArmed);
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
 
@@ -117,23 +114,6 @@ export class PcLiveKeyboard {
   private readonly maybeLost = $localize`:@@pc.live.maybe-lost:Parte do texto pode não ter chegado.`;
   private readonly notSent = $localize`:@@pc.live.not-sent:O texto não foi enviado.`;
 
-  private readonly typer = new LiveTyper(
-    {
-      key: (key, modifiers) => this.store.sendKey(key, modifiers),
-      text: (text) => this.store.sendText(text),
-    },
-    {
-      failed: (failure) => {
-        // Sem texto guardado para devolver: o campo recomeça do que o PC tem e a pessoa é avisada.
-        this.reset();
-        if (failure.kind === 'cancelled') this.failed.emit(this.notSent);
-        else if (UNCERTAIN_FAILURES.has(failure.kind)) this.failed.emit(this.maybeLost);
-        else if (!NOTED_FAILURES.has(failure.kind)) this.failed.emit(failure.message);
-      },
-      idle: () => this.refill(),
-    },
-  );
-
   constructor() {
     afterNextRender(() => this.reset());
     // Sem PC o campo desliga e o teclado fecha: o modo teclado acaba.
@@ -143,12 +123,18 @@ export class PcLiveKeyboard {
         this.typing.emit(false);
       }
     });
-    inject(DestroyRef).onDestroy(() => this.typer.clear());
+    // A fila é do app, não desta tela: o que ainda não saiu segue saindo ao trocar de aba. Aqui só se ouve falha e silêncio.
+    const stopFailure = this.input.onFailure((failure, kind) => this.onFailure(failure, kind));
+    const stopIdle = this.input.onIdle(() => this.refill());
+    inject(DestroyRef).onDestroy(() => {
+      stopFailure();
+      stopIdle();
+    });
   }
 
   /** Teclas pedidas e ainda sem resposta (a repetição de apagar e das setas espera por este número). */
   get pending(): number {
-    return this.typer.pending;
+    return this.input.pending;
   }
 
   /** O teclado do celular está aberto agora (o campo tem o foco). */
@@ -192,7 +178,19 @@ export class PcLiveKeyboard {
     const modifiers = this.armed.take(extra);
     if (key === 'BACKSPACE' && modifiers.length === 0) this.dropLast();
     else if (key === 'ENTER' || key === 'TAB') this.reset();
-    this.typer.key(key, modifiers);
+    this.input.sendKey(key, modifiers);
+  }
+
+  /**
+   * O envio falhou: sem texto guardado para devolver, o campo recomeça do que o PC tem. A tela é avisada do que o aviso de
+   * falha dela não diz (o motivo já está lá).
+   */
+  private onFailure(failure: PcFailure, kind: InputKind): void {
+    if (kind === 'edit') this.reset();
+    if (failure.kind === 'cancelled') this.failed.emit(this.notSent);
+    else if (kind === 'edit' && UNCERTAIN_FAILURES.has(failure.kind))
+      this.failed.emit(this.maybeLost);
+    else if (!NOTED_FAILURES.has(failure.kind)) this.failed.emit(failure.message);
   }
 
   protected onInput(): void {
@@ -207,14 +205,14 @@ export class PcLiveKeyboard {
     // Com uma tecla armada, uma letra sozinha é o atalho (Ctrl armado e "c" é Ctrl+C), não texto: sai como tecla e some do campo.
     if (armed.size > 0 && diff.erase === 0 && /^[a-z]$/i.test(diff.insert)) {
       field.value = this.lastValue;
-      this.typer.key(diff.insert.toUpperCase() as PcLetter, this.armed.take());
+      this.input.sendKey(diff.insert.toUpperCase() as PcLetter, this.armed.take());
       return;
     }
     // Modificador não vale para texto: qualquer outro texto vai inteiro e as armadas se soltam do mesmo jeito.
     this.armed.clear();
     this.mirror = after;
     this.lastValue = field.value;
-    this.typer.edit(diff);
+    this.input.edit(diff);
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -226,7 +224,7 @@ export class PcLiveKeyboard {
       this.press('TAB');
     } else if (event.key === 'Backspace' && this.caretAtStart()) {
       event.preventDefault();
-      this.typer.key('BACKSPACE', this.armed.take());
+      this.input.sendKey('BACKSPACE', this.armed.take());
     }
   }
 
@@ -238,7 +236,7 @@ export class PcLiveKeyboard {
       this.press('ENTER');
     } else if (type === 'deleteContentBackward' && this.caretAtStart() && !this.composing) {
       event.preventDefault();
-      this.typer.key('BACKSPACE', this.armed.take());
+      this.input.sendKey('BACKSPACE', this.armed.take());
     }
   }
 

@@ -58,7 +58,7 @@ async function turnOnClickButtons(page: Page) {
   await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
   const sheet = page.getByRole('dialog', { name: 'Ajustes' });
   await sheet.getByRole('switch', { name: 'Botões de clique' }).check();
-  await sheet.getByRole('button', { name: 'Fechar' }).click();
+  await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
   await expect(sheet).toHaveCount(0);
 }
 
@@ -251,7 +251,7 @@ test.describe('Mouse', () => {
     await expect(pointerLevels.getByRole('radio', { name: 'Normal' })).toBeChecked();
     await pointerLevels.getByRole('radio', { name: 'Alta' }).check();
     await sheet.getByRole('switch', { name: 'Inverter rolagem' }).check();
-    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await expect(sheet).toHaveCount(0);
 
     const { x, y } = await padCenter(page);
@@ -348,6 +348,31 @@ test.describe('Tela do mouse', () => {
     await afterFrames(page, 3);
     expect((await pad()).height).toBeGreaterThanOrEqual(430);
     expect(await hiddenControls(page)).toEqual([]);
+  });
+
+  test('o ponto de estado não cobre nenhum controle em nenhuma aba', async ({ page }) => {
+    for (const route of ['/pc', '/pc/atalhos', '/pc/midia', '/pc/mais', '/pc/energia']) {
+      await openPc(page, route);
+      const covered = await page.evaluate(() => {
+        const dot = document.querySelector('.status .dot')!.getBoundingClientRect();
+        const hits: string[] = [];
+        for (const element of document.querySelectorAll<HTMLElement>(
+          'app-pc-page button, app-pc-page a',
+        )) {
+          const box = element.getBoundingClientRect();
+          if (box.width === 0 || box.height === 0) continue;
+          const overlaps =
+            dot.left < box.right &&
+            dot.right > box.left &&
+            dot.top < box.bottom &&
+            dot.bottom > box.top;
+          if (overlaps)
+            hits.push(element.getAttribute('aria-label') ?? element.textContent?.trim() ?? '');
+        }
+        return hits;
+      });
+      expect(covered, route).toEqual([]);
+    }
   });
 
   test('os sete botões da barra cabem lado a lado e têm 44 px', async ({ page }) => {
@@ -565,7 +590,7 @@ test.describe('Gestos', () => {
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await sheet.getByRole('switch', { name: 'Clique do meio com três dedos' }).uncheck();
-    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     const { x, y } = await padCenter(page);
     await fingers(page, [
       { type: 'down', id: 1, x: x - 50, y },
@@ -601,7 +626,7 @@ test.describe('Gestos', () => {
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await sheet.getByRole('switch', { name: 'Toque duplo arrasta' }).check();
-    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await expect(sheet).toHaveCount(0);
 
     const { x, y } = await padCenter(page);
@@ -752,7 +777,7 @@ test.describe('Gestos', () => {
       .getByRole('radio', { name: 'Alta' })
       .check();
     await sheet.getByRole('switch', { name: 'Toque duplo arrasta' }).check();
-    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await page.reload();
     await expect(status(page)).toHaveText('Conectado');
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
@@ -922,80 +947,188 @@ test.describe('Digitação ao vivo', () => {
   });
 });
 
-test.describe('Teclado', () => {
-  test('digita o texto inteiro (com acento), esvazia o campo e manda as teclas e os atalhos', async ({
+test.describe('Atalhos', () => {
+  const keyRequests = () => pc.sent('/key');
+  const openSheet = async (page: Page) => {
+    await page.getByRole('button', { name: 'Atalhos', exact: true }).first().click();
+    const sheet = page.getByRole('dialog', { name: 'Atalhos' });
+    await expect(sheet).toBeVisible();
+    return sheet;
+  };
+
+  test('a aba mostra o catálogo agrupado, e tocar envia o atalho como tecla e modificadores', async ({
     page,
   }) => {
     await openPc(page, '/pc/atalhos');
-    const field = page.getByLabel('Texto para digitar no PC');
-    await field.fill('olá, mundo');
-    await page.getByRole('button', { name: 'Digitar' }).click();
-    await expect.poll(() => pc.sent('/text')).toEqual([{ text: 'olá, mundo' }]);
-    await expect(field).toHaveValue('');
-    await expect(page.getByRole('button', { name: 'Digitar' })).toBeDisabled();
-
-    await page.getByRole('button', { name: 'Enter', exact: true }).click();
-    await page.getByRole('button', { name: 'Copiar' }).click();
-    await page.getByRole('button', { name: 'Trocar Janela' }).click();
+    for (const title of [
+      'Fixados',
+      'Edição',
+      'Janela',
+      'Sistema',
+      'Navegador',
+      'Vídeo',
+      'Apresentação',
+    ]) {
+      await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    }
+    await page.locator('[data-shortcut="copy"]').first().click();
+    await page.locator('[data-shortcut="switch-window"]').first().click();
+    await page.locator('[data-shortcut="task-manager"]').click();
+    await page.locator('[data-shortcut="reopen-tab"]').click();
+    await page.locator('[data-shortcut="slides-end"]').click();
     await expect
-      .poll(() => pc.sent('/key'))
+      .poll(keyRequests)
       .toEqual([
-        { key: 'ENTER' },
         { key: 'C', modifiers: ['CTRL'] },
         { key: 'TAB', modifiers: ['ALT'] },
+        { key: 'ESCAPE', modifiers: ['CTRL', 'SHIFT'] },
+        { key: 'T', modifiers: ['CTRL', 'SHIFT'] },
+        { key: 'ESCAPE' },
       ]);
   });
 
-  test('as teclas armadas valem para a próxima tecla e se soltam sozinhas', async ({ page }) => {
+  test('bloquear é a ação de energia do PC, na hora, sem Win+L', async ({ page }) => {
     await openPc(page, '/pc/atalhos');
-    const key = (name: string) => page.getByRole('button', { name, exact: true });
-    const shift = key('Shift');
-    await expect(shift).toHaveAttribute('aria-pressed', 'false');
-    await shift.click();
-    await expect(shift).toHaveAttribute('aria-pressed', 'true');
-    await key('Enter').click();
-    await expect(shift).toHaveAttribute('aria-pressed', 'false');
-    await key('Enter').click();
+    await page.locator('[data-shortcut="lock"]').click();
+    await expect.poll(() => pc.sent('/power')).toEqual([{ action: 'LOCK' }]);
+    expect(keyRequests()).toEqual([]);
+  });
 
-    await key('Ctrl').click();
-    await key('Alt').click();
-    await key('Del (Delete)').click();
+  test('o texto de cada atalho diz o que faz, e a tecla vem pequena embaixo', async ({ page }) => {
+    await openPc(page, '/pc/atalhos');
+    const copy = page.locator('[data-shortcut="copy"]').first();
+    await expect(copy.locator('.name')).toHaveText('Copiar');
+    await expect(copy.locator('.keys')).toHaveText('Ctrl+C');
+  });
 
-    await key('Win').click();
-    await page.getByLabel('Texto para digitar no PC').fill('d');
-    await page.getByRole('button', { name: 'Digitar' }).click();
+  test('as teclas armadas no painel valem para a tecla seguinte e se soltam', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    const panel = page.getByRole('group', { name: 'Mais teclas' }).last();
+    await panel.getByRole('button', { name: 'Ctrl', exact: true }).click();
+    await panel.getByRole('button', { name: 'Alt', exact: true }).click();
+    await panel.getByRole('button', { name: 'Del (Delete)' }).click();
+    await expect.poll(keyRequests).toEqual([{ key: 'DELETE', modifiers: ['CTRL', 'ALT'] }]);
+    await expect(page.locator('.armed')).toHaveCount(0);
+  });
+
+  test('a folha do raio abre sobre o mouse, fica aberta depois de cada toque e fecha pelo X', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const sheet = await openSheet(page);
+    await sheet.locator('[data-shortcut="switch-window"]').first().click();
+    await sheet.locator('[data-shortcut="switch-window"]').first().click();
+    await sheet.locator('[data-shortcut="show-desktop"]').first().click();
+    await expect.poll(keyRequests).toEqual([
+      { key: 'TAB', modifiers: ['ALT'] },
+      { key: 'TAB', modifiers: ['ALT'] },
+      { key: 'D', modifiers: ['WIN'] },
+    ]);
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await expect(sheet).toHaveCount(0);
+  });
+
+  test('a folha fecha pelo Esc e o botão do raio volta ao normal', async ({ page }) => {
+    await openPc(page);
+    const open = page.getByRole('button', { name: 'Atalhos', exact: true }).first();
+    const sheet = await openSheet(page);
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(open).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('Arrastar vive na folha: trava o botão esquerdo até soltar, e fechar a folha não o solta', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const sheet = await openSheet(page);
+    const drag = sheet.getByRole('button', { name: 'Arrastar' });
+    await drag.click();
+    await expect(drag).toHaveAttribute('aria-pressed', 'true');
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await expect(page.locator('.pad.holding')).toBeVisible();
+    const again = await openSheet(page);
+    await again.getByRole('button', { name: 'Arrastar' }).click();
     await expect
-      .poll(() => pc.sent('/key'))
-      .toEqual([
-        { key: 'ENTER', modifiers: ['SHIFT'] },
-        { key: 'ENTER' },
-        { key: 'DELETE', modifiers: ['CTRL', 'ALT'] },
-        { key: 'D', modifiers: ['WIN'] },
-      ]);
-    expect(pc.sent('/text')).toEqual([]);
-    await expect(page.locator('.mods [aria-pressed="true"]')).toHaveCount(0);
+      .poll(() => pc.sent('/click').map((body) => body['action']))
+      .toEqual(['DOWN', 'UP']);
   });
 
-  test('as teclas F1 a F12 existem', async ({ page }) => {
+  test('esconder a página com o botão travado pela folha solta o botão', async ({ page }) => {
+    await openPc(page);
+    const sheet = await openSheet(page);
+    await sheet.getByRole('button', { name: 'Arrastar' }).click();
+    await expect(sheet.getByRole('button', { name: 'Arrastar' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await expect
+      .poll(() => pc.sent('/click').map((body) => body['action']))
+      .toEqual(['DOWN', 'UP']);
+  });
+
+  test('os fixados se editam com o lápis e voltam depois de recarregar', async ({ page }) => {
     await openPc(page, '/pc/atalhos');
-    await page.getByRole('button', { name: 'F5', exact: true }).click();
-    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'F5' }]);
+    const pinnedGroup = () => page.locator('section.group').first();
+    await expect(pinnedGroup().locator('[data-shortcut="save"]')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Editar fixados' }).click();
+    // Editando, tocar fixa e nada é enviado.
+    await page.locator('[data-shortcut="save"]').last().click();
+    await expect(pinnedGroup().locator('[data-shortcut="save"]')).toHaveCount(1);
+    await pinnedGroup().locator('[data-shortcut="copy"]').click();
+    await expect(pinnedGroup().locator('[data-shortcut="copy"]')).toHaveCount(0);
+    expect(keyRequests()).toEqual([]);
+
+    await page.reload();
+    await expect(status(page)).toHaveText('Conectado');
+    await expect(pinnedGroup().locator('[data-shortcut="save"]')).toHaveCount(1);
+    await expect(pinnedGroup().locator('[data-shortcut="copy"]')).toHaveCount(0);
+    // Fora da edição, o fixado envia.
+    await pinnedGroup().locator('[data-shortcut="save"]').click();
+    await expect.poll(keyRequests).toEqual([{ key: 'S', modifiers: ['CTRL'] }]);
   });
 
-  test('o texto com emoji vai inteiro, e o limite conta pontos de código', async ({ page }) => {
+  test('os fixados ficam guardados por conta neste aparelho', async ({ page }) => {
     await openPc(page, '/pc/atalhos');
-    const field = page.getByLabel('Texto para digitar no PC');
-    await field.fill('oi 😀 ação');
-    await page.getByRole('button', { name: 'Digitar' }).click();
-    await expect.poll(() => pc.sent('/text')).toEqual([{ text: 'oi 😀 ação' }]);
-
-    await field.fill('😀'.repeat(200) + 'x');
-    await expect(field).toHaveValue('😀'.repeat(200));
+    await page.getByRole('button', { name: 'Editar fixados' }).click();
+    await page.locator('[data-shortcut="save"]').last().click();
+    const names = await page.evaluate(() =>
+      Object.keys(localStorage).filter((name) => name.startsWith('uniover.pc.pinned.v1.')),
+    );
+    expect(names).toHaveLength(1);
+    expect(names[0]).not.toBe('uniover.pc.pinned.v1');
   });
 
-  test('cabe na tela e não tem falha de acessibilidade', async ({ page }) => {
+  test('sem PC a aba não mostra atalhos mortos', async ({ page }) => {
+    pc.status = { available: true, online: false, apps: [] };
+    await page.goto('/pc/atalhos');
+    await expect(page.getByRole('heading', { name: 'PC Desconectado' })).toBeVisible();
+    await expect(page.locator('[data-shortcut]')).toHaveCount(0);
+  });
+
+  test('a aba cabe na tela, tem alvos de 44 px e nenhuma falha de acessibilidade', async ({
+    page,
+  }) => {
     await openPc(page, '/pc/atalhos');
     await expectNoHorizontalScroll(page);
+    expect(await smallTargets(page)).toEqual([]);
+    await expectNoA11yViolations(page);
+  });
+
+  test('a folha aberta tem alvos de 44 px, cabe na janela e não tem falha de acessibilidade', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const sheet = await openSheet(page);
+    await settle(page);
+    const box = (await sheet.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 0.5);
+    expect(box.width).toBeLessThanOrEqual(viewport.width + 0.5);
     expect(await smallTargets(page)).toEqual([]);
     await expectNoA11yViolations(page);
   });

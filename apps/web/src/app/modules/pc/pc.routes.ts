@@ -33,7 +33,7 @@ export const PC_ROUTES: Routes = [
       },
       {
         path: 'atalhos',
-        loadComponent: () => import('./pages/keyboard.page').then((m) => m.KeyboardPage),
+        loadComponent: () => import('./pages/shortcuts.page').then((m) => m.ShortcutsPage),
       },
       {
         path: 'midia',

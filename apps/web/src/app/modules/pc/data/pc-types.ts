@@ -68,3 +68,64 @@ export type PcMediaAction =
 export type PcPowerAction = 'LOCK' | 'SLEEP' | 'SHUTDOWN' | 'CANCEL_SHUTDOWN';
 
 export type PcClickButton = 'LEFT' | 'RIGHT' | 'MIDDLE';
+
+/**
+ * Todas as teclas do contrato `pc.key.v1`, em tempo de execução. Um `Record` completo: o compilador recusa uma tecla que
+ * falta ou que sobra em relação ao tipo `PcKey` (e o teste confere o tipo contra o gerado do esquema do contrato).
+ */
+const KEY_TABLE: Readonly<Record<PcKey, true>> = {
+  ENTER: true,
+  BACKSPACE: true,
+  DELETE: true,
+  TAB: true,
+  ESCAPE: true,
+  SPACE: true,
+  UP: true,
+  DOWN: true,
+  LEFT: true,
+  RIGHT: true,
+  HOME: true,
+  END: true,
+  PAGE_UP: true,
+  PAGE_DOWN: true,
+  F1: true,
+  F2: true,
+  F3: true,
+  F4: true,
+  F5: true,
+  F6: true,
+  F7: true,
+  F8: true,
+  F9: true,
+  F10: true,
+  F11: true,
+  F12: true,
+  A: true,
+  B: true,
+  C: true,
+  D: true,
+  E: true,
+  F: true,
+  G: true,
+  H: true,
+  I: true,
+  J: true,
+  K: true,
+  L: true,
+  M: true,
+  N: true,
+  O: true,
+  P: true,
+  Q: true,
+  R: true,
+  S: true,
+  T: true,
+  U: true,
+  V: true,
+  W: true,
+  X: true,
+  Y: true,
+  Z: true,
+};
+
+export const PC_KEYS: readonly PcKey[] = Object.keys(KEY_TABLE) as PcKey[];

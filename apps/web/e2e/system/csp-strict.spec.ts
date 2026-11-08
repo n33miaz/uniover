@@ -79,7 +79,7 @@ test.describe('CSP estrita: nenhuma violação de estilo nas telas lazy', () => 
     expect(violations, 'violações de CSP').toEqual([]);
   });
 
-  test('Controle do PC: a folha de ajustes do touchpad e o Teclado, sem folha em linha', async ({
+  test('Controle do PC: as folhas de ajustes e de atalhos e a aba Atalhos, sem folha em linha', async ({
     page,
     context,
     violations,
@@ -94,19 +94,38 @@ test.describe('CSP estrita: nenhuma violação de estilo nas telas lazy', () => 
 
     // A folha nasce em tempo de execução (`@if` + `showModal`): os estilos do componente passam pelo mesmo nonce.
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Touchpad' });
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await expect(sheet).toBeVisible();
-    await sheet.getByRole('radio', { name: 'Alta' }).check();
+    await sheet
+      .getByRole('group', { name: 'Sensibilidade' })
+      .getByRole('radio', { name: 'Alta' })
+      .check();
     // O raio do canto vem do confirm-sheet.css: só existe se o <style> do componente foi aceito pela CSP.
-    expect(
-      await sheet.evaluate((dialog) => getComputedStyle(dialog).borderTopLeftRadius),
-    ).not.toBe('0px');
-    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    expect(await sheet.evaluate((dialog) => getComputedStyle(dialog).borderTopLeftRadius)).not.toBe(
+      '0px',
+    );
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await expect(sheet).toHaveCount(0);
 
-    await page.getByRole('link', { name: 'Teclado' }).click();
-    await expect(page).toHaveURL(/\/pc\/teclado$/);
-    await expect(page.getByLabel('Texto para digitar no PC')).toBeVisible();
+    // A folha de atalhos também nasce em tempo de execução, com os estilos dela e os da folha de confirmação.
+    await page.getByRole('button', { name: 'Atalhos', exact: true }).first().click();
+    const shortcuts = page.getByRole('dialog', { name: 'Atalhos' });
+    await expect(shortcuts).toBeVisible();
+    expect(
+      await shortcuts.evaluate((dialog) => getComputedStyle(dialog).borderTopLeftRadius),
+    ).not.toBe('0px');
+    expect(
+      await shortcuts
+        .locator('[data-shortcut="copy"]')
+        .first()
+        .evaluate((cell) => getComputedStyle(cell).borderTopLeftRadius),
+    ).not.toBe('0px');
+    await shortcuts.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await expect(shortcuts).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Atalhos' }).click();
+    await expect(page).toHaveURL(/\/pc\/atalhos$/);
+    await expect(page.locator('[data-shortcut="copy"]').first()).toBeVisible();
     await page.waitForLoadState('networkidle');
     await expectEveryStylesheetApplied(page);
     expect(violations, 'violações de CSP').toEqual([]);
