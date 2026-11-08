@@ -160,6 +160,13 @@ export interface TvMock {
   pairAnswer: 'ok' | 'unreachable' | 'unsupported' | 'refused';
   /** Os corpos dos `POST /pair` recebidos, na ordem (o do primeiro passo é `{}`). */
   pairBodies(): Record<string, unknown>[];
+  /**
+   * O que `POST /settings/open` (abrir a tela de rede ou as configurações da TV) responde: `ok`, ou `unsupported` (o
+   * agente da TV não abre essa tela, como a API faz com 409).
+   */
+  settingsAnswer: 'ok' | 'unsupported';
+  /** A tela de cada `POST /settings/open` recebido, na ordem (`WIFI` ou `SETTINGS`). */
+  settingsScreens(): string[];
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
   count(path: string): number;
   /** O `mode` de cada `POST /power/off` recebido (`null` é o pedido de antes, sem corpo). */
@@ -183,7 +190,10 @@ function requiredPermission(method: string, path: string): string | null {
   if (method === 'GET' && path === '/permission') return 'module:tv';
   if (method === 'POST' && path === '/permission/request') return 'tv:control';
   if (method === 'GET' && path === '/cleanup/latest') return 'tv:control';
-  if (method === 'POST' && ['/wake', '/presence', '/keys', '/text', '/cleanup'].includes(path))
+  if (
+    method === 'POST' &&
+    ['/wake', '/presence', '/keys', '/text', '/cleanup', '/settings/open'].includes(path)
+  )
     return 'tv:control';
   if (method === 'POST' && path === '/power/off') return 'tv:power';
   if (path === '/power/schedule' && ['GET', 'PUT', 'DELETE'].includes(method)) return 'tv:power';
@@ -305,6 +315,11 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     permissionAnswer: 'asked',
     grantOnAsk: true,
     pairAnswer: 'ok',
+    settingsAnswer: 'ok',
+    settingsScreens: () =>
+      mock.requests
+        .filter((r) => r.method === 'POST' && r.path === '/settings/open')
+        .map((r) => String(r.body?.['screen'])),
     pairBodies: () =>
       mock.requests
         .filter((r) => r.method === 'POST' && r.path === '/pair')
@@ -548,6 +563,16 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
         latencyMs: 40,
         outcome: body?.['mode'] === 'safe' ? mock.powerOffOutcome : 'sent',
       });
+    }
+    if (method === 'POST' && path === '/settings/open') {
+      // Como a API: só as duas telas da lista fechada; um agente que não as abre é 409.
+      if (body?.['screen'] !== 'WIFI' && body?.['screen'] !== 'SETTINGS') {
+        return problem(route, { status: 400, kind: 'validation-failed' });
+      }
+      if (mock.settingsAnswer === 'unsupported') {
+        return problem(route, { status: 409, kind: 'settings-unsupported' });
+      }
+      return json(route, 200, { ok: true, latencyMs: 40 });
     }
     if (method === 'POST' && path === '/text') {
       return json(route, 200, { ok: true, latencyMs: 40 });

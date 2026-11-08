@@ -34,6 +34,8 @@ export type TvIconName =
   | 'check'
   | 'clock'
   | 'tune'
+  | 'wifi'
+  | 'settings'
   | 'speaker'
   | 'tv';
 
@@ -76,6 +78,11 @@ const PATHS: Record<TvIconName, string> = {
   clock: 'M12 7v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   // Dois controles deslizantes: Personalizar.
   tune: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M15 4v6 M9 14v6',
+  // Três arcos e um ponto: a rede da TV.
+  wifi: 'M2 9a15 15 0 0 1 20 0 M5.5 12.5a10 10 0 0 1 13 0 M9 16a5 5 0 0 1 6 0 M12 19.5h.01',
+  // Uma engrenagem: as configurações da TV.
+  settings:
+    'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z M19.4 13.5a7.5 7.5 0 0 0 0-3l1.9-1.5-2-3.4-2.3.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5a7.5 7.5 0 0 0-2.6 1.5l-2.3-.9-2 3.4 1.9 1.5a7.5 7.5 0 0 0 0 3l-1.9 1.5 2 3.4 2.3-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 2.6-1.5l2.3.9 2-3.4z',
   // Uma tela com o pé: serve aos estados em que a TV só é vista (sem controle) ou nem isso (sem acesso).
   speaker: 'M4 9v6h4l5 4V5L8 9H4z M16.5 9a4 4 0 0 1 0 6 M19 6.5a8 8 0 0 1 0 11',
   tv: 'M3 5h18v12H3z M8 21h8 M12 17v4',

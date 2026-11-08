@@ -52,6 +52,8 @@ internal static class TvPermissionMap
 
     private static readonly object TextBody = new { text = "filme" };
 
+    private static readonly object SettingsBody = new { screen = "WIFI" };
+
     private static readonly object RenameBody = new { customLabel = "Meu app" };
 
     private static readonly object OrderBody = new { ids = new[] { Guid.NewGuid() } };
@@ -70,6 +72,7 @@ internal static class TvPermissionMap
         new("POST", "/api/v1/tv/text", "tv:control", TextBody),
         new("POST", "/api/v1/tv/wake", "tv:control"),
         new("POST", "/api/v1/tv/presence", "tv:control"),
+        new("POST", "/api/v1/tv/settings/open", "tv:control", SettingsBody),
         new("POST", "/api/v1/tv/permission/request", "tv:control"),
         new("POST", "/api/v1/tv/cleanup", "tv:control"),
         new("POST", "/api/v1/tv/power/off", "tv:power"),

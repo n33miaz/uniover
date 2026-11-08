@@ -42,7 +42,14 @@ FOREGROUND_POLL_SECONDS: Final = 1.0
 # pedidos de log ou de atualização) chega o tempo todo e não conta: contar tudo manteria a janela
 # de silêncio da limpeza profunda aberta para sempre.
 USER_ACTIVITY_TYPES: Final = frozenset(
-    {"tv.text.v1", "tv.app.launch.v1", "tv.wake.v1", "tv.power.off.v1", "tv.apps.refresh.v1"}
+    {
+        "tv.text.v1",
+        "tv.app.launch.v1",
+        "tv.settings.open.v1",
+        "tv.wake.v1",
+        "tv.power.off.v1",
+        "tv.apps.refresh.v1",
+    }
 )
 
 

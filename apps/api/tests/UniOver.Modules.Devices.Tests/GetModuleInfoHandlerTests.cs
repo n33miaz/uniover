@@ -15,6 +15,7 @@ public class GetModuleInfoHandlerTests
         // O agente só declara e envia o diagnóstico se a API disser aqui que o aceita (rollout seguro).
         info.Features.Should().Contain(["agent.diagnostics.v1", "tv.pair.v1", "tv.state.not_paired"]);
         info.Features.Should().Contain("tv.presence.v1", "o agente só declara a presença depois de a API a listar");
+        info.Features.Should().Contain("tv.settings.open.v1", "o agente só declara a abertura de telas da TV depois de a API a listar");
         info.Features.Should().Contain("tv.state.waking", "o agente só conta que a TV está ligando depois de a API aceitar o valor");
     }
 }

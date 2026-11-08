@@ -212,6 +212,21 @@ describe('TvApi', () => {
     await refresh;
   });
 
+  it('asks to open one screen of the closed list, with the name of the contract and nothing else', async () => {
+    const wifi = api.openSettings('WIFI');
+    const sent = http.expectOne('/api/v1/tv/settings/open');
+    expect(sent.request.method).toBe('POST');
+    expect(sent.request.body).toEqual({ screen: 'WIFI' });
+    sent.flush({ ok: true, latencyMs: 1 });
+    await wifi;
+
+    const settings = api.openSettings('SETTINGS');
+    const second = http.expectOne('/api/v1/tv/settings/open');
+    expect(second.request.body).toEqual({ screen: 'SETTINGS' });
+    second.flush({ ok: true, latencyMs: 1 });
+    await settings;
+  });
+
   it('edits a shortcut sending only what changes', async () => {
     const rename = api.updateShortcut('a1', { customLabel: 'Sala' });
     const patch = http.expectOne('/api/v1/tv/shortcuts/a1');
@@ -287,6 +302,9 @@ describe('TvApi', () => {
       const pair = api.pair();
       http.expectOne('/api/v1/tv/pair?tvId=amigo').flush({ ok: true, latencyMs: 5 });
       await pair;
+      const settings = api.openSettings('WIFI');
+      http.expectOne('/api/v1/tv/settings/open?tvId=amigo').flush({});
+      await settings;
       const launch = api.launch('a1');
       http.expectOne('/api/v1/tv/shortcuts/a1/launch?tvId=amigo').flush({});
       await launch;

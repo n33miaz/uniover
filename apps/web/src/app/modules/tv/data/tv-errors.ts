@@ -13,6 +13,7 @@ export type TvFailureKind =
   | 'rate-limited'
   | 'cleanup-busy'
   | 'shortcut-disabled'
+  | 'unsupported'
   | 'not-found'
   | 'invalid'
   | 'unknown';
@@ -148,6 +149,12 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
         $localize`:@@tv.error.not-found:Este atalho não existe mais. Atualize a lista.`,
       );
     case 409:
+      if (problem.kind === 'settings-unsupported') {
+        return make(
+          'unsupported',
+          $localize`:@@tv.error.settings-unsupported:Esta TV não abre essa tela pelo app.`,
+        );
+      }
       return problem.kind === 'cleanup-in-progress'
         ? make(
             'cleanup-busy',

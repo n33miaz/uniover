@@ -51,6 +51,11 @@ from uniover_agent.core.tv.session import (
     TvSessionError,
     TvSessionManager,
 )
+from uniover_agent.core.tv.settings_open import (
+    SETTINGS_OPEN_CAPABILITY,
+    TvSettings,
+    tv_settings_open_handler,
+)
 from uniover_agent.core.tv.state_publisher import TvStatePublisher
 from uniover_agent.core.tv.text_edit import AdbTyping, TextReconciler
 from uniover_agent.core.tv.user_activity import (
@@ -72,6 +77,7 @@ __all__ = [
     "PRESENCE_CAPABILITY",
     "PRESENCE_TYPE",
     "SAMSUNG_MAINTENANCE_CAPABILITY",
+    "SETTINGS_OPEN_CAPABILITY",
     "TV_NOT_PAIRED",
     "TV_PERMISSION_NEEDED",
     "TV_UNREACHABLE",
@@ -103,6 +109,7 @@ __all__ = [
     "TvRelocator",
     "TvSessionError",
     "TvSessionManager",
+    "TvSettings",
     "TvStatePublisher",
     "TvWatchdog",
     "UserActivity",
@@ -118,6 +125,7 @@ __all__ = [
     "tv_key_handler",
     "tv_power_off_handler",
     "tv_presence_handler",
+    "tv_settings_open_handler",
     "tv_text_handler",
     "tv_wake_handler",
     "unsupported_handler",

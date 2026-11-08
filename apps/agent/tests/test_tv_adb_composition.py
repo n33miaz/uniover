@@ -105,6 +105,7 @@ def test_without_the_adb_nothing_of_it_is_registered(
         setup = make_tv(Settings(tv_host=TV_HOST))
     assert setup is not None
     assert "tv.apps.refresh.v1" not in setup.handlers
+    assert "tv.settings.open.v1" not in setup.handlers
     assert setup.prepare == []
     assert "adb não encontrado" in caplog.text
 
@@ -125,6 +126,7 @@ async def test_capability_is_declared_when_the_adb_answers(
         *ANDROID_KEYS,
         "tv.adb",
         "tv.presence.v1",
+        "tv.settings.open.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -151,6 +153,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
         *ANDROID_KEYS,
         "tv.adb",
         "tv.presence.v1",
+        "tv.settings.open.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -316,6 +319,7 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         *ANDROID_KEYS,
         "tv.adb",
         "tv.presence.v1",
+        "tv.settings.open.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -441,3 +445,25 @@ async def test_the_hello_declares_presence_only_after_the_api_lists_it(
     capabilities = hello["body"]["capabilities"]
     assert ("tv.presence.v1" in capabilities) is declared
     assert "tv.adb" in capabilities  # o resto da TV segue declarado como sempre
+
+
+async def test_the_settings_screens_are_opened_through_the_adb_by_the_composed_handler(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    adb = FakeTvAdb()
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    for step in setup.prepare:
+        await step()
+    assert "tv.settings.open.v1" in setup.capabilities
+    handler = setup.handlers["tv.settings.open.v1"]
+    command_id = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea2"
+
+    opened = await handler(Command(command_id, "tv.settings.open.v1", {"screen": "WIFI"}))
+    refused = await handler(Command(command_id, "tv.settings.open.v1", {"screen": "DEVELOPER"}))
+
+    assert opened.status.value == "ok"
+    assert refused.status.value == "rejected"
+    assert adb.settings_opened == ["WIFI"]

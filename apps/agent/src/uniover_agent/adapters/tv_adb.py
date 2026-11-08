@@ -28,6 +28,7 @@ from typing import Final, cast
 from uniover_agent.adapters.adb_authorization import AdbAuthorization
 from uniover_agent.adapters.process import exec_hidden
 from uniover_agent.adapters.tv_adb_parsing import (
+    SETTINGS_ACTIONS,
     AdbOutput,
     DeviceState,
     am_start_succeeded,
@@ -886,6 +887,17 @@ class AdbTv:
             )
             if not monkey_succeeded(monkey.text):
                 raise AdbCommandFailed("a TV não conseguiu abrir o app")
+
+    async def open_settings(self, screen: str) -> None:
+        # Lista fechada: a ação do Android sai da tabela, nunca do texto recebido.
+        action = SETTINGS_ACTIONS.get(screen)
+        if action is None:
+            raise ValueError("tela de configurações desconhecida")
+        async with self._lock:
+            await self._ensure_connected_locked()
+            started = await self._shell(f"am start -a {action}")
+            if not am_start_succeeded(started.text):
+                raise AdbCommandFailed("a TV não conseguiu abrir a tela")
 
     async def input_text(self, text: str) -> None:
         if len(text) > _MAX_TEXT_LENGTH:

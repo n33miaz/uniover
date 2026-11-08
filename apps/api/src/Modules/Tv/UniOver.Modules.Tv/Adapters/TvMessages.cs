@@ -51,6 +51,25 @@ internal static class TvMessages
     public static TvMessage PowerOff() =>
         new(AgentMessageTypes.TvPowerOffV1, BodyOf(new TvPowerOffV1Message { Body = new TvPowerOffV1Body() }.ToJson()));
 
+    /// <summary>
+    /// Abre na TV uma tela da lista fechada (<c>WIFI</c> ou <c>SETTINGS</c>, os nomes do contrato). A API só a manda a agente
+    /// que declarou <c>tv.settings.open.v1</c>, e só por toque da pessoa.
+    /// </summary>
+    public static TvMessage OpenSettings(string screen) =>
+        new(AgentMessageTypes.TvSettingsOpenV1, BodyOf(
+            new TvSettingsOpenV1Message
+            {
+                Body = new TvSettingsOpenV1Body
+                {
+                    Screen = screen switch
+                    {
+                        "WIFI" => TvSettingsOpenV1BodyScreen.Wifi,
+                        "SETTINGS" => TvSettingsOpenV1BodyScreen.Settings,
+                        _ => throw new ArgumentOutOfRangeException(nameof(screen), "Tela fora da lista fechada."),
+                    },
+                },
+            }.ToJson()));
+
     public static TvMessage Text(string text) =>
         new(AgentMessageTypes.TvTextV1, BodyOf(
             new TvTextV1Message { Body = new TvTextV1Body { Text = text } }.ToJson()));

@@ -18,6 +18,7 @@ import { TvSelection } from './tv-selection';
 import {
   TV_STREAM_EVENTS,
   TvKey,
+  TvSettingsScreen,
   TvShortcut,
   TvState,
   TvSummary,
@@ -830,6 +831,34 @@ export class TvStore {
       if (this.live(epoch)) {
         const name = shortcutLabel(shortcut);
         this.showNotice('info', $localize`:@@tv.apps.launched:${name}:name: aberto na TV.`);
+      }
+      return true;
+    } catch (error) {
+      if (this.live(epoch)) this.fail(error);
+      return false;
+    }
+  }
+
+  /**
+   * Abre na TV a tela de rede ou as configurações, só quando a pessoa toca no botão (nunca por tempo nem por conta própria).
+   * Usa o ADB, então o sinal de presença vai antes, como ao abrir um app. Devolve `true` se a TV abriu; o aviso (sucesso ou
+   * erro) já foi mostrado.
+   */
+  async openSettings(screen: TvSettingsScreen): Promise<boolean> {
+    const epoch = this.begin();
+    if (!this.canSend() || !this.access.settings() || this.account === null || this.listFirst()) {
+      return false;
+    }
+    await this.presence();
+    try {
+      await this.api.openSettings(screen);
+      if (this.live(epoch)) {
+        this.showNotice(
+          'info',
+          screen === 'WIFI'
+            ? $localize`:@@tv.settings.opened-wifi:Rede aberta na TV.`
+            : $localize`:@@tv.settings.opened-settings:Configurações abertas na TV.`,
+        );
       }
       return true;
     } catch (error) {

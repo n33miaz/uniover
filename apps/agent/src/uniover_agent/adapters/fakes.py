@@ -185,6 +185,7 @@ class FakeTvAdb:
         self.events: list[tuple[str, str]] = events if events is not None else []
         self.apps = list(apps or [])
         self.launched: list[tuple[str, str | None]] = []
+        self.settings_opened: list[str] = []
         self.typed: list[str] = []
         self.connects = 0
         self.disconnects = 0
@@ -243,6 +244,10 @@ class FakeTvAdb:
     async def launch_package(self, package: str, activity: str | None = None) -> None:
         self._fail_if_scripted()
         self.launched.append((package, activity))
+
+    async def open_settings(self, screen: str) -> None:
+        self._fail_if_scripted()
+        self.settings_opened.append(screen)
 
     async def input_text(self, text: str) -> None:
         self._fail_if_scripted()

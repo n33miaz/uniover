@@ -78,6 +78,7 @@ const TV_ACTIONS = [
   'tv.power-off',
   'tv.cleanup',
   'tv.cleanup.setting',
+  'tv.settings.open',
   'tv.permission.request',
   'tv.discover',
   'tv.apps.refresh',
@@ -263,6 +264,11 @@ describe('describeTarget', () => {
     expect(
       describeTarget(item({ action: 'tv.cleanup.setting', target: 'background-app-closing=on' })),
     ).toBe('Ligado');
+    expect(describeTarget(item({ action: 'tv.settings.open', target: 'WIFI' }))).toBe('Rede');
+    expect(describeTarget(item({ action: 'tv.settings.open', target: 'SETTINGS' }))).toBe(
+      'Configurações',
+    );
+    expect(describeTarget(item({ action: 'tv.settings.open', target: 'OUTRA' }))).toBeNull();
   });
 
   it('says what was confirmed with the passkey, in words', () => {

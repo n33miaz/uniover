@@ -161,6 +161,7 @@ export function createFakeTvStore() {
     sendText: vi.fn<(text: string) => Promise<TvFailure | null>>().mockResolvedValue(null),
     powerOff: vi.fn<() => Promise<TvFailure | null>>().mockResolvedValue(null),
     cleanup: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
+    openSettings: vi.fn<(screen: string) => Promise<boolean>>().mockResolvedValue(true),
     launch: vi.fn<(shortcut: TvShortcut) => Promise<boolean>>().mockResolvedValue(true),
     refreshShortcuts: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
     renameShortcut: vi

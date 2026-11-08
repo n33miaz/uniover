@@ -46,6 +46,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
                 "tv.state.not_paired",
                 "tv.state.waking",
                 "tv.presence.v1",
+                "tv.settings.open.v1",
             }
         )
 

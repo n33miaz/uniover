@@ -118,6 +118,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>tv.presence.v1</c>.</summary>
     public const string TvPresenceV1 = "tv.presence.v1";
 
+    /// <summary>Tipo de mensagem <c>tv.settings.open.v1</c>.</summary>
+    public const string TvSettingsOpenV1 = "tv.settings.open.v1";
+
     /// <summary>Tipo de mensagem <c>tv.state.v1</c>.</summary>
     public const string TvStateV1 = "tv.state.v1";
 
@@ -170,6 +173,7 @@ public static class AgentMessageTypes
         TvPermissionV1,
         TvPowerOffV1,
         TvPresenceV1,
+        TvSettingsOpenV1,
         TvStateV1,
         TvTextV1,
         TvWakeV1,

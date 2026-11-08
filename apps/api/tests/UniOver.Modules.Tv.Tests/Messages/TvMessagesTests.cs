@@ -24,6 +24,29 @@ public class TvMessagesTests
         message.Body.GetRawText().Should().Be("{}");
     }
 
+    [Theory]
+    [InlineData("WIFI", "{\"screen\":\"WIFI\"}")]
+    [InlineData("SETTINGS", "{\"screen\":\"SETTINGS\"}")]
+    public void OpenSettings_BuildsTheClosedScreenBody(string screen, string expected)
+    {
+        var message = TvMessages.OpenSettings(screen);
+
+        message.Type.Should().Be("tv.settings.open.v1");
+        message.Body.GetRawText().Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("wifi")]
+    [InlineData("DEVELOPER")]
+    [InlineData("android.settings.WIFI_SETTINGS")]
+    [InlineData("")]
+    public void OpenSettings_RefusesAnythingOutsideTheClosedList(string screen)
+    {
+        var build = () => TvMessages.OpenSettings(screen);
+
+        build.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     [Fact]
     public void Key_OutsideTheV2List_GoesInTheV3Message()
     {

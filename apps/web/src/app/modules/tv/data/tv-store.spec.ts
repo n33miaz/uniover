@@ -64,6 +64,7 @@ describe('TvStore', () => {
     savePowerSchedule: vi.fn(),
     cancelPowerSchedule: vi.fn(),
     launch: vi.fn(),
+    openSettings: vi.fn(),
     cleanup: vi.fn(),
     latestCleanup: vi.fn(),
     refreshShortcuts: vi.fn(),
@@ -135,6 +136,7 @@ describe('TvStore', () => {
     api.savePowerSchedule.mockResolvedValue(null);
     api.cancelPowerSchedule.mockResolvedValue(undefined);
     api.launch.mockResolvedValue(undefined);
+    api.openSettings.mockResolvedValue(undefined);
     api.cleanup.mockResolvedValue({
       ok: true,
       latencyMs: 9000,
@@ -573,7 +575,10 @@ describe('TvStore', () => {
     });
 
     it('does not signal for a state that is not "visible" (prerender), only for "visible"', async () => {
-      Object.defineProperty(document, 'visibilityState', { value: 'prerender', configurable: true });
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'prerender',
+        configurable: true,
+      });
       await started();
       touch();
       await flush();
@@ -1189,6 +1194,66 @@ describe('TvStore', () => {
       expect(store.notice()?.text).toContain('O agente da TV está desligado');
       expect(store.state()?.agentOnline).toBe(false);
       expect(store.canSend()).toBe(false);
+    });
+  });
+
+  describe('screens of the TV settings', () => {
+    const androidTv = (capabilities: string[]): TvSummary => ({
+      id: 'sala',
+      name: 'Sala',
+      isDefault: true,
+      agentSlug: null,
+      kind: 'android',
+      online: true,
+      capabilities,
+    });
+    const withSettings = ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'];
+
+    it('signals presence first, opens the screen and says so', async () => {
+      api.tvs.mockResolvedValue([androidTv(withSettings)]);
+      const order: string[] = [];
+      api.presence.mockImplementation(async () => void order.push('presence'));
+      api.openSettings.mockImplementation(async () => void order.push('open'));
+      await started();
+      await expect(store.openSettings('WIFI')).resolves.toBe(true);
+      expect(order).toEqual(['presence', 'open']);
+      expect(api.openSettings).toHaveBeenCalledWith('WIFI');
+      expect(store.notice()?.text).toBe('Rede aberta na TV.');
+      await expect(store.openSettings('SETTINGS')).resolves.toBe(true);
+      expect(store.notice()?.text).toBe('Configurações abertas na TV.');
+    });
+
+    it('does nothing on its own: only the call opens a screen', async () => {
+      api.tvs.mockResolvedValue([androidTv(withSettings)]);
+      await started();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(api.openSettings).not.toHaveBeenCalled();
+    });
+
+    it('does not ask a TV whose agent does not declare it, nor while the remote cannot send', async () => {
+      api.tvs.mockResolvedValue([androidTv(['tv.remote', 'tv.kind.android', 'tv.adb'])]);
+      await started();
+      await expect(store.openSettings('WIFI')).resolves.toBe(false);
+      expect(api.openSettings).not.toHaveBeenCalled();
+
+      api.tvs.mockResolvedValue([androidTv(withSettings)]);
+      await store.refreshTvs();
+      online.set(false);
+      await expect(store.openSettings('WIFI')).resolves.toBe(false);
+      expect(api.openSettings).not.toHaveBeenCalled();
+    });
+
+    it('shows the failure as a notice and does not repeat the request', async () => {
+      api.tvs.mockResolvedValue([androidTv(withSettings)]);
+      await started();
+      api.openSettings.mockRejectedValueOnce(problem(409, 'settings-unsupported'));
+      await expect(store.openSettings('WIFI')).resolves.toBe(false);
+      expect(store.notice()).toEqual({
+        kind: 'error',
+        text: 'Esta TV não abre essa tela pelo app.',
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.openSettings).toHaveBeenCalledTimes(1);
     });
   });
 

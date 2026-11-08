@@ -229,6 +229,13 @@ class TvAdb(TvChannel, Protocol):
         """
         ...
 
+    async def open_settings(self, screen: str) -> None:
+        """Abre na TV uma tela de configurações de uma lista fechada: `WIFI` ou `SETTINGS`.
+
+        Levanta `ValueError` se `screen` não é um desses nomes e `AdbError` se não deu certo.
+        """
+        ...
+
     async def input_text(self, text: str) -> None:
         """Digita no campo em foco (acrescenta ao que há lá).
 

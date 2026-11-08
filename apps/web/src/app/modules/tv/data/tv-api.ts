@@ -9,6 +9,7 @@ import {
   TvCleanupResult,
   TvKey,
   TvPowerOffOutcome,
+  TvSettingsScreen,
   TvShortcut,
   TvState,
   TvSummary,
@@ -155,6 +156,12 @@ export class TvApi {
   async sendKey(key: TvKey): Promise<void> {
     const body: components['schemas']['SendKeyRequest'] = { key, direction: null };
     await firstValueFrom(this.http.post(`${BASE}/keys`, body, this.target()));
+  }
+
+  /** Abre na TV a tela de rede ou as configurações (lista fechada); só por toque da pessoa, nunca sozinho. */
+  async openSettings(screen: TvSettingsScreen): Promise<void> {
+    const body: components['schemas']['OpenSettingsRequest'] = { screen };
+    await firstValueFrom(this.http.post(`${BASE}/settings/open`, body, this.target()));
   }
 
   async sendText(text: string): Promise<void> {

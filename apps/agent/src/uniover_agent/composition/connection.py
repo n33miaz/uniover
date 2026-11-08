@@ -5,7 +5,7 @@ import logging
 import random
 import shutil
 import sys
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +69,7 @@ from uniover_agent.core import (
     MAINTENANCE_TYPE,
     PC_SILENT_TYPES,
     PRESENCE_CAPABILITY,
+    SETTINGS_OPEN_CAPABILITY,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
@@ -101,6 +102,26 @@ _log = logging.getLogger("uniover_agent")
 ARP_LEARN_SECONDS = 600.0
 # Prazo da arrumação da pasta na partida: sem ele, um disco travado impediria o agente de subir.
 TIDY_TIMEOUT_SECONDS = 60.0
+# Capacidades que uma API anterior recusaria no `hello` (ela não as conhece): só vão depois de a API
+# listá-las em `features`.
+API_LISTED_CAPABILITIES = frozenset(
+    {PAIR_CAPABILITY, PRESENCE_CAPABILITY, SETTINGS_OPEN_CAPABILITY}
+)
+
+
+def declarable_capabilities(
+    capabilities: Iterable[str], api_supports: Callable[[str], bool]
+) -> tuple[str, ...]:
+    """As capacidades da TV que podem ir ao `hello` agora.
+
+    Uma API anterior recusa o `hello` com capacidade que não conhece: as de
+    `API_LISTED_CAPABILITIES` só vão depois de a API listá-las em `features`; as demais vão sempre.
+    """
+    return tuple(
+        capability
+        for capability in capabilities
+        if capability not in API_LISTED_CAPABILITIES or api_supports(capability)
+    )
 
 
 def build_handler(
@@ -465,16 +486,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             MAINTENANCE_CAPABILITY,
             *delivery.capabilities(),
             *(
-                tuple(
-                    capability
-                    for capability in tv.capabilities
-                    # Uma API anterior recusa o `hello` com capacidade que não conhece: as opcionais
-                    # só vão depois de a API listá-las em `features`.
-                    if (capability != PAIR_CAPABILITY or features.supports(PAIR_CAPABILITY))
-                    and (
-                        capability != PRESENCE_CAPABILITY or features.supports(PRESENCE_CAPABILITY)
-                    )
-                )
+                declarable_capabilities(tv.capabilities, features.supports)
                 if tv is not None
                 else ()
             ),

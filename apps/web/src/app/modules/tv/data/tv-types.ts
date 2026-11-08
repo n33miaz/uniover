@@ -57,7 +57,14 @@ export interface TvSummary {
 export type TvFeature = 'cleanup' | 'text' | 'apps';
 
 /** Capacidades que o agente anuncia no `agent.hello` e que a web usa para decidir o que mostrar. */
-export const TV_CAPABILITY = { adb: 'tv.adb', powerOff: 'tv.power.off.v1' } as const;
+export const TV_CAPABILITY = {
+  adb: 'tv.adb',
+  powerOff: 'tv.power.off.v1',
+  settingsOpen: 'tv.settings.open.v1',
+} as const;
+
+/** As telas de configurações que o app pede à TV: lista fechada, os nomes do contrato `tv.settings.open.v1`. */
+export type TvSettingsScreen = 'WIFI' | 'SETTINGS';
 
 /**
  * O que o servidor respondeu ao pedido de desligar: `off` (o agente leu a TV ligada, apertou `POWER` uma vez e confirmou),
@@ -78,6 +85,15 @@ export function parsePowerOffOutcome(value: unknown): TvPowerOffOutcome {
  */
 export function tvCanPowerOffSafely(tv: TvSummary | null): boolean {
   return tv?.capabilities.includes(TV_CAPABILITY.powerOff) === true;
+}
+
+/**
+ * O agente desta TV declarou abrir a tela de rede e as configurações (`tv.settings.open.v1`)? Só a Android TV declara (é uma
+ * tela do Android pelo ADB). Como no desligamento com leitura, sem a lista de capacidades vale "não": pedir a quem não a
+ * conhece não adianta, e as linhas simplesmente não aparecem.
+ */
+export function tvCanOpenSettings(tv: TvSummary | null): boolean {
+  return tv?.capabilities.includes(TV_CAPABILITY.settingsOpen) === true;
 }
 
 /**

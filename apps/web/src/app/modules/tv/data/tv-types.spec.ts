@@ -8,6 +8,7 @@ import {
   parseWatchdog,
   shortcutLabel,
   parsePowerOffOutcome,
+  tvCanOpenSettings,
   tvCanPowerOffSafely,
   tvSupports,
   TvShortcut,
@@ -333,6 +334,14 @@ describe('desligar com leitura', () => {
     expect(tvCanPowerOffSafely(tv(['tv.remote', 'tv.adb']))).toBe(false);
     expect(tvCanPowerOffSafely(tv([]))).toBe(false);
     expect(tvCanPowerOffSafely(null)).toBe(false);
+  });
+
+  it('only an agent that declares it can be asked to open the network and settings screens', () => {
+    expect(tvCanOpenSettings(tv(['tv.remote', 'tv.adb', 'tv.settings.open.v1']))).toBe(true);
+    expect(tvCanOpenSettings(tv(['tv.remote', 'tv.adb']))).toBe(false);
+    expect(tvCanOpenSettings(tv(['tv.remote', 'tv.kind.samsung']))).toBe(false);
+    expect(tvCanOpenSettings(tv([]))).toBe(false);
+    expect(tvCanOpenSettings(null)).toBe(false);
   });
 
   it('reads the outcome of the answer and falls back to sent', () => {
