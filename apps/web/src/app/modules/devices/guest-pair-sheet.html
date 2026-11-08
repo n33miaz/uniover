@@ -7,9 +7,15 @@
   <span class="grabber" aria-hidden="true"></span>
   <form (submit)="approve($event)" novalidate>
     <h2 id="guest-pair-title" i18n="@@devices.guest-pair.title">Aprovar este computador</h2>
-    <p class="hint" i18n="@@devices.guest-pair.hint">
-      Este PC passa a controlar a sua TV. Digite a sua senha para confirmar.
-    </p>
+    @if (withTv()) {
+      <p class="hint" i18n="@@devices.guest-pair.hint">
+        Este PC passa a controlar a sua TV. Digite a sua senha para confirmar.
+      </p>
+    } @else {
+      <p class="hint" i18n="@@devices.guest-pair.hint-pc">
+        Este PC passa a ser controlado pelo app. Digite a sua senha para confirmar.
+      </p>
+    }
 
     <label for="guest-pair-code" i18n="@@devices.guest-pair.code">Código do computador</label>
     <input
@@ -28,23 +34,29 @@
       (input)="onCodeInput($event)"
     />
 
-    <label for="guest-pair-name" i18n="@@devices.guest-pair.name">Como Chamar Esta TV?</label>
-    <input
-      id="guest-pair-name"
-      class="ui-input"
-      type="text"
-      autocomplete="off"
-      [attr.maxlength]="maxName"
-      placeholder="TV"
-      i18n-placeholder="@@devices.guest-pair.name-placeholder"
-      [attr.aria-invalid]="nameValid() ? null : 'true'"
-      [value]="tvName()"
-      (input)="onNameInput($event)"
-    />
-    @if (!nameValid()) {
-      <p class="error ui-notice bad ui-rise" role="alert" i18n="@@devices.guest-pair.name-invalid">
-        Use letras, números, espaço e . _ ( ) -, começando por letra ou número.
-      </p>
+    @if (withTv()) {
+      <label for="guest-pair-name" i18n="@@devices.guest-pair.name">Como Chamar Esta TV?</label>
+      <input
+        id="guest-pair-name"
+        class="ui-input"
+        type="text"
+        autocomplete="off"
+        [attr.maxlength]="maxName"
+        placeholder="TV"
+        i18n-placeholder="@@devices.guest-pair.name-placeholder"
+        [attr.aria-invalid]="nameValid() ? null : 'true'"
+        [value]="tvName()"
+        (input)="onNameInput($event)"
+      />
+      @if (!nameValid()) {
+        <p
+          class="error ui-notice bad ui-rise"
+          role="alert"
+          i18n="@@devices.guest-pair.name-invalid"
+        >
+          Use letras, números, espaço e . _ ( ) -, começando por letra ou número.
+        </p>
+      }
     }
 
     <label for="guest-pair-password" i18n="@@devices.guest-pair.password">Sua senha</label>

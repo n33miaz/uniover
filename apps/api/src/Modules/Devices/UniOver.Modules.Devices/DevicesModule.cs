@@ -102,7 +102,9 @@ public static class DevicesModule
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, PcAgentRevokedInvalidator>();
         services.AddScoped<PcAgentResolver>();
         services.AddScoped<PcControlHandler>();
-        services.AddAuthorizationBuilder().AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure);
+        services.AddAuthorizationBuilder()
+            .AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure)
+            .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly);
         return services;
     }
 

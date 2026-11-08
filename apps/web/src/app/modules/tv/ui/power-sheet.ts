@@ -180,6 +180,8 @@ export class PowerSheet {
         return $localize`:@@tv.power.schedule.result-unsupported:Agente sem suporte`;
       case 'uncertain':
         return $localize`:@@tv.power.schedule.result-uncertain:Estado incerto`;
+      case 'missed':
+        return $localize`:@@tv.power.schedule.result-missed:Horário perdido: a TV não foi desligada`;
       case 'failed':
         return $localize`:@@tv.power.schedule.result-failed:Falha ao desligar`;
       case 'tv_changed':

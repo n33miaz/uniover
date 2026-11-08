@@ -75,9 +75,13 @@ export class SettingsPage {
         title: SETTINGS_TITLES.security,
       });
     }
-    // O convidado com a TV chega ao download do conector por aqui; aprovar o PC segue sendo do administrador.
+    // O convidado com a TV ou com o controle do PC chega ao download do conector (e ao pareamento do próprio PC) por aqui.
     const permissions = this.session.knownPermissions();
-    if (role === 'guest' && permissions !== null && canUseModule('guest', permissions, 'tv')) {
+    if (
+      role === 'guest' &&
+      permissions !== null &&
+      (canUseModule('guest', permissions, 'tv') || canUseModule('guest', permissions, 'pc'))
+    ) {
       entries.push({
         id: 'devices',
         link: '/ajustes/dispositivos',

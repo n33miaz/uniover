@@ -68,13 +68,16 @@ export class DevicesPage {
   protected readonly linkedCode = signal('');
   /** A API só deixa o dono listar e aprovar; o convidado que chega pelo QR vê um aviso no lugar. */
   protected readonly canManage = !this.session.isGuest();
-  /** O convidado com a TV também baixa o conector (aprovar continua só do administrador). */
-  protected readonly canDownload = canUseModule(
+  /** Só o convidado com a TV ganha a "TV própria" ao aprovar o PC; com só o controle do PC, o computador entra sem TV. */
+  protected readonly guestHasTv = canUseModule(
     this.session.role(),
     this.session.knownPermissions(),
     'tv',
   );
-  /** O convidado com a TV aprova o PC dele sozinho (a API confere a permissão, a senha recente e o limite). */
+  /** O convidado com a TV ou com o controle do PC também baixa o conector (aprovar o dos outros é do administrador). */
+  protected readonly canDownload =
+    this.guestHasTv || canUseModule(this.session.role(), this.session.knownPermissions(), 'pc');
+  /** O mesmo convidado aprova o PC dele sozinho (a API confere a permissão, a senha recente e o limite). */
   protected readonly canPairSelf = !this.canManage && this.canDownload;
   protected readonly guestPairing = signal(false);
   protected readonly connectorUrl = CONNECTOR_URL;

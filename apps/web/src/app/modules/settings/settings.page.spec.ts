@@ -206,6 +206,18 @@ describe('SettingsPage (a list of screens)', () => {
       expect(el.querySelector('a[href="/tv"]')).toBeNull();
     });
 
+    it('shows the device row (connector and own-PC pairing) to a guest with only the PC control', async () => {
+      api.me.mockResolvedValue({ ...GUEST, permissions: ['module:pc'] });
+      const { el } = await render();
+      expect(rows(el).map((row) => row.title)).toEqual([
+        'Perfil',
+        'Aparência',
+        'Segurança',
+        'Dispositivos',
+        'Sobre',
+      ]);
+    });
+
     it('does not even mention the administrator screens', async () => {
       const { el } = await render();
       for (const name of [
