@@ -7,8 +7,9 @@ public class DomainTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 19, 12, 0, 0, TimeSpan.Zero);
 
-    private static TvStateSnapshot Snapshot(string power = "on", int? volume = 10, string? app = "tv.app", string connection = "hot") =>
-        new(power, volume, app, connection, Now);
+    private static TvStateSnapshot Snapshot(
+        string power = "on", int? volume = 10, string? app = "tv.app", string connection = "hot", string? adbPermission = null) =>
+        new(power, volume, app, connection, Now, adbPermission);
 
     [Fact]
     public void ChangingOnlyTheVolume_IsNotAPersistedChange()
@@ -62,6 +63,36 @@ public class DomainTests
         TvState.From(Snapshot(volume: 33), agentOnline: false, offlineSince: since).OfflineSince.Should().Be(since);
         TvState.From(null, agentOnline: false, offlineSince: since).OfflineSince.Should().Be(since);
         TvState.From(Snapshot(volume: 33), agentOnline: true, offlineSince: since).OfflineSince.Should().BeNull();
+    }
+
+    [Fact]
+    public void ChangingOnlyTheAdbPermission_IsNotAPersistedChange()
+    {
+        Snapshot(adbPermission: "granted").SamePersistedFieldsAs(Snapshot(adbPermission: "missing")).Should().BeTrue();
+        TvStateRecord.Create("pc-casa", Snapshot(adbPermission: "granted")).Matches(Snapshot(adbPermission: "pending")).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("granted")]
+    [InlineData("missing")]
+    [InlineData("pending")]
+    public void State_WithTheAgentOnline_CarriesTheAdbPermission_AndWithoutItHidesIt(string value)
+    {
+        TvState.From(Snapshot(adbPermission: value), agentOnline: true).AdbPermission.Should().Be(value);
+        TvState.From(Snapshot(adbPermission: value), agentOnline: false).AdbPermission.Should().BeNull();
+        TvState.From(Snapshot(), agentOnline: true).AdbPermission.Should().BeNull("o agente que não disse (Samsung, antigo) é desconhecido");
+    }
+
+    [Theory]
+    [InlineData("granted", true)]
+    [InlineData("missing", true)]
+    [InlineData("pending", true)]
+    [InlineData("GRANTED", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void AdbPermissionText_KnowsOnlyTheContractValues(string? value, bool known)
+    {
+        AdbPermissionText.IsKnown(value).Should().Be(known);
     }
 
     [Fact]

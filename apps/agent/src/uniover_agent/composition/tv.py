@@ -104,6 +104,7 @@ from uniover_agent.core import (
     unsupported_handler,
     user_initiated,
 )
+from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import (
     LivreStateFile,
@@ -114,6 +115,7 @@ from uniover_agent.core.tv.livre import (
 )
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY, TvPairing
 from uniover_agent.ports import (
+    AdbPermissionSink,
     AdbUnauthorized,
     Clock,
     SecretStore,
@@ -164,6 +166,8 @@ class TvSetup:
     # Chamado quando um sinal de presença é recusado por idade fora da janela (relógio do PC fora de
     # hora, entrega muito atrasada): quem monta a conexão o liga ao diagnóstico.
     on_presence_refused: Callable[[float], None] | None = None
+    # O estado da permissão do ADB (preenchido pelo canal ADB): o publicador o conta ao app.
+    adb_permission: AdbPermissionTracker | None = None
     # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
     # Rodam ao encerrar o agente (cancelam o que ficou agendado).
@@ -604,13 +608,14 @@ def compose_light_settings(
     return closer, light_settings
 
 
-def build_adb(
+def build_adb(  # noqa: PLR0913 - todos são configuração independente
     path: Path,
     host: str,
     settings: Settings,
     user_active: Callable[[], bool],
     *,
     monotonic: Callable[[], float] = time.monotonic,
+    permission: AdbPermissionSink | None = None,
 ) -> AdbTv:
     """O único lugar que monta um `AdbTv`: sempre com a trava (registro da permissão por TV).
 
@@ -633,6 +638,7 @@ def build_adb(
         kill_server_cooldown=settings.adb_kill_server_cooldown_seconds,
         pull_timeout=settings.adb_pull_timeout_seconds,
         monotonic=monotonic,
+        permission=permission,
     )
 
 
@@ -667,7 +673,16 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         ),
     )
     setup.silent_commands.add(PRESENCE_TYPE)
-    adb = build_adb(path, host, settings, setup.activity.recent, monotonic=clock.monotonic)
+    # O estado da permissão do ADB (granted, missing, pending) vai ao app dentro do `tv.state.v1`.
+    setup.adb_permission = AdbPermissionTracker()
+    adb = build_adb(
+        path,
+        host,
+        settings,
+        setup.activity.recent,
+        monotonic=clock.monotonic,
+        permission=setup.adb_permission,
+    )
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
     manager.add_channel(adb, connect_on_warm=False)
@@ -768,10 +783,12 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         try:
             await adb.connect()
         except AdbUnauthorized:
+            reason = setup.adb_permission.reason if setup.adb_permission is not None else ""
             _log.warning(
-                "a TV ainda não deu a permissão do ADB ao UniOver: toque em Atualizar lista no "
-                "app e aceite o aviso na TV, marcando Sempre permitir neste computador. Nenhum "
-                "aviso é aberto sozinho; a lista de apps fica desligada até lá"
+                "o agente não usa o ADB da TV sem a pessoa pedir (motivo: %s): toque em Atualizar "
+                "lista no app e aceite o aviso na TV, marcando Sempre permitir neste computador. "
+                "Nenhum aviso é aberto sozinho; a lista de apps fica desligada até lá",
+                reason or "desconhecido",
             )
         except Exception as exc:
             _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)

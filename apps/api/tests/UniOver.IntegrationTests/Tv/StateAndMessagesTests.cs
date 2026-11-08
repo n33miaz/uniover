@@ -159,6 +159,37 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task State_WithTheAdbPermission_IsShownToTheScreenOnlyInMemory_AndAnUnknownValueIsDropped()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(adbPermission: "pending")));
+        await AdbPermissionIsAsync(app, "pending");
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(adbPermission: "missing")));
+        await AdbPermissionIsAsync(app, "missing");
+        await app.SettleAsync();
+
+        // Mudar só a permissão do ADB não grava nada nem publica evento (como o volume): vive em memória.
+        (await OutboxCountAsync(app)).Should().BeLessThanOrEqualTo(1);
+
+        // O corpo sem o campo (agente que não diz) volta a "não se sabe".
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody()));
+        await AdbPermissionIsAsync(app, null);
+    }
+
+    private static async Task AdbPermissionIsAsync(TvApp app, string? expected) =>
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            using var response = await app.GetAsync("/api/v1/tv/state");
+            var json = await TvApp.JsonAsync(response);
+            var value = json.TryGetProperty("adbPermission", out var element) && element.ValueKind == System.Text.Json.JsonValueKind.String
+                ? element.GetString()
+                : null;
+            return value == expected;
+        }, $"adbPermission = {expected ?? "nulo"}");
+
+    [Fact]
     public async Task State_ThatFlickersAndComesBack_DoesNotWriteAgain()
     {
         await using var app = await TvApp.StartAsync(postgres);

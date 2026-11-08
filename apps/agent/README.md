@@ -618,7 +618,20 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   `tv.presence.v1` sai assim que a API passa a listá-la em `features`, sem esperar os 5 minutos do `hello` repetido.
 - **O que o dono faz, uma vez por TV:** tocar em **Atualizar lista**, marcar **Sempre permitir neste computador** no
   aviso da TV e aceitar; depois tocar em **Atualizar lista** mais uma vez (a prova). Um reset de fábrica da TV exige
-  repetir.
+  repetir. No app, quando um atalho (ou a limpeza, ou o TV Livre) falha por falta de permissão, uma folha curta
+  oferece **Pedir na TV** (o mesmo pedido de **Atualizar lista**) e o aceite na TV vira um recado fixo no celular.
+- **IP novo da mesma TV:** o registro vale para um endereço **e** um MAC. Depois de uma queda de luz o roteador pode dar
+  outro IP à TV (o vigia do endereço a reencontra e o agente recomeça); a permissão do ADB é da chave na TV, não do
+  endereço, então o registro acompanha: com o registro `granted` ou `verified`, a mesma chave e **os dois MACs lidos
+  e iguais** (ARP, sem ADB e sem aviso na TV), o endereço novo herda tudo. MAC vazio, ou de outro aparelho, nunca
+  adota e continua barrado. Antes disso, um IP novo fechava o portão e todo atalho dizia `adb_unauthorized` sem a
+  TV ter sido consultada.
+- **O que o app fica sabendo (`adbPermission` no `tv.state.v1`):** `granted` (a TV aceitou: conexão aberta, `device`
+  visto), `missing` (o agente não usa o ADB sem a pessoa pedir) e `pending` (o aviso está na TV, esperando o
+  aceite). Só vai à API que lista `tv.state.adb_permission` em `features`. Cada mudança também vira uma ocorrência de
+  diagnóstico `adb.permission.<estado>` com o **motivo** (`never`, `tv_refused`, `tv_forgot` (a TV recusou uma chave
+  que já tinha aceitado), `unproven`, `key_changed`, `address_changed`, `device_changed`, `mac_unknown`,
+  `prompt_on_tv`, `prompt_expired`, `accepted`, `connected`); nunca IP nem MAC.
 - **Samsung e Remote v2 já seguiam a regra:** o token Samsung e a marca "permissão necessária" ficam no cofre e
   nenhuma rota volta a pedir o "Permitir" sozinha; o par certificado/chave do Remote v2 fica em `tv/<tv>` e só o
   `tv-pair` explícito o cria.

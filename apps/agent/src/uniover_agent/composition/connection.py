@@ -88,6 +88,7 @@ from uniover_agent.core import (
     update_body,
 )
 from uniover_agent.core.api_features import (
+    ADB_PERMISSION_FEATURE,
     FEATURES_TIMEOUT_SECONDS,
     NOT_PAIRED_FEATURE,
     WAKING_FEATURE,
@@ -427,6 +428,14 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             "o ADB não reconecta sozinho até a hora se acertar",
             component="tv",
         )
+        if tv.adb_permission is not None:
+            # Por que o ADB não conecta (IP novo, chave trocada, TV recusou, falta a prova) vai ao
+            # diagnóstico: o administrador vê em Sistema sem abrir o arquivo de registro.
+            tv.adb_permission.record_with(
+                lambda kind, severity, detail: kit.recorder.record(
+                    kind, severity, detail, component="tv_adb"
+                )
+            )
         for step in tv.prepare:
             await step()
     process = ProcessMessage(
@@ -463,6 +472,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             envelopes,
             reports_not_paired=lambda: features.supports(NOT_PAIRED_FEATURE),
             reports_waking=lambda: features.supports(WAKING_FEATURE),
+            reports_adb_permission=lambda: features.supports(ADB_PERMISSION_FEATURE),
+            adb_permission=lambda: tv.adb_permission.state if tv.adb_permission else None,
         )
         tv.manager.subscribe(publisher.publish)
         tv.manager.subscribe(tray.tv_state)
@@ -491,6 +502,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         # `not_paired` vai como `disconnected` e `waking` (TV ligando) como o estado de antes até a
         # API aceitá-los: depois, o estado sai de novo.
         features.on_change(lambda: publisher.publish(tv.manager.snapshot()))
+        if tv.adb_permission is not None:
+            # Cada mudança da permissão do ADB (pedida, aceita, perdida) chega ao celular na hora.
+            tv.adb_permission.on_change(lambda: publisher.publish(tv.manager.snapshot()))
     shipper = DiagnosticsShipper(
         kit.store,
         kit.recorder,

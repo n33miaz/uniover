@@ -259,7 +259,8 @@ internal sealed partial class TvAgentMessageHandler(
             body.GetProperty("volume") is { ValueKind: JsonValueKind.Number } volume ? volume.GetInt32() : null,
             body.GetProperty("app").GetString(),
             body.GetProperty("connection").GetString()!,
-            message.Timestamp);
+            message.Timestamp,
+            ReadAdbPermission(body));
 
         // Um estado vindo do agente prova que ele está conectado.
         state.NoteOnline(message.AgentId, true);
@@ -267,6 +268,13 @@ internal sealed partial class TvAgentMessageHandler(
         stream.PublishState(tvId, TvState.From(snapshot, agentOnline: true));
         persister.Observe(message.AgentId, snapshot);
     }
+
+    /// <summary>A permissão do ADB do estado (campo opcional): ausente ou fora da lista vira "não se sabe".</summary>
+    private static string? ReadAdbPermission(JsonElement body) =>
+        body.TryGetProperty("adbPermission", out var value) && value.ValueKind == JsonValueKind.String
+        && AdbPermissionText.IsKnown(value.GetString())
+            ? value.GetString()
+            : null;
 
     private async Task StoreAppsAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {

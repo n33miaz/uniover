@@ -26,8 +26,27 @@ public static class TvStateText
     public const string ConnectionWaking = "waking";
 }
 
-/// <summary>Última leitura do estado que o agente mandou (o volume só vive aqui, em memória).</summary>
-public sealed record TvStateSnapshot(string Power, int? Volume, string? App, string Connection, DateTimeOffset UpdatedAt)
+/// <summary>Valores de <c>adbPermission</c>, os mesmos do contrato com o agente (minúsculas).</summary>
+public static class AdbPermissionText
+{
+    /// <summary>A TV aceitou o UniOver no ADB.</summary>
+    public const string Granted = "granted";
+
+    /// <summary>O agente não consegue usar o ADB sem a pessoa pedir pelo app.</summary>
+    public const string Missing = "missing";
+
+    /// <summary>O aviso do ADB está na tela da TV esperando o aceite.</summary>
+    public const string Pending = "pending";
+
+    public static bool IsKnown(string? value) => value is Granted or Missing or Pending;
+}
+
+/// <summary>
+/// Última leitura do estado que o agente mandou (o volume e a permissão do ADB só vivem aqui, em memória).
+/// <c>AdbPermission</c> é <c>null</c> quando o agente não disse (Samsung, agente antigo, ADB ainda sem resposta).
+/// </summary>
+public sealed record TvStateSnapshot(
+    string Power, int? Volume, string? App, string Connection, DateTimeOffset UpdatedAt, string? AdbPermission = null)
 {
     /// <summary>
     /// Só <c>power</c>, <c>app</c> e <c>connection</c> valem gravação e evento: mudar apenas o volume não escreve nada
@@ -43,6 +62,8 @@ public sealed record TvStateSnapshot(string Power, int? Volume, string? App, str
 /// <summary>
 /// O estado como a tela o vê: a leitura do agente combinada com a presença dele. <c>AgentLinked</c> diz se a TV da conta
 /// tem um computador (agente) vinculado: sem vínculo não há o que ligar ou desligar, e a Início não mostra o ponto do agente.
+/// <c>AdbPermission</c> (<c>granted</c>, <c>missing</c>, <c>pending</c> ou <c>null</c> se não se sabe) só existe com o agente
+/// conectado: é o que a tela usa para pedir a permissão do ADB antes de uma ação falhar.
 /// </summary>
 public sealed record TvState(
     string Power,
@@ -52,7 +73,8 @@ public sealed record TvState(
     bool AgentOnline,
     DateTimeOffset? UpdatedAt,
     bool AgentLinked = true,
-    DateTimeOffset? OfflineSince = null)
+    DateTimeOffset? OfflineSince = null,
+    string? AdbPermission = null)
 {
     /// <summary>
     /// Sem agente conectado não há sessão com a TV: a conexão é sempre <c>disconnected</c> e o volume (que só o
@@ -68,7 +90,7 @@ public sealed record TvState(
         }
 
         return agentOnline
-            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked)
+            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked, null, snapshot.AdbPermission)
             : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt, agentLinked, since);
     }
 }

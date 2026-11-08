@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Final, Protocol
+from typing import Final, Literal, Protocol
 
 from uniover_agent.ports.tv_channel import TvChannel, TvChannelError
 
@@ -25,6 +25,20 @@ ADB_IDLE: Final = "adb_idle"
 ADB_IDENTITY: Final = "adb_identity"
 ADB_TIMEOUT: Final = "adb_timeout"
 ADB_FAILED: Final = "adb_failed"
+
+# Como está a permissão do ADB desta TV para o app: `granted` (a TV aceitou o UniOver), `missing` (o
+# agente não consegue usar o ADB sem a pessoa pedir) ou `pending` (o aviso está na tela da TV
+# esperando o aceite). Quem sabe é o adaptador do ADB; o resto só ouve (ver `AdbPermissionSink`).
+AdbPermissionState = Literal["granted", "missing", "pending"]
+
+
+class AdbPermissionSink(Protocol):
+    """Quem fica sabendo quando a permissão do ADB muda (o app avisa a pessoa pelo celular)."""
+
+    def report(self, state: AdbPermissionState, reason: str, detail: str = "") -> None:
+        """`reason` é um motivo curto e fixo; `detail` só vai ao diagnóstico (nunca IP nem MAC)."""
+        ...
+
 
 # Só um pedido explícito da pessoa (um botão do app) pode abrir uma conexão nova com uma TV que
 # ainda não deu a permissão do ADB: cada conexão assim faz a TV mostrar o aviso "Permitir depuração
