@@ -1,0 +1,59 @@
+:host {
+  display: block;
+}
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--space-2) max(var(--gutter), env(safe-area-inset-right)) var(--space-6)
+    max(var(--gutter), env(safe-area-inset-left));
+}
+
+.case {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.case h2,
+.case p {
+  margin: 0;
+}
+
+/* O título de cada caso cabe numa linha; o que ele explica vem logo abaixo, em frase curta. */
+.case h2 {
+  font-size: var(--fs-body);
+}
+
+.when {
+  color: var(--a-ink2);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+
+ul.lines {
+  list-style: disc;
+}
+
+.phone {
+  color: var(--a-ink2);
+}
+
+.phone strong {
+  margin-inline-end: 0.3em;
+  color: var(--a-ink);
+}
+
+.back {
+  align-self: stretch;
+}
