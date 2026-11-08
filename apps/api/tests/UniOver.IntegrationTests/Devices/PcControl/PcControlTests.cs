@@ -496,6 +496,50 @@ public sealed class PcControlTests(PostgresFixture postgres)
         SameJson(releaseCommand.GetProperty("body"), "{\"key\":\"ALT\",\"action\":\"UP\"}");
     }
 
+    [Fact]
+    public async Task Key_Budget_IsOnlyChargedForWhatWasSent_AndRefundedOnA409Or503()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectPcAsync(app); // agente sem a v2
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+        var budget = app.App.Services.GetRequiredService<PcKeyBudget>();
+        var user = await UserIdAsync(app);
+
+        // 409 (agente antigo): nada saiu, o gasto volta; muitas recusas seguidas nunca esgotam o teto.
+        for (var i = 0; i < 130; i++)
+        {
+            using var refused = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 50 });
+            refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+        for (var i = 0; i < 130; i++)
+        {
+            using var offline = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 50 });
+            offline.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+
+        budget.TryTake(user, PcKeyBudget.PressesPerMinute).Should().BeTrue("nenhum aperto saiu: o teto está inteiro");
+    }
+
+    [Fact]
+    public async Task Key_Settle_CountsFromTheFirstHelloOfTheConnection_NotFromEveryReHello()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        // O agente repete o `hello` (a capacidade nova só vem depois da API listá-la): isso não reabre a espera.
+        await agent.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Capability);
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.LastMessageAt >= app.App.Time.GetUtcNow(), "segundo hello processado");
+
+        using var response = await PostAsync(app, "key", new { key = "BACKSPACE", repeat = 5 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
     private static async Task<Guid> UserIdAsync(TransportApp app)
     {
         await using var db = app.App.Db();

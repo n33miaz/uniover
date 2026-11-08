@@ -546,13 +546,14 @@ internal static class PcControlEndpoints
 
         // Cada repetição é um aperto: o limite de pedidos do `pc-input` conta um por pedido. Soltar não paga.
         var isUp = request!.Action is not null && PcMessages.KeyActions[request.Action] == PcKeyV2BodyAction.Up;
-        if (!isUp && !budget.TryTake(userId, Math.Max(1, request.Repeat ?? 1)))
+        var cost = isUp ? 0 : Math.Max(1, request.Repeat ?? 1);
+        if (cost > 0 && !budget.TryTake(userId, cost))
         {
             return PcProblems.KeyBudgetExceeded();
         }
 
         // A v1 sempre que o pedido cabe nela; a v2 só para o que ela diz, e só para o agente que a declarou.
-        return await handler.RunAsync(
+        var result = await handler.RunAsync(
             userId,
             PcMessages.KeyFor(request!),
             PcControlHandler.CommandTimeout,
@@ -560,6 +561,14 @@ internal static class PcControlEndpoints
             ClientInfo.From(http),
             cancellationToken,
             PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability);
+
+        // O teto conta o que saiu: sem PC (409) ou sem sessão para entregar (503), nada foi enviado e o gasto volta.
+        if (cost > 0 && result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict or StatusCodes.Status503ServiceUnavailable })
+        {
+            budget.Refund(userId, cost);
+        }
+
+        return result;
     }
 
     private static async Task<IResult> KeyReleaseAsync(

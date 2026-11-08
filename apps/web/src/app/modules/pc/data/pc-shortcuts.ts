@@ -1,4 +1,4 @@
-import type { PcKey, PcModifier } from './pc-types';
+import type { PcKey, PcKeyV1, PcModifier } from './pc-types';
 
 /** Os grupos da folha de atalhos, na ordem em que aparecem (depois dos fixados). */
 export type ShortcutGroup = 'edit' | 'window' | 'system' | 'browser' | 'video' | 'slides';
@@ -14,7 +14,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
 
 /** O que um atalho faz: uma tecla com modificadores (o contrato `pc.key.v1`) ou uma ação de energia do PC. */
 export type ShortcutAction =
-  | { readonly kind: 'keys'; readonly key: PcKey; readonly modifiers: readonly PcModifier[] }
+  | { readonly kind: 'keys'; readonly key: PcKeyV1; readonly modifiers: readonly PcModifier[] }
   | { readonly kind: 'lock' };
 
 /**
@@ -31,7 +31,7 @@ export interface PcShortcut {
 const keys = (
   id: string,
   group: ShortcutGroup,
-  key: PcKey,
+  key: PcKeyV1,
   ...modifiers: PcModifier[]
 ): PcShortcut => ({ id, group, action: { kind: 'keys', key, modifiers } });
 

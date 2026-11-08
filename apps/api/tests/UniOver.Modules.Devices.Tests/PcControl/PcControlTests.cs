@@ -503,6 +503,44 @@ public sealed class PcKeyBudgetTests
     }
 
     [Fact]
+    public void ARefundGivesBackWhatWasNeverSent_NeverBelowZero_AndOnlyInTheCurrentWindow()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var budget = new PcKeyBudget(time);
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute).Should().BeTrue();
+        budget.TryTake(Alice, 1).Should().BeFalse();
+
+        budget.Refund(Alice, 50);
+        budget.TryTake(Alice, 50).Should().BeTrue("os 50 que não saíram voltaram");
+        budget.TryTake(Alice, 1).Should().BeFalse();
+
+        budget.Refund(Bruno, 10); // sem janela: nada acontece
+        budget.TryTake(Bruno, PcKeyBudget.PressesPerMinute).Should().BeTrue();
+        budget.Refund(Bruno, PcKeyBudget.PressesPerMinute * 3);
+        budget.TryTake(Bruno, PcKeyBudget.PressesPerMinute).Should().BeTrue("devolver demais não cria crédito negativo, só zera");
+        budget.TryTake(Bruno, 1).Should().BeFalse();
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        budget.Refund(Alice, 100); // janela vencida: ignorado
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute).Should().BeTrue();
+        budget.TryTake(Alice, 1).Should().BeFalse("a devolução tardia não aumentou o teto");
+    }
+
+    [Fact]
+    public void TheWindowOfOneAccountRestartsWithoutAnyoneElseNeedingAScan()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var budget = new PcKeyBudget(time);
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute).Should().BeTrue();
+        budget.TryTake(Bruno, 5).Should().BeTrue();
+
+        time.Advance(TimeSpan.FromSeconds(61));
+
+        budget.TryTake(Alice, PcKeyBudget.PressesPerMinute).Should().BeTrue("a janela de Alice venceu");
+        budget.TryTake(Alice, 1).Should().BeFalse();
+    }
+
+    [Fact]
     public void ARefusedRequestSpendsNothing_AndTheWindowOpensAgainAfterAMinute()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);

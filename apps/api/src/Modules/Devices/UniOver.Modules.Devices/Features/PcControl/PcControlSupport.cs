@@ -242,18 +242,19 @@ internal sealed class PcKeyBudget(TimeProvider time)
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
     private readonly object _gate = new();
     private readonly Dictionary<Guid, (DateTimeOffset Start, int Used)> _windows = [];
+    private DateTimeOffset _nextSweep = DateTimeOffset.MinValue;
 
     public bool TryTake(Guid userId, int presses)
     {
         lock (_gate)
         {
             var now = time.GetUtcNow();
-            foreach (var expired in _windows.Where(w => now - w.Value.Start >= Window).Select(w => w.Key).ToList())
-            {
-                _windows.Remove(expired);
-            }
+            SweepOccasionally(now);
 
-            var (start, used) = _windows.GetValueOrDefault(userId, (now, 0));
+            // Só a janela desta conta é olhada a cada aperto: se venceu, recomeça.
+            var (start, used) = _windows.TryGetValue(userId, out var current) && now - current.Start < Window
+                ? current
+                : (now, 0);
             if (used + presses > PressesPerMinute)
             {
                 return false;
@@ -261,6 +262,39 @@ internal sealed class PcKeyBudget(TimeProvider time)
 
             _windows[userId] = (start, used + presses);
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Devolve o que um pedido gastou e não chegou a sair (PC ausente, desconectado, reconectando ou agente antigo): só o
+    /// que foi enviado conta. Nunca passa de zero e só mexe na janela de agora.
+    /// </summary>
+    public void Refund(Guid userId, int presses)
+    {
+        lock (_gate)
+        {
+            if (_windows.TryGetValue(userId, out var current) && time.GetUtcNow() - current.Start < Window)
+            {
+                _windows[userId] = (current.Start, Math.Max(0, current.Used - presses));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Uma varredura por minuto, no máximo, tira as contas que não apertam mais nada: o dicionário não cresce com contas
+    /// que passaram uma vez, e nenhum aperto paga a varredura inteira.
+    /// </summary>
+    private void SweepOccasionally(DateTimeOffset now)
+    {
+        if (now < _nextSweep)
+        {
+            return;
+        }
+
+        _nextSweep = now + Window;
+        foreach (var expired in _windows.Where(w => now - w.Value.Start >= Window).Select(w => w.Key).ToList())
+        {
+            _windows.Remove(expired);
         }
     }
 }

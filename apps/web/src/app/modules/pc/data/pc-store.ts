@@ -135,6 +135,8 @@ export class PcStore {
   private inputGeneration = 0;
   /** Cada aperto tem o seu número: um `DOWN` atrasado só pede mais um `UP` se ainda é o último. */
   private downEpoch = 0;
+  /** Havia modificador segurado quando a conta trocou: o próximo `UP` pedido era dele, e não vai ao PC da conta nova. */
+  private keysOfOtherAccount = false;
   /** Depois de sair da tela ou esconder a página o sinal de vida não volta (só a próxima visita o liga). */
   private heartbeatAllowed = true;
   /** Um `DOWN` foi pedido e o `UP` ainda não foi confirmado: o botão pode estar apertado no PC. */
@@ -489,9 +491,17 @@ export class PcStore {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
     if (this.heldKeys().includes(key)) return null;
+    this.keysOfOtherAccount = false;
     const asked = this.account;
     this.setKeyHeld(key, true);
-    const failure = await this.queueInput(() => this.api.key(key, [], { action: 'DOWN' }));
+    const failure = await this.queueInput(() => {
+      const down = this.api.key(key, [], { action: 'DOWN' });
+      // A espera do `DOWN` tem prazo (e a soltura só espera `UP_DRAIN_MS`), mas o pedido de verdade segue no ar: quando ele
+      // termina, se a tecla já foi solta (o `UP` pode ter passado na frente dele) ou o resultado ficou incerto, solta de novo.
+      const settled = () => this.afterDown(key, asked);
+      down.then(settled, settled);
+      return down;
+    });
     if (this.session.accountId() !== asked) return failure;
     if (failure === CANCELLED) this.setKeyHeld(key, false);
     else if (failure !== null) void this.releaseKey(key, { persistent: true });
@@ -499,8 +509,19 @@ export class PcStore {
   }
 
   /**
-   * Solta um modificador segurado; sem ele segurado não faz nada. Rota e caminho próprios: nunca passa pela fila de entrada
-   * (uma falha dela não o cancela) e funciona mesmo com o PC marcado como desconectado (um `UP` a mais é inofensivo). Espera
+   * O `DOWN` de verdade terminou (bem ou mal). Se a tecla já não consta como segurada, o `UP` que a soltou pode ter chegado ao
+   * PC antes dele, e o Alt ficaria preso: um `UP` a mais, que é inofensivo, resolve. Se ela ainda consta, quem a solta virá
+   * depois deste pedido, na ordem certa.
+   */
+  private afterDown(key: PcHoldableKey, owner: string | null): void {
+    if (this.session.accountId() !== owner || this.heldKeys().includes(key)) return;
+    void this.keyUpWithRetry(key, owner, UP_RETRY_BACKOFF_MS.length + 1);
+  }
+
+  /**
+   * Solta um modificador. O `UP` sempre sai, mesmo sem a tecla constar como segurada (um `UP` a mais é inofensivo, e o estado
+   * daqui pode estar errado); só a troca de conta o dispensa (a tecla era do PC da outra conta). Rota e caminho próprios: nunca
+   * passa pela fila de entrada (uma falha dela não o cancela) e funciona mesmo com o PC marcado como desconectado. Espera
    * o que já saiu por até `UP_DRAIN_MS` (para não passar na frente do próprio `DOWN`) e sai de qualquer jeito. Com
    * `persistent` (ninguém mais vai tentar: saiu da tela) repete se falhar e, se nada passar, desiste do estado: o agente solta
    * o que ficar 30 s sem comandos.
@@ -510,7 +531,11 @@ export class PcStore {
     options: { readonly persistent?: boolean } = {},
   ): Promise<PcFailure | null> {
     this.syncAccount();
-    if (!this.heldKeys().includes(key)) return null;
+    if (this.keysOfOtherAccount) {
+      // A tecla era do PC da conta anterior: o `UP` não vai ao desta (e o agente de lá solta sozinho).
+      this.keysOfOtherAccount = false;
+      return null;
+    }
     const asked = this.account;
     await raceTimeout(this.inputTail.then(ignore, ignore), UP_DRAIN_MS);
     if (this.session.accountId() !== asked) return CANCELLED;
@@ -710,6 +735,7 @@ export class PcStore {
     this.scroller.reset();
     this.setDragging(false);
     // O modificador segurado era no PC da conta anterior: nada é enviado para o desta; o agente o solta sozinho.
+    if (this.heldKeys().length > 0) this.keysOfOtherAccount = true;
     this.dropHeldKeys();
     this.notice.set(null);
   }

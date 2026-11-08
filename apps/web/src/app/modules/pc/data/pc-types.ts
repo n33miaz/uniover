@@ -171,9 +171,9 @@ export type PcClickButton = 'LEFT' | 'RIGHT' | 'MIDDLE';
 
 /**
  * Todas as teclas do contrato `pc.key.v1`, em tempo de execução. Um `Record` completo: o compilador recusa uma tecla que
- * falta ou que sobra em relação ao tipo `PcKey` (e o teste confere o tipo contra o gerado do esquema do contrato).
+ * falta ou que sobra em relação ao tipo `PcKeyV1` (e o teste confere o tipo contra o gerado do esquema do contrato).
  */
-const KEY_TABLE: Readonly<Record<PcKey, true>> = {
+const KEY_TABLE: Readonly<Record<PcKeyV1, true>> = {
   ENTER: true,
   BACKSPACE: true,
   DELETE: true,
@@ -228,4 +228,4 @@ const KEY_TABLE: Readonly<Record<PcKey, true>> = {
   Z: true,
 };
 
-export const PC_KEYS: readonly PcKey[] = Object.keys(KEY_TABLE) as PcKey[];
+export const PC_KEYS: readonly PcKeyV1[] = Object.keys(KEY_TABLE) as PcKeyV1[];
