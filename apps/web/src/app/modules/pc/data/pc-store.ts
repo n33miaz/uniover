@@ -491,10 +491,23 @@ export class PcStore {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
     if (this.heldKeys().includes(key)) return null;
+    // Sem a tela (saiu do módulo ou escondeu a página) ninguém solta o que for segurado agora.
+    if (!this.heartbeatAllowed) return CANCELLED;
     this.keysOfOtherAccount = false;
     const asked = this.account;
     this.setKeyHeld(key, true);
+    let skipped = false;
     const failure = await this.queueInput(() => {
+      // O `DOWN` esperou na fila: se nesse meio tempo a tela saiu, a página se escondeu, a conta mudou ou a tecla já foi solta
+      // (a soltura de sair e de esconder passou na frente dele), ele não vai mais, para o Alt nunca ficar preso no PC.
+      if (
+        !this.heartbeatAllowed ||
+        this.session.accountId() !== asked ||
+        !this.heldKeys().includes(key)
+      ) {
+        skipped = true;
+        return Promise.resolve();
+      }
       const down = this.api.key(key, [], { action: 'DOWN' });
       // A espera do `DOWN` tem prazo (e a soltura só espera `UP_DRAIN_MS`), mas o pedido de verdade segue no ar: quando ele
       // termina, se a tecla já foi solta (o `UP` pode ter passado na frente dele) ou o resultado ficou incerto, solta de novo.
@@ -502,6 +515,7 @@ export class PcStore {
       down.then(settled, settled);
       return down;
     });
+    if (skipped) return CANCELLED;
     if (this.session.accountId() !== asked) return failure;
     if (failure === CANCELLED) this.setKeyHeld(key, false);
     else if (failure !== null) void this.releaseKey(key, { persistent: true });

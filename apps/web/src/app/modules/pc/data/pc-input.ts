@@ -13,6 +13,12 @@ export type InputKind = 'edit' | 'key';
 /** Teclas na fila a partir das quais a repetição (da tela ou do teclado do celular) pula a rodada em vez de empilhar. */
 export const MAX_KEYS_IN_FLIGHT = 2;
 
+/**
+ * Com a repetição em lotes (`pc.key.v2`) cada pedido carrega até `BATCH_MAX` apertos, então a rodada só sai com a fila vazia:
+ * pedidos em voo mais lotes esperando passariam de um lote a executar depois de o dedo sair.
+ */
+export const MAX_BATCHES_IN_FLIGHT = 1;
+
 /** Quanto o "Soltar" espera as teclas que a fila ainda não entregou ao PC. */
 export const RELEASE_SETTLE_MS = 1_500;
 
@@ -121,8 +127,13 @@ export class PcInput {
    * rápido não pode soltar o Alt antes do último Tab) e então solta pelo caminho próprio do store, que nunca é cancelado pela
    * fila. Passado o prazo, solta mesmo assim.
    */
-  async release(key: PcHoldableKey): Promise<PcFailure | null> {
+  async release(
+    key: PcHoldableKey,
+    options: { readonly discard?: readonly PcKey[] } = {},
+  ): Promise<PcFailure | null> {
     await this.settle(RELEASE_SETTLE_MS);
+    // Passado o prazo, o que ainda esperava na fila (os Tab de uma fila presa) não vai depois da soltura, como tecla solta.
+    if (options.discard) this.typer.discardKeys(options.discard);
     return this.store.releaseKey(key);
   }
 

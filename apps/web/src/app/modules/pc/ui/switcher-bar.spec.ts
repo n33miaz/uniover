@@ -5,8 +5,10 @@ import { PcSwitcherBar } from './switcher-bar';
 
 describe('PcSwitcherBar', () => {
   const active = signal(false);
+  const releasing = signal(false);
   const switcher = {
     active,
+    releasing,
     next: vi.fn(),
     previous: vi.fn(),
     release: vi.fn(() => Promise.resolve(null)),
@@ -18,6 +20,7 @@ describe('PcSwitcherBar', () => {
 
   beforeEach(() => {
     active.set(false);
+    releasing.set(false);
     vi.clearAllMocks();
     TestBed.configureTestingModule({ providers: [{ provide: PcSwitcher, useValue: switcher }] });
     fixture = TestBed.createComponent(PcSwitcherBar);
@@ -42,6 +45,25 @@ describe('PcSwitcherBar', () => {
     active.set(false);
     fixture.detectChanges();
     expect(root.querySelector('.bar')).toBeNull();
+  });
+
+  it('while releasing, the three buttons are off (no Tab can follow a Soltar)', () => {
+    active.set(true);
+    fixture.detectChanges();
+    expect(['previous', 'next', 'release'].map((name) => button(name).disabled)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    releasing.set(true);
+    fixture.detectChanges();
+    expect(['previous', 'next', 'release'].map((name) => button(name).disabled)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    button('next').click();
+    expect(switcher.next).not.toHaveBeenCalled();
   });
 
   it('the buttons call previous, next and release', () => {

@@ -1,11 +1,14 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { PcInput } from '../data/pc-input';
 import { PcPinned } from '../data/pc-pinned';
@@ -51,6 +54,7 @@ let nextGrid = 0;
               class="cell"
               [class.on]="editing() && pinned.isPinned(item.id)"
               [attr.aria-pressed]="editing() ? pinned.isPinned(item.id) : null"
+              [attr.aria-expanded]="item.action.kind === 'goto-slide' ? gotoOpen() : null"
               [attr.data-shortcut]="item.id"
               [disabled]="!editing() && !store.canSend()"
               (click)="activate(item)"
@@ -65,7 +69,7 @@ let nextGrid = 0;
       </section>
     }
     @if (gotoOpen()) {
-      <form class="goto" (submit)="goto($event, slide)">
+      <form class="goto" novalidate (submit)="goto($event, slide)">
         <label class="goto-label" for="{{ prefix }}slide" i18n="@@pc.sc.goto-label">
           Número do slide
         </label>
@@ -96,6 +100,16 @@ export class PcShortcutGrid {
   private readonly input = inject(PcInput);
   protected readonly prefix = `sc-${nextGrid++}-`;
 
+  constructor() {
+    // O campo do número do slide recebe o foco ao abrir (o teclado numérico sobe) e a linha aparece inteira na folha.
+    effect(() => {
+      const field = this.slideField()?.nativeElement;
+      if (!field) return;
+      field.focus();
+      field.closest('form')?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }
+
   private readonly switcher = inject(PcSwitcher);
 
   /** Modo de edição: tocar fixa e solta, em vez de enviar. */
@@ -104,6 +118,7 @@ export class PcShortcutGrid {
   readonly began = output<void>();
   /** O campo do número do slide está aberto. */
   protected readonly gotoOpen = signal(false);
+  private readonly slideField = viewChild<ElementRef<HTMLInputElement>>('slide');
 
   /** Um aviso curto (a lista de fixados está cheia; a falha de bloquear). */
   protected readonly note = signal<string | null>(null);
@@ -168,7 +183,8 @@ export class PcShortcutGrid {
   protected goto(event: Event, field: HTMLInputElement): void {
     event.preventDefault();
     const text = field.value.trim();
-    if (!/^[0-9]{1,3}$/.test(text) || Number(text) < 1 || !this.store.canSend()) {
+    if (!this.store.canSend()) return;
+    if (!/^[0-9]{1,3}$/.test(text) || Number(text) < 1) {
       this.note.set($localize`:@@pc.sc.goto-invalid:Digite o número do slide, de 1 a 999.`);
       return;
     }

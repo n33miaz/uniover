@@ -201,6 +201,11 @@ export class LiveTyper {
     void this.pump();
   }
 
+  /** Tira da fila as teclas que ainda não saíram (o passo em voo termina sozinho); o resto da fila segue como está. */
+  discardKeys(keys: readonly PcKey[]): void {
+    this.queue = this.queue.filter((op) => op.kind !== 'key' || !keys.includes(op.key));
+  }
+
   /** Descarta o que ainda não saiu (a tela foi fechada); o passo em voo termina sozinho. */
   clear(): void {
     this.queue = [];

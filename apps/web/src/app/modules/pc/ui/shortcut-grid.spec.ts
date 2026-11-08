@@ -110,42 +110,78 @@ describe('PcShortcutGrid', () => {
       ]);
     });
 
-    it('go to slide N opens a number field and sends the digits and Enter', async () => {
+    /** Digita no campo como a pessoa (o valor e o evento de entrada) e toca no botão "Ir". */
+    const typeSlide = async (value: string) => {
+      const field = root.querySelector<HTMLInputElement>('.goto-input')!;
+      field.value = value;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      root.querySelector<HTMLButtonElement>('.goto-go')!.click();
+      await flush();
+      fixture.detectChanges();
+      return field;
+    };
+
+    const openGoto = () => {
       store.capabilities.set(['pc.key.v2']);
       fixture.detectChanges();
-      expect(root.querySelector('.goto')).toBeNull();
       cell('slides-goto').click();
       fixture.detectChanges();
+    };
+
+    it('go to slide N opens a number field, with focus, and sends the digits and Enter', async () => {
+      store.capabilities.set(['pc.key.v2']);
+      fixture.detectChanges();
+      document.body.append(root);
+      expect(root.querySelector('.goto')).toBeNull();
+      expect(cell('slides-goto').getAttribute('aria-expanded')).toBe('false');
+      cell('slides-goto').click();
+      fixture.detectChanges();
+      expect(cell('slides-goto').getAttribute('aria-expanded')).toBe('true');
       const field = root.querySelector<HTMLInputElement>('.goto-input')!;
-      field.value = '12';
-      root
-        .querySelector<HTMLFormElement>('.goto')!
-        .dispatchEvent(new Event('submit', { cancelable: true }));
-      await flush();
+      expect(document.activeElement).toBe(field);
+      await typeSlide('12');
       expect(store.sendKey.mock.calls).toEqual([
         ['D1', []],
         ['D2', []],
         ['ENTER', []],
       ]);
       expect(field.value).toBe('');
+      root.remove();
     });
 
-    it('go to slide refuses what is not a number from 1 to 999 and sends nothing', async () => {
-      store.capabilities.set(['pc.key.v2']);
-      fixture.detectChanges();
+    it('the form turns the browser validation off, so every invalid value gets our own message', () => {
+      openGoto();
+      expect(root.querySelector('.goto')!.hasAttribute('novalidate')).toBe(true);
+    });
+
+    it.each(['', '   ', '0', '00', 'abc', '1a', '1234', '-3', '1.5'])(
+      'go to slide refuses %j with our own message and sends nothing',
+      async (bad) => {
+        openGoto();
+        await typeSlide(bad);
+        expect(store.sendKey).not.toHaveBeenCalled();
+        expect(root.querySelector('.note')?.textContent).toContain('de 1 a 999');
+      },
+    );
+
+    it('a refusal is cleared by the next good number', async () => {
+      openGoto();
+      await typeSlide('x');
+      expect(root.querySelector('.note')).not.toBeNull();
+      await typeSlide('7');
+      expect(root.querySelector('.note')).toBeNull();
+      expect(store.sendKey.mock.calls).toEqual([
+        ['D7', []],
+        ['ENTER', []],
+      ]);
+    });
+
+    it('tapping the cell again closes the field', () => {
+      openGoto();
       cell('slides-goto').click();
       fixture.detectChanges();
-      const field = root.querySelector<HTMLInputElement>('.goto-input')!;
-      for (const bad of ['', '0', 'abc', '1234', '-3']) {
-        field.value = bad;
-        root
-          .querySelector<HTMLFormElement>('.goto')!
-          .dispatchEvent(new Event('submit', { cancelable: true }));
-      }
-      await flush();
-      fixture.detectChanges();
-      expect(store.sendKey).not.toHaveBeenCalled();
-      expect(root.querySelector('.note')?.textContent).toContain('1 a 999');
+      expect(root.querySelector('.goto')).toBeNull();
+      expect(cell('slides-goto').getAttribute('aria-expanded')).toBe('false');
     });
   });
 
