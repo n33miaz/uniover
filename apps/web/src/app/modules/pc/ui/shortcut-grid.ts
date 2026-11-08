@@ -107,11 +107,12 @@ export class PcShortcutGrid {
     if (!this.store.canSend()) return;
     if (item.action.kind === 'lock') {
       tick();
+      this.input.diverge();
       void this.store.power('LOCK').then((failure) => {
         if (failure && failure.kind !== 'cancelled') this.note.set(failure.message);
       });
       return;
     }
-    this.input.press(item.action.key, item.action.modifiers);
+    this.input.shortcut(item.action.key, item.action.modifiers);
   }
 }

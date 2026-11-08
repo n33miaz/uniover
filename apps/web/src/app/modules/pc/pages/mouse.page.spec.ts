@@ -459,7 +459,7 @@ describe('MousePage', () => {
     });
 
     it('a typed text that may have been lost says so, and a key that timed out leaves it to the failure notice', async () => {
-      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      const field = root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
       store.sendText.mockResolvedValueOnce({
         kind: 'timeout',
         message: 'O PC não respondeu a tempo.',
@@ -490,7 +490,7 @@ describe('MousePage', () => {
     });
 
     it('the keyboard button opens the phone keyboard on the hidden field and closes it again', () => {
-      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      const field = root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
       expect(bar('Teclado').getAttribute('aria-pressed')).toBe('false');
       bar('Teclado').click();
       expect(document.activeElement).toBe(field);
@@ -503,8 +503,10 @@ describe('MousePage', () => {
     });
 
     it('touching a key of the bar keeps the phone keyboard open', () => {
-      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      const field = root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
       bar('Teclado').click();
+      // O toque na tecla avisa antes de o foco sair, e o clique o devolve.
+      bar('Tab').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
       field.blur();
       bar('Tab').click();
       expect(document.activeElement).toBe(field);
@@ -513,6 +515,47 @@ describe('MousePage', () => {
       expect(document.activeElement).not.toBe(field);
       bar('Tab').click();
       expect(document.activeElement).not.toBe(field);
+    });
+
+    it('the keyboard button closes the keyboard even if the touch took the focus away first', () => {
+      const field = root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
+      bar('Teclado').click();
+      settle();
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('true');
+      // Android: o toque tira o foco do campo antes do clique.
+      bar('Teclado').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      field.blur();
+      bar('Teclado').click();
+      settle();
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('false');
+      expect(document.activeElement).not.toBe(field);
+    });
+
+    it('the pointerdown of the keyboard button is not left to the browser (it would move the focus)', () => {
+      const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+      bar('Teclado').dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('when the system closes the keyboard, the button goes back to normal and a bar key does not reopen it', () => {
+      const field = root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
+      bar('Teclado').click();
+      settle();
+      field.blur();
+      settle();
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('false');
+      bar('Tab').click();
+      expect(document.activeElement).not.toBe(field);
+    });
+
+    it('opening the shortcuts sheet or the settings closes the keyboard mode', async () => {
+      bar('Teclado').click();
+      settle();
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('true');
+      bar('Atalhos').click();
+      await fixture.whenStable();
+      settle();
+      expect(bar('Teclado').getAttribute('aria-pressed')).toBe('false');
     });
 
     it('with the keyboard open, the armed keys get a row above the bar', () => {
@@ -528,7 +571,7 @@ describe('MousePage', () => {
     });
 
     it('typing on the phone keyboard reaches the PC at once', () => {
-      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      const field = root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
       field.value += 'ok';
       field.dispatchEvent(new Event('input', { bubbles: true }));
       expect(store.sendText).toHaveBeenCalledExactlyOnceWith('ok');
@@ -661,6 +704,70 @@ describe('MousePage', () => {
       pointer('pointerdown', 1, 100, 100, 5_000);
       runFrames(3);
       expect(store.scrollPointer).not.toHaveBeenCalled();
+    });
+
+    describe('the touch that stops a glide', () => {
+      beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+      afterEach(() => vi.useRealTimers());
+
+      it('does not click when it lifts, not even a quick tap', () => {
+        flick();
+        store.click.mockClear();
+        pointer('pointerdown', 1, 100, 100, 5_000);
+        pointer('pointerup', 1, 100, 100, 5_050);
+        expect(store.click).not.toHaveBeenCalled();
+        expect(store.beginGesture).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not start a long press if the finger stays', () => {
+        flick();
+        store.startDrag.mockClear();
+        pointer('pointerdown', 1, 100, 100, 5_000);
+        vi.advanceTimersByTime(2_000);
+        expect(store.startDrag).not.toHaveBeenCalled();
+        pointer('pointerup', 1, 100, 100, 7_000);
+        expect(store.release).not.toHaveBeenCalled();
+      });
+
+      it('does not move the pointer or scroll if the finger walks', () => {
+        flick();
+        store.movePointer.mockClear();
+        store.scrollPointer.mockClear();
+        pointer('pointerdown', 1, 100, 100, 5_000);
+        pointer('pointermove', 1, 200, 100, 5_016);
+        pointer('pointerup', 1, 200, 100, 5_032);
+        expect(store.movePointer).not.toHaveBeenCalled();
+        expect(store.scrollPointer).not.toHaveBeenCalled();
+      });
+
+      it('swallows a second finger that lands with it, and the next touch is normal again', () => {
+        flick();
+        store.click.mockClear();
+        pointer('pointerdown', 1, 100, 100, 5_000);
+        pointer('pointerdown', 2, 140, 100, 5_005);
+        pointer('pointerup', 1, 100, 100, 5_050);
+        pointer('pointerup', 2, 140, 100, 5_055);
+        expect(store.click).not.toHaveBeenCalled();
+        pointer('pointerdown', 1, 100, 100, 6_000);
+        pointer('pointerup', 1, 100, 100, 6_050);
+        expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+      });
+
+      it('a touch when nothing was gliding is an ordinary tap', () => {
+        pointer('pointerdown', 1, 100, 100, 0);
+        pointer('pointerup', 1, 100, 100, 50);
+        expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+      });
+
+      it('a system cancel forgets the swallowed finger', () => {
+        flick();
+        store.click.mockClear();
+        pointer('pointerdown', 1, 100, 100, 5_000);
+        pointer('pointercancel', 1, 100, 100, 5_010);
+        pointer('pointerdown', 1, 100, 100, 6_000);
+        pointer('pointerup', 1, 100, 100, 6_050);
+        expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+      });
     });
 
     it('hiding the page stops it', () => {

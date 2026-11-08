@@ -15,8 +15,13 @@ interface WakeLockLike {
 export class ScreenWakeLock {
   private sentinel: WakeLockSentinelLike | null = null;
   private wanted = false;
+  /** Há um pedido ao navegador ainda sem resposta: nenhum segundo pedido sai enquanto ele não volta. */
+  private requesting = false;
   private readonly onVisible = () => {
-    if (this.wanted && this.doc.visibilityState === 'visible' && !this.sentinel) {
+    if (this.doc.visibilityState === 'hidden') {
+      // O navegador solta o bloqueio ao esconder a página; soltar de propósito deixa a conta certa quando ela voltar.
+      this.drop();
+    } else if (this.wanted) {
       void this.request();
     }
   };
@@ -44,6 +49,10 @@ export class ScreenWakeLock {
   stop(): void {
     this.wanted = false;
     this.doc.removeEventListener('visibilitychange', this.onVisible);
+    this.drop();
+  }
+
+  private drop(): void {
     const held = this.sentinel;
     this.sentinel = null;
     void held?.release().catch(() => undefined);
@@ -57,11 +66,12 @@ export class ScreenWakeLock {
 
   private async request(): Promise<void> {
     const api = this.api();
-    if (!api || this.doc.visibilityState === 'hidden') return;
+    if (!api || this.requesting || this.sentinel || this.doc.visibilityState === 'hidden') return;
+    this.requesting = true;
     try {
       const sentinel = await api.request('screen');
-      // Pararam enquanto o pedido ia: o bloqueio que chegou agora não tem dono.
-      if (!this.wanted) {
+      // Pararam enquanto o pedido ia, ou já há outro bloqueio: o que chegou agora não tem dono e é solto.
+      if (!this.wanted || this.sentinel) {
         void sentinel.release().catch(() => undefined);
         return;
       }
@@ -71,6 +81,8 @@ export class ScreenWakeLock {
       });
     } catch {
       // recusado (economia de bateria, política da página): a tela apaga como sempre
+    } finally {
+      this.requesting = false;
     }
   }
 }

@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { PcArmed } from '../data/pc-armed';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { ShortcutsPage } from './shortcuts.page';
@@ -29,6 +30,17 @@ describe('ShortcutsPage', () => {
   it('shows the whole catalog in the tab itself, with no explanatory text', () => {
     expect(root.querySelectorAll('app-pc-shortcut-grid .group').length).toBe(7);
     expect(root.querySelectorAll('p').length).toBe(0);
+  });
+
+  it('shows the armed keys on the tab, so Win+Ctrl+F cannot fire unseen', () => {
+    expect(root.querySelector('app-pc-armed-pills .pills')).toBeNull();
+    TestBed.inject(PcArmed).toggle('WIN');
+    TestBed.inject(PcArmed).toggle('CTRL');
+    fixture.detectChanges();
+    const pills = [...root.querySelectorAll('app-pc-armed-pills .pill')].map((item) =>
+      item.textContent?.trim(),
+    );
+    expect(pills).toEqual(['Ctrl', 'Win']);
   });
 
   it('a tap sends the shortcut', async () => {

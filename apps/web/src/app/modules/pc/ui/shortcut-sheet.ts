@@ -15,6 +15,7 @@ import {
 } from '../../../shared/ui/dialog-motion';
 import { PcStore } from '../data/pc-store';
 import { tick } from '../input/haptics';
+import { PcArmedPills } from './armed-pills';
 import { PcShortcutGrid } from './shortcut-grid';
 
 /**
@@ -24,12 +25,13 @@ import { PcShortcutGrid } from './shortcut-grid';
  */
 @Component({
   selector: 'app-pc-shortcut-sheet',
-  imports: [PcShortcutGrid],
+  imports: [PcArmedPills, PcShortcutGrid],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <dialog #dialog class="sheet" aria-labelledby="pc-shortcuts-title" (cancel)="dismiss($event)">
       <header class="head">
         <h2 id="pc-shortcuts-title" tabindex="-1" i18n="@@pc.sc.title">Atalhos</h2>
+        <app-pc-armed-pills />
         <button
           type="button"
           class="icon"

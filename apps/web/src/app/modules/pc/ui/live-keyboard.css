@@ -22,4 +22,6 @@
   caret-color: transparent;
   font: inherit;
   font-size: 16px;
+  overflow: hidden;
+  resize: none;
 }

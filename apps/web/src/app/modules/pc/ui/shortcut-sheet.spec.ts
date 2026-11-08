@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { PcArmed } from '../data/pc-armed';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { PcShortcutSheet } from './shortcut-sheet';
@@ -38,6 +39,30 @@ describe('PcShortcutSheet', () => {
 
   it('starts with the focus on the title, so no button looks switched on', () => {
     expect(document.activeElement).toBe(root.querySelector('h2'));
+  });
+
+  it('shows the armed keys in the sheet header, and a tap on one lets it go', () => {
+    const armed = TestBed.inject(PcArmed);
+    expect(root.querySelector('app-pc-armed-pills .pill')).toBeNull();
+    armed.toggle('WIN');
+    fixture.detectChanges();
+    const pill = root.querySelector<HTMLButtonElement>('app-pc-armed-pills .pill')!;
+    expect(pill.textContent?.trim()).toBe('Win');
+    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    pill.click();
+    fixture.detectChanges();
+    expect(armed.has('WIN')).toBe(false);
+    expect(root.querySelector('app-pc-armed-pills .pill')).toBeNull();
+  });
+
+  it('the armed key goes with the shortcut that is tapped, and the pill goes away', async () => {
+    TestBed.inject(PcArmed).toggle('WIN');
+    fixture.detectChanges();
+    root.querySelector<HTMLButtonElement>('[data-shortcut="find"]')!.click();
+    await flush();
+    expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('F', ['CTRL', 'WIN']);
+    fixture.detectChanges();
+    expect(root.querySelector('app-pc-armed-pills .pill')).toBeNull();
   });
 
   it('stays open after a tap, so the next tap chains', async () => {
