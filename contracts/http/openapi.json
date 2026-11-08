@@ -3632,6 +3632,12 @@
       },
       "PcKeyRequest": {
         "properties": {
+          "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "key": {
             "type": [
               "null",
@@ -3645,6 +3651,15 @@
             "type": [
               "null",
               "array"
+            ]
+          },
+          "repeat": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
             ]
           }
         },
@@ -3766,6 +3781,12 @@
           "available": {
             "type": "boolean"
           },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "online": {
             "type": "boolean"
           }
@@ -3773,7 +3794,8 @@
         "required": [
           "available",
           "online",
-          "apps"
+          "apps",
+          "capabilities"
         ],
         "type": "object"
       },
