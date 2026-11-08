@@ -64,6 +64,12 @@
   border: 0;
   background: none;
 }
+/* Nas abas que crescem com o conteúdo não há superfície com canto livre: o ponto vai numa linha própria, à direita. */
+.pc:not(.fill) .status[data-phase='ready'] {
+  position: static;
+  align-self: flex-end;
+  margin-right: var(--space-2);
+}
 .status[data-phase='ready'] .label {
   position: absolute;
   width: 1px;

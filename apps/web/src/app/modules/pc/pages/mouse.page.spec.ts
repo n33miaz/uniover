@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
 import { PcPrefs } from '../data/pc-prefs';
 import { PcStore } from '../data/pc-store';
@@ -458,17 +458,27 @@ describe('MousePage', () => {
       expect(root.querySelector('.toast')?.textContent).toContain('O PC está desconectado.');
     });
 
-    it('a text that may have been lost says so', async () => {
+    it('a typed text that may have been lost says so, and a key that timed out leaves it to the failure notice', async () => {
+      const field = root.querySelector<HTMLInputElement>('app-pc-live-keyboard input')!;
+      store.sendText.mockResolvedValueOnce({
+        kind: 'timeout',
+        message: 'O PC não respondeu a tempo.',
+      });
+      field.value += 'oi';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+      settle();
+      expect(root.querySelector('.toast')?.textContent).toContain(
+        'Parte do texto pode não ter chegado.',
+      );
+
       store.sendKey.mockResolvedValueOnce({
         kind: 'timeout',
         message: 'O PC não respondeu a tempo.',
       });
       bar('Enter').click();
       await flush();
-      settle();
-      expect(root.querySelector('.toast')?.textContent).toContain(
-        'Parte do texto pode não ter chegado.',
-      );
+      expect(store.sendKey).toHaveBeenCalled();
     });
 
     it('with the PC away the bar stays drawn but off, and sends nothing', () => {
@@ -524,10 +534,27 @@ describe('MousePage', () => {
       expect(store.sendText).toHaveBeenCalledExactlyOnceWith('ok');
     });
 
-    it('the shortcuts button leads to the Shortcuts tab for now', () => {
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    it('the shortcuts button opens the shortcuts sheet over the mouse, and the sheet closes again', async () => {
+      expect(root.querySelector('app-pc-shortcut-sheet')).toBeNull();
       bar('Atalhos').click();
-      expect(navigate).toHaveBeenCalledExactlyOnceWith('/pc/atalhos');
+      await fixture.whenStable();
+      settle();
+      expect(bar('Atalhos').getAttribute('aria-expanded')).toBe('true');
+      const dialog = root.querySelector('app-pc-shortcut-sheet dialog')!;
+      expect(dialog.hasAttribute('open')).toBe(true);
+      root
+        .querySelector<HTMLButtonElement>('app-pc-shortcut-sheet [data-shortcut="copy"]')!
+        .click();
+      await flush();
+      expect(store.sendKey).toHaveBeenCalledWith('C', ['CTRL']);
+      expect(root.querySelector('app-pc-shortcut-sheet dialog')?.hasAttribute('open')).toBe(true);
+      root
+        .querySelector<HTMLButtonElement>('app-pc-shortcut-sheet button[aria-label="Fechar"]')!
+        .click();
+      settle();
+      await fixture.whenStable();
+      settle();
+      expect(root.querySelector('app-pc-shortcut-sheet')).toBeNull();
     });
   });
 

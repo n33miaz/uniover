@@ -11,8 +11,9 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
+import { PcInput } from '../data/pc-input';
 import { PcPrefs } from '../data/pc-prefs';
 import { SessionState } from '../../../core/session/session-state';
 import { PcStore } from '../data/pc-store';
@@ -24,6 +25,7 @@ import { PcActionBar } from '../ui/action-bar';
 import { PcLiveKeyboard } from '../ui/live-keyboard';
 import { PcKeyPanel } from '../ui/key-panel';
 import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
+import { PcShortcutSheet } from '../ui/shortcut-sheet';
 import { ScreenWakeLock } from '../ui/wake-lock';
 
 /** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
@@ -59,7 +61,7 @@ interface Ring {
  */
 @Component({
   selector: 'app-pc-mouse-page',
-  imports: [PcActionBar, PcKeyPanel, PcLiveKeyboard, PcPadSettingsSheet],
+  imports: [PcActionBar, PcKeyPanel, PcLiveKeyboard, PcPadSettingsSheet, PcShortcutSheet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
@@ -194,13 +196,17 @@ interface Ring {
       [disabled]="!store.canSend()"
       [typing]="typing()"
       [panelOpen]="panelOpen()"
+      [shortcutsOpen]="shortcutsOpen()"
       [busy]="keysBusy"
       (key)="sendKey($event)"
       (keyboard)="openKeyboard()"
       (panel)="panelOpen.set(!panelOpen())"
-      (shortcuts)="openShortcuts()"
+      (shortcuts)="shortcutsOpen.set(true)"
     />
 
+    @if (shortcutsOpen()) {
+      <app-pc-shortcut-sheet (closed)="shortcutsOpen.set(false)" />
+    }
     @if (settingsOpen()) {
       <app-pc-pad-settings-sheet (closed)="settingsOpen.set(false)" />
     }
@@ -214,7 +220,7 @@ export class MousePage {
   protected readonly store = inject(PcStore);
   protected readonly prefs = inject(PcPrefs);
   private readonly armed = inject(PcArmed);
-  private readonly router = inject(Router);
+  private readonly input = inject(PcInput);
   private readonly route = inject(ActivatedRoute);
   private readonly session = inject(SessionState);
   private readonly doc = inject(DOCUMENT);
@@ -225,6 +231,7 @@ export class MousePage {
   protected readonly active = signal(false);
   protected readonly settingsOpen = signal(false);
   protected readonly panelOpen = signal(false);
+  protected readonly shortcutsOpen = signal(false);
   /** O teclado do celular está aberto (o campo escondido tem o foco). */
   protected readonly typing = signal(false);
   private readonly keyboard = viewChild.required(PcLiveKeyboard);
@@ -245,7 +252,7 @@ export class MousePage {
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Devolve `true` quando já há teclas demais sem resposta (a repetição pula a rodada em vez de empilhar). */
-  protected readonly keysBusy = () => this.keyboard().pending >= MAX_KEYS_IN_FLIGHT;
+  protected readonly keysBusy = () => this.input.pending >= MAX_KEYS_IN_FLIGHT;
 
   private readonly wakeLock = new ScreenWakeLock(this.doc);
 
@@ -409,10 +416,6 @@ export class MousePage {
   /** Tocar numa tecla da tela tira o foco do campo: no modo teclado ele volta (o teclado do celular não fecha). */
   protected keepKeyboard(): void {
     this.keyboard().restore();
-  }
-
-  protected openShortcuts(): void {
-    void this.router.navigateByUrl('/pc/atalhos');
   }
 
   /**

@@ -128,8 +128,11 @@ export interface TyperSender {
 }
 
 export interface TyperEvents {
-  /** O envio falhou: o que esperava na fila foi descartado (o campo precisa recomeçar do que o PC tem). */
-  failed(failure: PcFailure): void;
+  /**
+   * O envio falhou: o que esperava na fila foi descartado (o campo precisa recomeçar do que o PC tem). `kind` diz o que
+   * falhou: a mudança do campo (`edit`) ou uma tecla.
+   */
+  failed(failure: PcFailure, kind: 'edit' | 'key'): void;
   /** A fila esvaziou e nada está a caminho. */
   idle(): void;
 }
@@ -196,7 +199,7 @@ export class LiveTyper {
         if (failure !== null && generation === this.generation) {
           this.queue = [];
           this.generation++;
-          this.events.failed(failure);
+          this.events.failed(failure, op.kind);
           break;
         }
       }

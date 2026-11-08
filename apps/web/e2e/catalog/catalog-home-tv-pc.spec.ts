@@ -213,9 +213,10 @@ test('TV: configurar e TV Livre', async ({ page }) => {
 test('PC', async ({ page }) => {
   const M = 'PC';
   const tabs: [string, string][] = [
-    ['/pc', 'touchpad'],
-    ['/pc/teclado', 'teclado'],
+    ['/pc', 'mouse'],
+    ['/pc/atalhos', 'atalhos'],
     ['/pc/midia', 'mídia'],
+    ['/pc/mais', 'mais'],
     ['/pc/energia', 'energia'],
   ];
   for (const [route, name] of tabs) {
@@ -226,10 +227,8 @@ test('PC', async ({ page }) => {
     );
   }
   const pc = { module: M, route: '/pc', url: '/pc' };
-  await snap(
-    page,
-    { ...pc, state: 'touchpad, PC conectado', kind: 'com dados', scheme: 'dark' },
-    () => open(page, '/pc'),
+  await snap(page, { ...pc, state: 'mouse, PC conectado', kind: 'com dados', scheme: 'dark' }, () =>
+    open(page, '/pc'),
   );
   await snap(page, { ...pc, state: 'PC desligado ou sem agente', kind: 'erro' }, async () => {
     s.pc.status = { available: true, online: false, apps: [] };
