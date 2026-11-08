@@ -1,10 +1,19 @@
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 /* Sete espaços iguais, de largura a largura: nunca rola nem fica atrás da barra de abas. */
 .bar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+/* As teclas armadas, uma fileira acima da barra enquanto o teclado do celular está aberto. */
+.mods {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-1);
 }

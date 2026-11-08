@@ -28,6 +28,8 @@ export interface PcMock {
   commandFailure: PcFailure | null;
   /** Se definida, a falha acima vale só para os comandos que ela aceita (ex.: só o `DOWN` do botão). */
   failOnly: ((request: PcRequest) => boolean) | null;
+  /** Espera, em milissegundos, antes de cada comando responder (a ida e volta real até o PC é de 200 a 460 ms). */
+  commandDelayMs: number;
   /** Os comandos (tudo que não é a leitura do estado), por rota. */
   sent(path: string): Record<string, unknown>[];
 }
@@ -73,6 +75,7 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
     status: { ...READY, apps: [...READY.apps] },
     commandFailure: null,
     failOnly: null,
+    commandDelayMs: 0,
     sent: (path) =>
       mock.requests.filter((r) => r.method === 'POST' && r.path === path).map((r) => r.body ?? {}),
   };
@@ -105,6 +108,7 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
       });
     }
     if (method !== 'POST') return problem(route, { status: 404, kind: 'not-found' });
+    if (mock.commandDelayMs > 0) await new Promise((r) => setTimeout(r, mock.commandDelayMs));
     if (mock.commandFailure && (!mock.failOnly || mock.failOnly(entry))) {
       return problem(route, mock.commandFailure);
     }

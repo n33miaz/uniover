@@ -170,7 +170,7 @@
 .toast {
   position: absolute;
   right: var(--space-3);
-  bottom: var(--space-3);
+  bottom: calc(var(--space-3) + 52px);
   left: var(--space-3);
   z-index: 3;
   margin: 0;

@@ -429,10 +429,13 @@ test.describe('Tela do mouse', () => {
     await expect(page.getByRole('button', { name: 'Bloquear' })).toBeVisible();
   });
 
-  test('o endereço antigo do teclado leva à tela que o substituiu', async ({ page }) => {
+  test('o endereço antigo do teclado leva à tela do mouse, com o teclado pedido', async ({
+    page,
+  }) => {
     await page.goto('/pc/teclado');
     await expect(status(page)).toHaveText('Conectado');
-    await expect(page).toHaveURL(/\/pc\/atalhos$/);
+    await expect(page).toHaveURL(/\/pc\?teclado=1$/);
+    await expect(page.locator('.pad')).toBeVisible();
   });
 
   test('com o PC desconectado a barra some junto com a tela e volta quando ele volta', async ({
@@ -480,6 +483,161 @@ test.describe('Tela do mouse', () => {
     await page.reload();
     await expect(status(page)).toHaveText('Conectado');
     await expect(page.locator('.hints')).toHaveCount(0);
+  });
+});
+
+test.describe('Digitação ao vivo', () => {
+  /** Abre o teclado do celular (o foco nasce no toque do botão) e devolve o campo escondido. */
+  async function openKeyboard(page: Page) {
+    await page.getByRole('button', { name: 'Teclado', exact: true }).click();
+    const field = page.getByLabel('Digitar no PC');
+    await expect(field).toBeFocused();
+    return field;
+  }
+  const typed = () =>
+    pc
+      .sent('/text')
+      .map((body) => String(body['text']))
+      .join('');
+
+  test('cada letra vai ao PC na hora, sem botão de enviar, e o campo não mostra nada', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await openKeyboard(page);
+    await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await page.keyboard.type('olá, mundo');
+    await expect.poll(typed).toBe('olá, mundo');
+    await expect(page.getByRole('button', { name: 'Digitar', exact: true })).toHaveCount(0);
+  });
+
+  test('com a rede lenta o que se digita se junta: poucos pedidos, o texto inteiro e na ordem', async ({
+    page,
+  }) => {
+    pc.commandDelayMs = 300;
+    await openPc(page);
+    await openKeyboard(page);
+    await page.keyboard.type('abcdefghij', { delay: 20 });
+    await expect.poll(typed).toBe('abcdefghij');
+    // Uma letra por pedido seriam dez; o que chegou enquanto um voava saiu junto.
+    expect(pc.sent('/text').length).toBeLessThanOrEqual(4);
+    expect(pc.sent('/key')).toEqual([]);
+  });
+
+  test('apagar manda Backspace, mesmo com o campo vazio', async ({ page }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.press('Backspace');
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'BACKSPACE' }]);
+    await field.pressSequentially('ab');
+    await expect.poll(typed).toBe('ab');
+    await field.press('Backspace');
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'BACKSPACE' }, { key: 'BACKSPACE' }]);
+  });
+
+  test('Enter e Tab saem como tecla, nunca como texto, e o foco fica no campo', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('oi');
+    await field.press('Enter');
+    await field.press('Tab');
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'ENTER' }, { key: 'TAB' }]);
+    expect(typed()).toBe('oi');
+    await expect(field).toBeFocused();
+  });
+
+  test('o Enter da barra de ações nunca passa na frente do texto digitado antes dele', async ({
+    page,
+  }) => {
+    pc.commandDelayMs = 250;
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('oi');
+    await page.getByRole('button', { name: 'Enter', exact: true }).click();
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'ENTER' }]);
+    expect(typed()).toBe('oi');
+  });
+
+  test('apagar na barra tira também a letra do campo, e o texto seguinte sai certo', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('ab');
+    await expect.poll(typed).toBe('ab');
+    await page.getByRole('button', { name: 'Apagar', exact: true }).click();
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'BACKSPACE' }]);
+    await field.pressSequentially('c');
+    await expect.poll(typed).toBe('abc');
+  });
+
+  test('o preenchimento invisível do campo nunca vai ao PC, nem se o campo perder e ganhar o foco', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('ab');
+    await expect.poll(typed).toBe('ab');
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    // O foco volta com o texto do campo todo selecionado (como no Tab): digitar por cima não apaga nada do PC.
+    await field.pressSequentially('c');
+    await expect.poll(typed).toBe('abc');
+    expect(typed()).not.toContain('​');
+    expect(pc.sent('/key')).toEqual([]);
+  });
+
+  test('uma tecla armada com uma letra digitada vira o atalho, e a letra não vira texto', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await openKeyboard(page);
+    await page
+      .getByRole('group', { name: 'Teclas armadas' })
+      .getByRole('button', { name: 'Win' })
+      .click();
+    await page.keyboard.type('d');
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'D', modifiers: ['WIN'] }]);
+    expect(pc.sent('/text')).toEqual([]);
+    await expect(page.locator('.armed')).toHaveCount(0);
+  });
+
+  test('o emoji vai inteiro', async ({ page }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('oi ');
+    await page.keyboard.insertText('😀');
+    await expect.poll(typed).toBe('oi 😀');
+  });
+
+  test('uma falha incerta avisa que parte do texto pode não ter chegado e recomeça o campo', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    pc.commandFailure = { status: 504, kind: 'timeout' };
+    await field.pressSequentially('a');
+    await expect(page.locator('.toast')).toContainText('Parte do texto pode não ter chegado.');
+    // O motivo vem do aviso de falha da tela, sem repetir.
+    await expect(page.locator('.notice')).toContainText('O PC não respondeu a tempo.');
+    pc.commandFailure = null;
+    await field.pressSequentially('z');
+    await expect.poll(typed).toBe('az');
+  });
+
+  test('o painel de teclas continua à mão com o teclado aberto, e nada fica atrás da barra de abas', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await openKeyboard(page);
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    expect(await hiddenControls(page)).toEqual([]);
+    expect(await smallTargets(page)).toEqual([]);
+    await expectNoA11yViolations(page);
   });
 });
 

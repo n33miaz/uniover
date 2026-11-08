@@ -1,6 +1,16 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import type { PcKey } from '../data/pc-types';
+import { ChangeDetectionStrategy, Component, inject, input, output } from '@angular/core';
+import { PcArmed } from '../data/pc-armed';
+import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
+import { tick } from '../input/haptics';
 import { PcRepeat } from './pc-repeat';
+
+/** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
+const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
+  CTRL: 'Ctrl',
+  SHIFT: 'Shift',
+  ALT: 'Alt',
+  WIN: 'Win',
+};
 
 /**
  * A barra de ações da tela do mouse: sempre à vista, sem rolagem, a um toque do touchpad. Teclado do celular, Enter, apagar
@@ -12,6 +22,28 @@ import { PcRepeat } from './pc-repeat';
   imports: [PcRepeat],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    @if (typing()) {
+      <!-- Com o teclado do celular aberto, as teclas armadas ficam aqui (o painel de teclas cobriria o campo). -->
+      <div
+        class="mods"
+        role="group"
+        aria-label="Teclas armadas"
+        i18n-aria-label="@@pc.keyboard.modifiers"
+      >
+        @for (mod of modifiers; track mod) {
+          <button
+            type="button"
+            class="key"
+            [class.on]="armed.has(mod)"
+            [attr.aria-pressed]="armed.has(mod)"
+            [disabled]="disabled()"
+            (click)="toggle(mod)"
+          >
+            {{ label(mod) }}
+          </button>
+        }
+      </div>
+    }
     <div class="bar" role="group" aria-label="Teclas rápidas" i18n-aria-label="@@pc.bar.label">
       <button
         type="button"
@@ -110,6 +142,9 @@ import { PcRepeat } from './pc-repeat';
   styleUrls: ['./key-button.css', './action-bar.css'],
 })
 export class PcActionBar {
+  protected readonly armed = inject(PcArmed);
+  protected readonly modifiers = PC_MODIFIERS;
+
   /** Os nomes das teclas não se traduzem: são os que estão no teclado do PC. */
   protected readonly escapeText = 'Esc';
   protected readonly tabText = 'Tab';
@@ -124,6 +159,16 @@ export class PcActionBar {
 
   readonly key = output<PcKey>();
   readonly keyboard = output<void>();
+
+  protected label(modifier: PcModifier): string {
+    return MODIFIER_LABEL[modifier];
+  }
+
+  protected toggle(modifier: PcModifier): void {
+    tick();
+    this.armed.toggle(modifier);
+  }
+
   readonly panel = output<void>();
   readonly shortcuts = output<void>();
 }

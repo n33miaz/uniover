@@ -1,4 +1,5 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes } from '@angular/router';
 import type { TabItem } from '../../shared/ui/tab-bar/tab-bar';
 import { PcPage } from './pc-page';
 
@@ -13,7 +14,7 @@ const TABS: readonly TabItem[] = [
 
 /**
  * Rotas do módulo. A casca (`PcPage`) mostra o estado do PC e, quando ele está conectado, a aba aberta. Cada aba é uma
- * página preguiçosa. O endereço antigo do teclado segue valendo e leva à tela que o substituiu.
+ * página preguiçosa. O endereço antigo do teclado segue valendo e leva à tela do mouse, com o teclado pedido.
  */
 export const PC_ROUTES: Routes = [
   {
@@ -26,7 +27,10 @@ export const PC_ROUTES: Routes = [
         pathMatch: 'full',
         loadComponent: () => import('./pages/mouse.page').then((m) => m.MousePage),
       },
-      { path: 'teclado', redirectTo: 'atalhos' },
+      {
+        path: 'teclado',
+        redirectTo: () => inject(Router).createUrlTree(['/pc'], { queryParams: { teclado: 1 } }),
+      },
       {
         path: 'atalhos',
         loadComponent: () => import('./pages/keyboard.page').then((m) => m.KeyboardPage),
