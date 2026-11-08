@@ -262,6 +262,22 @@ describe('PowerSheet', () => {
       expect(root.querySelector('.schedule-result')?.textContent).toContain('Estado incerto');
     });
 
+    it('says a schedule that was too late to run was missed, not cancelled', () => {
+      store.lastPowerSchedule.set({
+        id: 'perdido',
+        dueAtUtc: new Date().toISOString(),
+        timeZone: 'America/Sao_Paulo',
+        status: 'completed',
+        result: 'missed',
+        reason: null,
+        version: 4,
+      });
+      fixture.detectChanges();
+      const text = root.querySelector('.schedule-result')?.textContent;
+      expect(text).toContain('Horário perdido');
+      expect(text).not.toContain('cancelado');
+    });
+
     it('sits between the main action and Cancelar, so the main action stays the first thing the eye reaches', () => {
       const now = root.querySelector('.now')!;
       const close = root.querySelector('.close')!;

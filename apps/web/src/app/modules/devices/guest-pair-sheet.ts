@@ -22,10 +22,11 @@ import { MAX_TV_NICKNAME, formatCodeInput, isValidTvNickname, normalizeCode } fr
 export const PAIR_SELF_ACTION = 'devices.pair-self';
 
 /**
- * Folha do CONVIDADO que tem a TV: aprova o PC dele como a própria TV. Pede o código que o PC mostrou (já vem
- * preenchido quando a pessoa chegou pelo botão "Aprovar neste computador"), o nome da TV e a senha de novo (o passo forte
- * de quem não tem passkey, que vale poucos minutos). A TV nasce só para esta conta, nunca como a padrão, e o administrador
- * a vê e revoga em Ajustes. Sem escolha de pessoas: isso é do administrador.
+ * Folha do CONVIDADO que tem a TV ou o controle do PC: aprova o PC dele. Pede o código que o PC mostrou (já vem
+ * preenchido quando a pessoa chegou pelo botão "Aprovar neste computador"), o nome da TV (só com a TV) e a senha de novo
+ * (o passo forte de quem não tem passkey, que vale poucos minutos). Com a TV, ela nasce só para esta conta, nunca como a
+ * padrão; sem a TV (só o controle do PC) o computador é pareado sem criar TV. O administrador vê e revoga em Ajustes. Sem
+ * escolha de pessoas: isso é do administrador.
  */
 @Component({
   selector: 'app-guest-pair-sheet',
@@ -40,6 +41,8 @@ export class GuestPairSheet {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   readonly initialCode = input('');
+  /** A pessoa tem a TV: o PC vira a TV própria dela e a folha pergunta o nome. Sem ela, só o controle do PC. */
+  readonly withTv = input(true);
   readonly done = output<void>();
   readonly closed = output<void>();
 
@@ -61,7 +64,7 @@ export class GuestPairSheet {
       !this.busy() &&
       !this.leaving() &&
       this.normalized() !== null &&
-      this.nameValid() &&
+      (this.nameValid() || !this.withTv()) &&
       this.password().length > 0,
   );
 
@@ -109,7 +112,7 @@ export class GuestPairSheet {
         (token) => this.authApi.stepUpWithPassword(token, PAIR_SELF_ACTION, this.password()),
         { stepUp: false },
       );
-      await this.api.approveOwn(code, this.tvName().trim() || null);
+      await this.api.approveOwn(code, this.withTv() ? this.tvName().trim() || null : null);
       this.password.set('');
       this.leaving.set(true);
       leaveDialog(this.dialog().nativeElement, () => this.done.emit());

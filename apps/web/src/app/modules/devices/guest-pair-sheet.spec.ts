@@ -80,6 +80,38 @@ describe('GuestPairSheet', () => {
     expect(submit().disabled).toBe(true);
   });
 
+  describe('without the TV (only the PC control)', () => {
+    async function renderWithoutTv() {
+      const view = await render();
+      view.fixture.componentRef.setInput('withTv', false);
+      view.fixture.detectChanges();
+      await view.fixture.whenStable();
+      return view;
+    }
+
+    it('asks no TV name and says the PC is controlled by the app', async () => {
+      const { el, field, submit, type } = await renderWithoutTv();
+      expect(el.querySelector('#guest-pair-name')).toBeNull();
+      expect(el.textContent).toContain('Este PC passa a ser controlado pelo app.');
+      expect(el.textContent).not.toContain('controlar a sua TV');
+      expect(field('guest-pair-code').value).toBe('BCDF-2345');
+      type('guest-pair-password', 'minha-senha-123');
+      expect(submit().disabled).toBe(false);
+    });
+
+    it('confirms the password and approves with no TV name', async () => {
+      const { type, submit, done, fixture } = await renderWithoutTv();
+      type('guest-pair-password', 'minha-senha-123');
+      submit().click();
+      await vi.waitFor(() => expect(api.approveOwn).toHaveBeenCalled());
+
+      expect(api.approveOwn).toHaveBeenCalledExactlyOnceWith('BCDF2345', null);
+      expect(calls).toEqual(['password', 'approve']);
+      fixture.detectChanges();
+      await vi.waitFor(() => expect(done).toHaveBeenCalled());
+    });
+  });
+
   it('shows no choice of people: the TV is only his', async () => {
     const { el } = await render();
     expect(el.querySelector('input[role="switch"]')).toBeNull();

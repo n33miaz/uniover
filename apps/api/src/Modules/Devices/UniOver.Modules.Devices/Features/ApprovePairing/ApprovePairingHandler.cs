@@ -20,6 +20,9 @@ namespace UniOver.Modules.Devices.Features.ApprovePairing;
 /// Aprovação de um convidado para a PRÓPRIA TV: a TV nasce só com ele como membro (a lista recebida é ignorada), nunca vira
 /// a padrão e o convidado tem um teto de computadores ativos. O endpoint que a liga já exige a confirmação da senha.
 /// </param>
+/// <param name="CreateTv">
+/// <c>false</c> pareia só o computador, sem criar TV: é o caso de quem tem o controle do PC mas não a permissão da TV.
+/// </param>
 internal sealed record ApprovePairingCommand(
     Guid UserId,
     string UserCode,
@@ -27,7 +30,8 @@ internal sealed record ApprovePairingCommand(
     string? TvName,
     IReadOnlyList<Guid> TvMemberIds,
     ClientInfo Client,
-    bool OwnTvOnly = false);
+    bool OwnTvOnly = false,
+    bool CreateTv = true);
 
 internal sealed record ApprovedAgent(Guid Id, string Slug, string Name, string Platform);
 
@@ -101,13 +105,16 @@ internal sealed class ApprovePairingHandler(
                 // Primeiro grava o lado que pode colidir no slug. Se ele falhar, o contexto da TV ainda não recebeu
                 // estado algum e a tentativa seguinte continua limpa; o commit só acontece depois dos dois schemas.
                 await db.SaveChangesAsync(cancellationToken);
-                await tvs.RegisterAsync(
-                    command.OwnTvOnly
-                        ? new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, [command.UserId], CanBeDefault: false)
-                        : new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, command.TvMemberIds),
-                    db.Database.GetDbConnection(),
-                    transaction.GetDbTransaction(),
-                    cancellationToken);
+                if (command.CreateTv)
+                {
+                    await tvs.RegisterAsync(
+                        command.OwnTvOnly
+                            ? new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, [command.UserId], CanBeDefault: false)
+                            : new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, command.TvMemberIds),
+                        db.Database.GetDbConnection(),
+                        transaction.GetDbTransaction(),
+                        cancellationToken);
+                }
 
                 await transaction.CommitAsync(cancellationToken);
                 return ApprovalResult.Approved(new ApprovedAgent(agent.Id, agent.Slug, agent.Name, agent.Platform));

@@ -53,8 +53,9 @@ internal static class ApprovePairingEndpoint
     }
 
     /// <summary>
-    /// A aprovação do convidado para a PRÓPRIA TV. Rota separada da do administrador (nunca a mesma com outro papel): o corpo
-    /// não tem lista de pessoas, a política exige a permissão da TV mais a confirmação recente da senha, e o convidado não
+    /// A aprovação do convidado para o PRÓPRIO computador. Rota separada da do administrador (nunca a mesma com outro papel):
+    /// o corpo não tem lista de pessoas, a política exige a permissão da TV ou a do controle do PC mais a confirmação
+    /// recente da senha, e o convidado não
     /// alcança a rota do administrador (passkey, só dono). Em Development com a confirmação dispensada vale só a permissão.
     /// </summary>
     public static void MapApproveOwnPairing(this IEndpointRouteBuilder group)
@@ -74,7 +75,7 @@ internal static class ApprovePairingEndpoint
         var settings = services.GetRequiredService<IOptions<DevicesModuleOptions>>().Value.Pairing;
         if (environment.IsDevelopment() && !settings.RequireStepUp)
         {
-            route.RequireAuthorization(AccessPermissions.Policy(AccessPermissions.TvModule));
+            route.RequireAuthorization(PairingPolicies.ApproveOwnPermissionOnly);
         }
         else
         {
@@ -127,6 +128,7 @@ internal static class ApprovePairingEndpoint
         HttpContext http,
         ApproveOwnPairingRequest? request,
         ApprovePairingHandler handler,
+        IAccessGrants grants,
         CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId)
@@ -155,7 +157,10 @@ internal static class ApprovePairingEndpoint
         }
 
         var result = await handler.HandleAsync(
-            new ApprovePairingCommand(userId, code, name, tvName, [], ClientInfo.From(http), OwnTvOnly: true),
+            new ApprovePairingCommand(
+                userId, code, name, tvName, [], ClientInfo.From(http), OwnTvOnly: true,
+                // Só quem pode ver a TV ganha a "TV própria" junto; com só o controle do PC o computador é pareado sem TV.
+                CreateTv: await grants.HasAsync(userId, AccessPermissions.TvModule, cancellationToken)),
             cancellationToken);
         return Respond(result);
     }

@@ -110,11 +110,15 @@ public interface IAccessGrants
 
 /// <summary>
 /// Exige uma permissão do catálogo. O dono passa sempre (sem consulta); o convidado precisa da concessão no banco;
-/// papel ausente ou desconhecido, conta revogada ou porta sem implementação: negado.
+/// papel ausente ou desconhecido, conta revogada ou porta sem implementação: negado. Com <see cref="Alternatives"/>, basta
+/// uma das permissões (a principal ou qualquer alternativa): é o caso de uma rota que mais de um módulo usa.
 /// </summary>
-public sealed class PermissionRequirement(string permission) : IAuthorizationRequirement
+public sealed class PermissionRequirement(string permission, IReadOnlyList<string>? alternatives = null) : IAuthorizationRequirement
 {
     public string Permission { get; } = permission;
+
+    /// <summary>Outras permissões que também bastam (vazio: só <see cref="Permission"/> vale).</summary>
+    public IReadOnlyList<string> Alternatives { get; } = alternatives ?? [];
 }
 
 internal sealed class PermissionHandler(IServiceProvider services) : AuthorizationHandler<PermissionRequirement>
@@ -130,7 +134,7 @@ internal sealed class PermissionHandler(IServiceProvider services) : Authorizati
         if (string.Equals(role, AccountRoles.Owner, StringComparison.Ordinal))
         {
             // O dono tem todas as permissões, mas só as do catálogo: política de permissão desconhecida nunca vale.
-            if (AccessPermissions.IsKnown(requirement.Permission))
+            if (AccessPermissions.IsKnown(requirement.Permission) && requirement.Alternatives.All(AccessPermissions.IsKnown))
             {
                 context.Succeed(requirement);
             }
@@ -152,6 +156,16 @@ internal sealed class PermissionHandler(IServiceProvider services) : Authorizati
         if (await grants.HasAsync(userId, requirement.Permission))
         {
             context.Succeed(requirement);
+            return;
+        }
+
+        foreach (var alternative in requirement.Alternatives)
+        {
+            if (await grants.HasAsync(userId, alternative))
+            {
+                context.Succeed(requirement);
+                return;
+            }
         }
     }
 }
@@ -174,5 +188,24 @@ public static class PermissionPolicyExtensions
             .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
             .RequireActiveAccount()
             .AddRequirements(new PermissionRequirement(permission));
+    }
+
+    /// <summary>
+    /// Como <see cref="RequirePermission"/>, mas basta uma das permissões: a primeira é a principal e as demais valem como
+    /// alternativas. Serve a uma rota que dois módulos usam (por exemplo, parear o próprio PC com a TV ou com o controle do PC).
+    /// </summary>
+    public static AuthorizationPolicyBuilder RequireAnyPermission(this AuthorizationPolicyBuilder builder, string permission, params string[] alternatives)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(alternatives);
+        if (!AccessPermissions.IsKnown(permission) || !alternatives.All(AccessPermissions.IsKnown))
+        {
+            throw new ArgumentException("Permissão fora do catálogo.", nameof(permission));
+        }
+
+        return builder
+            .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
+            .RequireActiveAccount()
+            .AddRequirements(new PermissionRequirement(permission, alternatives));
     }
 }

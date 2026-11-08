@@ -901,6 +901,30 @@ describe('DevicesPage deep link and connector', () => {
     expect(api.list).not.toHaveBeenCalled();
   });
 
+  it('lets a guest with only the PC control download the connector and open the own-PC sheet without a TV name', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
+    TestBed.overrideProvider(AuthService, {
+      useValue: { authorized: (call: (token: string) => unknown) => call('token') },
+    });
+    TestBed.overrideProvider(AuthApi, { useValue: { stepUpWithPassword: vi.fn() } });
+    TestBed.inject(SessionState).setUser({
+      id: 'guest-1',
+      email: 'g@example.com',
+      displayName: 'Alice',
+      role: 'guest',
+      permissions: ['module:pc'],
+    });
+    const { harness, el } = await open('/ajustes/dispositivos?codigo=bcdf2345');
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(el.querySelector('app-guest-pair-sheet')).not.toBeNull();
+    });
+    expect(el.querySelector('#guest-pair-name')).toBeNull();
+    expect(el.querySelector<HTMLInputElement>('#guest-pair-code')!.value).toBe('BCDF-2345');
+    expect(el.querySelector('a.download')).not.toBeNull();
+    expect(api.list).not.toHaveBeenCalled();
+  });
+
   it('gives a guest without the TV no download', async () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
     TestBed.inject(SessionState).setUser({

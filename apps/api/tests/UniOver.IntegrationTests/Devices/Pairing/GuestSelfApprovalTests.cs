@@ -121,7 +121,7 @@ public sealed class GuestSelfApprovalTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Guest_WithoutTheTvPermission_Gets403_EvenWithAFreshPassword()
+    public async Task Guest_WithNeitherTheTvNorThePcPermission_Gets403_EvenWithAFreshPassword()
     {
         await using var app = await DevicesApp.StartAsync(postgres);
         var guest = await app.NewGuestAsync(["module:training"]);
@@ -133,6 +133,56 @@ public sealed class GuestSelfApprovalTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         await using var db = app.Db();
         (await db.Agents.CountAsync(Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Guest_WithOnlyThePcPermission_ApprovesHisOwnComputer_WithoutGettingAnyTv()
+    {
+        await using var app = await DevicesApp.StartAsync(postgres);
+        var guest = await app.NewGuestAsync(["module:pc"]);
+        await app.ConfirmWithPasswordAsync(guest);
+        var started = await app.StartAsync("PC da Alice");
+
+        using var response = await app.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode, tvName = "TV da Alice" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var devices = app.Db();
+        (await devices.Agents.SingleAsync(Ct)).PairedBy.Should().Be(guest.UserId, "é o computador dele que o controle do PC alcança");
+        await using var tv = TvApp.CreateContext(app.Database.OwnerConnection);
+        (await tv.Tvs.CountAsync(Ct)).Should().Be(0, "sem a permissão da TV não nasce a TV própria");
+        (await tv.TvMembers.CountAsync(Ct)).Should().Be(0);
+        using var poll = await app.PollRawAsync(started.PairingId, started.DeviceCode);
+        (await DevicesApp.JsonAsync(poll)).GetProperty("status").GetString().Should().Be("approved");
+    }
+
+    [Fact]
+    public async Task Guest_WithOnlyThePcPermission_StillNeedsTheFreshPassword()
+    {
+        await using var app = await DevicesApp.StartAsync(postgres);
+        var guest = await app.NewGuestAsync(["module:pc"]);
+        var started = await app.StartAsync();
+
+        using var response = await app.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await ReadTypeAsync(response)).Should().EndWith("/step-up-required");
+        await using var db = app.Db();
+        (await db.Agents.CountAsync(Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Guest_WithTheTvAndThePcPermission_StillGetsHisOwnTv()
+    {
+        await using var app = await DevicesApp.StartAsync(postgres);
+        var guest = await app.NewGuestAsync(["module:tv", "module:pc"]);
+        await app.ConfirmWithPasswordAsync(guest);
+        var started = await app.StartAsync("PC do Raphael");
+
+        using var response = await app.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode, tvName = "TV de Raphael" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var tv = TvApp.CreateContext(app.Database.OwnerConnection);
+        (await tv.Tvs.SingleAsync(Ct)).Name.Should().Be("TV de Raphael");
     }
 
     [Fact]
