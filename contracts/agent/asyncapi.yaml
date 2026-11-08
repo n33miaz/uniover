@@ -140,6 +140,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.key.v1.schema.json'
+      pcKeyV2:
+        name: pc.key.v2
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.key.v2.schema.json'
       pcText:
         name: pc.text.v1
         contentType: application/json
