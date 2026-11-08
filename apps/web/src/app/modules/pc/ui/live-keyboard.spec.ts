@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { PcArmed } from '../data/pc-armed';
+import { PcInput } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { PcLiveKeyboard, SENTINEL } from './live-keyboard';
@@ -7,7 +8,7 @@ import { PcLiveKeyboard, SENTINEL } from './live-keyboard';
 describe('PcLiveKeyboard', () => {
   let store: FakePcStore;
   let fixture: ReturnType<typeof TestBed.createComponent<PcLiveKeyboard>>;
-  let field: HTMLInputElement;
+  let field: HTMLTextAreaElement;
   let notices: string[];
   let typingStates: boolean[];
 
@@ -31,7 +32,7 @@ describe('PcLiveKeyboard', () => {
     fixture.componentInstance.failed.subscribe((message) => notices.push(message));
     fixture.componentInstance.typing.subscribe((state) => typingStates.push(state));
     fixture.detectChanges();
-    field = fixture.nativeElement.querySelector('input');
+    field = fixture.nativeElement.querySelector('textarea');
   });
 
   afterEach(() => fixture.destroy());
@@ -302,6 +303,8 @@ describe('PcLiveKeyboard', () => {
 
   it('a screen key takes the focus away, and restore brings it back while the keyboard mode is on', () => {
     fixture.componentInstance.open();
+    // O toque nas teclas da tela avisa antes de o foco sair.
+    fixture.componentInstance.holdFocus();
     field.blur();
     expect(fixture.componentInstance.focused).toBe(false);
     // A perda do foco não desliga o modo: o teclado do celular segue sendo o que a pessoa quer.
@@ -337,5 +340,301 @@ describe('PcLiveKeyboard', () => {
     fixture.componentInstance.press('BACKSPACE');
     fixture.componentInstance.press('BACKSPACE');
     expect(fixture.componentInstance.pending).toBe(2);
+  });
+});
+
+describe('PcLiveKeyboard: round two', () => {
+  let store: FakePcStore;
+  let fixture: ReturnType<typeof TestBed.createComponent<PcLiveKeyboard>>;
+  let field: HTMLTextAreaElement;
+  let notices: string[];
+  let typingStates: boolean[];
+
+  const flush = async () => {
+    for (let round = 0; round < 8; round++) await Promise.resolve();
+  };
+  function type(value: string) {
+    field.value = value;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const key = (name: string, extra: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', {
+      key: name,
+      bubbles: true,
+      cancelable: true,
+      ...extra,
+    });
+    field.dispatchEvent(event);
+    return event;
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    store = createFakePcStore();
+    notices = [];
+    typingStates = [];
+    TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
+    fixture = TestBed.createComponent(PcLiveKeyboard);
+    fixture.componentInstance.failed.subscribe((message) => notices.push(message));
+    fixture.componentInstance.typing.subscribe((state) => typingStates.push(state));
+    fixture.detectChanges();
+    field = fixture.nativeElement.querySelector('textarea');
+  });
+  afterEach(() => fixture.destroy());
+
+  describe('a failed key with a text behind it', () => {
+    it('restarts the field and says the text was not sent', async () => {
+      store.sendKey.mockResolvedValueOnce({ kind: 'timeout', message: 'Tempo.' });
+      fixture.componentInstance.press('ENTER');
+      type(SENTINEL + 'oi');
+      await flush();
+      expect(notices).toEqual(['O texto não foi enviado.']);
+      expect(field.value).toBe(SENTINEL);
+      expect(store.sendText).not.toHaveBeenCalled();
+      // O campo recomeçou do que o PC tem: o próximo texto sai inteiro, sem apagar nada.
+      type(SENTINEL + 'z');
+      expect(store.sendText).toHaveBeenCalledExactlyOnceWith('z');
+    });
+
+    it('a failed key with no text behind it leaves the field and the notice to the failure alone', async () => {
+      store.sendKey.mockResolvedValueOnce({ kind: 'timeout', message: 'Tempo.' });
+      type(SENTINEL + 'ab');
+      await flush();
+      fixture.componentInstance.press('ENTER');
+      await flush();
+      expect(notices).toEqual([]);
+    });
+  });
+
+  describe('the keyboard mode follows the system', () => {
+    it('a blur that is not a touch on the screen keys (Done on iOS) ends the mode', () => {
+      fixture.componentInstance.open();
+      expect(fixture.componentInstance.active).toBe(true);
+      field.blur();
+      expect(fixture.componentInstance.active).toBe(false);
+      expect(typingStates).toEqual([true, false]);
+      // O botão do teclado volta ao normal e uma tecla da tela não o reabre.
+      fixture.componentInstance.restore();
+      expect(document.activeElement).not.toBe(field);
+    });
+
+    it('a blur right after a touch on the screen keys does not', () => {
+      fixture.componentInstance.open();
+      fixture.componentInstance.holdFocus();
+      field.blur();
+      expect(fixture.componentInstance.active).toBe(true);
+      fixture.componentInstance.restore();
+      expect(document.activeElement).toBe(field);
+    });
+
+    it('the hold does not last: a later blur is the system again', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        fixture.componentInstance.open();
+        fixture.componentInstance.holdFocus();
+        vi.advanceTimersByTime(2_000);
+        field.blur();
+        expect(fixture.componentInstance.active).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('the window growing back after the keyboard shrank it (Back on Android) ends the mode', () => {
+      const listeners: (() => void)[] = [];
+      const viewport = {
+        height: 800,
+        addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+        removeEventListener: () => undefined,
+      };
+      Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
+      const second = TestBed.createComponent(PcLiveKeyboard);
+      second.detectChanges();
+      const states: boolean[] = [];
+      second.componentInstance.typing.subscribe((state) => states.push(state));
+      second.componentInstance.open();
+      viewport.height = 450;
+      listeners.forEach((listener) => listener());
+      expect(second.componentInstance.active).toBe(true);
+      viewport.height = 800;
+      listeners.forEach((listener) => listener());
+      expect(second.componentInstance.active).toBe(false);
+      expect(states).toEqual([true, false]);
+      second.destroy();
+      Reflect.deleteProperty(window, 'visualViewport');
+    });
+
+    it('a window that never shrank does not end the mode (the keyboard overlays it)', () => {
+      const listeners: (() => void)[] = [];
+      const viewport = {
+        height: 800,
+        addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+        removeEventListener: () => undefined,
+      };
+      Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
+      const second = TestBed.createComponent(PcLiveKeyboard);
+      second.detectChanges();
+      second.componentInstance.open();
+      listeners.forEach((listener) => listener());
+      expect(second.componentInstance.active).toBe(true);
+      second.destroy();
+      Reflect.deleteProperty(window, 'visualViewport');
+    });
+  });
+
+  describe('after anything that changes the PC text from outside the field', () => {
+    it.each(['ENTER', 'TAB'] as const)('%s restarts the field', (name) => {
+      type(SENTINEL + 'abc');
+      fixture.componentInstance.press(name);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('a screen key with a modifier restarts the field (Ctrl+Z, Alt+Tab)', () => {
+      type(SENTINEL + 'abc');
+      TestBed.inject(PcArmed).toggle('CTRL');
+      fixture.componentInstance.press('Z');
+      expect(field.value).toBe(SENTINEL);
+      type(SENTINEL + 'abc');
+      fixture.componentInstance.press('TAB', ['ALT']);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('a letter typed with a key armed (Ctrl+A, Ctrl+V) restarts the field too', async () => {
+      type(SENTINEL + 'abc');
+      await flush();
+      TestBed.inject(PcArmed).toggle('CTRL');
+      type(SENTINEL + 'abca');
+      expect(store.sendKey).toHaveBeenLastCalledWith('A', ['CTRL']);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('a shortcut from the grid or the sheet restarts it', () => {
+      type(SENTINEL + 'abc');
+      TestBed.inject(PcInput).shortcut('V', ['CTRL']);
+      expect(field.value).toBe(SENTINEL);
+      type(SENTINEL + 'abc');
+      TestBed.inject(PcInput).shortcut('F5', []);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('a plain screen key that does not touch the text leaves the field alone', () => {
+      type(SENTINEL + 'abc');
+      fixture.componentInstance.press('F5');
+      expect(field.value).toBe(SENTINEL + 'abc');
+    });
+  });
+
+  describe('Backspace of the phone keyboard is the key of the bar', () => {
+    const backspaceAtStart = () => {
+      field.setSelectionRange(0, 0);
+      return key('Backspace');
+    };
+
+    it('with a key armed it goes out with the modifier and restarts the field', async () => {
+      type(SENTINEL + 'abc');
+      await flush();
+      TestBed.inject(PcArmed).toggle('CTRL');
+      field.setSelectionRange(0, 0);
+      key('Backspace');
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('BACKSPACE', ['CTRL']);
+      expect(field.value).toBe(SENTINEL);
+      expect(TestBed.inject(PcArmed).armed().size).toBe(0);
+    });
+
+    it('deleting a typed letter with a key armed (caret inside the text) is the same key, not text', async () => {
+      type(SENTINEL + 'abc');
+      await flush();
+      store.sendKey.mockClear();
+      TestBed.inject(PcArmed).toggle('CTRL');
+      type(SENTINEL + 'ab');
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('BACKSPACE', ['CTRL']);
+      expect(field.value).toBe(SENTINEL);
+    });
+
+    it('goes out with no modifier when none is armed', () => {
+      backspaceAtStart();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('BACKSPACE', []);
+    });
+
+    it('holding it on an empty field stops adding keys while two are unanswered, like the bar', () => {
+      store.sendKey.mockReturnValue(new Promise(() => undefined));
+      field.setSelectionRange(0, 0);
+      key('Backspace');
+      key('Backspace', { repeat: true });
+      key('Backspace', { repeat: true });
+      key('Backspace', { repeat: true });
+      // Uma em voo e uma na fila: o resto das repetições pulou a rodada.
+      expect(fixture.componentInstance.pending).toBe(2);
+    });
+
+    it('a deliberate second tap is not held back by the cap', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        store.sendKey.mockReturnValue(new Promise(() => undefined));
+        field.setSelectionRange(0, 0);
+        key('Backspace');
+        vi.advanceTimersByTime(300);
+        key('Backspace');
+        vi.advanceTimersByTime(300);
+        key('Backspace');
+        expect(fixture.componentInstance.pending).toBe(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('the repeat through beforeinput (mobile) uses the same cap', () => {
+      store.sendKey.mockReturnValue(new Promise(() => undefined));
+      field.setSelectionRange(0, 0);
+      const before = () => {
+        const event = new Event('beforeinput', { bubbles: true, cancelable: true });
+        Object.assign(event, { inputType: 'deleteContentBackward' });
+        field.dispatchEvent(event);
+      };
+      before();
+      before();
+      before();
+      before();
+      expect(fixture.componentInstance.pending).toBe(2);
+    });
+  });
+
+  describe('composition', () => {
+    it('Enter while composing (or keyCode 229) is the keyboard committing a word, not a key for the PC', () => {
+      const composing = key('Enter', { isComposing: true });
+      expect(composing.defaultPrevented).toBe(false);
+      const ime = key('Enter', { keyCode: 229 });
+      expect(ime.defaultPrevented).toBe(false);
+      key('Tab', { isComposing: true });
+      field.setSelectionRange(0, 0);
+      key('Backspace', { isComposing: true });
+      key('Backspace', { keyCode: 229 });
+      expect(store.sendKey).not.toHaveBeenCalled();
+    });
+
+    it('a line break reported by beforeinput while composing is left alone', () => {
+      const event = new Event('beforeinput', { bubbles: true, cancelable: true });
+      Object.assign(event, { inputType: 'insertLineBreak', isComposing: true });
+      field.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(store.sendKey).not.toHaveBeenCalled();
+    });
+
+    it('Enter outside a composition still goes to the PC', () => {
+      const enter = key('Enter');
+      expect(enter.defaultPrevented).toBe(true);
+      expect(store.sendKey).toHaveBeenCalledWith('ENTER', []);
+    });
+  });
+
+  describe('a text pasted with several lines', () => {
+    it('is typed line by line, with Enter between them (the field takes line breaks)', async () => {
+      expect(field.tagName).toBe('TEXTAREA');
+      type(SENTINEL + 'um\ndois\r\ntrês');
+      await flush();
+      await flush();
+      expect(store.sendText.mock.calls.map(([text]) => text)).toEqual(['um', 'dois', 'três']);
+      expect(store.sendKey.mock.calls.map(([name]) => name)).toEqual(['ENTER', 'ENTER']);
+    });
   });
 });

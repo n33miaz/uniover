@@ -136,3 +136,48 @@ describe('PcInput', () => {
     expect(store.sendKey).not.toHaveBeenCalled();
   });
 });
+
+describe('PcInput: text changed outside the field', () => {
+  let store: FakePcStore;
+  let input: PcInput;
+  let diverged: number;
+
+  beforeEach(() => {
+    store = createFakePcStore();
+    TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
+    input = TestBed.inject(PcInput);
+    diverged = 0;
+    input.onDiverge(() => diverged++);
+  });
+
+  it('a key with a modifier, from the screen, tells the field to start over', () => {
+    TestBed.inject(PcArmed).toggle('CTRL');
+    input.press('BACKSPACE');
+    expect(diverged).toBe(1);
+  });
+
+  it('a plain key does not', () => {
+    input.press('ENTER');
+    expect(diverged).toBe(0);
+  });
+
+  it('any shortcut does, even one with no modifier (Space in a video, F5)', () => {
+    input.shortcut('F5', []);
+    expect(diverged).toBeGreaterThan(0);
+  });
+
+  it('a shortcut with the PC away sends nothing and tells nothing', () => {
+    store.phase.set('offline');
+    expect(input.shortcut('C', ['CTRL'])).toBe(false);
+    expect(diverged).toBe(0);
+  });
+
+  it('stops telling once the listener is gone', () => {
+    let seen = 0;
+    const stop = input.onDiverge(() => seen++);
+    input.diverge();
+    stop();
+    input.diverge();
+    expect(seen).toBe(1);
+  });
+});

@@ -796,7 +796,7 @@ describe('PcStore press after a click', () => {
     await store.release();
   });
 
-  it('a click that never answers does not hold the press forever', async () => {
+  it('a click that never answers gives the press up with a notice, and nothing is pressed behind it', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const { store, api } = setup();
@@ -805,11 +805,15 @@ describe('PcStore press after a click', () => {
       await vi.advanceTimersByTimeAsync(0);
       const started = store.startDrag();
       await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS + 10);
-      await started;
-      expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
-        undefined,
-        'DOWN',
-      ]);
+      const failure = await started;
+      expect(failure?.kind).toBe('timeout');
+      expect(failure?.message).toContain('clique');
+      expect(store.notice()?.message).toContain('clique');
+      // Nenhum DOWN: o botão não é apertado por trás de um clique que ninguém sabe se saiu.
+      expect(api.click.mock.calls.map((call) => (call as unknown[])[1])).toEqual([undefined]);
+      expect(store.dragging()).toBe(false);
+      // E a tela não fica travada: o próximo aperto, sem clique pendente, sai.
+      expect(store.buttonBusy).toBe(false);
     } finally {
       vi.useRealTimers();
     }

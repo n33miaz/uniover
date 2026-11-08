@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
-import { PcInput } from '../data/pc-input';
+import { MAX_KEYS_IN_FLIGHT, PcInput } from '../data/pc-input';
 import { PcPrefs } from '../data/pc-prefs';
 import { SessionState } from '../../../core/session/session-state';
 import { PcStore } from '../data/pc-store';
@@ -35,9 +35,6 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
   ALT: 'Alt',
   WIN: 'Win',
 };
-
-/** Teclas enviadas e ainda sem resposta a partir das quais a repetição de apagar e das setas pula a rodada. */
-const MAX_KEYS_IN_FLIGHT = 2;
 
 /** Quanto tempo a falha de uma tecla fica na tela. */
 const ERROR_MS = 4_000;
@@ -123,7 +120,7 @@ interface Ring {
         class="settings"
         aria-label="Ajustes do touchpad"
         i18n-aria-label="@@pc.pad.settings"
-        (click)="settingsOpen.set(true)"
+        (click)="openSheet('settings')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path [attr.d]="'M4 7h9M17 7h3M4 17h3M11 17h9'" />
@@ -135,6 +132,7 @@ interface Ring {
       @if (panelOpen()) {
         <app-pc-key-panel
           class="overlay"
+          (pointerdown)="holdKeyboard()"
           (click)="keepKeyboard()"
           [disabled]="!store.canSend()"
           [busy]="keysBusy"
@@ -192,6 +190,7 @@ interface Ring {
     />
 
     <app-pc-action-bar
+      (pointerdown)="holdKeyboard()"
       (click)="keepKeyboard()"
       [disabled]="!store.canSend()"
       [typing]="typing()"
@@ -201,7 +200,7 @@ interface Ring {
       (key)="sendKey($event)"
       (keyboard)="openKeyboard()"
       (panel)="panelOpen.set(!panelOpen())"
-      (shortcuts)="shortcutsOpen.set(true)"
+      (shortcuts)="openSheet('shortcuts')"
     />
 
     @if (shortcutsOpen()) {
@@ -228,6 +227,8 @@ export class MousePage {
   protected readonly rings = signal<readonly Ring[]>([]);
   private ringId = 0;
   private readonly ringTimers = new Set<ReturnType<typeof setTimeout>>();
+  /** Os dedos que só pararam a rolagem que seguia sozinha: o gesto os ignora até saírem. */
+  private readonly swallowed = new Set<number>();
   protected readonly active = signal(false);
   protected readonly settingsOpen = signal(false);
   protected readonly panelOpen = signal(false);
@@ -334,8 +335,14 @@ export class MousePage {
 
   protected onDown(event: PointerEvent): void {
     if (!this.store.canSend()) return;
-    // Um toque novo para a rolagem que seguia sozinha, na hora.
+    // Um toque novo para a rolagem que seguia sozinha, na hora. Esse toque só a parou: não clica, não começa pressão longa e
+    // não move nada (os dedos que pousarem junto com ele também). O gesto seguinte, depois de todos saírem, é normal.
+    const stoppedGlide = this.inertia.active;
     this.inertia.stop();
+    if (stoppedGlide || this.swallowed.size > 0) {
+      this.swallowed.add(event.pointerId);
+      return;
+    }
     try {
       (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
     } catch {
@@ -348,11 +355,12 @@ export class MousePage {
   }
 
   protected onMove(event: PointerEvent): void {
-    if (!this.active()) return;
+    if (this.swallowed.has(event.pointerId) || !this.active()) return;
     this.gesture.move(event.pointerId, event.clientX, event.clientY, event.timeStamp);
   }
 
   protected onUp(event: PointerEvent): void {
+    if (this.swallowed.delete(event.pointerId)) return;
     if (!this.active()) return;
     this.gesture.up(event.pointerId, event.timeStamp);
     if (!this.gesture.active) this.finish();
@@ -363,6 +371,7 @@ export class MousePage {
    * depois de cada dedo que sai, e cancelaria o segundo dedo no meio do toque de dois dedos.
    */
   protected onCancel(): void {
+    this.swallowed.clear();
     this.inertia.stop();
     this.gesture.cancel();
     this.finish();
@@ -409,8 +418,20 @@ export class MousePage {
 
   /** O botão do teclado abre e fecha o teclado do celular; o foco tem de nascer neste toque (regra do iOS). */
   protected openKeyboard(): void {
-    if (this.keyboard().focused) this.keyboard().close();
+    if (this.keyboard().active) this.keyboard().close();
     else this.keyboard().open();
+  }
+
+  /** Começo de um toque nas teclas da tela: a perda de foco que vem junto não é o sistema fechando o teclado. */
+  protected holdKeyboard(): void {
+    this.keyboard().holdFocus();
+  }
+
+  /** Uma folha por cima fica com o foco: o teclado do celular fecha, e o modo teclado acaba junto. */
+  protected openSheet(sheet: 'settings' | 'shortcuts'): void {
+    this.keyboard().close();
+    if (sheet === 'settings') this.settingsOpen.set(true);
+    else this.shortcutsOpen.set(true);
   }
 
   /** Tocar numa tecla da tela tira o foco do campo: no modo teclado ele volta (o teclado do celular não fecha). */

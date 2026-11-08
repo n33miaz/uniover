@@ -720,7 +720,40 @@ test.describe('Gestos', () => {
     const afterTouch = scrolled();
     await page.waitForTimeout(300);
     expect(scrolled()).toBe(afterTouch);
+    // O dedo que só parou a rolagem não começa uma pressão longa (450 ms) nem clica quando sai.
+    await page.waitForTimeout(600);
+    expect(clicks()).toEqual([]);
     await fingers(page, [{ type: 'up', id: 1, x, y }]);
+    await page.waitForTimeout(150);
+    expect(clicks()).toEqual([]);
+    await expect(page.locator('.pad.holding')).toHaveCount(0);
+  });
+
+  test('um toque rápido que só para a rolagem não clica, e o toque seguinte clica normalmente', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - 30, y: y - 150 },
+      { type: 'down', id: 2, x: x + 30, y: y - 150 },
+    ];
+    for (let step = 1; step <= 8; step++) {
+      steps.push({ type: 'move', id: 1, x: x - 30, y: y - 150 + step * 32, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + 30, y: y - 150 + step * 32 });
+    }
+    steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
+    steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
+    await fingers(page, steps);
+    await page.waitForTimeout(60);
+    await fingers(page, [
+      { type: 'down', id: 1, x, y },
+      { type: 'up', id: 1, x, y, wait: 50 },
+    ]);
+    await page.waitForTimeout(200);
+    expect(clicks()).toEqual([]);
+    await tap(page, x, y);
+    await expect.poll(clicks).toEqual([{ button: 'LEFT' }]);
   });
 
   test('a rolagem que segue sozinha para quando a página vai para o segundo plano', async ({
@@ -912,6 +945,65 @@ test.describe('Digitação ao vivo', () => {
     await expect(page.locator('.armed')).toHaveCount(0);
   });
 
+  test('um texto colado com várias linhas sai linha a linha, com Enter entre elas', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await page.keyboard.insertText('um\ndois\ntrês');
+    await expect.poll(typed).toBe('umdoistrês');
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'ENTER' }, { key: 'ENTER' }]);
+    await expect(field).toBeFocused();
+  });
+
+  test('tocar uma tecla da barra com o teclado aberto o mantém aberto, e o botão do teclado o fecha', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await page.getByRole('button', { name: 'Tab', exact: true }).click();
+    await expect(field).toBeFocused();
+    const toggle = page.getByRole('button', { name: 'Teclado', exact: true });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(field).not.toBeFocused();
+    // Fechado de propósito, uma tecla da barra não o reabre.
+    await page.getByRole('button', { name: 'Tab', exact: true }).click();
+    await expect(field).not.toBeFocused();
+  });
+
+  test('o sistema fechar o teclado (o foco sai do campo sem toque na tela) desliga o botão', async ({
+    page,
+  }) => {
+    await openPc(page);
+    const field = await openKeyboard(page);
+    // Passada a janela do toque no botão do teclado, perder o foco é o sistema.
+    await page.waitForTimeout(900);
+    await field.evaluate((element) => (element as HTMLElement).blur());
+    await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  test('uma tecla que falha com texto esperando atrás avisa que o texto não foi enviado e recomeça o campo', async ({
+    page,
+  }) => {
+    pc.commandDelayMs = 150;
+    await openPc(page);
+    const field = await openKeyboard(page);
+    pc.commandFailure = { status: 504, kind: 'timeout' };
+    pc.failOnly = (request) => request.path === '/key';
+    await page.getByRole('button', { name: 'Enter', exact: true }).click();
+    await field.pressSequentially('oi');
+    await expect(page.locator('.toast')).toContainText('O texto não foi enviado.');
+    expect(typed()).toBe('');
+    pc.commandFailure = null;
+    await field.pressSequentially('z');
+    await expect.poll(typed).toBe('z');
+  });
+
   test('o emoji vai inteiro', async ({ page }) => {
     await openPc(page);
     const field = await openKeyboard(page);
@@ -1009,6 +1101,54 @@ test.describe('Atalhos', () => {
     await panel.getByRole('button', { name: 'Alt', exact: true }).click();
     await panel.getByRole('button', { name: 'Del (Delete)' }).click();
     await expect.poll(keyRequests).toEqual([{ key: 'DELETE', modifiers: ['CTRL', 'ALT'] }]);
+    await expect(page.locator('.armed')).toHaveCount(0);
+  });
+
+  test('as teclas armadas aparecem na aba Atalhos e na folha, e sair do módulo as solta', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    await page
+      .getByRole('group', { name: 'Mais teclas' })
+      .last()
+      .getByRole('button', { name: 'Win', exact: true })
+      .click();
+    // Na folha do raio.
+    const sheet = await openSheet(page);
+    await expect(sheet.getByRole('button', { name: 'Win', exact: true }).first()).toBeVisible();
+    await sheet.locator('[data-shortcut="find"]').first().click();
+    await expect.poll(keyRequests).toEqual([{ key: 'F', modifiers: ['CTRL', 'WIN'] }]);
+    await expect(sheet.locator('app-pc-armed-pills .pill')).toHaveCount(0);
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
+
+    // Na aba Atalhos, e a pílula solta a tecla (o painel de teclas segue aberto na tela do mouse).
+    await page
+      .getByRole('group', { name: 'Mais teclas' })
+      .last()
+      .getByRole('button', { name: 'Win', exact: true })
+      .click();
+    await tabs(page).getByRole('link', { name: 'Atalhos' }).click();
+    const pill = page.locator('app-pc-armed-pills .pill');
+    await expect(pill).toHaveText('Win');
+    await pill.click();
+    await expect(pill).toHaveCount(0);
+
+    // Sair do módulo solta o que ficou armado.
+    await tabs(page).getByRole('link', { name: 'Mouse' }).click();
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    await page
+      .getByRole('group', { name: 'Mais teclas' })
+      .last()
+      .getByRole('button', { name: 'Alt', exact: true })
+      .click();
+    await expect(page.locator('.armed')).toContainText('Alt');
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
+    await page
+      .locator('article[data-module="pc"]')
+      .getByRole('link', { name: 'Controle do PC: Abrir controle' })
+      .click();
+    await expect(status(page)).toHaveText('Conectado');
     await expect(page.locator('.armed')).toHaveCount(0);
   });
 

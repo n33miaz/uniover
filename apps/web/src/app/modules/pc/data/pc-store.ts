@@ -345,7 +345,11 @@ export class PcStore {
       this.batcher.hold();
       if (!(await this.settleMoves())) return this.abandoned();
       // Os cliques que já saíram terminam antes do aperto (por até o mesmo prazo): o botão nunca é apertado por trás deles.
-      await this.settleClicks();
+      if (!(await this.settleClicks())) {
+        return this.abandoned(
+          $localize`:@@pc.error.click-stuck:O PC não respondeu ao clique; o arrasto não foi enviado.`,
+        );
+      }
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return CANCELLED;
       // Pediram para soltar enquanto o movimento saía: apertar agora só para soltar é desperdício, e arriscado.
@@ -476,26 +480,28 @@ export class PcStore {
     }
   }
 
-  /** Espera os cliques que existem agora terminarem, por no máximo `MOVE_SETTLE_MS`. */
-  private async settleClicks(): Promise<void> {
-    if (this.clicks.size === 0) return;
+  /**
+   * Espera os cliques que existem agora terminarem, por no máximo `MOVE_SETTLE_MS`. Devolve `false` se o prazo acabou antes
+   * (um clique preso): o aperto é abandonado, como no movimento que não termina, em vez de sair por trás dele.
+   */
+  private async settleClicks(): Promise<boolean> {
+    if (this.clicks.size === 0) return true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const giveUp = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, MOVE_SETTLE_MS);
+    const giveUp = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), MOVE_SETTLE_MS);
     });
     try {
-      await Promise.race([Promise.allSettled([...this.clicks]), giveUp]);
+      return await Promise.race([Promise.allSettled([...this.clicks]).then(() => true), giveUp]);
     } finally {
       clearTimeout(timer);
     }
   }
 
   /** O clique (ou o aperto) desistiu por um movimento que não terminou: nada foi enviado, e a tela avisa. */
-  private abandoned(): PcFailure {
-    const failure: PcFailure = {
-      kind: 'timeout',
-      message: $localize`:@@pc.error.move-stuck:O PC não acompanhou o movimento; o toque não foi enviado.`,
-    };
+  private abandoned(
+    message = $localize`:@@pc.error.move-stuck:O PC não acompanhou o movimento; o toque não foi enviado.`,
+  ): PcFailure {
+    const failure: PcFailure = { kind: 'timeout', message };
     this.noteFailure(failure);
     // Ele fica na tela por alguns segundos: os movimentos que vêm logo depois (e dão certo) não o apagam antes de ser lido.
     this.stickyNotice = failure;

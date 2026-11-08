@@ -149,6 +149,7 @@ describe('LiveTyper', () => {
 
   let calls: Call[];
   let failures: PcFailure[];
+  let dropped: boolean[];
   let idles: number;
   let typer: LiveTyper;
 
@@ -167,6 +168,7 @@ describe('LiveTyper', () => {
   beforeEach(() => {
     calls = [];
     failures = [];
+    dropped = [];
     idles = 0;
     typer = new LiveTyper(
       {
@@ -179,7 +181,13 @@ describe('LiveTyper', () => {
             calls.push({ what: 'text', value: text, resolve: (f = null) => resolve(f) }),
           ),
       },
-      { failed: (failure) => failures.push(failure), idle: () => idles++ },
+      {
+        failed: (failure, _kind, droppedEdits) => {
+          failures.push(failure);
+          dropped.push(droppedEdits);
+        },
+        idle: () => idles++,
+      },
     );
   });
 
@@ -287,5 +295,82 @@ describe('LiveTyper', () => {
     typer.key('BACKSPACE');
     typer.key('BACKSPACE');
     expect(typer.pending).toBe(3);
+  });
+});
+
+describe('LiveTyper: discarded edits and a queue that goes on', () => {
+  const FAILED: PcFailure = { kind: 'timeout', message: 'Tempo.' };
+  let pending: { what: string; resolve: (failure?: PcFailure | null) => void }[];
+  let reported: { kind: string; droppedEdits: boolean }[];
+  let typer: LiveTyper;
+  const flush = async () => {
+    for (let round = 0; round < 8; round++) await Promise.resolve();
+  };
+  const answer = async (failure: PcFailure | null = null) => {
+    pending.shift()!.resolve(failure);
+    await flush();
+  };
+
+  beforeEach(() => {
+    pending = [];
+    reported = [];
+    typer = new LiveTyper(
+      {
+        key: (key) =>
+          new Promise((resolve) =>
+            pending.push({ what: 'key:' + key, resolve: (f = null) => resolve(f) }),
+          ),
+        text: (text) =>
+          new Promise((resolve) =>
+            pending.push({ what: 'text:' + text, resolve: (f = null) => resolve(f) }),
+          ),
+      },
+      {
+        failed: (_failure, kind, droppedEdits) => reported.push({ kind, droppedEdits }),
+        idle: () => undefined,
+      },
+    );
+  });
+
+  it('a key that fails with a typed text waiting behind it says the text was dropped', async () => {
+    typer.key('ENTER');
+    typer.edit({ erase: 0, insert: 'abc' });
+    await answer(FAILED);
+    expect(reported).toEqual([{ kind: 'key', droppedEdits: true }]);
+    expect(pending).toEqual([]);
+  });
+
+  it('a key that fails with only keys behind it drops no text', async () => {
+    typer.key('ENTER');
+    typer.key('TAB');
+    await answer(FAILED);
+    expect(reported).toEqual([{ kind: 'key', droppedEdits: false }]);
+  });
+
+  it('an edit that fails with another edit behind it says it too', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    typer.key('ENTER');
+    typer.edit({ erase: 0, insert: 'b' });
+    await answer(FAILED);
+    expect(reported).toEqual([{ kind: 'edit', droppedEdits: true }]);
+  });
+
+  it('after clear() with a step in flight, what is asked next is not stuck behind it', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    typer.clear();
+    typer.edit({ erase: 0, insert: 'b' });
+    expect(pending.map((step) => step.what)).toEqual(['text:a']);
+    await answer();
+    // O passo em voo terminou; o que veio depois do clear() sai sem esperar outro toque.
+    expect(pending.map((step) => step.what)).toEqual(['text:b']);
+    await answer();
+    expect(typer.pending).toBe(0);
+  });
+
+  it('a failure of the step cleared in flight is not reported', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    typer.clear();
+    await answer(FAILED);
+    expect(reported).toEqual([]);
   });
 });

@@ -53,6 +53,7 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
         [disabled]="disabled()"
         aria-label="Teclado"
         i18n-aria-label="@@pc.bar.keyboard"
+        (pointerdown)="$event.preventDefault()"
         (click)="keyboard.emit()"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">

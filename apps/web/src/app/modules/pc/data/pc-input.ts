@@ -10,6 +10,9 @@ import type { PcKey, PcModifier } from './pc-types';
 /** O que falhou: `edit` foi o texto do teclado do celular (apagar e digitar), `key` uma tecla da tela. */
 export type InputKind = 'edit' | 'key';
 
+/** Teclas na fila a partir das quais a repetição (da tela ou do teclado do celular) pula a rodada em vez de empilhar. */
+export const MAX_KEYS_IN_FLIGHT = 2;
+
 /**
  * A fila de tudo o que se digita no PC: o teclado do celular (ao vivo), as teclas da barra, o painel de teclas, os atalhos.
  * Uma só para o app inteiro, para que um atalho tocado depois do texto digitado nunca passe na frente dele, mesmo vindo de
@@ -23,7 +26,10 @@ export class PcInput {
   private readonly armed = inject(PcArmed);
   /** A conta de quem é o que está na fila. */
   private account = this.session.accountId();
-  private readonly failureListeners = new Set<(failure: PcFailure, kind: InputKind) => void>();
+  private readonly failureListeners = new Set<
+    (failure: PcFailure, kind: InputKind, droppedEdits: boolean) => void
+  >();
+  private readonly divergeListeners = new Set<() => void>();
   private readonly idleListeners = new Set<() => void>();
 
   private readonly typer = new LiveTyper(
@@ -32,8 +38,8 @@ export class PcInput {
       text: (text) => this.sameAccount(() => this.store.sendText(text)),
     },
     {
-      failed: (failure, kind) =>
-        this.failureListeners.forEach((listener) => listener(failure, kind)),
+      failed: (failure, kind, droppedEdits) =>
+        this.failureListeners.forEach((listener) => listener(failure, kind, droppedEdits)),
       idle: () => this.idleListeners.forEach((listener) => listener()),
     },
   );
@@ -76,12 +82,35 @@ export class PcInput {
   press(key: PcKey, extra: readonly PcModifier[] = []): boolean {
     if (!this.store.canSend()) return false;
     tick();
-    this.typer.key(key, this.armed.take(extra));
+    const modifiers = this.armed.take(extra);
+    this.typer.key(key, modifiers);
+    // Uma tecla com modificador (Ctrl+Z, Ctrl+Backspace...) mexe no texto do PC sem o campo saber.
+    if (modifiers.length > 0) this.diverge();
     return true;
   }
 
+  /** Um atalho do catálogo: a tecla com os modificadores dele e os armados. Qualquer atalho pode mexer no texto do PC. */
+  shortcut(key: PcKey, modifiers: readonly PcModifier[]): boolean {
+    const sent = this.press(key, modifiers);
+    if (sent) this.diverge();
+    return sent;
+  }
+
+  /** O texto do PC pode ter mudado por um caminho que o campo do teclado do celular não viu: ele recomeça do que o PC tem. */
+  diverge(): void {
+    this.divergeListeners.forEach((listener) => listener());
+  }
+
+  /** Quem quer saber de o texto do PC ter mudado por fora do campo. Devolve quem para de ouvir. */
+  onDiverge(listener: () => void): () => void {
+    this.divergeListeners.add(listener);
+    return () => void this.divergeListeners.delete(listener);
+  }
+
   /** Quem quer saber de uma falha de envio (o campo recomeça e a tela avisa). Devolve quem para de ouvir. */
-  onFailure(listener: (failure: PcFailure, kind: InputKind) => void): () => void {
+  onFailure(
+    listener: (failure: PcFailure, kind: InputKind, droppedEdits: boolean) => void,
+  ): () => void {
     this.failureListeners.add(listener);
     return () => void this.failureListeners.delete(listener);
   }

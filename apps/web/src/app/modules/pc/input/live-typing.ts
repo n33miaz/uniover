@@ -130,9 +130,10 @@ export interface TyperSender {
 export interface TyperEvents {
   /**
    * O envio falhou: o que esperava na fila foi descartado (o campo precisa recomeçar do que o PC tem). `kind` diz o que
-   * falhou: a mudança do campo (`edit`) ou uma tecla.
+   * falhou: a mudança do campo (`edit`) ou uma tecla. `droppedEdits` diz que havia mudanças do campo esperando atrás e que
+   * elas foram descartadas (o PC não tem esse texto, mesmo que o que falhou tenha sido uma tecla).
    */
-  failed(failure: PcFailure, kind: 'edit' | 'key'): void;
+  failed(failure: PcFailure, kind: 'edit' | 'key', droppedEdits: boolean): void;
   /** A fila esvaziou e nada está a caminho. */
   idle(): void;
 }
@@ -197,16 +198,22 @@ export class LiveTyper {
         const op = this.queue.shift()!;
         const failure = await this.run(op, generation);
         if (failure !== null && generation === this.generation) {
+          const droppedEdits = this.queue.some((waiting) => waiting.kind === 'edit');
           this.queue = [];
           this.generation++;
-          this.events.failed(failure, op.kind);
+          this.events.failed(failure, op.kind, droppedEdits);
           break;
         }
       }
     } finally {
       this.running = false;
     }
-    if (this.queue.length === 0 && generation === this.generation) this.events.idle();
+    // O `clear()` com um passo em voo deixa a fila nova sem quem a puxe (o `pump` em curso saiu pela troca de geração): recomeça.
+    if (this.queue.length > 0) {
+      void this.pump();
+      return;
+    }
+    if (generation === this.generation) this.events.idle();
   }
 
   private async run(op: Op, generation: number): Promise<PcFailure | null> {

@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -12,7 +13,7 @@ import {
 } from '@angular/core';
 import { PcArmed } from '../data/pc-armed';
 import type { PcFailure } from '../data/pc-failure';
-import { PcInput, type InputKind } from '../data/pc-input';
+import { MAX_KEYS_IN_FLIGHT, PcInput, type InputKind } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
 import type { PcKey, PcLetter, PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
@@ -66,9 +67,9 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
   selector: 'app-pc-live-keyboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <input
+    <textarea
       #field
-      type="text"
+      rows="1"
       class="field"
       autocomplete="off"
       [attr.autocapitalize]="'off'"
@@ -84,7 +85,8 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
       (compositionstart)="composing = true"
       (compositionend)="composing = false"
       (focus)="onFocus()"
-    />
+      (blur)="onBlur()"
+    ></textarea>
   `,
   styleUrl: './live-keyboard.css',
 })
@@ -92,7 +94,7 @@ export class PcLiveKeyboard {
   private readonly store = inject(PcStore);
   private readonly input = inject(PcInput);
   private readonly armed = inject(PcArmed);
-  private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
+  private readonly field = viewChild.required<ElementRef<HTMLTextAreaElement>>('field');
 
   readonly disabled = input(false);
   /** O modo teclado ligou ou desligou (o botão do teclado abriu ou fechou o campo). */
@@ -104,8 +106,21 @@ export class PcLiveKeyboard {
   readonly failed = output<string>();
 
   protected composing = false;
-  /** O modo teclado: ligado pelo botão do teclado e desligado por ele. O campo perder o foco não o desliga. */
+  private readonly doc = inject(DOCUMENT);
+  /**
+   * O modo teclado: ligado pelo botão do teclado e desligado por ele, ou quando o sistema fecha o teclado (voltar do
+   * Android, "Concluído" do iOS) ou o foco vai para outro lugar. Tocar nas teclas da tela tira o foco do campo por um
+   * instante (ver `holdFocus`) e não conta.
+   */
   private wanted = false;
+  /** Até quando uma perda de foco vem de um toque nas teclas da tela (e o campo ganha o foco de volta no clique). */
+  private ignoreBlurUntil = 0;
+  /** A maior altura da janela vista sem o teclado: a base para saber que o teclado do sistema abriu e fechou. */
+  private fullHeight = 0;
+  /** A janela já encolheu com o teclado aberto: a próxima volta ao tamanho cheio é o sistema fechando o teclado. */
+  private shrunk = false;
+  /** Quando foi o último Backspace do teclado do celular (a repetição de segurar usa o mesmo freio da barra). */
+  private lastPhoneBackspace = 0;
   /** O que o campo mostrava na última vez que o PC foi posto em dia: a base da próxima diferença. */
   private mirror: FieldState = fieldState(SENTINEL);
   /** O valor do campo logo depois (para desfazer uma letra que virou atalho). */
@@ -124,12 +139,35 @@ export class PcLiveKeyboard {
       }
     });
     // A fila é do app, não desta tela: o que ainda não saiu segue saindo ao trocar de aba. Aqui só se ouve falha e silêncio.
-    const stopFailure = this.input.onFailure((failure, kind) => this.onFailure(failure, kind));
+    const stopFailure = this.input.onFailure((failure, kind, dropped) =>
+      this.onFailure(failure, kind, dropped),
+    );
     const stopIdle = this.input.onIdle(() => this.refill());
+    // Um atalho (ou uma tecla com modificador) mexeu no texto do PC por fora: o campo recomeça do que o PC tem.
+    const stopDiverge = this.input.onDiverge(() => this.reset());
+    const viewport = this.doc.defaultView?.visualViewport ?? null;
+    this.fullHeight = viewport?.height ?? 0;
+    const onViewport = () => this.watchViewport(viewport!.height);
+    viewport?.addEventListener('resize', onViewport);
     inject(DestroyRef).onDestroy(() => {
       stopFailure();
       stopIdle();
+      stopDiverge();
+      viewport?.removeEventListener('resize', onViewport);
     });
+  }
+
+  /** O modo teclado está ligado (o botão do teclado aparece apertado). */
+  get active(): boolean {
+    return this.wanted;
+  }
+
+  /**
+   * Chamar no começo de um toque nas teclas da tela: a perda de foco que vem junto não é o sistema fechando o teclado, e o
+   * foco volta no clique (`restore`).
+   */
+  holdFocus(): void {
+    this.ignoreBlurUntil = Date.now() + 700;
   }
 
   /** Teclas pedidas e ainda sem resposta (a repetição de apagar e das setas espera por este número). */
@@ -147,16 +185,14 @@ export class PcLiveKeyboard {
   open(): void {
     if (!this.wanted) {
       this.wanted = true;
+      this.shrunk = false;
       this.typing.emit(true);
     }
     this.field().nativeElement.focus();
   }
 
   close(): void {
-    if (this.wanted) {
-      this.wanted = false;
-      this.typing.emit(false);
-    }
+    this.endMode();
     this.field().nativeElement.blur();
   }
 
@@ -177,20 +213,60 @@ export class PcLiveKeyboard {
     tick();
     const modifiers = this.armed.take(extra);
     if (key === 'BACKSPACE' && modifiers.length === 0) this.dropLast();
-    else if (key === 'ENTER' || key === 'TAB') this.reset();
+    // Enter e Tab, e qualquer tecla com modificador (Ctrl+Z, Ctrl+Backspace...), mexem no texto do PC por fora do campo.
+    else if (key === 'ENTER' || key === 'TAB' || modifiers.length > 0) this.reset();
     this.input.sendKey(key, modifiers);
+  }
+
+  /**
+   * O Backspace do teclado do celular: o mesmo da tecla da barra (as armadas valem para ele; com modificador o campo
+   * recomeça). Segurar repete, e a repetição pula a rodada com teclas demais sem resposta, como na barra.
+   */
+  private phoneBackspace(repeating: boolean): void {
+    const now = Date.now();
+    const rapid = repeating || now - this.lastPhoneBackspace < 200;
+    this.lastPhoneBackspace = now;
+    if (rapid && this.input.pending >= MAX_KEYS_IN_FLIGHT) return;
+    if (!this.store.canSend()) return;
+    tick();
+    const modifiers = this.armed.take();
+    this.input.sendKey('BACKSPACE', modifiers);
+    if (modifiers.length > 0) this.reset();
+  }
+
+  /** O modo teclado acaba (o botão do teclado volta ao normal). */
+  private endMode(): void {
+    if (!this.wanted) return;
+    this.wanted = false;
+    this.typing.emit(false);
+  }
+
+  /** A janela encolheu (o teclado do sistema abriu) e voltou ao tamanho cheio (o sistema o fechou): o modo teclado acaba. */
+  private watchViewport(height: number): void {
+    if (!this.wanted) {
+      this.fullHeight = Math.max(this.fullHeight, height);
+      return;
+    }
+    if (height < this.fullHeight - 120) this.shrunk = true;
+    else if (this.shrunk && height >= this.fullHeight - 80) {
+      this.shrunk = false;
+      this.endMode();
+      this.field().nativeElement.blur();
+    }
   }
 
   /**
    * O envio falhou: sem texto guardado para devolver, o campo recomeça do que o PC tem. A tela é avisada do que o aviso de
    * falha dela não diz (o motivo já está lá).
    */
-  private onFailure(failure: PcFailure, kind: InputKind): void {
-    if (kind === 'edit') this.reset();
-    if (failure.kind === 'cancelled') this.failed.emit(this.notSent);
-    else if (kind === 'edit' && UNCERTAIN_FAILURES.has(failure.kind))
+  private onFailure(failure: PcFailure, kind: InputKind, droppedEdits: boolean): void {
+    // Falhou uma tecla e o que se digitou depois dela foi descartado: o PC não tem esse texto, então o campo recomeça igual.
+    if (kind === 'edit' || droppedEdits) this.reset();
+    if (failure.kind === 'cancelled' || (droppedEdits && kind === 'key')) {
+      this.failed.emit(this.notSent);
+    } else if (kind === 'edit' && UNCERTAIN_FAILURES.has(failure.kind)) {
       this.failed.emit(this.maybeLost);
-    else if (!NOTED_FAILURES.has(failure.kind)) this.failed.emit(failure.message);
+    } else if (!NOTED_FAILURES.has(failure.kind)) this.failed.emit(failure.message);
   }
 
   protected onInput(): void {
@@ -206,6 +282,13 @@ export class PcLiveKeyboard {
     if (armed.size > 0 && diff.erase === 0 && /^[a-z]$/i.test(diff.insert)) {
       field.value = this.lastValue;
       this.input.sendKey(diff.insert.toUpperCase() as PcLetter, this.armed.take());
+      // Ctrl+A, Ctrl+V, Ctrl+Z...: o texto do PC mudou por fora do campo.
+      this.reset();
+      return;
+    }
+    // Apagar com uma tecla armada (Ctrl+Backspace) é a tecla da barra: sai como tecla com o modificador, não como texto.
+    if (armed.size > 0 && diff.insert === '' && diff.erase > 0) {
+      this.phoneBackspace(false);
       return;
     }
     // Modificador não vale para texto: qualquer outro texto vai inteiro e as armadas se soltam do mesmo jeito.
@@ -216,6 +299,8 @@ export class PcLiveKeyboard {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    // Durante a composição (predição do teclado do celular) as teclas são do teclado, não do PC.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       this.press('ENTER');
@@ -224,24 +309,29 @@ export class PcLiveKeyboard {
       this.press('TAB');
     } else if (event.key === 'Backspace' && this.caretAtStart()) {
       event.preventDefault();
-      this.input.sendKey('BACKSPACE', this.armed.take());
+      this.phoneBackspace(event.repeat);
     }
   }
 
   /** Teclados de celular nem sempre mandam `keydown` com o nome da tecla: o `beforeinput` cobre Enter e apagar com o campo vazio. */
   protected onBeforeInput(event: Event): void {
-    const type = (event as InputEvent).inputType;
-    if (type === 'insertLineBreak' || type === 'insertParagraph') {
+    const { inputType: type, isComposing } = event as InputEvent;
+    if ((type === 'insertLineBreak' || type === 'insertParagraph') && !isComposing) {
       event.preventDefault();
       this.press('ENTER');
     } else if (type === 'deleteContentBackward' && this.caretAtStart() && !this.composing) {
       event.preventDefault();
-      this.input.sendKey('BACKSPACE', this.armed.take());
+      this.phoneBackspace(false);
     }
   }
 
   protected onFocus(): void {
     this.reset();
+  }
+
+  /** O foco saiu do campo: se não foi um toque nas teclas da tela, o teclado do celular foi fechado (ou o foco foi para outro lugar). */
+  protected onBlur(): void {
+    if (this.wanted && Date.now() > this.ignoreBlurUntil) this.endMode();
   }
 
   private caretAtStart(): boolean {

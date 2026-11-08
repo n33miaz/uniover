@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { PcArmedPills } from '../ui/armed-pills';
 import { PcShortcutGrid } from '../ui/shortcut-grid';
 
 /**
@@ -7,11 +8,12 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
  */
 @Component({
   selector: 'app-pc-shortcuts-page',
-  imports: [PcShortcutGrid],
+  imports: [PcArmedPills, PcShortcutGrid],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="head">
       <h2 i18n="@@pc.sc.title">Atalhos</h2>
+      <app-pc-armed-pills />
       <button
         type="button"
         class="icon"

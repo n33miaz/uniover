@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { PcArmed } from './data/pc-armed';
 import { PcStore } from './data/pc-store';
 import { PcPage } from './pc-page';
 import { FAILURE, FakePcStore, createFakePcStore } from './pc-test-kit';
@@ -77,6 +78,23 @@ describe('PcPage', () => {
     expect(root.querySelector('.notice')?.getAttribute('role')).toBe('alert');
     expect(root.querySelector('.notice')?.textContent).toContain('O PC está desconectado.');
     expect(root.querySelector('router-outlet')).not.toBeNull();
+  });
+
+  it('leaving the module lets go of the armed keys (a Win left armed cannot wait, unseen, for the next screen)', () => {
+    open('ready');
+    const armed = TestBed.inject(PcArmed);
+    armed.toggle('WIN');
+    armed.toggle('CTRL');
+    fixture.destroy();
+    expect(armed.armed().size).toBe(0);
+  });
+
+  it('the armed keys stay while the module is open (a change of tab keeps them)', () => {
+    open('ready');
+    const armed = TestBed.inject(PcArmed);
+    armed.toggle('WIN');
+    fixture.detectChanges();
+    expect(armed.has('WIN')).toBe(true);
   });
 
   it('connected, the state is a dot with the word kept for the screen reader', () => {

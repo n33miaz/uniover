@@ -15,6 +15,7 @@ import {
 } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
+import { PcArmed } from './data/pc-armed';
 import { PcStore } from './data/pc-store';
 import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 
@@ -123,6 +124,9 @@ export class PcPage {
   constructor() {
     const destroy = inject(DestroyRef);
     this.store.watch(destroy);
+    // As teclas armadas valem só dentro do módulo: sair dele as solta (Win armado não pode esperar, invisível, a próxima tela).
+    const armed = inject(PcArmed);
+    destroy.onDestroy(() => armed.clear());
     afterNextRender(() => {
       const watch = watchAvailableHeight(this.doc, this.screen().nativeElement, (value) =>
         this.height.set(value),
