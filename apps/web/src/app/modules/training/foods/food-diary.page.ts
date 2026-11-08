@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import { FoodRepository, type OwnFoodDraft } from '../data/foods/food-repository';
 import type { LocalFood } from '../data/foods/food';
 import { MealRepository, type MealDraft } from '../data/meals/meal-repository';
@@ -506,6 +507,25 @@ export class FoodDiaryPage {
   private savingOwnFoodQuery: string | null = null;
 
   constructor() {
+    // Lançamento com texto digitado e ainda não registrado: a recarga automática de atualização espera.
+    registerUnsavedWork(
+      () =>
+        [
+          this.time(),
+          this.note(),
+          this.freeName(),
+          this.freeKcal(),
+          this.freeProtein(),
+          this.freeCarbs(),
+          this.freeFat(),
+          this.ownName(),
+          this.ownBrand(),
+          this.ownKcal(),
+          this.ownProtein(),
+          this.ownCarbs(),
+          this.ownFat(),
+        ].some((text) => text.trim() !== '') || this.grams() !== '100',
+    );
     effect(() => {
       this.meals.revision();
       void this.loadDay();

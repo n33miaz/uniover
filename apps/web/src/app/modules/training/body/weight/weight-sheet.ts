@@ -8,6 +8,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../../core/pwa/unsaved-work';
 import type { LocalBodyEntry } from '../../data/body/body-entry';
 import { type BodyEntryDraft, BodyRepository } from '../../data/body/body-repository';
 import type { BodyEntryIssue } from '../../domain/body/body-limits';
@@ -114,17 +115,30 @@ export class WeightSheet {
     return $localize`:@@training.body.weight.sheet-edit:Pesagem de ${day}:day:`;
   });
 
-  /** O texto do campo: o que a pessoa digitou, ou o peso atual da pesagem em edição. */
-  protected readonly weightText = computed(() => {
-    const typed = this.weightDraft();
-    if (typed !== null) return typed;
+  /** O texto do campo antes de a pessoa mexer: o peso da pesagem em edição, ou vazio numa nova. */
+  private readonly savedWeightText = computed(() => {
     const weight = this.entry()?.weightKg ?? null;
     return weight === null ? '' : toFieldText(weight);
   });
 
+  /** O texto do campo: o que a pessoa digitou, ou o peso atual da pesagem em edição. */
+  protected readonly weightText = computed(() => this.weightDraft() ?? this.savedWeightText());
+
   protected readonly dateText = computed(
     () => this.dateDraft() ?? this.entry()?.measuredOn ?? this.today(),
   );
+
+  constructor() {
+    // Folha com texto ainda não salvo: a recarga automática de atualização espera.
+    registerUnsavedWork(() => {
+      const typedWeight = this.weightDraft();
+      const typedDate = this.dateDraft();
+      return (
+        (typedWeight !== null && typedWeight !== this.savedWeightText()) ||
+        (typedDate !== null && typedDate !== (this.entry()?.measuredOn ?? this.today()))
+      );
+    });
+  }
 
   protected async save(): Promise<void> {
     const value = parseDecimal(this.weightText());

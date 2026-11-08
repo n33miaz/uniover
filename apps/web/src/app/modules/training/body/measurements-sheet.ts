@@ -8,6 +8,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { registerUnsavedWork } from '../../../core/pwa/unsaved-work';
 import type { LocalBodyProfile } from '../data/body/body-profile';
 import { BodyRepository } from '../data/body/body-repository';
 import { NAVY_BODY_FAT_ENABLED } from '../domain/body/body-features';
@@ -289,6 +290,15 @@ export class BodyMeasurementsSheet {
   protected fieldId(key: MeasureKey): string {
     return `measure-${key}-${this.uid}`;
   }
+  constructor() {
+    // Folha com medidas ainda não salvas: a recarga automática de atualização espera.
+    registerUnsavedWork(
+      () =>
+        (this.dateDraft() !== null && this.dateDraft() !== this.today()) ||
+        Object.values(this.drafts()).some((text) => text.trim() !== ''),
+    );
+  }
+
   protected draft(field: DraftKey): string {
     return this.drafts()[field];
   }

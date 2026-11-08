@@ -19,8 +19,10 @@ export const AUTO_REQUEST_MAX_AGE_MS = 5 * 60_000;
  * explícitas (nada vigia o `document`):
  * - fontes registradas por telas (`register`, ou `registerUnsavedWork` em quem tem ciclo de vida): o sinal de "sujo" de um
  *   editor ou formulário (o valor atual difere do valor salvo). Quem salva precisa devolver esse sinal a "limpo" antes de
- *   navegar, senão o aviso de versão nova pede "salve ou descarte" para quem já salvou. O treino aberto não entra: a sessão
- *   fica gravada no aparelho e a recarga a retoma. A fila de saída offline também não: o que espera está gravado no aparelho;
+ *   navegar, senão o aviso de versão nova pede "salve ou descarte" para quem já salvou. A sessão de treino aberta não entra
+ *   (ela fica gravada no aparelho e a recarga a retoma), mas o que ainda não foi gravado nela entra: o cartão da série com
+ *   valores digitados e as folhas de peso, medidas, perfil, meta e edição de série. A fila de saída offline também não: o
+ *   que espera está gravado no aparelho;
  * - escritas (`POST/PUT/PATCH/DELETE`) em voo desta aba, contadas pelo interceptador `unsavedWorkInterceptor` (inclui os envios
  *   da fila, que saem pelo `HttpClient`). Leituras não contam: uma leitura refeita pela página nova não perde nada.
  */
