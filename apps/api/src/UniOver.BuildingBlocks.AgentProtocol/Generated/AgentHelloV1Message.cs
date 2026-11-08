@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcControlV1, PcKeyV2, TransportKeepaliveV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcControlV1, PcKeyV2, PcRtcV1, TransportKeepaliveV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -199,6 +199,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.PcControlV1;
                 case "pc.key.v2":
                     return AgentHelloV1BodyCapabilitiesItem.PcKeyV2;
+                case "pc.rtc.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcRtcV1;
                 case "transport.keepalive.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1;
                 case "tv.adb":
@@ -299,6 +301,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcKeyV2:
                     JsonSerializer.Serialize(writer, "pc.key.v2", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.PcRtcV1:
+                    JsonSerializer.Serialize(writer, "pc.rtc.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1:
                     JsonSerializer.Serialize(writer, "transport.keepalive.v1", options);

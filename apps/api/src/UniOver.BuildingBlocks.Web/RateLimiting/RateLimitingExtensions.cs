@@ -66,6 +66,9 @@ public static class RateLimitPolicies
     /// </summary>
     public const string PcKeyRelease = "pc-key-release";
 
+    /// <summary>Canal direto do controle do PC (oferta, candidato, fechamento): poucos por minuto e por conta, pois cada oferta acorda uma negociação no PC.</summary>
+    public const string PcRtc = "pc-rtc";
+
     /// <summary>Energia e favoritos do PC (bloquear, suspender, desligar, abrir programa): por conta e baixo, pois cada pedido age no PC de alguém.</summary>
     public const string PcPower = "pc-power";
 
@@ -75,7 +78,7 @@ public static class RateLimitPolicies
     /// </summary>
     public const string Beacon = "beacon";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcKeyRelease, PcPower, Beacon];
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcKeyRelease, PcPower, PcRtc, Beacon];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -112,6 +115,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.PcInput] = new() { Permitted = 600, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcKeyRelease] = new() { Permitted = 120, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.PcRtc] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Beacon] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
     };
 

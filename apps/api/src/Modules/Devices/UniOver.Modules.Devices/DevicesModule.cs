@@ -103,6 +103,12 @@ public static class DevicesModule
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, PcAgentRevokedInvalidator>();
         services.AddScoped<PcAgentResolver>();
         services.AddScoped<PcControlHandler>();
+
+        // Canal direto (WebRTC): sessões e esperas em memória da instância; a API só faz a sinalização autenticada.
+        services.AddSingleton<PcRtcSessions>();
+        services.AddSingleton<PcRtcAnswers>();
+        services.AddScoped<PcRtcClosures>();
+        services.AddScoped<PcRtcHandler>();
         services.AddAuthorizationBuilder()
             .AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure)
             .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly);
@@ -130,6 +136,7 @@ public static class DevicesModule
         group.MapAgentLogs();
         group.MapAgentMaintenance();
         endpoints.MapPcControl();
+        endpoints.MapPcRtc();
         return endpoints;
     }
 }
