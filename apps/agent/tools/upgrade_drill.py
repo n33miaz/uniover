@@ -391,15 +391,39 @@ _user32.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
 _user32.EnumWindows.argtypes = (_ENUM, wintypes.LPARAM)
 
 
-def process_table() -> dict[int, tuple[int, str]]:
-    """PID -> (PID do pai, nome do executável), rápido (sem CIM), para o vigia de janelas."""
+_kernel32.OpenProcess.restype = wintypes.HANDLE
+_kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+_kernel32.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+def creation_filetime(pid: int) -> int:
+    """Instante de criação do processo (FILETIME), ou 0 se não der para abrir o processo."""
+    handle = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return 0
+    try:
+        created, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not _kernel32.GetProcessTimes(
+            handle, *(ctypes.byref(t) for t in (created, ended, kernel, user))
+        ):
+            return 0
+        return (created.dwHighDateTime << 32) | created.dwLowDateTime
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def process_table() -> dict[int, tuple[int, str, int]]:
+    """PID -> (PID do pai, nome do executável, criação), rápido (sem CIM), para o vigia de
+    janelas. A criação separa o processo de hoje de outro que herdou o PID de um pai morto."""
     handle = _kernel32.CreateToolhelp32Snapshot(0x2, 0)
-    table: dict[int, tuple[int, str]] = {}
+    table: dict[int, tuple[int, str, int]] = {}
     entry = _Entry()
     entry.dwSize = ctypes.sizeof(_Entry)
     ok = _kernel32.Process32FirstW(handle, ctypes.byref(entry))
     while ok:
-        table[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile.lower())
+        pid = entry.th32ProcessID
+        table[pid] = (entry.th32ParentProcessID, entry.szExeFile.lower(), creation_filetime(pid))
         ok = _kernel32.Process32NextW(handle, ctypes.byref(entry))
     _kernel32.CloseHandle(handle)
     return table
@@ -423,13 +447,48 @@ def visible_windows() -> list[tuple[int, int, str, str]]:
     return found
 
 
+# O CIM guarda a criação em microssegundos e o sistema em 100 ns: a mesma criação difere por menos
+# de 1 µs. Um PID reaproveitado nasce muito depois (no mínimo milissegundos).
+SAME_CREATION_TICKS = 10_000
+
+
+def same_process(created_a: int, created_b: int) -> bool:
+    return created_a > 0 and created_b > 0 and abs(created_a - created_b) <= SAME_CREATION_TICKS
+
+
+def drill_pids(
+    table: dict[int, tuple[int, str, int]], seeds: set[tuple[int, int]], started: int
+) -> set[int]:
+    """PIDs que são, sem dúvida, do ensaio: os já identificados pelo rastreador (PID e criação) e
+    os descendentes por uma cadeia viva de pais do ensaio. Um filho só conta se nasceu depois do
+    início do ensaio e depois do pai (um pai morto cujo PID foi reaproveitado por um processo do
+    ensaio não adota os filhos antigos de outro programa, como o do dono)."""
+    tree = {
+        pid
+        for pid, (_, _, created) in table.items()
+        if any(pid == seed_pid and same_process(created, seed) for seed_pid, seed in seeds)
+    }
+    grew = True
+    while grew:
+        grew = False
+        for pid, (ppid, _, created) in table.items():
+            if pid in tree or ppid not in tree or created <= 0 or created < started:
+                continue
+            if created >= table[ppid][2]:
+                tree.add(pid)
+                grew = True
+    return tree
+
+
 class WindowWatch:
     """Amostra, de 0,4 em 0,4 s, as janelas visíveis dos processos do ensaio durante todo o ensaio
-    (pega também uma janela que só pisca). Janelas novas de console de fora da árvore (o Windows
-    Terminal pode abrir o console do processo fora dela) viram só aviso."""
+    (pega também uma janela que só pisca). Só conta processo provadamente do ensaio (ver
+    `drill_pids`). Janelas novas de console de fora da árvore (o Windows Terminal pode abrir o
+    console do processo fora dela) viram só aviso."""
 
-    def __init__(self) -> None:
-        self.seeds: set[int] = set()
+    def __init__(self, started: int = 0) -> None:
+        self.started = started
+        self.seeds: set[tuple[int, int]] = set()
         self.offenders: dict[tuple[int, str, str], str] = {}
         self.suspects: dict[tuple[int, str, str], str] = {}
         self._baseline = {w[0] for w in visible_windows()}
@@ -451,16 +510,9 @@ class WindowWatch:
 
     def sample(self) -> None:
         table = process_table()
-        tree = set(self.seeds)
-        grew = True
-        while grew:
-            grew = False
-            for pid, (ppid, _) in table.items():
-                if ppid in tree and pid not in tree:
-                    tree.add(pid)
-                    grew = True
+        tree = drill_pids(table, self.seeds, self.started)
         for hwnd, pid, klass, title in visible_windows():
-            name = table.get(pid, (0, "?"))[1]
+            name = table.get(pid, (0, "?", 0))[1]
             key = (pid, klass, title)
             if pid in tree:
                 self.offenders.setdefault(key, name)
@@ -686,7 +738,7 @@ class Drill:
             self.tracker.protected = ancestors_of(os.getpid(), procs)
         current = self.tracker.current(procs)
         if self.watch is not None:
-            self.watch.seeds = {p.pid for p in current}
+            self.watch.seeds = {p.key for p in current}
         return current
 
     def alive(self, key: tuple[int, int], procs: list[Proc]) -> bool:
@@ -801,7 +853,7 @@ class Drill:
                 raise SystemExit(f"{name} do ensaio fora da pasta temporaria: {value}")
         if self.base.is_relative_to(self.real_base) or self.real_base.is_relative_to(self.base):
             raise SystemExit("a pasta do ensaio se confunde com a instalacao real")
-        self.watch = WindowWatch()
+        self.watch = WindowWatch(self.tracker.started)
         self.watch.start()
 
     def install_base(self, base_sha: str) -> bool:
