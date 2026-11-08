@@ -71,10 +71,115 @@ def test_virtual_keys(key: str, vk: int) -> None:
     assert pc_inputs.virtual_key(key)[0] == vk
 
 
-@pytest.mark.parametrize("key", ["F13", "F0", "a", "AB", "PRINT_SCREEN", ""])
+@pytest.mark.parametrize("key", ["F13", "F0", "a", "AB", "D10", "DA", "PRINT", "NUMPAD0", ""])
 def test_keys_outside_the_contract_are_refused(key: str) -> None:
     with pytest.raises(UnknownKey):
         pc_inputs.virtual_key(key)
+
+
+# A tabela das teclas da v2: código virtual do Windows e se é estendida. D0 a D9 são a fileira de
+# cima (VK_0..VK_9), e as quatro pontuações são as teclas OEM de layout americano.
+V2_KEYS = [
+    *((f"D{n}", 0x30 + n, False) for n in range(10)),
+    ("MINUS", 0xBD, False),
+    ("EQUALS", 0xBB, False),
+    ("COMMA", 0xBC, False),
+    ("PERIOD", 0xBE, False),
+    ("INSERT", 0x2D, True),
+    ("PRINT_SCREEN", 0x2C, True),
+    ("APPS", 0x5D, True),
+    ("WIN", 0x5B, False),
+    ("CAPS_LOCK", 0x14, False),
+    ("CTRL", 0x11, False),
+    ("ALT", 0x12, False),
+    ("SHIFT", 0x10, False),
+]
+
+
+@pytest.mark.parametrize(("key", "vk", "extended"), V2_KEYS)
+def test_the_keys_only_the_v2_has_map_to_their_virtual_keys(
+    key: str, vk: int, extended: bool
+) -> None:
+    assert pc_inputs.virtual_key(key) == (vk, extended)
+    down, up = pc_inputs.key_inputs(key)
+    assert (down.vk, up.vk) == (vk, vk)
+    assert bool(down.flags & KEY_EXTENDED) is extended
+    assert up.flags & KEY_UP
+
+
+def test_the_digit_row_is_not_the_numeric_keypad() -> None:
+    # VK_NUMPAD0 é 0x60: a fileira de cima é VK_0 (0x30), que é o que Ctrl+0 do navegador usa.
+    assert pc_inputs.virtual_key("D0")[0] == 0x30
+    assert pc_inputs.virtual_key("D9")[0] == 0x39
+
+
+def test_repeat_presses_the_key_that_many_times_in_one_batch_with_the_modifiers_around_all() -> (
+    None
+):
+    events = pc_inputs.key_inputs("BACKSPACE", ["CTRL"], repeat=3)
+    assert [(e.vk, bool(e.flags & KEY_UP)) for e in events] == [
+        (0x11, False),
+        *[(0x08, False), (0x08, True)] * 3,
+        (0x11, True),
+    ]
+
+
+def test_repeat_is_bounded_even_if_the_contract_failed_to_bound_it() -> None:
+    assert len(pc_inputs.key_inputs("BACKSPACE", repeat=50)) == 100
+    assert len(pc_inputs.key_inputs("BACKSPACE", repeat=5000)) == 2 * pc_inputs.MAX_KEY_REPEAT
+    assert len(pc_inputs.key_inputs("BACKSPACE", repeat=0)) == 2
+    assert len(pc_inputs.key_inputs("BACKSPACE", repeat=-4)) == 2
+
+
+def test_the_default_is_still_one_press_like_the_v1() -> None:
+    assert pc_inputs.key_inputs("C", ["CTRL"]) == pc_inputs.key_inputs(
+        "C", ["CTRL"], repeat=1, action="PRESS"
+    )
+
+
+@pytest.mark.parametrize("key", ["CTRL", "ALT", "SHIFT", "WIN"])
+def test_down_and_up_press_or_release_a_single_modifier_without_the_other_half(key: str) -> None:
+    vk = pc_inputs.virtual_key(key)[0]
+    (down,) = pc_inputs.key_inputs(key, action="DOWN")
+    (up,) = pc_inputs.key_inputs(key, action="UP")
+    assert (down.vk, down.flags & KEY_UP) == (vk, 0)
+    assert (up.vk, up.flags & KEY_UP) == (vk, KEY_UP)
+
+
+@pytest.mark.parametrize(
+    ("key", "modifiers", "repeat", "action"),
+    [
+        ("A", [], 1, "DOWN"),
+        ("TAB", [], 1, "UP"),
+        ("CAPS_LOCK", [], 1, "DOWN"),
+        ("ALT", ["SHIFT"], 1, "DOWN"),
+        ("ALT", [], 1, "HOLD"),
+        ("ALT", [], 1, ""),
+    ],
+)
+def test_holding_anything_but_a_lone_modifier_is_refused_and_nothing_is_produced(
+    key: str, modifiers: list[str], repeat: int, action: str
+) -> None:
+    with pytest.raises(UnknownKey):
+        pc_inputs.key_inputs(key, modifiers, repeat, action)
+
+
+def test_held_keys_follow_the_order_of_the_events() -> None:
+    alt_down, alt_up = (
+        pc_inputs.key_inputs("ALT", action="DOWN")[0],
+        pc_inputs.key_inputs("ALT", action="UP")[0],
+    )
+    held = pc_inputs.held_keys_after({}, [alt_down])
+    assert list(held.values()) == [alt_up], "guarda o evento que solta"
+    assert pc_inputs.held_keys_after(held, pc_inputs.key_inputs("TAB")) == held, (
+        "uma batida completa não muda nada"
+    )
+    assert pc_inputs.held_keys_after(held, [alt_up]) == {}
+    assert pc_inputs.held_keys_after({}, pc_inputs.key_inputs("C", ["CTRL"], repeat=4)) == {}
+
+
+def test_a_unicode_batch_never_leaves_a_held_key() -> None:
+    assert pc_inputs.held_keys_after({}, pc_inputs.text_inputs("olá 😀")) == {}
 
 
 def test_unknown_modifier_is_refused_before_anything_is_pressed() -> None:

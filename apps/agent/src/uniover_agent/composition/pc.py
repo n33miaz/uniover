@@ -11,6 +11,7 @@ from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
 from uniover_agent.core import (
     PC_CONTROL_CAPABILITY,
+    PC_KEY_V2_CAPABILITY,
     ClockOffset,
     EnvelopeFactory,
     Handler,
@@ -33,7 +34,8 @@ class PcSetup:
     capabilities: list[str]
     after_hello: list[Callable[[], Awaitable[None]]]
     apps: list[PcApp]
-    # Solta os botões do mouse que o PC ficou segurando (conexão caída, agente encerrando).
+    # Solta os botões do mouse e as teclas que o PC ficou segurando (conexão caída, agente
+    # encerrando).
     release_all: Callable[[], None]
     # Referência de idade dos comandos: `ProcessMessage` a alimenta só com o `ts` dos batimentos da
     # API, e os comandos medem a idade por ela.
@@ -78,7 +80,9 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     )
     return PcSetup(
         handlers,
-        [PC_CONTROL_CAPABILITY],
+        # `pc.key.v2` aqui é só o que este agente sabe; o `hello` só o declara depois de a API
+        # listá-lo (`declarable_capabilities`).
+        [PC_CONTROL_CAPABILITY, PC_KEY_V2_CAPABILITY],
         [pc_apps_announcer(apps, transport, envelopes)],
         apps,
         pc_input.release_all,

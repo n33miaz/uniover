@@ -16,6 +16,7 @@ from uniover_agent.adapters.pc_inputs import (
     MOUSE_RIGHTDOWN,
     MOUSE_RIGHTUP,
     RawInput,
+    UnknownKey,
 )
 from uniover_agent.adapters.pc_windows import (
     PartialSendError,
@@ -370,6 +371,163 @@ def test_the_dead_man_timer_tries_again_when_the_release_was_refused() -> None:
     now[0] = 60
     timers.fire_last()
     assert flaky.batches[-1] == [LEFT_UP]
+
+
+ALT_DOWN = RawInput("keyboard", vk=0x12)
+ALT_UP = RawInput("keyboard", flags=KEY_UP, vk=0x12)
+SHIFT_DOWN = RawInput("keyboard", vk=0x10)
+SHIFT_UP = RawInput("keyboard", flags=KEY_UP, vk=0x10)
+
+
+def test_a_repeated_key_goes_out_as_one_batch() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent)
+    pc.key("BACKSPACE", [], repeat=12)
+    assert len(sent.batches) == 1
+    assert len(sent.batches[0]) == 24
+    pc.release_all()
+    assert len(sent.batches) == 1, "uma batida completa não deixa nada apertado"
+
+
+def test_a_held_modifier_stays_down_across_other_keys_and_is_let_go_by_up() -> None:
+    sent = Recorder()
+    timers = Timers()
+    pc = WindowsPcInput(sent, start_timer=timers)
+    pc.key("ALT", [], action="DOWN")
+    pc.key("TAB", [])  # Alt+Tab de verdade: o Alt segue apertado entre os toques
+    pc.key("TAB", ["SHIFT"])
+    assert sent.batches[0] == [ALT_DOWN]
+    assert ALT_UP not in [event for batch in sent.batches for event in batch]
+    assert len(timers.live()) == 1, (
+        "enquanto o Alt está apertado o temporizador de segurança está armado"
+    )
+    pc.key("ALT", [], action="UP")
+    assert sent.batches[-1] == [ALT_UP]
+    assert timers.live() == []
+    pc.release_all()
+    assert len(sent.batches) == 4, "nada ficou para soltar"
+
+
+def test_release_all_lets_go_of_a_held_modifier() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent)
+    pc.key("ALT", [], action="DOWN")
+    pc.release_all()
+    assert sent.batches == [[ALT_DOWN], [ALT_UP]]
+    pc.release_all()
+    assert len(sent.batches) == 2
+
+
+def test_release_all_lets_go_of_the_held_keys_in_the_reverse_order_and_the_mouse_too() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent)
+    pc.key("ALT", [], action="DOWN")
+    pc.key("SHIFT", [], action="DOWN")
+    pc.click("LEFT", "DOWN")
+    pc.release_all()
+    assert sent.batches[-1] == [LEFT_UP, SHIFT_UP, ALT_UP]
+
+
+def test_the_dead_man_timer_lets_go_of_a_modifier_held_without_traffic() -> None:
+    now = [10.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.key("ALT", [], action="DOWN")
+    ((delay, _),) = timers.live()
+    assert delay == 30
+    now[0] += 30
+    timers.fire_last()
+    assert sent.batches[-1] == [ALT_UP]
+    assert timers.live() == []
+
+
+def test_traffic_keeps_a_held_modifier_alive_past_the_dead_man_time() -> None:
+    now = [0.0]
+    timers = Timers()
+    sent = Recorder()
+    pc = WindowsPcInput(sent, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.key("ALT", [], action="DOWN")
+    now[0] = 20
+    pc.move(0, 0)  # o sinal de vida do app
+    now[0] = 30
+    timers.fire_last()
+    assert len(sent.batches) == 1, "passaram só 10 s sem tráfego: não solta"
+    now[0] = 50
+    timers.fire_last()
+    assert sent.batches[-1] == [ALT_UP]
+
+
+def test_a_refused_release_of_a_held_modifier_is_retried_by_the_dead_man_timer() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.key("ALT", [], action="DOWN")
+    flaky.refuse_all = True
+    pc.release_all()  # não levanta erro
+    ((delay, _),) = timers.live()
+    assert delay == 30
+    flaky.refuse_all = False
+    now[0] = 60
+    timers.fire_last()
+    assert flaky.batches[-1] == [ALT_UP]
+    pc.release_all()
+    assert flaky.batches[-1] == [ALT_UP] and len(flaky.batches) == 2
+
+
+def test_a_partial_batch_keeps_a_modifier_already_held_and_lets_go_of_what_it_pressed() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky)
+    pc.key("ALT", [], action="DOWN")
+    flaky.accept = [1]  # só o SHIFT apertado entra
+    with pytest.raises(PartialSendError):
+        pc.key("TAB", ["SHIFT"])
+    assert flaky.batches[-2:] == [[SHIFT_DOWN], [SHIFT_UP]], "o que o lote parcial apertou é solto"
+    pc.release_all()
+    assert flaky.batches[-1] == [ALT_UP], "o Alt segurado de antes segue até a soltura"
+
+
+def test_a_batch_refused_whole_leaves_the_held_modifier_untouched() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky)
+    pc.key("ALT", [], action="DOWN")
+    flaky.refuse_all = True
+    with pytest.raises(OSError):
+        pc.key("TAB", [])
+    flaky.refuse_all = False
+    pc.release_all()
+    assert flaky.batches[-1] == [ALT_UP]
+
+
+def test_pressing_the_held_modifier_again_does_not_double_track_it() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent)
+    pc.key("ALT", [], action="DOWN")
+    pc.key("ALT", [], action="DOWN")
+    pc.release_all()
+    assert sent.batches[-1] == [ALT_UP]
+    pc.release_all()
+    assert len(sent.batches) == 3
+
+
+def test_a_refused_hold_is_not_remembered_as_held() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky)
+    flaky.refuse_all = True
+    with pytest.raises(OSError):
+        pc.key("ALT", [], action="DOWN")
+    flaky.refuse_all = False
+    pc.release_all()
+    assert flaky.batches == []
+
+
+def test_a_key_that_cannot_be_held_is_refused_before_anything_is_sent() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent)
+    with pytest.raises(UnknownKey):
+        pc.key("A", [], action="DOWN")
+    assert sent.batches == []
 
 
 def test_typed_text_with_an_emoji_goes_out_as_a_single_batch() -> None:

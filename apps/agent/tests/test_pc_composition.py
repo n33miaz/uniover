@@ -11,6 +11,8 @@ import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
+from uniover_agent.adapters.pc_inputs import KEY_UP, RawInput
+from uniover_agent.adapters.pc_windows import WindowsPcInput
 from uniover_agent.composition import connection as connection_module
 from uniover_agent.composition.connection import build_handler, run
 from uniover_agent.composition.pc import build_pc
@@ -39,8 +41,13 @@ class FakeInput:
     def click(self, button: str, action: str) -> None:
         self.calls.append(("click", button, action))
 
-    def key(self, key: str, modifiers: Sequence[str]) -> None:
-        self.calls.append(("key", key, tuple(modifiers)))
+    def key(
+        self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
+    ) -> None:
+        if repeat == 1 and action == "PRESS":
+            self.calls.append(("key", key, tuple(modifiers)))
+        else:
+            self.calls.append(("key", key, tuple(modifiers), repeat, action))
 
     def type_text(self, text: str) -> None:
         self.calls.append(("text", text))
@@ -128,11 +135,13 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         launcher=FakeLauncher(),
     )
     assert pc is not None
-    assert pc.capabilities == ["pc.control.v1"]
+    # O que este agente sabe; o `hello` só declara `pc.key.v2` depois de a API listá-lo.
+    assert pc.capabilities == ["pc.control.v1", "pc.key.v2"]
     assert sorted(pc.handlers) == [
         "pc.app.launch.v1",
         "pc.click.v1",
         "pc.key.v1",
+        "pc.key.v2",
         "pc.media.v1",
         "pc.pointer.v1",
         "pc.power.v1",
@@ -321,6 +330,106 @@ async def test_run_serves_the_pc_commands_without_any_tv(
     assert pc_input.calls.count(("release_all",)) == 2
     assert power.calls == [("lock",)]
     assert launcher.opened == ["notepad"]
+
+
+async def hello_capabilities(
+    monkeypatch: pytest.MonkeyPatch, features: frozenset[str]
+) -> list[str]:
+    """As capacidades do `hello` de um agente com o controle do PC, em API que lista `features`."""
+
+    async def listed(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
+        return features
+
+    monkeypatch.setattr(connection_module, "fetch_api_features", listed)
+    monkeypatch.setattr(
+        connection_module,
+        "build_pc",
+        partial(
+            build_pc,
+            platform="win32",
+            pc_input=FakeInput(),
+            power=FakePower(),
+            launcher=FakeLauncher(),
+        ),
+    )
+
+    async def script(connection: ServerConnection) -> None:
+        await asyncio.sleep(0.2)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    silence_noisy_loggers()
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=True
+        )
+        assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
+    return list(api.received[0]["body"]["capabilities"])
+
+
+async def test_the_hello_declares_pc_key_v2_only_when_the_api_lists_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "tv.pair.v1"})
+    capabilities = await hello_capabilities(monkeypatch, older_api)
+    # Uma API anterior recusaria o `hello` com capacidade que não conhece: o agente atual segue
+    # declarando só o que ela entende, e a v1 das teclas segue servida.
+    assert "pc.control.v1" in capabilities
+    assert "pc.key.v2" not in capabilities
+
+    capabilities = await hello_capabilities(monkeypatch, older_api | {"pc.key.v2"})
+    assert capabilities[-2:] == ["pc.control.v1", "pc.key.v2"]
+
+
+async def test_a_held_modifier_is_let_go_when_the_connection_drops_and_old_keys_still_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # O adaptador de verdade, com o envio trocado por um registro: nada toca no teclado do PC.
+    batches: list[list[RawInput]] = []
+    monkeypatch.setattr(
+        connection_module,
+        "build_pc",
+        partial(
+            build_pc,
+            platform="win32",
+            pc_input=WindowsPcInput(lambda inputs: batches.append(list(inputs))),
+            power=FakePower(),
+            launcher=FakeLauncher(),
+        ),
+    )
+    ids = [f"0192f1e4-0000-7000-8000-0000000000d{n}" for n in range(4)]
+
+    async def script(connection: ServerConnection) -> None:
+        now = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        await connection.send(dump(envelope("pc.key.v1", {"key": "C"}, ts=now, id=ids[0])))
+        await connection.send(
+            dump(envelope("pc.key.v2", {"key": "ALT", "action": "DOWN"}, ts=now, id=ids[1]))
+        )
+        await connection.send(dump(envelope("pc.key.v2", {"key": "TAB"}, ts=now, id=ids[2])))
+        # A queda: o Alt segurado nunca pode ficar preso no PC.
+        await asyncio.sleep(0.3)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    silence_noisy_loggers()
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=True
+        )
+        assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
+
+    results = {
+        m["correlationId"]: m["body"] for m in api.received if m["type"] == "command.result.v1"
+    }
+    assert all(results[command_id] == {"ok": True} for command_id in ids[:3])
+    alt_down = RawInput("keyboard", vk=0x12)
+    alt_up = RawInput("keyboard", flags=KEY_UP, vk=0x12)
+    flat = [event for batch in batches for event in batch]
+    assert flat.index(alt_down) < flat.index(alt_up)
+    assert flat.count(alt_down) == 1 and flat.count(alt_up) == 1
+    assert batches[-1] == [alt_up], "a soltura foi a última coisa enviada ao teclado"
 
 
 async def test_run_declares_nothing_when_the_control_is_off() -> None:

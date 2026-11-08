@@ -4,6 +4,7 @@ from uniover_agent.core.pc.apps import MAX_FAVORITES, PcApp, parse_favorites, sl
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.handlers import (
     PC_CONTROL_CAPABILITY,
+    PC_KEY_V2_CAPABILITY,
     PC_SILENT_TYPES,
     SLEEP_DELAY_SECONDS,
     UNKNOWN_APP,
@@ -13,6 +14,7 @@ from uniover_agent.core.pc.handlers import (
     pc_click_handler,
     pc_handlers,
     pc_key_handler,
+    pc_key_v2_handler,
     pc_media_handler,
     pc_pointer_handler,
     pc_power_handler,
@@ -23,6 +25,7 @@ from uniover_agent.core.pc.use import PcUseTracker
 __all__ = [
     "MAX_FAVORITES",
     "PC_CONTROL_CAPABILITY",
+    "PC_KEY_V2_CAPABILITY",
     "PC_SILENT_TYPES",
     "SLEEP_DELAY_SECONDS",
     "UNKNOWN_APP",
@@ -36,6 +39,7 @@ __all__ = [
     "pc_click_handler",
     "pc_handlers",
     "pc_key_handler",
+    "pc_key_v2_handler",
     "pc_media_handler",
     "pc_pointer_handler",
     "pc_power_handler",
