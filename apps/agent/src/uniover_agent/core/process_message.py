@@ -7,11 +7,12 @@ from collections import deque
 from collections.abc import Callable, Collection
 from typing import Final
 
-from uniover_agent.core.domain import Command
+from uniover_agent.core.domain import Command, CommandResult
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand
 from uniover_agent.core.pc.handlers import POINTER_TYPE, merge_pointer_commands
+from uniover_agent.core.pc.pointer_order import PointerSequence
 from uniover_agent.core.tv.handlers import TimedKeyCommand
 from uniover_agent.core.tv.session import TV_UNREACHABLE
 from uniover_agent.ports import Transport, TransportError
@@ -27,6 +28,10 @@ _PC_PREFIX = "pc."
 # que se possa somar (a soma passaria dos limites, ou misturaria movimento e rolagem fora de
 # ordem), o movimento mais antigo é descartado.
 MAX_PENDING_PC: Final = 128
+# Movimentos fora de ordem (chegaram depois de um mais novo, por `seq`) seguidos que merecem um
+# aviso: um ou outro é a reordenação normal de pedidos paralelos; uma sequência longa indica um
+# caminho que embaralha. Eles são aplicados de qualquer jeito (o deslocamento é relativo).
+LATE_POINTER_WARNING: Final = 20
 
 
 class ProcessMessage:
@@ -86,6 +91,9 @@ class ProcessMessage:
         self._pc_wakeup = asyncio.Event()
         self._pc_consumer: asyncio.Task[None] | None = None
         self._pc_overflowing = False
+        # Movimentos numerados chegam em pedidos paralelos; a ordem só alimenta o diagnóstico.
+        self._pointer_order = PointerSequence()
+        self._late_pointers = 0
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -143,6 +151,19 @@ class ProcessMessage:
         await self._execute(command)
 
     def _enqueue_pc(self, command: Command) -> None:
+        if command.type == POINTER_TYPE:
+            seq = command.body.get("seq")
+            if self._pointer_order.is_late(
+                seq if isinstance(seq, int) else None, self._monotonic()
+            ):
+                self._late_pointers += 1
+                if self._late_pointers == LATE_POINTER_WARNING:
+                    _log.warning(
+                        "%d movimentos do mouse seguidos chegaram fora de ordem (aplicados)",
+                        LATE_POINTER_WARNING,
+                    )
+            else:
+                self._late_pointers = 0
         self._pc_queue.append(command)
         if len(self._pc_queue) > MAX_PENDING_PC:
             self._shrink_pc_queue()
@@ -194,7 +215,38 @@ class ProcessMessage:
                 self._pc_overflowing = False
                 self._pc_wakeup.clear()
                 await self._pc_wakeup.wait()
-            await self._execute_detached(self._pc_queue.popleft())
+            await self._execute_pc(self._pc_queue.popleft())
+
+    async def _execute_pc(self, command: Command) -> None:
+        """Executa um comando da faixa e responde SEM prender a faixa: o envio do resultado (rede)
+        sai em tarefa própria, para o movimento que vem atrás não esperar por ele. A ordem dos
+        resultados não importa (a API os casa pelo `id`); a ordem da execução é a da faixa."""
+        try:
+            result = await self._handle_command(command)
+        except Exception:
+            _log.exception("falha ao executar %s (id=%s)", command.type, command.id)
+            return
+        if command.type in self._silent_types:
+            return
+        task = asyncio.create_task(self._send_result(command, result))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _send_result(self, command: Command, result: CommandResult) -> None:
+        # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
+        try:
+            await self._transport.send(
+                self._envelopes.result(
+                    command.id,
+                    ok=result.status.value == "ok",
+                    code=result.code or result.status.value,
+                    message=result.detail,
+                )
+            )
+        except TransportError as exc:
+            _log.debug("resultado de %s não enviado (%s)", command.type, exc)
+        except Exception:
+            _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
 
     def _newest_press(self, key: str) -> Callable[[], bool]:
         self._latest_key[key] = self._latest_key.get(key, 0) + 1
@@ -226,6 +278,7 @@ class ProcessMessage:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
         self._pc_queue.clear()
+        self._pointer_order.reset()
         if self._pc_consumer is not None:
             self._pc_consumer.cancel()  # o próximo comando cria outro consumidor
             self._pc_consumer = None

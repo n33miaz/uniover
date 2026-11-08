@@ -100,7 +100,11 @@ def merge_pointer_commands(older: Command, newer: Command) -> Command | None:
     limits = (MAX_POINTER_DELTA, MAX_POINTER_DELTA, MAX_SCROLL_DELTA, MAX_SCROLL_DELTA)
     if any(abs(value) > limit for value, limit in zip(total, limits, strict=True)):
         return None
-    body = dict(zip(("dx", "dy", "scrollX", "scrollY"), total, strict=True))
+    body: dict[str, Any] = dict(zip(("dx", "dy", "scrollX", "scrollY"), total, strict=True))
+    # Só diagnóstico: fica o maior número dos dois.
+    seqs = [s for s in (older.body.get("seq"), newer.body.get("seq")) if s is not None]
+    if seqs:
+        body["seq"] = max(seqs)
     return Command(newer.id, newer.type, body, newer.correlation_id, newer.sent_at)
 
 
