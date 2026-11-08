@@ -120,6 +120,20 @@ export class PointerBatcher {
   }
 
   /**
+   * Manda já o que está esperando e devolve quando terminam só os pedidos que existem NESTE instante (os que já estavam em
+   * voo mais os que acabaram de sair). O que o dedo andar depois disto não entra na espera: é o que o clique e o aperto do
+   * botão usam, para não esperarem movimentos feitos depois deles (o clique cairia no alvo novo).
+   */
+  async settleNow(): Promise<void> {
+    this.cancelTimer();
+    while (this.hasPending()) {
+      if (this.stopped) this.pending = { dx: 0, dy: 0, scrollX: 0, scrollY: 0 };
+      else this.dispatch();
+    }
+    await Promise.all([...this.inFlight]);
+  }
+
+  /**
    * Esquece o que esperava (movimento somado e o aguardo da taxa) e continua utilizável. É o que a troca de conta usa:
    * movimento pendente de uma pessoa nunca sai depois como se fosse de outra. Não espera nada ("esvaziar" mandaria o
    * movimento antigo). Os pedidos que já estão em voo seguem, mas o que eles deixarem para trás também é descartado.

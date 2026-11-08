@@ -242,6 +242,11 @@ public sealed class PcControlTests(PostgresFixture postgres)
         revoke.StatusCode.Should().Be(HttpStatusCode.OK);
         await outbox.WaitForClaimAsync(Ct);
 
+        // Com o evento ainda travado (o cache segue quente), um movimento não pode ser entregue nem dado como enviado: a
+        // sessão já caiu, e é isso que o barra.
+        using var whileBlocked = await PostAsync(app, "pointer", new { dx = 3, dy = 3 });
+        whileBlocked.StatusCode.Should().NotBe(HttpStatusCode.NoContent);
+
         // Nada chegou ao agente depois da revogação: só o fechamento da sessão, sem nenhuma mensagem de movimento.
         var leftovers = new List<string>();
         while (await agent.ReceiveAsync() is { } message)

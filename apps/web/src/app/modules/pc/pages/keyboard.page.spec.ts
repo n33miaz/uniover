@@ -77,7 +77,7 @@ describe('KeyboardPage', () => {
     expect(store.sendText.mock.calls).toEqual([['um'], ['dois']]);
   });
 
-  it('gives the text back when it failed, unless something else was typed meanwhile', async () => {
+  it('gives the text back in front of what was typed meanwhile, and shows why', async () => {
     let fail: (value: typeof FAILURE) => void = () => undefined;
     store.sendText.mockImplementationOnce(
       () => new Promise<typeof FAILURE>((resolve) => (fail = resolve)),
@@ -88,7 +88,7 @@ describe('KeyboardPage', () => {
     fail(FAILURE);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(field().value).toBe('segundo');
+    expect(field().value).toBe('primeirosegundo');
     expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
   });
 
@@ -106,14 +106,60 @@ describe('KeyboardPage', () => {
     expect(root.querySelector('.error')?.textContent).toContain('pode ter sido digitado');
   });
 
-  it('gives back a text that a failure ahead in the queue cancelled, without a second error', async () => {
+  it('gives back a text that a failure ahead in the queue cancelled and says it was not sent', async () => {
     store.sendText.mockResolvedValueOnce({ kind: 'cancelled', message: '' });
     type('def');
     submit().click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(field().value).toBe('def');
-    expect(root.querySelector('.error')).toBeNull();
+    expect(root.querySelector('.error')?.textContent).toContain('O texto não foi enviado.');
+  });
+
+  it('gives back every text of a cancelled run, in the order they were sent', async () => {
+    const resolvers: ((value: typeof FAILURE | { kind: 'cancelled'; message: string }) => void)[] =
+      [];
+    store.sendText.mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve as never)),
+    );
+    type('abc');
+    submit().click();
+    type('def');
+    submit().click();
+    type('ghi');
+    submit().click();
+    resolvers[0]!(FAILURE);
+    resolvers[1]!({ kind: 'cancelled', message: '' });
+    resolvers[2]!({ kind: 'cancelled', message: '' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(field().value).toBe('abcdefghi');
+    expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
+  });
+
+  it('keeps what the person typed after the texts that came back', async () => {
+    const resolvers: ((value: typeof FAILURE) => void)[] = [];
+    store.sendText.mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+    type('abc');
+    submit().click();
+    type('novo');
+    resolvers[0]!(FAILURE);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(field().value).toBe('abcnovo');
+  });
+
+  it('treats a refusal of the PC system as uncertain too (part of the letters may have been typed)', async () => {
+    store.sendText.mockResolvedValueOnce({
+      kind: 'failed',
+      message: 'O PC não executou o comando.',
+    });
+    type('abcdef');
+    submit().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(field().value).toBe('');
+    expect(root.querySelector('.error')?.textContent).toContain('pode ter sido digitado');
   });
 
   it('special keys send the key with no modifiers', () => {

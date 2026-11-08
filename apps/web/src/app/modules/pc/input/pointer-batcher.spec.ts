@@ -337,6 +337,42 @@ describe('PointerBatcher pipelined', () => {
     expect(batcher.busy).toBe(false);
   });
 
+  it('settleNow sends what is waiting and waits only for the requests that exist at that moment', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...PIPELINED, minIntervalMs: 0 }, clock);
+    batcher.addMove(1, 0); // em voo
+    batcher.addMove(2, 0); // em voo
+    let settled = false;
+    const settling = batcher.settleNow().then(() => {
+      settled = true;
+    });
+    batcher.addMove(9, 0); // feito DEPOIS: não entra na espera
+    expect(batches.map((b) => b.dx)).toEqual([1, 2, 9]);
+    finish();
+    finish();
+    await settling;
+    expect(settled).toBe(true);
+    expect(batcher.busy).toBe(true); // o terceiro ainda voa
+    finish();
+    await flush();
+  });
+
+  it('settleNow dispatches the pending movement past the rate and the limit, and does nothing when idle', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, { ...OPTIONS, maxInFlight: 1 }, clock);
+    await batcher.settleNow();
+    expect(send).not.toHaveBeenCalled();
+    batcher.addMove(1, 0);
+    batcher.addMove(6, 0); // espera o voo e a taxa
+    const settling = batcher.settleNow();
+    expect(batches.map((b) => b.dx)).toEqual([1, 6]);
+    finish();
+    finish();
+    await settling;
+  });
+
   it('drain waits for ALL the requests in flight', async () => {
     const clock = fakeClock();
     const { send, finish } = controlledSend();

@@ -34,6 +34,18 @@ export const UP_RETRY_BACKOFF_MS: readonly number[] = [300, 1_000];
 /** O `UP` normal espera os movimentos em voo por até isto; passou, solta mesmo assim (botão preso é pior que um passo curto). */
 export const UP_DRAIN_MS = 1_500;
 
+/**
+ * O clique e o aperto do botão esperam os movimentos que já saíram por até isto. Passou, o clique (ou o aperto) é abandonado
+ * com um aviso: mandá-lo tarde cairia no alvo errado, ou viraria um clique duplo se a pessoa tocou de novo.
+ */
+export const MOVE_SETTLE_MS = 1_500;
+
+/**
+ * Quanto um texto ou uma tecla da fila de entrada espera a resposta. A API desiste em 5 s; passou disto sem resposta, o
+ * resultado é incerto (pode ter sido digitado) e a fila segue, sem o que estava atrás dele.
+ */
+export const INPUT_TIMEOUT_MS = 6_000;
+
 /** Um pedido do botão que desistiu porque a conta mudou: não é falha do PC e não aparece para ninguém. */
 class AccountChanged extends Error {}
 
@@ -236,8 +248,9 @@ export class PcStore {
   }
 
   /**
-   * Clique depois de todo movimento que já saiu: espera as respostas dos pedidos de movimento em voo (são pedidos HTTP
-   * independentes, e um clique que os ultrapassasse cairia no lugar errado). A espera só custa o clique, nunca o movimento.
+   * Clique depois de todo movimento que já saiu: espera as respostas dos pedidos de movimento feitos até agora (são pedidos
+   * HTTP independentes, e um clique que os ultrapassasse cairia no lugar errado), por até `MOVE_SETTLE_MS`. Passou disso o
+   * clique é abandonado com um aviso, e nunca sai tarde. A espera só custa o clique, nunca o movimento.
    */
   async click(
     button: PcClickButton,
@@ -246,7 +259,8 @@ export class PcStore {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
     const asked = this.account;
-    await this.batcher.drain();
+    // Só os movimentos feitos ANTES do clique: o que o dedo andar depois não o atrasa nem muda o alvo dele.
+    if (!(await this.settleMoves())) return this.abandoned();
     // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
     if (this.session.accountId() !== asked) return this.blocked();
     return this.run(() => this.api.click(button, action));
@@ -277,8 +291,9 @@ export class PcStore {
     const epoch = ++this.downEpoch;
     try {
       // O aperto espera o movimento já enviado terminar (o dedo ficou parado até a pressão longa, então quase sempre já
-      // terminou): o botão nunca é apertado antes de o ponteiro chegar onde o dedo parou.
-      await this.batcher.drain();
+      // terminou): o botão nunca é apertado antes de o ponteiro chegar onde o dedo parou. Se o movimento não termina no
+      // prazo, o aperto é abandonado com um aviso (nada foi apertado).
+      if (!(await this.settleMoves())) return this.abandoned();
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return CANCELLED;
       // Pediram para soltar enquanto o movimento saía: apertar agora só para soltar é desperdício, e arriscado.
@@ -377,7 +392,11 @@ export class PcStore {
     const generation = this.inputGeneration;
     const run = this.inputTail.then(async (): Promise<PcFailure | null> => {
       if (generation !== this.inputGeneration) return CANCELLED;
-      const failure = await this.run(call);
+      // O pedido que não responde no prazo vira `timeout` (resultado incerto) e a fila segue sem o que esperava atrás.
+      const failure = await this.run(async () => {
+        if (await raceTimeout(call(), INPUT_TIMEOUT_MS))
+          throw new HttpErrorResponse({ status: 504 });
+      });
       if (failure !== null) this.inputGeneration++;
       return failure;
     });
@@ -385,17 +404,35 @@ export class PcStore {
     return run;
   }
 
-  /** Espera os movimentos em voo terminarem, por no máximo `UP_DRAIN_MS`. */
+  /** Espera os movimentos feitos até agora terminarem, por no máximo `UP_DRAIN_MS` (passou, solta mesmo assim). */
   private async drainBeforeUp(): Promise<void> {
+    await this.settleMoves(UP_DRAIN_MS);
+  }
+
+  /**
+   * Manda o que esperava e espera só os pedidos de movimento existentes agora, por até `limit`. Devolve `false` se o prazo
+   * acabou antes (um pedido de movimento preso).
+   */
+  private async settleMoves(limit = MOVE_SETTLE_MS): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const giveUp = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, UP_DRAIN_MS);
+    const giveUp = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), limit);
     });
     try {
-      await Promise.race([this.batcher.drain(), giveUp]);
+      return await Promise.race([this.batcher.settleNow().then(() => true), giveUp]);
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** O clique (ou o aperto) desistiu por um movimento que não terminou: nada foi enviado, e a tela avisa. */
+  private abandoned(): PcFailure {
+    const failure: PcFailure = {
+      kind: 'timeout',
+      message: $localize`:@@pc.error.move-stuck:O PC não acompanhou o movimento; o toque não foi enviado.`,
+    };
+    this.noteFailure(failure);
+    return failure;
   }
 
   private async command(call: () => Promise<void>): Promise<PcFailure | null> {
