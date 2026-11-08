@@ -1,6 +1,11 @@
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using UniOver.BuildingBlocks.Persistence;
+using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.InstallHint;
+using UniOver.Modules.Identity.Persistence;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 
@@ -32,7 +37,7 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         await using var app = await IdentityApp.StartAsync(postgres);
 
         using var read = await app.GetAsync(Route);
-        using var write = await app.SendAsync(HttpMethod.Put, Route, new { scopes = new { root = new { installed = true } } });
+        using var write = await app.SendAsync(HttpMethod.Put, Route, new { scopes = new { root = new { never = true } } });
 
         read.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         write.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -56,12 +61,12 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
 
-        using var save = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { installed = true }, tv = new { dismissedAt = 1_000L } } });
+        using var save = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { never = true }, tv = new { dismissedAt = 1_000L } } });
         save.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var read = await app.GetAsync(Route, owner.AccessToken);
         var body = await IdentityApp.JsonAsync(read);
-        body.GetProperty("root").GetProperty("installed").GetBoolean().Should().BeTrue();
+        body.GetProperty("root").GetProperty("never").GetBoolean().Should().BeTrue();
         body.GetProperty("tv").GetProperty("dismissedAt").GetInt64().Should().Be(1_000L);
 
         // A Início não tem nenhuma linha: nunca gravada, versão zero, e o corpo não ganhou campo novo.
@@ -75,19 +80,38 @@ public sealed class InstallHintTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Installed_IsAFactOfTheDevice_NeverStoredNorReturned()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+
+        using var save = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { installed = true, never = true }, tv = new { installed = true } } });
+
+        save.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await IdentityApp.JsonAsync(save);
+        body.GetProperty("root").TryGetProperty("installed", out _).Should().BeFalse();
+        body.GetProperty("tv").TryGetProperty("installed", out _).Should().BeFalse();
+        body.GetProperty("root").GetProperty("never").GetBoolean().Should().BeTrue();
+        await using var db = app.Db();
+        (await db.InstallHintAnswers.SingleAsync(Ct)).AnswersJson.Should().NotContain("installed");
+        using var read = await app.GetAsync(Route, owner.AccessToken);
+        (await IdentityApp.JsonAsync(read)).GetProperty("root").TryGetProperty("installed", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Merge_NeverUndoesAnAnswer()
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
-        using var first = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { installed = true, dismissedAt = 5_000L } } });
+        using var first = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { never = true, dismissedAt = 5_000L } } });
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Um aparelho de memória apagada manda "nada instalado" e um "Agora não" mais antigo: nada que valia se desfaz.
-        using var second = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { installed = false, dismissedAt = 2_000L }, treino = new { never = true } } });
+        // Um aparelho de memória apagada manda "nunca" desligado e um "Agora não" mais antigo: nada que valia se desfaz.
+        using var second = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { never = false, dismissedAt = 2_000L }, treino = new { never = true } } });
         second.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var merged = await IdentityApp.JsonAsync(second);
-        merged.GetProperty("root").GetProperty("installed").GetBoolean().Should().BeTrue();
+        merged.GetProperty("root").GetProperty("never").GetBoolean().Should().BeTrue();
         merged.GetProperty("root").GetProperty("dismissedAt").GetInt64().Should().Be(5_000L);
         merged.GetProperty("treino").GetProperty("never").GetBoolean().Should().BeTrue();
     }
@@ -110,7 +134,7 @@ public sealed class InstallHintTests(PostgresFixture postgres)
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
-        using var hint = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { installed = true } } });
+        using var hint = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { never = true } } });
         hint.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // O aparelho nunca gravou a Início (versão zero): a primeira gravação vence, sem 409 que apagaria a personalização local.
@@ -122,6 +146,9 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         body.GetProperty("home").EnumerateArray().Select(e => e.GetProperty("id").GetString()).Should().Equal("training", "tv");
     }
 
+    /// <summary>A política `profile` deixa 10 gravações por minuto por conta: os testes de concorrência ficam abaixo disso, senão um 429 se passaria por falha da fusão.</summary>
+    private const int UnderProfileLimit = 7;
+
     [Fact]
     public async Task HintsAndFirstHomeSaves_AtTheSameTime_NeverConflictTheHome()
     {
@@ -129,9 +156,9 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         var owner = await app.LoginAsync();
 
         // A corrida do relato: várias respostas da dica chegando enquanto o aparelho faz a primeira gravação da Início.
-        var hints = Enumerable.Range(0, 6).Select(async i =>
+        var hints = Enumerable.Range(0, UnderProfileLimit - 1).Select(async i =>
         {
-            using var response = await PutHintAsync(app, owner.AccessToken, new { scopes = new Dictionary<string, object> { [$"app{i}"] = new { installed = true } } });
+            using var response = await PutHintAsync(app, owner.AccessToken, new { scopes = new Dictionary<string, object> { [$"app{i}"] = new { never = true } } });
             return response.StatusCode;
         });
         var home = Task.Run(async () =>
@@ -150,13 +177,13 @@ public sealed class InstallHintTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ConcurrentFirstAnswers_NeverFail_AndAllOfThemEndUpStored()
+    public async Task ConcurrentAnswers_SerializedByTheAccountLock_NeverFail_AndAllOfThemEndUpStored()
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
 
         var results = await Task.WhenAll(
-            Enumerable.Range(0, 8).Select(async i =>
+            Enumerable.Range(0, UnderProfileLimit).Select(async i =>
             {
                 using var response = await PutHintAsync(app, owner.AccessToken, new { scopes = new Dictionary<string, object> { [$"app{i}"] = new { dismissedAt = 1_000L + i } } });
                 return response.StatusCode;
@@ -164,7 +191,7 @@ public sealed class InstallHintTests(PostgresFixture postgres)
 
         results.Should().AllSatisfy(status => status.Should().Be(HttpStatusCode.OK));
         using var read = await app.GetAsync(Route, owner.AccessToken);
-        (await IdentityApp.JsonAsync(read)).EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(Enumerable.Range(0, 8).Select(i => $"app{i}"));
+        (await IdentityApp.JsonAsync(read)).EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(Enumerable.Range(0, UnderProfileLimit).Select(i => $"app{i}"));
         await using var db = app.Db();
         (await db.InstallHintAnswers.CountAsync(Ct)).Should().Be(1);
     }
@@ -178,7 +205,7 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         using var revoke = await app.SendAsync(HttpMethod.Post, $"/api/v1/identity/guests/{guest.UserId}/revoke", bearer: owner.AccessToken);
         revoke.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        using var write = await PutHintAsync(app, guest.Login.AccessToken, new { scopes = new { root = new { installed = true } } });
+        using var write = await PutHintAsync(app, guest.Login.AccessToken, new { scopes = new { root = new { never = true } } });
 
         write.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -189,7 +216,7 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
         var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
-        using var save = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { installed = true } } });
+        using var save = await PutHintAsync(app, owner.AccessToken, new { scopes = new { root = new { never = true } } });
         save.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var guestRead = await app.GetAsync(Route, guest.Login.AccessToken);
@@ -201,18 +228,18 @@ public sealed class InstallHintTests(PostgresFixture postgres)
         using var ownerRead = await app.GetAsync(Route, owner.AccessToken);
         var ownerNow = await IdentityApp.JsonAsync(ownerRead);
         ownerNow.TryGetProperty("tv", out _).Should().BeFalse();
-        ownerNow.GetProperty("root").GetProperty("installed").GetBoolean().Should().BeTrue();
+        ownerNow.GetProperty("root").GetProperty("never").GetBoolean().Should().BeTrue();
     }
 
     public static TheoryData<string, object?> InvalidBodies => new()
     {
         { "sem corpo", null },
         { "sem apps", new { } },
-        { "app em maiúsculas", new { scopes = new Dictionary<string, object> { ["TV"] = new { installed = true } } } },
-        { "app com barra", new { scopes = new Dictionary<string, object> { ["tv/x"] = new { installed = true } } } },
+        { "app em maiúsculas", new { scopes = new Dictionary<string, object> { ["TV"] = new { never = true } } } },
+        { "app com barra", new { scopes = new Dictionary<string, object> { ["tv/x"] = new { never = true } } } },
         { "app sem resposta", new { scopes = new Dictionary<string, object?> { ["tv"] = null } } },
         { "instante negativo", new { scopes = new { root = new { dismissedAt = -1L } } } },
-        { "apps demais", new { scopes = Enumerable.Range(0, 9).ToDictionary(i => $"app{i}", _ => (object)new { installed = true }) } },
+        { "apps demais", new { scopes = Enumerable.Range(0, 9).ToDictionary(i => $"app{i}", _ => (object)new { never = true }) } },
     };
 
     [Theory]
@@ -234,10 +261,10 @@ public sealed class InstallHintTests(PostgresFixture postgres)
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
-        using var first = await PutHintAsync(app, owner.AccessToken, new { scopes = Enumerable.Range(0, 8).ToDictionary(i => $"app{i}", _ => (object)new { installed = true }) });
+        using var first = await PutHintAsync(app, owner.AccessToken, new { scopes = Enumerable.Range(0, 8).ToDictionary(i => $"app{i}", _ => (object)new { never = true }) });
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var over = await PutHintAsync(app, owner.AccessToken, new { scopes = new { extra = new { installed = true } } });
+        using var over = await PutHintAsync(app, owner.AccessToken, new { scopes = new { extra = new { never = true } } });
 
         over.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         using var read = await app.GetAsync(Route, owner.AccessToken);
@@ -249,7 +276,7 @@ public sealed class InstallHintTests(PostgresFixture postgres)
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
-        using var save = await PutHintAsync(app, guest.Login.AccessToken, new { scopes = new { root = new { installed = true } } });
+        using var save = await PutHintAsync(app, guest.Login.AccessToken, new { scopes = new { root = new { never = true } } });
         save.StatusCode.Should().Be(HttpStatusCode.OK);
 
         await using (var db = app.Db())
@@ -259,5 +286,60 @@ public sealed class InstallHintTests(PostgresFixture postgres)
 
         await using var check = app.Db();
         (await check.InstallHintAnswers.CountAsync(Ct)).Should().Be(0);
+    }
+
+    /// <summary>
+    /// A criação da linha perde a corrida: no meio da gravação, outra conexão (sem passar pela trava, como faria uma
+    /// instância antiga ou um script) cria a linha da conta. O handler tem de tratar a violação de chave única, refazer a
+    /// fusão sobre a linha que apareceu e devolver as duas respostas, sem erro. Teste direto no handler, com um
+    /// interceptador que provoca a corrida de verdade.
+    /// </summary>
+    [Fact]
+    public async Task LosingTheRaceToCreateTheRow_MergesOverTheWinner_InsteadOfFailing()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        _ = await app.LoginAsync();
+        Guid userId;
+        await using (var db = app.Db())
+        {
+            userId = await db.Users.Select(u => u.Id).SingleAsync(Ct);
+        }
+
+        var racer = new RowCreatedByAnotherConnection(app, userId);
+        var builder = new DbContextOptionsBuilder<IdentityDbContext>();
+        ModuleDatabase.Configure(builder, app.Database.OwnerConnection, IdentityDbContext.SchemaName, typeof(IdentityDbContext).Assembly);
+        builder.AddInterceptors(racer);
+        await using var context = new IdentityDbContext(builder.Options);
+        var handler = new InstallHintHandler(context, app.Time);
+
+        var merged = await handler.MergeAsync(
+            userId, new Dictionary<string, InstallHintScope?> { ["tv"] = new InstallHintScope(null, true) }, Ct);
+
+        racer.Fired.Should().Be(2, "a primeira gravação perdeu a corrida e foi refeita uma vez");
+        merged.Should().NotBeNull();
+        merged!["root"].Never.Should().BeTrue("a resposta do vencedor da corrida continua valendo");
+        merged["tv"].Never.Should().BeTrue("e a nossa foi fundida por cima");
+        await using var check = app.Db();
+        (await check.InstallHintAnswers.CountAsync(Ct)).Should().Be(1);
+    }
+
+    /// <summary>Na primeira gravação, cria por outra conexão a linha da conta que a gravação em curso também ia criar.</summary>
+    private sealed class RowCreatedByAnotherConnection(IdentityApp app, Guid userId) : SaveChangesInterceptor
+    {
+        public int Fired { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Fired++ == 0)
+            {
+                await using var other = app.Db();
+                other.InstallHintAnswers.Add(InstallHintAnswers.Create(
+                    userId, "{\"root\":{\"never\":true}}", app.Time.GetUtcNow()));
+                await other.SaveChangesAsync(cancellationToken);
+            }
+
+            return result;
+        }
     }
 }

@@ -146,14 +146,17 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(service.autoEligible()).toBe(false);
     });
 
-    it('a janela instalada grava a resposta na conta, para o Safari não perguntar depois', async () => {
+    it('a janela instalada guarda "instalado" só no aparelho (no balde da conta) e nunca o envia à conta', async () => {
       const service = create({ userAgent: SAFARI, standalone: true });
-      // Antes de a sessão ser confirmada ainda não há de quem seja: fica no aparelho.
+      // Antes de a sessão ser confirmada ainda não há de quem seja: fica no balde do aparelho.
       expect(JSON.parse(localStorage.getItem(INSTALL_HINT_KEY)!)).toEqual({ installed: true });
       await service.syncAccount(ACCOUNT);
-      expect(api.saveInstallHint).toHaveBeenCalledWith({ root: { installed: true } });
       expect(inAccount('root', ACCOUNT)).toEqual({ installed: true });
-      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
+      // As chaves antigas ficam onde estão: um pacote antigo (ou um recuo de versão) ainda acha a memória.
+      expect(JSON.parse(localStorage.getItem(INSTALL_HINT_KEY)!)).toEqual({ installed: true });
+      expect(api.saveInstallHint).not.toHaveBeenCalled();
+      service.never();
+      expect(api.saveInstallHint).toHaveBeenCalledWith({ root: { never: true } });
     });
 
     it.each<[string, string, 'root' | 'tv' | 'treino' | null]>([
@@ -242,8 +245,8 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
   });
 
   describe('a conta lembra por quem teve a memória do Safari apagada', () => {
-    it('a conta que já instalou: nada de pergunta, e o aparelho guarda a resposta', async () => {
-      api.getInstallHint.mockResolvedValue({ root: { installed: true } });
+    it('a conta que disse "nunca": nada de pergunta, e o aparelho guarda a resposta', async () => {
+      api.getInstallHint.mockResolvedValue({ root: { never: true } });
       const service = create({ userAgent: SAFARI });
       expect(service.autoEligible()).toBe(true); // antes de a conta responder só há o aparelho
 
@@ -251,8 +254,19 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
 
       expect(service.syncedFor()).toBe(ACCOUNT);
       expect(service.autoEligible()).toBe(false);
-      expect(inAccount('root', ACCOUNT)).toEqual({ installed: true });
+      expect(inAccount('root', ACCOUNT)).toEqual({ never: true });
       expect(api.saveInstallHint).not.toHaveBeenCalled(); // a conta já sabia: nada a subir
+    });
+
+    it('"instalado" é do aparelho: se a conta o trouxer, é ignorado', async () => {
+      api.getInstallHint.mockResolvedValue({ root: { installed: true }, tv: { installed: true } });
+      const service = create({ userAgent: SAFARI });
+
+      await service.syncAccount(ACCOUNT);
+
+      expect(service.autoEligible()).toBe(true);
+      expect(inAccount('root', ACCOUNT)).toBeNull();
+      expect(api.saveInstallHint).not.toHaveBeenCalled();
     });
 
     it('"nunca" e "Agora não" da conta valem no aparelho, cada um no seu app', async () => {
@@ -269,10 +283,13 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(inAccount('treino', ACCOUNT)).toEqual({ dismissedAt: t0 });
     });
 
-    it('funde sem desfazer: o instante mais novo e os "sim" de cada lado', async () => {
+    it('funde sem desfazer: o instante mais novo e os "sim" de cada lado, e "instalado" fica no aparelho', async () => {
       const t = Date.UTC(2026, 10, 1);
-      localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ dismissedAt: t + 5, never: true }));
-      api.getInstallHint.mockResolvedValue({ root: { dismissedAt: t, installed: true } });
+      localStorage.setItem(
+        INSTALL_HINT_KEY,
+        JSON.stringify({ dismissedAt: t + 5, never: true, installed: true }),
+      );
+      api.getInstallHint.mockResolvedValue({ root: { dismissedAt: t } });
       const service = create({ userAgent: SAFARI });
 
       await service.syncAccount(ACCOUNT);
@@ -282,9 +299,9 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
         never: true,
         installed: true,
       });
-      // Falta na conta o "nunca" e o instante mais novo: sobem juntos.
+      // Falta na conta o "nunca" e o instante mais novo: sobem juntos, sem o "instalado".
       expect(api.saveInstallHint).toHaveBeenCalledWith({
-        root: { dismissedAt: t + 5, never: true, installed: true },
+        root: { dismissedAt: t + 5, never: true },
       });
     });
 
@@ -332,6 +349,24 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(service.autoEligible()).toBe(true);
     });
 
+    it('se a leitura da conta falhou, o que ficou para trás sobe na próxima leitura bem-sucedida', async () => {
+      api.getInstallHint.mockRejectedValueOnce(new Error('sem rede'));
+      api.saveInstallHint.mockRejectedValue(new Error('sem rede'));
+      const service = create({ userAgent: SAFARI });
+      await service.syncAccount(ACCOUNT);
+      service.never(); // o envio falha: fica só no aparelho
+      expect(api.saveInstallHint).toHaveBeenCalledTimes(1);
+
+      api.saveInstallHint.mockResolvedValue({});
+      await service.syncAccount(ACCOUNT); // outra chamada (a sessão mudou de novo): lê a conta de novo
+      expect(api.getInstallHint).toHaveBeenCalledTimes(2);
+      expect(api.saveInstallHint).toHaveBeenCalledTimes(2);
+      expect(api.saveInstallHint).toHaveBeenLastCalledWith({ root: { never: true } });
+
+      await service.syncAccount(ACCOUNT); // já casada: não lê nem envia de novo
+      expect(api.getInstallHint).toHaveBeenCalledTimes(2);
+    });
+
     it('renovar o token (a sessão piscar) não pergunta de novo à conta nem refaz a espera', async () => {
       const service = create({ userAgent: SAFARI });
       await Promise.all([service.syncAccount(ACCOUNT), service.syncAccount(ACCOUNT)]);
@@ -347,6 +382,60 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(inAccount('root', ACCOUNT)).toBeNull();
       expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
       expect(service.autoEligible()).toBe(true);
+    });
+  });
+
+  describe('"Agora não" nunca vale mais que agora + 1 dia', () => {
+    const future = () => Date.now() + 400 * DAY;
+
+    it('um valor futuro no aparelho não vale: vale o da conta, que é menor', async () => {
+      const serverValue = Date.now() - 2 * DAY;
+      localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ dismissedAt: future() }));
+      api.getInstallHint.mockResolvedValue({ root: { dismissedAt: serverValue } });
+      const service = create({ userAgent: SAFARI });
+      expect(service.autoOpenAllowed(Date.now() + 400 * DAY)).toBe(true);
+
+      await service.syncAccount(ACCOUNT);
+
+      expect(inAccount('root', ACCOUNT)).toEqual({ dismissedAt: serverValue });
+      expect(service.autoOpenAllowed(Date.now() + 31 * DAY)).toBe(true);
+      expect(service.autoOpenAllowed(Date.now())).toBe(false);
+    });
+
+    it('um valor futuro vindo da conta é ignorado, e um dado agora (dentro de 1 dia de folga) vale', async () => {
+      api.getInstallHint.mockResolvedValue({ root: { dismissedAt: future() } });
+      const service = create({ userAgent: SAFARI });
+      await service.syncAccount(ACCOUNT);
+      expect(inAccount('root', ACCOUNT)).toBeNull();
+
+      const edge = Date.now() + DAY / 2;
+      service.dismiss(edge);
+      expect(inAccount('root', ACCOUNT)).toEqual({ dismissedAt: edge });
+    });
+
+    it('dismiss e a abertura automática com um relógio errado não gravam o futuro', async () => {
+      const service = create({ userAgent: SAFARI });
+      await service.syncAccount(ACCOUNT);
+      service.dismiss(future());
+      expect(inAccount('root', ACCOUNT)).toEqual({});
+      service.openAuto(future());
+      expect(inAccount('root', ACCOUNT)).toEqual({});
+      expect(api.saveInstallHint).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('"já instalei" soma, não apaga', () => {
+    it('acknowledgeInstalled guarda junto com o "Agora não" e o "nunca" que já havia', async () => {
+      const service = create({ userAgent: SAFARI });
+      await service.syncAccount(ACCOUNT);
+      service.dismiss(Date.UTC(2026, 10, 1));
+      service.never();
+      service.acknowledgeInstalled();
+      expect(inAccount('root', ACCOUNT)).toEqual({
+        dismissedAt: Date.UTC(2026, 10, 1),
+        never: true,
+        installed: true,
+      });
     });
   });
 
@@ -396,18 +485,43 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
 
       expect(inAccount('root', ACCOUNT)).toEqual({ never: true });
       expect(inAccount('tv', ACCOUNT)).toEqual({ installed: true });
-      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
-      expect(localStorage.getItem(installHintKey('tv'))).toBeNull();
-      expect(api.saveInstallHint).toHaveBeenCalledWith({
-        root: { never: true },
-        tv: { installed: true },
-      });
+      // As chaves antigas ficam onde estão (um pacote antigo ainda as acha), mas só a primeira conta as herda.
+      expect(JSON.parse(localStorage.getItem(INSTALL_HINT_KEY)!)).toEqual({ never: true });
+      expect(JSON.parse(localStorage.getItem(installHintKey('tv'))!)).toEqual({ installed: true });
+      expect(api.saveInstallHint).toHaveBeenCalledTimes(1);
+      expect(api.saveInstallHint).toHaveBeenCalledWith({ root: { never: true } });
 
       api.saveInstallHint.mockClear();
       const second = reload({ userAgent: SAFARI });
       await second.syncAccount(OTHER);
       expect(second.autoEligible()).toBe(true);
       expect(api.saveInstallHint).not.toHaveBeenCalled();
+    });
+
+    it('uma resposta dada enquanto a conta troca (a anterior saiu, a nova não se confirmou) não cai no balde do aparelho nem no da anterior', async () => {
+      const service = create({ userAgent: SAFARI });
+      await service.syncAccount(ACCOUNT);
+      service.never();
+      let answer!: (value: object) => void;
+      api.getInstallHint.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+      api.saveInstallHint.mockClear();
+
+      const switching = service.syncAccount(OTHER);
+      service.dismiss(Date.UTC(2026, 10, 3)); // no meio da troca
+      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
+      expect(inAccount('root', OTHER)).toBeNull();
+      expect(inAccount('root', ACCOUNT)).toEqual({ never: true });
+      expect(api.saveInstallHint).not.toHaveBeenCalled();
+
+      answer({});
+      await switching;
+      // Confirmada a conta nova, o que foi dito no meio entra no balde dela, e só nele.
+      expect(inAccount('root', OTHER)).toEqual({ dismissedAt: Date.UTC(2026, 10, 3) });
+      expect(inAccount('root', ACCOUNT)).toEqual({ never: true });
+      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
+      expect(api.saveInstallHint).toHaveBeenCalledWith({
+        root: { dismissedAt: Date.UTC(2026, 10, 3) },
+      });
     });
 
     it('a chave por conta tem o formato uniover.install-hint.v2.<conta>.<app>', () => {

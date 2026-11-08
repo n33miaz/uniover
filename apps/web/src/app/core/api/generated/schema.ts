@@ -12315,7 +12315,6 @@ export interface components {
     InstallHintScope: {
       /** Format: int64 */
       dismissedAt: null | number | string;
-      installed: null | boolean;
       never: null | boolean;
     };
     JsonElement: unknown;

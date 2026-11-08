@@ -893,29 +893,19 @@ test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de 
       await expectSheetClosed(page);
     });
 
-    test('grava na conta que o app está instalado: o Safari, com os dados apagados, não pergunta', async ({
-      context,
+    test('"instalado" é do aparelho: fica na memória dele e nunca vai para a conta', async ({
       page,
     }) => {
       await simulateStandalone(page);
       await signInAsOwner();
       await page.goto('/');
       await homeReady(page);
-      await expect
-        .poll(() => Object.values(identity.installHints).map((hints) => hints['root']))
-        .toEqual([{ installed: true }]);
-      await page.close();
-
-      // A mesma conta, agora no Safari (armazenamento separado: o do atalho não chega até ele).
-      const safari = await context.newPage();
-      await safari.clock.install();
-      await safari.goto('/');
-      await homeReady(safari);
-      await wipeSiteData(safari);
-      await safari.reload();
-      await homeReady(safari);
-      await safari.clock.fastForward(AFTER_DELAY_MS * 3);
-      await expect(sheetOf(safari)).toHaveCount(0);
+      await expect.poll(() => storedMemory(page)).toEqual({ installed: true });
+      await page.clock.fastForward(AFTER_DELAY_MS * 3);
+      await expectSheetClosed(page);
+      // Nada foi enviado: a conta só guarda "Agora não" e "nunca".
+      expect(identity.installHintWrites).toBe(0);
+      expect(identity.installHints).toEqual({});
     });
   });
 
@@ -972,7 +962,7 @@ test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de 
       await expectSheetClosed(page);
     });
 
-    test('"Já instalei" fica para sempre, em qualquer tempo e depois de apagar os dados do site', async ({
+    test('"Já instalei" fica no aparelho para sempre, em qualquer tempo, e nunca vai para a conta', async ({
       page,
     }) => {
       await signInAsOwner();
@@ -980,10 +970,15 @@ test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de 
       await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
       await sheetOf(page).getByRole('button', { name: 'Já instalei' }).click();
       await expectSheetClosed(page);
-      await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
+      expect(await storedMemory(page)).toEqual({
+        dismissedAt: expect.any(Number),
+        installed: true,
+      });
+      for (const answers of Object.values(identity.installHints)) {
+        for (const answer of Object.values(answers)) expect(answer).not.toHaveProperty('installed');
+      }
 
       await jumpDays(page, 400);
-      await wipeSiteData(page);
       await page.reload();
       await homeReady(page);
       await page.clock.fastForward(AFTER_DELAY_MS * 3);

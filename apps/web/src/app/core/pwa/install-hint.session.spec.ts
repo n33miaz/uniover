@@ -87,7 +87,7 @@ describe('InstallHint com a conta', () => {
     TestBed.resetTestingModule();
   }
 
-  it('espera a resposta da conta: com a resposta pendente nem os 3 s a abrem, e "já instalei" na conta a cancela de vez', async () => {
+  it('espera a resposta da conta: com a resposta pendente nem os 3 s a abrem, e o "nunca" da conta a cancela de vez', async () => {
     let answer!: (value: InstallHintAnswers) => void;
     api.getInstallHint.mockReturnValue(
       new Promise<InstallHintAnswers>((resolve) => (answer = resolve)),
@@ -96,7 +96,7 @@ describe('InstallHint com a conta', () => {
     await tick(INSTALL_HINT_DELAY_MS + 1000); // dentro do prazo de espera da conta
     expect(sheet()).toBeNull();
 
-    answer({ root: { installed: true } });
+    answer({ root: { never: true } });
     await tick(10 * INSTALL_HINT_DELAY_MS);
     expect(sheet()).toBeNull();
   });

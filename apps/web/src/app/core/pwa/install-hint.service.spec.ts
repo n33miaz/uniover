@@ -9,6 +9,7 @@ import {
   INSTALL_HINT_SNOOZE_MS,
   INSTALL_INTENT_KEY,
   INSTALL_NAVIGATE,
+  installHintKey,
   INSTALL_OFFER_WAIT_MS,
   InstallHintService,
   InstallMode,
@@ -149,7 +150,8 @@ describe('InstallHintService', () => {
       expect(service.mode()).toBe('native');
       window.dispatchEvent(new Event('appinstalled'));
       expect(service.mode()).toBe('none');
-      expect(stored()).toEqual({ installed: true });
+      // Soma ao que já havia (o "Agora não"), não apaga.
+      expect(stored()).toEqual({ dismissedAt: 1, installed: true });
     });
   });
 
@@ -462,7 +464,11 @@ describe('InstallHintService', () => {
         localStorage.setItem(`${INSTALL_HINT_KEY}.treino`, JSON.stringify({ installed: true }));
         const service = createAt('/treino/', { userAgent: UA.android, standalone: true });
         await vi.waitFor(() => expect(service.mode()).toBe('android-manual'));
-        expect(JSON.parse(localStorage.getItem(`${INSTALL_HINT_KEY}.treino`)!)).toEqual({});
+        // A correção vale para a memória da conta: só depois de a conta ser casada.
+        await service.syncAccount('conta-do-chrome');
+        expect(
+          JSON.parse(localStorage.getItem(installHintKey('treino', 'conta-do-chrome'))!),
+        ).toEqual({});
       } finally {
         Reflect.deleteProperty(window.navigator, 'getInstalledRelatedApps');
       }
