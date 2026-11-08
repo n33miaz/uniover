@@ -62,6 +62,8 @@ export class PointerBatcher {
   private lastSentAt = Number.NEGATIVE_INFINITY;
   private timer: unknown = null;
   private stopped = false;
+  /** Quantas retenções estão ativas (o aperto do botão e um clique podem segurar ao mesmo tempo): só a última solta. */
+  private holds = 0;
   private held = false;
 
   constructor(
@@ -88,13 +90,16 @@ export class PointerBatcher {
    * aperto do botão ainda não terminou (o ponteiro só anda depois que o botão está apertado). `drain()` continua mandando.
    */
   hold(): void {
+    this.holds++;
     this.held = true;
     this.cancelTimer();
   }
 
   /** Solta o que foi segurado: o que se acumulou sai assim que a taxa permite. */
   resume(): void {
-    this.held = false;
+    if (this.holds > 0) this.holds--;
+    this.held = this.holds > 0;
+    if (this.held) return;
     if (this.hasPending()) this.schedule();
   }
 

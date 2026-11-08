@@ -8,6 +8,7 @@ import { PcApi } from './pc-api';
 import { CANCELLED } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
+  ABANDONED_NOTICE_MS,
   DOWN_TIMEOUT_MS,
   HOLD_HEARTBEAT_MS,
   PC_POLL_MS,
@@ -165,26 +166,93 @@ describe('PcStore commands', () => {
     expect(order).toEqual(['pointer 10', 'pointer 7', 'click']);
   });
 
-  it('a click waits only for the movements made before it: a move made afterwards does not delay it', async () => {
-    const { store, api } = setup();
-    const order: string[] = [];
-    const finish: (() => void)[] = [];
-    api.pointer.mockImplementation(((dx: number) => {
-      order.push(`pointer ${dx}`);
-      return new Promise<void>((resolve) => finish.push(resolve));
-    }) as never);
-    api.click.mockImplementationOnce(() => {
-      order.push('click');
-      return Promise.resolve();
-    });
-    store.movePointer(10, 0, 16); // em voo
-    const clicking = store.click('LEFT');
-    store.movePointer(7, 0, 16); // depois do clique: não entra na espera
-    await flush();
-    finish[0]!(); // só o primeiro responde
-    await clicking;
-    // O clique saiu antes de o segundo movimento terminar (e antes de ele sequer sair, pela taxa).
-    expect(order.slice(0, 2)).toEqual(['pointer 10', 'click']);
+  it('a move made after the tap cannot overtake the click: it is held until the click is sent', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      const order: string[] = [];
+      const finish: (() => void)[] = [];
+      api.pointer.mockImplementation(((dx: number) => {
+        order.push(`pointer ${dx}`);
+        return new Promise<void>((resolve) => finish.push(resolve));
+      }) as never);
+      api.click.mockImplementationOnce(() => {
+        order.push('click');
+        return Promise.resolve();
+      });
+      store.movePointer(10, 0, 16); // em voo
+      const clicking = store.click('LEFT');
+      store.movePointer(7, 0, 16); // depois do toque: não entra na espera e não pode passar na frente
+      await vi.advanceTimersByTimeAsync(200); // a taxa já permitiria mandar o segundo
+      expect(order).toEqual(['pointer 10']);
+      finish[0]!(); // o primeiro responde
+      await clicking;
+      await vi.advanceTimersByTimeAsync(200);
+      // O clique saiu primeiro e o movimento retido veio atrás dele (sem esperar a resposta do clique ou do primeiro).
+      expect(order).toEqual(['pointer 10', 'click', 'pointer 7']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a click does not release the hold of a button press that is still starting', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      let finishDown: () => void = () => undefined;
+      api.click.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finishDown = resolve)),
+      );
+      const starting = store.startDrag();
+      await vi.advanceTimersByTimeAsync(10);
+      await store.click('RIGHT');
+      store.movePointer(5, 0, 16);
+      await vi.advanceTimersByTimeAsync(200);
+      // O DOWN ainda não terminou: o movimento segue retido, mesmo depois de o clique ter saído.
+      expect(api.pointer).not.toHaveBeenCalled();
+      finishDown();
+      await starting;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(api.pointer).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the notice of an abandoned tap is not cleared by the next movement that works, only by time or a newer failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      api.pointer.mockImplementationOnce(() => new Promise<void>(() => undefined)); // preso
+      store.movePointer(10, 0, 16);
+      const clicking = store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS + 1);
+      expect((await clicking)?.kind).toBe('timeout');
+      expect(store.notice()?.message).toContain('o toque não foi enviado');
+
+      // O movimento seguinte dá certo e não apaga o aviso.
+      store.movePointer(3, 0, 16);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(api.pointer).toHaveBeenCalledTimes(2);
+      expect(store.notice()?.message).toContain('o toque não foi enviado');
+
+      // Passado o tempo, o aviso some.
+      await vi.advanceTimersByTimeAsync(ABANDONED_NOTICE_MS);
+      expect(store.notice()).toBeNull();
+
+      // E uma falha mais nova substitui o aviso preso.
+      api.pointer.mockImplementationOnce(() => new Promise<void>(() => undefined));
+      store.movePointer(1, 0, 16);
+      const second = store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS + 1);
+      await second;
+      api.pointer.mockRejectedValueOnce(new HttpErrorResponse({ status: 503 }));
+      store.movePointer(2, 0, 16);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(store.notice()?.kind).toBe('offline');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a movement that never answers makes the click give up with a notice, never fire late', async () => {
