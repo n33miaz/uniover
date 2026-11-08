@@ -195,6 +195,38 @@ describe('PowerSheet', () => {
       expect(store.powerOff).not.toHaveBeenCalled();
     });
 
+    describe('the clock label around midnight (fixed clock, no dependence on when the suite runs)', () => {
+      const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const label = (due: Date) => {
+        store.powerSchedule.set({
+          id: 'schedule',
+          dueAtUtc: due.toISOString(),
+          timeZone: zone,
+          status: 'pending',
+          result: null,
+          reason: null,
+          version: 2,
+        });
+        fixture.detectChanges();
+        return row().querySelector('.schedule-active > span')!.textContent;
+      };
+      afterEach(() => vi.useRealTimers());
+
+      it('shows only the time when it shuts down today', () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date(2026, 10, 7, 15, 10, 0));
+        expect(label(new Date(2026, 10, 7, 15, 40, 0))).toBe('Desliga às 15:40');
+      });
+
+      it('adds the date when the time falls on tomorrow', () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date(2026, 10, 7, 23, 50, 0));
+        expect(label(new Date(2026, 10, 8, 0, 20, 0))).toMatch(
+          /^Desliga às 08\/11\/(20)?26, 00:20$/,
+        );
+      });
+    });
+
     it('says the time left in minutes, in whole hours, and nothing once it has passed', () => {
       const due = (minutes: number) => ({
         id: 'schedule',
