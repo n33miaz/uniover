@@ -30,8 +30,8 @@ import { PcShortcutGrid } from './shortcut-grid';
   template: `
     <dialog #dialog class="sheet" aria-labelledby="pc-shortcuts-title" (cancel)="dismiss($event)">
       <header class="head">
-        <h2 id="pc-shortcuts-title" tabindex="-1" i18n="@@pc.sc.title">Atalhos</h2>
-        <app-pc-armed-pills />
+        <h2 #title id="pc-shortcuts-title" tabindex="-1" i18n="@@pc.sc.title">Atalhos</h2>
+        <app-pc-armed-pills [fallback]="title" />
         <button
           type="button"
           class="icon"

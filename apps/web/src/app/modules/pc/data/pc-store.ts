@@ -280,7 +280,13 @@ export class PcStore {
     // pedidos independentes, e um clique que chegasse depois do `DOWN` soltaria o botão.
     const sending = this.sendClick(button, action);
     this.clicks.add(sending);
-    const forget = () => void this.clicks.delete(sending);
+    // O clique que não responde sai da lista no prazo (o do pedido de texto e tecla): um clique preso não pode barrar todo
+    // aperto de botão para sempre.
+    const forget = () => {
+      clearTimeout(expire);
+      this.clicks.delete(sending);
+    };
+    const expire = setTimeout(forget, INPUT_TIMEOUT_MS);
     void sending.then(forget, forget);
     return sending;
   }
@@ -306,7 +312,12 @@ export class PcStore {
       if (!(await this.settleMoves())) return this.abandoned();
       // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return this.blocked();
-      const sending = this.run(() => this.api.click(button, action));
+      // O pedido do clique também tem prazo: sem resposta, vira `timeout` (resultado incerto) e o aviso de falha aparece.
+      const sending = this.run(async () => {
+        if (await raceTimeout(this.api.click(button, action), INPUT_TIMEOUT_MS)) {
+          throw new HttpErrorResponse({ status: 504 });
+        }
+      });
       resume(); // o pedido já saiu: o movimento retido vem atrás dele
       return await sending;
     } finally {

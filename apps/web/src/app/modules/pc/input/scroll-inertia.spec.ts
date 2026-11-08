@@ -1,4 +1,6 @@
 import {
+  INERTIA_SWALLOW_MS,
+  INERTIA_SWALLOW_SPEED,
   INERTIA_MAX_SPEED,
   INERTIA_MIN_SPEED,
   INERTIA_STOP_SPEED,
@@ -76,6 +78,7 @@ describe('ScrollInertia', () => {
   let allowed: boolean;
   let reduced: boolean;
   let inertia: ScrollInertia;
+  let clock: number;
 
   /** Roda o próximo quadro, 16 ms depois do anterior. */
   function frame(ms = 16) {
@@ -92,7 +95,9 @@ describe('ScrollInertia', () => {
     sent = [];
     allowed = true;
     reduced = false;
+    clock = 1_000;
     inertia = new ScrollInertia({
+      now: () => clock,
       frames: {
         request: (callback) => {
           queue.set(nextHandle, callback);
@@ -172,5 +177,85 @@ describe('ScrollInertia', () => {
     frame(16);
     frame(900);
     expect(sent[1][2]).toBe(50);
+  });
+});
+
+describe('ScrollInertia: when a touch only stops it', () => {
+  let queue: Map<number, (time: number) => void>;
+  let nextHandle: number;
+  let time: number;
+  let inertia: ScrollInertia;
+
+  function frame(ms = 16) {
+    time += ms;
+    const [handle, callback] = [...queue][0];
+    queue.delete(handle);
+    callback(time);
+  }
+
+  beforeEach(() => {
+    queue = new Map();
+    nextHandle = 1;
+    time = 0;
+    inertia = new ScrollInertia({
+      now: () => time,
+      frames: {
+        request: (callback) => {
+          queue.set(nextHandle, callback);
+          return nextHandle++;
+        },
+        cancel: (handle) => void queue.delete(handle),
+      },
+      scroll: () => undefined,
+      canRun: () => true,
+      reducedMotion: () => false,
+    });
+  });
+
+  it('is not visible when nothing is gliding', () => {
+    expect(inertia.visible).toBe(false);
+    expect(inertia.speed).toBe(0);
+    expect(inertia.age).toBe(0);
+  });
+
+  it('is visible at the start: fast and young', () => {
+    inertia.start(0, 2);
+    expect(inertia.visible).toBe(true);
+    expect(inertia.speed).toBeGreaterThan(INERTIA_SWALLOW_SPEED);
+  });
+
+  it('is still visible while the speed is above the threshold, even after the first moments', () => {
+    inertia.start(0, 4);
+    for (let step = 0; step < 30; step++) frame();
+    expect(inertia.age).toBeGreaterThan(INERTIA_SWALLOW_MS);
+    expect(inertia.speed).toBeGreaterThanOrEqual(INERTIA_SWALLOW_SPEED);
+    expect(inertia.visible).toBe(true);
+  });
+
+  it('is still visible while it is young, even if it was slow from the start', () => {
+    inertia.start(0, 0.45);
+    frame();
+    expect(inertia.speed).toBeLessThan(INERTIA_SWALLOW_SPEED + 0.2);
+    for (let step = 0; step < 10; step++) frame();
+    expect(inertia.age).toBeLessThan(INERTIA_SWALLOW_MS);
+    expect(inertia.visible).toBe(true);
+  });
+
+  it('is no longer visible when it is old and has slowed down: a touch there is an ordinary touch', () => {
+    inertia.start(0, 0.45);
+    for (let step = 0; step < 40 && inertia.active; step++) frame();
+    expect(inertia.age === 0 || inertia.age >= INERTIA_SWALLOW_MS).toBe(true);
+    expect(inertia.visible).toBe(false);
+  });
+
+  it('a slow glide that is old but not over is not visible either', () => {
+    inertia.start(0, 0.5);
+    time += 600;
+    // O relógio andou, os quadros não: a velocidade ainda é a do começo, mas a idade já passou. Rápido o bastante, vale.
+    expect(inertia.speed).toBeGreaterThan(INERTIA_SWALLOW_SPEED);
+    expect(inertia.visible).toBe(true);
+    for (let step = 0; step < 12; step++) frame();
+    expect(inertia.speed).toBeLessThan(INERTIA_SWALLOW_SPEED);
+    expect(inertia.visible).toBe(false);
   });
 });

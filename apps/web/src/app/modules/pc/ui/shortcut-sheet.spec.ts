@@ -48,10 +48,13 @@ describe('PcShortcutSheet', () => {
     fixture.detectChanges();
     const pill = root.querySelector<HTMLButtonElement>('app-pc-armed-pills .pill')!;
     expect(pill.textContent?.trim()).toBe('Win');
-    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    expect(pill.getAttribute('aria-label')).toBe('Soltar Win');
     pill.click();
     fixture.detectChanges();
+    TestBed.tick();
     expect(armed.has('WIN')).toBe(false);
+    // O foco não se perde: com a última pílula fora, vai para o título da folha.
+    expect(document.activeElement).toBe(root.querySelector('h2'));
     expect(root.querySelector('app-pc-armed-pills .pill')).toBeNull();
   });
 

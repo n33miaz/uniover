@@ -978,8 +978,7 @@ test.describe('Digitação ao vivo', () => {
   }) => {
     await openPc(page);
     const field = await openKeyboard(page);
-    // Passada a janela do toque no botão do teclado, perder o foco é o sistema.
-    await page.waitForTimeout(900);
+    // Acabado o toque no botão do teclado, perder o foco é o sistema.
     await field.evaluate((element) => (element as HTMLElement).blur());
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toHaveAttribute(
       'aria-pressed',
@@ -1116,7 +1115,7 @@ test.describe('Atalhos', () => {
       .click();
     // Na folha do raio.
     const sheet = await openSheet(page);
-    await expect(sheet.getByRole('button', { name: 'Win', exact: true }).first()).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Soltar Win' })).toBeVisible();
     await sheet.locator('[data-shortcut="find"]').first().click();
     await expect.poll(keyRequests).toEqual([{ key: 'F', modifiers: ['CTRL', 'WIN'] }]);
     await expect(sheet.locator('app-pc-armed-pills .pill')).toHaveCount(0);

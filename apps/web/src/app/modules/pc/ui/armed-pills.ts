@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  inject,
+  input,
+} from '@angular/core';
 import { PcArmed } from '../data/pc-armed';
 import { PC_MODIFIERS, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
@@ -28,7 +37,12 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
         i18n-aria-label="@@pc.keyboard.modifiers"
       >
         @for (mod of list(); track mod) {
-          <button type="button" class="pill" aria-pressed="true" (click)="release(mod)">
+          <button
+            type="button"
+            class="pill"
+            [attr.aria-label]="releaseLabel(mod)"
+            (click)="release(mod)"
+          >
             {{ label(mod) }}
           </button>
         }
@@ -66,6 +80,10 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
 })
 export class PcArmedPills {
   private readonly armed = inject(PcArmed);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  /** Para onde o foco vai quando a última pílula some (o título da folha ou da aba): sem isto o foco se perderia. */
+  readonly fallback = input<HTMLElement | null>(null);
   protected readonly list = computed(() =>
     PC_MODIFIERS.filter((modifier) => this.armed.armed().has(modifier)),
   );
@@ -74,8 +92,23 @@ export class PcArmedPills {
     return MODIFIER_LABEL[modifier];
   }
 
+  protected releaseLabel(modifier: PcModifier): string {
+    const name = MODIFIER_LABEL[modifier];
+    return $localize`:@@pc.armed.release:Soltar ${name}:name:`;
+  }
+
+  /** Solta a tecla e leva o foco à pílula seguinte (ou à anterior); sem pílulas, ao título. */
   protected release(modifier: PcModifier): void {
+    const index = this.list().indexOf(modifier);
     tick();
     this.armed.toggle(modifier);
+    afterNextRender(
+      () => {
+        const pills = [...this.host.nativeElement.querySelectorAll<HTMLElement>('.pill')];
+        const next = pills[Math.min(index, pills.length - 1)];
+        (next ?? this.fallback())?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 }

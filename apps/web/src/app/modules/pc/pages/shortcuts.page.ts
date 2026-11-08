@@ -12,8 +12,8 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="head">
-      <h2 i18n="@@pc.sc.title">Atalhos</h2>
-      <app-pc-armed-pills />
+      <h2 #title tabindex="-1" i18n="@@pc.sc.title">Atalhos</h2>
+      <app-pc-armed-pills [fallback]="title" />
       <button
         type="button"
         class="icon"

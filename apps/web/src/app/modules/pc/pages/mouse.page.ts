@@ -336,8 +336,9 @@ export class MousePage {
   protected onDown(event: PointerEvent): void {
     if (!this.store.canSend()) return;
     // Um toque novo para a rolagem que seguia sozinha, na hora. Esse toque só a parou: não clica, não começa pressão longa e
-    // não move nada (os dedos que pousarem junto com ele também). O gesto seguinte, depois de todos saírem, é normal.
-    const stoppedGlide = this.inertia.active;
+    // não move nada (os dedos que pousarem junto com ele também). Só vale enquanto a rolagem ainda é visível: depois de ela quase
+    // parar, o toque é um toque comum. O gesto seguinte, depois de todos saírem, é normal.
+    const stoppedGlide = this.inertia.visible;
     this.inertia.stop();
     if (stoppedGlide || this.swallowed.size > 0) {
       this.swallowed.add(event.pointerId);
