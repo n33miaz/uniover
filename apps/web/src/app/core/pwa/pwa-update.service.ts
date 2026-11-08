@@ -133,6 +133,11 @@ export class PwaUpdateService {
   private leaving = false;
   /** Quando a saída começou (`beforeunload`, que pode ser desistida): vale como saída só por `LEAVING_GRACE_MS`. */
   private leavingSince: number | null = null;
+  /** Único relógio da espera pelo `pagehide`: várias falhas na mesma saída compartilham ele (e a rota da última vale). */
+  private graceTimer: number | undefined;
+  private gracePending: { target: string | undefined } | undefined;
+  /** Quantas navegações terminaram: uma que termine durante a espera mostra que a pessoa seguiu em frente. */
+  private navigations = 0;
   private readonly router = inject(Router);
   /** Para onde a recarga vai quando a recuperação nasceu de uma navegação que falhou (senão, recarrega onde está). */
   private resumeUrl: string | undefined;
@@ -184,12 +189,15 @@ export class PwaUpdateService {
    */
   private watchLeaving(win: Window): void {
     const starting = () => (this.leavingSince = Date.now());
-    const left = () => (this.leaving = true);
+    const left = () => {
+      this.leaving = true;
+      this.cancelGrace();
+    };
     const back = (event: Event) => {
-      if ((event as PageTransitionEvent).persisted) {
-        this.leaving = false;
-        this.leavingSince = null;
-      }
+      if (!(event as PageTransitionEvent).persisted) return;
+      this.leaving = false;
+      this.leavingSince = null;
+      this.cancelGrace();
     };
     win.addEventListener('beforeunload', starting);
     win.addEventListener('pagehide', left);
@@ -198,7 +206,63 @@ export class PwaUpdateService {
       win.removeEventListener('beforeunload', starting);
       win.removeEventListener('pagehide', left);
       win.removeEventListener('pageshow', back);
+      this.cancelGrace();
     });
+  }
+
+  private cancelGrace(): void {
+    if (this.graceTimer !== undefined) this.win?.clearTimeout(this.graceTimer);
+    this.graceTimer = undefined;
+    this.gracePending = undefined;
+  }
+
+  /**
+   * Uma falha de pedaço durante uma saída só começada (`beforeunload`): espera o prazo pelo `pagehide` e, se a página ficou,
+   * só recupera depois de confirmar que a casca está mesmo velha. Chamadas repetidas reaproveitam o mesmo relógio.
+   */
+  private holdForLeaving(win: Window, target: string | undefined): void {
+    this.gracePending = { target };
+    if (this.graceTimer !== undefined) return;
+    const seen = this.navigations;
+    const arm = () => {
+      this.graceTimer = win.setTimeout(() => {
+        this.graceTimer = undefined;
+        const left = this.leavingGraceLeft();
+        if (left > 0) return arm();
+        const pending = this.gracePending;
+        this.gracePending = undefined;
+        if (!pending || this.leaving || this.navigations !== seen) return;
+        void this.shellIsStale(win).then((stale) => {
+          if (stale && !this.leaving && this.navigations === seen)
+            this.recoverFromStaleShell(pending.target);
+        });
+      }, this.leavingGraceLeft());
+    };
+    arm();
+  }
+
+  /**
+   * Confirma, com a rede, que a casca aberta é velha: o arquivo de entrada dela (cujo nome carrega o hash de todo o
+   * resto) já não existe no servidor. Barato (um HEAD por script, com prazo curto); sem resposta (sem rede, prazo, erro do
+   * servidor) não há confirmação e a página não recarrega: uma saída lenta nunca é atropelada por um palpite.
+   */
+  private async shellIsStale(win: Window): Promise<boolean> {
+    if (typeof win.fetch !== 'function') return false;
+    const scripts = Array.from(
+      win.document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]'),
+    ).map((script) => script.src);
+    if (scripts.length === 0) return false;
+    const gone = async (src: string): Promise<boolean> => {
+      const response = await win.fetch(src, { method: 'HEAD', cache: 'no-store' });
+      if (response.status === 404 || response.status === 410) return true;
+      // Servidor que devolve a página para qualquer endereço: um script que vira HTML também sumiu.
+      return response.ok && (response.headers.get('content-type') ?? '').startsWith('text/html');
+    };
+    const verdict = await this.withTimeout(
+      Promise.all(scripts.map(gone)).then((all) => all.some(Boolean)),
+      UPDATE_CACHE_CLEAR_TIMEOUT_MS,
+    );
+    return verdict === true;
   }
 
   /** Chamado na inicialização do app; não bloqueia a primeira tela. */
@@ -330,6 +394,8 @@ export class PwaUpdateService {
    * já não vale; é também um momento seguro. Com uma recarga adiada, ela dispara se a tela estiver limpa.
    */
   onNavigated(): void {
+    this.navigations++;
+    this.cancelGrace();
     this.resumeUrl = undefined;
     this.navigationBlocked.set(false);
     void this.runDeferred();
@@ -342,8 +408,8 @@ export class PwaUpdateService {
    * registro e não apaga cache: com o worker antigo ainda no comando, o precache antigo serve os pedaços antigos. `target` é a
    * rota que o usuário tentava abrir: o roteador volta ao endereço anterior quando a navegação falha, então a recarga vai
    * direto ao alvo em vez de largá-lo na tela de antes. Com a página saindo (`pagehide`), não faz nada (a falha é só a
-   * importação abortada pela navegação); com a saída só começada (`beforeunload`), espera `LEAVING_GRACE_MS` e confere de
-   * novo. Devolve `true` se há uma recuperação em curso (ou começou agora) e
+   * importação abortada pela navegação); com a saída só começada (`beforeunload`), espera `LEAVING_GRACE_MS` (um relógio só, desfeito por
+   * `pagehide`, `pageshow` e navegação concluída) e só recarrega se a casca estiver confirmadamente velha. Devolve `true` se há uma recuperação em curso (ou começou agora) e
    * `false` se a guarda a negou, para o erro seguir o caminho normal.
    */
   recoverFromStaleShell(target?: string): boolean {
@@ -352,10 +418,9 @@ export class PwaUpdateService {
     if (!win) return false;
     // A página está saindo: o pedaço que falhou foi abortado pela navegação da pessoa, não perdido pelo deploy.
     if (this.leaving) return true;
-    const waiting = this.leavingGraceLeft();
-    if (waiting > 0) {
-      // Saída ainda sem `pagehide` (pode ter sido desistida): confere de novo quando o prazo acabar.
-      win.setTimeout(() => this.recoverFromStaleShell(target), waiting);
+    if (this.leavingGraceLeft() > 0) {
+      // Saída ainda sem `pagehide` (pode ter sido desistida): espera o prazo e confirma a casca velha antes de recarregar.
+      this.holdForLeaving(win, target);
       return true;
     }
     if (this.deferred === undefined && guardActive(win, CHUNK_RECOVERY_KEY, AUTO_RECOVERY_GUARD_MS))
