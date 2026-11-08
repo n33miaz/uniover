@@ -10,6 +10,7 @@ import {
 } from '../input/pc-acceleration';
 import { PointerBatch, PointerBatcher } from '../input/pointer-batcher';
 import { PcApi } from './pc-api';
+import { PcDirect } from './pc-direct';
 import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
@@ -110,6 +111,7 @@ export type PcPhase = 'loading' | 'unavailable' | 'offline' | 'ready';
 @Injectable({ providedIn: 'root' })
 export class PcStore {
   private readonly api = inject(PcApi);
+  private readonly direct = inject(PcDirect);
   private readonly availability = inject(PcAvailability);
   private readonly session = inject(SessionState);
   private readonly prefs = inject(PcPrefs);
@@ -234,10 +236,16 @@ export class PcStore {
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('pagehide', onPageHide);
+    // O canal direto é um acelerador opcional: tenta abrir com a tela e, se cair, a tela solta o que o PC segurava.
+    const offLost = this.direct.onLost(() => this.onDirectLost());
+    this.direct.start();
     const stop = () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pagehide', onPageHide);
+      offLost();
+      // O canal fecha primeiro (o agente solta o que o PC segurava) e o `UP` que segue vai pela nuvem.
+      this.direct.stop();
       this.endGesture();
       this.heartbeatAllowed = false;
       this.stopHeartbeat();
@@ -250,6 +258,17 @@ export class PcStore {
 
   refresh(): Promise<boolean> {
     return this.availability.refresh();
+  }
+
+  /**
+   * O canal direto caiu sem a tela pedir: o agente soltou o que o PC segurava ao perdê-lo, e o resultado do que estava no
+   * canal sem resposta é incerto. A tela alinha o estado soltando o botão e os modificadores (agora pela nuvem; um `UP` a
+   * mais é inofensivo) e o resto segue pela nuvem sem aviso.
+   */
+  private onDirectLost(): void {
+    this.syncAccount();
+    if (this.holding()) void this.release({ persistent: true });
+    void this.releaseHeldKeys({ persistent: true });
   }
 
   /** Um dedo novo pousou: ele não herda a fração de pixel do anterior. */

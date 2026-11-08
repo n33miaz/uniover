@@ -30,6 +30,8 @@ export interface PcMock {
   commandFailure: PcFailure | null;
   /** Se definida, a falha acima vale só para os comandos que ela aceita (ex.: só o `DOWN` do botão). */
   failOnly: ((request: PcRequest) => boolean) | null;
+  /** A falha da oferta do canal direto (`/rtc/offer`); sem ela, a API simulada responde como a real (com resposta e token). */
+  rtcOfferFailure: PcFailure | null;
   /** Espera, em milissegundos, antes de cada comando responder (a ida e volta real até o PC é de 200 a 460 ms). */
   commandDelayMs: number;
   /** Os comandos (tudo que não é a leitura do estado), por rota. */
@@ -78,6 +80,7 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
     commandFailure: null,
     failOnly: null,
     commandDelayMs: 0,
+    rtcOfferFailure: null,
     sent: (path) =>
       mock.requests.filter((r) => r.method === 'POST' && r.path === path).map((r) => r.body ?? {}),
   };
@@ -110,6 +113,21 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
       });
     }
     if (method !== 'POST') return problem(route, { status: 404, kind: 'not-found' });
+    // O canal direto: só a sinalização passa pela API (o SDP da resposta é de mentira; o par é o falso do teste).
+    if (path === '/rtc/offer') {
+      if (mock.rtcOfferFailure) return problem(route, mock.rtcOfferFailure);
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: '0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e01',
+          sdp: 'v=0\r\nANSWER',
+          token: 'token-de-teste-0123456789abcdefghijklmnop',
+          expiresInSeconds: 30,
+        }),
+      });
+    }
+    if (path.startsWith('/rtc/')) return route.fulfill({ status: 204 });
     if (mock.commandDelayMs > 0) await new Promise((r) => setTimeout(r, mock.commandDelayMs));
     if (mock.commandFailure && (!mock.failOnly || mock.failOnly(entry))) {
       return problem(route, mock.commandFailure);
