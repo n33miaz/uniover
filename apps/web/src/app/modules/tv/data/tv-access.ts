@@ -2,7 +2,7 @@ import { Injectable, computed, inject } from '@angular/core';
 import { userCan } from '../../../core/session/access';
 import { SessionState } from '../../../core/session/session-state';
 import { TvSelection } from './tv-selection';
-import { tvSupports } from './tv-types';
+import { tvCanOpenSettings, tvSupports } from './tv-types';
 
 /**
  * O que a pessoa pode fazer na TV, um signal para cada permissão da API (a mesma que ela confere em cada rota). A tela
@@ -42,6 +42,10 @@ export class TvAccess {
   /** Limpar a TV: é do controle e só existe onde a TV tem o canal para isso (ADB). */
   readonly cleanup = computed(
     () => this.control() && tvSupports(this.selection.selected(), 'cleanup'),
+  );
+  /** Abrir a tela de rede e as configurações da TV: é do controle e só onde o agente declara saber (a Android TV). */
+  readonly settings = computed(
+    () => this.control() && tvCanOpenSettings(this.selection.selected()),
   );
   /** Digitar na TV (aba Teclado): é do controle e só onde a TV recebe texto. */
   readonly text = computed(() => this.control() && tvSupports(this.selection.selected(), 'text'));

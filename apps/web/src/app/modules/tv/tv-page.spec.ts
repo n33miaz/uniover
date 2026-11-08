@@ -43,6 +43,14 @@ describe('TvPage', () => {
     await render();
     await render();
   };
+  /** O caminho de quem usa a tela: abre o menu e toca numa linha de ação na TV; o menu sai e a ação roda. */
+  const chooseOnTv = async (name: string) => {
+    menuButton().click();
+    await render();
+    menuRow(name).click();
+    await render();
+    await render();
+  };
   const titleButton = () => root.querySelector<HTMLButtonElement>('h1 button')!;
   const customizeSheet = () => root.querySelector<HTMLElement>('app-tv-customize-sheet dialog');
   const prefsKey = () =>
@@ -785,6 +793,52 @@ describe('TvPage', () => {
       expect(root.querySelector('app-tv-menu a[href="/tv/livre"]')).toBeNull();
     });
 
+    describe('actions on the TV itself', () => {
+      const withSettings = ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'];
+
+      it('opens the network screen only after the tap, with the menu already closed', async () => {
+        TestBed.inject(TvSelection).setTvs([
+          makeTv('tcl', { isDefault: true, capabilities: withSettings }),
+        ]);
+        await render();
+        expect(store.openSettings).not.toHaveBeenCalled();
+        await chooseOnTv('Rede');
+        expect(store.openSettings).toHaveBeenCalledTimes(1);
+        expect(store.openSettings).toHaveBeenCalledWith('WIFI');
+        expect(root.querySelector('app-tv-menu')).toBeNull();
+      });
+
+      it('opens the settings screen, and the inputs list through the same key as the remote', async () => {
+        TestBed.inject(TvSelection).setTvs([
+          makeTv('tcl', { isDefault: true, capabilities: withSettings }),
+        ]);
+        await render();
+        await chooseOnTv('Configurações');
+        expect(store.openSettings).toHaveBeenLastCalledWith('SETTINGS');
+        await chooseOnTv('Entradas');
+        expect(store.sendKey).toHaveBeenCalledWith('INPUT');
+        expect(store.openSettings).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves the network and settings rows out for a TV whose agent does not declare them', async () => {
+        TestBed.inject(TvSelection).setTvs([
+          makeTv('samsung', {
+            isDefault: true,
+            kind: 'samsung',
+            capabilities: ['tv.remote', 'tv.kind.samsung'],
+          }),
+        ]);
+        await openMenu();
+        const titles = [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((title) =>
+          title.textContent?.trim(),
+        );
+        expect(titles).not.toContain('Rede');
+        expect(titles).not.toContain('Configurações');
+        expect(titles).toContain('Entradas');
+        expect(root.querySelector('app-tv-menu a[href="/tv/internet"]')).not.toBeNull();
+      });
+    });
+
     it('starts closed and opens as a panel named "Mais opções", with the same gestures as the other panels', async () => {
       expect(root.querySelector('app-tv-menu')).toBeNull();
       await openMenu();
@@ -797,6 +851,8 @@ describe('TvPage', () => {
         'Apps da TV',
         'Mais botões',
         'Personalizar',
+        'Entradas',
+        'Se a internet cair',
         'Gerenciar TVs',
         'Ajuda para Configurar',
       ]);
@@ -1169,8 +1225,8 @@ describe('TvPage for a guest', () => {
     fixture.detectChanges();
     expect(
       [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar']);
-    expect(root.querySelector('app-tv-menu a')).toBeNull();
+    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Entradas', 'Se a internet cair']);
+    expect(root.querySelector('app-tv-menu a[href="/ajustes/sistema"]')).toBeNull();
     expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
   });
 
@@ -1271,7 +1327,7 @@ describe('TvPage by permission', () => {
     await render();
     expect(
       [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Opções da TV', 'Mais botões', 'Personalizar']);
+    ).toEqual(['Opções da TV', 'Mais botões', 'Personalizar', 'Entradas', 'Se a internet cair']);
     [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')]
       .find((row) => row.textContent?.includes('Opções da TV'))!
       .click();

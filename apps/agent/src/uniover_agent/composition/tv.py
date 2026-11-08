@@ -64,6 +64,7 @@ from uniover_agent.core import (
     PRESENCE_CAPABILITY,
     PRESENCE_TYPE,
     SAMSUNG_MAINTENANCE_CAPABILITY,
+    SETTINGS_OPEN_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
     Command,
@@ -85,6 +86,7 @@ from uniover_agent.core import (
     TvLightSettings,
     TvPermission,
     TvSessionManager,
+    TvSettings,
     TvWatchdog,
     UserActivity,
     WatchdogEvents,
@@ -96,6 +98,7 @@ from uniover_agent.core import (
     tv_key_handler,
     tv_power_off_handler,
     tv_presence_handler,
+    tv_settings_open_handler,
     tv_text_handler,
     tv_wake_handler,
     unsupported_handler,
@@ -691,6 +694,8 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     # marca "Sempre permitir"); a lista diária, a limpeza e o resto nunca o abrem.
     setup.handlers["tv.apps.refresh.v1"] = user_initiated(tv_apps_refresh_handler(apps))
     setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
+    # Rede e Configurações da TV: lista fechada de duas telas, só quando a pessoa toca no botão.
+    setup.handlers["tv.settings.open.v1"] = tv_settings_open_handler(TvSettings(manager, adb))
     # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
     # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
     cleanup = TvCleanup(adb, clock, keep=keep, allow_app_closing=False)
@@ -744,6 +749,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             return
         setup.capabilities.append("tv.adb")
         setup.capabilities.append(PRESENCE_CAPABILITY)
+        setup.capabilities.append(SETTINGS_OPEN_CAPABILITY)
         # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
         setup.capabilities.append("tv.cleanup.automatic.v1")
         # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema

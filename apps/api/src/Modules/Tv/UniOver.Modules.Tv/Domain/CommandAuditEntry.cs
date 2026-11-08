@@ -22,6 +22,9 @@ public static class TvCommandNames
     /// <summary>Alguém com a permissão de editar atalhos renomeou ou escondeu um: o detalhe leva só os códigos dos campos, nunca o nome novo.</summary>
     public const string ShortcutUpdate = "tv.shortcut.update";
     public const string PowerOff = "tv.power-off";
+
+    /// <summary>Alguém tocou para abrir na TV a tela de rede ou as configurações. O detalhe é a tela (<c>WIFI</c> ou <c>SETTINGS</c>).</summary>
+    public const string SettingsOpen = "tv.settings.open";
     public const string PowerSchedule = "tv.power-schedule";
     public const string Cleanup = "tv.cleanup";
 

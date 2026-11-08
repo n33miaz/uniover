@@ -45,6 +45,7 @@ from .tv_permission_request_v1 import TvPermissionRequestV1Message
 from .tv_permission_v1 import TvPermissionV1Message
 from .tv_power_off_v1 import TvPowerOffV1Message
 from .tv_presence_v1 import TvPresenceV1Message
+from .tv_settings_open_v1 import TvSettingsOpenV1Message
 from .tv_state_v1 import TvStateV1Message
 from .tv_text_v1 import TvTextV1Message
 from .tv_wake_v1 import TvWakeV1Message
@@ -90,6 +91,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "tv.permission.v1": TvPermissionV1Message,
     "tv.power.off.v1": TvPowerOffV1Message,
     "tv.presence.v1": TvPresenceV1Message,
+    "tv.settings.open.v1": TvSettingsOpenV1Message,
     "tv.state.v1": TvStateV1Message,
     "tv.text.v1": TvTextV1Message,
     "tv.wake.v1": TvWakeV1Message,

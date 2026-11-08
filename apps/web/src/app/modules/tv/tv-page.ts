@@ -294,6 +294,10 @@ export class TvPage {
     this.menuOpen.set(false);
     const choice = this.pendingChoice;
     this.pendingChoice = null;
+    if (choice === 'network' || choice === 'settings' || choice === 'inputs') {
+      this.runOnTv(choice);
+      return;
+    }
     const opener = this.menuOpener();
     if (!choice || !opener) return;
     // Com o menu ainda no DOM a tela está inerte: o painel seguinte só abre depois que ele sair.
@@ -301,6 +305,18 @@ export class TvPage {
       () => (choice === 'customize' ? this.openCustomize(opener) : this.open(choice, opener)),
       { injector: this.injector },
     );
+  }
+
+  /**
+   * Uma ação do menu que acontece na própria TV, só por este toque: a tela de rede, as configurações ou a lista de entradas
+   * (a mesma tecla de fonte do controle). O aviso de sucesso ou de erro aparece na tela, já sem o menu.
+   */
+  private runOnTv(choice: 'network' | 'settings' | 'inputs'): void {
+    if (choice === 'inputs') {
+      void this.store.sendKey('INPUT');
+      return;
+    }
+    void this.store.openSettings(choice === 'network' ? 'WIFI' : 'SETTINGS');
   }
 
   protected openSuggestion(request: TvSuggestionRequest): void {

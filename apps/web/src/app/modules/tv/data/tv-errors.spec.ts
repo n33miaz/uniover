@@ -118,6 +118,12 @@ describe('describeFailure', () => {
     expect(describeFailure(http(409, 'shortcut-disabled')).kind).toBe('shortcut-disabled');
   });
 
+  it('says a TV that does not open the screen (409) is not a missing app', () => {
+    const failure = describeFailure(http(409, 'settings-unsupported'));
+    expect(failure.kind).toBe('unsupported');
+    expect(failure.message).toBe('Esta TV não abre essa tela pelo app.');
+  });
+
   it('maps 429 with the Retry-After seconds, or without them', () => {
     const withWait = describeFailure(http(429, 'rate-limited', {}, { 'Retry-After': '7' }));
     expect(withWait.kind).toBe('rate-limited');

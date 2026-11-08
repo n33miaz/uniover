@@ -440,7 +440,10 @@ test.describe('menu dos três pontos', () => {
     await menuButton(page).click();
     const menu = menuDialog(page);
     await expect(menu.getByRole('button', { name: 'Apps da TV', exact: true })).toBeVisible();
-    await expect(menu.getByRole('link')).toHaveCount(0);
+    // O único link que a convidada tem é o do passo a passo de quando a internet cai: nada de gerenciar TVs.
+    await expect(menu.getByRole('link')).toHaveCount(1);
+    await expect(menu.getByRole('link', { name: 'Se a internet cair' })).toBeVisible();
+    await expect(menu.getByRole('link', { name: /Gerenciar TVs/ })).toHaveCount(0);
     await expect(menu.getByText('Afeta todos')).toHaveCount(0);
     expect(tv.denied).toEqual([]);
   });

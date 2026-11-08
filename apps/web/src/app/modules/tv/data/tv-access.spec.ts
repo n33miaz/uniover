@@ -196,6 +196,29 @@ describe('TvAccess with the capabilities of the TV in use', () => {
     expect([access.cleanup(), access.text(), access.appList()]).toEqual([true, true, true]);
   });
 
+  it('opens the network and settings screens only with control and an agent that declares it', () => {
+    owner();
+    const access = TestBed.inject(TvAccess);
+    show(tv({ capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'] }));
+    expect(access.settings()).toBe(true);
+    show(tv({}));
+    expect(access.settings()).toBe(false);
+    show(tv({ kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] }));
+    expect(access.settings()).toBe(false);
+    // Sem nada saber da TV (agente fora do ar) a linha não aparece: pedir a quem não a conhece não adianta.
+    show(tv({ kind: null, capabilities: [], online: false }));
+    expect(access.settings()).toBe(false);
+    TestBed.inject(SessionState).setUser({
+      id: '2',
+      email: 'g@b.c',
+      displayName: 'G',
+      role: 'guest',
+      permissions: ['module:tv'],
+    });
+    show(tv({ capabilities: ['tv.remote', 'tv.adb', 'tv.settings.open.v1'] }));
+    expect(access.settings()).toBe(false);
+  });
+
   it('still needs the permission: the capability alone gives nothing', () => {
     TestBed.inject(SessionState).setUser({
       id: '2',

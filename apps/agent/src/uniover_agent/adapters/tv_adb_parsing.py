@@ -162,6 +162,15 @@ def parse_package_versions(text: str) -> dict[str, int]:
     return versions
 
 
+# As únicas telas de configurações que o agente abre: o nome do contrato e a ação pública do
+# Android (`Settings.ACTION_WIFI_SETTINGS` e `Settings.ACTION_SETTINGS`). Nada fora daqui chega
+# ao `am start`.
+SETTINGS_ACTIONS: Final = {
+    "WIFI": "android.settings.WIFI_SETTINGS",
+    "SETTINGS": "android.settings.SETTINGS",
+}
+
+
 def am_start_succeeded(text: str) -> bool:
     """`am start` sai com 0 até quando falha: só a saída diz ("Error: ...", "Error type 3")."""
     lines = clean_lines(text)

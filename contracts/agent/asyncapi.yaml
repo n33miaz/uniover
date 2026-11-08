@@ -60,6 +60,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.presence.v1.schema.json'
+      tvSettingsOpen:
+        name: tv.settings.open.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.settings.open.v1.schema.json'
       tvAppLaunch:
         name: tv.app.launch.v1
         contentType: application/json
@@ -319,6 +324,13 @@ operations:
     summary: A API pede ao agente que abra um app da TV por pacote ou link.
     messages:
       - $ref: '#/channels/agentCommands/messages/tvAppLaunch'
+  sendTvSettingsOpen:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede ao agente que abra na TV a tela de rede ou as configurações (lista fechada, só por toque da pessoa).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvSettingsOpen'
   sendTvAppsRefresh:
     action: send
     channel:

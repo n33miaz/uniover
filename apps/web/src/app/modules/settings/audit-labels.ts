@@ -128,6 +128,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-cleanup:Limpeza da TV`;
     case 'tv.cleanup.setting':
       return $localize`:@@settings.audit.action.tv-cleanup-setting:Fechar apps em segundo plano alterado`;
+    case 'tv.settings.open':
+      return $localize`:@@settings.audit.action.tv-settings-open:Tela da TV aberta`;
     case 'tv.permission.request':
       return $localize`:@@settings.audit.action.tv-permission-request:Permissão da TV pedida`;
     case 'tv.discover':
@@ -306,6 +308,12 @@ function describeBaseTarget(action: string, target: string): string | null {
     }
     case 'tv.app.launch':
       return $localize`:@@settings.audit.target.app:App ${target}:app:`;
+    case 'tv.settings.open':
+      return target === 'WIFI'
+        ? $localize`:@@settings.audit.target.settings-wifi:Rede`
+        : target === 'SETTINGS'
+          ? $localize`:@@settings.audit.target.settings-screen:Configurações`
+          : null;
     case 'tv.cleanup.setting':
       return target === 'background-app-closing=on'
         ? $localize`:@@settings.audit.target.close-background-on:Ligado`

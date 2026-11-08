@@ -9,8 +9,14 @@ import { TvSelection } from '../data/tv-selection';
 import { tvHasLivre } from '../livre/data/livre-types';
 import { TvIcon } from './tv-icon';
 
-/** O que o menu pede à tela: abrir o painel Apps, o Mais botões ou a folha Personalizar (o menu fecha antes). */
-export type TvMenuChoice = 'apps' | 'keys' | 'customize';
+/**
+ * O que o menu pede à tela (o menu fecha antes): abrir o painel Apps, o Mais botões ou a folha Personalizar, ou uma ação na
+ * própria TV, que só roda por este toque (a tela de rede, as configurações ou a lista de entradas).
+ */
+export type TvMenuChoice = 'apps' | 'keys' | 'customize' | 'network' | 'settings' | 'inputs';
+
+/** Onde está o passo a passo de quando a internet cai. */
+export const TV_OFFLINE_GUIDE_ROUTE = '/tv/internet';
 
 /** Onde o administrador gerencia as TVs: quais existem, qual computador controla cada uma e quem usa (ajustes do sistema). */
 export const TV_BINDING_ROUTE = '/ajustes/sistema';
@@ -43,6 +49,7 @@ export class TvMenu {
 
   /** Só o administrador (a conta dona) escolhe o computador da TV; a rota também é só dele. */
   protected readonly canBind = computed(() => !this.isGuest());
+  protected readonly offlineGuideRoute = TV_OFFLINE_GUIDE_ROUTE;
   protected readonly canOpenLivre = computed(
     () => !this.isGuest() && tvHasLivre(this.selection.selected()),
   );

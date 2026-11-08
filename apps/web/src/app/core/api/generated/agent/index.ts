@@ -38,6 +38,7 @@ export * from './tv_permission_request_v1';
 export * from './tv_permission_v1';
 export * from './tv_power_off_v1';
 export * from './tv_presence_v1';
+export * from './tv_settings_open_v1';
 export * from './tv_state_v1';
 export * from './tv_text_v1';
 export * from './tv_wake_v1';

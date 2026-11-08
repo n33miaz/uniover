@@ -52,11 +52,13 @@ describe('TvMenu', () => {
       'Apps da TV',
       'Mais botões',
       'Personalizar',
+      'Entradas',
+      'Se a internet cair',
       'Gerenciar TVs',
       'Ajuda para Configurar',
     ]);
-    expect(root.querySelectorAll('.ui-group')).toHaveLength(2);
-    const bind = root.querySelector<HTMLAnchorElement>('a.ui-row')!;
+    expect(root.querySelectorAll('.ui-group')).toHaveLength(3);
+    const bind = root.querySelector<HTMLAnchorElement>('a[href="/ajustes/sistema"]')!;
     expect(bind.getAttribute('href')).toBe('/ajustes/sistema');
     expect(bind.querySelector('.ui-chip')?.textContent?.trim()).toBe('Afeta todos');
     expect(root.querySelector('a[href="/tv/configurar"]')).not.toBeNull();
@@ -106,8 +108,15 @@ describe('TvMenu', () => {
 
   it('never shows the guest what changes the TV for everybody', () => {
     mount(GUEST_TV);
-    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar']);
-    expect(root.querySelector('a.ui-row')).toBeNull();
+    expect(rows()).toEqual([
+      'Apps da TV',
+      'Mais botões',
+      'Personalizar',
+      'Entradas',
+      'Se a internet cair',
+    ]);
+    expect(root.querySelector('a[href="/ajustes/sistema"]')).toBeNull();
+    expect(root.querySelector('a[href="/tv/configurar"]')).toBeNull();
     expect(root.querySelector('.ui-chip')).toBeNull();
   });
 
@@ -115,6 +124,77 @@ describe('TvMenu', () => {
     mount(['module:tv']);
     expect(rows()).toEqual([]);
     expect(root.querySelector('.ui-group')).toBeNull();
+  });
+
+  describe('actions on the TV itself', () => {
+    const ANDROID_WITH_SETTINGS = ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'];
+    const button = (title: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')].find(
+        (row) => row.querySelector('.ui-row-title')?.textContent?.trim() === title,
+      );
+
+    it('offers Rede and Configurações only where the agent declares it, and always Entradas to who controls', () => {
+      mount();
+      expect(rows()).not.toContain('Rede');
+      expect(rows()).not.toContain('Configurações');
+      expect(rows()).toContain('Entradas');
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
+      ]);
+      fixture.detectChanges();
+      expect(rows().slice(0, 6)).toEqual([
+        'Apps da TV',
+        'Mais botões',
+        'Personalizar',
+        'Rede',
+        'Configurações',
+        'Entradas',
+      ]);
+    });
+
+    it('hides Rede and Configurações on a Samsung, which has no way to open them', () => {
+      mount();
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', {
+          isDefault: true,
+          kind: 'samsung',
+          capabilities: ['tv.remote', 'tv.kind.samsung', 'tv.key.INPUT'],
+        }),
+      ]);
+      fixture.detectChanges();
+      expect(rows()).not.toContain('Rede');
+      expect(rows()).not.toContain('Configurações');
+      expect(rows()).toContain('Entradas');
+    });
+
+    it('asks the screen to run each action, and the screen closes the menu first', () => {
+      mount();
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
+      ]);
+      fixture.detectChanges();
+      button('Rede')!.click();
+      button('Configurações')!.click();
+      button('Entradas')!.click();
+      expect(chosen).toEqual(['network', 'settings', 'inputs']);
+    });
+
+    it('never sends anything just by being shown: nothing runs until the tap', () => {
+      mount();
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
+      ]);
+      fixture.detectChanges();
+      expect(chosen).toEqual([]);
+      expect(store.openSettings).not.toHaveBeenCalled();
+      expect(store.sendKey).not.toHaveBeenCalled();
+    });
+
+    it('links to the guide for when the internet falls', () => {
+      mount();
+      const link = root.querySelector<HTMLAnchorElement>('a[href="/tv/internet"]')!;
+      expect(link.querySelector('.ui-row-title')?.textContent?.trim()).toBe('Se a internet cair');
+    });
   });
 
   it('brings back the removed suggestions only for who edits shortcuts, and only when there is one to bring back', () => {

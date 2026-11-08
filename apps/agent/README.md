@@ -478,6 +478,14 @@ Comportamentos que valem saber:
   standby, sem rede, dá `tv_unreachable`).
 - **Links:** `tv.app.launch.v1` com `kind=link` só abre os esquemas `https`, `http`, `market` e `vnd.youtube`
   (`intent://`, `file://` e afins são recusados). `kind=package` abre o app pelo ADB; sem `adb` neste PC responde `unsupported`.
+- **Rede e Configurações:** `tv.settings.open.v1` (`screen`: `WIFI` ou `SETTINGS`) abre pelo ADB a tela de rede ou as
+  configurações da Android TV, com `am start -a android.settings.WIFI_SETTINGS` ou `android.settings.SETTINGS`. A lista é
+  fechada nas duas pontas: o agente recusa (`invalid_target`) qualquer nome fora dela e o adaptador só monta o comando a
+  partir da tabela, nunca do texto recebido. O comando só chega quando alguém toca no botão do app (nunca por conta do
+  agente, e não é de `user_initiated`: só o "Atualizar lista" pode abrir o aviso do ADB na TV). A capacidade
+  `tv.settings.open.v1` é declarada junto com `tv.adb`, só depois de a rota pública `devices/info` listá-la em `features`
+  (a mesma regra do pareamento e da presença), e **a Samsung não a declara** (não há canal para isso): o app esconde as
+  linhas. "Entradas" não usa isto: é a tecla `INPUT` que o controle já tem.
 - A biblioteca não avisa quando a conexão cai e **descarta em silêncio** a tecla enviada depois da queda; por
   isso o adaptador vigia a queda e o gerenciador reabre a sessão (com a mesma espera de 1, 2 e 4 s).
 - **TV em standby** desliga a rede e não responde nada: cada comando espera as tentativas (até ~27 s no pior

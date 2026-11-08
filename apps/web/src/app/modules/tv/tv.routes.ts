@@ -41,6 +41,15 @@ export const TV_ROUTES: Routes = [
     },
     loadComponent: () => import('./livre/livre.page').then((m) => m.LivrePage),
   },
+  {
+    // O passo a passo de quando a internet de casa cai: só texto, sem nenhum comando para a TV.
+    path: 'internet',
+    data: {
+      title: $localize`:@@tv.offline.route.title:Se a internet cair`,
+      back: { link: '/tv', label: $localize`:@@tv.offline.back-label:Voltar ao Controle` },
+    },
+    loadComponent: () => import('./pages/offline-guide.page').then((m) => m.OfflineGuidePage),
+  },
   { path: 'apps', redirectTo: toPanel('apps') },
   { path: 'teclado', redirectTo: toPanel('keyboard') },
 ];
