@@ -38,6 +38,7 @@ describe('OfflineGuidePage', () => {
     expect(text).toContain('mesmo nome e a mesma senha do Wi-Fi de casa');
     expect(text).toContain('iPhone:');
     expect(text).toContain('Android:');
+    expect(text).toContain('Maximizar compatibilidade (2,4 GHz)');
     expect(text).not.toMatch(/troque a senha|mude a senha|altere a senha/i);
   });
 

@@ -10,27 +10,10 @@ using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.OpenSettings;
 
-/// <param name="Screen">Uma tela da lista fechada: <c>WIFI</c> ou <c>SETTINGS</c> (os nomes do contrato).</param>
-internal sealed record OpenSettingsRequest(string? Screen);
+/// <param name="Screen">Uma tela da lista fechada (<see cref="TvSettingsScreen"/>): <c>WIFI</c> ou <c>SETTINGS</c>. Ausente é 400; um valor fora da lista nem chega ao handler.</param>
+internal sealed record OpenSettingsRequest(TvSettingsScreen? Screen);
 
-/// <summary>
-/// A lista fechada de telas que a API sabe pedir à TV. O nome vem do contrato (<c>tv.settings.open.v1</c>); qualquer outro
-/// valor é recusado aqui, antes de chegar ao agente.
-/// </summary>
-internal static class OpenSettingsScreens
-{
-    public const string Wifi = "WIFI";
-    public const string Settings = "SETTINGS";
-
-    public static bool TryParse(string? name, out string screen)
-    {
-        // Comparação exata de propósito: nada de apelidos nem de maiúsculas diferentes.
-        screen = name ?? string.Empty;
-        return screen is Wifi or Settings;
-    }
-}
-
-internal sealed record OpenSettingsCommand(TvCommandOrigin Origin, string Screen);
+internal sealed record OpenSettingsCommand(TvCommandOrigin Origin, TvSettingsScreen Screen);
 
 /// <param name="Unsupported">O agente se apresentou sem a capacidade: nada foi enviado.</param>
 internal sealed record OpenSettingsResult(bool Unsupported, TvSendOutcome? Outcome);
@@ -58,7 +41,7 @@ internal sealed class OpenSettingsHandler(TvCommandRunner runner, IAgentPresence
         }
 
         var outcome = await runner.RunAsync(
-            command.Origin, TvCommandNames.SettingsOpen, command.Screen, TvMessages.OpenSettings(command.Screen), waitForReply: true, cancellationToken);
+            command.Origin, TvCommandNames.SettingsOpen, TvSettingsScreens.WireName(command.Screen), TvMessages.OpenSettings(command.Screen), waitForReply: true, cancellationToken);
         return new OpenSettingsResult(false, outcome);
     }
 }
@@ -91,7 +74,7 @@ internal static class OpenSettingsEndpoint
             return TvProblems.Unauthenticated();
         }
 
-        if (!OpenSettingsScreens.TryParse(request.Screen, out var screen))
+        if (request.Screen is not { } screen)
         {
             return ProblemDetailsExtensions.ValidationProblem(
                 new Dictionary<string, string[]> { ["screen"] = ["A tela deve ser WIFI ou SETTINGS."] });

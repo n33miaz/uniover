@@ -724,6 +724,71 @@ describe('TvPage', () => {
         expect(dialogs()).toHaveLength(0);
       });
 
+      describe('an action of the menu that runs on the TV', () => {
+        const withSettings = [
+          'tv.remote',
+          'tv.kind.android',
+          'tv.adb',
+          'tv.settings.open.v1',
+          'tv.key.INPUT',
+        ];
+
+        beforeEach(async () => {
+          TestBed.inject(TvSelection).setTvs([
+            makeTv('tcl', { isDefault: true, capabilities: withSettings }),
+          ]);
+          fixture.detectChanges();
+        });
+
+        it('only runs when the menu has finished leaving, never at the tap', async () => {
+          menuButton().click();
+          await tick();
+          menuRow('Rede').click();
+          await tick();
+          // A saída está rolando: o menu ainda está na tela e nada foi pedido à TV.
+          expect(dialogs()).toHaveLength(1);
+          expect(dialogs()[0].classList.contains('leaving')).toBe(true);
+          expect(store.openSettings).not.toHaveBeenCalled();
+
+          await tick(300);
+          await tick();
+          expect(root.querySelector('app-tv-menu')).toBeNull();
+          expect(store.openSettings).toHaveBeenCalledTimes(1);
+          expect(store.openSettings).toHaveBeenCalledWith('WIFI');
+        });
+
+        it('a choice left behind by a menu that vanished never fires at a later close', async () => {
+          menuButton().click();
+          await tick();
+          menuRow('Rede').click();
+          await tick();
+          expect(store.openSettings).not.toHaveBeenCalled();
+
+          // A conta perde o menu no meio da saída: ele some sem emitir `closed`.
+          const user = TestBed.inject(SessionState).user()!;
+          TestBed.inject(SessionState).setUser({
+            ...user,
+            role: 'guest',
+            permissions: ['module:tv'],
+          });
+          await tick(300);
+          await tick();
+          expect(root.querySelector('app-tv-menu')).toBeNull();
+          expect(store.openSettings).not.toHaveBeenCalled();
+
+          // A conta volta, o menu abre de novo e é fechado por Esc: nada do toque antigo acontece.
+          TestBed.inject(SessionState).setUser(user);
+          await tick();
+          menuButton().click();
+          await tick();
+          dialogs()[0].dispatchEvent(new Event('cancel', { cancelable: true }));
+          await tick(300);
+          await tick();
+          expect(root.querySelector('app-tv-menu')).toBeNull();
+          expect(store.openSettings).not.toHaveBeenCalled();
+        });
+      });
+
       it('Fechar of the keyboard goes through the same exit', async () => {
         root
           .querySelector<HTMLButtonElement>('app-tv-control button[aria-label="Teclado"]')!
@@ -794,7 +859,13 @@ describe('TvPage', () => {
     });
 
     describe('actions on the TV itself', () => {
-      const withSettings = ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'];
+      const withSettings = [
+        'tv.remote',
+        'tv.kind.android',
+        'tv.adb',
+        'tv.settings.open.v1',
+        'tv.key.INPUT',
+      ];
 
       it('opens the network screen only after the tap, with the menu already closed', async () => {
         TestBed.inject(TvSelection).setTvs([
@@ -834,7 +905,8 @@ describe('TvPage', () => {
         );
         expect(titles).not.toContain('Rede');
         expect(titles).not.toContain('Configurações');
-        expect(titles).toContain('Entradas');
+        // Sem a tecla `INPUT` declarada, nem Entradas.
+        expect(titles).not.toContain('Entradas');
         expect(root.querySelector('app-tv-menu a[href="/tv/internet"]')).not.toBeNull();
       });
     });
@@ -851,7 +923,6 @@ describe('TvPage', () => {
         'Apps da TV',
         'Mais botões',
         'Personalizar',
-        'Entradas',
         'Se a internet cair',
         'Gerenciar TVs',
         'Ajuda para Configurar',
@@ -1225,7 +1296,7 @@ describe('TvPage for a guest', () => {
     fixture.detectChanges();
     expect(
       [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Entradas', 'Se a internet cair']);
+    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Se a internet cair']);
     expect(root.querySelector('app-tv-menu a[href="/ajustes/sistema"]')).toBeNull();
     expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
   });
@@ -1327,7 +1398,7 @@ describe('TvPage by permission', () => {
     await render();
     expect(
       [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Opções da TV', 'Mais botões', 'Personalizar', 'Entradas', 'Se a internet cair']);
+    ).toEqual(['Opções da TV', 'Mais botões', 'Personalizar', 'Se a internet cair']);
     [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')]
       .find((row) => row.textContent?.includes('Opções da TV'))!
       .click();

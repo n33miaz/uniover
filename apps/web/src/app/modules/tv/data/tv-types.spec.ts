@@ -9,6 +9,7 @@ import {
   shortcutLabel,
   parsePowerOffOutcome,
   tvCanOpenSettings,
+  tvDeclaresKey,
   tvCanPowerOffSafely,
   tvSupports,
   TvShortcut,
@@ -342,6 +343,13 @@ describe('desligar com leitura', () => {
     expect(tvCanOpenSettings(tv(['tv.remote', 'tv.kind.samsung']))).toBe(false);
     expect(tvCanOpenSettings(tv([]))).toBe(false);
     expect(tvCanOpenSettings(null)).toBe(false);
+  });
+
+  it('only a declared key counts, with nothing known about the TV meaning no', () => {
+    expect(tvDeclaresKey(tv(['tv.remote', 'tv.key.INPUT']), 'INPUT')).toBe(true);
+    expect(tvDeclaresKey(tv(['tv.remote']), 'INPUT')).toBe(false);
+    expect(tvDeclaresKey(tv([]), 'INPUT')).toBe(false);
+    expect(tvDeclaresKey(null, 'INPUT')).toBe(false);
   });
 
   it('reads the outcome of the answer and falls back to sent', () => {

@@ -54,7 +54,7 @@
 
 <!--
   Ações na própria TV (só por este toque) e o guia de quando a internet cai. Rede e Configurações só existem onde o agente da
-  TV declara saber abri-las (a Android TV); Entradas usa a tecla de fonte que o controle já tem.
+  TV declara saber abri-las (a Android TV); Entradas usa a tecla de fonte e só aparece com `tv.key.INPUT` declarada.
 -->
 @if (access.control() || canBind()) {
   <div class="ui-group">
@@ -72,7 +72,7 @@
         </span>
       </button>
     }
-    @if (access.control()) {
+    @if (access.inputs()) {
       <button type="button" class="ui-row" (click)="choose.emit('inputs')">
         <span class="ui-tile"><app-tv-icon name="input" /></span>
         <span class="ui-row-text">

@@ -63,8 +63,8 @@ export const TV_CAPABILITY = {
   settingsOpen: 'tv.settings.open.v1',
 } as const;
 
-/** As telas de configurações que o app pede à TV: lista fechada, os nomes do contrato `tv.settings.open.v1`. */
-export type TvSettingsScreen = 'WIFI' | 'SETTINGS';
+/** As telas de configurações que o app pede à TV: a lista fechada do contrato HTTP (tipo gerado do OpenAPI). */
+export type TvSettingsScreen = NonNullable<components['schemas']['TvSettingsScreen']>;
 
 /**
  * O que o servidor respondeu ao pedido de desligar: `off` (o agente leu a TV ligada, apertou `POWER` uma vez e confirmou),
@@ -85,6 +85,14 @@ export function parsePowerOffOutcome(value: unknown): TvPowerOffOutcome {
  */
 export function tvCanPowerOffSafely(tv: TvSummary | null): boolean {
   return tv?.capabilities.includes(TV_CAPABILITY.powerOff) === true;
+}
+
+/**
+ * O agente desta TV declarou a tecla (`tv.key.INPUT`)? Só vale o que ele declarou: sem a lista de capacidades (agente
+ * desligado) a linha que depende da tecla não aparece.
+ */
+export function tvDeclaresKey(tv: TvSummary | null, key: string): boolean {
+  return tv?.capabilities.includes(`tv.key.${key}`) === true;
 }
 
 /**

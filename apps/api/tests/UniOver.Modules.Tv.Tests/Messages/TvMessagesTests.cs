@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Tv.Adapters;
+using UniOver.Modules.Tv.Domain;
 
 namespace UniOver.Modules.Tv.Tests.Messages;
 
@@ -25,24 +26,21 @@ public class TvMessagesTests
     }
 
     [Theory]
-    [InlineData("WIFI", "{\"screen\":\"WIFI\"}")]
-    [InlineData("SETTINGS", "{\"screen\":\"SETTINGS\"}")]
-    public void OpenSettings_BuildsTheClosedScreenBody(string screen, string expected)
+    [InlineData(TvSettingsScreen.Wifi, "{\"screen\":\"WIFI\"}")]
+    [InlineData(TvSettingsScreen.Settings, "{\"screen\":\"SETTINGS\"}")]
+    public void OpenSettings_BuildsTheClosedScreenBody(TvSettingsScreen screen, string expected)
     {
         var message = TvMessages.OpenSettings(screen);
 
         message.Type.Should().Be("tv.settings.open.v1");
         message.Body.GetRawText().Should().Be(expected);
+        TvSettingsScreens.WireName(screen).Should().Be(screen == TvSettingsScreen.Wifi ? "WIFI" : "SETTINGS");
     }
 
-    [Theory]
-    [InlineData("wifi")]
-    [InlineData("DEVELOPER")]
-    [InlineData("android.settings.WIFI_SETTINGS")]
-    [InlineData("")]
-    public void OpenSettings_RefusesAnythingOutsideTheClosedList(string screen)
+    [Fact]
+    public void OpenSettings_RefusesAValueOutsideTheClosedList()
     {
-        var build = () => TvMessages.OpenSettings(screen);
+        var build = () => TvMessages.OpenSettings((TvSettingsScreen)99);
 
         build.Should().Throw<ArgumentOutOfRangeException>();
     }

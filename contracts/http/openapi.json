@@ -3516,9 +3516,13 @@
       "OpenSettingsRequest": {
         "properties": {
           "screen": {
-            "type": [
-              "null",
-              "string"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TvSettingsScreen"
+              }
             ]
           }
         },
@@ -6176,6 +6180,13 @@
           "outcome"
         ],
         "type": "object"
+      },
+      "TvSettingsScreen": {
+        "enum": [
+          "WIFI",
+          "SETTINGS",
+          null
+        ]
       },
       "TvShortcut": {
         "properties": {

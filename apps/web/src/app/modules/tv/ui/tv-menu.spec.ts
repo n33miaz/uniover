@@ -52,7 +52,6 @@ describe('TvMenu', () => {
       'Apps da TV',
       'Mais botões',
       'Personalizar',
-      'Entradas',
       'Se a internet cair',
       'Gerenciar TVs',
       'Ajuda para Configurar',
@@ -108,13 +107,7 @@ describe('TvMenu', () => {
 
   it('never shows the guest what changes the TV for everybody', () => {
     mount(GUEST_TV);
-    expect(rows()).toEqual([
-      'Apps da TV',
-      'Mais botões',
-      'Personalizar',
-      'Entradas',
-      'Se a internet cair',
-    ]);
+    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Se a internet cair']);
     expect(root.querySelector('a[href="/ajustes/sistema"]')).toBeNull();
     expect(root.querySelector('a[href="/tv/configurar"]')).toBeNull();
     expect(root.querySelector('.ui-chip')).toBeNull();
@@ -127,17 +120,23 @@ describe('TvMenu', () => {
   });
 
   describe('actions on the TV itself', () => {
-    const ANDROID_WITH_SETTINGS = ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'];
+    const ANDROID_WITH_SETTINGS = [
+      'tv.remote',
+      'tv.kind.android',
+      'tv.adb',
+      'tv.settings.open.v1',
+      'tv.key.INPUT',
+    ];
     const button = (title: string) =>
       [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')].find(
         (row) => row.querySelector('.ui-row-title')?.textContent?.trim() === title,
       );
 
-    it('offers Rede and Configurações only where the agent declares it, and always Entradas to who controls', () => {
+    it('offers Rede and Configurações only where the agent declares them, and Entradas only with the INPUT key', () => {
       mount();
       expect(rows()).not.toContain('Rede');
       expect(rows()).not.toContain('Configurações');
-      expect(rows()).toContain('Entradas');
+      expect(rows()).not.toContain('Entradas');
       TestBed.inject(TvSelection).setTvs([
         makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
       ]);
@@ -150,6 +149,19 @@ describe('TvMenu', () => {
         'Configurações',
         'Entradas',
       ]);
+    });
+
+    it('leaves Entradas out when the TV does not declare the INPUT key', () => {
+      mount();
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', {
+          isDefault: true,
+          capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'],
+        }),
+      ]);
+      fixture.detectChanges();
+      expect(rows()).toContain('Rede');
+      expect(rows()).not.toContain('Entradas');
     });
 
     it('hides Rede and Configurações on a Samsung, which has no way to open them', () => {

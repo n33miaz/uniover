@@ -12280,7 +12280,7 @@ export interface components {
       status: string;
     };
     OpenSettingsRequest: {
-      screen: null | string;
+      screen: null | components['schemas']['TvSettingsScreen'];
     };
     PairRequest: {
       cancel?: null | boolean;
@@ -12901,6 +12901,8 @@ export interface components {
       ok: boolean;
       outcome: string;
     };
+    /** @enum {unknown} */
+    TvSettingsScreen: 'WIFI' | 'SETTINGS' | null;
     TvShortcut: {
       customLabel: null | string;
       enabled: boolean;
