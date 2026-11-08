@@ -306,7 +306,8 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         on_recovered=on_recovered,
         is_paused=is_paused,
         network_signature=network_signature,
-        on_network_change=locator.reset_schedule,
+        on_network_change=lambda new: locator.reset_schedule(full=new),
+        searched=lambda: locator.searched,
         on_not_found=not_found,
     )
 

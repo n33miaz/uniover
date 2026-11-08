@@ -191,14 +191,23 @@ class TvLocator:
         self._schedule = _Schedule()
         # A tabela ARP ainda mostra a TV no endereço de sempre (a última procura concluiu isso).
         self._at_same_place = False
+        # A última `find` rodou alguma etapa cara (SSDP, mDNS ou varredura)?
+        self.searched = False
 
-    def reset_schedule(self) -> None:
-        """Esquece os espaçamentos: a próxima procura roda todas as etapas na hora.
+    def reset_schedule(self, *, full: bool = False) -> None:
+        """Esquece os espaçamentos do SSDP, do mDNS e da varredura: a próxima procura roda na hora.
 
-        Chamado quando o PC mudou de rede (a TV, se ainda está ligada, também foi para outra): o
-        que valia para a rede de antes (varredura há pouco, procura lenta) não vale mais.
+        Chamado quando o PC mudou de rede (a TV, se ainda está ligada, também foi para outra). Os
+        contadores da procura lenta (TV desligada por horas) só zeram com `full`, para uma rede
+        genuinamente nova: uma placa que oscila não pode acordar a varredura a noite toda.
         """
-        self._schedule = _Schedule()
+        schedule = self._schedule
+        schedule.last_ssdp = None
+        schedule.last_mdns = None
+        schedule.last_sweep = None
+        if full:
+            schedule.empty_searches = 0
+            schedule.last_search = None
         self._at_same_place = False
 
     async def is_at(self, host: str) -> bool:
@@ -209,7 +218,17 @@ class TvLocator:
         return not self.known.can_identify or self.known.matches(identity)
 
     async def find(self, current_host: str) -> Located | None:
-        """Procura a TV; devolve onde ela está agora, ou `None` (não achou, ou não mudou)."""
+        """Procura a TV; devolve onde ela está agora, ou `None` (não achou, ou não mudou).
+
+        Depois, `searched` diz se alguma etapa cara rodou de verdade (e não só o ARP, ou a espera da
+        procura lenta, ou a TV dormindo no mesmo lugar).
+        """
+        self._schedule.ran_expensive_stage = False
+        found = await self._find(current_host)
+        self.searched = self._schedule.ran_expensive_stage
+        return found
+
+    async def _find(self, current_host: str) -> Located | None:
         if not self.known.can_identify:
             # Sem MAC, só a sessão com o certificado pareado pode confirmar um candidato.
             return await self._by_sweep(current_host) if self._authenticate is not None else None
@@ -357,7 +376,9 @@ class TvLocator:
         self._schedule.last_sweep = now
         self._schedule.ran_expensive_stage = True
         self._schedule.sweeps += 1
-        hosts = [host for host in self._hosts() if host != current_host]
+        # Listar as placas do PC é leitura do sistema: fora do laço de eventos.
+        listed = await asyncio.to_thread(self._hosts)
+        hosts = [host for host in listed if host != current_host]
         queue: asyncio.Queue[str] = asyncio.Queue()
         for host in hosts:
             queue.put_nowait(host)

@@ -5,12 +5,15 @@ senha), a TV ganha endereço de **outra faixa** (por exemplo 172.20.10.x). Varre
 endereço velho da TV nunca a acharia: a procura tem de cobrir a faixa de cada placa **de verdade**
 deste PC. Aqui só se lê a lista de placas do Windows (nada sai pela rede):
 
-- ficam de fora o loopback, o link-local (169.254, placa sem rede), as placas desligadas e as
-  virtuais (Hyper-V, WSL, VMware, VirtualBox, VPN, Docker...), que não levam a uma TV;
+- ficam de fora o loopback, o link-local (169.254, placa sem rede), as placas desligadas, as
+  virtuais (Hyper-V, WSL, VMware, VirtualBox, VPN, Docker...), as de banda larga móvel e as
+  de túnel/PPP, e os endereços que não são de rede privada (RFC 1918): nada disso leva a uma
+  TV de casa;
 - cada rede vale no máximo um /24 (o ponto de acesso do iPhone é um /28: varre-se só ele), e
   poucas redes entram na varredura.
 """
 
+import asyncio
 import ipaddress
 import logging
 import socket
@@ -31,9 +34,13 @@ MAX_SWEEP_PREFIX = 30
 
 _IF_ETHERNET = 6
 _IF_WIFI = 71
-_IF_MOBILE_GSM = 243
-_IF_MOBILE_CDMA = 244
-_REAL_ADAPTER_TYPES = frozenset({_IF_ETHERNET, _IF_WIFI, _IF_MOBILE_GSM, _IF_MOBILE_CDMA})
+# Só Ethernet e Wi-Fi: banda larga móvel (243/244), PPP (23) e túnel (131) nunca levam a uma TV.
+_REAL_ADAPTER_TYPES = frozenset({_IF_ETHERNET, _IF_WIFI})
+_PRIVATE_NETWORKS = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+)
 _OPER_STATUS_UP = 1
 
 # Pedaços do nome/descrição de placas que não levam a uma TV (comparados em minúsculas).
@@ -109,6 +116,8 @@ def usable_interfaces(rows: Iterable[AdapterRow]) -> list[LocalInterface]:
             continue
         if address.is_multicast or address.is_reserved:
             continue
+        if not any(address in network for network in _PRIVATE_NETWORKS):
+            continue  # CGNAT (100.64/10), IP público: rede de operadora, não a de casa
         interface = LocalInterface(row.address, row.prefix)
         if interface not in found:
             found.append(interface)
@@ -228,9 +237,19 @@ def local_interfaces() -> list[LocalInterface]:
     return interfaces
 
 
-def network_signature() -> frozenset[str]:
-    """O conjunto de endereços do PC: muda quando ele troca de rede (barato, nada sai pela rede)."""
-    return frozenset(f"{item.address}/{item.prefix}" for item in local_interfaces())
+def _networks_now() -> frozenset[str]:
+    return frozenset(
+        str(ipaddress.IPv4Interface(f"{item.address}/{item.prefix}").network)
+        for item in local_interfaces()
+    )
+
+
+async def network_signature() -> frozenset[str]:
+    """As redes onde o PC está (e não os endereços: o DHCP renovar o endereço não é trocar de rede).
+
+    Só lê a lista de placas do sistema (numa thread, fora do laço de eventos); nada sai pela rede.
+    """
+    return await asyncio.to_thread(_networks_now)
 
 
 def _clamped(interface: ipaddress.IPv4Interface) -> ipaddress.IPv4Interface:
@@ -245,20 +264,23 @@ def sweep_networks(
 ) -> list[ipaddress.IPv4Interface]:
     """As redes a varrer: a de cada placa (no máximo /24 cada) e, por último, a do endereço velho.
 
-    Sem repetir rede e com no máximo `limit` redes. A do endereço velho vai por último: é a que o
-    PC pode nem alcançar mais (o roteador de casa caiu), e a varredura para na primeira TV
-    confirmada.
+    Sem repetir rede e com no máximo `limit` redes. O /24 do endereço velho só entra se alguma
+    placa do PC está numa rede que o contém; senão os pacotes sairiam pela rota padrão (o roteador
+    de casa caiu), à toa. Sem nenhuma placa conhecida (a lista falhou), ele entra como antes.
     """
     chosen: list[ipaddress.IPv4Interface] = []
     seen: set[ipaddress.IPv4Network] = set()
-    candidates = [
-        _clamped(ipaddress.IPv4Interface(f"{item.address}/{item.prefix}")) for item in interfaces
-    ]
+    listed = list(interfaces)
+    real = [ipaddress.IPv4Interface(f"{item.address}/{item.prefix}") for item in listed]
+    candidates = [_clamped(item) for item in real]
     if old_host:
         try:
-            candidates.append(ipaddress.IPv4Interface(f"{old_host}/{MIN_SWEEP_PREFIX}"))
+            old = ipaddress.IPv4Interface(f"{old_host}/{MIN_SWEEP_PREFIX}")
         except ValueError:
             _log.debug("o endereço velho da TV não é um IP; só as placas contam")
+        else:
+            if not real or any(old.ip in item.network for item in real):
+                candidates.append(old)
     for candidate in candidates:
         if candidate.network in seen:
             continue
