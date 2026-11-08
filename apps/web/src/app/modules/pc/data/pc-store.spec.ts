@@ -12,6 +12,8 @@ import {
   HOLD_HEARTBEAT_MS,
   PC_POLL_MS,
   PcStore,
+  INPUT_TIMEOUT_MS,
+  MOVE_SETTLE_MS,
   UP_DRAIN_MS,
   UP_RETRY_BACKOFF_MS,
 } from './pc-store';
@@ -161,6 +163,84 @@ describe('PcStore commands', () => {
     finish.forEach((resolve) => resolve());
     await clicking;
     expect(order).toEqual(['pointer 10', 'pointer 7', 'click']);
+  });
+
+  it('a click waits only for the movements made before it: a move made afterwards does not delay it', async () => {
+    const { store, api } = setup();
+    const order: string[] = [];
+    const finish: (() => void)[] = [];
+    api.pointer.mockImplementation(((dx: number) => {
+      order.push(`pointer ${dx}`);
+      return new Promise<void>((resolve) => finish.push(resolve));
+    }) as never);
+    api.click.mockImplementationOnce(() => {
+      order.push('click');
+      return Promise.resolve();
+    });
+    store.movePointer(10, 0, 16); // em voo
+    const clicking = store.click('LEFT');
+    store.movePointer(7, 0, 16); // depois do clique: não entra na espera
+    await flush();
+    finish[0]!(); // só o primeiro responde
+    await clicking;
+    // O clique saiu antes de o segundo movimento terminar (e antes de ele sequer sair, pela taxa).
+    expect(order.slice(0, 2)).toEqual(['pointer 10', 'click']);
+  });
+
+  it('a movement that never answers makes the click give up with a notice, never fire late', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      api.pointer.mockImplementation((() => new Promise<void>(() => undefined)) as never);
+      store.movePointer(10, 0, 16);
+      const clicking = store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS - 1);
+      expect(api.click).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      const failure = await clicking;
+      expect(failure?.kind).toBe('timeout');
+      expect(store.notice()?.message).toContain('o toque não foi enviado');
+      // Nem agora nem depois: o clique abandonado nunca sai.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.click).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the press of the button also gives up (nothing is pressed) when the movement never answers', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      api.pointer.mockImplementation((() => new Promise<void>(() => undefined)) as never);
+      store.movePointer(10, 0, 16);
+      const starting = store.startDrag();
+      await vi.advanceTimersByTimeAsync(MOVE_SETTLE_MS + 1);
+      expect((await starting)?.kind).toBe('timeout');
+      expect(api.click).not.toHaveBeenCalled();
+      expect(store.dragging()).toBe(false);
+      expect(store.buttonBusy).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a text or key that never answers becomes a timeout, and the queue goes on without what was behind it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      const { store, api } = setup();
+      api.text.mockImplementationOnce(() => new Promise<void>(() => undefined));
+      const first = store.sendText('abc');
+      const second = store.sendKey('ENTER');
+      await vi.advanceTimersByTimeAsync(INPUT_TIMEOUT_MS + 1);
+      expect((await first)?.kind).toBe('timeout');
+      expect(await second).toBe(CANCELLED);
+      expect(store.notice()?.kind).toBe('timeout');
+      expect(api.key).not.toHaveBeenCalled();
+      expect(await store.sendKey('TAB')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a second text only leaves after the first one settled, so they never swap on the way', async () => {

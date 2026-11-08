@@ -26,8 +26,17 @@ const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
   WIN: 'Win',
 };
 
-/** Falhas em que não se sabe se o PC recebeu o texto: o campo não o recebe de volta (ver `send`). */
-const UNCERTAIN_FAILURES: ReadonlySet<string> = new Set(['timeout', 'network', 'unknown']);
+/**
+ * Falhas em que o texto pode ter sido digitado, ao menos em parte: o campo não o recebe de volta (ver `send`). `failed` é
+ * a recusa do sistema do PC no meio do envio (o Windows aceita só os primeiros eventos de um lote), então parte das letras
+ * pode ter entrado.
+ */
+const UNCERTAIN_FAILURES: ReadonlySet<string> = new Set([
+  'timeout',
+  'network',
+  'unknown',
+  'failed',
+]);
 
 /**
  * Teclado do PC: um campo para digitar texto (vai inteiro, com acentos, para onde o cursor do PC estiver) e as teclas e os
@@ -161,6 +170,9 @@ export class KeyboardPage {
   protected readonly text = signal('');
   protected readonly error = signal<string | null>(null);
   private readonly maybeTyped = $localize`:@@pc.keyboard.maybe-typed:O texto pode ter sido digitado no PC.`;
+  private readonly notSent = $localize`:@@pc.keyboard.not-sent:O texto não foi enviado.`;
+  /** O que já voltou ao campo depois de falhas (no começo dele): a pessoa que digita por cima o mantém para depois. */
+  private givenBack = '';
 
   protected readonly mainKeys: readonly KeyButton[] = [
     { key: 'ESCAPE', label: 'Esc', aria: $localize`:@@pc.key.escape:Esc (Escape)` },
@@ -227,6 +239,7 @@ export class KeyboardPage {
       input.setSelectionRange?.(caret, caret);
     }
     this.text.set(clamped);
+    this.givenBack = '';
     this.error.set(null);
   }
 
@@ -241,12 +254,15 @@ export class KeyboardPage {
     if (!value || !this.store.canSend()) return;
     tick();
     this.text.set('');
+    this.givenBack = '';
     this.error.set(null);
     void this.sendValue(value).then((failure) => {
       if (!failure) return;
-      // Cancelado por uma falha anterior da fila: nada saiu. A falha de antes já está na tela.
+      // Cancelado (uma falha à frente na fila, ou a troca de conta): nada saiu. O texto volta ao campo e, se a falha de antes
+      // já não está na tela (um envio novo a limpou), um aviso curto diz que ele não foi enviado.
       if (failure.kind === 'cancelled') {
-        if (this.text() === '') this.text.set(value);
+        this.giveBack(value);
+        if (!this.error()) this.error.set(this.notSent);
         return;
       }
       if (UNCERTAIN_FAILURES.has(failure.kind)) {
@@ -254,8 +270,21 @@ export class KeyboardPage {
         return;
       }
       this.error.set(failure.message);
-      if (this.text() === '') this.text.set(value);
+      this.giveBack(value);
     });
+  }
+
+  /**
+   * Devolve ao campo um texto que não saiu, atrás dos que já voltaram e na frente do que a pessoa digitou depois. Vários
+   * textos cancelados voltam todos, na ordem em que foram enviados.
+   */
+  private giveBack(value: string): void {
+    const current = this.text();
+    const typedSince = current.startsWith(this.givenBack)
+      ? current.slice(this.givenBack.length)
+      : current;
+    this.givenBack = clampText(this.givenBack + value, MAX_TEXT);
+    this.text.set(clampText(this.givenBack + typedSince, MAX_TEXT));
   }
 
   protected press(item: KeyButton): void {
