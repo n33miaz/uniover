@@ -46,6 +46,9 @@ export const MOVE_SETTLE_MS = 1_500;
  */
 export const INPUT_TIMEOUT_MS = 6_000;
 
+/** Quanto tempo o aviso de toque abandonado fica na tela, mesmo que o movimento seguinte dê certo. */
+export const ABANDONED_NOTICE_MS = 4_000;
+
 /** Um pedido do botão que desistiu porque a conta mudou: não é falha do PC e não aparece para ninguém. */
 class AccountChanged extends Error {}
 
@@ -129,6 +132,9 @@ export class PcStore {
   private releaseWanted = false;
   /** A página foi escondida nesse meio tempo: o `UP` que segue o `DOWN` leva `keepalive`. */
   private releaseKeepalive = false;
+
+  /** Aviso de toque abandonado ainda na tela: um movimento que dá certo não o apaga (só o tempo ou uma falha mais nova). */
+  private stickyNotice: PcFailure | null = null;
 
   /** A última falha de um movimento (os cliques e teclas devolvem a própria falha). Some ao próximo sucesso. */
   readonly notice = signal<PcFailure | null>(null);
@@ -259,11 +265,26 @@ export class PcStore {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
     const asked = this.account;
-    // Só os movimentos feitos ANTES do clique: o que o dedo andar depois não o atrasa nem muda o alvo dele.
-    if (!(await this.settleMoves())) return this.abandoned();
-    // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
-    if (this.session.accountId() !== asked) return this.blocked();
-    return this.run(() => this.api.click(button, action));
+    // O movimento feito depois do toque fica retido até o clique sair: do contrário um pedido de movimento mais novo
+    // poderia ultrapassá-lo e o clique cairia no alvo novo.
+    this.batcher.hold();
+    let resumed = false;
+    const resume = () => {
+      if (resumed) return;
+      resumed = true;
+      this.batcher.resume();
+    };
+    try {
+      // Só os movimentos feitos ANTES do clique: o que o dedo andar depois não o atrasa nem muda o alvo dele.
+      if (!(await this.settleMoves())) return this.abandoned();
+      // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
+      if (this.session.accountId() !== asked) return this.blocked();
+      const sending = this.run(() => this.api.click(button, action));
+      resume(); // o pedido já saiu: o movimento retido vem atrás dele
+      return await sending;
+    } finally {
+      resume();
+    }
   }
 
   /** Aperta o botão esquerdo e o mantém (arrastar); chamar de novo solta. Um segundo toque com o pedido a caminho é ignorado. */
@@ -293,12 +314,13 @@ export class PcStore {
       // O aperto espera o movimento já enviado terminar (o dedo ficou parado até a pressão longa, então quase sempre já
       // terminou): o botão nunca é apertado antes de o ponteiro chegar onde o dedo parou. Se o movimento não termina no
       // prazo, o aperto é abandonado com um aviso (nada foi apertado).
+      // O movimento feito depois fica retido já daqui (e até o aperto confirmar): o ponteiro só anda com o botão apertado.
+      this.batcher.hold();
       if (!(await this.settleMoves())) return this.abandoned();
       // A conta trocou enquanto o movimento saía: o aperto era de outra pessoa e não vai ao PC desta.
       if (this.session.accountId() !== asked) return CANCELLED;
       // Pediram para soltar enquanto o movimento saía: apertar agora só para soltar é desperdício, e arriscado.
       if (this.releaseWanted) return null;
-      this.batcher.hold();
       this.maybeHeld = true;
       const failure = await this.run(async () => {
         const timedOut = await this.queueButton(() => this.downRequest(epoch, asked));
@@ -432,6 +454,13 @@ export class PcStore {
       message: $localize`:@@pc.error.move-stuck:O PC não acompanhou o movimento; o toque não foi enviado.`,
     };
     this.noteFailure(failure);
+    // Ele fica na tela por alguns segundos: os movimentos que vêm logo depois (e dão certo) não o apagam antes de ser lido.
+    this.stickyNotice = failure;
+    setTimeout(() => {
+      if (this.stickyNotice !== failure) return;
+      this.stickyNotice = null;
+      if (this.notice() === failure) this.notice.set(null);
+    }, ABANDONED_NOTICE_MS);
     return failure;
   }
 
@@ -632,7 +661,7 @@ export class PcStore {
     }
     try {
       await this.api.pointer(batch.dx, batch.dy, batch.scrollX, batch.scrollY, batch.seq);
-      this.notice.set(null);
+      if (this.stickyNotice === null) this.notice.set(null);
       return true;
     } catch (error) {
       this.noteFailure(pcFailureOf(error));
@@ -642,6 +671,7 @@ export class PcStore {
 
   /** Um PC que sumiu (ou deixou de ter o controle) muda a tela na hora, sem esperar a próxima leitura. */
   private noteFailure(failure: PcFailure): void {
+    this.stickyNotice = null; // uma falha mais nova substitui o aviso que estava preso
     this.notice.set(failure);
     if (failure.kind === 'offline' || failure.kind === 'unavailable')
       void this.availability.refresh();
