@@ -105,7 +105,8 @@
 }
 .actions {
   display: flex;
-  gap: var(--gap);
+  /* Sem folga entre o ponto e o desligar: o alvo de 44 px do ponto já deixa 10 px de ar em volta dos seus 24 px. */
+  gap: 0;
   align-items: center;
   justify-self: end;
 }

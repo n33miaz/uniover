@@ -8,6 +8,11 @@ describe('StatusIndicator', () => {
   let store: FakeTvStore;
   let fixture: ReturnType<typeof TestBed.createComponent<StatusIndicator>>;
   let root: HTMLElement;
+  const lessMotion = (reduce: boolean) =>
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: reduce })),
+    );
 
   const render = async () => {
     fixture.detectChanges();
@@ -25,8 +30,11 @@ describe('StatusIndicator', () => {
     await render();
   };
 
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(async () => {
     store = createFakeTvStore();
+    lessMotion(false);
     TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
     fixture = TestBed.createComponent(StatusIndicator);
     root = fixture.nativeElement;
@@ -39,6 +47,51 @@ describe('StatusIndicator', () => {
     expect(trigger().getAttribute('aria-expanded')).toBe('false');
     expect(trigger().getAttribute('aria-haspopup')).toBe('dialog');
     expect(panel()).toBeNull();
+  });
+
+  describe('blink when a remote button sends a command', () => {
+    const sent = () => trigger().getAttribute('data-sent');
+    const send = async () => {
+      store.sentCount.update((count) => count + 1);
+      await render();
+    };
+
+    it('stays still until a command goes out', () => {
+      expect(sent()).toBeNull();
+    });
+
+    it('does not blink for commands sent before the dot was born', async () => {
+      store.sentCount.set(5);
+      fixture.destroy();
+      fixture = TestBed.createComponent(StatusIndicator);
+      root = fixture.nativeElement;
+      await render();
+      expect(sent()).toBeNull();
+    });
+
+    it('blinks on a command and alternates the animation so a quick second tap restarts it', async () => {
+      await send();
+      expect(sent()).toBe('a');
+      await send();
+      expect(sent()).toBe('b');
+      await send();
+      expect(sent()).toBe('a');
+    });
+
+    it('keeps the same phase and label while it blinks (no text, no state change)', async () => {
+      await send();
+      expect(phase()).toBe('connected');
+      expect(trigger().getAttribute('aria-label')).toBe('Estado do controle: Conectada');
+    });
+
+    it('does not blink for people who asked for less motion', async () => {
+      lessMotion(true);
+      await send();
+      expect(sent()).toBeNull();
+      lessMotion(false);
+      await send();
+      expect(sent()).toBe('b');
+    });
   });
 
   describe('phase of the dot, one per state', () => {

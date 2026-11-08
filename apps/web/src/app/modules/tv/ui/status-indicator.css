@@ -9,13 +9,37 @@
   place-items: center;
   width: 44px;
   height: 44px;
-  padding: 0;
+  /* O ponto desliza 3 px para o desligar (o alvo segue com os 44 px; só o desenho se aproxima). */
+  padding: 0 0 0 6px;
   border: 0;
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Piscada curta (0,26 s) do ponto quando um botão do controle manda um comando: some um pouco e cresce um pouco, sem
+ * mexer na caixa (só `opacity` e `transform`). Duas animações iguais, uma por vez, para reiniciar a cada comando.
+ */
+.trigger[data-sent='a'] app-status-dot {
+  animation: sent-a 260ms ease-out;
+}
+.trigger[data-sent='b'] app-status-dot {
+  animation: sent-b 260ms ease-out;
+}
+@keyframes sent-a {
+  40% {
+    opacity: 0.4;
+    transform: scale(1.3);
+  }
+}
+@keyframes sent-b {
+  40% {
+    opacity: 0.4;
+    transform: scale(1.3);
+  }
 }
 
 /*
