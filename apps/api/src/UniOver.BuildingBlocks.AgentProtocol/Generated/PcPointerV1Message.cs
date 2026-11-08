@@ -20,7 +20,12 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// viram uma mensagem). `dx`/`dy` são pixels relativos (positivo: direita e baixo);
     /// `scrollX`/`scrollY` estão em unidades de roda (120 = um clique da roda) e têm o sinal do
     /// Windows (positivo: direita e cima). O agente limita cada valor e executa sem responder (a
-    /// API manda o movimento sem esperar resposta).
+    /// API manda o movimento sem esperar resposta). `seq` é opcional e só serve ao diagnóstico:
+    /// o app numera os pedidos de movimento em ordem crescente durante a vida da página e manda
+    /// vários ao mesmo tempo, então o agente reconhece o que chega fora de ordem (e uma sessão
+    /// nova, quando o contador recomeça). O movimento é relativo e a soma não depende da ordem:
+    /// o agente aplica também o que chega depois de um mais novo; só a idade descarta um
+    /// movimento.
     /// </summary>
     public partial class PcPointerV1Message
     {
@@ -64,6 +69,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("scrollY")]
         public long? ScrollY { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("seq")]
+        public long? Seq { get; set; }
     }
 
     public partial class PcPointerV1Message
