@@ -47,6 +47,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     public partial class TvStateV1Body
     {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("adbPermission")]
+        public TvStateV1BodyAdbPermission? AdbPermission { get; set; }
+
         [JsonPropertyName("app")]
         public string? App { get; set; }
 
@@ -59,6 +63,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("volume")]
         public long? Volume { get; set; }
     }
+
+    public enum TvStateV1BodyAdbPermission { Granted, Missing, Pending };
 
     public enum TvStateV1BodyConnection { Disconnected, Hibernating, Hot, NotPaired, Waking };
 
@@ -80,11 +86,51 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             Converters =
             {
+                TvStateV1MessageTvStateV1BodyAdbPermissionConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyConnectionConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyPowerConverter.Singleton,
                 TvStateV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
+    }
+
+    internal class TvStateV1MessageTvStateV1BodyAdbPermissionConverter : JsonConverter<TvStateV1BodyAdbPermission>
+    {
+        public override bool CanConvert(Type t) => t == typeof(TvStateV1BodyAdbPermission);
+
+        public override TvStateV1BodyAdbPermission Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "granted":
+                    return TvStateV1BodyAdbPermission.Granted;
+                case "missing":
+                    return TvStateV1BodyAdbPermission.Missing;
+                case "pending":
+                    return TvStateV1BodyAdbPermission.Pending;
+            }
+            throw new Exception("Cannot unmarshal type TvStateV1BodyAdbPermission");
+        }
+
+        public override void Write(Utf8JsonWriter writer, TvStateV1BodyAdbPermission value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case TvStateV1BodyAdbPermission.Granted:
+                    JsonSerializer.Serialize(writer, "granted", options);
+                    return;
+                case TvStateV1BodyAdbPermission.Missing:
+                    JsonSerializer.Serialize(writer, "missing", options);
+                    return;
+                case TvStateV1BodyAdbPermission.Pending:
+                    JsonSerializer.Serialize(writer, "pending", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type TvStateV1BodyAdbPermission");
+        }
+
+        public static readonly TvStateV1MessageTvStateV1BodyAdbPermissionConverter Singleton = new TvStateV1MessageTvStateV1BodyAdbPermissionConverter();
     }
 
     internal class TvStateV1MessageTvStateV1BodyConnectionConverter : JsonConverter<TvStateV1BodyConnection>

@@ -23,6 +23,13 @@ class TvStateV1BodyConnection(
     ]
 
 
+class TvStateV1BodyAdbPermission(RootModel[Literal['granted', 'missing', 'pending']]):
+    root: Annotated[
+        Literal['granted', 'missing', 'pending'],
+        Field(title='TvStateV1BodyAdbPermission'),
+    ]
+
+
 class TvStateV1Body(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -33,6 +40,9 @@ class TvStateV1Body(BaseModel):
     connection: Annotated[
         TvStateV1BodyConnection, Field(title='TvStateV1BodyConnection')
     ]
+    adbPermission: Annotated[
+        TvStateV1BodyAdbPermission | None, Field(title='TvStateV1BodyAdbPermission')
+    ] = None
 
 
 class TvStateV1Message(BaseModel):

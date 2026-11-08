@@ -485,14 +485,23 @@ internal sealed class TvApp : IAsyncDisposable
     public static Task ReplyAsync(FakeAgent agent, JsonElement command, JsonObject? result = null) =>
         agent.SendTextAsync(agent.Envelope("command.result.v1", result ?? Ok(), command.GetProperty("id").GetGuid()));
 
-    public static JsonObject StateBody(string power = "on", int? volume = 12, string? app = "com.exemplo.video", string connection = "hot") =>
-        new()
+    public static JsonObject StateBody(
+        string power = "on", int? volume = 12, string? app = "com.exemplo.video", string connection = "hot", string? adbPermission = null)
+    {
+        var body = new JsonObject
         {
             ["power"] = power,
             ["volume"] = volume,
             ["app"] = app,
             ["connection"] = connection,
         };
+        if (adbPermission is not null)
+        {
+            body["adbPermission"] = adbPermission;
+        }
+
+        return body;
+    }
 
     public static JsonObject AppsBody(params (string Package, string? Label)[] apps) =>
         new()

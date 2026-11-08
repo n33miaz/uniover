@@ -16,13 +16,15 @@ class TvStatePublisher:
     """Só o estado mais recente interessa: se a TV mudar de novo durante um envio, o intermediário
     é descartado (segurar a tecla de volume empurraria dezenas de mensagens sem valor)."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - cada gancho é uma decisão independente por API
         self,
         transport: Transport,
         envelopes: EnvelopeFactory,
         *,
         reports_not_paired: Callable[[], bool] = lambda: True,
         reports_waking: Callable[[], bool] = lambda: True,
+        reports_adb_permission: Callable[[], bool] = lambda: False,
+        adb_permission: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._transport = transport
         self._envelopes = envelopes
@@ -31,6 +33,10 @@ class TvStatePublisher:
         self._reports_not_paired = reports_not_paired
         # Idem para `waking` (TV ligando): até a API aceitá-lo, o estado sai como antes de existir.
         self._reports_waking = reports_waking
+        # A permissão do ADB (`granted`, `missing`, `pending`) vai dentro do estado, e só para a API
+        # que aceita o campo (uma anterior recusaria o estado inteiro): até lá o estado sai sem ela.
+        self._reports_adb_permission = reports_adb_permission
+        self._adb_permission = adb_permission
         self._pending: TvState | None = None
         self._task: asyncio.Task[None] | None = None
 
@@ -48,7 +54,8 @@ class TvStatePublisher:
         await self._transport.send(self._message(state))
 
     def _message(self, state: TvState) -> dict[str, Any]:
-        return self._envelopes.tv_state(state, self._wire(state))
+        permission = self._adb_permission() if self._reports_adb_permission() else None
+        return self._envelopes.tv_state(state, self._wire(state), permission)
 
     def _wire(self, state: TvState) -> WireConnection:
         if state.waking and self._reports_waking():

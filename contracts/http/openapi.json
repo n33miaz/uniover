@@ -6315,6 +6315,12 @@
       },
       "TvState": {
         "properties": {
+          "adbPermission": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "agentLinked": {
             "default": true,
             "type": "boolean"

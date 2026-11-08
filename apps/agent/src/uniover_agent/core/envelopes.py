@@ -122,14 +122,25 @@ class EnvelopeFactory:
             body["error"] = {"code": code or "failed", "message": message or code or "falha"}
         return self._build("command.result.v1", body, correlation_id)
 
-    def tv_state(self, state: TvState, connection: WireConnection | None = None) -> dict[str, Any]:
-        """`connection` troca o valor da sessão pelo do fio (o publicador decide, por API)."""
+    def tv_state(
+        self,
+        state: TvState,
+        connection: WireConnection | None = None,
+        adb_permission: str | None = None,
+    ) -> dict[str, Any]:
+        """`connection` troca o valor da sessão pelo do fio (o publicador decide, por API).
+
+        `adb_permission` (`granted`, `missing` ou `pending`) só entra no corpo quando dito: o
+        campo é opcional no contrato e uma API anterior o recusaria.
+        """
         body: dict[str, Any] = {
             "power": state.power,
             "volume": state.volume,
             "app": state.app,
             "connection": connection or state.connection,
         }
+        if adb_permission is not None:
+            body["adbPermission"] = adb_permission
         return self._build("tv.state.v1", body, None)
 
     def tv_apps(
