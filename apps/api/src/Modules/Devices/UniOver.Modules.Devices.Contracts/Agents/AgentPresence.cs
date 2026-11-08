@@ -41,7 +41,9 @@ public sealed record AgentUpdateInfo(
 /// Presença viva de um agente (conexão, em memória). O último contato, a versão e a situação de atualização também são
 /// guardados no banco, num resumo à parte, para valerem com o agente desligado. <see cref="AgentVersion"/> e
 /// <see cref="Capabilities"/> vêm do <c>agent.hello.v1</c> e ficam vazios até ele chegar. <see cref="DisconnectedAt"/>
-/// é o instante em que a sessão caiu (nulo enquanto conectado).
+/// é o instante em que a sessão caiu (nulo enquanto conectado). <see cref="HelloAt"/> é quando chegou o <c>hello</c> da sessão
+/// de agora: nulo enquanto ele não chegou nesta conexão (e para um agente só "esperado de volta"), e então as
+/// <see cref="Capabilities"/> não são confiáveis.
 /// </summary>
 public sealed record AgentPresenceInfo(
     string AgentId,
@@ -52,7 +54,8 @@ public sealed record AgentPresenceInfo(
     DateTimeOffset? LastMessageAt,
     DateTimeOffset? DisconnectedAt = null,
     [property: JsonIgnore] AgentHostInfo? Host = null,
-    [property: JsonIgnore] AgentUpdateInfo? Update = null);
+    [property: JsonIgnore] AgentUpdateInfo? Update = null,
+    [property: JsonIgnore] DateTimeOffset? HelloAt = null);
 
 /// <summary>Consulta a presença dos agentes (a escrita é do Devices).</summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1716", Justification = "O nome Get da consulta é parte do contrato público pedido pela tarefa.")]

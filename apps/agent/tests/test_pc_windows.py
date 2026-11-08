@@ -522,6 +522,75 @@ def test_a_refused_hold_is_not_remembered_as_held() -> None:
     assert flaky.batches == []
 
 
+def test_a_refused_up_of_a_held_modifier_is_retried_at_the_start_of_the_next_dispatch() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky)
+    pc.key("ALT", [], action="DOWN")
+    flaky.refuse_all = True  # o Windows recusa (janela elevada)
+    with pytest.raises(OSError):
+        pc.key("ALT", [], action="UP")
+    flaky.refuse_all = False
+    pc.move(5, 6)  # qualquer tráfego seguinte
+    assert flaky.batches[-2:] == [[ALT_UP], [RawInput("mouse", MOUSE_MOVE, 5, 6)]]
+    pc.release_all()
+    assert len(flaky.batches) == 3, "nada ficou para soltar"
+
+
+def test_a_refused_up_stays_pending_while_refused_and_the_dead_man_timer_keeps_trying() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.key("ALT", [], action="DOWN")
+    flaky.refuse_all = True
+    with pytest.raises(OSError):
+        pc.key("ALT", [], action="UP")
+    assert len(timers.live()) == 1, "a soltura pendente mantém o temporizador armado"
+    now[0] = 40
+    timers.fire_last()
+    flaky.refuse_all = False
+    now[0] = 80
+    timers.fire_last()
+    assert flaky.batches[-1] == [ALT_UP]
+    assert timers.live() == []
+
+
+def test_a_send_the_system_refused_does_not_count_as_traffic_for_the_dead_man_timer() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    pc.key("ALT", [], action="DOWN")
+    now[0] = 20
+    flaky.refuse_all = True
+    with pytest.raises(OSError):
+        pc.key("TAB", [])  # recusado: não adia a soltura
+    flaky.refuse_all = False
+    now[0] = 30
+    timers.fire_last()
+    assert flaky.batches[-1] == [ALT_UP], "30 s desde o último envio aceito: solta"
+
+
+def test_a_key_with_a_modifier_already_held_neither_presses_nor_releases_it() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent)
+    pc.key("ALT", [], action="DOWN")
+    pc.key("TAB", ["ALT"])  # o Alt segue apertado: só a tecla sai
+    assert sent.batches[-1] == [
+        RawInput("keyboard", vk=0x09),
+        RawInput("keyboard", flags=KEY_UP, vk=0x09),
+    ]
+    pc.key("TAB", ["ALT", "SHIFT"])  # o que não estava apertado é apertado e solto
+    assert sent.batches[-1] == [
+        SHIFT_DOWN,
+        RawInput("keyboard", vk=0x09),
+        RawInput("keyboard", flags=KEY_UP, vk=0x09),
+        SHIFT_UP,
+    ]
+    pc.release_all()
+    assert sent.batches[-1] == [ALT_UP], "o Alt segurado de antes só sai na soltura"
+
+
 def test_a_key_that_cannot_be_held_is_refused_before_anything_is_sent() -> None:
     sent = Recorder()
     pc = WindowsPcInput(sent)

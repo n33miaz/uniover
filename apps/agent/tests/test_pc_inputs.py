@@ -1,5 +1,7 @@
 """Tradução do contrato do controle do PC para eventos de entrada: pura, sem tocar no sistema."""
 
+from collections.abc import Callable
+
 import pytest
 
 from uniover_agent.adapters import pc_inputs
@@ -162,6 +164,31 @@ def test_holding_anything_but_a_lone_modifier_is_refused_and_nothing_is_produced
 ) -> None:
     with pytest.raises(UnknownKey):
         pc_inputs.key_inputs(key, modifiers, repeat, action)
+
+
+def test_a_modifier_already_held_is_left_alone_by_the_batch() -> None:
+    events = pc_inputs.key_inputs("TAB", ["ALT", "SHIFT"], already_held={0x12})
+    assert [(e.vk, bool(e.flags & KEY_UP)) for e in events] == [
+        (0x10, False),
+        (0x09, False),
+        (0x09, True),
+        (0x10, True),
+    ]
+    assert [e.vk for e in pc_inputs.key_inputs("TAB", ["ALT"], already_held={0x12})] == [0x09, 0x09]
+
+
+def test_refusals_never_repeat_the_key_nor_the_modifier() -> None:
+    cases: list[Callable[[], object]] = [
+        lambda: pc_inputs.virtual_key("D7X"),
+        lambda: pc_inputs.key_inputs("D7", action="DOWN"),
+        lambda: pc_inputs.key_inputs("A", ["SUPER7"]),
+        lambda: pc_inputs.key_inputs("ALT", ["D7"], action="UP"),
+    ]
+    for case in cases:
+        with pytest.raises(UnknownKey) as raised:
+            case()
+        assert "D7" not in str(raised.value)
+        assert "SUPER7" not in str(raised.value)
 
 
 def test_held_keys_follow_the_order_of_the_events() -> None:

@@ -18,8 +18,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// <summary>
     /// API para agente: uma tecla do teclado, com modificadores opcionais, repetida em um só
     /// pedido (`repeat`) ou apertada e segurada em dois tempos (`action`). A lista de teclas é
-    /// fechada: o agente nunca digita um código que não esteja aqui. As teclas de pontuação são
-    /// só as que o Windows mantém iguais em qualquer layout; as demais saem pelo `pc.text`.
+    /// fechada: o agente nunca digita um código que não esteja aqui. As quatro de pontuação
+    /// (`MINUS`, `EQUALS`, `COMMA`, `PERIOD`) só são estáveis nos layouts americano e ABNT2; em
+    /// outros layouts o caractere pode mudar. O resto da pontuação sai pelo `pc.text`.
     /// </summary>
     public partial class PcKeyV2Message
     {
