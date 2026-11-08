@@ -32,14 +32,16 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
         }
       </div>
       <div class="name">
-        <h1>{{ title() }}</h1>
+        <h1 [style.--title-len]="title().length">{{ title() }}</h1>
       </div>
       <div class="actions"><ng-content select="[pageTopBarActions]" /></div>
     </header>
   `,
   styles: `
+    /* Contêiner de largura: o título mede o espaço que sobra entre os dois círculos (cqw) para caber numa linha só. */
     :host {
       display: block;
+      container-type: inline-size;
     }
     .head {
       --gap: 6px;
@@ -141,11 +143,23 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     h1:focus {
       outline: none;
     }
+    /*
+     * Título numa linha, com tipografia fluida: cresce com a largura da tela até 1,35 rem e encolhe para o espaço que sobra
+     * entre os dois círculos conforme o tamanho do texto (0,6 em de largura média por letra, folga para o negrito). O
+     * primeiro font-size é o de reserva para quem não entende cqw; as reticências ficam só como rede de segurança para um
+     * texto fora do normal, nenhum título de tela chega nelas.
+     */
     h1 {
+      --title-room: calc(100cqw - 2 * var(--gutter) - 2 * (var(--tap) + 4px));
       margin: 0;
       min-width: 0;
       overflow: hidden;
-      font-size: 1.35rem;
+      font-size: clamp(1rem, 5.6vw, 1.35rem);
+      font-size: clamp(
+        0.9rem,
+        min(5.6vw, var(--title-room) / (var(--title-len, 20) * 0.6)),
+        1.35rem
+      );
       text-align: center;
       text-overflow: ellipsis;
       white-space: nowrap;

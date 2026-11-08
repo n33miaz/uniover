@@ -106,6 +106,93 @@ test.describe('Topo das páginas dos módulos', () => {
   }
 });
 
+/**
+ * O título do topo cabe numa linha, inteiro: sem quebra, sem reticências e sem passar do espaço entre os dois círculos. Mede o
+ * texto pelo `Range` (a caixa do h1 esconde o excesso) e confere a altura de uma linha só.
+ */
+async function titleFit(page: Page) {
+  // Consulta o documento na hora (e não um elemento já resolvido): a casca do Treino troca o topo ao confirmar a conta.
+  return page.evaluate(() => {
+    const h1 = document.querySelector('app-page-top-bar h1')!;
+    const style = getComputedStyle(h1);
+    const range = document.createRange();
+    range.selectNodeContents(h1);
+    const text = range.getBoundingClientRect();
+    const box = h1.getBoundingClientRect();
+    const bar = h1.closest('app-page-top-bar')!;
+    const circles = Array.from(bar.querySelectorAll('button, a')).map((el) =>
+      el.getBoundingClientRect(),
+    );
+    return {
+      fontSize: parseFloat(style.fontSize),
+      lines: range.getClientRects().length,
+      clipped: h1.scrollWidth - h1.clientWidth,
+      textWidth: text.width,
+      boxWidth: box.width,
+      left: text.left,
+      right: text.right,
+      circleLeft: Math.max(
+        0,
+        ...circles.filter((c) => c.right <= box.left + 1).map((c) => c.right),
+      ),
+      circleRight: Math.min(
+        document.documentElement.clientWidth,
+        ...circles.filter((c) => c.left >= box.right - 1).map((c) => c.left),
+      ),
+    };
+  });
+}
+
+test.describe('Título do topo: uma linha, sem corte', () => {
+  for (const width of [360, 390]) {
+    for (const [path, title] of [
+      ['/treino', 'Treino'],
+      ['/ajustes', 'Configurações'],
+      ['/ajustes/aparencia', 'Aparência'],
+      ['/ajustes/pessoas', 'Pessoas e Permissões'],
+      ['/ajustes/seguranca/siri', 'Atalhos da Siri'],
+      ['/ajustes/tvs-por-pessoa', 'TVs por Pessoa'],
+    ] as const) {
+      test(`${title} em ${width} px cabe inteiro numa linha`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.emulateMedia({ colorScheme: 'light' });
+        await page.goto(path);
+        await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+        // A casca do Treino troca o topo quando a conta passa a valer: mede só depois, com um único topo na tela.
+        await expect(page.locator('app-training-account-scope .ui-notice')).toHaveCount(0);
+        await expect(page.locator('app-page-top-bar')).toHaveCount(1);
+        await settle(page);
+        const fit = await titleFit(page);
+        // Uma linha só, nada escondido pelas reticências e dentro do espaço entre os círculos.
+        expect(fit.lines, `linhas de "${title}"`).toBe(1);
+        expect(fit.clipped, `corte de "${title}" (${fit.fontSize}px)`).toBeLessThanOrEqual(0);
+        expect(fit.left).toBeGreaterThanOrEqual(fit.circleLeft - 0.5);
+        expect(fit.right).toBeLessThanOrEqual(fit.circleRight + 0.5);
+        // Letra legível: o título encolhe, mas não some.
+        expect(fit.fontSize).toBeGreaterThanOrEqual(14);
+        expect(fit.fontSize).toBeLessThanOrEqual(21.7);
+      });
+    }
+  }
+
+  test('um título longo demais encolhe até caber, em vez de ganhar reticências', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('/ajustes/aparencia');
+    await expect(page.getByRole('heading', { level: 1, name: 'Aparência' })).toBeVisible();
+    // Texto sintético mais longo que qualquer título real: o tamanho acompanha o comprimento.
+    await page.locator('app-page-top-bar h1').evaluate((h1) => {
+      h1.textContent = 'Pessoas e Permissões da Casa';
+      (h1 as HTMLElement).style.setProperty('--title-len', String(h1.textContent.length));
+    });
+    const long = await titleFit(page);
+    expect(long.clipped).toBeLessThanOrEqual(0);
+    expect(long.lines).toBe(1);
+    expect(long.fontSize).toBeLessThan(21.6);
+  });
+});
+
 test.describe('Início: a marca no centro da tela', () => {
   for (const width of [390, 430]) {
     test(`em ${width} px o texto fica no centro real`, async ({ page }, info) => {
