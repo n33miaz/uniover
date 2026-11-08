@@ -1,12 +1,16 @@
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
+import { PcArmed } from '../data/pc-armed';
+import { PcPrefs } from '../data/pc-prefs';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { LONG_PRESS_MS } from '../input/pad-gesture';
-import { TouchpadPage } from './touchpad.page';
+import { MousePage } from './mouse.page';
 
-describe('TouchpadPage', () => {
+describe('MousePage', () => {
+  let prefs: PcPrefs;
   let store: FakePcStore;
-  let fixture: ReturnType<typeof TestBed.createComponent<TouchpadPage>>;
+  let fixture: ReturnType<typeof TestBed.createComponent<MousePage>>;
   let root: HTMLElement;
 
   const pad = () => root.querySelector<HTMLElement>('.pad')!;
@@ -29,9 +33,13 @@ describe('TouchpadPage', () => {
   }
 
   beforeEach(() => {
+    localStorage.clear();
     store = createFakePcStore();
     TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
-    fixture = TestBed.createComponent(TouchpadPage);
+    // Os botões de clique são opcionais (desligados por padrão): os testes dos botões os ligam.
+    prefs = TestBed.inject(PcPrefs);
+    prefs.set({ clickButtons: true });
+    fixture = TestBed.createComponent(MousePage);
     fixture.detectChanges();
     root = fixture.nativeElement;
   });
@@ -42,7 +50,7 @@ describe('TouchpadPage', () => {
     expect(pad().getAttribute('aria-labelledby')).toBe('pad-help');
     const help = root.querySelector('#pad-help')!.textContent ?? '';
     expect(help).toContain('Touchpad');
-    expect(help).toContain('botões');
+    expect(help).toContain('barra');
   });
 
   it('one finger sliding moves the pointer and never clicks', () => {
@@ -203,12 +211,10 @@ describe('TouchpadPage', () => {
       fixture.detectChanges();
       expect(pad().classList.contains('holding')).toBe(true);
       expect(root.querySelector('.holding-label')?.textContent?.trim()).toBe('Arrastando');
-      expect(root.querySelector('.hint.second')).toBeNull();
       pointer('pointerup', 1, 100, 100, 800);
       fixture.detectChanges();
       expect(pad().classList.contains('holding')).toBe(false);
       expect(root.querySelector('.holding-label')?.textContent?.trim()).toBe('');
-      expect(root.querySelector('.hint.second')).not.toBeNull();
     });
 
     it('keeps one live region in the DOM and only its text changes', () => {
@@ -327,6 +333,159 @@ describe('TouchpadPage', () => {
       root.querySelector<HTMLButtonElement>('dialog .footer button')!.click();
       await settle();
       expect(sheet()).toBeNull();
+    });
+  });
+
+  describe('action bar and key panel', () => {
+    const bar = (name: string) =>
+      root.querySelector<HTMLButtonElement>(`app-pc-action-bar button[aria-label="${name}"]`)!;
+    const panelKey = (name: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('app-pc-key-panel button')].find(
+        (b) => b.textContent?.trim() === name || b.getAttribute('aria-label') === name,
+      )!;
+    const settle = () => fixture.detectChanges();
+
+    it('Enter, Esc and Tab are one touch away from the surface', () => {
+      bar('Enter').click();
+      bar('Esc (Escape)').click();
+      bar('Tab').click();
+      expect(store.sendKey.mock.calls).toEqual([
+        ['ENTER', []],
+        ['ESCAPE', []],
+        ['TAB', []],
+      ]);
+    });
+
+    it('Backspace acts on touch, and a keyboard activation acts once', () => {
+      bar('Apagar').dispatchEvent(new MouseEvent('click', { detail: 0, bubbles: true }));
+      expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+      // O clique que o dedo gera depois do toque (detail 1) não repete a ação.
+      bar('Apagar').dispatchEvent(new MouseEvent('click', { detail: 1, bubbles: true }));
+      expect(store.sendKey).toHaveBeenCalledTimes(1);
+    });
+
+    it('holding Backspace repeats, but stops adding keys while two are still unanswered', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      try {
+        store.sendKey.mockReturnValue(new Promise(() => undefined));
+        bar('Apagar').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+        expect(store.sendKey).toHaveBeenCalledTimes(1);
+        vi.advanceTimersByTime(420);
+        expect(store.sendKey).toHaveBeenCalledTimes(2);
+        vi.advanceTimersByTime(2_000);
+        // Nenhuma resposta voltou: o PC não fica apagando depois de o dedo sair.
+        expect(store.sendKey).toHaveBeenCalledTimes(2);
+        bar('Apagar').dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('the panel opens over the surface, arms a key, and the next key carries it and lets go', () => {
+      expect(root.querySelector('app-pc-key-panel')).toBeNull();
+      bar('Mais teclas').click();
+      settle();
+      expect(bar('Mais teclas').getAttribute('aria-expanded')).toBe('true');
+      panelKey('Ctrl').click();
+      settle();
+      expect(panelKey('Ctrl').getAttribute('aria-pressed')).toBe('true');
+      expect(root.querySelector('.armed')?.textContent).toContain('Ctrl');
+
+      bar('Tab').click();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('TAB', ['CTRL']);
+      settle();
+      expect(root.querySelector('.armed')).toBeNull();
+      expect(panelKey('Ctrl').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('the panel has navigation keys and the function row opens on Fn', () => {
+      bar('Mais teclas').click();
+      settle();
+      panelKey('Seta para cima').dispatchEvent(
+        new MouseEvent('click', { detail: 0, bubbles: true }),
+      );
+      panelKey('Home (início da linha)').dispatchEvent(
+        new MouseEvent('click', { detail: 0, bubbles: true }),
+      );
+      expect(store.sendKey.mock.calls).toEqual([
+        ['UP', []],
+        ['HOME', []],
+      ]);
+      expect(panelKey('F5')).toBeUndefined();
+      panelKey('Fn').click();
+      settle();
+      panelKey('F5').click();
+      expect(store.sendKey).toHaveBeenLastCalledWith('F5', []);
+      bar('Mais teclas').click();
+      settle();
+      expect(root.querySelector('app-pc-key-panel')).toBeNull();
+    });
+
+    it('the panel keys carry the armed keys from the shared owner', () => {
+      TestBed.inject(PcArmed).toggle('ALT');
+      bar('Mais teclas').click();
+      settle();
+      panelKey('Fn').click();
+      settle();
+      panelKey('F4').click();
+      expect(store.sendKey).toHaveBeenCalledExactlyOnceWith('F4', ['ALT']);
+    });
+
+    it('shows the failure of a key for a moment, and a cancelled key says nothing', async () => {
+      store.sendKey.mockResolvedValueOnce({ kind: 'cancelled', message: '' });
+      bar('Enter').click();
+      await Promise.resolve();
+      await Promise.resolve();
+      settle();
+      expect(root.querySelector('.toast')).toBeNull();
+
+      store.sendKey.mockResolvedValueOnce({ kind: 'offline', message: 'O PC está desconectado.' });
+      bar('Enter').click();
+      await Promise.resolve();
+      await Promise.resolve();
+      settle();
+      expect(root.querySelector('.toast')?.getAttribute('role')).toBe('alert');
+      expect(root.querySelector('.toast')?.textContent).toContain('O PC está desconectado.');
+    });
+
+    it('with the PC away the bar stays drawn but off, and sends nothing', () => {
+      store.phase.set('offline');
+      settle();
+      const buttons = [...root.querySelectorAll<HTMLButtonElement>('app-pc-action-bar button')];
+      expect(buttons).toHaveLength(7);
+      expect(buttons.every((b) => b.disabled)).toBe(true);
+    });
+
+    it('the keyboard and shortcuts buttons lead to the Shortcuts tab for now', () => {
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      bar('Teclado').click();
+      bar('Atalhos').click();
+      expect(navigate).toHaveBeenCalledTimes(2);
+      expect(navigate).toHaveBeenCalledWith('/pc/atalhos');
+    });
+  });
+
+  describe('first-use hint and optional buttons', () => {
+    it('draws the three gestures until the first touch, and never again', () => {
+      prefs.set({ hintSeen: false });
+      fixture.detectChanges();
+      expect(root.querySelectorAll('.hints svg')).toHaveLength(3);
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerup', 1, 100, 100, 50);
+      fixture.detectChanges();
+      expect(root.querySelector('.hints')).toBeNull();
+      expect(prefs.hintSeen()).toBe(true);
+    });
+
+    it('has no Left and Right buttons unless the person turns them on', () => {
+      expect(root.querySelector('.buttons')).not.toBeNull();
+      prefs.set({ clickButtons: false });
+      fixture.detectChanges();
+      expect(root.querySelector('.buttons')).toBeNull();
+    });
+
+    it('fills the screen: the shell reads this from the page', () => {
+      expect(fixture.componentInstance.fillsScreen).toBe(true);
     });
   });
 });

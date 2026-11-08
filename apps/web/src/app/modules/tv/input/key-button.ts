@@ -3,7 +3,7 @@ import { TV_CONFIG } from '../data/tv-config';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvKey } from '../data/tv-types';
-import { HoldRepeater } from './hold-repeater';
+import { HoldRepeater } from '../../../shared/input/hold-repeater';
 
 /** Tempo depois do fim do toque em que um clique ainda é "o mesmo toque" (e não uma tecla do teclado). */
 const CLICK_ECHO_MS = 500;

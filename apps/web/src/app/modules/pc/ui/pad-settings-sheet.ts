@@ -12,7 +12,7 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../../shared/ui/dialog-motion';
-import { PcPrefs } from '../data/pc-prefs';
+import { PcPrefs, type PcPrefsValue } from '../data/pc-prefs';
 import { POINTER_SENSITIVITIES, type PointerSensitivity } from '../input/pc-acceleration';
 
 const LABELS: Readonly<Record<PointerSensitivity, () => string>> = {
@@ -23,15 +23,16 @@ const LABELS: Readonly<Record<PointerSensitivity, () => string>> = {
 };
 
 /**
- * Ajustes do touchpad numa folha que sobe de baixo: a sensibilidade do ponteiro e a rolagem invertida. Cada escolha vale
- * na hora e fica guardada neste aparelho (`PcPrefs`); a folha só fecha por "Fechar", pelo Esc ou tocando fora.
+ * Ajustes do mouse numa folha que sobe de baixo: a sensibilidade do ponteiro, a rolagem invertida, os botões de clique e
+ * a tela acesa. Cada escolha vale na hora e fica guardada neste aparelho (`PcPrefs`); a folha só fecha por "Fechar", pelo
+ * Esc ou tocando fora.
  */
 @Component({
   selector: 'app-pc-pad-settings-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <dialog #dialog class="sheet" aria-labelledby="pad-settings-title" (cancel)="dismiss($event)">
-      <h2 id="pad-settings-title" i18n="@@pc.settings.title">Touchpad</h2>
+      <h2 id="pad-settings-title" i18n="@@pc.settings.title">Ajustes</h2>
 
       <fieldset class="segment">
         <legend class="legend" i18n="@@pc.settings.sensitivity">Sensibilidade</legend>
@@ -56,7 +57,29 @@ const LABELS: Readonly<Record<PointerSensitivity, () => string>> = {
           role="switch"
           class="ui-switch"
           [checked]="prefs.invertScroll()"
-          (change)="onInvert($event)"
+          (change)="onSwitch('invertScroll', $event)"
+        />
+      </label>
+
+      <label class="row">
+        <span i18n="@@pc.settings.click-buttons">Botões de clique</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="prefs.clickButtons()"
+          (change)="onSwitch('clickButtons', $event)"
+        />
+      </label>
+
+      <label class="row">
+        <span i18n="@@pc.settings.keep-awake">Manter a tela acesa</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="prefs.keepAwake()"
+          (change)="onSwitch('keepAwake', $event)"
         />
       </label>
 
@@ -155,8 +178,9 @@ export class PcPadSettingsSheet {
     });
   }
 
-  protected onInvert(event: Event): void {
-    this.prefs.set({ invertScroll: (event.target as HTMLInputElement).checked });
+  protected onSwitch(name: 'invertScroll' | 'clickButtons' | 'keepAwake', event: Event): void {
+    const patch: Partial<PcPrefsValue> = { [name]: (event.target as HTMLInputElement).checked };
+    this.prefs.set(patch);
   }
 
   /** Fecha a folha (o navegador também chega aqui pelo Esc: quem tira a folha do DOM é a página). */

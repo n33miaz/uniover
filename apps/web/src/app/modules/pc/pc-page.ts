@@ -1,12 +1,31 @@
-import { DestroyRef, ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  effect,
+  computed,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 import { PcStore } from './data/pc-store';
+import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 
 /**
- * Casca do módulo: o estado do PC (verde quando conectado) e, embaixo, a aba aberta. Sem PC conectado nenhuma aba
- * mostraria um controle que não leva a lugar nenhum, então no lugar dela fica uma frase curta e a ação possível.
- * Enquanto a primeira leitura não chega, o esqueleto tem a forma do touchpad (a tela não pula quando o estado chega).
+ * Casca do módulo: o estado do PC e, embaixo, a aba aberta. Conectado, o estado é um ponto de 10 px no canto de cima
+ * (cheio e verde); nos outros casos é a pílula com a palavra. Sem PC conectado nenhuma aba mostraria um controle que não
+ * leva a lugar nenhum, então no lugar dela fica uma frase curta e a ação possível. Enquanto a primeira leitura não chega,
+ * o esqueleto tem a forma da tela do mouse (a tela não pula quando o estado chega).
+ *
+ * A altura é medida (ver `watchAvailableHeight`): a tela do mouse ocupa exatamente o que sobra entre o cabeçalho e a barra
+ * de abas, com ou sem o aviso de versão nova, e as outras abas têm no mínimo essa altura e crescem com o conteúdo.
  */
 @Component({
   selector: 'app-pc-page',
@@ -14,7 +33,13 @@ import { PcStore } from './data/pc-store';
   imports: [RouterLink, RouterOutlet, Skeleton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="pc" [attr.data-phase]="store.phase()">
+    <section
+      #screen
+      class="pc"
+      [class.fill]="fill() || store.phase() === 'loading'"
+      [attr.data-phase]="store.phase()"
+      [style.--pc-h]="height() === null ? null : height() + 'px'"
+    >
       <p class="status" role="status" [attr.data-phase]="store.phase()">
         <span class="dot" aria-hidden="true"></span>
         <span class="label">{{ statusLabel() }}</span>
@@ -58,12 +83,12 @@ import { PcStore } from './data/pc-store';
           </div>
         }
         @default {
-          <router-outlet />
+          <router-outlet (activate)="onActivate($event)" (deactivate)="fill.set(false)" />
         }
       }
 
       @if (store.notice(); as notice) {
-        <p class="notice" role="alert">{{ notice.message }}</p>
+        <p class="notice" role="alert" [class.float]="fill()">{{ notice.message }}</p>
       }
     </section>
   `,
@@ -71,6 +96,14 @@ import { PcStore } from './data/pc-store';
 })
 export class PcPage {
   protected readonly store = inject(PcStore);
+  private readonly doc = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
+  private watch: ViewportWatch | null = null;
+  private readonly screen = viewChild.required<ElementRef<HTMLElement>>('screen');
+  /** A aba aberta pede a altura toda (a do mouse); as outras crescem com o conteúdo. */
+  protected readonly fill = signal(false);
+  /** A altura que sobra entre o cabeçalho e a barra de abas, em pixels; `null` até a primeira medida. */
+  protected readonly height = signal<number | null>(null);
   /** O comando é do agente, não se traduz. */
   protected readonly enableCommand = 'uniover-agent pc-control on';
 
@@ -88,7 +121,24 @@ export class PcPage {
   });
 
   constructor() {
-    this.store.watch(inject(DestroyRef));
+    const destroy = inject(DestroyRef);
+    this.store.watch(destroy);
+    afterNextRender(() => {
+      const watch = watchAvailableHeight(this.doc, this.screen().nativeElement, (value) =>
+        this.height.set(value),
+      );
+      this.watch = watch;
+      destroy.onDestroy(() => watch.stop());
+    });
+    // A tela do mouse puxa um pouco do respiro da página (margem negativa): ao entrar ou sair dela a conta se refaz.
+    effect(() => {
+      this.fill();
+      untracked(() => afterNextRender(() => this.watch?.remeasure(), { injector: this.injector }));
+    });
+  }
+
+  protected onActivate(page: object): void {
+    this.fill.set('fillsScreen' in page && page.fillsScreen === true);
   }
 
   protected retry(): void {

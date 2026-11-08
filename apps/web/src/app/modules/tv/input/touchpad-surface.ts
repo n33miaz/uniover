@@ -2,7 +2,7 @@ import { DestroyRef, Component, inject, signal } from '@angular/core';
 import { TV_CONFIG } from '../data/tv-config';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
-import { HoldRepeater } from './hold-repeater';
+import { HoldRepeater } from '../../../shared/input/hold-repeater';
 import {
   DEFAULT_GESTURE,
   GestureConfig,
