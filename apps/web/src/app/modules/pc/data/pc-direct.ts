@@ -122,6 +122,20 @@ interface Link {
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** A época de uma página: 64 bits aleatórios em 16 hexadecimais (o agente e a API validam esse formato). */
+export function newCloudEpoch(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** O 409 `pc-direct-revoked`: a pessoa perdeu o acesso enquanto o canal abria. */
+function isDirectRevoked(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 409) return false;
+  const type = (error.error as { type?: unknown } | null)?.type;
+  return typeof type === 'string' && type.endsWith('/pc-direct-revoked');
+}
+
 /** Um erro que a tela já sabe traduzir (`pcFailureOf`): o canal fala a língua das respostas da API. */
 function failureFor(code: string | undefined): HttpErrorResponse {
   switch (code) {
@@ -165,6 +179,13 @@ export class PcDirect {
   private wanted = false;
   /** Outro aparelho tomou o canal, ou a sessão deixou de valer: só uma ação da pessoa (a tela abrir de novo) tenta outra vez. */
   private suspended = false;
+  /**
+   * A API disse que a pessoa perdeu o acesso (409 `pc-direct-revoked`, ou o agente fechou com `revoked`): nada de nova tentativa
+   * com recuo. Volta com a tela abrindo de novo ou quando o token de acesso é renovado (`revokedAtExpiry` é o vencimento de
+   * quando isso aconteceu: mudou, a sessão foi renovada).
+   */
+  private revoked = false;
+  private revokedAtExpiry: number | null = null;
   /** O canal já levou o primeiro comando: daqui em diante os comandos de entrada vão só por ele (a nuvem fecha o canal em uso). */
   private adopted = false;
   private openedAt = 0;
@@ -193,6 +214,11 @@ export class PcDirect {
    * troca de caminho (chegou tarde) e não fecha o canal; um número maior é pedido novo da nuvem e fecha.
    */
   private cloudSeq = 0;
+  /**
+   * A época desta página (sorteada quando ela abre): o contador acima recomeça do zero numa página reaberta, então o `seq`
+   * sozinho não diz de qual página vem. Vai junto com o `seq` nos pedidos da nuvem e com o marcador (`ce`) no canal.
+   */
+  readonly cloudEpoch = newCloudEpoch();
   /** Quando o último pedido da nuvem terminou, e quanto ele levou (a "ida e volta" da nuvem, com teto). */
   private lastCloudDoneAt = 0;
   private cloudRtt = 0;
@@ -215,7 +241,10 @@ export class PcDirect {
     effect(() => {
       this.availability.status();
       this.session.accountId();
+      this.session.expiresAt();
       untracked(() => {
+        // O token de acesso foi renovado: o acesso pode ter voltado, e a próxima avaliação tenta o canal.
+        if (this.revoked && this.session.expiresAt() !== this.revokedAtExpiry) this.revoked = false;
         // Outra conta na aba: o canal era do PC da anterior.
         if (this.session.accountId() !== this.account) {
           this.account = this.session.accountId();
@@ -283,6 +312,7 @@ export class PcDirect {
   /** A tela do PC abriu: passa a tentar o canal enquanto ela estiver visível. */
   start(): void {
     this.suspended = false; // abrir a tela de novo é uma ação da pessoa: tenta outra vez
+    this.revoked = false;
     if (this.wanted) {
       this.evaluate();
       return;
@@ -354,6 +384,7 @@ export class PcDirect {
       b: body,
       ts: Date.now(),
       cs: this.cloudSeq,
+      ce: this.cloudEpoch,
       p: { s: this.seq, x: this.totals.x, y: this.totals.y, w: this.totals.w, h: this.totals.h },
     };
     return new Promise<void>((resolve, reject) => {
@@ -367,6 +398,9 @@ export class PcDirect {
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);
+        // O comando não saiu, mas o canal ainda se diz aberto: quem chama vai recuar para a nuvem. O canal deixa de ser o dono da
+        // entrada até a nuvem terminar o que ela vai levar, senão o próximo comando sairia por ele e passaria na frente deste.
+        this.adopted = false;
         reject(new DirectNotSent());
       }
     });
@@ -378,6 +412,7 @@ export class PcDirect {
     if (
       !this.wanted ||
       this.suspended ||
+      this.revoked ||
       this.open() ||
       this.connecting ||
       this.backoffTimer !== null
@@ -420,7 +455,9 @@ export class PcDirect {
         this.readyWaiter = resolve;
       });
       this.lifeSeconds = 0;
-      link.input.send(JSON.stringify({ k: 'auth', tok: answer.token, cs: this.cloudSeq }));
+      link.input.send(
+        JSON.stringify({ k: 'auth', tok: answer.token, cs: this.cloudSeq, ce: this.cloudEpoch }),
+      );
       await Promise.race([
         ready,
         pause(OPEN_TIMEOUT_MS).then(() => Promise.reject(new Error('sem ready'))),
@@ -430,7 +467,8 @@ export class PcDirect {
       await this.syncClock(link);
       if (this.link !== link) return;
       this.onOpen(this.lifeSeconds);
-    } catch {
+    } catch (error) {
+      if (isDirectRevoked(error)) this.markRevoked();
       if (link !== null && this.link === link) this.teardown('failed', {});
       else if (link !== null) this.discard(link);
       this.scheduleRetry();
@@ -565,8 +603,11 @@ export class PcDirect {
    * outro já. Os demais seguem o recuo de sempre.
    */
   private onBye(reason: string): void {
-    if (reason === 'replaced' || reason === 'revoked') {
+    if (reason === 'replaced') {
       this.suspended = true;
+      this.teardown(reason, { unexpected: true });
+    } else if (reason === 'revoked') {
+      this.markRevoked();
       this.teardown(reason, { unexpected: true });
     } else if (reason === 'lifetime') {
       this.teardown(reason, { unexpected: true, renew: true });
@@ -690,8 +731,13 @@ export class PcDirect {
     }
   }
 
+  private markRevoked(): void {
+    this.revoked = true;
+    this.revokedAtExpiry = this.session.expiresAt();
+  }
+
   private scheduleRetry(): void {
-    if (!this.wanted || this.suspended || this.backoffTimer !== null) return;
+    if (!this.wanted || this.suspended || this.revoked || this.backoffTimer !== null) return;
     const wait = DIRECT_BACKOFF_MS[Math.min(this.attempts, DIRECT_BACKOFF_MS.length - 1)] ?? 60_000;
     this.attempts++;
     this.backoffTimer = setTimeout(() => {

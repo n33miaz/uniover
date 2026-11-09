@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { PcApi } from './pc-api';
+import { PcDirect } from './pc-direct';
 
 describe('PcApi click', () => {
   let api: PcApi;
@@ -24,6 +25,7 @@ describe('PcApi click', () => {
       button: 'LEFT',
       action: 'DOWN',
       seq: expect.any(Number),
+      epoch: expect.stringMatching(/^[0-9a-f]{16}$/),
     });
     expect(request.request.keepalive).toBe(false);
     request.flush(null, { status: 204, statusText: 'No Content' });
@@ -33,7 +35,12 @@ describe('PcApi click', () => {
   it('keepalive is passed to the request, so the browser finishes it even if the page goes away', async () => {
     const sending = api.click('LEFT', 'UP', { keepalive: true });
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/click'));
-    expect(request.request.body).toEqual({ button: 'LEFT', action: 'UP', seq: expect.any(Number) });
+    expect(request.request.body).toEqual({
+      button: 'LEFT',
+      action: 'UP',
+      seq: expect.any(Number),
+      epoch: expect.any(String),
+    });
     expect(request.request.keepalive).toBe(true);
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
@@ -59,8 +66,9 @@ describe('PcApi key', () => {
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
     // Todo pedido da nuvem leva o número do contador comum; o resto do corpo é o de sempre.
-    const { seq, ...rest } = request.request.body as Record<string, unknown>;
+    const { seq, epoch, ...rest } = request.request.body as Record<string, unknown>;
     expect(typeof seq).toBe('number');
+    expect(epoch).toMatch(/^[0-9a-f]{16}$/);
     return rest;
   }
 
@@ -108,7 +116,11 @@ describe('PcApi keyRelease', () => {
   it('releases a modifier on its own route, as a plain request by default', async () => {
     const sending = api.keyRelease('ALT');
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key/release'));
-    expect(request.request.body).toEqual({ key: 'ALT', seq: expect.any(Number) });
+    expect(request.request.body).toEqual({
+      key: 'ALT',
+      seq: expect.any(Number),
+      epoch: expect.any(String),
+    });
     expect(request.request.keepalive).toBe(false);
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
@@ -153,6 +165,23 @@ describe('PcApi cloud sequence', () => {
     await answer(api.media('MUTE'), '/v1/pc/media');
 
     expect(seqs).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('every numbered request carries the same epoch (the one of this page)', async () => {
+    const epochs: string[] = [];
+    const answer = async (sending: Promise<void>, path: string) => {
+      const request = http.expectOne((req) => req.url.endsWith(path));
+      epochs.push((request.request.body as { epoch: string }).epoch);
+      request.flush(null, { status: 204, statusText: 'No Content' });
+      await sending;
+    };
+
+    await answer(api.click('LEFT'), '/v1/pc/click');
+    await answer(api.text('abc'), '/v1/pc/text');
+    await answer(api.media('MUTE'), '/v1/pc/media');
+
+    expect(new Set(epochs).size).toBe(1);
+    expect(epochs[0]).toBe(TestBed.inject(PcDirect).cloudEpoch);
   });
 
   it('the pointer keeps the numbering the batcher gives it, and never takes a number from the counter', async () => {

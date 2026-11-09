@@ -11,6 +11,7 @@ import {
   DirectNotSent,
   MAX_CLOUD_IDLE_MS,
   PC_RTC_CAPABILITY,
+  newCloudEpoch,
   PC_RTC_FACTORY,
   PING_MS,
   POINTER_TAIL_MS,
@@ -180,7 +181,12 @@ describe('PcDirect opening', () => {
     expect(signaling.offer).toHaveBeenCalledWith(expect.stringContaining('a=fingerprint'));
     expect(connection.remoteDescription).toEqual({ type: 'answer', sdp: 'ANSWER' });
     // A primeira (e única até o ready) mensagem do canal de entrada é o token que a API emitiu.
-    expect(input.sent[0]).toEqual({ k: 'auth', tok: 'tok-1', cs: 0 });
+    expect(input.sent[0]).toEqual({
+      k: 'auth',
+      tok: 'tok-1',
+      cs: 0,
+      ce: direct.cloudEpoch,
+    });
     expect(pointer.sent.filter((m) => m['k'] === 'ptr')).toEqual([]);
   });
 
@@ -580,6 +586,22 @@ describe('PcDirect cloud hand-over', () => {
     expect(input.last('cmd')?.['cs']).toBe(3);
   });
 
+  it('draws one epoch per page life: 16 hex digits, the same in the auth and in every command', async () => {
+    const { direct, connections } = setup();
+    expect(direct.cloudEpoch).toMatch(/^[0-9a-f]{16}$/);
+    const { input } = await openChannel(direct, connections);
+    expect(input.last('auth')?.['ce']).toBe(direct.cloudEpoch);
+
+    void direct.command('pc.media.v1', { action: 'MUTE' }).catch(() => undefined);
+    expect(input.last('cmd')?.['ce']).toBe(direct.cloudEpoch);
+  });
+
+  it('a new page (a new service) draws a different epoch, even with the counter back at zero', () => {
+    const epochs = new Set(Array.from({ length: 50 }, () => newCloudEpoch()));
+    expect(epochs.size).toBe(50);
+    for (const epoch of epochs) expect(epoch).toMatch(/^[0-9a-f]{16}$/);
+  });
+
   it('keeps counting across a renewed channel (the number never goes back)', async () => {
     const { direct, connections } = setup();
     const first = await openChannel(direct, connections);
@@ -780,6 +802,84 @@ describe('PcDirect clock and lifetime', () => {
       expect(connections).toHaveLength(2);
     },
   );
+
+  it('a send that throws with the channel still open hands the input back to the cloud until it is done', async () => {
+    const { direct, connections } = setup();
+    const { input } = await openChannel(direct, connections);
+    expect(direct.canUse()).toBe(true); // a primeira entrada: o canal assumiu
+
+    input.send = () => {
+      throw new Error('o canal fechou agora');
+    };
+    await expect(direct.command('pc.media.v1', { action: 'MUTE' })).rejects.toBeInstanceOf(
+      DirectNotSent,
+    );
+    // Quem chama recua para a nuvem: o pedido dela está em voo, e o próximo comando NÃO pode passar por ela na frente.
+    let finish: () => void = () => undefined;
+    const cloud = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
+    expect(direct.canUse()).toBe(false);
+
+    finish();
+    await cloud;
+  });
+
+  it('a 409 pc-direct-revoked on the offer suspends the channel: no backoff retry, back on the next screen visit', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections, signaling } = setup();
+    signaling.offer.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 409,
+        error: { type: 'https://uniover.app/problems/pc-direct-revoked' },
+      }),
+    );
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(connections).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS.at(-1)! * 3);
+    expect(connections).toHaveLength(1);
+
+    direct.start(); // a próxima visita à tela
+    await vi.advanceTimersByTimeAsync(10);
+    expect(connections).toHaveLength(2);
+  });
+
+  it('a revoked suspension also ends when the access token is renewed', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections, signaling } = setup();
+    const session = TestBed.inject(SessionState);
+    session.setToken('token-1', 600, 1_000);
+    signaling.offer.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 409,
+        error: { type: 'https://uniover.app/problems/pc-direct-revoked' },
+      }),
+    );
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS.at(-1)! * 2);
+    expect(connections).toHaveLength(1);
+
+    session.setToken('token-2', 600, 2_000_000); // o refresh trouxe outro token de acesso
+    await vi.advanceTimersByTimeAsync(10);
+    expect(connections).toHaveLength(2);
+  });
+
+  it('any other 409 on the offer keeps the generic retry with backoff', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections, signaling } = setup();
+    signaling.offer.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 409,
+        error: { type: 'https://uniover.app/problems/pc-direct-unavailable' },
+      }),
+    );
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
+
+    expect(connections).toHaveLength(2);
+  });
 
   it('opens another channel at once when the agent says the lifetime is over', async () => {
     vi.useFakeTimers(FAKE_TIMERS);

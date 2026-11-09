@@ -76,7 +76,7 @@ export class PcApi {
     await this.cloud(
       this.http.post(
         `${BASE}/click`,
-        { ...body, seq: this.direct.nextCloudSeq() },
+        { ...body, ...this.numbered() },
         options.keepalive ? { keepalive: true } : {},
       ),
     );
@@ -102,7 +102,7 @@ export class PcApi {
       (await this.viaDirect(keyNeedsV2(key, options) ? 'pc.key.v2' : 'pc.key.v1', body))
     )
       return;
-    await this.cloud(this.http.post(`${BASE}/key`, { ...body, seq: this.direct.nextCloudSeq() }));
+    await this.cloud(this.http.post(`${BASE}/key`, { ...body, ...this.numbered() }));
   }
 
   /**
@@ -122,7 +122,7 @@ export class PcApi {
     await this.cloud(
       this.http.post(
         `${BASE}/key/release`,
-        { key, seq: this.direct.nextCloudSeq() },
+        { key, ...this.numbered() },
         options.keepalive ? { keepalive: true } : {},
       ),
     );
@@ -130,13 +130,13 @@ export class PcApi {
 
   async text(text: string): Promise<void> {
     if (this.direct.canUse() && (await this.viaDirect('pc.text.v1', { text }))) return;
-    await this.cloud(this.http.post(`${BASE}/text`, { text, seq: this.direct.nextCloudSeq() }));
+    await this.cloud(this.http.post(`${BASE}/text`, { text, ...this.numbered() }));
   }
 
   async media(action: PcMediaAction, steps = 1): Promise<void> {
     const body = steps > 1 ? { action, steps } : { action };
     if (this.direct.canUse() && (await this.viaDirect('pc.media.v1', body))) return;
-    await this.cloud(this.http.post(`${BASE}/media`, { ...body, seq: this.direct.nextCloudSeq() }));
+    await this.cloud(this.http.post(`${BASE}/media`, { ...body, ...this.numbered() }));
   }
 
   /** Suspender e desligar só valem com `confirm: true`: a API recusa sem ele. */
@@ -165,6 +165,11 @@ export class PcApi {
       if (error instanceof DirectNotSent) return false;
       throw error;
     }
+  }
+
+  /** O número do próximo pedido da nuvem e a época desta página: o agente só os compara juntos. */
+  private numbered(): { seq: number; epoch: string } {
+    return { seq: this.direct.nextCloudSeq(), epoch: this.direct.cloudEpoch };
   }
 
   /** O pedido da nuvem, contado como em voo: o canal só assume quando nenhum está no ar (nada passa na frente de nada). */

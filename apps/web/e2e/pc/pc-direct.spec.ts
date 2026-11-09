@@ -115,6 +115,7 @@ test.describe('Canal direto', () => {
       k: 'auth',
       tok: 'token-de-teste-0123456789abcdefghijklmnop',
       cs: 0,
+      ce: expect.stringMatching(/^[0-9a-f]{16}$/),
     });
     expect(log.input.find((m) => m['k'] === 'cmd')).toMatchObject({
       t: 'pc.click.v1',
