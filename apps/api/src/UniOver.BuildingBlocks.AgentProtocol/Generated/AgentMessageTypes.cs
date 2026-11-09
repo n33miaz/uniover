@@ -43,6 +43,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.click.v1</c>.</summary>
     public const string PcClickV1 = "pc.click.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.click.v2</c>.</summary>
+    public const string PcClickV2 = "pc.click.v2";
+
     /// <summary>Tipo de mensagem <c>pc.key.v1</c>.</summary>
     public const string PcKeyV1 = "pc.key.v1";
 
@@ -75,6 +78,9 @@ public static class AgentMessageTypes
 
     /// <summary>Tipo de mensagem <c>pc.text.v1</c>.</summary>
     public const string PcTextV1 = "pc.text.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.text.v2</c>.</summary>
+    public const string PcTextV2 = "pc.text.v2";
 
     /// <summary>Tipo de mensagem <c>tv.adb.rebind.v1</c>.</summary>
     public const string TvAdbRebindV1 = "tv.adb.rebind.v1";
@@ -169,6 +175,7 @@ public static class AgentMessageTypes
         PcAppLaunchV1,
         PcAppsV1,
         PcClickV1,
+        PcClickV2,
         PcKeyV1,
         PcKeyV2,
         PcMediaV1,
@@ -180,6 +187,7 @@ public static class AgentMessageTypes
         PcRtcClosedV1,
         PcRtcOfferV1,
         PcTextV1,
+        PcTextV2,
         TvAdbRebindV1,
         TvAppLaunchV1,
         TvAppsRefreshV1,

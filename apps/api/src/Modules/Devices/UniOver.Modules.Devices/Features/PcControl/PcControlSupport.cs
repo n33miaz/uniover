@@ -189,13 +189,13 @@ internal static class PcProblems
     public const string KeyUnsupportedType = "pc-key-unsupported";
 
     /// <summary>
-    /// O pedido de tecla precisa da <c>pc.key.v2</c> (repetição, segurar modificador, tecla nova) e o agente deste PC é de antes
+    /// O pedido precisa de uma mensagem v2 (<c>pc.key.v2</c>, <c>pc.text.v2</c> ou <c>pc.click.v2</c>: tecla nova, repetição, segurar, apagar e digitar, clique com modificador) e o agente deste PC é de antes
     /// dela: nada é enviado (o esquema fechado dele recusaria a mensagem e o toque morreria sem explicação). A tela mostra
     /// "atualize o agente do PC".
     /// </summary>
     public static IResult KeyUnsupported() => Results.Problem(
         statusCode: StatusCodes.Status409Conflict,
-        title: "O agente deste PC é antigo demais para esta tecla. Atualize o agente do PC.",
+        title: "O agente deste PC é antigo demais para este comando. Atualize o agente do PC.",
         type: ProblemDetailsExtensions.TypeBase + KeyUnsupportedType);
 
     /// <summary>

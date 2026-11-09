@@ -24,8 +24,11 @@ public sealed class PcControlTests(PostgresFixture postgres)
 {
     private const string Capability = "pc.control.v1";
     private const string KeyV2 = "pc.key.v2";
+    private const string TextV2 = "pc.text.v2";
+    private const string ClickV2 = "pc.click.v2";
 
     private static readonly string[] Ctrl = ["CTRL"];
+    private static readonly string[] CtrlShift = ["CTRL", "SHIFT"];
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -604,6 +607,224 @@ public sealed class PcControlTests(PostgresFixture postgres)
         }
 
         budget.TryTake(user, PcKeyBudget.PressesPerMinute).Should().BeTrue("nenhum aperto saiu: o teto está inteiro");
+    }
+
+    [Fact]
+    public async Task Text_ThatFitsTheV1_GoesAsV1_EvenToAnAgentThatKnowsTheV2()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2);
+
+        var http = PostAsync(app, "text", new { text = "olá", erase = 0 });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.text.v1");
+        SameJson(command.GetProperty("body"), "{\"text\":\"olá\"}");
+    }
+
+    [Fact]
+    public async Task Text_ThatErasesOrPressesAKey_GoesAsV2_ToAnAgentThatDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2);
+
+        var edit = PostAsync(app, "text", new { erase = 4, text = "olá", key = "ENTER" });
+        var editCommand = await AnswerAsync(agent);
+        using var editResponse = await Within(edit);
+        var eraseOnly = PostAsync(app, "text", new { erase = 12 });
+        var eraseCommand = await AnswerAsync(agent);
+        using var eraseResponse = await Within(eraseOnly);
+        var keyOnly = PostAsync(app, "text", new { key = "TAB" });
+        var keyCommand = await AnswerAsync(agent);
+        using var keyResponse = await Within(keyOnly);
+
+        new[] { editResponse, eraseResponse, keyResponse }.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+        editCommand.GetProperty("type").GetString().Should().Be("pc.text.v2");
+        SameJson(editCommand.GetProperty("body"), "{\"erase\":4,\"text\":\"olá\",\"key\":\"ENTER\"}");
+        SameJson(eraseCommand.GetProperty("body"), "{\"erase\":12}");
+        SameJson(keyCommand.GetProperty("body"), "{\"key\":\"TAB\"}");
+    }
+
+    [Theory]
+    [InlineData("{\"erase\":3,\"text\":\"a\"}")]
+    [InlineData("{\"text\":\"a\",\"key\":\"ENTER\"}")]
+    [InlineData("{\"erase\":1}")]
+    public async Task Text_ThatNeedsTheV2_Returns409Unsupported_ForAnOlderAgent_AndNothingIsSent(string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, "text", JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+
+        // O agente anterior à v2 segue servido pela v1: a primeira coisa que ele recebe é o próximo texto, e não o recusado.
+        var next = PostAsync(app, "text", new { text = "ok" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.text.v1");
+    }
+
+    [Fact]
+    public async Task Text_Erase_CountsEveryBackspaceAgainstTheKeyBudget_AndIsRefundedWhenNothingWasSent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+        var budget = app.App.Services.GetRequiredService<PcKeyBudget>();
+        var user = await UserIdAsync(app);
+        budget.TryTake(user, PcKeyBudget.PressesPerMinute - 201).Should().BeTrue();
+
+        // 200 Backspaces e a tecla do fim são 201 apertos: cabem exatamente; o seguinte passa do teto.
+        var within = PostAsync(app, "text", new { erase = 200, key = "ENTER" });
+        await AnswerAsync(agent);
+        using var okResponse = await Within(within);
+        using var over = await PostAsync(app, "text", new { erase = 1 });
+        // O texto puro nunca paga: segue passando mesmo com o teto cheio.
+        var plain = PostAsync(app, "text", new { text = "abc" });
+        await AnswerAsync(agent);
+        using var plainResponse = await Within(plain);
+
+        okResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        over.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        plainResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Text_Erase_IsRefunded_OnA409OrA503_BecauseNothingWasSent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectPcAsync(app); // agente sem a v2
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+        var budget = app.App.Services.GetRequiredService<PcKeyBudget>();
+        var user = await UserIdAsync(app);
+
+        for (var i = 0; i < 60; i++)
+        {
+            using var refused = await PostAsync(app, "text", new { erase = 200 });
+            refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+        for (var i = 0; i < 60; i++)
+        {
+            using var offline = await PostAsync(app, "text", new { erase = 200 });
+            offline.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+
+        budget.TryTake(user, PcKeyBudget.PressesPerMinute).Should().BeTrue("nenhum aperto saiu: o teto está inteiro");
+    }
+
+    [Fact]
+    public async Task Click_ThatFitsTheV1_GoesAsV1_EvenToAnAgentThatKnowsTheV2()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, ClickV2);
+
+        var http = PostAsync(app, "click", new { button = "LEFT", action = "DOUBLE", modifiers = Array.Empty<string>(), gapMs = 0 });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.click.v1");
+        SameJson(command.GetProperty("body"), "{\"button\":\"LEFT\",\"action\":\"DOUBLE\"}");
+    }
+
+    [Fact]
+    public async Task Click_WithModifiersOrAGap_GoesAsV2_ToAnAgentThatDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, ClickV2);
+
+        var withModifiers = PostAsync(app, "click", new { button = "LEFT", modifiers = CtrlShift });
+        var modifiersCommand = await AnswerAsync(agent);
+        using var modifiersResponse = await Within(withModifiers);
+        var withGap = PostAsync(app, "click", new { button = "LEFT", gapMs = 140 });
+        var gapCommand = await AnswerAsync(agent);
+        using var gapResponse = await Within(withGap);
+
+        new[] { modifiersResponse, gapResponse }.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+        modifiersCommand.GetProperty("type").GetString().Should().Be("pc.click.v2");
+        SameJson(modifiersCommand.GetProperty("body"), "{\"button\":\"LEFT\",\"modifiers\":[\"CTRL\",\"SHIFT\"]}");
+        SameJson(gapCommand.GetProperty("body"), "{\"button\":\"LEFT\",\"gapMs\":140}");
+    }
+
+    [Theory]
+    [InlineData("{\"button\":\"LEFT\",\"modifiers\":[\"CTRL\"]}")]
+    [InlineData("{\"button\":\"LEFT\",\"gapMs\":120}")]
+    public async Task Click_ThatNeedsTheV2_Returns409Unsupported_ForAnOlderAgent_AndNothingIsSent(string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, "click", JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+
+        var next = PostAsync(app, "click", new { button = "LEFT" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.click.v1");
+    }
+
+    [Fact]
+    public async Task TheV2Inputs_CarryTheirSequenceAndEpoch_ToAnAgentThatDeclaresTheDirectChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2, ClickV2, "pc.rtc.v1");
+
+        const string page = "3fa9c10d7be2465a";
+        var sent = new (string Path, object Body, string Type)[]
+        {
+            ("click", new { button = "LEFT", modifiers = Ctrl, gapMs = 100, seq = 31, epoch = page }, "pc.click.v2"),
+            ("text", new { erase = 2, text = "ab", key = "ENTER", seq = 32, epoch = page }, "pc.text.v2"),
+        };
+        var expected = 31;
+        foreach (var (path, body, type) in sent)
+        {
+            var posting = PostAsync(app, path, body);
+            var command = await AnswerAsync(agent);
+            using var response = await Within(posting);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent, path);
+            command.GetProperty("type").GetString().Should().Be(type);
+            command.GetProperty("body").GetProperty("seq").GetInt32().Should().Be(expected++, path);
+            command.GetProperty("body").GetProperty("epoch").GetString().Should().Be(page, path);
+        }
+    }
+
+    [Theory]
+    [InlineData("click", "{\"button\":\"LEFT\",\"modifiers\":[\"CTRL\",\"CTRL\"]}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"modifiers\":[\"META\"]}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"modifiers\":[\"WIN\"]}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"gapMs\":401}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"gapMs\":-1}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"gapMs\":\"120\"}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"action\":\"DOWN\",\"modifiers\":[\"CTRL\"]}")]
+    [InlineData("click", "{\"button\":\"LEFT\",\"action\":\"UP\",\"gapMs\":50}")]
+    [InlineData("text", "{\"erase\":201}")]
+    [InlineData("text", "{\"erase\":-1,\"text\":\"a\"}")]
+    [InlineData("text", "{\"erase\":\"3\"}")]
+    [InlineData("text", "{\"text\":\"a\",\"key\":\"ESCAPE\"}")]
+    [InlineData("text", "{\"erase\":0}")]
+    [InlineData("text", "{\"erase\":2,\"text\":\"a\\nb\"}")]
+    public async Task AV2BodyOutsideTheContract_Returns400_AndAsksTheAgentNothing(string path, string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2, ClickV2);
+
+        using var response = await PostAsync(app, path, JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
