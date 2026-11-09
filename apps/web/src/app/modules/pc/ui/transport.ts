@@ -17,7 +17,7 @@ export type TransportKind = 'track' | 'seek';
       class="round"
       [attr.data-action]="'previous'"
       [attr.aria-label]="previousLabel()"
-      [disabled]="!store.canSend()"
+      [disabled]="!store.canSend() || disabled()"
       (click)="previous.emit()"
     >
       @if (kind() === 'seek') {
@@ -36,7 +36,7 @@ export type TransportKind = 'track' | 'seek';
       class="round big"
       [attr.data-action]="'toggle'"
       [attr.aria-label]="toggleLabel()"
-      [disabled]="!store.canSend()"
+      [disabled]="!store.canSend() || disabled()"
       (click)="playPause.emit()"
     >
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -48,7 +48,7 @@ export type TransportKind = 'track' | 'seek';
       class="round"
       [attr.data-action]="'next'"
       [attr.aria-label]="nextLabel()"
-      [disabled]="!store.canSend()"
+      [disabled]="!store.canSend() || disabled()"
       (click)="next.emit()"
     >
       @if (kind() === 'seek') {
@@ -68,6 +68,8 @@ export type TransportKind = 'track' | 'seek';
 export class PcTransport {
   protected readonly store = inject(PcStore);
   readonly kind = input<TransportKind>('track');
+  /** Desliga os três botões além do PC ausente (o Alt do "Trocar janela" segurado). */
+  readonly disabled = input(false);
   readonly previousLabel = input.required<string>();
   readonly toggleLabel = input.required<string>();
   readonly nextLabel = input.required<string>();

@@ -1,4 +1,4 @@
-import { Injectable, effect, inject, untracked } from '@angular/core';
+import { Injectable, computed, effect, inject, untracked } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
 import { tick } from '../input/haptics';
 import { LiveTyper, type TextDiff } from '../input/live-typing';
@@ -107,21 +107,30 @@ export class PcInput {
   }
 
   /**
+   * Há um modificador segurado no PC (o Alt do "Trocar janela"): qualquer tecla que saísse agora seria Alt+tecla. As telas
+   * que mandam teclas soltas (a Mídia) desligam os botões enquanto isto vale, como a tela do mouse, e `plain` e `gotoSlide`
+   * recusam por conta própria.
+   */
+  readonly held = computed(() => this.store.heldKeys().length > 0);
+
+  /**
    * Uma tecla do catálogo com só os modificadores dela: as teclas armadas na tela do mouse NÃO valem (quem aperta "Voltar 10 s"
    * não quer um Ctrl+J porque deixou o Ctrl armado). Há uma vibração curta. Devolve `false` quando nada foi enviado.
    */
   plain(key: PcKey, modifiers: readonly PcModifier[] = []): boolean {
-    if (!this.store.canSend()) return false;
+    if (!this.store.canSend() || this.held()) return false;
     tick();
     this.typer.key(key, modifiers);
+    this.diverge();
     return true;
   }
 
   /** "Ir ao slide N": os dígitos e o Enter, na ordem da fila. Só para PC que entende `pc.key.v2`; quem chama confere. */
   gotoSlide(slide: number): boolean {
-    if (!this.store.canSend()) return false;
+    if (!this.store.canSend() || this.held()) return false;
     tick();
     for (const key of slideKeys(slide)) this.typer.key(key, []);
+    this.diverge();
     return true;
   }
 

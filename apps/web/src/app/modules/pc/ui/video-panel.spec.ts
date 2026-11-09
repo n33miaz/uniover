@@ -58,6 +58,18 @@ describe('PcVideoPanel', () => {
     ]);
   });
 
+  it('with the Alt of the window switcher held every button is off and nothing goes out as Alt+key', async () => {
+    store.heldKeys.set(['ALT']);
+    fixture.detectChanges();
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons.length).toBe(7);
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    buttons[0].click();
+    await flush();
+    expect(store.sendKey).not.toHaveBeenCalled();
+    expect(TestBed.inject(PcPrefs).videoHintSeen()).toBe(false);
+  });
+
   it('warns once that the player needs focus, and the warning goes away with the first touch for good', () => {
     const warning = () => root.querySelector('.hint')?.textContent?.trim();
     expect(warning()).toBe('O player precisa estar em foco.');

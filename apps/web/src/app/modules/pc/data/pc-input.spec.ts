@@ -70,6 +70,31 @@ describe('PcInput', () => {
     expect(armed.has('CTRL')).toBe(true);
   });
 
+  it('plain and gotoSlide tell the typing field the PC text may have changed, like any shortcut', async () => {
+    const diverged = vi.fn();
+    input.onDiverge(diverged);
+    input.plain('J');
+    expect(diverged).toHaveBeenCalledTimes(1);
+    input.gotoSlide(4);
+    expect(diverged).toHaveBeenCalledTimes(2);
+    await flush();
+  });
+
+  it('with a modifier held (the Alt of the window switcher) plain and gotoSlide send nothing, and held says so', async () => {
+    expect(input.held()).toBe(false);
+    store.heldKeys.set(['ALT']);
+    expect(input.held()).toBe(true);
+    const diverged = vi.fn();
+    input.onDiverge(diverged);
+    expect(input.plain('J')).toBe(false);
+    expect(input.gotoSlide(3)).toBe(false);
+    await flush();
+    expect(store.sendKey).not.toHaveBeenCalled();
+    expect(diverged).not.toHaveBeenCalled();
+    store.heldKeys.set([]);
+    expect(input.plain('J')).toBe(true);
+  });
+
   it('plain and gotoSlide send nothing with the PC away', () => {
     store.phase.set('offline');
     expect(input.plain('J')).toBe(false);

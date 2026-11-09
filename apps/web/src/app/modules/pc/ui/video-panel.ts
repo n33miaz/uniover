@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { PcInput } from '../data/pc-input';
 import { PcPrefs } from '../data/pc-prefs';
+import { shortcutById } from '../data/pc-shortcuts';
 import { PcShortcutCells } from './shortcut-cells';
 import { PcTransport } from './transport';
 
@@ -20,15 +21,16 @@ import { PcTransport } from './transport';
     }
     <app-pc-transport
       [kind]="'seek'"
+      [disabled]="input.held()"
       previousLabel="Voltar 10 segundos"
       i18n-previousLabel="@@pc.video.back-10"
       toggleLabel="Tocar ou pausar"
       i18n-toggleLabel="@@pc.media.play-pause"
       nextLabel="Avançar 10 segundos"
       i18n-nextLabel="@@pc.video.forward-10"
-      (previous)="tap('J')"
-      (playPause)="tap('SPACE')"
-      (next)="tap('L')"
+      (previous)="tap('video-back-10')"
+      (playPause)="tap('play-pause')"
+      (next)="tap('video-forward-10')"
     />
     <app-pc-shortcut-cells
       [ids]="['video-back-5', 'video-forward-5', 'video-fullscreen', 'video-subtitles']"
@@ -52,11 +54,12 @@ import { PcTransport } from './transport';
 })
 export class PcVideoPanel {
   protected readonly prefs = inject(PcPrefs);
-  private readonly input = inject(PcInput);
+  protected readonly input = inject(PcInput);
 
-  /** As teclas de salto e de tocar não passam pelas células: o aviso some do mesmo jeito. */
-  protected tap(key: 'J' | 'L' | 'SPACE'): void {
-    if (this.input.plain(key)) this.seen();
+  /** Os três botões grandes mandam atalhos do catálogo (J, espaço, L); o aviso some do mesmo jeito que nas células. */
+  protected tap(id: 'video-back-10' | 'play-pause' | 'video-forward-10'): void {
+    const action = shortcutById(id)?.action;
+    if (action?.kind === 'keys' && this.input.plain(action.key, action.modifiers)) this.seen();
   }
 
   protected seen(): void {

@@ -25,9 +25,9 @@ import { PcStore } from '../data/pc-store';
           pattern="[0-9]*"
           maxlength="3"
           autocomplete="off"
-          [disabled]="!store.canSend()"
+          [disabled]="!store.canSend() || input.held()"
         />
-        <button type="submit" class="goto-go" [disabled]="!store.canSend()">
+        <button type="submit" class="goto-go" [disabled]="!store.canSend() || input.held()">
           <span i18n="@@pc.slides.goto-go">Ir ao Slide</span>
         </button>
       </form>
@@ -40,19 +40,18 @@ import { PcStore } from '../data/pc-store';
 })
 export class PcSlideGoto {
   protected readonly store = inject(PcStore);
-  private readonly input = inject(PcInput);
+  protected readonly input = inject(PcInput);
   protected readonly note = signal<string | null>(null);
 
   protected goto(event: Event, field: HTMLInputElement): void {
     event.preventDefault();
-    if (!this.store.canSend()) return;
+    if (!this.store.canSend() || this.input.held()) return;
     const slide = parseSlideNumber(field.value);
     if (slide === null) {
       this.note.set($localize`:@@pc.sc.goto-invalid:Digite o número do slide, de 1 a 999.`);
       return;
     }
     this.note.set(null);
-    this.input.gotoSlide(slide);
-    field.value = '';
+    if (this.input.gotoSlide(slide)) field.value = '';
   }
 }
