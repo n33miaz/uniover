@@ -32,6 +32,7 @@ class PcClickV1Body(BaseModel):
         Field(title='PcClickV1BodyAction', validate_default=True),
     ] = 'CLICK'
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
+    epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
 
 
 class PcClickV1Message(BaseModel):

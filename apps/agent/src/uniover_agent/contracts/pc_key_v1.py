@@ -34,6 +34,7 @@ class PcKeyV1Body(BaseModel):
         None
     )
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
+    epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
 
 
 class PcKeyV1Message(BaseModel):
