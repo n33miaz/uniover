@@ -13,6 +13,7 @@ from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.pc.apps import PcApp
+from uniover_agent.core.pc.click_pacer import ClickPacer
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.freshness import (
     MAX_COMMAND_AGE_SECONDS,
@@ -31,6 +32,10 @@ PC_CONTROL_CAPABILITY: Final = "pc.control.v1"
 # Também no `hello`, mas só depois de a API listá-la em `features` (uma API anterior recusaria o
 # `hello` com capacidade que não conhece): teclas novas, repetição e segurar modificador.
 PC_KEY_V2_CAPABILITY: Final = "pc.key.v2"
+# Idem: apagar, digitar e apertar uma tecla numa mensagem só.
+PC_TEXT_V2_CAPABILITY: Final = "pc.text.v2"
+# Idem: clique com modificadores e com o intervalo do toque anterior (duplo clique confiável).
+PC_CLICK_V2_CAPABILITY: Final = "pc.click.v2"
 
 # Comandos executados sem resposta: a API manda o movimento do mouse sem esperar por ela.
 PC_SILENT_TYPES: Final = frozenset({"pc.pointer.v1"})
@@ -40,6 +45,8 @@ POINTER_TYPE: Final = "pc.pointer.v1"
 # cortada pelo adaptador e perderia caminho, então não se soma.
 MAX_POINTER_DELTA: Final = 2000
 MAX_SCROLL_DELTA: Final = 1200
+# Os cliques que contam para o intervalo do duplo clique: apertar e soltar o botão (o arrastar) não.
+_PACED_ACTIONS: Final = frozenset({"CLICK", "DOUBLE"})
 UNSUPPORTED: Final = "unsupported"
 UNKNOWN_APP: Final = "unknown_app"
 # Tempo entre responder à API e suspender: o resultado precisa sair antes de o PC adormecer.
@@ -132,14 +139,45 @@ def pc_pointer_handler(pc: PcInput) -> Handler:
     return _guarded(handle, noisy=False)
 
 
-def pc_click_handler(pc: PcInput) -> Handler:
-    """`pc.click.v1`."""
+def pc_click_handler(pc: PcInput, pacer: ClickPacer | None = None) -> Handler:
+    """`pc.click.v1`. O clique que sai fica marcado em `pacer`: dele conta o `gapMs` do seguinte."""
 
     def handle(command: Command) -> CommandResult:
-        pc.click(str(command.body["button"]), str(command.body.get("action") or "CLICK"))
+        button = str(command.body["button"])
+        action = str(command.body.get("action") or "CLICK")
+        if pacer is not None and action in _PACED_ACTIONS:
+            pacer.mark(button)
+        pc.click(button, action)
         return _ok(command)
 
     return _guarded(handle)
+
+
+def pc_click_v2_handler(pc: PcInput, pacer: ClickPacer | None = None) -> Handler:
+    """`pc.click.v2`: o clique da v1 com `modifiers` (apertados, o clique, soltos, num lote só) e
+    `gapMs`: antes de clicar espera o que faltar desde o último clique do mesmo botão para
+    reproduzir o intervalo que o app mediu (o Windows só vê duplo clique com os apertos próximos).
+    Se o pedido chegou mais tarde que `gapMs`, sai na hora; nunca espera mais que `gapMs`."""
+
+    def handle(command: Command) -> CommandResult:
+        body = command.body
+        button = str(body["button"])
+        action = str(body.get("action") or "CLICK")
+        modifiers: Sequence[str] = body.get("modifiers") or ()
+        if pacer is not None:
+            pacer.mark(button)
+        pc.click(button, action, modifiers)
+        return _ok(command)
+
+    guarded = _guarded(handle)
+
+    async def run(command: Command) -> CommandResult:
+        gap = command.body.get("gapMs")
+        if pacer is not None and isinstance(gap, int) and gap > 0:
+            await pacer.wait(str(command.body["button"]), gap / 1000)
+        return await guarded(command)
+
+    return run
 
 
 def pc_key_handler(pc: PcInput) -> Handler:
@@ -176,6 +214,23 @@ def pc_text_handler(pc: PcInput) -> Handler:
 
     def handle(command: Command) -> CommandResult:
         pc.type_text(str(command.body["text"]))
+        return _ok(command)
+
+    return _guarded(handle)
+
+
+def pc_text_v2_handler(pc: PcInput) -> Handler:
+    """`pc.text.v2`: apagar `erase` caracteres, digitar `text` e apertar `key` (Enter ou Tab), nesta
+    ordem e no mesmo toque no sistema. O texto nunca vai para o registro: pode ser uma senha."""
+
+    def handle(command: Command) -> CommandResult:
+        body = command.body
+        key = body.get("key")
+        pc.edit_text(
+            int(body.get("erase") or 0),
+            str(body.get("text") or ""),
+            None if key is None else str(key),
+        )
         return _ok(command)
 
     return _guarded(handle)
@@ -262,6 +317,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     shutdown_delay_seconds: int,
     clock: ClockOffset | None = None,
     use: PcUseTracker | None = None,
+    pacer: ClickPacer | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
@@ -270,8 +326,11 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     monotônico do agente): quem monta o agente a compartilha com `ProcessMessage`, que a alimenta
     com os batimentos da API. `use` anota cada comando que chega a ser executado (não os recusados
     por idade): a atualização do agente o lê para não reiniciar no meio de uma sessão do touchpad.
+    `pacer` guarda o último clique para o `gapMs` do seguinte (um só para o `v1` e o `v2`, e para
+    a nuvem e o canal direto, que entregam ao mesmo conjunto de manipuladores).
     """
     offset = clock or ClockOffset()
+    clicks = pacer or ClickPacer()
 
     def noted(handle: Handler) -> Handler:
         return use.noting(handle) if use is not None else handle
@@ -288,10 +347,12 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     return {
         "pc.pointer.v1": fresh(noted(pc_pointer_handler(pc)), MAX_POINTER_AGE_SECONDS, quiet=True),
         "pc.click.v1": fresh(
-            noted(pc_click_handler(pc)),
+            noted(pc_click_handler(pc, clicks)),
             MAX_COMMAND_AGE_SECONDS,
             exempt=lambda command: command.body.get("action") == "UP",
         ),
+        # O `v2` só tem CLICK e DOUBLE: não há soltura para isentar da idade.
+        "pc.click.v2": fresh(noted(pc_click_v2_handler(pc, clicks)), MAX_COMMAND_AGE_SECONDS),
         "pc.key.v1": fresh(noted(pc_key_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         # Soltar nunca é recusado por idade (como o UP de um clique): uma soltura atrasada ainda é
         # a que impede o modificador de ficar preso.
@@ -301,6 +362,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
             exempt=lambda command: command.body.get("action") == "UP",
         ),
         "pc.text.v1": fresh(noted(pc_text_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        "pc.text.v2": fresh(noted(pc_text_v2_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         "pc.media.v1": fresh(noted(pc_media_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         "pc.power.v1": fresh(
             noted(pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds)),

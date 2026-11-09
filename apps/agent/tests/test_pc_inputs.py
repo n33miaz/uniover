@@ -323,3 +323,114 @@ def test_release_inputs_lifts_each_button_in_a_fixed_order() -> None:
         *pc_inputs.click_inputs("RIGHT", "UP"),
     ]
     assert pc_inputs.release_inputs(()) == []
+
+
+def _keys(events: list[RawInput]) -> list[tuple[str, int, bool]]:
+    """O que cada evento faz, para conferir a ordem: (tipo, vk ou sinalizador do botão, soltou?)."""
+    return [
+        ("keyboard", e.vk, bool(e.flags & KEY_UP))
+        if e.kind == "keyboard"
+        else ("mouse", e.flags, False)
+        for e in events
+    ]
+
+
+def test_a_click_with_modifiers_presses_them_first_and_lets_them_go_in_reverse_order() -> None:
+    events = pc_inputs.click_inputs("LEFT", "CLICK", ["CTRL", "SHIFT"])
+    assert _keys(events) == [
+        ("keyboard", 0x11, False),
+        ("keyboard", 0x10, False),
+        ("mouse", pc_inputs.MOUSE_LEFTDOWN, False),
+        ("mouse", pc_inputs.MOUSE_LEFTUP, False),
+        ("keyboard", 0x10, True),
+        ("keyboard", 0x11, True),
+    ]
+
+
+def test_a_double_click_with_a_modifier_holds_it_for_both_clicks() -> None:
+    events = pc_inputs.click_inputs("LEFT", "DOUBLE", ["CTRL"])
+    assert [kind for kind, _, _ in _keys(events)] == ["keyboard"] + ["mouse"] * 4 + ["keyboard"]
+    assert pc_inputs.held_keys_after({}, events) == {}, "o modificador nunca fica preso"
+
+
+def test_a_click_without_modifiers_is_exactly_what_it_always_was() -> None:
+    assert pc_inputs.click_inputs("LEFT", "CLICK", []) == pc_inputs.click_inputs("LEFT", "CLICK")
+    assert pc_inputs.click_inputs("RIGHT", "DOUBLE", ()) == pc_inputs.click_inputs(
+        "RIGHT", "DOUBLE"
+    )
+
+
+@pytest.mark.parametrize("action", ["DOWN", "UP"])
+def test_holding_the_button_never_takes_a_modifier(action: str) -> None:
+    with pytest.raises(UnknownKey):
+        pc_inputs.click_inputs("LEFT", action, ["CTRL"])
+
+
+@pytest.mark.parametrize("modifiers", [["WIN"], ["META"], ["CTRL", "WIN"], ["D7"]])
+def test_a_click_only_takes_ctrl_alt_and_shift_and_refuses_before_producing_anything(
+    modifiers: list[str],
+) -> None:
+    with pytest.raises(UnknownKey) as raised:
+        pc_inputs.click_inputs("LEFT", "CLICK", modifiers)
+    assert "D7" not in str(raised.value)
+
+
+def test_a_click_leaves_a_modifier_already_held_alone() -> None:
+    events = pc_inputs.click_inputs("LEFT", "CLICK", ["ALT", "SHIFT"], already_held={0x12})
+    assert _keys(events) == [
+        ("keyboard", 0x10, False),
+        ("mouse", pc_inputs.MOUSE_LEFTDOWN, False),
+        ("mouse", pc_inputs.MOUSE_LEFTUP, False),
+        ("keyboard", 0x10, True),
+    ]
+    only_alt = pc_inputs.click_inputs("LEFT", "CLICK", ["ALT"], already_held={0x12})
+    assert [kind for kind, _, _ in _keys(only_alt)] == ["mouse", "mouse"]
+
+
+def test_the_same_modifier_twice_is_pressed_once() -> None:
+    events = pc_inputs.click_inputs("LEFT", "CLICK", ["CTRL", "CTRL"])
+    assert [k for k in _keys(events) if k[0] == "keyboard"] == [
+        ("keyboard", 0x11, False),
+        ("keyboard", 0x11, True),
+    ]
+
+
+def test_an_edit_erases_then_types_then_presses_the_key_in_one_batch() -> None:
+    events = pc_inputs.edit_inputs(2, "ab", "ENTER")
+    assert [(e.vk, e.scan, e.flags) for e in events] == [
+        (0x08, 0, 0),
+        (0x08, 0, KEY_UP),
+        (0x08, 0, 0),
+        (0x08, 0, KEY_UP),
+        (0, ord("a"), KEY_UNICODE),
+        (0, ord("a"), KEY_UNICODE | KEY_UP),
+        (0, ord("b"), KEY_UNICODE),
+        (0, ord("b"), KEY_UNICODE | KEY_UP),
+        (0x0D, 0, 0),
+        (0x0D, 0, KEY_UP),
+    ]
+    assert pc_inputs.held_keys_after({}, events) == {}
+
+
+def test_an_edit_can_be_only_the_erase_only_the_text_or_only_the_key() -> None:
+    assert len(pc_inputs.edit_inputs(3, "")) == 6
+    assert [e.scan for e in pc_inputs.edit_inputs(0, "x")] == [ord("x"), ord("x")]
+    assert [e.vk for e in pc_inputs.edit_inputs(0, "", "TAB")] == [0x09, 0x09]
+    assert pc_inputs.edit_inputs(0, "") == []
+
+
+def test_an_edit_erases_up_to_the_contract_limit_not_the_limit_of_a_key_repeat() -> None:
+    assert len(pc_inputs.edit_inputs(120, "")) == 240, "mais que os 50 de uma tecla repetida"
+    assert len(pc_inputs.edit_inputs(5000, "")) == 2 * pc_inputs.MAX_ERASE
+    assert pc_inputs.edit_inputs(-4, "") == []
+
+
+def test_an_edit_with_a_key_outside_the_contract_is_refused_before_anything_is_produced() -> None:
+    with pytest.raises(UnknownKey):
+        pc_inputs.edit_inputs(1, "a", "ESCAPE")
+
+
+def test_an_edit_with_half_a_character_is_refused_whole_and_never_repeats_the_text() -> None:
+    with pytest.raises(UnknownKey) as raised:
+        pc_inputs.edit_inputs(3, "senha\ud800", "ENTER")
+    assert "senha" not in str(raised.value)

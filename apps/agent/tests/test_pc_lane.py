@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,13 @@ from uniover_agent.core import (
     ResultStatus,
 )
 from uniover_agent.core.handle_command import FreshKeyHandler, Handler
+from uniover_agent.core.pc import (
+    ClickPacer,
+    pc_click_handler,
+    pc_click_v2_handler,
+    pc_key_handler,
+    pc_pointer_handler,
+)
 from uniover_agent.core.pc.handlers import MAX_POINTER_DELTA
 from uniover_agent.core.process_message import MAX_PENDING_PC
 
@@ -369,3 +377,57 @@ async def test_finished_pointer_moves_leave_nothing_behind() -> None:
     assert len(process._tasks) == 1
     await process.aclose()
     assert len(process._tasks) == 0
+
+
+async def test_a_click_waiting_for_its_gap_is_not_overtaken_by_the_next_commands() -> None:
+    log: list[str] = []
+    gate = asyncio.Event()
+    clock = [0.0]
+
+    async def sleeper(seconds: float) -> None:
+        log.append(f"waiting:{seconds:.2f}")
+        await gate.wait()
+
+    pacer = ClickPacer(lambda: clock[0], sleeper)
+
+    class Input:
+        def click(self, button: str, action: str, modifiers: object = ()) -> None:
+            log.append(f"click:{button}:{action}")
+
+        def key(self, key: str, modifiers: object, **_: object) -> None:
+            log.append(f"key:{key}")
+
+        def move(self, dx: int, dy: int) -> None:
+            log.append(f"move:{dx}")
+
+    pc: Any = Input()
+    handlers: dict[str, Handler] = {
+        "pc.click.v1": pc_click_handler(pc, pacer),
+        "pc.click.v2": pc_click_v2_handler(pc, pacer),
+        "pc.key.v1": pc_key_handler(pc),
+        "pc.pointer.v1": pc_pointer_handler(pc),
+    }
+    gate_ = EnvelopeGate(AGENT_ID)
+    clock_ = FakeClock()
+    process = ProcessMessage(
+        AGENT_ID,
+        gate_,
+        HandleCommand(handlers, clock_),
+        EnvelopeFactory(AGENT_ID, gate_, clock_),
+        FakeTransport(),
+        silent_types={"pc.pointer.v1"},
+    )
+    await process(click("CLICK"))
+    await settle()
+    clock[0] = 0.05
+    second = envelope("pc.click.v2", {"button": "LEFT", "gapMs": 150}, ts=now())
+    await process(dump(second))
+    await process(dump(envelope("pc.key.v1", {"key": "ENTER"}, ts=now())))
+    await process(pointer(4))
+    await settle()
+    # O segundo toque espera os 100 ms que faltam; a tecla e o movimento seguintes esperam por ele.
+    assert log == ["click:LEFT:CLICK", "waiting:0.10"]
+    gate.set()
+    await settle()
+    assert log == ["click:LEFT:CLICK", "waiting:0.10", "click:LEFT:CLICK", "key:ENTER", "move:4"]
+    await process.aclose()

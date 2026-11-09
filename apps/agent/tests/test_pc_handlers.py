@@ -9,6 +9,7 @@ from uniover_agent.core import Command, Handler, ResultStatus
 from uniover_agent.core.pc import (
     UNKNOWN_APP,
     UNSUPPORTED,
+    ClickPacer,
     PcApp,
     parse_favorites,
     pc_app_launch_handler,
@@ -36,8 +37,11 @@ class FakeInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self._record("scroll", horizontal, vertical)
 
-    def click(self, button: str, action: str) -> None:
-        self._record("click", button, action)
+    def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
+        if modifiers:
+            self._record("click", button, action, tuple(modifiers))
+        else:
+            self._record("click", button, action)
 
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
@@ -49,6 +53,9 @@ class FakeInput:
 
     def type_text(self, text: str) -> None:
         self._record("text", text)
+
+    def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
+        self._record("edit", erase, text, key)
 
     def media(self, action: str, steps: int) -> None:
         self._record("media", action, steps)
@@ -330,3 +337,140 @@ def test_a_sum_exactly_at_the_limit_is_merged() -> None:
     merged = merge_pointer_commands(_move(1000), _move(1000))
     assert merged is not None
     assert merged.body["dx"] == 2000
+
+
+async def test_text_v2_erases_types_and_presses_the_key_in_one_call_to_the_input() -> None:
+    handlers, pc, _, _ = build()
+    await run(handlers["pc.text.v2"], {"erase": 3, "text": "olá", "key": "ENTER"})
+    await run(handlers["pc.text.v2"], {"erase": 12})
+    await run(handlers["pc.text.v2"], {"text": "abc"})
+    await run(handlers["pc.text.v2"], {"key": "TAB"})
+    assert pc.calls == [
+        ("edit", 3, "olá", "ENTER"),
+        ("edit", 12, "", None),
+        ("edit", 0, "abc", None),
+        ("edit", 0, "", "TAB"),
+    ]
+
+
+async def test_text_v1_is_untouched_by_the_v2() -> None:
+    handlers, pc, _, _ = build()
+    assert "pc.text.v1" in handlers
+    await run(handlers["pc.text.v1"], {"text": "olá"})
+    assert pc.calls == [("text", "olá")]
+
+
+async def test_text_v2_never_reaches_the_log(caplog: pytest.LogCaptureFixture) -> None:
+    handlers, pc, _, _ = build()
+    pc.error = OSError("o Windows recusou")
+    with caplog.at_level("DEBUG"):
+        result = await handlers["pc.text.v2"](
+            Command("1", "pc.text.v2", {"erase": 2, "text": "senha-secreta", "key": "ENTER"})
+        )
+    assert result.status is ResultStatus.FAILED
+    assert "senha-secreta" not in caplog.text
+    assert "senha-secreta" not in str(result)
+
+
+async def test_text_v2_refused_by_the_input_is_reported_not_raised() -> None:
+    handlers, pc, _, _ = build()
+    pc.error = ValueError("texto com metade de um caractere (par substituto incompleto)")
+    result = await handlers["pc.text.v2"](Command("1", "pc.text.v2", {"text": "x"}))
+    assert (result.status, result.code) == (ResultStatus.REJECTED, "invalid_message")
+
+
+async def test_click_v2_passes_the_modifiers_to_the_input() -> None:
+    handlers, pc, _, _ = build()
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "modifiers": ["CTRL", "SHIFT"]})
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "action": "DOUBLE"})
+    await run(handlers["pc.click.v2"], {"button": "RIGHT", "modifiers": ["ALT"], "gapMs": 0})
+    assert pc.calls == [
+        ("click", "LEFT", "CLICK", ("CTRL", "SHIFT")),
+        ("click", "LEFT", "DOUBLE"),
+        ("click", "RIGHT", "CLICK", ("ALT",)),
+    ]
+
+
+async def test_click_v2_refused_by_the_input_is_reported_not_raised() -> None:
+    handlers, pc, _, _ = build()
+    pc.error = ValueError("só CTRL, ALT e SHIFT")
+    result = await handlers["pc.click.v2"](Command("1", "pc.click.v2", {"button": "LEFT"}))
+    assert (result.status, result.code) == (ResultStatus.REJECTED, "invalid_message")
+
+
+class FakeTime:
+    """Relógio e espera de mentira: dormir só adianta o relógio, sem esperar de verdade."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(round(seconds, 4))
+        self.now += seconds
+
+
+def paced() -> tuple[dict[str, Handler], FakeInput, FakeTime]:
+    pc, clock = FakeInput(), FakeTime()
+    pacer = ClickPacer(clock.monotonic, clock.sleep)
+    handlers = pc_handlers(
+        pc, FakePower(), FakeLauncher(), APPS, shutdown_delay_seconds=45, pacer=pacer
+    )
+    return dict(handlers), pc, clock
+
+
+async def test_the_second_tap_waits_for_what_is_missing_of_the_measured_gap() -> None:
+    handlers, pc, clock = paced()
+    await run(handlers["pc.click.v1"], {"button": "LEFT"})
+    clock.now += 0.04  # o pedido do segundo toque chegou 40 ms depois do primeiro
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 150})
+    assert clock.sleeps == [0.11], "espera os 110 ms que faltam para os 150 medidos"
+    assert pc.calls == [("click", "LEFT", "CLICK"), ("click", "LEFT", "CLICK")]
+
+
+async def test_a_second_tap_that_arrived_late_goes_out_at_once() -> None:
+    handlers, _, clock = paced()
+    await run(handlers["pc.click.v1"], {"button": "LEFT"})
+    clock.now += 0.3
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 150})
+    assert clock.sleeps == []
+
+
+async def test_the_wait_never_goes_past_the_gap_the_app_asked_for() -> None:
+    handlers, _, clock = paced()
+    await run(handlers["pc.click.v1"], {"button": "LEFT"})
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 400})
+    assert clock.sleeps == [0.4]
+    # Mesmo com o relógio andando para trás (não deveria), nunca passa de \`gapMs\`.
+    clock.now -= 5
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 100})
+    assert clock.sleeps[-1] <= 0.1
+
+
+async def test_without_a_previous_click_or_a_gap_or_with_another_button_nothing_waits() -> None:
+    handlers, _, clock = paced()
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 200})  # nenhum antes
+    assert clock.sleeps == []
+    await run(handlers["pc.click.v2"], {"button": "RIGHT", "gapMs": 200})  # outro botão
+    assert clock.sleeps == []
+    await run(handlers["pc.click.v2"], {"button": "RIGHT", "modifiers": ["CTRL"]})  # sem intervalo
+    await run(handlers["pc.click.v2"], {"button": "RIGHT", "modifiers": ["CTRL"], "gapMs": 0})
+    assert clock.sleeps == []
+
+
+async def test_holding_and_releasing_the_button_do_not_count_as_the_previous_tap() -> None:
+    handlers, _, clock = paced()
+    await run(handlers["pc.click.v1"], {"button": "LEFT", "action": "DOWN"})
+    await run(handlers["pc.click.v1"], {"button": "LEFT", "action": "UP"})
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 200})
+    assert clock.sleeps == []
+
+
+async def test_the_v2_click_also_counts_as_the_previous_tap_of_the_next() -> None:
+    handlers, _, clock = paced()
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "modifiers": ["CTRL"]})
+    await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 120})
+    assert clock.sleeps == [0.12]

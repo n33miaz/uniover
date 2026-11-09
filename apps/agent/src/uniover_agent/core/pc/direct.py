@@ -79,7 +79,15 @@ RTC_SILENT_TYPES: Final = frozenset({CANDIDATE_TYPE, CLOSE_TYPE})
 # O que o canal de entrada aceita. Energia e abrir favorito (com confirmação e trilha na API) só
 # existem pela nuvem.
 INPUT_TYPES: Final = frozenset(
-    {"pc.click.v1", "pc.key.v1", "pc.key.v2", "pc.text.v1", "pc.media.v1"}
+    {
+        "pc.click.v1",
+        "pc.click.v2",
+        "pc.key.v1",
+        "pc.key.v2",
+        "pc.text.v1",
+        "pc.text.v2",
+        "pc.media.v1",
+    }
 )
 # O que, chegando pela nuvem, fecha o canal em uso: os comandos de entrada (clique, tecla, texto,
 # mídia e segurar). O movimento do mouse NÃO está aqui: ele chega sem espera (a API responde antes
@@ -101,6 +109,8 @@ BYE_FLUSH_SECONDS: Final = 0.1
 MAX_RTT_SAMPLES: Final = 200
 # O maior `repeat` do contrato do `pc.key.v2`.
 MAX_KEY_REPEAT: Final = 50
+# O maior `erase` do contrato do `pc.text.v2`.
+MAX_ERASE: Final = 200
 # O maior `seq` que o contrato aceita nos pedidos de entrada da nuvem.
 MAX_CLOUD_SEQ: Final = 2_147_483_647
 # A época de uma página: 16 hexadecimais sorteados quando ela abre (o mesmo formato do contrato).
@@ -269,7 +279,14 @@ def _is_release(message_type: str, body: dict[str, Any]) -> bool:
 
 
 def _press_cost(message_type: str, body: dict[str, Any]) -> int:
-    """Quantas teclas o comando aperta: `repeat` conta cada aperto (o mesmo orçamento da nuvem)."""
+    """Quantas teclas o comando aperta: `repeat` conta cada aperto, e na edição de texto cada
+    Backspace (`erase`) e a tecla do fim (o mesmo orçamento da nuvem; o texto puro paga um)."""
+    if message_type == "pc.text.v2":
+        erase = _as_int(body.get("erase"))
+        presses = (max(0, min(MAX_ERASE, erase)) if erase is not None else 0) + (
+            1 if body.get("key") is not None else 0
+        )
+        return max(1, presses)
     if message_type != "pc.key.v2":
         return 1
     repeat = _as_int(body.get("repeat"))

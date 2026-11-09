@@ -11,9 +11,11 @@ from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher,
 from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
 from uniover_agent.core import (
+    PC_CLICK_V2_CAPABILITY,
     PC_CONTROL_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
+    PC_TEXT_V2_CAPABILITY,
     ClockOffset,
     DirectSettings,
     EnvelopeFactory,
@@ -98,9 +100,14 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         clock=clock,
         use=use,
     )
-    # `pc.key.v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só os declara
-    # depois de a API listá-los (`declarable_capabilities`).
-    capabilities = [PC_CONTROL_CAPABILITY, PC_KEY_V2_CAPABILITY]
+    # As capacidades `v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só as declara
+    # depois de a API listá-las (`declarable_capabilities`).
+    capabilities = [
+        PC_CONTROL_CAPABILITY,
+        PC_KEY_V2_CAPABILITY,
+        PC_TEXT_V2_CAPABILITY,
+        PC_CLICK_V2_CAPABILITY,
+    ]
     direct: PcDirectService | None = None
     if settings.pc_direct and gate is not None and direct_available():
         direct = _build_direct(

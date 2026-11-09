@@ -26,8 +26,11 @@ class FakeInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self.calls.append(("scroll", horizontal, vertical))
 
-    def click(self, button: str, action: str) -> None:
-        self.calls.append(("click", button, action))
+    def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
+        if modifiers:
+            self.calls.append(("click", button, action, tuple(modifiers)))
+        else:
+            self.calls.append(("click", button, action))
 
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
@@ -39,6 +42,9 @@ class FakeInput:
 
     def type_text(self, text: str) -> None:
         self.calls.append(("text", text))
+
+    def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
+        self.calls.append(("edit", erase, text, key))
 
     def media(self, action: str, steps: int) -> None:
         self.calls.append(("media", action, steps))

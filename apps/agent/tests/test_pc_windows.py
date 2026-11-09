@@ -729,3 +729,98 @@ def test_an_empty_move_also_retries_a_stuck_key() -> None:
     assert [(e.vk, e.flags) for e in flaky.batches[-1]] == [(ord("T"), KEY_UP), (0x11, KEY_UP)]
     pc.release_all()
     assert len(flaky.batches) == 2  # nada mais preso
+
+
+CTRL_DOWN = RawInput("keyboard", vk=0x11)
+CTRL_UP = RawInput("keyboard", flags=KEY_UP, vk=0x11)
+LEFT_DOWN = RawInput("mouse", MOUSE_LEFTDOWN)
+LEFT_UP = RawInput("mouse", MOUSE_LEFTUP)
+
+
+def test_a_click_with_a_modifier_is_a_single_batch_with_the_modifier_around_it() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.click("LEFT", "CLICK", ["CTRL"])
+    assert sent.batches == [[CTRL_DOWN, LEFT_DOWN, LEFT_UP, CTRL_UP]]
+    pc.release_all()
+    assert len(sent.batches) == 1, "nada ficou apertado"
+
+
+def test_a_click_with_a_modifier_already_held_neither_presses_nor_releases_it() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.key("ALT", [], action="DOWN")
+    pc.click("LEFT", "CLICK", ["ALT"])
+    assert sent.batches[-1] == [LEFT_DOWN, LEFT_UP]
+    pc.release_all()
+    assert sent.batches[-1] == [ALT_UP], "o Alt segurado de antes só sai na soltura"
+
+
+def test_a_partial_click_batch_lets_go_of_the_modifier_that_went_down() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [1]  # só o aperto do Ctrl entrou
+    with pytest.raises(PartialSendError):
+        pc.click("LEFT", "CLICK", ["CTRL"])
+    assert flaky.batches[-1] == [CTRL_UP]
+    pc.release_all()
+    assert len(flaky.batches) == 2, "nada mais preso"
+
+
+def test_a_click_cut_after_the_button_went_down_lets_go_of_both_the_button_and_the_modifier() -> (
+    None
+):
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [2]  # o Ctrl e o aperto do botão entraram
+    with pytest.raises(PartialSendError):
+        pc.click("LEFT", "CLICK", ["CTRL"])
+    assert flaky.batches[-1] == [LEFT_UP, CTRL_UP]
+
+
+def test_a_click_the_system_refused_whole_leaves_nothing_held() -> None:
+    flaky = Flaky()
+    flaky.refuse_all = True
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    with pytest.raises(OSError, match="recusou"):
+        pc.click("LEFT", "CLICK", ["CTRL", "SHIFT"])
+    assert flaky.batches == []
+
+
+def test_a_click_with_a_modifier_on_the_drag_is_refused_before_anything_is_sent() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    with pytest.raises(UnknownKey):
+        pc.click("LEFT", "DOWN", ["CTRL"])
+    assert sent.batches == []
+
+
+def test_an_edit_is_a_single_batch_to_the_system() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.edit_text(3, "oi \U0001f600", "TAB")
+    (batch,) = sent.batches
+    assert len(batch) == 3 * 2 + 5 * 2 + 2
+    assert [e.vk for e in batch[:6:2]] == [0x08, 0x08, 0x08]
+    assert [e.scan for e in batch[6:16:2]] == [ord("o"), ord("i"), ord(" "), 0xD83D, 0xDE00]
+    assert batch[-2:] == [
+        RawInput("keyboard", vk=0x09),
+        RawInput("keyboard", flags=KEY_UP, vk=0x09),
+    ]
+
+
+def test_an_edit_with_half_a_character_is_refused_and_nothing_is_sent_not_even_the_erase() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    with pytest.raises(ValueError, match="par substituto"):
+        pc.edit_text(5, "senha\ud800", "ENTER")
+    assert sent.batches == []
+
+
+def test_a_partial_edit_batch_releases_the_key_that_went_down() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [3]  # um Backspace inteiro e o aperto do segundo
+    with pytest.raises(PartialSendError):
+        pc.edit_text(2, "ab", None)
+    assert flaky.batches[-1] == [RawInput("keyboard", flags=KEY_UP, vk=0x08)]

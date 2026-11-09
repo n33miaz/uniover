@@ -27,6 +27,9 @@ KEY_UNICODE: Final = 0x0004
 WHEEL_DELTA: Final = 120
 # Quantas vezes uma só mensagem aperta a mesma tecla (o contrato limita; isto protege o adaptador).
 MAX_KEY_REPEAT: Final = 50
+# Quantos Backspaces uma só edição de texto aperta (o contrato do `pc.text.v2` limita; isto protege
+# o adaptador).
+MAX_ERASE: Final = 200
 # Limite de segurança de um único toque do sistema: o contrato já limita, isto protege o adaptador.
 MAX_POINTER: Final = 2000
 MAX_SCROLL: Final = 1200
@@ -82,6 +85,11 @@ _MODIFIERS: Final = {"CTRL": 0x11, "ALT": 0x12, "SHIFT": 0x10, "WIN": 0x5B}
 # deixaria o PC repetindo caractere.
 HOLDABLE_KEYS: Final = frozenset(_MODIFIERS)
 KEY_ACTIONS: Final = ("PRESS", "DOWN", "UP")
+# Os modificadores que um clique leva (`pc.click.v2`): sem o Windows, que soltaria o menu Iniciar
+# depois do clique.
+CLICK_MODIFIERS: Final = frozenset({"CTRL", "ALT", "SHIFT"})
+# A tecla que uma edição de texto aperta depois de digitar (`pc.text.v2`).
+EDIT_KEYS: Final = frozenset({"ENTER", "TAB"})
 _MEDIA: Final = {
     "PLAY_PAUSE": 0xB3,
     "NEXT": 0xB0,
@@ -150,19 +158,47 @@ def scroll_inputs(horizontal: int, vertical: int) -> list[RawInput]:
     return inputs
 
 
-def click_inputs(button: str, action: str) -> list[RawInput]:
+def click_inputs(
+    button: str,
+    action: str,
+    modifiers: Sequence[str] = (),
+    already_held: Collection[int] = (),
+) -> list[RawInput]:
+    """Os eventos de um clique. Com `modifiers` (só `CLICK` e `DOUBLE`): os modificadores
+    apertados, o clique e os modificadores soltos na ordem inversa, tudo num lote só.
+
+    Segurar o botão (`DOWN`/`UP`, o arrastar) nunca leva modificador: um modificador apertado numa
+    ponta e solto na outra seria mais um caminho para a tecla ficar presa. `already_held` são os
+    códigos virtuais já apertados (o Alt do Alt+Tab): esses não são apertados de novo nem soltos
+    no fim.
+    """
     if button not in _BUTTONS:
         raise UnknownKey(f"botão fora do contrato: {button}")
     down, up = (RawInput("mouse", flag) for flag in _BUTTONS[button])
     if action == "DOWN":
-        return [down]
-    if action == "UP":
-        return [up]
-    if action == "CLICK":
-        return [down, up]
-    if action == "DOUBLE":
-        return [down, up, down, up]
-    raise UnknownKey(f"ação de clique fora do contrato: {action}")
+        events = [down]
+    elif action == "UP":
+        events = [up]
+    elif action == "CLICK":
+        events = [down, up]
+    elif action == "DOUBLE":
+        events = [down, up, down, up]
+    else:
+        raise UnknownKey(f"ação de clique fora do contrato: {action}")
+    if not modifiers:
+        return events
+    if action not in ("CLICK", "DOUBLE"):
+        raise UnknownKey("segurar ou soltar o botão não leva modificadores")
+    codes: list[int] = []
+    for name in modifiers:
+        if name not in CLICK_MODIFIERS:
+            raise UnknownKey("modificador fora do contrato")
+        code = _MODIFIERS[name]
+        if code not in already_held and code not in codes:
+            codes.append(code)
+    pressed = [_key(code) for code in codes]
+    released = [_key(code, up=True) for code in reversed(codes)]
+    return [*pressed, *events, *released]
 
 
 def held_after(held: Iterable[str], events: Iterable[RawInput]) -> frozenset[str]:
@@ -300,6 +336,25 @@ def text_inputs(text: str) -> list[RawInput]:
     return inputs
 
 
+def edit_inputs(erase: int, text: str, key: str | None = None) -> list[RawInput]:
+    """Apagar `erase` caracteres (Backspace), digitar `text` e apertar `key` (Enter ou Tab), nesta
+    ordem e num lote só. Tudo é montado antes de qualquer envio: um texto inválido (metade de um
+    par substituto) recusa a edição inteira, sem apagar nada.
+    """
+    if key is not None and key not in EDIT_KEYS:
+        raise UnknownKey("tecla fora do contrato")
+    inputs: list[RawInput] = []
+    backspace, extended = virtual_key("BACKSPACE")
+    erase_once = [_key(backspace, extended=extended), _key(backspace, extended=extended, up=True)]
+    inputs += erase_once * max(0, min(MAX_ERASE, erase))
+    if text:
+        inputs += text_inputs(text)
+    if key is not None:
+        vk, extended = virtual_key(key)
+        inputs += [_key(vk, extended=extended), _key(vk, extended=extended, up=True)]
+    return inputs
+
+
 def media_inputs(action: str, steps: int = 1) -> list[RawInput]:
     if action not in _MEDIA:
         raise UnknownKey(f"ação de mídia fora do contrato: {action}")
@@ -309,11 +364,14 @@ def media_inputs(action: str, steps: int = 1) -> list[RawInput]:
 
 
 __all__ = [
+    "CLICK_MODIFIERS",
+    "EDIT_KEYS",
     "HOLDABLE_KEYS",
     "KEY_ACTIONS",
     "KEY_EXTENDED",
     "KEY_UNICODE",
     "KEY_UP",
+    "MAX_ERASE",
     "MAX_KEY_REPEAT",
     "MOUSE_HWHEEL",
     "MOUSE_MOVE",
@@ -322,6 +380,7 @@ __all__ = [
     "UnknownKey",
     "click_inputs",
     "dangling_key_ups",
+    "edit_inputs",
     "held_after",
     "held_keys_after",
     "key_identity",
