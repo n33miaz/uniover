@@ -4,7 +4,9 @@ import asyncio
 from collections.abc import Sequence
 
 import pytest
+from pydantic import ValidationError
 
+from uniover_agent.contracts.registry import MESSAGE_MODELS
 from uniover_agent.core import Command, Handler, ResultStatus
 from uniover_agent.core.pc import (
     UNKNOWN_APP,
@@ -474,3 +476,106 @@ async def test_the_v2_click_also_counts_as_the_previous_tap_of_the_next() -> Non
     await run(handlers["pc.click.v2"], {"button": "LEFT", "modifiers": ["CTRL"]})
     await run(handlers["pc.click.v2"], {"button": "LEFT", "gapMs": 120})
     assert clock.sleeps == [0.12]
+
+
+# o pacer: a espera nunca passa do intervalo e nunca segura uma soltura
+
+
+async def test_the_pacer_never_waits_more_than_the_contract_gap() -> None:
+    clock = FakeTime()
+    pacer = ClickPacer(clock.monotonic, clock.sleep)
+    pacer.mark("LEFT")
+    await pacer.wait("LEFT", 5.0)  # um pedido que passasse do contrato continua cortado
+    assert clock.sleeps == [0.4]
+
+
+async def test_waits_of_clicks_in_a_row_do_not_add_up() -> None:
+    clock = FakeTime()
+    pacer = ClickPacer(clock.monotonic, clock.sleep)
+    pacer.mark("LEFT")
+    await pacer.wait("LEFT", 0.4)  # espera 400 ms
+    pacer.mark("LEFT")  # o clique saiu
+    clock.now += 0.1
+    await pacer.wait("LEFT", 0.4)  # conta do último clique que saiu: faltam 300 ms, não 700
+    assert clock.sleeps == [0.4, 0.3]
+
+
+async def test_the_pacer_does_not_wait_while_a_release_is_waiting() -> None:
+    clock = FakeTime()
+    pacer = ClickPacer(clock.monotonic, clock.sleep)
+    waiting = [True]
+    pacer.bind(lambda: waiting[0])
+    pacer.mark("LEFT")
+    await pacer.wait("LEFT", 0.4)
+    assert clock.sleeps == []
+    waiting[0] = False
+    await pacer.wait("LEFT", 0.4)
+    assert clock.sleeps == [0.4]
+
+
+async def test_a_release_that_arrives_ends_the_wait_in_course() -> None:
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def blocked_sleep(seconds: float) -> None:
+        started.set()
+        await gate.wait()
+
+    pacer = ClickPacer(lambda: 0.0, blocked_sleep)
+    pacer.mark("LEFT")
+    waiting = asyncio.ensure_future(pacer.wait("LEFT", 0.4))
+    await started.wait()
+    assert not waiting.done()
+    pacer.hurry()
+    await asyncio.wait_for(waiting, 1)  # terminou sem a espera (o portão nunca abriu)
+    assert not gate.is_set()
+
+
+async def test_cancelling_a_waiting_click_leaves_no_task_behind() -> None:
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def blocked_sleep(seconds: float) -> None:
+        started.set()
+        await gate.wait()
+
+    pacer = ClickPacer(lambda: 0.0, blocked_sleep)
+    pacer.mark("LEFT")
+    waiting = asyncio.ensure_future(pacer.wait("LEFT", 0.4))
+    await started.wait()
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    assert pacer._waiting == set()
+
+
+# a segunda barreira (o modelo gerado) valida de verdade os limites da edição de texto
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"erase": 0},
+        {"erase": -5},
+        {"erase": 201},
+        {"text": ""},
+        {"text": "a\nb"},
+        {"key": "ESCAPE"},
+        {"erase": 2, "extra": 1},
+    ],
+)
+def test_the_typed_model_of_the_text_edit_refuses_what_the_contract_refuses(
+    body: dict[str, object],
+) -> None:
+    envelope = {
+        "v": 1,
+        "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f",
+        "type": "pc.text.v2",
+        "source": "api",
+        "target": "agent:pc-casa",
+        "ts": "2026-11-09T14:00:00Z",
+        "correlationId": None,
+        "body": body,
+    }
+    with pytest.raises(ValidationError):
+        MESSAGE_MODELS["pc.text.v2"].model_validate(envelope)

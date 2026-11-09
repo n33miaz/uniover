@@ -23,6 +23,8 @@ _log = logging.getLogger(__name__)
 _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
+# Os comandos do PC que têm `UP`.
+_RELEASE_TYPES = frozenset({"pc.click.v1", "pc.key.v2"})
 # O canal direto (`pc.rtc.*`) é sinalização, não comando de entrada: a oferta espera a biblioteca
 # carregar e não pode ficar atrás do mouse da nuvem (nem segurá-lo).
 _RTC_PREFIX = "pc.rtc."
@@ -40,6 +42,11 @@ LATE_POINTER_WARNING: Final = 20
 # pode acumular tarefas sem fim: acima disto o resultado mais antigo é abandonado (a API o dá como
 # sem resposta pelo prazo dela).
 MAX_PENDING_RESULTS: Final = 64
+
+
+def _is_release(command: Command) -> bool:
+    """Soltar um botão ou um modificador: o `UP` do clique e da tecla."""
+    return command.type in _RELEASE_TYPES and command.body.get("action") == "UP"
 
 
 class ProcessMessage:
@@ -74,6 +81,7 @@ class ProcessMessage:
         release_inputs: Callable[[], None] | None = None,
         observe_timestamp: Callable[[str | None], None] | None = None,
         on_cloud_pc_input: Callable[[str, int | None, str | None], None] | None = None,
+        on_release_queued: Callable[[], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -93,6 +101,11 @@ class ProcessMessage:
         # pelo canal direto), antes de ele entrar na faixa: o canal direto fecha primeiro, e nada
         # dele cai depois do que a nuvem faz.
         self._on_cloud_pc_input = on_cloud_pc_input
+        # Chamado quando uma soltura (`UP`) entra na faixa do PC: quem espera um intervalo de
+        # clique para de esperar (a soltura nunca espera por ele).
+        self._on_release_queued = on_release_queued
+        # O comando do canal direto que a faixa executa agora: se o canal fecha, ele é cancelado.
+        self._running_direct: asyncio.Future[CommandResult] | None = None
         # Recebe o `ts` de cada batimento da API (`api.keepalive.v1`): só ele, que a API nunca
         # segura, serve para estimar a diferença entre o relógio dela e o monotônico deste agente.
         # Um comando `pc.*` não entra aí: se tivesse chegado atrasado, ensinaria a estimativa a
@@ -193,10 +206,19 @@ class ProcessMessage:
             self._direct[command.id] = on_result
         self._enqueue_pc(command)
 
+    def release_waiting(self) -> bool:
+        """Há uma soltura (`UP`) esperando na faixa do PC?"""
+        return any(_is_release(queued) for queued in self._pc_queue)
+
     def direct_lost(self) -> None:
         """O canal direto fechou: tudo o que dele esperava na faixa (comandos e movimento) sai dela
-        e o que o PC segurava é solto (como na queda da API, sem mexer no da nuvem). O que já
-        estava sendo executado termina, mas o resultado não vai a lugar nenhum."""
+        e o que o PC segurava é solto (como na queda da API, sem mexer no da nuvem). O comando do
+        canal que já estava sendo executado é cancelado no próximo ponto de espera dele (um clique
+        esperando o intervalo do duplo clique não sai depois de o canal fechar); o resultado dele
+        nunca vai a lugar nenhum."""
+        running = self._running_direct
+        if running is not None and not running.done():
+            running.cancel()
         if self._direct_ids:
             keep = [queued for queued in self._pc_queue if queued.id not in self._direct_ids]
             self._pc_queue.clear()
@@ -220,6 +242,8 @@ class ProcessMessage:
             else:
                 self._late_pointers = 0
         self._pc_queue.append(command)
+        if self._on_release_queued is not None and _is_release(command):
+            self._on_release_queued()
         if len(self._pc_queue) > MAX_PENDING_PC:
             self._shrink_pc_queue()
         if self._pc_consumer is None or self._pc_consumer.done():
@@ -282,11 +306,8 @@ class ProcessMessage:
         # (e é descartado), nunca da API, que não pediu este comando.
         from_direct = command.id in self._direct_ids
         self._direct_ids.discard(command.id)
-        try:
-            result = await self._handle_command(command)
-        except Exception:
-            _log.exception("falha ao executar %s (id=%s)", command.type, command.id)
-            self._direct.pop(command.id, None)
+        result = await self._run_pc(command, from_direct=from_direct)
+        if result is None:
             return
         if from_direct:
             sink = self._direct.pop(command.id, None)
@@ -312,6 +333,36 @@ class ProcessMessage:
                     "envio de resultados do PC acumulado (%d): abandonando o mais antigo",
                     MAX_PENDING_RESULTS,
                 )
+
+    async def _run_pc(self, command: Command, *, from_direct: bool) -> CommandResult | None:
+        """Roda o handler; `None` se ele falhou ou se o canal direto fechou com ele na espera.
+
+        O comando do canal direto (menos o movimento, que não espera nada) roda em tarefa própria,
+        para o fechamento do canal poder cancelá-lo no meio de uma espera.
+        """
+        inner: asyncio.Future[CommandResult] | None = None
+        try:
+            if from_direct and command.type != POINTER_TYPE:
+                inner = asyncio.ensure_future(self._handle_command(command))
+                self._running_direct = inner
+                return await inner
+            return await self._handle_command(command)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if inner is not None and inner.cancelled() and not (current and current.cancelling()):
+                # O canal fechou com o comando na espera: ele não sai e ninguém é avisado.
+                self._direct.pop(command.id, None)
+                return None
+            if inner is not None:
+                inner.cancel()
+            raise
+        except Exception:
+            _log.exception("falha ao executar %s (id=%s)", command.type, command.id)
+            self._direct.pop(command.id, None)
+            return None
+        finally:
+            if inner is not None and self._running_direct is inner:
+                self._running_direct = None
 
     def _forget_result_task(self, task: asyncio.Task[None]) -> None:
         with contextlib.suppress(ValueError):  # já saiu da fila (abandonada ou cancelada na queda)

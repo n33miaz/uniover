@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from uniover_agent.core import Command, ResultStatus
-from uniover_agent.core.pc import ClockOffset, PcApp, PcUseTracker, pc_handlers
+from uniover_agent.core.pc import ClickPacer, ClockOffset, PcApp, PcUseTracker, pc_handlers
 from uniover_agent.core.pc.freshness import EXPIRED
 
 NOW = datetime(2026, 11, 7, 12, 0, 0, tzinfo=UTC)
@@ -88,9 +88,15 @@ class Lab:
     """
 
     def __init__(
-        self, *, pc_ahead: float = 0.0, mono_origin: float = 5000.0, seeded: bool = True
+        self,
+        *,
+        pc_ahead: float = 0.0,
+        mono_origin: float = 5000.0,
+        seeded: bool = True,
+        paced: bool = False,
     ) -> None:
         self.elapsed = 0.0
+        self.sleeps: list[float] = []
         self.drift = 0.0
         self.api_step = 0.0
         self.pc_ahead = pc_ahead
@@ -108,6 +114,8 @@ class Lab:
         self.power = FakePower()
         self.launcher = FakeLauncher()
         self.use = PcUseTracker(lambda: mono_origin + self.elapsed)
+        # Com `paced`, a espera do intervalo do duplo clique só adianta o relógio falso.
+        self.pacer = ClickPacer(lambda: mono_origin + self.elapsed, self._sleep) if paced else None
         self.handlers = dict(
             pc_handlers(
                 self.pc,
@@ -117,12 +125,17 @@ class Lab:
                 shutdown_delay_seconds=30,
                 clock=self.clock,
                 use=self.use,
+                pacer=self.pacer,
             )
         )
         if seeded:
             # A estimativa só existe depois de dois batimentos que concordam.
             self.heartbeat(0.2)
             self.heartbeat(0.2)
+
+    async def _sleep(self, seconds: float) -> None:
+        self.sleeps.append(round(seconds, 4))
+        self.elapsed += seconds
 
     def stamp(self, in_flight: float) -> str:
         """O `ts` de uma mensagem que a API montou `in_flight` s antes de chegar."""
@@ -561,3 +574,39 @@ async def test_a_link_whose_beats_never_agree_is_reported_once(
     # Dois que concordam, enfim, formam a estimativa e zeram a contagem.
     lab.beats(2)
     assert lab.clock.offset is not None
+
+
+async def test_a_click_that_ages_out_while_waiting_for_its_gap_is_not_sent() -> None:
+    lab = Lab(paced=True)
+    assert await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5) == ("ok", "")
+    # Chegou com 4,9 s de idade (vale) e a espera de 400 ms o leva a 5,3 s: passou da validade.
+    status = await lab.run("pc.click.v2", {"button": "LEFT", "gapMs": 400}, 5.1)
+    assert status == ("rejected", EXPIRED)
+    assert lab.sleeps == [0.4], "esperou, e só depois conferiu de novo"
+    assert lab.pc.calls == [("click", "LEFT", "CLICK")], "o segundo clique nunca saiu"
+
+
+async def test_a_click_already_expired_does_not_wait_at_all() -> None:
+    lab = Lab(paced=True)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert await lab.run("pc.click.v2", {"button": "LEFT", "gapMs": 400}, 10.0) == (
+        "rejected",
+        EXPIRED,
+    )
+    assert lab.sleeps == []
+
+
+async def test_a_click_that_is_still_fresh_after_the_wait_goes_out() -> None:
+    lab = Lab(paced=True)
+    assert (await lab.run("pc.click.v1", {"button": "LEFT"}, 0.5))[0] == "ok"
+    assert await lab.run("pc.click.v2", {"button": "LEFT", "gapMs": 150}, 1.0) == ("ok", "")
+    assert lab.sleeps == [0.15]
+    assert lab.pc.calls == [("click", "LEFT", "CLICK"), ("click", "LEFT", "CLICK")]
+
+
+async def test_an_edit_with_nothing_to_do_is_refused_not_reported_as_done() -> None:
+    lab = Lab()
+    assert await lab.run("pc.text.v2", {}, 0.5) == ("rejected", "invalid_message")
+    assert await lab.run("pc.text.v2", {"text": ""}, 0.5) == ("rejected", "invalid_message")
+    assert lab.pc.calls == []
+    assert (await lab.run("pc.text.v2", {"key": "ENTER"}, 0.5))[0] == "ok"

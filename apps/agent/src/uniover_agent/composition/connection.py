@@ -488,6 +488,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         on_cloud_pc_input=pc.direct.cloud_input
         if pc is not None and pc.direct is not None
         else None,
+        # Uma soltura que entra na faixa interrompe a espera do intervalo de um duplo clique.
+        on_release_queued=pc.pacer.hurry if pc is not None else None,
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
@@ -496,6 +498,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             )
         ),
     )
+    if pc is not None:
+        pc.pacer.bind(process.release_waiting)
     if pc is not None and pc.direct is not None:
         # O canal direto usa a mesma faixa do PC e, ao fechar, solta o que ele segurava.
         pc.direct.bind(process.submit_direct, process.direct_lost)
