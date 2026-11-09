@@ -269,6 +269,106 @@ describe('MousePage', () => {
     ]);
   });
 
+  describe('taps on a PC with pc.click.v2', () => {
+    const tap = (x: number, down: number, up: number) => {
+      pointer('pointerdown', 1, x, 100, down);
+      pointer('pointerup', 1, x, 100, up);
+    };
+
+    beforeEach(() => {
+      store.capabilities.set(['pc.click.v2']);
+      fixture.detectChanges();
+    });
+
+    it('a tap carries the armed Ctrl and Shift (a Ctrl+click) and lets them go', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('SHIFT');
+      armed.toggle('CTRL');
+      tap(100, 0, 90);
+      expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT', undefined, {
+        modifiers: ['CTRL', 'SHIFT'],
+        gapMs: undefined,
+      });
+      expect(armed.armed().size).toBe(0);
+    });
+
+    it('the Windows key stays armed: a click does not carry it', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('WIN');
+      armed.toggle('ALT');
+      tap(100, 0, 90);
+      expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT', undefined, {
+        modifiers: ['ALT'],
+        gapMs: undefined,
+      });
+      expect([...armed.armed()]).toEqual(['WIN']);
+    });
+
+    it('the second tap of a double tap carries the gap since the first click', () => {
+      tap(100, 0, 60);
+      tap(103, 200, 260);
+      expect(store.click).toHaveBeenNthCalledWith(1, 'LEFT', undefined, {
+        modifiers: [],
+        gapMs: undefined,
+      });
+      expect(store.click).toHaveBeenNthCalledWith(2, 'LEFT', undefined, {
+        modifiers: [],
+        gapMs: 200,
+      });
+    });
+
+    it('the Ctrl armed for a tap is spent by the first tap, never by the second of a double tap', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60);
+      tap(103, 200, 260);
+      expect(store.click).toHaveBeenNthCalledWith(1, 'LEFT', undefined, {
+        modifiers: ['CTRL'],
+        gapMs: undefined,
+      });
+      expect(store.click).toHaveBeenNthCalledWith(2, 'LEFT', undefined, {
+        modifiers: [],
+        gapMs: 200,
+      });
+    });
+
+    it('a right click of two fingers also carries the armed keys', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('SHIFT');
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerdown', 2, 140, 100, 0);
+      pointer('pointerup', 1, 100, 100, 40);
+      pointer('pointerup', 2, 140, 100, 45);
+      expect(store.click).toHaveBeenCalledExactlyOnceWith('RIGHT', undefined, {
+        modifiers: ['SHIFT'],
+        gapMs: undefined,
+      });
+    });
+
+    it('with the PC away nothing is spent: the keys stay armed', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      store.phase.set('offline');
+      fixture.detectChanges();
+      pad().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(armed.has('CTRL')).toBe(true);
+      expect(store.click).toHaveBeenCalledExactlyOnceWith('LEFT');
+    });
+  });
+
+  describe('taps on a PC from before pc.click.v2', () => {
+    it('a tap goes out as it always did and what is armed stays armed (it is not lost without effect)', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      pointer('pointerdown', 1, 100, 100, 0);
+      pointer('pointerup', 1, 100, 100, 60);
+      pointer('pointerdown', 1, 103, 100, 200);
+      pointer('pointerup', 1, 103, 100, 260);
+      expect(store.click.mock.calls).toEqual([['LEFT'], ['LEFT']]);
+      expect(armed.has('CTRL')).toBe(true);
+    });
+  });
+
   describe('long press', () => {
     beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
     afterEach(() => vi.useRealTimers());

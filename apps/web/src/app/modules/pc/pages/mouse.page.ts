@@ -293,8 +293,8 @@ export class MousePage {
   private readonly gesture = new PadGesture({
     move: (dx, dy, elapsedMs) => this.store.movePointer(dx, dy, elapsedMs),
     scroll: (dx, dy, elapsedMs) => this.store.scrollPointer(dx, dy, elapsedMs),
-    tap: (button, at) => {
-      this.press(button);
+    tap: (button, at, gapMs) => {
+      this.press(button, gapMs);
       this.showRing(button, at);
     },
     dragStart: () => this.startHold(),
@@ -421,9 +421,19 @@ export class MousePage {
     }
   }
 
-  protected press(button: PadButton): void {
+  /**
+   * Um toque. Num PC com `pc.click.v2` o Ctrl, o Shift e o Alt armados valem para ele (Ctrl+clique) e se soltam, e o segundo
+   * toque de um toque duplo leva o intervalo desde o primeiro (`gapMs`). Num agente anterior o toque sai como sempre e o que
+   * está armado segue armado, em vez de se perder sem efeito.
+   */
+  protected press(button: PadButton, gapMs?: number): void {
     tick();
-    void this.store.click(button);
+    if (!this.store.supportsClickV2() || !this.store.canSend()) {
+      void this.store.click(button);
+      return;
+    }
+    const modifiers = this.armed.takeForClick();
+    void this.store.click(button, undefined, { modifiers, gapMs });
   }
 
   protected drag(): void {

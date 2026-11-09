@@ -1,3 +1,4 @@
+import { PC_CLICK_MAX_GAP_MS } from '../data/pc-types';
 import { DEFAULT_PAD_GESTURE, LONG_PRESS_MS, PadGesture } from './pad-gesture';
 import { setup } from './pad-gesture-test-kit';
 
@@ -303,5 +304,80 @@ describe('PadGesture: how fast the scroll ends', () => {
     gesture.move(1, 100, 200, 316);
     gesture.cancel();
     expect(handlers.scrollEnd).not.toHaveBeenCalled();
+  });
+});
+
+describe('PadGesture: the gap of the second tap (for a reliable double click)', () => {
+  function tapAt(gesture: PadGesture, x: number, y: number, at: number) {
+    gesture.down(1, x, y, at);
+    gesture.up(1, at + 60);
+  }
+
+  it('the first tap carries no gap: it is only the click', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0);
+    expect(handlers.tap).toHaveBeenCalledExactlyOnceWith('LEFT', { x: 100, y: 100 });
+  });
+
+  it('the second tap of a double tap carries the time since the first click went out', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0); // o clique sai em 60
+    tapAt(gesture, 103, 100, 200); // o clique sai em 260: 200 ms depois
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 103, y: 100 }, 200);
+  });
+
+  it('works with the double tap drag on and off (the click is the same)', () => {
+    const { gesture, handlers } = setup();
+    gesture.configure({ doubleTapDrag: true });
+    tapAt(gesture, 100, 100, 0);
+    tapAt(gesture, 100, 100, 150);
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 100, y: 100 }, 150);
+  });
+
+  it('is cut at what the contract allows: a slower second tap still asks for the longest wait', () => {
+    const { gesture, handlers } = setup();
+    // Cada toque dura 250 ms (ainda é toque) e o segundo pousa 290 ms depois do primeiro sair: 540 ms entre as saídas.
+    gesture.down(1, 100, 100, 0);
+    gesture.up(1, 250);
+    gesture.down(1, 100, 100, 540);
+    gesture.up(1, 790);
+    expect(handlers.tap).toHaveBeenNthCalledWith(
+      2,
+      'LEFT',
+      { x: 100, y: 100 },
+      PC_CLICK_MAX_GAP_MS,
+    );
+  });
+
+  it('a touch that comes too late is an ordinary tap, with no gap', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0);
+    tapAt(gesture, 100, 100, 60 + DEFAULT_PAD_GESTURE.doubleTapMs + 1);
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 100, y: 100 });
+  });
+
+  it('a touch far from the first is an ordinary tap, with no gap', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0);
+    tapAt(gesture, 100 + DEFAULT_PAD_GESTURE.doubleTapRadiusPx + 5, 100, 200);
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 137, y: 100 });
+  });
+
+  it('a third tap does not chain onto the double tap: it measures from nothing', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0);
+    tapAt(gesture, 100, 100, 200);
+    tapAt(gesture, 100, 100, 400);
+    expect(handlers.tap).toHaveBeenNthCalledWith(3, 'LEFT', { x: 100, y: 100 });
+  });
+
+  it('the right click of two fingers never carries a gap', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0);
+    gesture.down(1, 100, 100, 200);
+    gesture.down(2, 140, 100, 205);
+    gesture.up(1, 250);
+    gesture.up(2, 255);
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'RIGHT', { x: 120, y: 100 });
   });
 });
