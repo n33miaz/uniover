@@ -23,8 +23,9 @@ class PcInput(Protocol):
         """Rola, em unidades de roda (120 = um clique). Positivo: para cima e para a direita."""
         ...
 
-    def click(self, button: str, action: str) -> None:
-        """`button`: LEFT, RIGHT ou MIDDLE. `action`: CLICK, DOUBLE, DOWN ou UP."""
+    def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
+        """`button`: LEFT, RIGHT ou MIDDLE. `action`: CLICK, DOUBLE, DOWN ou UP. `modifiers` (só
+        com CLICK e DOUBLE): apertados antes do clique e soltos depois, no mesmo lote."""
         ...
 
     def key(
@@ -37,6 +38,11 @@ class PcInput(Protocol):
 
     def type_text(self, text: str) -> None:
         """Digita o texto como caracteres Unicode (não depende do layout do teclado)."""
+        ...
+
+    def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
+        """Apaga `erase` caracteres, digita `text` e aperta `key` (ENTER ou TAB), nesta ordem e no
+        mesmo toque no sistema."""
         ...
 
     def media(self, action: str, steps: int) -> None:

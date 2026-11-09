@@ -12,10 +12,12 @@ from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand, Handler
 from uniover_agent.core.pair_agent import PairAgent, PairedAgent
 from uniover_agent.core.pc import (
+    PC_CLICK_V2_CAPABILITY,
     PC_CONTROL_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
     PC_SILENT_TYPES,
+    PC_TEXT_V2_CAPABILITY,
     RTC_SILENT_TYPES,
     RTC_TYPES,
     ClockOffset,
@@ -116,10 +118,12 @@ __all__ = [
     "LOGS_REQUEST_TYPE",
     "MAINTENANCE_CAPABILITY",
     "MAINTENANCE_TYPE",
+    "PC_CLICK_V2_CAPABILITY",
     "PC_CONTROL_CAPABILITY",
     "PC_KEY_V2_CAPABILITY",
     "PC_RTC_CAPABILITY",
     "PC_SILENT_TYPES",
+    "PC_TEXT_V2_CAPABILITY",
     "PERMISSION_CAPABILITY",
     "POWER_OFF_CAPABILITY",
     "PRESENCE_CAPABILITY",

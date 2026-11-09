@@ -38,8 +38,11 @@ class FakeInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self.calls.append(("scroll", horizontal, vertical))
 
-    def click(self, button: str, action: str) -> None:
-        self.calls.append(("click", button, action))
+    def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
+        if modifiers:
+            self.calls.append(("click", button, action, tuple(modifiers)))
+        else:
+            self.calls.append(("click", button, action))
 
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
@@ -51,6 +54,9 @@ class FakeInput:
 
     def type_text(self, text: str) -> None:
         self.calls.append(("text", text))
+
+    def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
+        self.calls.append(("edit", erase, text, key))
 
     def media(self, action: str, steps: int) -> None:
         self.calls.append(("media", action, steps))
@@ -135,17 +141,19 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         launcher=FakeLauncher(),
     )
     assert pc is not None
-    # O que este agente sabe; o `hello` só declara `pc.key.v2` depois de a API listá-lo.
-    assert pc.capabilities == ["pc.control.v1", "pc.key.v2"]
+    # O que este agente sabe; o `hello` só declara as `v2` depois de a API listá-las.
+    assert pc.capabilities == ["pc.control.v1", "pc.key.v2", "pc.text.v2", "pc.click.v2"]
     assert sorted(pc.handlers) == [
         "pc.app.launch.v1",
         "pc.click.v1",
+        "pc.click.v2",
         "pc.key.v1",
         "pc.key.v2",
         "pc.media.v1",
         "pc.pointer.v1",
         "pc.power.v1",
         "pc.text.v1",
+        "pc.text.v2",
     ]
     assert [app.id for app in pc.apps] == ["notas"]
 
@@ -380,6 +388,24 @@ async def test_the_hello_declares_pc_key_v2_only_when_the_api_lists_it(
 
     capabilities = await hello_capabilities(monkeypatch, older_api | {"pc.key.v2"})
     assert capabilities[-2:] == ["pc.control.v1", "pc.key.v2"]
+
+
+async def test_the_hello_declares_pc_text_v2_and_click_v2_only_when_the_api_lists_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "tv.pair.v1", "pc.key.v2"})
+    capabilities = await hello_capabilities(monkeypatch, older_api)
+    # Uma API que ainda não lista as `v2` novas recusaria o `hello` com elas: o agente só declara
+    # o que a API entende, e a v1 do texto e do clique segue servida.
+    assert "pc.text.v2" not in capabilities
+    assert "pc.click.v2" not in capabilities
+
+    capabilities = await hello_capabilities(monkeypatch, older_api | {"pc.text.v2"})
+    assert "pc.text.v2" in capabilities
+    assert "pc.click.v2" not in capabilities
+
+    capabilities = await hello_capabilities(monkeypatch, older_api | {"pc.text.v2", "pc.click.v2"})
+    assert capabilities[-4:] == ["pc.control.v1", "pc.key.v2", "pc.text.v2", "pc.click.v2"]
 
 
 async def test_a_held_modifier_is_let_go_when_the_connection_drops_and_old_keys_still_work(

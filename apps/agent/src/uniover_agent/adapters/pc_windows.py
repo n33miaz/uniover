@@ -182,8 +182,11 @@ class WindowsPcInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self._dispatch(pc_inputs.scroll_inputs(horizontal, vertical))
 
-    def click(self, button: str, action: str) -> None:
-        self._dispatch(pc_inputs.click_inputs(button, action))
+    def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
+        with self._lock:
+            # O que já está segurado (o Alt do Alt+Tab) não é apertado nem solto por este clique.
+            held = frozenset(identity[0] for identity in self._held_keys)
+            self._dispatch(pc_inputs.click_inputs(button, action, modifiers, held))
 
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
@@ -198,6 +201,11 @@ class WindowsPcInput:
 
     def type_text(self, text: str) -> None:
         self._dispatch(pc_inputs.text_inputs(text))
+
+    def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
+        """Apagar, digitar e apertar a tecla do fim, num lote só (e, se o Windows aceitar só parte,
+        o que ficou apertado é solto como em qualquer lote)."""
+        self._dispatch(pc_inputs.edit_inputs(erase, text, key))
 
     def media(self, action: str, steps: int) -> None:
         self._dispatch(pc_inputs.media_inputs(action, steps))

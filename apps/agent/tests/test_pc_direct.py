@@ -56,8 +56,11 @@ class FakeInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self.calls.append(("scroll", horizontal, vertical))
 
-    def click(self, button: str, action: str) -> None:
-        self.calls.append(("click", button, action))
+    def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
+        if modifiers:
+            self.calls.append(("click", button, action, tuple(modifiers)))
+        else:
+            self.calls.append(("click", button, action))
 
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"
@@ -66,6 +69,9 @@ class FakeInput:
 
     def type_text(self, text: str) -> None:
         self.calls.append(("text", text))
+
+    def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
+        self.calls.append(("edit", erase, text, key))
 
     def media(self, action: str, steps: int) -> None:
         self.calls.append(("media", action, steps))
@@ -483,6 +489,16 @@ async def test_commands_keep_their_order_with_the_pointer(lab: Lab) -> None:
         ("pc.click.v1", {"button": "X"}, "invalid_message"),
         ("pc.key.v1", {"key": "A", "modifiers": ["CTRL", "CTRL"]}, "invalid_message"),
         ("pc.text.v1", {"text": ""}, "invalid_message"),
+        ("pc.text.v2", {}, "invalid_message"),
+        ("pc.text.v2", {"erase": 0, "text": "a"}, "invalid_message"),
+        ("pc.text.v2", {"text": "a", "key": "ESCAPE"}, "invalid_message"),
+        ("pc.click.v2", {"button": "LEFT", "modifiers": ["WIN"]}, "invalid_message"),
+        (
+            "pc.click.v2",
+            {"button": "LEFT", "action": "DOWN", "modifiers": ["CTRL"]},
+            "invalid_message",
+        ),
+        ("pc.click.v2", {"button": "LEFT", "gapMs": 401}, "invalid_message"),
     ],
 )
 async def test_what_the_cloud_would_refuse_is_refused_here_too(
@@ -518,6 +534,32 @@ async def test_text_keys_media_and_the_v2_key_all_go_through(lab: Lab) -> None:
         ("media", "MUTE", 1),
     ]
     assert [a["i"] for a in peer.acks()] == ["t", "k1", "k2", "k3", "k4", "m"]
+    assert all(a["ok"] for a in peer.acks())
+
+
+async def test_the_v2_text_and_click_go_through_the_channel_like_the_cloud(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(
+        INPUT_CHANNEL,
+        lab.command("pc.text.v2", {"erase": 3, "text": "olá", "key": "ENTER"}, "t"),
+    )
+    peer.phone(INPUT_CHANNEL, lab.command("pc.text.v2", {"erase": 5}, "e"))
+    peer.phone(
+        INPUT_CHANNEL,
+        lab.command("pc.click.v2", {"button": "LEFT", "modifiers": ["CTRL"], "gapMs": 0}, "c1"),
+    )
+    peer.phone(INPUT_CHANNEL, lab.command("pc.click.v2", {"button": "LEFT", "gapMs": 100}, "c2"))
+    await settle()
+    await asyncio.sleep(0.15)  # o segundo toque espera o intervalo medido
+    await settle()
+
+    assert lab.pc.calls == [
+        ("edit", 3, "olá", "ENTER"),
+        ("edit", 5, "", None),
+        ("click", "LEFT", "CLICK", ("CTRL",)),
+        ("click", "LEFT", "CLICK"),
+    ]
+    assert [a["i"] for a in peer.acks()] == ["t", "e", "c1", "c2"]
     assert all(a["ok"] for a in peer.acks())
 
 
@@ -1094,6 +1136,22 @@ async def test_repeat_counts_every_press_against_the_hundred_per_second_budget()
         acks = {a["i"]: a for a in peer.acks()}
         assert [acks[f"r{n}"]["ok"] for n in range(3)] == [True, True, False]
         assert acks["r2"]["c"] == "rate_limited"
+    finally:
+        await lab.aclose()
+
+
+async def test_an_edit_counts_every_backspace_and_the_final_key_against_the_press_budget() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=1000))
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(3):
+            body = {"erase": 49, "text": "x", "key": "ENTER"}  # 50 apertos cada
+            peer.phone(INPUT_CHANNEL, lab.command("pc.text.v2", body, f"e{n}"))
+        await settle()
+
+        acks = {a["i"]: a for a in peer.acks()}
+        assert [acks[f"e{n}"]["ok"] for n in range(3)] == [True, True, False]
+        assert acks["e2"]["c"] == "rate_limited"
     finally:
         await lab.aclose()
 

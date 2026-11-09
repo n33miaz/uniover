@@ -1,6 +1,7 @@
 """Controle do PC: mouse, teclado, mídia, energia e favoritos."""
 
 from uniover_agent.core.pc.apps import MAX_FAVORITES, PcApp, parse_favorites, slugify
+from uniover_agent.core.pc.click_pacer import ClickPacer
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.direct import (
     CANDIDATE_TYPE,
@@ -13,15 +14,18 @@ from uniover_agent.core.pc.direct import (
     pc_rtc_handlers,
 )
 from uniover_agent.core.pc.handlers import (
+    PC_CLICK_V2_CAPABILITY,
     PC_CONTROL_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
     PC_SILENT_TYPES,
+    PC_TEXT_V2_CAPABILITY,
     SLEEP_DELAY_SECONDS,
     UNKNOWN_APP,
     UNSUPPORTED,
     pc_app_launch_handler,
     pc_apps_announcer,
     pc_click_handler,
+    pc_click_v2_handler,
     pc_handlers,
     pc_key_handler,
     pc_key_v2_handler,
@@ -29,6 +33,7 @@ from uniover_agent.core.pc.handlers import (
     pc_pointer_handler,
     pc_power_handler,
     pc_text_handler,
+    pc_text_v2_handler,
 )
 from uniover_agent.core.pc.use import PcUseTracker
 
@@ -36,15 +41,18 @@ __all__ = [
     "CANDIDATE_TYPE",
     "CLOSE_TYPE",
     "MAX_FAVORITES",
+    "PC_CLICK_V2_CAPABILITY",
     "PC_CONTROL_CAPABILITY",
     "PC_KEY_V2_CAPABILITY",
     "PC_RTC_CAPABILITY",
     "PC_SILENT_TYPES",
+    "PC_TEXT_V2_CAPABILITY",
     "RTC_SILENT_TYPES",
     "RTC_TYPES",
     "SLEEP_DELAY_SECONDS",
     "UNKNOWN_APP",
     "UNSUPPORTED",
+    "ClickPacer",
     "ClockOffset",
     "DirectSettings",
     "PcApp",
@@ -54,6 +62,7 @@ __all__ = [
     "pc_app_launch_handler",
     "pc_apps_announcer",
     "pc_click_handler",
+    "pc_click_v2_handler",
     "pc_handlers",
     "pc_key_handler",
     "pc_key_v2_handler",
@@ -62,5 +71,6 @@ __all__ = [
     "pc_power_handler",
     "pc_rtc_handlers",
     "pc_text_handler",
+    "pc_text_v2_handler",
     "slugify",
 ]

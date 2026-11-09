@@ -20,6 +20,7 @@ from .command_result_v1 import CommandResultV1Message
 from .pc_app_launch_v1 import PcAppLaunchV1Message
 from .pc_apps_v1 import PcAppsV1Message
 from .pc_click_v1 import PcClickV1Message
+from .pc_click_v2 import PcClickV2Message
 from .pc_key_v1 import PcKeyV1Message
 from .pc_key_v2 import PcKeyV2Message
 from .pc_media_v1 import PcMediaV1Message
@@ -31,6 +32,7 @@ from .pc_rtc_close_v1 import PcRtcCloseV1Message
 from .pc_rtc_closed_v1 import PcRtcClosedV1Message
 from .pc_rtc_offer_v1 import PcRtcOfferV1Message
 from .pc_text_v1 import PcTextV1Message
+from .pc_text_v2 import PcTextV2Message
 from .tv_adb_rebind_v1 import TvAdbRebindV1Message
 from .tv_app_launch_v1 import TvAppLaunchV1Message
 from .tv_apps_refresh_v1 import TvAppsRefreshV1Message
@@ -73,6 +75,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.app.launch.v1": PcAppLaunchV1Message,
     "pc.apps.v1": PcAppsV1Message,
     "pc.click.v1": PcClickV1Message,
+    "pc.click.v2": PcClickV2Message,
     "pc.key.v1": PcKeyV1Message,
     "pc.key.v2": PcKeyV2Message,
     "pc.media.v1": PcMediaV1Message,
@@ -84,6 +87,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.rtc.closed.v1": PcRtcClosedV1Message,
     "pc.rtc.offer.v1": PcRtcOfferV1Message,
     "pc.text.v1": PcTextV1Message,
+    "pc.text.v2": PcTextV2Message,
     "tv.adb.rebind.v1": TvAdbRebindV1Message,
     "tv.app.launch.v1": TvAppLaunchV1Message,
     "tv.apps.refresh.v1": TvAppsRefreshV1Message,
