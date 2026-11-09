@@ -93,6 +93,14 @@ internal static class TvMessages
             new TvPermissionRequestV1Message { Body = new TvPermissionRequestV1Body() }.ToJson()));
 
     /// <summary>
+    /// A pessoa confirmou que o aparelho que responde agora no endereço da TV é a mesma TV: o agente refaz o registro da
+    /// permissão do ADB para o MAC de agora. Não conecta a nada. A API só a manda a agente com <c>tv.adb.rebind.v1</c>.
+    /// </summary>
+    public static TvMessage AdbRebind() =>
+        new(AgentMessageTypes.TvAdbRebindV1, BodyOf(
+            new TvAdbRebindV1Message { Body = new TvAdbRebindV1Body() }.ToJson()));
+
+    /// <summary>
     /// O pareamento da Android TV em passos: sem <paramref name="code"/> a TV mostra o código na tela; com ele o agente
     /// conclui; com <paramref name="cancel"/> o agente larga o pareamento que esperava o código. A API só o manda a agente com <c>tv.pair.v1</c>, e só a pedido do dono.
     /// </summary>

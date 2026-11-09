@@ -25,6 +25,15 @@ public class TvMessagesTests
         message.Body.GetRawText().Should().Be("{}");
     }
 
+    [Fact]
+    public void AdbRebind_BuildsTheMessageWithAnEmptyBody()
+    {
+        var message = TvMessages.AdbRebind();
+
+        message.Type.Should().Be("tv.adb.rebind.v1");
+        message.Body.GetRawText().Should().Be("{}");
+    }
+
     [Theory]
     [InlineData(TvSettingsScreen.Wifi, "{\"screen\":\"WIFI\"}")]
     [InlineData(TvSettingsScreen.Settings, "{\"screen\":\"SETTINGS\"}")]

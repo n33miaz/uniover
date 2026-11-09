@@ -39,6 +39,8 @@ export interface TvState {
   readonly offlineSince?: string | null;
   /** A permissão do ADB; `null` quando o agente não diz (Samsung, agente antigo, ADB ainda sem resposta). */
   readonly adbPermission?: AdbPermission | null;
+  /** O motivo do agente quando a permissão falta (`tv_forgot`: a TV esqueceu uma que tinha dado); texto curto e fixo. */
+  readonly adbPermissionReason?: string | null;
 }
 
 /** Tipo da TV, como o agente a declara: muda o que o controle oferece (a Samsung não tem teclado nem limpeza). */
@@ -181,6 +183,10 @@ function toAdbPermission(value: unknown, agentOnline: boolean): AdbPermission | 
   return value === 'granted' || value === 'missing' || value === 'pending' ? value : null;
 }
 
+function toAdbReason(value: unknown, agentOnline: boolean): string | null {
+  return agentOnline && typeof value === 'string' && /^[a-z_]{1,32}$/.test(value) ? value : null;
+}
+
 function toPower(value: unknown): TvPower {
   return value === 'on' || value === 'off' ? value : 'unknown';
 }
@@ -212,6 +218,7 @@ export function parseState(value: unknown): TvState | null {
     updatedAt: typeof dto.updatedAt === 'string' ? dto.updatedAt : null,
     offlineSince: !agentOnline && typeof dto.offlineSince === 'string' ? dto.offlineSince : null,
     adbPermission: toAdbPermission(dto.adbPermission, agentOnline),
+    adbPermissionReason: toAdbReason(dto.adbPermissionReason, agentOnline),
   };
 }
 

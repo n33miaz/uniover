@@ -19,6 +19,7 @@ export * from './pc_media_v1';
 export * from './pc_pointer_v1';
 export * from './pc_power_v1';
 export * from './pc_text_v1';
+export * from './tv_adb_rebind_v1';
 export * from './tv_app_launch_v1';
 export * from './tv_apps_refresh_v1';
 export * from './tv_apps_v1';

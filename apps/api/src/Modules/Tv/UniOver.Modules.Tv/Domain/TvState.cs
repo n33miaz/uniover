@@ -39,6 +39,10 @@ public static class AdbPermissionText
     public const string Pending = "pending";
 
     public static bool IsKnown(string? value) => value is Granted or Missing or Pending;
+
+    /// <summary>Motivo curto do agente (<c>[a-z_]</c>, até 32): o que não tem essa forma não passa para a tela.</summary>
+    public static bool IsReason(string? value) =>
+        !string.IsNullOrEmpty(value) && value.Length <= 32 && value.All(c => c is (>= 'a' and <= 'z') or '_');
 }
 
 /// <summary>
@@ -46,7 +50,7 @@ public static class AdbPermissionText
 /// <c>AdbPermission</c> é <c>null</c> quando o agente não disse (Samsung, agente antigo, ADB ainda sem resposta).
 /// </summary>
 public sealed record TvStateSnapshot(
-    string Power, int? Volume, string? App, string Connection, DateTimeOffset UpdatedAt, string? AdbPermission = null)
+    string Power, int? Volume, string? App, string Connection, DateTimeOffset UpdatedAt, string? AdbPermission = null, string? AdbPermissionReason = null)
 {
     /// <summary>
     /// Só <c>power</c>, <c>app</c> e <c>connection</c> valem gravação e evento: mudar apenas o volume não escreve nada
@@ -74,7 +78,8 @@ public sealed record TvState(
     DateTimeOffset? UpdatedAt,
     bool AgentLinked = true,
     DateTimeOffset? OfflineSince = null,
-    string? AdbPermission = null)
+    string? AdbPermission = null,
+    string? AdbPermissionReason = null)
 {
     /// <summary>
     /// Sem agente conectado não há sessão com a TV: a conexão é sempre <c>disconnected</c> e o volume (que só o
@@ -90,7 +95,7 @@ public sealed record TvState(
         }
 
         return agentOnline
-            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked, null, snapshot.AdbPermission)
+            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked, null, snapshot.AdbPermission, snapshot.AdbPermissionReason)
             : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt, agentLinked, since);
     }
 }

@@ -446,8 +446,9 @@ export class TvLivreStore {
    */
   private describe(error: unknown, byPerson: boolean): string {
     const failure = describeLivreFailure(error);
+    if (failure.code === 'adb_device_changed') this.adbPermission.deviceChanged();
     if (failure.code === 'adb_unauthorized') {
-      if (!byPerson || !this.adbPermission.prompted()) this.adbPermission.denied();
+      if (!byPerson || !this.adbPermission.prompted(() => undefined)) this.adbPermission.denied();
     }
     return failure.message;
   }

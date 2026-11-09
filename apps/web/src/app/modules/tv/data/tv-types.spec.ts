@@ -48,6 +48,7 @@ describe('parseState', () => {
       updatedAt: '2026-10-19T14:02:00Z',
       offlineSince: null,
       adbPermission: null,
+      adbPermissionReason: null,
     });
   });
 
@@ -61,6 +62,21 @@ describe('parseState', () => {
     ).toBeNull();
     expect(parseState({ ...base, adbPermission: 'revoked' })?.adbPermission).toBeNull();
     expect(parseState({ ...base, adbPermission: 7 })?.adbPermission).toBeNull();
+  });
+
+  it('reads the reason only as a short lowercase word from a connected agent', () => {
+    const missing = { ...base, adbPermission: 'missing' };
+    expect(parseState({ ...missing, adbPermissionReason: 'tv_forgot' })?.adbPermissionReason).toBe(
+      'tv_forgot',
+    );
+    expect(
+      parseState({ ...missing, adbPermissionReason: 'Tv Forgot!' })?.adbPermissionReason,
+    ).toBeNull();
+    expect(parseState({ ...missing, adbPermissionReason: 5 })?.adbPermissionReason).toBeNull();
+    expect(
+      parseState({ ...missing, agentOnline: false, adbPermissionReason: 'tv_forgot' })
+        ?.adbPermissionReason,
+    ).toBeNull();
   });
 
   it('carries the offline instant only while the agent is off', () => {

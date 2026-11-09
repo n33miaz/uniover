@@ -186,6 +186,8 @@ class FakeTvAdb:
         self.apps = list(apps or [])
         self.launched: list[tuple[str, str | None]] = []
         self.settings_opened: list[str] = []
+        self.rebinds = 0
+        self.forgets = 0
         self.typed: list[str] = []
         self.connects = 0
         self.disconnects = 0
@@ -248,6 +250,13 @@ class FakeTvAdb:
     async def open_settings(self, screen: str) -> None:
         self._fail_if_scripted()
         self.settings_opened.append(screen)
+
+    async def rebind_registration(self) -> None:
+        self._fail_if_scripted()
+        self.rebinds += 1
+
+    async def forget_registration(self) -> None:
+        self.forgets += 1
 
     async def input_text(self, text: str) -> None:
         self._fail_if_scripted()

@@ -72,6 +72,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/presence", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/settings/open", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/refresh", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/adb/rebind", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/cleanup", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
         ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),

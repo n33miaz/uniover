@@ -663,9 +663,7 @@ describe('GuestsSection', () => {
 
     describe('the Início line', () => {
       const homeText = (el: HTMLElement) =>
-        Array.from(el.querySelectorAll('.home-line')).map((node) =>
-          node.textContent?.trim(),
-        );
+        Array.from(el.querySelectorAll('.home-line')).map((node) => node.textContent?.trim());
       const entries = (...list: [string, boolean][]) =>
         list.map(([id, enabled]) => ({ id, enabled }));
 

@@ -6,6 +6,7 @@ from uniover_agent.core.tv.adb_commands import (
     tv_apps_refresh_handler,
     user_initiated,
 )
+from uniover_agent.core.tv.adb_rebind import ADB_REBIND_CAPABILITY, tv_adb_rebind_handler
 from uniover_agent.core.tv.apps import AppEntry, describe_apps
 from uniover_agent.core.tv.cleanup import (
     CLEANUP_FAILED,
@@ -68,6 +69,7 @@ from uniover_agent.core.tv.watchdog import TvWatchdog
 from uniover_agent.core.tv.watchdog_events import WatchdogEvents
 
 __all__ = [
+    "ADB_REBIND_CAPABILITY",
     "CLEANUP_FAILED",
     "CLEANUP_IN_PROGRESS",
     "DEFAULT_LINK_SCHEMES",
@@ -117,6 +119,7 @@ __all__ = [
     "can_restrict_background",
     "describe_apps",
     "is_protected",
+    "tv_adb_rebind_handler",
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",

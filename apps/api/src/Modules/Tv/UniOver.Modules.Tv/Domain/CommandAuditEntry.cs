@@ -31,6 +31,9 @@ public static class TvCommandNames
     /// <summary>Alguém pediu que a TV Samsung mostre de novo o aviso "Permitir" do UniOver (o agente nunca o faz sozinho).</summary>
     public const string PermissionRequest = "tv.permission.request";
 
+    /// <summary>Alguém confirmou no app que o aparelho que responde agora no endereço da TV é a mesma TV (o MAC mudou), e o agente refez o registro do ADB. O agente nunca o faz sozinho.</summary>
+    public const string AdbRebind = "tv.adb.rebind";
+
     /// <summary>O dono pediu o pareamento da Android TV (passo <c>start</c>: mostrar o código; <c>finish</c>: entregar o digitado; <c>cancel</c>: desistir). O código nunca entra na trilha.</summary>
     public const string Pair = "tv.pair";
 

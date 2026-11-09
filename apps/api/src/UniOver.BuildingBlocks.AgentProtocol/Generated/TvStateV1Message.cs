@@ -51,6 +51,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("adbPermission")]
         public TvStateV1BodyAdbPermission? AdbPermission { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("adbPermissionReason")]
+        public string? AdbPermissionReason { get; set; }
+
         [JsonPropertyName("app")]
         public string? App { get; set; }
 

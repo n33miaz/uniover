@@ -43,6 +43,7 @@ class TvStateV1Body(BaseModel):
     adbPermission: Annotated[
         TvStateV1BodyAdbPermission | None, Field(title='TvStateV1BodyAdbPermission')
     ] = None
+    adbPermissionReason: Annotated[str | None, Field(pattern='^[a-z_]{1,32}$')] = None
 
 
 class TvStateV1Message(BaseModel):

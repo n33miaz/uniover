@@ -22,7 +22,8 @@
         "volume": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
         "app": { "type": ["string", "null"] },
         "connection": { "enum": ["hot", "hibernating", "disconnected", "not_paired", "waking"] },
-        "adbPermission": { "enum": ["granted", "missing", "pending"] }
+        "adbPermission": { "enum": ["granted", "missing", "pending"] },
+        "adbPermissionReason": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
       }
     }
   }

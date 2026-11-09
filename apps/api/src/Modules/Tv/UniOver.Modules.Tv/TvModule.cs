@@ -26,6 +26,7 @@ using UniOver.Modules.Tv.Features.LaunchShortcut;
 using UniOver.Modules.Tv.Features.ListShortcuts;
 using UniOver.Modules.Tv.Features.Layout;
 using UniOver.Modules.Tv.Features.Nearby;
+using UniOver.Modules.Tv.Features.AdbRebind;
 using UniOver.Modules.Tv.Features.OpenSettings;
 using UniOver.Modules.Tv.Features.Pair;
 using UniOver.Modules.Tv.Features.Permission;
@@ -141,6 +142,7 @@ public static class TvModule
         services.AddScoped<RefreshShortcutsHandler>();
         services.AddScoped<WakeHandler>();
         services.AddScoped<OpenSettingsHandler>();
+        services.AddScoped<AdbRebindHandler>();
         services.AddSingleton<PresenceThrottle>();
         services.AddScoped<PresenceHandler>();
         services.AddScoped<SiriTokensHandler>();
@@ -176,6 +178,7 @@ public static class TvModule
         group.MapSendText();
         group.MapPowerOff();
         group.MapOpenSettings();
+        group.MapAdbRebind();
         group.MapPowerSchedule();
         group.MapLaunchShortcut();
         group.MapListShortcuts();

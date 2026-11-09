@@ -127,6 +127,7 @@ async def test_capability_is_declared_when_the_adb_answers(
         "tv.adb",
         "tv.presence.v1",
         "tv.settings.open.v1",
+        "tv.adb.rebind.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -154,6 +155,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
         "tv.adb",
         "tv.presence.v1",
         "tv.settings.open.v1",
+        "tv.adb.rebind.v1",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
@@ -467,3 +469,24 @@ async def test_the_settings_screens_are_opened_through_the_adb_by_the_composed_h
     assert opened.status.value == "ok"
     assert refused.status.value == "rejected"
     assert adb.settings_opened == ["WIFI"]
+
+
+async def test_the_rebind_command_and_the_pairing_hook_are_composed_with_the_adb(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    adb = FakeTvAdb()
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    for step in setup.prepare:
+        await step()
+    assert "tv.adb.rebind.v1" in setup.capabilities
+    command_id = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea4"
+    result = await setup.handlers["tv.adb.rebind.v1"](Command(command_id, "tv.adb.rebind.v1", {}))
+    assert result.status.value == "ok"
+    assert adb.rebinds == 1
+    # Um pareamento novo (pedido da pessoa) apaga o registro do ADB.
+    for hook in setup.on_paired:
+        await hook()
+    assert adb.forgets == 1

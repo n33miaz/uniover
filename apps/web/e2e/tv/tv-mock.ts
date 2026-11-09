@@ -95,6 +95,8 @@ export interface MockTvState {
   offlineSince?: string | null;
   /** A permissão do ADB que o agente conta (`granted`, `missing` ou `pending`); ausente: o agente não diz. */
   adbPermission?: string | null;
+  /** O motivo do agente quando a permissão falta (`tv_forgot`, `never`...). */
+  adbPermissionReason?: string | null;
 }
 
 /** Falha que a próxima chamada de comando devolve (e que se repete até o teste limpar). */
@@ -586,6 +588,9 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     if (method === 'GET' && path === '/cleanup/latest') {
       // Sem limpeza gravada a API responde 204, e a tela não mostra nada.
       return route.fulfill({ status: 204 });
+    }
+    if (method === 'POST' && path === '/adb/rebind') {
+      return json(route, 200, { ok: true, latencyMs: 40 });
     }
     if (method === 'POST' && path === '/shortcuts/refresh') {
       return json(route, 200, { ok: true, latencyMs: 40 });

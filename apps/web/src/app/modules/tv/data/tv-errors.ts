@@ -11,6 +11,7 @@ export type TvFailureKind =
   | 'timeout'
   | 'command-failed'
   | 'adb-permission'
+  | 'adb-device-changed'
   | 'rate-limited'
   | 'cleanup-busy'
   | 'shortcut-disabled'
@@ -70,6 +71,16 @@ function powerOffFailedMessage(code: string | null): string | null {
 /** Texto curto da falta de permissão do ADB; Atualizar lista (no painel Apps) faz o mesmo pedido da folha "Liberar na TV". */
 export function adbPermissionMessage(): string {
   return $localize`:@@tv.error.adb-unauthorized:A TV ainda não liberou o UniOver. Toque em Atualizar lista.`;
+}
+
+/** O pedido da pessoa voltou recusado, mas a TV não mostrou o aviso: nada a aceitar. */
+export function adbNoPromptMessage(): string {
+  return $localize`:@@tv.error.adb-no-prompt:A TV não mostrou o pedido. Tente de novo.`;
+}
+
+/** Outro aparelho está no endereço onde a TV estava (o agente se recusa a falar com ele). */
+export function adbDeviceChangedMessage(): string {
+  return $localize`:@@tv.error.adb-device-changed:TV não encontrada no endereço. Confira a rede.`;
 }
 
 function commandFailedMessage(code: string | null, context?: TvFailureContext): string {
@@ -181,6 +192,9 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
       const code = agentErrorOf(error);
       // Falta a permissão do ADB na TV: a tela abre a folha que a pede (e não só um erro).
       if (code === 'adb_unauthorized') return make('adb-permission', adbPermissionMessage());
+      if (code === 'adb_device_changed') {
+        return make('adb-device-changed', adbDeviceChangedMessage());
+      }
       return make('command-failed', commandFailedMessage(code, context));
     }
     case 503:

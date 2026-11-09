@@ -99,6 +99,7 @@ internal static class TvPermissionMap
         new("DELETE", "/api/v1/tv/tvs/{id:guid}", "tv.bind-agent"),
         new("GET", "/api/v1/tv/tvs/nearby"),
         new("POST", "/api/v1/tv/pair", Body: new { }),
+        new("POST", "/api/v1/tv/adb/rebind", Body: new { }),
         new("GET", "/api/v1/tv/tvs/access"),
         new("GET", "/api/v1/tv/commands/recent"),
         new("GET", "/api/v1/tv/tvs/{id:guid}/members"),

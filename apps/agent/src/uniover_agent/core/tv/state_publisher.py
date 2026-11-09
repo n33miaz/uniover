@@ -25,6 +25,7 @@ class TvStatePublisher:
         reports_waking: Callable[[], bool] = lambda: True,
         reports_adb_permission: Callable[[], bool] = lambda: False,
         adb_permission: Callable[[], str | None] = lambda: None,
+        adb_permission_reason: Callable[[], str | None] = lambda: None,
     ) -> None:
         self._transport = transport
         self._envelopes = envelopes
@@ -37,6 +38,7 @@ class TvStatePublisher:
         # que aceita o campo (uma anterior recusaria o estado inteiro): até lá o estado sai sem ela.
         self._reports_adb_permission = reports_adb_permission
         self._adb_permission = adb_permission
+        self._adb_permission_reason = adb_permission_reason
         self._pending: TvState | None = None
         self._task: asyncio.Task[None] | None = None
 
@@ -55,7 +57,9 @@ class TvStatePublisher:
 
     def _message(self, state: TvState) -> dict[str, Any]:
         permission = self._adb_permission() if self._reports_adb_permission() else None
-        return self._envelopes.tv_state(state, self._wire(state), permission)
+        # O motivo só interessa ao app quando a permissão falta (é ele que decide se abre a folha).
+        reason = self._adb_permission_reason() if permission == "missing" else None
+        return self._envelopes.tv_state(state, self._wire(state), permission, reason)
 
     def _wire(self, state: TvState) -> WireConnection:
         if state.waking and self._reports_waking():

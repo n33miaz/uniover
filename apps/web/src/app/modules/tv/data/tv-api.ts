@@ -236,6 +236,14 @@ export class TvApi {
     await firstValueFrom(this.http.post(`${BASE}/shortcuts/refresh`, null, this.target()));
   }
 
+  /**
+   * "É a mesma TV": a pessoa confirmou que o aparelho que responde agora no endereço da TV é ela (o MAC mudou), e o
+   * agente refaz o registro da permissão do ADB. Não conecta a nada: o pedido de permissão vem depois, pelo de sempre.
+   */
+  async rebindAdb(): Promise<void> {
+    await firstValueFrom(this.http.post(`${BASE}/adb/rebind`, null, this.target()));
+  }
+
   /** Muda só o que vier preenchido (`null` = não muda); texto vazio em `customLabel` apaga o nome próprio. */
   async updateShortcut(
     id: string,

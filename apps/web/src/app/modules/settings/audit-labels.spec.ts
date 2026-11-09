@@ -80,6 +80,7 @@ const TV_ACTIONS = [
   'tv.cleanup.setting',
   'tv.settings.open',
   'tv.permission.request',
+  'tv.adb.rebind',
   'tv.discover',
   'tv.apps.refresh',
   'tv.shortcuts.reorder',

@@ -8,8 +8,8 @@ public class DomainTests
     private static readonly DateTimeOffset Now = new(2026, 10, 19, 12, 0, 0, TimeSpan.Zero);
 
     private static TvStateSnapshot Snapshot(
-        string power = "on", int? volume = 10, string? app = "tv.app", string connection = "hot", string? adbPermission = null) =>
-        new(power, volume, app, connection, Now, adbPermission);
+        string power = "on", int? volume = 10, string? app = "tv.app", string connection = "hot", string? adbPermission = null, string? reason = null) =>
+        new(power, volume, app, connection, Now, adbPermission, reason);
 
     [Fact]
     public void ChangingOnlyTheVolume_IsNotAPersistedChange()
@@ -93,6 +93,27 @@ public class DomainTests
     public void AdbPermissionText_KnowsOnlyTheContractValues(string? value, bool known)
     {
         AdbPermissionText.IsKnown(value).Should().Be(known);
+    }
+
+    [Fact]
+    public void State_CarriesTheAdbPermissionReason_OnlyWithTheAgentOnline()
+    {
+        TvState.From(Snapshot(adbPermission: "missing", reason: "tv_forgot"), agentOnline: true).AdbPermissionReason.Should().Be("tv_forgot");
+        TvState.From(Snapshot(adbPermission: "missing", reason: "tv_forgot"), agentOnline: false).AdbPermissionReason.Should().BeNull();
+        TvState.From(Snapshot(), agentOnline: true).AdbPermissionReason.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("tv_forgot", true)]
+    [InlineData("never", true)]
+    [InlineData("Tv_Forgot", false)]
+    [InlineData("com espaço", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
+    public void AdbPermissionText_AcceptsOnlyAShortLowercaseReason(string? value, bool valid)
+    {
+        AdbPermissionText.IsReason(value).Should().Be(valid);
     }
 
     [Fact]

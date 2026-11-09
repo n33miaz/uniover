@@ -27,7 +27,8 @@ export class AdbPermissionNotice {
       const state = this.store.state();
       const live = this.store.link() === 'ok' && state?.agentOnline === true;
       const value = live ? (state?.adbPermission ?? null) : null;
-      untracked(() => this.permission.observe(value));
+      const reason = live ? (state?.adbPermissionReason ?? null) : null;
+      untracked(() => this.permission.observe(value, reason));
     });
     // Sem tela que a hospede, a falta de permissão vira só o erro curto (nada aparece sozinho em outra tela).
     this.permission.attach();

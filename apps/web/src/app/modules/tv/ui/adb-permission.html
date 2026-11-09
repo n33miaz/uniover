@@ -31,6 +31,27 @@
           A TV não respondeu. Ligue-a e tente de novo.
         </p>
       }
+      @case ('noprompt') {
+        <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.noprompt">
+          A TV não mostrou o pedido. Tente de novo.
+        </p>
+      }
+      @case ('notfound') {
+        @if (permission.canRebind()) {
+          <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.notfound">
+            TV não encontrada no endereço. Confira a rede.
+          </p>
+        } @else {
+          <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.notfound-guest">
+            TV não encontrada no endereço. Peça ao dono da TV.
+          </p>
+        }
+      }
+      @case ('confirmsame') {
+        <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.confirmsame">
+          Esta é a mesma TV? (ex.: trocou de Wi-Fi para cabo)
+        </p>
+      }
       @case ('failed') {
         <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.failed">
           Não deu certo agora. Tente de novo.
@@ -43,26 +64,58 @@
       }
     }
     <div class="actions">
-      <button
-        type="button"
-        class="ui-btn secondary"
-        [disabled]="permission.asking()"
-        (click)="permission.dismiss()"
-        i18n="@@tv.adb.later"
-      >
-        Agora não
-      </button>
-      <button
-        type="button"
-        class="ui-btn primary"
-        [disabled]="permission.asking()"
-        (click)="permission.ask()"
-      >
-        @if (permission.asking()) {
-          <span class="ui-spinner" aria-hidden="true"></span>
+      @if (permission.phase() === 'confirmsame') {
+        <button
+          type="button"
+          class="ui-btn secondary"
+          (click)="permission.backFromSameTv()"
+          i18n="@@tv.adb.not-same"
+        >
+          Não
+        </button>
+        <button
+          type="button"
+          class="ui-btn primary"
+          (click)="permission.confirmSameTv()"
+          i18n="@@tv.adb.same-yes"
+        >
+          Sim, é a mesma
+        </button>
+      } @else {
+        <button
+          type="button"
+          class="ui-btn secondary"
+          [disabled]="permission.asking()"
+          (click)="permission.dismiss()"
+          i18n="@@tv.adb.later"
+        >
+          Agora não
+        </button>
+        @if (permission.phase() === 'notfound') {
+          @if (permission.canRebind()) {
+            <button
+              type="button"
+              class="ui-btn primary"
+              (click)="permission.askSameTv()"
+              i18n="@@tv.adb.same"
+            >
+              É a mesma TV
+            </button>
+          }
+        } @else {
+          <button
+            type="button"
+            class="ui-btn primary"
+            [disabled]="permission.asking()"
+            (click)="permission.ask()"
+          >
+            @if (permission.asking()) {
+              <span class="ui-spinner" aria-hidden="true"></span>
+            }
+            <span i18n="@@tv.adb.ask">Pedir na TV</span>
+          </button>
         }
-        <span i18n="@@tv.adb.ask">Pedir na TV</span>
-      </button>
+      }
     </div>
   </section>
 }
