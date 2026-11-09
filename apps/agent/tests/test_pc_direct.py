@@ -1285,11 +1285,17 @@ async def test_a_merged_or_discarded_move_leaves_no_id_behind() -> None:
 # a troca da nuvem para o canal: o movimento atrasado e o marcador `cs`
 
 
-async def open_with_marker(lab: Lab, marker: int | None) -> FakePeer:
+PAGE = "3fa9c10d7be2465a"
+OTHER_PAGE = "9c01e7d2a4b85f36"
+
+
+async def open_with_marker(lab: Lab, marker: int | None, epoch: str | None = PAGE) -> FakePeer:
     await lab.open()
     auth: dict[str, Any] = {"k": "auth", "tok": TOKEN}
     if marker is not None:
         auth["cs"] = marker
+    if epoch is not None:
+        auth["ce"] = epoch
     lab.peer.phone(INPUT_CHANNEL, auth)
     await settle()
     await lab.sync_clock(lab.peer)
@@ -1338,7 +1344,9 @@ async def test_a_cloud_command_numbered_up_to_the_marker_runs_but_leaves_the_cha
     peer = await open_with_marker(lab, 7)
     peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
     await settle()
-    old = envelope("pc.media.v1", {"action": "STOP", "seq": 7}, ts=lab.service._stamp(0.0))
+    old = envelope(
+        "pc.media.v1", {"action": "STOP", "seq": 7, "epoch": PAGE}, ts=lab.service._stamp(0.0)
+    )
     await lab.process(dump(old))
     await settle_close()
 
@@ -1351,7 +1359,9 @@ async def test_a_cloud_command_numbered_after_the_marker_closes_the_channel(lab:
     peer = await open_with_marker(lab, 7)
     peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
     await settle()
-    new = envelope("pc.media.v1", {"action": "STOP", "seq": 8}, ts=lab.service._stamp(0.0))
+    new = envelope(
+        "pc.media.v1", {"action": "STOP", "seq": 8, "epoch": PAGE}, ts=lab.service._stamp(0.0)
+    )
     await lab.process(dump(new))
     await settle_close()
 
@@ -1374,13 +1384,21 @@ async def test_the_marker_in_a_command_raises_it_and_never_lowers_it(lab: Lab) -
     peer = await open_with_marker(lab, 7)
     first = lab.command("pc.media.v1", {"action": "MUTE"}, "m1")
     first["cs"] = 9
+    first["ce"] = PAGE
     peer.phone(INPUT_CHANNEL, first)
     lower = lab.command("pc.media.v1", {"action": "MUTE"}, "m2")
     lower["cs"] = 3
+    lower["ce"] = PAGE
     peer.phone(INPUT_CHANNEL, lower)
     await settle()
     await lab.process(
-        dump(envelope("pc.media.v1", {"action": "STOP", "seq": 9}, ts=lab.service._stamp(0.0)))
+        dump(
+            envelope(
+                "pc.media.v1",
+                {"action": "STOP", "seq": 9, "epoch": PAGE},
+                ts=lab.service._stamp(0.0),
+            )
+        )
     )
     await settle_close()
 
@@ -1390,13 +1408,19 @@ async def test_the_marker_in_a_command_raises_it_and_never_lowers_it(lab: Lab) -
 @pytest.mark.parametrize("bad", [-1, 2**31, "7", True, 1.5, None])
 async def test_a_malformed_marker_is_ignored(lab: Lab, bad: object) -> None:
     await lab.open()
-    lab.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN, "cs": bad})
+    lab.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN, "cs": bad, "ce": PAGE})
     await settle()
     await lab.sync_clock(lab.peer)
     lab.peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
     await settle()
     await lab.process(
-        dump(envelope("pc.media.v1", {"action": "STOP", "seq": 1}, ts=lab.service._stamp(0.0)))
+        dump(
+            envelope(
+                "pc.media.v1",
+                {"action": "STOP", "seq": 1, "epoch": PAGE},
+                ts=lab.service._stamp(0.0),
+            )
+        )
     )
     await settle_close()
 
@@ -1468,3 +1492,124 @@ async def test_the_memory_of_closed_sessions_is_bounded(lab: Lab) -> None:
     # O mais antigo foi esquecido; uma sessão nova (id novo) abre normal.
     await lab.open()
     assert lab.service.session_id == SESSION
+
+
+# a época da página: o contador recomeça a cada página, e o `seq` sozinho não diz de qual vem
+
+
+async def test_a_new_page_with_a_restarted_counter_closes_the_old_session_and_releases(
+    lab: Lab,
+) -> None:
+    peer = await open_with_marker(lab, 300)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.key.v2", {"key": "CTRL", "action": "DOWN"}, "hold"))
+    await settle()
+    lab.pc.calls.clear()
+    # A aba que segurava o CTRL morreu; a página reaberta manda seq=1 (menor que o cs=300 da antiga).
+    reopened = envelope(
+        "pc.media.v1",
+        {"action": "STOP", "seq": 1, "epoch": OTHER_PAGE},
+        ts=lab.service._stamp(0.0),
+    )
+    await lab.process(dump(reopened))
+    await settle_close()
+
+    assert lab.service.session_id is None
+    assert (SESSION, "cloud") in lab.closed
+    assert lab.pc.calls == [
+        ("release_all",),
+        ("media", "STOP", 1),
+    ]  # solta tudo, depois a nuvem roda
+
+
+async def test_a_cloud_command_without_an_epoch_closes_even_with_a_small_seq(lab: Lab) -> None:
+    peer = await open_with_marker(lab, 300)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    await lab.process(
+        dump(envelope("pc.media.v1", {"action": "STOP", "seq": 1}, ts=lab.service._stamp(0.0)))
+    )
+    await settle_close()
+
+    assert (SESSION, "cloud") in lab.closed
+
+
+async def test_the_same_page_and_a_seq_up_to_the_marker_still_keeps_the_channel(lab: Lab) -> None:
+    peer = await open_with_marker(lab, 300)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    same = envelope(
+        "pc.media.v1", {"action": "STOP", "seq": 300, "epoch": PAGE}, ts=lab.service._stamp(0.0)
+    )
+    await lab.process(dump(same))
+    await settle_close()
+
+    assert lab.service.authenticated
+    assert ("media", "STOP", 1) in lab.pc.calls
+
+
+async def test_an_auth_without_an_epoch_leaves_no_marker_so_every_cloud_command_closes(
+    lab: Lab,
+) -> None:
+    peer = await open_with_marker(lab, 300, epoch=None)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    await lab.process(
+        dump(
+            envelope(
+                "pc.media.v1",
+                {"action": "STOP", "seq": 1, "epoch": PAGE},
+                ts=lab.service._stamp(0.0),
+            )
+        )
+    )
+    await settle_close()
+
+    assert (SESSION, "cloud") in lab.closed
+
+
+async def test_a_command_from_another_epoch_never_moves_the_marker_or_the_page(lab: Lab) -> None:
+    peer = await open_with_marker(lab, 7)
+    other = lab.command("pc.media.v1", {"action": "MUTE"}, "m1")
+    other["cs"] = 9999
+    other["ce"] = OTHER_PAGE
+    peer.phone(INPUT_CHANNEL, other)
+    await settle()
+    await lab.process(
+        dump(
+            envelope(
+                "pc.media.v1",
+                {"action": "STOP", "seq": 100, "epoch": PAGE},
+                ts=lab.service._stamp(0.0),
+            )
+        )
+    )
+    await settle_close()
+
+    assert (
+        SESSION,
+        "cloud",
+    ) in lab.closed  # 100 > 7 na página dele; o 9999 de outra página não vale
+
+
+@pytest.mark.parametrize(
+    "bad", ["", "ZZZZZZZZZZZZZZZZ", "3FA9C10D7BE2465A", "3fa9c10d7be2465", 12, None]
+)
+async def test_a_malformed_epoch_leaves_no_marker(lab: Lab, bad: object) -> None:
+    await lab.open()
+    lab.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN, "cs": 5, "ce": bad})
+    await settle()
+    await lab.sync_clock(lab.peer)
+    lab.peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    await lab.process(
+        dump(
+            envelope(
+                "pc.media.v1",
+                {"action": "STOP", "seq": 1, "epoch": PAGE},
+                ts=lab.service._stamp(0.0),
+            )
+        )
+    )
+    await settle_close()
+
+    assert (SESSION, "cloud") in lab.closed

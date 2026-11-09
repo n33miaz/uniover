@@ -73,7 +73,7 @@ class ProcessMessage:
         uncapped_types: Collection[str] = (),
         release_inputs: Callable[[], None] | None = None,
         observe_timestamp: Callable[[str | None], None] | None = None,
-        on_cloud_pc_input: Callable[[str, int | None], None] | None = None,
+        on_cloud_pc_input: Callable[[str, int | None, str | None], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -163,9 +163,11 @@ class ProcessMessage:
         if command.type.startswith(_PC_PREFIX) and not command.type.startswith(_RTC_PREFIX):
             if self._on_cloud_pc_input is not None:
                 seq = command.body.get("seq")
+                epoch = command.body.get("epoch")
                 self._on_cloud_pc_input(
                     command.type,
                     seq if isinstance(seq, int) and not isinstance(seq, bool) else None,
+                    epoch if isinstance(epoch, str) else None,
                 )
             self._enqueue_pc(command)
             return

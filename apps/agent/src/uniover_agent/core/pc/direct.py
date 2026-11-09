@@ -37,6 +37,7 @@ import hmac
 import json
 import logging
 import math
+import re
 import statistics
 import time
 import uuid
@@ -102,6 +103,8 @@ MAX_RTT_SAMPLES: Final = 200
 MAX_KEY_REPEAT: Final = 50
 # O maior `seq` que o contrato aceita nos pedidos de entrada da nuvem.
 MAX_CLOUD_SEQ: Final = 2_147_483_647
+# A época de uma página: 16 hexadecimais sorteados quando ela abre (o mesmo formato do contrato).
+_EPOCH_PATTERN: Final = re.compile(r"[0-9a-f]{16}")
 
 REASON_REQUESTED: Final = "requested"
 REASON_REPLACED: Final = "replaced"
@@ -225,6 +228,9 @@ class _Session:
     # o canal (`cs` do `auth` e dos comandos): o que a nuvem entrega com número até aqui é anterior
     # à troca de caminho e não fecha o canal.
     cloud_marker: int | None = None
+    # A época da página que numerou esses pedidos (`ce`): um `seq` só vale ao lado dela, porque uma
+    # página reaberta recomeça a contagem do zero.
+    cloud_epoch: str | None = None
     closed: bool = False
     last_rx: float = 0.0
     violations: int = 0
@@ -424,7 +430,9 @@ class PcDirectService:
             self._halt(session)
             self._spawn(self._dispose(session, REASON_DISCONNECTED, notify=False))
 
-    def cloud_input(self, message_type: str, seq: int | None = None) -> None:
+    def cloud_input(
+        self, message_type: str, seq: int | None = None, epoch: str | None = None
+    ) -> None:
         """Chegou comando de entrada pela nuvem: o canal em uso fecha ANTES de ele ir à faixa.
 
         Síncrono de propósito: a sessão é dada como fechada e o que o PC segurava é solto já, então
@@ -441,7 +449,8 @@ class PcDirectService:
         if session is None or session.closed or not session.used:
             return
         marker = session.cloud_marker
-        if seq is not None and marker is not None and seq <= marker:
+        same_page = epoch is not None and epoch == session.cloud_epoch
+        if same_page and seq is not None and marker is not None and seq <= marker:
             return
         self._halt(session)
         self._spawn(self._dispose(session, REASON_CLOUD, notify=True))
@@ -523,9 +532,20 @@ class PcDirectService:
     def _note_cloud_marker(session: _Session, data: dict[str, Any]) -> None:
         """Guarda o `cs` (último pedido de entrada da nuvem que o app emitiu); só cresce."""
         marker = _as_int(data.get("cs"))
-        if marker is not None and 0 <= marker <= MAX_CLOUD_SEQ:
-            current = session.cloud_marker
-            session.cloud_marker = marker if current is None else max(current, marker)
+        epoch = data.get("ce")
+        if (
+            marker is None
+            or not 0 <= marker <= MAX_CLOUD_SEQ
+            or not isinstance(epoch, str)
+            or _EPOCH_PATTERN.fullmatch(epoch) is None
+        ):
+            return  # sem época e número válidos juntos não há marcador: todo comando da nuvem fecha
+        if session.cloud_epoch is None:
+            session.cloud_epoch = epoch
+        elif session.cloud_epoch != epoch:
+            return  # uma página só por canal: outra época não mexe no marcador
+        current = session.cloud_marker
+        session.cloud_marker = marker if current is None else max(current, marker)
 
     def _remember_closed(self, session_id: str) -> None:
         """Lembra que a sessão fechou, por um pouco mais que a vida máxima de um canal."""
