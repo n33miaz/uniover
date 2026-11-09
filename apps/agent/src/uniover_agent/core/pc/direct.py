@@ -681,7 +681,11 @@ class PcDirectService:
             refuse("not_allowed", violation=True)
             return
         release = _is_release(message_type, body)
-        if not self._within_rates(session, now, message_type, body, release=release):
+        # Os tetos são conferidos já (a enxurrada é barrada antes de qualquer trabalho), mas só
+        # são COBRADOS depois de o pedido passar na idade, na prontidão e no esquema: uma recusa
+        # por `invalid_message`, `not_ready` ou `expired` não gasta vaga nem balde de ninguém.
+        charges = self._rate_charges(session, message_type, body, release=release)
+        if not all(rate.can(now, cost) for rate, cost in charges):
             refuse("rate_limited")
             return
         # Todo comando de entrada traz o instante do app (`ts`); sem ele não há como medir a idade.
@@ -704,6 +708,8 @@ class PcDirectService:
         if accepted is None:
             refuse("invalid_message", violation=True)
             return
+        for rate, cost in charges:
+            rate.charge(now, cost)
         self._accepted(session)
 
         def answered(result: CommandResult) -> None:
@@ -716,27 +722,21 @@ class PcDirectService:
         self._submit(accepted.command, answered)
 
     @staticmethod
-    def _within_rates(
-        session: _Session, now: float, message_type: str, body: dict[str, Any], *, release: bool
-    ) -> bool:
-        """Os tetos: soltar tem balde próprio; o resto paga mensagem, teclas e texto.
-
-        Confere todos antes de cobrar qualquer um: a mensagem recusada não gasta a vaga de nenhum.
-        """
+    def _rate_charges(
+        session: _Session, message_type: str, body: dict[str, Any], *, release: bool
+    ) -> list[tuple[_Rate | _Bucket, int]]:
+        """Os tetos que um pedido paga e quanto: soltar tem balde próprio; o resto paga mensagem,
+        teclas e texto. Quem chama confere todos (`can`) e só cobra (`charge`) o que for aceito."""
         if release:
-            return session.release_rate.allow(now)
+            return [(session.release_rate, 1)]
         text = body.get("text")
-        checks: list[tuple[_Rate | _Bucket, int]] = [
+        charges: list[tuple[_Rate | _Bucket, int]] = [
             (session.input_rate, 1),
             (session.press_rate, _press_cost(message_type, body)),
         ]
         if isinstance(text, str):
-            checks.append((session.text_rate, len(text)))
-        if not all(rate.can(now, cost) for rate, cost in checks):
-            return False
-        for rate, cost in checks:
-            rate.charge(now, cost)
-        return True
+            charges.append((session.text_rate, len(text)))
+        return charges
 
     @staticmethod
     def _age_of(session: _Session, sent_ms: float, *, release: bool) -> float | None:

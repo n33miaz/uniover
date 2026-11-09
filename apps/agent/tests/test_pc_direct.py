@@ -1686,6 +1686,7 @@ class PacerLab:
     def __init__(self) -> None:
         self.now = 1000.0
         self.sleeps: list[float] = []
+        self.cancelled = 0
         self.gate = asyncio.Event()
 
     def monotonic(self) -> float:
@@ -1693,7 +1694,11 @@ class PacerLab:
 
     async def sleep(self, seconds: float) -> None:
         self.sleeps.append(round(seconds, 4))
-        await self.gate.wait()
+        try:
+            await self.gate.wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1  # a espera foi cortada (soltura que entrou ou canal que fechou)
+            raise
 
     def pacer(self) -> ClickPacer:
         return ClickPacer(self.monotonic, self.sleep)
@@ -1739,9 +1744,11 @@ async def test_a_click_waiting_for_its_gap_is_dropped_when_the_channel_closes() 
         await settle()
         assert fake.sleeps == [0.3]
 
-        lab.process.direct_lost()  # o canal fechou com o segundo toque na espera
+        # O canal fecha de verdade (pelo serviço, que solta o que o PC segurava e chama a faixa).
+        await lab.service.close(SESSION)
         fake.gate.set()
         await settle()
+        assert fake.cancelled == 1, "a espera foi cancelada, não terminou sozinha"
 
         assert lab.pc.calls[0] == ("click", "LEFT", "CLICK")
         assert ("click", "LEFT", "CLICK") not in lab.pc.calls[1:], "o toque não sai depois do canal"
@@ -1764,6 +1771,8 @@ async def test_a_release_never_waits_for_the_pacer() -> None:
             INPUT_CHANNEL, lab.command("pc.click.v2", {"button": "LEFT", "gapMs": 400}, "second")
         )
         await settle()
+        assert fake.sleeps == [0.4], "a espera do segundo toque começou"
+        assert fake.cancelled == 0
         assert lab.pc.calls == [("click", "LEFT", "CLICK")], "esperando o intervalo"
 
         # Uma soltura entra na faixa: a espera acaba na hora (a espera nunca é aberta pela porta
@@ -1774,6 +1783,8 @@ async def test_a_release_never_waits_for_the_pacer() -> None:
         await settle()
 
         assert not fake.gate.is_set()
+        assert fake.cancelled == 1, "a espera em curso foi cortada pela soltura"
+        assert fake.sleeps == [0.4], "e nenhuma outra começou"
         assert lab.pc.calls == [
             ("click", "LEFT", "CLICK"),
             ("click", "LEFT", "CLICK"),
@@ -1792,16 +1803,20 @@ async def test_clicks_queued_behind_a_release_do_not_start_a_new_wait() -> None:
         peer = await lab.open_authenticated()
         peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT"}, "first"))
         await settle()
-        for n in range(3):
-            body = {"button": "LEFT", "gapMs": 400}
+        body = {"button": "LEFT", "gapMs": 400}
+        peer.phone(INPUT_CHANNEL, lab.command("pc.click.v2", body, "c0"))
+        await settle()
+        assert fake.sleeps == [0.4], "a primeira espera começou (antes de a soltura entrar)"
+        for n in (1, 2):
             peer.phone(INPUT_CHANNEL, lab.command("pc.click.v2", body, f"c{n}"))
         peer.phone(
             INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "UP"}, "up")
         )
         await settle()
 
-        # Só a primeira espera começou (antes da soltura entrar); as outras já a encontraram na fila.
-        assert len(fake.sleeps) <= 1
+        # A soltura cortou a espera em curso; os outros cliques já a encontraram na fila.
+        assert fake.sleeps == [0.4]
+        assert fake.cancelled == 1
         assert lab.pc.calls[-1] == ("click", "LEFT", "UP")
         assert len(lab.pc.calls) == 5
     finally:
@@ -1899,5 +1914,88 @@ async def test_a_refused_request_does_not_spend_the_budget_of_the_next() -> None
         acks = {a["i"]: a for a in peer.acks()}
         assert acks["refused"] == {"k": "ack", "i": "refused", "ok": False, "c": "rate_limited"}
         assert [acks[f"k{n}"]["ok"] for n in range(5)] == [True] * 5
+    finally:
+        await lab.aclose()
+
+
+# a cobrança só vem depois de o pedido passar: a recusa não gasta balde nem vaga
+
+
+def _stale(lab: Lab, message_type: str, body: dict[str, Any], command_id: str) -> dict[str, Any]:
+    """Um comando com o instante do app 10 s no passado (vai ser recusado por `expired`)."""
+    message = lab.command(message_type, body, command_id)
+    message["ts"] = int(time.time() * 1000) - 10_000
+    return message
+
+
+async def _a_full_bucket_still_fits(lab: Lab, peer: FakePeer) -> None:
+    """5 x 50 = 250 apertos: tudo o que o balde cheio comporta. Passa só se nada foi gasto antes."""
+    for n in range(5):
+        body = {"key": "BACKSPACE", "repeat": 50}
+        peer.phone(INPUT_CHANNEL, lab.command("pc.key.v2", body, f"ok{n}"))
+    await settle()
+    acks = {a["i"]: a for a in peer.acks()}
+    assert [acks[f"ok{n}"]["ok"] for n in range(5)] == [True] * 5, peer.acks()
+
+
+async def test_an_expired_request_spends_neither_the_bucket_nor_the_message_slot() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=5))
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(8):  # mais que as 5 mensagens por segundo: se cobrasse, esgotaria a janela
+            body = {"key": "BACKSPACE", "repeat": 50}
+            peer.phone(INPUT_CHANNEL, _stale(lab, "pc.key.v2", body, f"old{n}"))
+        await settle()
+        refused = [a for a in peer.acks() if a["i"].startswith("old")]
+        assert [a["c"] for a in refused] == ["expired"] * 8
+        await _a_full_bucket_still_fits(lab, peer)
+    finally:
+        await lab.aclose()
+
+
+async def test_a_request_before_the_clock_is_set_spends_nothing() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=5))
+    try:
+        peer = await lab.open_authenticated(clock=False)
+        for n in range(8):
+            body = {"key": "BACKSPACE", "repeat": 50}
+            peer.phone(INPUT_CHANNEL, lab.command("pc.key.v2", body, f"early{n}"))
+        await settle()
+        assert {a["c"] for a in peer.acks()} == {"not_ready"}
+        await lab.sync_clock(peer)
+        await _a_full_bucket_still_fits(lab, peer)
+    finally:
+        await lab.aclose()
+
+
+async def test_a_request_the_schema_refuses_spends_nothing() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=5))
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(8):
+            body = {"key": "BACKSPACE", "repeat": 50, "bogus": 1}
+            peer.phone(INPUT_CHANNEL, lab.command("pc.key.v2", body, f"bad{n}"))
+        await settle()
+        assert {a["c"] for a in peer.acks()} == {"invalid_message"}
+        await _a_full_bucket_still_fits(lab, peer)
+    finally:
+        await lab.aclose()
+
+
+async def test_a_release_is_never_refused_for_age_and_its_own_ceiling_still_holds() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_release_per_second=3))
+    try:
+        peer = await lab.open_authenticated()
+        # Soltar nunca expira (passa com idade zero): vai e gasta a vaga dele, como sempre.
+        for n in range(3):
+            body = {"button": "LEFT", "action": "UP"}
+            peer.phone(INPUT_CHANNEL, _stale(lab, "pc.click.v1", body, f"up{n}"))
+        peer.phone(
+            INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "UP"}, "up3")
+        )
+        await settle()
+        acks = {a["i"]: a for a in peer.acks()}
+        assert [acks[f"up{n}"]["ok"] for n in range(3)] == [True] * 3
+        assert acks["up3"]["c"] == "rate_limited", "o teto de soltar segue valendo para o que passa"
     finally:
         await lab.aclose()
