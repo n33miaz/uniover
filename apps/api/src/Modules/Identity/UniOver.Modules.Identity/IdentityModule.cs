@@ -88,6 +88,7 @@ public static class IdentityModule
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
+        services.AddScoped<UserAccessNotifier>();
         services.AddScoped<FailedLoginCounter>();
         services.AddScoped<SecondFactorVerifier>();
         services.AddSingleton<SystemSettingsService>();

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -11,6 +13,7 @@ using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
+using UniOver.Modules.Identity.Contracts;
 
 namespace UniOver.Modules.Devices.Features.PcControl;
 
@@ -22,7 +25,9 @@ internal sealed record PcRtcCandidateRequest(string? Candidate, string? SdpMid, 
 internal sealed record PcRtcOfferResponse(Guid SessionId, string Sdp, string Token, int ExpiresInSeconds);
 
 /// <summary>Uma sessão do canal direto, como a API a conhece: de quem é, de qual PC, e quando a negociação começou.</summary>
-internal sealed record PcRtcSession(Guid Id, Guid UserId, Guid AgentId, string AgentSlug, DateTimeOffset OpenedAt);
+/// <param name="SessionFamily">A sessão (família do refresh) que abriu o canal: ela acabando, o canal fecha junto.</param>
+internal sealed record PcRtcSession(
+    Guid Id, Guid UserId, Guid AgentId, string AgentSlug, DateTimeOffset OpenedAt, Guid? SessionFamily = null);
 
 /// <summary>Os limites do que o app pode pedir: o que a API deixaria passar e o contrato recusasse viraria 500 em vez de 400.</summary>
 internal static class PcRtcValidator
@@ -96,10 +101,10 @@ internal sealed class PcRtcSessions(TimeProvider time)
     private readonly object _gate = new();
     private readonly Dictionary<Guid, PcRtcSession> _sessions = [];
 
-    public PcRtcSession Open(Guid userId, Guid agentId, string agentSlug)
+    public PcRtcSession Open(Guid userId, Guid agentId, string agentSlug, Guid? sessionFamily = null)
     {
         var now = time.GetUtcNow();
-        var session = new PcRtcSession(Guid.CreateVersion7(), userId, agentId, agentSlug, now);
+        var session = new PcRtcSession(Guid.CreateVersion7(), userId, agentId, agentSlug, now, sessionFamily);
         lock (_gate)
         {
             foreach (var old in _sessions.Where(s => now - s.Value.OpenedAt > MaxAge).Select(s => s.Key).ToList())
@@ -155,6 +160,21 @@ internal sealed class PcRtcSessions(TimeProvider time)
 
             _sessions.Remove(sessionId);
             return session;
+        }
+    }
+
+    /// <summary>Tira as sessões de uma pessoa que cumprem a condição (a sessão, a senha, a conta ou a permissão dela mudou).</summary>
+    public IReadOnlyList<PcRtcSession> TakeWhere(Guid userId, Func<PcRtcSession, bool> match)
+    {
+        lock (_gate)
+        {
+            var found = _sessions.Values.Where(s => s.UserId == userId && match(s)).ToList();
+            foreach (var session in found)
+            {
+                _sessions.Remove(session.Id);
+            }
+
+            return found;
         }
     }
 
@@ -246,14 +266,26 @@ internal sealed class PcRtcHandler(
     PairingAuditWriter audit,
     DevicesDbContext db)
 {
-    /// <summary>O agente carrega a biblioteca na primeira oferta (cerca de um segundo) e junta os candidatos.</summary>
-    public static readonly TimeSpan OfferTimeout = TimeSpan.FromSeconds(10);
+    /// <summary>O agente carrega a biblioteca na primeira oferta (cerca de um segundo) e junta os candidatos; o prazo dele é de 12 s, e o desta espera é maior para a recusa dele chegar antes.</summary>
+    public static readonly TimeSpan OfferTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>Depois do resultado do comando a resposta já devia ter chegado (ela sai antes); uma folga curta basta.</summary>
     public static readonly TimeSpan AnswerGrace = TimeSpan.FromSeconds(2);
 
+    /// <summary>A vida máxima de um canal: o que resta do token de acesso da pessoa, entre estes limites.</summary>
+    public static readonly TimeSpan MinLifetime = TimeSpan.FromSeconds(60);
+
+    public static readonly TimeSpan MaxLifetime = TimeSpan.FromMinutes(15);
+
+    /// <param name="lifetime">O que resta do token de acesso desta requisição: o canal nunca vive mais que ele.</param>
+    /// <param name="sessionFamily">A sessão (família do refresh) da requisição; o canal fecha quando ela acaba.</param>
     public async Task<IResult> OfferAsync(
-        Guid userId, PcRtcOfferRequest request, ClientInfo client, CancellationToken cancellationToken)
+        Guid userId,
+        Guid? sessionFamily,
+        TimeSpan lifetime,
+        PcRtcOfferRequest request,
+        ClientInfo client,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -282,10 +314,11 @@ internal sealed class PcRtcHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        var session = sessions.Open(userId, target.AgentId, target.Slug);
+        var session = sessions.Open(userId, target.AgentId, target.Slug, sessionFamily);
         var token = NewToken();
         using var pending = answers.Expect(target.Slug, session.Id);
-        var message = PcMessages.RtcOffer(session.Id, request.Sdp!, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds);
+        var maxLifetime = (int)Math.Clamp(lifetime.TotalSeconds, MinLifetime.TotalSeconds, MaxLifetime.TotalSeconds);
+        var message = PcMessages.RtcOffer(session.Id, request.Sdp!, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds, maxLifetime);
 
         var reply = await gateway.RequestAsync(target.Slug, message, OfferTimeout, cancellationToken);
         if (reply.IsFailure)
@@ -354,6 +387,42 @@ internal sealed class PcRtcHandler(
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
 
+/// <summary>
+/// O canal direto não passa pela API a cada comando, então não perceberia sozinho que a pessoa deixou de poder usá-lo. Aqui ele
+/// fecha na hora quando a sessão que o abriu acaba (sair, "sair de todos", senha trocada ou recuperada, aparelho revogado), a
+/// conta é pausada ou revogada, ou a permissão do módulo é retirada: o agente solta o que o PC segurava, e a trilha grava o
+/// fechamento. Em processo, como os caches de permissão do Identity; um canal de outra instância vale em até a vida máxima dele.
+/// </summary>
+internal sealed class PcRtcAccessListener(
+    PcRtcSessions sessions, IAgentGateway gateway, PairingAuditWriter audit, DevicesDbContext db) : IUserAccessListener
+{
+    public async Task ChangedAsync(UserAccessChange change, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        var closing = sessions.TakeWhere(change.UserId, session => Affects(change, session));
+        foreach (var session in closing)
+        {
+            await gateway.SendAsync(session.AgentSlug, PcMessages.RtcClose(session.Id, PcRtcCloseV1BodyReason.Revoked), cancellationToken);
+            audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+        }
+
+        if (closing.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static bool Affects(UserAccessChange change, PcRtcSession session) => change.Kind switch
+    {
+        UserAccessChangeKind.SessionEnded => session.SessionFamily == change.SessionId,
+        UserAccessChangeKind.SessionsEnded => change.SessionId is null || session.SessionFamily != change.SessionId,
+        UserAccessChangeKind.AccountDisabled => true,
+        UserAccessChangeKind.ModuleRemoved => string.Equals(change.Module, AccessPermissions.PcModule, StringComparison.Ordinal),
+        _ => false,
+    };
+}
+
 internal static class PcRtcEndpoints
 {
     private static readonly string ModulePolicy = AccessPermissions.Policy(AccessPermissions.PcModule);
@@ -397,7 +466,12 @@ internal static class PcRtcEndpoints
     }
 
     private static async Task<IResult> OfferAsync(
-        PcRtcOfferRequest? request, ICurrentUser current, HttpContext http, PcRtcHandler handler, CancellationToken cancellationToken)
+        PcRtcOfferRequest? request,
+        ICurrentUser current,
+        HttpContext http,
+        PcRtcHandler handler,
+        TimeProvider time,
+        CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId)
         {
@@ -407,7 +481,17 @@ internal static class PcRtcEndpoints
         var errors = PcRtcValidator.Offer(request);
         return errors.Count > 0
             ? ProblemDetailsExtensions.ValidationProblem(errors)
-            : await handler.OfferAsync(userId, request!, ClientInfo.From(http), cancellationToken);
+            : await handler.OfferAsync(
+                userId, current.SessionId, RemainingAccess(http.User, time), request!, ClientInfo.From(http), cancellationToken);
+    }
+
+    /// <summary>O que resta do token de acesso (claim <c>exp</c>); sem a claim, o teto.</summary>
+    internal static TimeSpan RemainingAccess(ClaimsPrincipal user, TimeProvider time)
+    {
+        var claim = user.FindFirst("exp")?.Value;
+        return long.TryParse(claim, NumberStyles.None, CultureInfo.InvariantCulture, out var expires)
+            ? DateTimeOffset.FromUnixTimeSeconds(expires) - time.GetUtcNow()
+            : PcRtcHandler.MaxLifetime;
     }
 
     private static async Task<IResult> CandidateAsync(

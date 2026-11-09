@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -10,7 +11,8 @@ using UniOver.Modules.Identity.Security;
 namespace UniOver.Modules.Identity.Features.RevokeGuest;
 
 internal sealed class RevokeGuestHandler(
-    IdentityDbContext db, LoginAuditWriter audit, GuestAccountStatus status, AccessGrantsService grants, TimeProvider time)
+    IdentityDbContext db, LoginAuditWriter audit, GuestAccountStatus status, AccessGrantsService grants, TimeProvider time,
+    UserAccessNotifier? access = null)
 {
     /// <summary>
     /// Revoga a conta do convidado e derruba as sessões dele. O JWT de acesso já emitido vale até o prazo curto dele
@@ -58,6 +60,11 @@ internal sealed class RevokeGuestHandler(
         // também deixam de valer (o cache de permissões é esquecido; a leitura seguinte vê a conta revogada).
         status.MarkRevoked(guestId);
         grants.Invalidate(guestId);
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(guestId, UserAccessChangeKind.AccountDisabled), cancellationToken);
+        }
+
         return true;
     }
 }

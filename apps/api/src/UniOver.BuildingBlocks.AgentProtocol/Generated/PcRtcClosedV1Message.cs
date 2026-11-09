@@ -55,7 +55,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public Guid SessionId { get; set; }
     }
 
-    public enum PcRtcClosedV1BodyReason { ConnectTimeout, Disconnected, Failed, Idle, Replaced, Requested, Shutdown };
+    public enum PcRtcClosedV1BodyReason { Cloud, ConnectTimeout, Disconnected, Failed, Idle, Lifetime, Replaced, Requested, Revoked, Shutdown };
 
     public partial class PcRtcClosedV1Message
     {
@@ -88,6 +88,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "cloud":
+                    return PcRtcClosedV1BodyReason.Cloud;
                 case "connect_timeout":
                     return PcRtcClosedV1BodyReason.ConnectTimeout;
                 case "disconnected":
@@ -96,10 +98,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return PcRtcClosedV1BodyReason.Failed;
                 case "idle":
                     return PcRtcClosedV1BodyReason.Idle;
+                case "lifetime":
+                    return PcRtcClosedV1BodyReason.Lifetime;
                 case "replaced":
                     return PcRtcClosedV1BodyReason.Replaced;
                 case "requested":
                     return PcRtcClosedV1BodyReason.Requested;
+                case "revoked":
+                    return PcRtcClosedV1BodyReason.Revoked;
                 case "shutdown":
                     return PcRtcClosedV1BodyReason.Shutdown;
             }
@@ -110,6 +116,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case PcRtcClosedV1BodyReason.Cloud:
+                    JsonSerializer.Serialize(writer, "cloud", options);
+                    return;
                 case PcRtcClosedV1BodyReason.ConnectTimeout:
                     JsonSerializer.Serialize(writer, "connect_timeout", options);
                     return;
@@ -122,11 +131,17 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                 case PcRtcClosedV1BodyReason.Idle:
                     JsonSerializer.Serialize(writer, "idle", options);
                     return;
+                case PcRtcClosedV1BodyReason.Lifetime:
+                    JsonSerializer.Serialize(writer, "lifetime", options);
+                    return;
                 case PcRtcClosedV1BodyReason.Replaced:
                     JsonSerializer.Serialize(writer, "replaced", options);
                     return;
                 case PcRtcClosedV1BodyReason.Requested:
                     JsonSerializer.Serialize(writer, "requested", options);
+                    return;
+                case PcRtcClosedV1BodyReason.Revoked:
+                    JsonSerializer.Serialize(writer, "revoked", options);
                     return;
                 case PcRtcClosedV1BodyReason.Shutdown:
                     JsonSerializer.Serialize(writer, "shutdown", options);

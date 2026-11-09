@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -14,7 +15,7 @@ internal sealed record SessionSummary(
     Guid Id, string? UserAgent, string? Ip, DateTimeOffset CreatedAt, DateTimeOffset LastUsedAt, bool IsCurrent,
     string? Platform = null, bool? Installed = null);
 
-internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audit, TimeProvider time)
+internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audit, TimeProvider time, UserAccessNotifier? access = null)
 {
     public async Task<IReadOnlyList<SessionSummary>> ListAsync(
         Guid userId, Guid? currentId, CancellationToken cancellationToken)
@@ -58,6 +59,11 @@ internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audi
 
         await RevokeFamilyAsync(actorId, userId, familyId, client, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionEnded, familyId), cancellationToken);
+        }
+
         return true;
     }
 
@@ -76,6 +82,12 @@ internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audi
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        // "Sair de todos": as outras sessões acabaram e o canal direto do controle do PC que elas abriram fecha na hora.
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded, currentId), cancellationToken);
+        }
     }
 
     private async Task RevokeFamilyAsync(

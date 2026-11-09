@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Persistence;
@@ -31,7 +32,8 @@ internal enum SetGuestPermissionsStatus
 internal sealed record SetGuestPermissionsResult(SetGuestPermissionsStatus Status, GuestSummary? Guest = null);
 
 internal sealed class SetGuestPermissionsHandler(
-    IdentityDbContext db, LoginAuditWriter audit, AccessGrantsService grants, TimeProvider time)
+    IdentityDbContext db, LoginAuditWriter audit, AccessGrantsService grants, TimeProvider time,
+    UserAccessNotifier? access = null)
 {
     /// <param name="permissions">Já conferidas por <see cref="PermissionRules.Validate"/> (catálogo, módulo, dependência).</param>
     public async Task<SetGuestPermissionsResult> HandleAsync(
@@ -90,6 +92,15 @@ internal sealed class SetGuestPermissionsHandler(
 
         // Só depois do commit: nesta instância a mudança vale na hora; em outra, em até o prazo do cache (30 s).
         grants.Invalidate(guestId);
+        if (access is not null)
+        {
+            // Quem perdeu um módulo perde também o que ele abriu (o canal direto do controle do PC, por exemplo).
+            foreach (var grant in removed.Where(g => g.Permission.StartsWith("module:", StringComparison.Ordinal)))
+            {
+                await access.NotifyAsync(
+                    new UserAccessChange(guestId, UserAccessChangeKind.ModuleRemoved, Module: grant.Permission), cancellationToken);
+            }
+        }
 
         var summary = new GuestSummary(
             account.Id, account.DisplayName, account.Email, account.CreatedAt, account.DisabledAt, account.PausedAt, PermissionRules.Effective(wanted));

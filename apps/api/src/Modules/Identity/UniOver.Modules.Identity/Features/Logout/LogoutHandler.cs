@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -7,7 +8,7 @@ namespace UniOver.Modules.Identity.Features.Logout;
 
 internal sealed record LogoutCommand(Guid UserId, Guid SessionId, ClientInfo Client);
 
-internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit, TimeProvider time)
+internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit, TimeProvider time, UserAccessNotifier? access = null)
 {
     /// <summary>Revoga a família inteira: o refresh dessa sessão deixa de valer em qualquer aba.</summary>
     public async Task HandleAsync(LogoutCommand command, CancellationToken cancellationToken = default)
@@ -38,5 +39,11 @@ internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit
         audit.Add(userId, AuditEvents.Logout, command.Client);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // Só depois do commit: o canal direto do controle do PC que esta sessão abriu fecha na hora.
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionEnded, familyId), cancellationToken);
+        }
     }
 }

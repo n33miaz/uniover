@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -33,7 +34,8 @@ internal sealed class ChangePasswordHandler(
     LoginAuditWriter audit,
     FailedLoginCounter failures,
     TimeProvider time,
-    IOptions<IdentityModuleOptions> options)
+    IOptions<IdentityModuleOptions> options,
+    UserAccessNotifier? access = null)
 {
     public async Task<ChangePasswordResult> HandleAsync(
         Guid userId, Guid sessionId, string currentPassword, string newPassword,
@@ -86,6 +88,13 @@ internal sealed class ChangePasswordHandler(
         audit.Add(userId, AuditEvents.PasswordChanged, client);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // As outras sessões acabaram (a que trocou a senha segue): o canal direto delas fecha na hora.
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded, sessionId), cancellationToken);
+        }
+
         return new ChangePasswordResult(ChangePasswordStatus.Changed);
     }
 }

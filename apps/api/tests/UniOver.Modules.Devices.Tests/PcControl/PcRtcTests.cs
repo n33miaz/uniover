@@ -34,11 +34,12 @@ public sealed class PcRtcMessagesTests
         var token = new string('a', 43);
         var all = new (OutboundMessage Message, string Type)[]
         {
-            (PcMessages.RtcOffer(Session, "v=0\r\nm=application 9\r\na=fingerprint:sha-256 AA\r\n", token, 30), "pc.rtc.offer.v1"),
+            (PcMessages.RtcOffer(Session, "v=0\r\nm=application 9\r\na=fingerprint:sha-256 AA\r\n", token, 30, 600), "pc.rtc.offer.v1"),
             (PcMessages.RtcCandidate(Session, "candidate:1 1 udp 1 192.168.1.9 5000 typ host", "0", 0), "pc.rtc.candidate.v1"),
             (PcMessages.RtcCandidate(Session, "candidate:1 1 udp 1 192.168.1.9 5000 typ host", null, null), "pc.rtc.candidate.v1"),
             (PcMessages.RtcClose(Session, PcRtcCloseV1BodyReason.Requested), "pc.rtc.close.v1"),
             (PcMessages.RtcClose(Session, PcRtcCloseV1BodyReason.Replaced), "pc.rtc.close.v1"),
+            (PcMessages.RtcClose(Session, PcRtcCloseV1BodyReason.Revoked), "pc.rtc.close.v1"),
         };
 
         foreach (var (message, type) in all)
@@ -200,5 +201,45 @@ public sealed class PcRtcAnswersTests
         time.Advance(TimeSpan.FromSeconds(3));
 
         (await waiting).Should().BeNull();
+    }
+}
+
+public sealed class PcRtcAccessTests
+{
+    private static readonly Guid Alice = Guid.Parse("22222222-2222-7222-8222-222222222222");
+    private static readonly Guid Bruno = Guid.Parse("33333333-3333-7333-8333-333333333333");
+
+    [Fact]
+    public void TakeWhere_TakesOnlyThePersonsSessionsThatMatch()
+    {
+        var sessions = new PcRtcSessions(TimeProvider.System);
+        var family = Guid.NewGuid();
+        var mine = sessions.Open(Alice, Guid.NewGuid(), "pc-casa", family);
+        var other = sessions.Open(Alice, Guid.NewGuid(), "pc-casa", Guid.NewGuid());
+        var stranger = sessions.Open(Bruno, Guid.NewGuid(), "pc-bruno", family);
+
+        sessions.TakeWhere(Alice, s => s.SessionFamily == family).Should().ContainSingle().Which.Should().Be(mine);
+
+        sessions.Get(other.Id, Alice, negotiating: false).Should().NotBeNull();
+        sessions.Get(stranger.Id, Bruno, negotiating: false).Should().NotBeNull("outra pessoa nunca é tocada");
+    }
+
+    [Fact]
+    public void RemainingAccess_IsWhatIsLeftOfTheAccessToken_AndTheCeilingWithoutTheClaim()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-08T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture));
+        var expires = time.GetUtcNow().AddMinutes(7).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var with = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("exp", expires)]));
+        var without = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity());
+
+        PcRtcEndpoints.RemainingAccess(with, time).Should().Be(TimeSpan.FromMinutes(7));
+        PcRtcEndpoints.RemainingAccess(without, time).Should().Be(PcRtcHandler.MaxLifetime);
+    }
+
+    [Fact]
+    public void TheLifetimeLimitsAreOneMinuteAndFifteen()
+    {
+        PcRtcHandler.MinLifetime.Should().Be(TimeSpan.FromMinutes(1));
+        PcRtcHandler.MaxLifetime.Should().Be(TimeSpan.FromMinutes(15));
     }
 }
