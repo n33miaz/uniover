@@ -54,6 +54,15 @@ export type DirectCommandType =
   | 'pc.text.v2'
   | 'pc.media.v1';
 
+/**
+ * As mensagens v2 que só um agente que as lista no `ready` entende no canal (`caps`). Um agente anterior não manda o campo:
+ * mandar a mensagem mesmo assim seria recusada (e contada como violação), e o clique ou o texto se perderia.
+ */
+const CHANNEL_LISTED_TYPES: ReadonlySet<DirectCommandType> = new Set<DirectCommandType>([
+  'pc.click.v2',
+  'pc.text.v2',
+]);
+
 /** O comando nem saiu (o canal não está aberto agora): quem chama segue pela nuvem, sem risco de repetir. */
 export class DirectNotSent extends Error {}
 
@@ -210,6 +219,8 @@ export class PcDirect {
   private readonly pingSentAt = new Map<number, number>();
   private lastRtt: number | null = null;
   private lifeSeconds = 0;
+  /** As mensagens v2 que o agente deste canal listou no `ready` (vazio até ele responder, e com um agente anterior). */
+  private channelTypes: ReadonlySet<string> = new Set();
   private readyWaiter: (() => void) | null = null;
   private readonly pending = new Map<string, Pending>();
   private commandCount = 0;
@@ -272,6 +283,14 @@ export class PcDirect {
     if (!this.open()) return false;
     if (!this.adopted && this.cloudInFlight === 0 && this.cloudQuiet()) this.adopted = true;
     return this.adopted;
+  }
+
+  /**
+   * O agente deste canal entende este comando? Os de sempre sim (todo agente com canal os tem); as mensagens v2 novas só se
+   * ele as listou no `ready`. Quando não, quem chama manda pela nuvem, onde a API confere o que o agente de agora declarou.
+   */
+  accepts(type: DirectCommandType): boolean {
+    return !CHANNEL_LISTED_TYPES.has(type) || this.channelTypes.has(type);
   }
 
   /** A nuvem está em silêncio há pelo menos uma ida e volta dela (nunca usada: já está). */
@@ -465,6 +484,7 @@ export class PcDirect {
         this.readyWaiter = resolve;
       });
       this.lifeSeconds = 0;
+      this.channelTypes = new Set();
       link.input.send(
         JSON.stringify({ k: 'auth', tok: answer.token, cs: this.cloudSeq, ce: this.cloudEpoch }),
       );
@@ -594,6 +614,10 @@ export class PcDirect {
     const message = parse(data);
     if (message?.['k'] === 'ready') {
       this.lifeSeconds = typeof message['life'] === 'number' ? message['life'] : 0;
+      const caps = message['caps'];
+      this.channelTypes = new Set(
+        Array.isArray(caps) ? caps.filter((cap): cap is string => typeof cap === 'string') : [],
+      );
       this.readyWaiter?.();
     } else if (message?.['k'] === 'bye') {
       this.onBye(typeof message['r'] === 'string' ? message['r'] : '');

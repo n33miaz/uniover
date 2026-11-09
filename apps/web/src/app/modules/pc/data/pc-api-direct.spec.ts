@@ -9,6 +9,8 @@ function setup() {
   let cloudSeq = 0;
   const direct = {
     canUse: vi.fn(() => true),
+    // Por padrão o canal aceita tudo; um teste troca para o agente que não listou as mensagens v2 no `ready`.
+    accepts: vi.fn<(type: string) => boolean>(() => true),
     nextCloudSeq: vi.fn(() => ++cloudSeq),
     cloudEpoch: '3fa9c10d7be2465a',
     command: vi.fn<(type: string, body: Record<string, unknown>) => Promise<void>>(() =>
@@ -113,6 +115,46 @@ describe('PcApi over the direct channel', () => {
 
     expect(direct.command).toHaveBeenCalledWith(type, body);
     http.expectNone(() => true);
+  });
+
+  it.each<[string, (api: PcApi) => Promise<void>, string, string]>([
+    ['edit', (api) => api.edit({ erase: 2, text: 'a' }), 'pc.text.v2', '/v1/pc/text'],
+    [
+      'click with a modifier',
+      (api) => api.click('LEFT', undefined, { modifiers: ['CTRL'] }),
+      'pc.click.v2',
+      '/v1/pc/click',
+    ],
+    [
+      'click with a gap',
+      (api) => api.click('LEFT', undefined, { gapMs: 120 }),
+      'pc.click.v2',
+      '/v1/pc/click',
+    ],
+  ])(
+    'an agent whose channel did not list pc.%s goes by the cloud: nothing is sent that it would refuse',
+    async (_name, call, type, url) => {
+      const { api, direct, http } = setup();
+      direct.accepts.mockImplementation((asked) => asked !== type);
+      const sending = call(api);
+      await tick();
+      http.expectOne((req) => req.url.endsWith(url)).flush(null, noContent);
+      await sending;
+      expect(direct.command).not.toHaveBeenCalled();
+    },
+  );
+
+  it('the messages the channel always had need no listing, and a v1 click still goes through it', async () => {
+    const { api, direct } = setup();
+    direct.accepts.mockImplementation((asked) => !asked.endsWith('v2') || asked === 'pc.key.v2');
+    await api.click('LEFT');
+    await api.key('BACKSPACE', [], { repeat: 3 });
+    await api.edit({ text: 'olá' });
+    expect(direct.command.mock.calls.map(([type]) => type)).toEqual([
+      'pc.click.v1',
+      'pc.key.v2',
+      'pc.text.v1',
+    ]);
   });
 
   it('the pointer goes as totals through the channel, with no request', async () => {

@@ -184,7 +184,8 @@ export class PcApi {
     type: DirectCommandType,
     body: Record<string, unknown>,
   ): Promise<boolean> {
-    if (!this.direct.canUse()) return false;
+    // Um agente que não listou a mensagem no `ready` do canal não a entende: a nuvem leva (a API manda a v1 ou recusa na borda).
+    if (!this.direct.canUse() || !this.direct.accepts(type)) return false;
     try {
       await this.direct.command(type, body);
       return true;

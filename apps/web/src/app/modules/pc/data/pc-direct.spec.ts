@@ -962,3 +962,74 @@ describe('PcDirect clock and lifetime', () => {
     expect(direct.canUse()).toBe(true);
   });
 });
+
+describe('PcDirect: what the agent of the channel accepts', () => {
+  /** Abre o canal com um `ready` que lista (ou não) as mensagens v2 que o agente entende. */
+  async function openWith(
+    direct: PcDirect,
+    connections: FakeConnection[],
+    ready: Record<string, unknown>,
+    index = 0,
+  ) {
+    direct.start();
+    await vi.waitFor(() => expect(connections[index]?.channels).toHaveLength(2));
+    const connection = connections[index]!;
+    await vi.waitFor(() => expect(connection.remoteDescription).not.toBeNull());
+    connection.channel('pointer').open();
+    connection.channel('input').open();
+    await vi.waitFor(() => expect(connection.channel('input').last('auth')).toBeDefined());
+    connection.channel('input').receive({ k: 'ready', ...ready });
+    await vi.waitFor(() => expect(direct.mode()).toBe('direct'));
+    return connection;
+  }
+
+  it('an agent from before the v2 messages (no caps in the ready) accepts only what it always did', async () => {
+    const { direct, connections } = setup();
+    await openWith(direct, connections, {});
+    for (const type of [
+      'pc.click.v1',
+      'pc.key.v1',
+      'pc.key.v2',
+      'pc.text.v1',
+      'pc.media.v1',
+    ] as const)
+      expect(direct.accepts(type)).toBe(true);
+    expect(direct.accepts('pc.text.v2')).toBe(false);
+    expect(direct.accepts('pc.click.v2')).toBe(false);
+  });
+
+  it('an agent that lists the v2 messages accepts exactly those', async () => {
+    const { direct, connections } = setup();
+    await openWith(direct, connections, { caps: ['pc.text.v2'] });
+    expect(direct.accepts('pc.text.v2')).toBe(true);
+    expect(direct.accepts('pc.click.v2')).toBe(false);
+  });
+
+  it('a malformed list is as good as none', async () => {
+    const { direct, connections } = setup();
+    await openWith(direct, connections, { caps: 'pc.text.v2' });
+    expect(direct.accepts('pc.text.v2')).toBe(false);
+    TestBed.resetTestingModule();
+    const other = setup();
+    await openWith(other.direct, other.connections, { caps: [1, null, 'pc.click.v2'] });
+    expect(other.direct.accepts('pc.click.v2')).toBe(true);
+    expect(other.direct.accepts('pc.text.v2')).toBe(false);
+  });
+
+  it('a new channel starts over: what the previous agent listed does not carry over', async () => {
+    const { direct, connections } = setup();
+    const first = await openWith(direct, connections, { caps: ['pc.text.v2', 'pc.click.v2'] });
+    expect(direct.accepts('pc.click.v2')).toBe(true);
+    first.channel('input').receive({ k: 'bye', r: 'lifetime' });
+    await vi.waitFor(() => expect(connections).toHaveLength(2));
+    await vi.waitFor(() => expect(connections[1]?.channels).toHaveLength(2));
+    const second = connections[1]!;
+    second.channel('pointer').open();
+    second.channel('input').open();
+    await vi.waitFor(() => expect(second.channel('input').last('auth')).toBeDefined());
+    expect(direct.accepts('pc.click.v2')).toBe(false);
+    second.channel('input').receive({ k: 'ready' });
+    await vi.waitFor(() => expect(direct.mode()).toBe('direct'));
+    expect(direct.accepts('pc.text.v2')).toBe(false);
+  });
+});
