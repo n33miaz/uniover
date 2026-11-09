@@ -1397,8 +1397,10 @@ test.describe('Mídia', () => {
     await expect(page.locator('.strip.dragging')).toHaveCount(0);
     await expect.poll(() => media().length).toBeGreaterThan(0);
     const total = () => media().reduce((sum, body) => sum + Number(body['steps'] ?? 1), 0);
-    // 160 px de arrasto a 7 px por passo: 22 passos (o resto de pixel não completa um).
-    await expect.poll(total).toBe(22);
+    // 160 px de arrasto a 7 px por passo são 22 passos; o que ainda esperava quando o dedo saiu vale no máximo 10, então
+    // com a rede lenta saem menos, nunca mais.
+    await expect.poll(total).toBeGreaterThanOrEqual(12);
+    expect(total()).toBeLessThanOrEqual(22);
     expect(media().every((body) => body['action'] === 'VOLUME_UP')).toBe(true);
     expect(Math.max(...media().map((body) => Number(body['steps'] ?? 1)))).toBeLessThanOrEqual(10);
     // Para a esquerda desce.
@@ -1852,6 +1854,31 @@ test.describe('Teclas do pc.key.v2', () => {
       expect(await hiddenControls(page)).toEqual([]);
       await bar(page).getByRole('button', { name: 'Soltar' }).click();
       await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+    });
+
+    test('com o Alt segurado as teclas da Mídia ficam desligadas e nada sai como Alt+tecla; ao soltar, voltam', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await holdAlt(page);
+      await expect.poll(keyBodies).toEqual([{ key: 'ALT', action: 'DOWN' }, { key: 'TAB' }]);
+      await tabs(page).getByRole('link', { name: 'Mídia' }).click();
+      await page.getByRole('tab', { name: 'Vídeo', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Voltar 10 segundos' })).toBeDisabled();
+      await expect(page.locator('[data-shortcut="video-fullscreen"]')).toBeDisabled();
+      // O volume e o mudo são comandos de mídia, sem tecla: seguem valendo.
+      await expect(page.getByRole('button', { name: 'Mudo' })).toBeEnabled();
+      await page.getByRole('tab', { name: 'Slides', exact: true }).click();
+      await expect(page.locator('.half[data-action="next"]')).toBeDisabled();
+      await expect(page.getByRole('textbox', { name: 'Número do slide' })).toBeDisabled();
+      await page.locator('.half[data-action="next"]').click({ force: true });
+      await bar(page).getByRole('button', { name: 'Soltar' }).click();
+      await expect.poll(releases).toEqual([{ key: 'ALT' }]);
+      await expect(page.locator('.half[data-action="next"]')).toBeEnabled();
+      await page.locator('.half[data-action="next"]').click();
+      await expect
+        .poll(keyBodies)
+        .toEqual([{ key: 'ALT', action: 'DOWN' }, { key: 'TAB' }, { key: 'RIGHT' }]);
     });
 
     test('em um agente antigo "Trocar janela" segue sendo um Alt+Tab de um toque, sem barra', async ({

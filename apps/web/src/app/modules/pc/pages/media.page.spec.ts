@@ -124,12 +124,47 @@ describe('MediaPage', () => {
       expect(store.sendMedia).toHaveBeenCalledTimes(held);
     });
 
-    it('keeps repeating while a step is still waiting for the PC, up to three at once', async () => {
-      store.sendMedia.mockImplementation(() => new Promise<never>(() => undefined));
+    it('keeps repeating while a step is still waiting for the PC, up to three at once, and goes on as they come back', async () => {
+      const answers: (() => void)[] = [];
+      store.sendMedia.mockImplementation(
+        () => new Promise((resolve) => answers.push(() => resolve(null))),
+      );
       press('Aumentar o volume');
+      // O primeiro passo vem no toque e a repetição começa depois: com a rede lenta, nenhum voltou e já há três no ar.
       await vi.advanceTimersByTimeAsync(420 + 190 * 8);
-      // A resposta lenta não para a repetição (cada passo não espera a ida e volta do anterior), mas ela tem teto.
       expect(store.sendMedia).toHaveBeenCalledTimes(3);
+      // Uma resposta volta: a repetição, que seguia viva, ocupa a vaga na rodada seguinte.
+      answers[0]();
+      await vi.advanceTimersByTimeAsync(190);
+      expect(store.sendMedia).toHaveBeenCalledTimes(4);
+      // E o teto segue valendo: mais rodadas sem resposta não mandam além de três em voo.
+      await vi.advanceTimersByTimeAsync(190 * 5);
+      expect(store.sendMedia).toHaveBeenCalledTimes(4);
+      press('Aumentar o volume', 'pointerup');
+    });
+
+    it('the repeat stops when the PC drops, with the finger still down, and does not come back with it', async () => {
+      press('Aumentar o volume');
+      await vi.advanceTimersByTimeAsync(420 + 190 * 2);
+      store.phase.set('offline');
+      fixture.detectChanges();
+      const sent = store.sendMedia.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(190 * 5);
+      expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+      store.phase.set('ready');
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(190 * 5);
+      expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+    });
+
+    it('the repeat stops when the mode changes, with the finger still down', async () => {
+      press('Aumentar o volume');
+      await vi.advanceTimersByTimeAsync(420 + 190 * 2);
+      tab('slides').click();
+      fixture.detectChanges();
+      const sent = store.sendMedia.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(190 * 5);
+      expect(store.sendMedia).toHaveBeenCalledTimes(sent);
     });
 
     it('keyboard and screen reader activation (a click with no pointer) also change the volume', () => {
