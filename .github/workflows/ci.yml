@@ -319,6 +319,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      # Reaproveita o cache do Gradle que o deploy grava (só leitura aqui): o download pelo GitHub às vezes devolve 504.
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       # O SDK do Android já vem na imagem do runner.
       - name: Testes de unidade e de tela
         run: ./gradlew --no-daemon testDebugUnitTest
