@@ -73,6 +73,7 @@ class ProcessMessage:
         uncapped_types: Collection[str] = (),
         release_inputs: Callable[[], None] | None = None,
         observe_timestamp: Callable[[str | None], None] | None = None,
+        on_cloud_pc_input: Callable[[str], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -88,6 +89,10 @@ class ProcessMessage:
         self._command_timeout = command_timeout_seconds
         self._uncapped_types = frozenset(uncapped_types)
         self._release_inputs = release_inputs
+        # Chamado com o tipo de cada comando `pc.*` que chega pela API (nunca pelo canal direto),
+        # antes de ele entrar na faixa: o canal direto fecha primeiro, e nada dele cai depois do que
+        # a nuvem faz.
+        self._on_cloud_pc_input = on_cloud_pc_input
         # Recebe o `ts` de cada batimento da API (`api.keepalive.v1`): só ele, que a API nunca
         # segura, serve para estimar a diferença entre o relógio dela e o monotônico deste agente.
         # Um comando `pc.*` não entra aí: se tivesse chegado atrasado, ensinaria a estimativa a
@@ -108,6 +113,9 @@ class ProcessMessage:
         # Comandos que vieram pelo canal direto e esperam a vez (id -> quem recebe o resultado). O
         # resultado deles volta pelo canal, nunca pela API (que não os pediu).
         self._direct: dict[str, Callable[[CommandResult], None]] = {}
+        # Os ids de TODO comando do canal direto ainda na fila (inclusive o movimento, que não tem
+        # quem espere resposta): o que sai da fila quando o canal fecha, e que nunca vai à API.
+        self._direct_ids: set[str] = set()
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -153,6 +161,8 @@ class ProcessMessage:
             task.add_done_callback(self._key_tasks.discard)
             return
         if command.type.startswith(_PC_PREFIX) and not command.type.startswith(_RTC_PREFIX):
+            if self._on_cloud_pc_input is not None:
+                self._on_cloud_pc_input(command.type)
             self._enqueue_pc(command)
             return
         if command.type in self._background_types:
@@ -172,20 +182,21 @@ class ProcessMessage:
         Entra na mesma fila, na mesma ordem e nos mesmos handlers dos da API. O resultado vai para
         `on_result` (o canal), não para a API; `None` não espera resposta.
         """
+        self._direct_ids.add(command.id)
         if on_result is not None:
-            # Só quem espera resposta fica registrado: o movimento (sem resposta) pode ser somado ou
-            # descartado pela fila cheia, e um registro dele nunca sairia daqui.
             self._direct[command.id] = on_result
         self._enqueue_pc(command)
 
     def direct_lost(self) -> None:
-        """O canal direto fechou: os comandos dele que esperavam resposta saem da faixa e o que o PC
-        segurava é solto (como na queda da API, sem mexer no que veio pela nuvem)."""
-        if self._direct:
-            keep = [queued for queued in self._pc_queue if queued.id not in self._direct]
+        """O canal direto fechou: tudo o que dele esperava na faixa (comandos e movimento) sai dela
+        e o que o PC segurava é solto (como na queda da API, sem mexer no da nuvem). O que já
+        estava sendo executado termina, mas o resultado não vai a lugar nenhum."""
+        if self._direct_ids:
+            keep = [queued for queued in self._pc_queue if queued.id not in self._direct_ids]
             self._pc_queue.clear()
             self._pc_queue.extend(keep)
-            self._direct.clear()
+        self._direct_ids.clear()
+        self._direct.clear()
         self._release_held_inputs()
 
     def _enqueue_pc(self, command: Command) -> None:
@@ -228,11 +239,13 @@ class ProcessMessage:
                 if merged is not None:
                     queue[index + 1] = merged
                     del queue[index]
+                    self._direct_ids.discard(older.id)
                     self._warn_pc_overflow("somando")
                     return
         for index, queued in enumerate(queue):
             if queued.type in silent:
                 del queue[index]
+                self._direct_ids.discard(queued.id)
                 self._warn_pc_overflow("descartando")
                 return
 
@@ -259,17 +272,23 @@ class ProcessMessage:
         """Executa um comando da faixa e responde SEM prender a faixa: o envio do resultado (rede)
         sai em tarefa própria, para o movimento que vem atrás não esperar por ele. A ordem dos
         resultados não importa (a API os casa pelo `id`); a ordem da execução é a da faixa."""
+        # De onde veio, anotado ANTES de executar: se o canal fechar no meio, o resultado é dele
+        # (e é descartado), nunca da API, que não pediu este comando.
+        from_direct = command.id in self._direct_ids
+        self._direct_ids.discard(command.id)
         try:
             result = await self._handle_command(command)
         except Exception:
             _log.exception("falha ao executar %s (id=%s)", command.type, command.id)
             self._direct.pop(command.id, None)
             return
-        if command.id in self._direct:
-            try:
-                self._direct.pop(command.id)(result)
-            except Exception:
-                _log.exception("falha ao responder pelo canal direto (%s)", command.type)
+        if from_direct:
+            sink = self._direct.pop(command.id, None)
+            if sink is not None:
+                try:
+                    sink(result)
+                except Exception:
+                    _log.exception("falha ao responder pelo canal direto (%s)", command.type)
             return
         if command.type in self._silent_types:
             return
@@ -341,6 +360,7 @@ class ProcessMessage:
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
         self._pc_queue.clear()
         self._direct.clear()
+        self._direct_ids.clear()
         self._pointer_order.reset()
         # Resultado de uma conexão que caiu não serve a ninguém: não fica tentando sair pela nova.
         while self._result_tasks:

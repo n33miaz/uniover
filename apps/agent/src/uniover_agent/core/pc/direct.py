@@ -7,18 +7,28 @@ módulo garante é o resto:
 
 - a primeira mensagem do canal de entrada precisa levar o token que a API emitiu (uso único, vida
   curta, contada aqui pelo relógio monotônico); sem ele o canal é fechado e o ponteiro não passa;
+- o canal tem vida máxima (a API a tira do que resta do token de acesso da pessoa): ele nunca vive
+  mais que a sessão que o autorizou, e a API o fecha na hora se a sessão, a senha, a conta ou a
+  permissão da pessoa deixam de valer;
 - as mensagens viram os MESMOS comandos `pc.*` da nuvem: passam pelo mesmo esquema (`EnvelopeGate`),
   pela mesma faixa e pelos mesmos handlers (idade, soltura de botão, registro sem o texto);
 - fechar o canal, por qualquer motivo, solta o que o PC ficou segurando e descarta o que dele
   esperava na faixa (como a queda da conexão com a API);
 - no máximo um canal por vez: uma oferta nova troca o par;
-- sem mensagem por `idle_seconds`, ou sem autenticar a tempo, o canal é fechado.
+- chegou comando de entrada pela nuvem enquanto o canal em uso existe: o canal fecha PRIMEIRO, de
+  modo que um aperto atrasado do canal nunca cai depois de um soltar da nuvem;
+- sem mensagem por `idle_seconds`, sem autenticar a tempo ou além da vida máxima, o canal é fechado.
 
 O ponteiro viaja como TOTAL ACUMULADO com número de sequência, num canal sem retransmissão: a
 mensagem perdida não perde caminho (a seguinte traz a soma), a que chega fora de ordem é ignorada.
 Cada comando da entrada leva também o total do ponteiro no instante em que foi dado, e o agente o
 aplica antes dele: o clique nunca passa na frente do movimento que o antecedeu, mesmo com os dois
 canais sendo independentes.
+
+A idade de um comando é medida como a da nuvem faz, só que com os sinais de vida do próprio canal
+(`ping` no canal do ponteiro, que nunca espera atrás de um comando): a escala de relógio do app
+contra o monotônico daqui. Sem essa escala (os dois primeiros sinais ainda não vieram) nenhum
+comando de entrada é aceito, exceto o que solta (`UP`), que passa sempre.
 """
 
 import asyncio
@@ -32,7 +42,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
@@ -59,9 +69,8 @@ PC_RTC_CAPABILITY: Final = "pc.rtc.v1"
 OFFER_TYPE: Final = "pc.rtc.offer.v1"
 CANDIDATE_TYPE: Final = "pc.rtc.candidate.v1"
 CLOSE_TYPE: Final = "pc.rtc.close.v1"
-# Os `pc.rtc.*` não entram na faixa do PC: a oferta espera a biblioteca carregar e não pode
-# segurar o
-# mouse da nuvem.
+# Os `pc.rtc.*` não entram na faixa do PC: a oferta espera a biblioteca carregar e não pode segurar
+# o mouse da nuvem.
 RTC_TYPES: Final = frozenset({OFFER_TYPE, CANDIDATE_TYPE, CLOSE_TYPE})
 # Sem resposta ao comando (a API os manda sem esperar): só a oferta é respondida.
 RTC_SILENT_TYPES: Final = frozenset({CANDIDATE_TYPE, CLOSE_TYPE})
@@ -71,17 +80,23 @@ RTC_SILENT_TYPES: Final = frozenset({CANDIDATE_TYPE, CLOSE_TYPE})
 INPUT_TYPES: Final = frozenset(
     {"pc.click.v1", "pc.key.v1", "pc.key.v2", "pc.text.v1", "pc.media.v1"}
 )
+# Tudo o que mexe no mouse ou no teclado: um destes chegando pela nuvem fecha o canal em uso.
+CLOUD_INPUT_TYPES: Final = INPUT_TYPES | {POINTER_TYPE}
 
 # Nenhuma mensagem legítima chega perto disto (o texto vai até 200 caracteres).
 MAX_MESSAGE_CHARS: Final = 4096
-# Mensagens inválidas seguidas que derrubam o canal.
+# Mensagens inválidas (JSON ruim ou JSON bom com conteúdo recusado) sem nenhuma aceita no meio.
 MAX_VIOLATIONS: Final = 30
 # Peças em que um deslocamento acumulado grande é dividido (os limites do contrato são por comando).
 MAX_POINTER_CHUNKS: Final = 8
 # Quanto o fechamento do par pode levar antes de ser abandonado.
 PEER_CLOSE_TIMEOUT_SECONDS: Final = 5.0
+# Tempo para o `bye` (o aviso do motivo) sair antes de o par ser fechado.
+BYE_FLUSH_SECONDS: Final = 0.1
 # Amostras de RTT guardadas para o resumo ao fechar.
 MAX_RTT_SAMPLES: Final = 200
+# O maior `repeat` do contrato do `pc.key.v2`.
+MAX_KEY_REPEAT: Final = 50
 
 REASON_REQUESTED: Final = "requested"
 REASON_REPLACED: Final = "replaced"
@@ -90,6 +105,24 @@ REASON_DISCONNECTED: Final = "disconnected"
 REASON_FAILED: Final = "failed"
 REASON_IDLE: Final = "idle"
 REASON_CONNECT_TIMEOUT: Final = "connect_timeout"
+REASON_LIFETIME: Final = "lifetime"
+REASON_REVOKED: Final = "revoked"
+REASON_CLOUD: Final = "cloud"
+# Os motivos que o contrato aceita em `pc.rtc.close.v1` (a API manda) e em `pc.rtc.closed.v1`.
+KNOWN_REASONS: Final = frozenset(
+    {
+        REASON_REQUESTED,
+        REASON_REPLACED,
+        REASON_SHUTDOWN,
+        REASON_DISCONNECTED,
+        REASON_FAILED,
+        REASON_IDLE,
+        REASON_CONNECT_TIMEOUT,
+        REASON_LIFETIME,
+        REASON_REVOKED,
+        REASON_CLOUD,
+    }
+)
 
 # Recusas da oferta (`command.result.v1`, código estável).
 REFUSED_UNAVAILABLE: Final = "rtc_unavailable"
@@ -99,6 +132,12 @@ Submit = Callable[[Command, Callable[[CommandResult], None] | None], None]
 NotifyClosed = Callable[[str, str], Awaitable[None]]
 Record = Callable[[str, str, str], None]
 
+_UNREACHABLE_HINT: Final = (
+    "o app negociou o canal direto mas nenhum pacote dele chegou a este PC: confira o Firewall do "
+    "Windows (rede em perfil Público sem regra de entrada para o Python) e se a rede isola os "
+    "aparelhos entre si; o app seguiu pela nuvem"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class DirectSettings:
@@ -106,8 +145,16 @@ class DirectSettings:
 
     connect_timeout_seconds: float = 15.0
     idle_seconds: float = 20.0
+    # Teto da vida de um canal, qualquer que seja o pedido da API (a vida do token de acesso).
+    max_lifetime_seconds: float = 900.0
+    accept_timeout_seconds: float = 12.0
     max_input_per_second: int = 40
     max_pointer_per_second: int = 240
+    # Soltar (`UP`) tem balde próprio e largo: nunca disputa vaga com os apertos.
+    max_release_per_second: int = 200
+    # O mesmo orçamento da nuvem: umas 100 teclas por segundo, contando cada repetição.
+    max_presses_per_second: int = 100
+    max_text_chars_per_second: int = 600
     tick_seconds: float = 0.5
 
 
@@ -128,18 +175,18 @@ class DirectRefused(Exception):  # noqa: N818 - o nome diz o que aconteceu
 
 
 class _Rate:
-    """Teto de mensagens por segundo (janela fixa): passou, a mensagem é descartada."""
+    """Teto por segundo (janela fixa): passou, a mensagem é descartada. `cost` é o peso dela."""
 
     def __init__(self, limit: int) -> None:
         self._limit = limit
         self._start = 0.0
         self._count = 0
 
-    def allow(self, now: float) -> bool:
+    def allow(self, now: float, cost: int = 1) -> bool:
         if now - self._start >= 1.0:
             self._start = now
             self._count = 0
-        self._count += 1
+        self._count += cost
         return self._count <= self._limit
 
 
@@ -149,11 +196,19 @@ class _Session:
     token: str
     created: float
     token_deadline: float
+    lifetime: float
     clock: ClockOffset
     input_rate: _Rate
+    press_rate: _Rate
+    text_rate: _Rate
+    release_rate: _Rate
     pointer_rate: _Rate
     peer: DirectPeer | None = None
+    # Os dois canais de dados abriram (o app chegou a este PC).
+    opened: bool = False
     authenticated: bool = False
+    # Já comandou alguma coisa (movimento ou comando): só então um comando da nuvem o fecha.
+    used: bool = False
     closed: bool = False
     last_rx: float = 0.0
     violations: int = 0
@@ -177,6 +232,26 @@ def _iso(milliseconds: float) -> str:
 def _as_int(value: object) -> int | None:
     """O inteiro de um campo do protocolo; `None` para o que não é (inclusive `True` e `False`)."""
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _as_millis(value: object) -> float | None:
+    """O instante (ms) de um campo do protocolo; `None` se não é um número finito."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def _is_release(message_type: str, body: dict[str, Any]) -> bool:
+    """Soltar um botão ou um modificador: nunca expira e nunca espera vaga no limite."""
+    return message_type in ("pc.click.v1", "pc.key.v2") and body.get("action") == "UP"
+
+
+def _press_cost(message_type: str, body: dict[str, Any]) -> int:
+    """Quantas teclas o comando aperta: `repeat` conta cada aperto (o mesmo orçamento da nuvem)."""
+    if message_type != "pc.key.v2":
+        return 1
+    repeat = _as_int(body.get("repeat"))
+    return max(1, min(MAX_KEY_REPEAT, repeat)) if repeat is not None else 1
 
 
 def _bucket(value: float | None, edges: tuple[int, ...]) -> str:
@@ -237,8 +312,19 @@ class PcDirectService:
 
     # ---- sinalização (vem da API) -------------------------------------------------------------
 
-    async def open(self, session_id: str, sdp: str, token: str, ttl_seconds: int) -> str:
+    async def open(
+        self,
+        session_id: str,
+        sdp: str,
+        token: str,
+        ttl_seconds: int,
+        max_lifetime_seconds: int | None = None,
+    ) -> str:
         """Atende a oferta: troca o par anterior, aplica a oferta e devolve a resposta SDP."""
+        settings = self._settings
+        lifetime = settings.max_lifetime_seconds
+        if max_lifetime_seconds is not None:
+            lifetime = min(lifetime, float(max_lifetime_seconds))
         async with self._lifecycle:
             if self._current is not None:
                 await self._finish(self._current, REASON_REPLACED, notify=False)
@@ -248,27 +334,36 @@ class PcDirectService:
                 token=token,
                 created=now,
                 token_deadline=now + ttl_seconds,
+                lifetime=lifetime,
                 clock=ClockOffset(monotonic=self._monotonic),
-                input_rate=_Rate(self._settings.max_input_per_second),
-                pointer_rate=_Rate(self._settings.max_pointer_per_second),
+                input_rate=_Rate(settings.max_input_per_second),
+                press_rate=_Rate(settings.max_presses_per_second),
+                text_rate=_Rate(settings.max_text_chars_per_second),
+                release_rate=_Rate(settings.max_release_per_second),
+                pointer_rate=_Rate(settings.max_pointer_per_second),
                 last_rx=now,
             )
             self._current = session
             session.peer = self._factory(
                 PeerCallbacks(
                     on_message=lambda channel, text: self._on_message(session, channel, text),
-                    on_open=lambda: _log.debug("canal direto aberto (os dois canais de dados)"),
+                    on_open=lambda: self._on_peer_open(session),
                     on_closed=lambda: self._spawn(self._finish(session, REASON_FAILED)),
                 )
             )
             try:
-                answer = await session.peer.accept_offer(sdp)
+                # Com prazo: negociação que não termina nunca prende o `lifecycle`.
+                answer = await asyncio.wait_for(
+                    session.peer.accept_offer(sdp), settings.accept_timeout_seconds
+                )
             except DirectUnavailable:
                 await self._finish(session, REASON_FAILED, notify=False)
                 raise DirectRefused(REFUSED_UNAVAILABLE) from None
             except Exception:
-                # Nunca o SDP nem o motivo detalhado da biblioteca: só que falhou.
-                _log.warning("oferta do canal direto recusada (a negociação falhou)")
+                # Nunca o SDP nem o motivo da biblioteca: só que falhou (ou passou do prazo).
+                _log.warning(
+                    "oferta do canal direto recusada (a negociação falhou ou passou do prazo)"
+                )
                 await self._finish(session, REASON_FAILED, notify=False)
                 raise DirectRefused(REFUSED_FAILED) from None
             session.watchdog = asyncio.create_task(self._watch(session))
@@ -290,13 +385,31 @@ class PcDirectService:
         """A API (ou o app) fechou o canal: solta o que o PC segurava, sem avisar de volta."""
         session = self._current
         if session is not None and session.id == session_id:
-            await self._finish(session, reason, notify=False)
+            await self._finish(
+                session, reason if reason in KNOWN_REASONS else REASON_REQUESTED, notify=False
+            )
 
     def api_disconnected(self) -> None:
         """A conexão com a API caiu: o canal não sobrevive à sessão que o autorizou."""
         session = self._current
         if session is not None and not session.closed:
-            self._spawn(self._finish(session, REASON_DISCONNECTED, notify=False))
+            self._halt(session)
+            self._spawn(self._dispose(session, REASON_DISCONNECTED, notify=False))
+
+    def cloud_input(self, message_type: str) -> None:
+        """Chegou comando de entrada pela nuvem: o canal em uso fecha ANTES de ele ir à faixa.
+
+        Síncrono de propósito: a sessão é dada como fechada e o que o PC segurava é solto já, então
+        nada que ainda venha pelo canal (um aperto atrasado) cai depois do que a nuvem vai fazer. O
+        resto (avisar o app, fechar o par) segue em tarefa. Um canal que nunca comandou nada fica.
+        """
+        if message_type not in CLOUD_INPUT_TYPES:
+            return
+        session = self._current
+        if session is None or session.closed or not session.used:
+            return
+        self._halt(session)
+        self._spawn(self._dispose(session, REASON_CLOUD, notify=True))
 
     async def aclose(self) -> None:
         """O agente está encerrando."""
@@ -308,6 +421,10 @@ class PcDirectService:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     # ---- o canal ------------------------------------------------------------------------------
+
+    def _on_peer_open(self, session: _Session) -> None:
+        session.opened = True
+        _log.debug("canal direto aberto (os dois canais de dados)")
 
     def _on_message(self, session: _Session, channel: str, text: str) -> None:
         if session.closed:
@@ -329,17 +446,24 @@ class PcDirectService:
             with contextlib.suppress(ValueError, RecursionError):
                 data = json.loads(text)
         if isinstance(data, dict) and isinstance(data.get("k"), str):
-            session.violations = 0
             return data
         self._violation(session)
         return None
 
     def _violation(self, session: _Session) -> None:
+        """Conta uma mensagem recusada (JSON ruim ou conteúdo inválido). Só uma aceita a zera."""
         session.violations += 1
         session.dropped += 1
         if session.violations >= MAX_VIOLATIONS:
             _log.warning("canal direto fechado: mensagens inválidas demais")
-            self._spawn(self._finish(session, REASON_FAILED))
+            self._halt(session)
+            self._spawn(self._dispose(session, REASON_FAILED, notify=True))
+
+    @staticmethod
+    def _accepted(session: _Session) -> None:
+        """Uma mensagem de conteúdo válido foi aceita: a sequência de recusas recomeça."""
+        session.violations = 0
+        session.used = True
 
     def _on_input(self, session: _Session, data: dict[str, Any], now: float) -> None:
         kind = data["k"]
@@ -347,10 +471,12 @@ class PcDirectService:
             # A primeira mensagem do canal de entrada TEM de ser o `auth` com o token da API.
             if kind == "auth" and self._token_ok(session, data.get("tok"), now):
                 session.authenticated = True
-                self._send(session, INPUT_CHANNEL, {"k": "ready"})
+                remaining = max(1, int(session.lifetime - (now - session.created)))
+                self._send(session, INPUT_CHANNEL, {"k": "ready", "life": remaining})
             else:
                 _log.warning("canal direto recusado: a primeira mensagem não trouxe o token válido")
-                self._spawn(self._finish(session, REASON_FAILED))
+                self._halt(session)
+                self._spawn(self._dispose(session, REASON_FAILED, notify=True))
             return
         if kind != "cmd":
             self._violation(session)
@@ -363,7 +489,9 @@ class PcDirectService:
             return False
         return hmac.compare_digest(token.encode("utf-8"), session.token.encode("utf-8"))
 
-    def _on_command(self, session: _Session, data: dict[str, Any], now: float) -> None:
+    def _on_command(  # noqa: PLR0911 - uma recusa por regra, cada uma com o seu código
+        self, session: _Session, data: dict[str, Any], now: float
+    ) -> None:
         command_id = data.get("i")
         message_type = data.get("t")
         body = data.get("b")
@@ -371,33 +499,46 @@ class PcDirectService:
             self._violation(session)
             return
 
-        def refuse(code: str) -> None:
+        def refuse(code: str, *, violation: bool = False) -> None:
             session.dropped += 1
             self._send(
                 session, INPUT_CHANNEL, {"k": "ack", "i": command_id, "ok": False, "c": code}
             )
+            if violation:
+                self._violation(session)
 
-        if not session.input_rate.allow(now):
-            refuse("rate_limited")
-            return
         if (
             not isinstance(message_type, str)
             or message_type not in INPUT_TYPES
             or not isinstance(body, dict)
         ):
-            refuse("not_allowed")
+            refuse("not_allowed", violation=True)
+            return
+        release = _is_release(message_type, body)
+        if not self._within_rates(session, now, message_type, body, release=release):
+            refuse("rate_limited")
+            return
+        # Todo comando de entrada traz o instante do app (`ts`); sem ele não há como medir a idade.
+        sent_ms = _as_millis(data.get("ts"))
+        if sent_ms is None:
+            refuse("invalid_message", violation=True)
+            return
+        age = self._age_of(session, sent_ms, release=release)
+        if age is None:
+            refuse("not_ready")  # a escala de relógio ainda não existe: só soltar passa
+            return
+        if age > MAX_COMMAND_AGE_SECONDS:
+            refuse("expired")
             return
         # O movimento que antecedeu o comando entra antes dele, mesmo se o ponteiro atrasou.
         snapshot = data.get("p")
         if isinstance(snapshot, dict):
             self._apply_snapshot(session, snapshot, heartbeat=False)
-        if self._expired(session, data.get("ts"), message_type, body):
-            refuse("expired")
-            return
-        accepted = self._validate(message_type, body)
+        accepted = self._validate(message_type, body, age)
         if accepted is None:
-            refuse("invalid_message")
+            refuse("invalid_message", violation=True)
             return
+        self._accepted(session)
 
         def answered(result: CommandResult) -> None:
             ok = result.status.value == "ok"
@@ -408,23 +549,33 @@ class PcDirectService:
 
         self._submit(accepted.command, answered)
 
-    def _expired(
-        self, session: _Session, sent_ms: object, message_type: str, body: dict[str, Any]
+    @staticmethod
+    def _within_rates(
+        session: _Session, now: float, message_type: str, body: dict[str, Any], *, release: bool
     ) -> bool:
-        """Idade do comando pelo relógio do app contra o monotônico daqui (como a nuvem faz)."""
-        if message_type in ("pc.click.v1", "pc.key.v2") and body.get("action") == "UP":
-            return False  # soltar nunca expira (o botão ou o modificador não pode ficar preso)
-        if (
-            not isinstance(sent_ms, (int, float))
-            or isinstance(sent_ms, bool)
-            or not math.isfinite(sent_ms)
-        ):
+        """Os tetos por segundo: soltar tem balde próprio; o resto paga mensagem, teclas e texto."""
+        if release:
+            return session.release_rate.allow(now)
+        if not session.input_rate.allow(now):
             return False
+        if not session.press_rate.allow(now, _press_cost(message_type, body)):
+            return False
+        text = body.get("text")
+        return not isinstance(text, str) or session.text_rate.allow(now, len(text))
+
+    @staticmethod
+    def _age_of(session: _Session, sent_ms: float, *, release: bool) -> float | None:
+        """Idade do comando pelo relógio do app contra o monotônico daqui (como a nuvem faz).
+
+        `None`: ainda não há escala de relógio (menos de dois sinais de vida que concordam), e
+        o comando não é de soltar. Soltar sempre passa, com idade zero.
+        """
+        if release:
+            return 0.0
         try:
-            age = session.clock.age(_iso(sent_ms))
+            return session.clock.age(_iso(sent_ms))
         except OverflowError, OSError, ValueError:
-            return False
-        return age is not None and age > MAX_COMMAND_AGE_SECONDS
+            return None
 
     def _on_pointer(self, session: _Session, data: dict[str, Any], now: float) -> None:
         if not session.authenticated:
@@ -443,15 +594,20 @@ class PcDirectService:
         self._apply_snapshot(session, data, heartbeat=data.get("hb") == 1)
 
     def _on_ping(self, session: _Session, data: dict[str, Any]) -> None:
-        sent = data.get("t")
-        if isinstance(sent, (int, float)) and not isinstance(sent, bool) and math.isfinite(sent):
+        sent = _as_millis(data.get("t"))
+        if sent is not None:
             with contextlib.suppress(OverflowError, OSError, ValueError):
                 session.clock.observe(_iso(sent))
         rtt = _as_int(data.get("r"))
         if rtt is not None and 0 <= rtt < 60_000:  # noqa: PLR2004
             session.rtts.append(rtt)
             del session.rtts[:-MAX_RTT_SAMPLES]
-        self._send(session, POINTER_CHANNEL, {"k": "pong", "n": data.get("n")})
+        # `c`: a escala de relógio já existe (o app só passa a usar o canal depois disto).
+        self._send(
+            session,
+            POINTER_CHANNEL,
+            {"k": "pong", "n": data.get("n"), "c": session.clock.offset is not None},
+        )
 
     def _apply_snapshot(self, session: _Session, data: dict[str, Any], *, heartbeat: bool) -> None:
         """Aplica o que falta para chegar ao total do app (`s` número, `x y w h` totais)."""
@@ -468,6 +624,7 @@ class PcDirectService:
         session.pointer_seq = seq
         delta = [new - old for new, old in zip(totals, session.totals, strict=True)]
         session.totals = totals
+        self._accepted(session)
         self._emit_pointer(session, delta, heartbeat=heartbeat)
 
     def _emit_pointer(self, session: _Session, delta: list[int], *, heartbeat: bool) -> None:
@@ -494,7 +651,7 @@ class PcDirectService:
             body["scrollX"] = chunk[2]
         if chunk[3]:
             body["scrollY"] = chunk[3]
-        accepted = self._validate(POINTER_TYPE, body)
+        accepted = self._validate(POINTER_TYPE, body, 0.0)
         if accepted is None:
             session.dropped += 1
             return
@@ -502,7 +659,7 @@ class PcDirectService:
 
     # ---- comandos -----------------------------------------------------------------------------
 
-    def _validate(self, message_type: str, body: dict[str, Any]) -> Accepted | None:
+    def _validate(self, message_type: str, body: dict[str, Any], age: float) -> Accepted | None:
         """Passa pelo portão da nuvem; `None` se o contrato recusa (corpo fora do registro)."""
         envelope = {
             "v": 1,
@@ -510,7 +667,7 @@ class PcDirectService:
             "type": message_type,
             "source": "api",
             "target": f"agent:{self._agent_id}",
-            "ts": self._fresh_stamp(),
+            "ts": self._stamp(age),
             "correlationId": None,
             "body": body,
         }
@@ -522,11 +679,12 @@ class PcDirectService:
         )
         return None
 
-    def _fresh_stamp(self) -> str:
-        """Um `ts` de "agora" na escala da API: a conferência de idade dos handlers vê comando novo.
+    def _stamp(self, age: float) -> str:
+        """O `ts` de um comando com `age` segundos de idade, na escala de relógio da API.
 
-        A idade deste canal já foi conferida (`_expired`); sem a escala da API (sem batimentos)
-        qualquer instante serve, porque então nada é medido.
+        Os handlers conferem a idade como sempre (limite próprio de cada comando, `UP` isento): o
+        `ts` carimbado aqui é "agora na escala da API" menos a idade medida neste canal. Sem
+        escala da API ainda (sem batimentos), os handlers o valem como chegou, como na nuvem.
         """
         offset = self._api_clock.offset
         moment = (
@@ -534,6 +692,7 @@ class PcDirectService:
             if offset is None
             else datetime.fromtimestamp(self._monotonic() - offset, UTC)
         )
+        moment -= timedelta(seconds=max(0.0, age))
         return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     # ---- fim ----------------------------------------------------------------------------------
@@ -543,12 +702,18 @@ class PcDirectService:
         while not session.closed:
             await asyncio.sleep(settings.tick_seconds)
             now = self._monotonic()
+            if now - session.created > session.lifetime:
+                _log.info("canal direto fechado: passou da vida máxima")
+                await self._finish(session, REASON_LIFETIME)
+                return
             if not session.authenticated:
                 limit = min(
                     settings.connect_timeout_seconds, session.token_deadline - session.created
                 )
                 if now - session.created > limit:
                     _log.info("canal direto fechado: não abriu a tempo")
+                    if not session.opened and self._record is not None:
+                        self._record("pc.direct_unreachable", "warn", _UNREACHABLE_HINT)
                     await self._finish(session, REASON_CONNECT_TIMEOUT)
                     return
             elif now - session.last_rx > settings.idle_seconds:
@@ -556,25 +721,41 @@ class PcDirectService:
                 await self._finish(session, REASON_IDLE)
                 return
 
-    async def _finish(self, session: _Session, reason: str, *, notify: bool = True) -> None:
+    def _halt(self, session: _Session) -> bool:
+        """A parte síncrona de fechar: a sessão deixa de valer e o que o PC segurava é solto.
+
+        Fechar o canal é como a conexão cair. Um canal que nunca autenticou não comandou nada: não
+        há o que soltar (nem por que mexer no que veio pela nuvem). `False` se já estava fechada.
+        """
         if session.closed:
-            return
+            return False
         session.closed = True
         if self._current is session:
             self._current = None
         watchdog = session.watchdog
         if watchdog is not None and watchdog is not asyncio.current_task():
             watchdog.cancel()
-        # Fechar o canal é como a conexão cair: solta o que o PC segurava e o que esperava na faixa.
-        # Um canal que nunca autenticou não comandou nada: não há o que soltar (nem por que mexer no
-        # que veio pela nuvem).
         if session.authenticated:
             try:
                 self._direct_lost()
             except Exception:
                 _log.exception("falha ao soltar o que o PC segurava")
+        return True
+
+    async def _finish(self, session: _Session, reason: str, *, notify: bool = True) -> None:
+        if self._halt(session):
+            await self._dispose(session, reason, notify=notify)
+
+    async def _dispose(self, session: _Session, reason: str, *, notify: bool) -> None:
+        """O resto de fechar: avisa o app do motivo, fecha o par, registra e avisa a API."""
         peer = session.peer
         if peer is not None:
+            if session.authenticated and reason not in (REASON_FAILED, REASON_DISCONNECTED):
+                # O app precisa saber o porquê (trocado, sessão encerrada, vida máxima...) para não
+                # insistir quando não deve; o aviso leva um instante para sair antes de fechar.
+                with contextlib.suppress(Exception):
+                    peer.send(INPUT_CHANNEL, json.dumps({"k": "bye", "r": reason}))
+                    await asyncio.sleep(BYE_FLUSH_SECONDS)
             # Com prazo: fechamento que não termina não prende a próxima oferta nem o aviso à API.
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(peer.close(), PEER_CLOSE_TIMEOUT_SECONDS)
@@ -621,7 +802,11 @@ def pc_rtc_handlers(
         session_id = str(body["sessionId"])
         try:
             answer = await service.open(
-                session_id, str(body["sdp"]), str(body["token"]), int(body["tokenTtlSeconds"])
+                session_id,
+                str(body["sdp"]),
+                str(body["token"]),
+                int(body["tokenTtlSeconds"]),
+                int(body["maxLifetimeSeconds"]),
             )
         except DirectRefused as refused:
             return CommandResult(
@@ -649,7 +834,10 @@ def pc_rtc_handlers(
         return CommandResult(command.id, ResultStatus.OK)
 
     async def close(command: Command) -> CommandResult:
-        await service.close(str(command.body["sessionId"]), REASON_REQUESTED)
+        reason = command.body.get("reason")
+        await service.close(
+            str(command.body["sessionId"]), reason if isinstance(reason, str) else REASON_REQUESTED
+        )
         return CommandResult(command.id, ResultStatus.OK)
 
     return {OFFER_TYPE: offer, CANDIDATE_TYPE: candidate, CLOSE_TYPE: close}

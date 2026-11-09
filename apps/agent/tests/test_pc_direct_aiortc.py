@@ -10,11 +10,12 @@ import contextlib
 import importlib
 import json
 import sys
+import time
 from typing import Any
 
 import pytest
 
-from uniover_agent.adapters import pc_direct_aiortc, pc_direct_stub_av
+from uniover_agent.adapters import pc_direct_aiortc, pc_direct_network, pc_direct_stub_av
 from uniover_agent.adapters.pc_direct_aiortc import (
     aiortc_installed,
     build_peer,
@@ -68,10 +69,16 @@ def test_the_fake_av_lets_aiortc_import_without_the_real_package() -> None:
 
 @pytest.fixture
 def loopback_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O celular de mentira é este mesmo processo: só 127.0.0.1, aceito pela política de endereços."""
+    if "aiortc" not in pc_direct_aiortc._loaded:
+        # Carrega antes (a carga instala a política de endereços da rede local); o teste vem depois dela.
+        pc_direct_aiortc._loaded["aiortc"] = pc_direct_aiortc._import_aiortc()
+
     def addresses(use_ipv4: bool, use_ipv6: bool) -> list[str]:
         return ["127.0.0.1"]
 
     monkeypatch.setattr("aioice.ice.get_host_addresses", addresses)
+    monkeypatch.setattr(pc_direct_network, "ALLOW_LOOPBACK", True)
 
 
 class Phone:
@@ -84,9 +91,16 @@ class Phone:
         self.inbox: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.opened = asyncio.Event()
         self.aiortc = aiortc
+        self.pongs: list[dict[str, Any]] = []
         self.input.on("message", lambda text: self.inbox.put_nowait(json.loads(text)))
+        self.pointer.on("message", self._on_pointer_message)
         self.pointer.on("open", self._check)
         self.input.on("open", self._check)
+
+    def _on_pointer_message(self, text: str) -> None:
+        message = json.loads(text)
+        if message.get("k") == "pong":
+            self.pongs.append(message)
 
     def _check(self) -> None:
         if self.pointer.readyState == "open" and self.input.readyState == "open":
@@ -122,7 +136,19 @@ async def test_a_real_peer_opens_authenticates_and_drives_the_pc(loopback_only: 
         await asyncio.wait_for(phone.opened.wait(), 20)
 
         phone.input.send(json.dumps({"k": "auth", "tok": TOKEN}))
-        assert await phone.next() == {"k": "ready"}
+        ready = await phone.next()
+        assert ready["k"] == "ready"
+        assert 0 < ready["life"] <= 900
+
+        # Dois sinais de vida firmam a escala de relógio; só então a entrada é aceita.
+        for n in (1, 2):
+            phone.pointer.send(json.dumps({"k": "ping", "n": n, "t": int(time.time() * 1000)}))
+            await asyncio.sleep(0.05)
+        for _ in range(100):
+            if phone.pongs and phone.pongs[-1].get("c") is True:
+                break
+            await asyncio.sleep(0.05)
+        assert phone.pongs[-1]["c"] is True
 
         phone.pointer.send(json.dumps({"k": "ptr", "s": 1, "x": 12, "y": -4, "w": 0, "h": 0}))
         click = {
@@ -130,7 +156,7 @@ async def test_a_real_peer_opens_authenticates_and_drives_the_pc(loopback_only: 
             "i": "c1",
             "t": "pc.click.v1",
             "b": {"button": "LEFT", "action": "DOWN"},
-            "ts": 0,
+            "ts": int(time.time() * 1000),
             "p": {"s": 1, "x": 12, "y": -4, "w": 0, "h": 0},
         }
         phone.input.send(json.dumps(click))
@@ -194,6 +220,54 @@ async def test_a_real_peer_refuses_extra_or_unknown_channels(loopback_only: None
             await asyncio.sleep(0.1)
 
         assert stray.readyState != "open"
+    finally:
+        await close_quietly(phone)
+        await lab.aclose()
+
+
+def test_the_library_is_loaded_with_the_local_network_address_policy() -> None:
+    import aioice.ice
+
+    pc_direct_aiortc._loaded.pop("aiortc", None)
+    pc_direct_aiortc._loaded["aiortc"] = pc_direct_aiortc._import_aiortc()
+
+    assert aioice.ice.get_host_addresses is pc_direct_network.lan_host_addresses
+
+
+def test_the_offer_of_a_real_peer_loses_its_public_and_odd_candidates() -> None:
+    offer = OFFER.replace(
+        "a=sctp-port:5000",
+        "a=candidate:3 1 udp 1 203.0.114.5 5000 typ srflx raddr 0.0.0.0 rport 0\r\n"
+        "a=candidate:4 1 udp 1 2001:4860::1 5000 typ host\r\na=sctp-port:5000",
+    )
+
+    prepared = prepare_offer(offer)
+
+    assert "203.0.114.5" not in prepared
+    assert "2001:4860" not in prepared
+    assert "192.168.1.9" in prepared
+
+
+async def test_a_peer_that_reaches_us_from_outside_the_local_network_is_dropped(
+    loopback_only: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # O celular de mentira chega por 127.0.0.1 (peer-reflexive, já que a oferta foi limpa): sem a
+    # permissão de loopback, o par escolhido não é "da rede local" e o canal é derrubado.
+    monkeypatch.setattr(pc_direct_network, "ALLOW_LOOPBACK", False)
+    aiortc = await pc_direct_aiortc._load()
+    lab = Lab(factory=build_peer)
+    phone = Phone(aiortc)
+    try:
+        offer = await phone.offer()
+        answer = await asyncio.wait_for(lab.service.open(SESSION, offer, TOKEN, 30), 20)
+        await phone.accept(answer)
+        for _ in range(150):
+            if lab.service.session_id is None:
+                break
+            await asyncio.sleep(0.1)
+
+        assert lab.service.session_id is None
+        assert lab.pc.calls == []
     finally:
         await close_quietly(phone)
         await lab.aclose()

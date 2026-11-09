@@ -6,10 +6,17 @@ readme = "README.md"
 license = "LicenseRef-Proprietary"
 requires-python = ">=3.14"
 dependencies = [
-    "aiortc==1.16.0",
+    # Canal direto (WebRTC). Versões exatas e com pelo menos 7 dias de publicadas em 08/11/2026 (aiortc 1.16.0, aioice 0.13.0 e
+    # dnspython 2.9.2 tinham de 2 a 5 dias e ficaram de fora); todas têm roda para o Python 3.14 no Windows (as três são puras;
+    # pylibsrtp é abi3 win_amd64 e google-crc32c é cp314 win_amd64). Os hashes de cada arquivo estão no uv.lock, que o
+    # `uv sync --frozen` do instalador e do supervisor confere. Atualizar exige rodar `tests/test_pc_direct_aiortc.py`.
+    "aioice==0.10.2",
+    "aiortc==1.15.0",
     "androidtvremote2==0.3.2",
     "cryptography>=50.0.2,<51",
+    "dnspython==2.9.1",
     "httpx>=0.28",
+    "ifaddr>=0.2",
     "jsonschema>=4.26.0",
     "keyring>=25",
     "pydantic>=2.14.1",
@@ -28,6 +35,9 @@ uniover-agent = "uniover_agent.main:main"
 
 [tool.uv]
 # O canal direto usa só o canal de dados do WebRTC: o `av` (FFmpeg, ~70 MB, com x264 e x265 sob GPL) não é usado.
+# `exclude-dependencies` e o `[manifest] excludes` do uv.lock exigem uv >= 0.9.8 para serem ENTENDIDOS (medido: a 0.9.7 recusa a
+# chave com um aviso). Um uv mais antigo ainda sincroniza o lock normalmente com --frozen (medido de 0.4.30 a 0.9.7, sem o `av`),
+# por isso o instalador e o supervisor rodam tudo com UV_FROZEN=1, avisam do uv antigo e tentam atualizá-lo pelo winget.
 # O que o `aiortc` importa dele é trocado por um módulo mínimo (`adapters/pc_direct_stub_av.py`). Atualizar o
 # `aiortc` exige revalidar isto (há um teste que abre o canal contra o próprio `aiortc`).
 exclude-dependencies = ["av"]
@@ -59,6 +69,10 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF", "PL", "N", "W"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLR2004"]
+# Os testes do canal direto e do supervisor têm comentários e textos de cenário longos, importações dentro do teste
+# (para provar a carga sob demanda) e o endereço 0.0.0.0 como dado (ele precisa ser recusado).
+"tests/test_pc_direct*.py" = ["E501", "PLC0415", "S104"]
+"tests/test_supervisor_uv_version.py" = ["E501"]
 
 [tool.mypy]
 strict = true

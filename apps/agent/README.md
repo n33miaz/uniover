@@ -83,7 +83,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_PC_CONTROL` | `1` liga o controle deste PC pelo app (mouse, teclado, mídia, energia, favoritos). **Desligado por padrão**: sem isto o agente nem declara a capacidade `pc.control.v1` e recusa todo `pc.*`. Mais fácil: `uv run uniover-agent pc-control on` (grava no `agent.toml`; `off` desliga, `status` mostra) e reiniciar o agente |
 | `UNIOVER_PC_APPS` | favoritos que o app pode abrir, `Nome=destino` (programa, documento ou endereço), separados por `;`. No `agent.toml`, `pc_apps` como lista (`["Navegador=C:\...\chrome.exe", "Notas=notepad"]`). O app só recebe o nome e um identificador; o destino nunca sai do PC |
 | `UNIOVER_PC_SHUTDOWN_DELAY_SECONDS` | contagem do desligamento pedido pelo app, de 10 a 300 (padrão `30`); o Windows avisa na tela durante ela e o app pode cancelar antes do fim |
-| `UNIOVER_PC_DIRECT` | `0` desliga o canal direto (WebRTC) deste PC (padrão ligado; ver "Canal direto"). `UNIOVER_PC_DIRECT_CONNECT_TIMEOUT_SECONDS` (padrão `15`) e `UNIOVER_PC_DIRECT_IDLE_SECONDS` (padrão `20`) são o prazo para o app abrir e autenticar o canal e o silêncio que o fecha |
+| `UNIOVER_PC_DIRECT` | `0` desliga o canal direto (WebRTC) deste PC (padrão ligado; ver "Canal direto"). `UNIOVER_PC_DIRECT_CONNECT_TIMEOUT_SECONDS` (padrão `15`), `UNIOVER_PC_DIRECT_IDLE_SECONDS` (padrão `20`) e `UNIOVER_PC_DIRECT_MAX_LIFETIME_SECONDS` (padrão `900`) são o prazo para o app abrir e autenticar o canal, o silêncio que o fecha e a vida máxima dele |
 | `UNIOVER_TV_LIVRE` | `0` desliga o módulo TV Livre neste PC (padrão: ligado, sempre opt-in por comando do dono; ver "TV Livre") |
 | `UNIOVER_TV_LIVRE_APK_URL` | pasta HTTPS da publicação com `uniover-launcher.apk` e `uniover-launcher.apk.sha256` (padrão: a última publicação do repositório) |
 | `UNIOVER_TV_LIVRE_SIGNER_SHA256` | SHA-256 do certificado de assinatura do APK do TV Livre (hexadecimal, com ou sem `:`; vários separados por vírgula). O padrão é o certificado público da chave fixa do projeto; lista vazia = **nada é instalado**, porque o hash da publicação não prova quem assinou. Conferido com o `apksigner` do Android SDK (`UNIOVER_TV_LIVRE_APKSIGNER_PATH` para indicar outro caminho) |
@@ -178,25 +178,51 @@ Um acelerador **opcional** do controle do PC: o app e este PC trocam os mesmos c
 passar pela API (que só faz a sinalização, autenticada). A nuvem segue sendo o caminho de sempre e a reserva automática:
 qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o app perceba além de um ponto de estado.
 
-- **Só o dono.** A oferta chega pelo canal autenticado com a API, e a API só a entrega ao agente de quem pareou o PC (a
-  mesma regra do controle). A impressão digital DTLS da oferta e da resposta passa por ela. A primeira mensagem do canal
-  leva um token de uso único e vida curta (30 s, contados aqui) emitido pela API; sem ele o canal fecha e o ponteiro não passa.
+- **Só o dono, e só enquanto a sessão dele valer.** A oferta chega pelo canal autenticado com a API, e a API só a entrega ao
+  agente de quem pareou o PC (a mesma regra do controle). A impressão digital DTLS da oferta e da resposta passa por ela. A
+  primeira mensagem do canal leva um token de uso único e vida curta (30 s, contados aqui) emitido pela API; sem ele o canal
+  fecha e o ponteiro não passa. O canal tem **vida máxima** (o que resta do token de acesso da pessoa, no máximo
+  `pc_direct_max_lifetime_seconds`, 15 min): o app abre outro um pouco antes do fim, sem ninguém notar. A API fecha o canal na
+  hora se a sessão que o abriu acaba (sair, "sair de todos", aparelho revogado), se a senha é trocada ou recuperada, se a
+  conta é pausada ou revogada ou se a permissão do módulo é retirada.
 - **Os mesmos comandos.** Cliques, teclas, texto e mídia passam pelo mesmo esquema, pela mesma faixa e pelos mesmos
-  handlers da nuvem (idade, soltura de botão, texto fora do registro). Energia e favoritos só existem pela nuvem.
+  handlers da nuvem (idade, soltura de botão, texto fora do registro). Energia e favoritos só existem pela nuvem. Todo
+  comando de entrada leva `ts` e só vale depois de dois sinais de vida firmarem a escala de relógio do app (soltar `UP`
+  passa sempre); o teto de teclas conta cada `repeat` (umas 100 por segundo, como a nuvem), e o texto tem teto de caracteres
+  por segundo. Mensagens recusadas (JSON ruim ou conteúdo inválido) se acumulam até 30 e derrubam o canal; só uma mensagem
+  aceita zera a conta.
   O ponteiro viaja como total acumulado com número de sequência; cada comando leva o total do instante em que foi dado, e
   o clique nunca passa na frente do movimento que o antecedeu.
-- **Fechar solta.** O canal fechado, por qualquer motivo (queda, silêncio de `pc_direct_idle_seconds`, troca por outra
-  oferta, a conexão com a API perdida, o agente encerrando), solta o que o PC segurava, como a queda da conexão com a API.
-  No máximo um canal por vez.
-- **Sem porta fixa e sem terceiros.** O porto UDP é efêmero e fecha com a sessão; nenhum STUN ou TURN, nenhum IP público.
-  Em Wi-Fi com isolamento de clientes, 5G ou rede marcada como Pública sem regra de entrada no Firewall o canal não abre e
-  o app usa a nuvem. O Firewall do Windows pode perguntar uma vez se o `python.exe` pode receber conexões: "Redes
-  privadas" basta na rede de casa.
-- **Dependência.** `aiortc` (versão exata), sem o `av` (FFmpeg, ~70 MB, com x264 e x265 sob GPL), que o `uv` exclui; um
+- **Fechar solta.** O canal fechado, por qualquer motivo (queda, silêncio de `pc_direct_idle_seconds`, vida máxima, troca por
+  outra oferta, a conexão com a API perdida, o agente encerrando), solta o que o PC segurava e tira da faixa o que dele
+  esperava (comandos e movimento), como a queda da conexão com a API. No máximo um canal por vez, e o app que o perdeu é
+  avisado do motivo (`bye`): quando outro aparelho tomou o lugar (`replaced`) ou a sessão deixou de valer (`revoked`) ele não
+  tenta de novo sozinho. **A nuvem vence:** chegando comando de entrada pela API enquanto o canal está em uso, o canal fecha
+  ANTES (e solta o que segurava), então um aperto atrasado do canal nunca cai depois de um soltar da nuvem.
+- **Sem porta fixa, sem terceiros e só rede local.** O porto UDP é efêmero e fecha com a sessão; nenhum STUN ou TURN. Dos
+  dois lados só entram endereços da rede local: da oferta, candidatos privados, de enlace local ou ULA (público, nome e
+  `.local` são descartados, e o endereço de onde o app de fato chega é conferido); o que o agente oferece são só os IPv4
+  privados e IPv6 ULA de interfaces físicas, sem o IPv6 global (o endereço público do PC), VPN, WSL, Hyper-V, Docker nem
+  máquinas virtuais.
+- **Firewall (para o dono).** O instalador não muda nada no Firewall. O pacote UDP do celular chega de fora para dentro, então
+  na PRIMEIRA vez o Windows pode perguntar se o `python.exe` pode receber conexões: marque "Redes privadas" (a de casa). Com a
+  rede de casa marcada como Pública e sem essa regra, ou em Wi-Fi com isolamento de clientes, ou em 5G, o canal não abre e o app
+  usa a nuvem (nada quebra, só não há o ganho). Quando o app negocia o canal e nenhum pacote chega em `pc_direct_connect_timeout_seconds`,
+  o agente grava o diagnóstico `pc.direct_unreachable` (em Sistema) apontando o Firewall e o perfil da rede; marcar a rede como
+  Privada (Configurações, Rede) e aceitar o aviso uma vez resolve. No PC do dono a regra do Python base provavelmente já existe;
+  em um PC novo (o do Raphael) o aviso aparece.
+- **Dependência.** `aiortc` e `aioice` (versões exatas, de pelo menos 7 dias de publicadas quando entraram; os hashes estão no
+  `uv.lock`), sem o `av` (FFmpeg, ~70 MB, com x264 e x265 sob GPL), que o `uv` exclui; um
   módulo pequeno (`adapters/pc_direct_stub_av.py`) faz o papel dele para o `aiortc` poder ser importado. A
   biblioteca só é carregada na primeira oferta, e a capacidade `pc.rtc.v1` só é declarada se ela está instalada, a
   configuração `pc_direct` está ligada e a API a listou em `features`. Atualizar o `aiortc` exige rodar os testes
   (`tests/test_pc_direct_aiortc.py` abre o canal contra o próprio `aiortc`).
+- **uv mínimo.** A chave `exclude-dependencies` do `pyproject.toml` e o `[manifest] excludes` do `uv.lock` são entendidos a partir
+  do **uv 0.9.8** (medido: a 0.9.7 recusa a chave com um aviso). Um uv anterior ainda sincroniza o lock com `--frozen` (medido de
+  0.4.30 a 0.9.7: sem o `av`, só com o aviso), e o ambiente que roda segue de pé; o que ele faria errado é refazer a resolução
+  em comandos sem `--frozen` e trazer o `av` de volta. Por isso o instalador e o supervisor rodam todo comando do uv com
+  `UV_FROZEN=1`, e o supervisor, com o agente já de pé, confere a versão: se for anterior à 0.9.8, grava o diagnóstico
+  `supervisor.old_uv` e, se o uv veio do winget, pede `winget upgrade astral-sh.uv` sem esperar (uma vez por dia).
 
 ## TV Samsung (Tizen)
 

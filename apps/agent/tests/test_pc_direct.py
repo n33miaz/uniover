@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -23,6 +24,7 @@ from uniover_agent.core import (
     pc_rtc_handlers,
 )
 from uniover_agent.core.pc.direct import (
+    BYE_FLUSH_SECONDS,
     REFUSED_FAILED,
     REFUSED_UNAVAILABLE,
     RTC_SILENT_TYPES,
@@ -181,6 +183,7 @@ class Lab:
             background_types=RTC_TYPES,
             silent_types={"pc.pointer.v1", *RTC_SILENT_TYPES},
             release_inputs=self.pc.release_all,
+            on_cloud_pc_input=self.service.cloud_input,
         )
         self.service.bind(self.process.submit_direct, self.process.direct_lost)
 
@@ -193,14 +196,25 @@ class Lab:
     def peer(self) -> FakePeer:
         return self.peers[-1]
 
-    async def open(self, token: str = TOKEN, session: str = SESSION) -> str:
-        return await self.service.open(session, SDP, token, self.ttl)
+    async def open(
+        self, token: str = TOKEN, session: str = SESSION, lifetime: int | None = None
+    ) -> str:
+        return await self.service.open(session, SDP, token, self.ttl, lifetime)
 
-    async def open_authenticated(self) -> FakePeer:
+    async def open_authenticated(self, *, clock: bool = True) -> FakePeer:
         await self.open()
         self.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN})
         await settle()
+        if clock:
+            await self.sync_clock(self.peer)
         return self.peer
+
+    @staticmethod
+    async def sync_clock(peer: FakePeer) -> None:
+        """Dois sinais de vida que concordam firmam a escala de relógio: só então a entrada vale."""
+        for n in (1, 2):
+            peer.phone(POINTER_CHANNEL, {"k": "ping", "n": n, "t": int(time.time() * 1000)})
+        await settle()
 
     def command(
         self, message_type: str, body: dict[str, Any], command_id: str = "c1"
@@ -223,6 +237,12 @@ async def settle() -> None:
     for _ in range(30):
         await asyncio.sleep(0)
     await asyncio.sleep(0.01)
+
+
+async def settle_close() -> None:
+    """Fechar avisa o app do motivo (`bye`) e dá um instante para sair antes de fechar o par."""
+    await settle()
+    await asyncio.sleep(BYE_FLUSH_SECONDS * 2)
 
 
 @pytest.fixture
@@ -248,7 +268,9 @@ async def test_first_message_with_the_right_token_authenticates(lab: Lab) -> Non
     peer = await lab.open_authenticated()
 
     assert lab.service.authenticated
-    assert (INPUT_CHANNEL, {"k": "ready"}) in peer.sent
+    ready = [m for c, m in peer.sent if c == INPUT_CHANNEL and m["k"] == "ready"]
+    assert len(ready) == 1
+    assert 0 < ready[0]["life"] <= 900  # o app abre outro canal antes disto
 
 
 @pytest.mark.parametrize(
@@ -302,7 +324,7 @@ async def test_the_token_is_single_use_per_session_and_a_second_auth_is_a_violat
     await settle()
 
     assert lab.service.authenticated  # um auth repetido não derruba nem repete o "ready"
-    assert [m for _, m in peer.sent if m.get("k") == "ready"] == [{"k": "ready"}]
+    assert len([m for _, m in peer.sent if m.get("k") == "ready"]) == 1
 
 
 async def test_an_offer_the_peer_cannot_take_is_refused_with_a_stable_code(lab: Lab) -> None:
@@ -398,7 +420,7 @@ async def test_the_pointer_channel_answers_pings_and_keeps_the_rtt_for_the_summa
     peer.phone(POINTER_CHANNEL, {"k": "ping", "n": 7, "t": now_ms, "r": 12})
     await settle()
 
-    assert (POINTER_CHANNEL, {"k": "pong", "n": 7}) in peer.sent
+    assert (POINTER_CHANNEL, {"k": "pong", "n": 7, "c": True}) in peer.sent
     await lab.service.close(SESSION)
     # O resumo vai ao diagnóstico em faixas fixas, sem identificador, endereço nem número exato.
     [(kind, severity, detail)] = lab.records
@@ -623,22 +645,20 @@ async def test_closing_drops_what_the_channel_still_had_waiting_in_the_lane(lab:
     assert lab.pc.calls == [("release_all",)]
 
 
-async def test_what_came_by_the_cloud_is_not_dropped_when_the_channel_closes(lab: Lab) -> None:
+async def test_a_cloud_command_closes_the_used_channel_first_and_its_own_still_runs(
+    lab: Lab,
+) -> None:
     peer = await lab.open_authenticated()
     peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "d"))
-    cloud = dump(
-        envelope(
-            "pc.media.v1",
-            {"action": "STOP"},
-            ts=lab.service._fresh_stamp(),
-        )
-    )
+    cloud = dump(envelope("pc.media.v1", {"action": "STOP"}, ts=lab.service._stamp(0.0)))
     await lab.process(cloud)
-    await lab.service.close(SESSION)
-    await settle()
+    await settle_close()
 
-    assert ("media", "STOP", 1) in lab.pc.calls
-    assert ("media", "MUTE", 1) not in lab.pc.calls
+    # O comando do canal ainda esperava na faixa: saiu dela. O da nuvem rodou, depois da soltura.
+    assert lab.pc.calls == [("release_all",), ("media", "STOP", 1)]
+    assert lab.service.session_id is None
+    assert peer.closed
+    assert (SESSION, "cloud") in lab.closed
 
 
 async def test_a_new_offer_replaces_the_channel_and_releases_what_it_held(lab: Lab) -> None:
@@ -725,7 +745,13 @@ async def test_late_candidates_reach_the_peer_but_local_names_do_not(lab: Lab) -
 
 
 def offer_envelope(session: str = SESSION, token: str = TOKEN) -> str:
-    body = {"sessionId": session, "sdp": SDP, "token": token, "tokenTtlSeconds": 30}
+    body = {
+        "sessionId": session,
+        "sdp": SDP,
+        "token": token,
+        "tokenTtlSeconds": 30,
+        "maxLifetimeSeconds": 600,
+    }
     return dump(envelope("pc.rtc.offer.v1", body, ts="2026-11-08T12:00:00.000Z"))
 
 
@@ -738,7 +764,7 @@ async def test_the_offer_is_answered_before_the_result_and_never_waits_for_the_l
                 envelope(
                     "pc.click.v1",
                     {"button": "LEFT", "action": "DOWN"},
-                    ts=lab.service._fresh_stamp(),
+                    ts=lab.service._stamp(0.0),
                 )
             )
         )
@@ -788,7 +814,7 @@ async def test_close_and_candidate_messages_from_the_api_are_silent(lab: Lab) ->
     await lab.process(
         dump(envelope("pc.rtc.close.v1", {"sessionId": SESSION}, ts="2026-11-08T12:00:00.000Z"))
     )
-    await settle()
+    await settle_close()
 
     assert lab.peer.candidates
     assert lab.peer.closed
@@ -801,7 +827,13 @@ async def test_an_offer_with_a_wrong_target_or_a_bad_token_shape_never_reaches_t
 ) -> None:
     bad = envelope(
         "pc.rtc.offer.v1",
-        {"sessionId": SESSION, "sdp": SDP, "token": "curto", "tokenTtlSeconds": 30},
+        {
+            "sessionId": SESSION,
+            "sdp": SDP,
+            "token": "curto",
+            "tokenTtlSeconds": 30,
+            "maxLifetimeSeconds": 600,
+        },
         ts="2026-11-08T12:00:00.000Z",
     )
     await lab.process(dump(bad))
@@ -810,3 +842,441 @@ async def test_an_offer_with_a_wrong_target_or_a_bad_token_shape_never_reaches_t
     assert lab.peers == []
     [result] = lab.transport.sent
     assert result["body"]["ok"] is False
+
+
+# ---- segunda rodada: vida máxima, relógio, limites e fechamento ----------------------------------
+
+
+async def test_the_channel_has_a_maximum_lifetime_the_api_can_only_shorten() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_lifetime_seconds=0.15))
+    try:
+        await lab.open(lifetime=3600)  # a API pede mais que o teto do agente: vale o teto
+        lab.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN})
+        await lab.sync_clock(lab.peer)
+        ready = [m for c, m in lab.peer.sent if m.get("k") == "ready"]
+        assert ready[0]["life"] <= 1
+        await asyncio.sleep(0.4)
+
+        assert lab.peer.closed
+        assert lab.closed == [(SESSION, "lifetime")]
+        assert (INPUT_CHANNEL, {"k": "bye", "r": "lifetime"}) in lab.peer.sent
+        assert lab.pc.calls == [("release_all",)]
+    finally:
+        await lab.aclose()
+
+
+async def test_the_lifetime_the_api_asks_for_wins_when_it_is_shorter() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_lifetime_seconds=900))
+    try:
+        await lab.open(lifetime=1)
+        await asyncio.sleep(1.4)
+
+        assert lab.peer.closed
+        assert lab.closed == [(SESSION, "lifetime")]
+    finally:
+        await lab.aclose()
+
+
+async def test_a_channel_that_never_opened_by_the_lifetime_is_closed_too() -> None:
+    lab = Lab(
+        DirectSettings(tick_seconds=0.005, max_lifetime_seconds=0.1, connect_timeout_seconds=30)
+    )
+    try:
+        await lab.open()
+        await asyncio.sleep(0.3)
+
+        assert lab.peer.closed
+    finally:
+        await lab.aclose()
+
+
+@pytest.mark.parametrize("reason", ["revoked", "replaced", "requested"])
+async def test_the_app_is_told_why_the_channel_closed_so_it_does_not_insist(
+    lab: Lab, reason: str
+) -> None:
+    peer = await lab.open_authenticated()
+    await lab.service.close(SESSION, reason)
+
+    assert (INPUT_CHANNEL, {"k": "bye", "r": reason}) in peer.sent
+    assert lab.closed == []  # a API já sabe: ela quem mandou
+
+
+async def test_a_second_device_replacing_the_channel_tells_the_first_one_replaced(lab: Lab) -> None:
+    first = await lab.open_authenticated()
+    await lab.service.open("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e02", SDP, TOKEN, 30)
+
+    assert (INPUT_CHANNEL, {"k": "bye", "r": "replaced"}) in first.sent
+
+
+async def test_an_unknown_reason_from_the_api_counts_as_requested(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    await lab.service.close(SESSION, "porque-sim")
+
+    assert (INPUT_CHANNEL, {"k": "bye", "r": "requested"}) in peer.sent
+
+
+async def test_a_close_from_the_api_with_a_reason_reaches_the_agent_as_that_reason(
+    lab: Lab,
+) -> None:
+    peer = await lab.open_authenticated()
+    await lab.process(
+        dump(
+            envelope(
+                "pc.rtc.close.v1",
+                {"sessionId": SESSION, "reason": "revoked"},
+                ts="2026-11-08T12:00:00.000Z",
+            )
+        )
+    )
+    await settle_close()
+
+    assert (INPUT_CHANNEL, {"k": "bye", "r": "revoked"}) in peer.sent
+    assert peer.closed
+
+
+# violations: JSON válido com conteúdo recusado também conta, e só uma mensagem aceita zera
+
+
+async def test_valid_json_with_refused_content_is_counted_too(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    for _ in range(30):
+        peer.phone(POINTER_CHANNEL, {"k": "zzz", "x": 1})  # JSON perfeito, tipo que não existe
+    await settle_close()
+
+    assert peer.closed
+    assert lab.closed == [(SESSION, "failed")]
+
+
+async def test_commands_refused_by_the_contract_are_violations_even_when_well_formed(
+    lab: Lab,
+) -> None:
+    peer = await lab.open_authenticated()
+    for index in range(30):
+        peer.phone(INPUT_CHANNEL, lab.command("pc.power.v1", {"action": "SHUTDOWN"}, f"p{index}"))
+    await settle_close()
+
+    assert peer.closed
+    assert lab.pc.calls == [("release_all",)]
+
+
+async def test_garbage_between_valid_pings_does_not_reset_the_count(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    for index in range(30):
+        peer.phone(POINTER_CHANNEL, {"k": "zzz"})
+        peer.phone(POINTER_CHANNEL, {"k": "ping", "n": 10 + index, "t": int(time.time() * 1000)})
+    await settle_close()
+
+    assert peer.closed
+
+
+async def test_an_accepted_command_restarts_the_count(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    for _ in range(29):
+        peer.phone(POINTER_CHANNEL, {"k": "zzz"})
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}))
+    for _ in range(29):
+        peer.phone(POINTER_CHANNEL, {"k": "zzz"})
+    await settle()
+
+    assert not peer.closed
+    assert ("media", "MUTE", 1) in lab.pc.calls
+
+
+# soltar não paga o limite de entrada
+
+
+async def test_releasing_is_exempt_from_the_input_rate_like_it_is_from_the_age() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=2))
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(4):
+            peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, f"m{n}"))
+        for n in range(6):
+            action = {"button": "LEFT", "action": "UP"}
+            peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", action, f"u{n}"))
+            peer.phone(
+                INPUT_CHANNEL, lab.command("pc.key.v2", {"key": "ALT", "action": "UP"}, f"k{n}")
+            )
+        await settle()
+
+        acks = {a["i"]: a for a in peer.acks()}
+        assert [acks[f"m{n}"]["ok"] for n in range(4)] == [True, True, False, False]
+        assert all(acks[f"u{n}"]["ok"] and acks[f"k{n}"]["ok"] for n in range(6))
+    finally:
+        await lab.aclose()
+
+
+# `ts` obrigatório e escala de relógio antes de aceitar entrada
+
+
+async def test_a_command_without_ts_is_refused(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    command = lab.command("pc.media.v1", {"action": "MUTE"})
+    del command["ts"]
+    peer.phone(INPUT_CHANNEL, command)
+    command2 = lab.command("pc.media.v1", {"action": "MUTE"}, "c2")
+    command2["ts"] = "agora"
+    peer.phone(INPUT_CHANNEL, command2)
+    await settle()
+
+    assert lab.pc.calls == []
+    assert [a["c"] for a in peer.acks()] == ["invalid_message", "invalid_message"]
+
+
+async def test_input_waits_for_the_clock_scale_but_a_release_always_passes(lab: Lab) -> None:
+    peer = await lab.open_authenticated(clock=False)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m"))
+    peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT"}, "c"))
+    peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "UP"}, "u"))
+    peer.phone(INPUT_CHANNEL, lab.command("pc.key.v2", {"key": "ALT", "action": "UP"}, "k"))
+    await settle()
+
+    acks = {a["i"]: a for a in peer.acks()}
+    assert acks["m"] == {"k": "ack", "i": "m", "ok": False, "c": "not_ready"}
+    assert acks["c"]["c"] == "not_ready"
+    assert acks["u"]["ok"] and acks["k"]["ok"]
+    assert lab.pc.calls == [("click", "LEFT", "UP"), ("key", "ALT", (), 1, "UP")]
+
+
+async def test_the_scale_exists_after_two_pings_that_agree_and_the_pong_says_so(lab: Lab) -> None:
+    peer = await lab.open_authenticated(clock=False)
+    now_ms = int(time.time() * 1000)
+    peer.phone(POINTER_CHANNEL, {"k": "ping", "n": 1, "t": now_ms})
+    await settle()
+    first = [m for c, m in peer.sent if m.get("k") == "pong"][-1]
+    peer.phone(POINTER_CHANNEL, {"k": "ping", "n": 2, "t": now_ms + 20})
+    await settle()
+    second = [m for c, m in peer.sent if m.get("k") == "pong"][-1]
+
+    assert (first["n"], first["c"]) == (1, False)
+    assert (second["n"], second["c"]) == (2, True)
+
+
+async def test_the_stamp_keeps_the_handlers_age_check_alive(lab: Lab) -> None:
+    from datetime import datetime
+
+    now = datetime.fromisoformat(lab.service._stamp(0.0))
+    older = datetime.fromisoformat(lab.service._stamp(3.0))
+
+    assert 2.9 < (now - older).total_seconds() < 3.1
+
+
+async def test_a_command_near_the_age_limit_passes_both_age_checks() -> None:
+    # Com a escala da API firmada, o `ts` carimbado leva a idade medida no canal: o handler a confere também.
+    lab = Lab()
+    try:
+        api_now = datetime.now(UTC)
+        for _ in range(2):  # dois batimentos da API que concordam (como `api.keepalive.v1`)
+            lab.api_clock.observe(api_now.isoformat(timespec="milliseconds").replace("+00:00", "Z"))
+        peer = await lab.open_authenticated()
+        command = lab.command("pc.media.v1", {"action": "MUTE"})
+        # Idade de 4 s no canal: dentro do limite (5 s) do canal e do handler.
+        command["ts"] = int(time.time() * 1000) - 4000
+        peer.phone(INPUT_CHANNEL, command)
+        await settle()
+        assert ("media", "MUTE", 1) in lab.pc.calls
+    finally:
+        await lab.aclose()
+
+
+# teto das teclas (repeat conta) e do texto
+
+
+async def test_repeat_counts_every_press_against_the_hundred_per_second_budget() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=1000))
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(3):
+            body = {"key": "BACKSPACE", "repeat": 50}
+            peer.phone(INPUT_CHANNEL, lab.command("pc.key.v2", body, f"r{n}"))
+        await settle()
+
+        acks = {a["i"]: a for a in peer.acks()}
+        assert [acks[f"r{n}"]["ok"] for n in range(3)] == [True, True, False]
+        assert acks["r2"]["c"] == "rate_limited"
+    finally:
+        await lab.aclose()
+
+
+async def test_text_is_capped_in_characters_per_second() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_text_chars_per_second=10))
+    try:
+        peer = await lab.open_authenticated()
+        peer.phone(INPUT_CHANNEL, lab.command("pc.text.v1", {"text": "12345678"}, "t1"))
+        peer.phone(INPUT_CHANNEL, lab.command("pc.text.v1", {"text": "12345678"}, "t2"))
+        await settle()
+
+        acks = {a["i"]: a for a in peer.acks()}
+        assert acks["t1"]["ok"] and acks["t2"] == {
+            "k": "ack",
+            "i": "t2",
+            "ok": False,
+            "c": "rate_limited",
+        }
+        assert lab.pc.calls == [("text", "12345678")]
+    finally:
+        await lab.aclose()
+
+
+# accept_offer não prende o ciclo de vida
+
+
+async def test_an_offer_that_never_finishes_is_given_up_and_the_next_offer_is_not_blocked() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, accept_timeout_seconds=0.1))
+    try:
+        original = lab._factory
+
+        def hanging(callbacks: PeerCallbacks) -> FakePeer:
+            peer = original(callbacks)
+
+            async def never(sdp: str) -> str:
+                await asyncio.sleep(3600)
+                return "nunca"
+
+            peer.accept_offer = never  # type: ignore[method-assign]
+            return peer
+
+        lab.service._factory = hanging
+        with pytest.raises(DirectRefused) as refused:
+            await lab.open()
+        assert refused.value.code == REFUSED_FAILED
+        assert lab.service.session_id is None
+
+        lab.service._factory = original
+        assert await asyncio.wait_for(lab.open(), 2) == "ANSWER-SDP"
+    finally:
+        await lab.aclose()
+
+
+# a nuvem fecha o canal em uso
+
+
+async def test_a_cloud_command_leaves_an_unused_channel_alone(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    await lab.process(dump(envelope("pc.media.v1", {"action": "STOP"}, ts=lab.service._stamp(0.0))))
+    await settle_close()
+
+    assert not peer.closed
+    assert lab.service.authenticated
+
+
+async def test_a_cloud_power_or_launch_never_closes_the_channel(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}))
+    await settle()
+    lab.service.cloud_input("pc.power.v1")
+    lab.service.cloud_input("pc.app.launch.v1")
+    await settle_close()
+
+    assert not peer.closed
+
+
+async def test_a_stale_direct_down_never_lands_after_a_cloud_up(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "DOWN"}, "d"))
+    await settle()
+    lab.pc.calls.clear()
+
+    up = dump(
+        envelope("pc.click.v1", {"button": "LEFT", "action": "UP"}, ts=lab.service._stamp(0.0))
+    )
+    await lab.process(up)
+    # O DOWN que ainda estivesse a caminho pelo canal chega depois do UP da nuvem.
+    peer.phone(
+        INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "DOWN"}, "late")
+    )
+    await settle_close()
+
+    assert lab.pc.calls == [("release_all",), ("click", "LEFT", "UP")]
+    assert not any(c[:3] == ("click", "LEFT", "DOWN") for c in lab.pc.calls)
+
+
+# diagnóstico de firewall
+
+
+async def test_a_channel_that_never_opened_by_the_connect_timeout_hints_at_the_firewall() -> None:
+    lab = Lab(DirectSettings(connect_timeout_seconds=0.05, tick_seconds=0.005))
+    try:
+        await lab.open()
+        await asyncio.sleep(0.2)
+
+        [(kind, severity, detail)] = lab.records
+        assert (kind, severity) == ("pc.direct_unreachable", "warn")
+        assert "Firewall" in detail
+        assert SESSION not in detail
+    finally:
+        await lab.aclose()
+
+
+async def test_a_channel_that_opened_but_never_authenticated_is_not_a_firewall_problem() -> None:
+    lab = Lab(DirectSettings(connect_timeout_seconds=0.05, tick_seconds=0.005))
+    try:
+        await lab.open()
+        lab.peer.callbacks.on_open()
+        await asyncio.sleep(0.2)
+
+        assert lab.records == []
+        assert lab.closed == [(SESSION, "connect_timeout")]
+    finally:
+        await lab.aclose()
+
+
+# a faixa: movimento da fila, resultado perdido e o gancho da nuvem
+
+
+async def test_closing_the_channel_also_purges_the_queued_direct_pointer_moves(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    for n in range(1, 6):
+        peer.phone(POINTER_CHANNEL, ptr(n, n * 10))
+    # Sem ceder a vez: a faixa ainda não executou nenhum movimento quando o canal fecha.
+    lab.process.direct_lost()
+    await settle()
+
+    assert [c for c in lab.pc.calls if c[0] == "move"] == []
+
+
+async def test_the_result_of_a_direct_command_that_was_running_when_the_channel_closed_is_dropped() -> (
+    None
+):
+    lab = Lab(block_clicks=True)
+    try:
+        peer = await lab.open_authenticated()
+        peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT"}, "slow"))
+        await settle()  # o clique está executando (preso no portão)
+        lab.process.direct_lost()  # o canal fechou no meio
+        lab.click_gate.set()
+        await settle()
+
+        assert lab.transport.sent == []  # nunca vira `command.result.v1` para a API
+        assert peer.acks() == []
+    finally:
+        await lab.aclose()
+
+
+async def test_a_direct_move_that_was_running_never_reports_to_the_api_either() -> None:
+    lab = Lab()
+    try:
+        peer = await lab.open_authenticated()
+        peer.phone(POINTER_CHANNEL, ptr(1, 5))
+        await settle()
+
+        assert lab.transport.sent == []
+        assert lab.process._direct_ids == set()  # nada ficou registrado
+    finally:
+        await lab.aclose()
+
+
+async def test_a_merged_or_discarded_move_leaves_no_id_behind() -> None:
+    from uniover_agent.core.process_message import MAX_PENDING_PC
+
+    lab = Lab()
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(1, MAX_PENDING_PC + 60):
+            peer.phone(POINTER_CHANNEL, ptr(n, n))  # sem ceder a vez: a fila enche e se soma
+        await settle()
+        await settle()
+
+        assert lab.process._direct_ids == set()
+    finally:
+        await lab.aclose()

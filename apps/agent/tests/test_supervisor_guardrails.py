@@ -63,10 +63,14 @@ class Pc:
         """`self-update` termina logo, `tray` fica vivo, `sync` e `run` seguem as linhas dadas."""
         lines = [
             "@echo off",
+            'if "%~1"=="--version" goto version',
             'if "%~1"=="sync" goto sync',
             'if "%~5"=="self-update" goto update',
             'if "%~5"=="tray" goto tray',
             'if "%~5"=="run" goto agent',
+            "exit /b 0",
+            ":version",
+            "if defined UNIOVER_TEST_UV_VERSION echo uv %UNIOVER_TEST_UV_VERSION% (fake)",
             "exit /b 0",
             ":update",
             *(update_lines or ["exit /b 0"]),

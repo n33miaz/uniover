@@ -480,6 +480,10 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         uncapped_types=tv.background_commands if tv is not None else (),
         release_inputs=pc.release_all if pc is not None else None,
         observe_timestamp=pc.clock.observe if pc is not None else None,
+        # Comando de entrada que chega pela nuvem fecha antes o canal direto em uso.
+        on_cloud_pc_input=pc.direct.cloud_input
+        if pc is not None and pc.direct is not None
+        else None,
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)

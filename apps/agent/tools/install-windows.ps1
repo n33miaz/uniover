@@ -24,6 +24,9 @@ param(
 # aceitavel e o pedido de permissao do Windows (UAC), feito uma vez.
 
 $ErrorActionPreference = 'Stop'
+# O uv.lock manda em todo comando do uv do instalador (`uv run` incluido): um uv anterior a 0.9.8 nao entende o
+# `exclude-dependencies` do pyproject e, sem isto, refaria a resolucao trazendo o pacote `av` (uns 70 MB, bibliotecas GPL).
+$env:UV_FROZEN = '1'
 # A barra de progresso do Windows PowerShell 5.1 deixa o download dezenas de vezes mais lento.
 $ProgressPreference = 'SilentlyContinue'
 try {
