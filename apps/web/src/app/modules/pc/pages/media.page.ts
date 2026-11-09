@@ -1,189 +1,143 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
+import { PcInput } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
-import { tick } from '../input/haptics';
 import type { PcMediaAction } from '../data/pc-types';
+import { tick } from '../input/haptics';
+import { PcFavorites } from '../ui/favorites';
+import { PcSlidesPanel } from '../ui/slides-panel';
+import { PcTransport } from '../ui/transport';
+import { PcVideoPanel } from '../ui/video-panel';
+import { PcVolume } from '../ui/volume';
 
-/** Segurar o volume repete: espera um pouco antes da primeira repetição e depois segue neste ritmo. */
-const REPEAT_AFTER_MS = 420;
-const REPEAT_EVERY_MS = 190;
-/** Passos do volume sem resposta que a repetição tolera (com a rede lenta, o pedido seguinte não espera o anterior). */
-const MAX_VOLUME_IN_FLIGHT = 3;
+/** Os três modos da tela, na ordem em que aparecem. */
+export type MediaMode = 'music' | 'video' | 'slides';
+const MODES: readonly MediaMode[] = ['music', 'video', 'slides'];
 
 /**
- * Mídia do PC: tocar e pausar, faixa anterior e seguinte, volume (segurar repete) e mudo. Embaixo, os favoritos que o
- * próprio PC deixa abrir (a lista vem do PC; o caminho do programa nunca chega aqui).
+ * Mídia do PC, com três modos numa linha só: Música (faixa anterior e seguinte, tocar e pausar), Vídeo (saltos de 10
+ * segundos, tela cheia, legendas) e Slides (anterior e próximo ocupando a tela, iniciar, ir ao slide, cronômetro). Música e
+ * Vídeo dividem o volume (relativo: arrastar, ou os botões, que repetem segurando), o mudo e o parar. Embaixo, nos três, os
+ * favoritos que o próprio PC deixa abrir. Os comandos de mídia saem por `sendMedia` e as teclas pela fila de entrada
+ * compartilhada: os dois pelo mesmo `PcApi`, então o canal direto e a nuvem valem para tudo.
  */
 @Component({
   selector: 'app-pc-media-page',
+  imports: [PcFavorites, PcSlidesPanel, PcTransport, PcVideoPanel, PcVolume],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="transport" role="group" aria-labelledby="transport-title">
-      <h2 id="transport-title" class="sr-only" i18n="@@pc.media.transport">Reprodução</h2>
-      <button
-        type="button"
-        class="round"
-        aria-label="Faixa anterior"
-        i18n-aria-label="@@pc.media.previous"
-        [disabled]="!store.canSend()"
-        (click)="press('PREVIOUS')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M7 6v12M18 6.5v11L9.5 12z'" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="round big"
-        aria-label="Tocar ou pausar"
-        i18n-aria-label="@@pc.media.play-pause"
-        [disabled]="!store.canSend()"
-        (click)="press('PLAY_PAUSE')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M7 5.5v13L17.5 12z'" class="solid" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="round"
-        aria-label="Próxima faixa"
-        i18n-aria-label="@@pc.media.next"
-        [disabled]="!store.canSend()"
-        (click)="press('NEXT')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M17 6v12M6 6.5v11L14.5 12z'" />
-        </svg>
-      </button>
-    </div>
-
-    <div class="volume" role="group" aria-labelledby="volume-title">
-      <h2 id="volume-title" class="sr-only" i18n="@@pc.media.volume">Volume</h2>
-      <button
-        type="button"
-        class="vol"
-        aria-label="Diminuir o volume"
-        i18n-aria-label="@@pc.media.volume-down"
-        [disabled]="!store.canSend()"
-        (pointerdown)="hold('VOLUME_DOWN', $event)"
-        (pointerup)="release()"
-        (pointercancel)="release()"
-        (pointerleave)="release()"
-        (click)="$event.detail === 0 && press('VOLUME_DOWN')"
-        (contextmenu)="$event.preventDefault()"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M4 10v4h3.5L12 18V6L7.5 10zM16 9.5a4 4 0 0 1 0 5'" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="vol mute"
-        aria-label="Mudo"
-        i18n-aria-label="@@pc.media.mute"
-        [disabled]="!store.canSend()"
-        (click)="press('MUTE')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M4 10v4h3.5L12 18V6L7.5 10zM16 9.5l5 5M21 9.5l-5 5'" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="vol"
-        aria-label="Aumentar o volume"
-        i18n-aria-label="@@pc.media.volume-up"
-        [disabled]="!store.canSend()"
-        (pointerdown)="hold('VOLUME_UP', $event)"
-        (pointerup)="release()"
-        (pointercancel)="release()"
-        (pointerleave)="release()"
-        (click)="$event.detail === 0 && press('VOLUME_UP')"
-        (contextmenu)="$event.preventDefault()"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            [attr.d]="'M4 10v4h3.5L12 18V6L7.5 10zM15.5 9a4.5 4.5 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11'"
-          />
-        </svg>
-      </button>
-    </div>
-
-    @if (store.apps().length > 0) {
-      <h2 class="section" i18n="@@pc.apps.title">Abrir no PC</h2>
-      <ul class="apps">
-        @for (app of store.apps(); track app.id) {
-          <li>
-            <button
-              type="button"
-              class="app ui-btn"
-              [disabled]="!store.canSend() || launching() === app.id"
-              (click)="launch(app.id)"
-            >
-              {{ app.label }}
-            </button>
-          </li>
-        }
-      </ul>
-      @if (error(); as message) {
-        <p class="error" role="alert">{{ message }}</p>
+    <div class="modes" role="tablist" aria-label="Modo" i18n-aria-label="@@pc.media.modes">
+      @for (item of modes; track item.id) {
+        <button
+          type="button"
+          role="tab"
+          class="mode"
+          [id]="'pc-mode-' + item.id"
+          [attr.data-mode]="item.id"
+          [attr.aria-selected]="mode() === item.id"
+          [attr.aria-controls]="mode() === item.id ? 'pc-mode-panel' : null"
+          [attr.tabindex]="mode() === item.id ? 0 : -1"
+          (click)="select(item.id)"
+          (keydown)="onKey($event)"
+        >
+          {{ item.label }}
+        </button>
       }
-    }
+    </div>
+
+    <div
+      id="pc-mode-panel"
+      class="panel"
+      role="tabpanel"
+      [class.grow]="mode() === 'slides'"
+      [attr.aria-labelledby]="'pc-mode-' + mode()"
+    >
+      @switch (mode()) {
+        @case ('music') {
+          <app-pc-transport
+            previousLabel="Faixa anterior"
+            i18n-previousLabel="@@pc.media.previous"
+            toggleLabel="Tocar ou pausar"
+            i18n-toggleLabel="@@pc.media.play-pause"
+            nextLabel="Próxima faixa"
+            i18n-nextLabel="@@pc.media.next"
+            (previous)="press('PREVIOUS')"
+            (playPause)="press('PLAY_PAUSE')"
+            (next)="press('NEXT')"
+          />
+        }
+        @case ('video') {
+          <app-pc-video-panel />
+        }
+        @case ('slides') {
+          <app-pc-slides-panel />
+        }
+      }
+
+      @if (mode() !== 'slides') {
+        <app-pc-volume />
+        <div class="extras">
+          <button
+            type="button"
+            class="extra"
+            [attr.data-action]="'mute'"
+            [disabled]="!store.canSend()"
+            (click)="press('MUTE')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path [attr.d]="'M4 10v4h3.5L12 18V6L7.5 10zM16 9.5l5 5M21 9.5l-5 5'" />
+            </svg>
+            <span i18n="@@pc.media.mute">Mudo</span>
+          </button>
+          <button
+            type="button"
+            class="extra"
+            [attr.data-action]="'stop'"
+            [disabled]="!store.canSend()"
+            (click)="press('STOP')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" />
+            </svg>
+            <span i18n="@@pc.media.stop">Parar</span>
+          </button>
+        </div>
+      }
+    </div>
+
+    <app-pc-favorites />
   `,
   styleUrl: './media.page.css',
 })
 export class MediaPage {
   protected readonly store = inject(PcStore);
-  protected readonly launching = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
+  private readonly input = inject(PcInput);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  private startTimer: number | null = null;
-  private repeatTimer: number | null = null;
-  /** Passos do volume ainda sem resposta: a repetição não espera a ida e volta do anterior, mas não se acumula sem fim. */
-  private inFlight = 0;
+  protected readonly modes: readonly { readonly id: MediaMode; readonly label: string }[] = [
+    { id: 'music', label: $localize`:@@pc.media.mode.music:Música` },
+    { id: 'video', label: $localize`:@@pc.media.mode.video:Vídeo` },
+    { id: 'slides', label: $localize`:@@pc.media.mode.slides:Slides` },
+  ];
+  protected readonly mode = signal<MediaMode>('music');
 
-  constructor() {
-    inject(DestroyRef).onDestroy(() => this.release());
+  protected select(mode: MediaMode): void {
+    this.mode.set(mode);
+  }
+
+  /** As setas trocam de modo (e levam o foco junto), como numa lista de abas. */
+  protected onKey(event: KeyboardEvent): void {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const next = MODES[(MODES.indexOf(this.mode()) + step + MODES.length) % MODES.length];
+    this.mode.set(next);
+    queueMicrotask(() =>
+      this.host.nativeElement.querySelector<HTMLElement>(`#pc-mode-${next}`)?.focus(),
+    );
   }
 
   protected press(action: PcMediaAction): void {
     tick();
     void this.store.sendMedia(action);
-  }
-
-  /** Aperta uma vez já e, se o dedo ficar, repete o volume até soltar (no máximo `MAX_VOLUME_IN_FLIGHT` sem resposta). */
-  protected hold(action: 'VOLUME_UP' | 'VOLUME_DOWN', event: PointerEvent): void {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    this.release();
-    this.step(action);
-    this.startTimer = window.setTimeout(() => {
-      this.repeatTimer = window.setInterval(() => this.step(action), REPEAT_EVERY_MS);
-    }, REPEAT_AFTER_MS);
-  }
-
-  protected release(): void {
-    if (this.startTimer !== null) window.clearTimeout(this.startTimer);
-    if (this.repeatTimer !== null) window.clearInterval(this.repeatTimer);
-    this.startTimer = null;
-    this.repeatTimer = null;
-  }
-
-  protected async launch(id: string): Promise<void> {
-    if (this.launching()) return;
-    this.launching.set(id);
-    this.error.set(null);
-    tick();
-    const failure = await this.store.launch(id);
-    this.launching.set(null);
-    if (failure) this.error.set(failure.message);
-  }
-
-  private step(action: PcMediaAction): void {
-    if (this.inFlight >= MAX_VOLUME_IN_FLIGHT) return;
-    this.inFlight++;
-    tick(5);
-    void this.store.sendMedia(action).finally(() => {
-      this.inFlight--;
-    });
   }
 }

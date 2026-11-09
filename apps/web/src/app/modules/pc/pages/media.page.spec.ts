@@ -12,6 +12,11 @@ describe('MediaPage', () => {
     [...root.querySelectorAll<HTMLButtonElement>('button')].find(
       (b) => b.getAttribute('aria-label') === label || b.textContent?.trim() === label,
     )!;
+  const tab = (id: string) =>
+    root.querySelector<HTMLButtonElement>(`[role="tab"][data-mode="${id}"]`)!;
+  const flush = async () => {
+    for (let round = 0; round < 8; round++) await Promise.resolve();
+  };
 
   function press(label: string, type: 'pointerdown' | 'pointerup' = 'pointerdown') {
     const event = new MouseEvent(type, { bubbles: true, button: 0 });
@@ -20,6 +25,7 @@ describe('MediaPage', () => {
   }
 
   beforeEach(() => {
+    localStorage.clear();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     store = createFakePcStore();
     TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
@@ -31,87 +37,163 @@ describe('MediaPage', () => {
   afterEach(() => {
     fixture.destroy();
     vi.useRealTimers();
+    localStorage.clear();
   });
 
-  it('the transport buttons send the media keys', () => {
-    named('Tocar ou pausar').click();
-    named('Próxima faixa').click();
-    named('Faixa anterior').click();
-    named('Mudo').click();
-    expect(store.sendMedia.mock.calls.map(([action]) => action)).toEqual([
-      'PLAY_PAUSE',
-      'NEXT',
-      'PREVIOUS',
-      'MUTE',
-    ]);
+  describe('modes', () => {
+    it('has Music, Video and Slides in one tab list, with Music open', () => {
+      expect([...root.querySelectorAll('[role="tab"]')].map((b) => b.textContent?.trim())).toEqual([
+        'Música',
+        'Vídeo',
+        'Slides',
+      ]);
+      expect(tab('music').getAttribute('aria-selected')).toBe('true');
+      expect(tab('video').getAttribute('aria-selected')).toBe('false');
+      expect(root.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby')).toBe(
+        'pc-mode-music',
+      );
+      expect(named('Faixa anterior')).toBeDefined();
+      expect(root.querySelector('app-pc-video-panel')).toBeNull();
+      expect(root.querySelector('app-pc-slides-panel')).toBeNull();
+    });
+
+    it('switches the panel, and the volume stays for Music and Video but not for Slides', () => {
+      tab('video').click();
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-video-panel')).not.toBeNull();
+      expect(root.querySelector('app-pc-volume')).not.toBeNull();
+      expect(named('Faixa anterior')).toBeUndefined();
+      tab('slides').click();
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-slides-panel')).not.toBeNull();
+      expect(root.querySelector('app-pc-volume')).toBeNull();
+      expect(tab('slides').getAttribute('aria-selected')).toBe('true');
+      expect(tab('slides').getAttribute('tabindex')).toBe('0');
+      expect(tab('music').getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('the arrow keys move between the modes, with the focus, and wrap around', async () => {
+      const key = (value: string) =>
+        root
+          .querySelector('[role="tab"][aria-selected="true"]')!
+          .dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
+      key('ArrowRight');
+      fixture.detectChanges();
+      expect(tab('video').getAttribute('aria-selected')).toBe('true');
+      key('ArrowLeft');
+      key('ArrowLeft');
+      fixture.detectChanges();
+      expect(tab('slides').getAttribute('aria-selected')).toBe('true');
+      key('Enter');
+      expect(tab('slides').getAttribute('aria-selected')).toBe('true');
+    });
   });
 
-  it('a short press on the volume sends one step and never repeats', async () => {
-    press('Aumentar o volume');
-    press('Aumentar o volume', 'pointerup');
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(store.sendMedia).toHaveBeenCalledTimes(1);
-    expect(store.sendMedia).toHaveBeenCalledWith('VOLUME_UP');
+  describe('Music', () => {
+    it('the transport buttons, mute and stop send the media commands', () => {
+      named('Tocar ou pausar').click();
+      named('Próxima faixa').click();
+      named('Faixa anterior').click();
+      named('Mudo').click();
+      named('Parar').click();
+      expect(store.sendMedia.mock.calls.map(([action]) => action)).toEqual([
+        'PLAY_PAUSE',
+        'NEXT',
+        'PREVIOUS',
+        'MUTE',
+        'STOP',
+      ]);
+    });
+
+    it('a short press on the volume sends one step and never repeats', async () => {
+      press('Aumentar o volume');
+      press('Aumentar o volume', 'pointerup');
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(store.sendMedia).toHaveBeenCalledTimes(1);
+      expect(store.sendMedia).toHaveBeenCalledWith('VOLUME_UP');
+    });
+
+    it('holding the volume repeats it until the finger leaves', async () => {
+      press('Diminuir o volume');
+      await vi.advanceTimersByTimeAsync(420 + 190 * 3);
+      const held = store.sendMedia.mock.calls.length;
+      expect(held).toBeGreaterThanOrEqual(3);
+      expect(store.sendMedia.mock.calls.every(([action]) => action === 'VOLUME_DOWN')).toBe(true);
+      press('Diminuir o volume', 'pointerup');
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(store.sendMedia).toHaveBeenCalledTimes(held);
+    });
+
+    it('keeps repeating while a step is still waiting for the PC, up to three at once', async () => {
+      store.sendMedia.mockImplementation(() => new Promise<never>(() => undefined));
+      press('Aumentar o volume');
+      await vi.advanceTimersByTimeAsync(420 + 190 * 8);
+      // A resposta lenta não para a repetição (cada passo não espera a ida e volta do anterior), mas ela tem teto.
+      expect(store.sendMedia).toHaveBeenCalledTimes(3);
+    });
+
+    it('keyboard and screen reader activation (a click with no pointer) also change the volume', () => {
+      named('Aumentar o volume').click();
+      expect(store.sendMedia).toHaveBeenCalledExactlyOnceWith('VOLUME_UP');
+    });
   });
 
-  it('holding the volume repeats it until the finger leaves', async () => {
-    press('Diminuir o volume');
-    await vi.advanceTimersByTimeAsync(420 + 190 * 3);
-    const held = store.sendMedia.mock.calls.length;
-    expect(held).toBeGreaterThanOrEqual(3);
-    expect(store.sendMedia.mock.calls.every(([action]) => action === 'VOLUME_DOWN')).toBe(true);
-    press('Diminuir o volume', 'pointerup');
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(store.sendMedia).toHaveBeenCalledTimes(held);
+  describe('favorites', () => {
+    it('shows no favorites section when the PC offers none', () => {
+      expect(root.querySelector('.apps')).toBeNull();
+    });
+
+    it('lists the favorites of the PC in a grid and opens the chosen one, in any mode', async () => {
+      store.apps.set([
+        { id: 'navegador', label: 'Navegador' },
+        { id: 'notas', label: 'Notas' },
+      ]);
+      tab('slides').click();
+      fixture.detectChanges();
+      expect([...root.querySelectorAll('.app .name')].map((b) => b.textContent?.trim())).toEqual([
+        'Navegador',
+        'Notas',
+      ]);
+      expect([...root.querySelectorAll('.app .badge')].map((b) => b.textContent?.trim())).toEqual([
+        'N',
+        'N',
+      ]);
+      root.querySelector<HTMLButtonElement>('[data-app="notas"]')!.click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.launch).toHaveBeenCalledExactlyOnceWith('notas');
+    });
+
+    it('says why a favorite did not open', async () => {
+      store.apps.set([{ id: 'notas', label: 'Notas' }]);
+      store.launch.mockResolvedValueOnce(FAILURE);
+      fixture.detectChanges();
+      root.querySelector<HTMLButtonElement>('[data-app="notas"]')!.click();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+      expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
+    });
   });
 
-  it('keeps repeating while a step is still waiting for the PC, up to three at once', async () => {
-    store.sendMedia.mockImplementation(() => new Promise<never>(() => undefined));
-    press('Aumentar o volume');
-    await vi.advanceTimersByTimeAsync(420 + 190 * 8);
-    // A resposta lenta não para a repetição (cada passo não espera a ida e volta do anterior), mas ela tem teto.
-    expect(store.sendMedia).toHaveBeenCalledTimes(3);
-  });
-
-  it('keyboard and screen reader activation (a click with no pointer) also change the volume', () => {
-    named('Aumentar o volume').click();
-    expect(store.sendMedia).toHaveBeenCalledExactlyOnceWith('VOLUME_UP');
-  });
-
-  it('shows no favorites section when the PC offers none', () => {
-    expect(root.querySelector('.apps')).toBeNull();
-  });
-
-  it('lists the favorites of the PC and opens the chosen one', async () => {
-    store.apps.set([
-      { id: 'navegador', label: 'Navegador' },
-      { id: 'notas', label: 'Notas' },
-    ]);
-    fixture.detectChanges();
-    expect([...root.querySelectorAll('.app')].map((b) => b.textContent?.trim())).toEqual([
-      'Navegador',
-      'Notas',
-    ]);
-    named('Notas').click();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(store.launch).toHaveBeenCalledExactlyOnceWith('notas');
-  });
-
-  it('says why a favorite did not open', async () => {
-    store.apps.set([{ id: 'notas', label: 'Notas' }]);
-    store.launch.mockResolvedValueOnce(FAILURE);
-    fixture.detectChanges();
-    named('Notas').click();
-    await vi.advanceTimersByTimeAsync(0);
-    fixture.detectChanges();
-    expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
-  });
-
-  it('is all disabled while the PC is not connected', () => {
+  it('every command button is disabled while the PC is not connected (the mode tabs still work)', async () => {
     store.phase.set('offline');
+    store.apps.set([{ id: 'notas', label: 'Notas' }]);
     fixture.detectChanges();
-    expect([...root.querySelectorAll<HTMLButtonElement>('button')].every((b) => b.disabled)).toBe(
-      true,
-    );
+    // O cronômetro é só da tela (não manda nada ao PC): fica de fora.
+    const buttons = (): HTMLButtonElement[] =>
+      [...root.querySelectorAll<HTMLButtonElement>('button:not([role="tab"])')].filter(
+        (b) => !b.closest('app-pc-slide-timer'),
+      );
+    expect(buttons().length).toBeGreaterThan(5);
+    expect(buttons().every((b) => b.disabled)).toBe(true);
+    for (const id of ['video', 'slides']) {
+      tab(id).click();
+      fixture.detectChanges();
+      await flush();
+      expect(buttons().length, id).toBeGreaterThan(3);
+      expect(
+        buttons().every((b) => b.disabled),
+        id,
+      ).toBe(true);
+    }
   });
 });

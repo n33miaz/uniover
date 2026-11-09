@@ -28,6 +28,8 @@ export interface PcPrefsValue {
   readonly keepAwake: boolean;
   /** A dica de primeiro uso (os três gestos) já foi vista: some ao primeiro toque e não volta. */
   readonly hintSeen: boolean;
+  /** O aviso do Vídeo ("o player precisa estar em foco") já foi visto: some ao primeiro toque de vídeo e não volta. */
+  readonly videoHintSeen: boolean;
 }
 
 export const PC_PREFS_DEFAULTS: PcPrefsValue = {
@@ -40,6 +42,7 @@ export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   clickButtons: false,
   keepAwake: true,
   hintSeen: false,
+  videoHintSeen: false,
 };
 
 export const PC_PREFS_KEY = 'uniover.pc.prefs.v1';
@@ -77,6 +80,7 @@ function parsePrefs(raw: unknown): PcPrefsValue {
     clickButtons: flag('clickButtons'),
     keepAwake: flag('keepAwake'),
     hintSeen: flag('hintSeen'),
+    videoHintSeen: flag('videoHintSeen'),
   };
 }
 
@@ -115,6 +119,7 @@ export class PcPrefs {
   readonly clickButtons = computed(() => this.value().clickButtons);
   readonly keepAwake = computed(() => this.value().keepAwake);
   readonly hintSeen = computed(() => this.value().hintSeen);
+  readonly videoHintSeen = computed(() => this.value().videoHintSeen);
   /** Alguma escolha difere do padrão. */
   readonly customized = computed(() =>
     CHOICES.some((name) => this.value()[name] !== PC_PREFS_DEFAULTS[name]),
@@ -131,9 +136,13 @@ export class PcPrefs {
     this.write(next);
   }
 
-  /** Volta as escolhas ao padrão; a dica vista continua vista. */
+  /** Volta as escolhas ao padrão; as dicas vistas continuam vistas. */
   reset(): void {
-    this.set({ ...PC_PREFS_DEFAULTS, hintSeen: this.value().hintSeen });
+    this.set({
+      ...PC_PREFS_DEFAULTS,
+      hintSeen: this.value().hintSeen,
+      videoHintSeen: this.value().videoHintSeen,
+    });
   }
 
   private openStorage(): Storage | null {

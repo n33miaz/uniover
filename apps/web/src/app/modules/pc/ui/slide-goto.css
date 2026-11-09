@@ -1,0 +1,57 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.goto {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.goto-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: 1rem;
+  text-align: center;
+}
+.goto-go {
+  min-height: 52px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.goto-go:active:not(:disabled) {
+  background: var(--a-accent-soft);
+}
+.goto-input:disabled,
+.goto-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.goto-input:focus-visible,
+.goto-go:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.note {
+  margin: 0;
+  color: var(--a-bad);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  text-align: center;
+}
