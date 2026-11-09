@@ -4,7 +4,7 @@ import { expect, test } from '../fixtures';
 import { settle } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { PcMock, mockPcApi } from './pc-mock';
-import { dropRtc, installFakeRtc, rtcLog } from './rtc-fake';
+import { byeRtc, dropRtc, installFakeRtc, rtcLog } from './rtc-fake';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -135,6 +135,27 @@ test.describe('Canal direto', () => {
     await expect
       .poll(() => pc.sent('/rtc/0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e01/close').length)
       .toBe(1);
+  });
+
+  test('outro aparelho tomar o canal (replaced) devolve tudo à nuvem, sem aviso e sem insistir', async ({
+    page,
+  }) => {
+    await installFakeRtc(page);
+    await openPc(page);
+    await expect(status(page)).toHaveText('Conectado, direto');
+    const { x, y } = await padCenter(page);
+    await tap(page, x, y);
+    await expect
+      .poll(async () => (await rtcLog(page))?.input.filter((m) => m['k'] === 'cmd').length)
+      .toBe(1);
+
+    await byeRtc(page, 'replaced');
+    await expect(status(page)).toHaveText('Conectado');
+
+    await tap(page, x, y);
+    await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }]);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    expect((await rtcLog(page))?.connections).toBe(1);
   });
 
   test('a API recusar a oferta (409) mantém tudo pela nuvem, sem aviso', async ({ page }) => {

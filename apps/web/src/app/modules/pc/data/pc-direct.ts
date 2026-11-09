@@ -33,6 +33,12 @@ export const STALL_MS = 2_500;
 export const ACK_TIMEOUT_MS = 6_500;
 /** Reenvio do último total do ponteiro depois de uma pausa: cobre a mensagem perdida sem retransmissão. */
 export const POINTER_TAIL_MS = 60;
+/** Quanto antes do fim da vida do canal o app abre outro (a vida vem do agente, no `ready`). */
+export const RENEW_MARGIN_MS = 30_000;
+/** O canal que durou isto (ou mais) antes de cair já provou que funciona: o recuo recomeça do início. */
+export const STABLE_MS = 60_000;
+/** Prazo para o agente firmar a escala de relógio (dois sinais de vida): sem ela, nenhum comando é aceito. */
+export const CLOCK_TIMEOUT_MS = 4_000;
 /** Acima disto no buffer do canal do ponteiro, a mensagem é pulada (a próxima traz a soma). */
 const MAX_BUFFERED_BYTES = 16_384;
 
@@ -123,6 +129,7 @@ function failureFor(code: string | undefined): HttpErrorResponse {
     case 'not_allowed':
       return new HttpErrorResponse({ status: 400 });
     case 'expired':
+    case 'not_ready':
       return new HttpErrorResponse({ status: 504 });
     default:
       return new HttpErrorResponse({ status: 502, error: { agentError: code ?? 'failed' } });
@@ -154,6 +161,15 @@ export class PcDirect {
   private readonly factory = inject(PC_RTC_FACTORY);
 
   private wanted = false;
+  /** Outro aparelho tomou o canal, ou a sessão deixou de valer: só uma ação da pessoa (a tela abrir de novo) tenta outra vez. */
+  private suspended = false;
+  /** O canal já levou o primeiro comando: daqui em diante os comandos de entrada vão só por ele (a nuvem fecha o canal em uso). */
+  private adopted = false;
+  private openedAt = 0;
+  private renewTimer: ReturnType<typeof setTimeout> | null = null;
+  private renewPending = false;
+  private clockWaiter: (() => void) | null = null;
+  private busyProbe: (() => boolean) | null = null;
   private connecting = false;
   private link: Link | null = null;
   private attempts = 0;
@@ -164,6 +180,7 @@ export class PcDirect {
   private pingCount = 0;
   private readonly pingSentAt = new Map<number, number>();
   private lastRtt: number | null = null;
+  private lifeSeconds = 0;
   private readyWaiter: (() => void) | null = null;
   private readonly pending = new Map<string, Pending>();
   private commandCount = 0;
@@ -198,9 +215,23 @@ export class PcDirect {
     });
   }
 
-  /** O canal pode levar o próximo comando agora (aberto, e a nuvem não tem nada em voo). */
+  /**
+   * O canal pode levar o próximo comando de entrada agora. O primeiro só sai por ele com a nuvem sem nada em voo (o que já saiu
+   * termina antes). Dali em diante é só ele: o agente fecha o canal em uso no instante em que chega um comando de entrada pela
+   * nuvem (para um aperto atrasado do canal nunca cair depois de um soltar da nuvem), então misturar os dois derrubaria o canal.
+   */
   canUse(): boolean {
-    return this.open() && this.cloudInFlight === 0;
+    if (!this.open()) return false;
+    if (!this.adopted && this.cloudInFlight === 0) this.adopted = true;
+    return this.adopted;
+  }
+
+  /**
+   * Quem usa o canal diz se algo está segurado no PC (botão, modificador). A renovação do canal (a vida dele é curta) espera
+   * isto acabar: trocar de canal no meio de um arrasto o soltaria.
+   */
+  setBusyProbe(probe: (() => boolean) | null): void {
+    this.busyProbe = probe;
   }
 
   /**
@@ -224,7 +255,11 @@ export class PcDirect {
 
   /** A tela do PC abriu: passa a tentar o canal enquanto ela estiver visível. */
   start(): void {
-    if (this.wanted) return;
+    this.suspended = false; // abrir a tela de novo é uma ação da pessoa: tenta outra vez
+    if (this.wanted) {
+      this.evaluate();
+      return;
+    }
     this.wanted = true;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
@@ -312,7 +347,14 @@ export class PcDirect {
   // ---- abrir -----------------------------------------------------------------------------------
 
   private evaluate(): void {
-    if (!this.wanted || this.open() || this.connecting || this.backoffTimer !== null) return;
+    if (
+      !this.wanted ||
+      this.suspended ||
+      this.open() ||
+      this.connecting ||
+      this.backoffTimer !== null
+    )
+      return;
     if (this.factory === null || document.visibilityState === 'hidden') return;
     const status = this.availability.status();
     if (!status?.online || !status.capabilities.includes(PC_RTC_CAPABILITY)) return;
@@ -349,13 +391,17 @@ export class PcDirect {
       const ready = new Promise<void>((resolve) => {
         this.readyWaiter = resolve;
       });
+      this.lifeSeconds = 0;
       link.input.send(JSON.stringify({ k: 'auth', tok: answer.token }));
       await Promise.race([
         ready,
         pause(OPEN_TIMEOUT_MS).then(() => Promise.reject(new Error('sem ready'))),
       ]);
       if (this.link !== link) return;
-      this.onOpen();
+      // O agente só aceita entrada depois de firmar a escala de relógio com dois sinais de vida; o canal só vale daqui.
+      await this.syncClock(link);
+      if (this.link !== link) return;
+      this.onOpen(this.lifeSeconds);
     } catch {
       if (link !== null && this.link === link) this.teardown('failed', {});
       else if (link !== null) this.discard(link);
@@ -412,14 +458,57 @@ export class PcDirect {
     });
   }
 
-  private onOpen(): void {
-    this.attempts = 0;
+  /** Manda o par de sinais de vida que firma a escala de relógio no agente e espera ele dizer que a tem (`c` no `pong`). */
+  private async syncClock(link: Link): Promise<void> {
+    const synced = new Promise<void>((resolve) => {
+      this.clockWaiter = resolve;
+    });
+    this.sendPing(link);
+    const timer = setInterval(() => this.sendPing(link), 120);
+    try {
+      await Promise.race([
+        synced,
+        pause(CLOCK_TIMEOUT_MS).then(() => Promise.reject(new Error('sem relógio'))),
+      ]);
+    } finally {
+      clearInterval(timer);
+      this.clockWaiter = null;
+    }
+  }
+
+  private sendPing(link: Link): void {
+    const n = ++this.pingCount;
+    this.pingSentAt.set(n, performance.now());
+    if (this.pingSentAt.size > 8)
+      this.pingSentAt.delete(this.pingSentAt.keys().next().value as number);
+    if (link.pointer.readyState !== 'open') return;
+    try {
+      link.pointer.send(JSON.stringify({ k: 'ping', n, t: Date.now(), r: this.lastRtt }));
+    } catch {
+      // idem: o `close` derruba
+    }
+  }
+
+  private onOpen(lifeSeconds: number): void {
+    // O recuo NÃO volta ao início só porque o canal abriu (dois aparelhos se trocando abriam e perdiam o canal em laço): ele
+    // recomeça quando um canal dura `STABLE_MS` (ver `teardown`).
+    this.openedAt = Date.now();
+    this.adopted = false;
+    this.renewPending = false;
     this.seq = 0;
     this.totals = { x: 0, y: 0, w: 0, h: 0 };
     this.lastPong = Date.now();
     this.pingSentAt.clear();
     this.open.set(true);
     this.pingTimer = setInterval(() => this.ping(), PING_MS);
+    // A vida do canal é curta (a da sessão que o autorizou): abre outro um pouco antes do fim, sem ninguém notar.
+    if (lifeSeconds > 0) {
+      const wait = Math.max(5_000, lifeSeconds * 1000 - RENEW_MARGIN_MS);
+      this.renewTimer = setTimeout(() => {
+        this.renewTimer = null;
+        this.renewPending = true;
+      }, wait);
+    }
   }
 
   // ---- mensagens -------------------------------------------------------------------------------
@@ -428,7 +517,10 @@ export class PcDirect {
     if (this.link !== link) return;
     const message = parse(data);
     if (message?.['k'] === 'ready') {
+      this.lifeSeconds = typeof message['life'] === 'number' ? message['life'] : 0;
       this.readyWaiter?.();
+    } else if (message?.['k'] === 'bye') {
+      this.onBye(typeof message['r'] === 'string' ? message['r'] : '');
     } else if (message?.['k'] === 'ack' && typeof message['i'] === 'string') {
       const waiting = this.pending.get(message['i']);
       if (!waiting) return;
@@ -439,11 +531,28 @@ export class PcDirect {
     }
   }
 
+  /**
+   * O agente diz por que fechou o canal. `replaced` (outro aparelho tomou o lugar) e `revoked` (a sessão, a senha, a conta ou
+   * a permissão deixou de valer): nenhuma tentativa sozinha, só a próxima vez que a tela abrir. `lifetime`: a vida acabou, abre
+   * outro já. Os demais seguem o recuo de sempre.
+   */
+  private onBye(reason: string): void {
+    if (reason === 'replaced' || reason === 'revoked') {
+      this.suspended = true;
+      this.teardown(reason, { unexpected: true });
+    } else if (reason === 'lifetime') {
+      this.teardown(reason, { unexpected: true, renew: true });
+    } else {
+      this.teardown(reason, { unexpected: true });
+    }
+  }
+
   private onPointer(link: Link, data: unknown): void {
     if (this.link !== link) return;
     const message = parse(data);
     if (message?.['k'] !== 'pong' || typeof message['n'] !== 'number') return;
     this.lastPong = Date.now();
+    if (message['c'] === true) this.clockWaiter?.();
     const sent = this.pingSentAt.get(message['n']);
     if (sent !== undefined) {
       this.pingSentAt.delete(message['n']);
@@ -472,16 +581,15 @@ export class PcDirect {
       this.teardown('stalled', { unexpected: true });
       return;
     }
-    const n = ++this.pingCount;
-    this.pingSentAt.set(n, performance.now());
-    if (this.pingSentAt.size > 8)
-      this.pingSentAt.delete(this.pingSentAt.keys().next().value as number);
-    if (link.pointer.readyState !== 'open') return;
-    try {
-      link.pointer.send(JSON.stringify({ k: 'ping', n, t: Date.now(), r: this.lastRtt }));
-    } catch {
-      // idem: o `close` derruba
+    // O canal pediu renovação (vida perto do fim) e nada está segurado: troca agora, de modo transparente.
+    if (this.renewPending && this.busyProbe?.() !== true) {
+      this.teardown('renew', {});
+      this.attempts = 0;
+      this.clearBackoff();
+      this.evaluate();
+      return;
     }
+    this.sendPing(link);
   }
 
   // ---- fechar ----------------------------------------------------------------------------------
@@ -496,13 +604,20 @@ export class PcDirect {
       readonly keepalive?: boolean;
       readonly unexpected?: boolean;
       readonly quiet?: boolean;
+      /** A vida do canal acabou: abre outro na hora, sem recuo. */
+      readonly renew?: boolean;
     },
   ): void {
     const link = this.link;
     if (link === null) return;
     this.link = null;
     const wasOpen = this.open();
+    const lived = wasOpen ? Date.now() - this.openedAt : 0;
     this.open.set(false);
+    this.adopted = false;
+    this.renewPending = false;
+    if (this.renewTimer !== null) clearTimeout(this.renewTimer);
+    this.renewTimer = null;
     this.rtt.set(null);
     if (this.pingTimer !== null) clearInterval(this.pingTimer);
     this.pingTimer = null;
@@ -518,8 +633,18 @@ export class PcDirect {
     if (options.unexpected === true && wasOpen) {
       for (const listener of [...this.lostListeners]) listener();
     }
-    // A queda que a tela não pediu volta a tentar com recuo (5, 15, 60 s), tenha o canal chegado a abrir ou não.
-    if (options.unexpected === true) this.scheduleRetry();
+    // A queda que a tela não pediu volta a tentar com recuo (5, 15, 60 s), tenha o canal chegado a abrir ou não. Um canal que
+    // durou o bastante provou que funciona e zera o recuo; um que caiu logo (dois aparelhos disputando) o faz crescer.
+    if (options.unexpected === true) {
+      if (lived >= STABLE_MS) this.attempts = 0;
+      if (options.renew === true) {
+        this.attempts = 0;
+        this.clearBackoff();
+        queueMicrotask(() => this.evaluate());
+      } else {
+        this.scheduleRetry();
+      }
+    }
     void reason;
   }
 
@@ -538,7 +663,7 @@ export class PcDirect {
   }
 
   private scheduleRetry(): void {
-    if (!this.wanted || this.backoffTimer !== null) return;
+    if (!this.wanted || this.suspended || this.backoffTimer !== null) return;
     const wait = DIRECT_BACKOFF_MS[Math.min(this.attempts, DIRECT_BACKOFF_MS.length - 1)] ?? 60_000;
     this.attempts++;
     this.backoffTimer = setTimeout(() => {
