@@ -4,6 +4,81 @@ import { PX_PER_VOLUME_STEP } from '../input/volume-drag';
 import { FAILURE, FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { PcVolume } from './volume';
 
+describe('PcVolume buttons (the repeat while held)', () => {
+  let store: FakePcStore;
+  let fixture: ReturnType<typeof TestBed.createComponent<PcVolume>>;
+  let root: HTMLElement;
+
+  const button = (label: string) =>
+    root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  function fire(label: string, type: string) {
+    const event = new MouseEvent(type, { bubbles: true, button: 0 });
+    Object.assign(event, { pointerType: 'touch' });
+    button(label).dispatchEvent(event);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    store = createFakePcStore();
+    TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
+    fixture = TestBed.createComponent(PcVolume);
+    fixture.detectChanges();
+    root = fixture.nativeElement;
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    vi.useRealTimers();
+  });
+
+  /** Segurado por um tempo: o toque mais duas repetições. */
+  async function holdAWhile() {
+    fire('Aumentar o volume', 'pointerdown');
+    await vi.advanceTimersByTimeAsync(420 + 190 * 2);
+    return store.sendMedia.mock.calls.length;
+  }
+
+  it('stops when the pointer capture is lost', async () => {
+    const sent = await holdAWhile();
+    expect(sent).toBeGreaterThanOrEqual(3);
+    fire('Aumentar o volume', 'lostpointercapture');
+    await vi.advanceTimersByTimeAsync(190 * 5);
+    expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+  });
+
+  it('stops when the page is hidden (pagehide) and when it goes to the background', async () => {
+    let sent = await holdAWhile();
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(190 * 5);
+    expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+    store.sendMedia.mockClear();
+    sent = await holdAWhile();
+    const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(190 * 5);
+      expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it('stops when the PC drops and sends no step while it is away, even from a timer already running', async () => {
+    const sent = await holdAWhile();
+    store.phase.set('offline');
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(190 * 5);
+    expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+  });
+
+  it('leaves no repeat behind when the component goes away with the finger down', async () => {
+    const sent = await holdAWhile();
+    fixture.destroy();
+    await vi.advanceTimersByTimeAsync(190 * 5);
+    expect(store.sendMedia).toHaveBeenCalledTimes(sent);
+  });
+});
+
 describe('PcVolume strip', () => {
   let store: FakePcStore;
   let fixture: ReturnType<typeof TestBed.createComponent<PcVolume>>;
@@ -111,6 +186,90 @@ describe('PcVolume strip', () => {
     fire('pointermove', 100 + PX_PER_VOLUME_STEP * 8);
     await flush();
     expect(requests()).toEqual([['VOLUME_UP', 3]]);
+  });
+
+  it('what was still waiting when the finger let go goes out only up to ten steps', async () => {
+    let answer!: () => void;
+    store.sendMedia.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = () => resolve(null))),
+    );
+    fire('pointerdown', 100);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 40);
+    fire('pointerup', 100 + PX_PER_VOLUME_STEP * 40);
+    answer();
+    await flush();
+    expect(requests()).toEqual([
+      ['VOLUME_UP', 1],
+      ['VOLUME_UP', 10],
+    ]);
+  });
+
+  it('without pointer capture the drag ends when the finger leaves the strip', async () => {
+    strip.setPointerCapture = () => {
+      throw new DOMException('gone', 'NotFoundError');
+    };
+    fire('pointerdown', 100);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 2);
+    expect(requests()).toEqual([['VOLUME_UP', 2]]);
+    strip.dispatchEvent(Object.assign(new MouseEvent('pointerleave'), { pointerId: 1 }));
+    fixture.detectChanges();
+    expect(strip.classList.contains('dragging')).toBe(false);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 9);
+    await flush();
+    expect(requests()).toEqual([['VOLUME_UP', 2]]);
+  });
+
+  it('without pointer capture the drag also ends when the finger goes up anywhere in the window', async () => {
+    strip.setPointerCapture = () => {
+      throw new DOMException('gone', 'NotFoundError');
+    };
+    fire('pointerdown', 100);
+    window.dispatchEvent(Object.assign(new MouseEvent('pointerup'), { pointerId: 1 }));
+    fixture.detectChanges();
+    expect(strip.classList.contains('dragging')).toBe(false);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 4);
+    await flush();
+    expect(store.sendMedia).not.toHaveBeenCalled();
+  });
+
+  it('with capture the finger leaving the strip does not end the drag', async () => {
+    fire('pointerdown', 100);
+    strip.dispatchEvent(Object.assign(new MouseEvent('pointerleave'), { pointerId: 1 }));
+    fixture.detectChanges();
+    expect(strip.classList.contains('dragging')).toBe(true);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 2);
+    expect(requests()).toEqual([['VOLUME_UP', 2]]);
+  });
+
+  it('hiding the page or going to the background drops the drag in progress', async () => {
+    fire('pointerdown', 100);
+    window.dispatchEvent(new Event('pagehide'));
+    fixture.detectChanges();
+    expect(strip.classList.contains('dragging')).toBe(false);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 4);
+    await flush();
+    expect(store.sendMedia).not.toHaveBeenCalled();
+    const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      fire('pointerdown', 100, 2);
+      document.dispatchEvent(new Event('visibilitychange'));
+      fire('pointermove', 100 + PX_PER_VOLUME_STEP * 4, 2);
+      await flush();
+      expect(store.sendMedia).not.toHaveBeenCalled();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it('the PC dropping in the middle of a drag ends it', async () => {
+    fire('pointerdown', 100);
+    store.phase.set('offline');
+    fixture.detectChanges();
+    expect(strip.classList.contains('dragging')).toBe(false);
+    fire('pointermove', 100 + PX_PER_VOLUME_STEP * 4);
+    await flush();
+    expect(store.sendMedia).not.toHaveBeenCalled();
   });
 
   it('does nothing while the PC is not connected', async () => {

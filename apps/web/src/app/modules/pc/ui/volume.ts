@@ -1,7 +1,15 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { PcStore } from '../data/pc-store';
 import { tick } from '../input/haptics';
-import { VolumeDrag } from '../input/volume-drag';
+import { MAX_STEPS_AFTER_RELEASE, VolumeDrag } from '../input/volume-drag';
 
 /** Segurar o volume repete: espera um pouco antes da primeira repetição e depois segue neste ritmo. */
 const REPEAT_AFTER_MS = 420;
@@ -33,6 +41,7 @@ type VolumeAction = 'VOLUME_UP' | 'VOLUME_DOWN';
       (pointerdown)="hold('VOLUME_DOWN', $event)"
       (pointerup)="release()"
       (pointercancel)="release()"
+      (lostpointercapture)="release()"
       (pointerleave)="release()"
       (click)="$event.detail === 0 && press('VOLUME_DOWN')"
       (contextmenu)="$event.preventDefault()"
@@ -52,6 +61,7 @@ type VolumeAction = 'VOLUME_UP' | 'VOLUME_DOWN';
       (pointerup)="end($event)"
       (pointercancel)="end($event)"
       (lostpointercapture)="end($event)"
+      (pointerleave)="leave($event)"
       (contextmenu)="$event.preventDefault()"
     >
       <svg class="hint left" viewBox="0 0 24 24"><path [attr.d]="'M14 7l-5 5 5 5'" /></svg>
@@ -68,6 +78,7 @@ type VolumeAction = 'VOLUME_UP' | 'VOLUME_DOWN';
       (pointerdown)="hold('VOLUME_UP', $event)"
       (pointerup)="release()"
       (pointercancel)="release()"
+      (lostpointercapture)="release()"
       (pointerleave)="release()"
       (click)="$event.detail === 0 && press('VOLUME_UP')"
       (contextmenu)="$event.preventDefault()"
@@ -99,13 +110,46 @@ export class PcVolume {
   /** Há um pedido do arrasto em voo: o seguinte só sai quando ele volta (um por vez, na ordem). */
   private sending = false;
   private destroyed = false;
+  /** O ponteiro do arrasto está capturado pela faixa; sem isso (a captura falhou) o fim do dedo vem de fora da faixa. */
+  private captured = false;
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => {
+    const destroy = inject(DestroyRef);
+    // Esconder a página ou ir para o segundo plano não pode deixar o volume subindo (o iOS nem avisa o componente).
+    const onHide = () => this.stopAll();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') this.stopAll();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onHide);
+    // Sem captura de ponteiro a faixa não ouve o dedo sair dela: o fim do toque se ouve na janela.
+    const onWindowEnd = (event: PointerEvent) => {
+      if (!this.captured) this.end(event);
+    };
+    window.addEventListener('pointerup', onWindowEnd);
+    window.addEventListener('pointercancel', onWindowEnd);
+    destroy.onDestroy(() => {
       this.destroyed = true;
-      this.release();
-      this.drag.reset();
+      this.stopAll();
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pointerup', onWindowEnd);
+      window.removeEventListener('pointercancel', onWindowEnd);
     });
+    // O PC caiu no meio de um toque: nada mais sai, e o arrasto e a repetição acabam.
+    effect(() => {
+      if (!this.store.canSend()) untracked(() => this.stopAll());
+    });
+  }
+
+  /** Para a repetição e o arrasto de vez, sem mandar o que esperava (a página se foi, o PC caiu, a tela acabou). */
+  private stopAll(): void {
+    this.release();
+    this.drag.reset();
+    this.pointerId = null;
+    this.captured = false;
+    this.dragging.set(false);
+    this.offset.set(0);
   }
 
   protected press(action: VolumeAction): void {
@@ -142,8 +186,10 @@ export class PcVolume {
     this.dragging.set(true);
     try {
       strip.setPointerCapture(event.pointerId);
+      this.captured = true;
     } catch {
-      // sem captura (o ponteiro já acabou): o arrasto vale até o dedo sair da faixa
+      // Sem captura (o ponteiro já acabou): o arrasto acaba quando o dedo sai da faixa ou sobe em qualquer lugar da janela.
+      this.captured = false;
     }
   }
 
@@ -156,12 +202,22 @@ export class PcVolume {
     this.flush();
   }
 
-  /** O dedo saiu: o botão volta ao meio e o que já foi andado ainda sai (sem pedido novo depois). */
+  /** O dedo saiu da faixa sem captura: o arrasto acaba ali. Com captura o `pointerleave` não conta (o dedo segue valendo fora). */
+  protected leave(event: PointerEvent): void {
+    if (!this.captured) this.end(event);
+  }
+
+  /**
+   * O dedo saiu: o botão volta ao meio e o que já foi andado ainda sai, mas só um pouco (`MAX_STEPS_AFTER_RELEASE`): a rede
+   * lenta não pode seguir mexendo no volume muito depois de soltar. Nenhum pedido novo nasce depois disto.
+   */
   protected end(event: PointerEvent): void {
     if (this.pointerId === null || event.pointerId !== this.pointerId) return;
     this.pointerId = null;
+    this.captured = false;
     this.dragging.set(false);
     this.offset.set(0);
+    this.drag.limit(MAX_STEPS_AFTER_RELEASE);
     this.flush();
   }
 
@@ -187,6 +243,8 @@ export class PcVolume {
   }
 
   private step(action: VolumeAction): void {
+    // Cada rodada confere o PC: com ele fora a repetição não manda nada (e o efeito do construtor a encerra).
+    if (!this.store.canSend()) return;
     if (this.inFlight >= MAX_VOLUME_IN_FLIGHT) return;
     this.inFlight++;
     tick(5);

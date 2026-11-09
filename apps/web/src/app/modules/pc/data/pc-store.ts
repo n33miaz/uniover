@@ -661,8 +661,17 @@ export class PcStore {
     return this.queueInput(() => this.api.edit(edit));
   }
 
+  /**
+   * Tem o mesmo prazo da fila de entrada (`INPUT_TIMEOUT_MS`): um pedido de mídia que não responde vira `timeout` em vez de
+   * prender para sempre quem espera por ele (a faixa do volume manda um pedido por vez). Só a mídia: os outros comandos
+   * (energia, abrir favorito) seguem sem esse prazo.
+   */
   sendMedia(action: PcMediaAction, steps = 1): Promise<PcFailure | null> {
-    return this.command(() => this.api.media(action, steps));
+    return this.command(async () => {
+      if (await raceTimeout(this.api.media(action, steps), INPUT_TIMEOUT_MS)) {
+        throw new HttpErrorResponse({ status: 504 });
+      }
+    });
   }
 
   /** Suspender e desligar levam `confirm`: quem chama só o passa depois de a pessoa confirmar na folha. */

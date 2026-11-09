@@ -260,6 +260,25 @@ describe('PcStore commands', () => {
     expect(availability.refresh).toHaveBeenCalledTimes(1);
   });
 
+  it('a media request that never answers becomes a timeout, so whoever waits for it is not stuck forever', async () => {
+    vi.useFakeTimers();
+    try {
+      const { store, api } = setup();
+      api.media.mockImplementationOnce(() => new Promise<void>(() => undefined));
+      let result: unknown = 'pending';
+      void store.sendMedia('VOLUME_UP', 3).then((failure) => (result = failure));
+      await vi.advanceTimersByTimeAsync(INPUT_TIMEOUT_MS - 1);
+      expect(result).toBe('pending');
+      await vi.advanceTimersByTimeAsync(2);
+      expect((result as { kind: string }).kind).toBe('timeout');
+      expect(store.notice()?.kind).toBe('timeout');
+      // A fila de mídia não ficou presa: o pedido seguinte sai normalmente.
+      expect(await store.sendMedia('MUTE')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not re-read the status for a failure that says nothing about the PC being away', async () => {
     const { store, api, availability } = setup();
     api.media.mockRejectedValueOnce(new HttpErrorResponse({ status: 429 }));
