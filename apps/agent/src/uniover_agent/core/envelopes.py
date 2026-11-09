@@ -127,6 +127,7 @@ class EnvelopeFactory:
         state: TvState,
         connection: WireConnection | None = None,
         adb_permission: str | None = None,
+        adb_permission_reason: str | None = None,
     ) -> dict[str, Any]:
         """`connection` troca o valor da sessão pelo do fio (o publicador decide, por API).
 
@@ -141,6 +142,8 @@ class EnvelopeFactory:
         }
         if adb_permission is not None:
             body["adbPermission"] = adb_permission
+            if adb_permission_reason is not None:
+                body["adbPermissionReason"] = adb_permission_reason
         return self._build("tv.state.v1", body, None)
 
     def tv_apps(

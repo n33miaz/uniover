@@ -115,6 +115,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.permission.request.v1.schema.json'
+      tvAdbRebind:
+        name: tv.adb.rebind.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.adb.rebind.v1.schema.json'
       tvPair:
         name: tv.pair.v1
         contentType: application/json

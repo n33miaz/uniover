@@ -49,15 +49,12 @@ class AdbPermissionTracker:
         self._recorder = recorder
 
     def report(self, state: AdbPermissionState, reason: str, detail: str = "") -> None:
-        """Implementa `AdbPermissionSink`: o estado novo vai aos ouvintes e ao diagnóstico; só o
-        motivo novo, apenas ao diagnóstico."""
+        """Implementa `AdbPermissionSink`: estado ou motivo novos vão aos ouvintes."""
         changed = state != self._state
         if not changed and reason == self._reason:
             return
         self._state, self._reason = state, reason
         self._write(state, reason, detail)
-        if not changed:
-            return
         for listener in self._listeners:
             try:
                 listener()

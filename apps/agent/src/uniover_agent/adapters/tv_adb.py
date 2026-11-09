@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from uniover_agent.adapters.adb_authorization import (
+    GATE_DEVICE_CHANGED,
     GATE_OTHER,
     GATE_TV_REFUSED,
     GRANTED,
@@ -62,6 +63,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
 )
 from uniover_agent.ports import (
     AdbCommandFailed,
+    AdbDeviceChanged,
     AdbError,
     AdbIdentityUnconfirmed,
     AdbIdle,
@@ -155,6 +157,7 @@ _UNAUTHORIZED_MESSAGE: Final = "a TV ainda não autorizou este PC no ADB"
 _GATED_MESSAGE: Final = "a TV ainda não deu ao UniOver a permissão do ADB; peça pelo app"
 _IDLE_MESSAGE: Final = "o ADB só abre conexão nova enquanto alguém usa a TV pelo app"
 _IDENTITY_MESSAGE: Final = "não deu para confirmar qual aparelho responde aqui; peça pelo app"
+_DEVICE_MESSAGE: Final = "outro aparelho responde no endereço da TV; o ADB não se conecta a ele"
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
@@ -457,8 +460,8 @@ class AdbTv:
         o aparelho nem adiantaria conectar), e não "sem permissão".
         """
         authorization = self._authorization
-        if not authorization.endpoint_moved():
-            return
+        if not authorization.can_adopt():
+            return  # nada a adotar: o caminho rápido, sem sondar a rede
         mac = await self._identity_mac()
         if mac is None and not is_user_initiated():
             raise AdbUnreachable("a TV não respondeu na rede")
@@ -485,7 +488,7 @@ class AdbTv:
             self._connected = True
             self._report_permission("granted", "channel_open")
             return
-        if state is DeviceState.UNAUTHORIZED:
+        if state is DeviceState.UNAUTHORIZED and self._gate_reason != GATE_DEVICE_CHANGED:
             # A TV está recusando a chave agora: não é só o portão do agente.
             self._gate_reason = GATE_TV_REFUSED
         if state in (DeviceState.DEVICE, DeviceState.UNAUTHORIZED, DeviceState.OFFLINE):
@@ -498,6 +501,9 @@ class AdbTv:
         # uma recusa explícita da TV rebaixa o registro).
         if self._refused_as_idle:
             raise AdbIdle(_IDLE_MESSAGE)
+        if self._gate_reason == GATE_DEVICE_CHANGED:
+            # Outro aparelho no endereço: não é falta de permissão (nada vai ao app como `missing`).
+            raise AdbDeviceChanged(_DEVICE_MESSAGE)
         # O portão não consultou a TV: o motivo diz se foi o registro (IP, chave, prova que falta)
         # ou a própria TV, e o app avisa a pessoa por ele.
         self._report_permission(
@@ -678,10 +684,71 @@ class AdbTv:
                 self._in_operation = False
                 self._mac_memo = _UNREAD
 
+    def _forget_state_of_the_old_registration(self, reason: str, detail: str) -> None:
+        """O registro mudou a pedido da pessoa: o que se sabia da recusa e do aviso já não vale."""
+        self._blocked_error = None
+        self._authorization_pending = False
+        self._gate_reason = GATE_OTHER
+        self._lost_from = None
+        self._permission_state = None
+        self._report_permission("missing", reason, detail)
+
+    async def rebind_registration(self) -> None:
+        """A pessoa confirmou, no app, que o aparelho do endereço agora é a mesma TV.
+
+        Refaz o registro da permissão para o MAC de agora. **Não conecta** a nada nem abre aviso: só
+        lê a ARP e grava o registro. O pedido de permissão que vem depois é o de sempre, da pessoa.
+        Só o comando `tv.adb.rebind.v1` chega aqui; nenhum caminho automático troca o aparelho do
+        registro.
+        """
+        async with self._lock:
+            mac = await self._identity_mac()
+            if mac is None:
+                raise AdbUnreachable("a TV não respondeu na rede")
+            if not mac:
+                raise AdbIdentityUnconfirmed(_IDENTITY_MESSAGE)
+            self._authorization.rebind(mac)
+            self._connected = False
+            await (
+                self._disconnect_locked()
+            )  # um transporte de antes não vale para o aparelho de agora
+            _log.info("registro do ADB refeito para o aparelho de agora, a pedido da pessoa")
+            self._forget_state_of_the_old_registration(
+                "rebound", "a pessoa confirmou que é a mesma TV; falta provar a permissão"
+            )
+
+    async def forget_registration(self) -> None:
+        """Um pareamento novo (a pessoa o pediu): apaga o registro da permissão do ADB.
+
+        Não fala com a TV (além de desfazer um transporte antigo): o pedido de permissão seguinte,
+        da pessoa, começa do zero e mostra o aviso se a TV não confia na chave.
+        """
+        async with self._lock:
+            self._authorization.clear()
+            self._connected = False
+            await self._disconnect_locked()
+            _log.info("registro do ADB apagado: pareamento novo pedido pela pessoa")
+            self._forget_state_of_the_old_registration(
+                "never", "registro apagado ao parear a TV de novo"
+            )
+
+    async def _another_device_here(self) -> bool:
+        """Num pedido da pessoa: a permissão dada é de um MAC e agora outro aparelho está nesse IP?
+
+        Só lê a ARP, e só quando há permissão e MAC anotados (sem isso nada se sonda).
+        """
+        authorization = self._authorization
+        record = authorization.record
+        if record.state not in (GRANTED, VERIFIED) or not record.mac:
+            return False
+        return authorization.another_device_at(await self._identity_mac())
+
     async def _gate_allows_locked(self) -> bool:
         """O portão de `_may_connect`, depois de levar o registro para o IP novo da mesma TV."""
         try:
             await self._adopt_known_tv()
+            if is_user_initiated() and await self._another_device_here():
+                raise AdbDeviceChanged(_DEVICE_MESSAGE)
             return await self._may_connect()
         except AdbUnreachable as exc:
             self._remember_failure(exc)
@@ -953,7 +1020,17 @@ class AdbTv:
                         await self._disconnect_locked()
                         await self._connect_locked(proof_ready=True)
                     return
-            raise type(self._blocked_error)(self._blocked_error.message)
+            cached = self._blocked_error
+            if not (
+                isinstance(cached, AdbUnauthorized)
+                and is_user_initiated()
+                and not self._watching_for_acceptance()
+            ):
+                raise type(cached)(cached.message)
+            # Pedido da pessoa: a recusa guardada (de um caminho automático) não vale. Ela pediu
+            # agora, então conecta de verdade e espera o aceite na TV. Com a espera do aceite já
+            # rodando o aviso já está na tela e o erro guardado segue valendo (sem aviso a mais).
+            self._blocked_error = None
         await self._connect_locked()
 
     # --- operações ----------------------------------------------------------------------------
@@ -1258,6 +1335,7 @@ class AdbTv:
             if state is DeviceState.UNAUTHORIZED:
                 self._connected = False
                 self._note_unauthorized()
+                self._report_refusal()
                 await self._drop_lost_transport_locked(state)
                 raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
             if state in (DeviceState.OFFLINE, DeviceState.NOT_FOUND):
@@ -1343,6 +1421,7 @@ class AdbTv:
         if state is DeviceState.UNAUTHORIZED:
             self._connected = False
             self._note_unauthorized()
+            self._report_refusal()
             await self._drop_lost_transport_locked(state)
             raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
         if state in (DeviceState.OFFLINE, DeviceState.NOT_FOUND):

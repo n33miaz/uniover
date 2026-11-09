@@ -61,6 +61,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.text.v1</c>.</summary>
     public const string PcTextV1 = "pc.text.v1";
 
+    /// <summary>Tipo de mensagem <c>tv.adb.rebind.v1</c>.</summary>
+    public const string TvAdbRebindV1 = "tv.adb.rebind.v1";
+
     /// <summary>Tipo de mensagem <c>tv.app.launch.v1</c>.</summary>
     public const string TvAppLaunchV1 = "tv.app.launch.v1";
 
@@ -157,6 +160,7 @@ public static class AgentMessageTypes
         PcPointerV1,
         PcPowerV1,
         PcTextV1,
+        TvAdbRebindV1,
         TvAppLaunchV1,
         TvAppsRefreshV1,
         TvAppsV1,

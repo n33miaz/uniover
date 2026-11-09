@@ -38,6 +38,7 @@ from uniover_agent.ports.transport import (
 from uniover_agent.ports.tv_adb import (
     ADB_USER_INITIATED,
     AdbCommandFailed,
+    AdbDeviceChanged,
     AdbError,
     AdbIdentityUnconfirmed,
     AdbIdle,
@@ -95,6 +96,7 @@ class SecretStore(Protocol):
 __all__ = [
     "ADB_USER_INITIATED",
     "AdbCommandFailed",
+    "AdbDeviceChanged",
     "AdbError",
     "AdbIdentityUnconfirmed",
     "AdbIdle",

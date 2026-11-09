@@ -1385,12 +1385,66 @@ describe('TvStore', () => {
       expect(store.notice()?.kind).toBe('error');
     });
 
-    it('Atualizar lista is the request that shows the prompt: it waits for the accept, with no sheet', async () => {
+    it('Atualizar lista is the request that shows the prompt: the notice shows once the agent says "pending", with no sheet', async () => {
       await started();
       api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
+      api.state.mockResolvedValue({ ...hot, adbPermission: 'pending' });
       await expect(store.refreshShortcuts()).resolves.toBe(false);
+      await flush();
       expect(permission.waiting()).toBe(true);
       expect(permission.sheetOpen()).toBe(false);
+      expect(store.notice()).toBeNull();
+    });
+
+    it('a refused refresh that shows no prompt on the TV is told, not turned into a notice', async () => {
+      await started();
+      api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
+      api.state.mockResolvedValue({
+        ...hot,
+        adbPermission: 'missing',
+        adbPermissionReason: 'tv_refused',
+      });
+      await store.refreshShortcuts();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(permission.waiting()).toBe(false);
+      expect(permission.phase()).toBe('noprompt');
+      expect(permission.sheetOpen()).toBe(true);
+    });
+
+    it('with a panel blocking the screen, that same case becomes a short error instead', async () => {
+      await started();
+      const dialog = document.createElement('dialog');
+      const lookup = vi
+        .spyOn(document, 'querySelector')
+        .mockImplementation((selector: string) => (selector.startsWith('dialog') ? dialog : null));
+      api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
+      api.state.mockResolvedValue({
+        ...hot,
+        adbPermission: 'missing',
+        adbPermissionReason: 'tv_refused',
+      });
+      await store.refreshShortcuts();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(store.notice()?.kind).toBe('error');
+      expect(store.notice()?.text).toBe('A TV não mostrou o pedido. Tente de novo.');
+      lookup.mockRestore();
+    });
+
+    it('another device at the address opens the "TV não encontrada" sheet instead of only an error', async () => {
+      await started();
+      api.launch.mockRejectedValueOnce(
+        new HttpErrorResponse({
+          status: 502,
+          error: {
+            type: PROBLEM + 'command-failed',
+            status: 502,
+            agentError: 'adb_device_changed',
+          },
+        }),
+      );
+      await store.launch(shortcut(1));
+      expect(permission.sheetOpen()).toBe(true);
+      expect(permission.phase()).toBe('notfound');
       expect(store.notice()).toBeNull();
     });
 

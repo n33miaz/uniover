@@ -260,7 +260,8 @@ internal sealed partial class TvAgentMessageHandler(
             body.GetProperty("app").GetString(),
             body.GetProperty("connection").GetString()!,
             message.Timestamp,
-            ReadAdbPermission(body));
+            ReadAdbPermission(body),
+            ReadAdbPermissionReason(body));
 
         // Um estado vindo do agente prova que ele está conectado.
         state.NoteOnline(message.AgentId, true);
@@ -273,6 +274,13 @@ internal sealed partial class TvAgentMessageHandler(
     private static string? ReadAdbPermission(JsonElement body) =>
         body.TryGetProperty("adbPermission", out var value) && value.ValueKind == JsonValueKind.String
         && AdbPermissionText.IsKnown(value.GetString())
+            ? value.GetString()
+            : null;
+
+    /// <summary>O motivo do estado (campo opcional, só com <c>missing</c>): fora da forma curta vira "sem motivo".</summary>
+    private static string? ReadAdbPermissionReason(JsonElement body) =>
+        body.TryGetProperty("adbPermissionReason", out var value) && value.ValueKind == JsonValueKind.String
+        && AdbPermissionText.IsReason(value.GetString())
             ? value.GetString()
             : null;
 

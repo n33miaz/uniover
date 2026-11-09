@@ -14,7 +14,15 @@ import { RecoveryCodeSection } from './recovery-code-section';
  */
 @Component({
   selector: 'app-security-page',
-  imports: [PasswordSection, SecuritySection, SessionsSection, TotpSection, RecoveryCodeSection, RouterLink, SettingsGlyph],
+  imports: [
+    PasswordSection,
+    SecuritySection,
+    SessionsSection,
+    TotpSection,
+    RecoveryCodeSection,
+    RouterLink,
+    SettingsGlyph,
+  ],
   template: `
     <app-password-section class="ui-rise" />
     <app-recovery-code-section class="ui-rise" />

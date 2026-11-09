@@ -624,14 +624,25 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   outro IP à TV (o vigia do endereço a reencontra e o agente recomeça); a permissão do ADB é da chave na TV, não do
   endereço, então o registro acompanha: com o registro `granted` ou `verified`, a mesma chave e **os dois MACs lidos
   e iguais** (ARP, sem ADB e sem aviso na TV), o endereço novo herda tudo. MAC vazio, ou de outro aparelho, nunca
-  adota e continua barrado. Antes disso, um IP novo fechava o portão e todo atalho dizia `adb_unauthorized` sem a
+  adota e continua barrado: com permissão dada e outro MAC no endereço (outro aparelho tomou o IP), o agente se recusa
+  a conectar, até a pedido da pessoa (`adb_device_changed`, "TV não encontrada no endereço"), sem registrar falta de
+  permissão. A sondagem da ARP só acontece quando adotar é possível (permissão dada, mesma chave, MAC anotado). Antes disso, um IP novo fechava o portão e todo atalho dizia `adb_unauthorized` sem a
   TV ter sido consultada.
+- **A saída do bloqueio ("É a mesma TV"):** quando o MAC no endereço não é o do registro, o agente se recusa a conectar
+  e o app mostra a folha "TV não encontrada no endereço". Se a pessoa confirma (pergunta de confirmação no app) que é a
+  mesma TV (trocou de Wi-Fi para cabo, por exemplo), o app manda `tv.adb.rebind.v1` (capacidade `tv.adb.rebind.v1`,
+  rota `POST /api/v1/tv/adb/rebind`, na trilha como `tv.adb.rebind`): o agente lê o MAC de agora e refaz o registro
+  (`granted`, sem prova; serial e ajuste do vencimento recomeçam). **Não conecta a nada**; o pedido de permissão de
+  sempre vem em seguida. Um pareamento novo da Android TV (**Parear de novo**, também pedido pela pessoa) apaga o registro
+  do ADB. Nenhum caminho automático troca o aparelho do registro.
 - **O que o app fica sabendo (`adbPermission` no `tv.state.v1`):** `granted` (a TV aceitou: conexão aberta, `device`
   visto), `missing` (o agente não usa o ADB sem a pessoa pedir) e `pending` (o aviso está na TV, esperando o
   aceite). Só vai à API que lista `tv.state.adb_permission` em `features`. Cada mudança também vira uma ocorrência de
   diagnóstico `adb.permission.<estado>` com o **motivo** (`never`, `tv_refused`, `tv_forgot` (a TV recusou uma chave
   que já tinha aceitado), `unproven`, `key_changed`, `address_changed`, `device_changed`, `mac_unknown`,
-  `prompt_on_tv`, `prompt_expired`, `accepted`, `connected`); nunca IP nem MAC.
+  `prompt_on_tv`, `prompt_expired`, `accepted`, `connected`); nunca IP nem MAC. O motivo de `missing` vai ao app em
+  `adbPermissionReason`: só `tv_forgot` abre a folha de pedido sozinha. Um pedido da pessoa (Atualizar lista, TV Livre) não
+  fica preso na recusa guardada de 30 s de um caminho automático: conecta de verdade e espera o aceite.
 - **Samsung e Remote v2 já seguiam a regra:** o token Samsung e a marca "permissão necessária" ficam no cofre e
   nenhuma rota volta a pedir o "Permitir" sozinha; o par certificado/chave do Remote v2 fica em `tv/<tv>` e só o
   `tv-pair` explícito o cria.

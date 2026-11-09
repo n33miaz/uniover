@@ -35,6 +35,7 @@ from uniover_agent.core import (
     user_initiated,
 )
 from uniover_agent.ports import (
+    AdbDeviceChanged,
     AdbIdentityUnconfirmed,
     AdbIdle,
     AdbUnauthorized,
@@ -318,7 +319,7 @@ async def test_a_record_for_another_address_and_another_device_never_connects(
     home.mac = OTHER_MAC  # o `tv_host` mudou e quem responde nele não é a TV anotada
     runner = runner_with(state=UNKNOWN)
     other = home.authorization("192.168.1.99:5555")
-    with pytest.raises(AdbUnauthorized):
+    with pytest.raises(AdbDeviceChanged):
         await home.adb(runner, authorization=other).connect()
     assert runner.calls == [GET_STATE]
 
@@ -327,7 +328,7 @@ async def test_another_device_at_the_same_address_never_connects(home: Home) -> 
     home.verify()
     home.mac = OTHER_MAC  # o IP foi parar em outro aparelho
     runner = runner_with(state=UNKNOWN)
-    with pytest.raises(AdbUnauthorized):
+    with pytest.raises(AdbDeviceChanged):
         await home.adb(runner).connect()
     assert CONNECT not in runner.calls
 
@@ -1554,16 +1555,19 @@ async def test_an_already_connected_transport_after_a_grant_still_needs_the_reco
     assert home.authorization().record.state == VERIFIED
 
 
-async def test_a_new_connection_to_another_tv_is_not_credited_by_a_grant_of_the_first(
+async def test_a_users_request_never_connects_to_another_device_at_the_address(
     home: Home,
 ) -> None:
+    # O IP foi parar em outro aparelho (o MAC não é o da TV com permissão): nem a pedido da pessoa o
+    # agente conecta, senão o aviso do ADB apareceria na tela de quem não é a TV.
     authorization = home.authorization()
     assert authorization.mark_granted(authorization.snapshot_key(), MAC)
     home.mac = OTHER_MAC
     runner = runner_with(connect=[FRESH, FRESH])
-    with user_initiated_adb():
+    with user_initiated_adb(), pytest.raises(AdbDeviceChanged):
         await home.adb(runner).connect()
-    assert DISCONNECT in runner.calls  # outro aparelho: a prova se faz inteira
+    assert runner.calls == []
+    assert home.authorization().record.state == "granted"  # e o registro não foi mexido
 
 
 def test_a_record_written_by_another_process_is_reloaded_before_use(home: Home) -> None:

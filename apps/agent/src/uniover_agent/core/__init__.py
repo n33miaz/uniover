@@ -33,6 +33,7 @@ from uniover_agent.core.remote_care import (
     agent_maintenance_handler,
 )
 from uniover_agent.core.tv import (
+    ADB_REBIND_CAPABILITY,
     CLEANUP_FAILED,
     CLEANUP_IN_PROGRESS,
     DEFAULT_LINK_SCHEMES,
@@ -81,6 +82,7 @@ from uniover_agent.core.tv import (
     WatchdogEvents,
     describe_apps,
     is_protected,
+    tv_adb_rebind_handler,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
@@ -98,6 +100,7 @@ from uniover_agent.core.tv import (
 from uniover_agent.core.update_report import UpdateStatusWatcher, update_body
 
 __all__ = [
+    "ADB_REBIND_CAPABILITY",
     "CLEANUP_FAILED",
     "CLEANUP_IN_PROGRESS",
     "DEFAULT_LINK_SCHEMES",
@@ -183,6 +186,7 @@ __all__ = [
     "pc_handlers",
     "redact",
     "redact_line",
+    "tv_adb_rebind_handler",
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",

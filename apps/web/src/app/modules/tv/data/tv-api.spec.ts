@@ -212,6 +212,15 @@ describe('TvApi', () => {
     await refresh;
   });
 
+  it('asks the agent to rebind the ADB registration to the device of now, with no body', async () => {
+    const rebind = api.rebindAdb();
+    const request = http.expectOne('/api/v1/tv/adb/rebind');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toBeNull();
+    request.flush({ ok: true, latencyMs: 1 });
+    await rebind;
+  });
+
   it('asks to open one screen of the closed list, with the name of the contract and nothing else', async () => {
     const wifi = api.openSettings('WIFI');
     const sent = http.expectOne('/api/v1/tv/settings/open');

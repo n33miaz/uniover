@@ -92,6 +92,11 @@ describe('describeFailure', () => {
     expect(unauthorized.message).toBe(
       'A TV ainda não liberou o UniOver. Toque em Atualizar lista.',
     );
+    const swapped = describeFailure(
+      http(502, 'command-failed', { agentError: 'adb_device_changed' }),
+    );
+    expect(swapped.kind).toBe('adb-device-changed');
+    expect(swapped.message).toBe('TV não encontrada no endereço. Confira a rede.');
     const idle = describeFailure(http(502, 'command-failed', { agentError: 'adb_idle' }));
     expect(idle.message).toContain('enquanto você usa a tela da TV');
     expect(idle.message).not.toContain('ainda não deu a permissão');

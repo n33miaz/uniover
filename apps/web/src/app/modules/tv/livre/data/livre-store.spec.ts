@@ -62,13 +62,13 @@ describe('TvLivreStore', () => {
     photo: vi.fn(),
     deletePhoto: vi.fn(),
   };
-  const tvApi = { shortcuts: vi.fn(), presence: vi.fn() };
+  const tvApi = { shortcuts: vi.fn(), presence: vi.fn(), state: vi.fn() };
   const reducer = vi.fn<(file: Blob) => Promise<PhotoFit<Blob>>>();
   let store: TvLivreStore;
 
   beforeEach(() => {
     calls.length = 0;
-    for (const fn of [...Object.values(api), tvApi.shortcuts, tvApi.presence, reducer])
+    for (const fn of [...Object.values(api), tvApi.shortcuts, tvApi.presence, tvApi.state, reducer])
       fn.mockReset();
     tvApi.presence.mockResolvedValue(undefined);
     api.get.mockResolvedValue(view());
@@ -344,12 +344,23 @@ describe('TvLivreStore', () => {
     });
 
     describe('when the ADB permission is missing', () => {
-      const unauthorized = () => failure(502, { agentError: 'adb_unauthorized' });
+      const unauthorized = (swapped = false) =>
+        failure(502, { agentError: swapped ? 'adb_device_changed' : 'adb_unauthorized' });
       let permission: TvAdbPermission;
 
       beforeEach(() => {
         permission = TestBed.inject(TvAdbPermission);
         permission.attach(); // a tela do TV Livre hospeda a folha
+        // O agente conta que o aviso está na tela da TV (é o que faz o celular esperar o aceite).
+        tvApi.state.mockResolvedValue({
+          power: 'on',
+          volume: 10,
+          app: null,
+          connection: 'hot',
+          agentOnline: true,
+          updatedAt: null,
+          adbPermission: 'pending',
+        });
       });
 
       afterEach(() => permission.detach());
@@ -358,6 +369,7 @@ describe('TvLivreStore', () => {
         await open();
         api.install.mockRejectedValue(unauthorized());
         expect(await store.install()).toBe(false);
+        await settle();
         expect(permission.waiting()).toBe(true);
         expect(permission.sheetOpen()).toBe(false);
         // A frase própria do TV Livre continua na tela.
@@ -369,6 +381,15 @@ describe('TvLivreStore', () => {
         api.refresh.mockRejectedValue(unauthorized());
         expect(await store.refresh()).toBe(false);
         expect(permission.sheetOpen()).toBe(true);
+        expect(permission.waiting()).toBe(false);
+      });
+
+      it('another device at the address opens the sheet that offers "É a mesma TV"', async () => {
+        await open();
+        api.install.mockRejectedValue(unauthorized(true));
+        await store.install();
+        expect(permission.sheetOpen()).toBe(true);
+        expect(permission.phase()).toBe('notfound');
         expect(permission.waiting()).toBe(false);
       });
 

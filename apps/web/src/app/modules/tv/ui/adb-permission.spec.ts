@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../../../core/session/session-state';
 import { TvAdbPermission } from '../data/tv-adb-permission';
 import { TvApi } from '../data/tv-api';
 import { TvStore } from '../data/tv-store';
@@ -24,6 +25,7 @@ describe('AdbPermissionNotice', () => {
   let root: HTMLElement;
   const api = {
     refreshShortcuts: vi.fn<() => Promise<void>>(),
+    rebindAdb: vi.fn<() => Promise<void>>(),
     state: vi.fn(),
   };
 
@@ -35,7 +37,9 @@ describe('AdbPermissionNotice', () => {
     );
 
   beforeEach(() => {
+    localStorage.clear();
     api.refreshShortcuts.mockReset().mockResolvedValue(undefined);
+    api.rebindAdb.mockReset().mockResolvedValue(undefined);
     api.state.mockReset().mockResolvedValue(HOT);
     store = createFakeTvStore();
     TestBed.configureTestingModule({
@@ -94,9 +98,12 @@ describe('AdbPermissionNotice', () => {
     api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
     button('Pedir na TV')!.click();
     await fixture.whenStable();
-    fixture.detectChanges();
+    // A folha segue "pedindo" até o agente contar o aviso; um agente que não conta o estado deixa o recado valer.
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(sheet()).toBeNull();
+    });
     expect(api.refreshShortcuts).toHaveBeenCalledTimes(1);
-    expect(sheet()).toBeNull();
     expect(notice()?.textContent).toContain('Aceite na TV e marque Sempre permitir');
   });
 
@@ -109,14 +116,44 @@ describe('AdbPermissionNotice', () => {
     expect(notice()?.textContent).toContain('Pronto');
   });
 
-  it('opens by itself when the agent says "missing", and only with a live connection', () => {
+  it('opens by itself when the TV forgot the permission, and only with a live connection', () => {
     store.link.set('offline');
-    store.state.set({ ...HOT, adbPermission: 'missing' });
+    store.state.set({ ...HOT, adbPermission: 'missing', adbPermissionReason: 'tv_forgot' });
     fixture.detectChanges();
     expect(sheet()).toBeNull(); // estado guardado, sem rede: não diz o que a TV pensa agora
     store.link.set('ok');
     fixture.detectChanges();
     expect(sheet()).not.toBeNull();
+  });
+
+  it('never opens by itself for a TV that was never released', () => {
+    store.state.set({ ...HOT, adbPermission: 'missing', adbPermissionReason: 'never' });
+    fixture.detectChanges();
+    expect(sheet()).toBeNull();
+    store.state.set({ ...HOT, adbPermission: 'missing' });
+    fixture.detectChanges();
+    expect(sheet()).toBeNull();
+  });
+
+  it('says the TV showed nothing when the refused request brings no prompt', async () => {
+    vi.useFakeTimers();
+    try {
+      api.state.mockResolvedValue({
+        ...HOT,
+        adbPermission: 'missing',
+        adbPermissionReason: 'tv_refused',
+      });
+      permission.denied();
+      fixture.detectChanges();
+      api.refreshShortcuts.mockRejectedValueOnce(unauthorized());
+      void permission.ask();
+      await vi.advanceTimersByTimeAsync(3000);
+      fixture.detectChanges();
+      expect(notice()).toBeNull();
+      expect(sheet()?.textContent).toContain('A TV não mostrou o pedido');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('ignores the state of an agent that is off', () => {
@@ -128,9 +165,44 @@ describe('AdbPermissionNotice', () => {
   it('tells an expired wait and offers to ask again', () => {
     store.state.set({ ...HOT, adbPermission: 'pending' });
     fixture.detectChanges();
-    store.state.set({ ...HOT, adbPermission: 'missing' });
+    store.state.set({ ...HOT, adbPermission: 'missing', adbPermissionReason: 'prompt_expired' });
     fixture.detectChanges();
     expect(sheet()?.textContent).toContain('Ninguém aceitou na TV');
     expect(button('Pedir na TV')).toBeDefined();
+  });
+
+  it('offers "É a mesma TV" for another device at the address, asks to confirm, and only then rebinds', async () => {
+    permission.deviceChanged();
+    fixture.detectChanges();
+    expect(sheet()?.textContent).toContain('TV não encontrada no endereço');
+    expect(button('Pedir na TV')).toBeUndefined(); // não há como "pedir" a um aparelho que não é a TV
+    button('É a mesma TV')!.click();
+    fixture.detectChanges();
+    expect(sheet()?.textContent).toContain('Esta é a mesma TV? (ex.: trocou de Wi-Fi para cabo)');
+    expect(api.rebindAdb).not.toHaveBeenCalled();
+    button('Não')!.click();
+    fixture.detectChanges();
+    expect(sheet()?.textContent).toContain('TV não encontrada no endereço');
+    button('É a mesma TV')!.click();
+    fixture.detectChanges();
+    button('Sim, é a mesma')!.click();
+    await fixture.whenStable();
+    expect(api.rebindAdb).toHaveBeenCalledTimes(1);
+    expect(api.refreshShortcuts).toHaveBeenCalledTimes(1); // o pedido de permissão de sempre
+  });
+
+  it('shows a guest "Peça ao dono da TV" instead of the "É a mesma TV" button', () => {
+    TestBed.inject(SessionState).setUser({
+      id: 'convidada',
+      email: 'c@exemplo.com',
+      displayName: 'Convidada',
+      role: 'guest',
+    });
+    permission.deviceChanged();
+    fixture.detectChanges();
+    expect(sheet()?.textContent).toContain('Peça ao dono da TV');
+    expect(button('É a mesma TV')).toBeUndefined();
+    expect(button('Pedir na TV')).toBeUndefined();
+    expect(button('Agora não')).toBeDefined();
   });
 });

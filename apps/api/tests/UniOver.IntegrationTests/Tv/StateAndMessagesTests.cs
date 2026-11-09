@@ -170,6 +170,10 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         await AdbPermissionIsAsync(app, "missing");
         await app.SettleAsync();
 
+        // O motivo acompanha o `missing`; o que não tem a forma curta do contrato nem chega ao agente (o esquema recusa).
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(adbPermission: "missing", adbPermissionReason: "tv_forgot")));
+        await AdbPermissionReasonIsAsync(app, "tv_forgot");
+
         // Mudar só a permissão do ADB não grava nada nem publica evento (como o volume): vive em memória.
         (await OutboxCountAsync(app)).Should().BeLessThanOrEqualTo(1);
 
@@ -177,6 +181,17 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody()));
         await AdbPermissionIsAsync(app, null);
     }
+
+    private static async Task AdbPermissionReasonIsAsync(TvApp app, string? expected) =>
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            using var response = await app.GetAsync("/api/v1/tv/state");
+            var json = await TvApp.JsonAsync(response);
+            var value = json.TryGetProperty("adbPermissionReason", out var element) && element.ValueKind == System.Text.Json.JsonValueKind.String
+                ? element.GetString()
+                : null;
+            return value == expected;
+        }, $"adbPermissionReason = {expected ?? "nulo"}");
 
     private static async Task AdbPermissionIsAsync(TvApp app, string? expected) =>
         await TvApp.WaitUntilAsync(async () =>

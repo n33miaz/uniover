@@ -11,7 +11,13 @@ import type { TvCleanupReport, TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
 import { TvAdbPermission } from './tv-adb-permission';
-import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
+import {
+  TvFailure,
+  TvFailureContext,
+  adbNoPromptMessage,
+  describeFailure,
+  forbiddenMessage,
+} from './tv-errors';
 import { ReadWatch } from './tv-read-watch';
 import { withOrder } from './tv-order';
 import { powerOffNotice } from './tv-power';
@@ -939,7 +945,11 @@ export class TvStore {
     } catch (error) {
       if (!this.live(epoch)) return false;
       // Atualizar lista é o pedido da pessoa que faz a TV mostrar o aviso: aceitar lá é o próximo passo.
-      if (describeFailure(error).kind !== 'adb-permission' || !this.adbPermission.prompted()) {
+      const unconfirmed = () => this.showNotice('error', adbNoPromptMessage());
+      if (
+        describeFailure(error).kind !== 'adb-permission' ||
+        !this.adbPermission.prompted(unconfirmed)
+      ) {
         this.fail(error);
       }
       return false;
@@ -1320,7 +1330,9 @@ export class TvStore {
     this.absorb(failure);
     // Falta de permissão do ADB: a folha "Liberar na TV" abre (ou o aviso já está na TV) e o erro não se repete em cima;
     // se a pessoa disse "Agora não", fica só o aviso curto.
-    const handled = failure.kind === 'adb-permission' && this.adbPermission.denied();
+    const handled =
+      (failure.kind === 'adb-permission' && this.adbPermission.denied()) ||
+      (failure.kind === 'adb-device-changed' && this.adbPermission.deviceChanged());
     if (!handled) this.showNotice('error', failure.message);
     return failure;
   }

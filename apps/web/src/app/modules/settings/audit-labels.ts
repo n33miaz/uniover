@@ -132,6 +132,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-settings-open:Tela da TV aberta`;
     case 'tv.permission.request':
       return $localize`:@@settings.audit.action.tv-permission-request:Permissão da TV pedida`;
+    case 'tv.adb.rebind':
+      return $localize`:@@settings.audit.action.tv-adb-rebind:Registro do ADB refeito para a TV de agora`;
     case 'tv.discover':
       return $localize`:@@settings.audit.action.tv-discover:TVs da rede procuradas`;
     case 'tv.apps.refresh':

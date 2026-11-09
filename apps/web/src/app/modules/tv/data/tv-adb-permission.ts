@@ -1,6 +1,8 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { SessionState } from '../../../core/session/session-state';
 import { TvApi } from './tv-api';
+import { TvSelection } from './tv-selection';
 import { describeFailure } from './tv-errors';
 import type { AdbPermission } from './tv-types';
 
@@ -10,9 +12,26 @@ export const ADB_WAIT_POLL_MS = 3000;
 export const ADB_WAIT_MS = 100_000;
 /** Quanto tempo o "Pronto" fica à vista. */
 export const ADB_DONE_MS = 4000;
+/** Depois de um pedido recusado: quantas vezes, e de quanto em quanto, se confere se o aviso chegou à TV (`pending`). */
+export const ADB_CONFIRM_POLL_MS = 1200;
+export const ADB_CONFIRM_TRIES = 3;
+/** "Agora não" vale por este tempo, por TV, neste aparelho. */
+export const ADB_DISMISS_MS = 24 * 60 * 60 * 1000;
+/** Onde "Agora não" fica guardado (por TV): sobrevive a recarregar e a fechar o app. */
+export const ADB_DISMISSED_KEY = 'uniover.tv.adb-permission.dismissed';
+/** O único motivo do agente que abre a folha sozinha: a TV recusou uma chave que já tinha aceitado. */
+export const ADB_FORGOT_REASON = 'tv_forgot';
 
 /** Em que ponto a folha "Liberar na TV" está. */
-export type AdbSheetPhase = 'intro' | 'asking' | 'unreachable' | 'expired' | 'failed';
+export type AdbSheetPhase =
+  | 'intro'
+  | 'asking'
+  | 'unreachable'
+  | 'expired'
+  | 'failed'
+  | 'noprompt'
+  | 'notfound'
+  | 'confirmsame';
 
 /**
  * A permissão do ADB na TV vista da tela do controle (e do TV Livre). O agente nunca abre o aviso do ADB sozinho: só um
@@ -21,8 +40,11 @@ export type AdbSheetPhase = 'intro' | 'asking' | 'unreachable' | 'expired' | 'fa
  * aviso está na TV (`pending`) um recado fixo no celular diz o que fazer ali. Toda vez que o aviso aparece na TV o
  * celular mostra esse recado, também quando foi um caminho automático que o abriu.
  *
- * Sem insistir: "Agora não" cala a folha até o próximo abrir do app (a falta continua à vista nos atalhos, por `needs`, e
- * uma falha seguinte vira só um aviso curto). A folha também não abre sobre um painel que já bloqueia a tela.
+ * Sem insistir: "Agora não" cala a folha por 24 h nesta TV, neste aparelho (a falta continua à vista nos atalhos, por
+ * `needs`, e uma falha seguinte vira só um aviso curto). A folha também não abre sobre um painel que já bloqueia a tela.
+ * Sozinha, pelo estado, ela só abre quando a TV **esqueceu** uma permissão que já tinha dado (`tv_forgot`); nunca para uma
+ * TV que ainda nunca foi liberada. O recado do aceite só aparece quando o agente conta `pending`: um pedido recusado sem
+ * `pending` não mostrou aviso nenhum na TV, e a pessoa fica sabendo disso.
  *
  * Quem aceita o aviso na TV deixa a permissão como `granted`, mas só um toque da pessoa a prova (o agente não conecta
  * sozinho antes disso). Por isso, ao ver o aceite, esta classe faz **um** pedido de lista a mais, a continuação do mesmo
@@ -32,6 +54,8 @@ export type AdbSheetPhase = 'intro' | 'asking' | 'unreachable' | 'expired' | 'fa
 export class TvAdbPermission {
   private readonly api = inject(TvApi);
   private readonly doc = inject(DOCUMENT);
+  private readonly selection = inject(TvSelection);
+  private readonly session = inject(SessionState);
 
   /** O ADB da TV está pedindo permissão: os atalhos mostram um sinal discreto. */
   readonly needs = signal(false);
@@ -42,10 +66,15 @@ export class TvAdbPermission {
   /** A TV acabou de aceitar: um "Pronto" curto. */
   readonly done = signal(false);
   readonly asking = computed(() => this.phase() === 'asking');
+  /** Refazer o registro do ADB é do dono da TV (a API recusa as outras contas): convidados veem "Peça ao dono da TV". */
+  readonly canRebind = computed(() => !this.session.isGuest());
 
-  private dismissed = false;
+  /** Um pedido da pessoa foi recusado e se confere se o aviso chegou à TV: um `missing` antigo não vale nesse intervalo. */
+  private confirming = false;
+  private confirmTimer: ReturnType<typeof setTimeout> | undefined;
   /** Uma ação foi recusada enquanto um painel bloqueava a tela: a folha abre quando ele fechar. */
   private deferred = false;
+  private deferredPhase: AdbSheetPhase = 'intro';
   /** Quantas telas hospedam a folha agora (sem nenhuma, nada se mostraria: quem chama mostra o erro curto). */
   private hosts = 0;
   private sawPending = false;
@@ -63,9 +92,10 @@ export class TvAdbPermission {
     this.needs.set(true);
     if (this.hosts === 0) return false;
     if (this.waiting() || this.sheetOpen()) return true;
-    if (this.dismissed) return false;
+    if (this.isDismissed()) return false;
     if (this.blockedByModal()) {
       this.deferred = true;
+      this.deferredPhase = 'intro';
       return false;
     }
     this.open('intro');
@@ -73,17 +103,19 @@ export class TvAdbPermission {
   }
 
   /**
-   * O pedido da própria pessoa (Atualizar lista, uma ação do TV Livre) deixou o aviso na TV: não há o que perguntar, só
-   * esperar o aceite, e depois provar a permissão com mais um pedido. Devolve `false` se nenhuma tela mostraria o recado
-   * (quem chama mostra o erro).
+   * O pedido da própria pessoa (Atualizar lista, uma ação do TV Livre) voltou recusado por falta de permissão: o agente
+   * conectou e, se tudo correu bem, o aviso está na TV. O recado do aceite só aparece quando o agente conta `pending`
+   * (confere algumas vezes); sem isso o pedido não mostrou aviso nenhum, e a folha diz "A TV não mostrou o pedido"
+   * (`onUnconfirmed` cuida do caso em que a folha não pode abrir). Um agente que não conta o estado não deixa conferir:
+   * vale o recado, como antes. O aceite, quando vem, é provado por mais um pedido, que só existe depois deste toque.
+   * Devolve `false` se nenhuma tela mostraria nada (quem chama mostra o erro).
    */
-  prompted(): boolean {
+  prompted(onUnconfirmed?: () => void): boolean {
     this.needs.set(true);
     if (this.hosts === 0) return false;
-    this.sheetOpen.set(false);
     this.proofsLeft = 1;
-    // O estado `pending` pode chegar pelo fluxo antes da resposta do pedido: a espera que ele já abriu segue como está.
-    if (!this.waiting()) this.startWaiting();
+    if (this.waiting()) return true;
+    this.confirmPrompt(onUnconfirmed);
     return true;
   }
 
@@ -101,7 +133,7 @@ export class TvAdbPermission {
   modalClosed(): void {
     if (!this.deferred || this.blockedByModal()) return;
     this.deferred = false;
-    if (this.needs() && this.hosts > 0 && !this.dismissed) this.open('intro');
+    if (this.needs() && this.hosts > 0 && !this.isDismissed()) this.open(this.deferredPhase);
   }
 
   /** Algo que usa o ADB deu certo: a permissão está valendo. */
@@ -112,10 +144,10 @@ export class TvAdbPermission {
   }
 
   /**
-   * O estado que o agente conta (`null`: não diz). `missing` abre a folha na hora (uma vez por abertura do app), `pending`
-   * mostra o recado, `granted` fecha tudo.
+   * O estado que o agente conta (`null`: não diz) e o motivo, quando é `missing`. `pending` mostra o recado do aceite,
+   * `granted` fecha tudo e `missing` só abre a folha sozinho quando a TV esqueceu uma permissão que tinha dado.
    */
-  observe(value: AdbPermission | null | undefined): void {
+  observe(value: AdbPermission | null | undefined, reason?: string | null): void {
     switch (value) {
       case 'granted':
         this.granted();
@@ -123,6 +155,7 @@ export class TvAdbPermission {
       case 'pending':
         this.needs.set(true);
         this.sheetOpen.set(false);
+        this.stopConfirming();
         if (!this.waiting()) this.startWaiting();
         this.sawPending = true;
         return;
@@ -130,18 +163,72 @@ export class TvAdbPermission {
         this.needs.set(true);
         // Só o fim do aviso (visto como `pending` antes) é o "ninguém aceitou"; um `missing` anterior ao pedido não é.
         if (this.waiting() && this.sawPending) this.expire();
-        else if (!this.waiting()) this.denied();
+        else if (!this.waiting() && !this.confirming && reason === ADB_FORGOT_REASON) this.denied();
         return;
       default:
         return;
     }
   }
 
+  /**
+   * Outro aparelho responde no endereço da TV (o agente se recusa a falar com ele): a folha diz isso e oferece "É a
+   * mesma TV". Como `denied`, devolve `false` se quem chamou deve mostrar o erro curto.
+   */
+  deviceChanged(): boolean {
+    this.needs.set(true);
+    if (this.hosts === 0) return false;
+    if (this.sheetOpen()) return true;
+    if (this.isDismissed()) return false;
+    if (this.blockedByModal()) {
+      this.deferred = true;
+      this.deferredPhase = 'notfound';
+      return false;
+    }
+    this.open('notfound');
+    return true;
+  }
+
+  /** "É a mesma TV": antes de qualquer coisa a folha pergunta de novo (trocar o aparelho do registro é sério). */
+  askSameTv(): void {
+    if (this.asking() || !this.canRebind()) return;
+    this.phase.set('confirmsame');
+  }
+
+  /** Volta da pergunta "Esta é a mesma TV?" sem mudar nada. */
+  backFromSameTv(): void {
+    if (this.phase() === 'confirmsame') this.phase.set('notfound');
+  }
+
+  /**
+   * "Sim, é a mesma": a pessoa confirmou. O agente refaz o registro do ADB para o aparelho de agora (explícito,
+   * auditado) e, em seguida, vem o pedido de permissão de sempre: a TV mostra o aviso se não confia na chave.
+   */
+  async confirmSameTv(): Promise<void> {
+    if (this.asking() || !this.canRebind()) return;
+    this.phase.set('asking');
+    try {
+      await this.api.rebindAdb();
+    } catch (error) {
+      this.phase.set(this.failurePhase(describeFailure(error).kind));
+      return;
+    }
+    await this.request();
+  }
+
   /** "Pedir na TV": faz o pedido da pessoa que mostra o aviso na TV (o mesmo de Atualizar lista). */
   async ask(): Promise<void> {
     if (this.asking()) return;
     this.phase.set('asking');
-    this.proofsLeft = 1;
+    await this.request();
+  }
+
+  private failurePhase(kind: string): AdbSheetPhase {
+    if (kind === 'adb-device-changed') return 'notfound';
+    if (kind === 'agent-offline' || kind === 'agent-reconnecting') return 'unreachable';
+    return 'failed';
+  }
+
+  private async request(): Promise<void> {
     try {
       await this.api.refreshShortcuts();
       // A TV já guardava a permissão: não houve aviso, e o pedido já a provou.
@@ -149,19 +236,19 @@ export class TvAdbPermission {
     } catch (error) {
       const failure = describeFailure(error);
       if (failure.kind === 'adb-permission') {
-        // O aviso está na TV: a folha sai, o recado fica, e o aceite chega pelo estado.
+        // A folha segue "pedindo" até o agente contar o aviso (`pending`) ou o intervalo acabar.
         this.prompted();
-      } else if (failure.kind === 'agent-offline' || failure.kind === 'agent-reconnecting') {
-        this.phase.set('unreachable');
       } else {
-        this.phase.set('failed');
+        this.phase.set(this.failurePhase(failure.kind));
       }
     }
   }
 
-  /** "Agora não": cala a folha até o próximo abrir do app. */
+  /** "Agora não": cala a folha por 24 h nesta TV, neste aparelho. */
   dismiss(): void {
-    this.dismissed = true;
+    this.rememberDismissal();
+    this.proofsLeft = 0;
+    this.stopConfirming();
     this.sheetOpen.set(false);
     this.phase.set('intro');
   }
@@ -169,6 +256,8 @@ export class TvAdbPermission {
   /** O que sobrou ao sair da tela: tempos e recado. */
   reset(): void {
     this.deferred = false;
+    this.proofsLeft = 0;
+    this.stopConfirming();
     this.stopWaiting();
     clearTimeout(this.doneTimer);
     this.sheetOpen.set(false);
@@ -184,6 +273,7 @@ export class TvAdbPermission {
 
   private granted(prove = true): void {
     const wasWaiting = this.waiting();
+    this.stopConfirming();
     this.needs.set(false);
     this.sheetOpen.set(false);
     this.phase.set('intro');
@@ -217,7 +307,7 @@ export class TvAdbPermission {
   private async poll(): Promise<void> {
     try {
       const state = await this.api.state();
-      this.observe(state.adbPermission);
+      this.observe(state.adbPermission, state.adbPermissionReason);
     } catch {
       // sem rede agora: a próxima conferência (ou o fim do prazo) resolve
     }
@@ -238,9 +328,96 @@ export class TvAdbPermission {
   /** O prazo do aceite acabou sem a TV aceitar: a folha volta, agora dizendo isso (foi um pedido da pessoa). */
   private expire(): void {
     if (!this.waiting()) return;
+    this.proofsLeft = 0; // sem aceite não há o que provar
     this.endWaiting();
     this.needs.set(true);
     this.open('expired');
+  }
+
+  /** Confere, algumas vezes, se o agente conta o aviso na TV (`pending`); sem contar, a folha fala e nada de recado. */
+  private confirmPrompt(onUnconfirmed?: () => void): void {
+    this.stopConfirming();
+    this.confirming = true;
+    const attempt = async (left: number): Promise<void> => {
+      let value: AdbPermission | null | undefined;
+      let read = true;
+      try {
+        const state = await this.api.state();
+        value = state.adbPermission;
+        this.observe(value, state.adbPermissionReason);
+      } catch {
+        read = false; // sem leitura agora: tenta de novo até acabarem as vezes
+      }
+      if (!this.confirming) return; // `pending`, `granted` ou outra saída já resolveu
+      if (read && value == null) {
+        // O agente não conta o estado (anterior a este campo): não há como conferir, vale o recado.
+        this.stopConfirming();
+        this.sheetOpen.set(false);
+        if (!this.waiting()) this.startWaiting();
+        return;
+      }
+      if (left > 1) {
+        this.confirmTimer = setTimeout(() => void attempt(left - 1), ADB_CONFIRM_POLL_MS);
+        return;
+      }
+      this.stopConfirming();
+      this.unconfirmed(onUnconfirmed);
+    };
+    void attempt(ADB_CONFIRM_TRIES);
+  }
+
+  private stopConfirming(): void {
+    this.confirming = false;
+    clearTimeout(this.confirmTimer);
+    this.confirmTimer = undefined;
+  }
+
+  /** O pedido não mostrou aviso na TV: a folha diz isso, ou, se ela não pode abrir agora, quem chamou mostra o erro. */
+  private unconfirmed(onUnconfirmed?: () => void): void {
+    this.needs.set(true);
+    if (this.hosts > 0 && !this.blockedByModal()) {
+      this.open('noprompt');
+      return;
+    }
+    this.sheetOpen.set(false);
+    this.phase.set('intro');
+    onUnconfirmed?.();
+  }
+
+  private dismissalKey(): string {
+    return this.selection.scope() ?? '_';
+  }
+
+  /** "Agora não" ainda vale para esta TV (guardado no aparelho por 24 h)? */
+  private isDismissed(): boolean {
+    try {
+      const raw = this.doc.defaultView?.localStorage.getItem(ADB_DISMISSED_KEY);
+      const stored: unknown = raw ? JSON.parse(raw) : {};
+      const at = (stored as Record<string, unknown> | null)?.[this.dismissalKey()];
+      return typeof at === 'number' && Date.now() - at >= 0 && Date.now() - at < ADB_DISMISS_MS;
+    } catch {
+      return false;
+    }
+  }
+
+  private rememberDismissal(): void {
+    try {
+      const storage = this.doc.defaultView?.localStorage;
+      if (!storage) return;
+      let stored: object = {};
+      try {
+        const parsed: unknown = JSON.parse(storage.getItem(ADB_DISMISSED_KEY) ?? '{}');
+        if (parsed && typeof parsed === 'object') stored = parsed;
+      } catch {
+        // o que estava guardado não presta: recomeça
+      }
+      storage.setItem(
+        ADB_DISMISSED_KEY,
+        JSON.stringify({ ...stored, [this.dismissalKey()]: Date.now() }),
+      );
+    } catch {
+      // sem armazenamento: o "Agora não" vale só até recarregar
+    }
   }
 
   private showDone(): void {

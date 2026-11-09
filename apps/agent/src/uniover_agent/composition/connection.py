@@ -65,6 +65,7 @@ from uniover_agent.config import (
     tv_cert_dir,
 )
 from uniover_agent.core import (
+    ADB_REBIND_CAPABILITY,
     LOGS_CAPABILITY,
     LOGS_REQUEST_TYPE,
     MAINTENANCE_CAPABILITY,
@@ -114,7 +115,13 @@ TIDY_TIMEOUT_SECONDS = 60.0
 # Capacidades que uma API anterior recusaria no `hello` (ela não as conhece): só vão depois de a API
 # listá-las em `features`.
 API_LISTED_CAPABILITIES = frozenset(
-    {PAIR_CAPABILITY, PRESENCE_CAPABILITY, SETTINGS_OPEN_CAPABILITY, PC_KEY_V2_CAPABILITY}
+    {
+        PAIR_CAPABILITY,
+        PRESENCE_CAPABILITY,
+        SETTINGS_OPEN_CAPABILITY,
+        ADB_REBIND_CAPABILITY,
+        PC_KEY_V2_CAPABILITY,
+    }
 )
 
 
@@ -474,6 +481,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             reports_waking=lambda: features.supports(WAKING_FEATURE),
             reports_adb_permission=lambda: features.supports(ADB_PERMISSION_FEATURE),
             adb_permission=lambda: tv.adb_permission.state if tv.adb_permission else None,
+            adb_permission_reason=lambda: tv.adb_permission.reason if tv.adb_permission else None,
         )
         tv.manager.subscribe(publisher.publish)
         tv.manager.subscribe(tray.tv_state)

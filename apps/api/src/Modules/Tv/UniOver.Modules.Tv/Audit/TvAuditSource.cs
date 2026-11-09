@@ -24,6 +24,7 @@ internal static class TvAuditNormalizer
         TvCommandNames.Cleanup,
         TvCommandNames.SettingsOpen,
         TvCommandNames.PermissionRequest,
+        TvCommandNames.AdbRebind,
         TvCommandNames.Pair,
         TvCommandNames.Discover,
         TvCommandNames.LivreRefresh,

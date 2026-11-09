@@ -22,6 +22,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'tv.discovery.v1'
   | 'tv.presence.v1'
   | 'tv.settings.open.v1'
+  | 'tv.adb.rebind.v1'
   | 'tv.key.INPUT'
   | 'tv.key.INFO'
   | 'tv.key.GUIDE'

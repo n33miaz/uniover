@@ -24,4 +24,5 @@ export interface TvStateV1Body {
   app: string | null;
   connection: TvStateV1BodyConnection;
   adbPermission?: TvStateV1BodyAdbPermission;
+  adbPermissionReason?: string;
 }

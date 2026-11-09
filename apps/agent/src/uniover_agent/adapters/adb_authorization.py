@@ -390,6 +390,71 @@ class AdbAuthorization:
         self._sync()
         return bool(self._record.endpoint) and self._record.endpoint != self._endpoint
 
+    def can_adopt(self) -> bool:
+        """Vale a pena ler o MAC para levar o registro ao endereço de agora?
+
+        Só com uma permissão dada, a mesma chave e um MAC anotado: sem isso `adopt_endpoint` nunca
+        adotaria, e a sondagem de rede (até 1,5 s com a TV desligada) seria custo sem resposta.
+        """
+        self._sync()
+        record = self._record
+        fingerprint = self._keys.fingerprint()
+        return (
+            bool(record.endpoint)
+            and record.endpoint != self._endpoint
+            and record.state in (GRANTED, VERIFIED)
+            and fingerprint is not None
+            and fingerprint == record.fingerprint
+            and bool(record.mac)
+        )
+
+    def another_device_at(self, mac: str | None) -> bool:
+        """Com uma permissão dada, o MAC lido agora é de **outro** aparelho que não o anotado?
+
+        Dois MACs lidos e diferentes. MAC vazio de qualquer lado é desconhecido, nunca "outro".
+        """
+        self._sync()
+        record = self._record
+        return (
+            record.state in (GRANTED, VERIFIED)
+            and bool(record.mac)
+            and bool(mac)
+            and mac != record.mac
+        )
+
+    def rebind(self, mac: str) -> bool:
+        """A **pessoa** disse que o aparelho do endereço agora é a mesma TV: o registro passa a ele.
+
+        É a saída do bloqueio "outro aparelho no endereço" (a TV trocou de Wi-Fi para cabo e o MAC
+        mudou). Nunca é automático: só o comando explícito do app chega aqui. A permissão dada
+        volta a `granted` (sem prova: o pedido da pessoa que vem a seguir a refaz, e a TV mostra o
+        aviso se não confia na chave); serial e ajuste do vencimento são do aparelho antigo e se
+        refazem. Sem MAC lido não há o que registrar. `False` se não fez nada.
+        """
+        if not mac:
+            return False
+        self._sync()
+        record = self._record
+        fingerprint = self._keys.fingerprint()
+        had_grant = record.state in (GRANTED, VERIFIED) and fingerprint is not None
+        self._save(
+            AdbAuthRecord(
+                state=GRANTED if had_grant else record.state,
+                fingerprint=(fingerprint or record.fingerprint)
+                if had_grant
+                else record.fingerprint,
+                endpoint=self._endpoint,
+                mac=mac,
+                granted_at=record.granted_at,
+            )
+        )
+        return True
+
+    def clear(self) -> None:
+        """Esquece o registro da TV (pareamento novo): o próximo pedido da pessoa começa do zero."""
+        self._sync()
+        self._save(AdbAuthRecord())
+
     def adopt_endpoint(self, mac: str | None) -> bool:
         """A mesma TV mudou de IP: leva o registro para o endereço de agora, sem falar com ela.
 
@@ -433,11 +498,11 @@ class AdbAuthorization:
             return GATE_KEY_CHANGED
         if record.state == NEEDS_USER:
             return GATE_TV_REFUSED
+        if self.another_device_at(mac):
+            return GATE_DEVICE_CHANGED
         if record.endpoint != self._endpoint:
             # MAC `""` (lido e vazio): a ARP não o mostra, então não há como confirmar a mesma TV.
             return GATE_MAC_UNKNOWN if mac == "" else GATE_ADDRESS_CHANGED
-        if mac and record.mac and mac != record.mac:
-            return GATE_DEVICE_CHANGED
         if record.state == GRANTED:
             return GATE_UNPROVEN
         if record.state == VERIFIED and (not mac or not record.mac):

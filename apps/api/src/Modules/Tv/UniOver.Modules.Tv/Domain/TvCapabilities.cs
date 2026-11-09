@@ -18,6 +18,9 @@ internal static class TvCapabilities
     /// <summary>O agente abre na TV a tela de rede ou as configurações (<c>tv.settings.open.v1</c>), só a pedido de um toque: é a Android TV pelo ADB.</summary>
     public const string SettingsOpenV1 = "tv.settings.open.v1";
 
+    /// <summary>O agente refaz o registro da permissão do ADB para o aparelho de agora quando a pessoa confirma que é a mesma TV (<c>tv.adb.rebind.v1</c>).</summary>
+    public const string AdbRebindV1 = "tv.adb.rebind.v1";
+
     /// <summary>O agente sabe procurar TVs compatíveis na rede local (<c>tv.discover.v1</c>).</summary>
     public const string DiscoveryV1 = "tv.discovery.v1";
 }

@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 
 from uniover_agent.adapters.adb_authorization import (
-    GATE_ADDRESS_CHANGED,
     GATE_MAC_UNKNOWN,
     GATE_NEVER,
     GATE_UNPROVEN,
@@ -24,6 +23,7 @@ from uniover_agent.adapters.tv_adb import AdbTv
 from uniover_agent.core import EnvelopeFactory, EnvelopeGate, TvState, TvStatePublisher
 from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
 from uniover_agent.ports import (
+    AdbDeviceChanged,
     AdbPermissionState,
     AdbUnauthorized,
     AdbUnreachable,
@@ -31,11 +31,20 @@ from uniover_agent.ports import (
 )
 
 from .support import AGENT_ID
-from .support_adb import CONNECT, DISCONNECT, GET_STATE, FakeAdbRunner
+from .support_adb import (
+    CONNECT,
+    DISCONNECT,
+    GET_STATE,
+    SERIAL,
+    FakeAdbRunner,
+    ok,
+    shell,
+)
 from .test_tv_adb import Clock
 from .test_tv_adb_permission import (
     DEVICE,
     ENDPOINT,
+    FRESH,
     MAC,
     OTHER_MAC,
     PAIRING,
@@ -96,16 +105,19 @@ async def test_the_same_tv_at_a_new_address_keeps_its_permission(home: Home) -> 
     assert after.mac == MAC
 
 
-async def test_another_device_at_the_new_address_stays_gated_and_says_why(home: Home) -> None:
+async def test_another_device_at_the_new_address_is_refused_without_saying_missing(
+    home: Home,
+) -> None:
     home.verify()
     home.mac = OTHER_MAC
     sink = Sink()
     moved = home.authorization(NEW_ENDPOINT)
     runner = runner_with(state=UNKNOWN)
-    with pytest.raises(AdbUnauthorized):
+    with pytest.raises(AdbDeviceChanged):
         await listening(home, runner, sink, authorization=moved).connect()
     assert CONNECT not in runner.calls
-    assert sink.last == ("missing", GATE_ADDRESS_CHANGED)
+    # Não é falta de permissão: o app não deve pedir nada a quem não é a TV.
+    assert sink.events == []
     assert home.authorization().record.endpoint == ENDPOINT  # o registro não foi levado
 
 
@@ -300,10 +312,136 @@ async def test_a_failing_listener_never_breaks_the_adb_channel(home: Home) -> No
     assert runner.calls == [CONNECT, GET_STATE]
 
 
+# --- o pedido da pessoa e a recusa guardada; shell e cópia; sondar a rede só se vale ---
+
+
+async def test_a_users_request_after_an_automatic_refusal_really_connects(home: Home) -> None:
+    home.verify(settled=True)
+    sink = Sink()
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    adb = listening(home, runner, sink, sleep=instant, **PAIRING)
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()  # caminho automático: a TV recusou a chave, e a recusa fica guardada
+    assert runner.calls.count(CONNECT) == 1
+    # Dentro dos 30 s do cache: o pedido da pessoa não pode ficar preso nele.
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 2  # conectou de verdade
+    assert sink.last == ("pending", "prompt_on_tv")
+    await adb.aclose()
+
+
+async def test_an_automatic_path_keeps_hitting_the_stored_refusal(home: Home) -> None:
+    home.verify(settled=True)
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    adb = home.adb(runner)
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    with pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 1  # nenhum aviso novo sem toque
+
+
+async def test_a_second_tap_while_the_prompt_is_on_the_tv_does_not_connect_again(
+    home: Home,
+) -> None:
+    forever = asyncio.Event()
+
+    async def never(seconds: float) -> None:
+        del seconds
+        await forever.wait()
+
+    home.verify(settled=True)
+    sink = Sink()
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    adb = listening(home, runner, sink, sleep=never, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.list_apps()
+    assert runner.calls.count(CONNECT) == 1  # o aviso já está na tela
+    assert sink.last == ("pending", "prompt_on_tv")
+    await adb.aclose()
+
+
+async def test_a_refusal_found_by_a_shell_command_is_told_as_the_tv_forgetting(
+    home: Home,
+) -> None:
+    home.verify(settled=True)
+    sink = Sink()
+    runner = runner_with()
+    memory = shell("grep MemAvailable /proc/meminfo")
+    runner.script[memory] = ok("error: device unauthorized.\r\n", returncode=1)
+    adb = listening(home, runner, sink)
+    await adb.connect()
+    assert sink.last == ("granted", "connected")
+    with pytest.raises(AdbUnauthorized):
+        await adb.memory_available_mb()
+    state, reason, detail = sink.events[-1]
+    assert (state, reason) == ("missing", "tv_forgot")  # nada de `granted` velho fechando a folha
+    assert "verified" in detail
+    assert home.authorization().record.state == NEEDS_USER
+
+
+async def test_a_refusal_found_while_copying_an_apk_is_told_too(home: Home) -> None:
+    home.verify(settled=True)
+    sink = Sink()
+    runner = runner_with()
+    remote = "/data/app/x/base.apk"
+    local = home.state / "x.apk"
+    runner.script[("-s", SERIAL, "pull", remote, str(local))] = ok(
+        "error: device unauthorized.\r\n", returncode=1
+    )
+    adb = listening(home, runner, sink)
+    await adb.connect()
+    with pytest.raises(AdbUnauthorized):
+        await adb.pull_apk(remote, local)
+    assert sink.last == ("missing", "tv_forgot")
+
+
+async def test_the_network_is_only_probed_when_adopting_is_possible(home: Home) -> None:
+    # Registro sem MAC anotado: não há o que adotar, então nada de sondar a rede no caminho rápido.
+    authorization = home.authorization()
+    assert authorization.mark_verified(authorization.snapshot_key(), "")
+    home.reads = 0
+    runner = runner_with(state=UNKNOWN)
+    with pytest.raises(AdbUnauthorized):
+        await home.adb(runner, authorization=home.authorization(NEW_ENDPOINT)).connect()
+    assert home.reads == 0
+    assert runner.calls == [GET_STATE]
+
+
+async def test_a_tv_that_is_off_costs_the_person_no_probe_and_no_cached_unreachable(
+    home: Home,
+) -> None:
+    # Sem MAC anotado e a TV desligada: o pedido da pessoa não esbarra num `AdbUnreachable`
+    # guardado por uma sondagem que nem poderia adotar nada.
+    authorization = home.authorization()
+    assert authorization.mark_verified(authorization.snapshot_key(), "")
+    home.mac = None
+    moved = home.authorization(NEW_ENDPOINT)
+    runner = runner_with(connect=FRESH, state=[UNKNOWN, DEVICE])
+    adb = home.adb(runner, authorization=moved)
+    with pytest.raises(AdbUnauthorized):
+        await adb.connect()  # automático: o portão, sem sondar nada
+    with user_initiated_adb():
+        await adb.connect()
+    assert CONNECT in runner.calls
+
+
+async def test_a_device_swap_needs_two_known_macs(home: Home) -> None:
+    home.verify()
+    authorization = home.authorization()
+    assert authorization.another_device_at(OTHER_MAC)
+    assert not authorization.another_device_at(MAC)
+    assert not authorization.another_device_at("")
+    assert not authorization.another_device_at(None)
+
+
 # --- o estado guardado, o diagnóstico e o campo do `tv.state.v1` ---
 
 
-def test_the_tracker_tells_listeners_only_when_the_state_changes_and_writes_every_reason() -> None:
+def test_the_tracker_tells_listeners_when_the_state_or_the_reason_changes() -> None:
     tracker = AdbPermissionTracker()
     written: list[tuple[str, str, str]] = []
     tracker.record_with(lambda kind, severity, detail: written.append((kind, severity, detail)))
@@ -316,7 +454,8 @@ def test_the_tracker_tells_listeners_only_when_the_state_changes_and_writes_ever
     tracker.report("pending", "prompt_on_tv")
     tracker.report("granted", "accepted")
 
-    assert heard == ["missing", "pending", "granted"]
+    # Só o motivo mudou (missing: never para missing: address_changed): o app também fica sabendo.
+    assert heard == ["missing", "missing", "pending", "granted"]
     assert [item[0] for item in written] == [
         "adb.permission.missing",
         "adb.permission.missing",
@@ -357,6 +496,7 @@ def make_publisher(
             envelopes,
             reports_adb_permission=lambda: supported,
             adb_permission=lambda: tracker.state,
+            adb_permission_reason=lambda: tracker.reason,
         ),
         transport,
     )
@@ -384,3 +524,18 @@ async def test_an_older_api_gets_the_state_exactly_as_before() -> None:
         "app": None,
         "connection": "hot",
     }
+
+
+async def test_the_reason_goes_with_missing_only() -> None:
+    tracker = AdbPermissionTracker()
+    publisher, transport = make_publisher(tracker, supported=True)
+    tracker.report("missing", "tv_forgot")
+    await publisher.announce(TvState("on", 10, None, "hot"))
+    tracker.report("granted", "accepted")
+    await publisher.announce(TvState("on", 10, None, "hot"))
+    tracker.report("pending", "prompt_on_tv")
+    await publisher.announce(TvState("on", 10, None, "hot"))
+    first, second, third = (m["body"] for m in transport.sent)
+    assert (first["adbPermission"], first["adbPermissionReason"]) == ("missing", "tv_forgot")
+    assert second["adbPermission"] == "granted" and "adbPermissionReason" not in second
+    assert third["adbPermission"] == "pending" and "adbPermissionReason" not in third

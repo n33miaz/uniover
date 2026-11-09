@@ -57,6 +57,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.TvKeyV2,
         AgentMessageTypes.TvKeyV3,
         AgentMessageTypes.TvPairV1,
+        AgentMessageTypes.TvAdbRebindV1,
         AgentMessageTypes.TvPermissionRequestV1,
         AgentMessageTypes.TvLivrePhotoV1,
         AgentMessageTypes.TvLivreV1,

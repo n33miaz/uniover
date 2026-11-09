@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcControlV1, PcKeyV2, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcControlV1, PcKeyV2, TransportKeepaliveV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -203,6 +203,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1;
                 case "tv.adb":
                     return AgentHelloV1BodyCapabilitiesItem.TvAdb;
+                case "tv.adb.rebind.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvAdbRebindV1;
                 case "tv.cleanup.automatic.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvCleanupAutomaticV1;
                 case "tv.discovery.v1":
@@ -303,6 +305,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvAdb:
                     JsonSerializer.Serialize(writer, "tv.adb", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvAdbRebindV1:
+                    JsonSerializer.Serialize(writer, "tv.adb.rebind.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvCleanupAutomaticV1:
                     JsonSerializer.Serialize(writer, "tv.cleanup.automatic.v1", options);

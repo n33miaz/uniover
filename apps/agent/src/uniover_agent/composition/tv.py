@@ -58,6 +58,7 @@ from uniover_agent.config import (
     tv_cert_dir,
 )
 from uniover_agent.core import (
+    ADB_REBIND_CAPABILITY,
     DISCOVERY_CAPABILITY,
     PERMISSION_CAPABILITY,
     POWER_OFF_CAPABILITY,
@@ -90,6 +91,7 @@ from uniover_agent.core import (
     TvWatchdog,
     UserActivity,
     WatchdogEvents,
+    tv_adb_rebind_handler,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
@@ -168,6 +170,8 @@ class TvSetup:
     on_presence_refused: Callable[[float], None] | None = None
     # O estado da permissão do ADB (preenchido pelo canal ADB): o publicador o conta ao app.
     adb_permission: AdbPermissionTracker | None = None
+    # Rodam depois de um pareamento novo da Android TV (pedido da pessoa): o ADB apaga o registro.
+    on_paired: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
     # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
     # Rodam ao encerrar o agente (cancelam o que ficou agendado).
@@ -316,6 +320,11 @@ def attach_pairing(
     async def paired() -> None:
         # O contexto TLS fica no cliente da biblioteca: um par refeito pede um cliente novo.
         remote.forget_client()
+        for hook in setup.on_paired:
+            try:
+                await hook()
+            except Exception:
+                _log.exception("falha ao refazer o que depende do pareamento")
         await setup.manager.pairing_done()
 
     pairing = TvPairing(run, paired)
@@ -710,6 +719,10 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
     # Rede e Configurações da TV: lista fechada de duas telas, só quando a pessoa toca no botão.
     setup.handlers["tv.settings.open.v1"] = tv_settings_open_handler(TvSettings(manager, adb))
+    # A saída do bloqueio "outro aparelho no endereço": só quando a pessoa confirma que é a mesma
+    # TV. Um pareamento novo (também pedido por ela) apaga o registro do ADB, e o pedido recomeça.
+    setup.handlers["tv.adb.rebind.v1"] = tv_adb_rebind_handler(adb)
+    setup.on_paired.append(adb.forget_registration)
     # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
     # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
     cleanup = TvCleanup(adb, clock, keep=keep, allow_app_closing=False)
@@ -764,6 +777,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         setup.capabilities.append("tv.adb")
         setup.capabilities.append(PRESENCE_CAPABILITY)
         setup.capabilities.append(SETTINGS_OPEN_CAPABILITY)
+        setup.capabilities.append(ADB_REBIND_CAPABILITY)
         # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
         setup.capabilities.append("tv.cleanup.automatic.v1")
         # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema

@@ -23,6 +23,7 @@ ADB_UNAUTHORIZED: Final = "adb_unauthorized"
 ADB_UNREACHABLE: Final = "adb_unreachable"
 ADB_IDLE: Final = "adb_idle"
 ADB_IDENTITY: Final = "adb_identity"
+ADB_DEVICE_CHANGED: Final = "adb_device_changed"
 ADB_TIMEOUT: Final = "adb_timeout"
 ADB_FAILED: Final = "adb_failed"
 
@@ -160,6 +161,16 @@ class AdbIdentityUnconfirmed(AdbNotReady):
     """
 
     code = ADB_IDENTITY
+
+
+class AdbDeviceChanged(AdbNotReady):
+    """Outro aparelho responde no endereço onde a TV com permissão estava (o MAC não confere).
+
+    O agente se recusa a falar com ele, mesmo a pedido da pessoa: o aviso do ADB apareceria na tela
+    de um aparelho que não é a TV. Não é falta de permissão (nada é registrado nem rebaixado).
+    """
+
+    code = ADB_DEVICE_CHANGED
 
 
 class AdbUnreachable(AdbNotReady):
