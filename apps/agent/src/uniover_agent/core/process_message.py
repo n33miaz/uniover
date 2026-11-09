@@ -73,7 +73,7 @@ class ProcessMessage:
         uncapped_types: Collection[str] = (),
         release_inputs: Callable[[], None] | None = None,
         observe_timestamp: Callable[[str | None], None] | None = None,
-        on_cloud_pc_input: Callable[[str], None] | None = None,
+        on_cloud_pc_input: Callable[[str, int | None], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -89,9 +89,9 @@ class ProcessMessage:
         self._command_timeout = command_timeout_seconds
         self._uncapped_types = frozenset(uncapped_types)
         self._release_inputs = release_inputs
-        # Chamado com o tipo de cada comando `pc.*` que chega pela API (nunca pelo canal direto),
-        # antes de ele entrar na faixa: o canal direto fecha primeiro, e nada dele cai depois do que
-        # a nuvem faz.
+        # Chamado com o tipo e o `seq` (se veio) de cada comando `pc.*` que chega pela API (nunca
+        # pelo canal direto), antes de ele entrar na faixa: o canal direto fecha primeiro, e nada
+        # dele cai depois do que a nuvem faz.
         self._on_cloud_pc_input = on_cloud_pc_input
         # Recebe o `ts` de cada batimento da API (`api.keepalive.v1`): só ele, que a API nunca
         # segura, serve para estimar a diferença entre o relógio dela e o monotônico deste agente.
@@ -162,7 +162,11 @@ class ProcessMessage:
             return
         if command.type.startswith(_PC_PREFIX) and not command.type.startswith(_RTC_PREFIX):
             if self._on_cloud_pc_input is not None:
-                self._on_cloud_pc_input(command.type)
+                seq = command.body.get("seq")
+                self._on_cloud_pc_input(
+                    command.type,
+                    seq if isinstance(seq, int) and not isinstance(seq, bool) else None,
+                )
             self._enqueue_pc(command)
             return
         if command.type in self._background_types:
