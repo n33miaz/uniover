@@ -14,16 +14,20 @@ import { PcDirect } from './pc-direct';
 import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
+  PC_CLICK_V2_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
+  PC_TEXT_V2_CAPABILITY,
   isHoldableKey,
   keyNeedsV2,
   type PcClickButton,
+  type PcClickOptions,
   type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
   type PcMediaAction,
   type PcModifier,
   type PcPowerAction,
+  type PcTextEdit,
 } from './pc-types';
 
 /** De quanto em quanto tempo o estado do PC é relido enquanto a tela está aberta. */
@@ -181,6 +185,10 @@ export class PcStore {
   readonly capabilities = this.availability.capabilities;
   /** O agente entende `pc.key.v2` (teclas novas, repetição, segurar modificador). */
   readonly supportsKeyV2 = computed(() => this.capabilities().includes(PC_KEY_V2_CAPABILITY));
+  /** O agente entende `pc.text.v2` (apagar, digitar e apertar uma tecla num pedido só). */
+  readonly supportsTextV2 = computed(() => this.capabilities().includes(PC_TEXT_V2_CAPABILITY));
+  /** O agente entende `pc.click.v2` (clique com modificadores e com o intervalo do toque anterior). */
+  readonly supportsClickV2 = computed(() => this.capabilities().includes(PC_CLICK_V2_CAPABILITY));
 
   constructor() {
     // Trocar de conta (sair e entrar como outra pessoa, sem recarregar) descarta o que era da anterior, mesmo sem uso.
@@ -327,10 +335,11 @@ export class PcStore {
   click(
     button: PcClickButton,
     action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
+    options?: PcClickOptions,
   ): Promise<PcFailure | null> {
     // O aperto do botão (arrastar) espera os cliques que já saíram: um toque e, logo depois, o arrasto do toque duplo são
     // pedidos independentes, e um clique que chegasse depois do `DOWN` soltaria o botão.
-    const sending = this.sendClick(button, action);
+    const sending = this.sendClick(button, action, options);
     this.clicks.add(sending);
     // O clique que não responde sai da lista no prazo (o do pedido de texto e tecla): um clique preso não pode barrar todo
     // aperto de botão para sempre.
@@ -346,10 +355,14 @@ export class PcStore {
   private async sendClick(
     button: PcClickButton,
     action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
+    options?: PcClickOptions,
   ): Promise<PcFailure | null> {
     this.syncAccount();
     if (!this.canSend()) return this.blocked();
     const asked = this.account;
+    // Modificador e intervalo são da `pc.click.v2`: um agente que não a declarou nem os recebe (nem pelo canal direto, que
+    // recusaria a mensagem inteira); o toque sai como o de sempre.
+    const extras = this.supportsClickV2() ? options : undefined;
     // O movimento feito depois do toque fica retido até o clique sair: do contrário um pedido de movimento mais novo
     // poderia ultrapassá-lo e o clique cairia no alvo novo.
     this.batcher.hold();
@@ -366,7 +379,10 @@ export class PcStore {
       if (this.session.accountId() !== asked) return this.blocked();
       // O pedido do clique também tem prazo: sem resposta, vira `timeout` (resultado incerto) e o aviso de falha aparece.
       const sending = this.run(async () => {
-        if (await raceTimeout(this.api.click(button, action), INPUT_TIMEOUT_MS)) {
+        const call = extras
+          ? this.api.click(button, action, extras)
+          : this.api.click(button, action);
+        if (await raceTimeout(call, INPUT_TIMEOUT_MS)) {
           throw new HttpErrorResponse({ status: 504 });
         }
       });
@@ -635,6 +651,14 @@ export class PcStore {
 
   sendText(text: string): Promise<PcFailure | null> {
     return this.queueInput(() => this.api.text(text));
+  }
+
+  /**
+   * Uma edição do campo num pedido só (apagar, digitar e a tecla do fim), na ordem da fila de entrada. Só para um PC que
+   * declarou `pc.text.v2`: quem chama confere (`supportsTextV2`).
+   */
+  sendTextEdit(edit: PcTextEdit): Promise<PcFailure | null> {
+    return this.queueInput(() => this.api.edit(edit));
   }
 
   sendMedia(action: PcMediaAction, steps = 1): Promise<PcFailure | null> {

@@ -45,7 +45,9 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'tv.key.E_MANUAL'
   | 'pc.control.v1'
   | 'pc.key.v2'
-  | 'pc.rtc.v1';
+  | 'pc.rtc.v1'
+  | 'pc.text.v2'
+  | 'pc.click.v2';
 export type AgentHelloV1BodyTvKind = 'android' | 'samsung';
 export type AgentHelloV1BodyUpdateOutcome =
   'not_checked' | 'updating' | 'updated' | 'up_to_date' | 'failed' | 'blocked' | 'rolled_back';

@@ -35,6 +35,29 @@ describe('PcArmed', () => {
     expect(armed.take(base)).toBe(base);
   });
 
+  it('takeForClick hands over Ctrl, Shift and Alt in the fixed order and lets go of them', () => {
+    armed.toggle('ALT');
+    armed.toggle('CTRL');
+    armed.toggle('SHIFT');
+    expect(armed.takeForClick()).toEqual(['CTRL', 'SHIFT', 'ALT']);
+    expect(armed.armed().size).toBe(0);
+  });
+
+  it('takeForClick leaves the Windows key armed: a click does not carry it', () => {
+    armed.toggle('WIN');
+    armed.toggle('CTRL');
+    expect(armed.takeForClick()).toEqual(['CTRL']);
+    expect([...armed.armed()]).toEqual(['WIN']);
+    expect(armed.takeForClick()).toEqual([]);
+    expect(armed.has('WIN')).toBe(true);
+  });
+
+  it('takeForClick with nothing armed changes nothing', () => {
+    const before = armed.armed();
+    expect(armed.takeForClick()).toEqual([]);
+    expect(armed.armed()).toBe(before);
+  });
+
   it('forgets what was armed when the account changes', () => {
     armed.toggle('CTRL');
     accountId.set('b');
