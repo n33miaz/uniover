@@ -71,6 +71,11 @@ GATE_DEVICE_CHANGED: Final = "device_changed"  # o MAC de agora é de outro apar
 GATE_MAC_UNKNOWN: Final = "mac_unknown"  # a ARP não mostra o MAC: a identidade não se confirma
 GATE_OTHER: Final = "other"
 
+# O que `rebind` fez: refez o registro, não o refez porque a chave mudou, ou não tinha MAC lido.
+REBIND_DONE: Final = "rebound"
+REBIND_KEY_CHANGED: Final = "key_changed"
+REBIND_NO_MAC: Final = "no_mac"
+
 
 def default_android_dir() -> Path:
     """A pasta `.android` do usuário, onde o `adb` guarda a chave."""
@@ -415,40 +420,48 @@ class AdbAuthorization:
         """
         self._sync()
         record = self._record
+        fingerprint = self._keys.fingerprint()
         return (
             record.state in (GRANTED, VERIFIED)
+            # Com outra chave a permissão anotada não vale: a TV pediria o aviso de novo.
+            and fingerprint is not None
+            and fingerprint == record.fingerprint
             and bool(record.mac)
             and bool(mac)
             and mac != record.mac
         )
 
-    def rebind(self, mac: str) -> bool:
+    def rebind(self, mac: str) -> str:
         """A **pessoa** disse que o aparelho do endereço agora é a mesma TV: o registro passa a ele.
 
         É a saída do bloqueio "outro aparelho no endereço" (a TV trocou de Wi-Fi para cabo e o MAC
         mudou). Nunca é automático: só o comando explícito do app chega aqui. A permissão dada
         volta a `granted` (sem prova: o pedido da pessoa que vem a seguir a refaz, e a TV mostra o
         aviso se não confia na chave); serial e ajuste do vencimento são do aparelho antigo e se
-        refazem. Sem MAC lido não há o que registrar. `False` se não fez nada.
+        refazem. Sem MAC lido não há o que registrar (`REBIND_NO_MAC`). Se a chave `adbkey` de agora
+        não é a do registro (`REBIND_KEY_CHANGED`), **nada é concedido**: a permissão era de outra
+        chave, então estado e chave anotados ficam como estavam (só o endereço e o MAC passam ao
+        aparelho de agora) e o pedido seguinte da pessoa é quem pede a permissão à chave nova.
         """
         if not mac:
-            return False
+            return REBIND_NO_MAC
         self._sync()
         record = self._record
         fingerprint = self._keys.fingerprint()
-        had_grant = record.state in (GRANTED, VERIFIED) and fingerprint is not None
+        had_grant = record.state in (GRANTED, VERIFIED)
+        if had_grant and (fingerprint is None or fingerprint != record.fingerprint):
+            self._save(_replace(record, endpoint=self._endpoint, mac=mac))
+            return REBIND_KEY_CHANGED
         self._save(
             AdbAuthRecord(
                 state=GRANTED if had_grant else record.state,
-                fingerprint=(fingerprint or record.fingerprint)
-                if had_grant
-                else record.fingerprint,
+                fingerprint=record.fingerprint,
                 endpoint=self._endpoint,
                 mac=mac,
                 granted_at=record.granted_at,
             )
         )
-        return True
+        return REBIND_DONE
 
     def clear(self) -> None:
         """Esquece o registro da TV (pareamento novo): o próximo pedido da pessoa começa do zero."""

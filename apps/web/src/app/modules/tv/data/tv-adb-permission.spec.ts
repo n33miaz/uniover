@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import {
+  ADB_CLEARED_MS,
   ADB_CONFIRM_POLL_MS,
   ADB_CONFIRM_TRIES,
   ADB_DISMISSED_KEY,
@@ -538,6 +539,30 @@ describe('TvAdbPermission', () => {
       expect(api.rebindAdb).toHaveBeenCalledTimes(1);
       finish();
       await first;
+    });
+  });
+
+  describe('when the agent deleted the registration (new pairing with another device)', () => {
+    it('tells the person once with a calm notice, never silently and never with the sheet', async () => {
+      permission.observe('missing', 'registration_cleared');
+      expect(permission.cleared()).toBe(true);
+      expect(permission.sheetOpen()).toBe(false);
+      expect(permission.needs()).toBe(true);
+      // O estado repete o motivo a cada mensagem: o recado não volta enquanto for o mesmo.
+      await vi.advanceTimersByTimeAsync(ADB_CLEARED_MS + 1);
+      expect(permission.cleared()).toBe(false);
+      permission.observe('missing', 'registration_cleared');
+      expect(permission.cleared()).toBe(false);
+      // Outro apagar, depois de a pessoa ver outro estado, é um recado novo.
+      permission.observe('missing', 'never');
+      permission.observe('missing', 'registration_cleared');
+      expect(permission.cleared()).toBe(true);
+    });
+
+    it('leaving the screen clears the notice', () => {
+      permission.observe('missing', 'registration_cleared');
+      permission.detach();
+      expect(permission.cleared()).toBe(false);
     });
   });
 

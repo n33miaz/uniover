@@ -7,6 +7,11 @@
   <p class="notice done" role="status" [animate.leave]="'notice-leave'">
     <span i18n="@@tv.adb.done">Pronto: a TV liberou o UniOver</span>
   </p>
+} @else if (permission.cleared()) {
+  <!-- O registro foi apagado porque a TV mudou: um recado calmo, nunca em silêncio. -->
+  <p class="notice" role="status" [animate.leave]="'notice-leave'">
+    <span i18n="@@tv.adb.cleared">Permissão apagada: a TV mudou. Será pedida de novo.</span>
+  </p>
 }
 
 @if (permission.sheetOpen()) {
@@ -39,17 +44,18 @@
       @case ('notfound') {
         @if (permission.canRebind()) {
           <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.notfound">
-            TV não encontrada no endereço. Confira a rede.
+            Outro aparelho respondeu no endereço da TV.
           </p>
         } @else {
           <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.notfound-guest">
-            TV não encontrada no endereço. Peça ao dono da TV.
+            Outro aparelho respondeu no endereço da TV. Peça ao dono da TV.
           </p>
         }
       }
       @case ('confirmsame') {
         <p id="adb-permission-text" class="text" role="alert" i18n="@@tv.adb.confirmsame">
-          Esta é a mesma TV? (ex.: trocou de Wi-Fi para cabo)
+          Esta é a mesma TV? (ex.: trocou de Wi-Fi para cabo) A TV vai pedir permissão; aceite
+          marcando Sempre permitir.
         </p>
       }
       @case ('failed') {

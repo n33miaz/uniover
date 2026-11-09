@@ -80,7 +80,7 @@ export function adbNoPromptMessage(): string {
 
 /** Outro aparelho está no endereço onde a TV estava (o agente se recusa a falar com ele). */
 export function adbDeviceChangedMessage(): string {
-  return $localize`:@@tv.error.adb-device-changed:TV não encontrada no endereço. Confira a rede.`;
+  return $localize`:@@tv.error.adb-device-changed:Outro aparelho respondeu no endereço da TV.`;
 }
 
 function commandFailedMessage(code: string | null, context?: TvFailureContext): string {
