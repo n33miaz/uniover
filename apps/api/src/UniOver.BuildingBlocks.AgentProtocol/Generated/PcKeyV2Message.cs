@@ -26,6 +26,11 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// numeração própria dele): o agente o compara com o último número que o app declara no
     /// canal direto para saber se um pedido da nuvem é anterior à troca de caminho (e por isso
     /// não fecha o canal) ou é novo. A API só o repassa a um agente que declara `pc.rtc.v1`.
+    /// `epoch` (opcional) identifica a vida da página que numerou o pedido: 16 caracteres
+    /// hexadecimais aleatórios, sorteados quando a página abre. Sem ela o `seq` não diz de qual
+    /// página vem (uma página reaberta recomeça a contagem), então o agente só trata o pedido
+    /// como anterior à troca de caminho quando a época é a mesma que o app declarou no canal
+    /// direto. A API só a repassa a um agente que declara `pc.rtc.v1`.
     /// </summary>
     public partial class PcKeyV2Message
     {
@@ -59,6 +64,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("action")]
         public PcKeyV2BodyAction? Action { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("epoch")]
+        public string? Epoch { get; set; }
 
         [JsonPropertyName("key")]
         public PcKeyV2BodyKey Key { get; set; }

@@ -26,6 +26,7 @@ class PcMediaV1Body(BaseModel):
     action: Annotated[PcMediaV1BodyAction, Field(title='PcMediaV1BodyAction')]
     steps: Annotated[int | None, Field(ge=1, le=10)] = 1
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
+    epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
 
 
 class PcMediaV1Message(BaseModel):

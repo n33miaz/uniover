@@ -40,6 +40,7 @@ class PcKeyV2Body(BaseModel):
     repeat: Annotated[int | None, Field(ge=1, le=50)] = None
     action: Annotated[PcKeyV2BodyAction | None, Field(title='PcKeyV2BodyAction')] = None
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
+    epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
 
 
 class PcKeyV2Message(BaseModel):
