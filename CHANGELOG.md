@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.50.0](https://github.com/n33miaz/uniover/compare/v0.49.0...v0.50.0) (2026-11-09)
+
+
+### Identity 0.43.0
+
+#### Features
+
+* **identity:** remember the install hint answer
+
+#### Bug Fixes
+
+* **web:** install answer per device, safer sync
+* **tv:** real permission requests and a way out
+
+
+### Devices 0.49.0
+
+#### Features
+
+* **tv:** report the adb permission state
+
+#### Bug Fixes
+
+* **tv:** real permission requests and a way out
+
+
+### TV 0.46.0
+
+#### Features
+
+* **tv:** report the adb permission state
+* **web:** ask for tv permission from the phone
+
+#### Bug Fixes
+
+* **tv:** real permission requests and a way out
+* **tv:** safer rebind and clearer permission text
+
+
+### Web 0.50.0
+
+#### Features
+
+* **web:** ask for tv permission from the phone
+
+#### Bug Fixes
+
+* **web:** no install hint inside the installed app
+* **web:** install answer per device, safer sync
+* **tv:** real permission requests and a way out
+* **tv:** safer rebind and clearer permission text
+
+
+### Agent 0.46.0
+
+#### Features
+
+* **tv:** report the adb permission state
+
+#### Bug Fixes
+
+* **agent:** keep adb permission when the tv ip changes
+* **tv:** real permission requests and a way out
+* **tv:** safer rebind and clearer permission text
+
 ## [0.49.0](https://github.com/n33miaz/uniover/compare/v0.48.0...v0.49.0) (2026-11-08)
 
 
