@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.51.0](https://github.com/n33miaz/uniover/compare/v0.50.0...v0.51.0) (2026-11-09)
+
+
+### Identity 0.43.1
+
+#### Bug Fixes
+
+* **api:** close direct channels on revoked access
+* **api:** harden direct channel revocation
+
+
+### Devices 0.50.0
+
+#### Features
+
+* **contracts:** direct pc channel signaling
+* **api:** relay direct pc channel signaling
+* **web:** use the direct pc channel
+* **contracts:** direct channel lifetime and close
+* **contracts:** seq on cloud pc inputs
+* **api:** forward cloud seq to direct agents
+* **contracts:** page epoch on cloud pc inputs
+* **api:** forward page epoch to direct agents
+
+#### Bug Fixes
+
+* **api:** close direct channels on revoked access
+* **web:** direct channel renewal and handover
+* **api:** harden direct channel revocation
+* **web:** number cloud inputs, adopt when idle
+* **api:** map rtc_closed refusal to 409
+* **web:** page epoch, send fallback, revoked stop
+* **web:** no readopt before the cloud fallback
+
+
+### Web 0.51.0
+
+#### Features
+
+* **web:** use the direct pc channel
+* **contracts:** seq on cloud pc inputs
+* **api:** forward cloud seq to direct agents
+* **contracts:** page epoch on cloud pc inputs
+* **api:** forward page epoch to direct agents
+
+#### Bug Fixes
+
+* **web:** direct channel renewal and handover
+* **web:** number cloud inputs, adopt when idle
+* **web:** page epoch, send fallback, revoked stop
+
+
+### Agent 0.47.0
+
+#### Features
+
+* **agent:** direct pc channel over webrtc
+* **contracts:** seq on cloud pc inputs
+* **contracts:** page epoch on cloud pc inputs
+
+#### Bug Fixes
+
+* **agent:** bounded, private direct pc channel
+* **agent:** keep channel on late cloud input
+* **agent:** close on cloud input from another page
+
 ## [0.50.0](https://github.com/n33miaz/uniover/compare/v0.49.0...v0.50.0) (2026-11-09)
 
 
