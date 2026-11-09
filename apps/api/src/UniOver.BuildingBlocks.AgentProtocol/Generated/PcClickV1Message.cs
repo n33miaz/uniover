@@ -17,7 +17,12 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     /// <summary>
     /// API para agente: clique do mouse. `down` e `up` existem para arrastar (toque e segure);
-    /// sem `action` vale `click`.
+    /// sem `action` vale `click`. `seq` (opcional) numera os pedidos de entrada pela nuvem em
+    /// ordem crescente (um contador só para o clique, a tecla, o texto e a mídia, durante a vida
+    /// da página; o movimento tem a numeração própria dele): o agente o compara com o último
+    /// número que o app declara no canal direto para saber se um pedido da nuvem é anterior à
+    /// troca de caminho (e por isso não fecha o canal) ou é novo. A API só o repassa a um agente
+    /// que declara `pc.rtc.v1`.
     /// </summary>
     public partial class PcClickV1Message
     {
@@ -54,6 +59,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
         [JsonPropertyName("button")]
         public PcClickV1BodyButton Button { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("seq")]
+        public long? Seq { get; set; }
     }
 
     public enum PcClickV1BodyAction { Click, Double, Down, Up };

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://uniover.dev/contracts/agent/messages/pc.click.v1.schema.json",
   "title": "pc.click.v1",
-  "description": "API para agente: clique do mouse. `down` e `up` existem para arrastar (toque e segure); sem `action` vale `click`.",
+  "description": "API para agente: clique do mouse. `down` e `up` existem para arrastar (toque e segure); sem `action` vale `click`. `seq` (opcional) numera os pedidos de entrada pela nuvem em ordem crescente (um contador só para o clique, a tecla, o texto e a mídia, durante a vida da página; o movimento tem a numeração própria dele): o agente o compara com o último número que o app declara no canal direto para saber se um pedido da nuvem é anterior à troca de caminho (e por isso não fecha o canal) ou é novo. A API só o repassa a um agente que declara `pc.rtc.v1`.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -66,6 +66,11 @@
             "UP"
           ],
           "default": "CLICK"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
         }
       }
     }

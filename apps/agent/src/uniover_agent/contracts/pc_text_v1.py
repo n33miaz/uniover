@@ -17,6 +17,7 @@ class PcTextV1Body(BaseModel):
     text: Annotated[
         str, Field(max_length=200, min_length=1, pattern='^[^\x00-\x1f\x7f-\x9f]+$')
     ]
+    seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
 
 
 class PcTextV1Message(BaseModel):
