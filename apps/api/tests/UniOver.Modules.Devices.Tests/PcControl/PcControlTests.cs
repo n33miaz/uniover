@@ -427,6 +427,9 @@ public sealed class PcValidatorTests
         PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "CTRL"], null)).Should().ContainKey("modifiers");
         PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["META"], null)).Should().ContainKey("modifiers");
         PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["WIN"], null)).Should().ContainKey("modifiers");
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "ALT", "SHIFT"], null)).Should().BeEmpty();
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "ALT", "SHIFT", "CTRL"], null)).Should().ContainKey("modifiers");
+        PcValidator.MaxClickModifiers.Should().Be(3);
         PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "ALT", "SHIFT", "WIN", "CTRL"], null)).Should().ContainKey("modifiers");
         PcValidator.Click(new PcClickRequest("LEFT", null, null, null, null, 400)).Should().BeEmpty();
         PcValidator.Click(new PcClickRequest("LEFT", null, null, null, null, 401)).Should().ContainKey("gapMs");

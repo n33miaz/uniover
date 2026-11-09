@@ -80,6 +80,7 @@ internal static class PcValidator
     public const int MaxScroll = 1200;
     public const int MaxTextLength = 200;
     public const int MaxModifiers = 4;
+    public const int MaxClickModifiers = 3;
     public const int MaxSteps = 10;
     public const int MaxKeyRepeat = 50;
     public const int MaxErase = 200;
@@ -112,7 +113,7 @@ internal static class PcValidator
         }
 
         var modifiers = request?.Modifiers ?? [];
-        if (modifiers.Length > MaxModifiers
+        if (modifiers.Length > MaxClickModifiers
             || modifiers.Any(m => m is null || !PcMessages.ClickModifiers.ContainsKey(m))
             || modifiers.Distinct(StringComparer.Ordinal).Count() != modifiers.Length)
         {
