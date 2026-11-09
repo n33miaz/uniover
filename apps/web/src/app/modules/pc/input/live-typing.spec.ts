@@ -8,6 +8,7 @@ import {
 import {
   LiveTyper,
   MAX_TEXT,
+  RATE_RETRY_MS,
   PADDING_CHAR,
   diffText,
   editRequests,
@@ -597,5 +598,77 @@ describe('LiveTyper on a PC that understands pc.text.v2', () => {
     typer.edit({ erase: 1, insert: 'b' });
     await answer();
     expect(sent()).toEqual(['key:BACKSPACE']);
+  });
+});
+
+describe('LiveTyper: an edit refused for its pace is not left half done', () => {
+  const RATE: PcFailure = { kind: 'rate-limited', message: 'Muitos comandos seguidos.' };
+  const FAILED: PcFailure = { kind: 'timeout', message: 'O PC não respondeu a tempo.' };
+
+  function lab(answers: (PcFailure | null)[]) {
+    const sent: string[] = [];
+    const failures: PcFailure[] = [];
+    const pauses: number[] = [];
+    let settled = Promise.resolve();
+    const typer = new LiveTyper(
+      {
+        key: () => Promise.resolve(null),
+        text: () => Promise.resolve(null),
+        edit: (edit: PcTextEdit) => {
+          sent.push(JSON.stringify(edit));
+          return Promise.resolve(answers.shift() ?? null);
+        },
+        canEdit: () => true,
+      },
+      { failed: (failure) => failures.push(failure), idle: () => undefined },
+      (ms) => {
+        pauses.push(ms);
+        settled = Promise.resolve();
+        return settled;
+      },
+    );
+    const flush = async () => {
+      for (let round = 0; round < 40; round++) await Promise.resolve();
+    };
+    return { typer, sent, failures, pauses, flush };
+  }
+
+  it('120 erased and new text: the second request refused for its pace is sent again, and all goes through', async () => {
+    const { typer, sent, failures, pauses, flush } = lab([null, RATE, null]);
+    typer.edit({ erase: 120, insert: 'ok' });
+    await flush();
+    expect(sent).toEqual([
+      `{"erase":${PC_TEXT_ERASE_CHUNK}}`,
+      `{"erase":${120 - PC_TEXT_ERASE_CHUNK},"text":"ok"}`,
+      `{"erase":${120 - PC_TEXT_ERASE_CHUNK},"text":"ok"}`,
+    ]);
+    expect(pauses).toEqual([RATE_RETRY_MS[0]]);
+    expect(failures).toEqual([]);
+  });
+
+  it('keeps trying with growing waits and gives up after the last, telling the screen once', async () => {
+    const { typer, sent, failures, pauses, flush } = lab([RATE, RATE, RATE, RATE, RATE]);
+    typer.edit({ erase: 3, insert: 'x' });
+    await flush();
+    expect(sent).toHaveLength(1 + RATE_RETRY_MS.length);
+    expect(pauses).toEqual([...RATE_RETRY_MS]);
+    expect(failures).toEqual([RATE]);
+  });
+
+  it('only a refusal for pace is repeated: any other failure may have been executed', async () => {
+    const { typer, sent, failures, pauses, flush } = lab([FAILED]);
+    typer.edit({ erase: 3, insert: 'x' });
+    await flush();
+    expect(sent).toHaveLength(1);
+    expect(pauses).toEqual([]);
+    expect(failures).toEqual([FAILED]);
+  });
+
+  it('a cleared queue ends the retries', async () => {
+    const { typer, sent, flush } = lab([RATE, null]);
+    typer.edit({ erase: 3, insert: 'x' });
+    typer.clear();
+    await flush();
+    expect(sent).toHaveLength(1);
   });
 });

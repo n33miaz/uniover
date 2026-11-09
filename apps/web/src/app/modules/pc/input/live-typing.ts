@@ -8,6 +8,12 @@ import {
 } from '../data/pc-types';
 import { clampText } from './text-limit';
 
+/**
+ * Esperas (ms) entre as tentativas de um pedido de edição recusado por excesso de ritmo (`rate-limited`): ele nunca foi
+ * executado, então repetir é seguro e a edição não fica pela metade. Passadas todas, a falha segue como qualquer outra.
+ */
+export const RATE_RETRY_MS: readonly number[] = [250, 500, 1_000];
+
 /** O limite do contrato para o texto de um pedido, em pontos de código (um emoji vale um). */
 export const MAX_TEXT = 200;
 
@@ -220,6 +226,8 @@ export class LiveTyper {
   constructor(
     private readonly sender: TyperSender,
     private readonly events: TyperEvents,
+    private readonly pause: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms)),
   ) {}
 
   /** Pedidos na fila mais o que está em voo (a repetição de tecla espera por este número). */
@@ -290,6 +298,25 @@ export class LiveTyper {
     if (generation === this.generation) this.events.idle();
   }
 
+  /**
+   * Um pedido de edição. Se o ritmo o recusou (nunca foi executado), repete depois de uma espera: uma edição grande tem vários
+   * pedidos, e largar o segundo deixaria o texto do PC pela metade.
+   */
+  private async sendEdit(
+    edit: (request: PcTextEdit) => Promise<PcFailure | null>,
+    request: PcTextEdit,
+    generation: number,
+  ): Promise<PcFailure | null> {
+    let failure = await edit(request);
+    for (const wait of RATE_RETRY_MS) {
+      if (failure?.kind !== 'rate-limited') break;
+      await this.pause(wait);
+      if (generation !== this.generation) return null;
+      failure = await edit(request);
+    }
+    return failure;
+  }
+
   private async run(op: Op, generation: number): Promise<PcFailure | null> {
     if (op.kind === 'key') {
       return op.options === undefined
@@ -299,7 +326,11 @@ export class LiveTyper {
     if (this.sender.edit !== undefined && this.sender.canEdit?.() === true) {
       for (const request of editRequests(op.diff)) {
         if (generation !== this.generation) return null;
-        const failure = await this.sender.edit(request);
+        const failure = await this.sendEdit(
+          this.sender.edit.bind(this.sender),
+          request,
+          generation,
+        );
         if (failure) return failure;
       }
       return null;
