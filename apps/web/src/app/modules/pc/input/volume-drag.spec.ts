@@ -52,6 +52,21 @@ describe('VolumeDrag', () => {
     expect(total).toBe(MAX_PENDING_STEPS);
   });
 
+  it('limit cuts what was waiting, in both directions, and leaves a smaller wait alone', () => {
+    const drag = new VolumeDrag();
+    drag.move(PX_PER_VOLUME_STEP * 30);
+    drag.limit(10);
+    expect(drag.take()).toEqual({ direction: 'UP', steps: 10 });
+    expect(drag.take()).toBeNull();
+    drag.move(-PX_PER_VOLUME_STEP * 30);
+    drag.limit(10);
+    expect(drag.take()).toEqual({ direction: 'DOWN', steps: 10 });
+    expect(drag.take()).toBeNull();
+    drag.move(PX_PER_VOLUME_STEP * 3);
+    drag.limit(10);
+    expect(drag.take()).toEqual({ direction: 'UP', steps: 3 });
+  });
+
   it('reset forgets the steps waiting and the fraction of a pixel', () => {
     const drag = new VolumeDrag();
     drag.move(PX_PER_VOLUME_STEP * 3 + 4);

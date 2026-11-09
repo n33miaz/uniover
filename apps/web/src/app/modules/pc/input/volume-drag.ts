@@ -10,6 +10,9 @@ export const MAX_STEPS_PER_REQUEST = 10;
 /** O que ainda esperava para sair (a rede lenta) nunca passa disto: não se corre atrás do dedo por mais que uma escala inteira. */
 export const MAX_PENDING_STEPS = 50;
 
+/** Quando o dedo sai, o que ainda esperava para sair vale no máximo isto: não se segue mexendo no volume depois de soltar. */
+export const MAX_STEPS_AFTER_RELEASE = 10;
+
 export type VolumeDirection = 'UP' | 'DOWN';
 
 export interface VolumeRequest {
@@ -49,6 +52,11 @@ export class VolumeDrag {
     const steps = Math.min(MAX_STEPS_PER_REQUEST, Math.abs(this.pending));
     this.pending -= direction === 'UP' ? steps : -steps;
     return { direction, steps };
+  }
+
+  /** Corta o que espera para no máximo `max` passos (o dedo saiu: o resto do atraso da rede não vira volume a mais). */
+  limit(max: number): void {
+    this.pending = Math.max(-max, Math.min(max, this.pending));
   }
 
   /** Esquece o que esperava (um pedido falhou, ou o dedo recomeça): a fração de pixel também. */
