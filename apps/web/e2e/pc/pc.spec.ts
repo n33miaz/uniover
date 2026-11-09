@@ -1807,3 +1807,181 @@ test.describe('Teclas do pc.key.v2', () => {
     expect(outline.style === 'none' || outline.width === '0px').toBe(true);
   });
 });
+
+test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
+  const declared = (capabilities: string[]) => {
+    pc.status = { ...READY, apps: [...READY.apps], capabilities };
+  };
+  const edits = () => pc.sent('/text');
+  const typedText = () =>
+    edits()
+      .map((body) => String(body['text'] ?? ''))
+      .join('');
+
+  /** Arma o Ctrl pelo painel de teclas e fecha o painel, que cobriria a superfície do toque. */
+  async function armCtrl(page: Page) {
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    const panel = page.getByRole('group', { name: 'Mais teclas' }).last();
+    await panel.getByRole('button', { name: 'Ctrl', exact: true }).click();
+    await expect(page.locator('.armed')).toContainText('Ctrl');
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    await expect(panel).toBeHidden();
+  }
+
+  async function openKeyboard(page: Page) {
+    await page.getByRole('button', { name: 'Teclado', exact: true }).click();
+    const field = page.getByLabel('Digitar no PC');
+    await expect(field).toBeFocused();
+    return field;
+  }
+
+  test.describe('digitação ao vivo num PC com pc.text.v2', () => {
+    test.beforeEach(() => declared(['pc.key.v2', 'pc.text.v2']));
+
+    test('apagar é um pedido de texto com o que apagar, sem Backspace por tecla', async ({
+      page,
+    }) => {
+      await openPc(page);
+      const field = await openKeyboard(page);
+      await field.pressSequentially('abc');
+      await expect.poll(typedText).toBe('abc');
+      await field.press('Backspace');
+      await expect.poll(() => edits().some((body) => body['erase'] === 1)).toBe(true);
+      expect(pc.sent('/key')).toEqual([]);
+    });
+
+    test('uma palavra trocada é um pedido só: apagar e digitar juntos', async ({ page }) => {
+      await openPc(page);
+      const field = await openKeyboard(page);
+      await field.pressSequentially('casa');
+      await expect.poll(typedText).toBe('casa');
+      const before = edits().length;
+      // Selecionar tudo e digitar por cima: a diferença apaga o que havia e digita o novo, num pedido só.
+      await field.press('ControlOrMeta+a');
+      await page.keyboard.insertText('rua');
+      await expect.poll(() => edits().length).toBe(before + 1);
+      expect(edits().at(-1)).toEqual({ erase: 4, text: 'rua' });
+      expect(pc.sent('/key')).toEqual([]);
+    });
+
+    test('um texto colado com várias linhas leva o Enter junto, no pedido do texto', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await openKeyboard(page);
+      await page.keyboard.insertText('um\ndois');
+      await expect.poll(() => edits()).toEqual([{ text: 'um', key: 'ENTER' }, { text: 'dois' }]);
+      expect(pc.sent('/key')).toEqual([]);
+    });
+
+    test('com a rede lenta uma rajada digitada e apagada custa poucos pedidos', async ({
+      page,
+    }) => {
+      pc.commandDelayMs = 300;
+      await openPc(page);
+      const field = await openKeyboard(page);
+      await field.pressSequentially('abcdefghij', { delay: 20 });
+      await expect.poll(typedText).toBe('abcdefghij');
+      const before = edits().length;
+      // O primeiro apagar sai na hora; os dois seguintes chegam com ele em voo e saem juntos, num pedido só.
+      await field.press('Backspace');
+      await field.press('Backspace');
+      await field.press('Backspace');
+      await expect
+        .poll(() => edits().reduce((sum, body) => sum + Number(body['erase'] ?? 0), 0))
+        .toBe(3);
+      expect(edits().length - before).toBeLessThanOrEqual(2);
+      expect(pc.sent('/key')).toEqual([]);
+    });
+  });
+
+  test('num PC sem pc.text.v2 apagar segue sendo uma tecla Backspace por caractere', async ({
+    page,
+  }) => {
+    declared(['pc.key.v2']);
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('ab');
+    await expect.poll(typedText).toBe('ab');
+    await field.press('Backspace');
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'BACKSPACE' }]);
+    expect(edits().some((body) => 'erase' in body)).toBe(false);
+  });
+
+  test.describe('toques num PC com pc.click.v2', () => {
+    test.beforeEach(() => declared(['pc.key.v2', 'pc.click.v2']));
+
+    test('o segundo toque de um toque duplo leva o intervalo medido desde o primeiro', async ({
+      page,
+    }) => {
+      await openPc(page);
+      const { x, y } = await padCenter(page);
+      await fingers(page, [
+        { type: 'down', id: 1, x, y },
+        { type: 'up', id: 1, x, y, wait: 40 },
+        { type: 'down', id: 1, x: x + 2, y, wait: 90 },
+        { type: 'up', id: 1, x: x + 2, y, wait: 40 },
+      ]);
+      await expect.poll(() => pc.sent('/click').length).toBe(2);
+      const [first, second] = pc.sent('/click');
+      expect(first).toEqual({ button: 'LEFT' });
+      expect(second).toMatchObject({ button: 'LEFT' });
+      // O intervalo é entre as duas saídas do dedo: uns 130 ms (a espera real do navegador varia).
+      expect(Number(second['gapMs'])).toBeGreaterThanOrEqual(100);
+      expect(Number(second['gapMs'])).toBeLessThanOrEqual(300);
+    });
+
+    test('um toque comum não leva intervalo nem modificador', async ({ page }) => {
+      await openPc(page);
+      const { x, y } = await padCenter(page);
+      await tap(page, x, y);
+      await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }]);
+    });
+
+    test('o Ctrl armado vale para o toque (Ctrl+clique) e se solta', async ({ page }) => {
+      await openPc(page);
+      await armCtrl(page);
+      const { x, y } = await padCenter(page);
+      await tap(page, x, y);
+      await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT', modifiers: ['CTRL'] }]);
+      await expect(page.locator('.armed')).toHaveCount(0);
+      // O toque seguinte (depois do tempo do toque duplo) já é comum.
+      await page.waitForTimeout(450);
+      await tap(page, x, y);
+      await expect
+        .poll(() => pc.sent('/click'))
+        .toEqual([{ button: 'LEFT', modifiers: ['CTRL'] }, { button: 'LEFT' }]);
+    });
+
+    test('arrastar nunca leva modificador, mesmo com Ctrl armado', async ({ page }) => {
+      await openPc(page);
+      await armCtrl(page);
+      const { x, y } = await padCenter(page);
+      await longPress(page, x, y);
+      await page.mouse.up();
+      await expect
+        .poll(() => pc.sent('/click'))
+        .toEqual([
+          { button: 'LEFT', action: 'DOWN' },
+          { button: 'LEFT', action: 'UP' },
+        ]);
+    });
+  });
+
+  test('num PC sem pc.click.v2 o toque sai como sempre e o Ctrl armado segue armado', async ({
+    page,
+  }) => {
+    declared(['pc.key.v2']);
+    await openPc(page);
+    await armCtrl(page);
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x, y },
+      { type: 'up', id: 1, x, y, wait: 40 },
+      { type: 'down', id: 1, x: x + 2, y, wait: 90 },
+      { type: 'up', id: 1, x: x + 2, y, wait: 40 },
+    ]);
+    await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }, { button: 'LEFT' }]);
+    await expect(page.locator('.armed')).toContainText('Ctrl');
+  });
+});
