@@ -672,3 +672,85 @@ describe('LiveTyper: an edit refused for its pace is not left half done', () => 
     expect(sent).toHaveLength(1);
   });
 });
+
+describe('LiveTyper: the waits cover an empty key bucket', () => {
+  /** O balde de teclas do agente, com o relógio andando só quando o app espera. */
+  class FakeBucket {
+    tokens: number;
+    now = 0;
+    constructor(
+      private readonly rate: number,
+      private readonly burst: number,
+      empty = false,
+    ) {
+      this.tokens = empty ? 0 : burst;
+    }
+    advance(ms: number) {
+      this.now += ms;
+      this.tokens = Math.min(this.burst, this.tokens + (ms / 1000) * this.rate);
+    }
+    take(cost: number): PcFailure | null {
+      if (this.tokens < cost) return { kind: 'rate-limited', message: 'Muitos comandos seguidos.' };
+      this.tokens -= cost;
+      return null;
+    }
+  }
+
+  function lab(bucket: FakeBucket) {
+    const done: string[] = [];
+    const failures: PcFailure[] = [];
+    const typer = new LiveTyper(
+      {
+        key: (_key, _modifiers, options) => Promise.resolve(bucket.take(options?.repeat ?? 1)),
+        text: () => Promise.resolve(null),
+        edit: (edit: PcTextEdit) => {
+          const failure = bucket.take((edit.erase ?? 0) + (edit.key ? 1 : 0));
+          if (!failure) done.push(JSON.stringify(edit));
+          return Promise.resolve(failure);
+        },
+        canEdit: () => true,
+      },
+      { failed: (failure) => failures.push(failure), idle: () => undefined },
+      (ms) => {
+        bucket.advance(ms);
+        return Promise.resolve();
+      },
+    );
+    const flush = async () => {
+      for (let round = 0; round < 80; round++) await Promise.resolve();
+    };
+    return { typer, done, failures, flush };
+  }
+
+  it('the waits add up to 3.5 s: enough for the heaviest request to refill from empty', () => {
+    expect(RATE_RETRY_MS.reduce((sum, ms) => sum + ms, 0)).toBeGreaterThanOrEqual(3_500);
+  });
+
+  it('a bucket emptied by held Backspaces (repeat) and then a big edit: the edit gets through, all of it, in order', async () => {
+    const bucket = new FakeBucket(100, 250);
+    const { typer, done, failures, flush } = lab(bucket);
+    for (let n = 0; n < 5; n++) typer.key('BACKSPACE', [], { repeat: 50 }); // 250 apertos: balde vazio
+    await flush();
+    expect(bucket.tokens).toBeLessThan(1);
+    typer.edit({ erase: 200, insert: 'fim\n' });
+    await flush();
+    expect(failures).toEqual([]);
+    expect(done).toEqual([
+      `{"erase":${PC_TEXT_ERASE_CHUNK}}`,
+      `{"erase":${PC_TEXT_ERASE_CHUNK}}`,
+      `{"erase":${200 - 2 * PC_TEXT_ERASE_CHUNK},"text":"fim","key":"ENTER"}`,
+    ]);
+  });
+
+  it('a slower refill (40 per second) from empty: the largest request the app sends still gets through', async () => {
+    // Com 40 por segundo o pedido de 81 apertos espera o que um de 201 esperaria no balde de 100: uns 2 s.
+    const bucket = new FakeBucket(40, 250, true);
+    const { typer, done, failures, flush } = lab(bucket);
+    typer.edit({ erase: PC_TEXT_ERASE_CHUNK, insert: 'x\n' }); // 81 apertos a 40 por segundo: 2 s
+    await flush();
+    expect(failures).toEqual([]);
+    expect(done).toHaveLength(1);
+    expect(bucket.now).toBeGreaterThan(1_750);
+    expect(bucket.now).toBeLessThanOrEqual(3_500);
+  });
+});

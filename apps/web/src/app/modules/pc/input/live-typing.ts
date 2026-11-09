@@ -10,9 +10,11 @@ import { clampText } from './text-limit';
 
 /**
  * Esperas (ms) entre as tentativas de um pedido de edição recusado por excesso de ritmo (`rate-limited`): ele nunca foi
- * executado, então repetir é seguro e a edição não fica pela metade. Passadas todas, a falha segue como qualquer outra.
+ * executado, então repetir é seguro e a edição não fica pela metade. Somam 3,5 s: com o balde de teclas vazio (100 por segundo), o
+ * pedido mais pesado que o app manda (81 apertos) espera uns 0,8 s, e um de 201 apertos, uns 2 s. Passadas todas,
+ * a falha segue como qualquer outra.
  */
-export const RATE_RETRY_MS: readonly number[] = [250, 500, 1_000];
+export const RATE_RETRY_MS: readonly number[] = [250, 500, 1_000, 1_750];
 
 /** O limite do contrato para o texto de um pedido, em pontos de código (um emoji vale um). */
 export const MAX_TEXT = 200;
