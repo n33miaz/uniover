@@ -74,6 +74,17 @@ describe('PcPrefs', () => {
     expect(fresh().hintSeen()).toBe(true);
   });
 
+  it('the video warning is seen once, is not a choice, survives a reset and a reload', () => {
+    const prefs = fresh();
+    expect(prefs.videoHintSeen()).toBe(false);
+    prefs.set({ videoHintSeen: true });
+    expect(prefs.customized()).toBe(false);
+    prefs.set({ haptics: false });
+    prefs.reset();
+    expect(prefs.videoHintSeen()).toBe(true);
+    expect(fresh().videoHintSeen()).toBe(true);
+  });
+
   it('the gesture choices start the way the owner asked and are kept', () => {
     const prefs = fresh();
     expect(prefs.scrollSensitivity()).toBe('normal');

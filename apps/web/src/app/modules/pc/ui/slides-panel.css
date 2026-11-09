@@ -1,0 +1,65 @@
+:host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* As duas metades tomam o que sobra da altura: o toque mais frequente é o mais fácil de acertar, sem olhar. */
+.nav {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-height: 140px;
+  touch-action: pan-y;
+}
+.half {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-title);
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.half.next {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  box-shadow: var(--shadow-1);
+}
+.half:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.half:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.half:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+svg {
+  width: 40px;
+  height: 40px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

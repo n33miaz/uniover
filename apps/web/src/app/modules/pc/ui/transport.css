@@ -1,0 +1,69 @@
+:host {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-4) 0 var(--space-2);
+}
+
+.round {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+  color: var(--a-ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.round.big {
+  width: 92px;
+  height: 92px;
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  box-shadow: var(--shadow-1);
+}
+.round:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.round:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.round:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.big svg {
+  width: 40px;
+  height: 40px;
+}
+svg .solid {
+  fill: currentColor;
+}
+svg .ten {
+  fill: currentColor;
+  stroke: none;
+  font-family: var(--font-sans);
+  font-size: 6.5px;
+  font-weight: 700;
+  text-anchor: middle;
+}

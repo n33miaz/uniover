@@ -108,6 +108,38 @@ describe('shortcut catalog', () => {
     expect(shortcut.action).toEqual({ kind: 'keys', key: 'TAB', modifiers: ['ALT'] });
   });
 
+  it('has what the media tabs use, all as keys of the old contract (any agent serves them)', () => {
+    const MEDIA_TABS = [
+      'video-back-5',
+      'video-forward-5',
+      'video-fullscreen',
+      'video-subtitles',
+      'slides-start',
+      'slides-here',
+      'slides-end',
+      'slides-black',
+      'slides-white',
+    ];
+    for (const id of MEDIA_TABS) {
+      const shortcut = shortcutById(id);
+      expect(shortcut, id).toBeDefined();
+      expect(shortcut!.action.kind, id).toBe('keys');
+      expect(shortcut!.needs, id).toBeUndefined();
+      expect(shortcut!.group, id).toBe(id.startsWith('video') ? 'video' : 'slides');
+    }
+    // As teclas do vídeo (J, L, espaço) e a seta do slide que as abas mandam direto também são do catálogo.
+    const keysOf = (id: string) => {
+      const action = shortcutById(id)!.action;
+      return action.kind === 'keys' ? [action.key, ...action.modifiers] : [];
+    };
+    expect(keysOf('video-back-10')).toEqual(['J']);
+    expect(keysOf('video-forward-10')).toEqual(['L']);
+    expect(keysOf('play-pause')).toEqual(['SPACE']);
+    expect(keysOf('slides-next')).toEqual(['RIGHT']);
+    expect(keysOf('slides-previous')).toEqual(['LEFT']);
+    expect(keysOf('slides-here')).toEqual(['F5', 'SHIFT']);
+  });
+
   it('lists every key of the contract once, at run time, for the check above', () => {
     expect(new Set(PC_KEYS).size).toBe(PC_KEYS.length);
     // 14 de navegação e edição, 12 de função e 26 letras.
