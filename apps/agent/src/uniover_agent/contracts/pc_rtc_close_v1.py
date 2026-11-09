@@ -11,10 +11,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 
 
 class PcRtcCloseV1BodyReason(
-    RootModel[Literal['requested', 'connect_timeout', 'idle', 'failed', 'replaced', 'shutdown', 'disconnected']]
+    RootModel[Literal['requested', 'connect_timeout', 'idle', 'failed', 'replaced', 'shutdown', 'disconnected', 'lifetime', 'revoked', 'cloud']]
 ):
     root: Annotated[
-        Literal['requested', 'connect_timeout', 'idle', 'failed', 'replaced', 'shutdown', 'disconnected'],
+        Literal['requested', 'connect_timeout', 'idle', 'failed', 'replaced', 'shutdown', 'disconnected', 'lifetime', 'revoked', 'cloud'],
         Field(title='PcRtcCloseV1BodyReason'),
     ]
 

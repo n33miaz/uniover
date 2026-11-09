@@ -18,6 +18,7 @@ class PcRtcOfferV1Body(BaseModel):
     sdp: Annotated[str, Field(max_length=16384, min_length=1)]
     token: Annotated[str, Field(pattern='^[A-Za-z0-9_-]{32,86}$')]
     tokenTtlSeconds: Annotated[int, Field(ge=5, le=120)]
+    maxLifetimeSeconds: Annotated[int, Field(ge=30, le=3600)]
 
 
 class PcRtcOfferV1Message(BaseModel):

@@ -21,6 +21,10 @@ $env:UV_PROJECT_ENVIRONMENT = Join-Path $runtime 'venv'
 $env:PYTHONUTF8 = '1'
 # O agente sabe que tem um supervisor (o auto-reparo so pede reinicio a quem o atende).
 $env:UNIOVER_SUPERVISED = '1'
+# O uv.lock manda em todo comando do uv deste supervisor: um `uv run` sem isto refaria a resolucao se achasse o lock
+# "desatualizado" (um uv anterior a 0.9.8 nao entende o `exclude-dependencies` do pyproject e traria de volta o pacote
+# `av`, uns 70 MB com bibliotecas GPL). O `uv sync --frozen` ja era assim; isto estende o mesmo a `uv run`.
+$env:UV_FROZEN = '1'
 
 function Get-WindowsStartupNames {
     # Os dois rotulos vivem no mesmo arquivo que o instalador e o agente Python leem.
@@ -48,6 +52,46 @@ function Find-Uv {
         if (Test-Path -LiteralPath $candidate) { return $candidate }
     }
     return $null
+}
+
+# A menor versao do uv que entende o `exclude-dependencies` do pyproject do agente (medido: a 0.9.7 recusa a chave, a 0.9.8 a
+# entende). Mais antigo que isso AINDA sincroniza (`uv sync --frozen` so avisa da chave desconhecida, medido de 0.4.30 a 0.9.7),
+# mas qualquer comando sem --frozen refaria a resolucao com o `av`. Por isso so avisamos e tentamos atualizar o uv.
+$minimumUv = [version]'0.9.8'
+$script:uvChecked = $false
+
+function Get-UvVersion([string]$Uv) {
+    try {
+        $run = Invoke-Bounded $Uv '--version' 20
+        if (-not $run.TimedOut -and $run.Output -match 'uv (\d+\.\d+\.\d+)') { return [version]$Matches[1] }
+    } catch { }
+    return $null
+}
+
+function Test-UvVersion([string]$Uv) {
+    # Uma vez por execucao do supervisor, com o agente ja de pe: nunca atrasa a partida nem troca o uv no meio de um sync.
+    # Nada aqui derruba nada: um uv antigo continua servindo o `sync --frozen`, e a atualizacao e so uma tentativa.
+    if ($script:uvChecked) { return }
+    $script:uvChecked = $true
+    $installed = Get-UvVersion $Uv
+    if ($null -eq $installed -or $installed -ge $minimumUv) { return }
+    Write-SupLog 'WARNING' ('o uv deste PC (' + $installed + ') e anterior a ' + $minimumUv + ', a primeira versao que entende o pyproject do agente')
+    Add-Diagnostic 'supervisor.old_uv' 'warn' ('o uv deste PC (' + $installed + ') e anterior a ' + $minimumUv + ', a primeira versao que entende o pyproject do agente; o sync segue pelo uv.lock, mas atualize o uv (winget upgrade astral-sh.uv)')
+    # So se o uv veio do winget (o mesmo caminho do instalador). Dispara e nao espera: o novo uv vale na proxima volta.
+    $stamp = Join-Path $runtime 'uv-upgrade.attempt'
+    try {
+        if ((Test-Path -LiteralPath $stamp) -and (((Get-Date) - (Get-Item -LiteralPath $stamp).LastWriteTime).TotalHours -lt 24)) { return }
+        New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+        [System.IO.File]::WriteAllText($stamp, (Get-UtcStamp (Get-Date)))
+        $listed = Invoke-Bounded 'winget' 'list --id astral-sh.uv -e --accept-source-agreements' 60
+        if ($listed.TimedOut -or $listed.ExitCode -ne 0 -or $listed.Output -notmatch 'astral-sh\.uv') {
+            Write-SupLog 'INFO' 'o uv nao veio do winget; nao tento atualiza-lo sozinho'
+            return
+        }
+        $line = '/d /s /c ""winget" upgrade --id astral-sh.uv -e --silent --accept-package-agreements --accept-source-agreements > nul 2>&1"'
+        $null = Start-Hidden ($env:ComSpec) $line
+        Write-SupLog 'INFO' 'pedi ao winget para atualizar o uv (a proxima volta ja usa o novo)'
+    } catch { }
 }
 
 function Get-Version {
@@ -1018,6 +1062,8 @@ $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
 $keptRetrySeconds = Get-Setting 'UNIOVER_SUPERVISOR_KEPT_RETRY_SECONDS' 1800
 # Um agente que passa disto de pe nao esta em laco de quedas rapidas (a baliza de "abriu" volta a valer).
 $stableSeconds = Get-Setting 'UNIOVER_SUPERVISOR_STABLE_SECONDS' 60
+# Com o agente de pe por tanto tempo, o supervisor confere a versao do uv (uma vez por execucao).
+$uvCheckAfterSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UV_CHECK_SECONDS' 60
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
@@ -1167,6 +1213,8 @@ while ($true) {
         Wait-Lap $lapSeconds $uv
         Touch-Alive
         $lap = Get-Date
+        # Com o agente de pe ha um minuto: confere a versao do uv (uma vez), sem atrasar nada.
+        if (-not $script:uvChecked -and (($lap - $started).TotalSeconds -ge $uvCheckAfterSeconds)) { Test-UvVersion $uv }
         # Depois de quedas rapidas, o agente que se firmou conta como recuperado: o "abriu" apaga no servidor a falha antiga.
         if ($script:fastExits -gt 0 -and (($lap - $started).TotalSeconds -ge $stableSeconds)) {
             $script:fastExits = 0

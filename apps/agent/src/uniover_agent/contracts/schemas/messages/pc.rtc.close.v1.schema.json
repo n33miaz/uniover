@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://uniover.dev/contracts/agent/messages/pc.rtc.close.v1.schema.json",
   "title": "pc.rtc.close.v1",
-  "description": "API para agente: o app (ou a API) fecha o canal direto da sessão; o agente solta o que o PC ficou segurando e não responde. O agente avisa o próprio fechamento com pc.rtc.closed.v1.",
+  "description": "API para agente: o app (ou a API) fecha o canal direto da sessão; o agente solta o que o PC ficou segurando e não responde. `reason`: `requested` (o app pediu), `replaced` (uma oferta nova de outro aparelho tomou o lugar: o app que perdeu o canal não tenta de novo sozinho) ou `revoked` (a sessão, a senha, a conta ou a permissão da pessoa deixou de valer). O agente avisa o próprio fechamento com pc.rtc.closed.v1.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -62,7 +62,10 @@
             "failed",
             "replaced",
             "shutdown",
-            "disconnected"
+            "disconnected",
+            "lifetime",
+            "revoked",
+            "cloud"
           ]
         }
       }

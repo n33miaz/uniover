@@ -34,6 +34,7 @@ def test_the_direct_channel_is_on_by_default_and_has_prudent_deadlines() -> None
     assert settings.pc_direct is True
     assert settings.pc_direct_connect_timeout_seconds == 15.0
     assert settings.pc_direct_idle_seconds == 20.0
+    assert settings.pc_direct_max_lifetime_seconds == 900.0
 
 
 def test_with_the_library_it_declares_the_capability_and_handles_the_signaling() -> None:

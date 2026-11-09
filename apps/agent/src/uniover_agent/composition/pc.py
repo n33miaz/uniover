@@ -146,6 +146,7 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
         settings=DirectSettings(
             connect_timeout_seconds=settings.pc_direct_connect_timeout_seconds,
             idle_seconds=settings.pc_direct_idle_seconds,
+            max_lifetime_seconds=settings.pc_direct_max_lifetime_seconds,
         ),
     )
 

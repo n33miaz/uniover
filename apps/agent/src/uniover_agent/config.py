@@ -207,6 +207,8 @@ class Settings(BaseSettings):
     pc_direct: bool = True
     pc_direct_connect_timeout_seconds: float = Field(default=15.0, ge=3, le=60)
     pc_direct_idle_seconds: float = Field(default=20.0, ge=5, le=300)
+    # Vida máxima de um canal (a API pede menos: o que resta do token de acesso): o app abre outro.
+    pc_direct_max_lifetime_seconds: float = Field(default=900.0, ge=60, le=3600)
 
     @model_validator(mode="after")
     def _command_timeout_covers_two_openings(self) -> Self:
