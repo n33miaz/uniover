@@ -6,8 +6,10 @@ import { DirectNotSent, PcDirect } from './pc-direct';
 
 /** O canal direto de mentira: o teste diz se pode levar o comando e o que ele responde. */
 function setup() {
+  let cloudSeq = 0;
   const direct = {
     canUse: vi.fn(() => true),
+    nextCloudSeq: vi.fn(() => ++cloudSeq),
     command: vi.fn<(type: string, body: Record<string, unknown>) => Promise<void>>(() =>
       Promise.resolve(),
     ),
@@ -136,6 +138,33 @@ describe('PcApi when the channel cannot take the command', () => {
 
     expect(direct.command).not.toHaveBeenCalled();
     expect(direct.trackCloud).toHaveBeenCalledTimes(1);
+  });
+
+  it('a request that goes by the cloud carries the next number of the shared counter', async () => {
+    const { api, direct, http } = setup();
+    direct.canUse.mockReturnValue(false);
+    const first = api.click('LEFT');
+    await tick();
+    const click = http.expectOne((r) => r.url.endsWith('/v1/pc/click'));
+    click.flush(null, noContent);
+    await first;
+    const second = api.text('olá');
+    await tick();
+    const text = http.expectOne((r) => r.url.endsWith('/v1/pc/text'));
+    text.flush(null, noContent);
+    await second;
+
+    expect(click.request.body).toEqual({ button: 'LEFT', seq: 1 });
+    expect(text.request.body).toEqual({ text: 'olá', seq: 2 });
+  });
+
+  it('a command that goes by the channel takes no number from the cloud counter', async () => {
+    const { api, direct } = setup();
+
+    await api.click('LEFT', 'DOWN');
+
+    expect(direct.command).toHaveBeenCalledTimes(1);
+    expect(direct.nextCloudSeq).not.toHaveBeenCalled();
   });
 
   it('a pointer with the channel unavailable goes by the cloud with its sequence number', async () => {

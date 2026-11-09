@@ -20,7 +20,11 @@ describe('PcApi click', () => {
   it('sends the button and the action as a plain request by default', async () => {
     const sending = api.click('LEFT', 'DOWN');
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/click'));
-    expect(request.request.body).toEqual({ button: 'LEFT', action: 'DOWN' });
+    expect(request.request.body).toEqual({
+      button: 'LEFT',
+      action: 'DOWN',
+      seq: expect.any(Number),
+    });
     expect(request.request.keepalive).toBe(false);
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
@@ -29,7 +33,7 @@ describe('PcApi click', () => {
   it('keepalive is passed to the request, so the browser finishes it even if the page goes away', async () => {
     const sending = api.click('LEFT', 'UP', { keepalive: true });
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/click'));
-    expect(request.request.body).toEqual({ button: 'LEFT', action: 'UP' });
+    expect(request.request.body).toEqual({ button: 'LEFT', action: 'UP', seq: expect.any(Number) });
     expect(request.request.keepalive).toBe(true);
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
@@ -54,7 +58,10 @@ describe('PcApi key', () => {
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key'));
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
-    return request.request.body;
+    // Todo pedido da nuvem leva o número do contador comum; o resto do corpo é o de sempre.
+    const { seq, ...rest } = request.request.body as Record<string, unknown>;
+    expect(typeof seq).toBe('number');
+    return rest;
   }
 
   it('a plain key goes out exactly as it always did, so the API can send the v1', async () => {
@@ -101,7 +108,7 @@ describe('PcApi keyRelease', () => {
   it('releases a modifier on its own route, as a plain request by default', async () => {
     const sending = api.keyRelease('ALT');
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key/release'));
-    expect(request.request.body).toEqual({ key: 'ALT' });
+    expect(request.request.body).toEqual({ key: 'ALT', seq: expect.any(Number) });
     expect(request.request.keepalive).toBe(false);
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
@@ -111,6 +118,61 @@ describe('PcApi keyRelease', () => {
     const sending = api.keyRelease('SHIFT', { keepalive: true });
     const request = http.expectOne((req) => req.url.endsWith('/v1/pc/key/release'));
     expect(request.request.keepalive).toBe(true);
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+  });
+});
+
+describe('PcApi cloud sequence', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('numbers every click, key, release, text and media request with one growing counter', async () => {
+    const seqs: number[] = [];
+    const answer = async (sending: Promise<void>, path: string) => {
+      const request = http.expectOne((req) => req.url.endsWith(path));
+      seqs.push((request.request.body as { seq: number }).seq);
+      request.flush(null, { status: 204, statusText: 'No Content' });
+      await sending;
+    };
+
+    await answer(api.click('LEFT'), '/v1/pc/click');
+    await answer(api.key('ENTER'), '/v1/pc/key');
+    await answer(api.keyRelease('ALT'), '/v1/pc/key/release');
+    await answer(api.text('abc'), '/v1/pc/text');
+    await answer(api.media('MUTE'), '/v1/pc/media');
+
+    expect(seqs).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('the pointer keeps the numbering the batcher gives it, and never takes a number from the counter', async () => {
+    const pointer = api.pointer(1, 1, 0, 0, 77);
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/pointer'));
+    expect((request.request.body as { seq: number }).seq).toBe(77);
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await pointer;
+
+    const sending = api.text('x');
+    const next = http.expectOne((req) => req.url.endsWith('/v1/pc/text'));
+    expect((next.request.body as { seq: number }).seq).toBe(1);
+    next.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+  });
+
+  it('power and favorites are not numbered (only the cloud takes them, and they never close the channel)', async () => {
+    const sending = api.power('LOCK');
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/power'));
+    expect(request.request.body).toEqual({ action: 'LOCK' });
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
   });

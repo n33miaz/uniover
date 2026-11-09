@@ -34,8 +34,13 @@ export interface PcMock {
   rtcOfferFailure: PcFailure | null;
   /** Espera, em milissegundos, antes de cada comando responder (a ida e volta real até o PC é de 200 a 460 ms). */
   commandDelayMs: number;
-  /** Os comandos (tudo que não é a leitura do estado), por rota. */
+  /**
+   * Os comandos (tudo que não é a leitura do estado), por rota. O `seq` do contador comum dos pedidos de clique, tecla, texto e
+   * mídia fica de fora (use `seqs`): o resto do corpo é o de sempre. O do movimento segue no corpo.
+   */
   sent(path: string): Record<string, unknown>[];
+  /** Os números (`seq`) que os pedidos da rota levaram, na ordem em que chegaram. */
+  seqs(path: string): unknown[];
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -82,7 +87,18 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
     commandDelayMs: 0,
     rtcOfferFailure: null,
     sent: (path) =>
-      mock.requests.filter((r) => r.method === 'POST' && r.path === path).map((r) => r.body ?? {}),
+      mock.requests
+        .filter((r) => r.method === 'POST' && r.path === path)
+        .map((r) => {
+          const body = r.body ?? {};
+          if (path === '/pointer' || !('seq' in body)) return body;
+          const { seq: _seq, ...rest } = body;
+          return rest;
+        }),
+    seqs: (path) =>
+      mock.requests
+        .filter((r) => r.method === 'POST' && r.path === path)
+        .map((r) => (r.body ?? {})['seq']),
   };
 
   await context.route('**/api/v1/pc/**', async (route) => {
