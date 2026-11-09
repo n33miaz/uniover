@@ -92,7 +92,7 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
         .map((r) => {
           const body = r.body ?? {};
           if (path === '/pointer' || !('seq' in body)) return body;
-          const { seq: _seq, ...rest } = body;
+          const { seq: _seq, epoch: _epoch, ...rest } = body;
           return rest;
         }),
     seqs: (path) =>

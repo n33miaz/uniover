@@ -10,6 +10,7 @@ function setup() {
   const direct = {
     canUse: vi.fn(() => true),
     nextCloudSeq: vi.fn(() => ++cloudSeq),
+    cloudEpoch: '3fa9c10d7be2465a',
     command: vi.fn<(type: string, body: Record<string, unknown>) => Promise<void>>(() =>
       Promise.resolve(),
     ),
@@ -154,8 +155,8 @@ describe('PcApi when the channel cannot take the command', () => {
     text.flush(null, noContent);
     await second;
 
-    expect(click.request.body).toEqual({ button: 'LEFT', seq: 1 });
-    expect(text.request.body).toEqual({ text: 'olá', seq: 2 });
+    expect(click.request.body).toEqual({ button: 'LEFT', seq: 1, epoch: '3fa9c10d7be2465a' });
+    expect(text.request.body).toEqual({ text: 'olá', seq: 2, epoch: '3fa9c10d7be2465a' });
   });
 
   it('a command that goes by the channel takes no number from the cloud counter', async () => {
