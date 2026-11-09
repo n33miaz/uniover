@@ -10,11 +10,11 @@ dependencies = [
     # dnspython 2.9.2 tinham de 2 a 5 dias e ficaram de fora); todas têm roda para o Python 3.14 no Windows (as três são puras;
     # pylibsrtp é abi3 win_amd64 e google-crc32c é cp314 win_amd64). Os hashes de cada arquivo estão no uv.lock, que o
     # `uv sync --frozen` do instalador e do supervisor confere. Atualizar exige rodar `tests/test_pc_direct_aiortc.py`.
-    "aioice==0.10.2",
-    "aiortc==1.15.0",
+    "aioice==0.13.0",
+    "aiortc==1.16.0",
     "androidtvremote2==0.3.2",
     "cryptography>=50.0.2,<51",
-    "dnspython==2.9.1",
+    "dnspython==2.9.2",
     "httpx>=0.28",
     "ifaddr>=0.2",
     "jsonschema>=4.26.0",
@@ -27,7 +27,7 @@ dependencies = [
     "samsungtvws==2.7.2",
     "segno>=1.6.6",
     "websockets>=17.2",
-    "zeroconf==0.151.5",
+    "zeroconf==0.153.0",
 ]
 
 [project.scripts]
