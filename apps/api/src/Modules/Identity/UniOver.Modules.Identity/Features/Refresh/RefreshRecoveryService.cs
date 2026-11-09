@@ -178,11 +178,18 @@ internal sealed class RefreshRecoveryService(IdentityDbContext db, LoginAuditWri
 
         audit.Add(null, AuditEvents.RefreshReuseDetected, client, AuditAboutAccount.Detail(token.UserId, reason));
         await db.SaveChangesAsync(cancellationToken);
+    }
 
-        // Sessão possivelmente roubada: o canal direto que ela abriu fecha na hora.
+    /// <summary>
+    /// Sessão possivelmente roubada: o canal direto que ela abriu fecha na hora. Chamado só depois do commit da transação que revogou
+    /// a família (e portanto fora da trava dela): o aviso fala com o agente e nunca pode segurar a trava nem se perder num rollback.
+    /// </summary>
+    public async Task NotifyFamilyRevokedAsync(RefreshToken token)
+    {
+        ArgumentNullException.ThrowIfNull(token);
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(token.UserId, UserAccessChangeKind.SessionEnded, familyId), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(token.UserId, UserAccessChangeKind.SessionEnded, token.FamilyId));
         }
     }
 }

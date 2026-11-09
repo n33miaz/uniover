@@ -43,7 +43,7 @@ internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit
         // Só depois do commit: o canal direto do controle do PC que esta sessão abriu fecha na hora.
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionEnded, familyId), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionEnded, familyId));
         }
     }
 }

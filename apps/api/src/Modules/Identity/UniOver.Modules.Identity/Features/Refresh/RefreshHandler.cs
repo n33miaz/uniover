@@ -105,6 +105,7 @@ internal sealed class RefreshHandler(
                 {
                     await recovery.RevokeFamilyForReuseAsync(token, now, command.Client, denial, cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
+                    await recovery.NotifyFamilyRevokedAsync(token);
                     return new RefreshResult(RefreshStatus.Unauthenticated);
                 }
 

@@ -92,7 +92,7 @@ internal sealed class ChangePasswordHandler(
         // As outras sessões acabaram (a que trocou a senha segue): o canal direto delas fecha na hora.
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded, sessionId), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded, sessionId));
         }
 
         return new ChangePasswordResult(ChangePasswordStatus.Changed);

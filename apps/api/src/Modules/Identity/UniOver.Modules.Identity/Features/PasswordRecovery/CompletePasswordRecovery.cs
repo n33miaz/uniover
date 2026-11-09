@@ -72,7 +72,7 @@ internal sealed class CompletePasswordRecoveryHandler(
         // Todas as sessões acabaram: o canal direto do controle do PC fecha na hora.
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(user.Id, UserAccessChangeKind.SessionsEnded), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(user.Id, UserAccessChangeKind.SessionsEnded));
         }
 
         return CompletePasswordRecoveryStatus.Changed;

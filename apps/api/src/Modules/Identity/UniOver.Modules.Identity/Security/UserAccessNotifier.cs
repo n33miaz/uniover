@@ -4,12 +4,14 @@ using UniOver.Modules.Identity.Contracts;
 namespace UniOver.Modules.Identity.Security;
 
 /// <summary>
-/// Avisa os <see cref="IUserAccessListener"/> de que o acesso de uma pessoa mudou (depois de a mudança estar gravada). Um
-/// ouvinte que falha só vai para o registro: a sessão encerrada, a senha trocada ou a permissão retirada já valem.
+/// Avisa os <see cref="IUserAccessListener"/> de que o acesso de uma pessoa mudou (depois de a mudança estar gravada e fora de
+/// qualquer trava). Um ouvinte que falha só vai para o registro: a sessão encerrada, a senha trocada ou a permissão retirada
+/// já valem. O aviso não usa o token da requisição (cancelar a requisição depois de gravar não pode deixar o canal aberto) e
+/// cada ouvinte tem o próprio prazo.
 /// </summary>
 internal sealed partial class UserAccessNotifier(IEnumerable<IUserAccessListener> listeners, ILogger<UserAccessNotifier> logger)
 {
-    public async Task NotifyAsync(UserAccessChange change, CancellationToken cancellationToken = default)
+    public async Task NotifyAsync(UserAccessChange change)
     {
         ArgumentNullException.ThrowIfNull(change);
 
@@ -17,11 +19,7 @@ internal sealed partial class UserAccessNotifier(IEnumerable<IUserAccessListener
         {
             try
             {
-                await listener.ChangedAsync(change, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
+                await listener.ChangedAsync(change, CancellationToken.None);
             }
 #pragma warning disable CA1031 // O ouvinte é um efeito colateral: a falha dele nunca desfaz a mudança de acesso já gravada.
             catch (Exception ex)
