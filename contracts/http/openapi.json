@@ -3646,6 +3646,15 @@
               "null",
               "string"
             ]
+          },
+          "seq": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
           }
         },
         "required": [
@@ -3659,6 +3668,15 @@
           "key": {
             "type": [
               "null",
+              "string"
+            ]
+          },
+          "seq": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
               "string"
             ]
           }
@@ -3699,6 +3717,15 @@
               "integer",
               "string"
             ]
+          },
+          "seq": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
           }
         },
         "required": [
@@ -3712,6 +3739,15 @@
           "action": {
             "type": [
               "null",
+              "string"
+            ]
+          },
+          "seq": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
               "string"
             ]
           },
@@ -3913,6 +3949,15 @@
       },
       "PcTextRequest": {
         "properties": {
+          "seq": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
           "text": {
             "type": [
               "null",

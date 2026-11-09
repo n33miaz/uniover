@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
 
@@ -53,6 +54,18 @@ internal static class PcMessages
 
     public static FrozenDictionary<string, PcPowerV1BodyAction> PowerActions { get; } = Enum.GetValues<PcPowerV1BodyAction>()
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
+
+    /// <summary>
+    /// A mesma mensagem com o <c>seq</c> do pedido no corpo (o contador comum dos pedidos de entrada pela nuvem). Só para um agente
+    /// que declarou <see cref="RtcCapability"/>: o esquema dos comandos de entrada de um agente anterior é fechado.
+    /// </summary>
+    public static OutboundMessage WithSeq(OutboundMessage message, int seq)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        var body = JsonNode.Parse(message.Body.GetRawText())!.AsObject();
+        body["seq"] = seq;
+        return message with { Body = JsonSerializer.SerializeToElement(body) };
+    }
 
     public static OutboundMessage Pointer(int dx, int dy, int scrollX, int scrollY) =>
         Live(AgentMessageTypes.PcPointerV1, BodyOf(new PcPointerV1Message

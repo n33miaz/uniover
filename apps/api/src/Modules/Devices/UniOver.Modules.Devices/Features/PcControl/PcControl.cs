@@ -22,14 +22,14 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps, IReadOnlyList<string> Capabilities);
 
 /// <summary>
-/// <c>Seq</c> é opcional: o app numera os pedidos de movimento em ordem crescente (diagnóstico). A API o aceita e o valida,
-/// mas NÃO o repassa ao agente: o esquema do <c>pc.pointer.v1</c> de um agente anterior é fechado e recusaria a mensagem
-/// inteira (o touchpad ficaria morto até ele atualizar). Quando a API passar a listar uma capacidade do agente para isso,
-/// o repasse volta, condicionado a ela.
+/// <c>Seq</c> é opcional: o app numera os pedidos de entrada pela nuvem (movimento, clique, tecla, texto e mídia) em ordem
+/// crescente, com um contador só. A API o valida e o repassa apenas a um agente que declarou <c>pc.rtc.v1</c> (o canal
+/// direto o usa para separar o que a nuvem entrega tarde, depois da troca de caminho, do que é novo): o esquema desses
+/// comandos num agente anterior é fechado e recusaria a mensagem inteira (o touchpad ficaria morto até ele atualizar).
 /// </summary>
 internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? ScrollY, int? Seq = null);
 
-internal sealed record PcClickRequest(string? Button, string? Action);
+internal sealed record PcClickRequest(string? Button, string? Action, int? Seq = null);
 
 /// <summary>
 /// <c>Repeat</c> (1 a 50) aperta a tecla várias vezes num pedido só; <c>Action</c> (<c>PRESS</c>, padrão, <c>DOWN</c>, <c>UP</c>)
@@ -40,14 +40,15 @@ internal sealed record PcKeyRequest(
     string? Key,
     string[]? Modifiers,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Repeat = null,
-    string? Action = null);
+    string? Action = null,
+    int? Seq = null);
 
 /// <summary>Soltar um modificador que o app segurou (<c>CTRL</c>, <c>ALT</c>, <c>SHIFT</c> ou <c>WIN</c>).</summary>
-internal sealed record PcKeyReleaseRequest(string? Key);
+internal sealed record PcKeyReleaseRequest(string? Key, int? Seq = null);
 
-internal sealed record PcTextRequest(string? Text);
+internal sealed record PcTextRequest(string? Text, int? Seq = null);
 
-internal sealed record PcMediaRequest(string? Action, int? Steps);
+internal sealed record PcMediaRequest(string? Action, int? Steps, int? Seq = null);
 
 internal sealed record PcPowerRequest(string? Action, bool? Confirm);
 
@@ -68,17 +69,14 @@ internal static class PcValidator
         Range(errors, "dy", request?.Dy, MaxPointer, required: true);
         Range(errors, "scrollX", request?.ScrollX, MaxScroll, required: false);
         Range(errors, "scrollY", request?.ScrollY, MaxScroll, required: false);
-        if (request?.Seq is < 0)
-        {
-            errors["seq"] = ["Use um número inteiro maior ou igual a zero."];
-        }
-
+        CheckSeq(errors, request?.Seq);
         return errors;
     }
 
     public static Dictionary<string, string[]> Click(PcClickRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
+        CheckSeq(errors, request?.Seq);
         if (request?.Button is null || !PcMessages.Buttons.ContainsKey(request.Button))
         {
             errors["button"] = ["Escolha LEFT, RIGHT ou MIDDLE."];
@@ -95,6 +93,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Key(PcKeyRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
+        CheckSeq(errors, request?.Seq);
         if (request?.Key is null || !PcMessages.KeysV2.ContainsKey(request.Key))
         {
             errors["key"] = ["Escolha uma tecla da lista."];
@@ -145,6 +144,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> KeyRelease(PcKeyReleaseRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
+        CheckSeq(errors, request?.Seq);
         if (request?.Key is null || !PcMessages.HoldableKeys.Contains(request.Key))
         {
             errors["key"] = ["Escolha CTRL, ALT, SHIFT ou WIN."];
@@ -156,6 +156,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Text(PcTextRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
+        CheckSeq(errors, request?.Seq);
         var text = request?.Text;
         if (string.IsNullOrEmpty(text))
         {
@@ -176,6 +177,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Media(PcMediaRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
+        CheckSeq(errors, request?.Seq);
         if (request?.Action is null || !PcMessages.MediaActions.ContainsKey(request.Action))
         {
             errors["action"] = ["Escolha uma ação de mídia da lista."];
@@ -203,6 +205,14 @@ internal static class PcValidator
         }
 
         return errors;
+    }
+
+    private static void CheckSeq(Dictionary<string, string[]> errors, int? seq)
+    {
+        if (seq is < 0)
+        {
+            errors["seq"] = ["Use um número inteiro maior ou igual a zero."];
+        }
     }
 
     private static void Range(Dictionary<string, string[]> errors, string field, int? value, int limit, bool required)
@@ -281,9 +291,21 @@ internal sealed class PcControlHandler(
             return target.Failure;
         }
 
-        var sent = await gateway.SendAsync(target.Slug, PcMessages.Pointer(dx, dy, scrollX, scrollY), cancellationToken);
+        var message = PcMessages.Pointer(dx, dy, scrollX, scrollY);
+        var sent = await gateway.SendAsync(target.Slug, NumberedFor(target, message, request.Seq), cancellationToken);
         return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
+
+    /// <summary>
+    /// A mensagem com o <c>seq</c> do pedido, se o agente declarou o canal direto (<c>pc.rtc.v1</c>): só ele tem o campo no esquema
+    /// (fechado) dos comandos de entrada. Sem número no pedido, ou com agente anterior, a mensagem segue como veio.
+    /// </summary>
+    private static OutboundMessage NumberedFor(ReadyTarget target, OutboundMessage message, int? seq) =>
+        seq is { } number
+        && target.HelloAt is not null
+        && target.Capabilities.Contains(PcMessages.RtcCapability, StringComparer.Ordinal)
+            ? PcMessages.WithSeq(message, number)
+            : message;
 
     /// <summary>As capacidades <c>pc.*</c> além da base (<see cref="PcMessages.Capability"/>), na ordem em que o agente as declarou.</summary>
     private static IReadOnlyList<string> OptionalCapabilities(PcTarget target) =>
@@ -303,7 +325,8 @@ internal sealed class PcControlHandler(
         string? auditEvent,
         ClientInfo client,
         CancellationToken cancellationToken,
-        string? requiredCapability = null)
+        string? requiredCapability = null,
+        int? seq = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
@@ -316,7 +339,7 @@ internal sealed class PcControlHandler(
             return problem;
         }
 
-        var reply = await gateway.RequestAsync(target.Slug, message, timeout, cancellationToken);
+        var reply = await gateway.RequestAsync(target.Slug, NumberedFor(target, message, seq), timeout, cancellationToken);
         if (reply.IsFailure)
         {
             // Sem resposta no prazo o comando já estava com o agente e pode ter sido executado: fica na trilha. Sem sessão
@@ -522,7 +545,13 @@ internal static class PcControlEndpoints
 
         var action = request!.Action is null ? PcClickV1BodyAction.Click : PcMessages.ClickActions[request.Action];
         return await handler.RunAsync(
-            userId, PcMessages.Click(PcMessages.Buttons[request.Button!], action), PcControlHandler.CommandTimeout, null, ClientInfo.From(http), cancellationToken);
+            userId,
+            PcMessages.Click(PcMessages.Buttons[request.Button!], action),
+            PcControlHandler.CommandTimeout,
+            null,
+            ClientInfo.From(http),
+            cancellationToken,
+            seq: request.Seq);
     }
 
     private static async Task<IResult> KeyAsync(
@@ -560,7 +589,8 @@ internal static class PcControlEndpoints
             null,
             ClientInfo.From(http),
             cancellationToken,
-            PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability);
+            PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability,
+            request!.Seq);
 
         // O teto conta o que saiu: sem PC (409) ou sem sessão para entregar (503), nada foi enviado e o gasto volta.
         if (cost > 0 && result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict or StatusCodes.Status503ServiceUnavailable })
@@ -589,7 +619,8 @@ internal static class PcControlEndpoints
                 null,
                 ClientInfo.From(http),
                 cancellationToken,
-                PcMessages.KeyV2Capability);
+                PcMessages.KeyV2Capability,
+                request.Seq);
     }
 
     private static async Task<IResult> TextAsync(
@@ -604,7 +635,13 @@ internal static class PcControlEndpoints
         return errors.Count > 0
             ? ProblemDetailsExtensions.ValidationProblem(errors)
             : await handler.RunAsync(
-                userId, PcMessages.Text(request!.Text!), PcControlHandler.CommandTimeout, null, ClientInfo.From(http), cancellationToken);
+                userId,
+                PcMessages.Text(request!.Text!),
+                PcControlHandler.CommandTimeout,
+                null,
+                ClientInfo.From(http),
+                cancellationToken,
+                seq: request.Seq);
     }
 
     private static async Task<IResult> MediaAsync(
@@ -624,7 +661,8 @@ internal static class PcControlEndpoints
                 PcControlHandler.CommandTimeout,
                 null,
                 ClientInfo.From(http),
-                cancellationToken);
+                cancellationToken,
+                seq: request.Seq);
     }
 
     private static async Task<IResult> PowerAsync(
