@@ -89,7 +89,7 @@ export function pcFailureOf(error: unknown): PcFailure {
   if (problem.status === 409 && problem.kind === KEY_UNSUPPORTED_PROBLEM) {
     return {
       kind: 'key-unsupported',
-      message: $localize`:@@pc.error.key-unsupported:Atualize o agente do PC para usar esta tecla.`,
+      message: $localize`:@@pc.error.key-unsupported:Atualize o agente do PC para usar este comando.`,
     };
   }
   if (problem.status === 409) {

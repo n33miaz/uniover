@@ -28,7 +28,7 @@ describe('pcFailureOf', () => {
       http(409, { type: 'https://uniover.dev/problems/pc-key-unsupported', title: 'x' }),
     );
     expect(unsupported.kind).toBe('key-unsupported');
-    expect(unsupported.message).toBe('Atualize o agente do PC para usar esta tecla.');
+    expect(unsupported.message).toBe('Atualize o agente do PC para usar este comando.');
     expect(
       pcFailureOf(http(409, { type: 'https://uniover.dev/problems/pc-unavailable', title: 'x' }))
         .kind,

@@ -46,7 +46,13 @@ const MAX_BUFFERED_BYTES = 16_384;
 
 /** Os comandos que o canal de entrada leva: os mesmos tipos `pc.*` da nuvem, só os de entrada. */
 export type DirectCommandType =
-  'pc.click.v1' | 'pc.key.v1' | 'pc.key.v2' | 'pc.text.v1' | 'pc.media.v1';
+  | 'pc.click.v1'
+  | 'pc.click.v2'
+  | 'pc.key.v1'
+  | 'pc.key.v2'
+  | 'pc.text.v1'
+  | 'pc.text.v2'
+  | 'pc.media.v1';
 
 /** O comando nem saiu (o canal não está aberto agora): quem chama segue pela nuvem, sem risco de repetir. */
 export class DirectNotSent extends Error {}

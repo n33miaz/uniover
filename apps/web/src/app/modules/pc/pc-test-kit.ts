@@ -1,17 +1,24 @@
 import { vi } from 'vitest';
 import { computed, signal } from '@angular/core';
 import type { PcFavorite, PcStatus } from '../../core/modules/pc-availability';
-import { PC_KEY_V2_CAPABILITY, keyNeedsV2 } from './data/pc-types';
+import {
+  PC_CLICK_V2_CAPABILITY,
+  PC_KEY_V2_CAPABILITY,
+  PC_TEXT_V2_CAPABILITY,
+  keyNeedsV2,
+} from './data/pc-types';
 import type { PcFailure } from './data/pc-failure';
 import type { PcPhase } from './data/pc-store';
 import type {
   PcClickButton,
+  PcClickOptions,
   PcHoldableKey,
   PcKey,
   PcKeyOptions,
   PcMediaAction,
   PcModifier,
   PcPowerAction,
+  PcTextEdit,
 } from './data/pc-types';
 
 type Outcome = Promise<PcFailure | null>;
@@ -39,6 +46,8 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
       Promise.resolve(),
     ),
     supportsKeyV2: computed(() => capabilities().includes(PC_KEY_V2_CAPABILITY)),
+    supportsTextV2: computed(() => capabilities().includes(PC_TEXT_V2_CAPABILITY)),
+    supportsClickV2: computed(() => capabilities().includes(PC_CLICK_V2_CAPABILITY)),
     supportsKey: (key: PcKey, options?: PcKeyOptions) =>
       !keyNeedsV2(key, options) || capabilities().includes(PC_KEY_V2_CAPABILITY),
     notice: signal<PcFailure | null>(null),
@@ -49,7 +58,9 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     endGesture: vi.fn(),
     movePointer: vi.fn<(dx: number, dy: number, elapsedMs: number) => void>(),
     scrollPointer: vi.fn<(dx: number, dy: number, elapsedMs?: number) => void>(),
-    click: vi.fn<(button: PcClickButton, action?: string) => Outcome>(() => Promise.resolve(null)),
+    click: vi.fn<(button: PcClickButton, action?: string, options?: PcClickOptions) => Outcome>(
+      () => Promise.resolve(null),
+    ),
     toggleDrag: vi.fn<() => Outcome>(() => Promise.resolve(null)),
     startDrag: vi.fn<() => Outcome>(() => Promise.resolve(null)),
     release: vi.fn<(options?: { persistent?: boolean }) => Outcome>(() => Promise.resolve(null)),
@@ -59,6 +70,7 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
       (key: PcKey, modifiers?: readonly PcModifier[], options?: PcKeyOptions) => Outcome
     >(() => Promise.resolve(null)),
     sendText: vi.fn<(text: string) => Outcome>(() => Promise.resolve(null)),
+    sendTextEdit: vi.fn<(edit: PcTextEdit) => Outcome>(() => Promise.resolve(null)),
     sendMedia: vi.fn<(action: PcMediaAction, steps?: number) => Outcome>(() =>
       Promise.resolve(null),
     ),

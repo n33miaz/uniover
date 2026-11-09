@@ -4,15 +4,21 @@ import { firstValueFrom, type Observable } from 'rxjs';
 import { APP_CONFIG } from '../../../core/config/app-config';
 import { PcDirect, DirectNotSent, type DirectCommandType } from './pc-direct';
 import {
+  PC_TEXT_MAX_ERASE,
+  clampClickGap,
   clampKeyRepeat,
+  clickNeedsV2,
   keyNeedsV2,
+  textEditNeedsV2,
   type PcClickButton,
+  type PcClickOptions,
   type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
   type PcMediaAction,
   type PcModifier,
   type PcPowerAction,
+  type PcTextEdit,
 } from './pc-types';
 
 const BASE = `${APP_CONFIG.apiBase}/v1/pc`;
@@ -63,16 +69,22 @@ export class PcApi {
   /**
    * `keepalive` deixa o navegador terminar o pedido mesmo com a página fechando (é o que solta o botão apertado em
    * `pagehide`). Só tem efeito com o `fetch`, que é o que o app usa; sem ele o pedido segue como qualquer outro.
+   *
+   * `modifiers` e `gapMs` são da `pc.click.v2` (só para `CLICK` e `DOUBLE`): o corpo só os leva quando valem alguma coisa, e quem
+   * chama só os passa a um PC que declarou `pc.click.v2` (nem o canal direto nem a nuvem entendem a v2 num agente anterior).
    */
   async click(
     button: PcClickButton,
     action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
-    options: { readonly keepalive?: boolean } = {},
+    options: { readonly keepalive?: boolean } & PcClickOptions = {},
   ): Promise<void> {
-    const body = action ? { button, action } : { button };
+    const body: Record<string, unknown> = action ? { button, action } : { button };
+    if (options.modifiers?.length) body['modifiers'] = options.modifiers;
+    const gapMs = clampClickGap(options.gapMs);
+    if (gapMs > 0) body['gapMs'] = gapMs;
+    const type = clickNeedsV2(options) ? 'pc.click.v2' : 'pc.click.v1';
     // O `keepalive` é da página que está morrendo: só a nuvem termina um pedido depois dela.
-    if (!options.keepalive && this.direct.canUse() && (await this.viaDirect('pc.click.v1', body)))
-      return;
+    if (!options.keepalive && this.direct.canUse() && (await this.viaDirect(type, body))) return;
     await this.cloud(
       this.http.post(
         `${BASE}/click`,
@@ -131,6 +143,21 @@ export class PcApi {
   async text(text: string): Promise<void> {
     if (this.direct.canUse() && (await this.viaDirect('pc.text.v1', { text }))) return;
     await this.cloud(this.http.post(`${BASE}/text`, { text, ...this.numbered() }));
+  }
+
+  /**
+   * Uma edição do campo (apagar, digitar e apertar uma tecla) num pedido só. O corpo só leva o que há: apagar e a tecla do fim
+   * são da `pc.text.v2` (quem chama só a usa com um PC que declarou `pc.text.v2`); texto puro sai como sempre, pela v1.
+   */
+  async edit(edit: PcTextEdit): Promise<void> {
+    const body: Record<string, unknown> = {};
+    const erase = Math.max(0, Math.min(PC_TEXT_MAX_ERASE, Math.trunc(edit.erase ?? 0)));
+    if (erase > 0) body['erase'] = erase;
+    if (edit.text) body['text'] = edit.text;
+    if (edit.key !== undefined) body['key'] = edit.key;
+    const type = textEditNeedsV2({ ...edit, erase }) ? 'pc.text.v2' : 'pc.text.v1';
+    if (this.direct.canUse() && (await this.viaDirect(type, body))) return;
+    await this.cloud(this.http.post(`${BASE}/text`, { ...body, ...this.numbered() }));
   }
 
   async media(action: PcMediaAction, steps = 1): Promise<void> {

@@ -47,6 +47,102 @@ describe('PcApi click', () => {
   });
 });
 
+describe('PcApi click with modifiers and gap', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  async function body(sending: Promise<void>) {
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/click'));
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+    const { seq, epoch, ...rest } = request.request.body as Record<string, unknown>;
+    expect(typeof seq).toBe('number');
+    expect(epoch).toMatch(/^[0-9a-f]{16}$/);
+    return rest;
+  }
+
+  it('a plain click goes out exactly as it always did, so the API can send the v1', async () => {
+    expect(await body(api.click('LEFT'))).toEqual({ button: 'LEFT' });
+    expect(await body(api.click('LEFT', 'DOUBLE', { modifiers: [], gapMs: 0 }))).toEqual({
+      button: 'LEFT',
+      action: 'DOUBLE',
+    });
+  });
+
+  it('carries the modifiers and the gap only when they change something', async () => {
+    expect(await body(api.click('LEFT', undefined, { modifiers: ['CTRL', 'SHIFT'] }))).toEqual({
+      button: 'LEFT',
+      modifiers: ['CTRL', 'SHIFT'],
+    });
+    expect(await body(api.click('LEFT', undefined, { gapMs: 120.4 }))).toEqual({
+      button: 'LEFT',
+      gapMs: 120,
+    });
+  });
+
+  it('keeps the gap inside what the contract allows', async () => {
+    expect(await body(api.click('LEFT', undefined, { gapMs: 9_000 }))).toEqual({
+      button: 'LEFT',
+      gapMs: 400,
+    });
+    expect(await body(api.click('LEFT', undefined, { gapMs: -5 }))).toEqual({ button: 'LEFT' });
+    expect(await body(api.click('LEFT', undefined, { gapMs: Number.NaN }))).toEqual({
+      button: 'LEFT',
+    });
+  });
+});
+
+describe('PcApi text edit', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  async function body(sending: Promise<void>) {
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/text'));
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+    const { seq, epoch, ...rest } = request.request.body as Record<string, unknown>;
+    expect(typeof seq).toBe('number');
+    expect(epoch).toMatch(/^[0-9a-f]{16}$/);
+    return rest;
+  }
+
+  it('sends only what the edit has', async () => {
+    expect(await body(api.edit({ text: 'olá' }))).toEqual({ text: 'olá' });
+    expect(await body(api.edit({ erase: 3, text: 'olá', key: 'ENTER' }))).toEqual({
+      erase: 3,
+      text: 'olá',
+      key: 'ENTER',
+    });
+    expect(await body(api.edit({ erase: 4 }))).toEqual({ erase: 4 });
+    expect(await body(api.edit({ key: 'TAB' }))).toEqual({ key: 'TAB' });
+    expect(await body(api.edit({ erase: 0, text: 'a' }))).toEqual({ text: 'a' });
+  });
+
+  it('keeps the erase inside what the contract allows', async () => {
+    expect(await body(api.edit({ erase: 5_000 }))).toEqual({ erase: 200 });
+  });
+});
+
 describe('PcApi key', () => {
   let api: PcApi;
   let http: HttpTestingController;

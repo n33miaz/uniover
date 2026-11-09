@@ -229,3 +229,60 @@ const KEY_TABLE: Readonly<Record<PcKeyV1, true>> = {
 };
 
 export const PC_KEYS: readonly PcKeyV1[] = Object.keys(KEY_TABLE) as PcKeyV1[];
+
+/** A capacidade que o PC declara quando o agente entende `pc.text.v2` (apagar, digitar e apertar uma tecla num pedido só). */
+export const PC_TEXT_V2_CAPABILITY = 'pc.text.v2';
+
+/** A capacidade que o PC declara quando o agente entende `pc.click.v2` (clique com modificadores e com o intervalo do toque anterior). */
+export const PC_CLICK_V2_CAPABILITY = 'pc.click.v2';
+
+/** A tecla que uma edição de texto aperta no fim. */
+export type PcTextKey = 'ENTER' | 'TAB';
+
+/**
+ * Uma edição do campo do PC num pedido só: apaga `erase` caracteres, digita `text` e aperta `key`, nesta ordem (`pc.text.v2`).
+ * Pelo menos um dos três; `erase` de 1 a `PC_TEXT_MAX_ERASE`.
+ */
+export interface PcTextEdit {
+  readonly erase?: number;
+  readonly text?: string;
+  readonly key?: PcTextKey;
+}
+
+/** O limite de caracteres apagados de um pedido (o da API e do agente). */
+export const PC_TEXT_MAX_ERASE = 200;
+
+/**
+ * Quantos caracteres a digitação ao vivo apaga por pedido. Fica abaixo dos 100 apertos por segundo que o canal direto aceita
+ * (cada apagado conta um, e a tecla do fim mais um): um apagar maior se divide em pedidos em ordem.
+ */
+export const PC_TEXT_ERASE_CHUNK = 80;
+
+/** O pedido só cabe na `pc.text.v2`? Apagar ou apertar uma tecla no fim. Texto puro vai pela v1, que todo agente entende. */
+export function textEditNeedsV2(edit: PcTextEdit): boolean {
+  return (edit.erase ?? 0) > 0 || edit.key !== undefined;
+}
+
+/** Os modificadores que um clique leva. O Windows fica de fora: soltá-lo depois do clique abriria o menu Iniciar. */
+export type PcClickModifier = 'CTRL' | 'ALT' | 'SHIFT';
+
+/** O que um clique pode pedir além do botão (`pc.click.v2`): modificadores e o intervalo desde o toque anterior. */
+export interface PcClickOptions {
+  readonly modifiers?: readonly PcClickModifier[];
+  /** Milissegundos desde o toque anterior (o do duplo clique): o agente reproduz esse intervalo. */
+  readonly gapMs?: number;
+}
+
+/** O maior intervalo que o pedido leva (o do contrato); acima disso o toque seguinte já não é um duplo clique. */
+export const PC_CLICK_MAX_GAP_MS = 400;
+
+/** O intervalo que vai ao pedido: inteiro de 0 a `PC_CLICK_MAX_GAP_MS` (o que passar é cortado; o que não for número vale 0). */
+export function clampClickGap(gapMs: number | undefined): number {
+  if (gapMs === undefined || !Number.isFinite(gapMs)) return 0;
+  return Math.max(0, Math.min(PC_CLICK_MAX_GAP_MS, Math.round(gapMs)));
+}
+
+/** O clique só cabe na `pc.click.v2`? Modificador ou intervalo. Sem eles a API manda a v1 e qualquer agente serve. */
+export function clickNeedsV2(options: PcClickOptions = {}): boolean {
+  return (options.modifiers?.length ?? 0) > 0 || clampClickGap(options.gapMs) > 0;
+}

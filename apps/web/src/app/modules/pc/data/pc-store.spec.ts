@@ -33,6 +33,7 @@ function setup(initial: PcStatus | null = status()) {
     key: vi.fn(() => Promise.resolve()),
     keyRelease: vi.fn<(key: string, options?: unknown) => Promise<void>>(() => Promise.resolve()),
     text: vi.fn(() => Promise.resolve()),
+    edit: vi.fn(() => Promise.resolve()),
     media: vi.fn(() => Promise.resolve()),
     power: vi.fn(() => Promise.resolve()),
     launch: vi.fn(() => Promise.resolve()),
@@ -116,6 +117,81 @@ describe('PcStore capabilities', () => {
     expect(current.store.supportsKey('D0')).toBe(true);
     expect(current.store.supportsKey('BACKSPACE', { repeat: 30 })).toBe(true);
     expect(current.store.supportsKey('ALT', { action: 'DOWN' })).toBe(true);
+  });
+});
+
+describe('PcStore text and click v2', () => {
+  it('knows what the agent declared, and follows a change', () => {
+    const { store, current } = setup(status());
+    expect(store.supportsTextV2()).toBe(false);
+    expect(store.supportsClickV2()).toBe(false);
+    current.set(status({ capabilities: ['pc.text.v2'] }));
+    expect(store.supportsTextV2()).toBe(true);
+    expect(store.supportsClickV2()).toBe(false);
+    current.set(status({ capabilities: ['pc.key.v2', 'pc.click.v2'] }));
+    expect(store.supportsTextV2()).toBe(false);
+    expect(store.supportsClickV2()).toBe(true);
+  });
+
+  it('an edit goes through the API in the queue, one request', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.text.v2'] }));
+    expect(await store.sendTextEdit({ erase: 3, text: 'olá', key: 'ENTER' })).toBeNull();
+    expect(api.edit).toHaveBeenCalledExactlyOnceWith({ erase: 3, text: 'olá', key: 'ENTER' });
+  });
+
+  it('an edit keeps its place in the queue: it never passes ahead of the text before it', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.text.v2'] }));
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    api.text.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            order.push('text');
+            resolve();
+          };
+        }),
+    );
+    api.edit.mockImplementationOnce(() => {
+      order.push('edit');
+      return Promise.resolve();
+    });
+    const first = store.sendText('abc');
+    const second = store.sendTextEdit({ erase: 1 });
+    await flush();
+    expect(order).toEqual([]);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['text', 'edit']);
+  });
+
+  it('a failed edit cancels what was waiting behind it, as any request of the queue', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.text.v2'] }));
+    api.edit.mockRejectedValueOnce(new HttpErrorResponse({ status: 502 }));
+    const first = store.sendTextEdit({ erase: 2 });
+    const second = store.sendTextEdit({ text: 'x' });
+    expect((await first)?.kind).toBeDefined();
+    expect(await second).toBe(CANCELLED);
+    expect(api.edit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a click with modifiers and gap reaches the API on a PC that declared pc.click.v2', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.click.v2'] }));
+    const options = { modifiers: ['CTRL'] as const, gapMs: 140 };
+    expect(await store.click('LEFT', undefined, options)).toBeNull();
+    expect(api.click).toHaveBeenCalledExactlyOnceWith('LEFT', undefined, options);
+  });
+
+  it('on a PC from before pc.click.v2 the click goes without them: nothing the agent would refuse', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.key.v2'] }));
+    expect(await store.click('LEFT', undefined, { modifiers: ['CTRL'], gapMs: 140 })).toBeNull();
+    expect(api.click).toHaveBeenCalledExactlyOnceWith('LEFT', undefined);
+  });
+
+  it('a click with no options is exactly what it always was', async () => {
+    const { store, api } = setup(status({ capabilities: ['pc.click.v2'] }));
+    expect(await store.click('RIGHT')).toBeNull();
+    expect(api.click).toHaveBeenCalledExactlyOnceWith('RIGHT', undefined);
   });
 });
 

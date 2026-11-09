@@ -68,6 +68,38 @@ describe('PcApi over the direct channel', () => {
     ['a v2-only key', (api) => api.key('INSERT'), 'pc.key.v2', { key: 'INSERT' }],
     ['modifier release', (api) => api.keyRelease('ALT'), 'pc.key.v2', { key: 'ALT', action: 'UP' }],
     ['text', (api) => api.text('olá'), 'pc.text.v1', { text: 'olá' }],
+    ['plain text edit', (api) => api.edit({ text: 'olá' }), 'pc.text.v1', { text: 'olá' }],
+    [
+      'edit that erases, types and presses a key',
+      (api) => api.edit({ erase: 3, text: 'olá', key: 'ENTER' }),
+      'pc.text.v2',
+      { erase: 3, text: 'olá', key: 'ENTER' },
+    ],
+    ['edit that only erases', (api) => api.edit({ erase: 7 }), 'pc.text.v2', { erase: 7 }],
+    [
+      'edit that only presses a key',
+      (api) => api.edit({ key: 'TAB' }),
+      'pc.text.v2',
+      { key: 'TAB' },
+    ],
+    [
+      'click with a modifier',
+      (api) => api.click('LEFT', undefined, { modifiers: ['CTRL'] }),
+      'pc.click.v2',
+      { button: 'LEFT', modifiers: ['CTRL'] },
+    ],
+    [
+      'second tap of a double tap, with the gap',
+      (api) => api.click('LEFT', undefined, { gapMs: 140 }),
+      'pc.click.v2',
+      { button: 'LEFT', gapMs: 140 },
+    ],
+    [
+      'click with an empty modifier list and no gap is still the v1',
+      (api) => api.click('LEFT', undefined, { modifiers: [], gapMs: 0 }),
+      'pc.click.v1',
+      { button: 'LEFT' },
+    ],
     ['media', (api) => api.media('MUTE'), 'pc.media.v1', { action: 'MUTE' }],
     [
       'media with steps',

@@ -12813,6 +12813,9 @@ export interface components {
       button: null | string;
       epoch?: null | string;
       /** Format: int32 */
+      gapMs?: null | number | string;
+      modifiers?: null | string[];
+      /** Format: int32 */
       seq?: null | number | string;
     };
     PcKeyReleaseRequest: {
@@ -12880,6 +12883,9 @@ export interface components {
     };
     PcTextRequest: {
       epoch?: null | string;
+      /** Format: int32 */
+      erase?: null | number | string;
+      key?: null | string;
       /** Format: int32 */
       seq?: null | number | string;
       text: null | string;
