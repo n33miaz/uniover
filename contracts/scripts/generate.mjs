@@ -93,10 +93,25 @@ function nameNested(schema, prefix) {
 }
 
 /** Remove palavras-chave que os geradores de tipos não modelam (a validação fica com o JSON Schema). */
+/** Um `anyOf` só de `required` ("pelo menos um destes campos") é regra de validação: nos tipos gerados viraria um `Any` em cada ramo. */
+function isRequiredOnlyAnyOf(list) {
+  return (
+    Array.isArray(list) &&
+    list.every(
+      (branch) =>
+        branch &&
+        typeof branch === "object" &&
+        Object.keys(branch).every((key) => key === "required" || key === "properties") &&
+        Object.values(branch.properties ?? {}).every((value) => value === true),
+    )
+  );
+}
+
 function stripValidationOnly(node) {
   if (Array.isArray(node)) return node.forEach(stripValidationOnly);
   if (node && typeof node === "object") {
     for (const k of ["if", "then", "else", "$schema", "$id", "$defs"]) delete node[k];
+    if (isRequiredOnlyAnyOf(node.anyOf)) delete node.anyOf;
     Object.values(node).forEach(stripValidationOnly);
   }
 }
