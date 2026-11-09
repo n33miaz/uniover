@@ -199,6 +199,11 @@ qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o 
   avisado do motivo (`bye`): quando outro aparelho tomou o lugar (`replaced`) ou a sessão deixou de valer (`revoked`) ele não
   tenta de novo sozinho. **A nuvem vence:** chegando comando de entrada pela API enquanto o canal está em uso, o canal fecha
   ANTES (e solta o que segurava), então um aperto atrasado do canal nunca cai depois de um soltar da nuvem.
+  Só os comandos de clique, tecla, texto e mídia fecham o canal; o movimento do mouse da nuvem nunca (ele chega sem espera, então
+  um movimento atrasado logo depois da troca de caminho é normal e é só somado). O app declara no `auth` e em cada comando o
+  último número (`cs`) do contador comum dos seus pedidos da nuvem: um comando da nuvem com `seq` até esse número é anterior à
+  troca (chegou tarde) e roda sem fechar o canal. O agente também lembra por um tempo as sessões que a API mandou fechar e
+  recusa (`rtc_closed`) uma oferta delas que chegue depois do fechamento.
 - **Sem porta fixa, sem terceiros e só rede local.** O porto UDP é efêmero e fecha com a sessão; nenhum STUN ou TURN. Dos
   dois lados só entram endereços da rede local: da oferta, candidatos privados, de enlace local ou ULA (público, nome e
   `.local` são descartados, e o endereço de onde o app de fato chega é conferido); o que o agente oferece são só os IPv4

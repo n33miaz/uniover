@@ -1280,3 +1280,191 @@ async def test_a_merged_or_discarded_move_leaves_no_id_behind() -> None:
         assert lab.process._direct_ids == set()
     finally:
         await lab.aclose()
+
+
+# a troca da nuvem para o canal: o movimento atrasado e o marcador `cs`
+
+
+async def open_with_marker(lab: Lab, marker: int | None) -> FakePeer:
+    await lab.open()
+    auth: dict[str, Any] = {"k": "auth", "tok": TOKEN}
+    if marker is not None:
+        auth["cs"] = marker
+    lab.peer.phone(INPUT_CHANNEL, auth)
+    await settle()
+    await lab.sync_clock(lab.peer)
+    return lab.peer
+
+
+async def test_a_late_cloud_pointer_after_a_direct_click_keeps_the_channel_and_the_click(
+    lab: Lab,
+) -> None:
+    peer = await open_with_marker(lab, 5)
+    peer.phone(
+        INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "DOWN"}, "d1")
+    )
+    # O movimento da nuvem (o 204 saiu antes de o agente o ler) chega depois do clique do canal.
+    late = envelope("pc.pointer.v1", {"dx": 4, "dy": 0, "seq": 5}, ts=lab.service._stamp(0.0))
+    await lab.process(dump(late))
+    await settle()
+
+    assert ("click", "LEFT", "DOWN") in lab.pc.calls
+    assert ("move", 4, 0) in lab.pc.calls  # o movimento é só somado
+    assert ("release_all",) not in lab.pc.calls
+    assert lab.service.authenticated
+    assert not peer.closed
+    assert peer.acks() == [{"k": "ack", "i": "d1", "ok": True}]
+
+
+async def test_a_cloud_pointer_never_closes_the_channel_even_without_a_marker(lab: Lab) -> None:
+    peer = await open_with_marker(lab, None)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    for seq in (None, 1, 99):
+        body: dict[str, Any] = {"dx": 1, "dy": 1}
+        if seq is not None:
+            body["seq"] = seq
+        await lab.process(dump(envelope("pc.pointer.v1", body, ts=lab.service._stamp(0.0))))
+    await settle_close()
+
+    assert lab.service.authenticated
+    assert not peer.closed
+    assert lab.closed == []
+
+
+async def test_a_cloud_command_numbered_up_to_the_marker_runs_but_leaves_the_channel(
+    lab: Lab,
+) -> None:
+    peer = await open_with_marker(lab, 7)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    old = envelope("pc.media.v1", {"action": "STOP", "seq": 7}, ts=lab.service._stamp(0.0))
+    await lab.process(dump(old))
+    await settle_close()
+
+    assert ("media", "STOP", 1) in lab.pc.calls
+    assert lab.service.authenticated
+    assert not peer.closed
+
+
+async def test_a_cloud_command_numbered_after_the_marker_closes_the_channel(lab: Lab) -> None:
+    peer = await open_with_marker(lab, 7)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    new = envelope("pc.media.v1", {"action": "STOP", "seq": 8}, ts=lab.service._stamp(0.0))
+    await lab.process(dump(new))
+    await settle_close()
+
+    assert lab.service.session_id is None
+    assert (SESSION, "cloud") in lab.closed
+    assert peer.closed
+
+
+async def test_a_cloud_command_without_a_number_still_closes_the_channel(lab: Lab) -> None:
+    peer = await open_with_marker(lab, 7)
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    await lab.process(dump(envelope("pc.media.v1", {"action": "STOP"}, ts=lab.service._stamp(0.0))))
+    await settle_close()
+
+    assert (SESSION, "cloud") in lab.closed
+
+
+async def test_the_marker_in_a_command_raises_it_and_never_lowers_it(lab: Lab) -> None:
+    peer = await open_with_marker(lab, 7)
+    first = lab.command("pc.media.v1", {"action": "MUTE"}, "m1")
+    first["cs"] = 9
+    peer.phone(INPUT_CHANNEL, first)
+    lower = lab.command("pc.media.v1", {"action": "MUTE"}, "m2")
+    lower["cs"] = 3
+    peer.phone(INPUT_CHANNEL, lower)
+    await settle()
+    await lab.process(
+        dump(envelope("pc.media.v1", {"action": "STOP", "seq": 9}, ts=lab.service._stamp(0.0)))
+    )
+    await settle_close()
+
+    assert lab.service.authenticated  # 9 ainda é anterior à troca (o marcador não desceu a 3)
+
+
+@pytest.mark.parametrize("bad", [-1, 2**31, "7", True, 1.5, None])
+async def test_a_malformed_marker_is_ignored(lab: Lab, bad: object) -> None:
+    await lab.open()
+    lab.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN, "cs": bad})
+    await settle()
+    await lab.sync_clock(lab.peer)
+    lab.peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "m1"))
+    await settle()
+    await lab.process(
+        dump(envelope("pc.media.v1", {"action": "STOP", "seq": 1}, ts=lab.service._stamp(0.0)))
+    )
+    await settle_close()
+
+    assert (SESSION, "cloud") in lab.closed  # sem marcador válido, todo comando da nuvem fecha
+
+
+# o fechamento que passa na frente da oferta
+
+
+async def test_a_close_that_arrives_before_the_offer_makes_the_offer_refused(lab: Lab) -> None:
+    await lab.service.close(SESSION, "revoked")
+
+    with pytest.raises(DirectRefused) as refused:
+        await lab.open()
+
+    assert refused.value.code == "rtc_closed"
+    assert lab.peers == []  # nenhum par chegou a ser criado
+
+
+async def test_an_offer_for_a_session_that_already_closed_is_refused(lab: Lab) -> None:
+    await lab.open_authenticated()
+    await lab.service.close(SESSION)
+
+    with pytest.raises(DirectRefused) as refused:
+        await lab.open()
+
+    assert refused.value.code == "rtc_closed"
+
+
+async def test_a_close_that_lands_while_the_offer_is_being_answered_refuses_it() -> None:
+    gate = asyncio.Event()
+
+    class SlowPeer(FakePeer):
+        async def accept_offer(self, sdp: str) -> str:
+            await gate.wait()
+            return await super().accept_offer(sdp)
+
+    made: list[FakePeer] = []
+
+    def factory(callbacks: PeerCallbacks) -> FakePeer:
+        peer = SlowPeer(callbacks)
+        made.append(peer)
+        return peer
+
+    lab = Lab(factory=factory)
+    try:
+        opening = asyncio.ensure_future(lab.open())
+        await settle()
+        await lab.service.close(SESSION, "revoked")
+        gate.set()
+
+        with pytest.raises(DirectRefused) as refused:
+            await opening
+
+        assert refused.value.code == "rtc_closed"
+        assert lab.service.session_id is None
+        assert made[-1].closed
+    finally:
+        await lab.aclose()
+
+
+async def test_the_memory_of_closed_sessions_is_bounded(lab: Lab) -> None:
+    from uniover_agent.core.pc.direct import MAX_TOMBSTONES
+
+    for n in range(MAX_TOMBSTONES + 20):
+        await lab.service.close(f"0192f1e4-7b3a-7c2e-9d11-{n:012d}")
+
+    assert len(lab.service._closed_ids) == MAX_TOMBSTONES
+    # O mais antigo foi esquecido; uma sessão nova (id novo) abre normal.
+    await lab.open()
+    assert lab.service.session_id == SESSION

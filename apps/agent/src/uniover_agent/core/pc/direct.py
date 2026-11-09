@@ -80,8 +80,11 @@ RTC_SILENT_TYPES: Final = frozenset({CANDIDATE_TYPE, CLOSE_TYPE})
 INPUT_TYPES: Final = frozenset(
     {"pc.click.v1", "pc.key.v1", "pc.key.v2", "pc.text.v1", "pc.media.v1"}
 )
-# Tudo o que mexe no mouse ou no teclado: um destes chegando pela nuvem fecha o canal em uso.
-CLOUD_INPUT_TYPES: Final = INPUT_TYPES | {POINTER_TYPE}
+# O que, chegando pela nuvem, fecha o canal em uso: os comandos de entrada (clique, tecla, texto,
+# mídia e segurar). O movimento do mouse NÃO está aqui: ele chega sem espera (a API responde antes
+# de o agente o ler), então um movimento atrasado da nuvem é normal logo depois da troca de caminho,
+# e é só somado.
+CLOUD_INPUT_TYPES: Final = INPUT_TYPES
 
 # Nenhuma mensagem legítima chega perto disto (o texto vai até 200 caracteres).
 MAX_MESSAGE_CHARS: Final = 4096
@@ -97,6 +100,8 @@ BYE_FLUSH_SECONDS: Final = 0.1
 MAX_RTT_SAMPLES: Final = 200
 # O maior `repeat` do contrato do `pc.key.v2`.
 MAX_KEY_REPEAT: Final = 50
+# O maior `seq` que o contrato aceita nos pedidos de entrada da nuvem.
+MAX_CLOUD_SEQ: Final = 2_147_483_647
 
 REASON_REQUESTED: Final = "requested"
 REASON_REPLACED: Final = "replaced"
@@ -127,6 +132,13 @@ KNOWN_REASONS: Final = frozenset(
 # Recusas da oferta (`command.result.v1`, código estável).
 REFUSED_UNAVAILABLE: Final = "rtc_unavailable"
 REFUSED_FAILED: Final = "rtc_failed"
+# O fechamento daquela sessão chegou antes da oferta (ou durante ela): nenhum canal nasce de uma
+# sessão que a API já mandou fechar.
+REFUSED_CLOSED: Final = "rtc_closed"
+
+# Quantas sessões fechadas o agente lembra, e por quanto tempo além da vida máxima de um canal.
+MAX_TOMBSTONES: Final = 64
+TOMBSTONE_MARGIN_SECONDS: Final = 60.0
 
 Submit = Callable[[Command, Callable[[CommandResult], None] | None], None]
 NotifyClosed = Callable[[str, str], Awaitable[None]]
@@ -209,6 +221,10 @@ class _Session:
     authenticated: bool = False
     # Já comandou alguma coisa (movimento ou comando): só então um comando da nuvem o fecha.
     used: bool = False
+    # O último número (`seq`) de pedido de entrada da nuvem que o app diz ter emitido antes de usar
+    # o canal (`cs` do `auth` e dos comandos): o que a nuvem entrega com número até aqui é anterior
+    # à troca de caminho e não fecha o canal.
+    cloud_marker: int | None = None
     closed: bool = False
     last_rx: float = 0.0
     violations: int = 0
@@ -291,6 +307,10 @@ class PcDirectService:
         self._settings = settings or DirectSettings()
         self._monotonic = monotonic
         self._current: _Session | None = None
+        # As sessões que fecharam (id -> instante): uma oferta delas que chegue depois do fechamento
+        # é recusada. O `pc.rtc.offer` espera a biblioteca carregar em tarefa própria e o `close` da
+        # API pode passar na frente dele.
+        self._closed_ids: dict[str, float] = {}
         self._lifecycle = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
 
@@ -326,6 +346,8 @@ class PcDirectService:
         if max_lifetime_seconds is not None:
             lifetime = min(lifetime, float(max_lifetime_seconds))
         async with self._lifecycle:
+            if self._was_closed(session_id):
+                raise DirectRefused(REFUSED_CLOSED)
             if self._current is not None:
                 await self._finish(self._current, REASON_REPLACED, notify=False)
             now = self._monotonic()
@@ -366,6 +388,9 @@ class PcDirectService:
                 )
                 await self._finish(session, REASON_FAILED, notify=False)
                 raise DirectRefused(REFUSED_FAILED) from None
+            if session.closed:
+                # Mandaram fechar enquanto a oferta era atendida: a resposta não serve a ninguém.
+                raise DirectRefused(REFUSED_CLOSED)
             session.watchdog = asyncio.create_task(self._watch(session))
             return answer
 
@@ -383,6 +408,9 @@ class PcDirectService:
 
     async def close(self, session_id: str, reason: str = REASON_REQUESTED) -> None:
         """A API (ou o app) fechou o canal: solta o que o PC segurava, sem avisar de volta."""
+        # Qualquer fechamento que a API manda vale também para uma oferta do mesmo id que ainda
+        # venha (ela espera em tarefa própria e pode chegar depois dele).
+        self._remember_closed(session_id)
         session = self._current
         if session is not None and session.id == session_id:
             await self._finish(
@@ -396,17 +424,24 @@ class PcDirectService:
             self._halt(session)
             self._spawn(self._dispose(session, REASON_DISCONNECTED, notify=False))
 
-    def cloud_input(self, message_type: str) -> None:
+    def cloud_input(self, message_type: str, seq: int | None = None) -> None:
         """Chegou comando de entrada pela nuvem: o canal em uso fecha ANTES de ele ir à faixa.
 
         Síncrono de propósito: a sessão é dada como fechada e o que o PC segurava é solto já, então
         nada que ainda venha pelo canal (um aperto atrasado) cai depois do que a nuvem vai fazer. O
         resto (avisar o app, fechar o par) segue em tarefa. Um canal que nunca comandou nada fica.
+
+        O movimento do mouse nunca fecha o canal. Um comando com `seq` até o último que o app
+        declarou ao trocar de caminho é anterior à troca (a nuvem o entregou tarde): segue para a
+        faixa como sempre, mas o canal fica.
         """
         if message_type not in CLOUD_INPUT_TYPES:
             return
         session = self._current
         if session is None or session.closed or not session.used:
+            return
+        marker = session.cloud_marker
+        if seq is not None and marker is not None and seq <= marker:
             return
         self._halt(session)
         self._spawn(self._dispose(session, REASON_CLOUD, notify=True))
@@ -471,6 +506,7 @@ class PcDirectService:
             # A primeira mensagem do canal de entrada TEM de ser o `auth` com o token da API.
             if kind == "auth" and self._token_ok(session, data.get("tok"), now):
                 session.authenticated = True
+                self._note_cloud_marker(session, data)
                 remaining = max(1, int(session.lifetime - (now - session.created)))
                 self._send(session, INPUT_CHANNEL, {"k": "ready", "life": remaining})
             else:
@@ -482,6 +518,30 @@ class PcDirectService:
             self._violation(session)
             return
         self._on_command(session, data, now)
+
+    @staticmethod
+    def _note_cloud_marker(session: _Session, data: dict[str, Any]) -> None:
+        """Guarda o `cs` (último pedido de entrada da nuvem que o app emitiu); só cresce."""
+        marker = _as_int(data.get("cs"))
+        if marker is not None and 0 <= marker <= MAX_CLOUD_SEQ:
+            current = session.cloud_marker
+            session.cloud_marker = marker if current is None else max(current, marker)
+
+    def _remember_closed(self, session_id: str) -> None:
+        """Lembra que a sessão fechou, por um pouco mais que a vida máxima de um canal."""
+        now = self._monotonic()
+        keep = self._settings.max_lifetime_seconds + TOMBSTONE_MARGIN_SECONDS
+        for old in [key for key, at in self._closed_ids.items() if now - at > keep]:
+            del self._closed_ids[old]
+        self._closed_ids.pop(session_id, None)
+        self._closed_ids[session_id] = now
+        while len(self._closed_ids) > MAX_TOMBSTONES:
+            del self._closed_ids[next(iter(self._closed_ids))]
+
+    def _was_closed(self, session_id: str) -> bool:
+        at = self._closed_ids.get(session_id)
+        keep = self._settings.max_lifetime_seconds + TOMBSTONE_MARGIN_SECONDS
+        return at is not None and self._monotonic() - at <= keep
 
     @staticmethod
     def _token_ok(session: _Session, token: object, now: float) -> bool:
@@ -498,6 +558,7 @@ class PcDirectService:
         if not isinstance(command_id, str) or not 0 < len(command_id) <= 40:  # noqa: PLR2004
             self._violation(session)
             return
+        self._note_cloud_marker(session, data)
 
         def refuse(code: str, *, violation: bool = False) -> None:
             session.dropped += 1
