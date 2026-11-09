@@ -18,7 +18,7 @@ import { PcPrefs } from '../data/pc-prefs';
 import { SessionState } from '../../../core/session/session-state';
 import { PcStore } from '../data/pc-store';
 import { PcSwitcher } from '../data/pc-switcher';
-import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
+import { PC_MODIFIERS, type PcClickModifier, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { PadButton, PadGesture, PadPoint } from '../input/pad-gesture';
 import { ScrollInertia } from '../input/scroll-inertia';
@@ -258,6 +258,8 @@ export class MousePage {
   protected readonly armedList = computed(() =>
     PC_MODIFIERS.filter((modifier) => this.armed.armed().has(modifier)),
   );
+  /** O que o último toque levou armado: o segundo toque de um toque duplo leva o mesmo (ver `press`). */
+  private doubleTapModifiers: readonly PcClickModifier[] = [];
   /** O botão está apertado por uma pressão longa (e então é o fim do dedo que solta; o "Arrastar" é do botão). */
   private pressHold = false;
   /** O número do aperto que este dedo começou: o fim do dedo só solta esse (não um mais novo, do botão "Arrastar"). */
@@ -432,7 +434,11 @@ export class MousePage {
       void this.store.click(button);
       return;
     }
-    const modifiers = this.armed.takeForClick();
+    const taken = this.armed.takeForClick();
+    // O Ctrl armado vale para o toque duplo inteiro: o segundo toque (o que leva o intervalo) repete o do primeiro, se nada
+    // novo foi armado entre os dois. Um toque comum (sem intervalo) começa de novo.
+    const modifiers = gapMs !== undefined && taken.length === 0 ? this.doubleTapModifiers : taken;
+    this.doubleTapModifiers = gapMs === undefined ? taken : [];
     void this.store.click(button, undefined, { modifiers, gapMs });
   }
 

@@ -317,7 +317,7 @@ describe('MousePage', () => {
       });
     });
 
-    it('the Ctrl armed for a tap is spent by the first tap, never by the second of a double tap', () => {
+    it('the Ctrl armed for a tap is on BOTH taps of a double tap (a Ctrl+double click)', () => {
       const armed = TestBed.inject(PcArmed);
       armed.toggle('CTRL');
       tap(100, 0, 60);
@@ -327,8 +327,44 @@ describe('MousePage', () => {
         gapMs: undefined,
       });
       expect(store.click).toHaveBeenNthCalledWith(2, 'LEFT', undefined, {
-        modifiers: [],
+        modifiers: ['CTRL'],
         gapMs: 200,
+      });
+      expect(armed.armed().size).toBe(0);
+    });
+
+    it('a new modifier armed between the two taps wins for the second', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60);
+      armed.toggle('SHIFT');
+      tap(103, 200, 260);
+      expect(store.click).toHaveBeenNthCalledWith(2, 'LEFT', undefined, {
+        modifiers: ['SHIFT'],
+        gapMs: 200,
+      });
+    });
+
+    it('a plain tap after a double tap starts from nothing: the Ctrl does not follow it', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60);
+      tap(103, 200, 260);
+      tap(100, 900, 960); // fora do tempo do toque duplo
+      expect(store.click).toHaveBeenNthCalledWith(3, 'LEFT', undefined, {
+        modifiers: [],
+        gapMs: undefined,
+      });
+    });
+
+    it('a lone Ctrl tap is not carried to a tap that comes much later', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60);
+      tap(100, 2000, 2060);
+      expect(store.click).toHaveBeenNthCalledWith(2, 'LEFT', undefined, {
+        modifiers: [],
+        gapMs: undefined,
       });
     });
 
