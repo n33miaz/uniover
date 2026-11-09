@@ -23,13 +23,14 @@ internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyLi
 
 /// <summary>
 /// <c>Seq</c> é opcional: o app numera os pedidos de entrada pela nuvem (movimento, clique, tecla, texto e mídia) em ordem
-/// crescente, com um contador só. A API o valida e o repassa apenas a um agente que declarou <c>pc.rtc.v1</c> (o canal
+/// crescente, com um contador só; nos pedidos de clique, tecla, texto e mídia, <c>Epoch</c> (16 hexadecimais sorteados quando a
+/// página abre) diz de qual página vem o número (uma página reaberta recomeça a contagem). A API o valida e o repassa apenas a um agente que declarou <c>pc.rtc.v1</c> (o canal
 /// direto o usa para separar o que a nuvem entrega tarde, depois da troca de caminho, do que é novo): o esquema desses
 /// comandos num agente anterior é fechado e recusaria a mensagem inteira (o touchpad ficaria morto até ele atualizar).
 /// </summary>
 internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? ScrollY, int? Seq = null);
 
-internal sealed record PcClickRequest(string? Button, string? Action, int? Seq = null);
+internal sealed record PcClickRequest(string? Button, string? Action, int? Seq = null, string? Epoch = null);
 
 /// <summary>
 /// <c>Repeat</c> (1 a 50) aperta a tecla várias vezes num pedido só; <c>Action</c> (<c>PRESS</c>, padrão, <c>DOWN</c>, <c>UP</c>)
@@ -41,14 +42,15 @@ internal sealed record PcKeyRequest(
     string[]? Modifiers,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Repeat = null,
     string? Action = null,
-    int? Seq = null);
+    int? Seq = null,
+    string? Epoch = null);
 
 /// <summary>Soltar um modificador que o app segurou (<c>CTRL</c>, <c>ALT</c>, <c>SHIFT</c> ou <c>WIN</c>).</summary>
-internal sealed record PcKeyReleaseRequest(string? Key, int? Seq = null);
+internal sealed record PcKeyReleaseRequest(string? Key, int? Seq = null, string? Epoch = null);
 
-internal sealed record PcTextRequest(string? Text, int? Seq = null);
+internal sealed record PcTextRequest(string? Text, int? Seq = null, string? Epoch = null);
 
-internal sealed record PcMediaRequest(string? Action, int? Steps, int? Seq = null);
+internal sealed record PcMediaRequest(string? Action, int? Steps, int? Seq = null, string? Epoch = null);
 
 internal sealed record PcPowerRequest(string? Action, bool? Confirm);
 
@@ -61,6 +63,7 @@ internal static class PcValidator
     public const int MaxModifiers = 4;
     public const int MaxSteps = 10;
     public const int MaxKeyRepeat = 50;
+    public const int EpochLength = 16;
 
     public static Dictionary<string, string[]> Pointer(PcPointerRequest? request)
     {
@@ -76,7 +79,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Click(PcClickRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        CheckSeq(errors, request?.Seq);
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
         if (request?.Button is null || !PcMessages.Buttons.ContainsKey(request.Button))
         {
             errors["button"] = ["Escolha LEFT, RIGHT ou MIDDLE."];
@@ -93,7 +96,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Key(PcKeyRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        CheckSeq(errors, request?.Seq);
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
         if (request?.Key is null || !PcMessages.KeysV2.ContainsKey(request.Key))
         {
             errors["key"] = ["Escolha uma tecla da lista."];
@@ -144,7 +147,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> KeyRelease(PcKeyReleaseRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        CheckSeq(errors, request?.Seq);
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
         if (request?.Key is null || !PcMessages.HoldableKeys.Contains(request.Key))
         {
             errors["key"] = ["Escolha CTRL, ALT, SHIFT ou WIN."];
@@ -156,7 +159,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Text(PcTextRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        CheckSeq(errors, request?.Seq);
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
         var text = request?.Text;
         if (string.IsNullOrEmpty(text))
         {
@@ -177,7 +180,7 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Media(PcMediaRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        CheckSeq(errors, request?.Seq);
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
         if (request?.Action is null || !PcMessages.MediaActions.ContainsKey(request.Action))
         {
             errors["action"] = ["Escolha uma ação de mídia da lista."];
@@ -206,6 +209,19 @@ internal static class PcValidator
 
         return errors;
     }
+
+    /// <summary>O número e a época de um pedido de entrada: a época, quando vem, são 16 hexadecimais minúsculos.</summary>
+    private static void CheckNumbering(Dictionary<string, string[]> errors, int? seq, string? epoch)
+    {
+        CheckSeq(errors, seq);
+        if (epoch is not null && !IsEpoch(epoch))
+        {
+            errors["epoch"] = ["Use 16 caracteres hexadecimais minúsculos."];
+        }
+    }
+
+    internal static bool IsEpoch(string value) =>
+        value.Length == EpochLength && value.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
     private static void CheckSeq(Dictionary<string, string[]> errors, int? seq)
     {
@@ -292,19 +308,19 @@ internal sealed class PcControlHandler(
         }
 
         var message = PcMessages.Pointer(dx, dy, scrollX, scrollY);
-        var sent = await gateway.SendAsync(target.Slug, NumberedFor(target, message, request.Seq), cancellationToken);
+        var sent = await gateway.SendAsync(target.Slug, NumberedFor(target, message, request.Seq, null), cancellationToken);
         return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
 
     /// <summary>
-    /// A mensagem com o <c>seq</c> do pedido, se o agente declarou o canal direto (<c>pc.rtc.v1</c>): só ele tem o campo no esquema
+    /// A mensagem com o <c>seq</c> e a <c>epoch</c> do pedido, se o agente declarou o canal direto (<c>pc.rtc.v1</c>): só ele tem o campo no esquema
     /// (fechado) dos comandos de entrada. Sem número no pedido, ou com agente anterior, a mensagem segue como veio.
     /// </summary>
-    private static OutboundMessage NumberedFor(ReadyTarget target, OutboundMessage message, int? seq) =>
-        seq is { } number
+    private static OutboundMessage NumberedFor(ReadyTarget target, OutboundMessage message, int? seq, string? epoch) =>
+        (seq is not null || epoch is not null)
         && target.HelloAt is not null
         && target.Capabilities.Contains(PcMessages.RtcCapability, StringComparer.Ordinal)
-            ? PcMessages.WithSeq(message, number)
+            ? PcMessages.WithSeq(message, seq, epoch)
             : message;
 
     /// <summary>As capacidades <c>pc.*</c> além da base (<see cref="PcMessages.Capability"/>), na ordem em que o agente as declarou.</summary>
@@ -326,7 +342,8 @@ internal sealed class PcControlHandler(
         ClientInfo client,
         CancellationToken cancellationToken,
         string? requiredCapability = null,
-        int? seq = null)
+        int? seq = null,
+        string? epoch = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
@@ -339,7 +356,7 @@ internal sealed class PcControlHandler(
             return problem;
         }
 
-        var reply = await gateway.RequestAsync(target.Slug, NumberedFor(target, message, seq), timeout, cancellationToken);
+        var reply = await gateway.RequestAsync(target.Slug, NumberedFor(target, message, seq, epoch), timeout, cancellationToken);
         if (reply.IsFailure)
         {
             // Sem resposta no prazo o comando já estava com o agente e pode ter sido executado: fica na trilha. Sem sessão
@@ -551,7 +568,8 @@ internal static class PcControlEndpoints
             null,
             ClientInfo.From(http),
             cancellationToken,
-            seq: request.Seq);
+            seq: request.Seq,
+            epoch: request.Epoch);
     }
 
     private static async Task<IResult> KeyAsync(
@@ -590,7 +608,8 @@ internal static class PcControlEndpoints
             ClientInfo.From(http),
             cancellationToken,
             PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability,
-            request!.Seq);
+            request!.Seq,
+            request.Epoch);
 
         // O teto conta o que saiu: sem PC (409) ou sem sessão para entregar (503), nada foi enviado e o gasto volta.
         if (cost > 0 && result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict or StatusCodes.Status503ServiceUnavailable })
@@ -620,7 +639,8 @@ internal static class PcControlEndpoints
                 ClientInfo.From(http),
                 cancellationToken,
                 PcMessages.KeyV2Capability,
-                request.Seq);
+                request.Seq,
+                request.Epoch);
     }
 
     private static async Task<IResult> TextAsync(
@@ -641,7 +661,8 @@ internal static class PcControlEndpoints
                 null,
                 ClientInfo.From(http),
                 cancellationToken,
-                seq: request.Seq);
+                seq: request.Seq,
+                epoch: request.Epoch);
     }
 
     private static async Task<IResult> MediaAsync(
@@ -662,7 +683,8 @@ internal static class PcControlEndpoints
                 null,
                 ClientInfo.From(http),
                 cancellationToken,
-                seq: request.Seq);
+                seq: request.Seq,
+                epoch: request.Epoch);
     }
 
     private static async Task<IResult> PowerAsync(

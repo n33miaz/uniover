@@ -241,6 +241,35 @@ public sealed class PcRtcAccessTests
     }
 
     [Fact]
+    public void WithSeq_AddsTheEpochToo_AndEitherOneAlone()
+    {
+        var text = PcMessages.Text("abc");
+
+        var both = PcMessages.WithSeq(text, 5, "3fa9c10d7be2465a");
+        var onlyEpoch = PcMessages.WithSeq(text, null, "3fa9c10d7be2465a");
+        var onlySeq = PcMessages.WithSeq(text, 5);
+
+        both.Body.GetProperty("epoch").GetString().Should().Be("3fa9c10d7be2465a");
+        both.Body.GetProperty("seq").GetInt32().Should().Be(5);
+        onlyEpoch.Body.TryGetProperty("seq", out _).Should().BeFalse();
+        onlyEpoch.Body.GetProperty("epoch").GetString().Should().Be("3fa9c10d7be2465a");
+        onlySeq.Body.TryGetProperty("epoch", out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("3fa9c10d7be2465a", true)]
+    [InlineData("0000000000000000", true)]
+    [InlineData("3FA9C10D7BE2465A", false)]
+    [InlineData("3fa9c10d7be2465", false)]
+    [InlineData("3fa9c10d7be2465a0", false)]
+    [InlineData("3fa9c10d7be2465g", false)]
+    [InlineData("", false)]
+    public void IsEpoch_AcceptsExactlySixteenLowercaseHexDigits(string value, bool valid)
+    {
+        PcValidator.IsEpoch(value).Should().Be(valid);
+    }
+
+    [Fact]
     public void RemainingAccess_IsWhatIsLeftOfTheAccessToken_AndTheCeilingWithoutTheClaim()
     {
         var time = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-08T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture));

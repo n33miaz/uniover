@@ -3647,6 +3647,12 @@
               "string"
             ]
           },
+          "epoch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "seq": {
             "format": "int32",
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -3665,6 +3671,12 @@
       },
       "PcKeyReleaseRequest": {
         "properties": {
+          "epoch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "key": {
             "type": [
               "null",
@@ -3689,6 +3701,12 @@
       "PcKeyRequest": {
         "properties": {
           "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "epoch": {
             "type": [
               "null",
               "string"
@@ -3737,6 +3755,12 @@
       "PcMediaRequest": {
         "properties": {
           "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "epoch": {
             "type": [
               "null",
               "string"
@@ -3949,6 +3973,12 @@
       },
       "PcTextRequest": {
         "properties": {
+          "epoch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "seq": {
             "format": "int32",
             "pattern": "^-?(?:0|[1-9]\\d*)$",
