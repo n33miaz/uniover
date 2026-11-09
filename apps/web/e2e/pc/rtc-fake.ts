@@ -32,6 +32,13 @@ export async function installFakeRtc(
       for (const connection of connections) connection.fail();
     };
 
+    // O agente diz por que fechou o canal (`bye`) e o fecha: o aparelho que perdeu o canal para outro, a sessão revogada...
+    w['__rtcBye'] = (reason: string) => {
+      const last = connections.at(-1);
+      const input = last?.channels.find((channel) => channel.label === 'input');
+      input?.reply({ k: 'bye', r: reason });
+    };
+
     class FakeChannel extends EventTarget {
       readyState = 'connecting';
       bufferedAmount = 0;
@@ -48,12 +55,13 @@ export async function installFakeRtc(
       send(text: string) {
         const message = JSON.parse(text) as Record<string, unknown>;
         (log[this.label] as unknown[]).push(message);
-        if (this.label === 'input' && message['k'] === 'auth') this.reply({ k: 'ready' });
+        if (this.label === 'input' && message['k'] === 'auth')
+          this.reply({ k: 'ready', life: 600 });
         if (this.label === 'input' && message['k'] === 'cmd') {
           this.reply({ k: 'ack', i: message['i'], ok: true });
         }
         if (this.label === 'pointer' && message['k'] === 'ping') {
-          this.reply({ k: 'pong', n: message['n'] });
+          this.reply({ k: 'pong', n: message['n'], c: true });
         }
       }
       close() {
@@ -111,6 +119,14 @@ export async function installFakeRtc(
     }
     w['RTCPeerConnection'] = FakeConnection;
   }, options.remove === true);
+}
+
+/** O agente avisa o motivo e fecha o canal (`replaced`, `revoked`, `lifetime`...). */
+export async function byeRtc(page: Page, reason: string): Promise<void> {
+  await page.evaluate(
+    (r) => (window as unknown as { __rtcBye: (reason: string) => void }).__rtcBye(r),
+    reason,
+  );
 }
 
 export function rtcLog(page: Page): Promise<RtcLog | null> {

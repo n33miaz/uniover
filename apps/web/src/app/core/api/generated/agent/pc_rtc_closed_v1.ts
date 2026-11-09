@@ -1,7 +1,16 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
 export type PcRtcClosedV1BodyReason =
-  'requested' | 'connect_timeout' | 'idle' | 'failed' | 'replaced' | 'shutdown' | 'disconnected';
+  | 'requested'
+  | 'connect_timeout'
+  | 'idle'
+  | 'failed'
+  | 'replaced'
+  | 'shutdown'
+  | 'disconnected'
+  | 'lifetime'
+  | 'revoked'
+  | 'cloud';
 
 /**
  * Agente para API: o canal direto da sessão fechou, com o motivo (a API grava a trilha). Sem resposta.

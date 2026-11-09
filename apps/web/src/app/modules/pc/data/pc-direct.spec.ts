@@ -6,6 +6,7 @@ import { SessionState } from '../../../core/session/session-state';
 import { status } from '../pc-test-kit';
 import {
   ACK_TIMEOUT_MS,
+  CLOCK_TIMEOUT_MS,
   DIRECT_BACKOFF_MS,
   DirectNotSent,
   PC_RTC_CAPABILITY,
@@ -14,6 +15,7 @@ import {
   POINTER_TAIL_MS,
   PcDirect,
   PcDirectSignaling,
+  STABLE_MS,
   STALL_MS,
 } from './pc-direct';
 
@@ -22,6 +24,8 @@ class FakeChannel extends EventTarget {
   readyState: 'connecting' | 'open' | 'closed' = 'connecting';
   bufferedAmount = 0;
   readonly sent: Record<string, unknown>[] = [];
+  /** O agente de mentira responde cada sinal de vida (com a escala de relógio já firmada). */
+  respond = true;
   constructor(
     readonly label: string,
     readonly options: { ordered?: boolean; maxRetransmits?: number },
@@ -29,7 +33,11 @@ class FakeChannel extends EventTarget {
     super();
   }
   send(text: string): void {
-    this.sent.push(JSON.parse(text) as Record<string, unknown>);
+    const message = JSON.parse(text) as Record<string, unknown>;
+    this.sent.push(message);
+    if (this.label === 'pointer' && this.respond && message['k'] === 'ping') {
+      queueMicrotask(() => this.receive({ k: 'pong', n: message['n'], c: true }));
+    }
   }
   close(): void {
     if (this.readyState === 'closed') return;
@@ -172,7 +180,7 @@ describe('PcDirect opening', () => {
     expect(connection.remoteDescription).toEqual({ type: 'answer', sdp: 'ANSWER' });
     // A primeira (e única até o ready) mensagem do canal de entrada é o token que a API emitiu.
     expect(input.sent[0]).toEqual({ k: 'auth', tok: 'tok-1' });
-    expect(pointer.sent).toEqual([]);
+    expect(pointer.sent.filter((m) => m['k'] === 'ptr')).toEqual([]);
   });
 
   it('shows the cloud until the agent accepts the token', async () => {
@@ -293,7 +301,7 @@ describe('PcDirect pointer', () => {
     direct.sendPointer(10, 5, 0, 0);
     direct.sendPointer(-3, 0, 0, 120);
 
-    expect(pointer.sent).toEqual([
+    expect(pointer.sent.filter((m) => m['k'] === 'ptr')).toEqual([
       { k: 'ptr', s: 1, x: 10, y: 5, w: 0, h: 0 },
       { k: 'ptr', s: 2, x: 7, y: 5, w: 0, h: 120 },
     ]);
@@ -304,7 +312,15 @@ describe('PcDirect pointer', () => {
     const { pointer } = await openChannel(direct, connections);
     direct.sendPointer(0, 0, 0, 0);
 
-    expect(pointer.sent[0]).toEqual({ k: 'ptr', s: 1, x: 0, y: 0, w: 0, h: 0, hb: 1 });
+    expect(pointer.sent.filter((m) => m['k'] === 'ptr')[0]).toEqual({
+      k: 'ptr',
+      s: 1,
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      hb: 1,
+    });
   });
 
   it('repeats the last total once after a pause, so a lost message does not lose the path', async () => {
@@ -336,7 +352,9 @@ describe('PcDirect pointer', () => {
     pointer.bufferedAmount = 0;
     direct.sendPointer(5, 0, 0, 0);
 
-    expect(pointer.sent).toEqual([{ k: 'ptr', s: 2, x: 10, y: 0, w: 0, h: 0 }]);
+    expect(pointer.sent.filter((m) => m['k'] === 'ptr')).toEqual([
+      { k: 'ptr', s: 2, x: 10, y: 0, w: 0, h: 0 },
+    ]);
   });
 
   it('the totals start over with each new channel', async () => {
@@ -347,8 +365,15 @@ describe('PcDirect pointer', () => {
     const second = await openChannel(direct, connections, 1);
     direct.sendPointer(1, 0, 0, 0);
 
-    expect(first.pointer.sent[0]).toMatchObject({ s: 1, x: 50 });
-    expect(second.pointer.sent[0]).toEqual({ k: 'ptr', s: 1, x: 1, y: 0, w: 0, h: 0 });
+    expect(first.pointer.sent.filter((m) => m['k'] === 'ptr')[0]).toMatchObject({ s: 1, x: 50 });
+    expect(second.pointer.sent.filter((m) => m['k'] === 'ptr')[0]).toEqual({
+      k: 'ptr',
+      s: 1,
+      x: 1,
+      y: 0,
+      w: 0,
+      h: 0,
+    });
   });
 });
 
@@ -476,7 +501,6 @@ describe('PcDirect cloud hand-over', () => {
   it('only takes over when no cloud request is in flight', async () => {
     const { direct, connections } = setup();
     await openChannel(direct, connections);
-    expect(direct.canUse()).toBe(true);
 
     let finish: () => void = () => undefined;
     const request = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
@@ -524,13 +548,15 @@ describe('PcDirect liveness', () => {
     });
     const result = setup();
     const { connection } = await openWithTimers(result);
+    connection.channel('pointer').respond = false; // daqui o teste responde à mão
     await vi.advanceTimersByTimeAsync(PING_MS + 5);
     const ping = connection.channel('pointer').last('ping')!;
-    expect(ping).toMatchObject({ k: 'ping', n: 1, r: null });
+    // O primeiro sinal (n=1) firmou a escala de relógio na abertura; este é o primeiro do ritmo de 1 por segundo.
+    expect(ping).toMatchObject({ k: 'ping', n: 2 });
     expect(typeof ping['t']).toBe('number');
 
     await vi.advanceTimersByTimeAsync(18);
-    connection.channel('pointer').receive({ k: 'pong', n: 1 });
+    connection.channel('pointer').receive({ k: 'pong', n: 2, c: true });
     const rtt = result.direct.rtt();
     expect(rtt).toBeGreaterThanOrEqual(18);
     expect(rtt).toBeLessThan(60);
@@ -544,6 +570,7 @@ describe('PcDirect liveness', () => {
     const lost = vi.fn();
     result.direct.onLost(lost);
     const { connection } = await openWithTimers(result);
+    connection.channel('pointer').respond = false; // o agente parou de responder
     await vi.advanceTimersByTimeAsync(STALL_MS + PING_MS * 2);
 
     expect(result.direct.mode()).toBe('cloud');
@@ -552,5 +579,213 @@ describe('PcDirect liveness', () => {
     expect(result.signaling.close).toHaveBeenCalledWith('s1', false);
     await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
     expect(result.connections.length).toBeGreaterThan(1);
+  });
+});
+
+// ---- segunda rodada: vida do canal, motivo do fechamento, recuo e relógio --------------------------
+
+const FAKE_TIMERS: Parameters<typeof vi.useFakeTimers>[0] = {
+  toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+};
+
+/** Abre o canal com timers falsos: oferta, canais, `ready` (com a vida) e o relógio firmado pelo agente de mentira. */
+async function openWithFakeTimers(
+  direct: PcDirect,
+  connections: FakeConnection[],
+  index = 0,
+  life = 600,
+) {
+  direct.start();
+  await vi.advanceTimersByTimeAsync(10);
+  const connection = connections[index]!;
+  connection.channel('pointer').open();
+  connection.channel('input').open();
+  await vi.advanceTimersByTimeAsync(10);
+  connection.channel('input').receive({ k: 'ready', life });
+  await vi.advanceTimersByTimeAsync(10);
+  return connection;
+}
+
+describe('PcDirect clock and lifetime', () => {
+  it('stays on the cloud until the agent says it has the clock scale (the first command is refused without it)', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    const connection = connections[0]!;
+    connection.channel('pointer').respond = false;
+    connection.channel('pointer').open();
+    connection.channel('input').open();
+    await vi.advanceTimersByTimeAsync(10);
+    connection.channel('input').receive({ k: 'ready', life: 600 });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(direct.mode()).toBe('cloud');
+    expect(direct.canUse()).toBe(false);
+    // Os sinais de vida seguem saindo enquanto espera (dois que concordam firmam a escala).
+    expect(
+      connection.channel('pointer').sent.filter((m) => m['k'] === 'ping').length,
+    ).toBeGreaterThan(2);
+
+    // Um `pong` que ainda diz "sem escala" não basta; o que diz "tenho" abre o canal.
+    connection.channel('pointer').receive({ k: 'pong', n: 1, c: false });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(direct.mode()).toBe('cloud');
+    connection.channel('pointer').receive({ k: 'pong', n: 2, c: true });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(direct.mode()).toBe('direct');
+  });
+
+  it('gives up on a channel whose agent never gets the clock scale, and tries again later', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    const first = connections[0]!;
+    first.channel('pointer').respond = false;
+    first.channel('pointer').open();
+    first.channel('input').open();
+    await vi.advanceTimersByTimeAsync(10);
+    first.channel('input').receive({ k: 'ready', life: 600 });
+    await vi.advanceTimersByTimeAsync(CLOCK_TIMEOUT_MS + 100);
+
+    expect(direct.mode()).toBe('cloud');
+    expect(first.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
+    expect(connections).toHaveLength(2);
+  });
+
+  it('opens a new channel before the lifetime ends, with nobody noticing, when nothing is held', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections, signaling } = setup();
+    const lost = vi.fn();
+    direct.onLost(lost);
+    const first = await openWithFakeTimers(direct, connections, 0, 50); // a vida é de 50 s: renova aos 20 s
+    expect(direct.mode()).toBe('direct');
+
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(connections).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(first.closed).toBe(true);
+    expect(signaling.close).toHaveBeenCalledWith('s1', false);
+    expect(connections).toHaveLength(2);
+    expect(lost).not.toHaveBeenCalled(); // renovar não é perder: nada foi segurado nem solto
+  });
+
+  it('waits for what is held to be released before it renews the channel', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    let held = true;
+    direct.setBusyProbe(() => held);
+    await openWithFakeTimers(direct, connections, 0, 50);
+
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(connections).toHaveLength(1);
+    expect(direct.mode()).toBe('direct');
+
+    held = false;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(connections).toHaveLength(2);
+  });
+
+  it.each(['replaced', 'revoked'])(
+    'after the agent says %s the channel is not retried by itself, only when the screen opens again',
+    async (reason) => {
+      vi.useFakeTimers(FAKE_TIMERS);
+      const { direct, connections } = setup();
+      const lost = vi.fn();
+      direct.onLost(lost);
+      const first = await openWithFakeTimers(direct, connections);
+      first.channel('input').receive({ k: 'bye', r: reason });
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(direct.mode()).toBe('cloud');
+      expect(lost).toHaveBeenCalledTimes(1); // a tela alinha o estado: o agente já soltou o que segurava
+      await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS.at(-1)! * 3);
+      expect(connections).toHaveLength(1);
+
+      direct.start(); // a próxima visita à tela
+      await vi.advanceTimersByTimeAsync(10);
+      expect(connections).toHaveLength(2);
+    },
+  );
+
+  it('opens another channel at once when the agent says the lifetime is over', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    const first = await openWithFakeTimers(direct, connections);
+    first.channel('input').receive({ k: 'bye', r: 'lifetime' });
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(connections).toHaveLength(2);
+  });
+
+  it('follows the backoff after the other reasons (the cloud closed it, idle...)', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    const first = await openWithFakeTimers(direct, connections);
+    first.channel('input').receive({ k: 'bye', r: 'cloud' });
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! - 100);
+    expect(connections).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(connections).toHaveLength(2);
+  });
+
+  it('the backoff grows when the channel keeps dropping soon after it opens (two devices fighting)', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    const first = await openWithFakeTimers(direct, connections);
+    first.channel('input').receive({ k: 'bye', r: 'cloud' }); // caiu logo: 5 s
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
+    expect(connections).toHaveLength(2);
+    const second = await openWithFakeTimers(direct, connections, 1);
+    second.channel('input').receive({ k: 'bye', r: 'cloud' }); // caiu logo de novo: agora 15 s, não 5
+
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 500);
+    expect(connections).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[1]!);
+    expect(connections).toHaveLength(3);
+  });
+
+  it('a channel that lasted a while and then drops starts the backoff over', async () => {
+    vi.useFakeTimers(FAKE_TIMERS);
+    const { direct, connections } = setup();
+    const first = await openWithFakeTimers(direct, connections);
+    first.channel('input').receive({ k: 'bye', r: 'cloud' });
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
+    const second = await openWithFakeTimers(direct, connections, 1);
+    await vi.advanceTimersByTimeAsync(STABLE_MS + 1_000); // o agente de mentira responde aos sinais de vida
+    second.channel('input').receive({ k: 'bye', r: 'cloud' });
+
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
+    expect(connections).toHaveLength(3);
+  });
+
+  it('after the first command the channel keeps every input, even with the cloud busy with something else', async () => {
+    const { direct, connections } = setup();
+    await openChannel(direct, connections);
+    expect(direct.canUse()).toBe(true); // a nuvem sem nada em voo: o canal assume (primeiro uso)
+
+    let finish: () => void = () => undefined;
+    void direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
+    // Energia ou favorito pela nuvem não tiram o canal da entrada (o agente só fecha o canal por entrada da nuvem).
+    expect(direct.canUse()).toBe(true);
+    finish();
+  });
+
+  it('the first use waits for the cloud to settle, and then it never mixes again', async () => {
+    const { direct, connections } = setup();
+    await openChannel(direct, connections);
+    // (openChannel não chamou canUse: ainda não houve primeiro uso)
+    let finish: () => void = () => undefined;
+    const request = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
+    expect(direct.canUse()).toBe(false);
+    finish();
+    await request;
+    expect(direct.canUse()).toBe(true);
+    void direct.trackCloud(new Promise<void>(() => undefined));
+    expect(direct.canUse()).toBe(true);
   });
 });

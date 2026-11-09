@@ -17,6 +17,7 @@ function setup() {
   const direct = {
     start: vi.fn(() => calls.push('direct.start')),
     stop: vi.fn(() => calls.push('direct.stop')),
+    setBusyProbe: vi.fn(),
     onLost: vi.fn((listener: () => void) => {
       lost.push(listener);
       return () => {

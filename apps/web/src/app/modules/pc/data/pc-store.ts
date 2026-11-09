@@ -238,12 +238,14 @@ export class PcStore {
     window.addEventListener('pagehide', onPageHide);
     // O canal direto é um acelerador opcional: tenta abrir com a tela e, se cair, a tela solta o que o PC segurava.
     const offLost = this.direct.onLost(() => this.onDirectLost());
+    this.direct.setBusyProbe(() => this.holding() || this.heldKeys().length > 0);
     this.direct.start();
     const stop = () => {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pagehide', onPageHide);
       offLost();
+      this.direct.setBusyProbe(null);
       // O canal fecha primeiro (o agente solta o que o PC segurava) e o `UP` que segue vai pela nuvem.
       this.direct.stop();
       this.endGesture();
@@ -263,7 +265,9 @@ export class PcStore {
   /**
    * O canal direto caiu sem a tela pedir: o agente soltou o que o PC segurava ao perdê-lo, e o resultado do que estava no
    * canal sem resposta é incerto. A tela alinha o estado soltando o botão e os modificadores (agora pela nuvem; um `UP` a
-   * mais é inofensivo) e o resto segue pela nuvem sem aviso.
+   * mais é inofensivo) e o resto segue pela nuvem sem aviso. Não precisa esperar o canal "confirmar" que fechou: o agente
+   * fecha o canal em uso ANTES de executar qualquer comando de entrada que chegue pela nuvem (e solta o que ele segurava),
+   * então um aperto atrasado do canal nunca cai depois destes `UP`.
    */
   private onDirectLost(): void {
     this.syncAccount();
