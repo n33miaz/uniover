@@ -349,7 +349,10 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
 
     def aged_out(command: Command) -> bool:
         age = offset.age(command.sent_at)
-        return age is not None and age > MAX_COMMAND_AGE_SECONDS
+        if age is None or age <= MAX_COMMAND_AGE_SECONDS:
+            return False
+        offset.refused(age)  # como a recusa por idade de sempre: alimenta o aviso de relógio
+        return True
 
     def noted(handle: Handler) -> Handler:
         return use.noting(handle) if use is not None else handle

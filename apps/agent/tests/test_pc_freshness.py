@@ -584,6 +584,9 @@ async def test_a_click_that_ages_out_while_waiting_for_its_gap_is_not_sent() -> 
     assert status == ("rejected", EXPIRED)
     assert lab.sleeps == [0.4], "esperou, e só depois conferiu de novo"
     assert lab.pc.calls == [("click", "LEFT", "CLICK")], "o segundo clique nunca saiu"
+    # Como toda recusa por idade, esta alimenta o aviso de relógio (idade medida depois da espera).
+    assert len(lab.refusals) == 1
+    assert lab.refusals[0] == pytest.approx(5.1 - 0.2 + 0.4)
 
 
 async def test_a_click_already_expired_does_not_wait_at_all() -> None:

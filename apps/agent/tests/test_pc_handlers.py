@@ -516,10 +516,15 @@ async def test_the_pacer_does_not_wait_while_a_release_is_waiting() -> None:
 async def test_a_release_that_arrives_ends_the_wait_in_course() -> None:
     gate = asyncio.Event()
     started = asyncio.Event()
+    cancelled: list[bool] = []
 
     async def blocked_sleep(seconds: float) -> None:
         started.set()
-        await gate.wait()
+        try:
+            await gate.wait()
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
 
     pacer = ClickPacer(lambda: 0.0, blocked_sleep)
     pacer.mark("LEFT")
@@ -529,15 +534,22 @@ async def test_a_release_that_arrives_ends_the_wait_in_course() -> None:
     pacer.hurry()
     await asyncio.wait_for(waiting, 1)  # terminou sem a espera (o portão nunca abriu)
     assert not gate.is_set()
+    await asyncio.sleep(0)
+    assert cancelled == [True], "a tarefa da espera foi cancelada, não deixada solta"
 
 
 async def test_cancelling_a_waiting_click_leaves_no_task_behind() -> None:
     gate = asyncio.Event()
     started = asyncio.Event()
+    cancelled: list[bool] = []
 
     async def blocked_sleep(seconds: float) -> None:
         started.set()
-        await gate.wait()
+        try:
+            await gate.wait()
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
 
     pacer = ClickPacer(lambda: 0.0, blocked_sleep)
     pacer.mark("LEFT")
@@ -547,6 +559,8 @@ async def test_cancelling_a_waiting_click_leaves_no_task_behind() -> None:
     with pytest.raises(asyncio.CancelledError):
         await waiting
     assert pacer._waiting == set()
+    await asyncio.sleep(0)
+    assert cancelled == [True], "a tarefa da espera também foi cancelada"
 
 
 # a segunda barreira (o modelo gerado) valida de verdade os limites da edição de texto
