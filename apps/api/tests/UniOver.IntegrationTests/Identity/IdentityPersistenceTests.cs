@@ -59,7 +59,7 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
 
         tables.Should().Equal(
             "__ef_migrations_history", "account_preferences", "account_recovery_codes", "capacity_alerts", "capacity_samples", "guest_invites",
-            "idempotency_keys", "login_audit", "passkeys", "password_reset_tokens", "qr_login_requests", "refresh_device_keys",
+            "idempotency_keys", "install_hint_answers", "login_audit", "passkeys", "password_reset_tokens", "qr_login_requests", "refresh_device_keys",
             "refresh_recovery_challenges", "refresh_tokens", "step_up_confirmations", "system_settings", "totp_factors", "user_grants",
             "users", "webauthn_challenges");
         publicTables.Should().BeEmpty();
