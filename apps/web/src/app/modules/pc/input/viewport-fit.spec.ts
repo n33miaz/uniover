@@ -43,9 +43,15 @@ describe('watchAvailableHeight', () => {
       return frames.length;
     });
     const heights: number[] = [];
-    const watch = watchAvailableHeight(document, host, (height) => heights.push(height));
+    const tabs: number[] = [];
+    const watch = watchAvailableHeight(document, host, (height, tabsHeight) => {
+      heights.push(height);
+      tabs.push(tabsHeight);
+    });
     expect(heights).toHaveLength(1);
     expect(heights[0]).toBeGreaterThanOrEqual(MIN_FIT_HEIGHT);
+    // O segundo número é a altura medida da barra de abas (0 sem barra na página).
+    expect(tabs).toEqual([0]);
 
     window.dispatchEvent(new Event('resize'));
     window.dispatchEvent(new Event('resize'));

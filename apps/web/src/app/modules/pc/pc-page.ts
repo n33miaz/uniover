@@ -42,6 +42,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
       [class.fill]="fill() || store.phase() === 'loading'"
       [attr.data-phase]="store.phase()"
       [style.--pc-h]="height() === null ? null : height() + 'px'"
+      [style.--pc-tabs]="tabsHeight() === null ? null : tabsHeight() + 'px'"
     >
       <p
         class="status"
@@ -117,6 +118,8 @@ export class PcPage {
   protected readonly fill = signal(false);
   /** A altura que sobra entre o cabeçalho e a barra de abas, em pixels; `null` até a primeira medida. */
   protected readonly height = signal<number | null>(null);
+  /** A altura medida da barra de abas (a folga da barra do "Trocar janela" acima dela); `null` até a primeira medida. */
+  protected readonly tabsHeight = signal<number | null>(null);
   /** O comando é do agente, não se traduz. */
   protected readonly enableCommand = 'uniover-agent pc-control on';
 
@@ -150,9 +153,10 @@ export class PcPage {
     const armed = inject(PcArmed);
     destroy.onDestroy(() => armed.clear());
     afterNextRender(() => {
-      const watch = watchAvailableHeight(this.doc, this.screen().nativeElement, (value) =>
-        this.height.set(value),
-      );
+      const watch = watchAvailableHeight(this.doc, this.screen().nativeElement, (value, tabs) => {
+        this.height.set(value);
+        this.tabsHeight.set(tabs);
+      });
       this.watch = watch;
       destroy.onDestroy(() => watch.stop());
     });

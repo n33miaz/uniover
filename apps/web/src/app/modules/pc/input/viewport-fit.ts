@@ -39,7 +39,7 @@ export interface ViewportWatch {
 export function watchAvailableHeight(
   doc: Document,
   host: HTMLElement,
-  apply: (height: number) => void,
+  apply: (height: number, tabsHeight: number) => void,
 ): ViewportWatch {
   const win = doc.defaultView;
   if (!win) return { remeasure: () => undefined, stop: () => undefined };
@@ -58,14 +58,16 @@ export function watchAvailableHeight(
     const bottomGap =
       (main ? px(win.getComputedStyle(main).paddingBottom) : 0) +
       px(win.getComputedStyle(host).marginBottom);
+    const tabsHeight = tabs?.offsetHeight ?? 0;
     apply(
       availableHeight({
         viewportHeight: win.innerHeight,
         keyboardInset: Number.isFinite(inset) ? inset : 0,
         top: host.getBoundingClientRect().top + win.scrollY,
-        tabsHeight: tabs?.offsetHeight ?? 0,
+        tabsHeight,
         bottomGap,
       }),
+      tabsHeight,
     );
   };
   // Vários avisos no mesmo quadro viram uma medida só.
