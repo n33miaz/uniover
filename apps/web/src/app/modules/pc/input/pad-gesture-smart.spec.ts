@@ -363,11 +363,45 @@ describe('PadGesture: the gap of the second tap (for a reliable double click)', 
     expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 137, y: 100 });
   });
 
-  it('a third tap does not chain onto the double tap: it measures from nothing', () => {
+  it('a third tap continues the chain (a triple click): it carries the gap since the second', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0); // sai em 60
+    tapAt(gesture, 100, 100, 200); // sai em 260
+    tapAt(gesture, 100, 100, 330); // sai em 390: 130 ms depois do segundo
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 100, y: 100 }, 200);
+    expect(handlers.tap).toHaveBeenNthCalledWith(3, 'LEFT', { x: 100, y: 100 }, 130);
+  });
+
+  it('the third tap still never starts a drag (only the second can)', () => {
+    const { gesture, handlers } = setup();
+    gesture.configure({ doubleTapDrag: true });
+    tapAt(gesture, 100, 100, 0);
+    tapAt(gesture, 100, 100, 200);
+    gesture.down(1, 100, 100, 400);
+    gesture.move(1, 150, 100, 430);
+    expect(handlers.dragStart).not.toHaveBeenCalled();
+  });
+
+  it('the chain ends when a touch comes too late: the next tap measures from nothing', () => {
     const { gesture, handlers } = setup();
     tapAt(gesture, 100, 100, 0);
     tapAt(gesture, 100, 100, 200);
-    tapAt(gesture, 100, 100, 400);
+    tapAt(gesture, 100, 100, 260 + DEFAULT_PAD_GESTURE.doubleTapMs + 1);
+    expect(handlers.tap).toHaveBeenNthCalledWith(3, 'LEFT', { x: 100, y: 100 });
+  });
+
+  it('a long touch, a slide or a two finger tap in the middle ends the chain', () => {
+    const { gesture, handlers } = setup();
+    tapAt(gesture, 100, 100, 0);
+    gesture.down(1, 100, 100, 150); // dedo apoiado: não é toque
+    gesture.up(1, 150 + DEFAULT_PAD_GESTURE.tapMaxMs + 20);
+    tapAt(gesture, 100, 100, 450);
+    expect(handlers.tap).toHaveBeenNthCalledWith(2, 'LEFT', { x: 100, y: 100 });
+
+    gesture.down(1, 100, 100, 600);
+    gesture.move(1, 160, 100, 620);
+    gesture.up(1, 640);
+    tapAt(gesture, 100, 100, 700);
     expect(handlers.tap).toHaveBeenNthCalledWith(3, 'LEFT', { x: 100, y: 100 });
   });
 

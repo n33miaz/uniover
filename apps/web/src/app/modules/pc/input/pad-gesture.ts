@@ -128,8 +128,15 @@ export class PadGesture {
   private lastTap: { readonly at: Point; readonly time: number } | null = null;
   /** Este toque é o segundo do toque duplo: andar com ele começa a arrastar. */
   private doubleArmed = false;
-  /** Quando o primeiro toque do toque duplo saiu (e clicou): dele conta o intervalo que o segundo clique leva. */
-  private doubleSince = 0;
+  /**
+   * O último toque curto de um dedo, em toda a sequência (o segundo, o terceiro...): dele conta o intervalo que o clique
+   * seguinte leva. Ao contrário de `lastTap` (só o primeiro toque arma o arrasto), a cadeia segue no terceiro toque, que
+   * também precisa chegar ao PC a menos do tempo do duplo clique do anterior (o triplo clique de um editor de texto).
+   */
+  private chain: { readonly at: Point; readonly time: number } | null = null;
+  /** Este toque continua a cadeia (pousou perto e logo depois do anterior). */
+  private chained = false;
+  private chainSince = 0;
   /** O eixo em que a rolagem de dois dedos travou; `null` até o primeiro passo. */
   private axis: 'x' | 'y' | null = null;
   private samples: ScrollSample[] = [];
@@ -167,7 +174,8 @@ export class PadGesture {
       this.axis = null;
       this.samples = [];
       this.doubleArmed = this.isSecondTap(x, y, timeMs);
-      this.doubleSince = this.lastTap?.time ?? 0;
+      this.chained = this.continuesChain(x, y, timeMs);
+      this.chainSince = this.chain?.time ?? 0;
       this.lastTap = null;
     }
     this.fingers.set(id, { x, y });
@@ -234,21 +242,26 @@ export class PadGesture {
       return;
     }
     if (this.displaced) {
+      this.chain = null;
       if (this.peak >= 2) this.endScroll(timeMs);
       return;
     }
-    if (timeMs - this.startedAt >= this.config.tapMaxMs) return;
+    if (timeMs - this.startedAt >= this.config.tapMaxMs) {
+      this.chain = null;
+      return;
+    }
     if (this.peak === 1) {
-      // Os dois cliques saem quando o dedo sai: o intervalo é entre as duas saídas (e o do primeiro toque é só o clique).
-      const gapMs = this.doubleArmed ? clampClickGap(timeMs - this.doubleSince) : 0;
+      // Os cliques saem quando o dedo sai: o intervalo é entre as saídas de dois toques seguidos (o primeiro é só o clique).
+      const gapMs = this.chained ? clampClickGap(timeMs - this.chainSince) : 0;
       if (gapMs > 0) this.handlers.tap('LEFT', this.origin, gapMs);
       else this.handlers.tap('LEFT', this.origin);
-      // O segundo toque de um toque duplo já usou o primeiro: um terceiro não encadeia.
+      this.chain = { at: this.origin, time: timeMs };
+      // O segundo toque de um toque duplo já usou o primeiro: um terceiro não arma o arrasto.
       this.lastTap = this.doubleArmed ? null : { at: this.origin, time: timeMs };
-    } else if (this.peak === 2) {
-      this.handlers.tap('RIGHT', this.origin);
-    } else if (this.peak === 3 && this.config.middleClick) {
-      this.handlers.tap('MIDDLE', this.origin);
+    } else {
+      this.chain = null;
+      if (this.peak === 2) this.handlers.tap('RIGHT', this.origin);
+      else if (this.peak === 3 && this.config.middleClick) this.handlers.tap('MIDDLE', this.origin);
     }
   }
 
@@ -257,6 +270,7 @@ export class PadGesture {
     this.lastCenter = null;
     this.displaced = false;
     this.lastTap = null;
+    this.chain = null;
     this.doubleArmed = false;
     this.samples = [];
     this.clearPress();
@@ -269,6 +283,16 @@ export class PadGesture {
   /** Este toque pousou perto e logo depois de um toque curto? */
   private isSecondTap(x: number, y: number, timeMs: number): boolean {
     const previous = this.lastTap;
+    if (!previous) return false;
+    return (
+      timeMs - previous.time <= this.config.doubleTapMs &&
+      Math.hypot(x - previous.at.x, y - previous.at.y) <= this.config.doubleTapRadiusPx
+    );
+  }
+
+  /** Este toque pousou perto e logo depois de um toque curto da cadeia (o segundo, o terceiro...)? */
+  private continuesChain(x: number, y: number, timeMs: number): boolean {
+    const previous = this.chain;
     if (!previous) return false;
     return (
       timeMs - previous.time <= this.config.doubleTapMs &&
