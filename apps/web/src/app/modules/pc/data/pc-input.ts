@@ -4,6 +4,7 @@ import { tick } from '../input/haptics';
 import { LiveTyper, type TextDiff } from '../input/live-typing';
 import { PcArmed } from './pc-armed';
 import { CANCELLED, type PcFailure } from './pc-failure';
+import { slideKeys } from './pc-slides';
 import { PcStore } from './pc-store';
 import type { PcHoldableKey, PcKey, PcModifier } from './pc-types';
 
@@ -102,6 +103,25 @@ export class PcInput {
     this.typer.key(key, modifiers);
     // Uma tecla com modificador (Ctrl+Z, Ctrl+Backspace...) mexe no texto do PC sem o campo saber.
     if (modifiers.length > 0) this.diverge();
+    return true;
+  }
+
+  /**
+   * Uma tecla do catálogo com só os modificadores dela: as teclas armadas na tela do mouse NÃO valem (quem aperta "Voltar 10 s"
+   * não quer um Ctrl+J porque deixou o Ctrl armado). Há uma vibração curta. Devolve `false` quando nada foi enviado.
+   */
+  plain(key: PcKey, modifiers: readonly PcModifier[] = []): boolean {
+    if (!this.store.canSend()) return false;
+    tick();
+    this.typer.key(key, modifiers);
+    return true;
+  }
+
+  /** "Ir ao slide N": os dígitos e o Enter, na ordem da fila. Só para PC que entende `pc.key.v2`; quem chama confere. */
+  gotoSlide(slide: number): boolean {
+    if (!this.store.canSend()) return false;
+    tick();
+    for (const key of slideKeys(slide)) this.typer.key(key, []);
     return true;
   }
 

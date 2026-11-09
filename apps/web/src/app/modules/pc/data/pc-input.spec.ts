@@ -58,6 +58,42 @@ describe('PcInput', () => {
     expect(armed.has('ALT')).toBe(true);
   });
 
+  it('plain sends the key with its own modifiers only and leaves the armed keys alone', async () => {
+    const armed = TestBed.inject(PcArmed);
+    armed.toggle('CTRL');
+    expect(input.plain('J')).toBe(true);
+    await flush();
+    expect(store.sendKey).toHaveBeenLastCalledWith('J', []);
+    expect(input.plain('F5', ['SHIFT'])).toBe(true);
+    await flush();
+    expect(store.sendKey).toHaveBeenLastCalledWith('F5', ['SHIFT']);
+    expect(armed.has('CTRL')).toBe(true);
+  });
+
+  it('plain and gotoSlide send nothing with the PC away', () => {
+    store.phase.set('offline');
+    expect(input.plain('J')).toBe(false);
+    expect(input.gotoSlide(3)).toBe(false);
+    expect(store.sendKey).not.toHaveBeenCalled();
+  });
+
+  it('gotoSlide sends the digits and Enter in order, after what was already waiting', async () => {
+    let answer!: () => void;
+    store.sendKey.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = () => resolve(null))),
+    );
+    input.sendKey('ESCAPE');
+    expect(input.gotoSlide(12)).toBe(true);
+    answer();
+    await flush();
+    expect(store.sendKey.mock.calls).toEqual([
+      ['ESCAPE', []],
+      ['D1', []],
+      ['D2', []],
+      ['ENTER', []],
+    ]);
+  });
+
   it('press does nothing, and spends nothing, with the PC away', () => {
     store.phase.set('offline');
     TestBed.inject(PcArmed).toggle('CTRL');

@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { PcInput } from '../data/pc-input';
 import { PcPinned } from '../data/pc-pinned';
+import { parseSlideNumber } from '../data/pc-slides';
 import {
   MAX_PINNED,
   SHORTCUTS,
@@ -22,7 +23,6 @@ import {
 } from '../data/pc-shortcuts';
 import { PcStore } from '../data/pc-store';
 import { PcSwitcher } from '../data/pc-switcher';
-import type { PcKey } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { GROUP_LABEL, shortcutLabel } from './shortcut-labels';
 
@@ -182,16 +182,14 @@ export class PcShortcutGrid {
   /** "Ir ao slide N": os dígitos e o Enter, pelo que o PowerPoint e os leitores de PDF entendem. */
   protected goto(event: Event, field: HTMLInputElement): void {
     event.preventDefault();
-    const text = field.value.trim();
     if (!this.store.canSend()) return;
-    if (!/^[0-9]{1,3}$/.test(text) || Number(text) < 1) {
+    const slide = parseSlideNumber(field.value);
+    if (slide === null) {
       this.note.set($localize`:@@pc.sc.goto-invalid:Digite o número do slide, de 1 a 999.`);
       return;
     }
     this.note.set(null);
-    tick();
-    for (const digit of text) this.input.sendKey(`D${digit}` as PcKey);
-    this.input.sendKey('ENTER');
+    this.input.gotoSlide(slide);
     this.input.diverge();
     field.value = '';
   }
