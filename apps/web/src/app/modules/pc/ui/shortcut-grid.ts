@@ -189,8 +189,6 @@ export class PcShortcutGrid {
       return;
     }
     this.note.set(null);
-    this.input.gotoSlide(slide);
-    this.input.diverge();
-    field.value = '';
+    if (this.input.gotoSlide(slide)) field.value = '';
   }
 }

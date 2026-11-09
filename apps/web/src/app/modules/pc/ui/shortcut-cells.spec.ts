@@ -71,6 +71,18 @@ describe('PcShortcutCells', () => {
     expect(fixture.componentInstance.used).toEqual(['slides-here', 'video-back-5']);
   });
 
+  it('with the Alt of the window switcher held the cells are off and send nothing (it would be Alt+key)', async () => {
+    store.heldKeys.set(['ALT']);
+    fixture.detectChanges();
+    expect(cell('slides-start').disabled).toBe(true);
+    cell('slides-start').click();
+    await flush();
+    expect(store.sendKey).not.toHaveBeenCalled();
+    store.heldKeys.set([]);
+    fixture.detectChanges();
+    expect(cell('slides-start').disabled).toBe(false);
+  });
+
   it('is disabled and sends nothing while the PC is not connected', async () => {
     store.phase.set('offline');
     fixture.detectChanges();

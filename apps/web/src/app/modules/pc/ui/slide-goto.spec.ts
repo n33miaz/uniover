@@ -62,6 +62,18 @@ describe('PcSlideGoto', () => {
     expect(root.querySelector('form')).toBeNull();
   });
 
+  it('with the Alt of the window switcher held it is off, sends nothing and keeps what was typed', async () => {
+    field().value = '12';
+    store.heldKeys.set(['ALT']);
+    fixture.detectChanges();
+    expect(field().disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>('.goto-go')!.disabled).toBe(true);
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(store.sendKey).not.toHaveBeenCalled();
+    expect(field().value).toBe('12');
+  });
+
   it('is disabled while the PC is not connected', async () => {
     store.phase.set('offline');
     fixture.detectChanges();

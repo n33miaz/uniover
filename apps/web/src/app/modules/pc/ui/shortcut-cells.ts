@@ -8,7 +8,7 @@ import { shortcutLabel } from './shortcut-labels';
  * Uma fileira de atalhos do catálogo (os do Vídeo e os da Apresentação), em grade: o nome do que fazem e a tecla pequena
  * embaixo. O catálogo (`pc-shortcuts`) é a única tabela de teclas: aqui só entram ids dele. Cada toque manda a tecla com os
  * modificadores do próprio atalho e NADA mais: as teclas armadas na tela do mouse não valem aqui (quem toca "Voltar 5 s" não
- * quer um Ctrl+Seta). O que precisa de `pc.key.v2` some num PC que não a declarou, como na lista de atalhos.
+ * quer um Ctrl+Seta), e com o Alt do "Trocar janela" segurado os botões ficam desligados (sairia Alt+tecla). O que precisa de `pc.key.v2` some num PC que não a declarou, como na lista de atalhos.
  */
 @Component({
   selector: 'app-pc-shortcut-cells',
@@ -20,7 +20,7 @@ import { shortcutLabel } from './shortcut-labels';
         type="button"
         class="cell"
         [attr.data-shortcut]="item.id"
-        [disabled]="!store.canSend()"
+        [disabled]="!store.canSend() || input.held()"
         (click)="send(item)"
       >
         <span class="name">{{ label(item) }}</span>
@@ -34,7 +34,7 @@ import { shortcutLabel } from './shortcut-labels';
 })
 export class PcShortcutCells {
   protected readonly store = inject(PcStore);
-  private readonly input = inject(PcInput);
+  protected readonly input = inject(PcInput);
 
   /** Os ids do catálogo, na ordem em que aparecem. */
   readonly ids = input.required<readonly string[]>();
