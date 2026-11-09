@@ -267,6 +267,9 @@ internal sealed class PcRtcHandler(
     /// <summary>Depois do resultado do comando a resposta já devia ter chegado (ela sai antes); uma folga curta basta.</summary>
     public static readonly TimeSpan AnswerGrace = TimeSpan.FromSeconds(2);
 
+    /// <summary>O código com que o agente recusa a oferta de uma sessão que a API já mandou fechar.</summary>
+    public const string RtcClosedCode = "rtc_closed";
+
     /// <summary>A vida máxima de um canal: o que resta do token de acesso da pessoa, entre estes limites.</summary>
     public static readonly TimeSpan MinLifetime = TimeSpan.FromSeconds(60);
 
@@ -332,7 +335,11 @@ internal sealed class PcRtcHandler(
         if (!reply.Value.Ok)
         {
             sessions.TakeOwned(session.Id, userId);
-            return RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
+            // O agente já tinha o fechamento desta sessão (a revogação passou na frente da oferta): é a mesma resposta de quando a
+            // revogação é descoberta depois, e o app não insiste.
+            return reply.Value.Error?.Code == RtcClosedCode
+                ? PcProblems.DirectRevoked()
+                : RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
         }
 
         var answer = await pending.WaitAsync(AnswerGrace, cancellationToken);
