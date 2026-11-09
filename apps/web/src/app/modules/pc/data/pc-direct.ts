@@ -400,7 +400,11 @@ export class PcDirect {
         this.pending.delete(id);
         // O comando não saiu, mas o canal ainda se diz aberto: quem chama vai recuar para a nuvem. O canal deixa de ser o dono da
         // entrada até a nuvem terminar o que ela vai levar, senão o próximo comando sairia por ele e passaria na frente deste.
+        // A nuvem também deixa de estar "quieta" a partir de agora: entre esta recusa e o pedido dela entrar em voo há passos
+        // assíncronos, e um comando já à espera readotaria o canal nesse meio. A folga máxima vale até a nuvem terminar.
         this.adopted = false;
+        this.lastCloudDoneAt = Date.now();
+        this.cloudRtt = MAX_CLOUD_IDLE_MS;
         reject(new DirectNotSent());
       }
     });
