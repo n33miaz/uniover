@@ -1,22 +1,5 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
-export type PcTextV2Body = (
-  | {
-      erase: unknown;
-    }
-  | {
-      text: unknown;
-    }
-  | {
-      key: unknown;
-    }
-) & {
-  erase?: number;
-  text?: string;
-  key?: PcTextV2BodyKey;
-  seq?: number;
-  epoch?: string;
-};
 export type PcTextV2BodyKey = 'ENTER' | 'TAB';
 
 /**
@@ -31,4 +14,11 @@ export interface PcTextV2Message {
   ts: string;
   correlationId: string | null;
   body: PcTextV2Body;
+}
+export interface PcTextV2Body {
+  erase?: number;
+  text?: string;
+  key?: PcTextV2BodyKey;
+  seq?: number;
+  epoch?: string;
 }
