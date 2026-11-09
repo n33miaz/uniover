@@ -63,7 +63,10 @@
             "failed",
             "replaced",
             "shutdown",
-            "disconnected"
+            "disconnected",
+            "lifetime",
+            "revoked",
+            "cloud"
           ]
         }
       }
