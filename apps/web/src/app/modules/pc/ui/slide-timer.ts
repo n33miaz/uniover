@@ -1,11 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
+import { PcSlideTimerState } from '../data/pc-slide-timer';
 import { tick } from '../input/haptics';
 
 /** "mm:ss", ou "h:mm:ss" a partir de uma hora. */
@@ -18,15 +19,20 @@ export function formatElapsed(totalSeconds: number): string {
   return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
 }
 
+let nextTimer = 0;
+
 /**
- * Cronômetro da apresentação. Vive só neste aparelho, na tela: não lê nada do PC (nem as notas, nem os slides) e não manda
- * nada a ele. Conta pelo relógio (e não por tiques), então a tela apagada ou a aba em segundo plano não o atrasa.
+ * Cronômetro da apresentação. A conta é do serviço (`PcSlideTimerState`): trocar de modo ou de aba não a perde. Aqui só há o
+ * desenho e o relógio que o atualiza enquanto a tela existe e a conta corre. O nome ("Cronômetro") é um rótulo escondido, e
+ * o tempo é o conteúdo do `timer`: o leitor de tela lê os dois (um `aria-label` no lugar do tempo o esconderia), e a região
+ * não anuncia a cada segundo.
  */
 @Component({
   selector: 'app-pc-slide-timer',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <span class="time" role="timer" [attr.aria-label]="timeLabel">{{ text() }}</span>
+    <span class="sr-only" [id]="labelId" i18n="@@pc.slides.timer">Cronômetro</span>
+    <span class="time" role="timer" [attr.aria-labelledby]="labelId">{{ text() }}</span>
     <button
       type="button"
       class="icon"
@@ -58,50 +64,39 @@ export function formatElapsed(totalSeconds: number): string {
   styleUrl: './slide-timer.css',
 })
 export class PcSlideTimer {
-  protected readonly timeLabel = $localize`:@@pc.slides.timer:Cronômetro`;
+  protected readonly labelId = `pc-timer-${nextTimer++}`;
   protected readonly startLabel = $localize`:@@pc.slides.timer-start:Iniciar cronômetro`;
   protected readonly pauseLabel = $localize`:@@pc.slides.timer-pause:Pausar cronômetro`;
   protected readonly resetLabel = $localize`:@@pc.slides.timer-reset:Zerar cronômetro`;
 
-  protected readonly running = signal(false);
+  private readonly state = inject(PcSlideTimerState);
+  protected readonly running = this.state.running;
+  /** O relógio da tela: só anda enquanto a conta corre (parada, o tempo mostrado é o do serviço). */
+  private readonly now = signal(Date.now());
   /** Segundos já contados (inteiros: o que a tela mostra). */
-  protected readonly elapsed = signal(0);
+  protected readonly elapsed = computed(() => Math.floor(this.state.elapsedMs(this.now()) / 1000));
   protected readonly text = computed(() => formatElapsed(this.elapsed()));
 
-  /** O que passou antes da última retomada, em ms, e quando ela foi. */
-  private before = 0;
-  private resumedAt = 0;
-  private timer: ReturnType<typeof setInterval> | undefined;
-
   constructor() {
-    inject(DestroyRef).onDestroy(() => clearInterval(this.timer));
+    effect((onCleanup) => {
+      if (!this.state.running()) {
+        this.now.set(Date.now());
+        return;
+      }
+      const timer = setInterval(() => this.now.set(Date.now()), 250);
+      onCleanup(() => clearInterval(timer));
+    });
   }
 
   protected toggle(): void {
     tick();
-    if (this.running()) {
-      this.before += Date.now() - this.resumedAt;
-      clearInterval(this.timer);
-      this.timer = undefined;
-      this.running.set(false);
-      this.elapsed.set(Math.floor(this.before / 1000));
-      return;
-    }
-    this.resumedAt = Date.now();
-    this.running.set(true);
-    this.timer = setInterval(() => this.refresh(), 250);
+    this.state.toggle();
+    this.now.set(Date.now());
   }
 
   protected reset(): void {
     tick();
-    clearInterval(this.timer);
-    this.timer = undefined;
-    this.running.set(false);
-    this.before = 0;
-    this.elapsed.set(0);
-  }
-
-  private refresh(): void {
-    this.elapsed.set(Math.floor((this.before + Date.now() - this.resumedAt) / 1000));
+    this.state.reset();
+    this.now.set(Date.now());
   }
 }

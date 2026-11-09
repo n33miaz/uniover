@@ -54,6 +54,42 @@ describe('PcSlideTimer', () => {
     expect(time()).toBe('00:07');
   });
 
+  it('keeps counting when the screen goes away and comes back (a mode or tab change)', async () => {
+    button('Iniciar cronômetro').click();
+    await vi.advanceTimersByTimeAsync(4_000);
+    fixture.destroy();
+    await vi.advanceTimersByTimeAsync(3_000);
+    const again = TestBed.createComponent(PcSlideTimer);
+    again.detectChanges();
+    root = again.nativeElement;
+    expect(time()).toBe('00:07');
+    expect(button('Pausar cronômetro')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(2_000);
+    again.detectChanges();
+    expect(time()).toBe('00:09');
+    // Pausado, o tempo também fica guardado.
+    button('Pausar cronômetro').click();
+    again.destroy();
+    await vi.advanceTimersByTimeAsync(5_000);
+    const third = TestBed.createComponent(PcSlideTimer);
+    third.detectChanges();
+    root = third.nativeElement;
+    expect(time()).toBe('00:09');
+    expect(button('Iniciar cronômetro')).not.toBeNull();
+    third.destroy();
+  });
+
+  it('the time is the content of the timer and the name is a label that points at it, so the time is read', () => {
+    const timer = root.querySelector('[role="timer"]')!;
+    expect(timer.hasAttribute('aria-label')).toBe(false);
+    expect(timer.textContent?.trim()).toBe('00:00');
+    const label = root.querySelector(`#${timer.getAttribute('aria-labelledby')}`);
+    expect(label?.textContent?.trim()).toBe('Cronômetro');
+    // Região do tipo `timer` já é "desligada" para anúncio automático: nenhum `aria-live` a ligou.
+    expect(timer.getAttribute('aria-live')).not.toBe('polite');
+    expect(timer.getAttribute('aria-live')).not.toBe('assertive');
+  });
+
   it('reset stops it and zeroes it', async () => {
     button('Iniciar cronômetro').click();
     await vi.advanceTimersByTimeAsync(3_000);
