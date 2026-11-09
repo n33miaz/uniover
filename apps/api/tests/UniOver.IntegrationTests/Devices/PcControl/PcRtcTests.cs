@@ -772,6 +772,41 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         offer.GetProperty("body").GetProperty("maxLifetimeSeconds").GetInt32().Should().Be(75, "o que resta, sem arredondar para cima");
     }
 
+    [Fact]
+    public async Task AnOfferTheAgentRefusesAsClosed_Gets409PcDirectRevoked_NotAGenericFailure()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
+        var offer = (await agent.ReceiveAsync())!.Value;
+        // O fechamento da sessão chegou ao agente antes da oferta: ele a recusa com `rtc_closed`.
+        await agent.SendTextAsync(agent.Envelope(
+            "command.result.v1",
+            new JsonObject { ["ok"] = false, ["error"] = new JsonObject { ["code"] = "rtc_closed", ["message"] = "texto livre" } },
+            offer.GetProperty("id").GetGuid()));
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-direct-revoked");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_opened", Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AnOfferTheAgentRefusesForAnotherReason_KeepsTheGenericFailure()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
+        await AnswerOfferAsync(agent, ok: false);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.OK);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().NotEndWith("/pc-direct-revoked");
+    }
+
     private static Task<Guid> OwnerIdAsyncFromToken(TransportApp app) =>
         Task.FromResult(Guid.Parse(new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(app.Login.AccessToken).Subject));
 
