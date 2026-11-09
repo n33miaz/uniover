@@ -25,7 +25,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// vários ao mesmo tempo, então o agente reconhece o que chega fora de ordem (e uma sessão
     /// nova, quando o contador recomeça). O movimento é relativo e a soma não depende da ordem:
     /// o agente aplica também o que chega depois de um mais novo; só a idade descarta um
-    /// movimento.
+    /// movimento. A API só o repassa a um agente que declara `pc.rtc.v1` (o esquema dos agentes
+    /// anteriores é fechado).
     /// </summary>
     public partial class PcPointerV1Message
     {

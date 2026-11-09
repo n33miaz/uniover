@@ -33,6 +33,7 @@ class PcKeyV1Body(BaseModel):
     modifiers: Annotated[list[PcKeyV1BodyModifiersItem] | None, Field(max_length=4)] = (
         None
     )
+    seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
 
 
 class PcKeyV1Message(BaseModel):

@@ -17,7 +17,12 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     /// <summary>
     /// API para agente: uma tecla do teclado, com modificadores opcionais (atalhos como Ctrl+C).
-    /// A lista de teclas é fechada: o agente nunca digita um código que não esteja aqui.
+    /// A lista de teclas é fechada: o agente nunca digita um código que não esteja aqui. `seq`
+    /// (opcional) numera os pedidos de entrada pela nuvem em ordem crescente (um contador só
+    /// para o clique, a tecla, o texto e a mídia, durante a vida da página; o movimento tem a
+    /// numeração própria dele): o agente o compara com o último número que o app declara no
+    /// canal direto para saber se um pedido da nuvem é anterior à troca de caminho (e por isso
+    /// não fecha o canal) ou é novo. A API só o repassa a um agente que declara `pc.rtc.v1`.
     /// </summary>
     public partial class PcKeyV1Message
     {
@@ -54,6 +59,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("modifiers")]
         public PcKeyV1BodyModifiersItem[]? Modifiers { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("seq")]
+        public long? Seq { get; set; }
     }
 
     public enum PcKeyV1BodyKey { A, B, Backspace, C, D, Delete, Down, E, End, Enter, Escape, F, F1, F10, F11, F12, F2, F3, F4, F5, F6, F7, F8, F9, G, H, Home, I, J, K, L, Left, M, N, O, P, PageDown, PageUp, Q, R, Right, S, Space, T, Tab, U, Up, V, W, X, Y, Z };

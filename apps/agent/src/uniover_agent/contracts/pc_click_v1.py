@@ -31,6 +31,7 @@ class PcClickV1Body(BaseModel):
         PcClickV1BodyAction | None,
         Field(title='PcClickV1BodyAction', validate_default=True),
     ] = 'CLICK'
+    seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
 
 
 class PcClickV1Message(BaseModel):
