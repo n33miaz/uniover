@@ -167,10 +167,15 @@
   text-decoration: none;
 }
 
-/* A barra do "Trocar janela": na tela do mouse flutua logo acima da barra de ações; nas outras abas acompanha o fim da tela. */
+/*
+ * A barra do "Trocar janela": na tela do mouse flutua logo acima da barra de ações; nas outras abas acompanha o fim da tela,
+ * logo acima da barra de abas do aparelho (que também gruda embaixo: sem esta folga uma aba mais alta que a tela a
+ * esconderia atrás dela).
+ */
 .switcher {
+  --pc-tabs: 57px;
   position: sticky;
-  bottom: var(--space-2);
+  bottom: calc(var(--pc-tabs) + var(--safe-bottom) + var(--kb-inset, 0px) + var(--space-2));
   z-index: 3;
 }
 .switcher.float {
