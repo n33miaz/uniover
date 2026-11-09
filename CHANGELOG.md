@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.52.0](https://github.com/n33miaz/uniover/compare/v0.51.0...v0.52.0) (2026-11-09)
+
+
+### Devices 0.51.0
+
+#### Features
+
+* **contracts:** pc text v2 and click v2
+* **api:** send pc text v2 and click v2
+* **web:** pc text and click v2 data layer
+* **web:** one pc request per typing burst
+* **web:** ctrl click and a reliable double tap
+
+#### Bug Fixes
+
+* **api:** cap click modifiers at three
+* **web:** resend an edit refused for its pace
+* **web:** v2 over the channel only if listed
+* **web:** a double tap keeps the armed modifier
+* **web:** retry waits cover an empty bucket
+* **web:** keep the modifier through a triple tap
+
+
+### Web 0.52.0
+
+#### Features
+
+* **web:** pc text and click v2 data layer
+
+#### Bug Fixes
+
+* **contracts:** no any-of in generated models
+
+
+### Agent 0.48.0
+
+#### Features
+
+* **agent:** pc text edit and click modifiers
+
+#### Bug Fixes
+
+* **contracts:** no any-of in generated models
+* **agent:** bound click wait, check text edits
+* **agent:** channel never refuses a valid edit
+* **agent:** charge the rate after the checks
+* **agent:** late expiry feeds the clock warning
+
 ## [0.51.0](https://github.com/n33miaz/uniover/compare/v0.50.0...v0.51.0) (2026-11-09)
 
 
