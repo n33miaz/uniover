@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.53.0](https://github.com/n33miaz/uniover/compare/v0.52.0...v0.53.0) (2026-11-09)
+
+
+### Devices 0.52.0
+
+#### Features
+
+* **web:** shared slide jump and plain key send
+* **web:** relative volume drag strip
+* **web:** music, video and slides media tabs
+
+#### Bug Fixes
+
+* **web:** switcher bar above the tab bar
+* **web:** no media keys with the Alt held
+* **web:** volume repeat and drag stop safely
+* **web:** do not swallow keyboard slide taps
+* **web:** keep the slide timer across modes
+* **web:** measure the tab bar for the switcher
+
+
+### Web 0.52.1
+
+#### Maintenance
+
+* no user-facing changes
+
 ## [0.52.0](https://github.com/n33miaz/uniover/compare/v0.51.0...v0.52.0) (2026-11-09)
 
 
