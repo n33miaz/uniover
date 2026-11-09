@@ -12811,9 +12811,13 @@ export interface components {
     PcClickRequest: {
       action: null | string;
       button: null | string;
+      /** Format: int32 */
+      seq?: null | number | string;
     };
     PcKeyReleaseRequest: {
       key: null | string;
+      /** Format: int32 */
+      seq?: null | number | string;
     };
     PcKeyRequest: {
       action?: null | string;
@@ -12821,9 +12825,13 @@ export interface components {
       modifiers: null | string[];
       /** Format: int32 */
       repeat?: null | number | string;
+      /** Format: int32 */
+      seq?: null | number | string;
     };
     PcMediaRequest: {
       action: null | string;
+      /** Format: int32 */
+      seq?: null | number | string;
       /** Format: int32 */
       steps: null | number | string;
     };
@@ -12867,6 +12875,8 @@ export interface components {
       online: boolean;
     };
     PcTextRequest: {
+      /** Format: int32 */
+      seq?: null | number | string;
       text: null | string;
     };
     PermissionPending: {

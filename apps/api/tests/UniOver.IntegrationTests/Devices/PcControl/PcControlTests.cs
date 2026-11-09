@@ -206,7 +206,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Pointer_AcceptsTheSequenceButNeverForwardsItToTheAgent()
+    public async Task Pointer_AcceptsTheSequenceButDoesNotForwardItToAnAgentWithoutTheDirectChannel()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
@@ -217,6 +217,82 @@ public sealed class PcControlTests(PostgresFixture postgres)
 
         numbered.StatusCode.Should().Be(HttpStatusCode.NoContent);
         body.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["dx", "dy"]);
+    }
+
+    [Fact]
+    public async Task EveryInput_CarriesItsSequenceToAnAgentThatDeclaresTheDirectChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, "pc.rtc.v1");
+
+        using var pointer = await PostAsync(app, "pointer", new { dx = 3, dy = 1, seq = 11 });
+        pointer.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body").GetProperty("seq").GetInt32().Should().Be(11);
+
+        var sent = new (string Path, object Body, string Type)[]
+        {
+            ("click", new { button = "LEFT", seq = 12 }, "pc.click.v1"),
+            ("key", new { key = "C", modifiers = Ctrl, seq = 13 }, "pc.key.v1"),
+            ("key", new { key = "BACKSPACE", repeat = 3, seq = 14 }, "pc.key.v2"),
+            ("key/release", new { key = "CTRL", seq = 15 }, "pc.key.v2"),
+            ("text", new { text = "olá", seq = 16 }, "pc.text.v1"),
+            ("media", new { action = "MUTE", seq = 17 }, "pc.media.v1"),
+        };
+        var expected = 12;
+        foreach (var (path, body, type) in sent)
+        {
+            var posting = PostAsync(app, path, body);
+            var command = await AnswerAsync(agent);
+            using var response = await Within(posting);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent, path);
+            command.GetProperty("type").GetString().Should().Be(type);
+            command.GetProperty("body").GetProperty("seq").GetInt32().Should().Be(expected++, path);
+        }
+    }
+
+    [Fact]
+    public async Task EveryInput_WithoutASequence_GoesAsBefore_EvenToAnAgentWithTheDirectChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, "pc.rtc.v1");
+
+        var posting = PostAsync(app, "click", new { button = "LEFT" });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(posting);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").EnumerateObject().Select(p => p.Name).Should().NotContain("seq");
+    }
+
+    [Fact]
+    public async Task EveryInput_DoesNotForwardTheSequenceToAnAgentWithoutTheDirectChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        var posting = PostAsync(app, "text", new { text = "abc", seq = 9 });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(posting);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["text"]);
+    }
+
+    [Theory]
+    [InlineData("click", "{\"button\":\"LEFT\",\"seq\":-1}")]
+    [InlineData("key", "{\"key\":\"C\",\"seq\":-1}")]
+    [InlineData("key/release", "{\"key\":\"CTRL\",\"seq\":-1}")]
+    [InlineData("text", "{\"text\":\"a\",\"seq\":-1}")]
+    [InlineData("media", "{\"action\":\"MUTE\",\"seq\":-1}")]
+    public async Task AnInput_WithANegativeSequence_Returns400(string path, string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, "pc.rtc.v1");
+
+        using var response = await PostAsync(app, path, JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
