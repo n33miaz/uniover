@@ -1,10 +1,16 @@
 import type { PcFailure } from '../data/pc-failure';
-import type { PcKey, PcModifier } from '../data/pc-types';
+import {
+  PC_TEXT_ERASE_CHUNK,
+  type PcKey,
+  type PcModifier,
+  type PcTextEdit,
+} from '../data/pc-types';
 import {
   LiveTyper,
   MAX_TEXT,
   PADDING_CHAR,
   diffText,
+  editRequests,
   fieldDiff,
   fieldState,
   mergeDiff,
@@ -372,5 +378,224 @@ describe('LiveTyper: discarded edits and a queue that goes on', () => {
     typer.clear();
     await answer(FAILED);
     expect(reported).toEqual([]);
+  });
+});
+
+describe('editRequests', () => {
+  it('a burst typed at the end is one request', () => {
+    expect(editRequests({ erase: 0, insert: 'olá' })).toEqual([{ text: 'olá' }]);
+  });
+
+  it('a replaced word is one request: erase, then type', () => {
+    expect(editRequests({ erase: 3, insert: 'casa' })).toEqual([{ erase: 3, text: 'casa' }]);
+  });
+
+  it('only erasing is one request with no text', () => {
+    expect(editRequests({ erase: 5, insert: '' })).toEqual([{ erase: 5 }]);
+  });
+
+  it('a final Enter or Tab goes in the same request, after the text', () => {
+    expect(editRequests({ erase: 2, insert: 'ok\n' })).toEqual([
+      { erase: 2, text: 'ok', key: 'ENTER' },
+    ]);
+    expect(editRequests({ erase: 0, insert: 'a\t' })).toEqual([{ text: 'a', key: 'TAB' }]);
+  });
+
+  it('a line break alone is a request that only presses the key (and keeps the erase)', () => {
+    expect(editRequests({ erase: 0, insert: '\n' })).toEqual([{ key: 'ENTER' }]);
+    expect(editRequests({ erase: 4, insert: '\n' })).toEqual([{ erase: 4, key: 'ENTER' }]);
+  });
+
+  it('text after a key starts a new request: the key is always the last thing a request does', () => {
+    expect(editRequests({ erase: 1, insert: 'a\nb' })).toEqual([
+      { erase: 1, text: 'a', key: 'ENTER' },
+      { text: 'b' },
+    ]);
+    expect(editRequests({ erase: 0, insert: 'a\n\nb\tc' })).toEqual([
+      { text: 'a', key: 'ENTER' },
+      { key: 'ENTER' },
+      { text: 'b', key: 'TAB' },
+      { text: 'c' },
+    ]);
+  });
+
+  it('a Windows line break is a single Enter', () => {
+    expect(editRequests({ erase: 0, insert: 'a\r\nb' })).toEqual([
+      { text: 'a', key: 'ENTER' },
+      { text: 'b' },
+    ]);
+  });
+
+  it('a text longer than the contract limit goes in several requests, in order', () => {
+    const text = 'x'.repeat(MAX_TEXT + 30);
+    expect(editRequests({ erase: 2, insert: text })).toEqual([
+      { erase: 2, text: 'x'.repeat(MAX_TEXT) },
+      { text: 'x'.repeat(30) },
+    ]);
+  });
+
+  it('an erase beyond the chunk goes in blocks, and what is left goes with the text', () => {
+    expect(editRequests({ erase: PC_TEXT_ERASE_CHUNK * 2 + 7, insert: 'z' })).toEqual([
+      { erase: PC_TEXT_ERASE_CHUNK },
+      { erase: PC_TEXT_ERASE_CHUNK },
+      { erase: 7, text: 'z' },
+    ]);
+    expect(editRequests({ erase: PC_TEXT_ERASE_CHUNK, insert: '' })).toEqual([
+      { erase: PC_TEXT_ERASE_CHUNK },
+    ]);
+  });
+
+  it('never asks for more than the contract allows in one request', () => {
+    for (const erase of [1, 79, 80, 81, 160, 161, 500]) {
+      for (const request of editRequests({ erase, insert: 'a\nb' })) {
+        expect(request.erase ?? 0).toBeLessThanOrEqual(PC_TEXT_ERASE_CHUNK);
+        expect(request.text?.length ?? 0).toBeLessThanOrEqual(MAX_TEXT);
+      }
+    }
+  });
+
+  it('the control characters other than Enter and Tab never travel', () => {
+    expect(editRequests({ erase: 0, insert: 'a\u0007b\u0000' })).toEqual([{ text: 'ab' }]);
+  });
+
+  it('no change is no request', () => {
+    expect(editRequests({ erase: 0, insert: '' })).toEqual([]);
+  });
+
+  it('an emoji counts as one character: the erase is by code point', () => {
+    expect(editRequests({ erase: 1, insert: '😀' })).toEqual([{ erase: 1, text: '😀' }]);
+  });
+});
+
+describe('LiveTyper on a PC that understands pc.text.v2', () => {
+  interface Call {
+    readonly what: 'key' | 'text' | 'edit';
+    readonly value: string;
+    resolve(failure?: PcFailure | null): void;
+  }
+
+  let calls: Call[];
+  let failures: PcFailure[];
+  let supported: boolean;
+  let typer: LiveTyper;
+
+  const FAILED: PcFailure = { kind: 'timeout', message: 'O PC não respondeu a tempo.' };
+  const flush = async () => {
+    for (let round = 0; round < 6; round++) await Promise.resolve();
+  };
+  const answer = async (failure: PcFailure | null = null) => {
+    calls.shift()!.resolve(failure);
+    await flush();
+  };
+  const sent = () => calls.map((call) => `${call.what}:${call.value}`);
+
+  beforeEach(() => {
+    calls = [];
+    failures = [];
+    supported = true;
+    typer = new LiveTyper(
+      {
+        key: (key: PcKey) =>
+          new Promise((resolve) =>
+            calls.push({ what: 'key', value: key, resolve: (f = null) => resolve(f) }),
+          ),
+        text: (text: string) =>
+          new Promise((resolve) =>
+            calls.push({ what: 'text', value: text, resolve: (f = null) => resolve(f) }),
+          ),
+        edit: (edit: PcTextEdit) =>
+          new Promise((resolve) =>
+            calls.push({
+              what: 'edit',
+              value: JSON.stringify(edit),
+              resolve: (f = null) => resolve(f),
+            }),
+          ),
+        canEdit: () => supported,
+      },
+      { failed: (failure) => failures.push(failure), idle: () => undefined },
+    );
+  });
+
+  it('erase and new text are ONE request, not one per erased character', () => {
+    typer.edit({ erase: 4, insert: 'casa' });
+    expect(sent()).toEqual(['edit:{"erase":4,"text":"casa"}']);
+  });
+
+  it('a burst typed while a request is in flight costs one request, not one per letter', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    typer.edit({ erase: 0, insert: 'b' });
+    typer.edit({ erase: 0, insert: 'c' });
+    typer.edit({ erase: 1, insert: 'd' });
+    expect(sent()).toEqual(['edit:{"text":"a"}']);
+    await answer();
+    // O "b", o "c" e o apagar do "c" com o "d" juntaram numa diferença só: digita "bd".
+    expect(sent()).toEqual(['edit:{"text":"bd"}']);
+    await answer();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('a final Enter goes in the same request as the text before it', () => {
+    typer.edit({ erase: 0, insert: 'ok\n' });
+    expect(sent()).toEqual(['edit:{"text":"ok","key":"ENTER"}']);
+  });
+
+  it('text after a line break goes in the next request, in order', async () => {
+    typer.edit({ erase: 0, insert: 'a\nb' });
+    expect(sent()).toEqual(['edit:{"text":"a","key":"ENTER"}']);
+    await answer();
+    expect(sent()).toEqual(['edit:{"text":"b"}']);
+  });
+
+  it('a key never passes ahead of the edit typed before it', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    typer.edit({ erase: 2, insert: 'bc' });
+    typer.key('ENTER');
+    expect(sent()).toEqual(['edit:{"text":"a"}']);
+    await answer();
+    expect(sent()).toEqual(['edit:{"erase":2,"text":"bc"}']);
+    await answer();
+    expect(sent()).toEqual(['key:ENTER']);
+  });
+
+  it('a failure drops what was waiting, as with the request per key', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    typer.edit({ erase: 0, insert: 'b' });
+    await answer(FAILED);
+    expect(failures).toEqual([FAILED]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('a failure in the middle of a long erase stops the rest of it', async () => {
+    typer.edit({ erase: 200, insert: 'x' });
+    expect(sent()).toEqual([`edit:{"erase":${PC_TEXT_ERASE_CHUNK}}`]);
+    await answer(FAILED);
+    expect(calls).toHaveLength(0);
+    expect(failures).toEqual([FAILED]);
+  });
+
+  it('a long erase goes in blocks, one after the other', async () => {
+    typer.edit({ erase: PC_TEXT_ERASE_CHUNK + 5, insert: 'x' });
+    expect(sent()).toEqual([`edit:{"erase":${PC_TEXT_ERASE_CHUNK}}`]);
+    await answer();
+    expect(sent()).toEqual(['edit:{"erase":5,"text":"x"}']);
+  });
+
+  it('on a PC that does not understand it, each erase is a Backspace key and the text goes as before', async () => {
+    supported = false;
+    typer.edit({ erase: 2, insert: 'xy' });
+    expect(sent()).toEqual(['key:BACKSPACE']);
+    await answer();
+    await answer();
+    expect(sent()).toEqual(['text:xy']);
+  });
+
+  it('follows the PC: the answer to "supported" is read at each request', async () => {
+    typer.edit({ erase: 0, insert: 'a' });
+    expect(sent()).toEqual(['edit:{"text":"a"}']);
+    supported = false;
+    typer.edit({ erase: 1, insert: 'b' });
+    await answer();
+    expect(sent()).toEqual(['key:BACKSPACE']);
   });
 });
