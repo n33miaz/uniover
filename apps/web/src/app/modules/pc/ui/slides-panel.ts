@@ -8,6 +8,8 @@ import { PcSlideTimer } from './slide-timer';
 /** Quanto o dedo precisa andar para os lados para valer como deslizar, e o quanto de vertical ele pode andar. */
 export const SWIPE_MIN_PX = 48;
 export const SWIPE_MAX_SLOPE = 0.7;
+/** Depois de um deslizar que agiu, o clique de dedo que o navegador solta em seguida (e só ele) não age de novo, por este tempo. */
+export const SWIPE_CLICK_MS = 500;
 
 /**
  * A apresentação: anterior e próximo ocupando a tela (metade cada; deslizar para os lados também vale), iniciar, encerrar e
@@ -30,8 +32,8 @@ export const SWIPE_MAX_SLOPE = 0.7;
         type="button"
         class="half"
         [attr.data-action]="'previous'"
-        [disabled]="!store.canSend()"
-        (click)="go('slides-previous')"
+        [disabled]="!store.canSend() || input.held()"
+        (click)="go('slides-previous', $event)"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="'M15 5l-7 7 7 7'" /></svg>
         <span i18n="@@pc.slides.previous">Anterior</span>
@@ -40,8 +42,8 @@ export const SWIPE_MAX_SLOPE = 0.7;
         type="button"
         class="half next"
         [attr.data-action]="'next'"
-        [disabled]="!store.canSend()"
-        (click)="go('slides-next')"
+        [disabled]="!store.canSend() || input.held()"
+        (click)="go('slides-next', $event)"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="'M9 5l7 7-7 7'" /></svg>
         <span i18n="@@pc.slides.next">Próximo</span>
@@ -56,22 +58,26 @@ export const SWIPE_MAX_SLOPE = 0.7;
 })
 export class PcSlidesPanel {
   protected readonly store = inject(PcStore);
-  private readonly input = inject(PcInput);
+  protected readonly input = inject(PcInput);
 
   private swipeFrom: { readonly id: number; readonly x: number; readonly y: number } | null = null;
-  /** O último gesto foi um deslizar (já agiu): o clique que o navegador solta em seguida não age de novo. */
-  private swiped = false;
+  /** Quando o último deslizar agiu (nunca, de início): o clique de dedo que vem colado nele não age de novo. */
+  private swipedAt = Number.NEGATIVE_INFINITY;
 
-  protected go(id: 'slides-previous' | 'slides-next'): void {
-    if (this.swiped) {
-      this.swiped = false;
+  /**
+   * `detail === 0` é a ativação sem ponteiro (teclado, VoiceOver): essa nunca é engolida, por mais perto que esteja de um
+   * deslizar.
+   */
+  protected go(id: 'slides-previous' | 'slides-next', event: MouseEvent): void {
+    if (event.detail !== 0 && performance.now() - this.swipedAt < SWIPE_CLICK_MS) {
+      this.swipedAt = Number.NEGATIVE_INFINITY;
       return;
     }
     this.input.plain(id === 'slides-next' ? 'RIGHT' : 'LEFT');
   }
 
   protected swipeStart(event: PointerEvent): void {
-    this.swiped = false;
+    this.swipedAt = Number.NEGATIVE_INFINITY;
     this.swipeFrom = { id: event.pointerId, x: event.clientX, y: event.clientY };
   }
 
@@ -82,9 +88,8 @@ export class PcSlidesPanel {
     const dx = event.clientX - from.x;
     const dy = event.clientY - from.y;
     if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dy) > Math.abs(dx) * SWIPE_MAX_SLOPE) return;
-    this.swiped = true;
     // Deslizar para a esquerda traz o slide seguinte (como virar a página); para a direita, o anterior.
-    this.input.plain(dx < 0 ? 'RIGHT' : 'LEFT');
+    if (this.input.plain(dx < 0 ? 'RIGHT' : 'LEFT')) this.swipedAt = performance.now();
   }
 
   protected swipeCancel(): void {

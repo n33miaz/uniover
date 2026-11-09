@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
-import { PcSlidesPanel, SWIPE_MIN_PX } from './slides-panel';
+import { PcSlidesPanel, SWIPE_CLICK_MS, SWIPE_MIN_PX } from './slides-panel';
 
 describe('PcSlidesPanel', () => {
   let store: FakePcStore;
@@ -23,7 +23,11 @@ describe('PcSlidesPanel', () => {
   function swipe(target: Element, from: number, to: number, y = 0) {
     pointer('pointerdown', target, from);
     pointer('pointerup', target, to, 100 + y);
-    (target as HTMLElement).click();
+    fingerClick(target);
+  }
+  /** O clique que o navegador solta depois de um toque de dedo (`detail` 1); o do teclado e do leitor de tela tem 0. */
+  function fingerClick(target: Element) {
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
   }
 
   beforeEach(() => {
@@ -75,6 +79,51 @@ describe('PcSlidesPanel', () => {
       ['RIGHT', []],
       ['LEFT', []],
     ]);
+  });
+
+  it('the activation of a button by keyboard or screen reader (no pointer) is never swallowed, even right after a swipe', async () => {
+    pointer('pointerdown', half('previous'), 200);
+    pointer('pointerup', half('previous'), 100);
+    half('next').click();
+    await flush();
+    expect(store.sendKey.mock.calls).toEqual([
+      ['RIGHT', []],
+      ['RIGHT', []],
+    ]);
+  });
+
+  it('the click that comes stuck to a swipe is swallowed once, and only for a short time', async () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    try {
+      pointer('pointerdown', half('next'), 200);
+      pointer('pointerup', half('next'), 100);
+      vi.advanceTimersByTime(SWIPE_CLICK_MS + 50);
+      // Passou o tempo: este clique de dedo é um toque de verdade e age.
+      fingerClick(half('next'));
+      await flush();
+      expect(store.sendKey.mock.calls).toEqual([
+        ['RIGHT', []],
+        ['RIGHT', []],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('with the Alt of the window switcher held everything is off and nothing goes out as Alt+key', async () => {
+    store.heldKeys.set(['ALT']);
+    fixture.detectChanges();
+    expect(half('next').disabled).toBe(true);
+    expect(half('previous').disabled).toBe(true);
+    expect(cell('slides-start').disabled).toBe(true);
+    expect(root.querySelector<HTMLInputElement>('.goto-input')!.disabled).toBe(true);
+    pointer('pointerdown', half('next'), 200);
+    pointer('pointerup', half('next'), 100);
+    await flush();
+    expect(store.sendKey).not.toHaveBeenCalled();
+    store.heldKeys.set([]);
+    fixture.detectChanges();
+    expect(half('next').disabled).toBe(false);
   });
 
   it('a tap that moves a little, or a mostly vertical drag, is a tap and not a swipe', async () => {
