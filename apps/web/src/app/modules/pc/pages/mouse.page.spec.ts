@@ -333,6 +333,50 @@ describe('MousePage', () => {
       expect(armed.armed().size).toBe(0);
     });
 
+    it('the Ctrl is on EVERY tap of a triple tap, and the gap of each is the one since the one before', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60);
+      tap(103, 200, 260);
+      tap(100, 330, 390);
+      expect(store.click.mock.calls.map(([, , options]) => options)).toEqual([
+        { modifiers: ['CTRL'], gapMs: undefined },
+        { modifiers: ['CTRL'], gapMs: 200 },
+        { modifiers: ['CTRL'], gapMs: 130 },
+      ]);
+    });
+
+    it('a tap that starts again (no gap) takes only what is armed now, and the sequence starts over', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60);
+      tap(100, 1000, 1060); // fora da sequência: o Ctrl não o acompanha
+      tap(103, 1200, 1260); // e este, que continua o de cima, leva o que ele levou (nada)
+      expect(store.click.mock.calls.map(([, , options]) => options?.modifiers)).toEqual([
+        ['CTRL'],
+        [],
+        [],
+      ]);
+    });
+
+    it('the sequence is forgotten when a tap goes out the plain way (no pc.click.v2 or no PC)', () => {
+      const armed = TestBed.inject(PcArmed);
+      armed.toggle('CTRL');
+      tap(100, 0, 60); // leva o Ctrl
+      store.phase.set('offline');
+      fixture.detectChanges();
+      // O Enter da superfície clica sem passar pelo gesto: é o retorno antecipado de `press`.
+      pad().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      store.phase.set('ready');
+      fixture.detectChanges();
+      tap(103, 200, 260); // continua o toque de 60 ms, mas a sequência já foi esquecida
+      expect(store.click.mock.calls.map(([, , options]) => options?.modifiers)).toEqual([
+        ['CTRL'],
+        undefined,
+        [],
+      ]);
+    });
+
     it('a new modifier armed between the two taps wins for the second', () => {
       const armed = TestBed.inject(PcArmed);
       armed.toggle('CTRL');

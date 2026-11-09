@@ -258,8 +258,11 @@ export class MousePage {
   protected readonly armedList = computed(() =>
     PC_MODIFIERS.filter((modifier) => this.armed.armed().has(modifier)),
   );
-  /** O que o último toque levou armado: o segundo toque de um toque duplo leva o mesmo (ver `press`). */
-  private doubleTapModifiers: readonly PcClickModifier[] = [];
+  /** O botão e o que o último toque levou armado: os toques seguintes da sequência levam o mesmo (ver `press`). */
+  private tapSequence: {
+    readonly button: PadButton;
+    readonly modifiers: readonly PcClickModifier[];
+  } | null = null;
   /** O botão está apertado por uma pressão longa (e então é o fim do dedo que solta; o "Arrastar" é do botão). */
   private pressHold = false;
   /** O número do aperto que este dedo começou: o fim do dedo só solta esse (não um mais novo, do botão "Arrastar"). */
@@ -431,14 +434,18 @@ export class MousePage {
   protected press(button: PadButton, gapMs?: number): void {
     tick();
     if (!this.store.supportsClickV2() || !this.store.canSend()) {
+      this.tapSequence = null;
       void this.store.click(button);
       return;
     }
     const taken = this.armed.takeForClick();
-    // O Ctrl armado vale para o toque duplo inteiro: o segundo toque (o que leva o intervalo) repete o do primeiro, se nada
-    // novo foi armado entre os dois. Um toque comum (sem intervalo) começa de novo.
-    const modifiers = gapMs !== undefined && taken.length === 0 ? this.doubleTapModifiers : taken;
-    this.doubleTapModifiers = gapMs === undefined ? taken : [];
+    // O Ctrl armado vale para a sequência inteira (o toque duplo, o triplo): um toque que continua a anterior (leva o
+    // intervalo, `gapMs`) e do mesmo botão repete o que o anterior levou, se nada novo foi armado entre eles. Um toque que
+    // começa de novo (sem intervalo) começa só com o que está armado.
+    const carried =
+      gapMs !== undefined && this.tapSequence?.button === button ? this.tapSequence.modifiers : [];
+    const modifiers = taken.length > 0 ? taken : carried;
+    this.tapSequence = { button, modifiers };
     void this.store.click(button, undefined, { modifiers, gapMs });
   }
 
