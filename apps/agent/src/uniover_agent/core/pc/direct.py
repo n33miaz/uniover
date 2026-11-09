@@ -89,6 +89,8 @@ INPUT_TYPES: Final = frozenset(
         "pc.media.v1",
     }
 )
+# As mensagens v2 do canal de entrada: o `ready` as lista, e o app só as manda a quem as lista.
+CHANNEL_V2_TYPES: Final = frozenset({"pc.click.v2", "pc.text.v2"})
 # O que, chegando pela nuvem, fecha o canal em uso: os comandos de entrada (clique, tecla, texto,
 # mídia e segurar). O movimento do mouse NÃO está aqui: ele chega sem espera (a API responde antes
 # de o agente o ler), então um movimento atrasado da nuvem é normal logo depois da troca de caminho,
@@ -111,6 +113,10 @@ MAX_RTT_SAMPLES: Final = 200
 MAX_KEY_REPEAT: Final = 50
 # O maior `erase` do contrato do `pc.text.v2`.
 MAX_ERASE: Final = 200
+# O pedido mais pesado que o contrato aceita em apertos de tecla: apagar o máximo e apertar a tecla
+# do fim. O balde das teclas nunca é menor que isto, ou um pedido válido seria recusado só
+# pelo canal.
+MAX_PRESSES_PER_REQUEST: Final = MAX_ERASE + 1
 # O maior `seq` que o contrato aceita nos pedidos de entrada da nuvem.
 MAX_CLOUD_SEQ: Final = 2_147_483_647
 # A época de uma página: 16 hexadecimais sorteados quando ela abre (o mesmo formato do contrato).
@@ -177,8 +183,11 @@ class DirectSettings:
     max_pointer_per_second: int = 240
     # Soltar (`UP`) tem balde próprio e largo: nunca disputa vaga com os apertos.
     max_release_per_second: int = 200
-    # O mesmo orçamento da nuvem: umas 100 teclas por segundo, contando cada repetição.
+    # O mesmo orçamento da nuvem: umas 100 teclas por segundo em média, contando cada repetição e
+    # cada apagado, num balde que comporta um rajada (o pedido mais pesado do contrato, 201 apertos,
+    # cabe sempre: ver `MAX_PRESSES_PER_REQUEST`).
     max_presses_per_second: int = 100
+    max_press_burst: int = 250
     max_text_chars_per_second: int = 600
     tick_seconds: float = 0.5
 
@@ -200,19 +209,69 @@ class DirectRefused(Exception):  # noqa: N818 - o nome diz o que aconteceu
 
 
 class _Rate:
-    """Teto por segundo (janela fixa): passou, a mensagem é descartada. `cost` é o peso dela."""
+    """Teto por segundo (janela fixa): passou, a mensagem é descartada. `cost` é o peso dela.
+
+    Só o que passa é cobrado: a mensagem recusada não gasta a janela (senão uma recusa tiraria a
+    vaga da seguinte, que caberia).
+    """
 
     def __init__(self, limit: int) -> None:
         self._limit = limit
         self._start = 0.0
         self._count = 0
 
-    def allow(self, now: float, cost: int = 1) -> bool:
+    def _roll(self, now: float) -> None:
         if now - self._start >= 1.0:
             self._start = now
             self._count = 0
+
+    def can(self, now: float, cost: int = 1) -> bool:
+        self._roll(now)
+        return self._count + cost <= self._limit
+
+    def charge(self, now: float, cost: int = 1) -> None:
+        self._roll(now)
         self._count += cost
-        return self._count <= self._limit
+
+    def allow(self, now: float, cost: int = 1) -> bool:
+        if not self.can(now, cost):
+            return False
+        self.charge(now, cost)
+        return True
+
+
+class _Bucket:
+    """Balde contínuo: enche `rate` por segundo até `burst`, e cada mensagem tira o peso dela.
+
+    Serve às teclas apertadas: o pedido mais pesado que o contrato aceita (apagar 200 e apertar a
+    tecla do fim) cabe sempre num balde cheio, então nenhum pedido válido é recusado só por ser
+    grande; o que passa da média é que espera. A mensagem recusada não gasta nada.
+    """
+
+    def __init__(self, rate: int, burst: int) -> None:
+        self._rate = rate
+        self._burst = burst
+        self._tokens = float(burst)
+        self._at: float | None = None
+
+    def _fill(self, now: float) -> None:
+        if self._at is not None and now > self._at:
+            self._tokens = min(float(self._burst), self._tokens + (now - self._at) * self._rate)
+        self._at = now if self._at is None else max(self._at, now)
+
+    def can(self, now: float, cost: int = 1) -> bool:
+        self._fill(now)
+        return self._tokens >= cost
+
+    def charge(self, now: float, cost: int = 1) -> None:
+        self._fill(now)
+        self._tokens = max(0.0, self._tokens - cost)
+
+    def allow(self, now: float, cost: int = 1) -> bool:
+        if not self.can(now, cost):
+            return False
+        self.charge(now, cost)
+        return True
 
 
 @dataclass(slots=True)
@@ -224,7 +283,7 @@ class _Session:
     lifetime: float
     clock: ClockOffset
     input_rate: _Rate
-    press_rate: _Rate
+    press_rate: _Bucket
     text_rate: _Rate
     release_rate: _Rate
     pointer_rate: _Rate
@@ -382,7 +441,10 @@ class PcDirectService:
                 lifetime=lifetime,
                 clock=ClockOffset(monotonic=self._monotonic),
                 input_rate=_Rate(settings.max_input_per_second),
-                press_rate=_Rate(settings.max_presses_per_second),
+                press_rate=_Bucket(
+                    settings.max_presses_per_second,
+                    max(settings.max_press_burst, MAX_PRESSES_PER_REQUEST),
+                ),
                 text_rate=_Rate(settings.max_text_chars_per_second),
                 release_rate=_Rate(settings.max_release_per_second),
                 pointer_rate=_Rate(settings.max_pointer_per_second),
@@ -534,7 +596,13 @@ class PcDirectService:
                 session.authenticated = True
                 self._note_cloud_marker(session, data)
                 remaining = max(1, int(session.lifetime - (now - session.created)))
-                self._send(session, INPUT_CHANNEL, {"k": "ready", "life": remaining})
+                # `caps`: as mensagens v2 que este agente aceita no canal. Um agente anterior não
+                # manda o campo, e o app então não manda v2 pelo canal.
+                self._send(
+                    session,
+                    INPUT_CHANNEL,
+                    {"k": "ready", "life": remaining, "caps": sorted(CHANNEL_V2_TYPES)},
+                )
             else:
                 _log.warning("canal direto recusado: a primeira mensagem não trouxe o token válido")
                 self._halt(session)
@@ -651,15 +719,24 @@ class PcDirectService:
     def _within_rates(
         session: _Session, now: float, message_type: str, body: dict[str, Any], *, release: bool
     ) -> bool:
-        """Os tetos por segundo: soltar tem balde próprio; o resto paga mensagem, teclas e texto."""
+        """Os tetos: soltar tem balde próprio; o resto paga mensagem, teclas e texto.
+
+        Confere todos antes de cobrar qualquer um: a mensagem recusada não gasta a vaga de nenhum.
+        """
         if release:
             return session.release_rate.allow(now)
-        if not session.input_rate.allow(now):
-            return False
-        if not session.press_rate.allow(now, _press_cost(message_type, body)):
-            return False
         text = body.get("text")
-        return not isinstance(text, str) or session.text_rate.allow(now, len(text))
+        checks: list[tuple[_Rate | _Bucket, int]] = [
+            (session.input_rate, 1),
+            (session.press_rate, _press_cost(message_type, body)),
+        ]
+        if isinstance(text, str):
+            checks.append((session.text_rate, len(text)))
+        if not all(rate.can(now, cost) for rate, cost in checks):
+            return False
+        for rate, cost in checks:
+            rate.charge(now, cost)
+        return True
 
     @staticmethod
     def _age_of(session: _Session, sent_ms: float, *, release: bool) -> float | None:
