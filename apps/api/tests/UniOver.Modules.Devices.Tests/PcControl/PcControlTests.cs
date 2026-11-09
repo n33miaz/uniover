@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
 using UniOver.Modules.Devices.Features.PcControl;
 using Microsoft.AspNetCore.Http;
@@ -186,6 +187,101 @@ public sealed class PcMessagesTests
         PcMessages.KeyV2Capability.Should().Be("pc.key.v2");
         GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.key.v2");
     }
+
+    [Fact]
+    public void TextAndClickV2Capabilities_AreTheOnesTheHelloDeclares_AndTheApiListsThemAsFeatures()
+    {
+        PcMessages.TextV2Capability.Should().Be("pc.text.v2");
+        PcMessages.ClickV2Capability.Should().Be("pc.click.v2");
+        GetModuleInfoHandler.AgentFeatures.Should().Contain(["pc.text.v2", "pc.click.v2"]);
+        AgentMessageDirections.ToAgent.Should().Contain([AgentMessageTypes.PcTextV2, AgentMessageTypes.PcClickV2]);
+    }
+
+    [Fact]
+    public void TextFitsV1_OnlyForPlainText()
+    {
+        PcMessages.TextFitsV1(new PcTextRequest("olá")).Should().BeTrue();
+        PcMessages.TextFitsV1(new PcTextRequest("olá", null, null, 0, null)).Should().BeTrue();
+        PcMessages.TextFitsV1(new PcTextRequest("olá", null, null, 2, null)).Should().BeFalse();
+        PcMessages.TextFitsV1(new PcTextRequest("olá", null, null, null, "ENTER")).Should().BeFalse();
+        PcMessages.TextFitsV1(new PcTextRequest(null, null, null, 2, null)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TextFor_BuildsTheV1ForPlainTextAndTheV2OnlyWhenItNeedsIt()
+    {
+        var plain = PcMessages.TextFor(new PcTextRequest("olá", null, null, 0, null));
+        plain.Type.Should().Be(AgentMessageTypes.PcTextV1);
+        SameJson(plain.Body, "{\"text\":\"olá\"}");
+        IsValidForTheContract(plain).Should().BeTrue();
+
+        var edit = PcMessages.TextFor(new PcTextRequest("olá", null, null, 3, "ENTER"));
+        edit.Type.Should().Be(AgentMessageTypes.PcTextV2);
+        SameJson(edit.Body, "{\"erase\":3,\"text\":\"olá\",\"key\":\"ENTER\"}");
+        IsValidForTheContract(edit).Should().BeTrue();
+
+        var eraseOnly = PcMessages.TextFor(new PcTextRequest(null, null, null, 5, null));
+        SameJson(eraseOnly.Body, "{\"erase\":5}");
+        IsValidForTheContract(eraseOnly).Should().BeTrue();
+
+        var keyOnly = PcMessages.TextFor(new PcTextRequest("", null, null, null, "TAB"));
+        SameJson(keyOnly.Body, "{\"key\":\"TAB\"}");
+        IsValidForTheContract(keyOnly).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TextPresses_CountsEveryBackspaceAndTheKeyAtTheEnd()
+    {
+        PcMessages.TextPresses(new PcTextRequest("abc")).Should().Be(0);
+        PcMessages.TextPresses(new PcTextRequest("abc", null, null, 4, null)).Should().Be(4);
+        PcMessages.TextPresses(new PcTextRequest("abc", null, null, 4, "ENTER")).Should().Be(5);
+        PcMessages.TextPresses(new PcTextRequest(null, null, null, null, "TAB")).Should().Be(1);
+    }
+
+    [Fact]
+    public void ClickFitsV1_OnlyWithoutModifiersAndWithoutAGap()
+    {
+        PcMessages.ClickFitsV1(new PcClickRequest("LEFT", null)).Should().BeTrue();
+        PcMessages.ClickFitsV1(new PcClickRequest("LEFT", "DOUBLE", null, null, [], 0)).Should().BeTrue();
+        PcMessages.ClickFitsV1(new PcClickRequest("LEFT", null, null, null, ["CTRL"], null)).Should().BeFalse();
+        PcMessages.ClickFitsV1(new PcClickRequest("LEFT", null, null, null, null, 120)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ClickFor_BuildsTheV1WhenTheRequestFitsAndTheV2OnlyWhenItNeedsIt()
+    {
+        var plain = PcMessages.ClickFor(new PcClickRequest("RIGHT", "DOUBLE"));
+        plain.Type.Should().Be(AgentMessageTypes.PcClickV1);
+        SameJson(plain.Body, "{\"button\":\"RIGHT\",\"action\":\"DOUBLE\"}");
+        IsValidForTheContract(plain).Should().BeTrue();
+
+        var withModifiers = PcMessages.ClickFor(new PcClickRequest("LEFT", null, null, null, ["CTRL", "SHIFT"], null));
+        withModifiers.Type.Should().Be(AgentMessageTypes.PcClickV2);
+        SameJson(withModifiers.Body, "{\"button\":\"LEFT\",\"modifiers\":[\"CTRL\",\"SHIFT\"]}");
+        IsValidForTheContract(withModifiers).Should().BeTrue();
+
+        var withGap = PcMessages.ClickFor(new PcClickRequest("LEFT", "CLICK", null, null, null, 140));
+        withGap.Type.Should().Be(AgentMessageTypes.PcClickV2);
+        SameJson(withGap.Body, "{\"button\":\"LEFT\",\"gapMs\":140}");
+        IsValidForTheContract(withGap).Should().BeTrue();
+
+        var both = PcMessages.ClickFor(new PcClickRequest("MIDDLE", "DOUBLE", null, null, ["ALT"], 90));
+        SameJson(both.Body, "{\"button\":\"MIDDLE\",\"action\":\"DOUBLE\",\"modifiers\":[\"ALT\"],\"gapMs\":90}");
+        IsValidForTheContract(both).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TheV2BodiesCarryTheSequenceAndEpochTheDirectChannelNeeds()
+    {
+        const string page = "3fa9c10d7be2465a";
+        var text = PcMessages.WithSeq(PcMessages.TextFor(new PcTextRequest("a", null, null, 2, null)), 7, page);
+        var click = PcMessages.WithSeq(PcMessages.ClickFor(new PcClickRequest("LEFT", null, null, null, ["CTRL"], null)), 8, page);
+
+        SameJson(text.Body, "{\"erase\":2,\"text\":\"a\",\"seq\":7,\"epoch\":\"3fa9c10d7be2465a\"}");
+        SameJson(click.Body, "{\"button\":\"LEFT\",\"modifiers\":[\"CTRL\"],\"seq\":8,\"epoch\":\"3fa9c10d7be2465a\"}");
+        IsValidForTheContract(text).Should().BeTrue("o esquema fechado da v2 aceita o número e a época");
+        IsValidForTheContract(click).Should().BeTrue("o esquema fechado da v2 aceita o número e a época");
+    }
 }
 
 public sealed class PcProblemsTests
@@ -321,6 +417,44 @@ public sealed class PcValidatorTests
         PcValidator.Text(new PcTextRequest(string.Concat(Enumerable.Repeat("\U0001F600", 200)))).Should().BeEmpty();
         PcValidator.Text(new PcTextRequest(string.Concat(Enumerable.Repeat("\U0001F600", 201)))).Should().ContainKey("text");
         PcValidator.Text(new PcTextRequest(new string('x', 201))).Should().ContainKey("text");
+    }
+
+    [Fact]
+    public void Click_ModifiersAndGapFollowTheContractOfTheV2()
+    {
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "SHIFT"], 120)).Should().BeEmpty();
+        PcValidator.Click(new PcClickRequest("LEFT", "DOUBLE", null, null, ["ALT"], 0)).Should().BeEmpty();
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "CTRL"], null)).Should().ContainKey("modifiers");
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["META"], null)).Should().ContainKey("modifiers");
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["WIN"], null)).Should().ContainKey("modifiers");
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, ["CTRL", "ALT", "SHIFT", "WIN", "CTRL"], null)).Should().ContainKey("modifiers");
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, null, 400)).Should().BeEmpty();
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, null, 401)).Should().ContainKey("gapMs");
+        PcValidator.Click(new PcClickRequest("LEFT", null, null, null, null, -1)).Should().ContainKey("gapMs");
+    }
+
+    [Theory]
+    [InlineData("DOWN")]
+    [InlineData("UP")]
+    public void Click_HoldingTheButtonNeverTakesAModifierOrAGap(string action)
+    {
+        PcValidator.Click(new PcClickRequest("LEFT", action, null, null, ["CTRL"], null)).Should().ContainKey("action");
+        PcValidator.Click(new PcClickRequest("LEFT", action, null, null, null, 100)).Should().ContainKey("action");
+        PcValidator.Click(new PcClickRequest("LEFT", action, null, null, null, 0)).Should().BeEmpty();
+        PcValidator.Click(new PcClickRequest("LEFT", action)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Text_V2CanEraseAndPressAKeyWithoutText()
+    {
+        PcValidator.Text(new PcTextRequest(null, null, null, 3, null)).Should().BeEmpty();
+        PcValidator.Text(new PcTextRequest("", null, null, null, "ENTER")).Should().BeEmpty();
+        PcValidator.Text(new PcTextRequest("abc", null, null, 200, "TAB")).Should().BeEmpty();
+        PcValidator.Text(new PcTextRequest(null, null, null, 0, null)).Should().ContainKey("text");
+        PcValidator.Text(new PcTextRequest(null, null, null, 201, null)).Should().ContainKey("erase");
+        PcValidator.Text(new PcTextRequest("a", null, null, -1, null)).Should().ContainKey("erase");
+        PcValidator.Text(new PcTextRequest("a", null, null, null, "ESCAPE")).Should().ContainKey("key");
+        PcValidator.Text(new PcTextRequest("a\nb", null, null, 1, "ENTER")).Should().ContainKey("text");
     }
 
     [Fact]

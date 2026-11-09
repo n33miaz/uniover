@@ -16,7 +16,7 @@ using UniOver.Modules.Devices.Security;
 namespace UniOver.Modules.Devices.Features.PcControl;
 
 /// <summary>
-/// <c>Capabilities</c>: as capacidades <c>pc.*</c> opcionais que o agente declarou (hoje <c>pc.key.v2</c>), para a tela
+/// <c>Capabilities</c>: as capacidades <c>pc.*</c> opcionais que o agente declarou (<c>pc.key.v2</c>, <c>pc.text.v2</c>, <c>pc.click.v2</c>...), para a tela
 /// esconder o que o PC não entende. Vazio com agente antigo, sem PC ou sem conexão ainda.
 /// </summary>
 internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps, IReadOnlyList<string> Capabilities);
@@ -30,7 +30,17 @@ internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyLi
 /// </summary>
 internal sealed record PcPointerRequest(int? Dx, int? Dy, int? ScrollX, int? ScrollY, int? Seq = null);
 
-internal sealed record PcClickRequest(string? Button, string? Action, int? Seq = null, string? Epoch = null);
+/// <summary>
+/// <c>Modifiers</c> (Ctrl+clique) e <c>GapMs</c> (o intervalo desde o toque anterior, para o duplo clique) só existem na
+/// <c>pc.click.v2</c>, e só valem para <c>CLICK</c> e <c>DOUBLE</c>: segurar o botão (<c>DOWN</c>/<c>UP</c>) nunca leva modificador.
+/// </summary>
+internal sealed record PcClickRequest(
+    string? Button,
+    string? Action,
+    int? Seq = null,
+    string? Epoch = null,
+    string[]? Modifiers = null,
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? GapMs = null);
 
 /// <summary>
 /// <c>Repeat</c> (1 a 50) aperta a tecla várias vezes num pedido só; <c>Action</c> (<c>PRESS</c>, padrão, <c>DOWN</c>, <c>UP</c>)
@@ -48,7 +58,16 @@ internal sealed record PcKeyRequest(
 /// <summary>Soltar um modificador que o app segurou (<c>CTRL</c>, <c>ALT</c>, <c>SHIFT</c> ou <c>WIN</c>).</summary>
 internal sealed record PcKeyReleaseRequest(string? Key, int? Seq = null, string? Epoch = null);
 
-internal sealed record PcTextRequest(string? Text, int? Seq = null, string? Epoch = null);
+/// <summary>
+/// <c>Erase</c> (Backspaces) e <c>Key</c> (<c>ENTER</c> ou <c>TAB</c> no fim) só existem na <c>pc.text.v2</c>: o agente apaga, digita e
+/// aperta a tecla, nesta ordem, num toque só. <c>Text</c> pode faltar quando um dos outros dois vem.
+/// </summary>
+internal sealed record PcTextRequest(
+    string? Text,
+    int? Seq = null,
+    string? Epoch = null,
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Erase = null,
+    string? Key = null);
 
 internal sealed record PcMediaRequest(string? Action, int? Steps, int? Seq = null, string? Epoch = null);
 
@@ -63,6 +82,8 @@ internal static class PcValidator
     public const int MaxModifiers = 4;
     public const int MaxSteps = 10;
     public const int MaxKeyRepeat = 50;
+    public const int MaxErase = 200;
+    public const int MaxGapMs = 400;
     public const int EpochLength = 16;
 
     public static Dictionary<string, string[]> Pointer(PcPointerRequest? request)
@@ -88,6 +109,30 @@ internal static class PcValidator
         if (request?.Action is not null && !PcMessages.ClickActions.ContainsKey(request.Action))
         {
             errors["action"] = ["Escolha CLICK, DOUBLE, DOWN ou UP."];
+        }
+
+        var modifiers = request?.Modifiers ?? [];
+        if (modifiers.Length > MaxModifiers
+            || modifiers.Any(m => m is null || !PcMessages.ClickModifiers.ContainsKey(m))
+            || modifiers.Distinct(StringComparer.Ordinal).Count() != modifiers.Length)
+        {
+            errors["modifiers"] = ["Use CTRL, ALT ou SHIFT, sem repetir."];
+        }
+
+        if (request?.GapMs is { } gap && (gap < 0 || gap > MaxGapMs))
+        {
+            errors["gapMs"] = [$"Use de 0 a {MaxGapMs} ms."];
+        }
+
+        // Segurar e soltar o botão (o arrastar) nunca leva modificador nem intervalo: um modificador apertado numa ponta e solto na
+        // outra seria mais um caminho para a tecla ficar presa.
+        if ((modifiers.Length > 0 || request?.GapMs is > 0)
+            && request?.Action is not null
+            && PcMessages.ClickActions.TryGetValue(request.Action, out var action)
+            && action is PcClickV1BodyAction.Down or PcClickV1BodyAction.Up
+            && !errors.ContainsKey("action"))
+        {
+            errors["action"] = ["Modificador e intervalo só valem com CLICK ou DOUBLE."];
         }
 
         return errors;
@@ -161,9 +206,23 @@ internal static class PcValidator
         var errors = new Dictionary<string, string[]>();
         CheckNumbering(errors, request?.Seq, request?.Epoch);
         var text = request?.Text;
+        if (request?.Erase is { } erase && (erase < 0 || erase > MaxErase))
+        {
+            errors["erase"] = [$"Use de 0 a {MaxErase} caracteres a apagar."];
+        }
+
+        if (request?.Key is not null && !PcMessages.TextKeys.ContainsKey(request.Key))
+        {
+            errors["key"] = ["Escolha ENTER ou TAB."];
+        }
+
+        // O texto só pode faltar quando há o que apagar ou uma tecla no fim.
         if (string.IsNullOrEmpty(text))
         {
-            errors["text"] = ["Informe o texto a digitar."];
+            if (!errors.ContainsKey("erase") && !errors.ContainsKey("key") && !PcMessages.TextEditsAnything(request))
+            {
+                errors["text"] = ["Informe o texto a digitar."];
+            }
         }
         else if (text.EnumerateRunes().Count() > MaxTextLength)
         {
@@ -560,16 +619,17 @@ internal static class PcControlEndpoints
             return ProblemDetailsExtensions.ValidationProblem(errors);
         }
 
-        var action = request!.Action is null ? PcClickV1BodyAction.Click : PcMessages.ClickActions[request.Action];
+        // A v1 sempre que o pedido cabe nela; a v2 só com modificador ou intervalo, e só para o agente que a declarou.
         return await handler.RunAsync(
             userId,
-            PcMessages.Click(PcMessages.Buttons[request.Button!], action),
+            PcMessages.ClickFor(request!),
             PcControlHandler.CommandTimeout,
             null,
             ClientInfo.From(http),
             cancellationToken,
-            seq: request.Seq,
-            epoch: request.Epoch);
+            PcMessages.ClickFitsV1(request!) ? null : PcMessages.ClickV2Capability,
+            request!.Seq,
+            request.Epoch);
     }
 
     private static async Task<IResult> KeyAsync(
@@ -644,7 +704,12 @@ internal static class PcControlEndpoints
     }
 
     private static async Task<IResult> TextAsync(
-        PcTextRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+        PcTextRequest? request,
+        ICurrentUser current,
+        HttpContext http,
+        PcControlHandler handler,
+        PcKeyBudget budget,
+        CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId)
         {
@@ -652,17 +717,37 @@ internal static class PcControlEndpoints
         }
 
         var errors = PcValidator.Text(request);
-        return errors.Count > 0
-            ? ProblemDetailsExtensions.ValidationProblem(errors)
-            : await handler.RunAsync(
-                userId,
-                PcMessages.Text(request!.Text!),
-                PcControlHandler.CommandTimeout,
-                null,
-                ClientInfo.From(http),
-                cancellationToken,
-                seq: request.Seq,
-                epoch: request.Epoch);
+        if (errors.Count > 0)
+        {
+            return ProblemDetailsExtensions.ValidationProblem(errors);
+        }
+
+        // Cada Backspace e a tecla do fim são apertos: contam no mesmo teto das teclas (o texto puro, como sempre, não paga).
+        var cost = PcMessages.TextPresses(request!);
+        if (cost > 0 && !budget.TryTake(userId, cost))
+        {
+            return PcProblems.KeyBudgetExceeded();
+        }
+
+        // A v1 para o texto puro; a v2 só com apagar ou tecla no fim, e só para o agente que a declarou.
+        var result = await handler.RunAsync(
+            userId,
+            PcMessages.TextFor(request!),
+            PcControlHandler.CommandTimeout,
+            null,
+            ClientInfo.From(http),
+            cancellationToken,
+            PcMessages.TextFitsV1(request!) ? null : PcMessages.TextV2Capability,
+            request!.Seq,
+            request.Epoch);
+
+        // O teto conta o que saiu: sem PC (409) ou sem sessão para entregar (503), nada foi enviado e o gasto volta.
+        if (cost > 0 && result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict or StatusCodes.Status503ServiceUnavailable })
+        {
+            budget.Refund(userId, cost);
+        }
+
+        return result;
     }
 
     private static async Task<IResult> MediaAsync(

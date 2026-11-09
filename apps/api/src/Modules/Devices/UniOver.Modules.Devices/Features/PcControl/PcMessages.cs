@@ -22,6 +22,16 @@ internal static class PcMessages
     /// </summary>
     public const string KeyV2Capability = "pc.key.v2";
 
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.text.v2</c> (apagar, digitar e apertar uma tecla numa mensagem só).
+    /// </summary>
+    public const string TextV2Capability = "pc.text.v2";
+
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.click.v2</c> (clique com modificadores e com o intervalo do toque anterior).
+    /// </summary>
+    public const string ClickV2Capability = "pc.click.v2";
+
     /// <summary>Capacidade do canal direto (WebRTC): o agente só a declara depois de a API a listar em <c>features</c>.</summary>
     public const string RtcCapability = "pc.rtc.v1";
 
@@ -30,6 +40,13 @@ internal static class PcMessages
 
     public static FrozenDictionary<string, PcClickV1BodyAction> ClickActions { get; } = Enum.GetValues<PcClickV1BodyAction>()
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
+
+    public static FrozenDictionary<string, PcClickV2BodyModifiersItem> ClickModifiers { get; } = Enum.GetValues<PcClickV2BodyModifiersItem>()
+        .ToFrozenDictionary(WireName, modifier => modifier, StringComparer.Ordinal);
+
+    /// <summary>As teclas que a <c>pc.text.v2</c> aperta depois de digitar.</summary>
+    public static FrozenDictionary<string, PcTextV2BodyKey> TextKeys { get; } = Enum.GetValues<PcTextV2BodyKey>()
+        .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
 
     public static FrozenDictionary<string, PcKeyV1BodyKey> Keys { get; } = Enum.GetValues<PcKeyV1BodyKey>()
         .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
@@ -94,6 +111,40 @@ internal static class PcMessages
             Body = new PcClickV1Body { Button = button, Action = action },
         }.ToJson()));
 
+    /// <summary>
+    /// A v1 serve todo clique que ela sabe exprimir (sem modificador e sem intervalo): o agente anterior à v2 segue servido.
+    /// Só modificador ou intervalo precisam da v2 (e da capacidade <see cref="ClickV2Capability"/>).
+    /// </summary>
+    public static bool ClickFitsV1(PcClickRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return (request.Modifiers ?? []).Length == 0 && (request.GapMs ?? 0) == 0;
+    }
+
+    /// <summary>Monta a mensagem do clique (v1 quando cabe, v2 quando não) de um pedido já validado.</summary>
+    public static OutboundMessage ClickFor(PcClickRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var action = request.Action is null ? PcClickV1BodyAction.Click : ClickActions[request.Action];
+        if (ClickFitsV1(request))
+        {
+            return Click(Buttons[request.Button!], action);
+        }
+
+        var modifiers = (request.Modifiers ?? []).Select(m => ClickModifiers[m]).ToList();
+        return Live(AgentMessageTypes.PcClickV2, BodyOf(new PcClickV2Message
+        {
+            Body = new PcClickV2Body
+            {
+                Button = Enum.Parse<PcClickV2BodyButton>(Buttons[request.Button!].ToString()),
+                // CLICK é o padrão do contrato: só vai o que muda.
+                Action = action == PcClickV1BodyAction.Double ? PcClickV2BodyAction.Double : null,
+                Modifiers = modifiers.Count == 0 ? null : [.. modifiers],
+                GapMs = request.GapMs is > 0 ? request.GapMs : null,
+            },
+        }.ToJson()));
+    }
+
     public static OutboundMessage Key(PcKeyV1BodyKey key, IReadOnlyList<PcKeyV1BodyModifiersItem> modifiers) =>
         Live(AgentMessageTypes.PcKeyV1, BodyOf(new PcKeyV1Message
         {
@@ -139,6 +190,47 @@ internal static class PcMessages
 
     public static OutboundMessage Text(string text) =>
         Live(AgentMessageTypes.PcTextV1, BodyOf(new PcTextV1Message { Body = new PcTextV1Body { Text = text } }.ToJson()));
+
+    /// <summary>O pedido tem texto, o que apagar ou uma tecla no fim: sem nada disso não há o que fazer.</summary>
+    public static bool TextEditsAnything(PcTextRequest? request) =>
+        request is not null && (!string.IsNullOrEmpty(request.Text) || (request.Erase ?? 0) > 0 || request.Key is not null);
+
+    /// <summary>
+    /// A v1 serve o texto puro: sem apagar e sem tecla no fim, o agente anterior à v2 segue servido. Só apagar ou apertar uma
+    /// tecla depois precisam da v2 (e da capacidade <see cref="TextV2Capability"/>).
+    /// </summary>
+    public static bool TextFitsV1(PcTextRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return (request.Erase ?? 0) == 0 && request.Key is null && !string.IsNullOrEmpty(request.Text);
+    }
+
+    /// <summary>Quantos apertos de tecla o pedido faz (cada Backspace e a tecla do fim); o texto puro não conta.</summary>
+    public static int TextPresses(PcTextRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return (request.Erase ?? 0) + (request.Key is null ? 0 : 1);
+    }
+
+    /// <summary>Monta a mensagem do texto (v1 quando cabe, v2 quando não) de um pedido já validado.</summary>
+    public static OutboundMessage TextFor(PcTextRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (TextFitsV1(request))
+        {
+            return Text(request.Text!);
+        }
+
+        return Live(AgentMessageTypes.PcTextV2, BodyOf(new PcTextV2Message
+        {
+            Body = new PcTextV2Body
+            {
+                Erase = request.Erase is > 0 ? request.Erase : null,
+                Text = string.IsNullOrEmpty(request.Text) ? null : request.Text,
+                Key = request.Key is null ? null : TextKeys[request.Key],
+            },
+        }.ToJson()));
+    }
 
     public static OutboundMessage Media(PcMediaV1BodyAction action, int steps) =>
         Live(AgentMessageTypes.PcMediaV1, BodyOf(new PcMediaV1Message
@@ -190,6 +282,13 @@ internal static class PcMessages
     private static string WireName(PcClickV1BodyAction action) =>
         BodyOf(new PcClickV1Message { Body = new PcClickV1Body { Button = PcClickV1BodyButton.Left, Action = action } }.ToJson())
             .GetProperty("action").GetString()!;
+
+    private static string WireName(PcClickV2BodyModifiersItem modifier) =>
+        BodyOf(new PcClickV2Message { Body = new PcClickV2Body { Button = PcClickV2BodyButton.Left, Modifiers = [modifier] } }.ToJson())
+            .GetProperty("modifiers")[0].GetString()!;
+
+    private static string WireName(PcTextV2BodyKey key) =>
+        BodyOf(new PcTextV2Message { Body = new PcTextV2Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
 
     private static string WireName(PcKeyV1BodyKey key) =>
         BodyOf(new PcKeyV1Message { Body = new PcKeyV1Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
