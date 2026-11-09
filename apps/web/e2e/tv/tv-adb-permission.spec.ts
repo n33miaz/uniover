@@ -216,16 +216,19 @@ test.describe('a TV ainda não liberou o ADB', () => {
       extra: { agentError: 'adb_device_changed' },
     };
     await shortcut(page, 'Atalho 1').click();
-    await expect(sheet(page)).toContainText('TV não encontrada no endereço');
+    await expect(sheet(page)).toContainText('Outro aparelho respondeu no endereço da TV');
     await expect(page.locator('app-tv-toast .toast')).toHaveCount(0); // sem o erro em cima da folha
     // Sem o pedido de permissão aqui (o agente se recusa a falar com esse aparelho): só a saída explícita.
     await expect(button(sheet(page), 'Pedir na TV')).toHaveCount(0);
 
     await button(sheet(page), 'É a mesma TV').click();
     await expect(sheet(page)).toContainText('Esta é a mesma TV? (ex.: trocou de Wi-Fi para cabo)');
+    await expect(sheet(page)).toContainText(
+      'A TV vai pedir permissão; aceite marcando Sempre permitir.',
+    );
     expect(tv.count('/adb/rebind')).toBe(0); // nada foi enviado antes de confirmar
     await button(sheet(page), 'Não').click();
-    await expect(sheet(page)).toContainText('TV não encontrada no endereço');
+    await expect(sheet(page)).toContainText('Outro aparelho respondeu no endereço da TV');
     expect(tv.count('/adb/rebind')).toBe(0);
 
     // Confirmado: o registro é refeito e, em seguida, vem o pedido de permissão de sempre.
@@ -260,5 +263,14 @@ test.describe('a TV ainda não liberou o ADB', () => {
     await expect(button(sheet(page), 'É a mesma TV')).toHaveCount(0);
     await expect(button(sheet(page), 'Pedir na TV')).toHaveCount(0);
     expect(tv.count('/adb/rebind')).toBe(0);
+  });
+
+  test('registro apagado por um pareamento novo com outro aparelho: recado calmo, sem folha', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await saysAgent(page, 'missing', 'registration_cleared');
+    await expect(notice(page)).toContainText('Permissão apagada: a TV mudou');
+    await expect(sheet(page)).toBeHidden();
   });
 });

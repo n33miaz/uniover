@@ -5,11 +5,19 @@ processo é o `FakeAdbRunner`. O agente nunca conecta sozinho a um MAC trocado: 
 que o refazer do registro não conecta e que, sem ele, nenhum caminho (nem o da pessoa) conecta.
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters.adb_authorization import GRANTED, NEEDS_USER
+from uniover_agent.adapters.adb_authorization import (
+    GRANTED,
+    NEEDS_USER,
+    REBIND_DONE,
+    REBIND_KEY_CHANGED,
+    REBIND_NO_MAC,
+    VERIFIED,
+)
 from uniover_agent.adapters.fakes import FakeTvAdb
 from uniover_agent.composition.connection import declarable_capabilities
 from uniover_agent.core import Command, ResultStatus, tv_adb_rebind_handler
@@ -26,8 +34,11 @@ from .support_adb import CONNECT, DISCONNECT, GET_STATE
 from .test_tv_adb_permission import (
     MAC,
     OTHER_MAC,
+    PAIRING,
+    REFUSED,
     UNKNOWN,
     Home,
+    fake_key,
     runner_with,
 )
 
@@ -53,7 +64,7 @@ def home(tmp_path: Path) -> Home:
 def test_the_registration_moves_to_the_device_of_now_and_asks_for_a_new_proof(home: Home) -> None:
     authorization = home.verify(settled=True)
     authorization.note_serial("SN-ANTIGO")
-    assert authorization.rebind(OTHER_MAC)
+    assert authorization.rebind(OTHER_MAC) == REBIND_DONE
     record = home.authorization().record
     assert record.state == GRANTED  # sem prova: o pedido da pessoa que vem depois a refaz
     assert record.mac == OTHER_MAC
@@ -64,7 +75,7 @@ def test_the_registration_moves_to_the_device_of_now_and_asks_for_a_new_proof(ho
 
 def test_rebinding_needs_a_mac_that_was_read(home: Home) -> None:
     authorization = home.verify()
-    assert not authorization.rebind("")
+    assert authorization.rebind("") == REBIND_NO_MAC
     assert home.authorization().record.mac == MAC
 
 
@@ -136,17 +147,116 @@ async def test_the_rebind_is_refused_when_the_tv_does_not_answer_or_has_no_reada
     assert home.authorization().record.mac == MAC  # nada mudou
 
 
-async def test_a_new_pairing_clears_the_registration_and_the_next_request_starts_clean(
+async def test_a_new_pairing_with_the_same_tv_only_asks_for_a_new_proof(home: Home) -> None:
+    home.verify(settled=True)
+    sink = Sink()
+    runner = runner_with(state=UNKNOWN)
+    adb = home.adb(runner, permission=sink)
+    await adb.forget_registration()
+    record = home.authorization().record
+    # Mesmo MAC: nada é apagado. Chave e MAC ficam, e só a prova se refaz.
+    assert record.state == GRANTED
+    assert record.mac == MAC
+    assert record.fingerprint == home.authorization().keys.fingerprint()
+    assert record.serial == "" and not record.timeout_disabled
+    assert sink.events[-1] == ("missing", "unproven")
+    with pytest.raises(AdbUnauthorized):  # nada conecta sozinho antes da prova
+        await adb.connect()
+    assert CONNECT not in runner.calls
+
+
+async def test_a_new_pairing_with_another_device_deletes_the_registration_and_says_so(
     home: Home,
 ) -> None:
     home.verify(settled=True)
+    home.mac = OTHER_MAC
     sink = Sink()
     adb = home.adb(runner_with(state=UNKNOWN), permission=sink)
     await adb.forget_registration()
     assert home.authorization().record.state == ""
-    assert sink.events[-1] == ("missing", "never")
-    with pytest.raises(AdbUnauthorized):  # nada conecta sozinho depois de apagar
+    assert home.authorization().record.mac == ""
+    # O app mostra um aviso gentil: o motivo próprio não é silencioso.
+    assert sink.events[-1] == ("missing", "registration_cleared")
+
+
+async def test_a_new_pairing_without_a_readable_mac_keeps_the_registration(home: Home) -> None:
+    home.verify(settled=True)
+    home.mac = ""
+    adb = home.adb(runner_with(state=UNKNOWN))
+    await adb.forget_registration()
+    assert home.authorization().record.state == GRANTED
+    assert home.authorization().record.mac == MAC
+
+
+# --- uma espera do aceite não sobrevive a um registro refeito ------------------------------------
+
+
+@pytest.mark.parametrize("action", ["rebind", "forget"])
+async def test_a_running_accept_wait_ends_when_the_registration_changes(
+    home: Home, action: str
+) -> None:
+    forever = asyncio.Event()
+
+    async def never(seconds: float) -> None:
+        del seconds
+        await forever.wait()
+
+    home.verify(settled=True)
+    sink = Sink()
+    runner = runner_with(connect=REFUSED, state=UNKNOWN)
+    adb = home.adb(runner, permission=sink, sleep=never, **PAIRING)
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
         await adb.connect()
+    assert sink.events[-1] == ("pending", "prompt_on_tv")
+    task = adb._pairing_task
+    assert task is not None and not task.done()
+
+    if action == "rebind":
+        await adb.rebind_registration()
+    else:
+        await adb.forget_registration()
+
+    assert sink.events[-1][0] == "missing"  # nunca preso em `pending`
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert task.cancelled() or task.done()
+    assert adb._pairing_task is None
+    await adb.aclose()
+
+
+# --- a chave mudou: refazer o registro não concede nada ------------------------------------------
+
+
+async def test_rebinding_with_a_changed_key_grants_nothing(home: Home) -> None:
+    authorization = home.verify(settled=True)
+    old = authorization.keys.fingerprint()
+    home.write_key(fake_key("outra-chave"))  # o `adbkey` de agora não é o do registro
+    home.mac = OTHER_MAC
+    sink = Sink()
+    runner = runner_with(connect=[REFUSED], state=UNKNOWN)
+    adb = home.adb(runner, permission=sink)
+
+    await adb.rebind_registration()
+
+    record = home.authorization().record
+    assert record.state == VERIFIED  # estado e chave anotados ficam como estavam
+    assert record.fingerprint == old
+    assert record.mac == OTHER_MAC  # só o aparelho de agora foi anotado
+    assert not home.authorization().has_grant()  # e a chave nova não tem permissão nenhuma
+    assert sink.events[-1] == ("missing", "key_changed")
+    assert CONNECT not in runner.calls
+    # Sem a trava do outro aparelho (a permissão antiga era de outra chave), o pedido segue:
+    # é ele que pede a permissão à chave nova.
+    with user_initiated_adb(), pytest.raises(AdbUnauthorized):
+        await adb.connect()
+    assert CONNECT in runner.calls
+
+
+def test_the_authorization_reports_what_a_rebind_did(home: Home) -> None:
+    authorization = home.verify()
+    home.write_key(fake_key("outra-chave"))
+    assert authorization.rebind(OTHER_MAC) == REBIND_KEY_CHANGED
+    assert not authorization.another_device_at(MAC)  # outra chave: nada a proteger
 
 
 async def test_clearing_the_registration_survives_a_missing_runner_call(home: Home) -> None:

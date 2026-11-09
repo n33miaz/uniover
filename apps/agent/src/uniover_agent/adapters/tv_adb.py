@@ -30,6 +30,7 @@ from uniover_agent.adapters.adb_authorization import (
     GATE_OTHER,
     GATE_TV_REFUSED,
     GRANTED,
+    REBIND_KEY_CHANGED,
     VERIFIED,
     AdbAuthorization,
 )
@@ -685,13 +686,22 @@ class AdbTv:
                 self._mac_memo = _UNREAD
 
     def _forget_state_of_the_old_registration(self, reason: str, detail: str) -> None:
-        """O registro mudou a pedido da pessoa: o que se sabia da recusa e do aviso já não vale."""
+        """O registro mudou a pedido da pessoa: o que se sabia da recusa e do aviso já não vale.
+
+        Uma espera do aceite em andamento acaba aqui (o aviso era do registro antigo): o estado
+        nunca fica preso em `pending`. Quem cancela não espera a tarefa: ela termina quando a
+        trava (que quem chamou segura) for solta.
+        """
+        task = self._pairing_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._pairing_task = None
         self._blocked_error = None
         self._authorization_pending = False
         self._gate_reason = GATE_OTHER
         self._lost_from = None
         self._permission_state = None
-        self._report_permission("missing", reason, detail)
+        self._report_permission("missing", reason, detail, final=True)
 
     async def rebind_registration(self) -> None:
         """A pessoa confirmou, no app, que o aparelho do endereço agora é a mesma TV.
@@ -707,30 +717,53 @@ class AdbTv:
                 raise AdbUnreachable("a TV não respondeu na rede")
             if not mac:
                 raise AdbIdentityUnconfirmed(_IDENTITY_MESSAGE)
-            self._authorization.rebind(mac)
+            outcome = self._authorization.rebind(mac)
             self._connected = False
             await (
                 self._disconnect_locked()
             )  # um transporte de antes não vale para o aparelho de agora
-            _log.info("registro do ADB refeito para o aparelho de agora, a pedido da pessoa")
+            _log.info("registro do ADB: pedido de refazer atendido (%s)", outcome)
+            if outcome == REBIND_KEY_CHANGED:
+                # A chave mudou: nada foi concedido; o pedido seguinte é o da chave nova.
+                self._forget_state_of_the_old_registration(
+                    "key_changed", "a chave do ADB deste PC mudou; a permissão antiga não vale"
+                )
+                return
             self._forget_state_of_the_old_registration(
                 "rebound", "a pessoa confirmou que é a mesma TV; falta provar a permissão"
             )
 
     async def forget_registration(self) -> None:
-        """Um pareamento novo (a pessoa o pediu): apaga o registro da permissão do ADB.
+        """Um pareamento novo (a pessoa o pediu): a permissão do ADB volta a exigir prova.
 
-        Não fala com a TV (além de desfazer um transporte antigo): o pedido de permissão seguinte,
-        da pessoa, começa do zero e mostra o aviso se a TV não confia na chave.
+        Com o **mesmo aparelho** (MAC igual, ou ainda sem como ler) o registro só cai para `granted`
+        (`forget_device`): chave e MAC ficam, e o pedido de permissão seguinte, da pessoa, refaz a
+        prova (a TV só mostra o aviso se não confiar na chave). Só com **outro MAC** o registro é
+        apagado: era de outra TV, e o app avisa a pessoa (`registration_cleared`). Não conecta a
+        nada; só lê a ARP e desfaz um transporte antigo.
         """
         async with self._lock:
-            self._authorization.clear()
+            try:
+                mac = await self._identity_mac()
+            except Exception:
+                mac = None
+            authorization = self._authorization
+            record = authorization.record
+            if record.mac and mac and mac != record.mac:
+                authorization.clear()
+                reason = "registration_cleared"
+                detail = "pareamento novo com outro aparelho no endereço: registro apagado"
+            elif record.state in (GRANTED, VERIFIED):
+                authorization.forget_device()
+                reason = "unproven"
+                detail = "pareamento novo: a permissão volta a exigir prova"
+            else:
+                reason = "never"
+                detail = "pareamento novo: nada registrado ainda"
             self._connected = False
             await self._disconnect_locked()
-            _log.info("registro do ADB apagado: pareamento novo pedido pela pessoa")
-            self._forget_state_of_the_old_registration(
-                "never", "registro apagado ao parear a TV de novo"
-            )
+            _log.info("registro do ADB depois do pareamento novo: %s", reason)
+            self._forget_state_of_the_old_registration(reason, detail)
 
     async def _another_device_here(self) -> bool:
         """Num pedido da pessoa: a permissão dada é de um MAC e agora outro aparelho está nesse IP?

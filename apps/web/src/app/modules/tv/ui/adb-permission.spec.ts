@@ -174,7 +174,7 @@ describe('AdbPermissionNotice', () => {
   it('offers "É a mesma TV" for another device at the address, asks to confirm, and only then rebinds', async () => {
     permission.deviceChanged();
     fixture.detectChanges();
-    expect(sheet()?.textContent).toContain('TV não encontrada no endereço');
+    expect(sheet()?.textContent).toContain('Outro aparelho respondeu no endereço da TV');
     expect(button('Pedir na TV')).toBeUndefined(); // não há como "pedir" a um aparelho que não é a TV
     button('É a mesma TV')!.click();
     fixture.detectChanges();
@@ -182,7 +182,7 @@ describe('AdbPermissionNotice', () => {
     expect(api.rebindAdb).not.toHaveBeenCalled();
     button('Não')!.click();
     fixture.detectChanges();
-    expect(sheet()?.textContent).toContain('TV não encontrada no endereço');
+    expect(sheet()?.textContent).toContain('Outro aparelho respondeu no endereço da TV');
     button('É a mesma TV')!.click();
     fixture.detectChanges();
     button('Sim, é a mesma')!.click();
@@ -204,5 +204,23 @@ describe('AdbPermissionNotice', () => {
     expect(button('É a mesma TV')).toBeUndefined();
     expect(button('Pedir na TV')).toBeUndefined();
     expect(button('Agora não')).toBeDefined();
+  });
+
+  it('shows a calm notice when the agent deleted the registration, and the confirmation explains the prompt', () => {
+    store.state.set({
+      ...HOT,
+      adbPermission: 'missing',
+      adbPermissionReason: 'registration_cleared',
+    });
+    fixture.detectChanges();
+    expect(notice()?.textContent).toContain('Permissão apagada: a TV mudou');
+    expect(sheet()).toBeNull();
+    permission.deviceChanged();
+    fixture.detectChanges();
+    button('É a mesma TV')!.click();
+    fixture.detectChanges();
+    expect(sheet()?.textContent).toContain(
+      'A TV vai pedir permissão; aceite marcando Sempre permitir.',
+    );
   });
 });

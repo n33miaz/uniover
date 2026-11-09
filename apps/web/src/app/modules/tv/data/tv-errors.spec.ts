@@ -96,7 +96,7 @@ describe('describeFailure', () => {
       http(502, 'command-failed', { agentError: 'adb_device_changed' }),
     );
     expect(swapped.kind).toBe('adb-device-changed');
-    expect(swapped.message).toBe('TV não encontrada no endereço. Confira a rede.');
+    expect(swapped.message).toBe('Outro aparelho respondeu no endereço da TV.');
     const idle = describeFailure(http(502, 'command-failed', { agentError: 'adb_idle' }));
     expect(idle.message).toContain('enquanto você usa a tela da TV');
     expect(idle.message).not.toContain('ainda não deu a permissão');

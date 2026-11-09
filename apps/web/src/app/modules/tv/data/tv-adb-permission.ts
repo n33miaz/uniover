@@ -10,8 +10,11 @@ import type { AdbPermission } from './tv-types';
 export const ADB_WAIT_POLL_MS = 3000;
 /** O agente espera o aceite por 90 s: a espera aqui passa um pouco disso, para o fim vir dele e não do relógio. */
 export const ADB_WAIT_MS = 100_000;
-/** Quanto tempo o "Pronto" fica à vista. */
+/** Quanto tempo o "Pronto" fica à vista, e o recado de que o registro foi apagado. */
 export const ADB_DONE_MS = 4000;
+export const ADB_CLEARED_MS = 8000;
+/** O motivo do agente quando o registro foi apagado (pareamento novo com outro aparelho no endereço). */
+export const ADB_CLEARED_REASON = 'registration_cleared';
 /** Depois de um pedido recusado: quantas vezes, e de quanto em quanto, se confere se o aviso chegou à TV (`pending`). */
 export const ADB_CONFIRM_POLL_MS = 1200;
 export const ADB_CONFIRM_TRIES = 3;
@@ -65,6 +68,8 @@ export class TvAdbPermission {
   readonly waiting = signal(false);
   /** A TV acabou de aceitar: um "Pronto" curto. */
   readonly done = signal(false);
+  /** O registro da permissão foi apagado porque a TV mudou (pareamento novo): um recado calmo, por alguns segundos. */
+  readonly cleared = signal(false);
   readonly asking = computed(() => this.phase() === 'asking');
   /** Refazer o registro do ADB é do dono da TV (a API recusa as outras contas): convidados veem "Peça ao dono da TV". */
   readonly canRebind = computed(() => !this.session.isGuest());
@@ -82,6 +87,9 @@ export class TvAdbPermission {
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private expireTimer: ReturnType<typeof setTimeout> | undefined;
   private doneTimer: ReturnType<typeof setTimeout> | undefined;
+  private clearedTimer: ReturnType<typeof setTimeout> | undefined;
+  /** O recado do registro apagado já foi dado para este motivo (o estado repete o motivo a cada mensagem). */
+  private clearedTold = false;
 
   /**
    * Uma ação que precisa do ADB falhou por falta de permissão. Devolve `true` se a tela já cuida disso (a folha abriu, ou
@@ -148,6 +156,7 @@ export class TvAdbPermission {
    * `granted` fecha tudo e `missing` só abre a folha sozinho quando a TV esqueceu uma permissão que tinha dado.
    */
   observe(value: AdbPermission | null | undefined, reason?: string | null): void {
+    this.tellIfCleared(value, reason);
     switch (value) {
       case 'granted':
         this.granted();
@@ -260,6 +269,9 @@ export class TvAdbPermission {
     this.stopConfirming();
     this.stopWaiting();
     clearTimeout(this.doneTimer);
+    clearTimeout(this.clearedTimer);
+    this.clearedTold = false;
+    this.cleared.set(false);
     this.sheetOpen.set(false);
     this.waiting.set(false);
     this.done.set(false);
@@ -418,6 +430,19 @@ export class TvAdbPermission {
     } catch {
       // sem armazenamento: o "Agora não" vale só até recarregar
     }
+  }
+
+  /** O agente apagou o registro (outro aparelho no endereço, no pareamento novo): a pessoa fica sabendo, uma vez. */
+  private tellIfCleared(value: AdbPermission | null | undefined, reason?: string | null): void {
+    if (value !== 'missing' || reason !== ADB_CLEARED_REASON) {
+      if (value) this.clearedTold = false;
+      return;
+    }
+    if (this.clearedTold) return;
+    this.clearedTold = true;
+    clearTimeout(this.clearedTimer);
+    this.cleared.set(true);
+    this.clearedTimer = setTimeout(() => this.cleared.set(false), ADB_CLEARED_MS);
   }
 
   private showDone(): void {
