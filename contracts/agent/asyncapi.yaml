@@ -140,6 +140,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.click.v1.schema.json'
+      pcClickV2:
+        name: pc.click.v2
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.click.v2.schema.json'
       pcKey:
         name: pc.key.v1
         contentType: application/json
@@ -155,6 +160,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.text.v1.schema.json'
+      pcTextV2:
+        name: pc.text.v2
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.text.v2.schema.json'
       pcMedia:
         name: pc.media.v1
         contentType: application/json
@@ -527,6 +537,7 @@ operations:
     summary: A API envia um clique do mouse (ou o apertar e soltar de um arrasto).
     messages:
       - $ref: '#/channels/agentCommands/messages/pcClick'
+      - $ref: '#/channels/agentCommands/messages/pcClickV2'
   sendPcKey:
     action: send
     channel:
@@ -541,6 +552,7 @@ operations:
     summary: A API envia um texto para digitar no PC.
     messages:
       - $ref: '#/channels/agentCommands/messages/pcText'
+      - $ref: '#/channels/agentCommands/messages/pcTextV2'
   sendPcMedia:
     action: send
     channel:
