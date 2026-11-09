@@ -210,7 +210,7 @@ public sealed class PcRtcAccessTests
     private static readonly Guid Bruno = Guid.Parse("33333333-3333-7333-8333-333333333333");
 
     [Fact]
-    public void TakeWhere_TakesOnlyThePersonsSessionsThatMatch()
+    public void FindWhere_FindsOnlyThePersonsSessionsThatMatch_AndLeavesThemRegistered()
     {
         var sessions = new PcRtcSessions(TimeProvider.System);
         var family = Guid.NewGuid();
@@ -218,10 +218,26 @@ public sealed class PcRtcAccessTests
         var other = sessions.Open(Alice, Guid.NewGuid(), "pc-casa", Guid.NewGuid());
         var stranger = sessions.Open(Bruno, Guid.NewGuid(), "pc-bruno", family);
 
-        sessions.TakeWhere(Alice, s => s.SessionFamily == family).Should().ContainSingle().Which.Should().Be(mine);
+        sessions.FindWhere(Alice, s => s.SessionFamily == family).Should().ContainSingle().Which.Should().Be(mine);
 
+        sessions.Get(mine.Id, Alice, negotiating: false).Should().NotBeNull("achar não tira: quem tira é quem conseguiu avisar o agente");
         sessions.Get(other.Id, Alice, negotiating: false).Should().NotBeNull();
         sessions.Get(stranger.Id, Bruno, negotiating: false).Should().NotBeNull("outra pessoa nunca é tocada");
+    }
+
+    [Fact]
+    public void WithSeq_AddsTheSequenceToTheBodyAndKeepsTheRestAndTheContractValid()
+    {
+        var click = PcMessages.Click(PcClickV1BodyButton.Left, PcClickV1BodyAction.Down);
+
+        var numbered = PcMessages.WithSeq(click, 41);
+
+        numbered.Type.Should().Be(click.Type);
+        numbered.Delivery.Should().Be(click.Delivery);
+        numbered.Body.GetProperty("seq").GetInt32().Should().Be(41);
+        numbered.Body.GetProperty("button").GetString().Should().Be("LEFT");
+        numbered.Body.GetProperty("action").GetString().Should().Be("DOWN");
+        click.Body.TryGetProperty("seq", out _).Should().BeFalse("a mensagem original não muda");
     }
 
     [Fact]

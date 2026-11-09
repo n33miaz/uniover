@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
@@ -163,18 +164,12 @@ internal sealed class PcRtcSessions(TimeProvider time)
         }
     }
 
-    /// <summary>Tira as sessões de uma pessoa que cumprem a condição (a sessão, a senha, a conta ou a permissão dela mudou).</summary>
-    public IReadOnlyList<PcRtcSession> TakeWhere(Guid userId, Func<PcRtcSession, bool> match)
+    /// <summary>As sessões de uma pessoa que cumprem a condição (a sessão, a senha, a conta ou a permissão dela mudou), sem tirá-las.</summary>
+    public IReadOnlyList<PcRtcSession> FindWhere(Guid userId, Func<PcRtcSession, bool> match)
     {
         lock (_gate)
         {
-            var found = _sessions.Values.Where(s => s.UserId == userId && match(s)).ToList();
-            foreach (var session in found)
-            {
-                _sessions.Remove(session.Id);
-            }
-
-            return found;
+            return _sessions.Values.Where(s => s.UserId == userId && match(s)).ToList();
         }
     }
 
@@ -289,6 +284,13 @@ internal sealed class PcRtcHandler(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Falta menos que o piso do token de acesso: um canal de 60 s que sobrevive ao token que o autorizou não existe. O app
+        // renova o token (o 401 faz isso) e oferece de novo.
+        if (lifetime < MinLifetime)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
         var target = await resolver.ResolveAsync(userId, cancellationToken);
         if (target is null)
         {
@@ -317,7 +319,7 @@ internal sealed class PcRtcHandler(
         var session = sessions.Open(userId, target.AgentId, target.Slug, sessionFamily);
         var token = NewToken();
         using var pending = answers.Expect(target.Slug, session.Id);
-        var maxLifetime = (int)Math.Clamp(lifetime.TotalSeconds, MinLifetime.TotalSeconds, MaxLifetime.TotalSeconds);
+        var maxLifetime = (int)Math.Min(lifetime.TotalSeconds, MaxLifetime.TotalSeconds);
         var message = PcMessages.RtcOffer(session.Id, request.Sdp!, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds, maxLifetime);
 
         var reply = await gateway.RequestAsync(target.Slug, message, OfferTimeout, cancellationToken);
@@ -338,6 +340,14 @@ internal sealed class PcRtcHandler(
         {
             sessions.TakeOwned(session.Id, userId);
             return RemoteCareProblems.Timeout();
+        }
+
+        // A negociação leva segundos, e a sessão pode ter sido revogada nesse meio (o ouvinte a tirou daqui e mandou o fechamento,
+        // que pode ter passado na frente da oferta no agente): nada do canal chega ao app, e o agente é avisado outra vez.
+        if (sessions.Get(session.Id, userId, negotiating: false) is null)
+        {
+            await CloseWithoutRequestAsync(target.Slug, session.Id);
+            return PcProblems.DirectRevoked();
         }
 
         // A trilha diz que o canal foi negociado e entregue (ele só abre depois, direto entre o app e o PC) e nunca leva SDP nem token.
@@ -378,6 +388,20 @@ internal sealed class PcRtcHandler(
         return TypedResults.NoContent();
     }
 
+    /// <summary>O aviso de fechamento depois de a pessoa ter perdido o acesso: com prazo próprio, porque não há mais quem espere a requisição.</summary>
+    private async Task CloseWithoutRequestAsync(string agentSlug, Guid sessionId)
+    {
+        using var timeout = new CancellationTokenSource(PcRtcAccessListener.Timeout);
+        try
+        {
+            await gateway.SendAsync(agentSlug, PcMessages.RtcClose(sessionId, PcRtcCloseV1BodyReason.Revoked), timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Sem resposta no prazo: a vida máxima do canal no agente é a garantia.
+        }
+    }
+
     /// <summary>O PC declarou o canal direto no <c>hello</c> desta sessão (um agente "esperado de volta" não conta: guarda as de antes).</summary>
     private static bool OffersDirect(PcTarget target) =>
         target.HelloAt is not null && target.Capabilities.Contains(PcMessages.RtcCapability, StringComparer.Ordinal);
@@ -393,25 +417,94 @@ internal sealed class PcRtcHandler(
 /// conta é pausada ou revogada, ou a permissão do módulo é retirada: o agente solta o que o PC segurava, e a trilha grava o
 /// fechamento. Em processo, como os caches de permissão do Identity; um canal de outra instância vale em até a vida máxima dele.
 /// </summary>
-internal sealed class PcRtcAccessListener(
-    PcRtcSessions sessions, IAgentGateway gateway, PairingAuditWriter audit, DevicesDbContext db) : IUserAccessListener
+internal sealed partial class PcRtcAccessListener(
+    PcRtcSessions sessions,
+    IAgentGateway gateway,
+    PairingAuditWriter audit,
+    DevicesDbContext db,
+    ILogger<PcRtcAccessListener> logger) : IUserAccessListener
 {
+    /// <summary>O prazo do ouvinte inteiro (e de cada gravação): a mudança de acesso já está gravada e ninguém mais espera por ele.</summary>
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Não usa o token da requisição (ela pode ter acabado, e a mudança já está gravada) e nunca propaga falha: o que não deu para
+    /// fechar agora fecha pela vida máxima do canal no agente.
+    /// </summary>
     public async Task ChangedAsync(UserAccessChange change, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(change);
 
-        var closing = sessions.TakeWhere(change.UserId, session => Affects(change, session));
-        foreach (var session in closing)
+        try
         {
-            await gateway.SendAsync(session.AgentSlug, PcMessages.RtcClose(session.Id, PcRtcCloseV1BodyReason.Revoked), cancellationToken);
-            audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+            using var timeout = new CancellationTokenSource(Timeout);
+            await CloseAffectedAsync(change, timeout.Token);
         }
-
-        if (closing.Count > 0)
+#pragma warning disable CA1031 // A mudança de acesso já vale: a falha daqui só vai para o registro.
+        catch (Exception ex)
+#pragma warning restore CA1031
         {
-            await db.SaveChangesAsync(cancellationToken);
+            LogCloseFailed(change.Kind.ToString(), ex.GetType().Name);
         }
     }
+
+    private async Task CloseAffectedAsync(UserAccessChange change, CancellationToken cancellationToken)
+    {
+        var closed = 0;
+        try
+        {
+            foreach (var session in sessions.FindWhere(change.UserId, session => Affects(change, session)))
+            {
+                // Só sai do registro o que o aviso de fato alcançou: sem alcançar o agente (offline, queda), a sessão fica e uma
+                // próxima mudança, o aviso dele ou a vida máxima do canal a encerram.
+                if (!await TrySendCloseAsync(session, cancellationToken)
+                    || sessions.TakeOwned(session.Id, session.UserId) is null)
+                {
+                    continue;
+                }
+
+                audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+                closed++;
+            }
+        }
+        finally
+        {
+            if (closed > 0)
+            {
+                // O que já saiu do registro tem a trilha gravada mesmo que o resto tenha estourado o prazo.
+                using var saving = new CancellationTokenSource(Timeout);
+                await db.SaveChangesAsync(saving.Token);
+            }
+        }
+    }
+
+    /// <summary>Manda o fechamento ao agente da sessão; <c>false</c> se ele não foi alcançado (offline, queda ou falha da entrega). Uma sessão não derruba as outras.</summary>
+    private async Task<bool> TrySendCloseAsync(PcRtcSession session, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var sent = await gateway.SendAsync(
+                session.AgentSlug, PcMessages.RtcClose(session.Id, PcRtcCloseV1BodyReason.Revoked), cancellationToken);
+            return sent.IsSuccess;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // O aviso a um agente não pode impedir o dos outros: o canal que ficou fecha pela vida máxima dele.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogSendFailed(ex.GetType().Name);
+            return false;
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "O fechamento dos canais diretos do PC falhou ({Kind}, {Error}).")]
+    private partial void LogCloseFailed(string kind, string error);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "O aviso de fechamento do canal direto não saiu ({Error}).")]
+    private partial void LogSendFailed(string error);
 
     private static bool Affects(UserAccessChange change, PcRtcSession session) => change.Kind switch
     {

@@ -45,6 +45,9 @@ internal sealed record DevicesAppOptions
     /// <summary>Teto de balizas por minuto e por IP; alto por padrão para não atrapalhar os outros testes.</summary>
     public int? BeaconPermitted { get; init; }
 
+    /// <summary>Serviços a mais (ouvintes de sonda, por exemplo) registrados por cima dos do aplicativo.</summary>
+    public Action<IServiceCollection>? ConfigureServices { get; init; }
+
     public DbCommandInterceptor? CommandInterceptor { get; init; }
 
     /// <summary>
@@ -177,6 +180,7 @@ internal sealed class DevicesApp : IAsyncDisposable
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(time);
             services.AddSingleton<ILoggerProvider>(logs);
+            options.ConfigureServices?.Invoke(services);
             if (options.CommandInterceptor is { } commandInterceptor)
             {
                 services.ConfigureDbContext<DevicesDbContext>(builder => builder.AddInterceptors(commandInterceptor));
@@ -228,6 +232,15 @@ internal sealed class DevicesApp : IAsyncDisposable
             request.Headers.Add("Idempotency-Key", (idempotencyKey ?? Guid.NewGuid()).ToString());
         }
 
+        return await Client.SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Renova a sessão com o segredo do refresh (o cookie), como o app faz.</summary>
+    public async Task<HttpResponseMessage> RefreshRawAsync(string secret)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/identity/auth/refresh");
+        request.Headers.Add(IdentityApp.ClientHeader, "web");
+        request.Headers.Add("Cookie", "uo_rt=" + secret);
         return await Client.SendAsync(request, TestContext.Current.CancellationToken);
     }
 

@@ -708,6 +708,160 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         told.GetProperty("body").GetProperty("reason").GetString().Should().Be("requested");
     }
 
+    // ---- a rodada de revisão: oferta perdida na corrida, piso do token, aviso depois do commit ----
+
+    private static async Task ReplyToOfferAsync(FakeAgent agent, JsonElement offer)
+    {
+        var id = offer.GetProperty("id").GetGuid();
+        await agent.SendTextAsync(agent.Envelope(
+            "pc.rtc.answer.v1",
+            new JsonObject { ["sessionId"] = offer.GetProperty("body").GetProperty("sessionId").GetGuid(), ["sdp"] = "ANSWER-SDP" },
+            id));
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject { ["ok"] = true }, id));
+    }
+
+    [Fact]
+    public async Task AnOffer_WhoseSessionIsRevokedWhileItIsAnswered_Gets409_AndTheAgentIsToldToCloseItAgain()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var other = await app.App.LoginAsync();
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
+        var offer = (await agent.ReceiveAsync())!.Value;
+        var sessionId = offer.GetProperty("body").GetProperty("sessionId").GetGuid();
+
+        // A pessoa perde a sessão que pediu o canal enquanto o agente ainda atende a oferta.
+        using var revoked = await app.App.SendAsync(
+            HttpMethod.Post, $"/api/v1/identity/sessions/{SessionOf(app.Login)}/revoke", bearer: other.AccessToken);
+        revoked.StatusCode.Should().BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.OK);
+        await ExpectRevokedCloseAsync(agent, sessionId);
+
+        await ReplyToOfferAsync(agent, offer);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-direct-revoked");
+        (await response.Content.ReadAsStringAsync(Ct)).Should().NotContain("ANSWER-SDP", "nada do canal chega a quem perdeu o acesso");
+        await ExpectRevokedCloseAsync(agent, sessionId);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_opened", Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TheOffer_IsRefusedWith401_WhenLessThanTheFloorRemainsOnTheAccessToken_AndGrantsWhatRemainsAboveIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var handler = scope.ServiceProvider.GetRequiredService<PcRtcHandler>();
+        var client = new UniOver.Modules.Devices.Security.ClientInfo(null, null);
+        var sdp = new PcRtcOfferRequest(FakeSdp);
+
+        var refused = await handler.OfferAsync(Guid.NewGuid(), null, TimeSpan.FromSeconds(59), sdp, client, Ct);
+
+        refused.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(401, "menos que o piso: nem o piso se concede");
+
+        var userId = await OwnerIdAsyncFromToken(app);
+        var offering = handler.OfferAsync(userId, null, TimeSpan.FromSeconds(75), sdp, client, Ct);
+        var offer = await AnswerOfferAsync(agent);
+        var granted = await offering.WaitAsync(FakeAgent.Patience, Ct);
+
+        granted.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>().Which.StatusCode.Should().Be(200);
+        offer.GetProperty("body").GetProperty("maxLifetimeSeconds").GetInt32().Should().Be(75, "o que resta, sem arredondar para cima");
+    }
+
+    private static Task<Guid> OwnerIdAsyncFromToken(TransportApp app) =>
+        Task.FromResult(Guid.Parse(new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(app.Login.AccessToken).Subject));
+
+    [Fact]
+    public async Task TheListener_KeepsInTheRegistryWhatTheCloseDidNotReach_AndNeverThrows()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+        var reached = answer.GetProperty("sessionId").GetGuid();
+        var userId = await OwnerIdAsyncFromToken(app);
+        var registry = app.App.Services.GetRequiredService<PcRtcSessions>();
+        var unreachable = registry.Open(userId, Guid.NewGuid(), "pc-fora-do-ar");
+
+        await using (var scope = app.App.Services.CreateAsyncScope())
+        {
+            var listener = scope.ServiceProvider.GetServices<IUserAccessListener>().OfType<PcRtcAccessListener>().Single();
+            var act = () => listener.ChangedAsync(new UserAccessChange(userId, UserAccessChangeKind.AccountDisabled), Ct);
+            await act.Should().NotThrowAsync();
+        }
+
+        await ExpectRevokedCloseAsync(agent, reached);
+        registry.Get(reached, userId, negotiating: false).Should().BeNull("o aviso saiu: sai do registro");
+        registry.Get(unreachable.Id, userId, negotiating: false).Should().NotBeNull("o aviso não o alcançou: a sessão fica");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(1, "só a que foi avisada entra na trilha");
+    }
+
+    private sealed class AccessProbe : IUserAccessListener
+    {
+        private int _calls;
+
+        public string Connection { get; set; } = string.Empty;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public bool? FamilyLockFree { get; private set; }
+
+        public long? ActiveTokensOfFamily { get; private set; }
+
+        public async Task ChangedAsync(UserAccessChange change, CancellationToken cancellationToken = default)
+        {
+            if (change.Kind != UserAccessChangeKind.SessionEnded || change.SessionId is not { } family)
+            {
+                return;
+            }
+
+            // Uma conexão nova, como a de qualquer outra requisição: só vê o que já foi gravado, e a trava da família só está livre
+            // se a transação que revogou já acabou.
+            await using var connection = new Npgsql.NpgsqlConnection(Connection);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var command = new Npgsql.NpgsqlCommand(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended(@key, 0)), "
+                + "(SELECT count(*) FROM identity.refresh_tokens WHERE family_id = @family AND revoked_at IS NULL)",
+                connection,
+                transaction);
+            command.Parameters.AddWithValue("key", family.ToString("N"));
+            command.Parameters.AddWithValue("family", family);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            FamilyLockFree = reader.GetBoolean(0);
+            ActiveTokensOfFamily = reader.GetInt64(1);
+            Interlocked.Increment(ref _calls);
+        }
+    }
+
+    [Fact]
+    public async Task AReusedRefreshToken_ClosesTheChannel_OnlyAfterTheCommit_AndOutsideTheFamilyLock()
+    {
+        var probe = new AccessProbe();
+        await using var app = await TransportApp.StartAsync(
+            postgres, new DevicesAppOptions { ConfigureServices = services => services.AddSingleton<IUserAccessListener>(probe) });
+        probe.Connection = app.App.Database.OwnerConnection;
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+
+        // Rotaciona uma vez e reapresenta o token antigo depois da folga de reuso: a família inteira cai.
+        using var rotated = await app.App.RefreshRawAsync(app.Login.RefreshSecret);
+        rotated.StatusCode.Should().Be(HttpStatusCode.OK);
+        app.App.Time.Advance(TimeSpan.FromSeconds(4));
+        using var replay = await app.App.RefreshRawAsync(app.Login.RefreshSecret);
+        replay.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        await ExpectRevokedCloseAsync(agent, answer.GetProperty("sessionId").GetGuid());
+        probe.Calls.Should().Be(1);
+        probe.FamilyLockFree.Should().BeTrue("o aviso corre depois do commit, sem a trava da família");
+        probe.ActiveTokensOfFamily.Should().Be(0, "a revogação já estava gravada quando o aviso saiu");
+    }
+
     [Fact]
     public async Task TheOfferRoutes_HaveTheirOwnRateLimit()
     {

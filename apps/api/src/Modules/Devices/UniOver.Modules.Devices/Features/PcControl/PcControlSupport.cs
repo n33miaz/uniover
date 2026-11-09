@@ -223,6 +223,14 @@ internal static class PcProblems
         title: "A sessão do canal direto acabou.",
         type: ProblemDetailsExtensions.TypeBase + DirectExpiredType);
 
+    public const string DirectRevokedType = "pc-direct-revoked";
+
+    /// <summary>A pessoa perdeu o acesso (sessão encerrada, senha trocada, permissão retirada) enquanto o canal era negociado: nada dele vale.</summary>
+    public static IResult DirectRevoked() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "O acesso mudou enquanto o canal direto abria. Entre de novo.",
+        type: ProblemDetailsExtensions.TypeBase + DirectRevokedType);
+
     public const string ReconnectingType = "agent-reconnecting";
 
     /// <summary>

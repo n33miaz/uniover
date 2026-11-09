@@ -61,7 +61,7 @@ internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audi
         await transaction.CommitAsync(cancellationToken);
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionEnded, familyId), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionEnded, familyId));
         }
 
         return true;
@@ -86,7 +86,7 @@ internal sealed class SessionHandler(IdentityDbContext db, LoginAuditWriter audi
         // "Sair de todos": as outras sessões acabaram e o canal direto do controle do PC que elas abriram fecha na hora.
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded, currentId), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded, currentId));
         }
     }
 

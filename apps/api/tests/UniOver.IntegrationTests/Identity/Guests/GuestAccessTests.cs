@@ -79,6 +79,9 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/pc/media",
         "/api/v1/pc/power",
         "/api/v1/pc/apps/{appId}/launch",
+        "/api/v1/pc/rtc/offer",
+        "/api/v1/pc/rtc/{sessionId:guid}/candidates",
+        "/api/v1/pc/rtc/{sessionId:guid}/close",
     ];
 
     /// <summary>Rotas que se autenticam por credencial própria (o agente do PC), não por papel de pessoa.</summary>

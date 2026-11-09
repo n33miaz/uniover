@@ -98,7 +98,7 @@ internal sealed class SetGuestPermissionsHandler(
             foreach (var grant in removed.Where(g => g.Permission.StartsWith("module:", StringComparison.Ordinal)))
             {
                 await access.NotifyAsync(
-                    new UserAccessChange(guestId, UserAccessChangeKind.ModuleRemoved, Module: grant.Permission), cancellationToken);
+                    new UserAccessChange(guestId, UserAccessChangeKind.ModuleRemoved, Module: grant.Permission));
             }
         }
 

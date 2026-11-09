@@ -67,7 +67,7 @@ internal sealed class RecoverWithCodeHandler(
         // Todas as sessões acabaram: o canal direto do controle do PC fecha na hora.
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded));
         }
 
         return RecoverWithCodeStatus.Changed;

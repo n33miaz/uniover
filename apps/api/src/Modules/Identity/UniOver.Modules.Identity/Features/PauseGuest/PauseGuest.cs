@@ -70,7 +70,7 @@ internal sealed class PauseGuestHandler(
         grants.Invalidate(guestId);
         if (access is not null)
         {
-            await access.NotifyAsync(new UserAccessChange(guestId, UserAccessChangeKind.AccountDisabled), cancellationToken);
+            await access.NotifyAsync(new UserAccessChange(guestId, UserAccessChangeKind.AccountDisabled));
         }
 
         return PauseGuestStatus.Done;
