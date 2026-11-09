@@ -814,6 +814,8 @@ describe('PcDirect clock and lifetime', () => {
     await expect(direct.command('pc.media.v1', { action: 'MUTE' })).rejects.toBeInstanceOf(
       DirectNotSent,
     );
+    // Antes de o pedido da nuvem entrar em voo (passos assíncronos de quem chama), o canal também não pode ser readotado.
+    expect(direct.canUse()).toBe(false);
     // Quem chama recua para a nuvem: o pedido dela está em voo, e o próximo comando NÃO pode passar por ela na frente.
     let finish: () => void = () => undefined;
     const cloud = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
