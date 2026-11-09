@@ -17,8 +17,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     /// <summary>
     /// API para agente: o app (ou a API) fecha o canal direto da sessão; o agente solta o que o
-    /// PC ficou segurando e não responde. O agente avisa o próprio fechamento com
-    /// pc.rtc.closed.v1.
+    /// PC ficou segurando e não responde. `reason`: `requested` (o app pediu), `replaced` (uma
+    /// oferta nova de outro aparelho tomou o lugar: o app que perdeu o canal não tenta de novo
+    /// sozinho) ou `revoked` (a sessão, a senha, a conta ou a permissão da pessoa deixou de
+    /// valer). O agente avisa o próprio fechamento com pc.rtc.closed.v1.
     /// </summary>
     public partial class PcRtcCloseV1Message
     {
@@ -57,7 +59,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public Guid SessionId { get; set; }
     }
 
-    public enum PcRtcCloseV1BodyReason { ConnectTimeout, Disconnected, Failed, Idle, Replaced, Requested, Shutdown };
+    public enum PcRtcCloseV1BodyReason { Cloud, ConnectTimeout, Disconnected, Failed, Idle, Lifetime, Replaced, Requested, Revoked, Shutdown };
 
     public partial class PcRtcCloseV1Message
     {
@@ -90,6 +92,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "cloud":
+                    return PcRtcCloseV1BodyReason.Cloud;
                 case "connect_timeout":
                     return PcRtcCloseV1BodyReason.ConnectTimeout;
                 case "disconnected":
@@ -98,10 +102,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return PcRtcCloseV1BodyReason.Failed;
                 case "idle":
                     return PcRtcCloseV1BodyReason.Idle;
+                case "lifetime":
+                    return PcRtcCloseV1BodyReason.Lifetime;
                 case "replaced":
                     return PcRtcCloseV1BodyReason.Replaced;
                 case "requested":
                     return PcRtcCloseV1BodyReason.Requested;
+                case "revoked":
+                    return PcRtcCloseV1BodyReason.Revoked;
                 case "shutdown":
                     return PcRtcCloseV1BodyReason.Shutdown;
             }
@@ -112,6 +120,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case PcRtcCloseV1BodyReason.Cloud:
+                    JsonSerializer.Serialize(writer, "cloud", options);
+                    return;
                 case PcRtcCloseV1BodyReason.ConnectTimeout:
                     JsonSerializer.Serialize(writer, "connect_timeout", options);
                     return;
@@ -124,11 +135,17 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                 case PcRtcCloseV1BodyReason.Idle:
                     JsonSerializer.Serialize(writer, "idle", options);
                     return;
+                case PcRtcCloseV1BodyReason.Lifetime:
+                    JsonSerializer.Serialize(writer, "lifetime", options);
+                    return;
                 case PcRtcCloseV1BodyReason.Replaced:
                     JsonSerializer.Serialize(writer, "replaced", options);
                     return;
                 case PcRtcCloseV1BodyReason.Requested:
                     JsonSerializer.Serialize(writer, "requested", options);
+                    return;
+                case PcRtcCloseV1BodyReason.Revoked:
+                    JsonSerializer.Serialize(writer, "revoked", options);
                     return;
                 case PcRtcCloseV1BodyReason.Shutdown:
                     JsonSerializer.Serialize(writer, "shutdown", options);

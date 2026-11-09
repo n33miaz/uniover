@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -23,7 +24,8 @@ internal enum PauseGuestStatus
 /// entrada, renovação, TV e permissões até o dono retomar. Só o dono chega aqui (política da rota).
 /// </summary>
 internal sealed class PauseGuestHandler(
-    IdentityDbContext db, LoginAuditWriter audit, GuestAccountStatus status, AccessGrantsService grants, TimeProvider time)
+    IdentityDbContext db, LoginAuditWriter audit, GuestAccountStatus status, AccessGrantsService grants, TimeProvider time,
+    UserAccessNotifier? access = null)
 {
     public async Task<PauseGuestStatus> PauseAsync(Guid ownerId, Guid guestId, ClientInfo client, CancellationToken cancellationToken = default)
     {
@@ -66,6 +68,11 @@ internal sealed class PauseGuestHandler(
 
         status.MarkRevoked(guestId);
         grants.Invalidate(guestId);
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(guestId, UserAccessChangeKind.AccountDisabled), cancellationToken);
+        }
+
         return PauseGuestStatus.Done;
     }
 

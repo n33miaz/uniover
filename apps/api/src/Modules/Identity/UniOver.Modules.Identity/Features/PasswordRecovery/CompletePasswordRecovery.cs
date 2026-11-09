@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -18,7 +19,7 @@ internal enum CompletePasswordRecoveryStatus { Changed, InvalidToken, FactorRequ
 internal sealed class CompletePasswordRecoveryHandler(
     IdentityDbContext db, PasswordService passwords, SecondFactorVerifier secondFactor,
     FailedLoginCounter failures, LoginAuditWriter audit, TimeProvider time,
-    IOptions<IdentityModuleOptions> options)
+    IOptions<IdentityModuleOptions> options, UserAccessNotifier? access = null)
 {
     public async Task<CompletePasswordRecoveryStatus> HandleAsync(
         string token, string newPassword, string? totpCode, string? recoveryCode,
@@ -67,6 +68,13 @@ internal sealed class CompletePasswordRecoveryHandler(
         audit.Add(user.Id, AuditEvents.PasswordRecovered, client);
         await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
+
+        // Todas as sessões acabaram: o canal direto do controle do PC fecha na hora.
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(user.Id, UserAccessChangeKind.SessionsEnded), cancellationToken);
+        }
+
         return CompletePasswordRecoveryStatus.Changed;
     }
 }

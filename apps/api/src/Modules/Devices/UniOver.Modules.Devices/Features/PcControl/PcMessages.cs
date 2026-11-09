@@ -131,10 +131,17 @@ internal static class PcMessages
         Live(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
 
     /// <summary>A oferta do canal direto, com o token de uso único que a primeira mensagem do canal precisa apresentar.</summary>
-    public static OutboundMessage RtcOffer(Guid sessionId, string sdp, string token, int tokenTtlSeconds) =>
+    public static OutboundMessage RtcOffer(Guid sessionId, string sdp, string token, int tokenTtlSeconds, int maxLifetimeSeconds) =>
         Live(AgentMessageTypes.PcRtcOfferV1, BodyOf(new PcRtcOfferV1Message
         {
-            Body = new PcRtcOfferV1Body { SessionId = sessionId, Sdp = sdp, Token = token, TokenTtlSeconds = tokenTtlSeconds },
+            Body = new PcRtcOfferV1Body
+            {
+                SessionId = sessionId,
+                Sdp = sdp,
+                Token = token,
+                TokenTtlSeconds = tokenTtlSeconds,
+                MaxLifetimeSeconds = maxLifetimeSeconds,
+            },
         }.ToJson()));
 
     public static OutboundMessage RtcCandidate(Guid sessionId, string candidate, string? sdpMid, long? sdpMLineIndex) =>

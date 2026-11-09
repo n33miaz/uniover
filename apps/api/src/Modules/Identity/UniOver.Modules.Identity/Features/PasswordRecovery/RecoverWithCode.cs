@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -16,7 +17,7 @@ internal enum RecoverWithCodeStatus { Changed, Unauthenticated, StepUpRequired, 
 /// <summary>Sem e-mail: exige sessão ativa, código previamente emitido e, para o dono, passkey da mesma sessão.</summary>
 internal sealed class RecoverWithCodeHandler(
     IdentityDbContext db, PasswordService passwords, FailedLoginCounter failures,
-    LoginAuditWriter audit, TimeProvider time, IOptions<IdentityModuleOptions> options)
+    LoginAuditWriter audit, TimeProvider time, IOptions<IdentityModuleOptions> options, UserAccessNotifier? access = null)
 {
     public async Task<RecoverWithCodeStatus> HandleAsync(
         Guid userId, Guid sessionId, string code, string newPassword, ClientInfo client,
@@ -62,6 +63,13 @@ internal sealed class RecoverWithCodeHandler(
         audit.Add(userId, AuditEvents.PasswordRecovered, client, "recovery-code");
         await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
+
+        // Todas as sessões acabaram: o canal direto do controle do PC fecha na hora.
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(userId, UserAccessChangeKind.SessionsEnded), cancellationToken);
+        }
+
         return RecoverWithCodeStatus.Changed;
     }
 }

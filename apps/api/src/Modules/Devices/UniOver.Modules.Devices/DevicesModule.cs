@@ -109,6 +109,7 @@ public static class DevicesModule
         services.AddSingleton<PcRtcAnswers>();
         services.AddScoped<PcRtcClosures>();
         services.AddScoped<PcRtcHandler>();
+        services.AddScoped<UniOver.Modules.Identity.Contracts.IUserAccessListener, PcRtcAccessListener>();
         services.AddAuthorizationBuilder()
             .AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure)
             .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly);

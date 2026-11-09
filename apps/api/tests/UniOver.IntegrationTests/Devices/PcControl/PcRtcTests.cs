@@ -3,9 +3,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
+using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Identity.Guests;
+using UniOver.Modules.Devices.Features.PcControl;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.IntegrationTests.Infrastructure;
 
 namespace UniOver.IntegrationTests.Devices.PcControl;
@@ -419,6 +423,289 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         await using var db = app.App.Db();
         var events = await db.PairingAudit.Where(a => a.Event.StartsWith("pc_direct")).Select(a => a.Event).ToListAsync(Ct);
         events.Should().BeEquivalentTo(["pc_direct_opened", "pc_direct_closed"]);
+    }
+
+    // ---- o canal não sobrevive à sessão que o autorizou ----
+
+    private static readonly string[] OnlyTv = ["module:tv"];
+
+    private static readonly string[] OnlyPc = ["module:pc"];
+
+    private static Guid SessionOf(LoggedIn login) =>
+        Guid.Parse(new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(login.AccessToken).GetClaim("sid").Value);
+
+    private static async Task ExpectRevokedCloseAsync(FakeAgent agent, Guid sessionId)
+    {
+        var told = (await agent.ReceiveAsync())!.Value;
+        told.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
+        told.GetProperty("body").GetProperty("sessionId").GetGuid().Should().Be(sessionId);
+        told.GetProperty("body").GetProperty("reason").GetString().Should().Be("revoked");
+    }
+
+    /// <summary>
+    /// Prova que o canal NÃO foi fechado pela API: o próximo aviso que o agente recebe é o fechamento pedido agora pelo dono
+    /// (<c>requested</c>), e não um <c>revoked</c> antes dele. Sem esperar por "nada chegar" (que não prova nada).
+    /// </summary>
+    private static async Task ExpectStillOpenAsync(TransportApp app, FakeAgent agent, Guid sessionId)
+    {
+        using var close = await PostAsync(app, $"{sessionId}/close", null, app.Login.AccessToken);
+        close.StatusCode.Should().Be(HttpStatusCode.NoContent, "a sessão seguia aberta para o dono");
+        var told = (await agent.ReceiveAsync())!.Value;
+        told.GetProperty("body").GetProperty("sessionId").GetGuid().Should().Be(sessionId);
+        told.GetProperty("body").GetProperty("reason").GetString().Should().Be("requested");
+    }
+
+    private static async Task<Guid> OwnerIdAsync(TransportApp app)
+    {
+        await using var db = app.App.Db();
+        return await db.PairingAudit.Where(a => a.Event == "pc_direct_opened").Select(a => a.UserId!.Value).FirstAsync(Ct);
+    }
+
+    [Fact]
+    public async Task TheOffer_CarriesTheLifetimeOfTheAccessTokenThatAuthorizedIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+
+        var (_, offer) = await OpenAsync(app, agent);
+
+        var lifetime = offer.GetProperty("body").GetProperty("maxLifetimeSeconds").GetInt32();
+        lifetime.Should().BeInRange(60, 600, "o que resta do token de acesso (uns 10 min), não o teto de quando a claim some");
+    }
+
+    [Fact]
+    public async Task LoggingOutTheSessionThatOpenedTheChannel_ClosesItAtOnce_WithTheRevokedReasonAndTheTrail()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+        var sessionId = answer.GetProperty("sessionId").GetGuid();
+
+        using var logout = await app.App.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/logout", bearer: app.Login.AccessToken);
+
+        logout.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await ExpectRevokedCloseAsync(agent, sessionId);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task LoggingOutAnotherSession_LeavesTheChannelAlone()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var other = await app.App.LoginAsync();
+        var (answer, _) = await OpenAsync(app, agent);
+
+        using var logout = await app.App.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/logout", bearer: other.AccessToken);
+
+        logout.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await ExpectStillOpenAsync(app, agent, answer.GetProperty("sessionId").GetGuid());
+    }
+
+    [Fact]
+    public async Task ChangingThePassword_ClosesTheChannelsOfTheOtherSessions_ButNotTheOneThatChangedIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var changer = await app.App.LoginAsync();
+        var (answer, _) = await OpenAsync(app, agent);
+
+        using var changed = await app.App.SendAsync(
+            HttpMethod.Post, "/api/v1/identity/me/password",
+            new { currentPassword = app.App.OwnerPassword, newPassword = "pw-" + Guid.NewGuid().ToString("N") },
+            bearer: changer.AccessToken);
+
+        changed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await ExpectRevokedCloseAsync(agent, answer.GetProperty("sessionId").GetGuid());
+    }
+
+    [Fact]
+    public async Task ChangingThePasswordFromTheSessionThatOpenedTheChannel_KeepsTheChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+
+        using var changed = await app.App.SendAsync(
+            HttpMethod.Post, "/api/v1/identity/me/password",
+            new { currentPassword = app.App.OwnerPassword, newPassword = "pw-" + Guid.NewGuid().ToString("N") },
+            bearer: app.Login.AccessToken);
+
+        changed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await ExpectStillOpenAsync(app, agent, answer.GetProperty("sessionId").GetGuid());
+    }
+
+    [Theory]
+    [InlineData(UserAccessChangeKind.AccountDisabled, null)]
+    [InlineData(UserAccessChangeKind.ModuleRemoved, "module:pc")]
+    [InlineData(UserAccessChangeKind.SessionsEnded, null)]
+    public async Task TheListener_ClosesTheChannelWhenTheAccountIsDisabledTheModuleIsRemovedOrAllSessionsEnd(
+        UserAccessChangeKind kind, string? module)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+        var userId = await OwnerIdAsync(app);
+
+        await using (var scope = app.App.Services.CreateAsyncScope())
+        {
+            var listener = scope.ServiceProvider.GetServices<IUserAccessListener>().OfType<PcRtcAccessListener>().Single();
+            await listener.ChangedAsync(new UserAccessChange(userId, kind, Module: module), Ct);
+        }
+
+        await ExpectRevokedCloseAsync(agent, answer.GetProperty("sessionId").GetGuid());
+    }
+
+    [Fact]
+    public async Task TheListener_IgnoresAnotherModule_AndAnotherPerson()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+        var userId = await OwnerIdAsync(app);
+
+        await using (var scope = app.App.Services.CreateAsyncScope())
+        {
+            var listener = scope.ServiceProvider.GetServices<IUserAccessListener>().OfType<PcRtcAccessListener>().Single();
+            await listener.ChangedAsync(new UserAccessChange(userId, UserAccessChangeKind.ModuleRemoved, Module: "module:tv"), Ct);
+            await listener.ChangedAsync(new UserAccessChange(Guid.NewGuid(), UserAccessChangeKind.AccountDisabled), Ct);
+        }
+
+        await ExpectStillOpenAsync(app, agent, answer.GetProperty("sessionId").GetGuid());
+    }
+
+    // ---- as mesmas mudanças de acesso, pelas rotas de verdade do Identity (não só pelo ouvinte) ----
+
+    [Fact]
+    public async Task SigningOutOfAllOtherSessions_ThroughTheRoute_ClosesTheirChannels_ButNotTheCurrentOne()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var keeper = await app.App.LoginAsync();
+        var (answer, _) = await OpenAsync(app, agent);
+        var sessionId = answer.GetProperty("sessionId").GetGuid();
+
+        using var revoked = await app.App.SendAsync(HttpMethod.Post, "/api/v1/identity/sessions/others/revoke", bearer: keeper.AccessToken);
+
+        revoked.StatusCode.Should().BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.OK);
+        await ExpectRevokedCloseAsync(agent, sessionId);
+    }
+
+    [Fact]
+    public async Task RevokingJustThatSession_ThroughTheRoute_ClosesItsChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var other = await app.App.LoginAsync();
+        var (answer, _) = await OpenAsync(app, agent);
+        var openingSession = SessionOf(app.Login);
+
+        using var revoked = await app.App.SendAsync(
+            HttpMethod.Post, $"/api/v1/identity/sessions/{openingSession}/revoke", bearer: other.AccessToken);
+
+        revoked.StatusCode.Should().BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.OK);
+        await ExpectRevokedCloseAsync(agent, answer.GetProperty("sessionId").GetGuid());
+    }
+
+    /// <summary>O convidado pareia o PRÓPRIO PC (com o canal direto) e abre um canal com a sessão dele.</summary>
+    private static async Task<(FakeAgent Agent, GuestSession Guest, Guid ChannelId)> GuestWithChannelAsync(TransportApp app, string label)
+    {
+        var guest = await app.App.NewGuestAsync(["module:tv", "module:pc"], label);
+        await app.App.ConfirmWithPasswordAsync(guest);
+        var started = await app.App.StartAsync($"PC de {label}");
+        using var approved = await app.App.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode, tvName = $"TV de {label}" });
+        approved.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var poll = await app.App.PollRawAsync(started.PairingId, started.DeviceCode);
+        var credentials = await DevicesApp.JsonAsync(poll);
+        var slug = credentials.GetProperty("agentId").GetString()!;
+        var agent = await FakeAgent.ConnectAsync(app.Server, slug, credentials.GetProperty("deviceToken").GetString()!);
+        await agent.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Control, Rtc);
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.AgentVersion is not null, $"hello do PC de {label}");
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp }, guest.Login.AccessToken);
+        await AnswerOfferAsync(agent);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (agent, guest, (await DevicesApp.JsonAsync(response)).GetProperty("sessionId").GetGuid());
+    }
+
+    [Fact]
+    public async Task PausingTheGuest_ThroughTheRoute_ClosesTheChannelOfHisOwnPc()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var (agent, guest, channel) = await GuestWithChannelAsync(app, "Alice");
+        await using var _ = agent;
+
+        using var paused = await app.App.SendAsync(
+            HttpMethod.Post, $"/api/v1/identity/guests/{guest.UserId}/pause", bearer: app.Login.AccessToken);
+
+        paused.StatusCode.Should().BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.OK);
+        await ExpectRevokedCloseAsync(agent, channel);
+    }
+
+    [Fact]
+    public async Task RevokingTheGuest_ThroughTheRoute_ClosesTheChannelOfHisOwnPc()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var (agent, guest, channel) = await GuestWithChannelAsync(app, "Bruno");
+        await using var _ = agent;
+
+        using var revoked = await app.App.SendAsync(
+            HttpMethod.Post, $"/api/v1/identity/guests/{guest.UserId}/revoke", bearer: app.Login.AccessToken);
+
+        revoked.StatusCode.Should().BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.OK);
+        await ExpectRevokedCloseAsync(agent, channel);
+    }
+
+    private static async Task AllowPermissionsChangeAsync(TransportApp app)
+    {
+        // A confirmação (passkey) da troca de permissões: gravada direto, como os outros testes do Identity fazem.
+        var ownerId = Guid.Parse(new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(app.Login.AccessToken).Subject);
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<UniOver.Modules.Identity.Persistence.IdentityDbContext>();
+        db.StepUpConfirmations.Add(UniOver.Modules.Identity.Domain.StepUpConfirmation.Create(
+            ownerId,
+            SessionOf(app.Login),
+            UniOver.Modules.Identity.Domain.StepUpActions.PermissionsChange,
+            app.App.Time.GetUtcNow(),
+            TimeSpan.FromMinutes(5)));
+        await db.SaveChangesAsync(Ct);
+    }
+
+    [Fact]
+    public async Task TakingTheModulePcAwayFromTheGuest_ThroughTheRoute_ClosesTheChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var (agent, guest, channel) = await GuestWithChannelAsync(app, "Carla");
+        await using var _ = agent;
+        await AllowPermissionsChangeAsync(app);
+
+        using var put = await app.App.SendAsync(
+            HttpMethod.Put, $"/api/v1/identity/guests/{guest.UserId}/permissions", new { permissions = OnlyTv },
+            bearer: app.Login.AccessToken);
+
+        put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(Ct));
+        await ExpectRevokedCloseAsync(agent, channel);
+    }
+
+    [Fact]
+    public async Task TakingAnotherModuleAwayFromTheGuest_LeavesTheChannelAlone()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var (agent, guest, channel) = await GuestWithChannelAsync(app, "Davi");
+        await using var _ = agent;
+        await AllowPermissionsChangeAsync(app);
+
+        using var put = await app.App.SendAsync(
+            HttpMethod.Put, $"/api/v1/identity/guests/{guest.UserId}/permissions", new { permissions = OnlyPc },
+            bearer: app.Login.AccessToken);
+
+        put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(Ct));
+        using var close = await PostAsync(app, $"{channel}/close", null, guest.Login.AccessToken);
+        close.StatusCode.Should().Be(HttpStatusCode.NoContent, "a sessão seguia aberta para o convidado");
+        var told = (await agent.ReceiveAsync())!.Value;
+        told.GetProperty("body").GetProperty("reason").GetString().Should().Be("requested");
     }
 
     [Fact]

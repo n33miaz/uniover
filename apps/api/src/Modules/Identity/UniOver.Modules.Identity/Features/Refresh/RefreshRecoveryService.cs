@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -44,7 +45,7 @@ internal sealed record RecoveryCandidate(RefreshToken? Successor, RefreshDeviceK
 /// Regras comuns do refresh já girado: o que pode ser recuperado, o desafio de uso único, a prova e a revogação por
 /// reuso. Tudo roda sob a trava da família e dentro da transação de quem chama.
 /// </summary>
-internal sealed class RefreshRecoveryService(IdentityDbContext db, LoginAuditWriter audit)
+internal sealed class RefreshRecoveryService(IdentityDbContext db, LoginAuditWriter audit, UserAccessNotifier? access = null)
 {
     /// <summary>
     /// Um token que já girou pode ser recuperado se, nesta ordem: foi girado há pouco, nunca participou de uma
@@ -177,5 +178,11 @@ internal sealed class RefreshRecoveryService(IdentityDbContext db, LoginAuditWri
 
         audit.Add(null, AuditEvents.RefreshReuseDetected, client, AuditAboutAccount.Detail(token.UserId, reason));
         await db.SaveChangesAsync(cancellationToken);
+
+        // Sessão possivelmente roubada: o canal direto que ela abriu fecha na hora.
+        if (access is not null)
+        {
+            await access.NotifyAsync(new UserAccessChange(token.UserId, UserAccessChangeKind.SessionEnded, familyId), cancellationToken);
+        }
     }
 }
