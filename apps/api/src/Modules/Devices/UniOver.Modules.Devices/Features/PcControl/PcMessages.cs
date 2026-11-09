@@ -56,14 +56,23 @@ internal static class PcMessages
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
 
     /// <summary>
-    /// A mesma mensagem com o <c>seq</c> do pedido no corpo (o contador comum dos pedidos de entrada pela nuvem). Só para um agente
+    /// A mesma mensagem com o <c>seq</c> do pedido (o contador comum dos de entrada pela nuvem) e a <c>epoch</c> da página no corpo. Só para um agente
     /// que declarou <see cref="RtcCapability"/>: o esquema dos comandos de entrada de um agente anterior é fechado.
     /// </summary>
-    public static OutboundMessage WithSeq(OutboundMessage message, int seq)
+    public static OutboundMessage WithSeq(OutboundMessage message, int? seq, string? epoch = null)
     {
         ArgumentNullException.ThrowIfNull(message);
         var body = JsonNode.Parse(message.Body.GetRawText())!.AsObject();
-        body["seq"] = seq;
+        if (seq is { } number)
+        {
+            body["seq"] = number;
+        }
+
+        if (epoch is not null)
+        {
+            body["epoch"] = epoch;
+        }
+
         return message with { Body = JsonSerializer.SerializeToElement(body) };
     }
 

@@ -229,14 +229,15 @@ public sealed class PcControlTests(PostgresFixture postgres)
         pointer.StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await Within(agent.ReceiveAsync()))!.Value.GetProperty("body").GetProperty("seq").GetInt32().Should().Be(11);
 
+        const string page = "3fa9c10d7be2465a";
         var sent = new (string Path, object Body, string Type)[]
         {
-            ("click", new { button = "LEFT", seq = 12 }, "pc.click.v1"),
-            ("key", new { key = "C", modifiers = Ctrl, seq = 13 }, "pc.key.v1"),
-            ("key", new { key = "BACKSPACE", repeat = 3, seq = 14 }, "pc.key.v2"),
-            ("key/release", new { key = "CTRL", seq = 15 }, "pc.key.v2"),
-            ("text", new { text = "olá", seq = 16 }, "pc.text.v1"),
-            ("media", new { action = "MUTE", seq = 17 }, "pc.media.v1"),
+            ("click", new { button = "LEFT", seq = 12, epoch = page }, "pc.click.v1"),
+            ("key", new { key = "C", modifiers = Ctrl, seq = 13, epoch = page }, "pc.key.v1"),
+            ("key", new { key = "BACKSPACE", repeat = 3, seq = 14, epoch = page }, "pc.key.v2"),
+            ("key/release", new { key = "CTRL", seq = 15, epoch = page }, "pc.key.v2"),
+            ("text", new { text = "olá", seq = 16, epoch = page }, "pc.text.v1"),
+            ("media", new { action = "MUTE", seq = 17, epoch = page }, "pc.media.v1"),
         };
         var expected = 12;
         foreach (var (path, body, type) in sent)
@@ -248,6 +249,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
             response.StatusCode.Should().Be(HttpStatusCode.NoContent, path);
             command.GetProperty("type").GetString().Should().Be(type);
             command.GetProperty("body").GetProperty("seq").GetInt32().Should().Be(expected++, path);
+            command.GetProperty("body").GetProperty("epoch").GetString().Should().Be(page, path);
         }
     }
 
@@ -262,7 +264,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         using var response = await Within(posting);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        command.GetProperty("body").EnumerateObject().Select(p => p.Name).Should().NotContain("seq");
+        command.GetProperty("body").EnumerateObject().Select(p => p.Name).Should().NotContain(["seq", "epoch"]);
     }
 
     [Fact]
@@ -271,7 +273,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
 
-        var posting = PostAsync(app, "text", new { text = "abc", seq = 9 });
+        var posting = PostAsync(app, "text", new { text = "abc", seq = 9, epoch = "3fa9c10d7be2465a" });
         var command = await AnswerAsync(agent);
         using var response = await Within(posting);
 
@@ -285,7 +287,12 @@ public sealed class PcControlTests(PostgresFixture postgres)
     [InlineData("key/release", "{\"key\":\"CTRL\",\"seq\":-1}")]
     [InlineData("text", "{\"text\":\"a\",\"seq\":-1}")]
     [InlineData("media", "{\"action\":\"MUTE\",\"seq\":-1}")]
-    public async Task AnInput_WithANegativeSequence_Returns400(string path, string json)
+    [InlineData("click", "{\"button\":\"LEFT\",\"epoch\":\"ZZ-nao-e-hex\"}")]
+    [InlineData("key", "{\"key\":\"C\",\"seq\":1,\"epoch\":\"3FA9C10D7BE2465A\"}")]
+    [InlineData("key/release", "{\"key\":\"CTRL\",\"epoch\":\"3fa9c10d7be2465\"}")]
+    [InlineData("text", "{\"text\":\"a\",\"epoch\":\"3fa9c10d7be2465a0\"}")]
+    [InlineData("media", "{\"action\":\"MUTE\",\"epoch\":\"\"}")]
+    public async Task AnInput_WithANegativeSequenceOrAMalformedEpoch_Returns400(string path, string json)
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, "pc.rtc.v1");

@@ -12811,16 +12811,19 @@ export interface components {
     PcClickRequest: {
       action: null | string;
       button: null | string;
+      epoch?: null | string;
       /** Format: int32 */
       seq?: null | number | string;
     };
     PcKeyReleaseRequest: {
+      epoch?: null | string;
       key: null | string;
       /** Format: int32 */
       seq?: null | number | string;
     };
     PcKeyRequest: {
       action?: null | string;
+      epoch?: null | string;
       key: null | string;
       modifiers: null | string[];
       /** Format: int32 */
@@ -12830,6 +12833,7 @@ export interface components {
     };
     PcMediaRequest: {
       action: null | string;
+      epoch?: null | string;
       /** Format: int32 */
       seq?: null | number | string;
       /** Format: int32 */
@@ -12875,6 +12879,7 @@ export interface components {
       online: boolean;
     };
     PcTextRequest: {
+      epoch?: null | string;
       /** Format: int32 */
       seq?: null | number | string;
       text: null | string;
