@@ -16,6 +16,7 @@ from uniover_agent.core.pc.apps import PcApp
 from uniover_agent.core.pc.click_pacer import ClickPacer
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.freshness import (
+    EXPIRED,
     MAX_COMMAND_AGE_SECONDS,
     MAX_POINTER_AGE_SECONDS,
     MAX_POWER_AGE_SECONDS,
@@ -153,11 +154,20 @@ def pc_click_handler(pc: PcInput, pacer: ClickPacer | None = None) -> Handler:
     return _guarded(handle)
 
 
-def pc_click_v2_handler(pc: PcInput, pacer: ClickPacer | None = None) -> Handler:
+def pc_click_v2_handler(
+    pc: PcInput,
+    pacer: ClickPacer | None = None,
+    *,
+    expired: Callable[[Command], bool] | None = None,
+) -> Handler:
     """`pc.click.v2`: o clique da v1 com `modifiers` (apertados, o clique, soltos, num lote só) e
     `gapMs`: antes de clicar espera o que faltar desde o último clique do mesmo botão para
     reproduzir o intervalo que o app mediu (o Windows só vê duplo clique com os apertos próximos).
-    Se o pedido chegou mais tarde que `gapMs`, sai na hora; nunca espera mais que `gapMs`."""
+    Se o pedido chegou mais tarde que `gapMs`, sai na hora; nunca espera mais que `gapMs`.
+
+    Depois da espera o comando é conferido de novo: `expired` diz se ele passou da validade
+    enquanto esperava (a idade também conta a espera), e então não sai. Se a faixa o cancelar na
+    espera (o canal direto de onde veio fechou), nada sai."""
 
     def handle(command: Command) -> CommandResult:
         body = command.body
@@ -175,6 +185,9 @@ def pc_click_v2_handler(pc: PcInput, pacer: ClickPacer | None = None) -> Handler
         gap = command.body.get("gapMs")
         if pacer is not None and isinstance(gap, int) and gap > 0:
             await pacer.wait(str(command.body["button"]), gap / 1000)
+            if expired is not None and expired(command):
+                _log.info("comando %s expirou durante a espera do intervalo", command.type)
+                return CommandResult(command.id, ResultStatus.REJECTED, "comando expirado", EXPIRED)
         return await guarded(command)
 
     return run
@@ -226,11 +239,13 @@ def pc_text_v2_handler(pc: PcInput) -> Handler:
     def handle(command: Command) -> CommandResult:
         body = command.body
         key = body.get("key")
-        pc.edit_text(
-            int(body.get("erase") or 0),
-            str(body.get("text") or ""),
-            None if key is None else str(key),
-        )
+        erase = int(body.get("erase") or 0)
+        text = str(body.get("text") or "")
+        # O contrato pede pelo menos um dos três (o modelo gerado não impõe o "ou"): uma edição
+        # vazia não faz nada e é recusada, em vez de responder "feito".
+        if erase <= 0 and not text and key is None:
+            raise ValueError("edição de texto sem nada a fazer")
+        pc.edit_text(erase, text, None if key is None else str(key))
         return _ok(command)
 
     return _guarded(handle)
@@ -332,6 +347,10 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     offset = clock or ClockOffset()
     clicks = pacer or ClickPacer()
 
+    def aged_out(command: Command) -> bool:
+        age = offset.age(command.sent_at)
+        return age is not None and age > MAX_COMMAND_AGE_SECONDS
+
     def noted(handle: Handler) -> Handler:
         return use.noting(handle) if use is not None else handle
 
@@ -352,7 +371,11 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
             exempt=lambda command: command.body.get("action") == "UP",
         ),
         # O `v2` só tem CLICK e DOUBLE: não há soltura para isentar da idade.
-        "pc.click.v2": fresh(noted(pc_click_v2_handler(pc, clicks)), MAX_COMMAND_AGE_SECONDS),
+        # A idade é conferida antes da espera do intervalo (não vale esperar o que já expirou) e de
+        # novo depois dela (a espera também envelhece o comando).
+        "pc.click.v2": fresh(
+            noted(pc_click_v2_handler(pc, clicks, expired=aged_out)), MAX_COMMAND_AGE_SECONDS
+        ),
         "pc.key.v1": fresh(noted(pc_key_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         # Soltar nunca é recusado por idade (como o UP de um clique): uma soltura atrasada ainda é
         # a que impede o modificador de ficar preso.

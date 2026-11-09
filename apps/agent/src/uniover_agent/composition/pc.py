@@ -16,6 +16,7 @@ from uniover_agent.core import (
     PC_KEY_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
     PC_TEXT_V2_CAPABILITY,
+    ClickPacer,
     ClockOffset,
     DirectSettings,
     EnvelopeFactory,
@@ -57,6 +58,8 @@ class PcSetup:
     clock: ClockOffset
     # Quando o controle foi usado pela última vez (a atualização do agente espera por ele).
     use: PcUseTracker
+    # O último clique, para o intervalo do duplo clique; a faixa o liga (uma soltura nunca espera).
+    pacer: ClickPacer
     # O canal direto (WebRTC), quando este PC o oferece; `None` sem a biblioteca ou desligado.
     direct: PcDirectService | None = None
 
@@ -91,6 +94,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     pc_input = pc_input or WindowsPcInput()
     clock = ClockOffset(on_skew=on_clock_skew, on_refused=on_expired, on_unstable=on_clock_unstable)
     use = PcUseTracker()
+    pacer = ClickPacer()
     handlers = pc_handlers(
         pc_input,
         power or WindowsPcPower(),
@@ -99,6 +103,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
         clock=clock,
         use=use,
+        pacer=pacer,
     )
     # As capacidades `v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só as declara
     # depois de a API listá-las (`declarable_capabilities`).
@@ -123,6 +128,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         pc_input.release_all,
         clock,
         use,
+        pacer,
         direct,
     )
 
