@@ -3653,6 +3653,24 @@
               "string"
             ]
           },
+          "gapMs": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "modifiers": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "seq": {
             "format": "int32",
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -3974,6 +3992,21 @@
       "PcTextRequest": {
         "properties": {
           "epoch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "erase": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "key": {
             "type": [
               "null",
               "string"
