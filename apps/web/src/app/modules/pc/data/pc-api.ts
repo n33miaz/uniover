@@ -37,7 +37,10 @@ export class PcApi {
   }
 
   /**
-   * `seq` numera os pedidos de movimento (crescente): vários saem ao mesmo tempo e o agente usa o número para reconhecer
+   * Cada pedido de clique, tecla, texto e mídia pela nuvem leva um `seq` de um contador só (ver `PcDirect.nextCloudSeq`): é o
+   * marcador que o canal direto declara ao agente na troca de caminho.
+   *
+   * `seq` (do movimento) numera os pedidos de movimento (crescente): vários saem ao mesmo tempo e o agente usa o número para reconhecer
    * o que chega fora de ordem (diagnóstico; o movimento é relativo e todos são aplicados). O sinal de vida não leva.
    */
   async pointer(dx: number, dy: number, scrollX = 0, scrollY = 0, seq?: number): Promise<void> {
@@ -71,7 +74,11 @@ export class PcApi {
     if (!options.keepalive && this.direct.canUse() && (await this.viaDirect('pc.click.v1', body)))
       return;
     await this.cloud(
-      this.http.post(`${BASE}/click`, body, options.keepalive ? { keepalive: true } : {}),
+      this.http.post(
+        `${BASE}/click`,
+        { ...body, seq: this.direct.nextCloudSeq() },
+        options.keepalive ? { keepalive: true } : {},
+      ),
     );
   }
 
@@ -95,7 +102,7 @@ export class PcApi {
       (await this.viaDirect(keyNeedsV2(key, options) ? 'pc.key.v2' : 'pc.key.v1', body))
     )
       return;
-    await this.cloud(this.http.post(`${BASE}/key`, body));
+    await this.cloud(this.http.post(`${BASE}/key`, { ...body, seq: this.direct.nextCloudSeq() }));
   }
 
   /**
@@ -113,19 +120,23 @@ export class PcApi {
     )
       return;
     await this.cloud(
-      this.http.post(`${BASE}/key/release`, { key }, options.keepalive ? { keepalive: true } : {}),
+      this.http.post(
+        `${BASE}/key/release`,
+        { key, seq: this.direct.nextCloudSeq() },
+        options.keepalive ? { keepalive: true } : {},
+      ),
     );
   }
 
   async text(text: string): Promise<void> {
     if (this.direct.canUse() && (await this.viaDirect('pc.text.v1', { text }))) return;
-    await this.cloud(this.http.post(`${BASE}/text`, { text }));
+    await this.cloud(this.http.post(`${BASE}/text`, { text, seq: this.direct.nextCloudSeq() }));
   }
 
   async media(action: PcMediaAction, steps = 1): Promise<void> {
     const body = steps > 1 ? { action, steps } : { action };
     if (this.direct.canUse() && (await this.viaDirect('pc.media.v1', body))) return;
-    await this.cloud(this.http.post(`${BASE}/media`, body));
+    await this.cloud(this.http.post(`${BASE}/media`, { ...body, seq: this.direct.nextCloudSeq() }));
   }
 
   /** Suspender e desligar só valem com `confirm: true`: a API recusa sem ele. */

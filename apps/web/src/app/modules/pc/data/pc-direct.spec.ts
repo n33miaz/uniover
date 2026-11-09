@@ -9,6 +9,7 @@ import {
   CLOCK_TIMEOUT_MS,
   DIRECT_BACKOFF_MS,
   DirectNotSent,
+  MAX_CLOUD_IDLE_MS,
   PC_RTC_CAPABILITY,
   PC_RTC_FACTORY,
   PING_MS,
@@ -179,7 +180,7 @@ describe('PcDirect opening', () => {
     expect(signaling.offer).toHaveBeenCalledWith(expect.stringContaining('a=fingerprint'));
     expect(connection.remoteDescription).toEqual({ type: 'answer', sdp: 'ANSWER' });
     // A primeira (e única até o ready) mensagem do canal de entrada é o token que a API emitiu.
-    expect(input.sent[0]).toEqual({ k: 'auth', tok: 'tok-1' });
+    expect(input.sent[0]).toEqual({ k: 'auth', tok: 'tok-1', cs: 0 });
     expect(pointer.sent.filter((m) => m['k'] === 'ptr')).toEqual([]);
   });
 
@@ -497,10 +498,17 @@ describe('PcDirect commands', () => {
   });
 });
 
+/** Só o relógio de parede é de mentira: o resto (promessas, `waitFor`) segue real. */
+function freezeClock(at = 10_000): void {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(at);
+}
+
 describe('PcDirect cloud hand-over', () => {
   it('only takes over when no cloud request is in flight', async () => {
     const { direct, connections } = setup();
     await openChannel(direct, connections);
+    freezeClock();
 
     let finish: () => void = () => undefined;
     const request = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
@@ -508,17 +516,79 @@ describe('PcDirect cloud hand-over', () => {
 
     finish();
     await request;
+    expect(direct.canUse()).toBe(true); // a nuvem respondeu na hora (ida e volta zero): já pode
+  });
+
+  it('waits for the cloud to be quiet for one of its round trips before the first use', async () => {
+    const { direct, connections } = setup();
+    await openChannel(direct, connections);
+    freezeClock();
+
+    let finish: () => void = () => undefined;
+    const request = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
+    vi.setSystemTime(10_120); // o pedido da nuvem levou 120 ms
+    finish();
+    await request;
+
+    expect(direct.canUse()).toBe(false); // acabou de responder: o pedido pode ainda estar a caminho do agente
+    vi.setSystemTime(10_239);
+    expect(direct.canUse()).toBe(false);
+    vi.setSystemTime(10_240);
+    expect(direct.canUse()).toBe(true);
+  });
+
+  it('a new cloud request restarts the quiet period, and a slow one never delays more than the cap', async () => {
+    const { direct, connections } = setup();
+    await openChannel(direct, connections);
+    freezeClock();
+
+    let finish: () => void = () => undefined;
+    const request = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
+    vi.setSystemTime(10_000 + 9_000); // um pedido lento (ex.: reconectando)
+    finish();
+    await request;
+
+    expect(direct.canUse()).toBe(false);
+    vi.setSystemTime(10_000 + 9_000 + MAX_CLOUD_IDLE_MS - 1);
+    expect(direct.canUse()).toBe(false);
+    vi.setSystemTime(10_000 + 9_000 + MAX_CLOUD_IDLE_MS);
     expect(direct.canUse()).toBe(true);
   });
 
   it('a failed cloud request also stops counting', async () => {
     const { direct, connections } = setup();
     await openChannel(direct, connections);
+    freezeClock();
     const request = direct.trackCloud(Promise.reject(new Error('falhou')));
     await request.catch(() => undefined);
     await flush();
 
     expect(direct.canUse()).toBe(true);
+  });
+
+  it('declares the last cloud sequence it issued (cs) in the auth message and in every command', async () => {
+    const { direct, connections } = setup();
+    direct.nextCloudSeq();
+    direct.nextCloudSeq();
+    const { input } = await openChannel(direct, connections);
+    expect(input.last('auth')?.['cs']).toBe(2);
+
+    expect(direct.nextCloudSeq()).toBe(3);
+    void direct.command('pc.media.v1', { action: 'MUTE' }).catch(() => undefined);
+    expect(input.last('cmd')?.['cs']).toBe(3);
+    void direct.command('pc.media.v1', { action: 'MUTE' }).catch(() => undefined);
+    expect(input.last('cmd')?.['cs']).toBe(3);
+  });
+
+  it('keeps counting across a renewed channel (the number never goes back)', async () => {
+    const { direct, connections } = setup();
+    const first = await openChannel(direct, connections);
+    direct.nextCloudSeq();
+    first.input.receive({ k: 'bye', r: 'lifetime' });
+    const second = await openChannel(direct, connections, 1);
+
+    expect(second.input.last('auth')?.['cs']).toBe(1);
+    expect(direct.nextCloudSeq()).toBe(2);
   });
 
   it('with the channel closed nothing can use it, whatever the cloud is doing', () => {
@@ -779,6 +849,7 @@ describe('PcDirect clock and lifetime', () => {
     const { direct, connections } = setup();
     await openChannel(direct, connections);
     // (openChannel não chamou canUse: ainda não houve primeiro uso)
+    freezeClock();
     let finish: () => void = () => undefined;
     const request = direct.trackCloud(new Promise<void>((resolve) => (finish = resolve)));
     expect(direct.canUse()).toBe(false);

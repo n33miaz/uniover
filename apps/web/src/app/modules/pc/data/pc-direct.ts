@@ -39,6 +39,8 @@ export const RENEW_MARGIN_MS = 30_000;
 export const STABLE_MS = 60_000;
 /** Prazo para o agente firmar a escala de relógio (dois sinais de vida): sem ela, nenhum comando é aceito. */
 export const CLOCK_TIMEOUT_MS = 4_000;
+/** Teto da espera de silêncio da nuvem antes de o canal assumir (um pedido lento da nuvem não pode adiar o canal sem fim). */
+export const MAX_CLOUD_IDLE_MS = 2_000;
 /** Acima disto no buffer do canal do ponteiro, a mensagem é pulada (a próxima traz a soma). */
 const MAX_BUFFERED_BYTES = 16_384;
 
@@ -185,6 +187,15 @@ export class PcDirect {
   private readonly pending = new Map<string, Pending>();
   private commandCount = 0;
   private cloudInFlight = 0;
+  /**
+   * O último número (`seq`) dado a um pedido de clique, tecla, texto ou mídia pela nuvem (crescente na vida da página). Vai ao
+   * agente como marcador (`cs`) no `auth` e em cada comando do canal: o que a nuvem entregar com número até ele é anterior à
+   * troca de caminho (chegou tarde) e não fecha o canal; um número maior é pedido novo da nuvem e fecha.
+   */
+  private cloudSeq = 0;
+  /** Quando o último pedido da nuvem terminou, e quanto ele levou (a "ida e volta" da nuvem, com teto). */
+  private lastCloudDoneAt = 0;
+  private cloudRtt = 0;
   private readonly lostListeners = new Set<() => void>();
   private cleanup: (() => void) | null = null;
   private account = this.session.accountId();
@@ -216,14 +227,26 @@ export class PcDirect {
   }
 
   /**
-   * O canal pode levar o próximo comando de entrada agora. O primeiro só sai por ele com a nuvem sem nada em voo (o que já saiu
-   * termina antes). Dali em diante é só ele: o agente fecha o canal em uso no instante em que chega um comando de entrada pela
-   * nuvem (para um aperto atrasado do canal nunca cair depois de um soltar da nuvem), então misturar os dois derrubaria o canal.
+   * O canal pode levar o próximo comando de entrada agora. O primeiro só sai por ele com a nuvem sem nada em voo E em silêncio
+   * há pelo menos uma ida e volta dela (a resposta da nuvem sai antes de o agente ler o pedido: sem essa folga, um movimento
+   * ainda a caminho chegaria depois do primeiro comando do canal). Dali em diante é só ele: o agente fecha o canal em uso no
+   * instante em que chega um comando de entrada novo pela nuvem (para um aperto atrasado do canal nunca cair depois de um
+   * soltar da nuvem), então misturar os dois derrubaria o canal.
    */
   canUse(): boolean {
     if (!this.open()) return false;
-    if (!this.adopted && this.cloudInFlight === 0) this.adopted = true;
+    if (!this.adopted && this.cloudInFlight === 0 && this.cloudQuiet()) this.adopted = true;
     return this.adopted;
+  }
+
+  /** A nuvem está em silêncio há pelo menos uma ida e volta dela (nunca usada: já está). */
+  private cloudQuiet(): boolean {
+    return Date.now() - this.lastCloudDoneAt >= this.cloudRtt;
+  }
+
+  /** O número do próximo pedido de clique, tecla, texto ou mídia pela nuvem (um contador só, crescente). */
+  nextCloudSeq(): number {
+    return ++this.cloudSeq;
   }
 
   /**
@@ -240,8 +263,12 @@ export class PcDirect {
    */
   trackCloud<T>(call: Promise<T>): Promise<T> {
     this.cloudInFlight++;
+    const started = Date.now();
     const done = () => {
       this.cloudInFlight--;
+      const now = Date.now();
+      this.lastCloudDoneAt = now;
+      this.cloudRtt = Math.min(MAX_CLOUD_IDLE_MS, Math.max(0, now - started));
     };
     call.then(done, done);
     return call;
@@ -326,6 +353,7 @@ export class PcDirect {
       t: type,
       b: body,
       ts: Date.now(),
+      cs: this.cloudSeq,
       p: { s: this.seq, x: this.totals.x, y: this.totals.y, w: this.totals.w, h: this.totals.h },
     };
     return new Promise<void>((resolve, reject) => {
@@ -392,7 +420,7 @@ export class PcDirect {
         this.readyWaiter = resolve;
       });
       this.lifeSeconds = 0;
-      link.input.send(JSON.stringify({ k: 'auth', tok: answer.token }));
+      link.input.send(JSON.stringify({ k: 'auth', tok: answer.token, cs: this.cloudSeq }));
       await Promise.race([
         ready,
         pause(OPEN_TIMEOUT_MS).then(() => Promise.reject(new Error('sem ready'))),

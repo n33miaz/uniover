@@ -66,6 +66,21 @@ test.describe('Canal direto', () => {
     await expect(page.getByRole('alert')).toHaveCount(0);
   });
 
+  test('os cliques pela nuvem levam o número do contador comum, que cresce de um em um', async ({
+    page,
+  }) => {
+    await installFakeRtc(page, { remove: true });
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+
+    await tap(page, x, y);
+    await expect.poll(() => pc.sent('/click').length).toBe(1);
+    await tap(page, x, y);
+    await expect.poll(() => pc.sent('/click').length).toBe(2);
+
+    expect(pc.seqs('/click')).toEqual([1, 2]);
+  });
+
   test('o PC que não declara o canal nem recebe tentativa (o resto segue igual)', async ({
     page,
   }) => {
@@ -96,7 +111,11 @@ test.describe('Canal direto', () => {
       .toBe(1);
     const log = (await rtcLog(page))!;
     // O token que a API emitiu é a primeira mensagem do canal de entrada.
-    expect(log.input[0]).toEqual({ k: 'auth', tok: 'token-de-teste-0123456789abcdefghijklmnop' });
+    expect(log.input[0]).toEqual({
+      k: 'auth',
+      tok: 'token-de-teste-0123456789abcdefghijklmnop',
+      cs: 0,
+    });
     expect(log.input.find((m) => m['k'] === 'cmd')).toMatchObject({
       t: 'pc.click.v1',
       b: { button: 'LEFT' },
