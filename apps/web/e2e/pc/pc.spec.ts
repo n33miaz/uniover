@@ -1953,6 +1953,31 @@ test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
         .toEqual([{ button: 'LEFT', modifiers: ['CTRL'] }, { button: 'LEFT' }]);
     });
 
+    test('o Ctrl armado vale para os DOIS toques de um toque duplo, e o segundo leva o intervalo', async ({
+      page,
+    }) => {
+      await openPc(page);
+      await armCtrl(page);
+      const { x, y } = await padCenter(page);
+      await fingers(page, [
+        { type: 'down', id: 1, x, y },
+        { type: 'up', id: 1, x, y, wait: 40 },
+        { type: 'down', id: 1, x: x + 2, y, wait: 90 },
+        { type: 'up', id: 1, x: x + 2, y, wait: 40 },
+      ]);
+      await expect.poll(() => pc.sent('/click').length).toBe(2);
+      const [first, second] = pc.sent('/click');
+      expect(first).toEqual({ button: 'LEFT', modifiers: ['CTRL'] });
+      expect(second).toMatchObject({ button: 'LEFT', modifiers: ['CTRL'] });
+      expect(Number(second['gapMs'])).toBeGreaterThanOrEqual(100);
+      await expect(page.locator('.armed')).toHaveCount(0);
+      // Um toque comum depois, fora do tempo do toque duplo, já não leva o Ctrl.
+      await page.waitForTimeout(450);
+      await tap(page, x, y);
+      await expect.poll(() => pc.sent('/click').length).toBe(3);
+      expect(pc.sent('/click')[2]).toEqual({ button: 'LEFT' });
+    });
+
     test('arrastar nunca leva modificador, mesmo com Ctrl armado', async ({ page }) => {
       await openPc(page);
       await armCtrl(page);
