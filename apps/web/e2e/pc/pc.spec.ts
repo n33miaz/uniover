@@ -304,13 +304,14 @@ async function pushPageDown(page: Page, height = 60) {
 }
 
 /** Os controles da tela que ficam atrás da barra de abas ou fora da janela (não deve haver nenhum). */
-async function hiddenControls(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
+async function hiddenControls(page: Page, skip = ''): Promise<string[]> {
+  return page.evaluate((skipSelector) => {
     const tabs = document.querySelector('app-tab-bar')!.getBoundingClientRect();
     const found: string[] = [];
     for (const element of document.querySelectorAll<HTMLElement>(
       'app-pc-page button, app-pc-page a',
     )) {
+      if (skipSelector && element.closest(skipSelector)) continue;
       const box = element.getBoundingClientRect();
       if (box.width === 0 || box.height === 0) continue;
       if (box.bottom > tabs.top + 0.5 || box.top < 0 || box.right > window.innerWidth + 0.5) {
@@ -319,7 +320,7 @@ async function hiddenControls(page: Page): Promise<string[]> {
       }
     }
     return found;
-  });
+  }, skip);
 }
 
 test.describe('Tela do mouse', () => {
@@ -1274,17 +1275,24 @@ test.describe('Atalhos', () => {
 });
 
 test.describe('Mídia', () => {
-  test('toca, pausa, muda a faixa, ajusta o volume e abre um favorito do PC', async ({ page }) => {
+  const mode = (page: Page, name: string) => page.getByRole('tab', { name, exact: true });
+  const media = () => pc.sent('/media');
+
+  test('toca, pausa, muda a faixa, ajusta o volume, para e abre um favorito do PC', async ({
+    page,
+  }) => {
     await openPc(page, '/pc/midia');
+    await expect(mode(page, 'Música')).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('button', { name: 'Tocar ou pausar' }).click();
     await page.getByRole('button', { name: 'Próxima faixa' }).click();
     await page.getByRole('button', { name: 'Aumentar o volume' }).click();
     await page.getByRole('button', { name: 'Mudo' }).click();
+    await page.getByRole('button', { name: 'Parar' }).click();
     await expect
-      .poll(() => pc.sent('/media').map((body) => body['action']))
-      .toEqual(['PLAY_PAUSE', 'NEXT', 'VOLUME_UP', 'MUTE']);
+      .poll(() => media().map((body) => body['action']))
+      .toEqual(['PLAY_PAUSE', 'NEXT', 'VOLUME_UP', 'MUTE', 'STOP']);
 
-    await expect(page.locator('.app')).toHaveText(['Navegador', 'Notas']);
+    await expect(page.locator('.app .name')).toHaveText(['Navegador', 'Notas']);
     await page.getByRole('button', { name: 'Notas' }).click();
     await expect.poll(() => pc.sent('/apps/notas/launch').length).toBe(1);
   });
@@ -1295,17 +1303,224 @@ test.describe('Mídia', () => {
     await expect(page.getByRole('heading', { name: 'Abrir no PC' })).toHaveCount(0);
   });
 
-  test('cabe na tela e não tem falha de acessibilidade', async ({ page }) => {
+  test('os favoritos formam uma grade de três colunas e valem em todos os modos', async ({
+    page,
+  }) => {
+    pc.status = {
+      ...pc.status,
+      apps: ['Navegador', 'Notas', 'Planilha', 'Slides do Trabalho'].map((label, i) => ({
+        id: `app${i}`,
+        label,
+      })),
+    };
     await openPc(page, '/pc/midia');
-    await expectNoHorizontalScroll(page);
-    expect(await smallTargets(page)).toEqual([]);
-    await expectNoA11yViolations(page);
+    const tiles = page.locator('.app');
+    await expect(tiles).toHaveCount(4);
+    const boxes = await tiles.evaluateAll((items) =>
+      items.map((item) => {
+        const box = item.getBoundingClientRect();
+        return { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) };
+      }),
+    );
+    expect(new Set(boxes.slice(0, 3).map((box) => box.y)).size).toBe(1);
+    expect(boxes[3].y).toBeGreaterThan(boxes[0].y);
+    expect(new Set(boxes.slice(0, 3).map((box) => box.width)).size).toBe(1);
+    await mode(page, 'Slides').click();
+    await expect(tiles).toHaveCount(4);
   });
 
-  test('print da Mídia', async ({ page }, info) => {
-    await page.emulateMedia({ colorScheme: 'light' });
+  test('o Vídeo manda os saltos, o espaço e as teclas do player do catálogo, e o aviso some', async ({
+    page,
+  }) => {
     await openPc(page, '/pc/midia');
-    await screenshot(page, join(SHOTS, `pc-midia-${info.project.name}.png`));
+    await mode(page, 'Vídeo').click();
+    await expect(page.getByText('O player precisa estar em foco.')).toBeVisible();
+    await page.getByRole('button', { name: 'Voltar 10 segundos' }).click();
+    await page.getByRole('button', { name: 'Tocar ou pausar' }).click();
+    await page.getByRole('button', { name: 'Avançar 10 segundos' }).click();
+    await page.locator('[data-shortcut="video-fullscreen"]').click();
+    await page.locator('[data-shortcut="video-subtitles"]').click();
+    await expect
+      .poll(() => pc.sent('/key'))
+      .toEqual([{ key: 'J' }, { key: 'SPACE' }, { key: 'L' }, { key: 'F' }, { key: 'C' }]);
+    await expect(page.getByText('O player precisa estar em foco.')).toHaveCount(0);
+    // O volume e o mudo valem no Vídeo e vão pelos comandos de mídia, não pelas teclas do player.
+    await page.getByRole('button', { name: 'Mudo' }).click();
+    await expect.poll(() => media()).toEqual([{ action: 'MUTE' }]);
+    // E o aviso não volta ao reabrir a tela.
+    await openPc(page, '/pc/midia');
+    await mode(page, 'Vídeo').click();
+    await expect(page.getByText('O player precisa estar em foco.')).toHaveCount(0);
+  });
+
+  test('uma tecla armada no mouse não vira Ctrl+J no Vídeo', async ({ page }) => {
+    await openPc(page);
+    await page.getByRole('button', { name: 'Mais teclas', exact: true }).click();
+    await page
+      .getByRole('group', { name: 'Mais teclas' })
+      .last()
+      .getByRole('button', { name: 'Ctrl', exact: true })
+      .click();
+    await expect(page.locator('.armed')).toContainText('Ctrl');
+    await tabs(page).getByRole('link', { name: 'Mídia' }).click();
+    await mode(page, 'Vídeo').click();
+    await page.getByRole('button', { name: 'Voltar 10 segundos' }).click();
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'J' }]);
+  });
+
+  test('as teclas da Mídia levam o número de ordem, como as outras entradas', async ({ page }) => {
+    await openPc(page, '/pc/midia');
+    await page.getByRole('button', { name: 'Próxima faixa' }).click();
+    await mode(page, 'Vídeo').click();
+    await page.getByRole('button', { name: 'Voltar 10 segundos' }).click();
+    await page.getByRole('button', { name: 'Avançar 10 segundos' }).click();
+    await expect.poll(() => pc.sent('/key').length).toBe(2);
+    const numbers = [...pc.seqs('/media'), ...pc.seqs('/key')];
+    expect(numbers.every((value) => typeof value === 'number')).toBe(true);
+    // Um contador só para a mídia e as teclas: sem repetir e crescente na ordem em que a pessoa tocou.
+    expect([...numbers].sort((a, b) => Number(a) - Number(b))).toEqual(numbers);
+    expect(new Set(numbers).size).toBe(3);
+  });
+
+  test('arrastar a faixa do volume manda passos em pedidos de até dez, para o lado do dedo', async ({
+    page,
+  }) => {
+    await openPc(page, '/pc/midia');
+    const strip = page.locator('.strip');
+    const box = (await strip.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + 40, y);
+    await page.mouse.down();
+    for (let step = 1; step <= 20; step++) await page.mouse.move(box.x + 40 + step * 8, y);
+    await expect(page.locator('.strip.dragging')).toBeVisible();
+    await page.mouse.up();
+    await expect(page.locator('.strip.dragging')).toHaveCount(0);
+    await expect.poll(() => media().length).toBeGreaterThan(0);
+    const total = () => media().reduce((sum, body) => sum + Number(body['steps'] ?? 1), 0);
+    // 160 px de arrasto a 7 px por passo: 22 passos (o resto de pixel não completa um).
+    await expect.poll(total).toBe(22);
+    expect(media().every((body) => body['action'] === 'VOLUME_UP')).toBe(true);
+    expect(Math.max(...media().map((body) => Number(body['steps'] ?? 1)))).toBeLessThanOrEqual(10);
+    // Para a esquerda desce.
+    await page.mouse.move(box.x + 200, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 130, y, { steps: 5 });
+    await page.mouse.up();
+    await expect
+      .poll(() => media().filter((body) => body['action'] === 'VOLUME_DOWN').length)
+      .toBeGreaterThan(0);
+  });
+
+  test('os Slides: anterior e próximo são metades da tela, e iniciar, encerrar e tela preta mandam as teclas', async ({
+    page,
+  }) => {
+    await openPc(page, '/pc/midia');
+    await mode(page, 'Slides').click();
+    await expect(page.getByRole('button', { name: 'Mudo' })).toHaveCount(0);
+    const previous = (await page.locator('.half[data-action="previous"]').boundingBox())!;
+    const next = (await page.locator('.half[data-action="next"]').boundingBox())!;
+    expect(Math.abs(previous.width - next.width)).toBeLessThan(1);
+    expect(previous.height).toBeGreaterThanOrEqual(120);
+    await page.getByRole('button', { name: 'Próximo' }).click();
+    await page.getByRole('button', { name: 'Anterior' }).click();
+    await page.locator('[data-shortcut="slides-start"]').click();
+    await page.locator('[data-shortcut="slides-here"]').click();
+    await page.locator('[data-shortcut="slides-black"]').click();
+    await page.locator('[data-shortcut="slides-end"]').click();
+    await expect
+      .poll(() => pc.sent('/key'))
+      .toEqual([
+        { key: 'RIGHT' },
+        { key: 'LEFT' },
+        { key: 'F5' },
+        { key: 'F5', modifiers: ['SHIFT'] },
+        { key: 'B' },
+        { key: 'ESCAPE' },
+      ]);
+  });
+
+  test('nos Slides, deslizar para os lados troca de slide uma vez só', async ({ page }) => {
+    await openPc(page, '/pc/midia');
+    await mode(page, 'Slides').click();
+    const nav = (await page.locator('.nav').boundingBox())!;
+    const y = nav.y + nav.height / 2;
+    await page.mouse.move(nav.x + nav.width - 40, y);
+    await page.mouse.down();
+    await page.mouse.move(nav.x + 40, y, { steps: 6 });
+    await page.mouse.up();
+    await page.mouse.move(nav.x + 40, y);
+    await page.mouse.down();
+    await page.mouse.move(nav.x + nav.width - 40, y, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'RIGHT' }, { key: 'LEFT' }]);
+  });
+
+  test.describe('ir ao slide', () => {
+    test('com pc.key.v2 manda os dígitos e o Enter, em ordem', async ({ page }) => {
+      pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.key.v2'] };
+      await openPc(page, '/pc/midia');
+      await mode(page, 'Slides').click();
+      await page.getByRole('textbox', { name: 'Número do slide' }).fill('12');
+      await page.getByRole('button', { name: 'Ir ao Slide' }).click();
+      await expect
+        .poll(() => pc.sent('/key'))
+        .toEqual([{ key: 'D1' }, { key: 'D2' }, { key: 'ENTER' }]);
+      await page.getByRole('textbox', { name: 'Número do slide' }).fill('0');
+      await page.getByRole('button', { name: 'Ir ao Slide' }).click();
+      await expect(page.getByRole('alert')).toContainText('de 1 a 999');
+      expect(pc.sent('/key')).toHaveLength(3);
+    });
+
+    test('num agente antigo a linha nem aparece', async ({ page }) => {
+      await openPc(page, '/pc/midia');
+      await mode(page, 'Slides').click();
+      await expect(page.getByRole('textbox', { name: 'Número do slide' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Ir ao Slide' })).toHaveCount(0);
+    });
+  });
+
+  test('o cronômetro dos Slides conta no aparelho e não manda nada ao PC', async ({ page }) => {
+    await openPc(page, '/pc/midia');
+    await mode(page, 'Slides').click();
+    await expect(page.getByRole('timer')).toHaveText('00:00');
+    await page.getByRole('button', { name: 'Iniciar cronômetro' }).click();
+    await expect(page.getByRole('timer')).toHaveText(/^00:0[1-9]$/, { timeout: 4_000 });
+    await page.getByRole('button', { name: 'Pausar cronômetro' }).click();
+    await page.getByRole('button', { name: 'Zerar cronômetro' }).click();
+    await expect(page.getByRole('timer')).toHaveText('00:00');
+    expect(pc.sent('/key')).toEqual([]);
+    expect(media()).toEqual([]);
+  });
+
+  for (const name of ['Música', 'Vídeo', 'Slides']) {
+    test(`${name}: cabe na tela, sem controle atrás da barra de abas e sem falha de acessibilidade`, async ({
+      page,
+    }) => {
+      pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.key.v2'] };
+      await openPc(page, '/pc/midia');
+      await mode(page, name).click();
+      await expect(mode(page, name)).toHaveAttribute('aria-selected', 'true');
+      await expectNoHorizontalScroll(page);
+      expect(await smallTargets(page)).toEqual([]);
+      await expectNoA11yViolations(page);
+      // Os favoritos ficam embaixo e a página rola até eles; tudo o que vem antes cabe sem rolar.
+      expect(await hiddenControls(page, 'app-pc-favorites')).toEqual([]);
+    });
+  }
+
+  test('prints dos modos da Mídia', async ({ page }, info) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.key.v2'] };
+    await openPc(page, '/pc/midia');
+    await screenshot(page, join(SHOTS, `pc-midia-musica-${info.project.name}.png`));
+    await mode(page, 'Vídeo').click();
+    await expect(page.getByRole('button', { name: 'Voltar 10 segundos' })).toBeVisible();
+    await settle(page);
+    await screenshot(page, join(SHOTS, `pc-midia-video-${info.project.name}.png`));
+    await mode(page, 'Slides').click();
+    await expect(page.getByRole('button', { name: 'Próximo' })).toBeVisible();
+    await settle(page);
+    await screenshot(page, join(SHOTS, `pc-midia-slides-${info.project.name}.png`));
   });
 });
 
