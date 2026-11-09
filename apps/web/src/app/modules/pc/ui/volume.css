@@ -1,0 +1,98 @@
+:host {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  gap: var(--space-2);
+}
+
+.vol {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.vol:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.vol:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.vol:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A faixa do arrasto: o botão volta ao meio ao soltar (mola curta); parada, mostra para onde ir com duas setas. */
+.strip {
+  position: relative;
+  display: grid;
+  align-items: center;
+  min-height: 64px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-elev);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: grab;
+}
+.strip.dragging {
+  cursor: grabbing;
+  border-color: var(--a-accent);
+}
+.strip.off {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.hint {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+  color: var(--a-ink3);
+}
+.hint.left {
+  left: var(--space-3);
+}
+.hint.right {
+  right: var(--space-3);
+}
+.thumb {
+  justify-self: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.strip.dragging .thumb {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thumb {
+    transition: none;
+  }
+}
