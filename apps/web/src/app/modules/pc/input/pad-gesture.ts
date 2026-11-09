@@ -1,3 +1,5 @@
+import { clampClickGap } from '../data/pc-types';
+
 export type PadButton = 'LEFT' | 'RIGHT' | 'MIDDLE';
 
 /** Um ponto da tela, nas coordenadas do ponteiro (a tela diz onde mostrar o retorno do toque). */
@@ -12,8 +14,11 @@ export interface PadHandlers {
   move(dx: number, dy: number, elapsedMs: number): void;
   /** Deslize de dois dedos em pixels do centro entre os dois. `elapsedMs`: tempo desde o passo anterior. */
   scroll(dx: number, dy: number, elapsedMs: number): void;
-  /** Toque curto e parado: um dedo é o clique esquerdo, dois o direito, três o do meio. `at` é onde os dedos pousaram. */
-  tap(button: PadButton, at: PadPoint): void;
+  /**
+   * Toque curto e parado: um dedo é o clique esquerdo, dois o direito, três o do meio. `at` é onde os dedos pousaram.
+   * `gapMs` só vem no segundo toque de um toque duplo: o intervalo desde o clique do primeiro, para o PC reproduzi-lo.
+   */
+  tap(button: PadButton, at: PadPoint, gapMs?: number): void;
   /** Um dedo ficou parado tempo bastante (ou tocou e logo andou, no arrasto com toque duplo): aperta o botão esquerdo. */
   dragStart(): void;
   /** O dedo que arrastava saiu (ou o gesto foi tomado pelo sistema): solta o botão esquerdo. */
@@ -123,6 +128,8 @@ export class PadGesture {
   private lastTap: { readonly at: Point; readonly time: number } | null = null;
   /** Este toque é o segundo do toque duplo: andar com ele começa a arrastar. */
   private doubleArmed = false;
+  /** Quando o primeiro toque do toque duplo saiu (e clicou): dele conta o intervalo que o segundo clique leva. */
+  private doubleSince = 0;
   /** O eixo em que a rolagem de dois dedos travou; `null` até o primeiro passo. */
   private axis: 'x' | 'y' | null = null;
   private samples: ScrollSample[] = [];
@@ -160,6 +167,7 @@ export class PadGesture {
       this.axis = null;
       this.samples = [];
       this.doubleArmed = this.isSecondTap(x, y, timeMs);
+      this.doubleSince = this.lastTap?.time ?? 0;
       this.lastTap = null;
     }
     this.fingers.set(id, { x, y });
@@ -231,7 +239,10 @@ export class PadGesture {
     }
     if (timeMs - this.startedAt >= this.config.tapMaxMs) return;
     if (this.peak === 1) {
-      this.handlers.tap('LEFT', this.origin);
+      // Os dois cliques saem quando o dedo sai: o intervalo é entre as duas saídas (e o do primeiro toque é só o clique).
+      const gapMs = this.doubleArmed ? clampClickGap(timeMs - this.doubleSince) : 0;
+      if (gapMs > 0) this.handlers.tap('LEFT', this.origin, gapMs);
+      else this.handlers.tap('LEFT', this.origin);
       // O segundo toque de um toque duplo já usou o primeiro: um terceiro não encadeia.
       this.lastTap = this.doubleArmed ? null : { at: this.origin, time: timeMs };
     } else if (this.peak === 2) {
