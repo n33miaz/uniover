@@ -1,5 +1,11 @@
 import type { PcFailure } from '../data/pc-failure';
-import type { PcKey, PcKeyOptions, PcModifier } from '../data/pc-types';
+import {
+  PC_TEXT_ERASE_CHUNK,
+  type PcKey,
+  type PcKeyOptions,
+  type PcModifier,
+  type PcTextEdit,
+} from '../data/pc-types';
 import { clampText } from './text-limit';
 
 /** O limite do contrato para o texto de um pedido, em pontos de código (um emoji vale um). */
@@ -121,6 +127,44 @@ export function textSteps(insert: string): TextStep[] {
   return steps;
 }
 
+/**
+ * Uma diferença do campo vira os pedidos `pc.text.v2` que a levam ao PC, em ordem: cada pedido apaga, digita e aperta uma tecla
+ * (Enter ou Tab), nesta ordem. O caso comum, uma rajada digitada (ou uma palavra trocada), é um pedido só. Vira mais de um
+ * quando o apagar passa de `PC_TEXT_ERASE_CHUNK`, quando o texto passa de `MAX_TEXT`, ou quando depois de uma tecla ainda há
+ * texto (o pedido não digita depois de apertar a tecla do fim).
+ */
+export function editRequests(diff: TextDiff): PcTextEdit[] {
+  const requests: PcTextEdit[] = [];
+  let erase = diff.erase;
+  while (erase > PC_TEXT_ERASE_CHUNK) {
+    requests.push({ erase: PC_TEXT_ERASE_CHUNK });
+    erase -= PC_TEXT_ERASE_CHUNK;
+  }
+  let current: { erase: number; text?: string; key?: 'ENTER' | 'TAB' } = { erase };
+  const flush = () => {
+    if (current.erase > 0 || current.text !== undefined || current.key !== undefined) {
+      requests.push({
+        ...(current.erase > 0 ? { erase: current.erase } : {}),
+        ...(current.text !== undefined ? { text: current.text } : {}),
+        ...(current.key !== undefined ? { key: current.key } : {}),
+      });
+    }
+    current = { erase: 0 };
+  };
+  for (const step of textSteps(diff.insert)) {
+    if (step.kind === 'text') {
+      if (current.text !== undefined || current.key !== undefined) flush();
+      current.text = step.text;
+    } else {
+      // `textSteps` só tira Enter e Tab como tecla.
+      if (current.key !== undefined) flush();
+      current.key = step.key === 'TAB' ? 'TAB' : 'ENTER';
+    }
+  }
+  flush();
+  return requests;
+}
+
 /** O que a digitação ao vivo pede ao PC (o `PcStore` já guarda a ordem e o prazo de cada pedido). */
 export interface TyperSender {
   /** `options` só vai quando a tecla leva `repeat` ou `action` (um toque comum chama como sempre). */
@@ -130,6 +174,12 @@ export interface TyperSender {
     options?: PcKeyOptions,
   ): Promise<PcFailure | null>;
   text(text: string): Promise<PcFailure | null>;
+  /**
+   * Uma edição inteira (apagar, digitar e a tecla do fim) num pedido só (`pc.text.v2`). Só existe, e só vale, com `canEdit`.
+   */
+  edit?(edit: PcTextEdit): Promise<PcFailure | null>;
+  /** O PC entende `pc.text.v2` agora? Sem isso (agente anterior) cada apagar e cada trecho saem como sempre. */
+  canEdit?(): boolean;
 }
 
 export interface TyperEvents {
@@ -159,7 +209,8 @@ type Op =
  * texto que a pessoa digitou antes dele. Falhou um passo: o resto da fila é descartado (não se digita "def" depois de "abc"
  * ter falhado) e quem usa recomeça do que o PC tem.
  *
- * Com o contrato atual cada apagar é uma tecla: `erase` apagar custam `erase` pedidos em série.
+ * Num PC que entende `pc.text.v2` a diferença do campo vai num pedido só (`editRequests`: apagar, digitar e a tecla do fim). Sem
+ * isso (agente anterior), cada apagar é uma tecla: `erase` apagar custam `erase` pedidos em série.
  */
 export class LiveTyper {
   private queue: Op[] = [];
@@ -244,6 +295,14 @@ export class LiveTyper {
       return op.options === undefined
         ? this.sender.key(op.key, op.modifiers)
         : this.sender.key(op.key, op.modifiers, op.options);
+    }
+    if (this.sender.edit !== undefined && this.sender.canEdit?.() === true) {
+      for (const request of editRequests(op.diff)) {
+        if (generation !== this.generation) return null;
+        const failure = await this.sender.edit(request);
+        if (failure) return failure;
+      }
+      return null;
     }
     for (let erased = 0; erased < op.diff.erase; erased++) {
       if (generation !== this.generation) return null;

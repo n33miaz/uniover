@@ -50,6 +50,8 @@ export class PcInput {
             : this.store.sendKey(key, modifiers, options),
         ),
       text: (text) => this.sameAccount(() => this.store.sendText(text)),
+      edit: (edit) => this.sameAccount(() => this.store.sendTextEdit(edit)),
+      canEdit: () => this.store.supportsTextV2(),
     },
     {
       failed: (failure, kind, droppedEdits) =>
