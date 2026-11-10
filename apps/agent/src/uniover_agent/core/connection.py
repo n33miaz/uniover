@@ -23,6 +23,8 @@ APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
 # O `hello` volta de tempos em tempos: se a API do momento o recusou (ainda não conhecia um campo
 # novo) ou foi trocada com o agente já conectado, ele passa a valer sem reiniciar o agente.
 REHELLO_SECONDS: Final = 300.0
+RECENT_CONNECTION_SECONDS: Final = 10 * 60.0
+RECENT_CONNECTION_CAP_SECONDS: Final = 5.0
 # Prazo de cada passo da conexão. O transporte já limita a abertura (105 s, a API dormindo acorda
 # em até ~1 min); estes prazos são a segunda barreira: nenhum `await` de rede ou de reanúncio pode
 # parar o laço para sempre.
@@ -64,12 +66,13 @@ class Backoff:
         self._random = random
         self._attempt = 0
 
-    def next_delay(self) -> float:
-        raw = min(self._policy.cap, self._policy.base * (2**self._attempt))
+    def next_delay(self, cap: float | None = None) -> float:
+        ceiling = self._policy.cap if cap is None else min(cap, self._policy.cap)
+        raw = min(ceiling, self._policy.base * (2**self._attempt))
         self._attempt = min(self._attempt + 1, 32)
         factor = 1 + self._policy.jitter * (2 * self._random() - 1)
         # O teto vale também depois do jitter.
-        return float(min(self._policy.cap, raw * factor))
+        return float(min(ceiling, raw * factor))
 
     def reset(self) -> None:
         self._attempt = 0
@@ -132,6 +135,8 @@ class ConnectionSupervisor:
         # Cada sessão tem um número; uma tarefa abandonada que ignorou o cancelamento vê que a sua
         # passou e sai, em vez de seguir lendo ou enviando no canal da sessão seguinte.
         self._generation = 0
+        self._last_connected_at: float | None = None
+        self._last_session_seconds = 0.0
 
     def _expect(self, seconds: float) -> None:
         self._due_at = self._clock.monotonic() + seconds
@@ -215,11 +220,16 @@ class ConnectionSupervisor:
             except ServerRestarting as exc:
                 # Não cresce a espera: o aviso é do próprio servidor, não falha de rede.
                 wait = self._policy.restart_wait * (0.5 + self._random())
-                _log.info("servidor reiniciando (%s); volto em %.1f s", exc, wait)
+                _log.info(
+                    "conexão perdida após %.1f s: servidor reiniciando (%s); volto em %.1f s",
+                    self._last_session_seconds,
+                    exc,
+                    wait,
+                )
                 await self._sleep(wait)
                 continue
             except TransportError as exc:
-                _log.warning("conexão perdida (%s)", exc)
+                _log.info("conexão perdida após %.1f s: %s", self._last_session_seconds, exc)
                 await self._note_failure(exc, unexpected=False)
             except Exception as exc:
                 # Nada que o laço não preveja pode matar o agente: PC ligado há horas e agente fora
@@ -227,10 +237,16 @@ class ConnectionSupervisor:
                 _log.exception("falha inesperada na conexão; reconectando")
                 await self._note_failure(exc, unexpected=True)
             else:
-                _log.info("conexão encerrada pelo servidor")
-            delay = self._backoff.next_delay()
+                _log.info("conexão encerrada pelo servidor após %.1f s", self._last_session_seconds)
+            delay = self._backoff.next_delay(self._recent_connection_cap())
             _log.info("reconectando em %.1f s", delay)
             await self._sleep(delay)
+
+    def _recent_connection_cap(self) -> float | None:
+        connected = self._last_connected_at
+        if connected is None or self._clock.monotonic() - connected >= RECENT_CONNECTION_SECONDS:
+            return None
+        return RECENT_CONNECTION_CAP_SECONDS
 
     async def _note_failure(self, exc: BaseException, *, unexpected: bool) -> None:
         if self._hello_done or self._on_startup_failure is None:
@@ -268,6 +284,7 @@ class ConnectionSupervisor:
             await self._bounded(
                 self._transport.send(self._hello()), self._policy.send_timeout, "o envio do hello"
             )
+            self._last_connected_at = self._clock.monotonic()
             self._hello_done = True
             self._in_session = True
             if self._on_connected is not None:
@@ -295,11 +312,10 @@ class ConnectionSupervisor:
             # Antes de tudo: o que ficar para trás (ignorando o cancelamento) sai por conta própria.
             self._generation += 1
             await self._stop(tasks)
-            if (
-                started is not None
-                and self._clock.monotonic() - started >= self._policy.stable_after
-            ):
-                self._backoff.reset()
+            if started is not None:
+                self._last_session_seconds = max(0.0, self._clock.monotonic() - started)
+                if self._last_session_seconds >= self._policy.stable_after:
+                    self._backoff.reset()
             await self._close_channel()
             if self._on_disconnected is not None:
                 self._on_disconnected()

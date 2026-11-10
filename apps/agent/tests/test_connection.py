@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -100,6 +101,27 @@ async def test_reconnects_with_growing_backoff_without_attempt_limit() -> None:
     harness = Harness(transport)
     await harness.run_until(lambda: len(harness.clock.sleeps) >= 8)
     assert harness.clock.sleeps[:8] == [1, 2, 4, 8, 16, 30, 30, 30]
+
+
+async def test_recent_connection_caps_reconnect_backoff_at_five_seconds() -> None:
+    transport = FakeTransport([[TransportError("cai")]] * 8)
+    harness = Harness(transport)
+
+    await harness.run_until(lambda: len(harness.clock.sleeps) >= 8)
+
+    assert harness.clock.sleeps[:8] == [1, 2, 4, 5, 5, 5, 5, 5]
+
+
+async def test_connection_loss_log_includes_reason_and_session_duration(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transport = FakeTransport([[TransportError("sem rede")]])
+    harness = Harness(transport)
+
+    with caplog.at_level(logging.INFO):
+        await harness.run_until(lambda: len(harness.clock.sleeps) >= 1)
+
+    assert "conexão perdida após 0.0 s: sem rede" in caplog.text
 
 
 async def test_backoff_resets_after_stable_connection() -> None:
