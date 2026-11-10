@@ -234,6 +234,10 @@ def build_driver_setup(
             known.mac = mac
             _log.info("MAC da TV guardado a partir da tabela ARP")
 
+    async def wake_on_lan() -> bool:
+        # O MAC vem do arquivo ou é aprendido na primeira conexão; sem ele não há pacote mágico.
+        return known.mac is not None and await send_wake_on_lan(known.mac, host)
+
     remote = AndroidTvRemoteV2(
         host,
         settings.tv_client_name,
@@ -248,6 +252,7 @@ def build_driver_setup(
         remote,
         hibernate_seconds=settings.tv_hibernate_seconds,
         liveness=build_liveness("android", host),
+        wake_on_lan=wake_on_lan,
         power_off_read_timeout_seconds=settings.tv_power_off_read_timeout_seconds,
         power_off_confirmation_timeout_seconds=settings.tv_power_off_confirmation_timeout_seconds,
         warm_timeout_seconds=settings.tv_session_warm_timeout_seconds,
