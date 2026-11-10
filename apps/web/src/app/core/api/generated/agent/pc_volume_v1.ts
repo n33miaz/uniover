@@ -1,0 +1,21 @@
+/* GERADO por `npm --prefix contracts run generate` — não editar. */
+
+/**
+ * API para agente: volume absoluto do PC. `level` (opcional, 0 a 100): o nível do volume principal do dispositivo de saída padrão, em porcentagem (o Windows o guarda como fração, então 37 vira 0,37). `muted` (opcional): liga ou desliga o mudo, sem alternar (repetir o mesmo valor não muda nada). Pelo menos um dos dois; juntos, o nível entra antes do mudo. O mudo e o nível são independentes: mudar o nível não desliga o mudo. Responde com `command.result.v1`; depois de executar, o agente avisa o nível de agora em `pc.volume.state.v1`. As teclas de volume relativas (`pc.media.v1`) seguem valendo. A API só a usa para o agente que declarou a capacidade `pc.volume.v1` (depois de a API listá-la em `features`); para um agente sem ela o pedido volta como 409 `pc-key-unsupported`, sem enviar nada. `seq` (opcional) numera os pedidos de entrada pela nuvem em ordem crescente (um contador só para o clique, a tecla, o texto, a mídia, o zoom e o volume, durante a vida da página; o movimento tem a numeração própria dele): o agente o compara com o último número que o app declara no canal direto para saber se um pedido da nuvem é anterior à troca de caminho (e por isso não fecha o canal) ou é novo. A API só o repassa a um agente que declara `pc.rtc.v1`. `epoch` (opcional) identifica a vida da página que numerou o pedido: 16 caracteres hexadecimais aleatórios, sorteados quando a página abre. Sem ela o `seq` não diz de qual página vem (uma página reaberta recomeça a contagem), então o agente só trata o pedido como anterior à troca de caminho quando a época é a mesma que o app declarou no canal direto. A API só a repassa a um agente que declara `pc.rtc.v1`.
+ */
+export interface PcVolumeV1Message {
+  v: 1;
+  id: string;
+  type: 'pc.volume.v1';
+  source: string;
+  target: string;
+  ts: string;
+  correlationId: string | null;
+  body: PcVolumeV1Body;
+}
+export interface PcVolumeV1Body {
+  level?: number;
+  muted?: boolean;
+  seq?: number;
+  epoch?: string;
+}

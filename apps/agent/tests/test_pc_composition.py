@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import pytest
 from websockets.asyncio.server import ServerConnection
@@ -25,7 +26,7 @@ from uniover_agent.config import Settings
 from uniover_agent.core import Command, EnvelopeFactory, EnvelopeGate
 from uniover_agent.main import main
 
-from .support import AGENT_ID, TOKEN, FakeApi, dump, envelope
+from .support import AGENT_ID, TOKEN, FakeApi, FakeAudio, dump, envelope
 
 
 class FakeInput:
@@ -37,6 +38,9 @@ class FakeInput:
 
     def scroll(self, horizontal: int, vertical: int) -> None:
         self.calls.append(("scroll", horizontal, vertical))
+
+    def zoom(self, steps: int) -> None:
+        self.calls.append(("zoom", steps))
 
     def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
         if modifiers:
@@ -122,6 +126,7 @@ async def test_the_built_handlers_feed_the_use_tracker_the_update_waits_on() -> 
         pc_input=FakeInput(),
         power=FakePower(),
         launcher=FakeLauncher(),
+        audio=FakeAudio(),
     )
     assert pc is not None
     assert pc.use.seconds_since_use() is None
@@ -139,10 +144,18 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         pc_input=FakeInput(),
         power=FakePower(),
         launcher=FakeLauncher(),
+        audio=FakeAudio(),
     )
     assert pc is not None
     # O que este agente sabe; o `hello` só declara as `v2` depois de a API listá-las.
-    assert pc.capabilities == ["pc.control.v1", "pc.key.v2", "pc.text.v2", "pc.click.v2"]
+    assert pc.capabilities == [
+        "pc.control.v1",
+        "pc.key.v2",
+        "pc.text.v2",
+        "pc.click.v2",
+        "pc.pointer.zoom.v1",
+        "pc.volume.v1",
+    ]
     assert sorted(pc.handlers) == [
         "pc.app.launch.v1",
         "pc.click.v1",
@@ -151,9 +164,11 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.key.v2",
         "pc.media.v1",
         "pc.pointer.v1",
+        "pc.pointer.zoom.v1",
         "pc.power.v1",
         "pc.text.v1",
         "pc.text.v2",
+        "pc.volume.v1",
     ]
     assert [app.id for app in pc.apps] == ["notas"]
 
@@ -170,6 +185,7 @@ async def test_the_favorites_list_is_announced_with_ids_and_labels_only() -> Non
         pc_input=FakeInput(),
         power=FakePower(),
         launcher=FakeLauncher(),
+        audio=FakeAudio(),
     )
     assert pc is not None
     for step in pc.after_hello:
@@ -236,6 +252,7 @@ async def test_run_registers_the_pc_use_marker_job_fed_by_the_pc_commands(
             pc_input=FakeInput(),
             power=FakePower(),
             launcher=FakeLauncher(),
+            audio=FakeAudio(),
         ),
     )
 
@@ -358,6 +375,7 @@ async def hello_capabilities(
             pc_input=FakeInput(),
             power=FakePower(),
             launcher=FakeLauncher(),
+            audio=FakeAudio(),
         ),
     )
 
@@ -420,6 +438,94 @@ async def test_the_hello_declares_the_restart_capability_only_when_the_api_lists
     assert "transport.restart.v1" in capabilities
 
 
+async def test_the_hello_declares_zoom_and_volume_only_when_the_api_lists_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "pc.key.v2", "pc.text.v2", "pc.click.v2"})
+    capabilities = await hello_capabilities(monkeypatch, older_api)
+    # Uma API que ainda não lista as novas recusaria o `hello` com elas, e um agente com esquema
+    # fechado nunca recebe mensagem que não declarou: sem a listagem, nada de zoom nem de volume.
+    assert "pc.pointer.zoom.v1" not in capabilities
+    assert "pc.volume.v1" not in capabilities
+
+    capabilities = await hello_capabilities(monkeypatch, older_api | {"pc.pointer.zoom.v1"})
+    assert "pc.pointer.zoom.v1" in capabilities
+    assert "pc.volume.v1" not in capabilities
+
+    capabilities = await hello_capabilities(
+        monkeypatch, older_api | {"pc.pointer.zoom.v1", "pc.volume.v1"}
+    )
+    assert capabilities[-2:] == ["pc.pointer.zoom.v1", "pc.volume.v1"]
+
+
+async def volume_session(
+    monkeypatch: pytest.MonkeyPatch, features: frozenset[str], audio: FakeAudio
+) -> list[dict[str, Any]]:
+    """Roda o agente (com áudio de mentira) contra uma API que lista `features`; devolve o que ela
+    recebeu. A API manda um `pc.volume.v1` e um zoom e fecha a conexão."""
+
+    async def listed(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
+        return features
+
+    monkeypatch.setattr(connection_module, "fetch_api_features", listed)
+    pc_input = FakeInput()
+    monkeypatch.setattr(
+        connection_module,
+        "build_pc",
+        partial(
+            build_pc,
+            platform="win32",
+            pc_input=pc_input,
+            power=FakePower(),
+            launcher=FakeLauncher(),
+            audio=audio,
+        ),
+    )
+
+    async def script(connection: ServerConnection) -> None:
+        await asyncio.sleep(0.5)  # o `hello` e a consulta de `features` (o hello se repete)
+        now = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        vol_id = "0192f1e4-0000-7000-8000-0000000000e1"
+        zoom_id = "0192f1e4-0000-7000-8000-0000000000e2"
+        await connection.send(dump(envelope("pc.volume.v1", {"level": 65}, ts=now, id=vol_id)))
+        await connection.send(
+            dump(envelope("pc.pointer.zoom.v1", {"steps": 2}, ts=now, id=zoom_id))
+        )
+        await asyncio.sleep(0.6)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    silence_noisy_loggers()
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=True
+        )
+        assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
+    assert ("zoom", 2) in pc_input.calls
+    return list(api.received)
+
+
+async def test_the_volume_state_is_sent_only_after_the_api_lists_pc_volume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = frozenset({"agent.diagnostics.v1", "pc.key.v2", "pc.pointer.zoom.v1", "pc.volume.v1"})
+    # API anterior: o tipo `pc.volume.state.v1` ela nem conhece, e o agente nunca o manda.
+    audio = FakeAudio(level=40)
+    older = await volume_session(monkeypatch, listing - {"pc.volume.v1"}, audio)
+    assert [m for m in older if m["type"] == "pc.volume.state.v1"] == []
+
+    audio = FakeAudio(level=40)
+    received = await volume_session(monkeypatch, listing, audio)
+    states = [m["body"] for m in received if m["type"] == "pc.volume.state.v1"]
+    assert states, "a API listou: o nível sobe"
+    assert (states[0]["level"], states[0]["muted"]) == (40, False)
+    assert (states[-1]["level"], states[-1]["muted"]) == (65, False), "o de depois do comando"
+    results = {m["correlationId"]: m["body"] for m in received if m["type"] == "command.result.v1"}
+    assert results["0192f1e4-0000-7000-8000-0000000000e1"] == {"ok": True}
+    assert audio.calls == [("level", 65)]
+
+
 async def test_a_held_modifier_is_let_go_when_the_connection_drops_and_old_keys_still_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -434,6 +540,7 @@ async def test_a_held_modifier_is_let_go_when_the_connection_drops_and_old_keys_
             pc_input=WindowsPcInput(lambda inputs: batches.append(list(inputs))),
             power=FakePower(),
             launcher=FakeLauncher(),
+            audio=FakeAudio(),
         ),
     )
     ids = [f"0192f1e4-0000-7000-8000-0000000000d{n}" for n in range(4)]

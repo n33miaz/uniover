@@ -42,7 +42,7 @@ from uniover_agent.ports import (
     PeerCallbacks,
 )
 
-from .support import AGENT_ID, dump, envelope
+from .support import AGENT_ID, FakeAudio, dump, envelope
 
 SESSION = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e01"
 TOKEN = "q3Vx9Zk2mP7sT1wY4bN8cR5dF6gH0jLa"
@@ -58,6 +58,9 @@ class FakeInput:
 
     def scroll(self, horizontal: int, vertical: int) -> None:
         self.calls.append(("scroll", horizontal, vertical))
+
+    def zoom(self, steps: int) -> None:
+        self.calls.append(("zoom", steps))
 
     def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
         if modifiers:
@@ -132,7 +135,7 @@ class FakePeer:
 class Lab:
     """Serviço, faixa do PC e handlers de verdade, com PC falso e par falso."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - ganchos de teste, todos com padrão
         self,
         settings: DirectSettings | None = None,
         ttl: int = 30,
@@ -140,12 +143,14 @@ class Lab:
         block_clicks: bool = False,
         factory: DirectPeerFactory | None = None,
         pacer: ClickPacer | None = None,
+        pc: Any | None = None,
     ) -> None:
         self.clock = FakeClock()
         self.gate = EnvelopeGate(AGENT_ID)
         self.transport = FakeTransport()
         self.envelopes = EnvelopeFactory(AGENT_ID, self.gate, self.clock)
-        self.pc = FakeInput()
+        self.pc = pc if pc is not None else FakeInput()
+        self.audio = FakeAudio()
         self.api_clock = ClockOffset()
         handlers = pc_handlers(
             self.pc,
@@ -156,6 +161,7 @@ class Lab:
             clock=self.api_clock,
             use=PcUseTracker(),
             pacer=pacer,
+            audio=self.audio,
         )
         self.click_gate = asyncio.Event()
         if block_clicks:
@@ -1827,7 +1833,7 @@ async def test_clicks_queued_behind_a_release_do_not_start_a_new_wait() -> None:
 async def test_the_ready_message_lists_the_v2_commands_this_agent_accepts(lab: Lab) -> None:
     peer = await lab.open_authenticated()
     ready = [m for c, m in peer.sent if c == INPUT_CHANNEL and m.get("k") == "ready"]
-    assert ready[0]["caps"] == ["pc.click.v2", "pc.text.v2"]
+    assert ready[0]["caps"] == ["pc.click.v2", "pc.pointer.zoom.v1", "pc.text.v2", "pc.volume.v1"]
 
 
 # o balde das teclas: o pedido mais pesado do contrato nunca é recusado só pelo canal
@@ -1999,3 +2005,132 @@ async def test_a_release_is_never_refused_for_age_and_its_own_ceiling_still_hold
         assert acks["up3"]["c"] == "rate_limited", "o teto de soltar segue valendo para o que passa"
     finally:
         await lab.aclose()
+
+
+# ---- o zoom da pinça e o volume absoluto pelo canal: a mesma validação, idade, taxa e fila --------------
+
+
+async def test_a_zoom_through_the_channel_runs_in_the_lane_and_is_acknowledged(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.pointer.zoom.v1", {"steps": 3}, "z1"))
+    peer.phone(INPUT_CHANNEL, lab.command("pc.pointer.zoom.v1", {"steps": -2}, "z2"))
+    await settle()
+
+    assert lab.pc.calls == [("zoom", 3), ("zoom", -2)]
+    assert {a["i"]: a["ok"] for a in peer.acks()} == {"z1": True, "z2": True}
+
+
+async def test_a_volume_through_the_channel_runs_in_the_lane_and_is_acknowledged(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.volume.v1", {"level": 35}, "v1"))
+    peer.phone(INPUT_CHANNEL, lab.command("pc.volume.v1", {"muted": True}, "v2"))
+    await settle()
+
+    assert lab.audio.calls == [("level", 35), ("muted", True)]
+    assert {a["i"]: a["ok"] for a in peer.acks()} == {"v1": True, "v2": True}
+
+
+@pytest.mark.parametrize(
+    ("message_type", "body"),
+    [
+        ("pc.pointer.zoom.v1", {"steps": 0}),
+        ("pc.pointer.zoom.v1", {"steps": 13}),
+        ("pc.pointer.zoom.v1", {"steps": 1, "extra": True}),
+        ("pc.volume.v1", {}),
+        ("pc.volume.v1", {"level": 101}),
+        ("pc.volume.v1", {"level": 5, "extra": True}),
+    ],
+)
+async def test_a_zoom_or_volume_body_the_contract_refuses_never_reaches_the_pc(
+    lab: Lab, message_type: str, body: dict[str, Any]
+) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command(message_type, body, "bad"))
+    await settle()
+
+    assert lab.pc.calls == [] and lab.audio.calls == []
+    assert peer.acks() == [{"k": "ack", "i": "bad", "ok": False, "c": "invalid_message"}]
+
+
+async def test_a_stale_zoom_or_volume_through_the_channel_is_refused_as_expired(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    for command_id, message_type, body in (
+        ("oz", "pc.pointer.zoom.v1", {"steps": 2}),
+        ("ov", "pc.volume.v1", {"level": 90}),
+    ):
+        message = lab.command(message_type, body, command_id)
+        message["ts"] -= 10_000  # o app o deu há 10 s
+        peer.phone(INPUT_CHANNEL, message)
+    await settle()
+
+    assert lab.pc.calls == [] and lab.audio.calls == []
+    assert {a["i"]: a["c"] for a in peer.acks()} == {"oz": "expired", "ov": "expired"}
+
+
+async def test_flooding_zooms_through_the_channel_is_cut_by_the_rate_limit() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, max_input_per_second=2))
+    try:
+        peer = await lab.open_authenticated()
+        for n in range(5):
+            peer.phone(INPUT_CHANNEL, lab.command("pc.pointer.zoom.v1", {"steps": 1}, f"z{n}"))
+        await settle()
+
+        assert lab.pc.calls == [("zoom", 1), ("zoom", 1)]
+        assert {a["c"] for a in peer.acks() if not a["ok"]} == {"rate_limited"}
+    finally:
+        await lab.aclose()
+
+
+async def test_a_zoom_or_volume_from_the_cloud_closes_the_used_channel_first(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "d"))
+    cloud = dump(envelope("pc.pointer.zoom.v1", {"steps": 1}, ts=lab.service._stamp(0.0)))
+    await lab.process(cloud)
+    await settle_close()
+
+    # O aperto do canal que esperava na faixa saiu; o zoom da nuvem rodou depois da soltura.
+    assert lab.pc.calls == [("release_all",), ("zoom", 1)]
+    assert (SESSION, "cloud") in lab.closed
+    assert peer.closed
+
+
+async def test_the_zoom_the_channel_had_waiting_is_dropped_when_it_closes(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.pointer.zoom.v1", {"steps": 2}, "z1"))
+    peer.phone(INPUT_CHANNEL, lab.command("pc.pointer.zoom.v1", {"steps": 2}, "z2"))
+    # Sem ceder a vez: a faixa ainda não executou nada quando o canal fecha.
+    await lab.service.close(SESSION)
+    await settle()
+
+    assert ("zoom", 2) not in lab.pc.calls
+    assert lab.pc.calls == [("release_all",)]
+
+
+def zoom_pc() -> tuple[Any, list[list[Any]]]:
+    """O adaptador de verdade com o envio trocado por um registro: nada toca o mouse nem o teclado."""
+    from uniover_agent.adapters.pc_windows import WindowsPcInput
+
+    batches: list[list[Any]] = []
+    return WindowsPcInput(lambda inputs: batches.append(list(inputs))), batches
+
+
+async def test_a_zoom_through_the_channel_never_leaves_the_ctrl_down_even_when_the_channel_drops() -> (
+    None
+):
+    pc, batches = zoom_pc()
+    lab = Lab(pc=pc)
+    try:
+        peer = await lab.open_authenticated()
+        peer.phone(INPUT_CHANNEL, lab.command("pc.pointer.zoom.v1", {"steps": 4}, "z"))
+        await settle()
+        peer.callbacks.on_closed()  # a queda do canal: solta o que o PC segurava
+        await settle()
+    finally:
+        await lab.aclose()
+
+    keys = [e for batch in batches for e in batch if e.kind == "keyboard"]
+    downs = [e for e in keys if not e.flags & 0x0002]
+    ups = [e for e in keys if e.flags & 0x0002]
+    assert len(downs) == len(ups) == 1, "o Ctrl foi apertado e solto uma vez, no mesmo lote"
+    assert batches[0][0].vk == batches[0][-1].vk == 0x11
+    assert len(batches) == 1, "a queda do canal não enviou mais nada ao teclado"

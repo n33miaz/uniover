@@ -19,6 +19,8 @@ from uniover_agent.core.pc.handlers import (
     PC_KEY_V2_CAPABILITY,
     PC_SILENT_TYPES,
     PC_TEXT_V2_CAPABILITY,
+    PC_VOLUME_CAPABILITY,
+    PC_ZOOM_CAPABILITY,
     SLEEP_DELAY_SECONDS,
     UNKNOWN_APP,
     UNSUPPORTED,
@@ -34,8 +36,10 @@ from uniover_agent.core.pc.handlers import (
     pc_power_handler,
     pc_text_handler,
     pc_text_v2_handler,
+    pc_zoom_handler,
 )
 from uniover_agent.core.pc.use import PcUseTracker
+from uniover_agent.core.pc.volume import PcVolumeAnnouncer, pc_volume_handler, volume_after_hello
 
 __all__ = [
     "CANDIDATE_TYPE",
@@ -47,6 +51,8 @@ __all__ = [
     "PC_RTC_CAPABILITY",
     "PC_SILENT_TYPES",
     "PC_TEXT_V2_CAPABILITY",
+    "PC_VOLUME_CAPABILITY",
+    "PC_ZOOM_CAPABILITY",
     "RTC_SILENT_TYPES",
     "RTC_TYPES",
     "SLEEP_DELAY_SECONDS",
@@ -58,6 +64,7 @@ __all__ = [
     "PcApp",
     "PcDirectService",
     "PcUseTracker",
+    "PcVolumeAnnouncer",
     "parse_favorites",
     "pc_app_launch_handler",
     "pc_apps_announcer",
@@ -72,5 +79,8 @@ __all__ = [
     "pc_rtc_handlers",
     "pc_text_handler",
     "pc_text_v2_handler",
+    "pc_volume_handler",
+    "pc_zoom_handler",
     "slugify",
+    "volume_after_hello",
 ]

@@ -13,6 +13,8 @@ from uniover_agent.core import Command, ResultStatus
 from uniover_agent.core.pc import ClickPacer, ClockOffset, PcApp, PcUseTracker, pc_handlers
 from uniover_agent.core.pc.freshness import EXPIRED
 
+from .support import FakeAudio
+
 NOW = datetime(2026, 11, 7, 12, 0, 0, tzinfo=UTC)
 
 
@@ -25,6 +27,9 @@ class FakeInput:
 
     def scroll(self, horizontal: int, vertical: int) -> None:
         self.calls.append(("scroll", horizontal, vertical))
+
+    def zoom(self, steps: int) -> None:
+        self.calls.append(("zoom", steps))
 
     def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
         if modifiers:
@@ -113,6 +118,7 @@ class Lab:
         self.pc = FakeInput()
         self.power = FakePower()
         self.launcher = FakeLauncher()
+        self.audio = FakeAudio()
         self.use = PcUseTracker(lambda: mono_origin + self.elapsed)
         # Com `paced`, a espera do intervalo do duplo clique só adianta o relógio falso.
         self.pacer = ClickPacer(lambda: mono_origin + self.elapsed, self._sleep) if paced else None
@@ -126,6 +132,7 @@ class Lab:
                 clock=self.clock,
                 use=self.use,
                 pacer=self.pacer,
+                audio=self.audio,
             )
         )
         if seeded:
@@ -258,6 +265,8 @@ async def test_a_command_without_a_usable_timestamp_runs_as_it_arrived() -> None
         ("pc.key.v1", {"key": "ENTER"}),
         ("pc.text.v1", {"text": "oi"}),
         ("pc.media.v1", {"action": "MUTE"}),
+        ("pc.pointer.zoom.v1", {"steps": 2}),
+        ("pc.volume.v1", {"level": 10}),
         ("pc.app.launch.v1", {"appId": "notas"}),
     ],
 )
@@ -268,6 +277,7 @@ async def test_a_stale_command_is_rejected_as_expired_and_never_executed(
     lab.heartbeat(0.2)
     assert await lab.run(handler, body, 6.5) == ("rejected", EXPIRED)
     assert lab.pc.calls == []
+    assert lab.audio.calls == []
     assert lab.launcher.opened == []
 
 

@@ -27,7 +27,14 @@ from uniover_agent.ports.pairing import (
     PollResult,
     PollSlowDown,
 )
-from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
+from uniover_agent.ports.pc import (
+    PcAudio,
+    PcInput,
+    PcLauncher,
+    PcPower,
+    PcUnsupported,
+    VolumeState,
+)
 from uniover_agent.ports.pc_direct import (
     INPUT_CHANNEL,
     POINTER_CHANNEL,
@@ -142,6 +149,7 @@ __all__ = [
     "PairingRateLimited",
     "PairingTicket",
     "PairingUnavailable",
+    "PcAudio",
     "PcInput",
     "PcLauncher",
     "PcPower",
@@ -170,6 +178,7 @@ __all__ = [
     "TvRemote",
     "TvUnreachable",
     "UserRequest",
+    "VolumeState",
     "adb_text_groups",
     "current_user_request",
     "is_adb_typable",

@@ -87,10 +87,15 @@ INPUT_TYPES: Final = frozenset(
         "pc.text.v1",
         "pc.text.v2",
         "pc.media.v1",
+        # O zoom da pinça e o volume absoluto: a mesma validação, idade, taxa e fila das demais.
+        "pc.pointer.zoom.v1",
+        "pc.volume.v1",
     }
 )
 # As mensagens v2 do canal de entrada: o `ready` as lista, e o app só as manda a quem as lista.
-CHANNEL_V2_TYPES: Final = frozenset({"pc.click.v2", "pc.text.v2"})
+CHANNEL_V2_TYPES: Final = frozenset(
+    {"pc.click.v2", "pc.text.v2", "pc.pointer.zoom.v1", "pc.volume.v1"}
+)
 # O que, chegando pela nuvem, fecha o canal em uso: os comandos de entrada (clique, tecla, texto,
 # mídia e segurar). O movimento do mouse NÃO está aqui: ele chega sem espera (a API responde antes
 # de o agente o ler), então um movimento atrasado da nuvem é normal logo depois da troca de caminho,

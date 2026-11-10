@@ -8,6 +8,7 @@ import { PcSlidesPanel } from '../ui/slides-panel';
 import { PcTransport } from '../ui/transport';
 import { PcVideoPanel } from '../ui/video-panel';
 import { PcVolume } from '../ui/volume';
+import { PcVolumeLevelControl } from '../ui/volume-level';
 
 /** Os três modos da tela, na ordem em que aparecem. */
 export type MediaMode = 'music' | 'video' | 'slides';
@@ -22,7 +23,7 @@ const MODES: readonly MediaMode[] = ['music', 'video', 'slides'];
  */
 @Component({
   selector: 'app-pc-media-page',
-  imports: [PcFavorites, PcSlidesPanel, PcTransport, PcVideoPanel, PcVolume],
+  imports: [PcFavorites, PcSlidesPanel, PcTransport, PcVideoPanel, PcVolume, PcVolumeLevelControl],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="modes" role="tablist" aria-label="Modo" i18n-aria-label="@@pc.media.modes">
@@ -74,6 +75,9 @@ const MODES: readonly MediaMode[] = ['music', 'video', 'slides'];
       }
 
       @if (mode() !== 'slides') {
+        @if (store.supportsVolume()) {
+          <app-pc-volume-level />
+        }
         <app-pc-volume />
         <div class="extras">
           <button

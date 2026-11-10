@@ -22,6 +22,17 @@ export interface PcStatus {
    * Vazio com um agente anterior a elas.
    */
   readonly capabilities: readonly string[];
+  /**
+   * O volume de agora, como o agente avisou (nível de 0 a 100 e mudo); `null` enquanto ele não disse (um agente anterior ao
+   * volume, ou ainda sem leitura). A API só o manda com o PC conectado.
+   */
+  readonly volume: PcVolumeLevel | null;
+}
+
+/** O nível e o mudo do volume do PC. */
+export interface PcVolumeLevel {
+  readonly level: number;
+  readonly muted: boolean;
 }
 
 export const PC_STATUS_PATH = `${APP_CONFIG.apiBase}/v1/pc/status`;
@@ -45,7 +56,20 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
     capabilities: Array.isArray(body['capabilities'])
       ? body['capabilities'].filter((item): item is string => typeof item === 'string')
       : [],
+    volume: parseVolume(body['volume']),
   };
+}
+
+/** O volume do corpo de `/pc/status`: só um nível inteiro de 0 a 100 e um mudo de verdade valem; o resto é "sem leitura". */
+function parseVolume(raw: unknown): PcVolumeLevel | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const volume = raw as Record<string, unknown>;
+  const level = volume['level'];
+  const muted = volume['muted'];
+  if (typeof level !== 'number' || !Number.isInteger(level) || level < 0 || level > 100)
+    return null;
+  if (typeof muted !== 'boolean') return null;
+  return { level, muted };
 }
 
 /**
@@ -67,6 +91,8 @@ export class PcAvailability {
   readonly online = computed(() => this.current()?.online === true);
   readonly apps = computed(() => this.current()?.apps ?? []);
   readonly capabilities = computed(() => this.current()?.capabilities ?? []);
+  /** O volume de agora do PC, ou `null` sem leitura. */
+  readonly volume = computed(() => this.current()?.volume ?? null);
   /** `null` até a primeira leitura bem-sucedida. */
   readonly status = this.current.asReadonly();
 

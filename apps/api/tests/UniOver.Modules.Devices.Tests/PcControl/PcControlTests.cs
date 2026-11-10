@@ -198,6 +198,59 @@ public sealed class PcMessagesTests
     }
 
     [Fact]
+    public void ZoomAndVolumeCapabilities_AreTheOnesTheHelloDeclares_AndTheApiListsThemAsFeatures()
+    {
+        PcMessages.ZoomCapability.Should().Be("pc.pointer.zoom.v1");
+        PcMessages.VolumeCapability.Should().Be("pc.volume.v1");
+        GetModuleInfoHandler.AgentFeatures.Should().Contain(["pc.pointer.zoom.v1", "pc.volume.v1"]);
+        AgentMessageDirections.ToAgent.Should().Contain([AgentMessageTypes.PcPointerZoomV1, AgentMessageTypes.PcVolumeV1]);
+        AgentMessageDirections.FromAgent.Should().Contain(AgentMessageTypes.PcVolumeStateV1);
+        AgentMessageDirections.FromAgent.Should().NotContain([AgentMessageTypes.PcPointerZoomV1, AgentMessageTypes.PcVolumeV1]);
+    }
+
+    [Fact]
+    public void Zoom_IsAMessageOfItsOwn_WithTheStepsAsTheContractSaysAndNothingElse()
+    {
+        var zoomIn = PcMessages.Zoom(3);
+        zoomIn.Type.Should().Be(AgentMessageTypes.PcPointerZoomV1);
+        SameJson(zoomIn.Body, "{\"steps\":3}");
+        IsValidForTheContract(zoomIn).Should().BeTrue();
+
+        var zoomOut = PcMessages.Zoom(-12);
+        SameJson(zoomOut.Body, "{\"steps\":-12}");
+        IsValidForTheContract(zoomOut).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Volume_CarriesOnlyWhatTheRequestHas()
+    {
+        var level = PcMessages.Volume(40, null);
+        level.Type.Should().Be(AgentMessageTypes.PcVolumeV1);
+        SameJson(level.Body, "{\"level\":40}");
+        IsValidForTheContract(level).Should().BeTrue();
+
+        var muted = PcMessages.Volume(null, true);
+        SameJson(muted.Body, "{\"muted\":true}");
+        IsValidForTheContract(muted).Should().BeTrue();
+
+        var both = PcMessages.Volume(0, false);
+        SameJson(both.Body, "{\"level\":0,\"muted\":false}");
+        IsValidForTheContract(both).Should().BeTrue();
+    }
+
+    [Fact]
+    public void WithSeq_NumbersTheZoomAndTheVolume_LikeEveryOtherInput()
+    {
+        const string page = "3fa9c10d7be2465a";
+        var zoom = PcMessages.WithSeq(PcMessages.Zoom(2), 7, page);
+        SameJson(zoom.Body, "{\"steps\":2,\"seq\":7,\"epoch\":\"3fa9c10d7be2465a\"}");
+        IsValidForTheContract(zoom).Should().BeTrue();
+        var volume = PcMessages.WithSeq(PcMessages.Volume(10, null), 8, page);
+        SameJson(volume.Body, "{\"level\":10,\"seq\":8,\"epoch\":\"3fa9c10d7be2465a\"}");
+        IsValidForTheContract(volume).Should().BeTrue();
+    }
+
+    [Fact]
     public void TextFitsV1_OnlyForPlainText()
     {
         PcMessages.TextFitsV1(new PcTextRequest("olá")).Should().BeTrue();
@@ -486,6 +539,111 @@ public sealed class PcValidatorTests
         PcValidator.Power(new PcPowerRequest(action, confirm)).Count.Should().Be(valid ? 0 : 1);
 }
 
+public sealed class PcZoomAndVolumeValidatorTests
+{
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(-1, true)]
+    [InlineData(12, true)]
+    [InlineData(-12, true)]
+    [InlineData(0, false)]
+    [InlineData(13, false)]
+    [InlineData(-13, false)]
+    public void Zoom_AcceptsTwelveStepsEitherWay_ButNeverZero(int steps, bool valid) =>
+        PcValidator.Zoom(new PcZoomRequest(steps)).Count.Should().Be(valid ? 0 : 1);
+
+    [Fact]
+    public void Zoom_NeedsTheSteps_AndChecksTheNumbering()
+    {
+        PcValidator.Zoom(new PcZoomRequest(null)).Should().ContainKey("steps");
+        PcValidator.Zoom(null).Should().ContainKey("steps");
+        PcValidator.Zoom(new PcZoomRequest(2, -1)).Should().ContainKey("seq");
+        PcValidator.Zoom(new PcZoomRequest(2, 5, "XYZ")).Should().ContainKey("epoch");
+        PcValidator.Zoom(new PcZoomRequest(2, 5, "3fa9c10d7be2465a")).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0, null, true)]
+    [InlineData(100, null, true)]
+    [InlineData(37, true, true)]
+    [InlineData(null, false, true)]
+    [InlineData(null, null, false)]
+    [InlineData(101, null, false)]
+    [InlineData(-1, true, false)]
+    public void Volume_AcceptsALevelFromZeroToOneHundredAndOrTheMute_ButNotNothing(int? level, bool? muted, bool valid) =>
+        PcValidator.Volume(new PcVolumeRequest(level, muted)).Count.Should().Be(valid ? 0 : 1);
+
+    [Fact]
+    public void Volume_NullRequestIsRefused_AndTheNumberingIsChecked()
+    {
+        PcValidator.Volume(null).Should().ContainKey("level");
+        PcValidator.Volume(new PcVolumeRequest(10, null, -1)).Should().ContainKey("seq");
+        PcValidator.Volume(new PcVolumeRequest(10, null, 1, "ZZ")).Should().ContainKey("epoch");
+    }
+}
+
+public sealed class PcVolumeStoreTests
+{
+    [Fact]
+    public void KeepsTheLastVolumeOfEachAgentSeparately()
+    {
+        var store = new PcVolumeStore();
+        store.Get("pc-casa").Should().BeNull();
+        store.Set("pc-casa", new PcVolumeState(40, false));
+        store.Set("outro", new PcVolumeState(10, true));
+        store.Set("pc-casa", new PcVolumeState(55, true));
+
+        store.Get("pc-casa").Should().Be(new PcVolumeState(55, true));
+        store.Get("outro").Should().Be(new PcVolumeState(10, true));
+    }
+
+    private static AgentPresenceInfo Presence(string slug, bool connected, DateTimeOffset? helloAt) =>
+        new(slug, connected, DateTimeOffset.UnixEpoch, "0.1.0", [], null, null, null, null, helloAt);
+
+    [Fact]
+    public void ALevelFromAnEarlierSessionIsDropped_WhenTheAgentDropsOrStartsANewConnection()
+    {
+        var store = new PcVolumeStore();
+        store.Set("pc-casa", new PcVolumeState(20, false));
+        store.Set("outro", new PcVolumeState(70, false));
+
+        // Mensagens de presença de uma sessão com hello não mexem em nada (nem as de outro agente).
+        store.OnPresenceChanged(Presence("pc-casa", true, DateTimeOffset.UnixEpoch));
+        store.Get("pc-casa").Should().Be(new PcVolumeState(20, false));
+
+        // Queda: o nível se vai.
+        store.OnPresenceChanged(Presence("pc-casa", false, DateTimeOffset.UnixEpoch));
+        store.Get("pc-casa").Should().BeNull();
+        store.Get("outro").Should().Be(new PcVolumeState(70, false));
+
+        // Volta (conexão nova, ainda sem hello): o que chegar depois é da sessão nova e vale.
+        store.Set("pc-casa", new PcVolumeState(30, false));
+        store.OnPresenceChanged(Presence("pc-casa", true, null));
+        store.Get("pc-casa").Should().BeNull("o 30 era da sessão anterior à conexão nova");
+        store.Set("pc-casa", new PcVolumeState(80, false));
+        store.Get("pc-casa").Should().Be(new PcVolumeState(80, false));
+    }
+
+    [Fact]
+    public async Task TheAgentMessageHandler_StoresTheVolumeTheAgentSent()
+    {
+        var volume = new PcVolumeStore();
+        var handler = new PcAgentMessageHandler(
+            new PcAppsStore(),
+            new PcRtcAnswers(TimeProvider.System),
+            new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!),
+            volume);
+        var body = JsonDocument.Parse("{\"level\":62,\"muted\":true,\"at\":\"2026-11-09T14:00:00Z\"}").RootElement.Clone();
+
+        handler.HandledTypes.Should().Contain(AgentMessageTypes.PcVolumeStateV1);
+        await handler.HandleAsync(
+            new InboundMessage("pc-casa", Guid.CreateVersion7(), AgentMessageTypes.PcVolumeStateV1, null, DateTimeOffset.UtcNow, body),
+            TestContext.Current.CancellationToken);
+
+        volume.Get("pc-casa").Should().Be(new PcVolumeState(62, true));
+    }
+}
+
 public sealed class PcAppsStoreTests
 {
     [Fact]
@@ -507,7 +665,7 @@ public sealed class PcAppsStoreTests
     public async Task TheAgentMessageHandler_StoresTheIdsAndNamesTheAgentSent()
     {
         var store = new PcAppsStore();
-        var handler = new PcAgentMessageHandler(store, new PcRtcAnswers(TimeProvider.System), new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!));
+        var handler = new PcAgentMessageHandler(store, new PcRtcAnswers(TimeProvider.System), new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!), new PcVolumeStore());
         var body = JsonDocument.Parse(
             "{\"apps\":[{\"id\":\"navegador\",\"label\":\"Navegador\"},{\"id\":\"notas\",\"label\":\"Notas\"}],\"at\":\"2026-11-01T14:00:00Z\"}")
             .RootElement.Clone();

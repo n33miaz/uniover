@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.volume.state.v1.schema.json",
+  "title": "pc.volume.state.v1",
+  "description": "Agente para API: o volume de agora do PC (`level`, 0 a 100, e `muted`) e quando foi lido (`at`). O agente só o manda a uma API que listou `pc.volume.v1` em `features`: na conexão (e quando a API passa a listá-lo), depois de executar `pc.volume.v1` e as teclas de volume e de mudo de `pc.media.v1`, e quando uma leitura periódica mostra que o volume mudou por outro caminho (o teclado do próprio PC). A API o guarda em memória, por agente, e o devolve em `GET /api/v1/pc/status` (`volume`) enquanto o PC está conectado; um agente que não o manda deixa `volume` nulo. Sem resposta.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.volume.state.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "muted",
+        "at"
+      ],
+      "properties": {
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "muted": {
+          "type": "boolean"
+        },
+        "at": {
+          "$ref": "../envelope.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

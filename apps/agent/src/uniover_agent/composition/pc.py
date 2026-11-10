@@ -6,8 +6,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from uniover_agent.adapters.local_config import update_config
+from uniover_agent.adapters.pc_audio import WindowsPcAudio
 from uniover_agent.adapters.pc_direct_aiortc import aiortc_installed, build_peer
 from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher, WindowsPcPower
+from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
 from uniover_agent.core import (
@@ -16,6 +18,8 @@ from uniover_agent.core import (
     PC_KEY_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
     PC_TEXT_V2_CAPABILITY,
+    PC_VOLUME_CAPABILITY,
+    PC_ZOOM_CAPABILITY,
     ClickPacer,
     ClockOffset,
     DirectSettings,
@@ -25,13 +29,17 @@ from uniover_agent.core import (
     PcApp,
     PcDirectService,
     PcUseTracker,
+    PcVolumeAnnouncer,
     parse_favorites,
     pc_apps_announcer,
     pc_handlers,
     pc_rtc_handlers,
+    volume_after_hello,
 )
 from uniover_agent.ports import (
+    Clock,
     DirectPeerFactory,
+    PcAudio,
     PcInput,
     PcLauncher,
     PcPower,
@@ -60,6 +68,9 @@ class PcSetup:
     use: PcUseTracker
     # O último clique, para o intervalo do duplo clique; a faixa o liga (uma soltura nunca espera).
     pacer: ClickPacer
+    # O aviso do volume de agora (`pc.volume.state.v1`): quem monta o agente liga `enabled` ao que a
+    # API listou em `features`; até lá nada é enviado.
+    volume: PcVolumeAnnouncer | None = None
     # O canal direto (WebRTC), quando este PC o oferece; `None` sem a biblioteca ou desligado.
     direct: PcDirectService | None = None
 
@@ -73,6 +84,8 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     pc_input: PcInput | None = None,
     power: PcPower | None = None,
     launcher: PcLauncher | None = None,
+    audio: PcAudio | None = None,
+    clock_source: Clock | None = None,
     on_clock_skew: Callable[[float], None] | None = None,
     on_expired: Callable[[float], None] | None = None,
     on_clock_unstable: Callable[[int], None] | None = None,
@@ -95,6 +108,10 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     clock = ClockOffset(on_skew=on_clock_skew, on_refused=on_expired, on_unstable=on_clock_unstable)
     use = PcUseTracker()
     pacer = ClickPacer()
+    audio = audio or WindowsPcAudio()
+    volume = PcVolumeAnnouncer(
+        audio, transport, envelopes, clock_source or SystemClock(), enabled=lambda: False
+    )
     handlers = pc_handlers(
         pc_input,
         power or WindowsPcPower(),
@@ -104,6 +121,8 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         clock=clock,
         use=use,
         pacer=pacer,
+        audio=audio,
+        volume_changed=volume.soon,
     )
     # As capacidades `v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só as declara
     # depois de a API listá-las (`declarable_capabilities`).
@@ -112,6 +131,8 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         PC_KEY_V2_CAPABILITY,
         PC_TEXT_V2_CAPABILITY,
         PC_CLICK_V2_CAPABILITY,
+        PC_ZOOM_CAPABILITY,
+        PC_VOLUME_CAPABILITY,
     ]
     direct: PcDirectService | None = None
     if settings.pc_direct and gate is not None and direct_available():
@@ -123,12 +144,13 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     return PcSetup(
         handlers,
         capabilities,
-        [pc_apps_announcer(apps, transport, envelopes)],
+        [pc_apps_announcer(apps, transport, envelopes), volume_after_hello(volume)],
         apps,
         pc_input.release_all,
         clock,
         use,
         pacer,
+        volume,
         direct,
     )
 

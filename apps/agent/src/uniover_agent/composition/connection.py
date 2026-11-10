@@ -76,6 +76,8 @@ from uniover_agent.core import (
     PC_RTC_CAPABILITY,
     PC_SILENT_TYPES,
     PC_TEXT_V2_CAPABILITY,
+    PC_VOLUME_CAPABILITY,
+    PC_ZOOM_CAPABILITY,
     PRESENCE_CAPABILITY,
     RTC_SILENT_TYPES,
     RTC_TYPES,
@@ -133,6 +135,8 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_KEY_V2_CAPABILITY,
         PC_TEXT_V2_CAPABILITY,
         PC_CLICK_V2_CAPABILITY,
+        PC_ZOOM_CAPABILITY,
+        PC_VOLUME_CAPABILITY,
         PC_RTC_CAPABILITY,
     }
 )
@@ -418,6 +422,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         envelopes,
         gate=gate,
         agent_id=agent_id,
+        clock_source=clock,
         record=lambda kind, severity, detail: kit.recorder.record(
             kind,
             "warn" if severity == "warn" else "info",
@@ -550,6 +555,12 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         if tv.adb_permission is not None:
             # Cada mudança da permissão do ADB (pedida, aceita, perdida) chega ao celular na hora.
             tv.adb_permission.on_change(lambda: publisher.publish(tv.manager.snapshot()))
+    if pc is not None and pc.volume is not None:
+        volume = pc.volume
+        # O nível só sobe depois de a API listar a capacidade (uma anterior recusaria o tipo), e
+        # sobe assim que ela passa a listá-la: o primeiro `hello` costuma vir antes da resposta.
+        volume.bind_enabled(lambda: features.supports(PC_VOLUME_CAPABILITY))
+        features.on_change(volume.soon)
     shipper = DiagnosticsShipper(
         kit.store,
         kit.recorder,
@@ -651,6 +662,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             root / "runtime" / PC_USE_MARKER_FILE, pc.use.seconds_since_use, clock
         )
         jobs = [*jobs, pc_marker.run]
+        if pc.volume is not None:
+            # A leitura periódica: o volume que mudou por fora (o teclado do PC) chega à API.
+            jobs = [*jobs, pc.volume.run]
     if settings.self_care:
         care = SelfCare(
             build_checks(
@@ -665,7 +679,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             on_critical=lambda outcome: roll_back_if_in_trial(outcome, kit),
         )
         jobs = [*jobs, care.run, shipper.run]
-    if settings.self_care or tv is not None or (pc is not None and pc.direct is not None):
+    if settings.self_care or tv is not None or pc is not None:
         # O pareamento pelo app e o estado "não pareada" também dependem do que a API aceita.
         jobs = [*jobs, features.run]
     # Cada tarefa de fundo é supervisionada: erro vira registro e ocorrência, e ela recomeça.
@@ -704,6 +718,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         await asyncio.gather(*background, return_exceptions=True)
         if pc is not None and pc.direct is not None:
             await pc.direct.aclose()
+        if pc is not None and pc.volume is not None:
+            await pc.volume.aclose()
         await process.aclose()
         if tv is not None:
             await tv.manager.aclose()

@@ -824,3 +824,107 @@ def test_a_partial_edit_batch_releases_the_key_that_went_down() -> None:
     with pytest.raises(PartialSendError):
         pc.edit_text(2, "ab", None)
     assert flaky.batches[-1] == [RawInput("keyboard", flags=KEY_UP, vk=0x08)]
+
+
+WHEEL_UP = RawInput("mouse", 0x0800, data=120)
+WHEEL_DOWN = RawInput("mouse", 0x0800, data=-120)
+
+
+def test_a_zoom_is_a_single_batch_with_the_ctrl_pressed_and_released_around_the_wheel() -> None:
+    sent = Recorder()
+    timers = Timers()
+    pc = WindowsPcInput(sent, start_timer=timers)
+    pc.zoom(2)
+    assert sent.batches == [[CTRL_DOWN, WHEEL_UP, WHEEL_UP, CTRL_UP]]
+    assert timers.live() == [], "nada ficou apertado: nenhum temporizador de segurança"
+    pc.release_all()
+    assert len(sent.batches) == 1, "o Ctrl não ficou preso"
+
+
+def test_a_zoom_with_the_ctrl_held_by_the_app_leaves_the_ctrl_to_the_app() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    pc.key("CTRL", [], action="DOWN")
+    pc.zoom(-1)
+    assert sent.batches[-1] == [WHEEL_DOWN], "nem aperta o Ctrl de novo nem o solta no fim"
+    pc.release_all()
+    assert sent.batches[-1] == [CTRL_UP], "só a soltura do app solta o Ctrl segurado"
+
+
+def test_a_zoom_cut_right_after_the_ctrl_went_down_lets_go_of_the_ctrl_at_once() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [1]  # só o aperto do Ctrl entrou
+    with pytest.raises(PartialSendError):
+        pc.zoom(3)
+    assert flaky.batches[-1] == [CTRL_UP]
+    pc.release_all()
+    assert len(flaky.batches) == 2, "nada mais preso"
+
+
+def test_a_zoom_cut_in_the_middle_of_the_wheel_lets_go_of_the_ctrl() -> None:
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, start_timer=Timers())
+    flaky.accept = [3]  # o Ctrl e duas voltas da roda
+    with pytest.raises(PartialSendError):
+        pc.zoom(4)
+    assert flaky.batches[-1] == [CTRL_UP]
+
+
+def test_a_zoom_the_system_refused_whole_leaves_nothing_held() -> None:
+    flaky = Flaky()
+    flaky.refuse_all = True
+    timers = Timers()
+    pc = WindowsPcInput(flaky, start_timer=timers)
+    with pytest.raises(OSError, match="recusou"):
+        pc.zoom(2)
+    assert flaky.batches == []
+    assert timers.live() == []
+
+
+def test_a_cut_zoom_whose_release_is_refused_is_released_when_the_connection_drops() -> None:
+    # O Windows aceitou o Ctrl, cortou o lote e recusou também a soltura (janela elevada): o Ctrl é
+    # uma pendência, tentada de novo ao perder a conexão com a API (ou o canal direto), que chamam
+    # `release_all`.
+    flaky = Flaky()
+    state = {"refuse": False}
+
+    def send(inputs: Sequence[RawInput]) -> None:
+        if state["refuse"] and list(inputs) == [CTRL_UP]:
+            raise OSError("recusou a soltura")
+        flaky(inputs)
+
+    pc = WindowsPcInput(send, start_timer=Timers())
+    flaky.accept = [1]
+    state["refuse"] = True
+    with pytest.raises(PartialSendError):
+        pc.zoom(3)
+    state["refuse"] = False  # a janela elevada saiu do foco: a soltura passa
+    pc.release_all()  # a conexão caiu
+    assert flaky.batches[-1] == [CTRL_UP]
+    pc.release_all()
+    assert len(flaky.batches) == 2, "uma soltura só, e nada mais preso depois dela"
+
+
+def test_a_cut_zoom_whose_release_is_refused_is_retried_by_the_dead_man_timer() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    state = {"refuse": False}
+
+    def send(inputs: Sequence[RawInput]) -> None:
+        if state["refuse"] and list(inputs) == [CTRL_UP]:
+            raise OSError("recusou a soltura")
+        flaky(inputs)
+
+    pc = WindowsPcInput(send, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    flaky.accept = [1]
+    state["refuse"] = True
+    with pytest.raises(PartialSendError):
+        pc.zoom(3)
+    assert len(timers.live()) == 1, "o Ctrl pendente mantém o temporizador armado"
+    state["refuse"] = False
+    now[0] = 31
+    timers.fire_last()
+    assert flaky.batches[-1] == [CTRL_UP]
+    assert timers.live() == []

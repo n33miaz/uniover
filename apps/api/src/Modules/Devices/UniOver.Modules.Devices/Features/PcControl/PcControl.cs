@@ -19,7 +19,11 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 /// <c>Capabilities</c>: as capacidades <c>pc.*</c> opcionais que o agente declarou (<c>pc.key.v2</c>, <c>pc.text.v2</c>, <c>pc.click.v2</c>...), para a tela
 /// esconder o que o PC não entende. Vazio com agente antigo, sem PC ou sem conexão ainda.
 /// </summary>
-internal sealed record PcStatusResponse(bool Available, bool Online, IReadOnlyList<PcApp> Apps, IReadOnlyList<string> Capabilities);
+internal sealed record PcStatusResponse(
+    bool Available, bool Online, IReadOnlyList<PcApp> Apps, IReadOnlyList<string> Capabilities, PcVolumeState? Volume = null);
+
+/// <summary>O volume de agora do PC, como o agente avisou (<c>pc.volume.state.v1</c>): nível de 0 a 100 e mudo.</summary>
+internal sealed record PcVolumeState(int Level, bool Muted);
 
 /// <summary>
 /// <c>Seq</c> é opcional: o app numera os pedidos de entrada pela nuvem (movimento, clique, tecla, texto e mídia) em ordem
@@ -71,6 +75,25 @@ internal sealed record PcTextRequest(
 
 internal sealed record PcMediaRequest(string? Action, int? Steps, int? Seq = null, string? Epoch = null);
 
+/// <summary>
+/// O zoom da pinça (<c>pc.pointer.zoom.v1</c>): <c>Steps</c> cliques de roda com o Ctrl apertado, de -12 a 12 e nunca zero (positivo aproxima).
+/// <c>Steps</c> e <c>Seq</c> só são número JSON (nada de texto como "2").
+/// </summary>
+internal sealed record PcZoomRequest(
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Steps,
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Seq = null,
+    string? Epoch = null);
+
+/// <summary>
+/// O volume absoluto (<c>pc.volume.v1</c>): <c>Level</c> (0 a 100) e/ou <c>Muted</c> (liga ou desliga o mudo, sem alternar); pelo menos um dos dois.
+/// <c>Level</c> e <c>Seq</c> só são número JSON.
+/// </summary>
+internal sealed record PcVolumeRequest(
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Level,
+    bool? Muted,
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Seq = null,
+    string? Epoch = null);
+
 internal sealed record PcPowerRequest(string? Action, bool? Confirm);
 
 /// <summary>Os limites do contrato <c>pc.*</c>: o que a API deixaria passar e o contrato recusar viraria 500 em vez de 400.</summary>
@@ -85,6 +108,8 @@ internal static class PcValidator
     public const int MaxKeyRepeat = 50;
     public const int MaxErase = 200;
     public const int MaxGapMs = 400;
+    public const int MaxZoomSteps = 12;
+    public const int MaxVolumeLevel = 100;
     public const int EpochLength = 16;
 
     public static Dictionary<string, string[]> Pointer(PcPointerRequest? request)
@@ -254,6 +279,37 @@ internal static class PcValidator
         return errors;
     }
 
+    public static Dictionary<string, string[]> Zoom(PcZoomRequest? request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
+        // Zero não é zoom: o contrato o recusa, e a API o barra aqui para o pedido não virar 500.
+        if (request?.Steps is not { } steps || steps == 0 || Math.Abs(steps) > MaxZoomSteps)
+        {
+            errors["steps"] = [$"Use de -{MaxZoomSteps} a {MaxZoomSteps}, sem o zero."];
+        }
+
+        return errors;
+    }
+
+    public static Dictionary<string, string[]> Volume(PcVolumeRequest? request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        CheckNumbering(errors, request?.Seq, request?.Epoch);
+        if (request?.Level is { } level && (level < 0 || level > MaxVolumeLevel))
+        {
+            errors["level"] = [$"Use de 0 a {MaxVolumeLevel}."];
+        }
+
+        // Pelo menos um dos dois: um pedido vazio não faria nada e o contrato o recusa.
+        if (request is null || (request.Level is null && request.Muted is null))
+        {
+            errors["level"] = ["Informe o nível (0 a 100) ou o mudo."];
+        }
+
+        return errors;
+    }
+
     public static Dictionary<string, string[]> Power(PcPowerRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
@@ -322,6 +378,7 @@ internal static class PcValidator
 internal sealed class PcControlHandler(
     PcAgentResolver resolver,
     PcAppsStore apps,
+    PcVolumeStore volume,
     IAgentGateway gateway,
     PairingAuditWriter audit,
     DevicesDbContext db,
@@ -345,7 +402,7 @@ internal sealed class PcControlHandler(
         var target = await resolver.ResolveAsync(userId, cancellationToken);
         return TypedResults.Ok(target is null
             ? new PcStatusResponse(false, false, [], [])
-            : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug), OptionalCapabilities(target)));
+            : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug), OptionalCapabilities(target), VolumeOf(target)));
     }
 
     /// <summary>
@@ -382,6 +439,13 @@ internal sealed class PcControlHandler(
         && target.Capabilities.Contains(PcMessages.RtcCapability, StringComparer.Ordinal)
             ? PcMessages.WithSeq(message, seq, epoch)
             : message;
+
+    /// <summary>
+    /// O volume que o agente avisou, só enquanto ele está conectado e já mandou o <c>hello</c> desta sessão. O que chegou numa sessão
+    /// anterior já foi descartado pelo <see cref="PcVolumeStore"/> (queda ou conexão nova): um agente que voltou e ainda não avisou não tem
+    /// leitura de agora, e o nível de antes seria mentira. Nulo sem leitura (ou agente anterior ao volume).
+    /// </summary>
+    private PcVolumeState? VolumeOf(PcTarget target) => target.Connected && target.HelloAt is not null ? volume.Get(target.Slug) : null;
 
     /// <summary>As capacidades <c>pc.*</c> além da base (<see cref="PcMessages.Capability"/>), na ordem em que o agente as declarou.</summary>
     private static IReadOnlyList<string> OptionalCapabilities(PcTarget target) =>
@@ -560,6 +624,17 @@ internal static class PcControlEndpoints
             .WithCommonProblems();
 
         group.MapPost("/media", MediaAsync)
+            .RequireAuthorization(ModulePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
+            .WithCommonProblems();
+
+        // O zoom da pinça e o volume absoluto: o balde das entradas (cliques, teclas, texto, mídia), como a mídia.
+        group.MapPost("/zoom", ZoomAsync)
+            .RequireAuthorization(ModulePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
+            .WithCommonProblems();
+
+        group.MapPost("/volume", VolumeAsync)
             .RequireAuthorization(ModulePolicy)
             .RequireRateLimiting(RateLimitPolicies.PcInput)
             .WithCommonProblems();
@@ -771,6 +846,53 @@ internal static class PcControlEndpoints
                 cancellationToken,
                 seq: request.Seq,
                 epoch: request.Epoch);
+    }
+
+    private static async Task<IResult> ZoomAsync(
+        PcZoomRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        var errors = PcValidator.Zoom(request);
+        // Mensagem nova, sem v1: só o agente que declarou a capacidade a recebe (409 pc-key-unsupported para os outros).
+        return errors.Count > 0
+            ? ProblemDetailsExtensions.ValidationProblem(errors)
+            : await handler.RunAsync(
+                userId,
+                PcMessages.Zoom(request!.Steps!.Value),
+                PcControlHandler.CommandTimeout,
+                null,
+                ClientInfo.From(http),
+                cancellationToken,
+                PcMessages.ZoomCapability,
+                request.Seq,
+                request.Epoch);
+    }
+
+    private static async Task<IResult> VolumeAsync(
+        PcVolumeRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        var errors = PcValidator.Volume(request);
+        return errors.Count > 0
+            ? ProblemDetailsExtensions.ValidationProblem(errors)
+            : await handler.RunAsync(
+                userId,
+                PcMessages.Volume(request!.Level, request.Muted),
+                PcControlHandler.CommandTimeout,
+                null,
+                ClientInfo.From(http),
+                cancellationToken,
+                PcMessages.VolumeCapability,
+                request.Seq,
+                request.Epoch);
     }
 
     private static async Task<IResult> PowerAsync(

@@ -434,3 +434,43 @@ def test_an_edit_with_half_a_character_is_refused_whole_and_never_repeats_the_te
     with pytest.raises(UnknownKey) as raised:
         pc_inputs.edit_inputs(3, "senha\ud800", "ENTER")
     assert "senha" not in str(raised.value)
+
+
+# ---- zoom (a pinça: Ctrl, a roda e Ctrl solto, num lote só) -----------------------------------
+
+_CTRL = 0x11
+
+
+def test_a_zoom_is_the_ctrl_pressed_the_wheel_clicks_and_the_ctrl_released_in_one_batch() -> None:
+    events = pc_inputs.zoom_inputs(3)
+    assert events[0] == RawInput("keyboard", vk=_CTRL)
+    assert events[-1] == RawInput("keyboard", flags=KEY_UP, vk=_CTRL)
+    wheel = events[1:-1]
+    assert wheel == [RawInput("mouse", MOUSE_WHEEL, data=120)] * 3
+    assert pc_inputs.dangling_key_ups(events) == [], "o lote inteiro não deixa o Ctrl apertado"
+
+
+def test_zooming_out_turns_the_wheel_the_other_way_one_click_per_step() -> None:
+    events = pc_inputs.zoom_inputs(-2)
+    assert events[1:-1] == [RawInput("mouse", MOUSE_WHEEL, data=-120)] * 2
+
+
+def test_a_zoom_never_goes_past_the_contract_limit() -> None:
+    assert len(pc_inputs.zoom_inputs(500)) == pc_inputs.MAX_ZOOM_STEPS + 2
+    assert len(pc_inputs.zoom_inputs(-500)) == pc_inputs.MAX_ZOOM_STEPS + 2
+
+
+def test_a_zoom_without_steps_is_refused_before_anything_is_built() -> None:
+    with pytest.raises(UnknownKey):
+        pc_inputs.zoom_inputs(0)
+
+
+def test_a_zoom_with_the_ctrl_already_held_neither_presses_nor_releases_it() -> None:
+    events = pc_inputs.zoom_inputs(2, already_held={_CTRL})
+    assert events == [RawInput("mouse", MOUSE_WHEEL, data=120)] * 2
+
+
+def test_a_zoom_with_another_modifier_held_still_wraps_the_ctrl() -> None:
+    events = pc_inputs.zoom_inputs(1, already_held={0x12})  # o Alt do Alt+Tab
+    assert events[0] == RawInput("keyboard", vk=_CTRL)
+    assert events[-1] == RawInput("keyboard", flags=KEY_UP, vk=_CTRL)

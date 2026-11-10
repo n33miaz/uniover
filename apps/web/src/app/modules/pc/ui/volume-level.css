@@ -1,0 +1,43 @@
+:host {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(5ch, auto);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+
+.name {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.range {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--a-accent);
+  touch-action: pan-y;
+}
+.range:disabled {
+  opacity: 0.55;
+}
+.range:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+
+.value {
+  color: var(--a-ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  text-align: end;
+  white-space: nowrap;
+}
+.value.muted {
+  color: var(--a-ink2);
+}

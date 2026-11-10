@@ -7,6 +7,8 @@ import {
   PC_TEXT_MAX_ERASE,
   clampClickGap,
   clampKeyRepeat,
+  clampVolumeLevel,
+  clampZoomSteps,
   clickNeedsV2,
   keyNeedsV2,
   textEditNeedsV2,
@@ -19,6 +21,7 @@ import {
   type PcModifier,
   type PcPowerAction,
   type PcTextEdit,
+  type PcVolumeChange,
 } from './pc-types';
 
 const BASE = `${APP_CONFIG.apiBase}/v1/pc`;
@@ -164,6 +167,31 @@ export class PcApi {
     const body = steps > 1 ? { action, steps } : { action };
     if (this.direct.canUse() && (await this.viaDirect('pc.media.v1', body))) return;
     await this.cloud(this.http.post(`${BASE}/media`, { ...body, ...this.numbered() }));
+  }
+
+  /**
+   * O zoom da pinça: `steps` cliques de roda com o Ctrl apertado (positivo aproxima), de -12 a 12 e nunca zero. Mensagem nova, sem v1:
+   * quem chama só a usa com um PC que declarou `pc.pointer.zoom.v1`. Sem passos (zero) nada sai.
+   */
+  async zoom(steps: number): Promise<void> {
+    const clamped = clampZoomSteps(steps);
+    if (clamped === 0) return;
+    const body = { steps: clamped };
+    if (this.direct.canUse() && (await this.viaDirect('pc.pointer.zoom.v1', body))) return;
+    await this.cloud(this.http.post(`${BASE}/zoom`, { ...body, ...this.numbered() }));
+  }
+
+  /**
+   * O volume absoluto: o nível (0 a 100) e/ou o mudo, sem alternar. Mensagem nova, sem v1: quem chama só a usa com um PC que declarou
+   * `pc.volume.v1`. Um pedido sem nada a mudar não sai.
+   */
+  async volume(change: PcVolumeChange): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (change.level !== undefined) body['level'] = clampVolumeLevel(change.level);
+    if (change.muted !== undefined) body['muted'] = change.muted;
+    if (Object.keys(body).length === 0) return;
+    if (this.direct.canUse() && (await this.viaDirect('pc.volume.v1', body))) return;
+    await this.cloud(this.http.post(`${BASE}/volume`, { ...body, ...this.numbered() }));
   }
 
   /** Suspender e desligar só valem com `confirm: true`: a API recusa sem ele. */

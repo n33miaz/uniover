@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   afterNextRender,
+  computed,
   inject,
   output,
   viewChild,
@@ -12,7 +13,9 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../../shared/ui/dialog-motion';
+import { PcAvailability } from '../../../core/modules/pc-availability';
 import { PcPrefs, type PcPrefsValue } from '../data/pc-prefs';
+import { PC_ZOOM_CAPABILITY } from '../data/pc-types';
 import { canVibrate } from '../input/haptics';
 import {
   POINTER_SENSITIVITIES,
@@ -30,7 +33,13 @@ const LABELS: Readonly<Record<PointerSensitivity | ScrollSensitivity, () => stri
 
 /** Os interruptores da folha, na ordem em que aparecem. */
 type SwitchName =
-  'invertScroll' | 'doubleTapDrag' | 'middleClick' | 'clickButtons' | 'haptics' | 'keepAwake';
+  | 'invertScroll'
+  | 'doubleTapDrag'
+  | 'middleClick'
+  | 'pinchZoom'
+  | 'clickButtons'
+  | 'haptics'
+  | 'keepAwake';
 
 /**
  * Ajustes do mouse numa folha que sobe de baixo: a sensibilidade do ponteiro, a rolagem invertida, os botões de clique e
@@ -76,7 +85,7 @@ type SwitchName =
         }
       </fieldset>
 
-      @for (item of switches; track item.name) {
+      @for (item of visibleSwitches(); track item.name) {
         <label class="row">
           <span>{{ item.label }}</span>
           <input
@@ -169,6 +178,7 @@ type SwitchName =
 })
 export class PcPadSettingsSheet {
   protected readonly prefs = inject(PcPrefs);
+  private readonly availability = inject(PcAvailability);
   readonly closed = output<void>();
 
   protected readonly choices: readonly { value: PointerSensitivity; label: string }[] =
@@ -187,6 +197,7 @@ export class PcPadSettingsSheet {
         name: 'middleClick',
         label: $localize`:@@pc.settings.middle-click:Clique do meio com três dedos`,
       },
+      { name: 'pinchZoom', label: $localize`:@@pc.settings.pinch-zoom:Pinça para zoom` },
       { name: 'clickButtons', label: $localize`:@@pc.settings.click-buttons:Botões de clique` },
       // O iPhone não vibra: o ajuste só aparece onde existe.
       ...(canVibrate()
@@ -195,6 +206,14 @@ export class PcPadSettingsSheet {
       { name: 'keepAwake', label: $localize`:@@pc.settings.keep-awake:Manter a tela acesa` },
     ] as const
   ).map((item) => ({ ...item }));
+
+  /** A pinça só aparece com um PC que entende o zoom: para os outros ela não faria nada. */
+  protected readonly visibleSwitches = computed(() =>
+    this.switches.filter(
+      (item) =>
+        item.name !== 'pinchZoom' || this.availability.capabilities().includes(PC_ZOOM_CAPABILITY),
+    ),
+  );
 
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private opener: Element | null = null;

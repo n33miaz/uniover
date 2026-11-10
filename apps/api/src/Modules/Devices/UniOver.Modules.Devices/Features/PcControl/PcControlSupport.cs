@@ -40,6 +40,53 @@ internal sealed class PcAppsStore
 }
 
 /// <summary>
+/// O último volume que cada agente avisou (<c>pc.volume.state.v1</c>). Em memória e da instância (nada estático): o agente o manda
+/// de novo a cada conexão e a cada mudança. O nível só vale para a sessão em que chegou: ao cair ou ao começar uma conexão nova
+/// (presença sem o <c>hello</c> dela ainda) o que estava guardado é descartado, porque o dono pode ter mexido no volume do PC no
+/// intervalo e o nível de antes seria mentira até o agente avisar o de agora. Não depende de comparar horas (a presença só tem
+/// resolução de segundos): é o evento de presença que limpa.
+/// </summary>
+internal sealed class PcVolumeStore : IAgentPresenceListener
+{
+    private readonly object _gate = new();
+    private readonly Dictionary<string, PcVolumeState> _volumes = new(StringComparer.Ordinal);
+
+    public void Set(string agentSlug, PcVolumeState state)
+    {
+        lock (_gate)
+        {
+            _volumes[agentSlug] = state;
+        }
+    }
+
+    public PcVolumeState? Get(string agentSlug)
+    {
+        lock (_gate)
+        {
+            return _volumes.GetValueOrDefault(agentSlug);
+        }
+    }
+
+    public void Forget(string agentSlug)
+    {
+        lock (_gate)
+        {
+            _volumes.Remove(agentSlug);
+        }
+    }
+
+    /// <summary>Queda, conexão nova ou volta esperada (qualquer presença sem o <c>hello</c> da sessão): o nível guardado era de outra sessão.</summary>
+    public void OnPresenceChanged(AgentPresenceInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        if (!info.Connected || info.HelloAt is null)
+        {
+            Forget(info.AgentId);
+        }
+    }
+}
+
+/// <summary>
 /// O computador que atende o pedido: o agente, se está conectado agora e o que ele declarou no último <c>hello</c> (a
 /// presença é lida a cada pedido: a lista acompanha uma atualização do agente sem esperar nada). <c>HelloAt</c> é quando
 /// chegou o <c>hello</c> da sessão de agora; nulo = as capacidades não são desta sessão (agente "esperado de volta" depois de
@@ -324,10 +371,10 @@ internal sealed class PcKeyBudget(TimeProvider time)
 }
 
 /// <summary>Guarda a lista de favoritos que o agente anuncia (<c>pc.apps.v1</c>), na ordem em que ele a mandou.</summary>
-internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answers, PcRtcClosures closures) : IAgentMessageHandler
+internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answers, PcRtcClosures closures, PcVolumeStore volume) : IAgentMessageHandler
 {
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1];
+        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcVolumeStateV1];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -343,6 +390,15 @@ internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answ
         if (string.Equals(message.Type, AgentMessageTypes.PcRtcClosedV1, StringComparison.Ordinal))
         {
             await closures.AgentClosedAsync(message.AgentId, message.Body.GetProperty("sessionId").GetGuid(), cancellationToken);
+            return;
+        }
+
+        // O volume de agora: nível (0 a 100, o contrato já limitou) e mudo. Só o último fica, e só em memória.
+        if (string.Equals(message.Type, AgentMessageTypes.PcVolumeStateV1, StringComparison.Ordinal))
+        {
+            volume.Set(
+                message.AgentId,
+                new PcVolumeState(message.Body.GetProperty("level").GetInt32(), message.Body.GetProperty("muted").GetBoolean()));
             return;
         }
 

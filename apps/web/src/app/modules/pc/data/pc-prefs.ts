@@ -22,6 +22,8 @@ export interface PcPrefsValue {
   readonly middleClick: boolean;
   /** Vibração curta nos toques (só onde o aparelho vibra). */
   readonly haptics: boolean;
+  /** A pinça de dois dedos vira zoom no PC (só com um PC que entende o zoom; a rolagem de dois dedos segue igual). */
+  readonly pinchZoom: boolean;
   /** Mostra os botões Esquerdo, Arrastar e Direito embaixo da superfície (para quem não usa os gestos). */
   readonly clickButtons: boolean;
   /** Mantém a tela do aparelho acesa enquanto o touchpad está aberto. */
@@ -38,6 +40,7 @@ export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   invertScroll: false,
   doubleTapDrag: false,
   middleClick: true,
+  pinchZoom: true,
   haptics: true,
   clickButtons: false,
   keepAwake: true,
@@ -76,6 +79,7 @@ function parsePrefs(raw: unknown): PcPrefsValue {
     invertScroll: flag('invertScroll'),
     doubleTapDrag: flag('doubleTapDrag'),
     middleClick: flag('middleClick'),
+    pinchZoom: flag('pinchZoom'),
     haptics: flag('haptics'),
     clickButtons: flag('clickButtons'),
     keepAwake: flag('keepAwake'),
@@ -91,6 +95,7 @@ const CHOICES = [
   'invertScroll',
   'doubleTapDrag',
   'middleClick',
+  'pinchZoom',
   'haptics',
   'clickButtons',
   'keepAwake',
@@ -115,6 +120,7 @@ export class PcPrefs {
   readonly invertScroll = computed(() => this.value().invertScroll);
   readonly doubleTapDrag = computed(() => this.value().doubleTapDrag);
   readonly middleClick = computed(() => this.value().middleClick);
+  readonly pinchZoom = computed(() => this.value().pinchZoom);
   readonly haptics = computed(() => this.value().haptics);
   readonly clickButtons = computed(() => this.value().clickButtons);
   readonly keepAwake = computed(() => this.value().keepAwake);

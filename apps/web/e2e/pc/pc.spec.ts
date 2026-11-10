@@ -2252,3 +2252,158 @@ test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
     await expect(page.locator('.armed')).toContainText('Ctrl');
   });
 });
+
+test.describe('Pinça e volume absoluto', () => {
+  const declared = (capabilities: string[], volume: PcMock['status']['volume'] = null) => {
+    pc.status = { ...READY, apps: [...READY.apps], capabilities, volume };
+  };
+  const zoomed = () => pc.sent('/zoom').reduce((sum, body) => sum + Number(body['steps']), 0);
+
+  /** Dois dedos que se afastam (ou se aproximam) sem o centro sair do lugar. */
+  async function pinch(page: Page, from: number, to: number) {
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - from / 2, y },
+      { type: 'down', id: 2, x: x + from / 2, y },
+    ];
+    const moves = 10;
+    for (let step = 1; step <= moves; step++) {
+      const gap = from + ((to - from) * step) / moves;
+      steps.push({ type: 'move', id: 1, x: x - gap / 2, y, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + gap / 2, y });
+    }
+    steps.push({ type: 'up', id: 1, x: x - to / 2, y, wait: 16 });
+    steps.push({ type: 'up', id: 2, x: x + to / 2, y });
+    await fingers(page, steps);
+  }
+
+  test('a pinça com o PC que entende o zoom manda os passos, e não rola, não clica nem move', async ({
+    page,
+  }) => {
+    declared(['pc.pointer.zoom.v1']);
+    await openPc(page);
+    await pinch(page, 80, 280); // 200 px a mais, 24 px por passo
+    await expect.poll(zoomed).toBe(8);
+    expect(pc.sent('/zoom').every((body) => Number(body['steps']) > 0)).toBe(true);
+    await pinch(page, 200, 80); // fecha: 120 px a menos
+    await expect.poll(zoomed).toBe(8 - 5);
+    expect(pc.sent('/click')).toEqual([]);
+    expect(pc.sent('/pointer')).toEqual([]);
+  });
+
+  test('com o PC que entende o zoom a rolagem de dois dedos segue igual: rola e não dá zoom', async ({
+    page,
+  }) => {
+    declared(['pc.pointer.zoom.v1']);
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    const steps: FingerStep[] = [
+      { type: 'down', id: 1, x: x - 30, y },
+      { type: 'down', id: 2, x: x + 30, y },
+    ];
+    for (let step = 1; step <= 8; step++) {
+      steps.push({ type: 'move', id: 1, x: x - 30 + step * 2, y: y + step * 14, wait: 16 });
+      steps.push({ type: 'move', id: 2, x: x + 30 + step * 2, y: y + step * 14 });
+    }
+    steps.push({ type: 'up', id: 1, x: x - 30, y: y + 112, wait: 200 });
+    steps.push({ type: 'up', id: 2, x: x + 30, y: y + 112 });
+    await fingers(page, steps);
+    await expect.poll(() => pc.sent('/pointer').length).toBeGreaterThan(0);
+    expect(pc.sent('/pointer').some((body) => Number(body['scrollY']) !== 0)).toBe(true);
+    expect(pc.sent('/zoom')).toEqual([]);
+  });
+
+  test('um toque rápido de dois dedos segue sendo o clique direito com o zoom ligado', async ({
+    page,
+  }) => {
+    declared(['pc.pointer.zoom.v1']);
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x: x - 30, y },
+      { type: 'down', id: 2, x: x + 30, y },
+      { type: 'up', id: 1, x: x - 30, y, wait: 40 },
+      { type: 'up', id: 2, x: x + 30, y },
+    ]);
+    await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'RIGHT' }]);
+    expect(pc.sent('/zoom')).toEqual([]);
+  });
+
+  test('num PC sem o zoom a pinça não manda nada e a tela é a de sempre (sem o ajuste da pinça)', async ({
+    page,
+  }) => {
+    declared(['pc.key.v2']);
+    await openPc(page);
+    await pinch(page, 80, 280);
+    await page.waitForTimeout(150);
+    expect(pc.sent('/zoom')).toEqual([]);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await expect(sheet.getByRole('switch', { name: 'Pinça para zoom' })).toHaveCount(0);
+  });
+
+  test('com o zoom a pinça se desliga nos ajustes', async ({ page }) => {
+    declared(['pc.pointer.zoom.v1']);
+    await openPc(page);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    const toggle = sheet.getByRole('switch', { name: 'Pinça para zoom' });
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck();
+    await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await pinch(page, 80, 280);
+    await page.waitForTimeout(150);
+    expect(pc.sent('/zoom')).toEqual([]);
+  });
+
+  test('a Mídia mostra o nível do PC ao lado da faixa relativa, e uma faixa define o nível exato', async ({
+    page,
+  }) => {
+    declared(['pc.volume.v1'], { level: 37, muted: false });
+    await openPc(page, '/pc/midia');
+    const level = page.locator('app-pc-volume-level .value');
+    await expect(level).toHaveText('37%');
+    // O que já existia segue lá: os botões do volume, a faixa de arrastar e o mudo.
+    await expect(page.getByRole('button', { name: 'Diminuir o volume' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Aumentar o volume' })).toBeVisible();
+    await expect(page.locator('app-pc-volume .strip')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mudo' })).toBeVisible();
+
+    await page.getByRole('slider', { name: 'Volume' }).fill('62');
+    await expect.poll(() => pc.sent('/volume')).toEqual([{ level: 62 }]);
+    await expect(level).toHaveText('62%');
+    expect(pc.seqs('/volume')).toEqual([expect.any(Number)]);
+  });
+
+  test('o nível mostra o mudo, e as teclas relativas atualizam o número', async ({ page }) => {
+    declared(['pc.volume.v1'], { level: 20, muted: true });
+    await openPc(page, '/pc/midia');
+    await expect(page.locator('app-pc-volume-level .value')).toHaveText('20% · mudo');
+    // O agente avisa o nível novo; a tela o lê de novo depois da tecla.
+    pc.status.volume = { level: 24, muted: false };
+    await page.getByRole('button', { name: 'Aumentar o volume' }).click();
+    await expect.poll(() => pc.sent('/media')).toEqual([{ action: 'VOLUME_UP' }]);
+    await expect(page.locator('app-pc-volume-level .value')).toHaveText('24%');
+  });
+
+  test('um PC com o volume mas sem leitura ainda mostra um traço, e a faixa fica desligada', async ({
+    page,
+  }) => {
+    declared(['pc.volume.v1'], null);
+    await openPc(page, '/pc/midia');
+    await expect(page.locator('app-pc-volume-level .value')).toHaveText('—');
+    await expect(page.getByRole('slider', { name: 'Volume' })).toBeDisabled();
+    expect(pc.sent('/volume')).toEqual([]);
+  });
+
+  test('num PC sem o volume absoluto a Mídia é a de sempre: nenhum nível, nenhuma faixa nova', async ({
+    page,
+  }) => {
+    declared(['pc.key.v2']);
+    await openPc(page, '/pc/midia');
+    await expect(page.getByRole('button', { name: 'Aumentar o volume' })).toBeVisible();
+    await expect(page.locator('app-pc-volume .strip')).toBeVisible();
+    await expect(page.locator('app-pc-volume-level .value')).toHaveCount(0);
+    await expect(page.getByRole('slider')).toHaveCount(0);
+  });
+});

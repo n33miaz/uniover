@@ -32,6 +32,18 @@ internal static class PcMessages
     /// </summary>
     public const string ClickV2Capability = "pc.click.v2";
 
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.pointer.zoom.v1</c> (o zoom da pinça: Ctrl apertado e a roda do mouse). É uma
+    /// mensagem nova, sem v1 equivalente: só o agente que a declara a recebe.
+    /// </summary>
+    public const string ZoomCapability = "pc.pointer.zoom.v1";
+
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.volume.v1</c> (volume absoluto, de 0 a 100, e mudo) e manda o nível de agora em
+    /// <c>pc.volume.state.v1</c>. Mensagem nova, sem v1 equivalente: só o agente que a declara a recebe.
+    /// </summary>
+    public const string VolumeCapability = "pc.volume.v1";
+
     /// <summary>Capacidade do canal direto (WebRTC): o agente só a declara depois de a API a listar em <c>features</c>.</summary>
     public const string RtcCapability = "pc.rtc.v1";
 
@@ -236,6 +248,20 @@ internal static class PcMessages
         Live(AgentMessageTypes.PcMediaV1, BodyOf(new PcMediaV1Message
         {
             Body = new PcMediaV1Body { Action = action, Steps = steps == 1 ? null : steps },
+        }.ToJson()));
+
+    /// <summary>O zoom da pinça: `steps` cliques de roda com o Ctrl apertado (positivo aproxima), de um pedido já validado.</summary>
+    public static OutboundMessage Zoom(int steps) =>
+        Live(AgentMessageTypes.PcPointerZoomV1, BodyOf(new PcPointerZoomV1Message
+        {
+            Body = new PcPointerZoomV1Body { Steps = steps },
+        }.ToJson()));
+
+    /// <summary>O volume absoluto de um pedido já validado: só vai ao agente o que o pedido traz (`level` e/ou `muted`).</summary>
+    public static OutboundMessage Volume(int? level, bool? muted) =>
+        Live(AgentMessageTypes.PcVolumeV1, BodyOf(new PcVolumeV1Message
+        {
+            Body = new PcVolumeV1Body { Level = level, Muted = muted },
         }.ToJson()));
 
     public static OutboundMessage Power(PcPowerV1BodyAction action) =>

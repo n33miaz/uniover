@@ -1,4 +1,5 @@
 import { clampClickGap } from '../data/pc-types';
+import { PinchTracker, classifyTwoFingers, type TwoFingerIntent } from './pinch';
 
 export type PadButton = 'LEFT' | 'RIGHT' | 'MIDDLE';
 
@@ -28,6 +29,11 @@ export interface PadHandlers {
    * quiser deixa a rolagem seguir sozinha (inércia); quem não implementa isto não perde nada.
    */
   scrollEnd?(vx: number, vy: number): void;
+  /**
+   * Dois dedos que se afastam (positivo: aproxima) ou se aproximam: `steps` cliques de roda de zoom, sempre inteiros e diferentes
+   * de zero. Opcional como `scrollEnd`: sem ele (ou com `pinchZoom` desligado) os dois dedos só rolam, como sempre.
+   */
+  zoom?(steps: number): void;
 }
 
 /** Quem marca o tempo da pressão longa (troca-se nos testes). */
@@ -62,6 +68,11 @@ export interface PadGestureConfig {
   readonly lockScrollAxis: boolean;
   /** Janela (ms) com que se mede a velocidade da rolagem na hora em que os dedos saem. */
   readonly velocityWindowMs: number;
+  /**
+   * A pinça de dois dedos vira zoom (`handlers.zoom`). Desligada, os dois dedos se comportam exatamente como antes. Só liga quando o
+   * PC entende o zoom: sem isso uma pinça seria um gesto sem efeito.
+   */
+  readonly pinchZoom: boolean;
 }
 
 /** O quanto o dedo pode andar sem que isso seja movimento (e sem que deixe de ser um toque ou uma pressão parada). */
@@ -87,6 +98,7 @@ export const DEFAULT_PAD_GESTURE: PadGestureConfig = {
   middleClick: true,
   lockScrollAxis: true,
   velocityWindowMs: 90,
+  pinchZoom: false,
 };
 
 /** Se o último passo da rolagem foi há mais que isto (ms) quando os dedos saem, eles pararam antes: nada de inércia. */
@@ -140,6 +152,11 @@ export class PadGesture {
   /** O eixo em que a rolagem de dois dedos travou; `null` até o primeiro passo. */
   private axis: 'x' | 'y' | null = null;
   private samples: ScrollSample[] = [];
+  /** O que os dois dedos fazem neste gesto (decidido uma vez; ver `classifyTwoFingers`). Só conta com `pinchZoom` ligado. */
+  private intent: TwoFingerIntent = 'undecided';
+  /** A distância entre os dois dedos quando pousaram (a referência da decisão pinça ou rolagem). */
+  private spreadStart = 0;
+  private readonly pinch = new PinchTracker();
 
   constructor(
     private readonly handlers: PadHandlers,
@@ -149,7 +166,9 @@ export class PadGesture {
 
   /** Troca ajustes que a pessoa muda sem recarregar a tela (valem do próximo toque em diante). */
   configure(
-    patch: Partial<Pick<PadGestureConfig, 'doubleTapDrag' | 'middleClick' | 'lockScrollAxis'>>,
+    patch: Partial<
+      Pick<PadGestureConfig, 'doubleTapDrag' | 'middleClick' | 'lockScrollAxis' | 'pinchZoom'>
+    >,
   ): void {
     this.config = { ...this.config, ...patch };
   }
@@ -173,6 +192,7 @@ export class PadGesture {
       this.displaced = false;
       this.axis = null;
       this.samples = [];
+      this.intent = 'undecided';
       this.doubleArmed = this.isSecondTap(x, y, timeMs);
       this.chained = this.continuesChain(x, y, timeMs);
       this.chainSince = this.chain?.time ?? 0;
@@ -185,6 +205,7 @@ export class PadGesture {
     // A origem é a do conjunto dos dedos no instante em que o gesto passa a ser o atual (um dedo novo a reinicia).
     this.origin = this.center()!;
     this.lastCenter = this.origin;
+    this.rebaseSpread();
     // Só um dedo parado vale como pressão longa: um segundo dedo ou o movimento desfazem a contagem.
     this.clearPress();
     if (this.fingers.size === 1)
@@ -200,6 +221,10 @@ export class PadGesture {
     const center = this.center()!;
     const last = this.lastCenter ?? center;
     this.lastCenter = center;
+
+    // A pinça decide antes da rolagem: dois dedos que se afastam não andam o centro, e sem isto o gesto acabaria como um toque
+    // de dois dedos (o clique direito). Quando a pinça não vence, o resto segue exatamente como era.
+    if (this.pinching(center)) return;
 
     // Passou do raio de tremor: o dedo está andando, não pressionando (mesmo antes de passar do limite do movimento).
     if (
@@ -232,6 +257,7 @@ export class PadGesture {
     if (this.fingers.size > 0) {
       // Um dedo que sai muda o centro: sem refazer a referência o próximo passo daria um salto.
       this.lastCenter = this.center();
+      this.rebaseSpread();
       return;
     }
     this.lastCenter = null;
@@ -273,6 +299,7 @@ export class PadGesture {
     this.chain = null;
     this.doubleArmed = false;
     this.samples = [];
+    this.intent = 'undecided';
     this.clearPress();
     if (this.holding) {
       this.holding = false;
@@ -298,6 +325,48 @@ export class PadGesture {
       timeMs - previous.time <= this.config.doubleTapMs &&
       Math.hypot(x - previous.at.x, y - previous.at.y) <= this.config.doubleTapRadiusPx
     );
+  }
+
+  /** A distância entre os dois dedos de agora (só existe com exatamente dois). */
+  private spread(): number | null {
+    if (this.fingers.size !== 2) return null;
+    const [a, b] = [...this.fingers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  /** O conjunto de dedos mudou: a distância de agora é a nova referência da decisão e dos passos. */
+  private rebaseSpread(): void {
+    const spread = this.spread();
+    if (spread === null) return;
+    this.spreadStart = spread;
+    this.pinch.begin(spread);
+  }
+
+  /**
+   * Vê se a pinça toma este movimento de dois dedos; `true` quando sim (a rolagem não roda). Desligada, ou sem quem receba o zoom, nunca
+   * toma nada. Decidida pinça, vale até os dedos saírem, mesmo que um deles saia antes (o dedo que sobra não rola). Marca o gesto como
+   * "andou" para os dedos que saem não virarem um toque de dois dedos (o clique direito) nem uma rolagem com inércia.
+   */
+  private pinching(center: Point): boolean {
+    const zoom = this.handlers.zoom;
+    if (!this.config.pinchZoom || !zoom || this.holding) return false;
+    if (this.intent === 'pinch') {
+      const spread = this.spread();
+      const steps = spread === null ? 0 : this.pinch.update(spread);
+      if (steps !== 0) zoom.call(this.handlers, steps);
+      return true;
+    }
+    const spread = this.spread();
+    if (this.intent === 'scroll' || spread === null) return false;
+    const travel = Math.hypot(center.x - this.origin.x, center.y - this.origin.y);
+    this.intent = classifyTwoFingers(spread - this.spreadStart, travel, this.config.slopPx);
+    if (this.intent !== 'pinch') return false;
+    this.displaced = true;
+    this.clearPress();
+    this.chain = null;
+    const steps = this.pinch.update(spread);
+    if (steps !== 0) zoom.call(this.handlers, steps);
+    return true;
   }
 
   private longPress(): void {

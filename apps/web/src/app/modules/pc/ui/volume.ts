@@ -24,7 +24,7 @@ type VolumeAction = 'VOLUME_UP' | 'VOLUME_DOWN';
 /**
  * O volume do PC, em passos relativos: menos, uma faixa de arrastar e mais. Segurar os botões repete (já existia); arrastar
  * a faixa para os lados sobe e desce o volume continuamente, no ritmo do dedo, e o botão volta ao meio ao soltar. A faixa
- * não mostra nível nenhum: o PC não diz em que volume está, e inventar um número seria mentira. Os botões seguem sendo o
+ * não mostra nível nenhum: ela é relativa, e quem diz em que volume o PC está é o controle de nível (`app-pc-volume-level`), que só aparece com um PC que avisa o volume. Os botões seguem sendo o
  * caminho do teclado e do leitor de tela (a faixa é só de toque). Tudo sai por `sendMedia`, o mesmo caminho dos outros
  * comandos de mídia.
  */
