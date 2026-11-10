@@ -10,6 +10,7 @@ supervisor acrescentar enquanto o agente lê cai num arquivo novo e não se perd
 envio interrompido (a renomeação feita, o processo caiu) é lido primeiro na vez seguinte.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -124,9 +125,30 @@ class FileDiagnosticStore:
         # disponível).
         self._leased: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._queued: list[DiagnosticEvent] = []
+        self._append_task: asyncio.Task[None] | None = None
 
     def append(self, event: DiagnosticEvent) -> None:
-        self.append_confirmed(event)
+        """Acrescenta sem bloquear o laço; fora dele mantém a escrita síncrona de partida."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self.append_confirmed(event)
+            return
+        self._queued.append(event)
+        if self._append_task is None or self._append_task.done():
+            self._append_task = asyncio.create_task(self._append_queued())
+
+    async def _append_queued(self) -> None:
+        while self._queued:
+            event = self._queued.pop(0)
+            await asyncio.to_thread(self.append_confirmed, event)
+
+    async def flush_appends(self) -> None:
+        """Espera as escritas já enfileiradas antes de emprestar eventos para envio."""
+        task = self._append_task
+        if task is not None:
+            await task
 
     def append_confirmed(self, event: DiagnosticEvent) -> bool:
         """Como `append`, e diz se a linha chegou ao arquivo (quem decide repetir precisa saber)."""

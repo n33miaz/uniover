@@ -15,6 +15,7 @@ from websockets.exceptions import (
 )
 from websockets.frames import Close
 
+from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
@@ -27,9 +28,8 @@ _log = logging.getLogger(__name__)
 # Igual ao limite do servidor: mensagem maior fecha a conexão com 1009.
 MAX_MESSAGE_BYTES: Final = 64 * 1024
 PING_INTERVAL_SECONDS: Final = 20.0
-# Quanto esperar o pong antes de dar a conexão por morta. O padrão da biblioteca (20 s) derrubava
-# o canal com 1011 por um soluço do PC ou da rede; 60 s ainda detecta conexão morta a tempo.
-PING_TIMEOUT_SECONDS: Final = 60.0
+# Com o trabalho síncrono fora do laço, o prazo padrão volta a detectar um canal morto rapidamente.
+PING_TIMEOUT_SECONDS: Final = 20.0
 # A API dormindo (Render grátis) acorda em até ~1 minuto: a abertura espera 105 s e, se não deu, o
 # laço tenta de novo (com espera crescente) em vez de deixar o agente fora do ar por minutos. O
 # prazo do laço de conexão (`CONNECT_TIMEOUT_SECONDS`, 120 s) é a segunda barreira, acima deste.
@@ -64,7 +64,10 @@ def _close_outcome(close: Close | None) -> Exception | None:
     if reason == _REVOKED_REASON or close.code in _CREDENTIAL_CLOSE_CODES:
         return CredentialRejected("o servidor encerrou por revogação da credencial")
     if close.code in _RESTART_CLOSE_CODES:
-        return ServerRestarting(f"código {close.code}")
+        detail = f"código {close.code}"
+        if close.reason:
+            detail += f", motivo {close.reason!r}"
+        return ServerRestarting(detail)
     return None
 
 
@@ -107,9 +110,12 @@ class WebSocketTransport:
         token = self._token_provider()
         if not token:
             raise CredentialRejected("não há token de dispositivo no cofre")
+        # O contexto TLS sai pronto de uma thread: criá-lo no laço a cada reconexão o travava.
+        tls = await ssl_contexts.verified() if self._url.startswith("wss:") else None
         try:
             self._ws = await connect(
                 self._url,
+                ssl=tls,
                 additional_headers={"Authorization": f"Bearer {token}"},
                 user_agent_header=self._user_agent,
                 ping_interval=self._ping_interval,
@@ -153,7 +159,10 @@ class WebSocketTransport:
                 # por falta de pong (1011 enviado). Não é "o servidor fechou".
                 sent = f", enviado {exc.sent.code}" if exc.sent else ""
                 raise TransportError(f"conexão perdida sem aviso do servidor{sent}") from None
-            raise TransportError(f"fechada pelo servidor (código {exc.rcvd.code})") from None
+            reason = f", motivo {exc.rcvd.reason!r}" if exc.rcvd.reason else ""
+            raise TransportError(
+                f"fechada pelo servidor (código {exc.rcvd.code}{reason})"
+            ) from None
         # Fechamento limpo: ainda assim o motivo pode ser `replaced` ou revogação.
         outcome = _close_outcome(ws.protocol.close_rcvd)
         if outcome is not None:

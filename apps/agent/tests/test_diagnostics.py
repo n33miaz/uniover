@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -190,6 +191,25 @@ def test_the_file_queue_keeps_order_and_gives_back_what_could_not_be_sent(tmp_pa
     store.put_back(first)
     assert [e.detail for e in store.take(10)] == [f"falha {i}" for i in range(5)]
     assert store.take(10) == []
+
+
+async def test_file_append_runs_in_a_thread_and_keeps_the_queued_order(tmp_path: Path) -> None:
+    store = FileDiagnosticStore(tmp_path)
+    main_thread = threading.get_ident()
+    wrote_on: list[int] = []
+    original = store.append_confirmed
+
+    def append(event: DiagnosticEvent) -> bool:
+        wrote_on.append(threading.get_ident())
+        return original(event)
+
+    store.append_confirmed = append  # type: ignore[method-assign]
+    store.append(make_event(1))
+    store.append(make_event(2))
+    await store.flush_appends()
+
+    assert wrote_on and all(identifier != main_thread for identifier in wrote_on)
+    assert [event.detail for event in store.take(10)] == ["falha 1", "falha 2"]
 
 
 def test_lines_from_the_supervisor_script_are_accepted_and_foreign_ones_are_dropped(

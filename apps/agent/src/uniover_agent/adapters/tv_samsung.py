@@ -22,6 +22,7 @@ from samsungtvws.event import (
     MS_CHANNEL_UNAUTHORIZED,
 )
 
+from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.adapters.tv_discovery import samsung_identity
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.core.tv.locator import TvIdentity
@@ -263,7 +264,9 @@ async def fetch_samsung_info(host: str) -> dict[str, Any] | None:
     """O REST da própria TV (`/api/v2/`): energia, `duid` e MAC Wi-Fi numa só leitura."""
     url = f"http://{host}:{SAMSUNG_REST_PORT}/api/v2/"
     try:
-        async with httpx.AsyncClient(timeout=SAMSUNG_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(
+            timeout=SAMSUNG_TIMEOUT_SECONDS, verify=await ssl_contexts.verified()
+        ) as client:
             response = await client.get(url)
             response.raise_for_status()
             data = response.json()
@@ -510,7 +513,7 @@ class SamsungTvDriver:
         return await self._rest_app_list()
 
     async def _rest_app_list(self) -> list[dict[str, Any]]:
-        async with httpx.AsyncClient(transport=self._rest_transport) as client:
+        async with await self._rest_client() as client:
             semaphore = asyncio.Semaphore(SAMSUNG_APP_PROBE_CONCURRENCY)
             tasks = [
                 asyncio.create_task(self._probe_app(client, semaphore, app_id))
@@ -564,7 +567,7 @@ class SamsungTvDriver:
         Nunca abre o canal do controle: o aviso "Permitir" só aparece quando alguém o abre. Apps
         que não responderam (ou não estão instalados) ficam de fora da lista.
         """
-        async with httpx.AsyncClient(transport=self._rest_transport) as client:
+        async with await self._rest_client() as client:
             semaphore = asyncio.Semaphore(SAMSUNG_APP_PROBE_CONCURRENCY)
             results = await asyncio.gather(
                 *(self._fetch_status(client, semaphore, app_id) for app_id in self._app_ids)
@@ -573,13 +576,13 @@ class SamsungTvDriver:
 
     async def app_status(self, app_id: str) -> SamsungAppStatus | None:
         """O estado de um app agora, pelo REST; `None` se a TV não respondeu."""
-        async with httpx.AsyncClient(transport=self._rest_transport) as client:
+        async with await self._rest_client() as client:
             return await self._fetch_status(client, asyncio.Semaphore(1), app_id)
 
     async def close_app(self, app_id: str) -> bool:
         """Fecha um app pelo REST (`DELETE`); `True` só se a TV respondeu com sucesso."""
         try:
-            async with httpx.AsyncClient(transport=self._rest_transport) as client:
+            async with await self._rest_client() as client:
                 response = await asyncio.wait_for(
                     client.delete(self._application_url(app_id)),
                     timeout=self._app_timeout_seconds,
@@ -667,13 +670,18 @@ class SamsungTvDriver:
 
     async def _launch_app_rest(self, app_id: str) -> bool:
         try:
-            async with httpx.AsyncClient(transport=self._rest_transport) as client:
+            async with await self._rest_client() as client:
                 response = await asyncio.wait_for(
                     client.post(self._application_url(app_id)), timeout=self._app_timeout_seconds
                 )
         except httpx.HTTPError, TimeoutError:
             return False
         return response.is_success
+
+    async def _rest_client(self) -> httpx.AsyncClient:
+        if self._rest_transport is not None:
+            return httpx.AsyncClient(transport=self._rest_transport)
+        return httpx.AsyncClient(verify=await ssl_contexts.verified())
 
     def _application_url(self, app_id: str) -> str:
         return f"http://{self._host}:{SAMSUNG_REST_PORT}/api/v2/applications/{app_id}"
