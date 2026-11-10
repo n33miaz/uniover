@@ -16,6 +16,7 @@ import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { ExerciseHistory } from './exercise-history';
 import { ExerciseChooserSheet } from './exercise-chooser-sheet';
 import { LiveStore } from './live-store';
+import { registerOpenSessionWork } from './open-session-work';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
 import { TodayStore } from './today-store';
 import { awaitingSetsText } from './today-text';
@@ -168,6 +169,9 @@ export class WorkoutDay {
   });
 
   constructor() {
+    // O treino aberto também segura a recarga automática de atualização aqui, na tela do dia (a do exercício registra o mesmo na
+    // dela): voltar de um exercício para esta tela não pode soltar a guarda.
+    registerOpenSessionWork(() => this.live.session());
     // A tela acesa vale só enquanto o treino está aberto na tela: sair do treino solta o bloqueio.
     const removeMenu = this.headerActions.register({
       id: 'workout-menu',

@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AuthApi } from '../auth/auth-api';
 import { AuthService } from '../auth/auth.service';
+import { AUTO_REQUEST_MAX_AGE_MS, UnsavedWork } from '../pwa/unsaved-work';
 import { SessionState } from '../session/session-state';
 import {
   FakeTransport,
@@ -503,6 +504,39 @@ describe('SyncEngine', () => {
     gate.open();
     await run;
     await vi.waitFor(() => expect(kit.queue().syncing()).toBe(false));
+  });
+
+  it('holds the automatic reload while a send is in flight (without ever asking the person), and lets go after', async () => {
+    const kit = setupQueue();
+    const unsaved = TestBed.inject(UnsavedWork);
+    expect(unsaved.reasons()).toEqual([]);
+    const gate = deferred();
+    kit.transport.gate = gate.promise;
+    await kit.queue().enqueue(NEW_ITEM);
+    const run = kit.engine().start();
+    await vi.waitFor(() => expect(unsaved.reasons()).toContain('sync'));
+    expect(unsaved.hasUnsaved()).toBe(true);
+    expect(unsaved.isInUse()).toBe(true);
+    expect(unsaved.needsConfirmation()).toBe(false);
+    gate.open();
+    await run;
+    await vi.waitFor(() => expect(unsaved.reasons()).not.toContain('sync'));
+  });
+
+  it('stops holding the reload for an engine that has been "sending" for too long', async () => {
+    const kit = setupQueue();
+    const unsaved = TestBed.inject(UnsavedWork);
+    kit.transport.gate = new Promise(() => undefined); // nunca termina
+    await kit.queue().enqueue(NEW_ITEM);
+    void kit.engine().start();
+    await vi.waitFor(() => expect(unsaved.reasons()).toContain('sync'));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + AUTO_REQUEST_MAX_AGE_MS + 1);
+      expect(unsaved.reasons()).not.toContain('sync');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('exposes a transport port so other code (and tests) can replace the sender', () => {

@@ -467,6 +467,20 @@ describe('TodayPage', () => {
       return { ...kit, el: kit.harness.routeNativeElement as HTMLElement };
     }
 
+    it('holds the automatic reload on the day screen too, and keeps holding it when coming back from an exercise', async () => {
+      const kit = await atDay();
+      const unsaved = TestBed.inject(UnsavedWork);
+      await eventually(kit.fixture, () => expect(unsaved.reasons()).toEqual(['session']));
+      expect(unsaved.needsConfirmation()).toBe(false);
+
+      // Entra num exercício (outra rota, outro componente) e volta à tela do dia: a guarda não pode ter soltado.
+      await kit.harness.navigateByUrl('/treino/sessao/exercicio', WorkoutExercise);
+      await eventually(kit.fixture, () => expect(unsaved.reasons()).toEqual(['session']));
+      await kit.harness.navigateByUrl('/treino/sessao', WorkoutDay);
+      await eventually(kit.fixture, () => expect(unsaved.reasons()).toEqual(['session']));
+      expect(unsaved.needsConfirmation()).toBe(false);
+    });
+
     it('shows the day screen with the compact name, one photo card per exercise and the options menu', async () => {
       const { el, fixture } = await atDay();
 
@@ -507,7 +521,7 @@ describe('TodayPage', () => {
       expect(TestBed.inject(RestTimerService).active()).toBe(false);
     });
 
-    it('does not hold back the automatic reload after the last set of the exercise, when no card is left on screen', async () => {
+    it('holds nothing but the open session after the last set of the exercise, when no card is left on screen', async () => {
       const kit = await started();
       const { el, fixture } = kit;
       const unsaved = TestBed.inject(UnsavedWork);
@@ -527,7 +541,9 @@ describe('TodayPage', () => {
       button(el, 'Concluir Série').click();
 
       await eventually(fixture, () => expect(back).toHaveBeenCalledOnce());
-      await eventually(fixture, () => expect(unsaved.hasUnsaved()).toBe(false));
+      // O rascunho velho não segura mais nada; só o treino aberto (que segura a recarga automática, sem pedir confirmação).
+      await eventually(fixture, () => expect(unsaved.reasons()).toEqual(['session']));
+      expect(unsaved.needsConfirmation()).toBe(false);
     });
 
     it('ending the exercise from the rest card stops the clock, so the next exercise does not open resting', async () => {
@@ -587,13 +603,14 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(el.querySelector('.rest')).toBeNull());
     });
 
-    it('holds back the automatic reload while the set card has typed values, and lets it go once the set is concluded', async () => {
+    it('asks for confirmation while the set card has typed values, and only the open session holds the reload once the set is concluded', async () => {
       const kit = await started();
       const { el, fixture } = kit;
       const unsaved = TestBed.inject(UnsavedWork);
       await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
-      // O cartão chega preenchido com a última vez: sem a pessoa mexer, não há nada a perder.
-      expect(unsaved.hasUnsaved()).toBe(false);
+      // O cartão chega preenchido com a última vez: sem a pessoa mexer, não há nada a perder (só o treino aberto segura a recarga).
+      expect(unsaved.reasons()).toEqual(['session']);
+      expect(unsaved.needsConfirmation()).toBe(false);
 
       const load = el.querySelector<HTMLInputElement>('app-live-stepper input')!;
       load.value = '45';
@@ -603,7 +620,8 @@ describe('TodayPage', () => {
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Descanso'));
-      await eventually(fixture, () => expect(unsaved.hasUnsaved()).toBe(false));
+      await eventually(fixture, () => expect(unsaved.needsConfirmation()).toBe(false));
+      expect(unsaved.reasons()).toEqual(['session']);
     });
 
     it('keeps the effort (RPE) optional: the same number again clears it, and a chosen one is saved', async () => {

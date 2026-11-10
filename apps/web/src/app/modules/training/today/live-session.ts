@@ -31,6 +31,7 @@ import { FocusHint, type Tip } from './focus-hint';
 import { HowToSheet } from './how-to-sheet';
 import { LiveRecordBanner } from './live-record-banner';
 import { LiveStore } from './live-store';
+import { registerOpenSessionWork } from './open-session-work';
 import { PlanSheet } from './plan-sheet';
 import { RestCard } from './rest-card';
 import { EMPTY_FIELDS, type SetFields, sameSetFields } from './set-draft';
@@ -317,6 +318,8 @@ export class LiveSession {
         this.applied !== null &&
         !sameSetFields(this.draft(), this.applied),
     );
+    // O treino aberto nesta tela segura a recarga automática de atualização (ver `registerOpenSessionWork`).
+    registerOpenSessionWork(() => this.live.session());
     // O cartão recomeça (preenchido com a última vez) quando muda o exercício, a série ou o que há de gravado; e, se a
     // pessoa ainda não mexeu nele, também quando o histórico chega depois (primeira leitura do servidor).
     effect(() => {

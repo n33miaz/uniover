@@ -47,6 +47,26 @@ describe('UpdateBanner', () => {
     expect(el.textContent).toContain('Nova versão disponível');
   });
 
+  it('tells the person the new version waits (nothing to save) when only a session or the queue held the navigation', async () => {
+    const { service, fixture, el } = mount();
+    const apply = vi.spyOn(service, 'applyUpdate').mockResolvedValue(undefined);
+    service.updateReady.set(true);
+    service.navigationHeld.set(true);
+    await fixture.whenStable();
+
+    expect(el.textContent).toContain(
+      'Há uma versão nova: atualize quando terminar o que está fazendo',
+    );
+    expect(el.textContent).not.toContain('salve ou descarte');
+    el.querySelector('button')!.click();
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    // Se também há algo a salvar, vale o aviso mais forte.
+    service.navigationBlocked.set(true);
+    await fixture.whenStable();
+    expect(el.textContent).toContain('salve ou descarte');
+  });
+
   it('keeps the button on "Atualizando…" and disabled while the tap is still deciding', async () => {
     const { service, fixture, el } = mount();
     service.updateReady.set(true);

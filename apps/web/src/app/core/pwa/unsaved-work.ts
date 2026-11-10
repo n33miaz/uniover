@@ -3,8 +3,15 @@ import { DestroyRef, Injectable, inject } from '@angular/core';
 import { finalize } from 'rxjs';
 import { QUIET_REQUEST } from '../connectivity/quiet-request';
 
-/** O que impede uma recarga automática: cada motivo é um tipo de trabalho que a recarga perderia ou cortaria. */
-export type UnsavedReason = 'form' | 'request';
+/**
+ * O que impede uma recarga automática: cada motivo é um tipo de trabalho que a recarga perderia ou cortaria.
+ * - `form`: editor ou formulário sujo (a pessoa perderia o que digitou);
+ * - `request`: escrita em voo desta aba (a recarga a cortaria);
+ * - `session`: treino aberto na tela (fica gravado no aparelho e a recarga o retoma, mas a casca não se troca no meio de uma
+ *   série ou de um descanso);
+ * - `sync`: a fila de saída offline está enviando (o que espera está gravado, mas um envio em curso não se corta).
+ */
+export type UnsavedReason = 'form' | 'request' | 'session' | 'sync';
 
 /** O toque (`isWriting`) deixa de esperar um pedido sem resposta há mais que isto: um envio que nunca termina não o trava. */
 export const REQUEST_MAX_AGE_MS = 30_000;
@@ -15,15 +22,15 @@ export const REQUEST_MAX_AGE_MS = 30_000;
 export const AUTO_REQUEST_MAX_AGE_MS = 5 * 60_000;
 
 /**
- * Registro do "trabalho não salvo" da aba. Uma recarga automática (atualização, recuperação de pedaço ausente) só
- * acontece quando ele está vazio; nunca se perde um editor sujo nem um pedido em voo desta aba. Só há duas fontes, ambas
- * explícitas (nada vigia o `document`):
- * - fontes registradas por telas (`register`, ou `registerUnsavedWork` em quem tem ciclo de vida): o sinal de "sujo" de um
- *   editor ou formulário (o valor atual difere do valor salvo). Quem salva precisa devolver esse sinal a "limpo" antes de
- *   navegar, senão o aviso de versão nova pede "salve ou descarte" para quem já salvou. A sessão de treino aberta não entra
- *   (ela fica gravada no aparelho e a recarga a retoma), mas o que ainda não foi gravado nela entra: o cartão da série com
- *   valores digitados e as folhas de peso, medidas, perfil, meta e edição de série. A fila de saída offline também não: o
- *   que espera está gravado no aparelho;
+ * Registro do "trabalho em curso" da aba. Uma recarga automática (atualização, recuperação de pedaço ausente) só acontece
+ * quando ele está vazio: nunca se perde um editor sujo, não se corta um pedido em voo nem se troca a casca no meio de um
+ * treino. As fontes são explícitas (nada vigia o `document`):
+ * - fontes registradas por telas e serviços (`register`, ou `registerUnsavedWork` em quem tem ciclo de vida), cada uma com o
+ *   seu motivo (`UnsavedReason`). Os formulários (`form`) devolvem o sinal de "sujo" de um editor (o valor atual difere do
+ *   valor salvo); quem salva precisa devolvê-lo a "limpo" antes de navegar, senão o aviso de versão nova pede "salve ou
+ *   descarte" para quem já salvou. Entram o cartão da série com valores digitados e as folhas de peso, medidas, perfil, meta
+ *   e edição de série. O treino aberto na tela (`session`) e o envio da fila offline em curso (`sync`) só seguram a recarga
+ *   automática: o que eles têm está gravado no aparelho, então o toque no aviso não pergunta nada por causa deles;
  * - escritas (`POST/PUT/PATCH/DELETE`) em voo desta aba, contadas pelo interceptador `unsavedWorkInterceptor` (inclui os envios
  *   da fila, que saem pelo `HttpClient`). Leituras não contam: uma leitura refeita pela página nova não perde nada.
  */
@@ -92,11 +99,21 @@ export class UnsavedWork {
     return [...found];
   }
 
+  /** Há qualquer trabalho em curso: é o que uma recarga automática confere antes de agir. */
   hasUnsaved(): boolean {
     return this.reasons().length > 0;
   }
 
-  /** Há algo que só a pessoa pode decidir perder: um editor sujo (`form`). */
+  /** Há um treino aberto na tela ou a fila offline está enviando: trabalho em curso sem nada a salvar nem a decidir. */
+  isInUse(): boolean {
+    const reasons = this.reasons();
+    return reasons.includes('session') || reasons.includes('sync');
+  }
+
+  /**
+   * Há algo que só a pessoa pode decidir perder: um editor sujo (`form`). Só ele abre a pergunta do toque no aviso; o treino
+   * aberto, a fila em envio e as escritas em voo (que têm espera própria) nunca a abrem.
+   */
   needsConfirmation(): boolean {
     return this.reasons().includes('form');
   }

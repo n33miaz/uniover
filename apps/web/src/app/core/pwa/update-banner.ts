@@ -27,6 +27,10 @@ import { PwaUpdateService } from './pwa-update.service';
                 <span i18n="@@pwa.update-blocked"
                   >Há uma versão nova: salve ou descarte para continuar</span
                 >
+              } @else if (pwa.navigationHeld()) {
+                <span i18n="@@pwa.update-held"
+                  >Há uma versão nova: atualize quando terminar o que está fazendo</span
+                >
               } @else {
                 <span i18n="@@pwa.update-available">Nova versão disponível</span>
               }
