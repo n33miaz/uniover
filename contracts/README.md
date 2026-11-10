@@ -21,6 +21,12 @@ um `type` publicado. As duas versões convivem até o agente atualizar.
 que descartam conexões WebSocket ociosas. O agente anuncia a capacidade `transport.keepalive.v1`; enquanto ela não
 existe, a API não envia o batimento novo para preservar a compatibilidade durante a atualização.
 
+`transport.restart.v1` é a capacidade de quem entende o fechamento `4411` (motivo `server-restart`): a API que vai parar
+(troca de instância na publicação) fecha o canal com esse código para dizer "reconecte agora", e o agente volta em 0,2 a
+0,5 s, com jitter, sem somar espera. A API só o usa com o agente que declarou a capacidade; para os demais mantém o
+`1012` de sempre. O agente só a declara depois de a API listá-la em `features` (`GET /api/v1/devices/info`), porque uma
+API anterior recusa capacidade que não conhece.
+
 | `type` | Direção | Corpo |
 |---|---|---|
 | `tv.key.v1` | API para agente | `key` (14 teclas). Segue válido e inalterado. |

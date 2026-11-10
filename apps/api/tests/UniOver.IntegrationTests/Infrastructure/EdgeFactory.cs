@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -19,7 +20,8 @@ public sealed class EdgeFactory(
     IReadOnlyDictionary<string, string?>? settings = null,
     bool withTestEndpoints = false,
     bool withTestModule = false,
-    string? webRoot = null) : WebApplicationFactory<Program>
+    string? webRoot = null,
+    string? peerAddress = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -38,6 +40,7 @@ public sealed class EdgeFactory(
         {
             if (withTestEndpoints)
             {
+                services.AddSingleton(new TestPeer(peerAddress));
                 services.AddSingleton<IStartupFilter, TestEndpointsFilter>();
             }
 
@@ -53,7 +56,10 @@ public sealed class EdgeFactory(
     /// Mapeia rotas de teste no mesmo construtor de endpoints do Host: depois do pipeline montado, o
     /// WebApplication deixa o construtor de rotas nas propriedades do IApplicationBuilder.
     /// </summary>
-    private sealed class TestEndpointsFilter : IStartupFilter
+    /// <summary>O endereço de quem abriu a conexão com o app (o salto do proxy); sem ele o servidor de teste não informa nenhum.</summary>
+    private sealed record TestPeer(string? Address);
+
+    private sealed class TestEndpointsFilter(TestPeer peer) : IStartupFilter
     {
         private const string RouteBuilderKey = "__EndpointRouteBuilder";
 
@@ -63,12 +69,25 @@ public sealed class EdgeFactory(
 
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
         {
+            // Antes de todo o pipeline do Host: é o que o Kestrel preencheria ao aceitar a conexão.
+            if (peer.Address is not null)
+            {
+                var address = IPAddress.Parse(peer.Address);
+                app.Use((context, forward) =>
+                {
+                    context.Connection.RemoteIpAddress = address;
+                    return forward(context);
+                });
+            }
+
             next(app);
 
             var routes = (IEndpointRouteBuilder)app.Properties[RouteBuilderKey]!;
             routes.MapGet("/api/test/login", () => Results.Ok("ok"))
                 .AllowAnonymous()
                 .RequireRateLimiting(RateLimitPolicies.Login);
+            routes.MapGet("/api/test/client-ip", (HttpContext context) => Results.Ok(context.Connection.RemoteIpAddress?.ToString()))
+                .AllowAnonymous();
             routes.MapGet("/api/test/validation", () => ProblemDetailsExtensions.ValidationProblem(
                 new Dictionary<string, string[]> { ["email"] = ["Informe um e-mail válido."] })).AllowAnonymous();
             routes.MapGet("/api/test/boom", Boom).AllowAnonymous();

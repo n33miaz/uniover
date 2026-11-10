@@ -888,6 +888,10 @@ novas). Versão em prova (menos de 10 minutos estável) não é substituída; at
 - Credencial recusada (401/403 na abertura ou fechamento 4403 `revoked`): **para**, avisa para rodar
   `uniover-agent pair` e mantém o token no cofre até o usuário decidir. Fechamento 4409 `replaced` (outra instância do
   mesmo agente assumiu): espera 60 s antes de tentar de novo.
+- Fechamento 1012/1001 (a API está trocando de instância): volta em 0,25 a 0,75 s, sem somar à espera crescente. Fechamento
+  4411 `server-restart` (a API que vai parar pede "reconecte agora"): volta em 0,2 a 0,5 s, também com jitter. O agente só
+  declara a capacidade `transport.restart.v1` (e portanto só recebe o 4411) depois de a API listá-la em `features`; sem ela
+  a API usa o 1012 de sempre.
 - `status` não abre o canal (uma segunda conexão derrubaria a do agente em execução): confere só se a API responde.
 
 ## O que é validado

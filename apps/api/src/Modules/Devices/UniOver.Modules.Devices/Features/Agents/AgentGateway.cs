@@ -95,17 +95,24 @@ internal sealed partial class AgentGateway(
             return true;
         }
 
-        // Quem age no PC ao vivo (mouse, teclado, energia) nunca espera a volta do agente: o que fosse enviado depois da
-        // queda chegaria junto, mais tarde, e cairia em outra janela.
+        // Quem age no PC ao vivo (mouse, teclado, energia) só espera uma volta MUITO curta e só se o agente acabou de cair
+        // (a presença ainda está na graça): a troca de instância na publicação o faz reconectar em menos de um segundo, e o
+        // comando que coincidiu com ela não deve falhar. Passado o prazo curto o que fosse enviado depois chegaria junto,
+        // mais tarde, e cairia em outra janela: falha como "reconectando". Agente que já estava fora do ar falha na hora.
+        var wait = options.Value.ReconnectGrace;
         if (delivery == AgentDelivery.Immediate)
         {
-            return false;
+            if (!connections.IsInGrace(agentId))
+            {
+                return false;
+            }
+
+            wait = options.Value.ImmediateReconnectWait;
         }
 
         // Deploys e quedas breves do socket levam o agente a reconectar em cerca de dois segundos. Esperar esta
         // janela evita responder `agent_offline` para o comando que coincidiu com a troca, sem reter filas longas.
-        var session = await connections.WaitForSessionAsync(
-            agentId, options.Value.ReconnectGrace, time, cancellationToken);
+        var session = await connections.WaitForSessionAsync(agentId, wait, time, cancellationToken);
         return session is not null && await session.SendAsync(json, cancellationToken);
     }
 

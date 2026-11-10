@@ -15,6 +15,12 @@ export interface StreamConfig {
   /** Esperas entre tentativas depois de um erro: dobra a cada falha, de 1 s até o teto. */
   readonly backoffStartMs: number;
   readonly backoffMaxMs: number;
+  /**
+   * Espera da primeira reabertura de um fluxo que já estava aberto e foi cortado (troca da API na publicação): entre o mínimo e o
+   * máximo, sorteada para não reabrir tudo junto. Curta de propósito: o painel não deve ficar parado nem mostrar erro.
+   */
+  readonly quickRetryMinMs: number;
+  readonly quickRetryMaxMs: number;
   /** Reabertura proativa: o servidor encerra a conexão em 10 min, então reabre antes (aos 9). */
   readonly reopenAfterMs: number;
   /** Quanto tempo com a aba oculta antes de fechar a conexão (o iOS suspende a página de qualquer jeito). */
@@ -26,6 +32,8 @@ export const STREAM_CONFIG = new InjectionToken<StreamConfig>('STREAM_CONFIG', {
   factory: () => ({
     backoffStartMs: 1_000,
     backoffMaxMs: 30_000,
+    quickRetryMinMs: 200,
+    quickRetryMaxMs: 500,
     reopenAfterMs: 9 * 60_000,
     hiddenCloseMs: 2 * 60_000,
   }),
@@ -143,8 +151,11 @@ class StreamConnection {
 
     const source = this.deps.factory(this.path);
     this.source = source;
+    let opened = false;
     source.addEventListener('open', () => {
-      if (generation === this.generation) this.attempt = 0;
+      if (generation !== this.generation) return;
+      opened = true;
+      this.attempt = 0;
     });
     for (const type of this.eventTypes) {
       source.addEventListener(type, (event) => {
@@ -160,15 +171,19 @@ class StreamConnection {
     source.addEventListener('error', () => {
       if (generation !== this.generation) return;
       this.stopConnection();
-      this.scheduleRetry();
+      this.scheduleRetry(opened);
     });
     this.reopenTimer = setTimeout(() => void this.connect(), this.deps.config.reopenAfterMs);
   }
 
-  private scheduleRetry(): void {
-    const { backoffStartMs, backoffMaxMs } = this.deps.config;
-    const delay = Math.min(backoffStartMs * 2 ** this.attempt, backoffMaxMs);
-    this.attempt++;
+  private scheduleRetry(afterOpenStream = false): void {
+    const { backoffStartMs, backoffMaxMs, quickRetryMinMs, quickRetryMaxMs } = this.deps.config;
+    // Um fluxo que estava aberto e foi cortado quase sempre é a troca de instância da API: a primeira volta é rápida e não
+    // conta como falha. Se a instância nova ainda não atende, a falha seguinte já entra na espera crescente.
+    const delay = afterOpenStream
+      ? quickRetryMinMs + Math.random() * (quickRetryMaxMs - quickRetryMinMs)
+      : Math.min(backoffStartMs * 2 ** this.attempt, backoffMaxMs);
+    if (!afterOpenStream) this.attempt++;
     this.retryTimer = setTimeout(() => void this.connect(), delay);
   }
 }

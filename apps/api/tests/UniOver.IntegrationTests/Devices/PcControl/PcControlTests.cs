@@ -1315,19 +1315,34 @@ public sealed class PcControlTests(PostgresFixture postgres)
         }
     }
 
-    // ---- queda do canal: o comando ao vivo não espera nem chega atrasado ----
+    // ---- queda do canal: o comando ao vivo espera só uma volta muito curta e nunca chega atrasado depois dela ----
 
-    private static async Task WaitUntilTheServerLostTheSessionAsync(TransportApp app) =>
-        await TransportApp.WaitUntilAsync(
-            async () =>
-            {
-                using var probe = await PostAsync(app, "pointer", new { dx = 1, dy = 1 });
-                return probe.StatusCode == HttpStatusCode.ServiceUnavailable;
-            },
-            "sessão encerrada no servidor");
+    /// <summary>Espera o servidor perder a sessão (sem mandar comando: um pedido ao vivo logo depois da queda esperaria a volta do agente).</summary>
+    private static async Task WaitUntilTheServerLostTheSessionAsync(TransportApp app)
+    {
+        var connections = app.App.Services.GetRequiredService<UniOver.Modules.Devices.Features.Agents.AgentConnections>();
+        await TransportApp.WaitUntilAsync(() => !connections.TryGet(app.Agent.Slug, out _), "sessão encerrada no servidor");
+    }
+
+    /// <summary>
+    /// Um comando ao vivo logo depois da queda (presença ainda na graça) espera a volta do agente por alguns segundos do relógio
+    /// falso: o relógio anda até o pedido responder, e o que se confere é o que ele responde depois da espera.
+    /// </summary>
+    private static async Task<HttpResponseMessage> PostAcrossTheShortWaitAsync(TransportApp app, string path, object? body)
+    {
+        var post = PostAsync(app, path, body);
+        using var giveUp = new CancellationTokenSource(FakeAgent.Patience);
+        while (!post.IsCompleted)
+        {
+            app.App.Time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(20, giveUp.Token);
+        }
+
+        return await post;
+    }
 
     [Fact]
-    public async Task InsideThePresenceGrace_EveryCommandFailsAtOnceAs503_AndNothingArrivesWhenThePcComesBack()
+    public async Task InsideThePresenceGrace_EveryCommandFailsAs503AfterTheShortWait_AndNothingArrivesWhenThePcComesBack()
     {
         // Graça de presença ligada: o PC segue "verde" na tela depois da queda, que é quando o comando antigo ficava esperando.
         await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PresenceGraceSeconds = 150 });
@@ -1349,8 +1364,8 @@ public sealed class PcControlTests(PostgresFixture postgres)
         ];
         foreach (var (path, body) in commands)
         {
-            // O relógio não anda: se algum deles esperasse a janela de reconexão, o teste estouraria aqui.
-            using var response = await Within(PostAsync(app, path, body));
+            // Espera só a volta curta (alguns segundos de relógio falso), não a janela de 25 s dos comandos da TV.
+            using var response = await Within(PostAcrossTheShortWaitAsync(app, path, body));
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, path);
             (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting", path);
@@ -1372,16 +1387,16 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Pointer_WithNoLiveSession_FailsAtOnceAs503_WithoutWaitingAnything()
+    public async Task Pointer_WithNoLiveSession_FailsAs503_AfterOnlyTheShortWait()
     {
         await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PresenceGraceSeconds = 150 });
         var agent = await ConnectPcAsync(app);
         await agent.DisposeAsync();
         await WaitUntilTheServerLostTheSessionAsync(app);
 
-        using var zero = await Within(PostAsync(app, "pointer", new { dx = 0, dy = 0 }));
-        zero.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "o sinal de vida também falha na hora");
-        using var response = await Within(PostAsync(app, "pointer", new { dx = 9, dy = 9, scrollY = 120 }));
+        using var zero = await Within(PostAcrossTheShortWaitAsync(app, "pointer", new { dx = 0, dy = 0 }));
+        zero.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "o sinal de vida também falha, depois da espera curta");
+        using var response = await Within(PostAcrossTheShortWaitAsync(app, "pointer", new { dx = 9, dy = 9, scrollY = 120 }));
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting");

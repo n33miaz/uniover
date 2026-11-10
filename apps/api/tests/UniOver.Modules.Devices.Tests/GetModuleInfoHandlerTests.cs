@@ -20,5 +20,6 @@ public class GetModuleInfoHandlerTests
         info.Features.Should().Contain("tv.state.waking", "o agente só conta que a TV está ligando depois de a API aceitar o valor");
         info.Features.Should().Contain("tv.state.adb_permission", "o agente só conta a permissão do ADB no estado depois de a API aceitar o campo");
         info.Features.Should().Contain("tv.adb.rebind.v1", "o agente só declara o refazer do registro do ADB depois de a API o listar");
+        info.Features.Should().Contain("transport.restart.v1", "o agente só declara que entende o fechamento 4411 depois de a API o listar");
     }
 }

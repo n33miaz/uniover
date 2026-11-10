@@ -1,0 +1,29 @@
+# Blueprint do serviço da API (e do PWA, servido pela mesma imagem) no Render.
+#
+# Este arquivo SÓ TEM EFEITO se o serviço for criado ou sincronizado como Blueprint no painel (New > Blueprint, ou
+# "Sync" num Blueprint já ligado ao repositório). Sem isso é documentação versionada do que deve estar configurado no painel:
+# confira lá os mesmos valores. O nome abaixo precisa ser o do serviço que já existe (uniover.onrender.com); um nome
+# diferente faria o Blueprint criar OUTRO serviço, em vez de ajustar este.
+#
+# Variáveis de ambiente e segredos (ConnectionStrings__Default, ForwardedHeaders__Enabled etc.) não estão aqui de propósito:
+# ficam no painel, onde já estão. O auto-deploy fica desligado porque quem publica é o deploy hook, depois das migrations
+# (ver .github/workflows/deploy.yml).
+services:
+  - type: web
+    name: uniover
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+
+    # Na troca de instância o Render só passa o tráfego para a nova depois de ela responder 2xx/3xx neste caminho; a antiga
+    # segue atendendo até lá. Usa /health/live (não toca no banco), e NÃO /health/ready: o Render repete a verificação
+    # durante toda a vida do serviço, e a pronta consulta o banco (manteria o compute do Neon sempre acordado, gastando as
+    # horas do plano grátis) e tem limite de 12 por minuto por IP, que uma verificação a cada poucos segundos pode estourar
+    # (429 vira "instância doente" e o Render a reinicia). Ver apps/api/README.md.
+    healthCheckPath: /health/live
+
+    # Tempo que o Render espera a instância antiga sair depois do SIGTERM (padrão 30 s, máximo 300 s). Folga para a API avisar
+    # os agentes (fechamento 4411), esperar os comandos em curso e encerrar os fluxos SSE.
+    maxShutdownDelaySeconds: 120

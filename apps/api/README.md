@@ -100,6 +100,20 @@ Tudo isto vive em `UniOver.BuildingBlocks.Web`; o Host só compõe.
   aplicam a política com `.RequireRateLimiting(...)`.
 - **IP real atrás de proxy**: `ForwardedHeaders:Enabled` vem **desligado**; ligue só onde há proxy confiável
   (o limite por IP depende disso).
+  Em produção quem liga é a variável de ambiente `ForwardedHeaders__Enabled=true` do serviço no Render (painel; nenhum arquivo
+  do repositório a define). `Edge/ProductionClientIpTests` prova o efeito com o Host real em `Production`: o IP auditado e a
+  chave do limite são o cliente da cadeia, e `X-Forwarded-For` de um peer fora das redes internas é ignorado. Conferir no painel
+  que a variável existe é passo manual depois de cada mudança de hospedagem.
+- **Troca de instância sem derrubar o uso** (o Render mantém a antiga atendendo enquanto a nova sobe e a desliga com SIGTERM; ver
+  `render.yaml`). No `ApplicationStopping` a API espera até `DrainWaitSeconds` (5) os comandos em curso e fecha os agentes que
+  declararam `transport.restart.v1` com o código 4411 `server-restart` ("reconecte já"; os demais seguem com o 1012 do
+  desligamento), e passa a recusar sessão nova. Comando que coincide com a queda espera em vez de falhar: o do PC
+  (`AgentDelivery.Immediate`) até `ImmediateReconnectWaitSeconds` (5), só se o agente acabou de cair; o da TV até
+  `ReconnectGraceSeconds` (25). O comando já enviado espera até `ReplyHoldSeconds` (5) o agente voltar, e o resultado chega por
+  `commandId`. O fluxo SSE avisa o navegador com `retry:` (`Sse:RetryMilliseconds`, 1000) e o app reabre em 200 a 500 ms. O
+  último sinal gravado do agente só avança (a instância antiga não sobrescreve o da nova). **Limite conhecido**: um comando
+  recebido pela instância nova enquanto o agente ainda está ligado à antiga só chega depois de o agente trocar de instância, e o
+  resultado de um comando enviado pela antiga não atravessa para a nova (não há barramento entre instâncias).
 - **Teto de corpo**: toda rota aceita no máximo `RequestLimits:MaxBodyBytes` (256 KiB por padrão; o Kestrel aceitaria 28,6 MB).
   Passou, 413 `payload-too-large` sem ler o corpo (declarado no `Content-Length`) ou ao ler (chunked). A rota que precisa de mais
   declara o próprio teto com `RequestSizeLimitAttribute` (a foto de progresso e a importação da TACO).

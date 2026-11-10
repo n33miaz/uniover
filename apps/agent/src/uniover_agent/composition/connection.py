@@ -118,10 +118,14 @@ _log = logging.getLogger("uniover_agent")
 ARP_LEARN_SECONDS = 600.0
 # Prazo da arrumação da pasta na partida: sem ele, um disco travado impediria o agente de subir.
 TIDY_TIMEOUT_SECONDS = 60.0
+# Quem entende o fechamento 4411 "reconecte já" (`ServerRestartNow`): a API só o usa com quem
+# declarou isto.
+RESTART_CAPABILITY = "transport.restart.v1"
 # Capacidades que uma API anterior recusaria no `hello` (ela não as conhece): só vão depois de a API
 # listá-las em `features`.
 API_LISTED_CAPABILITIES = frozenset(
     {
+        RESTART_CAPABILITY,
         PAIR_CAPABILITY,
         PRESENCE_CAPABILITY,
         SETTINGS_OPEN_CAPABILITY,
@@ -586,6 +590,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         agent_version=build_version(),
         capabilities=lambda: (
             "transport.keepalive.v1",
+            *declarable_capabilities((RESTART_CAPABILITY,), features.supports),
             LOGS_CAPABILITY,
             MAINTENANCE_CAPABILITY,
             *delivery.capabilities(),

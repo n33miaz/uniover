@@ -8,13 +8,15 @@ namespace UniOver.Modules.Devices.Transport.WebSocket;
 
 /// <summary>
 /// Códigos de fechamento que o adaptador usa. Os de aplicação ficam na faixa 4000-4999; o agente decide pelo
-/// motivo (texto) e pelo código: <c>revoked</c> (4403) para de reconectar, <c>replaced</c> (4409) espera antes de tentar de novo.
+/// motivo (texto) e pelo código: <c>revoked</c> (4403) para de reconectar, <c>replaced</c> (4409) espera antes de tentar de novo,
+/// <c>server-restart</c> (4411) reconecta na hora (só vai a quem declarou <c>transport.restart.v1</c>).
 /// </summary>
 internal static class CloseCodes
 {
     public const WebSocketCloseStatus Replaced = (WebSocketCloseStatus)4409;
     public const WebSocketCloseStatus Revoked = (WebSocketCloseStatus)4403;
     public const WebSocketCloseStatus QueueFull = (WebSocketCloseStatus)1013;
+    public const WebSocketCloseStatus ServerRestart = (WebSocketCloseStatus)4411;
 
     public static (WebSocketCloseStatus Status, string Reason) For(AgentCloseReason reason) => reason switch
     {
@@ -22,6 +24,7 @@ internal static class CloseCodes
         AgentCloseReason.Revoked => (Revoked, "revoked"),
         AgentCloseReason.PolicyViolation => (WebSocketCloseStatus.PolicyViolation, "policy_violation"),
         AgentCloseReason.Shutdown => ((WebSocketCloseStatus)1012, "service_restart"),
+        AgentCloseReason.ServerRestart => (ServerRestart, "server-restart"),
         AgentCloseReason.InternalError => (WebSocketCloseStatus.InternalServerError, "internal_error"),
         _ => (WebSocketCloseStatus.NormalClosure, "closed"),
     };

@@ -8,7 +8,16 @@ name: Deploy
 # - As migrations usam a conexão DIRETA do Neon com o papel dono. A aplicação no Render usa o pooler com o papel
 #   sem DDL; a conexão do dono nunca vai para o Render.
 # - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
-#   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL, as migrations rodam e o deploy é pulado com aviso.
+#   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL o workflow FALHA, e falha antes de migrar (primeiro passo do job
+#   migrate): o banco nunca avança sem que o código novo possa ser publicado.
+# - Quando version, migrate, deploy, dast, release ou launcher falham na branch de produção, o job notify abre (ou comenta) a
+#   issue "Publicação falhou"; a primeira publicação completa que der certo a comenta e a fecha. Só esse job escreve em issues.
+#
+# Smoke autenticado (ainda não existe: precisa de uma conta de teste). Depois do deploy e antes do dast, um job com o ambiente
+# production entraria com uma conta criada só para isso (sem permissão de TV nem de PC, senha em segredo do ambiente) e faria
+# só leitura: (1) entrar pelo login e conferir o /identity/me; (2) abrir o SSE de /devices/stream e ver o retrato de presença
+# chegar; (3) pedir a lista de aparelhos da conta. Nenhum comando a TV ou PC (mexeria no aparelho do dono). Falha em qualquer
+# passo falha o workflow e cai no notify. Uma entrada por execução cabe no limite de login por IP.
 
 # A branch de produção fica em apps/agent/tools/update-channel.json na main. A lista abaixo
 # permite receber eventos dos ramos elegíveis; o job channel decide qual deles pode publicar.
@@ -74,6 +83,23 @@ jobs:
     timeout-minutes: 20
     environment: production
     steps:
+      # Antes de qualquer coisa que mexa no banco: sem o hook do Render o código novo não entra no ar, e migrar assim deixaria o
+      # schema à frente da API. Os dois segredos moram no ambiente production, o mesmo deste job.
+      - name: Conferir os pré-requisitos da publicação
+        env:
+          DB_OWNER_CONNECTION: ${{ secrets.NEON_OWNER_CONNECTION }}
+          HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          missing=0
+          if [ -z "$DB_OWNER_CONNECTION" ]; then
+            echo "::error::o segredo NEON_OWNER_CONNECTION não está cadastrado no ambiente production."
+            missing=1
+          fi
+          if [ -z "$HOOK_URL" ]; then
+            echo "::error::o segredo RENDER_DEPLOY_HOOK_URL não está cadastrado no ambiente production: sem ele o código não seria publicado, e nada foi migrado."
+            missing=1
+          fi
+          exit "$missing"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -256,10 +282,10 @@ jobs:
         env:
           HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
+          # O job migrate já barrou a falta do segredo antes de migrar; a conferência fica aqui também porque é este passo que o usa.
           if [ -z "$HOOK_URL" ]; then
-            echo "::warning::o segredo RENDER_DEPLOY_HOOK_URL não existe: as migrations foram aplicadas, mas o código não foi publicado."
-            echo "deployed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::o segredo RENDER_DEPLOY_HOOK_URL não existe: o código não foi publicado."
+            exit 1
           fi
           echo "::add-mask::$HOOK_URL"
           # A URL do hook é credencial: sem -v, sem eco, e o erro do curl (que poderia citá-la) é descartado.
@@ -461,3 +487,60 @@ jobs:
           tag="v$(tr -d '\r\n' < VERSION)"
           gh release upload "$tag" launcher-assets/uniover-launcher.apk launcher-assets/uniover-launcher.apk.sha256 --clobber
           echo "Launcher anexado ao Release $tag."
+
+  # Aviso de falha da publicação, sem serviço externo: uma issue "Publicação falhou" aberta enquanto a produção estiver quebrada.
+  # Falha de version, migrate, deploy, dast, release ou launcher abre a issue (ou comenta na que já está aberta, sem duplicar); a
+  # primeira publicação em que todos eles terminam com sucesso comenta e a fecha. Execuções canceladas ou puladas por outro motivo
+  # não mexem na issue. Roda só na branch de produção (a do channel). É o único job com permissão de escrever em issues: sem
+  # checkout, sem segredos, sem ação de terceiros; o texto da issue só leva nomes de job, o commit e o link da execução.
+  # Se as issues estiverem desligadas no repositório o passo falha em silêncio (continue-on-error) e a execução mantém o resultado real.
+  notify:
+    name: notify
+    needs: [channel, version, migrate, deploy, dast, release, launcher]
+    if: ${{ always() && needs.channel.outputs.ref == github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Abrir, comentar ou fechar a issue da publicação
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_RESULT: ${{ needs.version.result }}
+          MIGRATE_RESULT: ${{ needs.migrate.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          DAST_RESULT: ${{ needs.dast.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          LAUNCHER_RESULT: ${{ needs.launcher.result }}
+        run: |
+          set -euo pipefail
+          title="Publicação falhou"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          failed=""
+          succeeded=0
+          for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "launcher:$LAUNCHER_RESULT"; do
+            job="${pair%%:*}"
+            result="${pair#*:}"
+            [ "$result" = "failure" ] && failed="$failed $job"
+            [ "$result" = "success" ] && succeeded=$((succeeded + 1))
+          done
+          number=$(gh issue list --state open --limit 100 --json number,title \
+            | jq -r --arg title "$title" 'map(select(.title == $title)) | first | .number // empty')
+          if [ -n "$failed" ]; then
+            body="A publicação do commit ${GITHUB_SHA:0:12} na branch $GITHUB_REF_NAME falhou no(s) job(s):$failed. Execução: $run_url"
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --body "$body"
+              echo "Comentário acrescentado à issue #$number."
+            else
+              gh issue create --title "$title" --body "$body"
+              echo "Issue aberta."
+            fi
+          elif [ "$succeeded" -eq 6 ] && [ -n "$number" ]; then
+            gh issue comment "$number" --body "Publicação do commit ${GITHUB_SHA:0:12} concluída com sucesso. Execução: $run_url"
+            gh issue close "$number" --reason completed
+            echo "Issue #$number fechada."
+          else
+            echo "Nada a fazer: sem falha e sem publicação completa."
+          fi

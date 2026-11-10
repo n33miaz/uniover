@@ -99,17 +99,20 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
 
         var snapshot = await db.AgentPresenceSnapshots
             .SingleOrDefaultAsync(item => item.AgentId == agentIdValue.Value, cancellationToken);
+        var isNew = snapshot is null;
         if (snapshot is null)
         {
             snapshot = AgentPresenceSnapshot.Create(agentIdValue.Value);
             db.AgentPresenceSnapshots.Add(snapshot);
         }
 
-        var lastSeenWritten = false;
-        if (forceLastSeen || !IsRecent(snapshot.LastSeenAt, now))
+        // O último sinal só avança (comparar e trocar no banco): durante a troca de instância na publicação a instância antiga
+        // ainda grava a queda da sua conexão enquanto a nova já gravou a conexão do mesmo agente, e o dado mais velho não pode
+        // sobrescrever o mais novo. Linha nova entra já com o valor; a existente é atualizada abaixo, num só UPDATE condicional.
+        var wantsLastSeen = forceLastSeen || !IsRecent(snapshot.LastSeenAt, now);
+        if (wantsLastSeen && isNew)
         {
             snapshot.RecordLastSeen(now);
-            lastSeenWritten = true;
         }
 
         if (hello is not null)
@@ -124,8 +127,16 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
 
         await db.SaveChangesAsync(cancellationToken);
 
-        // Só depois de gravar: uma falha não pode fazer o cache achar que já está no banco.
-        if (lastSeenWritten)
+        if (wantsLastSeen && !isNew)
+        {
+            await db.AgentPresenceSnapshots
+                .Where(item => item.AgentId == agentIdValue.Value && (item.LastSeenAt == null || item.LastSeenAt < now))
+                .ExecuteUpdateAsync(set => set.SetProperty(item => item.LastSeenAt, now), cancellationToken);
+        }
+
+        // Só depois de gravar: uma falha não pode fazer o cache achar que já está no banco. Se outra instância já tinha um sinal
+        // mais novo, o UPDATE não mudou nada e o cache fica com este instante: há um sinal recente no banco de qualquer forma.
+        if (wantsLastSeen)
         {
             _lastSeenWrites[agentId] = now;
         }

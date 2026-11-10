@@ -34,6 +34,29 @@ internal sealed class AgentConnections(
     private readonly Dictionary<string, PendingDrop> _drops = new(StringComparer.Ordinal);
     private readonly HashSet<string> _revokedAgents = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<TaskCompletionSource<IAgentSession?>>> _waiters = new(StringComparer.Ordinal);
+    private bool _draining;
+
+    /// <summary>A API está parando (SIGTERM): não deve aceitar sessão nova, que seria derrubada em seguida.</summary>
+    public bool IsDraining
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _draining;
+            }
+        }
+    }
+
+    /// <summary>Marca o desligamento e devolve as sessões vivas nesse instante (a lista é uma cópia).</summary>
+    public IReadOnlyList<IAgentSession> BeginDraining()
+    {
+        lock (_gate)
+        {
+            _draining = true;
+            return [.. _sessions.Values];
+        }
+    }
 
     /// <summary>Torna <paramref name="session"/> a dona da conexão do agente e devolve a sessão que ela substituiu, se havia.</summary>
     public IAgentSession? Attach(IAgentSession session, DateTimeOffset now)
