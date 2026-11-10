@@ -30,6 +30,8 @@ from xml.etree import ElementTree
 
 import httpx
 
+from uniover_agent.adapters.ssl_contexts import ssl_contexts
+
 _log = logging.getLogger(__name__)
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -327,7 +329,7 @@ class SamsungVolume:
 
     async def _get_volume(self, control: str) -> int | None:
         try:
-            async with self._client() as client:
+            async with await self._open_client() as client:
                 response = await client.post(
                     control,
                     content=_soap("GetVolume"),
@@ -373,15 +375,24 @@ class SamsungVolume:
 
     async def _control_of(self, location: str) -> str | None:
         try:
-            async with self._client() as client:
+            async with await self._open_client() as client:
                 response = await client.get(location)
                 response.raise_for_status()
         except httpx.HTTPError:
             return None
         return rendering_control_url(response.text, str(response.url))
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=self._transport, timeout=UPNP_TIMEOUT_SECONDS)
+    async def _open_client(self) -> httpx.AsyncClient:
+        client = self._client()
+        return client if isinstance(client, httpx.AsyncClient) else await client
+
+    def _client(self) -> httpx.AsyncClient | Awaitable[httpx.AsyncClient]:
+        if self._transport is not None:
+            return httpx.AsyncClient(transport=self._transport, timeout=UPNP_TIMEOUT_SECONDS)
+        return self._default_client()
+
+    async def _default_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=UPNP_TIMEOUT_SECONDS, verify=await ssl_contexts.verified())
 
 
 def attempts_note(attempts: list[VolumeAttempt] | None, method: str, ok: bool, detail: str) -> None:

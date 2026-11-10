@@ -16,6 +16,7 @@ from uniover_agent.adapters.housekeeping import tidy
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.local_config import ConfigValue, update_config
 from uniover_agent.adapters.local_networks import network_signature, same_network
+from uniover_agent.adapters.loop_lag import LoopLagMonitor
 from uniover_agent.adapters.loop_watchdog import LoopWatchdog
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import fetch_api_features
@@ -618,6 +619,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         tray.run,
         # Se o laço de eventos parar, a pilha de todas as threads vai para `crash.log`.
         LoopWatchdog(installation_base() / "logs").run,
+        # Atrasos menores que a parada do vigia também explicam lentidão do controle.
+        LoopLagMonitor().run,
     ]
     # O disco da instalação: um diagnóstico quando o espaço piora de nível e outro quando volta.
     root = installation_base()
@@ -704,6 +707,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         if publisher is not None:
             await publisher.aclose()
         kit.recorder.flush_pending()
+        await kit.store.flush_appends()
         run_state.end(stopped_because)
     if moved:
         return EXIT_TV_MOVED

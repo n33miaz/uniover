@@ -17,6 +17,7 @@ from typing import Final
 
 import httpx
 
+from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.ports.tv_livre import LauncherApk, LauncherApkError
 
 _log = logging.getLogger(__name__)
@@ -45,15 +46,13 @@ class ReleaseApkSource:
         self._scratch = scratch
         self._timeout = timeout
         self._verifier = verifier
-        self._client_factory = client_factory or (
-            lambda: httpx.AsyncClient(follow_redirects=True, timeout=timeout)
-        )
+        self._client_factory = client_factory
 
     async def fetch(self) -> LauncherApk:
         self._scratch.mkdir(parents=True, exist_ok=True)
         target = self._scratch / APK_NAME
         try:
-            async with self._client_factory() as client:
+            async with await self._client() as client:
                 declared = await self._declared_hash(client)
                 digest = hashlib.sha256()
                 total = 0
@@ -88,6 +87,15 @@ class ReleaseApkSource:
                 target.unlink(missing_ok=True)
                 raise
         return LauncherApk(target, declared)
+
+    async def _client(self) -> httpx.AsyncClient:
+        if self._client_factory is not None:
+            return self._client_factory()
+        return httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=self._timeout,
+            verify=await ssl_contexts.verified(),
+        )
 
     async def _declared_hash(self, client: httpx.AsyncClient) -> str:
         response = await client.get(f"{self._base}/{APK_NAME}.sha256")

@@ -26,6 +26,7 @@ from zeroconf import IPVersion, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
 from uniover_agent.adapters.arp import arp_mac
+from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.core.tv.locator import TvIdentity, normalize_mac
 
 _log = logging.getLogger(__name__)
@@ -237,7 +238,9 @@ async def tcp_open(host: str, port: int, wait: float = CONNECT_TIMEOUT_SECONDS) 
 
 async def http_json(url: str) -> dict[str, Any] | None:
     try:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(
+            timeout=HTTP_TIMEOUT_SECONDS, verify=await ssl_contexts.verified()
+        ) as client:
             response = await client.get(url)
         data = response.json()
     except httpx.HTTPError, ValueError:

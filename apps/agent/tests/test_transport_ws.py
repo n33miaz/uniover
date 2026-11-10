@@ -6,7 +6,12 @@ import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent.adapters.fakes import FakeClock
-from uniover_agent.adapters.transport_ws import MAX_MESSAGE_BYTES, WebSocketTransport, build_ws_url
+from uniover_agent.adapters.transport_ws import (
+    MAX_MESSAGE_BYTES,
+    PING_TIMEOUT_SECONDS,
+    WebSocketTransport,
+    build_ws_url,
+)
 from uniover_agent.composition.connection import build_handler
 from uniover_agent.core import (
     ConnectionSupervisor,
@@ -52,6 +57,10 @@ def test_insecure_scheme_logs_a_warning(caplog: pytest.LogCaptureFixture) -> Non
     with caplog.at_level(logging.WARNING):
         WebSocketTransport("ws://127.0.0.1:1/ws", lambda: "t")
     assert "sem criptografia" in caplog.text
+
+
+def test_ping_timeout_is_twenty_seconds() -> None:
+    assert PING_TIMEOUT_SECONDS == 20.0
 
 
 async def test_sends_token_only_in_authorization_header() -> None:

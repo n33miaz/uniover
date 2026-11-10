@@ -217,6 +217,9 @@ class DiagnosticsShipper:
     async def flush(self) -> int:
         """Envia o que há na fila; devolve quantas ocorrências foram entregues ao transporte."""
         self._recorder.flush_pending()
+        flush_appends = getattr(self._store, "flush_appends", None)
+        if flush_appends is not None:
+            await flush_appends()
         if not self._enabled():
             return 0
         sent = 0
@@ -232,7 +235,7 @@ class DiagnosticsShipper:
             except asyncio.CancelledError:
                 # Reinício ou atualização no meio do envio: o lote volta à fila (chamada direta, a
                 # tarefa já está cancelada) em vez de ficar emprestado, e o cancelamento segue.
-                self._store.put_back(batch)
+                await asyncio.to_thread(self._store.put_back, batch)
                 raise
             except Exception:
                 # Um lote que não vira mensagem válida não pode travar a fila para sempre:

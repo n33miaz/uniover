@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.ports import (
     PairingDenied,
     PairingError,
@@ -87,7 +88,9 @@ class HttpPairingClient:
         try:
             if self._client is not None:
                 return await self._client.post(self._base_url + path, json=payload)
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_TIMEOUT, verify=await ssl_contexts.verified()
+            ) as client:
                 return await client.post(self._base_url + path, json=payload)
         except httpx.HTTPError as exc:
             raise PairingUnavailable(f"sem resposta da API ({type(exc).__name__})") from None
@@ -133,7 +136,9 @@ class HttpPairingClient:
 async def probe_api(base_url: str, wait_seconds: float = 10.0) -> bool:
     """Confere se a API responde (rota anônima `devices/info`); não abre o canal do agente."""
     try:
-        async with httpx.AsyncClient(timeout=wait_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=wait_seconds, verify=await ssl_contexts.verified()
+        ) as client:
             response = await client.get(base_url.rstrip("/") + f"{_BASE}/info")
     except httpx.HTTPError:
         return False
@@ -147,7 +152,9 @@ async def fetch_api_features(base_url: str, wait_seconds: float = 10.0) -> froze
     o conjunto vazio. Quem chama não declara nem usa o que não foi confirmado.
     """
     try:
-        async with httpx.AsyncClient(timeout=wait_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=wait_seconds, verify=await ssl_contexts.verified()
+        ) as client:
             response = await client.get(base_url.rstrip("/") + f"{_BASE}/info")
         if response.status_code != HTTPStatus.OK:
             return None
