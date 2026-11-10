@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.54.0](https://github.com/n33miaz/uniover/compare/v0.53.0...v0.54.0) (2026-11-10)
+
+
+### Agent 0.49.0
+
+#### Features
+
+* **agent:** wake android tvs over the network
+
+#### Bug Fixes
+
+* **agent:** keep blocking work off the event loop
+* **agent:** reconnect faster after a short drop
+
 ## [0.53.0](https://github.com/n33miaz/uniover/compare/v0.52.0...v0.53.0) (2026-11-09)
 
 
