@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from websockets.asyncio.server import ServerConnection
 
-from uniover_agent.adapters import tv_locate
+from uniover_agent.adapters import tv_locate, wol
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport, FakeTvRemote
 from uniover_agent.composition import connection as connection_module
 from uniover_agent.composition import tv as tv_module
@@ -96,6 +96,34 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     assert "tv.pair.v1" in setup.background_commands
     assert setup.background == []
     assert setup.after_hello == []
+
+
+async def test_android_wake_on_lan_uses_the_saved_mac(monkeypatch: pytest.MonkeyPatch) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(wol, "_send", lambda mac, host: sent.append((mac, host)))
+    setup = make_tv(Settings(tv_host=TV_HOST, tv_mac="AA:BB:CC:00:00:09"))
+    assert setup is not None
+    wake_on_lan = setup.manager._wake_on_lan
+    assert wake_on_lan is not None
+    assert await wake_on_lan() is True
+    assert sent == [("AA:BB:CC:00:00:09", TV_HOST)]
+
+
+async def test_android_wake_on_lan_without_a_mac_does_not_send_a_packet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(wol, "_send", lambda mac, host: sent.append((mac, host)))
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    wake_on_lan = setup.manager._wake_on_lan
+    assert wake_on_lan is not None
+    assert await wake_on_lan() is False
+    assert sent == []
 
 
 async def test_the_composed_pairing_asks_the_tv_for_a_code_and_reopens_the_session(
