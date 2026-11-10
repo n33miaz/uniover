@@ -16,6 +16,7 @@ import type { components } from '../api/generated/schema';
 import { problemOf } from '../auth/api-problem';
 import { APP_CONFIG } from '../config/app-config';
 import { ConnectivityService } from '../connectivity/connectivity.service';
+import { ResumeGrace } from '../connectivity/resume-grace';
 import { canUseModule } from '../auth/guest-home';
 import { SessionState } from '../session/session-state';
 import { StreamEvent, StreamService } from '../sse/stream.service';
@@ -130,6 +131,7 @@ export class LiveHomeStatus extends HomeStatusPort {
   private readonly http = inject(HttpClient);
   private readonly session = inject(SessionState);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly resumeGrace = inject(ResumeGrace);
   private readonly stream = inject(StreamService);
   private readonly clock = inject(ClockService);
   private readonly config = inject(HOME_STATUS_CONFIG);
@@ -315,6 +317,9 @@ export class LiveHomeStatus extends HomeStatusPort {
   private onFailure(error: unknown): void {
     const problem = problemOf(error);
     if (!problem) return;
+    // Logo ao voltar ao app a leitura pode sair numa conexão já derrubada: o que se sabia da casa segue valendo, e a próxima
+    // leitura (ou o fluxo) confirma. Nada de "serviço fora" por uma falha da volta.
+    if (problem.isNetwork && this.resumeGrace.active()) return;
     const unanswered = problem.isNetwork
       ? this.connectivity.online()
       : problem.status >= 502 && problem.status <= 504;

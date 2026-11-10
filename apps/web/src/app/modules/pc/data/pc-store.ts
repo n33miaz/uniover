@@ -1,7 +1,9 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { PcAvailability } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
+import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import {
   PointerAccelerator,
   ScrollAccelerator,
@@ -119,6 +121,9 @@ export class PcStore {
   private readonly availability = inject(PcAvailability);
   private readonly session = inject(SessionState);
   private readonly prefs = inject(PcPrefs);
+  /** O comando sem resposta ganha o aviso "O PC não está respondendo"; a falha vai para a telemetria privada. */
+  private readonly slow = inject(SlowCommandWatch);
+  private readonly telemetry = inject(ClientTelemetry);
   /** A conta de quem é o estado de movimento e de arrastar guardado aqui (o store vive a aba toda, as contas não). */
   private account = this.session.accountId();
   private readonly accelerator = new PointerAccelerator();
@@ -764,6 +769,7 @@ export class PcStore {
   }
 
   private async run(call: () => Promise<void>): Promise<PcFailure | null> {
+    const done = this.slow.begin('pc');
     try {
       await call();
       return null;
@@ -773,6 +779,8 @@ export class PcStore {
       const failure = pcFailureOf(error);
       this.noteFailure(failure);
       return failure;
+    } finally {
+      done();
     }
   }
 
@@ -995,6 +1003,14 @@ export class PcStore {
   private noteFailure(failure: PcFailure): void {
     this.stickyNotice = null; // uma falha mais nova substitui o aviso que estava preso
     this.notice.set(failure);
+    if (failure.kind !== 'cancelled') {
+      this.telemetry.record({
+        kind: 'command-failure',
+        module: 'pc',
+        code: failure.kind,
+        transport: this.direct.canUse() ? 'direct' : 'cloud',
+      });
+    }
     // Também quando o agente foi atualizado (ou trocado) depois da última leitura: as capacidades que a tela mostra vêm dela.
     if (
       failure.kind === 'offline' ||

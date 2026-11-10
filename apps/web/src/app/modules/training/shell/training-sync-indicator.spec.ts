@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { vi } from 'vitest';
 import { NEW_ITEM } from '../../../core/offline-queue/queue-test-kit';
 import { TrainingSync } from '../data/sync/training-sync';
@@ -86,5 +87,18 @@ describe('TrainingSyncIndicator', () => {
     expect(pull).toHaveBeenCalledOnce();
     expect(indicator.retrying()).toBe(false);
     expect((await store().get(id))?.status).not.toBe('failed');
+  });
+
+  it('watches "Tentar de Novo" for the "servidor não está respondendo" flag, and stops watching when it ends, even if it fails', async () => {
+    const { indicator } = await make();
+    const done = vi.fn();
+    const begin = vi.spyOn(TestBed.inject(SlowCommandWatch), 'begin').mockReturnValue(done);
+    vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockRejectedValue(new Error('sem resposta'));
+
+    await indicator.retry();
+
+    expect(begin).toHaveBeenCalledExactlyOnceWith('training');
+    expect(done).toHaveBeenCalledOnce();
+    expect(indicator.retrying()).toBe(false);
   });
 });

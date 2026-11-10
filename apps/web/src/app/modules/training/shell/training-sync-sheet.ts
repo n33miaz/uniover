@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, output } from '@angular/core';
+import { SlowCommandNotice } from '../../../core/connectivity/slow-command-notice';
 import { SyncStatusLine } from '../../../core/offline-queue/sync-status-line';
 import { TrainingSheet } from './training-sheet';
 import { TrainingSyncIndicator } from './training-sync-indicator';
@@ -9,7 +10,7 @@ import { TrainingSyncIndicator } from './training-sync-indicator';
  */
 @Component({
   selector: 'app-training-sync-sheet',
-  imports: [SyncStatusLine, TrainingSheet],
+  imports: [SlowCommandNotice, SyncStatusLine, TrainingSheet],
   template: `
     <app-training-sheet [heading]="heading" (closed)="closed.emit()">
       <p class="state" role="status">{{ text() }}</p>
@@ -34,6 +35,7 @@ import { TrainingSyncIndicator } from './training-sync-indicator';
             </button>
           }
         </div>
+        <app-slow-command-notice [module]="'training'" [inline]="true" />
       }
     </app-training-sheet>
   `,

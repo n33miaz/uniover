@@ -1,6 +1,7 @@
 import { HttpInterceptorFn } from '@angular/common/http';
 import { DestroyRef, Injectable, inject } from '@angular/core';
 import { finalize } from 'rxjs';
+import { QUIET_REQUEST } from '../connectivity/quiet-request';
 
 /** O que impede uma recarga automática: cada motivo é um tipo de trabalho que a recarga perderia ou cortaria. */
 export type UnsavedReason = 'form' | 'request';
@@ -113,7 +114,11 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** Conta as escritas em voo para o `UnsavedWork` (inclui os reenvios da fila offline, que também saem pelo `HttpClient`). */
 export const unsavedWorkInterceptor: HttpInterceptorFn = (request, next) => {
-  if (READ_METHODS.has(request.method.toUpperCase())) return next(request);
+  // O envio da telemetria (`QUIET_REQUEST`) é escrita só no nome: nada do que a pessoa fez depende dele, e ele nunca deve segurar uma
+  // atualização do app nem a pergunta de "sair da página".
+  if (READ_METHODS.has(request.method.toUpperCase()) || request.context.get(QUIET_REQUEST)) {
+    return next(request);
+  }
   const end = inject(UnsavedWork).beginRequest();
   return next(request).pipe(finalize(end));
 };

@@ -181,6 +181,7 @@
 </div>
 
 <app-tv-toast [notice]="showToast() ? store.notice() : null" />
+<app-slow-command-notice [module]="'tv'" />
 
 @if (access.launch()) {
   <!-- Só quem pode pedir a permissão (o pedido é o de Atualizar lista, de quem abre apps) recebe a folha. -->

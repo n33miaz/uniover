@@ -3,8 +3,10 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { ConnectivityService, ServerState } from '../../../core/connectivity/connectivity.service';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
+import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import { TvAdbPermission } from './tv-adb-permission';
 import { TvApi } from './tv-api';
 import { TvSelection } from './tv-selection';
@@ -103,7 +105,7 @@ describe('TvStore', () => {
       providers: [
         { provide: TvApi, useValue: api },
         { provide: StreamService, useValue: { open } },
-        { provide: ConnectivityService, useValue: { online, serverState } },
+        { provide: ConnectivityService, useValue: { online, serverState, quiet: () => false } },
       ],
     });
 
@@ -466,6 +468,210 @@ describe('TvStore', () => {
       await store.sendKey('OK');
       await vi.advanceTimersByTimeAsync(6_000);
       expect(store.notice()).toBeNull();
+    });
+  });
+
+  describe('commands without an answer and coming back to the app', () => {
+    it('a key that gets no answer for 3 s raises the "A TV não está respondendo" flag, and it goes away with the answer', async () => {
+      await started();
+      const watch = TestBed.inject(SlowCommandWatch);
+      let release!: () => void;
+      api.sendKey.mockReturnValueOnce(new Promise<void>((resolve) => (release = resolve)));
+      const pending = store.sendKey('OK');
+      await vi.advanceTimersByTimeAsync(2_900);
+      expect(watch.isSlow('tv')).toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(watch.isSlow('tv')).toBe(true);
+      release();
+      await pending;
+      expect(watch.isSlow('tv')).toBe(false);
+      expect(store.notice()).toBeNull();
+    });
+
+    it('a key that answers in time never raises it', async () => {
+      await started();
+      const watch = TestBed.inject(SlowCommandWatch);
+      await store.sendKey('OK');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(watch.isSlow('tv')).toBe(false);
+    });
+
+    it('a key that fails clears the flag and still shows the failure (never silence when the command did not arrive)', async () => {
+      await started();
+      const watch = TestBed.inject(SlowCommandWatch);
+      let fail!: (error: unknown) => void;
+      api.sendKey.mockReturnValueOnce(new Promise<void>((_, reject) => (fail = reject)));
+      const pending = store.sendKey('OK');
+      await vi.advanceTimersByTimeAsync(3_100);
+      expect(watch.isSlow('tv')).toBe(true);
+      fail(problem(504, 'agent-timeout'));
+      await pending;
+      expect(watch.isSlow('tv')).toBe(false);
+      expect(store.notice()?.kind).toBe('error');
+    });
+
+    it('launching an app and opening settings are watched too', async () => {
+      await started();
+      const watch = TestBed.inject(SlowCommandWatch);
+      api.launch.mockReturnValueOnce(new Promise<void>(() => undefined));
+      void store.launch(shortcut(1));
+      await vi.advanceTimersByTimeAsync(3_100);
+      expect(watch.isSlow('tv')).toBe(true);
+    });
+
+    describe('every action the person starts is watched from the tap', () => {
+      const hang = () => new Promise<never>(() => undefined);
+      const watch = () => TestBed.inject(SlowCommandWatch);
+
+      it.each([
+        ['typing text', () => api.sendText, () => store.sendText('abc')],
+        ['refreshing the app list', () => api.refreshShortcuts, () => store.refreshShortcuts()],
+        ['renaming a shortcut', () => api.updateShortcut, () => store.renameShortcut('s1', 'Meu')],
+        [
+          'toggling a shortcut',
+          () => api.updateShortcut,
+          () => store.setShortcutEnabled('s1', false),
+        ],
+        ['reordering the shortcuts', () => api.reorderShortcuts, () => store.reorder(['s2', 's1'])],
+      ])(
+        '%s that gets no answer raises the flag after 3 s and clears with the answer',
+        async (_name, call, run) => {
+          await started();
+          let release!: (value?: unknown) => void;
+          call().mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+          const pending = run();
+          await vi.advanceTimersByTimeAsync(2_900);
+          expect(watch().isSlow('tv')).toBe(false);
+          await vi.advanceTimersByTimeAsync(300);
+          expect(watch().isSlow('tv')).toBe(true);
+          release([shortcut(1), shortcut(2)]);
+          await pending;
+          expect(watch().isSlow('tv')).toBe(false);
+        },
+      );
+
+      it('opening the TV settings is watched too', async () => {
+        api.tvs.mockResolvedValue([
+          {
+            id: 'sala',
+            name: 'Sala',
+            isDefault: true,
+            agentSlug: null,
+            kind: 'android',
+            online: true,
+            capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'],
+          },
+        ]);
+        await started();
+        api.openSettings.mockReturnValueOnce(hang());
+        void store.openSettings('WIFI');
+        await vi.advanceTimersByTimeAsync(3_100);
+        expect(watch().isSlow('tv')).toBe(true);
+      });
+
+      it('cleaning the TV is flagged too, but only after its longer limit, and the flag clears when it ends', async () => {
+        await started();
+        let release!: () => void;
+        api.cleanup.mockReturnValueOnce(
+          new Promise((resolve) => (release = () => resolve({ ok: true }))),
+        );
+        const pending = store.cleanup();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(watch().isSlow('tv')).toBe(false);
+        await vi.advanceTimersByTimeAsync(20_100);
+        expect(watch().isSlow('tv')).toBe(true);
+        release();
+        await pending;
+        expect(watch().isSlow('tv')).toBe(false);
+      });
+
+      it('powering off is flagged too, only after its longer limit', async () => {
+        await started();
+        api.powerOff.mockReturnValueOnce(hang());
+        void store.powerOff();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(watch().isSlow('tv')).toBe(false);
+        await vi.advanceTimersByTimeAsync(20_100);
+        expect(watch().isSlow('tv')).toBe(true);
+      });
+
+      it('an action that fails clears the flag (the failure has its own text)', async () => {
+        await started();
+        let fail!: (error: unknown) => void;
+        api.updateShortcut.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+        const pending = store.renameShortcut('s1', 'x');
+        await vi.advanceTimersByTimeAsync(3_100);
+        expect(watch().isSlow('tv')).toBe(true);
+        fail(problem(500));
+        await pending;
+        expect(watch().isSlow('tv')).toBe(false);
+      });
+
+      it('the time counts from the tap, presence wait included: a hung presence signal does not hide the flag', async () => {
+        await started();
+        api.presence.mockReturnValue(hang());
+        api.launch.mockReturnValueOnce(hang());
+        void store.launch(shortcut(1));
+        await vi.advanceTimersByTimeAsync(3_100);
+        expect(watch().isSlow('tv')).toBe(true);
+      });
+
+      it('a cleaning stuck in the presence wait is flagged and does not leave the cleaning state stuck on failure', async () => {
+        await started();
+        api.presence.mockReturnValue(hang());
+        api.cleanup.mockRejectedValueOnce(problem(504, 'agent-timeout'));
+        await vi.advanceTimersByTimeAsync(0);
+        const pending = store.cleanup();
+        await vi.advanceTimersByTimeAsync(6_000);
+        await pending;
+        expect(store.cleaning()).toBe(false);
+        expect(watch().isSlow('tv')).toBe(false);
+      });
+    });
+
+    it('coming back with every request failing for lack of response shows no notice at all, and nothing is flagged', async () => {
+      await started();
+      const watch = TestBed.inject(SlowCommandWatch);
+      const noResponse = () => new HttpErrorResponse({ status: 0 });
+      api.state.mockRejectedValue(noResponse());
+      api.shortcuts.mockRejectedValue(noResponse());
+      api.wake.mockRejectedValue(noResponse());
+      api.tvs.mockRejectedValue(noResponse());
+      api.presence.mockRejectedValue(noResponse());
+
+      setVisibility('hidden');
+      setVisibility('visible');
+      await vi.advanceTimersByTimeAsync(4_500);
+
+      expect(store.notice()).toBeNull();
+      expect(store.status()).not.toBe('offline');
+      expect(watch.slowModules()).toEqual([]);
+    });
+
+    it('a command held by the grace period is flagged only when it ends', async () => {
+      await started();
+      const watch = TestBed.inject(SlowCommandWatch);
+      setVisibility('hidden');
+      setVisibility('visible');
+      await vi.advanceTimersByTimeAsync(0);
+      api.sendKey.mockReturnValueOnce(new Promise<void>(() => undefined));
+      void store.sendKey('OK');
+      await vi.advanceTimersByTimeAsync(3_100);
+      expect(watch.isSlow('tv')).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(watch.isSlow('tv')).toBe(true);
+    });
+
+    it('a failed command is registered for the owner (module and kind only, never the message)', async () => {
+      await started();
+      const record = vi.spyOn(TestBed.inject(ClientTelemetry), 'record');
+      api.sendKey.mockRejectedValueOnce(problem(504, 'agent-timeout'));
+      await store.sendKey('OK');
+      expect(record).toHaveBeenCalledWith({
+        kind: 'command-failure',
+        module: 'tv',
+        code: 'timeout',
+      });
     });
   });
 

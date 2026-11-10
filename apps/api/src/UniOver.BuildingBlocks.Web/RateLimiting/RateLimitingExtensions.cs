@@ -78,7 +78,13 @@ public static class RateLimitPolicies
     /// </summary>
     public const string Beacon = "beacon";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcKeyRelease, PcPower, PcRtc, Beacon];
+    /// <summary>
+    /// Telemetria de erros do app (autenticada, grava linhas no banco): por conta e baixa. O app junta tudo num envio só a cada poucos
+    /// segundos e já se limita sozinho, então 12 por minuto sobra; o teto por hora da API inteira fica no módulo.
+    /// </summary>
+    public const string ClientEvents = "client-events";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity, Siri, PcPointer, PcInput, PcKeyRelease, PcPower, PcRtc, Beacon, ClientEvents];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -117,6 +123,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.PcRtc] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Beacon] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
+        [RateLimitPolicies.ClientEvents] = new() { Permitted = 12, WindowSeconds = 60, Partition = "user" },
     };
 
     /// <summary>

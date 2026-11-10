@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Domain;
+using UniOver.Modules.Devices.Features.ClientEvents;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.SharedKernel;
 
@@ -265,7 +266,11 @@ internal static class AgentDiagnosticsEndpoint
     }
 }
 
-/// <summary>Apaga de hora em hora o que passou da retenção, de todos os agentes (ver <see cref="AgentDiagnosticsStore.PurgeExpiredAsync"/>).</summary>
+/// <summary>
+/// Apaga de hora em hora o que passou da retenção, de todos os agentes (ver <see cref="AgentDiagnosticsStore.PurgeExpiredAsync"/>) e
+/// também a telemetria de erros do app (ver <see cref="ClientEventStore.PurgeExpiredAsync"/>): é o mesmo trabalho de limpar rastro
+/// vencido, e um só laço de hora em hora basta para as duas tabelas.
+/// </summary>
 internal sealed partial class AgentDiagnosticsPurgeWorker(IServiceScopeFactory scopes, TimeProvider time, ILogger<AgentDiagnosticsPurgeWorker> logger)
     : BackgroundService
 {
@@ -280,6 +285,7 @@ internal sealed partial class AgentDiagnosticsPurgeWorker(IServiceScopeFactory s
             {
                 await using var scope = scopes.CreateAsyncScope();
                 await scope.ServiceProvider.GetRequiredService<AgentDiagnosticsStore>().PurgeExpiredAsync(stoppingToken);
+                await scope.ServiceProvider.GetRequiredService<ClientEventStore>().PurgeExpiredAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -299,6 +305,6 @@ internal sealed partial class AgentDiagnosticsPurgeWorker(IServiceScopeFactory s
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao apagar os diagnósticos vencidos dos agentes ({Error}).")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao apagar o rastro vencido (diagnósticos dos agentes e telemetria do app) ({Error}).")]
     private static partial void LogFailure(ILogger logger, string error);
 }

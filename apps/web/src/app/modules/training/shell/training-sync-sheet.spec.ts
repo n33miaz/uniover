@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { NEW_ITEM } from '../../../core/offline-queue/queue-test-kit';
 import { TrainingSync } from '../data/sync/training-sync';
 import { eventually, setupScreen } from './screen-test-kit';
@@ -71,5 +72,16 @@ describe('TrainingSyncSheet', () => {
     await eventually(fixture, () => expect(pull).toHaveBeenCalledOnce());
     expect(retry).toHaveBeenCalledWith(id);
     expect((await store().get(id))?.status).not.toBe('failed');
+  });
+
+  it('says honestly that the server is not answering while "Tentar de Novo" waits for too long', async () => {
+    vi.spyOn(SlowCommandWatch.prototype, 'isSlow').mockReturnValue(true);
+    const { fixture, queue, store, el, action } = await render();
+    const id = await queue().enqueue({ ...NEW_ITEM, url: '/api/v1/training/routines/1' });
+    await store().markFailed(id, (await store().get(id))!.revision, 'http-422');
+    await eventually(fixture, () => expect(action('Tentar de Novo')).toBeDefined());
+    expect(el.querySelector('.slow.inline')?.textContent).toContain(
+      'O servidor não está respondendo.',
+    );
   });
 });

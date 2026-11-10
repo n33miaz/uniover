@@ -805,6 +805,137 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/devices/client-events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          limit?: number | string;
+          module?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ClientEventsResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['ClientEventsBody'];
+        };
+      };
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Payload Too Large */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/devices/events': {
     parameters: {
       query?: never;
@@ -12398,6 +12529,52 @@ export interface components {
       /** Format: date-time */
       startedAt: string;
       trigger: string;
+    };
+    ClientEventItem: {
+      api: null | string;
+      /** Format: date-time */
+      at: null | string;
+      code: null | string;
+      grace: null | boolean;
+      /** Format: uuid */
+      id: null | string;
+      kind: null | string;
+      module: null | string;
+      route: null | string;
+      /** Format: int32 */
+      status: null | number | string;
+      traceId: null | string;
+      transport: null | string;
+      version: null | string;
+      visibility: null | string;
+    };
+    ClientEventRow: {
+      api: null | string;
+      /** Format: date-time */
+      at: string;
+      code: null | string;
+      grace: boolean;
+      /** Format: uuid */
+      id: string;
+      kind: string;
+      module: string;
+      route: string;
+      /** Format: int32 */
+      status: null | number | string;
+      traceId: null | string;
+      transport: null | string;
+      /** Format: uuid */
+      userId: string;
+      version: null | string;
+      visibility: string;
+    };
+    ClientEventsBody: {
+      events: null | components['schemas']['ClientEventItem'][];
+    };
+    ClientEventsResponse: {
+      items: components['schemas']['ClientEventRow'][];
+      /** Format: int32 */
+      retentionDays: number | string;
     };
     CompletePasskeyRegistrationRequest: {
       /** Format: uuid */

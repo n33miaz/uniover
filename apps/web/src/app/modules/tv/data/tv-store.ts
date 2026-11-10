@@ -2,8 +2,10 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
+import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import { TvAccess } from './tv-access';
 import { TvApi, tvEventsPath } from './tv-api';
 import { TvPresence } from './tv-presence';
@@ -160,6 +162,9 @@ export class TvStore {
   private readonly api = inject(TvApi);
   private readonly stream = inject(StreamService);
   private readonly connectivity = inject(ConnectivityService);
+  /** O comando que fica sem resposta ganha o aviso "A TV não está respondendo" (ver `SlowCommandWatch`). */
+  private readonly slow = inject(SlowCommandWatch);
+  private readonly telemetry = inject(ClientTelemetry);
   private readonly config = inject(TV_CONFIG);
   private readonly doc = inject(DOCUMENT);
   private readonly access = inject(TvAccess);
@@ -698,6 +703,7 @@ export class TvStore {
     }
     this._inFlightKeys.update((count) => count + 1);
     this._sent.update((count) => count + 1);
+    const done = this.slow.begin('tv');
     try {
       await this.api.sendKey(key);
       if (this.live(epoch) && this._notice()?.kind === 'error') this.clearNotice();
@@ -707,6 +713,7 @@ export class TvStore {
       if (this.live(epoch)) this.fail(error);
       return false;
     } finally {
+      done();
       // A troca de TV já zerou o contador: só a tecla da TV de agora o desconta.
       if (this.live(epoch)) this._inFlightKeys.update((count) => count - 1);
     }
@@ -735,13 +742,17 @@ export class TvStore {
         retryAfterSeconds: null,
       };
     }
+    const done = this.slow.begin('tv');
     try {
       await this.api.sendText(text);
       return null;
     } catch (error) {
       const failure = describeFailure(error);
+      this.telemetry.record({ kind: 'command-failure', module: 'tv', code: failure.kind });
       if (this.live(epoch)) this.absorb(failure);
       return failure;
+    } finally {
+      done();
     }
   }
 
@@ -765,14 +776,19 @@ export class TvStore {
     }
     const safe = this.safePowerOff();
     this._sent.update((count) => count + 1);
+    // Desligar espera o agente confirmar: o aviso vem com o prazo longo, mas vem.
+    const done = this.slow.begin('tv', 'long');
     try {
       const outcome = await this.api.powerOff(safe);
       if (this.live(epoch)) this.showNotice('info', powerOffNotice(outcome));
       return null;
     } catch (error) {
       const failure = describeFailure(error, safe ? 'power-off' : undefined);
+      this.telemetry.record({ kind: 'command-failure', module: 'tv', code: failure.kind });
       if (this.live(epoch)) this.absorb(failure);
       return failure;
+    } finally {
+      done();
     }
   }
 
@@ -800,6 +816,7 @@ export class TvStore {
         message: this.disabledReason() ?? '',
         retryAfterSeconds: null,
       };
+    const done = this.slow.begin('tv');
     try {
       const saved = await this.api.savePowerSchedule(
         dueAtUtc,
@@ -810,6 +827,8 @@ export class TvStore {
       return null;
     } catch (error) {
       return describeFailure(error);
+    } finally {
+      done();
     }
   }
 
@@ -818,12 +837,15 @@ export class TvStore {
     if (!this.access.power()) return forbidden();
     const active = this._powerSchedule();
     if (!active) return null;
+    const done = this.slow.begin('tv');
     try {
       await this.api.cancelPowerSchedule(active.version);
       if (this.live(epoch)) this._powerSchedule.set(null);
       return null;
     } catch (error) {
       return describeFailure(error);
+    } finally {
+      done();
     }
   }
 
@@ -844,8 +866,10 @@ export class TvStore {
     }
     // Abrir um app usa o ADB: o sinal de presença vai antes, para o agente poder reconectar se precisar.
     this._sent.update((count) => count + 1);
-    await this.presence();
+    // O prazo conta desde o toque, inclusive a espera do sinal de presença.
+    const done = this.slow.begin('tv');
     try {
+      await this.presence();
       await this.api.launch(shortcut.id);
       if (this.live(epoch)) {
         const name = shortcutLabel(shortcut);
@@ -855,6 +879,8 @@ export class TvStore {
     } catch (error) {
       if (this.live(epoch)) this.fail(error);
       return false;
+    } finally {
+      done();
     }
   }
 
@@ -868,8 +894,9 @@ export class TvStore {
     if (!this.canSend() || !this.access.settings() || this.account === null || this.listFirst()) {
       return false;
     }
-    await this.presence();
+    const done = this.slow.begin('tv');
     try {
+      await this.presence();
       await this.api.openSettings(screen);
       this.adbPermission.confirmed();
       if (this.live(epoch)) {
@@ -884,6 +911,8 @@ export class TvStore {
     } catch (error) {
       if (this.live(epoch)) this.fail(error);
       return false;
+    } finally {
+      done();
     }
   }
 
@@ -905,8 +934,10 @@ export class TvStore {
     }
     this._cleaning.set(true);
     this._sent.update((count) => count + 1);
-    await this.presence();
+    // A limpeza leva até ~25 s de propósito: o aviso vem com o prazo longo, contado desde o toque.
+    const done = this.slow.begin('tv', 'long');
     try {
+      await this.presence();
       const result = await this.api.cleanup();
       this.adbPermission.confirmed();
       if (this.live(epoch)) {
@@ -923,6 +954,7 @@ export class TvStore {
       if (this.live(epoch)) this.fail(error, 'cleanup');
       return false;
     } finally {
+      done();
       // A limpeza da TV anterior já foi desligada na troca; a flag agora pode ser de uma limpeza da atual.
       if (this.live(epoch)) this._cleaning.set(false);
     }
@@ -933,6 +965,7 @@ export class TvStore {
     if (!this.canSend() || !this.access.launch() || this.account === null || this.listFirst()) {
       return false;
     }
+    const done = this.slow.begin('tv');
     try {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
@@ -953,6 +986,8 @@ export class TvStore {
         this.fail(error);
       }
       return false;
+    } finally {
+      done();
     }
   }
 
@@ -1005,6 +1040,7 @@ export class TvStore {
       this.showNotice('error', this.blockedText());
       return false;
     }
+    const done = this.slow.begin('tv');
     try {
       const updated = await this.api.updateShortcut(id, change);
       if (!this.live(epoch)) return true;
@@ -1015,11 +1051,14 @@ export class TvStore {
     } catch (error) {
       if (this.live(epoch)) this.fail(error);
       return false;
+    } finally {
+      done();
     }
   }
 
   private async runReorder(): Promise<boolean> {
     const epoch = this.begin();
+    const done = this.slow.begin('tv');
     try {
       while (this.reorderWanted) {
         const ids = this.reorderWanted;
@@ -1051,6 +1090,7 @@ export class TvStore {
       void this.resyncShortcuts();
       return false;
     } finally {
+      done();
       // Depois da troca `reorderRun` já é de outra rodada (ou de nenhuma): só a rodada da TV de agora o limpa.
       if (this.live(epoch)) this.reorderRun = null;
     }
@@ -1328,6 +1368,7 @@ export class TvStore {
   private fail(error: unknown, context?: TvFailureContext): TvFailure {
     const failure = describeFailure(error, context);
     this.absorb(failure);
+    this.telemetry.record({ kind: 'command-failure', module: 'tv', code: failure.kind });
     // Falta de permissão do ADB: a folha "Liberar na TV" abre (ou o aviso já está na TV) e o erro não se repete em cima;
     // se a pessoa disse "Agora não", fica só o aviso curto.
     const handled =

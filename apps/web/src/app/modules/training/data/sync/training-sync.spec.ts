@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../../../../core/connectivity/connectivity.service';
+import { ResumeGrace } from '../../../../core/connectivity/resume-grace';
 import {
   NEW_ITEM,
   TEST_ACCOUNT,
@@ -181,6 +182,63 @@ describe('TrainingSync', () => {
       expect(t.sync().error()).toBe('network');
       expect(t.sync().lastPullAt()).toBe(777);
       expect(t.sync().pulling()).toBe(false);
+    });
+
+    it('a network failure right after coming back to the app is no error: it pulls again when the grace period ends', async () => {
+      const t = setup();
+      const grace = TestBed.inject(ResumeGrace);
+      let graceActive = true;
+      vi.spyOn(grace, 'active').mockImplementation(() => graceActive);
+      let afterEnd: (() => void) | null = null;
+      vi.spyOn(grace, 'afterEnd').mockImplementation((action) => {
+        afterEnd = action;
+        return () => undefined;
+      });
+      t.pull.script = [new HttpErrorResponse({ status: 0 })];
+
+      await t.sync().start();
+
+      // Sem anel vermelho nem "usando o que está no aparelho": o que se tem segue valendo.
+      expect(t.sync().error()).toBeNull();
+      expect(t.sync().pulling()).toBe(false);
+      expect(afterEnd).not.toBeNull();
+
+      graceActive = false;
+      t.pull.script = [page(['a'], 'c1')];
+      afterEnd!();
+      await vi.waitFor(() => expect(t.merged).toEqual([['a']]));
+      expect(t.sync().error()).toBeNull();
+    });
+
+    it('leaving Treino cancels the pull that was waiting for the grace period to end', async () => {
+      const t = setup();
+      const grace = TestBed.inject(ResumeGrace);
+      vi.spyOn(grace, 'active').mockReturnValue(true);
+      const cancel = vi.fn();
+      vi.spyOn(grace, 'afterEnd').mockReturnValue(cancel);
+      t.pull.script = [new HttpErrorResponse({ status: 0 })];
+      await t.sync().start();
+      expect(cancel).not.toHaveBeenCalled();
+
+      TestBed.resetTestingModule();
+
+      expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it('a network failure that repeats after the grace period is an error as always', async () => {
+      const t = setup();
+      vi.spyOn(TestBed.inject(ResumeGrace), 'active').mockReturnValue(false);
+      t.pull.script = [new HttpErrorResponse({ status: 0 })];
+      await t.sync().start();
+      expect(t.sync().error()).toBe('network');
+    });
+
+    it('a server error during the grace period still counts: only "no response" is excused', async () => {
+      const t = setup();
+      vi.spyOn(TestBed.inject(ResumeGrace), 'active').mockReturnValue(true);
+      t.pull.script = [new HttpErrorResponse({ status: 503 })];
+      await t.sync().start();
+      expect(t.sync().error()).toBe('server');
     });
 
     it('tells a sleeping or busy server apart and clears the error on the next success', async () => {

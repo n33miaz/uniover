@@ -1,5 +1,6 @@
 import { ErrorHandler, Injectable, Injector, inject } from '@angular/core';
 import { NavigationError } from '@angular/router';
+import { ClientTelemetry } from '../telemetry/client-telemetry';
 import { PwaUpdateService } from './pwa-update.service';
 
 /**
@@ -63,6 +64,12 @@ export class ChunkAwareErrorHandler extends ErrorHandler {
     if (isChunkLoadError(error)) {
       warnChunkError(error);
       if (this.injector.get(PwaUpdateService).recoverFromStaleShell()) return;
+    }
+    // Só o nome da classe do erro vai para a telemetria privada: a mensagem e a pilha podem trazer dado da pessoa.
+    try {
+      this.injector.get(ClientTelemetry).recordError(error);
+    } catch {
+      // Telemetria nunca atrapalha o tratamento do erro.
     }
     super.handleError(error);
   }

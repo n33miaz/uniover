@@ -10,6 +10,7 @@ import {
   untracked,
 } from '@angular/core';
 import { ConnectivityService } from '../../../../core/connectivity/connectivity.service';
+import { ResumeGrace } from '../../../../core/connectivity/resume-grace';
 import { OfflineQueue } from '../../../../core/offline-queue/offline-queue';
 import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
 import { AccountScope } from '../../../../core/session/account-scope';
@@ -107,6 +108,7 @@ export class TrainingSync {
   private readonly queue = inject(OfflineQueue);
   private readonly account = inject(AccountScope);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly resumeGrace = inject(ResumeGrace);
   private readonly runtime = inject(QUEUE_RUNTIME);
   private readonly doc = inject(DOCUMENT);
 
@@ -159,13 +161,19 @@ export class TrainingSync {
   private waitTimer: ReturnType<typeof setTimeout> | null = null;
   private waitArmed = false;
   private priority: readonly string[] = [];
+  /** A repetição agendada para o fim da carência da volta ao app; sai junto com o puxador (a tela do Treino fechou). */
+  private cancelGraceRetry: (() => void) | null = null;
 
   constructor() {
     this.waitTimer = setTimeout(
       () => this._firstPullWaitExpired.set(true),
       inject(FIRST_PULL_BOOT_MAX_MS),
     );
-    inject(DestroyRef).onDestroy(() => this.clearWaitTimer());
+    inject(DestroyRef).onDestroy(() => {
+      this.clearWaitTimer();
+      this.cancelGraceRetry?.();
+      this.cancelGraceRetry = null;
+    });
     const win = this.doc.defaultView;
     const onOnline = () => void this.request();
     const onVisibility = () => {
@@ -385,7 +393,18 @@ export class TrainingSync {
       this._error.set(null);
       this._lastPullAt.set(this.runtime.now());
     } catch (error) {
-      this._error.set(classify(error));
+      const kind = classify(error);
+      if (kind === 'network' && this.resumeGrace.active()) {
+        // Falha de rede logo ao voltar ao app: o que o aparelho tem segue valendo, sem anel vermelho. A passada refaz quando a
+        // carência acabar; se falhar de novo fora dela, aí sim vira erro.
+        this.cancelGraceRetry?.();
+        this.cancelGraceRetry = this.resumeGrace.afterEnd(() => {
+          this.cancelGraceRetry = null;
+          void this.request();
+        });
+      } else {
+        this._error.set(kind);
+      }
     } finally {
       this.settle();
       this._pulling.set(false);

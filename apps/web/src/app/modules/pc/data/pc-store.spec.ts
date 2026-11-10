@@ -1,8 +1,10 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
+import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import { status } from '../pc-test-kit';
 import { PcApi } from './pc-api';
 import { CANCELLED } from './pc-failure';
@@ -2204,5 +2206,61 @@ describe('PcStore when the account changes', () => {
     finish();
     await dragging;
     expect(store.dragging()).toBe(false);
+  });
+});
+
+describe('PcStore commands without an answer', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('a command that gets no answer for 3 s raises the "O PC não está respondendo" flag, and it goes away with the answer', async () => {
+    const { store, api } = setup();
+    const watch = TestBed.inject(SlowCommandWatch);
+    let release!: () => void;
+    api.click.mockReturnValueOnce(new Promise<void>((resolve) => (release = resolve)));
+    const pending = store.click('LEFT');
+    await vi.advanceTimersByTimeAsync(2_900);
+    expect(watch.isSlow('pc')).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(watch.isSlow('pc')).toBe(true);
+    release();
+    await expect(pending).resolves.toBeNull();
+    expect(watch.isSlow('pc')).toBe(false);
+  });
+
+  it('a command that answers in time never raises it', async () => {
+    const { store } = setup();
+    const watch = TestBed.inject(SlowCommandWatch);
+    await store.click('LEFT');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(watch.isSlow('pc')).toBe(false);
+  });
+
+  it('a command that fails clears the flag and still shows the failure', async () => {
+    const { store, api } = setup();
+    const watch = TestBed.inject(SlowCommandWatch);
+    let fail!: (error: unknown) => void;
+    api.click.mockReturnValueOnce(new Promise<void>((_, reject) => (fail = reject)));
+    const pending = store.click('LEFT');
+    await vi.advanceTimersByTimeAsync(3_100);
+    expect(watch.isSlow('pc')).toBe(true);
+    fail(new HttpErrorResponse({ status: 0 }));
+    const failure = await pending;
+    expect(failure?.kind).toBe('network');
+    expect(watch.isSlow('pc')).toBe(false);
+    expect(store.notice()?.kind).toBe('network');
+  });
+
+  it('a failed command is registered for the owner: module, kind and path, never the message', async () => {
+    const { store, api } = setup();
+    const record = vi.spyOn(TestBed.inject(ClientTelemetry), 'record');
+    api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 504 }));
+    await store.click('LEFT');
+    expect(record).toHaveBeenCalledWith({
+      kind: 'command-failure',
+      module: 'pc',
+      code: 'timeout',
+      transport: 'cloud',
+    });
   });
 });
