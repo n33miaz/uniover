@@ -78,4 +78,65 @@ describe('HoldRepeater', () => {
     expect(action).toHaveBeenCalledTimes(1);
     repeater.stop();
   });
+
+  describe('when the page leaves the screen', () => {
+    const hide = () => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    afterEach(() => Reflect.deleteProperty(document, 'visibilityState'));
+
+    it('stops a running repetition when the page goes to the background, and nothing fires after the return', () => {
+      const action = vi.fn();
+      const repeater = new HoldRepeater(action, 400, 250);
+      repeater.start();
+      vi.advanceTimersByTime(700);
+      expect(action).toHaveBeenCalledTimes(2);
+      hide();
+      expect(repeater.active).toBe(false);
+      vi.advanceTimersByTime(5_000);
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+
+    it('also stops before the first repetition, and on pagehide', () => {
+      const action = vi.fn();
+      const repeater = new HoldRepeater(action, 400, 250);
+      repeater.start();
+      hide();
+      vi.advanceTimersByTime(2_000);
+      expect(action).not.toHaveBeenCalled();
+
+      repeater.start();
+      vi.advanceTimersByTime(500);
+      window.dispatchEvent(new Event('pagehide'));
+      expect(repeater.active).toBe(false);
+      vi.advanceTimersByTime(2_000);
+      expect(action).toHaveBeenCalledTimes(1);
+    });
+
+    it('a page that only became visible again does not stop anything', () => {
+      const action = vi.fn();
+      const repeater = new HoldRepeater(action, 400, 250);
+      repeater.start();
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(repeater.active).toBe(true);
+      repeater.stop();
+    });
+
+    it('leaves no listener behind once stopped', () => {
+      const add = vi.spyOn(document, 'addEventListener');
+      const remove = vi.spyOn(document, 'removeEventListener');
+      const repeater = new HoldRepeater(vi.fn(), 400, 250);
+      repeater.start();
+      repeater.stop();
+      repeater.stop();
+      const added = add.mock.calls.filter(([type]) => type === 'visibilitychange').length;
+      const removed = remove.mock.calls.filter(([type]) => type === 'visibilitychange').length;
+      expect(added).toBe(1);
+      expect(removed).toBe(1);
+      add.mockRestore();
+      remove.mockRestore();
+    });
+  });
 });

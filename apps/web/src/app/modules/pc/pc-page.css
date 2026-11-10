@@ -204,3 +204,8 @@
   border-radius: var(--radius);
   background: var(--a-surface);
 }
+
+/* O aviso de comando sem resposta sobe acima da barra de abas fixa (mesma medida do aviso de falha). */
+app-slow-command-notice {
+  --slow-bottom: calc(var(--pc-tabs, calc(57px + var(--safe-bottom))) + var(--space-3));
+}

@@ -26,6 +26,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
     public DbSet<AgentBeacon> AgentBeacons => Set<AgentBeacon>();
 
+    public DbSet<ClientEvent> ClientEvents => Set<ClientEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -122,6 +124,28 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             e.HasIndex(x => new { x.AgentId, x.EventId }).IsUnique();
             e.HasIndex(x => new { x.AgentId, x.At });
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Telemetria de erros do app: tabela solta (nenhuma chave para outra tabela nem para outro schema); a conta é só um valor (UserId).
+        modelBuilder.Entity<ClientEvent>(e =>
+        {
+            e.ToTable("client_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasMaxLength(ClientEvent.KindMax).IsRequired();
+            e.Property(x => x.Module).HasMaxLength(ClientEvent.ModuleMax).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(ClientEvent.CodeMax);
+            e.Property(x => x.TraceId).HasMaxLength(ClientEvent.TraceIdMax);
+            e.Property(x => x.Transport).HasMaxLength(ClientEvent.TransportMax);
+            e.Property(x => x.Visibility).HasMaxLength(ClientEvent.VisibilityMax).IsRequired();
+            e.Property(x => x.Route).HasMaxLength(ClientEvent.RouteMax).IsRequired();
+            e.Property(x => x.Api).HasMaxLength(ClientEvent.RouteMax);
+            e.Property(x => x.Version).HasMaxLength(ClientEvent.VersionMax);
+
+            // O app reenvia o mesmo lote depois de uma queda de conexão: o id do evento é único.
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => x.At);
+            e.HasIndex(x => new { x.UserId, x.At });
         });
 
         modelBuilder.Entity<AgentBeacon>(e =>

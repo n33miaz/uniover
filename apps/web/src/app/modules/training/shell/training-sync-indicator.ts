@@ -1,5 +1,6 @@
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { TrainingSync } from '../data/sync/training-sync';
 
@@ -18,6 +19,8 @@ export class TrainingSyncIndicator {
   private readonly queue = inject(OfflineQueue);
   private readonly sync = inject(TrainingSync);
   private readonly connectivity = inject(ConnectivityService);
+  /** "Tentar de Novo" que fica sem resposta ganha o aviso "O servidor não está respondendo" na folha do anel. */
+  private readonly slow = inject(SlowCommandWatch);
 
   readonly failed = this.queue.failedCount;
   readonly pending = this.queue.pendingCount;
@@ -78,6 +81,7 @@ export class TrainingSyncIndicator {
   async retry(): Promise<void> {
     if (this.retrying()) return;
     this.retrying.set(true);
+    const done = this.slow.begin('training');
     try {
       const refused = (await this.queue.items()).filter((item) => item.status === 'failed');
       await Promise.all(refused.map((item) => this.queue.retry(item.id)));
@@ -86,6 +90,7 @@ export class TrainingSyncIndicator {
       // As fontes de sincronização guardam o próprio estado de erro, que o anel e a folha já mostram.
     } finally {
       this.retrying.set(false);
+      done();
     }
   }
 

@@ -34,9 +34,14 @@ export async function failWith(
   );
 }
 
-/** Derruba esta rota como se a rede tivesse caído no meio do envio (a página já abriu: sem rede só a partir daqui). */
+/**
+ * Derruba esta rota como se a rede tivesse caído no meio do envio (a página já abriu: sem rede só a partir daqui). A checagem
+ * de `/health/live` cai junto, como cairia de verdade: uma falha isolada com o servidor respondendo não acende o aviso global,
+ * e é a checagem que falha que o acende.
+ */
 export async function dropConnection(page: Page, path: string): Promise<void> {
   await page.route(`**/api/v1/identity${path}`, (route) => route.abort('internetdisconnected'));
+  await page.route('**/health/live', (route) => route.abort('internetdisconnected'));
 }
 
 /**

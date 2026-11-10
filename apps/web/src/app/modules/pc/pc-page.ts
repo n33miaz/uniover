@@ -14,6 +14,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
+import { SlowCommandNotice } from '../../core/connectivity/slow-command-notice';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 import { PcArmed } from './data/pc-armed';
 import { PcDirect } from './data/pc-direct';
@@ -33,7 +34,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 @Component({
   selector: 'app-pc-page',
   host: { 'data-screen-ready': 'pc' },
-  imports: [RouterLink, RouterOutlet, Skeleton, PcSwitcherBar],
+  imports: [RouterLink, RouterOutlet, Skeleton, PcSwitcherBar, SlowCommandNotice],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section
@@ -103,6 +104,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
       @if (store.notice(); as notice) {
         <p class="notice" role="alert" [class.float]="fill()">{{ notice.message }}</p>
       }
+      <app-slow-command-notice [module]="'pc'" />
     </section>
   `,
   styleUrl: './pc-page.css',

@@ -12,6 +12,7 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.ApprovePairing;
 using UniOver.Modules.Devices.Features.Beacons;
+using UniOver.Modules.Devices.Features.ClientEvents;
 using UniOver.Modules.Devices.Features.DenyPairing;
 using UniOver.Modules.Devices.Features.Diagnostics;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
@@ -86,6 +87,7 @@ public static class DevicesModule
         services.AddScoped<AgentBeaconStore>();
         services.AddScoped<AgentDiagnosticsStore>();
         services.AddScoped<AgentDiagnosticsHandler>();
+        services.AddScoped<ClientEventStore>();
         services.AddHostedService<AgentOutageWorker>();
         services.AddHostedService<AgentDiagnosticsPurgeWorker>();
         services.AddSingleton(sp => new PublishedBuild(
@@ -112,7 +114,8 @@ public static class DevicesModule
         services.AddScoped<UniOver.Modules.Identity.Contracts.IUserAccessListener, PcRtcAccessListener>();
         services.AddAuthorizationBuilder()
             .AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure)
-            .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly);
+            .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly)
+            .AddPolicy(ClientEventPolicies.Report, ClientEventPolicies.ConfigureReport);
         return services;
     }
 
@@ -134,6 +137,8 @@ public static class DevicesModule
         group.MapAgentDiagnostics();
         group.MapAgentBeacons();
         group.MapAgentBeacon();
+        group.MapClientEventsReport();
+        group.MapClientEventsList();
         group.MapAgentLogs();
         group.MapAgentMaintenance();
         endpoints.MapPcControl();

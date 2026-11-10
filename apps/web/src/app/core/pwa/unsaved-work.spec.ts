@@ -1,4 +1,4 @@
-import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpClient, HttpContext, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import {
   EnvironmentInjector,
@@ -6,6 +6,7 @@ import {
   runInInjectionContext,
 } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { QUIET_REQUEST } from '../connectivity/quiet-request';
 import {
   AUTO_REQUEST_MAX_AGE_MS,
   REQUEST_MAX_AGE_MS,
@@ -168,6 +169,15 @@ describe('unsavedWorkInterceptor', () => {
     expect(work.reasons()).toEqual(['request']);
     controller.expectOne('/api/v1/x').flush({});
     expect(work.hasUnsaved()).toBe(false);
+  });
+
+  it('does not count the telemetry send as unsaved work', () => {
+    const context = new HttpContext().set(QUIET_REQUEST, true);
+    http.post('/api/v1/devices/client-events', {}, { context }).subscribe();
+    expect(work.hasUnsaved()).toBe(false);
+    controller
+      .expectOne('/api/v1/devices/client-events')
+      .flush(null, { status: 204, statusText: 'ok' });
   });
 
   it('releases the reload when the write fails', () => {

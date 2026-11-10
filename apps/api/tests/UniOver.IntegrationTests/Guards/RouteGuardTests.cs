@@ -56,6 +56,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         // Baliza de partida do agente (anônima, grava uma linha): limite por IP próprio e mais largo que o do pareamento.
         ("POST", "/api/v1/devices/agents/{slug}/beacon", RateLimitPolicies.Beacon),
 
+        // Telemetria de erros do app (autenticada, grava linhas): limite por conta e baixo.
+        ("POST", "/api/v1/devices/client-events", RateLimitPolicies.ClientEvents),
+
         // Canal do agente: cada abertura valida o token de dispositivo, então o limite segura tentativas em massa.
         ("GET", "/api/v1/devices/agents/{agentId}/ws", RateLimitPolicies.Pairing),
 

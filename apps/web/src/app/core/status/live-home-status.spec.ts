@@ -4,6 +4,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { ConnectivityService } from '../connectivity/connectivity.service';
+import { ResumeGrace } from '../connectivity/resume-grace';
 import { SessionState } from '../session/session-state';
 import { StreamEvent, StreamService } from '../sse/stream.service';
 import { HOME_STATUS_CONFIG, HomeStatusConfig, LiveHomeStatus } from './live-home-status';
@@ -405,6 +406,22 @@ describe('LiveHomeStatus', () => {
       advance(30_000);
       answer({ agentOnline: true });
       expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
+    });
+
+    it('is not reported for a call that failed right after coming back to the app: the last state stays', () => {
+      advance(29_000);
+      TestBed.inject(ResumeGrace).begin();
+      advance(1_000);
+      http.expectOne(STATE).error(new ProgressEvent('error'), { status: 0 });
+      expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
+    });
+
+    it('is reported again for a failure after the grace period', () => {
+      TestBed.inject(ResumeGrace).begin();
+      advance(4_100);
+      advance(30_000);
+      http.expectOne(STATE).error(new ProgressEvent('error'), { status: 0 });
+      expect(live.status()).toMatchObject({ agent: 'unknown', serviceDown: true });
     });
 
     it.each([502, 503, 504])('is reported for the %i of the proxy', (status) => {

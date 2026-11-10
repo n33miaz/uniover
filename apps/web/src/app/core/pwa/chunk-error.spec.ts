@@ -6,6 +6,7 @@ import {
   isChunkLoadError,
   recoverFromChunkNavigationError,
 } from './chunk-error';
+import { ClientTelemetry } from '../telemetry/client-telemetry';
 import { PwaUpdateService } from './pwa-update.service';
 
 describe('isChunkLoadError', () => {
@@ -81,6 +82,35 @@ describe('chunk recovery wiring', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     TestBed.inject(ErrorHandler).handleError(new Error('outro erro'));
     expect(recover).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it('registers an app error for the owner with the class name only, never the message', () => {
+    const record = vi.spyOn(TestBed.inject(ClientTelemetry), 'recordError');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = new TypeError('a senha digitada era 1234');
+    TestBed.inject(ErrorHandler).handleError(error);
+    expect(record).toHaveBeenCalledWith(error);
+    logged.mockRestore();
+  });
+
+  it('does not register a missing chunk that the recovery handled', () => {
+    const record = vi.spyOn(TestBed.inject(ClientTelemetry), 'recordError');
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    TestBed.inject(ErrorHandler).handleError(
+      new TypeError('Failed to fetch dynamically imported module: /chunk-A.js'),
+    );
+    expect(record).not.toHaveBeenCalled();
+    warned.mockRestore();
+  });
+
+  it('a telemetry that breaks never changes how the error is handled', () => {
+    vi.spyOn(TestBed.inject(ClientTelemetry), 'recordError').mockImplementation(() => {
+      throw new Error('quebrou');
+    });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(() => TestBed.inject(ErrorHandler).handleError(new Error('x'))).not.toThrow();
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });

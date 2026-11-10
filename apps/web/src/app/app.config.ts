@@ -15,12 +15,14 @@ import { idempotencyInterceptor } from './core/api/idempotency.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
+import { resumeRetryInterceptor } from './core/connectivity/resume-retry.interceptor';
 import { watchKeyboardInset } from './core/layout/keyboard-inset';
 import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
 import { unsavedWorkInterceptor } from './core/pwa/unsaved-work';
+import { telemetryInterceptor } from './core/telemetry/telemetry.interceptor';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -33,9 +35,13 @@ export const appConfig: ApplicationConfig = {
     { provide: ErrorHandler, useClass: ChunkAwareErrorHandler },
     provideHttpClient(
       withFetch(),
+      // A telemetria fica por fora (vê só o resultado final); a repetição silenciosa da volta ao app fica logo dentro da
+      // conectividade, que assim nunca conta uma leitura salva pela repetição como falha.
       // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.
       withInterceptors([
+        telemetryInterceptor,
         connectivityInterceptor,
+        resumeRetryInterceptor,
         unsavedWorkInterceptor,
         authInterceptor,
         idempotencyInterceptor,
