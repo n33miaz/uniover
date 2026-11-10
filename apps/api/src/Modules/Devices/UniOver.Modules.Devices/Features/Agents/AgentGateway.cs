@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Ports;
 using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Devices.Features.Agents;
@@ -29,7 +30,7 @@ internal sealed partial class AgentGateway(
             return Result.Failure(envelope.Error);
         }
 
-        return await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, cancellationToken)
+        return await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, pending: null, cancellationToken, cancellationToken)
             ? Result.Success()
             : Result.Failure(AgentErrors.Offline);
     }
@@ -50,7 +51,32 @@ internal sealed partial class AgentGateway(
 
         // A espera entra no dicionário antes do envio: o agente pode responder antes do SendAsync voltar.
         using var pending = correlator.Expect(agentId, commandId);
-        if (!await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, cancellationToken))
+
+        // Se a espera falhar antes de o comando sair (o agente caiu de vez), a entrega para: o comando nunca sai depois de a API
+        // já ter respondido falha, senão a pessoa repetiria uma ação que acabaria sendo executada duas vezes.
+        using var delivery = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _ = pending.Reply.ContinueWith(
+            static (reply, state) =>
+            {
+                _ = reply.Exception;
+                if (reply.IsFaulted)
+                {
+                    try
+                    {
+                        ((CancellationTokenSource)state!).Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // A requisição já terminou: nada a cancelar.
+                    }
+                }
+            },
+            delivery,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        if (!await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, pending, delivery.Token, cancellationToken))
         {
             return Result.Failure<AgentReply>(AgentErrors.Offline);
         }
@@ -88,25 +114,55 @@ internal sealed partial class AgentGateway(
         return created;
     }
 
-    private async Task<bool> DeliverAsync(string agentId, byte[] json, AgentDelivery delivery, CancellationToken cancellationToken)
+    /// <param name="pending">A espera do comando (pedido/resposta); nula no envio sem resposta. Só se envia se ela ainda não falhou.</param>
+    /// <param name="cancellationToken">Cancela a espera por sessão: o do chamador e o da falha da espera.</param>
+    /// <param name="callerToken">O do chamador: quando é ele que cancela, o cancelamento sobe como sempre.</param>
+    private async Task<bool> DeliverAsync(
+        string agentId,
+        byte[] json,
+        AgentDelivery delivery,
+        IPendingReply? pending,
+        CancellationToken cancellationToken,
+        CancellationToken callerToken)
     {
-        if (connections.TryGet(agentId, out var connected) && await connected.SendAsync(json, cancellationToken))
+        if (connections.TryGet(agentId, out var connected)
+            && (pending is null || pending.TryBeginSend(connected))
+            && await connected.SendAsync(json, cancellationToken))
         {
             return true;
         }
 
-        // Quem age no PC ao vivo (mouse, teclado, energia) nunca espera a volta do agente: o que fosse enviado depois da
-        // queda chegaria junto, mais tarde, e cairia em outra janela.
+        // Quem age no PC ao vivo (mouse, teclado, energia) só espera uma volta MUITO curta e só se o agente acabou de cair
+        // (a presença ainda está na graça): a troca de instância na publicação o faz reconectar em menos de um segundo, e o
+        // comando que coincidiu com ela não deve falhar. Passado o prazo curto o que fosse enviado depois chegaria junto,
+        // mais tarde, e cairia em outra janela: falha como "reconectando". Agente que já estava fora do ar falha na hora.
+        var wait = options.Value.ReconnectGrace;
         if (delivery == AgentDelivery.Immediate)
         {
-            return false;
+            if (!connections.IsInGrace(agentId))
+            {
+                return false;
+            }
+
+            wait = options.Value.ImmediateReconnectWait;
         }
 
         // Deploys e quedas breves do socket levam o agente a reconectar em cerca de dois segundos. Esperar esta
         // janela evita responder `agent_offline` para o comando que coincidiu com a troca, sem reter filas longas.
-        var session = await connections.WaitForSessionAsync(
-            agentId, options.Value.ReconnectGrace, time, cancellationToken);
-        return session is not null && await session.SendAsync(json, cancellationToken);
+        IAgentSession? session;
+        try
+        {
+            session = await connections.WaitForSessionAsync(agentId, wait, time, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
+        {
+            // A espera do comando falhou enquanto ele aguardava uma sessão: não há mais a quem entregar.
+            return false;
+        }
+
+        return session is not null
+            && (pending is null || pending.TryBeginSend(session))
+            && await session.SendAsync(json, cancellationToken);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Comando {Type} ao agente {AgentId} ({CommandId}) sem resposta no prazo; resposta tardia será descartada.")]

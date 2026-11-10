@@ -59,6 +59,13 @@ public static class SseResults
             try
             {
                 await response.StartAsync(token);
+                if (options.RetryMilliseconds > 0)
+                {
+                    // Antes de qualquer evento: o navegador guarda o valor para a próxima reabertura.
+                    await response.WriteAsync($"retry: {options.RetryMilliseconds}\n\n", Utf8, token);
+                    await response.Body.FlushAsync(token);
+                }
+
                 await Pump(response, token);
             }
             catch (OperationCanceledException)

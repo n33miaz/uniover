@@ -23,6 +23,7 @@ from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
     ServerRestarting,
+    ServerRestartNow,
     TransportError,
 )
 
@@ -130,6 +131,9 @@ async def test_receives_raw_text_frames() -> None:
         (4403, "revoked", CredentialRejected),
         (1008, "revoked", CredentialRejected),
         (4403, "", CredentialRejected),
+        (4411, "server-restart", ServerRestartNow),
+        (4411, "", ServerRestartNow),
+        (1000, "server-restart", ServerRestartNow),
         (1012, "reinicio", ServerRestarting),
         (1001, "going away", ServerRestarting),
         (1011, "erro", None),

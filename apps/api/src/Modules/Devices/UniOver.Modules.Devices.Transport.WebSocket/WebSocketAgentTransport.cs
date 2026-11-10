@@ -55,17 +55,46 @@ internal sealed class WebSocketAgentTransport(
             return;
         }
 
-        // A requisição dura o que a sessão durar; o desligamento da aplicação também a encerra. Quem descarta a
-        // sessão (e fecha o socket) é o núcleo, ao terminar a condução dela.
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            context.RequestAborted, lifetime.ApplicationStopping);
+        // A requisição dura o que a sessão durar. Quem descarta a sessão (e fecha o socket) é o núcleo, ao terminar a condução
+        // dela; o desligamento da aplicação NÃO fecha nada aqui: o hub decide entre o 4411 (agente que o entende, depois de
+        // drenar os comandos em curso) e o 1012, e um fechamento antecipado do endpoint tiraria o 4411 do agente.
+        using var done = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        var fallback = CloseIfNobodyDoesAfterStoppingAsync(session, done.Token);
         try
         {
-            await session.Completion.WaitAsync(linked.Token);
+            await session.Completion.WaitAsync(context.RequestAborted);
         }
         catch (OperationCanceledException)
         {
             await session.CloseAsync(AgentCloseReason.Shutdown, CancellationToken.None);
         }
+        finally
+        {
+            await done.CancelAsync();
+            await fallback;
+        }
+    }
+
+    /// <summary>
+    /// Rede de segurança: depois do aviso de parada e do prazo que o hub tem para drenar e fechar, uma sessão que ninguém conduz
+    /// (entregue ao transporte e nunca lida, porque o serviço parou) é fechada aqui com o 1012, para a requisição não ficar
+    /// pendurada até o host derrubá-la.
+    /// </summary>
+    private async Task CloseIfNobodyDoesAfterStoppingAsync(WebSocketAgentSession session, CancellationToken done)
+    {
+        var settings = options.Value;
+        var stopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = lifetime.ApplicationStopping.Register(() => stopping.TrySetResult());
+        try
+        {
+            await stopping.Task.WaitAsync(done);
+            await Task.Delay(settings.DrainWait + (settings.CloseGrace * 3) + TimeSpan.FromSeconds(1), done);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await session.CloseAsync(AgentCloseReason.Shutdown, CancellationToken.None);
     }
 }

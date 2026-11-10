@@ -2,6 +2,7 @@
 
 export type AgentHelloV1BodyCapabilitiesItem =
   | 'transport.keepalive.v1'
+  | 'transport.restart.v1'
   | 'agent.logs.v1'
   | 'agent.maintenance.v1'
   | 'agent.diagnostics.v1'

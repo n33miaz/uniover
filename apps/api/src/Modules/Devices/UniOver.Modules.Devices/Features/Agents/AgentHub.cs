@@ -36,6 +36,7 @@ internal sealed partial class AgentHub(
 {
     private const string InvalidMessageText = "A mensagem não cumpre o contrato.";
     private const string KeepAliveCapability = "transport.keepalive.v1";
+    private const string RestartCapability = "transport.restart.v1";
     private const string AgentKeepAliveType = "agent.keepalive.v1";
     private const string ApiKeepAliveType = "api.keepalive.v1";
 
@@ -45,6 +46,15 @@ internal sealed partial class AgentHub(
 
         var agentId = session.AgentId;
         var closeReason = AgentCloseReason.Normal;
+
+        // A API está parando: uma sessão nova seria derrubada em seguida. Quem chega agora (o agente que acabou de receber o
+        // 4411 e ainda alcançou esta instância) é mandado de volta com o código de sempre e reconecta na instância nova.
+        if (connections.IsDraining)
+        {
+            await CloseQuietlyAsync(session, AgentCloseReason.Shutdown);
+            await session.DisposeAsync();
+            return;
+        }
 
         var connectedAt = time.GetUtcNow();
         IAgentSession? previous;
@@ -59,6 +69,8 @@ internal sealed partial class AgentHub(
             await session.DisposeAsync();
             return;
         }
+        // Voltou: o resultado de um comando que ficou esperando na queda ainda pode chegar por esta sessão.
+        correlator.Release(agentId);
         await persistedPresence.RecordConnectedAsync(agentId, connectedAt, cancellationToken);
         using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var helloAccepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -112,13 +124,63 @@ internal sealed partial class AgentHub(
             var disconnectedAt = time.GetUtcNow();
             if (connections.Detach(session, disconnectedAt))
             {
-                correlator.FailAll(agentId);
+                // Agente que costuma voltar em segundos (graça de presença): os comandos já enviados esperam a volta por um prazo
+                // curto em vez de falhar na hora. Revogado, ou sem graça, não volta: falham já.
+                if (connections.IsInGrace(agentId))
+                {
+                    correlator.Hold(agentId, session);
+                }
+                else
+                {
+                    correlator.FailAll(agentId);
+                }
+
                 await persistedPresence.RecordDisconnectedAsync(agentId, disconnectedAt, CancellationToken.None);
             }
 
             LogDisconnected(agentId, closeReason);
             await CloseQuietlyAsync(session, closeReason);
             await session.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Chamado no <c>ApplicationStopping</c> (SIGTERM da troca de instância): as sessões que declararam
+    /// <c>transport.restart.v1</c> são fechadas com o 4411 "reconecte agora", depois de esperar (por pouco) os comandos em curso
+    /// terminarem, porque o resultado de um comando só chega pela conexão que o enviou. Quem não declarou a capacidade segue
+    /// como sempre: recebe o 1012 quando o serviço de fato parar. Daqui em diante a instância recusa sessões novas.
+    /// </summary>
+    public async Task NotifyServerRestartAsync(CancellationToken cancellationToken)
+    {
+        var sessions = connections.BeginDraining();
+        var wait = options.Value.DrainWait;
+        if (wait > TimeSpan.Zero && !await WaitForPendingRepliesAsync(wait, cancellationToken))
+        {
+            LogDrainTimedOut();
+        }
+
+        var closing = new List<Task>();
+        foreach (var session in sessions)
+        {
+            if (connections.Supports(session, RestartCapability))
+            {
+                closing.Add(CloseQuietlyAsync(session, AgentCloseReason.ServerRestart));
+            }
+        }
+
+        await Task.WhenAll(closing);
+    }
+
+    private async Task<bool> WaitForPendingRepliesAsync(TimeSpan wait, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await correlator.WaitForIdleAsync(wait, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // O desligamento passou da paciência do host: segue direto para avisar os agentes.
+            return false;
         }
     }
 
@@ -582,6 +644,9 @@ internal sealed partial class AgentHub(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Agente {AgentId} reconectou: a conexão anterior foi substituída.")]
     private partial void LogReplaced(string agentId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Desligamento: ainda havia comandos esperando resposta; os agentes foram avisados mesmo assim.")]
+    private partial void LogDrainTimedOut();
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Mensagem do agente {AgentId} recusada: tipo {Type}, motivo {Reason}.")]
     private partial void LogRefused(string agentId, string type, string reason);

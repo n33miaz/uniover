@@ -18,6 +18,12 @@ public enum AgentCloseReason
     /// <summary>A API está parando.</summary>
     Shutdown,
 
+    /// <summary>
+    /// A API está trocando de instância (publicação) e o agente deve reconectar já. Só para quem declarou a capacidade
+    /// <c>transport.restart.v1</c>; os demais recebem <see cref="Shutdown"/>.
+    /// </summary>
+    ServerRestart,
+
     /// <summary>Falha interna ao tratar a sessão.</summary>
     InternalError,
 }

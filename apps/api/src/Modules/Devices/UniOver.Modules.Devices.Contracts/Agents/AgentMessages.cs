@@ -20,8 +20,9 @@ public enum AgentDelivery
     WaitForReconnect = 0,
 
     /// <summary>
-    /// Só entrega se há sessão agora; senão falha na hora com <c>agent_offline</c>. É o de quem age no PC ao vivo (mouse,
-    /// teclado, energia): um comando que espera e chega depois, junto com os outros, cai em outra janela.
+    /// Só entrega se há sessão agora ou se ela volta em poucos segundos (<c>ImmediateReconnectWaitSeconds</c>, e só para o agente
+    /// que acabou de cair); senão falha com <c>agent_offline</c>, na hora quando o agente já estava fora do ar. É o de quem age no
+    /// PC ao vivo (mouse, teclado, energia): um comando que espera muito e chega depois, junto com os outros, cai em outra janela.
     /// </summary>
     Immediate = 1,
 }
