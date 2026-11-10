@@ -8,7 +8,7 @@ from uniover_agent.composition.pc import PcSetup, build_pc
 from uniover_agent.config import Settings
 from uniover_agent.core import PC_RTC_CAPABILITY, EnvelopeFactory, EnvelopeGate
 
-from .support import AGENT_ID
+from .support import AGENT_ID, FakeAudio
 from .test_pc_composition import FakeInput, FakeLauncher, FakePower, hello_capabilities
 
 
@@ -22,6 +22,7 @@ def build(settings: Settings, *, available: bool = True, gate: bool = True) -> P
         pc_input=FakeInput(),
         power=FakePower(),
         launcher=FakeLauncher(),
+        audio=FakeAudio(),
         gate=EnvelopeGate(AGENT_ID) if gate else None,
         agent_id=AGENT_ID,
         direct_available=lambda: available,

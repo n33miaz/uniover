@@ -52,7 +52,9 @@ export type DirectCommandType =
   | 'pc.key.v2'
   | 'pc.text.v1'
   | 'pc.text.v2'
-  | 'pc.media.v1';
+  | 'pc.media.v1'
+  | 'pc.pointer.zoom.v1'
+  | 'pc.volume.v1';
 
 /**
  * As mensagens v2 que só um agente que as lista no `ready` entende no canal (`caps`). Um agente anterior não manda o campo:
@@ -61,6 +63,8 @@ export type DirectCommandType =
 const CHANNEL_LISTED_TYPES: ReadonlySet<DirectCommandType> = new Set<DirectCommandType>([
   'pc.click.v2',
   'pc.text.v2',
+  'pc.pointer.zoom.v1',
+  'pc.volume.v1',
 ]);
 
 /** O comando nem saiu (o canal não está aberto agora): quem chama segue pela nuvem, sem risco de repetir. */

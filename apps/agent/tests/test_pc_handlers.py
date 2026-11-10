@@ -39,6 +39,9 @@ class FakeInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self._record("scroll", horizontal, vertical)
 
+    def zoom(self, steps: int) -> None:
+        self._record("zoom", steps)
+
     def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
         if modifiers:
             self._record("click", button, action, tuple(modifiers))

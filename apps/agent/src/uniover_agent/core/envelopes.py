@@ -270,6 +270,11 @@ class EnvelopeFactory:
         }
         return self._build("pc.apps.v1", body, None)
 
+    def pc_volume_state(self, level: int, muted: bool) -> dict[str, Any]:
+        """`pc.volume.state.v1`: o volume de agora do PC (nível de 0 a 100 e mudo)."""
+        body: dict[str, Any] = {"level": level, "muted": muted, "at": self._utc_now()}
+        return self._build("pc.volume.state.v1", body, None)
+
     def pc_rtc_answer(
         self, session_id: str, sdp: str, correlation_id: str | None
     ) -> dict[str, Any]:

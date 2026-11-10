@@ -58,6 +58,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.pointer.v1</c>.</summary>
     public const string PcPointerV1 = "pc.pointer.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.pointer.zoom.v1</c>.</summary>
+    public const string PcPointerZoomV1 = "pc.pointer.zoom.v1";
+
     /// <summary>Tipo de mensagem <c>pc.power.v1</c>.</summary>
     public const string PcPowerV1 = "pc.power.v1";
 
@@ -81,6 +84,12 @@ public static class AgentMessageTypes
 
     /// <summary>Tipo de mensagem <c>pc.text.v2</c>.</summary>
     public const string PcTextV2 = "pc.text.v2";
+
+    /// <summary>Tipo de mensagem <c>pc.volume.state.v1</c>.</summary>
+    public const string PcVolumeStateV1 = "pc.volume.state.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.volume.v1</c>.</summary>
+    public const string PcVolumeV1 = "pc.volume.v1";
 
     /// <summary>Tipo de mensagem <c>tv.adb.rebind.v1</c>.</summary>
     public const string TvAdbRebindV1 = "tv.adb.rebind.v1";
@@ -180,6 +189,7 @@ public static class AgentMessageTypes
         PcKeyV2,
         PcMediaV1,
         PcPointerV1,
+        PcPointerZoomV1,
         PcPowerV1,
         PcRtcAnswerV1,
         PcRtcCandidateV1,
@@ -188,6 +198,8 @@ public static class AgentMessageTypes
         PcRtcOfferV1,
         PcTextV1,
         PcTextV2,
+        PcVolumeStateV1,
+        PcVolumeV1,
         TvAdbRebindV1,
         TvAppLaunchV1,
         TvAppsRefreshV1,

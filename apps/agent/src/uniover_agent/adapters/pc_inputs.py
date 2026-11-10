@@ -30,6 +30,9 @@ MAX_KEY_REPEAT: Final = 50
 # Quantos Backspaces uma só edição de texto aperta (o contrato do `pc.text.v2` limita; isto protege
 # o adaptador).
 MAX_ERASE: Final = 200
+# O maior zoom de uma mensagem (o contrato do `pc.pointer.zoom.v1` limita; isto protege o
+# adaptador).
+MAX_ZOOM_STEPS: Final = 12
 # Limite de segurança de um único toque do sistema: o contrato já limita, isto protege o adaptador.
 MAX_POINTER: Final = 2000
 MAX_SCROLL: Final = 1200
@@ -156,6 +159,28 @@ def scroll_inputs(horizontal: int, vertical: int) -> list[RawInput]:
     if horizontal:
         inputs.append(RawInput("mouse", MOUSE_HWHEEL, data=_clamp(horizontal, MAX_SCROLL)))
     return inputs
+
+
+def zoom_inputs(steps: int, already_held: Collection[int] = ()) -> list[RawInput]:
+    """Zoom: o Ctrl apertado, `steps` cliques de roda (um evento de 120 cada, positivo aproxima) e
+    o Ctrl solto, tudo num lote só.
+
+    Um clique de roda por evento (e não um só com o valor somado): os programas que dão um passo
+    de zoom por clique veem os `steps` que a pinça pediu. O Ctrl que o lote aperta é solto no mesmo
+    lote; se só parte dele entrar no sistema, quem envia solta o que ficou apertado
+    (`dangling_key_ups`). `already_held` são os códigos virtuais já apertados (o Ctrl segurado por
+    um `key` com `DOWN`): então a roda gira com ele, e ele não é apertado de novo nem solto no fim.
+    """
+    if steps == 0:
+        raise UnknownKey("zoom sem passos")
+    count = _clamp(steps, MAX_ZOOM_STEPS)
+    wheel = [RawInput("mouse", MOUSE_WHEEL, data=WHEEL_DELTA if count > 0 else -WHEEL_DELTA)] * abs(
+        count
+    )
+    ctrl = _MODIFIERS["CTRL"]
+    if ctrl in already_held:
+        return wheel
+    return [_key(ctrl), *wheel, _key(ctrl, up=True)]
 
 
 def click_inputs(
@@ -373,6 +398,7 @@ __all__ = [
     "KEY_UP",
     "MAX_ERASE",
     "MAX_KEY_REPEAT",
+    "MAX_ZOOM_STEPS",
     "MOUSE_HWHEEL",
     "MOUSE_MOVE",
     "MOUSE_WHEEL",
@@ -391,4 +417,5 @@ __all__ = [
     "scroll_inputs",
     "text_inputs",
     "virtual_key",
+    "zoom_inputs",
 ]

@@ -15,6 +15,8 @@ from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
+from uniover_agent.ports.pc import VolumeState
+
 AGENT_ID = "pc-casa"
 # O que uma TV Android declara no `hello` além do tipo e do `tv.remote`: desligar com leitura e as
 # teclas opcionais, o pareamento pelo app e a procura de TVs na rede.
@@ -54,6 +56,33 @@ def dump(data: dict[str, Any]) -> str:
 
 
 Script = Callable[[ServerConnection], Awaitable[None]]
+
+
+class FakeAudio:
+    """O áudio do PC de mentira: nenhum teste mexe no volume de verdade."""
+
+    def __init__(self, level: int = 40, muted: bool = False) -> None:
+        self.level = level
+        self.muted = muted
+        self.calls: list[tuple[str, int | bool]] = []
+        self.failure: Exception | None = None
+
+    def read(self) -> VolumeState:
+        if self.failure is not None:
+            raise self.failure
+        return VolumeState(self.level, self.muted)
+
+    def set_level(self, level: int) -> None:
+        if self.failure is not None:
+            raise self.failure
+        self.calls.append(("level", level))
+        self.level = level
+
+    def set_muted(self, muted: bool) -> None:
+        if self.failure is not None:
+            raise self.failure
+        self.calls.append(("muted", muted))
+        self.muted = muted
 
 
 class FakeApi:

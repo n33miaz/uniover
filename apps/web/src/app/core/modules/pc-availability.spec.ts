@@ -13,7 +13,26 @@ describe('parsePcStatus', () => {
       online: false,
       apps: [{ id: 'notas', label: 'Notas' }],
       capabilities: [],
+      volume: null,
     });
+  });
+
+  it('reads the volume the agent announced, and nothing else counts as a reading', () => {
+    const read = (volume: unknown) =>
+      parsePcStatus({ available: true, online: true, apps: [], volume })?.volume;
+    expect(read({ level: 40, muted: false })).toEqual({ level: 40, muted: false });
+    expect(read({ level: 0, muted: true })).toEqual({ level: 0, muted: true });
+    expect(read({ level: 100, muted: false })).toEqual({ level: 100, muted: false });
+    // sem leitura, ou uma leitura que não é um nível de 0 a 100 e um mudo: nunca um número inventado
+    expect(read(null)).toBeNull();
+    expect(read(undefined)).toBeNull();
+    expect(read('40')).toBeNull();
+    expect(read({ level: 101, muted: false })).toBeNull();
+    expect(read({ level: -1, muted: false })).toBeNull();
+    expect(read({ level: 40.5, muted: false })).toBeNull();
+    expect(read({ level: '40', muted: false })).toBeNull();
+    expect(read({ level: 40 })).toBeNull();
+    expect(read({ level: 40, muted: 'no' })).toBeNull();
   });
 
   it('reads the optional capabilities of the agent, ignoring anything that is not text', () => {

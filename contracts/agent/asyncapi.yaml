@@ -135,6 +135,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.pointer.v1.schema.json'
+      pcPointerZoom:
+        name: pc.pointer.zoom.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.pointer.zoom.v1.schema.json'
+      pcVolume:
+        name: pc.volume.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.volume.v1.schema.json'
       pcClick:
         name: pc.click.v1
         contentType: application/json
@@ -276,6 +286,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.apps.v1.schema.json'
+      pcVolumeState:
+        name: pc.volume.state.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.volume.state.v1.schema.json'
       pcRtcAnswer:
         name: pc.rtc.answer.v1
         contentType: application/json
@@ -530,6 +545,20 @@ operations:
     summary: A API envia o movimento do mouse e a rolagem já somados pelo app.
     messages:
       - $ref: '#/channels/agentCommands/messages/pcPointer'
+  sendPcPointerZoom:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia o zoom da pinça (Ctrl apertado e a roda do mouse).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcPointerZoom'
+  sendPcVolume:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia o volume absoluto do PC (nível de 0 a 100 e mudo).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcVolume'
   sendPcClick:
     action: send
     channel:
@@ -581,6 +610,13 @@ operations:
     summary: A API recebe a lista de apps favoritos que o PC deixa abrir pelo app.
     messages:
       - $ref: '#/channels/agentEvents/messages/pcApps'
+  receivePcVolumeState:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o volume de agora do PC (nível e mudo).
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcVolumeState'
   sendPcRtcOffer:
     action: send
     channel:

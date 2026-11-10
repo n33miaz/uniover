@@ -305,6 +305,7 @@ export class MousePage {
     dragStart: () => this.startHold(),
     dragEnd: () => this.endHold(),
     scrollEnd: (vx, vy) => this.inertia.start(vx, vy),
+    zoom: (steps) => this.store.zoomPointer(steps),
   });
 
   constructor() {
@@ -326,6 +327,8 @@ export class MousePage {
       this.gesture.configure({
         doubleTapDrag: this.prefs.doubleTapDrag(),
         middleClick: this.prefs.middleClick(),
+        // A pinça só vale com um PC que entende o zoom: sem ele os dois dedos se comportam como sempre (rolam, ou clicam).
+        pinchZoom: this.prefs.pinchZoom() && this.store.supportsZoom(),
       }),
     );
     // Com outra conta, ou sem PC, a rolagem que seguia sozinha para.

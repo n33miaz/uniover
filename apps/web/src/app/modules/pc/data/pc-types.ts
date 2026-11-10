@@ -286,3 +286,30 @@ export function clampClickGap(gapMs: number | undefined): number {
 export function clickNeedsV2(options: PcClickOptions = {}): boolean {
   return (options.modifiers?.length ?? 0) > 0 || clampClickGap(options.gapMs) > 0;
 }
+
+/** A capacidade que o PC declara quando o agente entende `pc.pointer.zoom.v1` (o zoom da pinça: Ctrl apertado e a roda do mouse). */
+export const PC_ZOOM_CAPABILITY = 'pc.pointer.zoom.v1';
+
+/** A capacidade que o PC declara quando o agente entende `pc.volume.v1` (volume absoluto) e manda o nível de agora. */
+export const PC_VOLUME_CAPABILITY = 'pc.volume.v1';
+
+/** O maior zoom de um pedido, em cliques de roda (o da API e do agente). */
+export const PC_ZOOM_MAX_STEPS = 12;
+
+/** O zoom que vai ao pedido: inteiro de -12 a 12 (o que passar é cortado); `0` quando não é número ou arredonda para nada. */
+export function clampZoomSteps(steps: number): number {
+  if (!Number.isFinite(steps)) return 0;
+  return Math.max(-PC_ZOOM_MAX_STEPS, Math.min(PC_ZOOM_MAX_STEPS, Math.trunc(steps)));
+}
+
+/** O que um pedido de volume absoluto leva: o nível (0 a 100) e/ou o mudo; pelo menos um. */
+export interface PcVolumeChange {
+  readonly level?: number;
+  readonly muted?: boolean;
+}
+
+/** O nível que vai ao pedido: inteiro de 0 a 100 (o que passar é cortado; o que não for número vale 0). */
+export function clampVolumeLevel(level: number): number {
+  if (!Number.isFinite(level)) return 0;
+  return Math.max(0, Math.min(100, Math.round(level)));
+}

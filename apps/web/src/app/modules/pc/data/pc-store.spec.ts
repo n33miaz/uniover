@@ -27,6 +27,7 @@ function setup(initial: PcStatus | null = status()) {
     status: current.asReadonly(),
     apps: () => current()?.apps ?? [],
     capabilities: () => current()?.capabilities ?? [],
+    volume: () => current()?.volume ?? null,
     refresh: vi.fn(() => Promise.resolve(true)),
   };
   const api = {
@@ -39,6 +40,10 @@ function setup(initial: PcStatus | null = status()) {
     media: vi.fn(() => Promise.resolve()),
     power: vi.fn(() => Promise.resolve()),
     launch: vi.fn(() => Promise.resolve()),
+    zoom: vi.fn<(steps: number) => Promise<void>>(() => Promise.resolve()),
+    volume: vi.fn<(change: { level?: number; muted?: boolean }) => Promise<void>>(() =>
+      Promise.resolve(),
+    ),
   };
   TestBed.configureTestingModule({
     providers: [

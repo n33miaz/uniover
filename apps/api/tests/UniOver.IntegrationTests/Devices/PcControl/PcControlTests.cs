@@ -26,6 +26,8 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private const string KeyV2 = "pc.key.v2";
     private const string TextV2 = "pc.text.v2";
     private const string ClickV2 = "pc.click.v2";
+    private const string Zoom = "pc.pointer.zoom.v1";
+    private const string Volume = "pc.volume.v1";
 
     private static readonly string[] Ctrl = ["CTRL"];
     private static readonly string[] CtrlShift = ["CTRL", "SHIFT"];
@@ -85,6 +87,27 @@ public sealed class PcControlTests(PostgresFixture postgres)
         }
 
         pending.IsCompleted.Should().BeTrue("o prazo do comando já devia ter estourado");
+    }
+
+    private static Task AnnounceVolumeAsync(FakeAgent agent, int level, bool muted) =>
+        agent.SendTextAsync(agent.Envelope("pc.volume.state.v1", new JsonObject
+        {
+            ["level"] = level,
+            ["muted"] = muted,
+            ["at"] = "2026-11-09T14:00:00Z",
+        }));
+
+    private static async Task<(int Level, bool Muted)?> VolumeOfStatusAsync(TransportApp app)
+    {
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        var volume = (await DevicesApp.JsonAsync(response)).GetProperty("volume");
+        return volume.ValueKind == JsonValueKind.Null ? null : (volume.GetProperty("level").GetInt32(), volume.GetProperty("muted").GetBoolean());
+    }
+
+    private static async Task<bool> StatusOnlineAsync(TransportApp app)
+    {
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        return (await DevicesApp.JsonAsync(response)).GetProperty("online").GetBoolean();
     }
 
     // ---- estado ----
@@ -155,6 +178,56 @@ public sealed class PcControlTests(PostgresFixture postgres)
         var body = await DevicesApp.JsonAsync(response);
 
         body.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).Should().Equal(KeyV2);
+    }
+
+    [Fact]
+    public async Task Status_HasNoVolume_UntilTheAgentAnnouncesIt_AndThenShowsTheLastOne()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Volume);
+
+        using var before = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        (await DevicesApp.JsonAsync(before)).GetProperty("volume").ValueKind.Should().Be(JsonValueKind.Null, "sem leitura nada se afirma");
+
+        await AnnounceVolumeAsync(agent, 40, false);
+        await TransportApp.WaitUntilAsync(async () => await VolumeOfStatusAsync(app) is not null, "volume recebido");
+        (await VolumeOfStatusAsync(app))!.Value.Should().Be((40, false));
+
+        await AnnounceVolumeAsync(agent, 65, true);
+        await TransportApp.WaitUntilAsync(async () => await VolumeOfStatusAsync(app) is (65, true), "volume novo recebido");
+    }
+
+    [Fact]
+    public async Task Status_NeverShowsAVolumeOfAnAgentThatIsOffline()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Volume);
+        await AnnounceVolumeAsync(agent, 40, false);
+        await TransportApp.WaitUntilAsync(async () => await VolumeOfStatusAsync(app) is not null, "volume recebido");
+
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(async () => !await StatusOnlineAsync(app), "agente desconectado");
+
+        (await VolumeOfStatusAsync(app)).Should().BeNull("o nível de antes da queda não é leitura de agora");
+    }
+
+    [Fact]
+    public async Task Status_NeverShowsTheVolumeOfAPreviousSession_UntilTheReconnectedAgentAnnouncesAgain()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var first = await ConnectAsync(app, "transport.keepalive.v1", Capability, Volume);
+        await AnnounceVolumeAsync(first, 20, false);
+        await TransportApp.WaitUntilAsync(async () => await VolumeOfStatusAsync(app) is (20, false), "volume da primeira sessão");
+
+        await first.DisposeAsync();
+        await TransportApp.WaitUntilAsync(async () => !await StatusOnlineAsync(app), "agente desconectado");
+
+        await using var second = await ConnectAsync(app, "transport.keepalive.v1", Capability, Volume);
+        await TransportApp.WaitUntilAsync(async () => await StatusOnlineAsync(app), "agente de volta");
+        (await VolumeOfStatusAsync(app)).Should().BeNull("o 20 era da sessão anterior: o PC pode ter mudado de volume enquanto caiu");
+
+        await AnnounceVolumeAsync(second, 80, false);
+        await TransportApp.WaitUntilAsync(async () => await VolumeOfStatusAsync(app) is (80, false), "volume da sessão nova");
     }
 
     [Fact]
@@ -774,6 +847,158 @@ public sealed class PcControlTests(PostgresFixture postgres)
         using var nextResponse = await Within(next);
         nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
         command.GetProperty("type").GetString().Should().Be("pc.click.v1");
+    }
+
+    [Fact]
+    public async Task Zoom_GoesAsItsOwnMessage_ToAnAgentThatDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, Zoom);
+
+        var posting = PostAsync(app, "zoom", new { steps = -3 });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(posting);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.pointer.zoom.v1");
+        SameJson(command.GetProperty("body"), "{\"steps\":-3}");
+    }
+
+    [Fact]
+    public async Task Volume_GoesAsItsOwnMessage_ToAnAgentThatDeclaredIt_WithOnlyWhatWasAsked()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Volume);
+
+        var level = PostAsync(app, "volume", new { level = 35 });
+        var levelCommand = await AnswerAsync(agent);
+        using var levelResponse = await Within(level);
+        var both = PostAsync(app, "volume", new { level = 0, muted = true });
+        var bothCommand = await AnswerAsync(agent);
+        using var bothResponse = await Within(both);
+
+        new[] { levelResponse, bothResponse }.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+        levelCommand.GetProperty("type").GetString().Should().Be("pc.volume.v1");
+        SameJson(levelCommand.GetProperty("body"), "{\"level\":35}");
+        SameJson(bothCommand.GetProperty("body"), "{\"level\":0,\"muted\":true}");
+    }
+
+    [Theory]
+    [InlineData("zoom", "{\"steps\":2}")]
+    [InlineData("volume", "{\"level\":20}")]
+    [InlineData("volume", "{\"muted\":true}")]
+    public async Task ZoomAndVolume_Return409Unsupported_ForAnAgentThatDidNotDeclareThem_AndNothingIsSent(string path, string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        // O agente declara só o que tinha antes: o esquema fechado dele recusaria a mensagem nova, e o toque ficaria morto.
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2, ClickV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, path, JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+
+        // Nada chegou ao agente: o próximo comando que ele recebe é o de uma tecla comum.
+        var next = PostAsync(app, "key", new { key = "A" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+    }
+
+    [Theory]
+    [InlineData("zoom", "{\"steps\":2}")]
+    [InlineData("volume", "{\"level\":20}")]
+    public async Task ZoomAndVolume_JustAfterTheHelloWithoutThem_AskToTryAgain_NotToUpdateTheAgent(string path, string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+
+        using var response = await PostAsync(app, path, JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-reconnecting");
+    }
+
+    [Fact]
+    public async Task ZoomAndVolume_CarryTheirSequenceAndEpoch_OnlyToAnAgentThatDeclaresTheDirectChannel()
+    {
+        const string page = "3fa9c10d7be2465a";
+        await using (var app = await TransportApp.StartAsync(postgres))
+        {
+            await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Zoom, Volume, "pc.rtc.v1");
+            var sent = new (string Path, object Body, string Type)[]
+            {
+                ("zoom", new { steps = 2, seq = 41, epoch = page }, "pc.pointer.zoom.v1"),
+                ("volume", new { level = 12, seq = 42, epoch = page }, "pc.volume.v1"),
+            };
+            var expected = 41;
+            foreach (var (path, body, type) in sent)
+            {
+                var posting = PostAsync(app, path, body);
+                var command = await AnswerAsync(agent);
+                using var response = await Within(posting);
+
+                response.StatusCode.Should().Be(HttpStatusCode.NoContent, path);
+                command.GetProperty("type").GetString().Should().Be(type);
+                command.GetProperty("body").GetProperty("seq").GetInt32().Should().Be(expected++, path);
+                command.GetProperty("body").GetProperty("epoch").GetString().Should().Be(page, path);
+            }
+        }
+
+        await using var older = await TransportApp.StartAsync(postgres);
+        await using var withoutDirect = await ConnectAsync(older, "transport.keepalive.v1", Capability, Zoom, Volume);
+        var zoom = PostAsync(older, "zoom", new { steps = 1, seq = 9, epoch = page });
+        var zoomCommand = await AnswerAsync(withoutDirect);
+        using var zoomResponse = await Within(zoom);
+        zoomResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        zoomCommand.GetProperty("body").EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["steps"]);
+    }
+
+    [Theory]
+    [InlineData("zoom", "{}")]
+    [InlineData("zoom", "{\"steps\":0}")]
+    [InlineData("zoom", "{\"steps\":13}")]
+    [InlineData("zoom", "{\"steps\":-13}")]
+    [InlineData("zoom", "{\"steps\":\"2\"}")]
+    [InlineData("zoom", "{\"steps\":1.5}")]
+    [InlineData("zoom", "{\"steps\":1,\"seq\":-1}")]
+    [InlineData("zoom", "{\"steps\":1,\"seq\":\"7\"}")]
+    [InlineData("zoom", "{\"steps\":1,\"seq\":7.5}")]
+    [InlineData("zoom", "{\"steps\":1,\"epoch\":\"nao-e-hex\"}")]
+    [InlineData("volume", "{}")]
+    [InlineData("volume", "{\"level\":101}")]
+    [InlineData("volume", "{\"level\":-1}")]
+    [InlineData("volume", "{\"level\":\"20\"}")]
+    [InlineData("volume", "{\"level\":40.5}")]
+    [InlineData("volume", "{\"level\":10,\"seq\":-1}")]
+    [InlineData("volume", "{\"level\":10,\"seq\":\"7\"}")]
+    [InlineData("volume", "{\"level\":10,\"seq\":7.5}")]
+    [InlineData("volume", "{\"muted\":true,\"epoch\":\"3FA9C10D7BE2465A\"}")]
+    public async Task AZoomOrVolumeBodyOutsideTheContract_Returns400_AndAsksTheAgentNothing(string path, string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, Zoom, Volume, "pc.rtc.v1");
+
+        using var response = await PostAsync(app, path, JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ZoomAndVolume_ToAnOfflineAgent_StillAnswerOffline_NotUnsupported()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Zoom, Volume);
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(async () => !await StatusOnlineAsync(app), "agente desconectado");
+
+        using var zoom = await PostAsync(app, "zoom", new { steps = 1 });
+        using var volume = await PostAsync(app, "volume", new { level = 10 });
+
+        zoom.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        volume.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
     [Fact]

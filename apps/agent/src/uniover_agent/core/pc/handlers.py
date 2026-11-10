@@ -23,8 +23,9 @@ from uniover_agent.core.pc.freshness import (
     fresh_only,
 )
 from uniover_agent.core.pc.use import PcUseTracker
+from uniover_agent.core.pc.volume import VOLUME_MEDIA_ACTIONS, pc_volume_handler
 from uniover_agent.ports import Transport, TransportError
-from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
+from uniover_agent.ports.pc import PcAudio, PcInput, PcLauncher, PcPower, PcUnsupported
 
 _log = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ PC_KEY_V2_CAPABILITY: Final = "pc.key.v2"
 PC_TEXT_V2_CAPABILITY: Final = "pc.text.v2"
 # Idem: clique com modificadores e com o intervalo do toque anterior (duplo clique confiável).
 PC_CLICK_V2_CAPABILITY: Final = "pc.click.v2"
+# Idem: zoom pela roda do mouse com o Ctrl apertado (a pinça).
+PC_ZOOM_CAPABILITY: Final = "pc.pointer.zoom.v1"
+# Idem: volume absoluto (nível de 0 a 100 e mudo) e o aviso do nível de agora.
+PC_VOLUME_CAPABILITY: Final = "pc.volume.v1"
 
 # Comandos executados sem resposta: a API manda o movimento do mouse sem esperar por ela.
 PC_SILENT_TYPES: Final = frozenset({"pc.pointer.v1"})
@@ -251,11 +256,38 @@ def pc_text_v2_handler(pc: PcInput) -> Handler:
     return _guarded(handle)
 
 
-def pc_media_handler(pc: PcInput) -> Handler:
-    """`pc.media.v1`."""
+# O maior zoom de uma mensagem (o contrato limita; o adaptador também).
+MAX_ZOOM_STEPS: Final = 12
+
+
+def pc_zoom_handler(pc: PcInput) -> Handler:
+    """`pc.pointer.zoom.v1`: `steps` cliques de roda com o Ctrl apertado (a pinça do app). O Ctrl é
+    apertado e solto no mesmo lote do sistema, então nunca fica preso."""
 
     def handle(command: Command) -> CommandResult:
-        pc.media(str(command.body["action"]), int(command.body.get("steps") or 1))
+        steps = command.body.get("steps")
+        # O contrato barra o zero e o que passa de 12 (o modelo gerado não impõe o "diferente de
+        # zero"): sem passos não há o que fazer, e é recusado em vez de responder "feito".
+        if (
+            not isinstance(steps, int)
+            or isinstance(steps, bool)
+            or not (0 < abs(steps) <= MAX_ZOOM_STEPS)
+        ):
+            raise ValueError("zoom fora do contrato")
+        pc.zoom(steps)
+        return _ok(command)
+
+    return _guarded(handle)
+
+
+def pc_media_handler(pc: PcInput, *, volume_changed: Callable[[], None] | None = None) -> Handler:
+    """`pc.media.v1`. As teclas de volume e de mudo avisam `volume_changed` depois de apertadas."""
+
+    def handle(command: Command) -> CommandResult:
+        action = str(command.body["action"])
+        pc.media(action, int(command.body.get("steps") or 1))
+        if volume_changed is not None and action in VOLUME_MEDIA_ACTIONS:
+            volume_changed()
         return _ok(command)
 
     return _guarded(handle)
@@ -333,6 +365,8 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     clock: ClockOffset | None = None,
     use: PcUseTracker | None = None,
     pacer: ClickPacer | None = None,
+    audio: PcAudio | None = None,
+    volume_changed: Callable[[], None] | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
@@ -342,7 +376,9 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     com os batimentos da API. `use` anota cada comando que chega a ser executado (não os recusados
     por idade): a atualização do agente o lê para não reiniciar no meio de uma sessão do touchpad.
     `pacer` guarda o último clique para o `gapMs` do seguinte (um só para o `v1` e o `v2`, e para
-    a nuvem e o canal direto, que entregam ao mesmo conjunto de manipuladores).
+    a nuvem e o canal direto, que entregam ao mesmo conjunto de manipuladores). `audio` é o áudio do
+    PC (sem ele não há `pc.volume.v1`); `volume_changed` é avisado depois de um comando mudar o
+    volume (o aviso do nível sai atrás dele).
     """
     offset = clock or ClockOffset()
     clicks = pacer or ClickPacer()
@@ -366,7 +402,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     ) -> Handler:
         return fresh_only(handle, max_age_seconds=max_age, clock=offset, exempt=exempt, quiet=quiet)
 
-    return {
+    handlers: dict[str, Handler] = {
         "pc.pointer.v1": fresh(noted(pc_pointer_handler(pc)), MAX_POINTER_AGE_SECONDS, quiet=True),
         "pc.click.v1": fresh(
             noted(pc_click_handler(pc, clicks)),
@@ -389,7 +425,12 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         ),
         "pc.text.v1": fresh(noted(pc_text_handler(pc)), MAX_COMMAND_AGE_SECONDS),
         "pc.text.v2": fresh(noted(pc_text_v2_handler(pc)), MAX_COMMAND_AGE_SECONDS),
-        "pc.media.v1": fresh(noted(pc_media_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        # O zoom é um lote só (Ctrl, roda, Ctrl): um zoom velho cairia em outra janela, então
+        # vale só dentro da validade dos comandos.
+        "pc.pointer.zoom.v1": fresh(noted(pc_zoom_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        "pc.media.v1": fresh(
+            noted(pc_media_handler(pc, volume_changed=volume_changed)), MAX_COMMAND_AGE_SECONDS
+        ),
         "pc.power.v1": fresh(
             noted(pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds)),
             MAX_POWER_AGE_SECONDS,
@@ -399,6 +440,11 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
             noted(pc_app_launch_handler(launcher, apps)), MAX_COMMAND_AGE_SECONDS
         ),
     }
+    if audio is not None:
+        handlers["pc.volume.v1"] = fresh(
+            noted(pc_volume_handler(audio, changed=volume_changed)), MAX_COMMAND_AGE_SECONDS
+        )
+    return handlers
 
 
 def pc_apps_announcer(

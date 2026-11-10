@@ -99,6 +99,8 @@ public static class DevicesModule
 
         // Controle do PC: os favoritos que cada agente anunciou ficam em memória (o agente os manda a cada conexão).
         services.AddSingleton<PcAppsStore>();
+        services.AddSingleton<PcVolumeStore>();
+        services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcVolumeStore>());
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();
         services.AddSingleton<PcTargetCache>();
         services.AddSingleton<PcKeyBudget>();

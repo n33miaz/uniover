@@ -5,6 +5,7 @@ acorda e por isso o manipulador o roda em outra thread.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 
@@ -21,6 +22,12 @@ class PcInput(Protocol):
 
     def scroll(self, horizontal: int, vertical: int) -> None:
         """Rola, em unidades de roda (120 = um clique). Positivo: para cima e para a direita."""
+        ...
+
+    def zoom(self, steps: int) -> None:
+        """Zoom pela roda com o Ctrl: `steps` cliques de roda (positivo aproxima, negativo afasta).
+        O Ctrl é apertado, a roda gira e o Ctrl é solto no mesmo lote: nunca fica preso. Um Ctrl que
+        já está segurado (`key` com `DOWN`) não é apertado de novo nem solto."""
         ...
 
     def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
@@ -56,6 +63,30 @@ class PcInput(Protocol):
         Nunca levanta erro: é chamado quando a conexão cai e ao encerrar, momentos em que não há
         a quem reportar a falha.
         """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class VolumeState:
+    """O volume principal do dispositivo de saída padrão: nível de 0 a 100 e mudo."""
+
+    level: int
+    muted: bool
+
+
+class PcAudio(Protocol):
+    """O áudio do PC. Nunca é tocado pelos testes: a implementação do Windows fala com o sistema."""
+
+    def read(self) -> VolumeState:
+        """O volume de agora."""
+        ...
+
+    def set_level(self, level: int) -> None:
+        """Define o nível (0 a 100) sem mexer no mudo."""
+        ...
+
+    def set_muted(self, muted: bool) -> None:
+        """Liga ou desliga o mudo, sem alternar e sem mexer no nível."""
         ...
 
 

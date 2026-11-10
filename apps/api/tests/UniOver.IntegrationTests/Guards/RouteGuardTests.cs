@@ -89,6 +89,8 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/pc/key/release", RateLimitPolicies.PcKeyRelease),
         ("POST", "/api/v1/pc/text", RateLimitPolicies.PcInput),
         ("POST", "/api/v1/pc/media", RateLimitPolicies.PcInput),
+        ("POST", "/api/v1/pc/zoom", RateLimitPolicies.PcInput),
+        ("POST", "/api/v1/pc/volume", RateLimitPolicies.PcInput),
         ("POST", "/api/v1/pc/power", RateLimitPolicies.PcPower),
         ("POST", "/api/v1/pc/apps/{appId}/launch", RateLimitPolicies.PcPower),
         ("GET", "/api/v1/pc/status", RateLimitPolicies.Commands),

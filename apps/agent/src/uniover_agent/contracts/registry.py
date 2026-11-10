@@ -25,6 +25,7 @@ from .pc_key_v1 import PcKeyV1Message
 from .pc_key_v2 import PcKeyV2Message
 from .pc_media_v1 import PcMediaV1Message
 from .pc_pointer_v1 import PcPointerV1Message
+from .pc_pointer_zoom_v1 import PcPointerZoomV1Message
 from .pc_power_v1 import PcPowerV1Message
 from .pc_rtc_answer_v1 import PcRtcAnswerV1Message
 from .pc_rtc_candidate_v1 import PcRtcCandidateV1Message
@@ -33,6 +34,8 @@ from .pc_rtc_closed_v1 import PcRtcClosedV1Message
 from .pc_rtc_offer_v1 import PcRtcOfferV1Message
 from .pc_text_v1 import PcTextV1Message
 from .pc_text_v2 import PcTextV2Message
+from .pc_volume_state_v1 import PcVolumeStateV1Message
+from .pc_volume_v1 import PcVolumeV1Message
 from .tv_adb_rebind_v1 import TvAdbRebindV1Message
 from .tv_app_launch_v1 import TvAppLaunchV1Message
 from .tv_apps_refresh_v1 import TvAppsRefreshV1Message
@@ -80,6 +83,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.key.v2": PcKeyV2Message,
     "pc.media.v1": PcMediaV1Message,
     "pc.pointer.v1": PcPointerV1Message,
+    "pc.pointer.zoom.v1": PcPointerZoomV1Message,
     "pc.power.v1": PcPowerV1Message,
     "pc.rtc.answer.v1": PcRtcAnswerV1Message,
     "pc.rtc.candidate.v1": PcRtcCandidateV1Message,
@@ -88,6 +92,8 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.rtc.offer.v1": PcRtcOfferV1Message,
     "pc.text.v1": PcTextV1Message,
     "pc.text.v2": PcTextV2Message,
+    "pc.volume.state.v1": PcVolumeStateV1Message,
+    "pc.volume.v1": PcVolumeV1Message,
     "tv.adb.rebind.v1": TvAdbRebindV1Message,
     "tv.app.launch.v1": TvAppLaunchV1Message,
     "tv.apps.refresh.v1": TvAppsRefreshV1Message,

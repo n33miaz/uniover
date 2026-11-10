@@ -13,6 +13,8 @@ export interface PcStatusBody {
   apps: { id: string; label: string }[];
   /** O que o agente do PC declarou além do básico (ex.: `pc.key.v2`); sem isso, é um agente antigo. */
   capabilities?: string[];
+  /** O volume que o agente avisou (`pc.volume.v1`); sem isso, a API devolve `null` (sem leitura). */
+  volume?: { level: number; muted: boolean } | null;
 }
 
 export interface PcFailure {
@@ -147,6 +149,14 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
     if (mock.commandDelayMs > 0) await new Promise((r) => setTimeout(r, mock.commandDelayMs));
     if (mock.commandFailure && (!mock.failOnly || mock.failOnly(entry))) {
       return problem(route, mock.commandFailure);
+    }
+    if (path === '/volume' && body) {
+      // O agente executa e avisa o nível de agora (`pc.volume.state.v1`); a API o devolve na leitura do estado.
+      const now = mock.status.volume ?? { level: 0, muted: false };
+      mock.status.volume = {
+        level: typeof body['level'] === 'number' ? body['level'] : now.level,
+        muted: typeof body['muted'] === 'boolean' ? body['muted'] : now.muted,
+      };
     }
     if (path === '/power' && ['SLEEP', 'SHUTDOWN'].includes(String(body?.['action']))) {
       if (body?.['confirm'] !== true) return problem(route, { status: 400, kind: 'validation' });

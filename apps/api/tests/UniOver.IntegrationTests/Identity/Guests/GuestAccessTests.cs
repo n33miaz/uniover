@@ -77,6 +77,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/pc/key/release",
         "/api/v1/pc/text",
         "/api/v1/pc/media",
+        "/api/v1/pc/zoom",
+        "/api/v1/pc/volume",
         "/api/v1/pc/power",
         "/api/v1/pc/apps/{appId}/launch",
         "/api/v1/pc/rtc/offer",

@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
-import { PcAvailability } from '../../../core/modules/pc-availability';
+import { PcAvailability, type PcVolumeLevel } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
 import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import {
@@ -19,6 +19,10 @@ import {
   PC_CLICK_V2_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
+  PC_VOLUME_CAPABILITY,
+  PC_ZOOM_CAPABILITY,
+  clampVolumeLevel,
+  clampZoomSteps,
   isHoldableKey,
   keyNeedsV2,
   type PcClickButton,
@@ -30,6 +34,7 @@ import {
   type PcModifier,
   type PcPowerAction,
   type PcTextEdit,
+  type PcVolumeChange,
 } from './pc-types';
 
 /** De quanto em quanto tempo o estado do PC é relido enquanto a tela está aberta. */
@@ -68,6 +73,18 @@ export const MOVE_SETTLE_MS = 1_500;
  * resultado é incerto (pode ter sido digitado) e a fila segue, sem o que estava atrás dele.
  */
 export const INPUT_TIMEOUT_MS = 6_000;
+
+/**
+ * Quanto zoom de pinça espera para sair (a rede lenta): o que passa disto é cortado. Uma pinça de ponta a ponta dá uns 8 passos, e
+ * o zoom que ainda saísse muito depois de os dedos saírem seria zoom a mais.
+ */
+export const MAX_PENDING_ZOOM_STEPS = 36;
+
+/**
+ * Quanto depois de um comando que muda o volume o estado do PC é relido: o agente avisa o nível novo assim que o Windows aplica a
+ * tecla, e a leitura logo depois mostra o número certo. Vários comandos seguidos viram uma leitura só.
+ */
+export const VOLUME_REFRESH_MS = 450;
 
 /** Quanto tempo o aviso de toque abandonado fica na tela, mesmo que o movimento seguinte dê certo. */
 export const ABANDONED_NOTICE_MS = 4_000;
@@ -194,6 +211,27 @@ export class PcStore {
   readonly supportsTextV2 = computed(() => this.capabilities().includes(PC_TEXT_V2_CAPABILITY));
   /** O agente entende `pc.click.v2` (clique com modificadores e com o intervalo do toque anterior). */
   readonly supportsClickV2 = computed(() => this.capabilities().includes(PC_CLICK_V2_CAPABILITY));
+  /** O agente entende `pc.pointer.zoom.v1` (a pinça vira Ctrl e a roda do mouse). */
+  readonly supportsZoom = computed(() => this.capabilities().includes(PC_ZOOM_CAPABILITY));
+  /** O agente entende `pc.volume.v1` (volume absoluto) e avisa o nível de agora. */
+  readonly supportsVolume = computed(() => this.capabilities().includes(PC_VOLUME_CAPABILITY));
+  /** O nível que a tela pediu e o PC ainda não confirmou na leitura do estado (o que o dedo deixou na faixa). */
+  private readonly volumeAsked = signal<PcVolumeLevel | null>(null);
+  /**
+   * O volume de agora do PC: o que ele avisou (relido com o estado), ou o que a tela acabou de pedir até a leitura confirmar.
+   * `null` com um agente que não conhece o volume absoluto, ou sem leitura ainda: a tela não inventa um número.
+   */
+  readonly volume = computed<PcVolumeLevel | null>(() =>
+    this.supportsVolume() ? (this.volumeAsked() ?? this.availability.volume()) : null,
+  );
+
+  /** Zoom da pinça esperando para sair (passos com sinal); um pedido por vez, o resto se soma aqui. */
+  private zoomPending = 0;
+  private zoomRunning = false;
+  /** O volume absoluto esperando para sair (o último nível e o último mudo pedidos): um pedido por vez, o mais novo vence. */
+  private volumePending: PcVolumeChange | null = null;
+  private volumeRunning = false;
+  private volumeRefreshTimer: number | null = null;
 
   constructor() {
     // Trocar de conta (sair e entrar como outra pessoa, sem recarregar) descarta o que era da anterior, mesmo sem uso.
@@ -667,16 +705,128 @@ export class PcStore {
   }
 
   /**
+   * O zoom da pinça: `steps` cliques de roda com o Ctrl apertado (positivo aproxima). Só para um PC que declarou o zoom. Sai pela
+   * fila de entrada, na ordem dos toques, com um pedido por vez: enquanto um está em voo os passos se somam (no máximo
+   * `MAX_PENDING_ZOOM_STEPS`) e o próximo leva a soma, de até 12 passos. Uma falha para o resto e some com o aviso na tela.
+   */
+  zoomPointer(steps: number): void {
+    this.syncAccount();
+    if (!this.canSend() || !this.supportsZoom() || !Number.isFinite(steps)) return;
+    const whole = Math.trunc(steps);
+    if (whole === 0) return;
+    this.zoomPending = Math.max(
+      -MAX_PENDING_ZOOM_STEPS,
+      Math.min(MAX_PENDING_ZOOM_STEPS, this.zoomPending + whole),
+    );
+    if (!this.zoomRunning) void this.runZoom();
+  }
+
+  private async runZoom(): Promise<void> {
+    this.zoomRunning = true;
+    try {
+      while (this.zoomPending !== 0 && this.canSend()) {
+        const failure = await this.queueInput(() => {
+          // Os passos são tomados na hora de sair (e não ao entrar na fila): o que se juntou na espera vai junto.
+          const steps = clampZoomSteps(this.zoomPending);
+          this.zoomPending -= steps;
+          return steps === 0 ? Promise.resolve() : this.api.zoom(steps);
+        });
+        if (failure !== null) {
+          // Falhou (ou foi cancelado): o resto não vai; zoom tardio seria zoom às cegas.
+          this.zoomPending = 0;
+          return;
+        }
+      }
+    } finally {
+      this.zoomRunning = false;
+    }
+  }
+
+  /**
+   * Define o volume do PC (nível de 0 a 100 e/ou mudo). Só para um PC que declarou `pc.volume.v1`. Um pedido por vez, na fila de
+   * entrada: enquanto um está em voo o mais novo substitui o que esperava (a faixa arrastada manda dezenas de níveis, e só o
+   * último importa). O número mostrado acompanha o pedido na hora; a leitura do estado o confirma logo depois. Devolve a falha do
+   * último pedido que saiu, ou `null`.
+   */
+  setVolume(change: PcVolumeChange): Promise<PcFailure | null> {
+    this.syncAccount();
+    if (!this.canSend() || !this.supportsVolume()) return Promise.resolve(this.blocked());
+    const level = change.level === undefined ? undefined : clampVolumeLevel(change.level);
+    if (level === undefined && change.muted === undefined) return Promise.resolve(null);
+    this.volumePending = {
+      level: level ?? this.volumePending?.level,
+      muted: change.muted ?? this.volumePending?.muted,
+    };
+    const shown = this.volumeAsked() ?? this.availability.volume();
+    this.volumeAsked.set({
+      level: level ?? shown?.level ?? 0,
+      muted: change.muted ?? shown?.muted ?? false,
+    });
+    return this.volumeRunning ? Promise.resolve(null) : this.runVolume();
+  }
+
+  private async runVolume(): Promise<PcFailure | null> {
+    this.volumeRunning = true;
+    let failure: PcFailure | null = null;
+    try {
+      while (this.volumePending !== null && this.canSend()) {
+        failure = await this.queueInput(() => {
+          const change = this.volumePending;
+          this.volumePending = null;
+          return change === null ? Promise.resolve() : this.api.volume(change);
+        });
+        if (failure !== null) {
+          this.volumePending = null;
+          this.volumeAsked.set(null); // o que a tela pediu não chegou: volta ao que o PC disse
+          return failure;
+        }
+      }
+    } finally {
+      this.volumeRunning = false;
+    }
+    this.scheduleVolumeRefresh(true);
+    return failure;
+  }
+
+  /**
+   * Relê o estado do PC daqui a pouco (o agente avisa o nível novo ao mudar o volume, por qualquer caminho). Com `keepAsked` o que a
+   * tela pediu fica até a leitura chegar (se ela falhar, o pedido que o PC aceitou segue valendo na tela); sem ele (as teclas de
+   * volume, em que o nível novo não é o que a tela tinha pedido) o pedido antigo é esquecido já.
+   */
+  private scheduleVolumeRefresh(keepAsked = false): void {
+    if (!keepAsked) this.volumeAsked.set(null);
+    if (!this.supportsVolume()) return;
+    if (this.volumeRefreshTimer !== null) window.clearTimeout(this.volumeRefreshTimer);
+    this.volumeRefreshTimer = window.setTimeout(() => {
+      this.volumeRefreshTimer = null;
+      const asked = this.account;
+      void this.availability.refresh().then((read) => {
+        if (!read || this.account !== asked || this.volumeRunning || this.volumePending !== null) {
+          return;
+        }
+        this.volumeAsked.set(null);
+      });
+    }, VOLUME_REFRESH_MS);
+  }
+
+  /**
    * Tem o mesmo prazo da fila de entrada (`INPUT_TIMEOUT_MS`): um pedido de mídia que não responde vira `timeout` em vez de
    * prender para sempre quem espera por ele (a faixa do volume manda um pedido por vez). Só a mídia: os outros comandos
    * (energia, abrir favorito) seguem sem esse prazo.
    */
   sendMedia(action: PcMediaAction, steps = 1): Promise<PcFailure | null> {
-    return this.command(async () => {
+    const sent = this.command(async () => {
       if (await raceTimeout(this.api.media(action, steps), INPUT_TIMEOUT_MS)) {
         throw new HttpErrorResponse({ status: 504 });
       }
     });
+    // As teclas de volume e de mudo mexem no nível que o PC avisa: a tela o relê logo depois de elas saírem.
+    if (action === 'VOLUME_UP' || action === 'VOLUME_DOWN' || action === 'MUTE') {
+      void sent.then((failure) => {
+        if (failure === null) this.scheduleVolumeRefresh();
+      });
+    }
+    return sent;
   }
 
   /** Suspender e desligar levam `confirm`: quem chama só o passa depois de a pessoa confirmar na folha. */
@@ -808,6 +958,9 @@ export class PcStore {
     this.releaseKeepalive = false;
     this.inputGeneration++;
     this.account = current;
+    this.zoomPending = 0;
+    this.volumePending = null;
+    this.volumeAsked.set(null);
     this.batcher.discard();
     this.accelerator.reset();
     this.scroller.reset();

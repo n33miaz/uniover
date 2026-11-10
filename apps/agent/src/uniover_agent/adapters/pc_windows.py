@@ -182,6 +182,14 @@ class WindowsPcInput:
     def scroll(self, horizontal: int, vertical: int) -> None:
         self._dispatch(pc_inputs.scroll_inputs(horizontal, vertical))
 
+    def zoom(self, steps: int) -> None:
+        """Ctrl apertado, a roda e Ctrl solto num lote só (se o Windows aceitar só parte, o que
+        ficou apertado é solto como em qualquer lote). Com o Ctrl já segurado por um `DOWN`, ele
+        fica como está."""
+        with self._lock:
+            held = frozenset(identity[0] for identity in self._held_keys)
+            self._dispatch(pc_inputs.zoom_inputs(steps, held))
+
     def click(self, button: str, action: str, modifiers: Sequence[str] = ()) -> None:
         with self._lock:
             # O que já está segurado (o Alt do Alt+Tab) não é apertado nem solto por este clique.

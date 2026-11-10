@@ -18,6 +18,8 @@ from uniover_agent.core.pc import (
     PC_RTC_CAPABILITY,
     PC_SILENT_TYPES,
     PC_TEXT_V2_CAPABILITY,
+    PC_VOLUME_CAPABILITY,
+    PC_ZOOM_CAPABILITY,
     RTC_SILENT_TYPES,
     RTC_TYPES,
     ClickPacer,
@@ -26,10 +28,12 @@ from uniover_agent.core.pc import (
     PcApp,
     PcDirectService,
     PcUseTracker,
+    PcVolumeAnnouncer,
     parse_favorites,
     pc_apps_announcer,
     pc_handlers,
     pc_rtc_handlers,
+    volume_after_hello,
 )
 from uniover_agent.core.process_message import ProcessMessage
 from uniover_agent.core.redaction import redact, redact_line
@@ -125,6 +129,8 @@ __all__ = [
     "PC_RTC_CAPABILITY",
     "PC_SILENT_TYPES",
     "PC_TEXT_V2_CAPABILITY",
+    "PC_VOLUME_CAPABILITY",
+    "PC_ZOOM_CAPABILITY",
     "PERMISSION_CAPABILITY",
     "POWER_OFF_CAPABILITY",
     "PRESENCE_CAPABILITY",
@@ -166,6 +172,7 @@ __all__ = [
     "PcApp",
     "PcDirectService",
     "PcUseTracker",
+    "PcVolumeAnnouncer",
     "PowerOffResult",
     "ProcessMessage",
     "Rejected",
@@ -219,4 +226,5 @@ __all__ = [
     "unsupported_handler",
     "update_body",
     "user_initiated",
+    "volume_after_hello",
 ]

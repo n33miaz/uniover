@@ -1,10 +1,12 @@
 import { vi } from 'vitest';
 import { computed, signal } from '@angular/core';
-import type { PcFavorite, PcStatus } from '../../core/modules/pc-availability';
+import type { PcFavorite, PcStatus, PcVolumeLevel } from '../../core/modules/pc-availability';
 import {
   PC_CLICK_V2_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
+  PC_VOLUME_CAPABILITY,
+  PC_ZOOM_CAPABILITY,
   keyNeedsV2,
 } from './data/pc-types';
 import type { PcFailure } from './data/pc-failure';
@@ -19,6 +21,7 @@ import type {
   PcModifier,
   PcPowerAction,
   PcTextEdit,
+  PcVolumeChange,
 } from './data/pc-types';
 
 type Outcome = Promise<PcFailure | null>;
@@ -32,6 +35,7 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
   const apps = signal<readonly PcFavorite[]>([]);
   const capabilities = signal<readonly string[]>([]);
   const heldKeys = signal<readonly PcHoldableKey[]>([]);
+  const volume = signal<PcVolumeLevel | null>(null);
   const store = {
     phase,
     canSend: computed(() => phase() === 'ready'),
@@ -48,6 +52,11 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     supportsKeyV2: computed(() => capabilities().includes(PC_KEY_V2_CAPABILITY)),
     supportsTextV2: computed(() => capabilities().includes(PC_TEXT_V2_CAPABILITY)),
     supportsClickV2: computed(() => capabilities().includes(PC_CLICK_V2_CAPABILITY)),
+    supportsZoom: computed(() => capabilities().includes(PC_ZOOM_CAPABILITY)),
+    supportsVolume: computed(() => capabilities().includes(PC_VOLUME_CAPABILITY)),
+    volume,
+    zoomPointer: vi.fn<(steps: number) => void>(),
+    setVolume: vi.fn<(change: PcVolumeChange) => Outcome>(() => Promise.resolve(null)),
     supportsKey: (key: PcKey, options?: PcKeyOptions) =>
       !keyNeedsV2(key, options) || capabilities().includes(PC_KEY_V2_CAPABILITY),
     notice: signal<PcFailure | null>(null),
@@ -87,5 +96,12 @@ export type FakePcStore = ReturnType<typeof createFakePcStore>;
 export const FAILURE: PcFailure = { kind: 'offline', message: 'O PC está desconectado.' };
 
 export function status(overrides: Partial<PcStatus> = {}): PcStatus {
-  return { available: true, online: true, apps: [], capabilities: [], ...overrides };
+  return {
+    available: true,
+    online: true,
+    apps: [],
+    capabilities: [],
+    volume: null,
+    ...overrides,
+  };
 }
