@@ -8,6 +8,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { AUTO_REQUEST_MAX_AGE_MS, registerUnsavedWork } from '../pwa/unsaved-work';
 import { AccountScope } from '../session/account-scope';
 import { DB_CLOSE_GRACE_MS, waitGrace } from '../session/db-close';
 import { LEGACY_DB_OPENER, adoptWhenDue } from '../session/legacy-adoption';
@@ -44,6 +45,18 @@ export class QueueScopes {
   private readonly adopting = new Set<AccountQueue>();
 
   constructor() {
+    // Um envio em curso segura a recarga automática de atualização (o que espera na fila está gravado no aparelho e a recarga
+    // o retoma, mas um envio no meio do caminho não se corta). Um motor que fica "enviando" por tempo demais deixa de valer:
+    // ele nunca trava a atualização.
+    let syncingSince: number | null = null;
+    registerUnsavedWork(() => {
+      if (!this._active()?.engine.syncing()) {
+        syncingSince = null;
+        return false;
+      }
+      syncingSince ??= Date.now();
+      return Date.now() - syncingSince < AUTO_REQUEST_MAX_AGE_MS;
+    }, 'sync');
     // O injetor de uma fila é filho do da raiz mas NÃO morre com ele: sem isto o motor da conta em uso seguiria com os
     // ouvintes de `online` e de visibilidade da página depois de a raiz acabar (o teste reinicia a raiz com o mesmo
     // documento). O banco não é fechado aqui: quem abriu o banco decide.

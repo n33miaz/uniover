@@ -1,5 +1,4 @@
 /// <reference lib="webworker" />
-import { clientsClaim } from 'workbox-core';
 import {
   PrecacheEntry,
   cleanupOutdatedCaches,
@@ -10,6 +9,8 @@ import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { SCOPED_MODULE_SLUGS } from './app/core/modules/module-slugs';
+import { createClaimPolicy } from './app/core/pwa/sw-claim';
+import { LIST_CLIENTS_MESSAGE, answerClientsQuery } from './app/core/pwa/sw-clients';
 import { EXERCISE_ART_CACHE } from './app/modules/training/illustrations/illustration-cache';
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -17,13 +18,31 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: (PrecacheEntry | string)[];
 };
 
-// Atualização controlada: um worker novo espera até o app pedir (botão "Atualizar") para não trocar a
-// casca no meio do uso. Na primeira instalação não há worker anterior, então ele já assume sozinho.
+// Atualização controlada: um worker novo espera até o app pedir para não trocar a casca no meio do uso. O pedido
+// (SKIP_WAITING) sai do app: toque no aviso, ou a primeira navegação/ida ao segundo plano sem trabalho em curso, com as
+// outras abas conferidas. Sem pedido, o worker que espera ativa sozinho quando a última página dele fecha (a próxima
+// abertura a frio). O worker só toma as páginas abertas (clients.claim) na primeira instalação ou depois desse pedido,
+// nunca por conta própria no meio de uma operação (ver sw-claim.ts). Uma aba ocupada que mesmo assim seja tomada adia a
+// própria recarga (PwaUpdateService) e busca na rede os pedaços que faltarem, onde a imagem do servidor guarda os
+// arquivos com hash das últimas versões.
+const claim = createClaimPolicy();
+self.addEventListener('install', () => claim.onInstall(self.registration.active !== null));
 self.addEventListener('message', (event) => {
-  if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING')
-    void self.skipWaiting();
+  const type = (event.data as { type?: string } | undefined)?.type;
+  // A página pergunta, antes de pedir a troca, quantas janelas do app existem (a lista autoritativa, ver sw-clients.ts).
+  if (type === LIST_CLIENTS_MESSAGE) {
+    const source = event.source;
+    const askerId = source && 'id' in source ? source.id : null;
+    event.waitUntil(answerClientsQuery(self, askerId, event.ports[0]));
+    return;
+  }
+  if (type !== 'SKIP_WAITING') return;
+  claim.onSkipWaitingRequest();
+  void self.skipWaiting();
 });
-clientsClaim();
+self.addEventListener('activate', (event) => {
+  if (claim.shouldClaim()) event.waitUntil(self.clients.claim());
+});
 cleanupOutdatedCaches();
 
 // A casca: JS/CSS/fontes com hash e as páginas `/`, `/tv/` e `/treino/` (o build as acrescenta; elas vêm

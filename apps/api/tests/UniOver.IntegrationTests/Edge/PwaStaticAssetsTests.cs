@@ -31,6 +31,9 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
         File.WriteAllText(Path.Combine(_webRoot, "main-NOVO1234.js"), "export const main = true;");
         File.WriteAllText(Path.Combine(_webRoot, "chunk-B-ZYueZf.js"), "export const dash = true;");
         File.WriteAllText(Path.Combine(_webRoot, "polyfills-NOVO1234.js"), "export const poly = true;");
+        // Um pedaço de uma versão anterior, que a imagem retém ao lado dos da versão atual (etapa `retained` do Dockerfile).
+        File.WriteAllText(Path.Combine(_webRoot, "chunk-RETIDOA1.js"), "export const retained = true;");
+        File.WriteAllText(Path.Combine(_webRoot, "main-RETIDO11.js"), "export const retainedMain = true;");
         File.WriteAllText(Path.Combine(_webRoot, "main-legacy.js"), "export const legacy = true;");
         File.WriteAllText(Path.Combine(_webRoot, "styles-legacy.css"), "body{margin:1px}");
         File.WriteAllText(Path.Combine(_webRoot, "chunk-curto.js"), "export const short = true;");
@@ -69,6 +72,38 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/html");
         (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().NotContain("csp-nonce");
+    }
+
+    [Theory]
+    [InlineData("/icons/sumido.png")]
+    [InlineData("/exercise-art/sumido.webp")]
+    [InlineData("/robots.txt")]
+    [InlineData("/dados.json")]
+    [InlineData("/treino/imagem-sumida.svg")]
+    public async Task AnyMissingStaticFile_WithAnExtension_Returns404_NotTheIndex(string path)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/html");
+    }
+
+    [Theory]
+    [InlineData("/chunk-RETIDOA1.js", "javascript")]
+    [InlineData("/main-RETIDO11.js", "javascript")]
+    public async Task AssetRetainedFromAPreviousVersion_IsServedImmutable_NextToTheCurrentOnes(string path, string mediaTypePart)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Contain(mediaTypePart);
+        var cacheControl = response.Headers.CacheControl!;
+        cacheControl.MaxAge.Should().Be(TimeSpan.FromDays(365));
+        cacheControl.Extensions.Select(extension => extension.Name).Should().Contain("immutable");
     }
 
     [Fact]

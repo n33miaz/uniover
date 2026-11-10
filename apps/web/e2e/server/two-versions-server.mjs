@@ -49,11 +49,13 @@ const app = createAppServer({
   resolveRoot: () => (state.version === 'b' ? rootB : rootA),
   transformSw: (body) => {
     if (state.version !== 'b' || state.swDelayMs <= 0) return body;
-    // Por ser o primeiro ouvinte de `message`, adia o `skipWaiting` do worker (o do sw.ts roda junto e não vê a
-    // mensagem): é o que um celular lento ou ocupado faz com a ativação.
+    // Por ser o primeiro ouvinte de `message`, segura o pedido SKIP_WAITING e o entrega de novo ao sw.ts depois do atraso
+    // (marcado, para não ser seguro outra vez): é o que um celular lento ou ocupado faz com a ativação, e o worker de verdade
+    // (que só toma as páginas abertas depois desse pedido, ver sw-claim.ts) segue o caminho real.
     const prelude =
-      `self.addEventListener('message',function(e){if(e.data&&e.data.type==='SKIP_WAITING'){` +
-      `e.stopImmediatePropagation();setTimeout(function(){self.skipWaiting()},${state.swDelayMs})}});\n`;
+      `self.addEventListener('message',function(e){if(e.data&&e.data.type==='SKIP_WAITING'&&!e.data.delayed){` +
+      `e.stopImmediatePropagation();setTimeout(function(){self.dispatchEvent(new ExtendableMessageEvent('message',` +
+      `{data:{type:'SKIP_WAITING',delayed:true}}))},${state.swDelayMs})}});\n`;
     return Buffer.concat([Buffer.from(prelude), body]);
   },
   // Sem cache HTTP: o navegador pode ter tirado do disco os arquivos da versão antiga (o iOS o faz cedo); o que o worker

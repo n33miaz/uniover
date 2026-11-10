@@ -10,7 +10,13 @@ import {
 } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { registerServiceWorker } from './register-sw';
-import { OTHER_TABS_ANSWER_TIMEOUT_MS, answerTabBusyQueries, askOtherTabs } from './tab-busy';
+import { askWorkerForOtherWindows } from './ask-worker-windows';
+import {
+  OTHER_TABS_ANSWER_TIMEOUT_MS,
+  answerTabBusyQueries,
+  askOtherTabs,
+  askOtherTabsStrict,
+} from './tab-busy';
 import { UnsavedWork } from './unsaved-work';
 
 /** Liga o service worker só fora do modo de desenvolvimento; os testes trocam este valor. */
@@ -26,6 +32,18 @@ export const UPDATE_ACTIVATE_TIMEOUT_MS = 8_000;
 /** Limpar caches não pode segurar a atualização: passado este prazo, segue para a recarga. */
 export const UPDATE_CACHE_CLEAR_TIMEOUT_MS = 3_000;
 export const UPDATE_CHECK_THROTTLE_MS = 60_000;
+/** Com a aba à vista, a busca de versão nova se repete neste intervalo (a resposta é um 304 sem corpo quando nada mudou). */
+export const UPDATE_POLL_MS = 15 * 60_000;
+/**
+ * Troca automática do worker novo (sem toque): liga e desliga a regra. Ligada, o worker que espera assume a página no
+ * primeiro momento seguro (ver `PwaUpdateService.applyWhenIdle`); desligada, só o toque no aviso e a abertura a frio trocam.
+ */
+export const AUTO_APPLY_UPDATES = new InjectionToken<boolean>('AUTO_APPLY_UPDATES', {
+  providedIn: 'root',
+  factory: () => true,
+});
+/** Depois de uma troca automática, outra só vale passada esta janela: uma troca que não pega nunca vira laço de recarga. */
+export const AUTO_APPLY_GUARD_MS = 2 * 60_000;
 /**
  * Depois de uma atualização, quanto a casca nova tem para mostrar o primeiro conteúdo antes de recarregar de novo. Fica bem
  * acima da espera do guarda de entrada (3 s pela API, que pode estar acordando) mais o download dos pedaços da tela: uma rede
@@ -53,6 +71,7 @@ export const UPDATE_REFRESHING_KEY = 'uniover.update.refreshing';
 export const UPDATE_WATCHDOG_KEY = 'uniover.update.watchdog';
 export const CHUNK_RECOVERY_KEY = 'uniover.update.chunk-recovery';
 export const CONTROLLER_CHANGE_KEY = 'uniover.update.controller-change';
+export const AUTO_APPLY_KEY = 'uniover.update.auto-apply';
 /** Bloqueio compartilhado que cada aba segura enquanto vive: é como se sabe se há outra aba aberta. */
 export const TAB_LOCK_NAME = 'uniover.tab';
 
@@ -98,16 +117,23 @@ function guardActive(win: Window, key: string, windowMs: number): boolean {
  * conteúdo velho e só então recarrega, uma vez. O mesmo caminho serve para se recuperar de uma casca antiga que pede
  * um pedaço de código que já não existe (ver `chunk-error.ts`).
  *
- * Um worker novo só ativa pelo toque no aviso (com confirmação se esta aba tem trabalho não salvo) ou na próxima abertura a
- * frio. Os caminhos automáticos (pedaço ausente, primeira pintura atrasada, outra aba que trocou o worker) só recarregam esta
- * página com a tela limpa (`UnsavedWork`); havendo trabalho, adiam e deixam o aviso à vista até um momento seguro. Eles nunca
- * ativam um worker que espera, e o último recurso (desfazer registro e precache) só roda com uma única aba aberta.
+ * Um worker novo ativa por três caminhos, todos com a tela limpa (`UnsavedWork`) e as outras abas conferidas:
+ * - o toque no aviso (com confirmação se esta aba tem texto digitado, ver `applyUpdate`);
+ * - o primeiro momento seguro depois de o worker chegar (`applyWhenIdle`): a próxima navegação concluída ou a aba indo para
+ *   segundo plano, sem esperar a pessoa parar nem um intervalo mínimo; com trabalho em curso (editor sujo, escrita em voo,
+ *   treino aberto, fila enviando) o aviso fica à vista e a troca espera;
+ * - a próxima abertura a frio, que é do navegador: sem nenhuma aba aberta o worker que espera ativa sozinho (o worker nunca
+ *   chama `skipWaiting` por conta própria, ver `sw.ts`).
+ * Os caminhos de recuperação (pedaço ausente, primeira pintura atrasada, outra aba que trocou o worker) só recarregam esta
+ * página com a tela limpa; havendo trabalho, adiam e deixam o aviso à vista até um momento seguro. Eles nunca ativam um worker
+ * que espera, e o último recurso (desfazer registro e precache) só roda com uma única aba aberta.
  */
 @Injectable({ providedIn: 'root' })
 export class PwaUpdateService {
   private readonly win = inject(DOCUMENT).defaultView;
   private readonly enabled = inject(PWA_ENABLED);
   private readonly unsaved = inject(UnsavedWork);
+  private readonly autoApply = inject(AUTO_APPLY_UPDATES);
   private readonly destroyRef = inject(DestroyRef);
   private registration: ServiceWorkerRegistration | undefined;
   private started = false;
@@ -129,6 +155,10 @@ export class PwaUpdateService {
   /** A página já tinha um worker no comando (a primeira instalação, que assume a página, não é troca). */
   private controlled = false;
   private visibilityBound = false;
+  /** Conferindo se é seguro trocar o worker sozinho (uma conferência por vez). */
+  private autoApplying = false;
+  /** Navegações concluídas até agora: a primeira é a abertura do app, não um momento para trocar a casca. */
+  private navigationsSeen = 0;
   /** A página já saiu de cena (`pagehide`): a pessoa está indo para outro endereço, então nenhuma recuperação a segura aqui. */
   private leaving = false;
   /**
@@ -159,6 +189,11 @@ export class PwaUpdateService {
    * o aviso passa a dizer o motivo ("salve para continuar") em vez de a navegação simplesmente não acontecer.
    */
   readonly navigationBlocked = signal(false);
+  /**
+   * Uma navegação falhou com a recarga adiada só porque há trabalho em curso que não pede confirmação (um treino aberto, a fila
+   * enviando): o aviso diz que a versão nova espera a pessoa terminar, sem pedir para salvar nada.
+   */
+  readonly navigationHeld = signal(false);
   /** O toque está decidindo (esperando escritas, perguntando às outras abas): o botão mostra "Atualizando…" sem o esqueleto. */
   readonly updateDeciding = signal(false);
   /**
@@ -289,7 +324,12 @@ export class PwaUpdateService {
     this.started = true;
     this.holdTabLock(win);
     // As outras abas perguntam, antes de um toque delas, se esta tem trabalho não salvo.
-    this.destroyRef.onDestroy(answerTabBusyQueries(win, () => this.unsaved.needsConfirmation()));
+    // A pergunta do toque só conta o que pede confirmação; a da troca automática (`strict`) conta qualquer trabalho em curso.
+    this.destroyRef.onDestroy(
+      answerTabBusyQueries(win, (strict) =>
+        strict ? this.unsaved.hasUnsaved() : this.unsaved.needsConfirmation(),
+      ),
+    );
     const container = win.navigator.serviceWorker;
     this.controlled = container?.controller != null;
     // Permanente: um worker novo pode assumir esta aba por pedido de outra.
@@ -299,9 +339,71 @@ export class PwaUpdateService {
     else win.addEventListener('load', run, { once: true });
     // Uma primeira tentativa offline não impede a próxima: a conexão e a volta à aba são novas oportunidades.
     win.addEventListener('online', run);
-    win.document.addEventListener('visibilitychange', () => {
+    const onVisibility = () => {
       if (win.document.visibilityState === 'visible') run();
+      // A aba saindo de cena é o melhor momento para trocar a casca: ninguém vê a recarga.
+      else void this.applyWhenIdle();
+    };
+    win.document.addEventListener('visibilitychange', onVisibility);
+    // Uma aba que fica aberta o dia todo também acha a versão nova (a volta à aba e a conexão não bastam).
+    const poll = win.setInterval(() => {
+      if (win.document.visibilityState === 'visible') run();
+    }, UPDATE_POLL_MS);
+    this.destroyRef.onDestroy(() => {
+      win.clearInterval(poll);
+      win.removeEventListener('online', run);
+      win.removeEventListener('load', run);
+      win.document.removeEventListener('visibilitychange', onVisibility);
     });
+  }
+
+  /**
+   * Troca automática do worker novo: sem toque e sem esperar a pessoa parar, mas só num momento seguro e sem derrubar o uso.
+   * Chamada na próxima navegação concluída (a primeira, a abertura do app, não vale) e quando a aba sai de cena. Só age se há um
+   * worker esperando que é mais novo que o do comando e se: esta aba não tem trabalho em curso (editor sujo, escrita em voo,
+   * treino aberto, fila enviando); nenhuma outra aba aberta tem (pergunta estrita pelo canal entre abas); e não houve outra troca
+   * automática nos últimos `AUTO_APPLY_GUARD_MS` (uma troca que não pega nunca vira laço de recarga). Fora disso o aviso de
+   * versão nova segue à vista para o toque. O resto é o caminho do toque (`proceed`): o worker assume a página, os caches de
+   * execução saem e a página recarrega uma vez.
+   */
+  private async applyWhenIdle(): Promise<void> {
+    const win = this.win;
+    const registration = this.registration;
+    if (!win || !registration || !this.autoApply || this.autoApplying) return;
+    if (!this.canApplyAutomatically(win, registration)) return;
+    this.autoApplying = true;
+    try {
+      // Pergunta estrita: cada outra janela aberta precisa dizer que está livre. Quantas existem vem do worker que vai ser
+      // ativado (a lista autoritativa: enxerga até a janela de uma versão anterior, que não segura o bloqueio de abas); o
+      // bloqueio só soma, nunca reduz. Sem a lista (worker que não responde, sem MessageChannel), sem canal, com silêncio de
+      // alguma janela ou com "ocupada", não troca sozinho; o aviso fica à vista para o toque.
+      const windows = registration.waiting
+        ? await askWorkerForOtherWindows(win, registration.waiting)
+        : null;
+      if (windows === null) return;
+      const locks = await this.otherTabCount();
+      // Só troca sozinho com o app aberto numa janela só: uma outra janela que respondeu "livre" pode começar um treino ou uma
+      // edição entre a resposta e a ativação, e o worker novo a tomaria no meio. Com mais de uma janela fica o aviso para o toque.
+      if (Math.max(windows, locks ?? 0) > 0) return;
+      if (await askOtherTabsStrict(win, 0)) return;
+      // A página seguiu usável durante a consulta: confere de novo logo antes de trocar.
+      if (!this.canApplyAutomatically(win, registration)) return;
+      writeStamp(win, AUTO_APPLY_KEY);
+      this.proceed();
+    } finally {
+      this.autoApplying = false;
+    }
+  }
+
+  private canApplyAutomatically(win: Window, registration: ServiceWorkerRegistration): boolean {
+    if (this.applying || this.deciding || this.reloading || this.checking) return false;
+    if (this.bootRefreshing() || this.confirmingUpdate() !== null) return false;
+    const waiting = registration.waiting;
+    const controller = win.navigator.serviceWorker?.controller ?? null;
+    // Sem worker no comando é a primeira instalação; com o próprio worker esperando no comando, ele é a versão atual.
+    if (!waiting || controller === null || controller === waiting) return false;
+    if (this.unsaved.hasUnsaved()) return false;
+    return !guardActive(win, AUTO_APPLY_KEY, AUTO_APPLY_GUARD_MS);
   }
 
   /**
@@ -414,7 +516,10 @@ export class PwaUpdateService {
     this.cancelGrace();
     this.resumeUrl = undefined;
     this.navigationBlocked.set(false);
+    this.navigationHeld.set(false);
     void this.runDeferred();
+    // A abertura do app não é um momento para trocar a casca: só as navegações seguintes.
+    if (++this.navigationsSeen > 1) void this.applyWhenIdle();
   }
 
   /**
@@ -478,6 +583,7 @@ export class PwaUpdateService {
     if (this.deferred?.key === UPDATE_WATCHDOG_KEY) {
       this.deferred = undefined;
       this.navigationBlocked.set(false);
+      this.navigationHeld.set(false);
       if (this.noticeFromDeferral) this.updateReady.set(false);
       this.noticeFromDeferral = false;
     }
@@ -591,6 +697,8 @@ export class PwaUpdateService {
   private raiseForNewWorker(): void {
     this.noticeFromDeferral = false;
     this.updateReady.set(true);
+    // Um worker que chega com a aba em segundo plano troca já; com a aba à vista espera a próxima navegação.
+    if (this.win?.document.visibilityState === 'hidden') void this.applyWhenIdle();
   }
 
   /**
@@ -602,6 +710,8 @@ export class PwaUpdateService {
       this.navigationBlocked.set(true);
       return;
     }
+    // Treino aberto ou fila enviando: nada a salvar, mas a navegação não acontece; o aviso diz que a versão nova espera.
+    if (this.unsaved.isInUse()) this.navigationHeld.set(true);
     if (!this.unsaved.hasUnsaved() || this.waitingForWrites) return;
     this.waitingForWrites = true;
     this.unsaved.afterWrites(() => {
@@ -619,14 +729,21 @@ export class PwaUpdateService {
    * ou sem resposta, não dá para garantir que não há outra: conta como "pode haver".
    */
   private async otherTabsMayBeOpen(): Promise<boolean> {
+    const others = await this.otherTabCount();
+    return others === null || others > 0;
+  }
+
+  /** Quantas outras abas do app estão abertas (pelo bloqueio compartilhado), ou `null` se não dá para contar. */
+  private async otherTabCount(): Promise<number | null> {
     const locks = this.win?.navigator.locks;
-    if (!locks || typeof locks.query !== 'function') return true;
+    if (!locks || typeof locks.query !== 'function') return null;
     try {
       const snapshot = await this.withTimeout(locks.query(), UPDATE_CACHE_CLEAR_TIMEOUT_MS);
-      if (!snapshot) return true;
-      return (snapshot.held ?? []).filter((lock) => lock.name === TAB_LOCK_NAME).length > 1;
+      if (!snapshot) return null;
+      const held = (snapshot.held ?? []).filter((lock) => lock.name === TAB_LOCK_NAME).length;
+      return Math.max(0, held - 1);
     } catch {
-      return true;
+      return null;
     }
   }
 

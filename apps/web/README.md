@@ -57,8 +57,36 @@ Paleta p2 (verde-sálvia), claro e escuro, em `src/styles.css`. `ThemeService` s
   `/treino/` são buscadas do servidor na instalação, já com o manifest do módulo e o nonce da CSP. Um roteador de
   navegação por escopo mantém o manifest certo ao recarregar dentro de um módulo, online ou offline.
 - **API fora do cache.** `/api/**` usa `NetworkOnly`; escrita offline é da fila do app, não do worker.
-- **Versão nova.** O worker novo espera; o app mostra "Nova versão disponível" e só troca quando o usuário aceita
-  (`SKIP_WAITING`). O registro (`core/pwa/register-sw.ts`) só acontece em produção.
+- **Versão nova.** O worker novo espera; o app mostra "Nova versão disponível". A troca (`SKIP_WAITING`) acontece por três
+  caminhos, sem derrubar o uso: o toque no aviso; o primeiro momento seguro (a próxima navegação concluída ou a aba indo
+  para segundo plano), sem esperar a pessoa parar nem um intervalo mínimo; e a próxima abertura a frio (o worker que espera
+  ativa sozinho quando a última página dele fecha). Os dois primeiros só valem com a tela limpa (`UnsavedWork`: editor
+  sujo, escrita em voo, treino aberto na tela do dia ou do exercício, fila offline enviando) e com as outras abas conferidas
+  por `BroadcastChannel` (`tab-busy.ts`, pergunta estrita). A troca automática só acontece com o app aberto numa janela só
+  (uma outra janela que dissesse "livre" poderia começar um treino antes da ativação); com mais de uma, fica o aviso. Quantas existem vem do worker que espera (`sw-clients.ts`: `clients.matchAll` com `includeUncontrolled`, a lista
+  autoritativa, que enxerga até a janela de uma versão anterior sem o bloqueio de abas); o bloqueio compartilhado só soma.
+  Ocupada, silêncio, worker que não responde à lista, janela de quem pergunta fora dela, falta de `BroadcastChannel` ou de
+  `MessageChannel` contam como ocupado e a troca espera, com o aviso à vista (o toque no aviso segue como sempre: quem não
+  responde conta como livre). Uma troca automática que
+  não pega não vira laço (guarda de 2 min no `sessionStorage`). O worker só toma as páginas abertas (`clients.claim`) na
+  primeira instalação ou depois desse pedido (`core/pwa/sw-claim.ts`), nunca por conta própria no meio de uma operação. A aba
+  à vista busca versão nova a cada 15 min. O registro (`core/pwa/register-sw.ts`) só acontece em produção.
+- **Arquivos com hash de versões anteriores.** Uma página aberta de antes do deploy ainda pede os pedaços da versão que
+  carregou. A API responde 404 (nunca o `index.html`) a caminho com extensão que não existe e envia
+  `Cache-Control: immutable` nos arquivos com hash (`PwaCachePolicy`); e a imagem retém os das últimas 3 versões no
+  `wwwroot`. O workflow `web-assets.yml` (chamado pelo job `web-assets` do `deploy.yml` depois de cada publicação)
+  anexa ao Release o artefato `web-assets-<versão>.tar.gz` (só `main`, `polyfills`, `styles` e `chunk` com hash, nunca
+  `index.html` nem `sw.js`), e a etapa `retained` do `Dockerfile` baixa os anteriores com `scripts/retained-assets.mjs`
+  (`RETAIN_RELEASES=0` desliga). Teste: `node --test scripts/retained-assets.test.mjs`.
+  - **Rodar antes da primeira publicação com retenção.** A imagem só retém o que já está anexado a um Release, e o primeiro
+    artefato só nasce depois da primeira publicação. Para a versão que está no ar não ficar sem arquivos retidos, rode
+    manualmente o workflow `web-assets.yml` (`workflow_dispatch`) com a tag dela (ex.: `v0.54.0`) ANTES de publicar. Ele
+    monta o PWA com o Dockerfile e o script do ramo sobre o código da tag, confere contra a página no ar e anexa ao Release.
+  - **Melhor esforço, de propósito.** Se o GitHub estiver fora (ou com limite de requisições) durante o build da imagem, a
+    publicação segue só com os arquivos da versão atual: não se trava a publicação por isso. A falha não passa em silêncio:
+    o log do build mostra linhas `AVISO retenção:` e uma faixa final, e depois de publicar o `web-assets.yml` confere no ar
+    (`check-live`: o `main` de cada versão anterior e uma amostra dos demais respondem 200) e emite `::warning::` do
+    GitHub Actions se algum faltar.
 - **Atualizar de verdade.** Ao tocar em "Atualizar", `PwaUpdateService` cobre a tela com um esqueleto (`update-skeleton.ts`),
   pede o `SKIP_WAITING`, **espera o `controllerchange`** (prazo de 8 s), apaga os caches de execução (todos menos o precache
   `workbox-precache*` e `exercise-art`) e só então recarrega, uma vez. Sem worker esperando, pede `registration.update()` e

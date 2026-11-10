@@ -158,6 +158,8 @@ jobs:
         run: npm run lint
       - name: Testes com cobertura
         run: npm run test:coverage
+      - name: Testes do script de retenção dos arquivos com hash
+        run: node --test scripts/retained-assets.test.mjs
       - name: Build de produção
         run: npm run build
 

@@ -200,3 +200,52 @@ describe('unsavedWorkInterceptor', () => {
     controller.expectOne('/api/v1/x').flush({});
   });
 });
+
+describe('UnsavedWork: treino aberto e fila enviando', () => {
+  let work: UnsavedWork;
+
+  beforeEach(() => {
+    work = TestBed.inject(UnsavedWork);
+  });
+
+  it.each(['session', 'sync'] as const)(
+    'holds the automatic reload for the %s but never asks the person anything',
+    (reason) => {
+      let inUse = true;
+      work.register(() => inUse, reason);
+      expect(work.reasons()).toEqual([reason]);
+      expect(work.hasUnsaved()).toBe(true);
+      expect(work.isInUse()).toBe(true);
+      expect(work.needsConfirmation()).toBe(false);
+      expect(work.dirtySources()).toEqual([]);
+      expect(work.isWriting()).toBe(false);
+
+      inUse = false;
+      expect(work.hasUnsaved()).toBe(false);
+      expect(work.isInUse()).toBe(false);
+    },
+  );
+
+  it('does not count a dirty editor or a write in flight as "in use": they have their own rules', () => {
+    work.register(() => true, 'form');
+    const end = work.beginRequest();
+    expect(work.isInUse()).toBe(false);
+    expect(work.needsConfirmation()).toBe(true);
+    end();
+  });
+
+  it('keeps the confirmation for the editor even when a session is also open', () => {
+    work.register(() => true, 'session');
+    work.register(() => true, 'form');
+    expect(work.reasons().sort()).toEqual(['form', 'session']);
+    expect(work.needsConfirmation()).toBe(true);
+  });
+
+  it('releases the session source when the screen that registered it is destroyed', () => {
+    const injector = createEnvironmentInjector([], TestBed.inject(EnvironmentInjector));
+    runInInjectionContext(injector, () => registerUnsavedWork(() => true, 'session'));
+    expect(work.hasUnsaved()).toBe(true);
+    injector.destroy();
+    expect(work.hasUnsaved()).toBe(false);
+  });
+});

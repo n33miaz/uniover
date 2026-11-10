@@ -10,7 +10,7 @@ name: Deploy
 # - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
 #   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL o workflow FALHA, e falha antes de migrar (primeiro passo do job
 #   migrate): o banco nunca avança sem que o código novo possa ser publicado.
-# - Quando version, migrate, deploy, dast, release ou launcher falham na branch de produção, o job notify abre (ou comenta) a
+# - Quando version, migrate, deploy, dast, release, launcher ou web-assets falham na branch de produção, o job notify abre (ou comenta) a
 #   issue "Publicação falhou"; a primeira publicação completa que der certo a comenta e a fecha. Só esse job escreve em issues.
 #
 # Smoke autenticado (ainda não existe: precisa de uma conta de teste). Depois do deploy e antes do dast, um job com o ambiente
@@ -410,6 +410,17 @@ jobs:
             echo "Release $tag criado."
           fi
 
+  # Os arquivos com hash do PWA desta versão, anexados ao Release para a imagem das versões seguintes os reter (o passo a
+  # passo, a conferência com o PWA no ar e o bootstrap manual estão em web-assets.yml). A retenção da imagem é de melhor
+  # esforço; este job confere depois de publicar e avisa (::warning::) se a imagem no ar não reteve as versões anteriores.
+  web-assets:
+    name: web-assets
+    needs: release
+    if: needs.release.result == 'success'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/web-assets.yml
+
   # O módulo TV Livre do agente baixa `uniover-launcher.apk` e `uniover-launcher.apk.sha256` do Release mais recente.
   # Este job monta o APK de release do launcher, assinado com a chave fixa do projeto (a mesma do ci.yml e do build
   # local, para a TV aceitar a atualização por cima), confere o certificado contra signing-cert.sha256 e anexa os dois
@@ -489,14 +500,14 @@ jobs:
           echo "Launcher anexado ao Release $tag."
 
   # Aviso de falha da publicação, sem serviço externo: uma issue "Publicação falhou" aberta enquanto a produção estiver quebrada.
-  # Falha de version, migrate, deploy, dast, release ou launcher abre a issue (ou comenta na que já está aberta, sem duplicar); a
+  # Falha de version, migrate, deploy, dast, release, launcher ou web-assets abre a issue (ou comenta na que já está aberta, sem duplicar); a
   # primeira publicação em que todos eles terminam com sucesso comenta e a fecha. Execuções canceladas ou puladas por outro motivo
   # não mexem na issue. Roda só na branch de produção (a do channel). É o único job com permissão de escrever em issues: sem
   # checkout, sem segredos, sem ação de terceiros; o texto da issue só leva nomes de job, o commit e o link da execução.
   # Se as issues estiverem desligadas no repositório o passo falha em silêncio (continue-on-error) e a execução mantém o resultado real.
   notify:
     name: notify
-    needs: [channel, version, migrate, deploy, dast, release, launcher]
+    needs: [channel, version, migrate, deploy, dast, release, launcher, web-assets]
     if: ${{ always() && needs.channel.outputs.ref == github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -514,13 +525,14 @@ jobs:
           DAST_RESULT: ${{ needs.dast.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
           LAUNCHER_RESULT: ${{ needs.launcher.result }}
+          WEB_ASSETS_RESULT: ${{ needs.web-assets.result }}
         run: |
           set -euo pipefail
           title="Publicação falhou"
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           failed=""
           succeeded=0
-          for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "launcher:$LAUNCHER_RESULT"; do
+          for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "launcher:$LAUNCHER_RESULT" "web-assets:$WEB_ASSETS_RESULT"; do
             job="${pair%%:*}"
             result="${pair#*:}"
             [ "$result" = "failure" ] && failed="$failed $job"
@@ -537,7 +549,7 @@ jobs:
               gh issue create --title "$title" --body "$body"
               echo "Issue aberta."
             fi
-          elif [ "$succeeded" -eq 6 ] && [ -n "$number" ]; then
+          elif [ "$succeeded" -eq 7 ] && [ -n "$number" ]; then
             gh issue comment "$number" --body "Publicação do commit ${GITHUB_SHA:0:12} concluída com sucesso. Execução: $run_url"
             gh issue close "$number" --reason completed
             echo "Issue #$number fechada."
