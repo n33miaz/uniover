@@ -20,6 +20,7 @@ from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
     ServerRestarting,
+    ServerRestartNow,
     TransportError,
 )
 
@@ -37,11 +38,15 @@ OPEN_TIMEOUT_SECONDS: Final = 105.0
 
 _REPLACED_REASON: Final = "replaced"
 _REVOKED_REASON: Final = "revoked"
-# Códigos que a API usa depois do upgrade: 4403 revogação, 4409 substituição.
+# Códigos que a API usa depois do upgrade: 4403 revogação, 4409 substituição, 4411 reinício.
 _REPLACED_CLOSE_CODE: Final = 4409
 # Códigos de aplicação que a API usa para recusa de credencial depois do upgrade.
 _CREDENTIAL_CLOSE_CODES: Final = frozenset({4401, 4403})
 _CREDENTIAL_STATUS: Final = frozenset({401, 403})
+# 4411 "server-restart": a API que vai parar manda reconectar já (a API só o envia a quem declarou
+# `transport.restart.v1`). Tem a volta mais curta de todas.
+_SERVER_RESTART_REASON: Final = "server-restart"
+_SERVER_RESTART_CLOSE_CODE: Final = 4411
 # 1001 (indo embora) e 1012 (reinício do serviço): o servidor está trocando de instância.
 _RESTART_CLOSE_CODES: Final = frozenset({1001, 1012})
 
@@ -63,6 +68,8 @@ def _close_outcome(close: Close | None) -> Exception | None:
         return ConnectionReplaced("outra conexão do mesmo agente assumiu")
     if reason == _REVOKED_REASON or close.code in _CREDENTIAL_CLOSE_CODES:
         return CredentialRejected("o servidor encerrou por revogação da credencial")
+    if close.code == _SERVER_RESTART_CLOSE_CODE or reason == _SERVER_RESTART_REASON:
+        return ServerRestartNow("a API vai parar e pediu para reconectar já")
     if close.code in _RESTART_CLOSE_CODES:
         detail = f"código {close.code}"
         if close.reason:

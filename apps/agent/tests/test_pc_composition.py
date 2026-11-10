@@ -408,6 +408,18 @@ async def test_the_hello_declares_pc_text_v2_and_click_v2_only_when_the_api_list
     assert capabilities[-4:] == ["pc.control.v1", "pc.key.v2", "pc.text.v2", "pc.click.v2"]
 
 
+async def test_the_hello_declares_the_restart_capability_only_when_the_api_lists_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "tv.pair.v1", "pc.key.v2"})
+    # Uma API anterior recusaria o `hello` com capacidade que não conhece (e nunca mandaria o 4411).
+    assert "transport.restart.v1" not in await hello_capabilities(monkeypatch, older_api)
+
+    capabilities = await hello_capabilities(monkeypatch, older_api | {"transport.restart.v1"})
+    assert capabilities[0] == "transport.keepalive.v1"
+    assert "transport.restart.v1" in capabilities
+
+
 async def test_a_held_modifier_is_let_go_when_the_connection_drops_and_old_keys_still_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

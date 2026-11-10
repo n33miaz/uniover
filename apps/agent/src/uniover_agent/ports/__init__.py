@@ -40,6 +40,7 @@ from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
     ServerRestarting,
+    ServerRestartNow,
     Transport,
     TransportError,
 )
@@ -151,6 +152,7 @@ __all__ = [
     "PollResult",
     "PollSlowDown",
     "SecretStore",
+    "ServerRestartNow",
     "ServerRestarting",
     "TextFieldStatus",
     "Transport",

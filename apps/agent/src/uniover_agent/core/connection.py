@@ -12,6 +12,7 @@ from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
     ServerRestarting,
+    ServerRestartNow,
     Transport,
     TransportError,
 )
@@ -48,6 +49,10 @@ class BackoffPolicy:
     # Espera depois de o servidor avisar que reinicia (1012/1001): a API nova sobe em segundos,
     # então volta-se logo, com jitter para uma frota de agentes não bater junta na porta.
     restart_wait: float = 0.5
+    # Espera depois do 4411 (a API pediu para reconectar já): sorteada entre os dois extremos,
+    # para uma frota de agentes não bater junta na instância nova.
+    restart_now_min: float = 0.2
+    restart_now_max: float = 0.5
     # Fração de variação para mais e para menos (0,2 = de 80% a 120%).
     jitter: float = 0.2
     # Prazos de cada passo (ver as constantes acima).
@@ -214,6 +219,19 @@ class ConnectionSupervisor:
                 wait = self._policy.replaced_wait
                 _log.warning(
                     "outra instância deste agente assumiu a conexão; nova tentativa em %.0f s", wait
+                )
+                await self._sleep(wait)
+                continue
+            except ServerRestartNow as exc:
+                wait = (
+                    self._policy.restart_now_min
+                    + (self._policy.restart_now_max - self._policy.restart_now_min) * self._random()
+                )
+                _log.info(
+                    "conexão perdida após %.1f s: a API pediu reconectar já (%s); volto em %.1f s",
+                    self._last_session_seconds,
+                    exc,
+                    wait,
                 )
                 await self._sleep(wait)
                 continue

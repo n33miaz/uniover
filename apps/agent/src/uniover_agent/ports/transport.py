@@ -20,6 +20,10 @@ class ServerRestarting(TransportError):  # noqa: N818
     """O servidor avisou que reinicia (deploy, troca de instância): volta-se logo, sem espera."""
 
 
+class ServerRestartNow(ServerRestarting):
+    """A API que vai parar mandou reconectar já (fechamento 4411): volta de 0,2 a 0,5 s."""
+
+
 class Transport(Protocol):
     """Canal de envelopes com a API; WebSocket hoje, MQTT depois, mesmo envelope."""
 

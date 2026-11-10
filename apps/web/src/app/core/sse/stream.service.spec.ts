@@ -138,6 +138,32 @@ describe('StreamService', () => {
     expect(sources()).toHaveLength(4);
   });
 
+  it('a stream that was open and gets cut reopens quickly (200 to 500 ms) with a fresh ticket', async () => {
+    await open();
+    latest().emit('open');
+    const tickets = streamTicket.mock.calls.length;
+    latest().emit('error');
+    expect(latest().closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(streamTicket.mock.calls.length).toBe(tickets);
+    await vi.advanceTimersByTimeAsync(301);
+    expect(streamTicket.mock.calls.length).toBe(tickets + 1);
+    expect(sources()).toHaveLength(2);
+  });
+
+  it('the quick reopen does not count as a failure: if it fails too the wait starts at 1 s', async () => {
+    await open();
+    latest().emit('open');
+    latest().emit('error');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sources()).toHaveLength(2);
+    latest().emit('error');
+    await vi.advanceTimersByTimeAsync(999);
+    expect(sources()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sources()).toHaveLength(3);
+  });
+
   it('retries with backoff when the ticket cannot be obtained', async () => {
     streamTicket.mockRejectedValueOnce(new Error('rede')).mockResolvedValue({ expiresIn: 120 });
     await open();

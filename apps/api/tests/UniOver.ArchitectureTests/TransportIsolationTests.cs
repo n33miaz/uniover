@@ -128,12 +128,27 @@ public class TransportIsolationTests
         }
     }
 
+    private sealed class IdleLifetime : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication()
+        {
+        }
+    }
+
     [Fact]
     public async Task AFakeTransport_PassesMessagesThroughTheCore_WithoutAnyWebSocket()
     {
         var transport = new FakeTransport();
         var services = new ServiceCollection();
         services.AddLogging();
+        // O listener escuta o ApplicationStopping: fora de um host é preciso dar um.
+        services.AddSingleton<IHostApplicationLifetime, IdleLifetime>();
         // Sem graça de presença: o teste confere a queda do agente na hora, não depois da espera de reconexão.
         services.AddDevicesTransport(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Modules:Devices:Transport:PresenceGraceSeconds"] = "0" })

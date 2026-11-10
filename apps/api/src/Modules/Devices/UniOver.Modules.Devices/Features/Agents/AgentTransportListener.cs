@@ -10,16 +10,24 @@ namespace UniOver.Modules.Devices.Features.Agents;
 /// Liga os transportes registrados ao núcleo: cada sessão que um transporte entrega vira uma tarefa do
 /// <see cref="AgentHub"/>. Ao parar a aplicação o cancelamento chega ao hub, que fecha as sessões com o motivo
 /// de desligamento; o serviço só termina quando todas terminaram, para o desligamento não deixar conexão solta.
+/// <para>
+/// Antes disso, no <c>ApplicationStopping</c> (o SIGTERM que o Render manda à instância antiga na troca), os agentes que
+/// entendem o 4411 são avisados para reconectar já, na instância nova (ver <see cref="AgentHub.NotifyServerRestartAsync"/>).
+/// </para>
 /// </summary>
 internal sealed partial class AgentTransportListener(
     IEnumerable<IAgentTransport> transports,
     AgentHub hub,
+    IHostApplicationLifetime lifetime,
     ILogger<AgentTransportListener> logger) : BackgroundService
 {
     private readonly ConcurrentDictionary<Task, byte> _sessions = new();
+    private volatile Task _restartNotice = Task.CompletedTask;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // O aviso começa no mesmo instante do SIGTERM, antes de os serviços pararem (e antes de o cancelamento fechar as sessões).
+        using var stopping = lifetime.ApplicationStopping.Register(() => _restartNotice = NotifyRestartAsync());
         var pumps = transports.Select(t => PumpAsync(t, stoppingToken)).ToArray();
         try
         {
@@ -31,7 +39,39 @@ internal sealed partial class AgentTransportListener(
         }
         finally
         {
+            await _restartNotice;
             await Task.WhenAll(_sessions.Keys);
+        }
+    }
+
+    /// <summary>
+    /// O cancelamento que fecha as sessões com o 1012 só vem depois do aviso (4411) e do dreno dos comandos em curso: o hub é
+    /// quem decide, por sessão, entre os dois códigos, e um fechamento antecipado (aqui ou no endpoint) tiraria o 4411 de quem o
+    /// entende. O prazo é o do próprio host (<paramref name="cancellationToken"/>).
+    /// </summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _restartNotice.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // O host perdeu a paciência: segue para o fechamento de sempre.
+        }
+
+        await base.StopAsync(cancellationToken);
+    }
+
+    private async Task NotifyRestartAsync()
+    {
+        try
+        {
+            await hub.NotifyServerRestartAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            LogRestartNoticeFailed(ex.GetType().Name);
         }
     }
 
@@ -69,6 +109,9 @@ internal sealed partial class AgentTransportListener(
     }
 
     // Só o tipo do erro: a mensagem de uma falha de rede ou de banco pode citar servidor e conexão.
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível avisar os agentes do desligamento ({ErrorType}).")]
+    private partial void LogRestartNoticeFailed(string errorType);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "O transporte {Transport} falhou e não aceita mais conexões ({ErrorType}).")]
     private partial void LogTransportFailed(string transport, string errorType);
 

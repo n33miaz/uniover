@@ -18,11 +18,17 @@ public sealed class SseStreamOptions
     /// <summary>Mensagens pendentes por assinante; um assinante que não acompanha é fechado e reabre pelo instantâneo.</summary>
     public int SubscriberQueue { get; set; } = 64;
 
+    /// <summary>
+    /// Espera, em milissegundos, que o navegador deve respeitar antes de reabrir um fluxo que caiu (campo <c>retry:</c> do SSE). Curta:
+    /// na troca de instância na publicação o fluxo termina limpo e a pessoa não deve ver o painel parado. Zero não envia o campo.
+    /// </summary>
+    public int RetryMilliseconds { get; set; } = 1000;
+
     public TimeSpan KeepAlive => TimeSpan.FromSeconds(KeepAliveSeconds);
 
     public TimeSpan MaxLifetime => TimeSpan.FromMinutes(MaxLifetimeMinutes);
 
     /// <summary>Valores que quebrariam o fluxo (zero ou negativo); o módulo prefere cair na partida.</summary>
     public bool IsValid() =>
-        MaxStreamsPerUser >= 1 && KeepAliveSeconds >= 1 && MaxLifetimeMinutes >= 1 && SubscriberQueue >= 1;
+        MaxStreamsPerUser >= 1 && KeepAliveSeconds >= 1 && MaxLifetimeMinutes >= 1 && SubscriberQueue >= 1 && RetryMilliseconds >= 0;
 }

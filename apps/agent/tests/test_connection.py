@@ -17,6 +17,7 @@ from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
     ServerRestarting,
+    ServerRestartNow,
     TransportError,
 )
 
@@ -269,6 +270,25 @@ async def test_server_restart_reconnects_fast_without_growing_the_backoff() -> N
     # Três avisos de reinício: espera curta e fixa; a primeira queda comum ainda começa em 1 s.
     assert harness.clock.sleeps[:4] == [POLICY.restart_wait] * 3 + [1]
     assert POLICY.restart_wait < 1
+
+
+async def test_restart_now_notice_reconnects_fast_without_growing_the_backoff() -> None:
+    notice: list[str | bytes | Exception] = [ServerRestartNow("4411")]
+    transport = FakeTransport([notice, notice, [TransportError("cai")]])
+    harness = Harness(transport)
+    await harness.run_until(lambda: len(harness.clock.sleeps) >= 3)
+    # Sem jitter (sorteio do meio): 0,35 s; a primeira queda comum ainda começa em 1 s.
+    assert harness.clock.sleeps[:3] == [pytest.approx(0.35)] * 2 + [1]
+
+
+@pytest.mark.parametrize(("draw", "expected"), [(0.0, 0.2), (1.0, 0.5)])
+async def test_restart_now_wait_stays_between_the_limits(draw: float, expected: float) -> None:
+    transport = FakeTransport([[ServerRestartNow("4411")], [TransportError("cai")]])
+    harness = Harness(transport)
+    harness.supervisor._random = lambda: draw
+    await harness.run_until(lambda: len(harness.clock.sleeps) >= 1)
+    assert harness.clock.sleeps[0] == pytest.approx(expected)
+    assert POLICY.restart_now_min <= harness.clock.sleeps[0] <= POLICY.restart_now_max
 
 
 async def test_unexpected_exception_in_the_loop_does_not_kill_the_agent() -> None:
