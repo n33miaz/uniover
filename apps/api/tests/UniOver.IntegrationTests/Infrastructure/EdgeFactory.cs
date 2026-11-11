@@ -38,9 +38,17 @@ public sealed class EdgeFactory(
 
         builder.ConfigureServices((context, services) =>
         {
+            // O TestServer não preenche o endereço de quem conectou. Com os cabeçalhos encaminhados ligados, a regra do IP
+            // só vale para conexão vinda de endereço interno, então o padrão é o laço local, como numa conexão local real.
+            var peer = peerAddress ?? (ForwardedHeadersEnabled ? IPAddress.Loopback.ToString() : null);
+            if (peer is not null)
+            {
+                services.AddSingleton(new TestPeer(peer));
+                services.AddSingleton<IStartupFilter, TestPeerFilter>();
+            }
+
             if (withTestEndpoints)
             {
-                services.AddSingleton(new TestPeer(peerAddress));
                 services.AddSingleton<IStartupFilter, TestEndpointsFilter>();
             }
 
@@ -57,9 +65,30 @@ public sealed class EdgeFactory(
     /// WebApplication deixa o construtor de rotas nas propriedades do IApplicationBuilder.
     /// </summary>
     /// <summary>O endereço de quem abriu a conexão com o app (o salto do proxy); sem ele o servidor de teste não informa nenhum.</summary>
-    private sealed record TestPeer(string? Address);
+    private bool ForwardedHeadersEnabled =>
+        settings is not null
+        && settings.TryGetValue("ForwardedHeaders:Enabled", out var enabled)
+        && string.Equals(enabled, "true", StringComparison.OrdinalIgnoreCase);
 
-    private sealed class TestEndpointsFilter(TestPeer peer) : IStartupFilter
+    private sealed record TestPeer(string Address);
+
+    /// <summary>Antes de todo o pipeline do Host: é o que o Kestrel preencheria ao aceitar a conexão.</summary>
+    private sealed class TestPeerFilter(TestPeer peer) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            var address = IPAddress.Parse(peer.Address);
+            app.Use((context, forward) =>
+            {
+                context.Connection.RemoteIpAddress = address;
+                return forward(context);
+            });
+
+            next(app);
+        };
+    }
+
+    private sealed class TestEndpointsFilter : IStartupFilter
     {
         private const string RouteBuilderKey = "__EndpointRouteBuilder";
 
@@ -69,17 +98,6 @@ public sealed class EdgeFactory(
 
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
         {
-            // Antes de todo o pipeline do Host: é o que o Kestrel preencheria ao aceitar a conexão.
-            if (peer.Address is not null)
-            {
-                var address = IPAddress.Parse(peer.Address);
-                app.Use((context, forward) =>
-                {
-                    context.Connection.RemoteIpAddress = address;
-                    return forward(context);
-                });
-            }
-
             next(app);
 
             var routes = (IEndpointRouteBuilder)app.Properties[RouteBuilderKey]!;
