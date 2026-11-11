@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.55.0](https://github.com/n33miaz/uniover/compare/v0.54.0...v0.55.0) (2026-11-11)
+
+
+### Devices 0.53.0
+
+#### Features
+
+* keep agents and commands up during deploys
+
+
+### Web 0.53.0
+
+#### Features
+
+* keep agents and commands up during deploys
+
+
+### Agent 0.50.0
+
+#### Features
+
+* keep agents and commands up during deploys
+
 ## [0.54.0](https://github.com/n33miaz/uniover/compare/v0.53.0...v0.54.0) (2026-11-10)
 
 
