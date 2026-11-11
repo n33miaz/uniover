@@ -15,7 +15,7 @@
 
   @if (store.safePowerOff()) {
     <p id="power-checked" class="text" i18n="@@tv.power.checked">
-      O agente só desliga se a TV estiver ligada e confirma o resultado. Se não conseguir confirmar,
+      O app só desliga se a TV estiver ligada e confirma o resultado. Se não conseguir confirmar,
       não repete a tecla.
     </p>
   }
@@ -106,7 +106,7 @@
       }
     } @else if (!store.powerSchedule()) {
       <p class="text" i18n="@@tv.power.schedule.unavailable">
-        Agendamento disponível com TV configurada e agente online com desligamento seguro.
+        O agendamento precisa da TV configurada e do computador que a controla ligado e atualizado.
       </p>
     }
     @if (store.lastPowerSchedule(); as last) {

@@ -15,9 +15,9 @@ export function statusLabel(status: TvStatus): string {
     case 'tv-waking':
       return $localize`:@@tv.status.waking:TV ligando…`;
     case 'agent-off':
-      return $localize`:@@tv.status.agent-off:agente desligado`;
+      return $localize`:@@tv.status.agent-off:computador desligado`;
     case 'unconfigured':
-      return $localize`:@@tv.status.unconfigured:sem agente configurado`;
+      return $localize`:@@tv.status.unconfigured:sem computador configurado`;
     case 'offline':
       return $localize`:@@tv.status.offline:sem rede`;
     case 'pc-off':
@@ -231,7 +231,7 @@ export function indicatorText(
       };
     case 'agent-off':
       return {
-        title: $localize`:@@tv.indicator.agent-off.title:Agente desligado`,
+        title: $localize`:@@tv.indicator.agent-off.title:Computador desligado`,
         meaning: $localize`:@@tv.indicator.agent-off.meaning:O computador que fala com a TV não está conectado. Ligue-o e o controle volta.`,
         action: 'retry',
         actionLabel: retry,
@@ -239,8 +239,8 @@ export function indicatorText(
       };
     case 'not-configured':
       return {
-        title: $localize`:@@tv.indicator.not-configured.title:Sem agente configurado`,
-        meaning: $localize`:@@tv.indicator.not-configured.meaning:Nenhum agente foi configurado para controlar a TV. Pareie o agente para usar o controle.`,
+        title: $localize`:@@tv.indicator.not-configured.title:Sem computador configurado`,
+        meaning: $localize`:@@tv.indicator.not-configured.meaning:Nenhum computador foi configurado para controlar a TV. Conecte um em Dispositivos para usar o controle.`,
         action: 'retry',
         actionLabel: retry,
         hints: NO_HINTS,

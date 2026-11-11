@@ -63,6 +63,7 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     dragging: signal(false),
     watch: vi.fn(() => () => undefined),
     refresh: vi.fn(() => Promise.resolve(true)),
+    requestApproval: vi.fn<() => Outcome>(() => Promise.resolve(null)),
     beginGesture: vi.fn(),
     endGesture: vi.fn(),
     movePointer: vi.fn<(dx: number, dy: number, elapsedMs: number) => void>(),

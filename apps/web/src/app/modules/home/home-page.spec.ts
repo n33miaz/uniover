@@ -140,17 +140,17 @@ describe('HomePage', () => {
     status.set({ ...status(), agent: 'online' });
     const online = (await render()).el.querySelector<HTMLElement>('.agent-status')!;
     expect(online.classList.contains('ok')).toBe(true);
-    expect(online.getAttribute('aria-label')).toBe('Agente ligado');
+    expect(online.getAttribute('aria-label')).toBe('Computador ligado');
 
     status.set({ ...status(), agent: 'offline' });
     const offline = (await render()).el.querySelector<HTMLElement>('.agent-status')!;
     expect(offline.classList.contains('warn')).toBe(true);
-    expect(offline.getAttribute('aria-label')).toBe('Agente desligado');
+    expect(offline.getAttribute('aria-label')).toBe('Computador desligado');
 
     status.set({ ...status(), agent: 'unknown', serviceDown: true });
     const unavailable = (await render()).el.querySelector<HTMLElement>('.agent-status')!;
     expect(unavailable.classList.contains('warn')).toBe(true);
-    expect(unavailable.getAttribute('aria-label')).toBe('Agente sem resposta');
+    expect(unavailable.getAttribute('aria-label')).toBe('Computador sem resposta');
   });
 
   it('asks the status to follow the house while on screen and lets go when it leaves', async () => {
@@ -267,7 +267,7 @@ describe('HomePage', () => {
     const { el } = await render();
     expect(el.querySelector('.agent-alert')).toBeNull();
     expect(el.querySelector<HTMLElement>('.agent-status')?.getAttribute('aria-label')).toBe(
-      'Agente desligado',
+      'Computador desligado',
     );
   });
 
@@ -373,7 +373,7 @@ describe('HomePage', () => {
     });
     const { el } = await render();
     const dot = el.querySelector('.agent-status');
-    expect(dot?.getAttribute('aria-label')).toBe('Agente desligado');
+    expect(dot?.getAttribute('aria-label')).toBe('Computador desligado');
     expect(el.querySelector('.agent-alert')).toBeNull();
     expect(el.querySelector('.hero-settings')).not.toBeNull();
   });

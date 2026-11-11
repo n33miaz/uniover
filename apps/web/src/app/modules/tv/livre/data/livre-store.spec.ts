@@ -178,7 +178,7 @@ describe('TvLivreStore', () => {
       );
       await open();
       expect(store.view()).toBeNull();
-      expect(store.loadFailure()).toContain('agente da TV');
+      expect(store.loadFailure()).toContain('computador que controla a TV');
       await store.load();
       expect(store.loadFailure()).toBeNull();
       expect(store.view()).not.toBeNull();

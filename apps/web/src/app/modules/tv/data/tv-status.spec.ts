@@ -42,14 +42,14 @@ describe('statusLabel', () => {
     expect(statusLabel('hibernating')).not.toMatch(/desligada/i);
   });
 
-  it('says "agente desligado" when the agent is down (it is not the TV)', () => {
-    expect(statusLabel('agent-off')).toBe('agente desligado');
+  it('says "computador desligado" when the agent is down (it is not the TV)', () => {
+    expect(statusLabel('agent-off')).toBe('computador desligado');
   });
 
   it('names the other states', () => {
     expect(statusLabel('hot')).toBe('conectada');
     expect(statusLabel('offline')).toBe('sem rede');
-    expect(statusLabel('unconfigured')).toBe('sem agente configurado');
+    expect(statusLabel('unconfigured')).toBe('sem computador configurado');
     expect(statusLabel('not-paired')).toBe('TV não pareada');
     expect(statusLabel('loading')).toBe('reconectando…');
     expect(statusLabel('pc-off')).toBe('PC desligado');
@@ -241,7 +241,7 @@ describe('indicatorText with a known offline instant', () => {
     expect(indicatorText('pc-off', 5).title).toBe('PC Desligado');
     // O agente fora sem o "desde quando" segue como era antes.
     expect(indicatorText('agent-off', 5, true, 'PC Desligado desde 28/10 19:24').title).toBe(
-      'Agente desligado',
+      'Computador desligado',
     );
   });
 });

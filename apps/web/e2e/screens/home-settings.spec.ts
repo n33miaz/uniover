@@ -206,7 +206,7 @@ test.describe('Início', () => {
       return { brand: box.left + box.width / 2, viewport: window.innerWidth };
     });
     expect(center.brand).toBeCloseTo(center.viewport / 2, 0);
-    await expect(page.locator('.agent-status')).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(page.locator('.agent-status')).toHaveAttribute('aria-label', 'Computador ligado');
     await expect(page.locator('.agent-alert')).toHaveCount(0);
   });
 

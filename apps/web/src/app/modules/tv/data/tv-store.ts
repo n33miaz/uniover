@@ -385,9 +385,9 @@ export class TvStore {
       return $localize`:@@tv.reason.not-paired:A TV não está pareada.`;
     }
     return this.currentAccount() && this._notConfigured()
-      ? $localize`:@@tv.reason.not-configured:Nenhum agente foi configurado para controlar a TV.`
+      ? $localize`:@@tv.reason.not-configured:Nenhum computador foi configurado para controlar a TV.`
       : (this.agentOffText() ??
-          $localize`:@@tv.reason.agent-off:O agente da TV está desligado, então os botões não funcionam agora.`);
+          $localize`:@@tv.reason.agent-off:O computador que controla a TV está desligado, então os botões não funcionam agora.`);
   });
 
   /** "controle religado às HH:MM" quando o vigia consertou o serviço; `null` sem evento recente. */
@@ -1400,7 +1400,7 @@ export class TvStore {
   private blockedText(): string {
     return (
       this.disabledReason() ??
-      $localize`:@@tv.reason.waking:O servidor está acordando. Tente de novo em instantes.`
+      $localize`:@@tv.reason.app-starting:O UniOver está iniciando. Tente de novo em instantes.`
     );
   }
 

@@ -206,7 +206,9 @@ test.describe('duas TVs', () => {
       'aria-current',
       'true',
     );
-    await expect(dialog.getByRole('button', { name: /Raphael/ })).toContainText('agente desligado');
+    await expect(dialog.getByRole('button', { name: /Raphael/ })).toContainText(
+      'computador desligado',
+    );
     await settle(page);
     await shoot(page, 'seletor-aberto', info.project.name);
     await expectSound(page);
@@ -598,7 +600,7 @@ test.describe('capacidades da TV', () => {
     await expect(page.locator('.pill.volume .level strong')).toHaveCount(0);
   });
 
-  test('com o agente desligado a TV não perde botões (a API não sabe o que ele faz)', async ({
+  test('com o computador desligado a TV não perde botões (a API não sabe o que ele faz)', async ({
     page,
   }) => {
     serve([{ ...CASA, online: false, kind: null, capabilities: [] }, RAPHAEL]);

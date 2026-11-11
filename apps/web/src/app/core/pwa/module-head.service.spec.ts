@@ -30,6 +30,26 @@ function head() {
   };
 }
 
+/** Os dois ícones da aba, como o index.html os declara (o servidor não os troca). */
+function seedTabIcons() {
+  for (const [type, href] of [
+    ['image/svg+xml', 'favicon.svg'],
+    ['image/png', 'favicon-32.png'],
+  ]) {
+    const link = document.createElement('link');
+    link.setAttribute('rel', 'icon');
+    link.setAttribute('type', type);
+    link.setAttribute('href', href);
+    document.head.appendChild(link);
+  }
+}
+
+function tabIcons() {
+  return Array.from(document.head.querySelectorAll('link[rel="icon"]')).map((link) =>
+    link.getAttribute('href'),
+  );
+}
+
 function expected(prefix: string, name: string) {
   return {
     manifest: [`${prefix}/manifest.webmanifest`],
@@ -103,10 +123,28 @@ describe('ModuleHeadService', () => {
     window.history.replaceState(null, '', '/');
     document.head
       .querySelectorAll(
-        'link[rel="manifest"], link[rel="apple-touch-icon"], meta[name="apple-mobile-web-app-title"]',
+        'link[rel="manifest"], link[rel="apple-touch-icon"], link[rel="icon"], meta[name="apple-mobile-web-app-title"]',
       )
       .forEach((element) => element.remove());
     document.title = '';
+  });
+
+  it('the tab icon follows the module, each link keeping its own format', async () => {
+    seedTabIcons();
+    const { router } = setup('/');
+    // Na raiz o que o index.html trouxe já está certo: nada é reescrito.
+    expect(tabIcons()).toEqual(['favicon.svg', 'favicon-32.png']);
+    await router.navigateByUrl('/tv');
+    expect(tabIcons()).toEqual(['/tv/favicon.svg', '/tv/favicon-32.png']);
+    await router.navigateByUrl('/treino');
+    expect(tabIcons()).toEqual(['/treino/favicon.svg', '/treino/favicon-32.png']);
+    await router.navigateByUrl('/entrar');
+    expect(tabIcons()).toEqual(['/favicon.svg', '/favicon-32.png']);
+  });
+
+  it('without tab icon links in the page none is created', () => {
+    setup('/tv');
+    expect(tabIcons()).toEqual([]);
   });
 
   it('fixes the title and the app name on a cold load of a module, keeping the server links', () => {

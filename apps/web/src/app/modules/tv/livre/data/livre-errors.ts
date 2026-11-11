@@ -56,7 +56,7 @@ export function livreCodeMessage(code: string): string | null {
     case 'install_failed':
       return $localize`:@@tv-livre.error.install-failed:A instalação não deu certo.`;
     case 'apk_unavailable':
-      return $localize`:@@tv-livre.error.apk-unavailable:O agente não tem o arquivo de instalação.`;
+      return $localize`:@@tv-livre.error.apk-unavailable:O computador que controla a TV não tem o arquivo de instalação.`;
     case 'apk_hash_mismatch':
       return $localize`:@@tv-livre.error.apk-hash-mismatch:O arquivo de instalação não confere.`;
     case 'apk_invalid':
@@ -78,24 +78,24 @@ export function livreCodeMessage(code: string): string | null {
     case 'sleep_failed':
       return $localize`:@@tv-livre.error.sleep-failed:A TV não entrou no Modo Dormir.`;
     case 'unknown_action':
-      return $localize`:@@tv-livre.error.unknown-action:O agente não conhece este pedido. Atualize o agente.`;
+      return $localize`:@@tv-livre.error.unknown-action:O computador que controla a TV precisa de uma atualização para fazer isso.`;
     case 'livre_failed':
       return $localize`:@@tv-livre.error.livre-failed:O TV Livre não respondeu como esperado.`;
     case 'adb_unauthorized':
-      return $localize`:@@tv-livre.error.adb-unauthorized:Aceite o aviso do ADB na tela da TV, marcando Sempre permitir neste computador, e tente de novo.`;
+      return $localize`:@@tv-livre.error.adb-unauthorized:Apareceu um aviso na tela da TV: marque Sempre permitir neste computador, aceite e tente de novo.`;
     case 'adb_device_changed':
       return $localize`:@@tv-livre.error.adb-device-changed:Outro aparelho respondeu no endereço da TV.`;
     case 'adb_idle':
-      return $localize`:@@tv-livre.error.adb-idle:O ADB só conecta enquanto você usa a tela da TV. Toque de novo.`;
+      return $localize`:@@tv-livre.error.adb-idle:A ligação com a TV estava em descanso. Toque de novo.`;
     case 'adb_identity':
-      return $localize`:@@tv-livre.error.adb-identity:Não deu para confirmar qual aparelho responde pelo ADB. Toque em Atualizar lista.`;
+      return $localize`:@@tv-livre.error.adb-identity:Não deu para confirmar qual aparelho da rede é a TV. Toque em Atualizar lista.`;
     case 'adb_unreachable':
     case 'adb_unavailable':
     case 'adb_timeout':
-      return $localize`:@@tv-livre.error.adb-unreachable:A TV não respondeu pelo ADB. Ligue a TV e tente de novo.`;
+      return $localize`:@@tv-livre.error.adb-unreachable:A TV não respondeu. Ligue a TV e tente de novo.`;
     default:
       return code.startsWith('adb_')
-        ? $localize`:@@tv-livre.error.adb-failed:O ADB da TV falhou. Tente de novo.`
+        ? $localize`:@@tv-livre.error.adb-failed:A TV não aceitou o pedido. Tente de novo.`
         : null;
   }
 }
@@ -139,7 +139,7 @@ export function describeLivreFailure(error: unknown): LivreFailure {
       };
     case 404:
       return {
-        message: $localize`:@@tv-livre.error.not-found:Não achei isso no servidor. Atualize a tela.`,
+        message: $localize`:@@tv-livre.error.not-found:Isso não existe mais. Atualize a tela.`,
         code,
       };
     case 409:

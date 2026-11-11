@@ -28,13 +28,17 @@ describe('livreCodeMessage', () => {
   });
 
   it('groups the adb codes by what the person can do', () => {
-    expect(livreCodeMessage('adb_unreachable')).toContain('ADB');
+    expect(livreCodeMessage('adb_unreachable')).toContain('A TV não respondeu');
     expect(livreCodeMessage('adb_timeout')).toBe(livreCodeMessage('adb_unreachable'));
-    expect(livreCodeMessage('adb_unauthorized')).toContain('Aceite');
-    expect(livreCodeMessage('adb_idle')).toContain('enquanto você usa a tela da TV');
+    expect(livreCodeMessage('adb_unauthorized')).toContain('aviso na tela da TV');
+    expect(livreCodeMessage('adb_idle')).toContain('estava em descanso');
     expect(livreCodeMessage('adb_unauthorized')).toContain('Sempre permitir neste computador');
-    expect(livreCodeMessage('adb_identity')).toContain('qual aparelho responde');
-    expect(livreCodeMessage('adb_qualquer_outro')).toContain('ADB');
+    expect(livreCodeMessage('adb_identity')).toContain('qual aparelho da rede é a TV');
+    expect(livreCodeMessage('adb_qualquer_outro')).toContain('A TV não aceitou o pedido');
+    // Nenhuma sigla técnica chega à tela.
+    for (const code of ['adb_unreachable', 'adb_unauthorized', 'adb_idle', 'adb_qualquer_outro']) {
+      expect(livreCodeMessage(code)).not.toContain('ADB');
+    }
   });
 
   it('does not know a code that is not one of the agent', () => {
@@ -96,7 +100,9 @@ describe('describeLivreFailure', () => {
 
   it('leaves the rest (network, session, permission, agent off) to the texts of the TV', () => {
     expect(describeLivreFailure(http(0)).message).toContain('Sem conexão');
-    expect(describeLivreFailure(http(503, 'agent-offline')).message).toContain('agente da TV');
+    expect(describeLivreFailure(http(503, 'agent-offline')).message).toContain(
+      'computador que controla a TV',
+    );
     expect(describeLivreFailure(http(403, 'forbidden')).message).toContain('permissão');
     expect(describeLivreFailure(new Error('x')).message).toContain('Não foi possível');
   });

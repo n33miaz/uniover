@@ -28,7 +28,7 @@ describe('pcFailureOf', () => {
       http(409, { type: 'https://uniover.dev/problems/pc-key-unsupported', title: 'x' }),
     );
     expect(unsupported.kind).toBe('key-unsupported');
-    expect(unsupported.message).toBe('Atualize o agente do PC para usar este comando.');
+    expect(unsupported.message).toBe('Este computador precisa de uma atualização para fazer isso.');
     expect(
       pcFailureOf(http(409, { type: 'https://uniover.dev/problems/pc-unavailable', title: 'x' }))
         .kind,
@@ -100,12 +100,17 @@ describe('pcFailureOf', () => {
       http(403, { type: 'https://uniover.dev/problems/pc-device-pending', title: 'x' }),
     );
     expect(pending.kind).toBe('device-pending');
-    expect(pending.message).toBe('Aprove este aparelho no PC.');
+    // O aviso diz o que apareceu no computador, o que clicar e como fazer a pergunta voltar.
+    expect(pending.message).toContain('pergunta na tela do computador');
+    expect(pending.message).toContain('clique em Sim');
+    expect(pending.message).toContain('2 minutos');
+    expect(pending.message).toContain('Tentar de Novo');
     const denied = pcFailureOf(
       http(403, { type: 'https://uniover.dev/problems/pc-device-denied', title: 'x' }),
     );
     expect(denied.kind).toBe('device-denied');
-    expect(denied.message).toBe('O dono do PC não permitiu este aparelho.');
+    expect(denied.message).toContain('respondeu Não');
+    expect(denied.message).toContain('uma hora');
     const unknown = pcFailureOf(
       http(403, { type: 'https://uniover.dev/problems/pc-device-unknown', title: 'x' }),
     );

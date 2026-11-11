@@ -1,11 +1,17 @@
 import { TestBed } from '@angular/core/testing';
-import { ConnectivityBanner } from './connectivity-banner';
+import { ConnectivityBanner, WAKING_NOTICE_DELAY_MS } from './connectivity-banner';
 import { ConnectivityService } from './connectivity.service';
 
 describe('ConnectivityBanner', () => {
-  async function render() {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** Monta a faixa e deixa passar `elapsedMs` (por padrão, o bastante para o "iniciando" aparecer). */
+  async function render(elapsedMs = WAKING_NOTICE_DELAY_MS) {
     const fixture = TestBed.createComponent(ConnectivityBanner);
-    await fixture.whenStable();
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(elapsedMs);
+    fixture.detectChanges();
     return fixture;
   }
   const text = (f: { nativeElement: unknown }) =>
@@ -22,8 +28,38 @@ describe('ConnectivityBanner', () => {
     service.serverState.set('waking');
     service.waitedSeconds.set(12);
     const fixture = await render();
-    expect(text(fixture)).toContain('Acordando o servidor');
+    expect(text(fixture)).toContain('O UniOver está iniciando');
     expect(text(fixture)).toContain('aguardando há 12 s');
+  });
+
+  it('a waking state that clears in under two seconds never shows (no blink when the app opens)', async () => {
+    const service = TestBed.inject(ConnectivityService);
+    service.serverState.set('waking');
+    const fixture = await render(WAKING_NOTICE_DELAY_MS - 1);
+    expect(text(fixture).trim()).toBe('');
+    service.serverState.set('ok');
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(WAKING_NOTICE_DELAY_MS * 2);
+    fixture.detectChanges();
+    expect(text(fixture).trim()).toBe('');
+  });
+
+  it('a waking state that lasts shows up, and leaves as soon as the server answers', async () => {
+    const service = TestBed.inject(ConnectivityService);
+    service.serverState.set('waking');
+    const fixture = await render(WAKING_NOTICE_DELAY_MS - 1);
+    expect(text(fixture)).not.toContain('O UniOver está iniciando');
+    await vi.advanceTimersByTimeAsync(1);
+    fixture.detectChanges();
+    expect(text(fixture)).toContain('O UniOver está iniciando');
+    service.serverState.set('ok');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['shown']()).toBe('ok');
+  });
+
+  it('the offline notice is never held back', async () => {
+    TestBed.inject(ConnectivityService).serverState.set('offline');
+    expect(text(await render(0))).toContain('Sem conexão');
   });
 
   it('opens and closes each notice inside a collapsible track, so the page below does not jump', async () => {
@@ -44,7 +80,7 @@ describe('ConnectivityBanner', () => {
     TestBed.inject(ConnectivityService).serverState.set('offline');
     const fixture = await render();
     expect(text(fixture)).toContain('Sem conexão');
-    expect(text(fixture)).not.toContain('Acordando');
+    expect(text(fixture)).not.toContain('iniciando');
   });
 
   it('says the server did not answer once the window is over', async () => {

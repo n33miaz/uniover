@@ -1104,7 +1104,7 @@ test.describe('folha de desligar', () => {
     await expect(sheet.getByRole('button')).toHaveText(['Desligar', 'Cancelar']);
     const row = sheet.getByRole('region', { name: 'Agendar' });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('Agendamento disponível com TV configurada');
+    await expect(row).toContainText('O agendamento precisa da TV configurada');
     await expect(row.locator('button, input')).toHaveCount(0);
     expect(tv.count('/power/off')).toBe(0);
   });

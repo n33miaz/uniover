@@ -137,22 +137,22 @@ export class HomePage {
     if (this.loading() && status.agent === 'unknown') {
       return {
         id: 'agent',
-        label: $localize`:@@home.agent-connecting:Conectando ao agente`,
+        label: $localize`:@@home.agent-connecting:Conectando ao computador`,
         tone: 'connecting',
       };
     }
     if (status.agent === 'online')
-      return { id: 'agent', label: $localize`:@@home.chip.agent-on:Agente ligado`, tone: 'ok' };
+      return { id: 'agent', label: $localize`:@@home.chip.agent-on:Computador ligado`, tone: 'ok' };
     if (status.serviceDown)
       return {
         id: 'agent',
-        label: $localize`:@@home.agent-unresponsive:Agente sem resposta`,
+        label: $localize`:@@home.agent-unresponsive:Computador sem resposta`,
         tone: 'warn',
       };
     if (status.agent === 'offline')
       return {
         id: 'agent',
-        label: $localize`:@@home.chip.agent-off:Agente desligado`,
+        label: $localize`:@@home.chip.agent-off:Computador desligado`,
         tone: 'warn',
       };
     return null;

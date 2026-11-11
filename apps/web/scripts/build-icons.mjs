@@ -49,9 +49,14 @@ for (const { svg, dir } of SETS) {
     out('icons/monochrome-512.png'),
     await render(`${svg}-mono.svg`, 512, { opaque: false }),
   );
+  // Ícone da aba de cada módulo: o próprio símbolo dele (só a raiz tem uma versão desenhada para tamanhos pequenos).
+  if (dir !== '') {
+    await write(out('favicon.svg'), await readFile(join(designDir, `${svg}.svg`)));
+    await write(out('favicon-32.png'), await render(`${svg}.svg`, 32, { opaque: false }));
+  }
 }
 
-// Favicon só na raiz: a versão para tamanhos pequenos (ponto maior, uma onda por lado).
+// Favicon da raiz: a versão para tamanhos pequenos (ponto maior, uma onda por lado).
 await write(join(publicDir, 'favicon.svg'), await readFile(join(designDir, 'core-small.svg')));
 await write(
   join(publicDir, 'favicon-32.png'),

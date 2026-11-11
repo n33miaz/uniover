@@ -849,7 +849,7 @@ test.describe('ponto de estado clicável', () => {
 
     await check('Conectada', 'connected');
     await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
-    await check('Agente desligado', 'agent-off');
+    await check('Computador desligado', 'agent-off');
     await sendState(page, {});
     await emitSse(page, 'tv.watchdog', {
       kind: 'repair_failed',
@@ -864,7 +864,7 @@ test.describe('ponto de estado clicável', () => {
 
     expect(shapes.size).toBe(4);
     expect(new Set(shapes.values()).size, 'uma forma diferente por fase').toBe(4);
-    // Conectada, agente desligado e vermelho (atenção e sem rede) são tons diferentes.
+    // Conectada, computador desligado e vermelho (atenção e sem rede) são tons diferentes.
     expect(new Set(colors.values()).size, 'tons por fase').toBeGreaterThanOrEqual(3);
   });
 
@@ -952,11 +952,13 @@ test.describe('ponto de estado clicável', () => {
     await openTv(page);
     tv.state = { ...HOT_STATE, agentOnline: false, connection: 'disconnected', volume: null };
     await emitSse(page, 'tv.state', tv.state);
-    await expect(statusDot(page, 'Agente desligado')).toBeVisible();
+    await expect(statusDot(page, 'Computador desligado')).toBeVisible();
     // Só o PC confirmado desligado (com a data) ganha o selo; aqui vale o aviso de sempre.
     await expect(page.locator('.seal')).toHaveCount(0);
     await expect(
-      page.getByText('O agente da TV está desligado, então os botões não funcionam agora.'),
+      page.getByText(
+        'O computador que controla a TV está desligado, então os botões não funcionam agora.',
+      ),
     ).toBeVisible();
     await expect(button(page, 'OK')).toBeDisabled();
     await expect(button(page, 'Desligar a TV')).toBeDisabled();
@@ -975,7 +977,7 @@ test.describe('ponto de estado clicável', () => {
     const before = states();
     await statusPanel(page).getByRole('button', { name: 'Tentar de Novo' }).click();
     await expect.poll(states).toBeGreaterThan(before);
-    await expect(statusDot(page, 'Agente desligado')).toBeVisible();
+    await expect(statusDot(page, 'Computador desligado')).toBeVisible();
     expect(tv.count('/wake')).toBe(wakes);
 
     // O agente volta: a próxima leitura traz o estado e tudo se reabilita.
@@ -1025,9 +1027,9 @@ test.describe('ponto de estado clicável', () => {
 
     await failSse(page);
     await statusDot(page).click();
-    await expect(statusPanel(page)).toContainText('Reconectando ao servidor…');
+    await expect(statusPanel(page)).toContainText('Reconectando…');
     await expect.poll(() => sseUrls(page)).toHaveLength(2);
-    await expect(statusPanel(page)).not.toContainText('Reconectando ao servidor…');
+    await expect(statusPanel(page)).not.toContainText('Reconectando…');
   });
 
   test('sem rede, mostra o último estado com a hora e desabilita os botões', async ({
@@ -1051,10 +1053,10 @@ test.describe('ponto de estado clicável', () => {
     await expect(statusDot(page, 'Sem rede')).toHaveCount(0);
   });
 
-  test('sem agente configurado o ponto pede atenção e o controle dá lugar ao estado vazio', async ({
+  test('sem computador configurado o ponto pede atenção e o controle dá lugar ao estado vazio', async ({
     page,
   }) => {
-    // Sem agente configurado a API informa agente fora do ar, e o aquecer volta 503 com o tipo próprio.
+    // Sem computador configurado a API informa agente fora do ar, e o aquecer volta 503 com o tipo próprio.
     tv.state = { ...HOT_STATE, agentOnline: false, connection: 'disconnected', volume: null };
     tv.wakeFailure = { status: 503, kind: 'agent-not-configured' };
     await signIn(page);
@@ -1062,7 +1064,7 @@ test.describe('ponto de estado clicável', () => {
     await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
     await emitSse(page, 'tv.state', tv.state);
     await emitSse(page, 'tv.shortcuts', tv.shortcuts);
-    await expect(statusDot(page, 'Sem agente configurado')).toHaveAttribute(
+    await expect(statusDot(page, 'Sem computador configurado')).toHaveAttribute(
       'data-phase',
       'attention',
     );
@@ -1106,12 +1108,14 @@ test.describe('erros de comando', () => {
     expect(tv.keysSent()).toEqual(['OK']);
   });
 
-  test('503 do agente mostra "agente desligado" e trava os botões', async ({ page }) => {
+  test('503 do agente mostra "computador desligado" e trava os botões', async ({ page }) => {
     await openTv(page);
     tv.commandFailure = { status: 503, kind: 'agent-offline' };
     await button(page, 'OK').click();
-    await expect(page.getByRole('alert')).toContainText('O agente da TV está desligado');
-    await expect(statusDot(page, 'Agente desligado')).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText(
+      'O computador que controla a TV está desligado',
+    );
+    await expect(statusDot(page, 'Computador desligado')).toBeVisible();
     await expect(button(page, 'OK')).toBeDisabled();
     expect(tv.keysSent()).toEqual(['OK']);
   });
@@ -1236,7 +1240,7 @@ test.describe('desligar com leitura', () => {
     tv.tvs = [{ ...SAFE_TV }];
     await openTv(page);
     await button(page, 'Desligar a TV').click();
-    await expect(sheetOf(page)).toContainText('O agente só desliga se a TV estiver ligada');
+    await expect(sheetOf(page)).toContainText('O app só desliga se a TV estiver ligada');
     await settleMotion(page);
     await screenshot(page, `test-results/tv-power-checked-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
@@ -1284,7 +1288,7 @@ test.describe('desligar com leitura', () => {
     tv.tvs = [{ ...SAFE_TV, capabilities: ['tv.remote', 'tv.kind.android', 'tv.key.v3'] }];
     await openTv(page);
     await button(page, 'Desligar a TV').click();
-    await expect(sheetOf(page)).not.toContainText('O agente só desliga se a TV estiver ligada');
+    await expect(sheetOf(page)).not.toContainText('O app só desliga se a TV estiver ligada');
     await sheetOf(page).getByRole('button', { name: 'Desligar', exact: true }).click();
     await expect(
       page.getByText('Pedido de desligar enviado. A TV só volta com o controle original.'),
@@ -1435,7 +1439,7 @@ test.describe('limpar a TV', () => {
     };
     await clean();
     await expect(appsDialog(page).getByRole('alert')).toHaveText(
-      'A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.',
+      'A TV não respondeu. Veja se ela está ligada e tente de novo.',
     );
 
     tv.commandFailure = { status: 504, kind: 'agent-timeout' };
@@ -2100,7 +2104,7 @@ test.describe('painel Apps', () => {
     await openApps(page);
     const dialog = appsDialog(page);
     await expect(dialog.getByRole('button', { name: 'Buscar apps da TV' })).toBeDisabled();
-    await expect(dialog.getByText('O agente da TV está desligado')).toBeVisible();
+    await expect(dialog.getByText('O computador que controla a TV está desligado')).toBeVisible();
   });
 });
 
@@ -2128,10 +2132,12 @@ test.describe('painel Teclado', () => {
     await openTv(page);
     await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
     await openKeyboard(page);
-    const note = keyboardDialog(page).getByRole('status').filter({ hasText: 'O agente da TV' });
+    const note = keyboardDialog(page)
+      .getByRole('status')
+      .filter({ hasText: 'O computador que controla a TV' });
     await expect(note).toBeVisible();
     await expect(note).toHaveText(
-      'O agente da TV está desligado, então os botões não funcionam agora.',
+      'O computador que controla a TV está desligado, então os botões não funcionam agora.',
     );
     await settleMotion(page);
     await screenshot(page, `test-results/tv-keyboard-agent-off-${info.project.name}.png`);

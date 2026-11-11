@@ -35,7 +35,7 @@ export function moduleScopeOf(path: string): ScopedModuleSlug | null {
 }
 
 /**
- * Mantém o `<head>` coerente com a tela aberta: manifest, ícone da tela de início e nome do app.
+ * Mantém o `<head>` coerente com a tela aberta: manifest, ícone da tela de início, ícone da aba e nome do app.
  *
  * O servidor só escolhe isso ao entregar o HTML. Quem entra por `/convite` ou `/entrar` recebe o manifest da raiz e,
  * depois, o roteador leva para `/tv` sem recarregar a página: o documento seguiria com o ícone e o nome do UniOver, e
@@ -80,6 +80,9 @@ export class ModuleHeadService {
       const name = slug ? MODULE_PRODUCT_NAMES[slug] : ROOT_PRODUCT_NAME;
       this.setLink('manifest', `${prefix}/manifest.webmanifest`);
       this.setLink('apple-touch-icon', `${prefix}/apple-touch-icon.png`);
+      // O ícone da aba (e o que o navegador usa em atalhos e no histórico) também é o do módulo.
+      this.setLink('icon', `${prefix}/favicon.svg`, '[type="image/svg+xml"]');
+      this.setLink('icon', `${prefix}/favicon-32.png`, '[type="image/png"]');
       if (this.doc.title !== name) this.title.setTitle(name);
       if (this.meta.getTag(`name="${APPLE_TITLE_META}"`)?.content !== name) {
         this.meta.updateTag({ name: APPLE_TITLE_META, content: name });
@@ -89,10 +92,12 @@ export class ModuleHeadService {
     }
   }
 
-  private setLink(rel: string, href: string): void {
+  /** `only` restringe a quais links do mesmo `rel` (os dois ícones da aba diferem pelo `type`); sem nenhum, nada é criado. */
+  private setLink(rel: string, href: string, only = ''): void {
     const head = this.doc.head;
-    let links = Array.from(head.querySelectorAll(`link[rel="${rel}"]`));
+    let links = Array.from(head.querySelectorAll(`link[rel="${rel}"]${only}`));
     if (links.length === 0) {
+      if (only !== '') return;
       // Sem o servidor para trocar o marcador (ng serve) o link não existe: cria um só.
       const created = this.doc.createElement('link');
       created.setAttribute('rel', rel);
@@ -102,7 +107,9 @@ export class ModuleHeadService {
     for (const link of links) {
       // `getAttribute`, nunca `link.href`: a propriedade é absoluta e nunca bateria; reescrever o mesmo valor faria o
       // Chromium buscar o manifest de novo.
-      if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+      // O index.html traz o ícone da raiz sem a barra (`favicon.svg`): é o mesmo arquivo, não se reescreve.
+      const current = link.getAttribute('href');
+      if (current !== href && `/${current}` !== href) link.setAttribute('href', href);
     }
   }
 }

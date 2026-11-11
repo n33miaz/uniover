@@ -80,6 +80,32 @@ describe('PcPage', () => {
     expect(root.querySelector('router-outlet')).not.toBeNull();
   });
 
+  it('explains the PC confirmation and can ask for it again', () => {
+    open('ready');
+    store.notice.set({
+      kind: 'device-pending',
+      message:
+        'Apareceu uma pergunta na tela do computador: clique em Sim para liberar este celular.',
+    });
+    fixture.detectChanges();
+    const retry = root.querySelector<HTMLButtonElement>('.notice button');
+    expect(root.querySelector('.notice')?.textContent).toContain('pergunta na tela do computador');
+    expect(retry?.textContent?.trim()).toBe('Tentar de Novo');
+    retry?.click();
+    expect(store.requestApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refused phone gets the explanation without a retry button (the computer keeps the answer for an hour)', () => {
+    open('ready');
+    store.notice.set({
+      kind: 'device-denied',
+      message: 'Alguém respondeu Não à pergunta no computador.',
+    });
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')?.textContent).toContain('respondeu Não');
+    expect(root.querySelector('.notice button')).toBeNull();
+  });
+
   it('leaving the module lets go of the armed keys (a Win left armed cannot wait, unseen, for the next screen)', () => {
     open('ready');
     const armed = TestBed.inject(PcArmed);

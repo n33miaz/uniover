@@ -17,16 +17,16 @@ function http(
 }
 
 describe('describeFailure', () => {
-  it('maps 503 agent-offline to "agente desligado"', () => {
+  it('maps 503 agent-offline to "computador desligado"', () => {
     const failure = describeFailure(http(503, 'agent-offline'));
     expect(failure.kind).toBe('agent-offline');
-    expect(failure.message).toContain('agente da TV está desligado');
+    expect(failure.message).toContain('computador que controla a TV está desligado');
   });
 
   it('tells apart 503 agent-not-configured from agent-offline', () => {
     const failure = describeFailure(http(503, 'agent-not-configured'));
     expect(failure.kind).toBe('not-configured');
-    expect(failure.message).toContain('Nenhum agente foi configurado');
+    expect(failure.message).toContain('Nenhum computador foi configurado');
   });
 
   it('maps 504 to "a TV não respondeu"', () => {
@@ -48,7 +48,7 @@ describe('describeFailure', () => {
   it('gives the codes of the safe power off their own message, and only for that request', () => {
     const unsafe = http(502, 'command-failed', { agentError: 'power_off_unsafe' });
     expect(describeFailure(unsafe, 'power-off').message).toBe(
-      'O agente não oferece mais o desligamento com confirmação. Nenhum comando foi enviado. Atualize a TV no app antes de tentar novamente.',
+      'O computador que controla a TV não consegue mais desligar com confirmação. Nada foi enviado. Atualize a TV no app antes de tentar de novo.',
     );
     const uncertain = http(502, 'command-failed', { agentError: 'uncertain' });
     expect(describeFailure(uncertain, 'power-off').message).toBe(
@@ -60,7 +60,7 @@ describe('describeFailure', () => {
     );
     const failed = http(502, 'command-failed', { agentError: 'failed' });
     expect(describeFailure(failed, 'power-off').message).toBe(
-      'O agente não conseguiu desligar a TV. Olhe a TV antes de tentar de novo.',
+      'Não deu para desligar a TV. Olhe a TV antes de tentar de novo.',
     );
     // Sem o contexto, são códigos desconhecidos como quaisquer outros.
     expect(describeFailure(uncertain).message).toContain('(código uncertain)');
@@ -80,9 +80,7 @@ describe('describeFailure', () => {
     for (const code of ['adb_unreachable', 'adb_unavailable', 'adb_timeout']) {
       const failure = describeFailure(http(502, 'command-failed', { agentError: code }));
       expect(failure.kind).toBe('command-failed');
-      expect(failure.message).toBe(
-        'A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.',
-      );
+      expect(failure.message).toBe('A TV não respondeu. Veja se ela está ligada e tente de novo.');
     }
     const unauthorized = describeFailure(
       http(502, 'command-failed', { agentError: 'adb_unauthorized' }),
@@ -98,11 +96,11 @@ describe('describeFailure', () => {
     expect(swapped.kind).toBe('adb-device-changed');
     expect(swapped.message).toBe('Outro aparelho respondeu no endereço da TV.');
     const idle = describeFailure(http(502, 'command-failed', { agentError: 'adb_idle' }));
-    expect(idle.message).toContain('enquanto você usa a tela da TV');
+    expect(idle.message).toContain('estava em descanso');
     expect(idle.message).not.toContain('ainda não deu a permissão');
     const identity = describeFailure(http(502, 'command-failed', { agentError: 'adb_identity' }));
-    expect(identity.message).toContain('qual aparelho responde');
-    expect(identity.message).not.toContain('enquanto você usa a tela da TV');
+    expect(identity.message).toContain('qual aparelho da rede é a TV');
+    expect(identity.message).not.toContain('estava em descanso');
     const missing = describeFailure(
       http(502, 'command-failed', { agentError: 'cleanup_report_missing' }),
     );

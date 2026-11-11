@@ -252,7 +252,7 @@ describe('TvStore', () => {
       emit('tv.state', { ...hot, agentOnline: false, connection: 'disconnected', volume: null });
       expect(store.status()).toBe('agent-off');
       expect(store.canSend()).toBe(false);
-      expect(store.disabledReason()).toContain('agente da TV está desligado');
+      expect(store.disabledReason()).toContain('computador que controla a TV está desligado');
       expect(store.state()?.volume).toBeNull();
     });
 
@@ -737,7 +737,7 @@ describe('TvStore', () => {
       await started();
       expect(store.status()).toBe('unconfigured');
       expect(store.canSend()).toBe(false);
-      expect(store.disabledReason()).toContain('Nenhum agente foi configurado');
+      expect(store.disabledReason()).toContain('Nenhum computador foi configurado');
 
       // Enquanto o agente segue fora do ar nada é aquecido; quando ele volta, o estado limpa o aviso.
       await vi.advanceTimersByTimeAsync(120_000);
@@ -1390,7 +1390,7 @@ describe('TvStore', () => {
       await expect(store.cleanup()).resolves.toBe(false);
       expect(store.notice()).toEqual({
         kind: 'error',
-        text: 'A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.',
+        text: 'A TV não respondeu. Veja se ela está ligada e tente de novo.',
       });
 
       api.cleanup.mockRejectedValueOnce(problem(504, 'agent-timeout'));
@@ -1415,7 +1415,7 @@ describe('TvStore', () => {
       await started();
       api.cleanup.mockRejectedValueOnce(problem(503, 'agent-offline'));
       await store.cleanup();
-      expect(store.notice()?.text).toContain('O agente da TV está desligado');
+      expect(store.notice()?.text).toContain('O computador que controla a TV está desligado');
       expect(store.state()?.agentOnline).toBe(false);
       expect(store.canSend()).toBe(false);
     });
@@ -2547,7 +2547,7 @@ describe('TvStore', () => {
       expect(store.status()).toBe('agent-off');
       expect(store.pcOff()).toBe(false);
       expect(store.pcOffSince()).toBeNull();
-      expect(store.disabledReason()).toContain('agente da TV está desligado');
+      expect(store.disabledReason()).toContain('computador que controla a TV está desligado');
     });
 
     it('an agent that is online never shows the seal, even with a stale "since"', async () => {

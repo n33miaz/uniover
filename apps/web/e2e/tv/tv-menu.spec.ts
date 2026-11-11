@@ -193,7 +193,7 @@ for (const screen of SCREENS) {
       });
       const row = page.locator('.reason-row');
       await expect(row).toBeVisible();
-      await expect(row.getByText('O agente da TV está desligado')).toBeVisible();
+      await expect(row.getByText('O computador que controla a TV está desligado')).toBeVisible();
       const retry = row.getByRole('button', { name: 'Tentar de Novo' });
       await expect(retry).toBeVisible();
       expect((await box(retry)).height).toBeGreaterThanOrEqual(44);
