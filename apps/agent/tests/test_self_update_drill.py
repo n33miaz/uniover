@@ -11,16 +11,22 @@ from tests.test_self_update import NEW, OLD, Installation, make_zip, patch_http,
 from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
+    SignedManifest,
     archive_url,
     commit_url,
     download_archive,
     drill_origin,
     latest_commit,
+    manifest_url,
     read_version,
     self_update,
 )
 
 ORIGIN = "http://127.0.0.1:50123"
+
+
+def fixture_manifest(_: bytes, sha: str) -> SignedManifest:
+    return SignedManifest("teste", sha, "0" * 64, module.archive_url(sha))
 
 
 @pytest.fixture
@@ -34,6 +40,7 @@ def test_the_drill_is_off_by_default_and_the_urls_stay_on_github() -> None:
     assert drill_origin() is None
     assert commit_url() == module.COMMIT_URL.format(channel="develop")
     assert archive_url(NEW) == f"https://github.com/n33miaz/uniover/archive/{NEW}.zip"
+    assert manifest_url() == module.MANIFEST_URL
 
 
 def test_the_origin_is_ignored_without_the_mode_variable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,6 +62,7 @@ def test_the_drill_points_both_requests_at_the_local_server(drill: str) -> None:
     assert drill_origin() == drill
     assert commit_url() == f"{drill}/commit"
     assert archive_url(NEW) == f"{drill}/archive/{NEW}.zip"
+    assert manifest_url() == f"{drill}/manifest"
 
 
 def test_a_trailing_slash_on_the_origin_is_tolerated(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,7 +148,13 @@ def test_a_full_update_runs_through_the_local_server_in_drill_mode(
     requests = patch_http(monkeypatch, respond)
     installed = Installation(tmp_path / "UniOver")
     result = self_update(
-        installed.source, run_sync=installed.run_sync, run_check=installed.run_check
+        installed.source,
+        run_sync=installed.run_sync,
+        run_check=installed.run_check,
+        fetch_signed_manifest=lambda: b"{}",
+        parse_manifest=fixture_manifest,
+        verify_signed_archive=lambda manifest, archive: None,
+        verify_files=lambda archive, sha: True,
     )
     assert result.updated
     assert read_version(installed.source) == NEW
@@ -165,7 +179,15 @@ def test_a_failed_check_in_drill_mode_keeps_the_running_version(
     def import_fails(_source: Path) -> None:
         raise SelfUpdateError("a verificação rápida da atualização falhou (código 1)")
 
-    result = self_update(installed.source, run_sync=installed.run_sync, run_check=import_fails)
+    result = self_update(
+        installed.source,
+        run_sync=installed.run_sync,
+        run_check=import_fails,
+        fetch_signed_manifest=lambda: b"{}",
+        parse_manifest=fixture_manifest,
+        verify_signed_archive=lambda manifest, archive: None,
+        verify_files=lambda archive, sha: True,
+    )
     assert not result.updated
     assert "verificação rápida" in result.message
     assert read_version(installed.source) == OLD

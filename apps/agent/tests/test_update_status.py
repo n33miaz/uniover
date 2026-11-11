@@ -16,7 +16,13 @@ from typing import Any
 import pytest
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
-from uniover_agent.adapters.self_update import SelfUpdateError, UpdateResult, self_update
+from uniover_agent.adapters.self_update import (
+    SelfUpdateError,
+    SignedManifest,
+    UpdateResult,
+    archive_url,
+    self_update,
+)
 from uniover_agent.adapters.update_status import (
     STATUS_FILE,
     FileUpdateStatus,
@@ -48,6 +54,11 @@ from uniover_agent.ports import TransportError
 from uniover_agent.ports.remote_care import UpdateStatus
 
 from .support import AGENT_ID
+
+
+def fixture_manifest(_: bytes, sha: str) -> SignedManifest:
+    return SignedManifest("teste", sha, "0" * 64, archive_url(sha))
+
 
 OLD = "a" * 40
 NEW = "b" * 40
@@ -546,6 +557,10 @@ def test_this_version_installs_over_the_current_one_and_reports_both(tmp_path: P
         fetch_latest=lambda: NEW,
         download=copier(archive),
         run_check=candidate_imports,
+        fetch_signed_manifest=lambda: b"{}",
+        parse_manifest=fixture_manifest,
+        verify_signed_archive=lambda manifest, archive: None,
+        verify_files=lambda archive, sha: True,
     )
 
     assert result.updated and result.outcome == "updated"
@@ -575,6 +590,10 @@ def test_a_candidate_that_does_not_import_is_never_installed_and_the_failure_is_
         fetch_latest=lambda: NEW,
         download=copier(archive),
         run_check=candidate_imports,
+        fetch_signed_manifest=lambda: b"{}",
+        parse_manifest=fixture_manifest,
+        verify_signed_archive=lambda manifest, archive: None,
+        verify_files=lambda archive, sha: True,
     )
 
     assert not result.updated and result.outcome == "failed"

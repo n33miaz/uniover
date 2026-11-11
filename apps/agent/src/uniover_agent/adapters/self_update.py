@@ -14,6 +14,8 @@ isso, deixa o ambiente virtual **fora** dela (`UV_PROJECT_ENVIRONMENT`) e roda o
 `--project` (sem mudar o diretório corrente): o próprio processo que atualiza não a trava.
 """
 
+import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -30,6 +32,8 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 import httpx
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.current_pointer import base_of
@@ -63,6 +67,14 @@ PRODUCTION_REF_URL = (
 COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/{{channel}}"
 TREE_URL = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{{sha}}?recursive=1"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
+MANIFEST_NAME = "uniover-agent-manifest.json"
+MANIFEST_URL = f"https://github.com/{REPOSITORY}/releases/latest/download/{MANIFEST_NAME}"
+# Chaves públicas Ed25519 em que o agente confia para o manifesto do Release (lista, para haver
+# rotação com sobreposição). A exigência de assinatura depende desta lista, e não do que o Release
+# traz: enquanto ela estiver vazia (a assinatura ainda não foi ativada) vale o caminho sem
+# manifesto, com a árvore do commit conferida; a partir da versão que embutir uma chave real, o
+# manifesto válido é obrigatório e a falta dele recusa a instalação. Ver `adr/0018`.
+MANIFEST_PUBLIC_KEYS: tuple[str, ...] = ()
 # Ensaio de atualização (`tools/upgrade-drill.ps1`): com `UNIOVER_UPDATE_DRILL=1`, as duas
 # consultas deste módulo vão para um servidor local em vez do GitHub. Sem a variável de modo
 # nada disso é lido, e em produção ela nunca existe.
@@ -189,6 +201,182 @@ def archive_url(sha: str) -> str:
     return ARCHIVE_URL.format(sha=sha) if origin is None else f"{origin}/archive/{sha}.zip"
 
 
+_inactive_logged = False
+
+
+def signature_required() -> bool:
+    """O agente exige manifesto assinado quando há alguma chave pública embutida."""
+    return bool(MANIFEST_PUBLIC_KEYS)
+
+
+def _note_signature_inactive() -> None:
+    """Registra, uma vez por processo, que a assinatura ainda não vale (sem chave embutida)."""
+    global _inactive_logged  # noqa: PLW0603 - aviso único do processo
+    if not _inactive_logged:
+        _inactive_logged = True
+        _log.info("assinatura do manifesto ainda não ativa: nenhuma chave pública embutida")
+
+
+def manifest_url() -> str:
+    """URL do manifesto do último Release, ou a origem local do ensaio."""
+    origin = drill_origin()
+    return MANIFEST_URL if origin is None else f"{origin}/manifest"
+
+
+@dataclass(frozen=True, slots=True)
+class SignedManifest:
+    """Metadados autenticados que prendem um Release ao arquivo que o agente instala."""
+
+    version: str
+    commit: str
+    archive_sha256: str
+    archive_url: str
+    # Número crescente (segundos Unix da assinatura): o agente persiste o maior aceito e recusa
+    # manifesto de outro commit com número menor ou igual, o que barra o rebaixamento para um
+    # Release antigo, ainda criptograficamente válido.
+    sequence: int = 0
+
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _manifest_message(fields: dict[str, str | int]) -> bytes:
+    """Representação canônica pequena e igual no publicador e no agente."""
+    return json.dumps(fields, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
+        "ascii"
+    )
+
+
+def read_manifest(data: bytes, expected_sha: str) -> SignedManifest:
+    """Lê e autentica o manifesto antes de baixar ou preparar uma candidata.
+
+    A chave vem somente do programa instalado. O manifesto não pode acrescentar uma chave própria,
+    pois isso trocaria a raiz de confiança junto com o conteúdo que ela deveria proteger.
+    """
+    try:
+        document = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise UpdateRejected("o manifesto assinado não é um JSON válido") from exc
+    if not isinstance(document, dict):
+        raise UpdateRejected("o manifesto assinado não é um objeto")
+    required = {
+        "format",
+        "version",
+        "commit",
+        "archiveSha256",
+        "archiveUrl",
+        "sequence",
+        "signature",
+    }
+    if set(document) != required:
+        raise UpdateRejected("o manifesto assinado tem campos inesperados")
+    format_version = document["format"]
+    version = document["version"]
+    commit = document["commit"]
+    archive_hash = document["archiveSha256"]
+    archive = document["archiveUrl"]
+    sequence = document["sequence"]
+    signature_text = document["signature"]
+    if (
+        format_version != 1
+        or not isinstance(sequence, int)
+        or isinstance(sequence, bool)
+        or sequence < 1
+        or not isinstance(version, str)
+        or not isinstance(commit, str)
+        or not isinstance(archive_hash, str)
+        or not isinstance(archive, str)
+        or not isinstance(signature_text, str)
+    ):
+        raise UpdateRejected("o manifesto assinado tem formato inválido")
+    payload: dict[str, str | int] = {
+        "format": format_version,
+        "version": version,
+        "commit": commit,
+        "archiveSha256": archive_hash,
+        "archiveUrl": archive,
+        "sequence": sequence,
+    }
+    if commit != expected_sha or not _SHA.fullmatch(commit):
+        raise UpdateRejected("o manifesto assinado não é do commit esperado")
+    if not _SHA256.fullmatch(archive_hash):
+        raise UpdateRejected("o manifesto assinado não tem hash válido")
+    if archive != archive_url(commit):
+        raise UpdateRejected("o manifesto assinado aponta para um pacote inesperado")
+    try:
+        signature = base64.b64decode(signature_text, validate=True)
+    except binascii.Error as exc:
+        raise UpdateRejected("a assinatura do manifesto não é válida") from exc
+    message = _manifest_message(payload)
+    for encoded_key in MANIFEST_PUBLIC_KEYS:
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(
+                base64.b64decode(encoded_key, validate=True)
+            )
+            public_key.verify(signature, message)
+        except ValueError, binascii.Error, InvalidSignature:
+            continue
+        return SignedManifest(version, commit, archive_hash, archive, sequence)
+    raise UpdateRejected("a assinatura do manifesto não confere")
+
+
+MANIFEST_SEQUENCE_FILE = "manifest-sequence.txt"
+
+
+def _sequence_path(source: Path) -> Path:
+    return base_of(source) / "runtime" / MANIFEST_SEQUENCE_FILE
+
+
+def accepted_sequence(source: Path) -> tuple[int, str] | None:
+    """O maior manifesto já aceito neste PC (`sequência|commit`), ou `None` se não há nenhum."""
+    try:
+        number, commit = _sequence_path(source).read_text(encoding="ascii").strip().split("|", 1)
+        return int(number), commit
+    except OSError, ValueError:
+        return None
+
+
+def check_manifest_sequence(source: Path, manifest: SignedManifest) -> None:
+    """Recusa manifesto que rebaixa: número menor, ou igual com outro commit, que o maior aceito.
+
+    O mesmo commit com o mesmo número passa: é a nova tentativa de uma atualização que falhou.
+    """
+    known = accepted_sequence(source)
+    if known is None:
+        return
+    number, commit = known
+    if manifest.sequence < number or (manifest.sequence == number and manifest.commit != commit):
+        raise UpdateRejected(
+            "o manifesto assinado é mais antigo que o já aceito neste PC (rebaixamento recusado)"
+        )
+
+
+def record_manifest_sequence(source: Path, manifest: SignedManifest) -> None:
+    """Guarda o manifesto como o maior aceito (só cresce; não grava se for o mesmo ou menor)."""
+    known = accepted_sequence(source)
+    if known is not None and known[0] >= manifest.sequence:
+        return
+    path = _sequence_path(source)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{manifest.sequence}|{manifest.commit}", encoding="ascii")
+
+
+def fetch_manifest() -> bytes:
+    """Baixa o manifesto publicado; a assinatura é conferida antes de qualquer preparo."""
+    try:
+        response = httpx.get(
+            manifest_url(),
+            headers={"Accept": "application/json", "User-Agent": "uniover-agent"},
+            timeout=_TIMEOUT,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise SelfUpdateError(
+            f"não consegui obter o manifesto assinado ({type(exc).__name__})"
+        ) from None
+    return response.content
+
+
 def latest_commit(channel: str = DEFAULT_CHANNEL) -> str:
     """Commit atual do ramo do canal (40 hexadecimais)."""
     ref = active_production_ref() if channel in PRODUCTION_ALIASES else PRODUCTION_REF
@@ -304,6 +492,17 @@ def verify_archive(archive: Path, sha: str) -> None:
         raise UpdateRejected("o pacote baixado não é do commit esperado")
 
 
+def verify_manifest_archive(manifest: SignedManifest, archive: Path) -> None:
+    """Confere o arquivo baixado contra o hash que a assinatura autenticou."""
+    try:
+        with archive.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    except OSError as exc:
+        raise SelfUpdateError(f"não consegui ler o pacote baixado ({type(exc).__name__})") from None
+    if digest != manifest.archive_sha256:
+        raise UpdateRejected("o pacote baixado não confere com o manifesto assinado")
+
+
 def _git_blob_sha1(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
 
@@ -334,9 +533,9 @@ def agent_blob_hashes(archive: Path) -> dict[str, tuple[str, str]]:
 def fetch_git_tree(sha: str) -> dict[str, str] | None:
     """Os arquivos de `apps/agent` do commit segundo o GitHub (caminho -> hash do git).
 
-    `None` quando não dá para conferir (rede, limite de consultas, árvore grande demais para a API):
-    quem chama segue sem esta conferência e diz isso no registro, em vez de travar toda
-    atualização.
+    `None` quando não dá para conferir (rede, limite de consultas, árvore grande demais para a API).
+    Quem chama transforma isso em recusa: a atualização espera a próxima checagem, sem preparar o
+    pacote só com o zip.
     """
     try:
         response = httpx.get(
@@ -370,18 +569,23 @@ def fetch_git_tree(sha: str) -> dict[str, str] | None:
     return files or None
 
 
+class TreeUnavailable(UpdateRejected):
+    """A árvore do commit não foi obtida (rede, limite de consultas): não há divergência provada."""
+
+
 def verify_tree(
     archive: Path, sha: str, fetch: Callable[[str], dict[str, str] | None] | None = None
 ) -> bool:
     """Confere cada arquivo do pacote contra a árvore do commit no GitHub.
 
-    Devolve `False` se a árvore não pôde ser obtida (a conferência não aconteceu) e levanta
-    `UpdateRejected` se houve conferência e algo não bate: arquivo a mais, a menos ou diferente.
+    Árvore indisponível levanta `TreeUnavailable` e divergência levanta `UpdateRejected`. Sem
+    assinatura ativa ambas recusam o pacote; com ela, o manifesto é a raiz de confiança e só a
+    divergência recusa (ver `self_update`).
     """
     # Resolvido na chamada (e não no padrão do parâmetro): quem troca `fetch_git_tree` vale.
     expected = (fetch or fetch_git_tree)(sha)
     if expected is None:
-        return False
+        raise TreeUnavailable("não consegui conferir a árvore do pacote")
     try:
         actual = agent_blob_hashes(archive)
     except zipfile.BadZipFile, OSError:
@@ -880,8 +1084,11 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     download: Callable[[str, Path], None] = download_archive,
     run_sync: Callable[[Path], None] = run_uv_sync,
     run_check: Callable[[Path], None] = run_uv_check,
+    fetch_signed_manifest: Callable[[], bytes] = fetch_manifest,
+    parse_manifest: Callable[[bytes, str], SignedManifest] = read_manifest,
     verify: Callable[[Path, str], None] = verify_archive,
     verify_files: Callable[[Path, str], bool] = verify_tree,
+    verify_signed_archive: Callable[[SignedManifest, Path], None] = verify_manifest_archive,
     free_bytes: Callable[[Path], int | None] = disk_free_bytes,
     min_free_bytes: int = MIN_FREE_BYTES,
     record_trial: Callable[[Path, str], None] = write_trial_marker,
@@ -896,9 +1103,10 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
 
-    Antes de trocar a pasta, a candidata passa por: conferência do zip (inteiro e do commit pedido),
-    conferência dos arquivos contra a árvore do commit no GitHub, `uv sync --frozen` num ambiente só
-    dela e o auto-diagnóstico dela. Qualquer falha deixa a instalação como estava.
+    Antes de trocar a pasta, a candidata passa pelo manifesto Ed25519 do Release, pelo hash do
+    pacote autenticado nele, pela conferência do zip e dos arquivos contra a árvore do commit no
+    GitHub, `uv sync --frozen` num ambiente só dela e o auto-diagnóstico dela. Qualquer falha deixa
+    a instalação como estava.
 
     Modo clássico: não troca a versão com a TV em uso (`tv_idle_seconds`): espera, no máximo
     `tv_max_defer_seconds` desde a primeira vez que adiou. `ignore_deferral` (o "Atualizar agora" do
@@ -989,16 +1197,34 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 "deferred_busy",
                 latest=sha,
             )
+        manifest: SignedManifest | None = None
+        if signature_required():
+            # Com chave embutida o manifesto é obrigatório: sem ele, ou inválido, nada é baixado.
+            manifest = parse_manifest(fetch_signed_manifest(), sha)
+            check_manifest_sequence(source, manifest)
+            within_budget()
+        else:
+            _note_signature_inactive()
         workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=base))
         try:
             archive = workspace / "main.zip"
             download(sha, archive)
             within_budget()
+            if manifest is not None:
+                verify_signed_archive(manifest, archive)
+                record_manifest_sequence(source, manifest)
             verify(archive, sha)
-            if verify_files(archive, sha):
-                _log.info("pacote conferido: os arquivos batem com o commit %s", sha[:12])
-            else:
-                _log.warning("não consegui conferir os arquivos contra o GitHub; sigo só com o zip")
+            try:
+                if verify_files(archive, sha):
+                    _log.info("pacote conferido: os arquivos batem com o commit %s", sha[:12])
+            except TreeUnavailable:
+                # Com assinatura ativa a árvore do GitHub é conferência extra: sem resposta dela, o
+                # pacote já autenticado segue; divergência (UpdateRejected) continua recusando.
+                if manifest is None:
+                    raise
+                _log.warning(
+                    "não consegui conferir a árvore no GitHub; sigo pelo manifesto assinado"
+                )
             if staged:
                 new = current_pointer.staged_app(base, sha)
                 new.parent.mkdir(parents=True, exist_ok=True)

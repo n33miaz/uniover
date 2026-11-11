@@ -41,6 +41,10 @@ FAST = BackoffPolicy(
 )
 
 
+def fixture_manifest(_: bytes, sha: str) -> update_module.SignedManifest:
+    return update_module.SignedManifest("teste", sha, "0" * 64, update_module.archive_url(sha))
+
+
 async def never() -> None:
     await asyncio.Event().wait()
 
@@ -472,6 +476,9 @@ def test_with_space_again_the_same_update_goes_ahead(tmp_path: Path) -> None:
         fetch_latest=lambda: NEW,
         download=download,
         free_bytes=lambda folder: 10 * 1024**3,
+        fetch_signed_manifest=lambda: b"{}",
+        parse_manifest=fixture_manifest,
+        verify_signed_archive=lambda manifest, archive: None,
     )
     assert reached == [NEW]
 
@@ -492,7 +499,13 @@ def test_a_disk_that_fills_during_the_update_leaves_the_install_alone(tmp_path: 
         raise OSError(errno.ENOSPC, "No space left on device")
 
     result = update_module.self_update(
-        source, fetch_latest=lambda: NEW, download=download, free_bytes=lambda folder: 10**10
+        source,
+        fetch_latest=lambda: NEW,
+        download=download,
+        free_bytes=lambda folder: 10**10,
+        fetch_signed_manifest=lambda: b"{}",
+        parse_manifest=fixture_manifest,
+        verify_signed_archive=lambda manifest, archive: None,
     )
     assert not result.updated and result.outcome == "failed"
     assert (source / ".version").read_text(encoding="utf-8").strip() == OLD

@@ -33,3 +33,5 @@ que o código é como é, sem precisar adivinhar.
 | [0014](0014-csp-com-nonce.md) | CSP estrita com nonce por requisição | Aceito |
 | [0015](0015-recuperacao-do-refresh.md) | Recuperação do refresh cuja resposta se perdeu, com prova da chave do aparelho | Aceito |
 | [0016](0016-atualizacao-do-agente.md) | Atualização do agente: canal, pacote conferido, prova antes de confiar | Proposto |
+| [0017](0017-instalacao-por-usuario-no-windows.md) | Instalação por usuário e pastas do agente no Windows | Proposto |
+| [0018](0018-manifesto-assinado-do-agente.md) | Manifesto assinado para atualização do agente | Aceito |

@@ -410,6 +410,65 @@ jobs:
             echo "Release $tag criado."
           fi
 
+  # Manifesto Ed25519 do Release para o agente. O agente passa a exigi-lo quando há chave pública
+  # embutida em MANIFEST_PUBLIC_KEYS (apps/agent/src/uniover_agent/adapters/self_update.py); antes
+  # disso ele é ignorado. Sem chave embutida e sem o segredo AGENT_SIGNING_KEY este job só avisa
+  # (::warning::) e não falha a publicação. Com chave embutida e sem o segredo, FALHA: não pode sair
+  # versão com chave sem manifesto. Com o segredo, assina e anexa. O ambiente production protege a
+  # chave privada e o segredo só entra no passo que a usa (ver o risco aceito no ADR 0018: esse
+  # passo roda código do checkout).
+  sign_agent_manifest:
+    name: sign-agent-manifest
+    needs: release
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Assinar o manifesto do agente
+        id: sign
+        env:
+          AGENT_SIGNING_KEY: ${{ secrets.AGENT_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          # Chave embutida no agente e segredo ausente: este passo FALHA (a versão não pode sair sem
+          # manifesto, pois os agentes dela passam a exigi-lo). Sem chave embutida e sem segredo,
+          # só avisa. A decisão fica em `sign_agent_manifest.py activation` (testada).
+          action=$(uv run --project apps/agent --frozen python apps/agent/tools/sign_agent_manifest.py activation)
+          if [ "$action" != "sign" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(tr -d '\r\n' < VERSION)
+          archive_url="https://github.com/$GITHUB_REPOSITORY/archive/$GITHUB_SHA.zip"
+          mkdir -p agent-manifest
+          # O hash é do mesmo arquivo que o agente baixa; nunca de um zip refeito no runner.
+          curl --fail --location --retry 3 --retry-all-errors --silent --show-error \
+            --output agent-manifest/agent.zip "$archive_url"
+          archive_sha256=$(sha256sum agent-manifest/agent.zip | awk '{print $1}')
+          # Número crescente do manifesto: o agente recusa um menor ou igual (de outro commit).
+          sequence=$(date -u +%s)
+          uv run --project apps/agent --frozen python apps/agent/tools/sign_agent_manifest.py sign \
+            --version "$version" --commit "$GITHUB_SHA" --archive-sha256 "$archive_sha256" \
+            --archive-url "$archive_url" --sequence "$sequence" --output agent-manifest/uniover-agent-manifest.json
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - name: Anexar o manifesto assinado ao Release
+        if: steps.sign.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="v$(tr -d '\r\n' < VERSION)"
+          gh release upload "$tag" agent-manifest/uniover-agent-manifest.json --clobber
+          echo "Manifesto assinado anexado ao Release $tag."
+
   # Os arquivos com hash do PWA desta versão, anexados ao Release para a imagem das versões seguintes os reter (o passo a
   # passo, a conferência com o PWA no ar e o bootstrap manual estão em web-assets.yml). A retenção da imagem é de melhor
   # esforço; este job confere depois de publicar e avisa (::warning::) se a imagem no ar não reteve as versões anteriores.
@@ -500,14 +559,14 @@ jobs:
           echo "Launcher anexado ao Release $tag."
 
   # Aviso de falha da publicação, sem serviço externo: uma issue "Publicação falhou" aberta enquanto a produção estiver quebrada.
-  # Falha de version, migrate, deploy, dast, release, launcher ou web-assets abre a issue (ou comenta na que já está aberta, sem duplicar); a
+  # Falha de version, migrate, deploy, dast, release, sign-agent-manifest, launcher ou web-assets abre a issue (ou comenta na que já está aberta, sem duplicar); a
   # primeira publicação em que todos eles terminam com sucesso comenta e a fecha. Execuções canceladas ou puladas por outro motivo
   # não mexem na issue. Roda só na branch de produção (a do channel). É o único job com permissão de escrever em issues: sem
   # checkout, sem segredos, sem ação de terceiros; o texto da issue só leva nomes de job, o commit e o link da execução.
   # Se as issues estiverem desligadas no repositório o passo falha em silêncio (continue-on-error) e a execução mantém o resultado real.
   notify:
     name: notify
-    needs: [channel, version, migrate, deploy, dast, release, launcher, web-assets]
+    needs: [channel, version, migrate, deploy, dast, release, sign_agent_manifest, launcher, web-assets]
     if: ${{ always() && needs.channel.outputs.ref == github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -524,6 +583,7 @@ jobs:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           DAST_RESULT: ${{ needs.dast.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
+          SIGN_AGENT_MANIFEST_RESULT: ${{ needs.sign_agent_manifest.result }}
           LAUNCHER_RESULT: ${{ needs.launcher.result }}
           WEB_ASSETS_RESULT: ${{ needs.web-assets.result }}
         run: |
@@ -532,7 +592,7 @@ jobs:
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           failed=""
           succeeded=0
-          for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "launcher:$LAUNCHER_RESULT" "web-assets:$WEB_ASSETS_RESULT"; do
+          for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "sign-agent-manifest:$SIGN_AGENT_MANIFEST_RESULT" "launcher:$LAUNCHER_RESULT" "web-assets:$WEB_ASSETS_RESULT"; do
             job="${pair%%:*}"
             result="${pair#*:}"
             [ "$result" = "failure" ] && failed="$failed $job"
@@ -549,7 +609,7 @@ jobs:
               gh issue create --title "$title" --body "$body"
               echo "Issue aberta."
             fi
-          elif [ "$succeeded" -eq 7 ] && [ -n "$number" ]; then
+          elif [ "$succeeded" -eq 8 ] && [ -n "$number" ]; then
             gh issue comment "$number" --body "Publicação do commit ${GITHUB_SHA:0:12} concluída com sucesso. Execução: $run_url"
             gh issue close "$number" --reason completed
             echo "Issue #$number fechada."

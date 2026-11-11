@@ -13,6 +13,7 @@ from uniover_agent.adapters import current_pointer as pointer
 from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
+    SignedManifest,
     UpdateResult,
     apply_prepared,
     candidate_env,
@@ -63,6 +64,9 @@ class Pc:
         self.checked.append(source)
 
     def prepare(self, latest: str, **kwargs: Any) -> UpdateResult:
+        def fixture_manifest(_: bytes, sha: str) -> SignedManifest:
+            return SignedManifest("teste", sha, "0" * 64, module.archive_url(sha))
+
         options: dict[str, Any] = {
             "staged": True,
             "fetch_latest": lambda: latest,
@@ -70,6 +74,10 @@ class Pc:
             "run_sync": self.run_sync,
             "run_check": self.run_check,
             "free_bytes": lambda folder: 10**12,
+            "fetch_signed_manifest": lambda: b"{}",
+            "parse_manifest": fixture_manifest,
+            "verify_signed_archive": lambda manifest, archive: None,
+            "verify_files": lambda archive, sha: True,
         } | kwargs
         return self_update(self.source, **options)
 

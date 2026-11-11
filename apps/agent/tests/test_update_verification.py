@@ -119,8 +119,9 @@ def test_an_extra_or_a_missing_file_is_rejected(tmp_path: Path) -> None:
         verify_tree(archive, NEW, lambda sha: fewer)
 
 
-def test_an_unavailable_tree_means_not_verified_not_rejected(tmp_path: Path) -> None:
-    assert verify_tree(make_package(tmp_path / "a.zip"), NEW, lambda sha: None) is False
+def test_an_unavailable_tree_rejects_the_package(tmp_path: Path) -> None:
+    with pytest.raises(UpdateRejected, match="não consegui conferir a árvore"):
+        verify_tree(make_package(tmp_path / "a.zip"), NEW, lambda sha: None)
 
 
 def test_the_default_fetch_is_looked_up_at_call_time(
@@ -128,7 +129,8 @@ def test_the_default_fetch_is_looked_up_at_call_time(
 ) -> None:
     asked: list[str] = []
     monkeypatch.setattr(module, "fetch_git_tree", asked.append)
-    assert verify_tree(make_package(tmp_path / "a.zip"), NEW) is False
+    with pytest.raises(UpdateRejected, match="não consegui conferir a árvore"):
+        verify_tree(make_package(tmp_path / "a.zip"), NEW)
     assert asked == [NEW]
 
 

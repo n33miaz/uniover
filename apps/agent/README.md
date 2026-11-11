@@ -1045,10 +1045,42 @@ Só o administrador, pela tela de Aparelhos do app, sem a pessoa do PC fazer nad
 ## Atualização
 
 O canal de produção segue o ramo em `tools/update-channel.json` na `main`; `main` e `develop` no arquivo local são valores legados desse canal. Antes de trocar a pasta, a candidata passa por:
-zip inteiro e do commit pedido, arquivos conferidos contra a árvore do commit no GitHub, `uv sync --frozen` (as versões do `uv.lock`, sem reescrevê-lo) num ambiente
-descartável e o auto-diagnóstico dela (`python -m uniover_agent.selfcheck`, que lê o `agent.toml` real com as regras
-novas). Versão em prova (menos de 10 minutos estável) não é substituída; atualização que falha tenta de novo em 30 min,
-1 h, 2 h... até 6 h. Detalhes e limites em `adr/0016-atualizacao-do-agente.md`.
+manifesto Ed25519 do Release (quando a assinatura está ativa, ver abaixo), hash SHA-256 do zip autenticado nesse manifesto, zip inteiro e do commit pedido, e
+arquivos conferidos contra a árvore do commit no GitHub. Sem assinatura ativa a árvore é obrigatória (indisponível ou
+divergente, o pacote é recusado, sem seguir "só com o zip"); com manifesto válido ela é conferência extra: a consulta
+falhar só gera aviso, mas divergir recusa. O manifesto traz um número crescente (`sequence`): o agente guarda o maior
+em `runtime\manifest-sequence.txt` e recusa manifesto de outro commit com número menor ou igual (rebaixamento). Só então roda
+`uv sync --frozen` (as versões do `uv.lock`, sem reescrevê-lo) num ambiente descartável e o auto-diagnóstico dela
+(`python -m uniover_agent.selfcheck`, que lê o `agent.toml` real com as regras novas). Versão em prova (menos de 10
+minutos estável) não é substituída; atualização que falha tenta de novo em 30 min, 1 h, 2 h... até 6 h. Detalhes e
+limites em `adr/0018-manifesto-assinado-do-agente.md`.
+
+### Assinatura do manifesto: ativação em dois passos
+
+Se o manifesto é obrigatório depende da lista de chaves públicas embutida no agente (`MANIFEST_PUBLIC_KEYS` em
+`src/uniover_agent/adapters/self_update.py`), nunca de o Release trazer ou não o arquivo. Quem controlasse o Release
+poderia simplesmente omitir o manifesto.
+
+1. **Sem chave embutida (estado atual).** A lista está vazia: o agente não consulta o manifesto, segue com o zip e a
+   árvore do commit conferida (falha da árvore recusa) e registra uma vez por execução que a assinatura ainda não está
+   ativa. No `deploy.yml`, sem o segredo `AGENT_SIGNING_KEY` o job `sign-agent-manifest` apenas emite `::warning::` e a
+   publicação segue; com o segredo, ele assina e anexa `uniover-agent-manifest.json` ao Release. Se o commit publicado
+   já embute chave e o segredo falta, o job **falha**: versão com chave não sai sem manifesto. Para chegar ao passo 2:
+   o dono gera o par, cadastra a privada como segredo e a pública entra no código, numa versão publicada.
+2. **Com chave embutida (a partir dessa versão).** Manifesto válido para o commit é obrigatório: sem ele, com assinatura
+   que nenhuma chave da lista confere, ou com hash do zip diferente, nada é baixado nem instalado e a instalação em uso
+   fica como está. O `deploy.yml` passa a falhar se a chave do segredo não estiver na lista.
+
+Para gerar o par, em uma máquina confiável:
+
+```
+uv run --project apps/agent python apps/agent/tools/sign_agent_manifest.py generate-key
+```
+
+Guarde `AGENT_SIGNING_KEY` somente como segredo desse nome no ambiente protegido `production` do GitHub. Copie a linha
+`AGENT_SIGNING_PUBLIC_KEY` para a lista `MANIFEST_PUBLIC_KEYS` (não existe chave provisória: a lista vazia é o estado
+sem assinatura). Para rotacionar, publique primeiro uma versão que contenha as duas públicas, passe a assinar com a
+nova privada e só remova a antiga depois que todos os PCs tiverem atualizado.
 
 ## Conexão
 
