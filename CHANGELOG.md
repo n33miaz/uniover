@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.56.0](https://github.com/n33miaz/uniover/compare/v0.55.0...v0.56.0) (2026-11-11)
+
+
+### Devices 0.54.0
+
+#### Features
+
+* **web:** quiet resume and honest no-reply notices
+
+
+### TV 0.47.0
+
+#### Features
+
+* **web:** quiet resume and honest no-reply notices
+
+
+### Training 0.43.0
+
+#### Features
+
+* **web:** quiet resume and honest no-reply notices
+
+
+### Web 0.54.0
+
+#### Features
+
+* **web:** quiet resume and honest no-reply notices
+
 ## [0.55.0](https://github.com/n33miaz/uniover/compare/v0.54.0...v0.55.0) (2026-11-11)
 
 
