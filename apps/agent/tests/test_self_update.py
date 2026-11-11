@@ -15,6 +15,7 @@ import pytest
 from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
+    SignedManifest,
     UpdateResult,
     candidate_env,
     download_archive,
@@ -77,12 +78,21 @@ class Installation:
         self.checked.append(source)
 
     def update(self, latest: str, **kwargs: object) -> UpdateResult:
+        def fixture_manifest(_: bytes, sha: str) -> SignedManifest:
+            return SignedManifest("teste", sha, "0" * 64, module.archive_url(sha))
+
         return self_update(
             self.source,
             fetch_latest=lambda: latest,
             download=kwargs.pop("download", self.download),  # type: ignore[arg-type]
             run_sync=kwargs.pop("run_sync", self.run_sync),  # type: ignore[arg-type]
             run_check=kwargs.pop("run_check", self.run_check),  # type: ignore[arg-type]
+            fetch_signed_manifest=kwargs.pop("fetch_signed_manifest", lambda: b"{}"),  # type: ignore[arg-type]
+            parse_manifest=kwargs.pop("parse_manifest", fixture_manifest),  # type: ignore[arg-type]
+            verify_signed_archive=kwargs.pop(
+                "verify_signed_archive", lambda manifest, archive: None
+            ),  # type: ignore[arg-type]
+            verify_files=kwargs.pop("verify_files", lambda archive, sha: True),  # type: ignore[arg-type]
             **kwargs,  # type: ignore[arg-type]
         )
 

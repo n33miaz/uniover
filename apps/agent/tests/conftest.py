@@ -97,8 +97,8 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tv_locate, "arp_mac", no_mac)
     monkeypatch.setattr(wol, "_send", lambda mac, host: None)
     monkeypatch.setattr(tv_samsung, "fetch_samsung_info", no_info)
-    # A conferência dos arquivos contra o GitHub nunca sai da máquina nos testes (sem ela, a
-    # atualização segue só com o zip, como no PC sem acesso à API do GitHub).
+    # A conferência dos arquivos contra o GitHub nunca sai da máquina nos testes. Cenários que
+    # chegam nela fornecem uma árvore explícita; sem ela, a atualização deve recusar o pacote.
     monkeypatch.setattr(self_update_module, "fetch_git_tree", lambda sha: None)
     monkeypatch.setattr("uniover_agent.adapters.tv_samsung_volume.ssdp_locations", lambda host: [])
     monkeypatch.setattr(tv_locate, "arp_table", no_arp)
