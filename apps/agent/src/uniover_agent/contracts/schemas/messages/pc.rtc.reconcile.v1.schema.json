@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.rtc.reconcile.v1.schema.json",
+  "title": "pc.rtc.reconcile.v1",
+  "description": "Agente para API, logo depois do hello: o canal direto que ficou aberto enquanto a conexão caiu (a API pode ter reiniciado e perdido o registro dele). Leva só `sessionId` e o `ticket` que a API deu na oferta: nada do que o agente declara é confiado. A API só reinscreve a sessão se o bilhete é dela (assinatura válida), não venceu, é deste mesmo agente (o da conexão) e da mesma `sessionId`, e se a sessão de login que abriu o canal ainda existe e não foi revogada; então reconfere as permissões com as regras da oferta. Reconhecida: pc.rtc.reconciled.v1; sem direito, com escopo a menos ou sem bilhete válido: pc.rtc.close.v1 (`revoked` ou `rescoped`). Só vai de um canal cuja oferta trouxe `ticket`, e a API só aceita de uma conexão que declarou pc.rtc.reconcile.v1. Sem resposta em 10 segundos, o agente fecha o canal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.rtc.reconcile.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessions"
+      ],
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sessionId",
+              "ticket"
+            ],
+            "properties": {
+              "sessionId": {
+                "$ref": "../envelope.schema.json#/$defs/uuid"
+              },
+              "ticket": {
+                "description": "Bilhete opaco assinado pela API na oferta (HMAC sobre a sessão, quem abriu, a sessão de login, o aparelho, os escopos, a TV e o agente, com a validade do canal). O agente só o guarda e o devolve em pc.rtc.reconcile.v1; nunca o interpreta.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{16,900}\\.[A-Za-z0-9_-]{43}$",
+                "maxLength": 1024
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

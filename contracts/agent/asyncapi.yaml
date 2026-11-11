@@ -210,6 +210,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.rtc.close.v1.schema.json'
+      pcRtcReconciled:
+        name: pc.rtc.reconciled.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.reconciled.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -311,6 +316,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.rtc.closed.v1.schema.json'
+      pcRtcReconcile:
+        name: pc.rtc.reconcile.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.rtc.reconcile.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -345,6 +355,13 @@ operations:
     summary: A API recebe o hello do agente.
     messages:
       - $ref: '#/channels/agentEvents/messages/agentHello'
+  receivePcRtcReconcile:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe os canais diretos que sobreviveram à reconexão do agente.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcRtcReconcile'
   receiveTvState:
     action: receive
     channel:
@@ -656,6 +673,13 @@ operations:
     summary: A API pede fechar o canal direto da sessão.
     messages:
       - $ref: '#/channels/agentCommands/messages/pcRtcClose'
+  sendPcRtcReconciled:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API confirma ao agente os canais diretos que reconheceu depois da reconexão.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcRtcReconciled'
   receivePcRtcAnswer:
     action: receive
     channel:

@@ -85,6 +85,12 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.rtc.offer.v1</c>.</summary>
     public const string PcRtcOfferV1 = "pc.rtc.offer.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.rtc.reconcile.v1</c>.</summary>
+    public const string PcRtcReconcileV1 = "pc.rtc.reconcile.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.rtc.reconciled.v1</c>.</summary>
+    public const string PcRtcReconciledV1 = "pc.rtc.reconciled.v1";
+
     /// <summary>Tipo de mensagem <c>pc.text.v1</c>.</summary>
     public const string PcTextV1 = "pc.text.v1";
 
@@ -204,6 +210,8 @@ public static class AgentMessageTypes
         PcRtcCloseV1,
         PcRtcClosedV1,
         PcRtcOfferV1,
+        PcRtcReconcileV1,
+        PcRtcReconciledV1,
         PcTextV1,
         PcTextV2,
         PcVolumeStateV1,

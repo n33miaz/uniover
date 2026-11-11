@@ -34,6 +34,8 @@ from .pc_rtc_candidate_v1 import PcRtcCandidateV1Message
 from .pc_rtc_close_v1 import PcRtcCloseV1Message
 from .pc_rtc_closed_v1 import PcRtcClosedV1Message
 from .pc_rtc_offer_v1 import PcRtcOfferV1Message
+from .pc_rtc_reconcile_v1 import PcRtcReconcileV1Message
+from .pc_rtc_reconciled_v1 import PcRtcReconciledV1Message
 from .pc_text_v1 import PcTextV1Message
 from .pc_text_v2 import PcTextV2Message
 from .pc_volume_state_v1 import PcVolumeStateV1Message
@@ -94,6 +96,8 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.rtc.close.v1": PcRtcCloseV1Message,
     "pc.rtc.closed.v1": PcRtcClosedV1Message,
     "pc.rtc.offer.v1": PcRtcOfferV1Message,
+    "pc.rtc.reconcile.v1": PcRtcReconcileV1Message,
+    "pc.rtc.reconciled.v1": PcRtcReconciledV1Message,
     "pc.text.v1": PcTextV1Message,
     "pc.text.v2": PcTextV2Message,
     "pc.volume.state.v1": PcVolumeStateV1Message,

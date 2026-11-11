@@ -124,6 +124,9 @@ export const DIRECT_TV_MAX_RTT_MS = 250;
 /** O comando nem saiu (o canal não está aberto agora): quem chama segue pela nuvem, sem risco de repetir. */
 export class DirectNotSent extends Error {}
 
+/** O agente recusou a tecla da TV antes de entregá-la (fila cheia ou limite). A nuvem pode repetir sem duplicar. */
+export class DirectRetryCloud extends Error {}
+
 /** A resposta do `POST /pc/rtc/offer`. */
 export interface DirectAnswer {
   readonly sessionId: string;
@@ -207,6 +210,12 @@ interface Pending {
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+  /**
+   * Uma recusa de antes da entrega (`busy`, `rate_limited`) pode ser repetida pela nuvem sem duplicar a ação. Só a TV: as teclas dela
+   * não têm o código de operação que a nuvem usa para não repetir. No PC a mesma recusa segue como o 429 de sempre: repetir um
+   * comando de entrada pela nuvem fecharia o canal.
+   */
+  readonly retryByCloud: boolean;
 }
 
 interface Link {
@@ -591,7 +600,7 @@ export class DirectChannel {
         this.pending.delete(id);
         reject(new HttpErrorResponse({ status: 504 }));
       }, ACK_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, retryByCloud: type.startsWith('tv.') });
       try {
         link.input.send(JSON.stringify(message));
       } catch {
@@ -843,7 +852,14 @@ export class DirectChannel {
       this.pending.delete(message['i']);
       clearTimeout(waiting.timer);
       if (message['ok'] === true) waiting.resolve();
-      else waiting.reject(failureFor(typeof message['c'] === 'string' ? message['c'] : undefined));
+      else {
+        const code = typeof message['c'] === 'string' ? message['c'] : undefined;
+        // Na TV, estes dois códigos são recusas ANTES de a ponte entregar a tecla (fila cheia, limite): a nuvem repete sem duplicar.
+        // Diferem de uma falha ou do silêncio depois da entrega, que seguem como resultado incerto.
+        if (waiting.retryByCloud && (code === 'busy' || code === 'rate_limited')) {
+          waiting.reject(new DirectRetryCloud());
+        } else waiting.reject(failureFor(code));
+      }
     }
   }
 

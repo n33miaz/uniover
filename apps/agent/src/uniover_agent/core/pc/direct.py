@@ -22,6 +22,12 @@ módulo garante é o resto:
   (sessão da TV, descarte por idade, junção de repetições) por uma ponte que leva o comando ao laço
   principal sem prender este laço; `POWER` e as demais ações da TV só existem pela nuvem;
 - no máximo um canal por vez: uma oferta nova troca o par;
+- a API pode reiniciar com o canal aberto e perder o registro dele (uma revogação não o acharia): ao
+  reconectar, o agente que sabe `pc.rtc.reconcile.v1` devolve à API o canal que segurou com o
+  BILHETE que ela assinou na oferta (opaco: o agente nunca o lê nem declara nada por conta própria)
+  e ela o confere de novo; sem a confirmação (`pc.rtc.reconciled.v1`) em `reconcile_seconds` o canal
+  fecha. Um canal cuja oferta não trouxe o bilhete não pode ser reconhecido pela API e é reaberto
+  pelo app (`rescoped`);
 - chegou comando de entrada pela nuvem enquanto o canal em uso existe: o canal fecha PRIMEIRO, de
   modo que um aperto atrasado do canal nunca cai depois de um soltar da nuvem;
 - sem mensagem por `idle_seconds`, sem autenticar a tempo ou além da vida máxima, o canal é fechado.
@@ -85,17 +91,22 @@ _log = logging.getLogger(__name__)
 PC_RTC_CAPABILITY: Final = "pc.rtc.v1"
 # O canal também leva as teclas e o texto da TV (escopo `tv` da oferta); só após a API listá-la.
 TV_RTC_CAPABILITY: Final = "tv.rtc.v1"
+# Ao reconectar, o agente conta à API o canal que ficou aberto; só após a API listá-la em
+# `features`.
+RECONCILE_CAPABILITY: Final = "pc.rtc.reconcile.v1"
 SCOPE_PC: Final = "pc"
 SCOPE_TV: Final = "tv"
 KNOWN_SCOPES: Final = frozenset({SCOPE_PC, SCOPE_TV})
 OFFER_TYPE: Final = "pc.rtc.offer.v1"
 CANDIDATE_TYPE: Final = "pc.rtc.candidate.v1"
 CLOSE_TYPE: Final = "pc.rtc.close.v1"
+# A API confirma o canal que o agente declarou ao reconectar (resposta a `pc.rtc.reconcile.v1`).
+RECONCILED_TYPE: Final = "pc.rtc.reconciled.v1"
 # Os `pc.rtc.*` não entram na faixa do PC: a oferta espera a biblioteca carregar e não pode segurar
 # o mouse da nuvem.
-RTC_TYPES: Final = frozenset({OFFER_TYPE, CANDIDATE_TYPE, CLOSE_TYPE})
+RTC_TYPES: Final = frozenset({OFFER_TYPE, CANDIDATE_TYPE, CLOSE_TYPE, RECONCILED_TYPE})
 # Sem resposta ao comando (a API os manda sem esperar): só a oferta é respondida.
-RTC_SILENT_TYPES: Final = frozenset({CANDIDATE_TYPE, CLOSE_TYPE})
+RTC_SILENT_TYPES: Final = frozenset({CANDIDATE_TYPE, CLOSE_TYPE, RECONCILED_TYPE})
 
 # O que o canal de entrada aceita. Energia e abrir favorito (com confirmação e trilha na API) só
 # existem pela nuvem.
@@ -206,6 +217,18 @@ class TvCounts:
     texts: int
 
 
+@dataclass(frozen=True, slots=True)
+class ReconcileClaim:
+    """O canal que o agente segura, como vai à API em `pc.rtc.reconcile.v1`: só o id e o bilhete
+    que a API assinou na oferta. Quem abriu, a sessão de login, os escopos e a TV estão no bilhete,
+    que o agente não interpreta."""
+
+    session_id: str
+    ticket: str
+
+
+# Leva o canal que ficou aberto à API (o laço da entrada o entrega ao laço do agente).
+AnnounceReconcile = Callable[[ReconcileClaim], Awaitable[None]]
 Submit = Callable[[Command, Callable[[CommandResult], None] | None], None]
 # Leva um comando da TV (já validado) ao laço principal: `received_at` é o instante da chegada aqui
 # (relógio monotônico do processo), a resposta volta por `on_result`, neste laço, e `valid` diz se a
@@ -248,6 +271,9 @@ class DirectSettings:
     # Quanto o canal sobrevive à queda da conexão com a API: ele não depende da nuvem para andar,
     # mas sem a API (que o fecha na revogação) não vale ficar aberto sem prazo.
     api_grace_seconds: float = 30.0
+    # Depois de reconectar, quanto a API tem para reconhecer o canal que o agente declarou
+    # (`pc.rtc.reconcile.v1`); sem a confirmação o canal fecha.
+    reconcile_seconds: float = 10.0
 
 
 def _unbound_submit(command: Command, on_result: Callable[[CommandResult], None] | None) -> None:
@@ -348,6 +374,13 @@ class _Session:
     tv_rate: _Rate
     # O que a API concedeu a este canal (`pc`, `tv`); sem escopos na oferta, só o PC.
     scopes: frozenset[str] = frozenset({SCOPE_PC})
+    # O bilhete assinado que a API deu na oferta, para ela reconhecer o canal depois de reiniciar
+    # (só vem a quem declara `pc.rtc.reconcile.v1`; sem ele o canal não pode ser reconhecido).
+    ticket: str | None = None
+    device_id: str | None = None
+    device_name: str | None = None
+    # A API reconheceu o canal depois da reconexão.
+    reconciled: bool = False
     peer: DirectPeer | None = None
     # Os dois canais de dados abriram (o app chegou a este PC).
     opened: bool = False
@@ -445,6 +478,7 @@ class PcDirectService:
         settings: DirectSettings | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         devices: DeviceApprovals | None = None,
+        announce_reconcile: AnnounceReconcile | None = None,
     ) -> None:
         self._factory = factory
         self._agent_id = agent_id
@@ -469,6 +503,11 @@ class PcDirectService:
         self._tasks: set[asyncio.Task[None]] = set()
         # A espera da volta da conexão com a API (a queda curta não fecha o canal).
         self._grace: asyncio.Task[None] | None = None
+        # A API reiniciada perde o registro do canal: ao reconectar, o agente o declara e espera a
+        # confirmação por `reconcile_seconds`. Sem `announce_reconcile` (ou sem a capacidade) nada
+        # disso roda.
+        self._announce_reconcile = announce_reconcile
+        self._reconcile: asyncio.Task[None] | None = None
 
     def bind(self, submit: Submit, direct_lost: Callable[[], None]) -> None:
         """Liga à faixa do PC: `submit` põe um comando nela; `direct_lost` solta o preso."""
@@ -520,6 +559,7 @@ class PcDirectService:
         device_id: str | None = None,
         device_name: str | None = None,
         scopes: Iterable[str] | None = None,
+        ticket: str | None = None,
     ) -> str:
         """Atende a oferta: troca o par anterior, aplica a oferta e devolve a resposta SDP.
 
@@ -574,6 +614,9 @@ class PcDirectService:
                 pointer_rate=_Rate(settings.max_pointer_per_second),
                 tv_rate=_Rate(settings.max_tv_per_second),
                 scopes=granted,
+                ticket=ticket,
+                device_id=device_id,
+                device_name=device_name,
                 last_rx=now,
             )
             self._current = session
@@ -641,6 +684,8 @@ class PcDirectService:
         rede) não deve derrubar um arrasto. A vida máxima do canal (o que resta do token de acesso)
         continua valendo; a revogação chega pela API e fecha na hora quando ela está de volta.
         """
+        # Uma reconciliação em curso perdeu a conexão que a confirmaria: a próxima conexão a refaz.
+        self._cancel_reconcile()
         session = self._current
         if session is None or session.closed:
             return
@@ -650,11 +695,74 @@ class PcDirectService:
         )
         self._grace = asyncio.ensure_future(self._grace_then_close(session))
 
-    def api_reconnected(self) -> None:
-        """A conexão com a API voltou: o canal que ficou aberto segue sem prazo extra."""
+    def api_reconnected(self, *, reconcile: bool = False) -> None:
+        """A conexão com a API voltou: o canal que ficou aberto segue sem prazo extra.
+
+        `reconcile` (a API listou `pc.rtc.reconcile.v1` e o agente a declarou): a API pode ter
+        reiniciado e perdido o registro do canal, e uma revogação não o acharia. O agente conta o
+        canal que segura e espera a confirmação por `reconcile_seconds`; sem ela, fecha. Um canal
+        aberto sem o bilhete da API não pode ser reconhecido: fecha como `rescoped`
+        (o app abre outro já, pela API, que o confere)."""
         if self._grace is not None:
             self._cancel_grace()
             _log.info("conexão com a API voltou; o canal direto seguiu aberto")
+        if reconcile:
+            self._begin_reconcile()
+
+    def confirm_reconciled(self, session_id: str) -> None:
+        """A API reconheceu o canal e o conferiu de novo: ele segue, sem prazo extra."""
+        session = self._current
+        if session is None or session.closed or session.id != session_id:
+            return
+        session.reconciled = True
+        self._cancel_reconcile()
+        _log.info("a API reconheceu o canal direto (sessão %s)", session.id[:8])
+
+    def _begin_reconcile(self) -> None:
+        session = self._current
+        announce = self._announce_reconcile
+        if session is None or session.closed or announce is None:
+            return
+        if session.ticket is None:
+            _log.info("canal direto sem o bilhete da API; ela não o reconheceria")
+            self._halt(session)
+            self._spawn(self._dispose(session, REASON_RESCOPED, notify=True))
+            return
+        if SCOPE_PC in session.scopes and self._devices is not None:
+            # O dono pode ter recusado o aparelho enquanto a API estava fora: o PC não segue
+            # (a TV, se estava junto, é reaberta pelo app).
+            decision = self._devices.check(session.device_id, session.device_name)
+            if decision is not DeviceDecision.APPROVED:
+                reason = REASON_RESCOPED if SCOPE_TV in session.scopes else REASON_REVOKED
+                self._halt(session)
+                self._spawn(self._dispose(session, reason, notify=True))
+                return
+        claim = ReconcileClaim(session_id=session.id, ticket=session.ticket)
+        self._cancel_reconcile()
+        session.reconciled = False
+        self._reconcile = asyncio.ensure_future(self._reconcile_then_close(session))
+        self._spawn(self._send_reconcile(announce, claim))
+
+    @staticmethod
+    async def _send_reconcile(announce: AnnounceReconcile, claim: ReconcileClaim) -> None:
+        try:
+            await announce(claim)
+        except Exception:
+            # O prazo já corre: sem a mensagem, a API não confirma e o canal fecha.
+            _log.debug("canal direto não declarado à API", exc_info=True)
+
+    def _cancel_reconcile(self) -> None:
+        waiting, self._reconcile = self._reconcile, None
+        if waiting is not None and waiting is not asyncio.current_task():
+            waiting.cancel()
+
+    async def _reconcile_then_close(self, session: _Session) -> None:
+        await asyncio.sleep(self._settings.reconcile_seconds)
+        if self._reconcile is asyncio.current_task():
+            self._reconcile = None
+        if not session.closed and not session.reconciled:
+            _log.info("a API não reconheceu o canal direto a tempo; fechando")
+            await self._finish(session, REASON_DISCONNECTED, notify=True)
 
     def _grace_seconds(self) -> float:
         return self._settings.api_grace_seconds
@@ -1162,6 +1270,7 @@ class PcDirectService:
         if self._current is session:
             self._current = None
             self._cancel_grace()
+            self._cancel_reconcile()
         watchdog = session.watchdog
         if watchdog is not None and watchdog is not asyncio.current_task():
             watchdog.cancel()
@@ -1265,6 +1374,11 @@ class PcDirectService:
         task.add_done_callback(self._tasks.discard)
 
 
+def _text_of(value: object) -> str | None:
+    """Um campo de texto da oferta (o esquema já o fixou); ausente, `None`."""
+    return value if isinstance(value, str) else None
+
+
 def _scopes_of(value: object) -> list[str] | None:
     """Os escopos da oferta (o esquema já os fixou); sem o campo, `None`: só o PC, como sempre."""
     if not isinstance(value, list):
@@ -1291,6 +1405,7 @@ def pc_rtc_handlers(
                 device_id=command.device_id,
                 device_name=command.device_name,
                 scopes=_scopes_of(body.get("scopes")),
+                ticket=_text_of(body.get("ticket")),
             )
         except DirectRefused as refused:
             return CommandResult(
@@ -1324,4 +1439,15 @@ def pc_rtc_handlers(
         )
         return CommandResult(command.id, ResultStatus.OK)
 
-    return {OFFER_TYPE: offer, CANDIDATE_TYPE: candidate, CLOSE_TYPE: close}
+    async def reconciled(command: Command) -> CommandResult:
+        ids = command.body.get("sessionIds")
+        for session_id in ids if isinstance(ids, list) else []:
+            service.confirm_reconciled(str(session_id))
+        return CommandResult(command.id, ResultStatus.OK)
+
+    return {
+        OFFER_TYPE: offer,
+        CANDIDATE_TYPE: candidate,
+        CLOSE_TYPE: close,
+        RECONCILED_TYPE: reconciled,
+    }

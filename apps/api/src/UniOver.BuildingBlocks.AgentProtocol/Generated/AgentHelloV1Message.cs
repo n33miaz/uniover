@@ -134,7 +134,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcRtcV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcRtcReconcileV1, PcRtcV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -220,6 +220,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.PcOpV1;
                 case "pc.pointer.zoom.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcPointerZoomV1;
+                case "pc.rtc.reconcile.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcRtcReconcileV1;
                 case "pc.rtc.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcRtcV1;
                 case "pc.text.v2":
@@ -345,6 +347,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcPointerZoomV1:
                     JsonSerializer.Serialize(writer, "pc.pointer.zoom.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.PcRtcReconcileV1:
+                    JsonSerializer.Serialize(writer, "pc.rtc.reconcile.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcRtcV1:
                     JsonSerializer.Serialize(writer, "pc.rtc.v1", options);

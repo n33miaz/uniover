@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
@@ -514,10 +515,15 @@ internal sealed class PcDeviceStates(TimeProvider time) : IAgentPresenceListener
 
 /// <summary>Guarda a lista de favoritos que o agente anuncia (<c>pc.apps.v1</c>), na ordem em que ele a mandou.</summary>
 internal sealed class PcAgentMessageHandler(
-    PcAppsStore store, PcRtcAnswers answers, PcRtcClosures closures, PcVolumeStore volume, PcDeviceStates deviceStates) : IAgentMessageHandler
+    PcAppsStore store,
+    PcRtcAnswers answers,
+    PcRtcClosures closures,
+    PcVolumeStore volume,
+    PcDeviceStates deviceStates,
+    PcRtcReconciler? reconciler = null) : IAgentMessageHandler
 {
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1];
+        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcRtcReconcileV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -540,6 +546,18 @@ internal sealed class PcAgentMessageHandler(
                 message.Body.TryGetProperty("tvKeys", out var keys) ? keys.GetInt32() : null,
                 message.Body.TryGetProperty("tvTexts", out var texts) ? texts.GetInt32() : null,
                 cancellationToken);
+            return;
+        }
+
+        // O canal que o agente diz ter aberto ao reconectar: a API o reconstrói e o confere de novo (ver PcRtcReconciler).
+        if (string.Equals(message.Type, AgentMessageTypes.PcRtcReconcileV1, StringComparison.Ordinal))
+        {
+            if (reconciler is not null)
+            {
+                var claims = message.Body.GetProperty("sessions").EnumerateArray().Select(ClaimOf).ToList();
+                await reconciler.ReconcileAsync(message.AgentId, claims, cancellationToken);
+            }
+
             return;
         }
 
@@ -572,4 +590,8 @@ internal sealed class PcAgentMessageHandler(
         // O agente manda a lista de favoritos a cada conexão: é o sinal de que ele voltou. A revogação que não o alcançou na queda é refeita agora.
         await closures.RetryRevocationsAsync(message.AgentId, cancellationToken);
     }
+
+    /// <summary>A sessão do <c>pc.rtc.reconcile.v1</c>: o gateway já validou o contrato, então os campos obrigatórios existem.</summary>
+    internal static PcRtcClaim ClaimOf(JsonElement session) =>
+        new(session.GetProperty("sessionId").GetGuid(), session.GetProperty("ticket").GetString()!);
 }

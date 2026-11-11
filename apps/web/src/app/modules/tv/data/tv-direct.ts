@@ -2,6 +2,7 @@ import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import {
   DirectChannel,
   DirectNotSent,
+  DirectRetryCloud,
   PC_RTC_CAPABILITY,
   TV_RTC_CAPABILITY,
   type TvDirectCommandType,
@@ -83,7 +84,7 @@ export class TvDirect {
       await this.channel.command(type, body);
       return true;
     } catch (error) {
-      if (error instanceof DirectNotSent) return false;
+      if (error instanceof DirectNotSent || error instanceof DirectRetryCloud) return false;
       throw error;
     }
   }

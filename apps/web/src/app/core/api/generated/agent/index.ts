@@ -27,6 +27,8 @@ export * from './pc_rtc_candidate_v1';
 export * from './pc_rtc_close_v1';
 export * from './pc_rtc_closed_v1';
 export * from './pc_rtc_offer_v1';
+export * from './pc_rtc_reconcile_v1';
+export * from './pc_rtc_reconciled_v1';
 export * from './pc_text_v1';
 export * from './pc_text_v2';
 export * from './pc_volume_state_v1';

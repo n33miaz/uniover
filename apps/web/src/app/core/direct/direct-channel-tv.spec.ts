@@ -7,6 +7,7 @@ import {
   DIRECT_TV_MAX_RTT_MS,
   DirectChannel,
   DirectNotSent,
+  DirectRetryCloud,
   DirectSignaling,
   PC_RTC_CAPABILITY,
   PC_RTC_FACTORY,
@@ -307,6 +308,31 @@ describe('DirectChannel TV commands', () => {
     input.receive({ k: 'ack', i: input.last('cmd')!['i'], ok: false, c: 'TV_UNREACHABLE' });
 
     await expect(sending).rejects.toMatchObject({ status: 502, error: { agentError: 'TV_UNREACHABLE' } });
+  });
+
+  it.each(['busy', 'rate_limited'])(
+    'asks for the cloud when the agent refused the key before delivering it (%s)',
+    async (code) => {
+      const { channel, connections } = setup();
+      const { input } = await openForTv(channel, connections);
+
+      const sending = channel.command('tv.key.v3', { key: 'OK' });
+      input.receive({ k: 'ack', i: input.last('cmd')!['i'], ok: false, c: code });
+
+      await expect(sending).rejects.toBeInstanceOf(DirectRetryCloud);
+    },
+  );
+
+  it('keeps a failure after the delivery as the error of the cloud, never as a retry', async () => {
+    const { channel, connections } = setup();
+    const { input } = await openForTv(channel, connections);
+
+    const sending = channel.command('tv.text.v1', { text: 'a' });
+    input.receive({ k: 'ack', i: input.last('cmd')!['i'], ok: false, c: 'failed' });
+
+    const error = await sending.catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(DirectRetryCloud);
+    expect(error).toMatchObject({ status: 502 });
   });
 
   it('lists the TV messages from the ready of the agent: an agent that did not list them gets nothing', async () => {

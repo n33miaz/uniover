@@ -357,6 +357,13 @@ mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagn
   `pc_direct_api_grace_seconds` (30 s) e fecha se a API não voltar. A revogação continua fechando na hora quando a API está de
   volta, e a API refaz a que não alcançou o agente assim que ele reconecta (o agente manda `pc.apps.v1` a cada conexão). O que o
   canal segura (um arrasto) não é solto pela queda da nuvem.
+- **Canal direto depois de a API reiniciar** (`pc.rtc.reconcile.v1`). A API perde em memória o registro dos canais ao
+  reiniciar, e uma revogação não acharia o que o agente segue segurando. Na oferta a API dá ao agente um **bilhete
+  assinado** (opaco: o agente só o guarda). Ao reconectar, o agente (que só declara a capacidade depois de a API a listar
+  em `features`) devolve o id do canal com o bilhete; nada mais é declarado por ele. A API confere a assinatura, a validade,
+  o agente e a sessão, e se a sessão de login ainda vale, e responde `pc.rtc.reconciled.v1` (segue) ou manda fechar
+  (`revoked`/`rescoped`). Sem resposta em `pc_direct_reconcile_seconds` (10 s) o canal fecha. Um canal aberto sem o bilhete
+  (oferta de antes da capacidade) não pode ser reconhecido: é fechado como `rescoped` e o app abre outro.
 - **Ciclo do canal direto no `agent.log` (INFO):** `canal direto aberto (sessão xxxxxxxx, escopos pc+tv, negociação n s)` e `canal direto fechado
   (sessão xxxxxxxx): motivo m; escopos pc+tv; aberto por n s; RTT <faixa>; movimentos perdidos n; mensagens n; TV pelo canal: n teclas, n textos, n
   recusados pela TV`, sem IP, SDP, candidato nem token. Nenhuma tecla vai uma a uma ao registro.
