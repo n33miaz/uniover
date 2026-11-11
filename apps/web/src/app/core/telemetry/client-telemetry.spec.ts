@@ -2,6 +2,7 @@ import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { AuthService } from '../auth/auth.service';
 import { ConnectivityService } from '../connectivity/connectivity.service';
 import { QUIET_REQUEST } from '../connectivity/quiet-request';
 import { ResumeGrace } from '../connectivity/resume-grace';
@@ -15,13 +16,21 @@ import {
 } from './client-telemetry';
 
 const LEGACY_KEY = 'uniover.telemetry.queue';
+const LAST_ACCOUNT_KEY = 'uniover.telemetry.last-account';
 const A = 'conta-a';
 const B = 'conta-b';
 const keyOf = (account: string) => `${LEGACY_KEY}.${account}`;
 
-function signIn(account: string) {
+/** Um JWT só com o `sub` (o app só lê o payload para saber de quem é o token; quem valida é a API). */
+function jwtOf(sub: string): string {
+  const part = (value: object) =>
+    btoa(JSON.stringify(value)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${part({ alg: 'none' })}.${part({ sub })}.assinatura`;
+}
+
+function signIn(account: string, expiresInSeconds = 600) {
   const session = TestBed.inject(SessionState);
-  session.setToken('t', 600);
+  session.setToken(jwtOf(account), expiresInSeconds);
   session.setUser({
     id: account,
     email: `${account}@exemplo.com`,
@@ -48,7 +57,7 @@ const baseConfig: TelemetryConfig = {
   random: () => 0,
 };
 
-function setup(overrides: Partial<TelemetryConfig> = {}) {
+function setup(overrides: Partial<TelemetryConfig> = {}, account = A) {
   TestBed.configureTestingModule({
     providers: [
       provideHttpClient(),
@@ -56,7 +65,7 @@ function setup(overrides: Partial<TelemetryConfig> = {}) {
       { provide: TELEMETRY_CONFIG, useValue: { ...baseConfig, ...overrides } },
     ],
   });
-  signIn(A);
+  signIn(account);
   return {
     telemetry: TestBed.inject(ClientTelemetry),
     backend: TestBed.inject(HttpTestingController),
@@ -68,6 +77,7 @@ describe('ClientTelemetry', () => {
     vi.useFakeTimers();
     for (const account of [A, B]) window.localStorage.removeItem(keyOf(account));
     window.localStorage.removeItem(LEGACY_KEY);
+    window.localStorage.removeItem(LAST_ACCOUNT_KEY);
     vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true);
   });
 
@@ -76,6 +86,7 @@ describe('ClientTelemetry', () => {
     vi.restoreAllMocks();
     for (const account of [A, B]) window.localStorage.removeItem(keyOf(account));
     window.localStorage.removeItem(LEGACY_KEY);
+    window.localStorage.removeItem(LAST_ACCOUNT_KEY);
   });
 
   it('sends the queued events in one authenticated batch after the delay, marked as quiet', async () => {
@@ -235,6 +246,50 @@ describe('ClientTelemetry', () => {
       expect(window.localStorage.getItem(keyOf(A))).toBeNull();
     });
 
+    it('discards the previous queue as soon as the session account changes', () => {
+      const { telemetry } = setup();
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      expect(stored(A)).toHaveLength(1);
+
+      TestBed.inject(SessionState).clear('anonymous');
+      signIn(B);
+      TestBed.tick();
+
+      expect(telemetry.pending).toBe(0);
+      expect(window.localStorage.getItem(keyOf(A))).toBeNull();
+      expect(window.localStorage.getItem(LAST_ACCOUNT_KEY)).toBe(B);
+    });
+
+    it('after logout and reload, discards the last account queue when another account signs in', () => {
+      const { telemetry } = setup();
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      expect(window.localStorage.getItem(LAST_ACCOUNT_KEY)).toBe(A);
+      expect(stored(A)).toHaveLength(1);
+
+      // A página fechou antes de a instância observar o logout; a nova partida não recebe a dica da conta antiga.
+      TestBed.resetTestingModule();
+      window.localStorage.removeItem('uniover.account-id');
+      const { telemetry: reloaded } = setup({}, B);
+
+      expect(reloaded.pending).toBe(0);
+      expect(window.localStorage.getItem(keyOf(A))).toBeNull();
+      expect(window.localStorage.getItem(LAST_ACCOUNT_KEY)).toBe(B);
+    });
+
+    it('after reload, keeps the queue when the same account returns', () => {
+      const { telemetry } = setup();
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      expect(stored(A)).toHaveLength(1);
+
+      TestBed.resetTestingModule();
+      window.localStorage.removeItem('uniover.account-id');
+      const { telemetry: reloaded } = setup({}, A);
+
+      expect(reloaded.pending).toBe(1);
+      expect(stored(A)).toHaveLength(1);
+      expect(window.localStorage.getItem(LAST_ACCOUNT_KEY)).toBe(A);
+    });
+
     it('the new account queue is its own: its events go out with its own session', async () => {
       const { telemetry, backend } = setup();
       telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
@@ -260,9 +315,69 @@ describe('ClientTelemetry', () => {
     it('does not send while the session in use is not the account that owns the queue', async () => {
       const { telemetry, backend } = setup();
       telemetry.record({ kind: 'command-failure', module: 'tv', code: 'network' });
-      vi.spyOn(TestBed.inject(SessionState), 'isSessionOf').mockReturnValue(false);
+      // O token em uso não é da conta dona da fila (`bearerOf` só devolve o dela): nada sai.
+      vi.spyOn(TestBed.inject(SessionState), 'bearerOf').mockReturnValue(null);
+      vi.spyOn(TestBed.inject(AuthService), 'accessToken').mockResolvedValue(null);
       await vi.advanceTimersByTimeAsync(8_100);
       backend.expectNone(CLIENT_EVENTS_PATH);
+      expect(telemetry.pending).toBe(1);
+    });
+
+    it('sends the batch with the explicit token of the account that owns the queue', async () => {
+      const { telemetry, backend } = setup();
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      await vi.advanceTimersByTimeAsync(8_100);
+      const request = backend.expectOne(CLIENT_EVENTS_PATH);
+      expect(request.request.headers.get('Authorization')).toBe(`Bearer ${jwtOf(A)}`);
+      request.flush(null, { status: 204, statusText: 'ok' });
+    });
+
+    it('race: the session turns into another account while the token renews, and nothing is sent', async () => {
+      // Token de A quase vencido: o envio espera a renovação antes de montar o lote.
+      const { telemetry, backend } = setup({}, A);
+      TestBed.inject(SessionState).setToken(jwtOf(A), 30);
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      let finish: (token: string | null) => void = () => undefined;
+      vi.spyOn(TestBed.inject(AuthService), 'accessToken').mockReturnValue(
+        new Promise<string | null>((resolve) => (finish = resolve)),
+      );
+
+      await vi.advanceTimersByTimeAsync(8_100);
+      // Durante a espera, outra aba entra com B e a renovação devolve o token de B.
+      TestBed.inject(SessionState).clear('anonymous');
+      signIn(B);
+      TestBed.tick();
+      finish(jwtOf(B));
+      await vi.advanceTimersByTimeAsync(0);
+
+      backend.expectNone(CLIENT_EVENTS_PATH);
+      expect(telemetry.pending).toBe(0);
+      expect(window.localStorage.getItem(keyOf(A))).toBeNull();
+    });
+
+    it('race: the token of the account that owns the queue is the one renewed, and then it goes out', async () => {
+      const { telemetry, backend } = setup({}, A);
+      TestBed.inject(SessionState).setToken(jwtOf(A), 30);
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      vi.spyOn(TestBed.inject(AuthService), 'accessToken').mockImplementation(async () => {
+        TestBed.inject(SessionState).setToken(jwtOf(A), 600);
+        return jwtOf(A);
+      });
+
+      await vi.advanceTimersByTimeAsync(8_100);
+      const request = backend.expectOne(CLIENT_EVENTS_PATH);
+      expect(request.request.headers.get('Authorization')).toBe(`Bearer ${jwtOf(A)}`);
+      request.flush(null, { status: 204, statusText: 'ok' });
+    });
+
+    it('a 401 keeps the batch and asks for a renewal', async () => {
+      const { telemetry, backend } = setup();
+      const renew = vi.spyOn(TestBed.inject(AuthService), 'renew').mockResolvedValue('renewed');
+      telemetry.record({ kind: 'command-failure', module: 'tv', code: 'da-conta-a' });
+      await vi.advanceTimersByTimeAsync(8_100);
+      backend.expectOne(CLIENT_EVENTS_PATH).flush(null, { status: 401, statusText: 'x' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(renew).toHaveBeenCalledTimes(1);
       expect(telemetry.pending).toBe(1);
     });
 
