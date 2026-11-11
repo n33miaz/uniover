@@ -408,3 +408,64 @@ describe('PointerBatcher pipelined', () => {
     expect(batcher.busy).toBe(false);
   });
 });
+
+describe('PointerBatcher: interval that follows the path and flush', () => {
+  it('uses the interval the provider gives now, not only the fixed one', () => {
+    const clock = fakeClock();
+    const { send, batches } = controlledSend();
+    let interval = 10;
+    const batcher = new PointerBatcher(send, { ...OPTIONS, maxInFlight: 4 }, clock, () => interval);
+    batcher.addMove(1, 0);
+    expect(batches).toHaveLength(1);
+    batcher.addMove(2, 0);
+    clock.advance(9);
+    expect(batches).toHaveLength(1); // ainda dentro dos 10 ms do canal direto
+    clock.advance(1);
+    expect(batches).toHaveLength(2);
+
+    interval = 32; // o canal caiu: volta o agrupamento da nuvem
+    batcher.addMove(3, 0);
+    clock.advance(31);
+    expect(batches).toHaveLength(2);
+    clock.advance(1);
+    expect(batches).toHaveLength(3);
+  });
+
+  it('flush sends what is waiting right now and does not wait for any answer', () => {
+    const clock = fakeClock();
+    const { send, batches } = controlledSend();
+    const batcher = new PointerBatcher(
+      send,
+      { ...OPTIONS, maxInFlight: 4, minIntervalMs: 500 },
+      clock,
+    );
+    batcher.addMove(1, 0); // sai já
+    batcher.addMove(4, 5); // espera os 500 ms
+    batcher.addScroll(0, 7);
+    expect(batches).toHaveLength(1);
+
+    batcher.flush();
+
+    expect(batches).toHaveLength(2);
+    expect(batches[1]).toMatchObject({ dx: 4, dy: 5, scrollY: 7 });
+    expect(batcher.busy).toBe(true); // os pedidos seguem em voo: o flush não os espera
+  });
+
+  it('flush does nothing when nothing waits, and a stopped batcher drops the leftovers', () => {
+    const clock = fakeClock();
+    const { send, batches } = controlledSend();
+    const batcher = new PointerBatcher(
+      send,
+      { ...OPTIONS, maxInFlight: 4, minIntervalMs: 500 },
+      clock,
+    );
+    batcher.flush();
+    expect(batches).toHaveLength(0);
+
+    batcher.addMove(1, 0);
+    batcher.addMove(2, 0);
+    batcher.stop();
+    batcher.flush();
+    expect(batches).toHaveLength(1);
+  });
+});

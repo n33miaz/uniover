@@ -229,6 +229,78 @@ qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o 
   `UV_FROZEN=1`, e o supervisor, com o agente já de pé, confere a versão: se for anterior à 0.9.8, grava o diagnóstico
   `supervisor.old_uv` e, se o uv veio do winget, pede `winget upgrade astral-sh.uv` sem esperar (uma vez por dia).
 
+### Entrada do PC isolada do resto do agente
+
+Medido em produção (agente 0.54.0, com o PC do dono sob pouca memória): o laço de eventos do agente ficou parado mais de 1 s
+em quase todos os minutos e até 250 s de uma vez, enquanto o Unified Remote, no mesmo PC, respondia normal. Mouse, teclado,
+mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagnóstico e a atualização. Agora:
+
+- **Um laço só da entrada** (`adapters/pc_input_thread.py`, ligado por `pc_input_thread`, padrão ligado): uma thread dedicada,
+  com prioridade acima do normal (`SetThreadPriority`), roda a faixa dos comandos `pc.*` (`core/pc/lane.py`), o serviço do canal
+  direto (e o `aiortc` com ele), os handlers do `SendInput`, o aviso de idade e a pergunta de aparelho novo. O laço principal só
+  valida a mensagem e a entrega com `post` (fila sem bloqueio, na ordem de chegada); o resultado volta por um `Sender` que leva o
+  envio ao laço do transporte sem nunca prender a entrada. Os dois laços têm o seu medidor de atraso (`laço principal` e `laço
+  entrada` no registro). A thread é supervisionada (um erro vai ao registro e o laço segue). A ordem, o `seq`/época, a soltura do
+  que o PC segura e os limites de taxa são os de sempre.
+- **Memória.** O processo pede ao Windows um conjunto de trabalho mínimo duro (`SetProcessWorkingSetSizeEx`,
+  `pc_working_set_min_mb`, padrão 64 MB, 0 desliga). Medido: o Windows aceita sem administrador (32 e 64 MB). Se recusar, o agente
+  segue sem a proteção e registra.
+- **O que o isolamento NÃO resolve.** As duas threads dividem o mesmo processo e o mesmo GIL: uma chamada em C que segura o
+  GIL por muito tempo (a leitura das autoridades de certificado do Windows, por exemplo) para as duas, e o Windows ainda decide
+  quem recebe CPU. O contexto TLS já é compartilhado (`ssl_contexts.py`); o resto é a prioridade e o conjunto de trabalho.
+- **Movimento atrasado é somado e aplicado** (decisão do dono de 10/11): só o que passa de 5 s é descartado (antes, 2 s). Os
+  movimentos vizinhos que já esperam na faixa viram um só (o mesmo caminho: o movimento é relativo), sem atravessar clique nem
+  tecla e sem misturar nuvem e canal direto. Um salto grande do ponteiro (acima de `pc_pointer_spread_min_px`, 12 px no maior
+  eixo) sai em 2 a 4 passos espalhados em `pc_pointer_spread_ms` (16 ms; 0 desliga), só quando nada espera atrás dele; qualquer
+  comando que chega faz o resto sair de uma vez. O Windows acorda temporizadores a cada ~15 ms, então o espaçamento real pode ser
+  maior que o pedido.
+- **Canal direto sobrevive à queda curta da API.** A conexão com a API cair não fecha o canal: ele segue por
+  `pc_direct_api_grace_seconds` (30 s) e fecha se a API não voltar. A revogação continua fechando na hora quando a API está de
+  volta, e a API refaz a que não alcançou o agente assim que ele reconecta (o agente manda `pc.apps.v1` a cada conexão). O que o
+  canal segura (um arrasto) não é solto pela queda da nuvem.
+- **Ciclo do canal direto no `agent.log` (INFO):** `canal direto aberto (sessão xxxxxxxx, negociação n s)` e `canal direto fechado
+  (sessão xxxxxxxx): motivo m; aberto por n s; RTT <faixa>; movimentos perdidos n; mensagens n`, sem IP, SDP, candidato nem token.
+- **Candidatos ICE tardios só da rede local:** UDP de IP privado (10/8, 172.16/12, 192.168/16), de enlace local (169.254/16,
+  fe80::/10) ou ULA (fc00::/7); nome (inclusive `.local`), `relay`, TCP, CGNAT, loopback, `::ffff:` e endereço público são
+  recusados no serviço e de novo no par. A conferência final do endereço do par **falha fechada**.
+- **`SendInput` recusado com causa.** O erro do Windows é lido na própria thread (`use_last_error`) e, só depois da recusa, o
+  agente olha o desktop de entrada (`OpenInputDesktop`) e a integridade da janela em primeiro plano (sem título): `session_locked`
+  (tela de bloqueio ou desktop seguro), `elevated_window` (janela com mais privilégio) ou `failed`. O código chega ao app
+  ("O PC está bloqueado", "Há uma janela de administrador na frente"). O movimento do mouse recusado vira UMA linha agregada por
+  rajada. Os fatos (erro, desktop, níveis de integridade) vão ao registro, nunca o título da janela.
+- **Operação ponta a ponta.** O app manda `X-Operation-Id` nos comandos pela nuvem (menos o movimento), a API o repassa no
+  envelope (`operationId`, só a um agente que declara `pc.op.v1`) e os dois registram `operação <código>: <tipo> via <nuvem|canal
+  direto>; fila n ms; execução n ms; resultado r`. Nunca texto, teclas nem coordenadas. No canal direto o código é o `i` do
+  comando do app.
+- **Aparelho novo aprovado no PC** (`pc_device_approval`, padrão ligado; capacidade `pc.device.v1`). A API manda no envelope o
+  aparelho (`deviceId`: a sessão do app; `deviceName`: "iPhone (Safari)", tirado do navegador). Na primeira vez o agente abre uma
+  janela do Windows no PC ("Permitir que <nome> controle este PC?", por cima de tudo, "Não" como padrão); o comando volta
+  `device_pending` (403 `pc-device-pending`) até o dono responder. Permitiu: fica guardado por aparelho em
+  `runtime\pc-devices.json` (só um resumo do identificador) e não pergunta de novo. Recusou: `device_denied` (403
+  `pc-device-denied`) por uma hora, depois pergunta de novo. A oferta do canal direto também passa por isso. **Por que não pela
+  bandeja:** o ícone é outro processo (o PowerShell da bandeja só lê o estado e devolve ações de menu); uma pergunta de sim ou não
+  ali pediria um protocolo de ida e volta por arquivos e, se a bandeja não estivesse viva, o aparelho ficaria pendente para
+  sempre. O agente roda na sessão do usuário (é por isso que o `SendInput` funciona), então ele mesmo mostra a janela.
+  Convidados continuam sem `module:pc` por padrão (o modelo "só TV" do convite não o inclui).
+  **Falha fechado:** com a aprovação ligada, comando sem `deviceId` só passa se a API RESPONDEU à consulta de `features` e NÃO
+  lista `pc.device.v1` (uma API anterior: decisão registrada no log). Com isso desconhecido (partida, consulta que falhou, o
+  `hello` ainda negociando) o comando volta `device_unknown` (403 `pc-device-unknown`, "tente de novo"). **O movimento do mouse**
+  de um aparelho pendente ou recusado é descartado sem resposta; para o app saber, o agente conta o estado à API
+  (`pc.device.state.v1`: `pending`, `denied`, `approved`, no máximo a cada 10 s por aparelho) e a API responde 403 também ao
+  ponteiro enquanto o aviso valer (30 s, renovado; apagado por `approved` e pela queda do agente): "Aprove este aparelho no PC".
+  **A API nunca "volta" a não ter aprovação:** depois de listar `pc.device.v1` uma vez (gravado em `runtime\pc-devices.json`,
+  `apiSeen`), uma resposta "não lista" (instância antiga no deploy, página de manutenção) nunca reabre o modo sem aprovação. Um 200
+  sem a lista `features` vale como "não respondeu" (`None`), e ao conectar sem a API ter respondido o agente consulta na hora
+  (prazo curto), sem esperar o recuo de até 5 min. **O canal de outro aparelho** nunca cai por uma oferta recusada: a API só
+  substitui as sessões antigas depois de o agente aceitar a oferta nova. A pergunta tem prazo de 2 min (fecha como "sem resposta").
+  **Sair do `apiSeen`** (por exemplo, voltar para uma API anterior sem a aprovação): desligar `pc_device_approval` no
+  `agent.toml` ou apagar `runtime\pc-devices.json` (apaga também as decisões já tomadas, e os aparelhos voltam a ser
+  perguntados). Enquanto `apiSeen` valer e a API não listar `pc.device.v1` (instância antiga no deploy), o agente pede nova
+  consulta de features a cada 15 s, no máximo, para o `hello` voltar a declarar a capacidade em segundos.
+  **Encerramento:** a janela roda numa thread daemon com título único; ao encerrar o agente, ele a acha pelo título e clica em
+  "Não" (`WM_COMMAND`; uma caixa Sim/Não ignora `WM_CLOSE`), espera a thread por até 3 s e a resposta assim dada nunca vira
+  decisão.
+
 ## TV Samsung (Tizen)
 
 Use uma Samsung recente na mesma rede do PC, com o controle por rede liberado:

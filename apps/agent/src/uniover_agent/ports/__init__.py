@@ -30,6 +30,7 @@ from uniover_agent.ports.pairing import (
 from uniover_agent.ports.pc import (
     PcAudio,
     PcInput,
+    PcInputRefused,
     PcLauncher,
     PcPower,
     PcUnsupported,
@@ -43,9 +44,11 @@ from uniover_agent.ports.pc_direct import (
     DirectUnavailable,
     PeerCallbacks,
 )
+from uniover_agent.ports.pc_lane import LaneHost
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
+    Sender,
     ServerRestarting,
     ServerRestartNow,
     Transport,
@@ -139,6 +142,7 @@ __all__ = [
     "DirectUnavailable",
     "IconCache",
     "IconToolError",
+    "LaneHost",
     "LaunchableApp",
     "PairingClient",
     "PairingDenied",
@@ -151,6 +155,7 @@ __all__ = [
     "PairingUnavailable",
     "PcAudio",
     "PcInput",
+    "PcInputRefused",
     "PcLauncher",
     "PcPower",
     "PcUnsupported",
@@ -160,6 +165,7 @@ __all__ = [
     "PollResult",
     "PollSlowDown",
     "SecretStore",
+    "Sender",
     "ServerRestartNow",
     "ServerRestarting",
     "TextFieldStatus",

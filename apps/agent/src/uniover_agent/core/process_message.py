@@ -1,52 +1,36 @@
 """Caso de uso de uma mensagem recebida: valida, executa só o que passou e responde."""
 
 import asyncio
-import contextlib
 import logging
 import time
-from collections import deque
 from collections.abc import Callable, Collection
+from functools import partial
 from typing import Final
 
 from uniover_agent.core.domain import Command, CommandResult
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand
-from uniover_agent.core.pc.handlers import POINTER_TYPE, merge_pointer_commands
-from uniover_agent.core.pc.pointer_order import PointerSequence
+from uniover_agent.core.pc.lane import (
+    LATE_POINTER_WARNING,
+    MAX_PENDING_PC,
+    MAX_PENDING_RESULTS,
+    PcLane,
+)
 from uniover_agent.core.tv.handlers import TimedKeyCommand
 from uniover_agent.core.tv.session import TV_UNREACHABLE
-from uniover_agent.ports import Transport, TransportError
+from uniover_agent.ports import LaneHost, Transport, TransportError
 
 _log = logging.getLogger(__name__)
 
 _KEEPALIVE_TYPE = "api.keepalive.v1"
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
-# Os comandos do PC que têm `UP`.
-_RELEASE_TYPES = frozenset({"pc.click.v1", "pc.key.v2"})
 # O canal direto (`pc.rtc.*`) é sinalização, não comando de entrada: a oferta espera a biblioteca
 # carregar e não pode ficar atrás do mouse da nuvem (nem segurá-lo).
 _RTC_PREFIX = "pc.rtc."
-# Teto de comandos do PC esperando a vez. Acima disso, os dois movimentos pendentes mais NOVOS que
-# estão lado a lado e podem ser somados viram um só: o movimento é relativo, então o caminho (a
-# soma) se preserva, e nada que veio antes de um clique ou tecla passa para depois dele. Sem par
-# que se possa somar (a soma passaria dos limites, ou misturaria movimento e rolagem fora de
-# ordem), o movimento mais antigo é descartado.
-MAX_PENDING_PC: Final = 128
-# Movimentos fora de ordem (chegaram depois de um mais novo, por `seq`) seguidos que merecem um
-# aviso: um ou outro é a reordenação normal de pedidos paralelos; uma sequência longa indica um
-# caminho que embaralha. Eles são aplicados de qualquer jeito (o deslocamento é relativo).
-LATE_POINTER_WARNING: Final = 20
-# Envios de resultado de comandos do PC ainda em andamento (cada um é uma tarefa). Rede parada não
-# pode acumular tarefas sem fim: acima disto o resultado mais antigo é abandonado (a API o dá como
-# sem resposta pelo prazo dela).
-MAX_PENDING_RESULTS: Final = 64
-
-
-def _is_release(command: Command) -> bool:
-    """Soltar um botão ou um modificador: o `UP` do clique e da tecla."""
-    return command.type in _RELEASE_TYPES and command.body.get("action") == "UP"
+# Quanto esperar a faixa do PC (em outro laço) encerrar.
+_LANE_CLOSE_SECONDS: Final = 5.0
 
 
 class ProcessMessage:
@@ -57,9 +41,11 @@ class ProcessMessage:
     Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos. Comandos em
     `silent_types` são executados mas não respondidos.
 
-    Os comandos `pc.*` correm numa faixa à parte: um só consumidor os executa um após o outro, na
-    ordem de chegada (apertar, mover, soltar), sem esperar as teclas da TV e sem que elas esperem
-    por eles.
+    Os comandos `pc.*` correm numa faixa à parte (`PcLane`): um só consumidor os executa um após o
+    outro, na ordem de chegada (apertar, mover, soltar), sem esperar as teclas da TV e sem que
+    elas esperem por eles. Em produção a faixa vive num laço de eventos próprio (`pc_host`, uma
+    thread dedicada): o laço principal só valida a mensagem e a entrega com `post`, na ordem de
+    chegada. Sem `pc_lane` a faixa nasce aqui, no mesmo laço (os testes e o uso simples).
     `release_inputs` solta os botões do mouse que o PC ficou segurando; é chamado quando a conexão
     cai e ao encerrar, depois de parar a faixa.
     """
@@ -82,6 +68,10 @@ class ProcessMessage:
         observe_timestamp: Callable[[str | None], None] | None = None,
         on_cloud_pc_input: Callable[[str, int | None, str | None], None] | None = None,
         on_release_queued: Callable[[], None] | None = None,
+        pc_lane: PcLane | None = None,
+        pc_host: LaneHost | None = None,
+        lane_detached_types: Collection[str] = (),
+        direct_active: Callable[[], bool] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -96,39 +86,27 @@ class ProcessMessage:
         # texto e o POWER que esperam por ela. Os tipos longos por natureza ficam de fora.
         self._command_timeout = command_timeout_seconds
         self._uncapped_types = frozenset(uncapped_types)
-        self._release_inputs = release_inputs
-        # Chamado com o tipo e o `seq` (se veio) de cada comando `pc.*` que chega pela API (nunca
-        # pelo canal direto), antes de ele entrar na faixa: o canal direto fecha primeiro, e nada
-        # dele cai depois do que a nuvem faz.
-        self._on_cloud_pc_input = on_cloud_pc_input
-        # Chamado quando uma soltura (`UP`) entra na faixa do PC: quem espera um intervalo de
-        # clique para de esperar (a soltura nunca espera por ele).
-        self._on_release_queued = on_release_queued
-        # O comando do canal direto que a faixa executa agora: se o canal fecha, ele é cancelado.
-        self._running_direct: asyncio.Future[CommandResult] | None = None
         # Recebe o `ts` de cada batimento da API (`api.keepalive.v1`): só ele, que a API nunca
         # segura, serve para estimar a diferença entre o relógio dela e o monotônico deste agente.
         # Um comando `pc.*` não entra aí: se tivesse chegado atrasado, ensinaria a estimativa a
         # tratar o atraso como normal.
         self._observe_timestamp = observe_timestamp
         self._tasks: set[asyncio.Task[None]] = set()
-        # Faixa do PC: a fila, o consumidor único (criado ao primeiro comando) e o aviso de excesso.
-        self._pc_queue: deque[Command] = deque()
-        self._pc_wakeup = asyncio.Event()
-        self._pc_consumer: asyncio.Task[None] | None = None
-        self._pc_overflowing = False
-        # Movimentos numerados chegam em pedidos paralelos; a ordem só alimenta o diagnóstico.
-        self._pointer_order = PointerSequence()
-        self._late_pointers = 0
-        # Envios de resultado da faixa do PC em andamento, do mais antigo ao mais novo.
-        self._result_tasks: deque[asyncio.Task[None]] = deque()
-        self._results_overflowing = False
-        # Comandos que vieram pelo canal direto e esperam a vez (id -> quem recebe o resultado). O
-        # resultado deles volta pelo canal, nunca pela API (que não os pediu).
-        self._direct: dict[str, Callable[[CommandResult], None]] = {}
-        # Os ids de TODO comando do canal direto ainda na fila (inclusive o movimento, que não tem
-        # quem espere resposta): o que sai da fila quando o canal fecha, e que nunca vai à API.
-        self._direct_ids: set[str] = set()
+        # A faixa do PC: ou a de fora (laço próprio) ou uma nesta mesma thread.
+        self._lane = pc_lane or PcLane(
+            handle_command,
+            envelopes,
+            transport,
+            silent_types=silent_types,
+            monotonic=monotonic,
+            release_inputs=release_inputs,
+            on_cloud_pc_input=on_cloud_pc_input,
+            on_release_queued=on_release_queued,
+            direct_active=direct_active,
+        )
+        self._pc_host: LaneHost | None = pc_host if pc_lane is not None else None
+        # Os comandos `pc.*` que a faixa executa fora da fila (a sinalização do canal direto).
+        self._lane_detached_types = frozenset(lane_detached_types)
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
@@ -163,8 +141,8 @@ class ProcessMessage:
                 command.body,
                 command.correlation_id,
                 command.sent_at,
-                self._monotonic(),
-                is_latest,
+                received_at=self._monotonic(),
+                is_latest=is_latest,
             )
             task = asyncio.create_task(self._execute_key(command, self._last_key_task))
             self._last_key_task = task
@@ -174,15 +152,10 @@ class ProcessMessage:
             task.add_done_callback(self._key_tasks.discard)
             return
         if command.type.startswith(_PC_PREFIX) and not command.type.startswith(_RTC_PREFIX):
-            if self._on_cloud_pc_input is not None:
-                seq = command.body.get("seq")
-                epoch = command.body.get("epoch")
-                self._on_cloud_pc_input(
-                    command.type,
-                    seq if isinstance(seq, int) and not isinstance(seq, bool) else None,
-                    epoch if isinstance(epoch, str) else None,
-                )
-            self._enqueue_pc(command)
+            self._to_lane(partial(self._lane.accept, command))
+            return
+        if command.type in self._lane_detached_types:
+            self._to_lane(partial(self._lane.run_detached, command))
             return
         if command.type in self._background_types:
             task = asyncio.create_task(self._execute_detached(command))
@@ -193,198 +166,30 @@ class ProcessMessage:
         await asyncio.gather(*tuple(self._key_tasks))
         await self._execute(command)
 
+    def _to_lane(self, callback: Callable[[], None]) -> None:
+        """Entrega à faixa do PC: no laço dela (thread própria) ou, sem ele, agora mesmo."""
+        if self._pc_host is None:
+            callback()
+        else:
+            self._pc_host.post(callback)
+
+    # A faixa do PC, vista de quem a usa no mesmo laço (os testes e o uso simples). Em produção a
+    # montagem liga o canal direto e o pacer à própria faixa.
+
+    @property
+    def lane(self) -> PcLane:
+        return self._lane
+
     def submit_direct(
         self, command: Command, on_result: Callable[[CommandResult], None] | None
     ) -> None:
-        """Põe na faixa do PC um comando que veio pelo canal direto (já validado pelo portão).
-
-        Entra na mesma fila, na mesma ordem e nos mesmos handlers dos da API. O resultado vai para
-        `on_result` (o canal), não para a API; `None` não espera resposta.
-        """
-        self._direct_ids.add(command.id)
-        if on_result is not None:
-            self._direct[command.id] = on_result
-        self._enqueue_pc(command)
+        self._lane.submit_direct(command, on_result)
 
     def release_waiting(self) -> bool:
-        """Há uma soltura (`UP`) esperando na faixa do PC?"""
-        return any(_is_release(queued) for queued in self._pc_queue)
+        return self._lane.release_waiting()
 
     def direct_lost(self) -> None:
-        """O canal direto fechou: tudo o que dele esperava na faixa (comandos e movimento) sai dela
-        e o que o PC segurava é solto (como na queda da API, sem mexer no da nuvem). O comando do
-        canal que já estava sendo executado é cancelado no próximo ponto de espera dele (um clique
-        esperando o intervalo do duplo clique não sai depois de o canal fechar); o resultado dele
-        nunca vai a lugar nenhum."""
-        running = self._running_direct
-        if running is not None and not running.done():
-            running.cancel()
-        if self._direct_ids:
-            keep = [queued for queued in self._pc_queue if queued.id not in self._direct_ids]
-            self._pc_queue.clear()
-            self._pc_queue.extend(keep)
-        self._direct_ids.clear()
-        self._direct.clear()
-        self._release_held_inputs()
-
-    def _enqueue_pc(self, command: Command) -> None:
-        if command.type == POINTER_TYPE:
-            seq = command.body.get("seq")
-            if self._pointer_order.is_late(
-                seq if isinstance(seq, int) else None, self._monotonic()
-            ):
-                self._late_pointers += 1
-                if self._late_pointers == LATE_POINTER_WARNING:
-                    _log.warning(
-                        "%d movimentos do mouse seguidos chegaram fora de ordem (aplicados)",
-                        LATE_POINTER_WARNING,
-                    )
-            else:
-                self._late_pointers = 0
-        self._pc_queue.append(command)
-        if self._on_release_queued is not None and _is_release(command):
-            self._on_release_queued()
-        if len(self._pc_queue) > MAX_PENDING_PC:
-            self._shrink_pc_queue()
-        if self._pc_consumer is None or self._pc_consumer.done():
-            self._pc_consumer = asyncio.create_task(self._consume_pc())
-            self._tasks.add(self._pc_consumer)
-            self._pc_consumer.add_done_callback(self._tasks.discard)
-        self._pc_wakeup.set()
-
-    def _shrink_pc_queue(self) -> None:
-        """Tira uma vaga da fila: soma o par de movimentos vizinhos mais novo que se possa somar.
-
-        Só vizinhos: entre dois movimentos não há clique, tecla nem texto, então somar não muda o
-        que acontece antes de nenhum deles. Se nenhum par se soma, descarta o movimento mais
-        antigo; se nem movimento há (a fila só tem comandos com resposta), passa do teto por
-        esta vez.
-        """
-        queue = self._pc_queue
-        silent = self._silent_types
-        for index in range(len(queue) - 2, -1, -1):
-            older, newer = queue[index], queue[index + 1]
-            if older.type == POINTER_TYPE == newer.type and older.type in silent:
-                merged = merge_pointer_commands(older, newer)
-                if merged is not None:
-                    queue[index + 1] = merged
-                    del queue[index]
-                    self._direct_ids.discard(older.id)
-                    self._warn_pc_overflow("somando")
-                    return
-        for index, queued in enumerate(queue):
-            if queued.type in silent:
-                del queue[index]
-                self._direct_ids.discard(queued.id)
-                self._warn_pc_overflow("descartando")
-                return
-
-    def _warn_pc_overflow(self, action: str) -> None:
-        if not self._pc_overflowing:
-            self._pc_overflowing = True
-            _log.warning(
-                "faixa do PC cheia (%d comandos esperando): %s movimentos do mouse",
-                MAX_PENDING_PC,
-                action,
-            )
-
-    async def _consume_pc(self) -> None:
-        # Um único consumidor: a ordem da faixa não depende de tarefas encadeadas, e cancelar este
-        # (queda da conexão, encerramento) interrompe tudo de uma vez.
-        while True:
-            while not self._pc_queue:
-                self._pc_overflowing = False
-                self._pc_wakeup.clear()
-                await self._pc_wakeup.wait()
-            await self._execute_pc(self._pc_queue.popleft())
-
-    async def _execute_pc(self, command: Command) -> None:
-        """Executa um comando da faixa e responde SEM prender a faixa: o envio do resultado (rede)
-        sai em tarefa própria, para o movimento que vem atrás não esperar por ele. A ordem dos
-        resultados não importa (a API os casa pelo `id`); a ordem da execução é a da faixa."""
-        # De onde veio, anotado ANTES de executar: se o canal fechar no meio, o resultado é dele
-        # (e é descartado), nunca da API, que não pediu este comando.
-        from_direct = command.id in self._direct_ids
-        self._direct_ids.discard(command.id)
-        result = await self._run_pc(command, from_direct=from_direct)
-        if result is None:
-            return
-        if from_direct:
-            sink = self._direct.pop(command.id, None)
-            if sink is not None:
-                try:
-                    sink(result)
-                except Exception:
-                    _log.exception("falha ao responder pelo canal direto (%s)", command.type)
-            return
-        if command.type in self._silent_types:
-            return
-        task = asyncio.create_task(self._send_result(command, result))
-        self._tasks.add(task)
-        self._result_tasks.append(task)
-        task.add_done_callback(self._tasks.discard)
-        task.add_done_callback(self._forget_result_task)
-        while len(self._result_tasks) > MAX_PENDING_RESULTS:
-            oldest = self._result_tasks.popleft()
-            oldest.cancel()
-            if not self._results_overflowing:
-                self._results_overflowing = True
-                _log.warning(
-                    "envio de resultados do PC acumulado (%d): abandonando o mais antigo",
-                    MAX_PENDING_RESULTS,
-                )
-
-    async def _run_pc(self, command: Command, *, from_direct: bool) -> CommandResult | None:
-        """Roda o handler; `None` se ele falhou ou se o canal direto fechou com ele na espera.
-
-        O comando do canal direto (menos o movimento, que não espera nada) roda em tarefa própria,
-        para o fechamento do canal poder cancelá-lo no meio de uma espera.
-        """
-        inner: asyncio.Future[CommandResult] | None = None
-        try:
-            if from_direct and command.type != POINTER_TYPE:
-                inner = asyncio.ensure_future(self._handle_command(command))
-                self._running_direct = inner
-                return await inner
-            return await self._handle_command(command)
-        except asyncio.CancelledError:
-            current = asyncio.current_task()
-            if inner is not None and inner.cancelled() and not (current and current.cancelling()):
-                # O canal fechou com o comando na espera: ele não sai e ninguém é avisado.
-                self._direct.pop(command.id, None)
-                return None
-            if inner is not None:
-                inner.cancel()
-            raise
-        except Exception:
-            _log.exception("falha ao executar %s (id=%s)", command.type, command.id)
-            self._direct.pop(command.id, None)
-            return None
-        finally:
-            if inner is not None and self._running_direct is inner:
-                self._running_direct = None
-
-    def _forget_result_task(self, task: asyncio.Task[None]) -> None:
-        with contextlib.suppress(ValueError):  # já saiu da fila (abandonada ou cancelada na queda)
-            self._result_tasks.remove(task)
-        if not self._result_tasks:
-            self._results_overflowing = False
-
-    async def _send_result(self, command: Command, result: CommandResult) -> None:
-        # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
-        try:
-            await self._transport.send(
-                self._envelopes.result(
-                    command.id,
-                    ok=result.status.value == "ok",
-                    code=result.code or result.status.value,
-                    message=result.detail,
-                )
-            )
-        except TransportError as exc:
-            _log.debug("resultado de %s não enviado (%s)", command.type, exc)
-        except Exception:
-            _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
+        self._lane.direct_lost()
 
     def _newest_press(self, key: str) -> Callable[[], bool]:
         self._latest_key[key] = self._latest_key.get(key, 0) + 1
@@ -410,30 +215,18 @@ class ProcessMessage:
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
-        self._release_held_inputs()
+        if self._pc_host is None:
+            await self._lane.aclose()
+        else:
+            try:
+                await self._pc_host.call(self._lane.aclose, wait_seconds=_LANE_CLOSE_SECONDS)
+            except TimeoutError, RuntimeError:
+                _log.warning("a faixa do PC não encerrou a tempo")
 
     def connection_lost(self) -> None:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
-        self._pc_queue.clear()
-        self._direct.clear()
-        self._direct_ids.clear()
-        self._pointer_order.reset()
-        # Resultado de uma conexão que caiu não serve a ninguém: não fica tentando sair pela nova.
-        while self._result_tasks:
-            self._result_tasks.popleft().cancel()
-        if self._pc_consumer is not None:
-            self._pc_consumer.cancel()  # o próximo comando cria outro consumidor
-            self._pc_consumer = None
-        self._release_held_inputs()
-
-    def _release_held_inputs(self) -> None:
-        if self._release_inputs is None:
-            return
-        try:
-            self._release_inputs()
-        except Exception:
-            _log.exception("falha ao soltar os botões do mouse")
+        self._to_lane(self._lane.connection_lost)
 
     async def _execute(self, command: Command) -> None:
         result = await self._handle_command(command)
@@ -510,4 +303,10 @@ class ProcessMessage:
             )
 
 
-__all__ = ["Accepted", "ProcessMessage"]
+__all__ = [
+    "LATE_POINTER_WARNING",
+    "MAX_PENDING_PC",
+    "MAX_PENDING_RESULTS",
+    "Accepted",
+    "ProcessMessage",
+]

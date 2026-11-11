@@ -63,8 +63,10 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private static JsonObject Failed(string code) =>
         new() { ["ok"] = false, ["error"] = new JsonObject { ["code"] = code, ["message"] = "texto livre do agente" } };
 
-    private static Task<HttpResponseMessage> PostAsync(TransportApp app, string path, object? body, string? token = null) =>
-        app.App.SendAsync(HttpMethod.Post, $"/api/v1/pc/{path}", body, token ?? app.Login.AccessToken);
+    private static Task<HttpResponseMessage> PostAsync(
+        TransportApp app, string path, object? body, string? token = null, string? operationId = null, string? userAgent = null) =>
+        app.App.SendAsync(
+            HttpMethod.Post, $"/api/v1/pc/{path}", body, token ?? app.Login.AccessToken, userAgent: userAgent, operationId: operationId);
 
     /// <summary>O PC anuncia o favorito "navegador", como o agente faz ao conectar.</summary>
     private static async Task AnnounceAppAsync(TransportApp app, FakeAgent agent)
@@ -1164,6 +1166,139 @@ public sealed class PcControlTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         var body = await DevicesApp.JsonAsync(response);
         body.GetProperty("agentError").GetString().Should().Be("failed");
+        body.GetRawText().Should().NotContain("texto livre do agente");
+    }
+
+    // ---- operação e aparelho (envelope) ----
+
+    private const string OperationCapability = "pc.op.v1";
+    private const string DeviceCapability = "pc.device.v1";
+
+    [Fact]
+    public async Task ACommandCarriesTheOperationOfTheRequestAndTheDevice_ToAnAgentThatDeclaresThem()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OperationCapability, DeviceCapability);
+
+        var http = PostAsync(
+            app, "key", new { key = "ENTER" }, operationId: "0192f1e47b3a7c2e",
+            userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1");
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("operationId").GetString().Should().Be("0192f1e47b3a7c2e");
+        command.GetProperty("deviceName").GetString().Should().Be("iPhone (Safari)");
+        command.GetProperty("deviceId").GetString().Should().MatchRegex("^[0-9a-f]{32}$");
+        command.GetRawText().Should().NotContain("Mozilla");
+    }
+
+    [Fact]
+    public async Task WithoutAValidOperationHeader_TheApiMakesUpTheCode_AndNeverRepeatsTheText()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OperationCapability);
+
+        var http = PostAsync(app, "key", new { key = "ENTER" }, operationId: "tecla A agora");
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("operationId").GetString().Should().MatchRegex("^[0-9a-f]{16}$");
+        command.TryGetProperty("deviceId", out _).Should().BeFalse("o agente não declarou a aprovação de aparelho");
+    }
+
+    [Fact]
+    public async Task AnOlderAgentGetsAnEnvelopeWithoutTheNewFields()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        var http = PostAsync(app, "key", new { key = "ENTER" }, operationId: "0192f1e47b3a7c2e");
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.EnumerateObject().Select(p => p.Name).Should().NotContain(["operationId", "deviceId", "deviceName"]);
+    }
+
+    [Fact]
+    public async Task ThePointer_CarriesTheDeviceButNeverAnOperation()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OperationCapability, DeviceCapability);
+
+        using var response = await PostAsync(app, "pointer", new { dx = 3, dy = 1 }, operationId: "0192f1e47b3a7c2e");
+        var envelope = (await Within(agent.ReceiveAsync()))!.Value;
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        envelope.TryGetProperty("operationId", out _).Should().BeFalse("o movimento é alta taxa e não entra no registro");
+        envelope.TryGetProperty("deviceId", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ThePointerOfADeviceThePcHasNotApproved_Gets403Too_FromTheStateTheAgentReported_WithoutAMessagePerMove()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, DeviceCapability);
+
+        // O primeiro movimento chega ao agente (a API ainda não sabe nada do aparelho) e o agente avisa o estado.
+        using var first = await PostAsync(app, "pointer", new { dx = 1, dy = 1 });
+        var envelope = (await Within(agent.ReceiveAsync()))!.Value;
+        var device = envelope.GetProperty("deviceId").GetString()!;
+        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await agent.SendTextAsync(agent.Envelope("pc.device.state.v1", new JsonObject
+        {
+            ["deviceId"] = device,
+            ["state"] = "pending",
+            ["at"] = "2026-11-01T14:00:00Z",
+        }));
+
+        await TransportApp.WaitUntilAsync(
+            async () => (await PostAsync(app, "pointer", new { dx = 1, dy = 1 })).StatusCode == HttpStatusCode.Forbidden,
+            "movimento recusado com 403");
+        using var refused = await PostAsync(app, "pointer", new { dx = 2, dy = 2 });
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await DevicesApp.JsonAsync(refused)).GetProperty("type").GetString().Should().EndWith("pc-device-pending");
+
+        // Negado vale o mesmo, com o outro tipo; aprovado limpa e o movimento volta a passar.
+        await agent.SendTextAsync(agent.Envelope("pc.device.state.v1", new JsonObject
+        {
+            ["deviceId"] = device,
+            ["state"] = "denied",
+            ["at"] = "2026-11-01T14:00:01Z",
+        }));
+        await TransportApp.WaitUntilAsync(
+            async () => (await DevicesApp.JsonAsync(await PostAsync(app, "pointer", new { dx = 1, dy = 1 })))
+                .GetProperty("type").GetString()!.EndsWith("pc-device-denied", StringComparison.Ordinal),
+            "negado");
+        await agent.SendTextAsync(agent.Envelope("pc.device.state.v1", new JsonObject
+        {
+            ["deviceId"] = device,
+            ["state"] = "approved",
+            ["at"] = "2026-11-01T14:00:02Z",
+        }));
+        await TransportApp.WaitUntilAsync(
+            async () => (await PostAsync(app, "pointer", new { dx = 1, dy = 1 })).StatusCode == HttpStatusCode.NoContent,
+            "aprovado limpa o aviso");
+    }
+
+    [Theory]
+    [InlineData("device_pending", "pc-device-pending")]
+    [InlineData("device_denied", "pc-device-denied")]
+    [InlineData("device_unknown", "pc-device-unknown")]
+    public async Task ADeviceTheOwnerHasNotApproved_Returns403WithAClearType(string agentCode, string problemType)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, DeviceCapability);
+
+        var http = PostAsync(app, "key", new { key = "ENTER" });
+        await AnswerAsync(agent, Failed(agentCode));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await DevicesApp.JsonAsync(response);
+        body.GetProperty("type").GetString().Should().EndWith(problemType);
         body.GetRawText().Should().NotContain("texto livre do agente");
     }
 

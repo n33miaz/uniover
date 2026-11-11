@@ -80,6 +80,41 @@ describe('pcFailureOf', () => {
     expect(failure.message).not.toContain('failed');
   });
 
+  it('tells a locked PC apart from a window that needs administrator rights', () => {
+    const locked = pcFailureOf(http(502, { agentError: 'session_locked' }));
+    expect(locked.kind).toBe('locked');
+    expect(locked.message).toBe('O PC está bloqueado.');
+    const elevated = pcFailureOf(http(502, { agentError: 'elevated_window' }));
+    expect(elevated.kind).toBe('elevated');
+    expect(elevated.message).toBe('Há uma janela de administrador na frente.');
+  });
+
+  it('keeps the live keyboard from treating a locked PC as a silent failure', () => {
+    expect(pcFailureOf(http(502, { agentError: 'session_locked' })).message).not.toContain(
+      'session_locked',
+    );
+  });
+
+  it('tells a device the owner has not approved yet from one the owner refused, and from a missing permission', () => {
+    const pending = pcFailureOf(
+      http(403, { type: 'https://uniover.dev/problems/pc-device-pending', title: 'x' }),
+    );
+    expect(pending.kind).toBe('device-pending');
+    expect(pending.message).toBe('Aprove este aparelho no PC.');
+    const denied = pcFailureOf(
+      http(403, { type: 'https://uniover.dev/problems/pc-device-denied', title: 'x' }),
+    );
+    expect(denied.kind).toBe('device-denied');
+    expect(denied.message).toBe('O dono do PC não permitiu este aparelho.');
+    const unknown = pcFailureOf(
+      http(403, { type: 'https://uniover.dev/problems/pc-device-unknown', title: 'x' }),
+    );
+    expect(unknown.kind).toBe('device-unknown');
+    expect(
+      pcFailureOf(http(403, { type: 'https://uniover.dev/problems/forbidden', title: 'x' })).kind,
+    ).toBe('forbidden');
+  });
+
   it('accepts an already-read problem and survives something that is not an HTTP error', () => {
     expect(pcFailureOf(new ApiProblem(503, 'agent-offline', 'x')).kind).toBe('offline');
     expect(pcFailureOf(new ApiProblem(503, 'agent-reconnecting', 'x')).kind).toBe('reconnecting');

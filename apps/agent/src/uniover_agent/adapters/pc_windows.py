@@ -17,7 +17,13 @@ from typing import Final, Protocol
 from uniover_agent.adapters import pc_inputs
 from uniover_agent.adapters.pc_inputs import RawInput
 from uniover_agent.adapters.process import run_hidden
-from uniover_agent.ports.pc import PcUnsupported
+from uniover_agent.ports.pc import (
+    CAUSE_ELEVATED_WINDOW,
+    CAUSE_SESSION_LOCKED,
+    CAUSE_UNKNOWN,
+    PcInputRefused,
+    PcUnsupported,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -34,12 +40,55 @@ Sender = Callable[[Sequence[RawInput]], None]
 DEAD_MAN_SECONDS: Final = 30.0
 
 
-class PartialSendError(OSError):
-    """O Windows aceitou só parte dos eventos de um lote (`sent` deles, os primeiros)."""
+class PartialSendError(PcInputRefused):
+    """O Windows aceitou só parte dos eventos de um lote (`sent` deles, os primeiros).
 
-    def __init__(self, sent: int, requested: int) -> None:
-        super().__init__(f"o Windows aceitou {sent} de {requested} eventos de entrada")
+    `cause` diz por quê, quando o adaptador conseguiu medir (ver `classify_refusal`)."""
+
+    def __init__(
+        self, sent: int, requested: int, cause: str = CAUSE_UNKNOWN, detail: str = ""
+    ) -> None:
+        super().__init__(
+            f"o Windows aceitou {sent} de {requested} eventos de entrada", cause, detail
+        )
         self.sent = sent
+
+
+# Níveis de integridade do Windows (o RID do SID obrigatório): baixo, médio, alto, sistema.
+INTEGRITY_LOW: Final = 0x1000
+INTEGRITY_MEDIUM: Final = 0x2000
+INTEGRITY_HIGH: Final = 0x3000
+INTEGRITY_SYSTEM: Final = 0x4000
+# Nome do desktop do usuário logado; a tela de bloqueio e o UAC rodam em outro (`Winlogon`).
+USER_DESKTOP: Final = "default"
+
+
+def integrity_name(level: int | None) -> str:
+    """O nível de integridade em texto fixo, para o registro."""
+    if level is None:
+        return "desconhecido"
+    if level >= INTEGRITY_SYSTEM:
+        return "sistema"
+    if level >= INTEGRITY_HIGH:
+        return "alto"
+    if level >= INTEGRITY_MEDIUM:
+        return "médio"
+    return "baixo"
+
+
+def classify_refusal(desktop: str | None, foreground: int | None, own: int | None) -> str:
+    """A causa de um `SendInput` recusado, a partir do que foi medido depois da recusa.
+
+    `desktop` é o nome do desktop que recebe a entrada agora (`None` se nem dá para abri-lo: é o
+    desktop seguro, como a tela de bloqueio ou o UAC); `foreground` e `own` são os níveis de
+    integridade da janela em primeiro plano e deste processo. Um desktop que não é o do usuário
+    vale como PC bloqueado; uma janela com integridade acima da deste processo, como janela de
+    administrador na frente (o Windows impede de propósito, UIPI); o resto não se sabe."""
+    if desktop is None or desktop.lower() != USER_DESKTOP:
+        return CAUSE_SESSION_LOCKED
+    if foreground is not None and own is not None and foreground > own:
+        return CAUSE_ELEVATED_WINDOW
+    return CAUSE_UNKNOWN
 
 
 class _Cancelable(Protocol):
@@ -104,14 +153,144 @@ if sys.platform == "win32":
     def native_size() -> int:
         return ctypes.sizeof(_Input)
 
+    # `use_last_error`: o código de erro do Windows é guardado por thread, logo depois da chamada,
+    # e lido por `get_last_error` na MESMA thread (a da faixa do PC).
+    _user32 = ctypes.WinDLL("user32", use_last_error=True)
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    _user32.SendInput.argtypes = (wintypes.UINT, ctypes.c_void_p, ctypes.c_int)
+    _user32.SendInput.restype = wintypes.UINT
+    _user32.OpenInputDesktop.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _user32.OpenInputDesktop.restype = wintypes.HANDLE
+    _user32.CloseDesktop.argtypes = (wintypes.HANDLE,)
+    _user32.GetUserObjectInformationW.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    _user32.GetForegroundWindow.restype = wintypes.HWND
+    _user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+    _kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    _kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _advapi32.OpenProcessToken.argtypes = (
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    )
+    _advapi32.GetTokenInformation.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    _advapi32.GetSidSubAuthorityCount.argtypes = (ctypes.c_void_p,)
+    _advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+    _advapi32.GetSidSubAuthority.argtypes = (ctypes.c_void_p, wintypes.DWORD)
+    _advapi32.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+
+    _UOI_NAME = 2
+    _DESKTOP_SWITCHDESKTOP = 0x0100
+    _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    _TOKEN_QUERY = 0x0008
+    _TOKEN_INTEGRITY_LEVEL = 25
+    _ERROR_ACCESS_DENIED = 5
+
+    def _input_desktop_name() -> str | None:
+        """Nome do desktop que recebe a entrada agora; `None` se não dá nem para abri-lo."""
+        desktop = _user32.OpenInputDesktop(0, False, _DESKTOP_SWITCHDESKTOP)
+        if not desktop:
+            return None
+        try:
+            needed = wintypes.DWORD(0)
+            buffer = ctypes.create_unicode_buffer(256)
+            ok = _user32.GetUserObjectInformationW(
+                desktop, _UOI_NAME, buffer, ctypes.sizeof(buffer), ctypes.byref(needed)
+            )
+            return buffer.value if ok else ""
+        finally:
+            _user32.CloseDesktop(desktop)
+
+    def _token_integrity(token: wintypes.HANDLE) -> int | None:
+        size = wintypes.DWORD(0)
+        _advapi32.GetTokenInformation(token, _TOKEN_INTEGRITY_LEVEL, None, 0, ctypes.byref(size))
+        if not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        if not _advapi32.GetTokenInformation(
+            token, _TOKEN_INTEGRITY_LEVEL, buffer, size, ctypes.byref(size)
+        ):
+            return None
+        # TOKEN_MANDATORY_LABEL começa com o ponteiro do SID; o último subautoridade é o nível.
+        sid = ctypes.c_void_p.from_buffer(buffer).value
+        if not sid:
+            return None
+        count = _advapi32.GetSidSubAuthorityCount(sid).contents.value
+        return int(_advapi32.GetSidSubAuthority(sid, count - 1).contents.value)
+
+    def _process_integrity(process: wintypes.HANDLE) -> int | None:
+        token = wintypes.HANDLE()
+        if not _advapi32.OpenProcessToken(process, _TOKEN_QUERY, ctypes.byref(token)):
+            # Um processo comum não abre o token de outro de nível mais alto: negado vale "alto".
+            return INTEGRITY_HIGH if ctypes.get_last_error() == _ERROR_ACCESS_DENIED else None
+        try:
+            return _token_integrity(token)
+        finally:
+            _kernel32.CloseHandle(token)
+
+    def _foreground_integrity() -> int | None:
+        """Integridade do processo da janela em primeiro plano (nunca lê o título dela)."""
+        window = _user32.GetForegroundWindow()
+        if not window:
+            return None
+        pid = wintypes.DWORD(0)
+        _user32.GetWindowThreadProcessId(window, ctypes.byref(pid))
+        if not pid.value:
+            return None
+        process = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if not process:
+            return INTEGRITY_HIGH if ctypes.get_last_error() == _ERROR_ACCESS_DENIED else None
+        try:
+            return _process_integrity(process)
+        finally:
+            _kernel32.CloseHandle(process)
+
+    def diagnose_refusal(last_error: int) -> tuple[str, str]:
+        """Depois de um `SendInput` recusado: a causa (código estável) e os fatos medidos.
+
+        Só roda depois da recusa (o caminho feliz não paga nada) e só olha o desktop de entrada e
+        a integridade da janela em primeiro plano: nada de título, nome de programa nem endereço.
+        """
+        desktop = _input_desktop_name()
+        foreground = _foreground_integrity()
+        own = _process_integrity(_kernel32.GetCurrentProcess())
+        cause = classify_refusal(desktop, foreground, own)
+        shown = "inacessível" if desktop is None else (desktop or "?")
+        detail = (
+            f"erro do Windows {last_error}; desktop de entrada {shown}; primeiro plano "
+            f"{integrity_name(foreground)}; este processo {integrity_name(own)}"
+        )
+        return cause, detail
+
     def _send_input(inputs: Sequence[RawInput]) -> None:
         if not inputs:
             return
         array = (_Input * len(inputs))(*(to_native(raw) for raw in inputs))
-        sent = ctypes.windll.user32.SendInput(len(inputs), array, ctypes.sizeof(_Input))
+        sent = _user32.SendInput(len(inputs), array, ctypes.sizeof(_Input))
         if sent != len(inputs):
-            # O Windows recusa quando outra janela com mais privilégio (UAC) tem o foco.
-            raise PartialSendError(sent, len(inputs))
+            # O Windows recusa na tela de bloqueio (desktop seguro) e quando outra janela com mais
+            # privilégio (UAC) tem o foco. O erro é lido já, na mesma thread; o resto é medido só
+            # agora (o envio que dá certo não paga).
+            last_error = ctypes.get_last_error()
+            try:
+                cause, detail = diagnose_refusal(last_error)
+            except Exception as exc:
+                cause, detail = CAUSE_UNKNOWN, f"erro do Windows {last_error}; sem medida ({exc})"
+            raise PartialSendError(sent, len(inputs), cause, detail)
 
     def _lock_workstation() -> bool:
         return bool(ctypes.windll.user32.LockWorkStation())

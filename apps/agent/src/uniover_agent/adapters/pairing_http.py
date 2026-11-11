@@ -148,8 +148,11 @@ async def probe_api(base_url: str, wait_seconds: float = 10.0) -> bool:
 async def fetch_api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
     """As mensagens opcionais que a API diz aceitar (`features` de `devices/info`, rota pública).
 
-    `None` quando não dá para saber (API dormindo, rede). Uma API que ainda não tem o campo devolve
-    o conjunto vazio. Quem chama não declara nem usa o que não foi confirmado.
+    `None` quando não dá para saber: API dormindo, rede, e também um 200 cujo corpo não é um objeto
+    com a lista `features` (página de manutenção em JSON, resposta torta). Isso não é "a API não
+    aceita nada", e quem decide segurança (a aprovação de aparelho) não pode tratá-lo como tal.
+    Lista vazia é a resposta de uma API que de fato não oferece nada opcional. Quem chama não
+    declara nem usa o que não foi confirmado.
     """
     try:
         async with httpx.AsyncClient(
@@ -163,5 +166,5 @@ async def fetch_api_features(base_url: str, wait_seconds: float = 10.0) -> froze
         return None
     features = data.get("features") if isinstance(data, dict) else None
     if not isinstance(features, list):
-        return frozenset()
+        return None
     return frozenset(item for item in features if isinstance(item, str))

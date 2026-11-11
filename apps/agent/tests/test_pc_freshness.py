@@ -317,11 +317,22 @@ async def test_a_stale_pointer_is_dropped_without_a_word(
     lab = Lab()
     lab.heartbeat(0.2)
     with caplog.at_level("DEBUG"):
-        assert await lab.run("pc.pointer.v1", {"dx": 900, "dy": 0}, 3) == ("rejected", EXPIRED)
+        assert await lab.run("pc.pointer.v1", {"dx": 900, "dy": 0}, 8) == ("rejected", EXPIRED)
         assert (await lab.run("pc.pointer.v1", {"dx": 1, "dy": 1}, 0.3))[0] == "ok"
     assert lab.pc.calls == [("move", 1, 1)]
     assert caplog.text == ""
     assert lab.refusals == []  # o movimento não vai ao diagnóstico
+
+
+async def test_a_pointer_move_that_arrives_a_few_seconds_late_is_still_applied() -> None:
+    # Decisão do dono: o movimento é relativo, então o deslocamento descartado não volta (o dedo
+    # andou e o cursor ficou para trás). Só o que passa de 5 s é descartado.
+    lab = Lab()
+    lab.heartbeat(0.2)
+    assert (await lab.run("pc.pointer.v1", {"dx": 40, "dy": 0}, 3.5))[0] == "ok"
+    assert (await lab.run("pc.pointer.v1", {"dx": 7, "dy": 0}, 4.5))[0] == "ok"
+    assert await lab.run("pc.pointer.v1", {"dx": 9, "dy": 0}, 6.0) == ("rejected", EXPIRED)
+    assert lab.pc.calls == [("move", 40, 0), ("move", 7, 0)]
 
 
 async def test_power_has_its_own_longer_validity() -> None:
@@ -441,9 +452,9 @@ async def test_when_the_api_clock_steps_back_commands_are_accepted_again_after_t
     lab = Lab()
     lab.beats(2)
     assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 0.3))[0] == "ok"
-    lab.api_step = 4.0  # o relógio da API recuou 4 s
+    lab.api_step = 6.0  # o relógio da API recuou 6 s
     lab.beats(1)
-    # O mínimo antigo ainda vale: tudo parece 4 s mais velho.
+    # O mínimo antigo ainda vale: tudo parece 6 s mais velho.
     assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 0.3) == ("rejected", EXPIRED)
     assert await lab.run("pc.click.v1", {"button": "LEFT"}, 1.5) == ("rejected", EXPIRED)
     lab.beats(1)
@@ -521,7 +532,7 @@ async def test_a_large_difference_is_reported_once_not_per_command(
 async def test_a_small_api_clock_step_back_is_rebased_after_three_beats() -> None:
     lab = Lab()
     assert (await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 1.2))[0] == "ok"
-    lab.api_step = 1.2  # o relógio da API recuou 1,2 s
+    lab.api_step = 4.5  # o relógio da API recuou 4,5 s
     lab.beats(1)
     assert await lab.run("pc.pointer.v1", {"dx": 5, "dy": 5}, 1.2) == ("rejected", EXPIRED)
     lab.beats(1)

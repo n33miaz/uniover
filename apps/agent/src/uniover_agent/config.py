@@ -209,6 +209,27 @@ class Settings(BaseSettings):
     pc_direct_idle_seconds: float = Field(default=20.0, ge=5, le=300)
     # Vida máxima de um canal (a API pede menos: o que resta do token de acesso): o app abre outro.
     pc_direct_max_lifetime_seconds: float = Field(default=900.0, ge=60, le=3600)
+    # Quanto o canal direto sobrevive à queda da conexão do agente com a API (publicação, troca de
+    # rede): ele não depende da nuvem para andar. Passado o prazo sem a API voltar, fecha. A
+    # revogação (a API manda fechar) fecha na hora, qualquer que seja o prazo.
+    pc_direct_api_grace_seconds: float = Field(default=30.0, ge=0, le=300)
+    # A entrada do PC (mouse, teclado, mídia, zoom, volume e o canal direto) roda num laço de
+    # eventos próprio, numa thread com prioridade acima do normal: o resto do agente (TV, rede,
+    # diagnóstico) não a atrasa. Desligar a devolve ao laço principal (só para isolar um defeito).
+    pc_input_thread: bool = True
+    # A primeira vez que um aparelho do app pede controle do PC, o dono confirma na tela do próprio
+    # PC ("Permitir que <nome> controle este PC?"); a decisão fica guardada por aparelho. Só vale
+    # com uma API que a oferece. Desligar tira a pergunta (vale a permissão da API).
+    pc_device_approval: bool = True
+    # Um salto grande do ponteiro (acima de `pc_pointer_spread_min_px` no maior eixo) sai em 2 a 4
+    # passos curtos espalhados em `pc_pointer_spread_ms`, para o cursor andar em vez de pular; 0
+    # desliga. Só quando nada mais espera na fila.
+    pc_pointer_spread_ms: int = Field(default=16, ge=0, le=50)
+    pc_pointer_spread_min_px: int = Field(default=12, ge=2, le=200)
+    # Conjunto de trabalho mínimo (MB) que o agente pede ao Windows para não ser cortado sob pouca
+    # memória (só vale com a entrada isolada); 0 desliga o pedido. Sem administrador; se o Windows
+    # recusar, o agente segue sem a proteção e registra.
+    pc_working_set_min_mb: int = Field(default=64, ge=0, le=512)
 
     @model_validator(mode="after")
     def _command_timeout_covers_two_openings(self) -> Self:

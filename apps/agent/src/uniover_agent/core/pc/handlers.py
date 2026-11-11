@@ -6,7 +6,9 @@ não é conferido de novo; o que depende do PC (um favorito que sumiu da configu
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from typing import Any, Final
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
@@ -25,7 +27,14 @@ from uniover_agent.core.pc.freshness import (
 from uniover_agent.core.pc.use import PcUseTracker
 from uniover_agent.core.pc.volume import VOLUME_MEDIA_ACTIONS, pc_volume_handler
 from uniover_agent.ports import Transport, TransportError
-from uniover_agent.ports.pc import PcAudio, PcInput, PcLauncher, PcPower, PcUnsupported
+from uniover_agent.ports.pc import (
+    PcAudio,
+    PcInput,
+    PcInputRefused,
+    PcLauncher,
+    PcPower,
+    PcUnsupported,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -42,6 +51,10 @@ PC_CLICK_V2_CAPABILITY: Final = "pc.click.v2"
 PC_ZOOM_CAPABILITY: Final = "pc.pointer.zoom.v1"
 # Idem: volume absoluto (nível de 0 a 100 e mudo) e o aviso do nível de agora.
 PC_VOLUME_CAPABILITY: Final = "pc.volume.v1"
+# Idem: o `operationId` do pedido HTTP no envelope dos comandos (liga os registros).
+PC_OP_CAPABILITY: Final = "pc.op.v1"
+# Idem: o aparelho do app (`deviceId`, `deviceName`) no envelope, para o dono aprová-lo no PC.
+PC_DEVICE_CAPABILITY: Final = "pc.device.v1"
 
 # Comandos executados sem resposta: a API manda o movimento do mouse sem esperar por ela.
 PC_SILENT_TYPES: Final = frozenset({"pc.pointer.v1"})
@@ -63,24 +76,108 @@ def _ok(command: Command) -> CommandResult:
     return CommandResult(command.id, ResultStatus.OK)
 
 
-def _guarded(handle: Callable[[Command], CommandResult], *, noisy: bool = True) -> Handler:
+# Recusas seguidas do movimento do mouse (com menos de `BURST_GAP_SECONDS` entre uma e outra) são
+# uma rajada: uma linha só no registro, no fim dela ou a cada `BURST_FLUSH_SECONDS` se não acaba.
+BURST_GAP_SECONDS: Final = 2.0
+BURST_FLUSH_SECONDS: Final = 10.0
+
+
+class RefusalBurst:
+    """Junta as recusas seguidas do fluxo de alta taxa (o movimento do mouse) numa linha só.
+
+    Um PC bloqueado recusa o movimento 60 vezes por segundo: uma linha por recusa afogaria o
+    registro, e nenhuma deixaria o dono sem saber por que o mouse não anda. A linha leva quantas
+    foram, por quanto tempo e a causa; nunca coordenadas.
+    """
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        monotonic: Callable[[], float] = time.monotonic,
+        gap_seconds: float = BURST_GAP_SECONDS,
+        flush_seconds: float = BURST_FLUSH_SECONDS,
+    ) -> None:
+        self._label = label
+        self._monotonic = monotonic
+        self._gap = gap_seconds
+        self._flush_after = flush_seconds
+        self._count = 0
+        self._started = 0.0
+        self._last = 0.0
+        self._cause = ""
+        self._detail = ""
+
+    def refused(self, exc: PcInputRefused) -> None:
+        now = self._monotonic()
+        if self._count and now - self._last > self._gap:
+            self._flush()  # a rajada anterior acabou faz tempo: fecha a linha dela
+        if not self._count:
+            self._started = now
+        self._count += 1
+        self._last = now
+        self._cause, self._detail = exc.cause, exc.detail
+        if now - self._started >= self._flush_after:
+            self._flush()  # uma rajada que não acaba também aparece
+
+    def accepted(self) -> None:
+        if self._count:
+            self._flush()
+
+    def _flush(self) -> None:
+        _log.warning(
+            "%d %s recusados em %.1f s (causa %s; %s)",
+            self._count,
+            self._label,
+            max(0.0, self._last - self._started),
+            self._cause,
+            self._detail or "sem detalhe",
+        )
+        self._count = 0
+
+
+def _guarded(
+    handle: Callable[[Command], CommandResult],
+    *,
+    noisy: bool = True,
+    burst: RefusalBurst | None = None,
+) -> Handler:
     """Transforma a falha do sistema em resultado: o agente nunca cai por causa de uma tecla.
 
     `noisy=False` é para o fluxo de alta taxa (o movimento do mouse): uma falha repetida seria uma
-    linha de registro por movimento, então vai só para o nível de depuração.
+    linha de registro por movimento, então vai só para o nível de depuração, e a rajada de recusas
+    do sistema vira UMA linha agregada (`burst`). A recusa do sistema (`PcInputRefused`) volta ao
+    app com a causa (`session_locked`, `elevated_window` ou `failed`), para ele dizer o que houve.
     """
 
     async def run(command: Command) -> CommandResult:
         try:
-            return handle(command)
+            result = handle(command)
         except PcUnsupported as exc:
             return CommandResult(command.id, ResultStatus.REJECTED, str(exc), UNSUPPORTED)
         except ValueError as exc:
             # Tecla fora das listas: o contrato já barra, isto só protege contra um erro nosso.
             return CommandResult(command.id, ResultStatus.REJECTED, str(exc), "invalid_message")
+        except PcInputRefused as exc:
+            if noisy:
+                _log.warning(
+                    "falha ao executar %s: %s (causa %s; %s)",
+                    command.type,
+                    exc,
+                    exc.cause,
+                    exc.detail or "sem detalhe",
+                )
+            else:
+                _log.debug("falha ao executar %s: %s", command.type, exc)
+                if burst is not None:
+                    burst.refused(exc)
+            return CommandResult(command.id, ResultStatus.FAILED, str(exc), exc.cause)
         except OSError as exc:
             (_log.warning if noisy else _log.debug)("falha ao executar %s: %s", command.type, exc)
             return CommandResult(command.id, ResultStatus.FAILED, str(exc), "failed")
+        if burst is not None:
+            burst.accepted()
+        return result
 
     return run
 
@@ -122,10 +219,10 @@ def merge_pointer_commands(older: Command, newer: Command) -> Command | None:
     seqs = [s for s in (older.body.get("seq"), newer.body.get("seq")) if s is not None]
     if seqs:
         body["seq"] = max(seqs)
-    return Command(newer.id, newer.type, body, newer.correlation_id, newer.sent_at)
+    return replace(newer, body=body)
 
 
-def pc_pointer_handler(pc: PcInput) -> Handler:
+def pc_pointer_handler(pc: PcInput, *, burst: RefusalBurst | None = None) -> Handler:
     """`pc.pointer.v1`: movimento e rolagem somados pelo app, num só toque no sistema."""
 
     def handle(command: Command) -> CommandResult:
@@ -142,7 +239,7 @@ def pc_pointer_handler(pc: PcInput) -> Handler:
             pc.move(dx, dy)
         return _ok(command)
 
-    return _guarded(handle, noisy=False)
+    return _guarded(handle, noisy=False, burst=burst or RefusalBurst("movimentos do mouse"))
 
 
 def pc_click_handler(pc: PcInput, pacer: ClickPacer | None = None) -> Handler:

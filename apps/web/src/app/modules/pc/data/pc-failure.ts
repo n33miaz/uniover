@@ -11,6 +11,11 @@ export type PcFailureKind =
   | 'timeout'
   | 'rate-limited'
   | 'failed'
+  | 'locked'
+  | 'elevated'
+  | 'device-pending'
+  | 'device-denied'
+  | 'device-unknown'
   | 'not-found'
   | 'invalid'
   | 'key-unsupported'
@@ -38,6 +43,23 @@ export interface PcFailure {
   readonly message: string;
 }
 
+/**
+ * `type` (sufixo) dos 403 que a API dá quando o dono do PC ainda não aprovou (ou recusou) este aparelho na tela do próprio PC. A conta tem a
+ * permissão do módulo: o que falta é o aparelho ser permitido lá.
+ */
+export const DEVICE_PENDING_PROBLEM = 'pc-device-pending';
+export const DEVICE_DENIED_PROBLEM = 'pc-device-denied';
+/** O agente ainda não identificou o aparelho (a negociação com a API está em curso): tentar de novo resolve. */
+export const DEVICE_UNKNOWN_PROBLEM = 'pc-device-unknown';
+
+/**
+ * Códigos do agente (`agentError`) para o `SendInput` que o Windows recusou: a tela de bloqueio (ou o desktop seguro) está na
+ * frente, ou uma janela com mais privilégio (administrador, UAC) está em primeiro plano. O PC não está fora do ar nem lento:
+ * a pessoa só precisa desbloquear ou tirar a janela.
+ */
+export const SESSION_LOCKED_CODE = 'session_locked';
+export const ELEVATED_WINDOW_CODE = 'elevated_window';
+
 /** O código do agente (`failed`, `unknown_app`...) vem numa extensão do problema que o leitor comum do app descarta. */
 function agentErrorOf(error: unknown): string | null {
   if (error instanceof HttpErrorResponse && error.error && typeof error.error === 'object') {
@@ -63,6 +85,24 @@ export function pcFailureOf(error: unknown): PcFailure {
     return {
       kind: 'session',
       message: $localize`:@@pc.error.session:Sua sessão expirou. Entre de novo.`,
+    };
+  }
+  if (problem.status === 403 && problem.kind === DEVICE_PENDING_PROBLEM) {
+    return {
+      kind: 'device-pending',
+      message: $localize`:@@pc.error.device-pending:Aprove este aparelho no PC.`,
+    };
+  }
+  if (problem.status === 403 && problem.kind === DEVICE_UNKNOWN_PROBLEM) {
+    return {
+      kind: 'device-unknown',
+      message: $localize`:@@pc.error.device-unknown:O PC ainda não reconheceu este aparelho. Tente de novo.`,
+    };
+  }
+  if (problem.status === 403 && problem.kind === DEVICE_DENIED_PROBLEM) {
+    return {
+      kind: 'device-denied',
+      message: $localize`:@@pc.error.device-denied:O dono do PC não permitiu este aparelho.`,
     };
   }
   if (isPermissionDenied(problem)) {
@@ -117,6 +157,18 @@ export function pcFailureOf(error: unknown): PcFailure {
     };
   }
   const code = agentErrorOf(error);
+  if (code === SESSION_LOCKED_CODE) {
+    return {
+      kind: 'locked',
+      message: $localize`:@@pc.error.locked:O PC está bloqueado.`,
+    };
+  }
+  if (code === ELEVATED_WINDOW_CODE) {
+    return {
+      kind: 'elevated',
+      message: $localize`:@@pc.error.elevated:Há uma janela de administrador na frente.`,
+    };
+  }
   return {
     kind: 'failed',
     message:

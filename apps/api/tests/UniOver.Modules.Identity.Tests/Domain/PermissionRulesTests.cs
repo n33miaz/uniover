@@ -76,6 +76,8 @@ public class PermissionRulesTests
         // A migration repete esta lista à mão; um teste de integração compara com o banco.
         PermissionRules.TvControlOnly.Should().Equal("module:tv", "tv:control", "tv:power", "tv:launch", "tv:history");
         PermissionRules.TvControlOnly.Should().NotContain(AccessPermissions.TvEditShortcuts);
+        // O controle do PC fica desligado por padrão para o convidado: só com a concessão explícita do dono.
+        PermissionRules.TvControlOnly.Should().NotContain(AccessPermissions.PcModule);
         PermissionRules.TrainingOnly.Should().Equal("module:training");
         PermissionRules.Validate(PermissionRules.TvControlOnly.ToArray()).IsValid.Should().BeTrue();
         PermissionRules.Validate(PermissionRules.TrainingOnly.ToArray()).IsValid.Should().BeTrue();

@@ -148,6 +148,8 @@ export const API_ROUTES: readonly string[] = [
   '/api/v1/pc/rtc/offer',
   '/api/v1/pc/status',
   '/api/v1/pc/text',
+  '/api/v1/pc/volume',
+  '/api/v1/pc/zoom',
   '/api/v1/shortcuts/tv',
   '/api/v1/system/dead-letters',
   '/api/v1/training/body/entries',

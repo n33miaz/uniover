@@ -338,3 +338,59 @@ describe('PcApi pointer', () => {
     expect(await body(api.pointer(1, 1, 0, 0, 0))).toEqual({ dx: 1, dy: 1, seq: 0 });
   });
 });
+
+describe('PcApi operation id', () => {
+  let api: PcApi;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    api = TestBed.inject(PcApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  const done = { status: 204, statusText: 'No Content' };
+
+  it('every command through the cloud carries its own X-Operation-Id', async () => {
+    const calls: [string, () => Promise<void>][] = [
+      ['click', () => api.click('LEFT')],
+      ['key', () => api.key('ENTER')],
+      ['text', () => api.text('olá')],
+      ['media', () => api.media('MUTE')],
+      ['zoom', () => api.zoom(2)],
+      ['volume', () => api.volume({ level: 30 })],
+      ['power', () => api.power('LOCK')],
+    ];
+    const seen = new Set<string>();
+    for (const [path, call] of calls) {
+      const sending = call();
+      const request = http.expectOne((req) => req.url.endsWith(`/v1/pc/${path}`));
+      const id = request.request.headers.get('X-Operation-Id');
+      expect(id).toMatch(/^[0-9a-f]{16}$/);
+      seen.add(id!);
+      request.flush(null, done);
+      await sending;
+    }
+    expect(seen.size).toBe(calls.length);
+  });
+
+  it('the pointer is high rate and never carries an operation', async () => {
+    const sending = api.pointer(3, 4);
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/pointer'));
+    expect(request.request.headers.has('X-Operation-Id')).toBe(false);
+    request.flush(null, done);
+    await sending;
+  });
+
+  it('a favorite launched through the cloud carries it too', async () => {
+    const sending = api.launch('navegador');
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/apps/navegador/launch'));
+    expect(request.request.headers.get('X-Operation-Id')).toMatch(/^[0-9a-f]{16}$/);
+    request.flush(null, done);
+    await sending;
+  });
+});

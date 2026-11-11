@@ -70,6 +70,11 @@ export class PointerBatcher {
     private readonly send: (batch: PointerBatch) => Promise<boolean>,
     private readonly options: BatcherOptions = DEFAULT_BATCHER,
     private readonly clock: Clock = SYSTEM_CLOCK,
+    /**
+     * O intervalo mínimo de agora, quando ele muda com o caminho (nuvem: 32 ms; canal direto: 10 ms, sem custo por pedido).
+     * Sem isto vale `options.minIntervalMs`.
+     */
+    private readonly minInterval: (() => number) | null = null,
   ) {}
 
   /** Acrescenta movimento do ponteiro (já inteiro, depois da aceleração). */
@@ -139,6 +144,18 @@ export class PointerBatcher {
   }
 
   /**
+   * Manda já o que está esperando e NÃO espera resposta de ninguém. É para quando a resposta não existe (o canal direto
+   * responde na hora e leva o total acumulado): o clique que vem junto leva o total do ponteiro e não precisa esperar HTTP.
+   */
+  flush(): void {
+    this.cancelTimer();
+    while (this.hasPending()) {
+      if (this.stopped) this.pending = { dx: 0, dy: 0, scrollX: 0, scrollY: 0 };
+      else this.dispatch();
+    }
+  }
+
+  /**
    * Esquece o que esperava (movimento somado e o aguardo da taxa) e continua utilizável. É o que a troca de conta usa:
    * movimento pendente de uma pessoa nunca sai depois como se fosse de outra. Não espera nada ("esvaziar" mandaria o
    * movimento antigo). Os pedidos que já estão em voo seguem, mas o que eles deixarem para trás também é descartado.
@@ -168,7 +185,8 @@ export class PointerBatcher {
       this.timer !== null
     )
       return;
-    const wait = Math.max(0, this.lastSentAt + this.options.minIntervalMs - this.clock.now());
+    const interval = this.minInterval?.() ?? this.options.minIntervalMs;
+    const wait = Math.max(0, this.lastSentAt + interval - this.clock.now());
     if (wait === 0) {
       this.dispatch();
       return;

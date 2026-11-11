@@ -42,7 +42,7 @@ import statistics
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
@@ -51,9 +51,17 @@ from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.pc.clock_offset import ClockOffset
+from uniover_agent.core.pc.devices import (
+    DEVICE_DENIED,
+    DEVICE_PENDING,
+    DEVICE_UNKNOWN,
+    DeviceApprovals,
+    DeviceDecision,
+)
 from uniover_agent.core.pc.freshness import MAX_COMMAND_AGE_SECONDS
 from uniover_agent.core.pc.handlers import MAX_POINTER_DELTA, MAX_SCROLL_DELTA, POINTER_TYPE
-from uniover_agent.ports import Transport, TransportError
+from uniover_agent.core.pc.lan import candidate_is_lan
+from uniover_agent.ports import Sender, TransportError
 from uniover_agent.ports.pc_direct import (
     INPUT_CHANNEL,
     POINTER_CHANNEL,
@@ -126,6 +134,8 @@ MAX_PRESSES_PER_REQUEST: Final = MAX_ERASE + 1
 MAX_CLOUD_SEQ: Final = 2_147_483_647
 # A época de uma página: 16 hexadecimais sorteados quando ela abre (o mesmo formato do contrato).
 _EPOCH_PATTERN: Final = re.compile(r"[0-9a-f]{16}")
+# O código de um comando do app (`i`): 1 a 40 letras, números, `_` e `-` (a operação do registro).
+_COMMAND_ID_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]{1,40}")
 
 REASON_REQUESTED: Final = "requested"
 REASON_REPLACED: Final = "replaced"
@@ -195,6 +205,9 @@ class DirectSettings:
     max_press_burst: int = 250
     max_text_chars_per_second: int = 600
     tick_seconds: float = 0.5
+    # Quanto o canal sobrevive à queda da conexão com a API: ele não depende da nuvem para andar,
+    # mas sem a API (que o fecha na revogação) não vale ficar aberto sem prazo.
+    api_grace_seconds: float = 30.0
 
 
 def _unbound_submit(command: Command, on_result: Callable[[CommandResult], None] | None) -> None:
@@ -315,6 +328,9 @@ class _Session:
     messages: int = 0
     rtts: list[int] = field(default_factory=list)
     watchdog: asyncio.Task[None] | None = None
+    # Quando os dois canais de dados abriram e quando o app se autenticou (monotônico).
+    opened_at: float | None = None
+    ready_at: float | None = None
 
 
 def _iso(milliseconds: float) -> str:
@@ -381,6 +397,7 @@ class PcDirectService:
         record: Record | None = None,
         settings: DirectSettings | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        devices: DeviceApprovals | None = None,
     ) -> None:
         self._factory = factory
         self._agent_id = agent_id
@@ -393,6 +410,7 @@ class PcDirectService:
         self._record = record
         self._settings = settings or DirectSettings()
         self._monotonic = monotonic
+        self._devices = devices
         self._current: _Session | None = None
         # As sessões que fecharam (id -> instante): uma oferta delas que chegue depois do fechamento
         # é recusada. O `pc.rtc.offer` espera a biblioteca carregar em tarefa própria e o `close` da
@@ -400,6 +418,8 @@ class PcDirectService:
         self._closed_ids: dict[str, float] = {}
         self._lifecycle = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
+        # A espera da volta da conexão com a API (a queda curta não fecha o canal).
+        self._grace: asyncio.Task[None] | None = None
 
     def bind(self, submit: Submit, direct_lost: Callable[[], None]) -> None:
         """Liga à faixa do PC: `submit` põe um comando nela; `direct_lost` solta o preso."""
@@ -417,17 +437,38 @@ class PcDirectService:
         current = self._current
         return current is not None and current.authenticated and not current.closed
 
+    @property
+    def holds_inputs(self) -> bool:
+        """Há um canal autenticado que já comandou algo: o que o PC segura agora é dele."""
+        current = self._current
+        return current is not None and current.authenticated and current.used and not current.closed
+
     # ---- sinalização (vem da API) -------------------------------------------------------------
 
-    async def open(
+    async def open(  # noqa: PLR0913 - a oferta traz o aparelho e os prazos
         self,
         session_id: str,
         sdp: str,
         token: str,
         ttl_seconds: int,
         max_lifetime_seconds: int | None = None,
+        *,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> str:
-        """Atende a oferta: troca o par anterior, aplica a oferta e devolve a resposta SDP."""
+        """Atende a oferta: troca o par anterior, aplica a oferta e devolve a resposta SDP.
+
+        De um aparelho que o dono não aprovou no PC (ou recusou) a oferta é recusada, e o app segue
+        pela nuvem, que também o recusa."""
+        if self._devices is not None:
+            decision = self._devices.check(device_id, device_name)
+            if decision is not DeviceDecision.APPROVED:
+                raise DirectRefused(
+                    {
+                        DeviceDecision.DENIED: DEVICE_DENIED,
+                        DeviceDecision.UNKNOWN: DEVICE_UNKNOWN,
+                    }.get(decision, DEVICE_PENDING)
+                )
         settings = self._settings
         lifetime = settings.max_lifetime_seconds
         if max_lifetime_seconds is not None:
@@ -490,8 +531,10 @@ class PcDirectService:
         session = self._current
         if session is None or session.closed or session.id != session_id or session.peer is None:
             return
-        # Os `.local` não se resolvem aqui (a conexão fecha pelo endereço de onde o app chega).
-        if ".local" in candidate:
+        # Só UDP de endereço da rede local: nome (inclusive `.local`, que não se resolve aqui),
+        # endereço público, TCP e `relay` ficam de fora. O candidato nunca vai ao registro.
+        if not candidate_is_lan(candidate):
+            _log.debug("candidato tardio recusado: não é UDP de endereço da rede local")
             return
         with contextlib.suppress(Exception):
             await session.peer.add_candidate(candidate, mid, index)
@@ -508,11 +551,42 @@ class PcDirectService:
             )
 
     def api_disconnected(self) -> None:
-        """A conexão com a API caiu: o canal não sobrevive à sessão que o autorizou."""
+        """A conexão com a API caiu: o canal segue por `api_grace_seconds` e fecha se não voltar.
+
+        O canal direto existe para não depender da nuvem, e uma queda curta (publicação, troca de
+        rede) não deve derrubar um arrasto. A vida máxima do canal (o que resta do token de acesso)
+        continua valendo; a revogação chega pela API e fecha na hora quando ela está de volta.
+        """
         session = self._current
-        if session is not None and not session.closed:
-            self._halt(session)
-            self._spawn(self._dispose(session, REASON_DISCONNECTED, notify=False))
+        if session is None or session.closed:
+            return
+        self._cancel_grace()
+        _log.info(
+            "conexão com a API caiu; o canal direto segue por até %.0f s", self._grace_seconds()
+        )
+        self._grace = asyncio.ensure_future(self._grace_then_close(session))
+
+    def api_reconnected(self) -> None:
+        """A conexão com a API voltou: o canal que ficou aberto segue sem prazo extra."""
+        if self._grace is not None:
+            self._cancel_grace()
+            _log.info("conexão com a API voltou; o canal direto seguiu aberto")
+
+    def _grace_seconds(self) -> float:
+        return self._settings.api_grace_seconds
+
+    def _cancel_grace(self) -> None:
+        grace, self._grace = self._grace, None
+        if grace is not None and grace is not asyncio.current_task():
+            grace.cancel()
+
+    async def _grace_then_close(self, session: _Session) -> None:
+        await asyncio.sleep(self._grace_seconds())
+        if self._grace is asyncio.current_task():
+            self._grace = None
+        if not session.closed:
+            _log.info("a conexão com a API não voltou a tempo; fechando o canal direto")
+            await self._finish(session, REASON_DISCONNECTED, notify=False)
 
     def cloud_input(
         self, message_type: str, seq: int | None = None, epoch: str | None = None
@@ -552,7 +626,7 @@ class PcDirectService:
 
     def _on_peer_open(self, session: _Session) -> None:
         session.opened = True
-        _log.debug("canal direto aberto (os dois canais de dados)")
+        session.opened_at = self._monotonic()
 
     def _on_message(self, session: _Session, channel: str, text: str) -> None:
         if session.closed:
@@ -599,6 +673,12 @@ class PcDirectService:
             # A primeira mensagem do canal de entrada TEM de ser o `auth` com o token da API.
             if kind == "auth" and self._token_ok(session, data.get("tok"), now):
                 session.authenticated = True
+                session.ready_at = now
+                _log.info(
+                    "canal direto aberto (sessão %s, negociação %.1f s)",
+                    session.id[:8],
+                    now - session.created,
+                )
                 self._note_cloud_marker(session, data)
                 remaining = max(1, int(session.lifetime - (now - session.created)))
                 # `caps`: as mensagens v2 que este agente aceita no canal. Um agente anterior não
@@ -665,7 +745,9 @@ class PcDirectService:
         command_id = data.get("i")
         message_type = data.get("t")
         body = data.get("b")
-        if not isinstance(command_id, str) or not 0 < len(command_id) <= 40:  # noqa: PLR2004
+        # O `i` vira a operação no registro: só letras, números, `_` e `-`, nunca um caractere de
+        # controle que falsifique uma linha do registro.
+        if not isinstance(command_id, str) or _COMMAND_ID_PATTERN.fullmatch(command_id) is None:
             self._violation(session)
             return
         self._note_cloud_marker(session, data)
@@ -724,7 +806,8 @@ class PcDirectService:
                 payload["c"] = result.code or result.status.value
             self._send(session, INPUT_CHANNEL, payload)
 
-        self._submit(accepted.command, answered)
+        # O código do comando do app é a operação dele no registro (nunca o corpo).
+        self._submit(replace(accepted.command, operation_id=command_id), answered)
 
     @staticmethod
     def _rate_charges(
@@ -883,7 +966,6 @@ class PcDirectService:
             await asyncio.sleep(settings.tick_seconds)
             now = self._monotonic()
             if now - session.created > session.lifetime:
-                _log.info("canal direto fechado: passou da vida máxima")
                 await self._finish(session, REASON_LIFETIME)
                 return
             if not session.authenticated:
@@ -891,13 +973,11 @@ class PcDirectService:
                     settings.connect_timeout_seconds, session.token_deadline - session.created
                 )
                 if now - session.created > limit:
-                    _log.info("canal direto fechado: não abriu a tempo")
                     if not session.opened and self._record is not None:
                         self._record("pc.direct_unreachable", "warn", _UNREACHABLE_HINT)
                     await self._finish(session, REASON_CONNECT_TIMEOUT)
                     return
             elif now - session.last_rx > settings.idle_seconds:
-                _log.info("canal direto fechado: sem mensagens")
                 await self._finish(session, REASON_IDLE)
                 return
 
@@ -912,6 +992,7 @@ class PcDirectService:
         session.closed = True
         if self._current is session:
             self._current = None
+            self._cancel_grace()
         watchdog = session.watchdog
         if watchdog is not None and watchdog is not asyncio.current_task():
             watchdog.cancel()
@@ -947,10 +1028,34 @@ class PcDirectService:
                 _log.debug("aviso de canal fechado não enviado", exc_info=True)
 
     def _summarize(self, session: _Session, reason: str) -> None:
-        """Uma linha de diagnóstico por canal: sem endereço nem SDP, com números em faixas fixas."""
+        """O ciclo do canal: uma linha no registro (INFO) e, se autenticou, uma no diagnóstico.
+
+        Nenhuma das duas leva endereço, SDP, candidato nem token: só motivo, duração, RTT e perdas.
+        """
+        now = self._monotonic()
+        median = statistics.median(session.rtts) if session.rtts else None
+        if session.authenticated:
+            _log.info(
+                "canal direto fechado (sessão %s): motivo %s; aberto por %.0f s; RTT %s; "
+                "movimentos perdidos %d; mensagens %d",
+                session.id[:8],
+                reason,
+                now - (session.ready_at if session.ready_at is not None else session.created),
+                _bucket(median, (10, 30, 100, 300)),
+                session.lost_pointers,
+                session.messages,
+            )
+        else:
+            _log.info(
+                "canal direto fechado antes de autenticar (sessão %s): motivo %s; %.1f s depois "
+                "da oferta; os canais de dados %s",
+                session.id[:8],
+                reason,
+                now - session.created,
+                "abriram" if session.opened else "não abriram",
+            )
         if self._record is None or not session.authenticated:
             return
-        median = statistics.median(session.rtts) if session.rtts else None
         lost = "sem perda" if session.lost_pointers == 0 else "com perda de movimentos"
         self._record(
             "pc.direct_closed",
@@ -972,7 +1077,7 @@ class PcDirectService:
 
 
 def pc_rtc_handlers(
-    service: PcDirectService, transport: Transport, envelopes: EnvelopeFactory
+    service: PcDirectService, transport: Sender, envelopes: EnvelopeFactory
 ) -> dict[str, Handler]:
     """Os `pc.rtc.*` que a API manda: a oferta (com a resposta pelo `pc.rtc.answer.v1`), o candidato
     tardio e o fechamento. Não passam pela conferência de idade nem pela faixa do PC."""
@@ -987,6 +1092,8 @@ def pc_rtc_handlers(
                 str(body["token"]),
                 int(body["tokenTtlSeconds"]),
                 int(body["maxLifetimeSeconds"]),
+                device_id=command.device_id,
+                device_name=command.device_name,
             )
         except DirectRefused as refused:
             return CommandResult(

@@ -8,7 +8,19 @@ namespace UniOver.Modules.Devices.Contracts.Agents;
 /// (id, origem, destino, instante) é montado e validado pelo Devices, para que nenhum módulo conheça o transporte.
 /// </summary>
 /// <param name="Delivery">O que fazer quando o agente está sem sessão no momento do envio (ver <see cref="AgentDelivery"/>).</param>
-public sealed record OutboundMessage(string Type, JsonElement Body, AgentDelivery Delivery = AgentDelivery.WaitForReconnect);
+/// <param name="OperationId">
+/// O <c>operationId</c> do envelope (opcional): o código do pedido HTTP que originou o comando, para ligar o registro da API ao do agente.
+/// Só vai a um agente que declarou <c>pc.op.v1</c>: o esquema de um agente anterior é fechado.
+/// </param>
+/// <param name="DeviceId">O <c>deviceId</c> do envelope (opcional): o aparelho do app, para o dono aprová-lo no PC (<c>pc.device.v1</c>).</param>
+/// <param name="DeviceName">O <c>deviceName</c> do envelope: o nome para mostrar ao dono. Vem junto com <paramref name="DeviceId"/>.</param>
+public sealed record OutboundMessage(
+    string Type,
+    JsonElement Body,
+    AgentDelivery Delivery = AgentDelivery.WaitForReconnect,
+    string? OperationId = null,
+    string? DeviceId = null,
+    string? DeviceName = null);
 
 /// <summary>Como o gateway trata a mensagem quando não há sessão viva com o agente.</summary>
 public enum AgentDelivery

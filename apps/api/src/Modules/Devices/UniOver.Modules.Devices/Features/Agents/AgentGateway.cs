@@ -103,7 +103,8 @@ internal sealed partial class AgentGateway(
             return Result.Failure<OutboundEnvelope>(AgentErrors.InvalidMessage("Agente e tipo da mensagem são obrigatórios."));
         }
 
-        var created = factory.Create(message.Type, agentId, correlationId: null, message.Body);
+        var created = factory.Create(
+            message.Type, agentId, correlationId: null, message.Body, message.OperationId, message.DeviceId, message.DeviceName);
         if (created.IsFailure)
         {
             // Erro de programação de quem chama: registra o tipo e o código, nunca o corpo.

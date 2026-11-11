@@ -21,6 +21,8 @@ from uniover_agent.adapters.pc_direct_aiortc import (
     build_peer,
     prepare_offer,
 )
+from uniover_agent.core.pc import lan
+from uniover_agent.ports.pc_direct import PeerCallbacks
 
 from .test_pc_direct import SESSION, TOKEN, Lab
 
@@ -78,7 +80,7 @@ def loopback_only(monkeypatch: pytest.MonkeyPatch) -> None:
         return ["127.0.0.1"]
 
     monkeypatch.setattr("aioice.ice.get_host_addresses", addresses)
-    monkeypatch.setattr(pc_direct_network, "ALLOW_LOOPBACK", True)
+    monkeypatch.setattr(lan, "ALLOW_LOOPBACK", True)
 
 
 class Phone:
@@ -253,7 +255,7 @@ async def test_a_peer_that_reaches_us_from_outside_the_local_network_is_dropped(
 ) -> None:
     # O celular de mentira chega por 127.0.0.1 (peer-reflexive, já que a oferta foi limpa): sem a
     # permissão de loopback, o par escolhido não é "da rede local" e o canal é derrubado.
-    monkeypatch.setattr(pc_direct_network, "ALLOW_LOOPBACK", False)
+    monkeypatch.setattr(lan, "ALLOW_LOOPBACK", False)
     aiortc = await pc_direct_aiortc._load()
     lab = Lab(factory=build_peer)
     phone = Phone(aiortc)
@@ -271,3 +273,40 @@ async def test_a_peer_that_reaches_us_from_outside_the_local_network_is_dropped(
     finally:
         await close_quietly(phone)
         await lab.aclose()
+
+
+async def test_a_peer_whose_address_cannot_be_read_is_dropped_not_trusted() -> None:
+    # A conferência final falha FECHADA: se a biblioteca mudar e o par não puder ser lido, o canal
+    # cai (o app segue pela nuvem) em vez de ficar aberto para um endereço que ninguém conferiu.
+    closed: list[bool] = []
+    peer = pc_direct_aiortc.AiortcPeer(
+        PeerCallbacks(
+            on_message=lambda channel, text: None,
+            on_open=lambda: None,
+            on_closed=lambda: closed.append(True),
+        )
+    )
+    peer._pc = object()  # sem `sctp`: o caminho até o par nominado não existe
+
+    assert peer._remote_is_lan() is False
+
+
+async def test_the_peer_refuses_a_late_candidate_outside_the_local_network_before_the_library() -> (
+    None
+):
+    reached: list[Any] = []
+
+    class FakeConnection:
+        async def addIceCandidate(self, candidate: Any) -> None:  # noqa: N802 - API da biblioteca
+            reached.append(candidate)
+
+    peer = pc_direct_aiortc.AiortcPeer(
+        PeerCallbacks(on_message=lambda c, t: None, on_open=lambda: None, on_closed=lambda: None)
+    )
+    peer._pc = FakeConnection()
+
+    await peer.add_candidate("candidate:1 1 udp 1 203.0.113.9 5000 typ srflx", "0", 0)
+    await peer.add_candidate("candidate:2 1 tcp 1 192.168.1.9 9 typ host", "0", 0)
+    await peer.add_candidate("candidate:3 1 udp 1 192.168.1.9 3478 typ relay", "0", 0)
+
+    assert reached == []

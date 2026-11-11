@@ -16,6 +16,16 @@ REAL_WOL_SEND = _wol._send
 
 
 @pytest.fixture(autouse=True)
+def no_real_scheduling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nenhum teste muda a prioridade de thread nem o conjunto de trabalho do processo de teste
+    (um mínimo duro de memória no pytest, numa máquina com pouca RAM, seria um dano real)."""
+    from uniover_agent.adapters import windows_scheduling  # noqa: PLC0415
+
+    monkeypatch.setattr(windows_scheduling, "raise_thread_priority", lambda: True)
+    monkeypatch.setattr(windows_scheduling, "protect_working_set", lambda minimum_mb: True)
+
+
+@pytest.fixture(autouse=True)
 def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nenhum teste fala com a rede local: o teste de vida da TV, a leitura do REST Samsung, o
     ARP, o SSDP e o mDNS são trocados por respostas fixas (os testes que precisam de outra

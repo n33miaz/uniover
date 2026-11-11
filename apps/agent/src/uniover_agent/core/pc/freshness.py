@@ -19,8 +19,10 @@ from uniover_agent.core.pc.clock_offset import ClockOffset
 
 # Cliques, teclas, texto, mídia e abrir programa: ações com efeito imediato na janela em foco.
 MAX_COMMAND_AGE_SECONDS: Final = 5.0
-# O movimento do mouse é descartado calado e cedo: o app já manda o próximo.
-MAX_POINTER_AGE_SECONDS: Final = 2.0
+# O movimento do mouse atrasado NÃO é descartado cedo: como é relativo, o deslocamento descartado
+# não volta (o dedo andou e o cursor ficou para trás). Ele é somado ao que vem junto e aplicado
+# (ver `PcLane`); só o que passou de 5 s é descartado, calado (decisão do dono de 10/11).
+MAX_POINTER_AGE_SECONDS: Final = 5.0
 # Energia passa por confirmação na tela, então tolera mais espera, mas não a ponto de executar um
 # desligamento pedido muito antes.
 MAX_POWER_AGE_SECONDS: Final = 15.0

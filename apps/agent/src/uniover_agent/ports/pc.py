@@ -13,6 +13,24 @@ class PcUnsupported(Exception):  # noqa: N818 - lê-se como fato: este sistema n
     """O sistema não consegue executar o pedido (por exemplo, o agente não está no Windows)."""
 
 
+# Códigos estáveis de `PcInputRefused.cause`: o app mostra um texto para cada um.
+CAUSE_SESSION_LOCKED = "session_locked"
+CAUSE_ELEVATED_WINDOW = "elevated_window"
+CAUSE_UNKNOWN = "failed"
+
+
+class PcInputRefused(OSError):  # noqa: N818 - o nome diz o que aconteceu
+    """O sistema recusou a entrada (mouse ou teclado). `cause` é o código estável da causa:
+    `session_locked` (tela de bloqueio ou desktop seguro na frente), `elevated_window` (uma janela
+    com mais privilégio no primeiro plano) ou `failed` (não deu para saber). `detail` são os fatos
+    medidos, sem título de janela nem endereço, para o registro."""
+
+    def __init__(self, message: str, cause: str = CAUSE_UNKNOWN, detail: str = "") -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.detail = detail
+
+
 class PcInput(Protocol):
     """Mouse e teclado do PC."""
 

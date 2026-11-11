@@ -27,6 +27,7 @@ A hora do relógio do PC só entra no AVISO de relógio fora de hora (diagnósti
 """
 
 import logging
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -72,6 +73,9 @@ class ClockOffset:
     `on_refused(idade)` roda a cada comando recusado por idade e quando o movimento do mouse vem
     sendo descartado sem parar (o registro do diagnóstico junta as repetições). O aviso no log sai
     uma vez só, aqui, e não em cada handler.
+
+    Os batimentos chegam pelo laço principal do agente e a idade é lida pelo laço da entrada do PC
+    (outra thread): o estado é protegido por uma trava, e os avisos (`on_*`) não podem bloquear.
     """
 
     def __init__(  # noqa: PLR0913 - tudo opcional e trocável para os testes
@@ -104,21 +108,28 @@ class ClockOffset:
         self._large_now = False
         self._warned = False
         self._pointer_drops = 0
+        self._lock = threading.RLock()
 
     @property
     def offset(self) -> float | None:
         """O menor `monotônico - ts` da janela (escala arbitrária), ou `None` sem amostras."""
-        self._prune()
-        return min((mono for _, mono, _ in self._buckets), default=None)
+        with self._lock:
+            self._prune()
+            return min((mono for _, mono, _ in self._buckets), default=None)
 
     @property
     def wall_difference(self) -> float | None:
         """O menor `agora - ts` da janela: quanto o relógio do PC está adiantado (para o aviso)."""
-        self._prune()
-        return min((wall for _, _, wall in self._buckets), default=None)
+        with self._lock:
+            self._prune()
+            return min((wall for _, _, wall in self._buckets), default=None)
 
     def observe(self, sent_at: str | None) -> None:
         """Conta o `ts` de um batimento da API (sem `ts` utilizável, não conta)."""
+        with self._lock:
+            self._observe(sent_at)
+
+    def _observe(self, sent_at: str | None) -> None:
         sent = _parse(sent_at)
         if sent is None:
             return
@@ -161,15 +172,18 @@ class ClockOffset:
 
     def pointer_result(self, *, dropped: bool, age: float = 0.0) -> None:
         """Conta descartes seguidos do movimento do mouse por idade; avisa uma vez por sequência."""
-        if not dropped:
-            self._pointer_drops = 0
-            return
-        self._pointer_drops += 1
-        if self._pointer_drops == POINTER_DROP_WARNING + 1:
+        with self._lock:
+            if not dropped:
+                self._pointer_drops = 0
+                return
+            self._pointer_drops += 1
+            warn = self._pointer_drops == POINTER_DROP_WARNING + 1
+            drops = self._pointer_drops
+        if warn:
             _log.warning(
                 "o movimento do mouse vem sendo descartado por idade (%d seguidos): rede lenta ou "
                 "relógio fora de hora; o mouse não vai responder direito",
-                self._pointer_drops,
+                drops,
             )
             self.refused(age)
 

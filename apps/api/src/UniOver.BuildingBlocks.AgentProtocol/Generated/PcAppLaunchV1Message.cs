@@ -27,8 +27,39 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("correlationId")]
         public Guid? CorrelationId { get; set; }
 
+        /// <summary>
+        /// O aparelho do app que originou o comando do PC (opcional): um código estável da sessão (a
+        /// família da sessão do app). Vem junto com `deviceName`, o nome para mostrar ao dono na
+        /// pergunta "Permitir que &lt;nome&gt; controle este PC?". Só vai a um agente que declarou a
+        /// capacidade `pc.device.v1` (a aprovação de aparelho novo no PC) e vale também para a
+        /// oferta do canal direto: o canal herda o aparelho da oferta.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("deviceId")]
+        public string? DeviceId { get; set; }
+
+        /// <summary>
+        /// O nome do aparelho para a pergunta de aprovação no PC (ver `deviceId`): até 60
+        /// caracteres, sem texto de controle.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("deviceName")]
+        [JsonConverter(typeof(PcAppLaunchV1MessageFluffyMinMaxLengthCheckConverter))]
+        public string? DeviceName { get; set; }
+
         [JsonPropertyName("id")]
         public Guid Id { get; set; }
+
+        /// <summary>
+        /// Identificador da operação (opcional): o mesmo do pedido HTTP que originou o comando do PC
+        /// (`X-Operation-Id`), para ligar o registro da API ao do agente. Só aparece em comandos
+        /// `pc.*` que NÃO são o movimento do mouse e só vai a um agente que declarou a capacidade
+        /// `pc.op.v1` (o esquema de um agente anterior é fechado e recusaria a mensagem inteira).
+        /// Nunca leva texto, teclas nem coordenadas: é só um código.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("operationId")]
+        public string? OperationId { get; set; }
 
         [JsonPropertyName("source")]
         public string Source { get; set; }
@@ -49,7 +80,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     public partial class PcAppLaunchV1Body
     {
         [JsonPropertyName("appId")]
-        [JsonConverter(typeof(PcAppLaunchV1MessageMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(PcAppLaunchV1MessagePurpleMinMaxLengthCheckConverter))]
         public string AppId { get; set; }
     }
 
@@ -74,7 +105,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         };
     }
 
-    internal class PcAppLaunchV1MessageMinMaxLengthCheckConverter : JsonConverter<string>
+    internal class PcAppLaunchV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>
     {
         public override bool CanConvert(Type t) => t == typeof(string);
 
@@ -98,7 +129,34 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly PcAppLaunchV1MessageMinMaxLengthCheckConverter Singleton = new PcAppLaunchV1MessageMinMaxLengthCheckConverter();
+        public static readonly PcAppLaunchV1MessagePurpleMinMaxLengthCheckConverter Singleton = new PcAppLaunchV1MessagePurpleMinMaxLengthCheckConverter();
+    }
+
+    internal class PcAppLaunchV1MessageFluffyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 60)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 60)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly PcAppLaunchV1MessageFluffyMinMaxLengthCheckConverter Singleton = new PcAppLaunchV1MessageFluffyMinMaxLengthCheckConverter();
     }
 
     internal class PcAppLaunchV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

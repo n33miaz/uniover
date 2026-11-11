@@ -68,13 +68,13 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         TransportApp app, FakeAgent agent, bool replacing = false)
     {
         var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
+        var offer = await AnswerOfferAsync(agent);
         if (replacing)
         {
-            // Um canal já aberto: a API fecha o anterior (avisando o agente) antes de entregar a oferta nova.
+            // Um canal já aberto: a API só fecha o anterior (avisando o agente) DEPOIS de o agente aceitar a oferta nova.
             (await agent.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
         }
 
-        var offer = await AnswerOfferAsync(agent);
         using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await DevicesApp.JsonAsync(response), offer);
@@ -395,8 +395,8 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         var firstId = first.GetProperty("sessionId").GetGuid();
 
         var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
-        var replaced = (await agent.ReceiveAsync())!.Value;
         await AnswerOfferAsync(agent);
+        var replaced = (await agent.ReceiveAsync())!.Value;
         using var second = await posting.WaitAsync(FakeAgent.Patience, Ct);
 
         second.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -407,6 +407,61 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         oldClose.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Theory]
+    [InlineData("device_pending", "pc-device-pending")]
+    [InlineData("device_denied", "pc-device-denied")]
+    [InlineData("device_unknown", "pc-device-unknown")]
+    public async Task AnOfferTheAgentRefusesForTheDevice_NeverClosesTheChannelOfTheApprovedDevice(string code, string problemType)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1");
+        var (first, _) = await OpenAsync(app, agent);
+        var firstId = first.GetProperty("sessionId").GetGuid();
+        var other = await app.App.LoginAsync(); // outro aparelho (outra sessão), ainda não aprovado no PC
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp }, other.AccessToken);
+        var command = (await agent.ReceiveAsync())!.Value;
+        command.GetProperty("type").GetString().Should().Be("pc.rtc.offer.v1");
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject
+        {
+            ["ok"] = false,
+            ["error"] = new JsonObject { ["code"] = code, ["message"] = "texto livre do agente" },
+        }, command.GetProperty("id").GetGuid()));
+        using var refused = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await DevicesApp.JsonAsync(refused)).GetProperty("type").GetString().Should().EndWith(problemType);
+        // O canal do aparelho aprovado segue: nenhum `replaced` foi mandado, e o dono ainda fecha a sessão dele.
+        await ExpectStillOpenAsync(app, agent, firstId);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(1, "só o fechamento pedido agora");
+    }
+
+    [Fact]
+    public async Task AnOfferTheAgentRefusesAsClosed_NeverReplacesTheEarlierChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (first, _) = await OpenAsync(app, agent);
+        var firstId = first.GetProperty("sessionId").GetGuid();
+
+        // `rtc_closed` é a recusa de ANTES da troca do par: o canal que já existia segue, sem `replaced` e sem trilha de fechamento.
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
+        var command = (await agent.ReceiveAsync())!.Value;
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject
+        {
+            ["ok"] = false,
+            ["error"] = new JsonObject { ["code"] = "rtc_closed", ["message"] = "texto livre" },
+        }, command.GetProperty("id").GetGuid()));
+        using var refused = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(refused)).GetProperty("type").GetString().Should().EndWith("pc-direct-revoked");
+        await ExpectStillOpenAsync(app, agent, firstId);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(1, "só o fechamento pedido agora");
+    }
+
     [Fact]
     public async Task WhenTheReplacementOfferFails_TheClosedLineOfTheOldChannelIsStillRecorded()
     {
@@ -415,8 +470,8 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         await OpenAsync(app, agent);
 
         var posting = PostAsync(app, "offer", new { sdp = FakeSdp });
-        (await agent.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
         await AnswerOfferAsync(agent, ok: false);
+        (await agent.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
         using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
@@ -487,6 +542,43 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         await ExpectRevokedCloseAsync(agent, sessionId);
         await using var db = app.App.Db();
         (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ARevocationThatFoundTheAgentOffline_IsRepeatedAsSoonAsItComesBack()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var first = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, first);
+        var sessionId = answer.GetProperty("sessionId").GetGuid();
+        // O canal direto sobrevive a uma queda curta da conexão do agente com a API: a revogação que acontece NESSE meio não pode se perder.
+        await first.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+
+        using var logout = await app.App.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/logout", bearer: app.Login.AccessToken);
+        logout.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await using (var db = app.App.Db())
+        {
+            (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(0, "o aviso não alcançou o agente");
+        }
+
+        await using var back = await ConnectDirectAsync(app);
+        // O agente manda a lista de favoritos a cada conexão: é o sinal de que voltou.
+        await back.SendTextAsync(back.Envelope("pc.apps.v1", new JsonObject
+        {
+            ["apps"] = new JsonArray(),
+            ["at"] = "2026-11-01T14:00:00Z",
+        }));
+
+        await ExpectRevokedCloseAsync(back, sessionId);
+        // A trilha é gravada logo depois do aviso (a mesma rotina): espera ela aparecer.
+        await TransportApp.WaitUntilAsync(
+            async () =>
+            {
+                await using var after = app.App.Db();
+                return await after.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct) == 1;
+            },
+            "trilha do fechamento");
     }
 
     [Fact]

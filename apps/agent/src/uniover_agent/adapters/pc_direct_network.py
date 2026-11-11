@@ -14,6 +14,10 @@ from typing import Final
 
 import ifaddr
 
+from uniover_agent.core.pc.lan import candidate_is_lan, is_lan_address
+
+__all__ = ["candidate_is_lan", "filter_offer_candidates", "is_lan_address", "lan_host_addresses"]
+
 # Interfaces que nunca servem a um celular na rede de casa: VPN, túnel, loopback, Bluetooth.
 _NEVER: Final = re.compile(
     r"vpn|tailscale|zerotier|wireguard|nordlynx|openvpn|hamachi|\btap\b|tap-|\btun\b|tunnel|teredo|"
@@ -27,21 +31,6 @@ _VIRTUAL: Final = re.compile(
     r"vethernet|hyper-v|wsl|docker|virtualbox|vbox|vmware|npcap", re.IGNORECASE
 )
 _ULA: Final = ipaddress.ip_network("fc00::/7")
-# Em testes de loopback (o celular de mentira é o mesmo processo) o endereço 127.0.0.1 é aceito.
-ALLOW_LOOPBACK = False
-
-
-def is_lan_address(text: str) -> bool:
-    """O endereço é privado, de enlace local ou ULA (e não nome, nem endereço público)?"""
-    try:
-        address = ipaddress.ip_address(text.split("%", 1)[0])
-    except ValueError:
-        return False
-    if address.is_loopback:
-        return ALLOW_LOOPBACK
-    if address.is_unspecified or address.is_multicast:
-        return False
-    return address.is_private
 
 
 def filter_offer_candidates(lines: list[str]) -> list[str]:
@@ -54,9 +43,7 @@ def filter_offer_candidates(lines: list[str]) -> list[str]:
         if not line.startswith("a=candidate"):
             kept.append(line)
             continue
-        parts = line.split()
-        # a=candidate:<fundação> <componente> <transporte> <prioridade> <endereço> <porta> typ ...
-        if len(parts) >= 8 and parts[2].lower() == "udp" and is_lan_address(parts[4]):  # noqa: PLR2004
+        if candidate_is_lan(line):
             kept.append(line)
     return kept
 

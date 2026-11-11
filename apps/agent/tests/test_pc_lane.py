@@ -25,6 +25,7 @@ from uniover_agent.core.pc import (
     pc_pointer_handler,
 )
 from uniover_agent.core.pc.handlers import MAX_POINTER_DELTA
+from uniover_agent.core.pc.lane import PcLane, PointerSpread, spread_steps
 from uniover_agent.core.process_message import MAX_PENDING_PC
 
 from .support import AGENT_ID, dump, envelope, tv_key
@@ -262,7 +263,7 @@ async def test_a_backlog_merges_the_newest_moves_and_keeps_the_whole_path() -> N
     total = MAX_PENDING_PC + 72
     for step in range(total):
         await process(pointer(step + 1))
-        assert len(process._pc_queue) <= MAX_PENDING_PC
+        assert len(process.lane._queue) <= MAX_PENDING_PC
     lab.pc_gate.set()
     await settle()
     await asyncio.sleep(0.05)
@@ -373,10 +374,10 @@ async def test_finished_pointer_moves_leave_nothing_behind() -> None:
     await asyncio.sleep(0.05)
     assert len([entry for entry in lab.log if entry.startswith("pointer")]) == 500
     # Fila vazia e só o consumidor único vivo: nada acumula com o uso do mouse.
-    assert len(process._pc_queue) == 0
-    assert len(process._tasks) == 1
+    assert len(process.lane._queue) == 0
+    assert len(process.lane._tasks) == 1
     await process.aclose()
-    assert len(process._tasks) == 0
+    assert len(process.lane._tasks) == 0
 
 
 async def test_a_click_waiting_for_its_gap_is_not_overtaken_by_the_next_commands() -> None:
@@ -431,3 +432,207 @@ async def test_a_click_waiting_for_its_gap_is_not_overtaken_by_the_next_commands
     await settle()
     assert log == ["click:LEFT:CLICK", "waiting:0.10", "click:LEFT:CLICK", "key:ENTER", "move:4"]
     await process.aclose()
+
+
+# ---- soma do movimento atrasado e passos do salto grande ----------------------------------
+
+
+class Probe:
+    """Handlers falsos que registram cada movimento e clique que a faixa executa."""
+
+    def __init__(self) -> None:
+        self.moves: list[tuple[str, int, int]] = []
+        self.times: list[float] = []
+        self.log: list[str] = []
+        self.gate = asyncio.Event()
+        self.refuse_moves = False
+
+    async def pointer(self, command: Command) -> CommandResult:
+        if self.refuse_moves:
+            return CommandResult(command.id, ResultStatus.FAILED, "recusou", "session_locked")
+        self.moves.append((command.id, command.body["dx"], command.body["dy"]))
+        self.times.append(asyncio.get_running_loop().time())
+        self.log.append(f"move:{command.body['dx']},{command.body['dy']}")
+        return CommandResult(command.id, ResultStatus.OK)
+
+    async def click(self, command: Command) -> CommandResult:
+        if command.body["action"] == "DOWN":
+            await self.gate.wait()
+        self.log.append(f"click:{command.body['action']}")
+        return CommandResult(command.id, ResultStatus.OK)
+
+
+def make_lane(probe: Probe, **kwargs: Any) -> PcLane:
+    clock = FakeClock()
+    gate = EnvelopeGate(AGENT_ID)
+    return PcLane(
+        HandleCommand({"pc.pointer.v1": probe.pointer, "pc.click.v1": probe.click}, clock),
+        EnvelopeFactory(AGENT_ID, gate, clock),
+        FakeTransport(),
+        silent_types={"pc.pointer.v1"},
+        **kwargs,
+    )
+
+
+def move(dx: int, dy: int = 0, command_id: str | None = None, sent_at: str = "agora") -> Command:
+    return Command(
+        command_id or f"m{dx}-{dy}", "pc.pointer.v1", {"dx": dx, "dy": dy}, sent_at=sent_at
+    )
+
+
+def press(action: str, command_id: str) -> Command:
+    return Command(command_id, "pc.click.v1", {"button": "LEFT", "action": action}, sent_at="agora")
+
+
+@pytest.mark.parametrize(
+    ("dx", "dy"), [(60, 0), (-60, 35), (13, 13), (100, -100), (1000, 1), (0, -37), (25, 24)]
+)
+def test_a_big_jump_becomes_two_to_four_steps_with_the_exact_same_path(dx: int, dy: int) -> None:
+    steps = spread_steps(dx, dy, PointerSpread())
+
+    assert 2 <= len(steps) <= 4
+    assert sum(sx for sx, _ in steps) == dx and sum(sy for _, sy in steps) == dy
+    # Cada passo anda no sentido do salto, sem voltar atrás.
+    assert all(sx * dx >= 0 and sy * dy >= 0 for sx, sy in steps)
+
+
+@pytest.mark.parametrize(("dx", "dy"), [(0, 0), (1, 1), (12, -12), (-5, 0), (0, 12)])
+def test_a_small_jump_stays_one_step(dx: int, dy: int) -> None:
+    assert spread_steps(dx, dy, PointerSpread()) == [(dx, dy)]
+
+
+def test_the_number_of_steps_grows_with_the_jump_up_to_the_limit() -> None:
+    counts = [len(spread_steps(size, 0, PointerSpread())) for size in (13, 30, 40, 500)]
+
+    assert counts == [2, 3, 4, 4]
+
+
+async def test_a_big_jump_alone_in_the_queue_is_spread_over_the_configured_time() -> None:
+    probe = Probe()
+    lane = make_lane(probe, spread=PointerSpread(min_pixels=10, total_seconds=0.06))
+    try:
+        lane.accept(move(40, 0))
+        await asyncio.sleep(0.3)
+
+        assert [m[1] for m in probe.moves] == [10, 10, 10, 10]
+        assert probe.times[-1] - probe.times[0] >= 0.04  # espalhados, não de uma vez
+    finally:
+        await lane.aclose()
+
+
+async def test_nothing_is_spread_while_something_else_waits_behind_the_move() -> None:
+    probe = Probe()
+    lane = make_lane(probe, spread=PointerSpread(min_pixels=10, total_seconds=0.2))
+    try:
+        lane.accept(press("DOWN", "d"))
+        lane.accept(move(40, 0))  # o DOWN segura a faixa
+        lane.accept(press("UP", "u"))
+        await asyncio.sleep(0.05)
+        probe.gate.set()
+        await asyncio.sleep(0.1)
+
+        assert probe.log == ["click:DOWN", "move:40,0", "click:UP"]  # um passo só, na ordem
+    finally:
+        await lane.aclose()
+
+
+async def test_a_command_that_arrives_while_a_jump_is_spread_flushes_the_rest_at_once() -> None:
+    probe = Probe()
+    lane = make_lane(probe, spread=PointerSpread(min_pixels=10, total_seconds=3.0))
+    try:
+        lane.accept(move(40, 0))
+        await asyncio.sleep(0.05)  # o primeiro passo saiu; o espaçamento de 1 s está correndo
+        assert probe.log == ["move:10,0"]
+        lane.accept(press("UP", "u"))
+        await asyncio.sleep(0.1)
+
+        # O clique não esperou os 3 s: o resto do salto saiu já, ANTES dele (a ordem é a de sempre).
+        assert probe.log == ["move:10,0", "move:10,0", "move:10,0", "move:10,0", "click:UP"]
+    finally:
+        await lane.aclose()
+
+
+async def test_a_refused_step_stops_the_rest_of_the_jump() -> None:
+    probe = Probe()
+    probe.refuse_moves = True
+    lane = make_lane(probe, spread=PointerSpread(min_pixels=10, total_seconds=0.02))
+    try:
+        lane.accept(move(40, 0))
+        await asyncio.sleep(0.1)
+
+        assert probe.moves == []
+        assert lane._consumer is not None and not lane._consumer.done()
+    finally:
+        await lane.aclose()
+
+
+async def test_a_backlog_of_late_moves_is_summed_into_one_and_keeps_the_path() -> None:
+    probe = Probe()
+    lane = make_lane(probe, pointer_stale=lambda command: command.sent_at == "velho")
+    try:
+        lane.accept(press("DOWN", "d"))  # a faixa fica presa (o laço engasgou)
+        for index in range(1, 11):
+            lane.accept(move(index, -index, f"m{index}"))
+        lane.accept(press("UP", "u"))
+        await asyncio.sleep(0.02)
+        probe.gate.set()
+        await asyncio.sleep(0.1)
+
+        assert probe.log == ["click:DOWN", "move:55,-55", "click:UP"]  # a soma, e antes do UP
+        assert probe.moves[0][0] == "m10"  # o `id` é o do mais novo
+    finally:
+        await lane.aclose()
+
+
+async def test_moves_too_old_to_count_are_not_summed_in() -> None:
+    probe = Probe()
+    lane = make_lane(probe, pointer_stale=lambda command: command.sent_at == "velho")
+    try:
+        lane.accept(press("DOWN", "d"))
+        lane.accept(move(100, 0, "m1", sent_at="velho"))
+        lane.accept(move(2, 0, "m2"))
+        lane.accept(move(3, 0, "m3"))
+        await asyncio.sleep(0.02)
+        probe.gate.set()
+        await asyncio.sleep(0.1)
+
+        # O velho sai sozinho (o handler de verdade o descarta); os que valem se somam entre si.
+        assert probe.log == ["click:DOWN", "move:100,0", "move:5,0"]
+    finally:
+        await lane.aclose()
+
+
+async def test_the_sum_never_crosses_a_click_or_mixes_the_cloud_with_the_direct_channel() -> None:
+    probe = Probe()
+    lane = make_lane(probe, pointer_stale=lambda command: False)
+    try:
+        lane.accept(press("DOWN", "d"))
+        lane.accept(move(1, 0, "a"))
+        lane.accept(move(2, 0, "b"))
+        lane.accept(press("UP", "u"))
+        lane.accept(move(4, 0, "c"))
+        lane.submit_direct(move(8, 0, "x"), None)
+        lane.submit_direct(move(16, 0, "y"), None)
+        await asyncio.sleep(0.02)
+        probe.gate.set()
+        await asyncio.sleep(0.1)
+
+        assert probe.log == ["click:DOWN", "move:3,0", "click:UP", "move:4,0", "move:24,0"]
+    finally:
+        await lane.aclose()
+
+
+async def test_without_the_staleness_hook_the_lane_does_not_sum_when_it_executes() -> None:
+    probe = Probe()
+    lane = make_lane(probe)
+    try:
+        lane.accept(press("DOWN", "d"))
+        lane.accept(move(1, 0, "a"))
+        lane.accept(move(2, 0, "b"))
+        await asyncio.sleep(0.02)
+        probe.gate.set()
+        await asyncio.sleep(0.1)
+
+        assert probe.log == ["click:DOWN", "move:1,0", "move:2,0"]
+    finally:
+        await lane.aclose()

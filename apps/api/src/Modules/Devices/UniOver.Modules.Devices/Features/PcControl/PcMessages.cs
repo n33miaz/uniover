@@ -47,6 +47,42 @@ internal static class PcMessages
     /// <summary>Capacidade do canal direto (WebRTC): o agente só a declara depois de a API a listar em <c>features</c>.</summary>
     public const string RtcCapability = "pc.rtc.v1";
 
+    /// <summary>
+    /// Capacidade de quem aceita o <c>operationId</c> no envelope dos comandos do PC (o código do pedido HTTP, para ligar o registro da API ao do
+    /// agente). O envelope de um agente anterior é fechado: sem a capacidade o campo nem sai.
+    /// </summary>
+    public const string OperationCapability = "pc.op.v1";
+
+    /// <summary>
+    /// Capacidade de quem aceita <c>deviceId</c> e <c>deviceName</c> no envelope e faz o dono aprovar, no PC, o aparelho novo. Sem ela os campos
+    /// nem saem e o agente não pergunta nada.
+    /// </summary>
+    public const string DeviceCapability = "pc.device.v1";
+
+    /// <summary>
+    /// A mensagem com o código da operação e o aparelho de origem, só para o que o agente declarou: o envelope dele é fechado, e um campo a
+    /// mais mataria o comando. O movimento do mouse (<paramref name="withOperation"/> falso) nunca leva operação: é alta taxa.
+    /// </summary>
+    public static OutboundMessage WithOrigin(
+        OutboundMessage message, IReadOnlyList<string> capabilities, PcOrigin? origin, bool withOperation)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(capabilities);
+        if (origin is null)
+        {
+            return message;
+        }
+
+        var operation = withOperation && capabilities.Contains(OperationCapability, StringComparer.Ordinal) ? origin.OperationId : null;
+        var device = origin.DeviceId is not null && capabilities.Contains(DeviceCapability, StringComparer.Ordinal);
+        return message with
+        {
+            OperationId = operation,
+            DeviceId = device ? origin.DeviceId : null,
+            DeviceName = device ? origin.DeviceName : null,
+        };
+    }
+
     public static FrozenDictionary<string, PcClickV1BodyButton> Buttons { get; } = Enum.GetValues<PcClickV1BodyButton>()
         .ToFrozenDictionary(WireName, button => button, StringComparer.Ordinal);
 

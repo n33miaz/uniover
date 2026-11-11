@@ -155,6 +155,7 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.click.v2",
         "pc.pointer.zoom.v1",
         "pc.volume.v1",
+        "pc.op.v1",
     ]
     assert sorted(pc.handlers) == [
         "pc.app.launch.v1",

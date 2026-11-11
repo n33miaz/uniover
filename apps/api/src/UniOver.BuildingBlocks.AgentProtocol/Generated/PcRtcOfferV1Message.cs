@@ -32,6 +32,26 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("correlationId")]
         public Guid? CorrelationId { get; set; }
 
+        /// <summary>
+        /// O aparelho do app que originou o comando do PC (opcional): um código estável da sessão (a
+        /// família da sessão do app). Vem junto com `deviceName`, o nome para mostrar ao dono na
+        /// pergunta "Permitir que &lt;nome&gt; controle este PC?". Só vai a um agente que declarou a
+        /// capacidade `pc.device.v1` (a aprovação de aparelho novo no PC) e vale também para a
+        /// oferta do canal direto: o canal herda o aparelho da oferta.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("deviceId")]
+        public string? DeviceId { get; set; }
+
+        /// <summary>
+        /// O nome do aparelho para a pergunta de aprovação no PC (ver `deviceId`): até 60
+        /// caracteres, sem texto de controle.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("deviceName")]
+        [JsonConverter(typeof(PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter))]
+        public string? DeviceName { get; set; }
+
         [JsonPropertyName("id")]
         public Guid Id { get; set; }
 
@@ -57,7 +77,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long MaxLifetimeSeconds { get; set; }
 
         [JsonPropertyName("sdp")]
-        [JsonConverter(typeof(PcRtcOfferV1MessageMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(PcRtcOfferV1MessagePurpleMinMaxLengthCheckConverter))]
         public string Sdp { get; set; }
 
         [JsonPropertyName("sessionId")]
@@ -91,7 +111,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         };
     }
 
-    internal class PcRtcOfferV1MessageMinMaxLengthCheckConverter : JsonConverter<string>
+    internal class PcRtcOfferV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>
     {
         public override bool CanConvert(Type t) => t == typeof(string);
 
@@ -115,7 +135,34 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly PcRtcOfferV1MessageMinMaxLengthCheckConverter Singleton = new PcRtcOfferV1MessageMinMaxLengthCheckConverter();
+        public static readonly PcRtcOfferV1MessagePurpleMinMaxLengthCheckConverter Singleton = new PcRtcOfferV1MessagePurpleMinMaxLengthCheckConverter();
+    }
+
+    internal class PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 60)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 60)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter Singleton = new PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter();
     }
 
     internal class PcRtcOfferV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

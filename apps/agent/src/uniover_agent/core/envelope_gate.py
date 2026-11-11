@@ -174,6 +174,9 @@ class EnvelopeGate:
             body=data["body"],
             correlation_id=data["correlationId"],
             sent_at=data["ts"],
+            operation_id=data.get("operationId"),
+            device_id=data.get("deviceId"),
+            device_name=data.get("deviceName"),
         )
         return Accepted(command, model)
 

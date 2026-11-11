@@ -32,4 +32,19 @@ class PcRtcOfferV1Message(BaseModel):
     target: Annotated[str, Field(pattern='^(api|agent:[a-z0-9][a-z0-9-]*)$')]
     ts: AwareDatetime
     correlationId: UUID | None
+    deviceId: Annotated[
+        str | None,
+        Field(
+            description='O aparelho do app que originou o comando do PC (opcional): um código estável da sessão (a família da sessão do app). Vem junto com `deviceName`, o nome para mostrar ao dono na pergunta "Permitir que <nome> controle este PC?". Só vai a um agente que declarou a capacidade `pc.device.v1` (a aprovação de aparelho novo no PC) e vale também para a oferta do canal direto: o canal herda o aparelho da oferta.',
+            pattern='^[A-Za-z0-9_-]{8,64}$',
+        ),
+    ] = None
+    deviceName: Annotated[
+        str | None,
+        Field(
+            description='O nome do aparelho para a pergunta de aprovação no PC (ver `deviceId`): até 60 caracteres, sem texto de controle.',
+            max_length=60,
+            min_length=1,
+        ),
+    ] = None
     body: Annotated[PcRtcOfferV1Body, Field(title='PcRtcOfferV1Body')]

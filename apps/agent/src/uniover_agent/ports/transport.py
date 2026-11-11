@@ -46,3 +46,13 @@ class Transport(Protocol):
         ...
 
     async def close(self) -> None: ...
+
+
+class Sender(Protocol):
+    """O que quem só responde precisa do transporte: enviar um envelope já montado e validado.
+
+    A faixa do PC roda noutro laço que o do transporte e recebe um `Sender` que leva o envio até
+    lá (ver `adapters/pc_input_thread.py`).
+    """
+
+    async def send(self, message: dict[str, Any]) -> None: ...

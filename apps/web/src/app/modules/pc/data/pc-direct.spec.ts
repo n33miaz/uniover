@@ -19,6 +19,7 @@ import {
   PcDirectSignaling,
   STABLE_MS,
   STALL_MS,
+  STALLED_FIRST_RETRY_MS,
 } from './pc-direct';
 
 /** Um canal de dados de mentira: guarda o que se manda e deixa o teste abrir, fechar e responder. */
@@ -671,6 +672,66 @@ describe('PcDirect liveness', () => {
     expect(result.signaling.close).toHaveBeenCalledWith('s1', false);
     await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]! + 50);
     expect(result.connections.length).toBeGreaterThan(1);
+  });
+
+  it('a slow answer of a few seconds does not drop the channel: only a second check in a row does', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+    });
+    const result = setup();
+    const { connection } = await openWithTimers(result);
+    connection.channel('pointer').respond = false;
+    // 3 s sem resposta (Wi-Fi com economia de energia) está abaixo do limite: nada acontece.
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(result.direct.mode()).toBe('direct');
+    // O limite estourou uma vez (4,5 s): a primeira amostra só avisa e o sinal de vida seguinte é o teste.
+    await vi.advanceTimersByTimeAsync(STALL_MS - 3_000 + 500);
+    expect(result.direct.mode()).toBe('direct');
+    // A resposta voltou antes da segunda amostra: a contagem zera e o canal segue.
+    connection.channel('pointer').receive({ k: 'pong', n: 2, c: true });
+    await vi.advanceTimersByTimeAsync(PING_MS * 3);
+    expect(result.direct.mode()).toBe('direct');
+    expect(connection.closed).toBe(false);
+  });
+
+  it('the first reopening after a stalled channel is quick, but only once per stable life', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+    });
+    const result = setup();
+    const { connection } = await openWithTimers(result);
+    connection.channel('pointer').respond = false;
+    await vi.advanceTimersByTimeAsync(STALL_MS + PING_MS * 2);
+    expect(result.direct.mode()).toBe('cloud');
+    const before = result.connections.length;
+
+    // Bem antes do recuo de uma falha (5 s): já voltou a tentar.
+    await vi.advanceTimersByTimeAsync(STALLED_FIRST_RETRY_MS + 100);
+    expect(result.connections.length).toBe(before + 1);
+    expect(STALLED_FIRST_RETRY_MS).toBeLessThan(DIRECT_BACKOFF_MS[0]!);
+
+    // O segundo canal também para logo: agora vale o recuo de sempre, sem repetir a volta rápida.
+    const second = await openWithFakeTimers(result.direct, result.connections, 1);
+    second.channel('pointer').respond = false;
+    await vi.advanceTimersByTimeAsync(STALL_MS + PING_MS * 2);
+    const countAfterSecondStall = result.connections.length;
+    await vi.advanceTimersByTimeAsync(STALLED_FIRST_RETRY_MS + 500);
+    expect(result.connections.length).toBe(countAfterSecondStall);
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]!);
+    expect(result.connections.length).toBe(countAfterSecondStall + 1);
+  });
+
+  it('a channel that failed to open keeps the usual backoff, not the quick return', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+    });
+    const result = setup();
+    result.signaling.offer.mockRejectedValueOnce(new Error('sem rede'));
+    result.direct.start();
+    await vi.advanceTimersByTimeAsync(STALLED_FIRST_RETRY_MS + 200);
+    expect(result.connections.length).toBe(1); // a oferta falhou: ainda não tenta de novo
+    await vi.advanceTimersByTimeAsync(DIRECT_BACKOFF_MS[0]!);
+    expect(result.connections.length).toBe(2);
   });
 });
 

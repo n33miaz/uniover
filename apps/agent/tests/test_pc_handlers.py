@@ -19,8 +19,8 @@ from uniover_agent.core.pc import (
     pc_power_handler,
     slugify,
 )
-from uniover_agent.core.pc.handlers import merge_pointer_commands
-from uniover_agent.ports.pc import PcUnsupported
+from uniover_agent.core.pc.handlers import RefusalBurst, merge_pointer_commands, pc_pointer_handler
+from uniover_agent.ports.pc import PcInputRefused, PcUnsupported
 
 
 class FakeInput:
@@ -596,3 +596,97 @@ def test_the_typed_model_of_the_text_edit_refuses_what_the_contract_refuses(
     }
     with pytest.raises(ValidationError):
         MESSAGE_MODELS["pc.text.v2"].model_validate(envelope)
+
+
+# ---- recusa do sistema com causa -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cause", ["session_locked", "elevated_window"])
+async def test_a_refused_input_reaches_the_app_with_its_cause(
+    cause: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    handlers, pc, _, _ = build()
+    pc.error = PcInputRefused("o Windows aceitou 0 de 2 eventos", cause, "erro do Windows 5")
+
+    with caplog.at_level("WARNING"):
+        result = await handlers["pc.key.v1"](Command("1", "pc.key.v1", {"key": "A"}))
+
+    assert (result.status, result.code) == (ResultStatus.FAILED, cause)
+    assert f"causa {cause}" in caplog.text and "erro do Windows 5" in caplog.text
+
+
+async def test_a_refusal_without_a_known_cause_stays_a_plain_failure() -> None:
+    handlers, pc, _, _ = build()
+    pc.error = PcInputRefused("recusou")
+
+    result = await handlers["pc.click.v1"](
+        Command("1", "pc.click.v1", {"button": "LEFT", "action": "CLICK"})
+    )
+
+    assert (result.status, result.code) == (ResultStatus.FAILED, "failed")
+
+
+class Ticks:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+async def test_a_burst_of_refused_moves_becomes_one_aggregated_line(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ticks = Ticks()
+    pc = FakeInput()
+    handler = pc_pointer_handler(pc, burst=RefusalBurst("movimentos do mouse", monotonic=ticks))
+    pc.error = PcInputRefused("recusou", "session_locked", "desktop de entrada Winlogon")
+
+    with caplog.at_level("WARNING"):
+        for _ in range(60):
+            result = await handler(Command("1", "pc.pointer.v1", {"dx": 5, "dy": 9}))
+            assert result.code == "session_locked"
+            ticks.now += 0.016
+        assert caplog.text == ""  # nenhuma linha por recusa
+        pc.error = None
+        await handler(Command("2", "pc.pointer.v1", {"dx": 1, "dy": 1}))
+
+    lines = [r.getMessage() for r in caplog.records]
+    assert len(lines) == 1
+    assert "60 movimentos do mouse recusados" in lines[0]
+    assert "causa session_locked" in lines[0] and "Winlogon" in lines[0]
+    assert "dx" not in lines[0] and "dy" not in lines[0]  # nunca coordenadas
+
+
+async def test_a_refusal_burst_that_never_ends_is_reported_every_ten_seconds(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ticks = Ticks()
+    pc = FakeInput()
+    handler = pc_pointer_handler(pc, burst=RefusalBurst("movimentos do mouse", monotonic=ticks))
+    pc.error = PcInputRefused("recusou", "elevated_window")
+
+    with caplog.at_level("WARNING"):
+        for _ in range(130):
+            await handler(Command("1", "pc.pointer.v1", {"dx": 1, "dy": 1}))
+            ticks.now += 0.1
+
+    assert len(caplog.records) == 1  # 13 s de recusas: uma linha aos 10 s, o resto ainda corre
+
+
+async def test_a_new_burst_after_a_quiet_gap_closes_the_old_line_first(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ticks = Ticks()
+    pc = FakeInput()
+    handler = pc_pointer_handler(pc, burst=RefusalBurst("movimentos do mouse", monotonic=ticks))
+    pc.error = PcInputRefused("recusou", "session_locked")
+
+    with caplog.at_level("WARNING"):
+        for _ in range(3):
+            await handler(Command("1", "pc.pointer.v1", {"dx": 1, "dy": 1}))
+            ticks.now += 0.05
+        ticks.now += 5.0  # o dedo parou
+        await handler(Command("1", "pc.pointer.v1", {"dx": 1, "dy": 1}))
+
+    assert [r.getMessage()[:2] for r in caplog.records] == ["3 "]

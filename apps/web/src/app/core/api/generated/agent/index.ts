@@ -14,6 +14,7 @@ export * from './pc_app_launch_v1';
 export * from './pc_apps_v1';
 export * from './pc_click_v1';
 export * from './pc_click_v2';
+export * from './pc_device_state_v1';
 export * from './pc_key_v1';
 export * from './pc_key_v2';
 export * from './pc_media_v1';

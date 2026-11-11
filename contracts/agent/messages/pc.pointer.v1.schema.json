@@ -44,6 +44,12 @@
         }
       ]
     },
+    "deviceId": {
+      "$ref": "../envelope.schema.json#/$defs/deviceId"
+    },
+    "deviceName": {
+      "$ref": "../envelope.schema.json#/$defs/deviceName"
+    },
     "body": {
       "type": "object",
       "additionalProperties": false,

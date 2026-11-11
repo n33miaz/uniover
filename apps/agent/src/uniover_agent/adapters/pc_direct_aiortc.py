@@ -110,13 +110,15 @@ class AiortcPeer:
         Os candidatos da oferta já foram filtrados, mas o `aioice` aceita também o endereço de onde
         um
         teste de conectividade chega (o que fecha a conexão com `.local`); este é o conferido. Se a
-        biblioteca mudar e o par não puder ser lido, vale como estava (a oferta já foi filtrada).
+        biblioteca mudar e o par não puder ser lido, a conferência FALHA FECHADA: o canal é
+        derrubado (o app segue pela nuvem) em vez de ficar aberto para um endereço não conferido.
         """
         try:
             pair = self._pc.sctp.transport.transport._connection._nominated[1]
             return pc_direct_network.is_lan_address(str(pair.remote_addr[0]))
         except Exception:
-            return True
+            _log.warning("canal direto derrubado: não consegui conferir o endereço do par")
+            return False
 
     def _adopt(self, channel: Any) -> None:
         label = str(channel.label)
@@ -153,6 +155,10 @@ class AiortcPeer:
 
     async def add_candidate(self, candidate: str, mid: str | None, index: int | None) -> None:
         if self._pc is None or self._closed:
+            return
+        # Defesa em profundidade: o serviço já recusou o que não é da rede local, e a oferta foi
+        # filtrada; aqui a regra vale de novo, porque é a última porta antes da biblioteca.
+        if not pc_direct_network.candidate_is_lan(candidate):
             return
         from aiortc.sdp import candidate_from_sdp  # noqa: PLC0415 - só com a biblioteca carregada
 

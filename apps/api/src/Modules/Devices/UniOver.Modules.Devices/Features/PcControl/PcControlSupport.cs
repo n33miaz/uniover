@@ -254,6 +254,43 @@ internal static class PcProblems
         title: "Muitas teclas seguidas. Espere um instante.",
         type: ProblemDetailsExtensions.TypeBase + ProblemDetailsExtensions.RateLimited);
 
+    public const string DeviceDeniedType = "pc-device-denied";
+
+    public const string DevicePendingType = "pc-device-pending";
+
+    public const string DeviceUnknownType = "pc-device-unknown";
+
+    /// <summary>O código do agente: o comando veio sem aparelho enquanto ele ainda não sabe se a API faz a aprovação (negociação em curso).</summary>
+    public const string DeviceUnknownCode = "device_unknown";
+
+    /// <summary>O código do agente: o dono recusou, no PC, este aparelho.</summary>
+    public const string DeviceDeniedCode = "device_denied";
+
+    /// <summary>O código do agente: a pergunta ao dono ainda está aberta no PC.</summary>
+    public const string DevicePendingCode = "device_pending";
+
+    /// <summary>
+    /// O aparelho não foi aprovado pelo dono no PC: 403 claro, com o tipo que diz se ainda aguarda ou se foi recusado. É um erro de
+    /// permissão do aparelho, não do usuário: a conta tem a permissão do módulo.
+    /// </summary>
+    public static IResult DeviceRefused(string agentCode) => agentCode switch
+    {
+        DeviceDeniedCode => Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "O dono do PC não permitiu este aparelho.",
+            type: ProblemDetailsExtensions.TypeBase + DeviceDeniedType),
+        DeviceUnknownCode => Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "O PC ainda não identificou este aparelho. Tente de novo.",
+            type: ProblemDetailsExtensions.TypeBase + DeviceUnknownType),
+        _ => Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Aguardando o dono permitir este aparelho na tela do PC.",
+            type: ProblemDetailsExtensions.TypeBase + DevicePendingType),
+    };
+
+    public static bool IsDeviceRefusal(string? agentCode) => agentCode is DeviceDeniedCode or DevicePendingCode or DeviceUnknownCode;
+
     public const string DirectUnavailableType = "pc-direct-unavailable";
 
     /// <summary>O PC não declara o canal direto (agente anterior, ou a biblioteca não está instalada): o app segue pela nuvem.</summary>
@@ -370,11 +407,80 @@ internal sealed class PcKeyBudget(TimeProvider time)
     }
 }
 
+/// <summary>
+/// O que o dono do PC decidiu sobre cada aparelho que ainda não está aprovado (<c>pc.device.state.v1</c>): <c>pending</c> (a pergunta está aberta no PC)
+/// ou <c>denied</c>. Em memória, por agente e aparelho, com validade curta: o agente renova o aviso (no máximo a cada 10 s) enquanto o aparelho insiste, e
+/// <c>approved</c> o apaga. Existe para o movimento do mouse, que o agente descarta sem resposta, também receber o 403: sem uma mensagem por movimento.
+/// </summary>
+internal sealed class PcDeviceStates(TimeProvider time) : IAgentPresenceListener
+{
+    /// <summary>Quanto vale um aviso; o agente renova dentro disto.</summary>
+    public static readonly TimeSpan Validity = TimeSpan.FromSeconds(30);
+
+    private const int MaxEntries = 256;
+
+    private readonly object _gate = new();
+    private readonly Dictionary<(string Agent, string Device), (string State, DateTimeOffset Until)> _states = [];
+
+    public void Set(string agentSlug, string deviceId, string state)
+    {
+        lock (_gate)
+        {
+            if (state == "approved")
+            {
+                _states.Remove((agentSlug, deviceId));
+                return;
+            }
+
+            var now = time.GetUtcNow();
+            foreach (var old in _states.Where(s => s.Value.Until <= now).Select(s => s.Key).ToList())
+            {
+                _states.Remove(old);
+            }
+
+            if (_states.Count < MaxEntries || _states.ContainsKey((agentSlug, deviceId)))
+            {
+                _states[(agentSlug, deviceId)] = (state, now + Validity);
+            }
+        }
+    }
+
+    /// <summary>O código do agente (<c>device_pending</c> ou <c>device_denied</c>) enquanto o aviso vale; nulo se não há (aprovado, vencido ou nunca avisado).</summary>
+    public string? RefusalFor(string agentSlug, string deviceId)
+    {
+        lock (_gate)
+        {
+            return _states.TryGetValue((agentSlug, deviceId), out var entry) && entry.Until > time.GetUtcNow()
+                ? entry.State == "denied" ? PcProblems.DeviceDeniedCode : PcProblems.DevicePendingCode
+                : null;
+        }
+    }
+
+    /// <summary>Queda ou conexão nova: o agente que volta pergunta de novo, e o que valia era de outra sessão dele.</summary>
+    public void OnPresenceChanged(AgentPresenceInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        if (info.Connected && info.HelloAt is not null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            foreach (var key in _states.Keys.Where(k => k.Agent == info.AgentId).ToList())
+            {
+                _states.Remove(key);
+            }
+        }
+    }
+}
+
 /// <summary>Guarda a lista de favoritos que o agente anuncia (<c>pc.apps.v1</c>), na ordem em que ele a mandou.</summary>
-internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answers, PcRtcClosures closures, PcVolumeStore volume) : IAgentMessageHandler
+internal sealed class PcAgentMessageHandler(
+    PcAppsStore store, PcRtcAnswers answers, PcRtcClosures closures, PcVolumeStore volume, PcDeviceStates deviceStates) : IAgentMessageHandler
 {
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcVolumeStateV1];
+        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -393,6 +499,17 @@ internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answ
             return;
         }
 
+        // O estado de um aparelho que o dono do PC ainda não aprovou (ou recusou): guardado por pouco tempo, para o movimento do mouse
+        // (que o agente descarta sem resposta) receber o 403 também.
+        if (string.Equals(message.Type, AgentMessageTypes.PcDeviceStateV1, StringComparison.Ordinal))
+        {
+            deviceStates.Set(
+                message.AgentId,
+                message.Body.GetProperty("deviceId").GetString()!,
+                message.Body.GetProperty("state").GetString()!);
+            return;
+        }
+
         // O volume de agora: nível (0 a 100, o contrato já limitou) e mudo. Só o último fica, e só em memória.
         if (string.Equals(message.Type, AgentMessageTypes.PcVolumeStateV1, StringComparison.Ordinal))
         {
@@ -407,5 +524,8 @@ internal sealed class PcAgentMessageHandler(PcAppsStore store, PcRtcAnswers answ
             .Select(a => new PcApp(a.GetProperty("id").GetString()!, a.GetProperty("label").GetString()!))
             .ToList();
         store.Set(message.AgentId, apps);
+
+        // O agente manda a lista de favoritos a cada conexão: é o sinal de que ele voltou. A revogação que não o alcançou na queda é refeita agora.
+        await closures.RetryRevocationsAsync(message.AgentId, cancellationToken);
     }
 }

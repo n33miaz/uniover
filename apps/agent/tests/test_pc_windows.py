@@ -928,3 +928,69 @@ def test_a_cut_zoom_whose_release_is_refused_is_retried_by_the_dead_man_timer() 
     timers.fire_last()
     assert flaky.batches[-1] == [CTRL_UP]
     assert timers.live() == []
+
+
+# ---- a causa de uma recusa do SendInput ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("desktop", "foreground", "own", "expected"),
+    [
+        (None, None, None, "session_locked"),  # nem dá para abrir o desktop de entrada
+        ("Winlogon", pc_windows.INTEGRITY_MEDIUM, pc_windows.INTEGRITY_MEDIUM, "session_locked"),
+        ("Screen-saver", None, pc_windows.INTEGRITY_MEDIUM, "session_locked"),
+        ("Default", pc_windows.INTEGRITY_HIGH, pc_windows.INTEGRITY_MEDIUM, "elevated_window"),
+        ("default", pc_windows.INTEGRITY_SYSTEM, pc_windows.INTEGRITY_MEDIUM, "elevated_window"),
+        ("Default", pc_windows.INTEGRITY_MEDIUM, pc_windows.INTEGRITY_MEDIUM, "failed"),
+        ("Default", pc_windows.INTEGRITY_LOW, pc_windows.INTEGRITY_MEDIUM, "failed"),
+        ("Default", None, pc_windows.INTEGRITY_MEDIUM, "failed"),  # não deu para medir
+        ("Default", pc_windows.INTEGRITY_HIGH, None, "failed"),
+    ],
+)
+def test_the_refusal_cause_comes_from_the_desktop_and_the_foreground_integrity(
+    desktop: str | None, foreground: int | None, own: int | None, expected: str
+) -> None:
+    assert pc_windows.classify_refusal(desktop, foreground, own) == expected
+
+
+def test_integrity_levels_have_fixed_names_for_the_log() -> None:
+    assert [
+        pc_windows.integrity_name(level) for level in (None, 0x1000, 0x2000, 0x3000, 0x4000)
+    ] == [
+        "desconhecido",
+        "baixo",
+        "médio",
+        "alto",
+        "sistema",
+    ]
+
+
+def test_a_partial_send_carries_the_cause_and_the_facts_up_to_the_handler() -> None:
+    error = PartialSendError(
+        0, 2, "session_locked", "erro do Windows 5; desktop de entrada Winlogon"
+    )
+
+    assert (error.sent, error.cause) == (0, "session_locked")
+    assert "0 de 2" in str(error) and "Winlogon" in error.detail
+
+
+def test_a_refused_batch_leaves_the_adapter_with_the_cause_intact() -> None:
+    def refuse(inputs: Sequence[RawInput]) -> None:
+        raise PartialSendError(0, len(inputs), "elevated_window", "primeiro plano alto")
+
+    pc = WindowsPcInput(refuse, start_timer=Timers())
+
+    with pytest.raises(PartialSendError) as caught:
+        pc.key("A", [])
+
+    assert caught.value.cause == "elevated_window"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="só o Windows mede o desktop de entrada")
+def test_measuring_a_refusal_only_reads_the_real_desktop_and_never_sends_input() -> None:
+    # Só lê: abre o desktop de entrada, olha a integridade do primeiro plano e fecha (sem enviar).
+    cause, detail = pc_windows.diagnose_refusal(5)
+
+    assert cause in {"session_locked", "elevated_window", "failed"}
+    assert "erro do Windows 5" in detail and "desktop de entrada" in detail
+    assert "primeiro plano" in detail and "este processo" in detail

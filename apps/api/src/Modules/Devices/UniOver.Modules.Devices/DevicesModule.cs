@@ -101,11 +101,14 @@ public static class DevicesModule
         services.AddSingleton<PcAppsStore>();
         services.AddSingleton<PcVolumeStore>();
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcVolumeStore>());
+        services.AddSingleton<PcDeviceStates>();
+        services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcDeviceStates>());
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();
         services.AddSingleton<PcTargetCache>();
         services.AddSingleton<PcKeyBudget>();
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, PcAgentRevokedInvalidator>();
         services.AddScoped<PcAgentResolver>();
+        services.AddScoped<PcOriginReader>();
         services.AddScoped<PcControlHandler>();
 
         // Canal direto (WebRTC): sessões e esperas em memória da instância; a API só faz a sinalização autenticada.

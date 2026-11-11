@@ -27,8 +27,15 @@ internal sealed record PcRtcOfferResponse(Guid SessionId, string Sdp, string Tok
 
 /// <summary>Uma sessão do canal direto, como a API a conhece: de quem é, de qual PC, e quando a negociação começou.</summary>
 /// <param name="SessionFamily">A sessão (família do refresh) que abriu o canal: ela acabando, o canal fecha junto.</param>
+/// <param name="RevokePending">A revogação não alcançou o agente (ele estava fora): refeita assim que ele volta.</param>
 internal sealed record PcRtcSession(
-    Guid Id, Guid UserId, Guid AgentId, string AgentSlug, DateTimeOffset OpenedAt, Guid? SessionFamily = null);
+    Guid Id,
+    Guid UserId,
+    Guid AgentId,
+    string AgentSlug,
+    DateTimeOffset OpenedAt,
+    Guid? SessionFamily = null,
+    bool RevokePending = false);
 
 /// <summary>Os limites do que o app pode pedir: o que a API deixaria passar e o contrato recusasse viraria 500 em vez de 400.</summary>
 internal static class PcRtcValidator
@@ -173,6 +180,38 @@ internal sealed class PcRtcSessions(TimeProvider time)
         }
     }
 
+    /// <summary>Marca a sessão cuja revogação não alcançou o agente: ela fica no registro e o aviso é refeito quando o agente volta.</summary>
+    public void MarkRevokePending(Guid sessionId)
+    {
+        lock (_gate)
+        {
+            if (_sessions.TryGetValue(sessionId, out var session))
+            {
+                _sessions[sessionId] = session with { RevokePending = true };
+            }
+        }
+    }
+
+    /// <summary>As sessões deste PC com a revogação por refazer, sem tirá-las (só saem depois de o aviso chegar).</summary>
+    public IReadOnlyList<PcRtcSession> RevokePendingForAgent(string agentSlug)
+    {
+        lock (_gate)
+        {
+            return _sessions.Values
+                .Where(s => s.RevokePending && string.Equals(s.AgentSlug, agentSlug, StringComparison.Ordinal))
+                .ToList();
+        }
+    }
+
+    /// <summary>As sessões abertas de um PC, sem tirá-las (quem as substitui só as tira depois de o agente aceitar a oferta nova).</summary>
+    public IReadOnlyList<PcRtcSession> ForAgent(string agentSlug)
+    {
+        lock (_gate)
+        {
+            return _sessions.Values.Where(s => string.Equals(s.AgentSlug, agentSlug, StringComparison.Ordinal)).ToList();
+        }
+    }
+
     /// <summary>Tira todas as sessões abertas de um PC (uma oferta nova substitui a anterior: no máximo uma por PC).</summary>
     public IReadOnlyList<PcRtcSession> TakeAllForAgent(string agentSlug)
     {
@@ -233,8 +272,31 @@ internal sealed class PcRtcAnswers(TimeProvider time)
 }
 
 /// <summary>Registra na trilha o fechamento do canal que o agente avisou (a sessão sai da memória uma vez só).</summary>
-internal sealed class PcRtcClosures(PcRtcSessions sessions, PairingAuditWriter audit, DevicesDbContext db)
+internal sealed class PcRtcClosures(PcRtcSessions sessions, PairingAuditWriter audit, DevicesDbContext db, IAgentGateway gateway)
 {
+    /// <summary>
+    /// O agente voltou: refaz o fechamento "revogado" das sessões cujo aviso não o alcançou na queda. Só sai do registro o que o aviso de
+    /// fato alcançou; o que falhar de novo segue marcado para a próxima volta.
+    /// </summary>
+    public async Task RetryRevocationsAsync(string agentSlug, CancellationToken cancellationToken)
+    {
+        var closed = 0;
+        foreach (var session in sessions.RevokePendingForAgent(agentSlug))
+        {
+            var sent = await gateway.SendAsync(agentSlug, PcMessages.RtcClose(session.Id, PcRtcCloseV1BodyReason.Revoked), cancellationToken);
+            if (sent.IsSuccess && sessions.TakeOwned(session.Id, session.UserId) is not null)
+            {
+                audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+                closed++;
+            }
+        }
+
+        if (closed > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     public async Task AgentClosedAsync(string agentSlug, Guid sessionId, CancellationToken cancellationToken)
     {
         if (sessions.TakeForAgent(agentSlug, sessionId) is not { } session)
@@ -259,7 +321,9 @@ internal sealed class PcRtcHandler(
     PcRtcSessions sessions,
     PcRtcAnswers answers,
     PairingAuditWriter audit,
-    DevicesDbContext db)
+    DevicesDbContext db,
+    PcOriginReader origins,
+    PcDeviceStates deviceStates)
 {
     /// <summary>O agente carrega a biblioteca na primeira oferta (cerca de um segundo) e junta os candidatos; o prazo dele é de 12 s, e o desta espera é maior para a recusa dele chegar antes.</summary>
     public static readonly TimeSpan OfferTimeout = TimeSpan.FromSeconds(15);
@@ -310,14 +374,17 @@ internal sealed class PcRtcHandler(
             return PcProblems.DirectUnavailable();
         }
 
-        // No máximo um canal por PC: a oferta nova substitui a anterior (o agente também troca o par e solta o que segurava).
-        foreach (var old in sessions.TakeAllForAgent(target.Slug))
+        // Um aparelho que o PC já avisou estar pendente ou recusado nem chega a mexer no canal de outro aparelho.
+        var origin = origins.Read();
+        if (origin.DeviceId is not null && deviceStates.RefusalFor(target.Slug, origin.DeviceId) is { } refusal)
         {
-            await gateway.SendAsync(target.Slug, PcMessages.RtcClose(old.Id, PcRtcCloseV1BodyReason.Replaced), cancellationToken);
-            audit.Add(PairingEvents.PcDirectClosed, client, agentId: old.AgentId, userId: old.UserId);
-            // Grava já: se a oferta nova falhar adiante, o fechamento do canal anterior não pode se perder.
-            await db.SaveChangesAsync(cancellationToken);
+            return PcProblems.DeviceRefused(refusal);
         }
+
+        // No máximo um canal por PC: a oferta nova substitui a anterior (o agente também troca o par e solta o que segurava). As anteriores
+        // só são fechadas e tiradas daqui DEPOIS de o agente aceitar a oferta nova: uma oferta recusada (aparelho pendente ou recusado, canal
+        // indisponível) nunca derruba o canal de quem já está usando.
+        var previous = sessions.ForAgent(target.Slug);
 
         var session = sessions.Open(userId, target.AgentId, target.Slug, sessionFamily);
         var token = NewToken();
@@ -325,6 +392,8 @@ internal sealed class PcRtcHandler(
         var maxLifetime = (int)Math.Min(lifetime.TotalSeconds, MaxLifetime.TotalSeconds);
         var message = PcMessages.RtcOffer(session.Id, request.Sdp!, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds, maxLifetime);
 
+        // A oferta leva o aparelho (a aprovação no PC); o canal herda a decisão. Sem a capacidade o campo nem sai.
+        message = PcMessages.WithOrigin(message, target.Capabilities, origin, withOperation: false);
         var reply = await gateway.RequestAsync(target.Slug, message, OfferTimeout, cancellationToken);
         if (reply.IsFailure)
         {
@@ -337,10 +406,25 @@ internal sealed class PcRtcHandler(
             sessions.TakeOwned(session.Id, userId);
             // O agente já tinha o fechamento desta sessão (a revogação passou na frente da oferta): é a mesma resposta de quando a
             // revogação é descoberta depois, e o app não insiste.
+            if (PcProblems.IsDeviceRefusal(reply.Value.Error?.Code))
+            {
+                return PcProblems.DeviceRefused(reply.Value.Error!.Code);
+            }
+
+            // `rtc_closed` é a recusa de antes da troca do par (a sessão já tinha sido fechada): as anteriores seguem. Só `rtc_failed` e
+            // `rtc_unavailable` vêm depois de o agente ter lido a oferta e podido trocar o par: aí o registro acompanha (como sempre foi).
+            if (reply.Value.Error?.Code != RtcClosedCode)
+            {
+                await ReplacePreviousAsync(previous, target.Slug, client, cancellationToken);
+            }
+
             return reply.Value.Error?.Code == RtcClosedCode
                 ? PcProblems.DirectRevoked()
                 : RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
         }
+
+        // O agente aceitou a oferta e trocou o par: agora sim as anteriores saem do registro, com o aviso e a trilha.
+        await ReplacePreviousAsync(previous, target.Slug, client, cancellationToken);
 
         var answer = await pending.WaitAsync(AnswerGrace, cancellationToken);
         if (answer is null)
@@ -361,6 +445,23 @@ internal sealed class PcRtcHandler(
         audit.Add(PairingEvents.PcDirectOpened, client, agentId: target.AgentId, userId: userId);
         await db.SaveChangesAsync(cancellationToken);
         return TypedResults.Ok(new PcRtcOfferResponse(session.Id, answer, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds));
+    }
+
+    private async Task ReplacePreviousAsync(
+        IReadOnlyList<PcRtcSession> previous, string agentSlug, ClientInfo client, CancellationToken cancellationToken)
+    {
+        foreach (var old in previous)
+        {
+            if (sessions.TakeOwned(old.Id, old.UserId) is null)
+            {
+                continue;
+            }
+
+            await gateway.SendAsync(agentSlug, PcMessages.RtcClose(old.Id, PcRtcCloseV1BodyReason.Replaced), cancellationToken);
+            audit.Add(PairingEvents.PcDirectClosed, client, agentId: old.AgentId, userId: old.UserId);
+            // Grava já: o fechamento do canal anterior não pode se perder se algo falhar adiante.
+            await db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     public async Task<IResult> CandidateAsync(
@@ -464,8 +565,15 @@ internal sealed partial class PcRtcAccessListener(
             {
                 // Só sai do registro o que o aviso de fato alcançou: sem alcançar o agente (offline, queda), a sessão fica e uma
                 // próxima mudança, o aviso dele ou a vida máxima do canal a encerram.
-                if (!await TrySendCloseAsync(session, cancellationToken)
-                    || sessions.TakeOwned(session.Id, session.UserId) is null)
+                if (!await TrySendCloseAsync(session, cancellationToken))
+                {
+                    // O agente não foi alcançado: a sessão fica marcada e a revogação é refeita quando ele voltar (ele pode manter o canal
+                    // direto por alguns segundos sem a API, e este é o que impede um canal revogado de viver até a vida máxima).
+                    sessions.MarkRevokePending(session.Id);
+                    continue;
+                }
+
+                if (sessions.TakeOwned(session.Id, session.UserId) is null)
                 {
                     continue;
                 }
@@ -540,6 +648,7 @@ internal static class PcRtcEndpoints
             .Produces<PcRtcOfferResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status502BadGateway)
