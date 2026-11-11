@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.61.0](https://github.com/n33miaz/uniover/compare/v0.60.0...v0.61.0) (2026-11-11)
+
+
+### Web 0.58.1
+
+#### Bug Fixes
+
+* **web:** drop other accounts' telemetry queue
+
+
+### Agent 0.54.0
+
+#### Features
+
+* **agent:** install only signed updates
+
+#### Bug Fixes
+
+* **agent:** reconnect as soon as the network is back
+
 ## [0.60.0](https://github.com/n33miaz/uniover/compare/v0.59.0...v0.60.0) (2026-11-11)
 
 
