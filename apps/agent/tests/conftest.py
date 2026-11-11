@@ -34,6 +34,16 @@ def no_stall_dump(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_keyboard_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nenhum teste consulta o teclado e o mouse reais: sem isto o adaptador do PC, ao soltar o que
+    uma execução anterior deixou apertado, mandaria entrada de verdade se quem roda os testes
+    estivesse segurando uma tecla. Os testes que precisam de outra resposta passam o `key_probe`."""
+    from uniover_agent.adapters import pc_windows  # noqa: PLC0415
+
+    monkeypatch.setattr(pc_windows, "_key_is_down", lambda vk: False)
+
+
+@pytest.fixture(autouse=True)
 def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nenhum teste fala com a rede local: o teste de vida da TV, a leitura do REST Samsung, o
     ARP, o SSDP e o mDNS são trocados por respostas fixas (os testes que precisam de outra

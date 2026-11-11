@@ -54,6 +54,11 @@ STOP_DUPLICATE: Final = "duplicate"
 # Intervalo mínimo entre duas antecipações da reconexão por aviso de mudança de rede.
 NETWORK_WAKE_MIN_SECONDS: Final = 5.0
 STOP_HANDOVER_UNSUPPORTED: Final = "handover_unsupported"
+# Candidata tirada do lugar (`replaced`) antes de virar dona: volta como candidata e reconecta já.
+# Mais de `RECANDIDACY_LIMIT` vezes em `RECANDIDACY_WINDOW_SECONDS` já não é acaso (algo disputa a
+# vaga): volta a valer a espera de sempre.
+RECANDIDACY_LIMIT: Final = 5
+RECANDIDACY_WINDOW_SECONDS: Final = 60.0
 # A API confirma que promoveu esta conexão (candidata da passagem): só então deixa de ser candidato.
 HANDOVER_ACCEPTED_TYPE: Final = "agent.handover.accepted.v1"
 
@@ -127,6 +132,8 @@ class ConnectionSupervisor:
         on_startup_failure: Callable[[BaseException, bool, int], Awaitable[None]] | None = None,
         handover: bool = False,
         on_handover_accepted: Callable[[], None] | None = None,
+        is_owner: Callable[[], bool] | None = None,
+        on_handover_restarted: Callable[[], None] | None = None,
         network_watcher: NetworkChangeWatcherFactory | None = None,
     ) -> None:
         """`handover`: esta execução veio tomar o lugar de outra. Ela é CANDIDATA (rota própria da
@@ -134,7 +141,13 @@ class ConnectionSupervisor:
         `agent.handover.accepted.v1`; antes disso toda reconexão dela é de novo candidata e nunca
         substitui a antiga por engano. Depois da confirmação ela é uma conexão comum: o `hello`
         deixa de trazer `handover` e `instanceId` (uma API revertida, de contrato fechado, recusaria
-        o campo)."""
+        o campo).
+
+        `is_owner` diz se esta execução já é a dona da instalação (a antiga saiu e a trava é dela).
+        Uma candidata que recebe `replaced` antes disso (um deploy da API no meio da passagem, uma
+        queda curta da antiga) não espera: volta a ser candidata, com o mesmo `instanceId`, e
+        reconecta já. Nesse caso `on_handover_restarted` avisa que a confirmação anterior não vale
+        mais: quem espera a promoção deve esperar a da nova candidatura."""
         self._transport = transport
         self._process = process_message
         self._envelopes = envelopes
@@ -166,6 +179,12 @@ class ConnectionSupervisor:
         # identificador é só desta execução.
         self._handover_pending = handover
         self._on_handover_accepted = on_handover_accepted
+        self._is_owner = is_owner
+        self._on_handover_restarted = on_handover_restarted
+        self._recandidated_at: list[float] = []
+        # Pedido de parada vindo de fora (`request_stop`): `run` devolve com este motivo.
+        self._requested_stop: str | None = None
+        self._stop_requested: asyncio.Event | None = None
         self._instance_id = str(uuid.uuid4()) if handover else None
         # Por que o laço parou (`run` devolve): `None` enquanto roda.
         self.stop_reason: str | None = None
@@ -342,11 +361,37 @@ class ConnectionSupervisor:
         """O identificador da execução só viaja enquanto ela é candidata (o `hello` de passagem)."""
         return self._instance_id if self._handover_pending else None
 
+    def request_stop(self, reason: str) -> None:
+        """Manda `run` parar e devolver com `reason`, em qualquer ponto em que ele esteja (numa
+        sessão, na espera da reconexão ou na espera do `replaced`). A sessão aberta é fechada como
+        no fim normal. Chamado de dentro do laço de eventos."""
+        if self._requested_stop is None:
+            self._requested_stop = reason
+        if self._stop_requested is not None:
+            self._stop_requested.set()
+
     async def run(self) -> None:
         self._start_network_watcher()
+        stop = self._stop_requested = asyncio.Event()
+        if self._requested_stop is not None:
+            stop.set()
+        loop_task = asyncio.ensure_future(self._run())
+        waiter = asyncio.ensure_future(stop.wait())
         try:
-            await self._run()
+            done, _ = await asyncio.wait({loop_task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            if loop_task in done:
+                loop_task.result()
+                return
+            # Pedido de parada: a sessão em curso é cancelada (o `finally` dela fecha o canal).
+            loop_task.cancel()
+            await asyncio.gather(loop_task, return_exceptions=True)
+            self.stop_reason = self._requested_stop
         finally:
+            for task in (loop_task, waiter):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(loop_task, waiter, return_exceptions=True)
+            self._stop_requested = None
             self._stop_network_watcher()
 
     async def _run(self) -> None:
@@ -365,6 +410,19 @@ class ConnectionSupervisor:
                 self.stop_reason = STOP_CREDENTIAL_REJECTED
                 return
             except ConnectionReplaced:
+                if self._recandidate():
+                    wait = (
+                        self._policy.restart_now_min
+                        + (self._policy.restart_now_max - self._policy.restart_now_min)
+                        * self._random()
+                    )
+                    _log.warning(
+                        "tiraram esta execução do lugar antes de ela virar a dona; volto como "
+                        "candidata da passagem em %.1f s",
+                        wait,
+                    )
+                    await self._sleep(wait)
+                    continue
                 if self._duplicate_detected():
                     _log.error(
                         "outra instância deste agente tomou a conexão duas vezes em %.0f min; "
@@ -426,6 +484,25 @@ class ConnectionSupervisor:
             delay = self._backoff.next_delay(self._recent_connection_cap())
             _log.info("reconectando em %.1f s", delay)
             await self._sleep_for_reconnect(delay)
+
+    def _recandidate(self) -> bool:
+        """A candidata da passagem foi tirada do lugar antes de ser dona: vale voltar já a ser
+        candidata (mesmo `instanceId`)? Não vale depois da posse (a espera de sempre protege contra
+        a disputa) nem se isso se repete demais."""
+        if self._instance_id is None or self._is_owner is None or self._is_owner():
+            return False
+        now = self._clock.monotonic()
+        self._recandidated_at = [
+            moment for moment in self._recandidated_at if now - moment < RECANDIDACY_WINDOW_SECONDS
+        ]
+        if len(self._recandidated_at) >= RECANDIDACY_LIMIT:
+            return False
+        self._recandidated_at.append(now)
+        # A API pode já ter confirmado a promoção: o que vale agora é a da nova conexão.
+        self._handover_pending = True
+        if self._on_handover_restarted is not None:
+            self._on_handover_restarted()
+        return True
 
     def _duplicate_detected(self) -> bool:
         """Duas substituições seguidas em pouco tempo: há outro agente vivo com a mesma identidade.

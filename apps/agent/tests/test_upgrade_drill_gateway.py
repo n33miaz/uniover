@@ -3,6 +3,8 @@
 import asyncio
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 import uuid
 from collections.abc import Iterator
@@ -205,3 +207,96 @@ async def test_the_diagnostic_kinds_the_agent_sends_are_kept(gateway: object) ->
     await asyncio.sleep(0.3)
     assert gateway.diagnostics == ["update.window"]  # type: ignore[attr-defined]
     await agent.close()
+
+
+async def test_the_handover_probe_sends_only_when_allowed_and_counts_every_answer(
+    gateway: object,
+) -> None:
+    gateway.begin_handover_probe()  # type: ignore[attr-defined]
+    old = await open_agent(gateway)
+    await old.send(hello(knows_handover=True))
+    candidate = await open_agent(gateway, candidate=True)
+    await candidate.send(hello(handover=True))
+    accepted = json.loads(await asyncio.wait_for(candidate.recv(), 5))
+    assert accepted["type"] == "agent.handover.accepted.v1"
+    # Sem a prova de que a entrada do PC é o dublê nada é enviado.
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(candidate.recv(), 0.5)
+    gateway.allow_handover_probe()  # type: ignore[attr-defined]
+
+    async def refuse_everything() -> None:
+        while True:
+            message = json.loads(await candidate.recv())
+            if message["type"] != "pc.key.v1":
+                continue
+            await candidate.send(
+                json.dumps(
+                    {
+                        "type": "command.result.v1",
+                        "correlationId": message["id"],
+                        "body": {"ok": False, "error": {"code": "agent_starting"}},
+                    }
+                )
+            )
+
+    responder = asyncio.create_task(refuse_everything())
+    await asyncio.sleep(0.8)
+    # Fecha o emissor (em outra thread: ele espera as respostas em trânsito) e só então conta.
+    result = await asyncio.to_thread(gateway.end_handover_probe)  # type: ignore[attr-defined]
+    responder.cancel()
+    assert result.sent >= 2
+    assert result.unanswered == 0
+    assert result.starting_refusals == result.answered
+    assert 0.4 <= result.start_delay_seconds <= 3.0  # o envio esperou a liberação
+    assert result.refusal_window_seconds >= result.start_delay_seconds
+    await candidate.close()
+
+
+# ---- a entrada do PC do ensaio é sempre o dublê (nenhuma tecla de prova chega ao desktop) ----
+
+SUPPORT = TOOLS / "upgrade_drill_support"
+SHOW_PC_INPUT = (
+    "import os, uniover_agent.adapters.pc_windows as w, uniover_agent.composition.pc as p;"
+    "print(p.WindowsPcInput.__name__, w.WindowsPcInput.__name__, w._send_input.__name__,"
+    " os.environ.get('UNIOVER_PC_CONTROL'))"
+)
+
+
+def python_with_support(code: str, *, drill: bool, extra_path: Path | None = None) -> str:
+    """Roda `code` num Python com o `sitecustomize` do ensaio carregado como no ensaio."""
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("UNIOVER_")}
+    path = [str(extra_path)] if extra_path is not None else []
+    env["PYTHONPATH"] = os.pathsep.join([*path, str(SUPPORT)])
+    if drill:
+        env["UNIOVER_UPDATE_DRILL"] = "1"
+        env["UNIOVER_UPDATE_SOURCE_URL"] = "http://127.0.0.1:9"
+    result = subprocess.run(  # noqa: S603 - o Python do próprio ambiente de teste
+        [sys.executable, "-c", code],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_in_the_drill_the_pc_input_and_the_send_input_sink_are_doubles() -> None:
+    out = python_with_support(SHOW_PC_INPUT, drill=True)
+    assert out == "DrillPcInput DrillPcInput _drill_send_input None"
+
+
+def test_outside_the_drill_nothing_about_the_pc_input_is_touched() -> None:
+    out = python_with_support(SHOW_PC_INPUT, drill=False)
+    assert out.startswith("WindowsPcInput WindowsPcInput _send_input")
+
+
+def test_if_the_double_cannot_be_installed_the_pc_control_is_turned_off(tmp_path: Path) -> None:
+    # Fail fechado: sem o dublê, `pc.key.v1` seria recusado pelo agente, nunca enviado ao Windows.
+    (tmp_path / "uniover_agent").mkdir()
+    (tmp_path / "uniover_agent" / "__init__.py").write_text("raise RuntimeError('quebrado')")
+    out = python_with_support(
+        "import os; print(os.environ.get('UNIOVER_PC_CONTROL'))", drill=True, extra_path=tmp_path
+    )
+    assert out == "false"

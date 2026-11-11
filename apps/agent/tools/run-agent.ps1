@@ -1291,11 +1291,9 @@ function Complete-UpdateWindow {
         if (-not $window['token'] -or [string]$marker['token'] -ne [string]$window['token']) { return }
         $ready = ConvertTo-UtcTime $marker['readyAt']
         $started = ConvertTo-UtcTime $window['newStartedAt']
-        $oldExit = ConvertTo-UtcTime $window['oldExitedAt']
-        if ($null -eq $ready -or $null -eq $started -or $null -eq $oldExit) { return }
+        if ($null -eq $ready -or $null -eq $started) { return }
         $detail = 'mode=handover sha=' + $sha + ' new_start_to_connected_s=' + [Math]::Round(($connected - $started).TotalSeconds, 1) +
-            ' connected_to_old_exit_s=' + [Math]::Round(($oldExit - $connected).TotalSeconds, 1) +
-            ' old_exit_to_ready_s=' + [Math]::Round(($ready - $oldExit).TotalSeconds, 1) +
+            ' connected_to_ready_s=' + [Math]::Round(($ready - $connected).TotalSeconds, 1) +
             ' total_s=' + [Math]::Round(($ready - $started).TotalSeconds, 1)
     }
     else {
@@ -1317,6 +1315,30 @@ function Get-HandoverMark([string]$Token) {
     $mark = Read-JsonFile (Join-Path $runtime 'connected.json')
     if ($null -ne $mark -and [string]$mark['token'] -eq $Token) { return $mark }
     return $null
+}
+
+function Request-OldExit([string]$Token) {
+    # Pede a execucao em uso que saia de forma ordenada (como no 4410). O arquivo leva o codigo da passagem: a versao nova, que
+    # tem o mesmo codigo, o ignora. Quem nao conhece o pedido (uma versao antiga) nao o le, e o supervisor derruba depois do prazo.
+    # Formato `handover-exit:<codigo>` (o agente recusa vazio, parcial ou de outro formato) e gravacao atomica: temporario e renomeacao.
+    # O destino pode estar aberto por um instante (antivirus, a leitura do agente): tenta de novo por ate 2 s e registra se nao der.
+    $path = Join-Path $runtime 'handover-exit'
+    for ($try = 1; $try -le 10; $try++) {
+        try {
+            [System.IO.File]::WriteAllText(($path + '.tmp'), ('handover-exit:' + $Token), [System.Text.Encoding]::ASCII)
+            Move-Item -LiteralPath ($path + '.tmp') -Destination $path -Force -ErrorAction Stop
+            return
+        } catch {
+            Start-Sleep -Milliseconds 200
+        }
+    }
+    Remove-Item -LiteralPath ($path + '.tmp') -Force -ErrorAction SilentlyContinue
+    Write-SupLog 'WARNING' 'nao consegui gravar o pedido de saida da versao em uso; ela sera derrubada no prazo'
+}
+
+function Clear-OldExitRequest {
+    Remove-Item -LiteralPath (Join-Path $runtime 'handover-exit.tmp') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $runtime 'handover-exit') -Force -ErrorAction SilentlyContinue
 }
 
 function Stop-WhenGone($Process, [double]$Seconds) {
@@ -1370,6 +1392,7 @@ function Invoke-Handover([string]$Uv, $Slot) {
     }
     finally {
         Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+        Clear-OldExitRequest
         try { $mutex.ReleaseMutex() } catch { }
         $mutex.Dispose()
     }
@@ -1393,13 +1416,14 @@ function Invoke-HandoverLocked([string]$Uv, $Slot) {
         return 'failed'
     }
     Remove-Item -LiteralPath (Join-Path $runtime 'connected.json') -Force -ErrorAction SilentlyContinue
+    Clear-OldExitRequest
     $began = Get-Date
     $token = [guid]::NewGuid().ToString('N')
     # O prazo do agente conta do inicio do processo e nunca passa deste instante (o prazo do supervisor menos uma margem): ele
     # desiste sozinho (codigo 5, "adiada") antes de o supervisor encerrar a nova.
     $agentSeconds = [Math]::Max(1, $handoverSeconds - $handoverMarginSeconds)
     $deadlineEpoch = [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + [int]$agentSeconds)
-    $environment = @{ UV_PROJECT_ENVIRONMENT = $Slot.venv; UNIOVER_APP_DIR = $Slot.app; UNIOVER_WINDOW_TOKEN = $token; UNIOVER_HANDOVER_DEADLINE = $deadlineEpoch }
+    $environment = @{ UV_PROJECT_ENVIRONMENT = $Slot.venv; UNIOVER_APP_DIR = $Slot.app; UNIOVER_WINDOW_TOKEN = $token; UNIOVER_HANDOVER_DEADLINE = $deadlineEpoch; UNIOVER_HANDOVER_TAKEOVER_SECONDS = [string]$handoverTakeoverSeconds }
     $new = $null
     try { $new = Start-Hidden $Uv ('run --project "' + $Slot.app + '" uniover-agent run --handover') $true $environment } catch { }
     if ($null -eq $new) {
@@ -1412,11 +1436,37 @@ function Invoke-HandoverLocked([string]$Uv, $Slot) {
     Write-SupLog 'INFO' ('passagem sem queda: versao ' + $short + ' iniciada (pid ' + $new.Id + '); a atual segue servindo')
     $deadline = $began.AddSeconds($handoverSeconds)
     $oldExitedAt = $null
+    $confirmedAt = $null
+    $asked = $false
+    $exitBy = $null
     while ($true) {
         Touch-Alive
         if ($new.HasExited) { break }
         if ($old.HasExited) { $oldExitedAt = Get-Date; break }
+        # Uma antiga que ignora tanto o 4410 quanto o pedido ordenado nao pode fazer a candidata
+        # vencer o prazo dela. A derrubada e contada do pedido, nao do prazo geral da passagem.
+        if ($asked -and $null -ne $exitBy -and (Get-Date) -ge $exitBy) {
+            Write-SupLog 'ERROR' ('a antiga nao saiu em ' + [int]$handoverExitSeconds + ' s depois do pedido; a antiga foi derrubada para a nova assumir')
+            Add-Diagnostic 'update.handover_forced' 'warn' ('a versao nova conectou mas a antiga nao saiu em ' + [int]$handoverExitSeconds + ' segundos depois do pedido; a antiga foi derrubada para a nova assumir')
+            Stop-Tree $old
+            $oldExitedAt = Get-Date
+            break
+        }
         if ((Get-Date) -ge $deadline) { break }
+        if (-not $asked) {
+            if ($null -eq $confirmedAt) {
+                $seen = Get-HandoverMark $token
+                if ($null -ne $seen -and [bool]$seen['connectedAt']) { $confirmedAt = Get-Date }
+            }
+            elseif (((Get-Date) - $confirmedAt).TotalSeconds -ge $handoverAskSeconds) {
+                # A API ja promoveu a nova e mandou a antiga sair, mas ela segue de pe (um 4409 no meio, uma versao sem o 4410):
+                # pede a saida ordenada antes de qualquer derrubada.
+                Request-OldExit $token
+                $asked = $true
+                $exitBy = (Get-Date).AddSeconds($handoverExitSeconds)
+                Write-SupLog 'WARNING' ('a antiga nao saiu ' + [int]$handoverAskSeconds + ' s depois de a nova ser confirmada; pedi a saida ordenada')
+            }
+        }
         Start-Sleep -Milliseconds 400
     }
     if ($new.HasExited) {
@@ -1425,6 +1475,16 @@ function Invoke-HandoverLocked([string]$Uv, $Slot) {
         Clear-OwnTrial $sha
         if ($old.HasExited) {
             # Os dois sairam: o laco do supervisor reinicia o agente da versao em uso (a antiga).
+            # A antiga pode ter atendido o 4410 antes de o supervisor ver a queda da candidata.
+            # Isso nao pode esconder uma falha da versao nova como simples adiamento.
+            if ($code -ne 5 -and $code -ne 6 -and $code -ne 7) {
+                Add-BlockedVersion $sha
+                Add-Diagnostic 'update.rolled_back' 'error' 'a versao nova caiu na passagem; foi bloqueada e o agente reiniciou pela versao em uso'
+                Set-UpdateState @{ outcome = 'blocked'; blockedSha = $sha; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova caiu na passagem; bloqueada' } | Out-Null
+            }
+            elseif ($code -eq 5) {
+                Add-DeferredVersion $sha
+            }
             Write-SupLog 'ERROR' ('a versao nova e a atual sairam juntas (codigo ' + $code + '); o agente reinicia pela versao em uso')
             return 'failed'
         }
@@ -1476,30 +1536,61 @@ function Invoke-HandoverLocked([string]$Uv, $Slot) {
         # Conectou (a API confirmou: ela ja a promoveu e mandou a antiga sair, que nao reconecta), mas a antiga nao largou a trava:
         # nao e defeito da versao nova. Quem tem de servir agora e a nova, entao e a ANTIGA que se derruba; a nova pega a trava, vira a
         # dona e o ponteiro muda como numa passagem normal. Matar a nova deixaria o PC sem agente.
-        Write-SupLog 'ERROR' ('a versao nova conectou, mas a antiga nao saiu em ' + [int]$handoverSeconds + ' s; a antiga foi derrubada para a nova assumir')
-        Add-Diagnostic 'update.handover_forced' 'warn' ('a versao nova conectou mas a antiga nao saiu em ' + [int]$handoverSeconds + ' segundos; a antiga foi derrubada para a nova assumir')
-        Stop-Tree $old
-        $oldExitedAt = Get-Date
-        $takeoverBy = $oldExitedAt.AddSeconds($handoverTakeoverSeconds)
-        $ready = $false
-        while ($true) {
-            Touch-Alive
-            if ($new.HasExited) { break }
-            $again = Get-HandoverMark $token
-            if ($null -ne $again -and [bool]$again['readyAt']) { $ready = $true; break }
-            if ((Get-Date) -ge $takeoverBy) { break }
-            Start-Sleep -Milliseconds 400
+        # Primeiro o pedido de saida ordenada (se ainda nao foi feito) e um prazo para a antiga atender; so depois a derrubada.
+        if (-not $asked) {
+            Request-OldExit $token
+            $asked = $true
+            $exitBy = (Get-Date).AddSeconds($handoverExitSeconds)
+            Write-SupLog 'WARNING' ('a antiga nao saiu em ' + [int]$handoverSeconds + ' s; pedi a saida ordenada')
         }
-        if (-not $ready) {
-            # Nem derrubada a antiga a nova assumiu: sem ela nao ha como confirmar nem reverter. O laco reinicia o agente pela versao em uso.
-            Stop-Tree $new
-            Clear-OwnTrial $sha
-            Add-DeferredVersion $sha
-            Write-SupLog 'ERROR' ('a versao nova nao assumiu em ' + [int]$handoverTakeoverSeconds + ' s depois de a antiga ser derrubada; o agente reinicia pela versao em uso')
-            Add-Diagnostic 'update.handover_failed' 'error' 'a versao nova nao assumiu depois de a antiga ser derrubada; o agente reiniciou pela versao em uso'
-            Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova nao assumiu na passagem; o agente reiniciou pela versao em uso' } | Out-Null
+        while (-not $old.HasExited -and -not $new.HasExited -and (Get-Date) -lt $exitBy) { Touch-Alive; Start-Sleep -Milliseconds 200 }
+        if ($old.HasExited) {
+            Write-SupLog 'INFO' 'a antiga saiu de forma ordenada a pedido do supervisor; a nova assume'
+        }
+        elseif ($new.HasExited) {
+            # A nova caiu enquanto se esperava a antiga: nao ha o que assumir (o ramo abaixo da posse a encerra e adia).
+            Write-SupLog 'WARNING' 'a versao nova saiu enquanto se esperava a antiga sair'
+        }
+        else {
+            Write-SupLog 'ERROR' ('a versao nova conectou, mas a antiga nao saiu em ' + [int]$handoverExitSeconds + ' s depois do pedido de saida ordenada; a antiga foi derrubada para a nova assumir')
+            Add-Diagnostic 'update.handover_forced' 'warn' ('a versao nova conectou mas a antiga nao saiu em ' + [int]$handoverExitSeconds + ' segundos depois do pedido; a antiga foi derrubada para a nova assumir')
+            Stop-Tree $old
+        }
+        $oldExitedAt = Get-Date
+    }
+    # Tanto a saida espontanea quanto a derrubada da antiga deixam a nova como unica candidata. Em
+    # ambos os casos o ponteiro e a prova so avancam depois de ela ter virado dona (`readyAt`).
+    $takeoverBy = $oldExitedAt.AddSeconds($handoverTakeoverSeconds)
+    $ready = $false
+    while ($true) {
+        Touch-Alive
+        if ($new.HasExited) { break }
+        $again = Get-HandoverMark $token
+        if ($null -ne $again -and [bool]$again['readyAt']) { $ready = $true; break }
+        if ((Get-Date) -ge $takeoverBy) { break }
+        Start-Sleep -Milliseconds 400
+    }
+    if (-not $ready) {
+        # Sem `readyAt` a candidata nunca serviu. Se ela caiu, isso e defeito da versao (salvo os
+        # codigos transitorios); uma candidata ainda viva pode estar presa por condicao do PC e e
+        # so adiada. Nos dois casos o ponteiro ainda e o da versao anterior.
+        $newAlreadyExited = $new.HasExited
+        $newCode = $null
+        if ($newAlreadyExited) { try { $newCode = $new.ExitCode } catch { } }
+        Stop-Tree $new
+        Clear-OwnTrial $sha
+        if ($newAlreadyExited -and $newCode -ne 5 -and $newCode -ne 7) {
+            Add-BlockedVersion $sha
+            Write-SupLog 'ERROR' ('a versao nova caiu antes de assumir (codigo ' + $newCode + '); bloqueada, o agente reinicia pela versao em uso')
+            Add-Diagnostic 'update.rolled_back' 'error' 'a versao nova caiu antes de assumir na passagem; foi bloqueada e o agente reiniciou pela versao em uso'
+            Set-UpdateState @{ outcome = 'blocked'; blockedSha = $sha; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova caiu antes de assumir na passagem; bloqueada' } | Out-Null
             return 'failed'
         }
+        Add-DeferredVersion $sha
+        Write-SupLog 'ERROR' ('a versao nova nao assumiu em ' + [int]$handoverTakeoverSeconds + ' s depois de a antiga sair; o agente reinicia pela versao em uso')
+        Add-Diagnostic 'update.handover_failed' 'error' 'a versao nova nao assumiu depois de a antiga sair; o agente reiniciou pela versao em uso'
+        Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova nao assumiu na passagem; o agente reiniciou pela versao em uso' } | Out-Null
+        return 'failed'
     }
     # A antiga saiu com a nova de pe: a nova e o agente agora. O ponteiro muda aqui (com tentativas: antivirus solta em instantes).
     $oldCode = $null
@@ -1563,14 +1654,20 @@ $ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
 # agente dar a atualizacao por interrompida (50 min). Um teste confere as duas desigualdades.
 $updateTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS' 2400
 $syncTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS' 900
-# Passagem sem queda (so com `update_handover` ligada): quanto esperar a versao nova conectar e a antiga sair. O agente novo conta
-# o prazo dele do inicio do processo e nunca passa de este prazo menos a margem (`UNIOVER_HANDOVER_DEADLINE`, 10 s). Depois dele, com a nova ja confirmada, a antiga e derrubada e a nova tem mais
-# `handoverTakeoverSeconds` para virar a dona; uma nova que cai depois de confirmada deixa a antiga `handoverOldGraceSeconds` para
-# terminar o que tem em curso. Sem a passagem (API antiga) a troca volta ao caminho de reserva por 30 minutos.
+# Passagem sem queda (so com `update_handover` ligada): quanto esperar a versao nova conectar. Depois do ACK, a antiga recebe
+# um pedido em `handoverAskSeconds`, tem `handoverExitSeconds` para sair e e derrubada logo em seguida. O prazo da candidata
+# e derivado desses dois valores mais a margem, e e o mesmo que o supervisor usa depois da saida: ha uma fonte de verdade e ela
+# nunca desiste antes da derrubada. Sem a passagem (API antiga) a troca volta ao caminho de reserva por 30 minutos.
 $handoverSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_SECONDS' 60
 $handoverMarginSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_MARGIN_SECONDS' 10
-$handoverTakeoverSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_TAKEOVER_SECONDS' 30
 $handoverOldGraceSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_OLD_GRACE_SECONDS' 10
+# Com a nova ja confirmada pela API a antiga deveria sair sozinha (4410) em poucos segundos: passados `handoverAskSeconds` sem ela
+# sair, o supervisor pede a saida ordenada (arquivo `runtime\handover-exit`, que a antiga atende como o 4410: termina o que tem em
+# curso, solta o PC e a TV e sai). So se ela nao sair em `handoverExitSeconds` depois do pedido (uma versao que nao conhece o
+# pedido, um processo preso) e que a arvore dela e derrubada.
+$handoverAskSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_ASK_SECONDS' 4
+$handoverExitSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_EXIT_SECONDS' 10
+$handoverTakeoverSeconds = $handoverAskSeconds + $handoverExitSeconds + $handoverMarginSeconds
 $script:handoverRetryAt = [DateTime]::MinValue
 # Abaixo disto de espaco livre (MB) nenhuma atualizacao comeca e o ambiente Python nunca e apagado.
 $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
@@ -1599,6 +1696,7 @@ Update-Layout
 $startupNames = Get-WindowsStartupNames
 # Sobra de uma passagem que um supervisor morto nao terminou: a marca nao vale mais (a trava morreu com ele).
 Remove-Item -LiteralPath (Join-Path $runtime 'handover-sha.txt') -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $runtime 'handover-exit') -Force -ErrorAction SilentlyContinue
 Write-SupLog 'INFO' 'supervisor iniciado'
 Touch-Alive
 Remove-StaleChildOutputs

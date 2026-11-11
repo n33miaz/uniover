@@ -65,6 +65,11 @@ INSTALLER_REL = "apps/agent/tools/install-windows.ps1"
 LAST_SYSTEM_PID = 4
 SUPPORT = Path(__file__).resolve().parent / "upgrade_drill_support"
 SHA = re.compile(r"[0-9a-f]{40}")
+# Passagem sem queda: o que o ensaio cobra (janela de recusa dos comandos do PC e do ACK à posse).
+REFUSAL_WINDOW_SECONDS = 4.0
+ACK_TO_OWNER_SECONDS = 5.0
+# O envio das teclas de prova tem de começar até isto depois do ACK, senão a janela não foi vista.
+PROBE_START_DELAY_SECONDS = 1.0
 AGENT_ID = "drill-agent"
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
@@ -1694,9 +1699,100 @@ class Drill:
         try:
             return self._offer_handover_enabled(label, files, sha)
         finally:
+            self.gateway.end_handover_probe()
             self.set_update_handover(False)
 
-    def _offer_handover_enabled(self, label: str, files: dict[str, bytes], sha: str) -> bool:
+    def arm_handover_probe(self) -> bool:
+        """Liga a medição ANTES do gatilho, mas sem enviar nada: o emissor só começa depois de
+        `allow_handover_probe` (a prova de que a candidata também tem o dublê). Aqui só a versão
+        em uso agora é conferida; sem a prova a fase falha e nenhuma tecla é enviada."""
+        if not self.verdict.check(
+            "a entrada do PC do agente em uso e o dublê do ensaio: nenhuma tecla vai ao PC",
+            self.pc_input_is_double(self.venv),
+        ):
+            return False
+        self.gateway.begin_handover_probe()
+        return True
+
+    def allow_handover_probe(self, sha: str) -> bool:
+        """Depois do gatilho: espera o ambiente da candidata (`venv-<sha>`, criado pela preparação)
+        e confere que a entrada do PC dela é o dublê; só então libera o envio das teclas. O emissor
+        já está armado, então o envio começa assim que a prova chega (um atraso grande demais perde
+        o começo da janela e reprova a medição)."""
+        proved = wait_until(
+            lambda: self.pc_input_is_double(self.base / "runtime" / f"venv-{sha}"),
+            self.args.timeout,
+        )
+        if not self.verdict.check(
+            "a entrada do PC da candidata e o dublê do ensaio: nenhuma tecla vai ao PC", proved
+        ):
+            self.gateway.end_handover_probe()
+            return False
+        self.gateway.allow_handover_probe()
+        return True
+
+    def check_handover_probe(self) -> bool:
+        """Fecha a medição das teclas de prova: todas respondidas, o envio começou logo depois do
+        ACK e a janela de recusa (do ACK à última recusa `agent_starting`) ficou curta."""
+        probe = self.gateway.end_handover_probe()
+        return self.verdict.check(
+            "os comandos do PC foram atendidos durante a passagem",
+            probe.sent > 0
+            and probe.unanswered == 0
+            and probe.start_delay_seconds <= PROBE_START_DELAY_SECONDS
+            and probe.refusal_window_seconds <= REFUSAL_WINDOW_SECONDS,
+            f"enviados={probe.sent}; respondidos={probe.answered}; "
+            f"agent_starting={probe.starting_refusals}; sem_resposta={probe.unanswered}; "
+            f"inicio_do_envio_s={probe.start_delay_seconds:.1f}; "
+            f"janela_recusa_s={probe.refusal_window_seconds:.1f}",
+        )
+
+    def check_ack_to_owner_measurement(self, window_row: str) -> bool:
+        """Confere a medida direta ACK→posse; cinco segundos é só um aviso operacional."""
+        match = re.search(r"connected_to_ready_s=([0-9.]+)", window_row)
+        total = float(match.group(1)) if match else None
+        valid = self.verdict.check(
+            "a medida ACK→posse foi registrada com valor não negativo",
+            total is not None and total >= 0,
+            f"connected_to_ready_s = {total:.1f} s"
+            if total is not None
+            else "update.window sem connected_to_ready_s",
+        )
+        if total is not None and total >= ACK_TO_OWNER_SECONDS:
+            say(
+                f"  AVISO: ACK→posse levou {total:.1f} s "
+                f"(referência operacional: {ACK_TO_OWNER_SECONDS:.0f} s)"
+            )
+        return valid
+
+    def pc_input_is_double(self, venv: Path) -> bool:
+        """A entrada do PC dentro de `venv` (com o ambiente isolado do ensaio) é o dublê, e o
+        destino do `SendInput` também? Só olha os nomes: nada é enviado."""
+        python = venv / "Scripts" / "python.exe"
+        if not python.is_file():
+            return False
+        check = (
+            "import uniover_agent.adapters.pc_windows as w, uniover_agent.composition.pc as p;"
+            "print('ok' if p.WindowsPcInput.__name__ == 'DrillPcInput' "
+            "and w.WindowsPcInput.__name__ == 'DrillPcInput' "
+            "and w._send_input.__name__ == '_drill_send_input' else 'real')"
+        )
+        try:
+            result = subprocess.run(  # noqa: S603 - o python do ambiente do próprio ensaio
+                [str(python), "-c", check],
+                env=self.env,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except OSError, subprocess.TimeoutExpired:
+            return False
+        return result.returncode == 0 and result.stdout.strip() == "ok"
+
+    def _offer_handover_enabled(  # noqa: PLR0915 - roteiro linear da fase
+        self, label: str, files: dict[str, bytes], sha: str
+    ) -> bool:
         """Oferece `sha` a um agente que roda de uma versão que SABE a passagem, com uma API que
         também a sabe: a troca não pode derrubar nada.
 
@@ -1723,8 +1819,14 @@ class Drill:
         old_version = self.version()
         starts_before = self.log_text().count(f"agente {AGENT_ID} iniciando")
         since = time.time()
+        # Armar antes do gatilho garante o emissor já no primeiro ACK (ele só envia depois da prova
+        # de que a candidata também tem o dublê: `allow_handover_probe`).
+        if not self.arm_handover_probe():
+            return False
         (self.base / "runtime" / "update-now").touch()
         timeout = self.args.timeout
+        if not self.allow_handover_probe(sha):
+            return False
         swapped = wait_until(lambda: self.version() == sha, timeout)
         ok = self.verdict.check(
             f"a versao entra pelo ponteiro (versao em uso = {sha[:12]})",
@@ -1732,6 +1834,7 @@ class Drill:
             f"ficou {self.version()[:12]}; bloqueadas: {self.blocked()}",
         )
         if not swapped:
+            self.gateway.end_handover_probe()
             return False
 
         def handed_over() -> bool:
@@ -1749,6 +1852,9 @@ class Drill:
             timeout,
         )
         ok &= self.verdict.check("o agente novo conectou e virou o dono da TV e do PC", ready)
+        # Fecha o emissor e espera até um segundo pelas respostas que já estavam em trânsito. A
+        # entrada do ensaio é dublê (sitecustomize), portanto não toca no PC.
+        ok &= self.check_handover_probe()
         procs = self.tree()
         ok &= self.verdict.check(
             "o mesmo lancador e o mesmo supervisor: nada reiniciou",
@@ -1807,6 +1913,7 @@ class Drill:
             window,
             line[-1][-160:] if line else "",
         )
+        ok &= self.check_ack_to_owner_measurement(line[-1] if line else "")
         starts = self.log_text().count(f"agente {AGENT_ID} iniciando")
         ok &= self.verdict.check(
             "o agente novo registrou 'iniciando' depois da passagem", starts > starts_before

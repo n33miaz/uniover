@@ -88,6 +88,21 @@ _MODIFIERS: Final = {"CTRL": 0x11, "ALT": 0x12, "SHIFT": 0x10, "WIN": 0x5B}
 # deixaria o PC repetindo caractere.
 HOLDABLE_KEYS: Final = frozenset(_MODIFIERS)
 KEY_ACTIONS: Final = ("PRESS", "DOWN", "UP")
+# Os modificadores, lado a lado, que uma execução anterior do agente pode ter deixado apertados
+# (código virtual, tecla "estendida"?): é o que a nova solta ao virar a dona, sem saber o que a
+# outra apertou.
+ORPHAN_MODIFIER_KEYS: Final[tuple[tuple[int, bool], ...]] = (
+    (0xA0, False),  # Shift esquerdo
+    (0xA1, False),  # Shift direito
+    (0xA2, False),  # Ctrl esquerdo
+    (0xA3, True),  # Ctrl direito
+    (0xA4, False),  # Alt esquerdo
+    (0xA5, True),  # Alt direito
+    (0x5B, True),  # Win esquerda
+    (0x5C, True),  # Win direita
+)
+# Código virtual que o Windows usa para perguntar se um botão do mouse está apertado.
+BUTTON_PROBE_KEYS: Final = {"LEFT": 0x01, "RIGHT": 0x02, "MIDDLE": 0x04}
 # Os modificadores que um clique leva (`pc.click.v2`): sem o Windows, que soltaria o menu Iniciar
 # depois do clique.
 CLICK_MODIFIERS: Final = frozenset({"CTRL", "ALT", "SHIFT"})
@@ -297,6 +312,20 @@ def held_keys_after(
 def release_inputs(buttons: Iterable[str]) -> list[RawInput]:
     """Os eventos que soltam `buttons` (numa ordem fixa, para o teste conferir)."""
     return [event for name in sorted(buttons) for event in click_inputs(name, "UP")]
+
+
+def orphan_release_inputs(
+    pressed_keys: Collection[int], pressed_buttons: Collection[str]
+) -> list[RawInput]:
+    """A soltura de cada modificador de `ORPHAN_MODIFIER_KEYS` que está em `pressed_keys` e de cada
+    botão em `pressed_buttons`. O que não está apertado não gera evento (um Alt ou um botão
+    direito "solto" sem estar apertado ativaria o menu da janela)."""
+    keys = [
+        _key(vk, extended=extended, up=True)
+        for vk, extended in reversed(ORPHAN_MODIFIER_KEYS)
+        if vk in pressed_keys
+    ]
+    return [*keys, *release_inputs(pressed_buttons)]
 
 
 def key_inputs(

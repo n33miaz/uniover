@@ -94,7 +94,7 @@ public sealed class AgentHubHandoverTests
 
     private sealed class Rig
     {
-        public Rig()
+        public Rig(bool handoverEnabled = true)
         {
             Time = new FakeTimeProvider(Start);
             Correlator = new ReplyCorrelator();
@@ -113,7 +113,8 @@ public sealed class AgentHubHandoverTests
                 scopes,
                 options,
                 Time,
-                NullLogger<AgentHub>.Instance);
+                NullLogger<AgentHub>.Instance,
+                handoverEnabled);
         }
 
         public FakeTimeProvider Time { get; }
@@ -620,8 +621,25 @@ public sealed class AgentHubHandoverTests
     }
 
     [Fact]
+    public async Task ACandidate_WithAHandoverHello_IsRejected_WhenTheFeatureIsDisabled()
+    {
+        var rig = new Rig(handoverEnabled: false);
+        var (old, oldRun, fresh, freshRun) = await ConnectAsync(rig, candidate: true);
+
+        fresh.Push(Hello(handover: true));
+        await freshRun.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        fresh.Closed.Should().Equal(AgentCloseReason.PolicyViolation);
+        old.Closed.Should().BeEmpty("a opção desligada não pode tirar a antiga do lugar");
+        rig.Connections.IsCurrent(old).Should().BeTrue();
+        rig.Connections.IsCurrent(fresh).Should().BeFalse();
+
+        await Finish(oldRun, old);
+    }
+
+    [Fact]
     public void TheModuleInfo_ListsTheHandoverFeature()
     {
-        GetModuleInfoHandler.AgentFeatures.Should().Contain("agent.handover.v1");
+        new GetModuleInfoHandler("1.2.3").Handle().Features.Should().Contain("agent.handover.v1");
     }
 }

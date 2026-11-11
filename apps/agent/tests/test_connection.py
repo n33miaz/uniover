@@ -17,6 +17,7 @@ from uniover_agent.core import (
 from uniover_agent.core.connection import (
     DUPLICATE_WINDOW_SECONDS,
     NETWORK_WAKE_MIN_SECONDS,
+    RECANDIDACY_LIMIT,
     STOP_CREDENTIAL_REJECTED,
     STOP_DUPLICATE,
     STOP_HANDOVER,
@@ -501,6 +502,7 @@ def _supervisor(  # noqa: PLR0913 - as variações que cada teste muda, todas po
     *,
     handover: bool = False,
     on_accepted: Callable[[], None] | None = None,
+    is_owner: Callable[[], bool] | None = None,
     policy: BackoffPolicy | None = None,
     rehello_interval: float = 300.0,
     keepalive_interval: float = 25.0,
@@ -516,6 +518,7 @@ def _supervisor(  # noqa: PLR0913 - as variações que cada teste muda, todas po
         policy=policy,
         handover=handover,
         on_handover_accepted=on_accepted,
+        is_owner=is_owner,
         rehello_interval=rehello_interval,
         keepalive_interval=keepalive_interval,
     )
@@ -746,3 +749,114 @@ async def test_a_plain_hello_carries_neither_handover_nor_instance_id() -> None:
     body = transport.sent[0]["body"]
     assert "handover" not in body
     assert "instanceId" not in body
+
+
+# ---- 4409 antes de virar dona: a candidata volta já ----
+
+
+async def test_a_candidate_replaced_before_it_owns_the_installation_comes_back_at_once() -> None:
+    candidate_flags: list[bool] = []
+
+    class Recording(FakeTransport):
+        async def connect(self) -> None:
+            candidate_flags.append(supervisor.handover_pending)
+            await super().connect()
+
+    transport = Recording()
+    clock = FakeClock()
+    supervisor = _supervisor(transport, clock, handover=True, is_owner=lambda: False)
+    assert supervisor.instance_id is not None
+    # A API a promoveu (confirmação) e, logo depois, um deploy a tirou do lugar com 4409.
+    transport.sessions = [[_ack(supervisor.instance_id), ConnectionReplaced("outra")], []]
+    await _run_until(supervisor, lambda: transport.connects >= 2)
+    assert transport.connects >= 2
+    # A 2ª conexão é de candidata de novo, com o mesmo `instanceId`, e sem os 60 s do `replaced`.
+    assert candidate_flags[:2] == [True, True]
+    hellos = [m["body"] for m in transport.sent if m["type"] == "agent.hello.v1"]
+    assert [h.get("handover") for h in hellos[:2]] == [True, True]
+    assert hellos[0]["instanceId"] == hellos[1]["instanceId"] == supervisor.instance_id
+    assert POLICY.replaced_wait not in clock.sleeps
+    assert clock.sleeps[0] <= POLICY.restart_now_max
+    assert supervisor.stop_reason is None
+
+
+async def test_a_run_that_already_owns_the_installation_keeps_the_replaced_wait() -> None:
+    transport = FakeTransport([[ConnectionReplaced("outra")], []])
+    clock = FakeClock()
+    supervisor = _supervisor(transport, clock, handover=True, is_owner=lambda: True)
+    await _run_until(supervisor, lambda: len(clock.sleeps) >= 1)
+    assert clock.sleeps[0] == POLICY.replaced_wait
+    assert supervisor.handover_pending is True  # sem confirmação, segue candidata como antes
+
+
+async def test_a_plain_run_never_becomes_a_candidate_when_replaced() -> None:
+    transport = FakeTransport([[ConnectionReplaced("outra")], []])
+    clock = FakeClock()
+    supervisor = _supervisor(transport, clock, is_owner=lambda: False)
+    await _run_until(supervisor, lambda: len(clock.sleeps) >= 1)
+    assert clock.sleeps[0] == POLICY.replaced_wait
+    assert supervisor.handover_pending is False
+
+
+async def test_a_candidate_that_keeps_being_replaced_falls_back_to_the_usual_wait() -> None:
+    transport = FakeTransport([[ConnectionReplaced("outra")] for _ in range(8)])
+    clock = FakeClock()
+    supervisor = _supervisor(transport, clock, handover=True, is_owner=lambda: False)
+    await _run_until(supervisor, lambda: len(clock.sleeps) >= RECANDIDACY_LIMIT + 1)
+    # As primeiras voltam já; passado o limite, a disputa vale a espera de sempre.
+    assert all(wait <= POLICY.restart_now_max for wait in clock.sleeps[:RECANDIDACY_LIMIT])
+    assert clock.sleeps[RECANDIDACY_LIMIT] == POLICY.replaced_wait
+
+
+# ---- pedido de parada vindo de fora (a saída ordenada da execução antiga) ----
+
+
+async def test_a_stop_request_ends_an_open_session_and_closes_the_channel() -> None:
+    release = asyncio.Event()
+
+    class Blocking(FakeTransport):
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            await release.wait()
+            yield "nunca"
+
+    transport = Blocking()
+    supervisor = _supervisor(transport, FakeClock())
+    task = asyncio.create_task(supervisor.run())
+    assert await settle(lambda: transport.connected)
+    supervisor.request_stop(STOP_HANDOVER)
+    await asyncio.wait_for(task, timeout=2)
+    assert supervisor.stop_reason == STOP_HANDOVER
+    assert transport.connects == 1
+    assert transport.closes == 1
+
+
+async def test_a_stop_request_ends_the_wait_after_a_replacement_without_reconnecting() -> None:
+    transport = FakeTransport([[ConnectionReplaced("outra")]])
+    clock = WaitingClock()
+    supervisor = _supervisor(transport, clock)
+    task = asyncio.create_task(supervisor.run())
+    # Dentro dos 60 s do `replaced`: é aí que o pedido tem de valer.
+    assert await settle(lambda: clock.sleeps == [POLICY.replaced_wait])
+    supervisor.request_stop(STOP_HANDOVER)
+    await asyncio.wait_for(task, timeout=2)
+    assert supervisor.stop_reason == STOP_HANDOVER
+    assert transport.connects == 1
+
+
+async def test_a_stop_asked_before_the_run_starts_is_not_lost() -> None:
+    transport = FakeTransport()
+    supervisor = _supervisor(transport, FakeClock())
+    supervisor.request_stop(STOP_HANDOVER)
+    await asyncio.wait_for(supervisor.run(), timeout=2)
+    assert supervisor.stop_reason == STOP_HANDOVER
+
+
+async def test_cancelling_the_run_still_cancels_it() -> None:
+    transport = FakeTransport()
+    supervisor = _supervisor(transport, WaitingClock())
+    task = asyncio.create_task(supervisor.run())
+    assert await settle(lambda: transport.connects >= 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert supervisor.stop_reason is None

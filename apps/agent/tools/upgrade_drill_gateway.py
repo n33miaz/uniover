@@ -43,6 +43,8 @@ ACCEPTED_TYPE = "agent.handover.accepted.v1"
 BASE_FEATURES = ("agent.diagnostics.v1",)
 # A API de verdade espera até isto o primeiro quadro da conexão nova antes de fechar a antiga.
 FIRST_FRAME_WAIT_SECONDS = 5.0
+HANDOVER_PROBE_SECONDS = 0.2
+HANDOVER_PROBE_RESPONSE_SECONDS = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +62,29 @@ class Session:
     hello: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class HandoverProbeResult:
+    sent: int
+    answered: int
+    starting_refusals: int
+    unanswered: int
+    refusal_window_seconds: float
+    start_delay_seconds: float = 0.0
+
+
+@dataclass(slots=True)
+class HandoverProbe:
+    active: bool = True
+    sent: dict[str, float] = field(default_factory=dict)
+    answered: set[str] = field(default_factory=set)
+    starting_refusals: list[float] = field(default_factory=list)
+    # `allowed`: só depois de o ensaio provar que a entrada do PC de quem vai receber as teclas é
+    # o dublê (ver `allow_handover_probe`) é que o emissor envia alguma coisa.
+    allowed: bool = False
+    started_at: float | None = None
+    first_sent_at: float | None = None
+
+
 class Gateway:
     def __init__(self, *, handover: bool = True) -> None:
         # Mudar em pleno ensaio vale para a próxima conexão: é assim que ele alterna os cenários.
@@ -74,6 +99,8 @@ class Gateway:
         self._ready = threading.Event()
         self._current: Session | None = None
         self._count = 0
+        self._handover_probe: HandoverProbe | None = None
+        self._handover_probe_task: asyncio.Task[None] | None = None
 
     # ---- ciclo de vida
 
@@ -224,6 +251,7 @@ class Gateway:
         }
         await session.socket.send(json.dumps(ack))
         self._note("ack", session.number, str(instance))
+        self._start_handover_probe(session)
         if previous is not None:
             # O 4410 só vai a quem declarou entendê-lo; a que não declarou sai como substituída.
             capabilities = previous.hello.get("capabilities")
@@ -247,6 +275,75 @@ class Gateway:
                 f"version={session.hello.get('agentVersion', '?')}",
             )
         self._observe(message)
+        self._observe_handover_probe(message)
+
+    def _start_handover_probe(self, session: Session) -> None:
+        """Começa a pedir teclas de prova só depois do ACK, já na sessão promovida."""
+        with self._lock:
+            probe = self._handover_probe
+            already_running = self._handover_probe_task is not None
+        if probe is not None and probe.active and not already_running:
+            probe.started_at = time.time()
+            self._handover_probe_task = asyncio.create_task(
+                self._run_handover_probe(session), name="handover-pc-probe"
+            )
+
+    async def _run_handover_probe(self, session: Session) -> None:
+        try:
+            while True:
+                with self._lock:
+                    probe = self._handover_probe
+                    current = self._current
+                if probe is None or not probe.active or current is not session:
+                    return
+                if not probe.allowed:
+                    await asyncio.sleep(0.05)
+                    continue
+                command_id = str(uuid.uuid4())
+                command = {
+                    "v": 1,
+                    "id": command_id,
+                    "type": "pc.key.v1",
+                    "source": "api",
+                    "target": f"agent:{AGENT_SLUG}",
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + ".000Z",
+                    "correlationId": None,
+                    "body": {"key": "F12"},
+                }
+                with self._lock:
+                    if self._handover_probe is not probe or not probe.active:
+                        return
+                    probe.sent[command_id] = time.time()
+                    if probe.first_sent_at is None:
+                        probe.first_sent_at = probe.sent[command_id]
+                try:
+                    await session.socket.send(json.dumps(command))
+                except Exception:
+                    with self._lock:
+                        probe.sent.pop(command_id, None)
+                    return
+                await asyncio.sleep(HANDOVER_PROBE_SECONDS)
+        finally:
+            with self._lock:
+                if self._handover_probe_task is asyncio.current_task():
+                    self._handover_probe_task = None
+
+    def _observe_handover_probe(self, message: dict[str, Any]) -> None:
+        if message.get("type") != "command.result.v1":
+            return
+        command_id = message.get("correlationId")
+        if not isinstance(command_id, str):
+            return
+        body = message.get("body")
+        error = body.get("error") if isinstance(body, dict) else None
+        code = error.get("code") if isinstance(error, dict) else None
+        with self._lock:
+            probe = self._handover_probe
+            if probe is None or command_id not in probe.sent:
+                return
+            probe.answered.add(command_id)
+            if code == "agent_starting":
+                probe.starting_refusals.append(time.time())
 
     @staticmethod
     def _parse(raw: str | bytes | None) -> dict[str, Any]:
@@ -339,3 +436,53 @@ class Gateway:
             for event in self.snapshot()
             if event.at >= since and event.kind == "hello" and "handover=True" in event.detail
         ]
+
+    def begin_handover_probe(self) -> None:
+        """Arma a medição dos comandos do PC da próxima passagem."""
+        with self._lock:
+            self._handover_probe = HandoverProbe()
+
+    def allow_handover_probe(self) -> None:
+        """Libera o envio das teclas de prova (o ensaio já provou que a entrada do PC é o dublê)."""
+        with self._lock:
+            if self._handover_probe is not None:
+                self._handover_probe.allowed = True
+
+    def end_handover_probe(self) -> HandoverProbeResult:
+        """Para o emissor, espera as respostas já enviadas e devolve uma contagem estável."""
+        with self._lock:
+            probe = self._handover_probe
+            if probe is None:
+                return HandoverProbeResult(0, 0, 0, 0, 0.0)
+            probe.active = False
+        # O último comando pode já estar no socket. Ele ainda merece a resposta; só então a
+        # contagem decide se houve perda. O servidor do ensaio tem laço próprio, por isso esta
+        # espera curta não bloqueia a leitura dele.
+        until = time.monotonic() + HANDOVER_PROBE_RESPONSE_SECONDS
+        while time.monotonic() < until:
+            with self._lock:
+                pending = set(probe.sent) - probe.answered
+            if not pending:
+                break
+            time.sleep(0.01)
+        with self._lock:
+            sent = len(probe.sent)
+            answered = len(probe.answered)
+            refusals = probe.starting_refusals
+            window = (
+                max(refusals) - probe.started_at
+                if refusals and probe.started_at is not None
+                else 0.0
+            )
+            delay = (
+                probe.first_sent_at - probe.started_at
+                if probe.first_sent_at is not None and probe.started_at is not None
+                else 0.0
+            )
+            result = HandoverProbeResult(
+                sent, answered, len(refusals), sent - answered, window, delay
+            )
+            task, loop = self._handover_probe_task, self._loop
+        if task is not None and loop is not None:
+            loop.call_soon_threadsafe(task.cancel)
+        return result

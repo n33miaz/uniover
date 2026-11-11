@@ -122,7 +122,11 @@ Nunca toca em `app`, `app.previous`, configuração, certificado nem registros.
 > agente a lê na partida. Desligada, o supervisor nunca sobe `run --handover`, o agente não declara `agent.handover.v1`
 > (a API fecha com 4409, que toda versão entende) e a troca é a **reserva** (item 3): versão preparada em segundo plano,
 > ponteiro e reinício. A reserva é a que o ensaio prova em todas as fases; só a fase C2 liga a chave, para continuar
-> provando a passagem. Ela fica desligada até as pendências do fim desta seção serem tratadas.
+> provando a passagem. A API anuncia `agent.handover.v1` por padrão para preservar a compatibilidade atual, mas o
+> anúncio global pode ser retirado com `Agent__Handover__Enabled=false` (`Agent:Handover:Enabled`, padrão `true`): todos
+> os agentes então usam a reserva, sem mudança de código. A chave vale para a descoberta e para o hub, mas é lida na
+> criação dos singletons: desligá-la ou religá-la exige reiniciar a API. A passagem local continua desligada até cumprir o critério de
+> ativação ao fim desta seção.
 
 A atualização **prepara** a versão nova com o agente antigo servindo e a troca é gravar um ponteiro, não mover pastas
 (o ambiente Python instala o projeto em modo editável, apontando para a pasta onde foi sincronizado: nada de renomear a
@@ -144,12 +148,15 @@ pasta de um agente vivo).
    antiga entende como "terminar sem reconectar" (só se ela declarou `agent.handover.v1` no `hello`; senão sai com 4409
    `replaced`): a API espera os comandos que a antiga recebeu responderem (até 5 s, e as respostas dela ainda valem),
    o que estava em curso termina (até 2 s), as teclas seguradas são soltas, a TV e o canal direto fecham (cada passo com
-   prazo de 10 s) e ela sai com 0. Depois da confirmação a nova **não desiste mais por prazo próprio** (a antiga já foi
-   mandada sair e não reconecta; sair deixaria o PC sem agente): espera a trava quanto for preciso, e só antes da
-   confirmação desiste em 40 s (contados do começo do processo). A nova só abre o que é compartilhado ou físico (a trava da instalação, o rastro da
+   prazo de 10 s) e ela sai com 0. Depois da confirmação a nova espera a trava pelo prazo que o supervisor deriva do
+   pedido de saída, da espera ordenada e da margem (`UNIOVER_HANDOVER_TAKEOVER_SECONDS`, passado pelo supervisor); sem ela sai com o código 5 de adiamento, para o
+   supervisor voltar pela reserva. A nova só abre o que é compartilhado ou físico (a trava da instalação, o rastro da
    execução, o diário, a fila de diagnóstico, a TV, o canal direto, o vigia do endereço da TV) **depois** de a antiga
-   sair; um comando que chega antes é recusado na hora (`agent_starting`), sem prender a leitura do canal. Só então o
-   supervisor grava o ponteiro, mantém a versão anterior para voltar atrás e adota o processo novo.
+   sair; um comando que chega antes é recusado na hora (`agent_starting`), sem prender a leitura do canal. Pegando a
+   trava, ela vira a dona logo: se a antiga foi derrubada solta os modificadores e botões do mouse que ela deixou apertados, abre o diário e
+   passa a atender o PC; a arrumação da pasta roda em segundo plano e o preparo da TV (ADB) tem prazo próprio de 20 s
+   (depois dele a TV segue e o preparo termina sozinho), e só os comandos `tv.*` seguem recusados até ele acabar. Só
+   então o supervisor grava o ponteiro, mantém a versão anterior para voltar atrás e adota o processo novo.
 3. **Reserva** (o padrão: a passagem desligada, ou a API sem a capacidade, ou a passagem que não deu): a versão já está
    preparada em segundo plano e `self-update --apply` a aplica **logo**, sem esperar ociosidade (pedido do dono), gravando
    o ponteiro; o agente reinicia e sobe da versão nova (o ambiente já está pronto: nada de `uv sync` com o agente
@@ -164,8 +171,11 @@ pasta de um agente vivo).
    supervisor lhe passa o instante absoluto (`UNIOVER_HANDOVER_DEADLINE`, o prazo dele menos 10 s de margem) para ele
    desistir sozinho (saída 5, "adiada") antes de o supervisor agir. Se ela conecta ("conectou" é a confirmação `agent.handover.accepted.v1` da API: só então o
    `runtime\connected.json` dela traz o código da passagem) a API já mandou a antiga sair e ela não reconecta, então daí
-   em diante **só a nova pode servir**: se a antiga não sai em 60 s, é a **antiga** que o supervisor derruba (a nova pega
-   a trava, vira a dona e o ponteiro muda; se ela não assume em 30 s, `UNIOVER_SUPERVISOR_HANDOVER_TAKEOVER_SECONDS`, a
+   em diante **só a nova pode servir**: mesmo se a antiga sai sozinha, o supervisor exige `readyAt` no prazo derivado antes de
+   gravar o ponteiro ou confirmar a prova. Se a antiga não sai sozinha, o supervisor lhe **pede a saída ordenada** (4 s depois da confirmação, ou ao fim dos
+   60 s; `UNIOVER_SUPERVISOR_HANDOVER_ASK_SECONDS`) e só depois de mais 10 s (`..._HANDOVER_EXIT_SECONDS`) é a **antiga**
+   que ele derruba, sem esperar o prazo geral (a nova pega
+   a trava, vira a dona e o ponteiro muda; se ela não assume no prazo derivado, `UNIOVER_HANDOVER_TAKEOVER_SECONDS`, a
    versão fica **adiada** e o agente reinicia pela versão em uso); e se a nova cai depois de conectada, a antiga ganha
    10 s para terminar e é derrubada, e o laço reinicia o agente na hora, pela versão em uso (sem esperar a detecção de
    travamento). A saída 5 ou 7 e a falta de assunção não são culpa da versão nova: ela fica **adiada** (24 h, 72 h, uma
@@ -175,23 +185,38 @@ pasta de um agente vivo).
    trava por identidade (`Local\UniOver-AgentSlug-<hash do agent_id>`, que vale para a máquina toda e, na passagem, só é
    tomada depois de a antiga sair); duas substituições (`4409`) em 10 minutos fazem o agente sair (código 7) e registrar
    `agent.duplicate`. O supervisor trata o 7 como o 5: espera calma, sem contar como queda da versão em prova.
-6. **Medida**: o supervisor registra `update.window` com os tempos (`mode=handover`: do início da nova até conectar, até a
-   antiga sair e até a nova virar a dona; `mode=restart`: do encerramento do agente até a primeira conexão).
+6. **Medida**: o supervisor registra `update.window` com os tempos (`mode=handover`: do início da nova até conectar
+   (`new_start_to_connected_s`) e do ACK da API até a nova virar a dona (`connected_to_ready_s`, `readyAt` menos `connectedAt`,
+   sempre maior ou igual a zero); `mode=restart`: do encerramento do agente até a primeira conexão).
 
-**Pendências da passagem** (achados da 4ª releitura, ainda NÃO corrigidos; por isso `update_handover` vem desligada):
+**Tratadas** (eram as três pendências de maior risco da 4ª releitura):
 
-- **[ALTA] 4409 depois do ACK.** Um deploy da API no meio da passagem (ou uma queda curta da antiga dentro dos 5 s do
-  `DrainWait`, ou uma antiga sem `agent.handover.v1`) faz a nova receber 4409 pela rota comum e esperar 60 s
-  (`replaced_wait`) enquanto o supervisor, no prazo, derruba a antiga: o PC fica até ~60 s sem agente e uma tecla ou
-  botão que a antiga segurava fica apertado (`release_all` só conhece o que o próprio processo apertou). Correções
-  previstas: (a) a nova volta a ser candidata (mesmo `instanceId`) se recebe `ConnectionReplaced` antes de ser dona e
-  reconecta já; (b) o supervisor pede antes uma saída ordenada da antiga (sinal em `runtime\`, que ela atende com
-  `drain` e `aclose`) e só depois força; (c) a nova solta, de forma genérica, os modificadores e botões ao virar dona.
-- **[MÉDIA] Capacidades da TV somem do `hello` por até 5 min** depois da passagem: `tv.prepare` roda em `take_over`
-  depois do `hello` e nada o reenvia. Prever `supervisor.hello_now()` depois de `owner.set()` e cobrir no teste.
-- **[MÉDIA] Janela de recusa `agent_starting` longa:** `owner.set()` só roda depois de `start_shared_state()` (arrumação
-  da pasta, até 60 s) e de `tv.prepare` (ADB). Abrir `owner` logo depois da trava, arrumar em segundo plano e preparar a
-  TV com prazo próprio.
+- **4409 depois do ACK.** (a) A nova que recebe `ConnectionReplaced` antes de ser dona volta a ser candidata (mesmo
+  `instanceId`, rota `/handover`) e reconecta em 0,2 a 0,5 s, sem os 60 s de `replaced_wait` (depois de 5 voltas em 1
+  minuto a disputa vale a espera de sempre; já dona, nada muda). A confirmação que já tinha vinha da conexão anterior e
+  deixa de valer: o prazo de confirmação recomeça e a nova só tenta a trava, e só vira dona, com a confirmação da
+  candidatura de agora. (b) A execução em uso atende o pedido de saída ordenada do supervisor
+  (`runtime\handover-exit`): para a conexão em qualquer ponto em que esteja, termina o que tem em curso (`drain`),
+  fecha tudo e sai com 0, como no 4410; o supervisor só a derruba depois do prazo do pedido (uma antiga de antes desta
+  versão não conhece o pedido, e para ela só vale a derrubada). O arquivo tem formato estrito,
+  `handover-exit:<código da passagem, 32 hexadecimais>`, gravado de uma vez (temporário e renomeação); a execução da
+  passagem, que tem o mesmo código, o ignora. Vazio, pela metade, de outro formato ou mais velho que a partida da
+  execução que o lê é ignorado e registrado uma vez; o `run` comum também vigia (será a "antiga" da próxima passagem),
+  nas mesmas regras. O supervisor e o agente apagam o arquivo que sobrar. (c) A nova solta, no laço da entrada, os
+  modificadores (Shift, Ctrl, Alt e Win, dos dois lados) e os botões do mouse que o Windows dá por apertados
+  (`GetAsyncKeyState`; só manda o que está apertado, para não ativar o menu da janela nem o de contexto) **só quando a
+  antiga não saiu de forma ordenada** (o rastro `run-state.json` dela ficou `running`: foi derrubada ou morreu). Numa
+  saída ordenada a antiga já soltou o que apertou (`release_all`), e o que estiver apertado depois pode ser de uma
+  pessoa de verdade.
+- **Capacidades da TV no `hello`.** O preparo da TV virou uma tarefa que, ao terminar, chama `supervisor.hello_now()`:
+  o que ele declara (ADB e derivados) chega à API na hora, e não no `hello` de 5 minutos.
+- **Janela `agent_starting`.** A dona abre logo depois da trava (`owner.set()`): a arrumação da pasta roda em segundo
+  plano e o preparo da TV tem prazo próprio (`HANDOVER_TV_PREPARE_SECONDS`, 20 s; falha ou estouro não derrubam a dona).
+  O que depende da TV (os comandos `tv.*`, o vigia do endereço, o anúncio da conexão e as tarefas de fundo da TV)
+  espera o preparo ou o prazo; o PC não espera. Sem a passagem (`run` comum) nada disso muda.
+
+**Pendências da passagem** (achados da 4ª releitura que sobram; `update_handover` segue desligada por padrão):
+
 - **[BAIXA]** Se o ACK se perde, a nova segue candidata para sempre (o `hello` periódico leva `handover`/`instanceId` e
   toda reconexão vai à rota `/handover`; com a API revertida isso vira código 6 já sendo dona): zerar
   `_handover_pending` também quando `take_over` pega a trava. E no supervisor o teste do código 6 vem antes da marca de
@@ -209,6 +234,12 @@ pasta de um agente vivo).
   se o append em disco não for atômico entre processos); (c) conferir se algum `transport.send` concorrente (uma recusa
   `agent_starting` da conexão anterior) pode sair entre o `connect` e o `hello` da candidata, que a API descarta se o
   primeiro quadro não for o `hello`.
+
+**Critério para ligar.** A chave local continua desligada por padrão. Só ligaremos `update_handover` depois de cinco
+passagens seguidas em um PC real, com ACK→`readyAt` em até 3 s (o ensaio reprova a janela de recusa acima de 4 s e só avisa acima de 5 s), zero diagnósticos
+`update.handover_forced` ou `update.handover_failed` e nenhuma tecla presa. Para desligar localmente, use
+`update_handover = false` no `agent.toml` ou `UNIOVER_UPDATE_HANDOVER=0`; para desligar globalmente, configure
+`Agent__Handover__Enabled=false`, que retira a capacidade da API e força a reserva em todos os agentes.
 
 `runtime\current.json` guarda a versão em uso e a anterior (caminhos relativos à pasta da instalação, validados); sem o
 arquivo vale o layout de sempre (`app` + `runtime\venv`). O supervisor, o lançador e o agente leem o mesmo formato.

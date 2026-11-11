@@ -474,3 +474,28 @@ def test_a_zoom_with_another_modifier_held_still_wraps_the_ctrl() -> None:
     events = pc_inputs.zoom_inputs(1, already_held={0x12})  # o Alt do Alt+Tab
     assert events[0] == RawInput("keyboard", vk=_CTRL)
     assert events[-1] == RawInput("keyboard", flags=KEY_UP, vk=_CTRL)
+
+
+def test_the_orphan_release_lets_go_of_only_what_is_down_in_the_reverse_order() -> None:
+    events = pc_inputs.orphan_release_inputs({0xA0, 0xA3, 0x5B}, ["RIGHT", "LEFT"])
+    assert events == [
+        RawInput("keyboard", flags=KEY_UP | KEY_EXTENDED, vk=0x5B),
+        RawInput("keyboard", flags=KEY_UP | KEY_EXTENDED, vk=0xA3),
+        RawInput("keyboard", flags=KEY_UP, vk=0xA0),
+        RawInput("mouse", pc_inputs.MOUSE_LEFTUP),
+        RawInput("mouse", pc_inputs.MOUSE_RIGHTUP),
+    ]
+
+
+def test_the_orphan_release_sends_nothing_when_nothing_is_down() -> None:
+    assert pc_inputs.orphan_release_inputs(set(), []) == []
+    # Um código que não é de modificador (uma letra apertada) nunca é solto por aqui.
+    assert pc_inputs.orphan_release_inputs({ord("A")}, []) == []
+
+
+def test_the_orphan_release_covers_shift_ctrl_alt_win_on_both_sides_and_the_three_buttons() -> None:
+    every_key = {vk for vk, _ in pc_inputs.ORPHAN_MODIFIER_KEYS}
+    events = pc_inputs.orphan_release_inputs(every_key, list(pc_inputs.BUTTON_PROBE_KEYS))
+    assert {e.vk for e in events if e.kind == "keyboard"} == every_key
+    assert all(e.flags & KEY_UP for e in events if e.kind == "keyboard")
+    assert len([e for e in events if e.kind == "mouse"]) == 3

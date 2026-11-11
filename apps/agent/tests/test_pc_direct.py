@@ -88,6 +88,9 @@ class FakeInput:
     def release_all(self) -> None:
         self.calls.append(("release_all",))
 
+    def release_orphans(self) -> None:
+        self.calls.append(("release_orphans",))
+
 
 class FakePower:
     def lock(self) -> None: ...

@@ -74,7 +74,12 @@ public static class DevicesModule
         services.AddAuditPurge<DevicesDbContext>(
             configuration, DevicesDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
-        services.AddSingleton(new GetModuleInfoHandler(version));
+        // A API pode retirar a capacidade da descoberta de uma vez, sem publicar código novo. O
+        // agente então não declara `agent.handover.v1` e o supervisor usa a troca de reserva.
+        // A chave é lida na criação dos singletons: para desligá-la ou religá-la é preciso
+        // reiniciar a API; recarregar a configuração não altera sessões nem serviços já criados.
+        var handoverEnabled = configuration.GetValue("Agent:Handover:Enabled", true);
+        services.AddSingleton(new GetModuleInfoHandler(version, handoverEnabled));
         services.AddScoped<StartPairingHandler>();
         services.AddScoped<PollPairingHandler>();
         services.AddScoped<ApprovePairingHandler>();
