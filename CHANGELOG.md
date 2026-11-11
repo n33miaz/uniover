@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.58.0](https://github.com/n33miaz/uniover/compare/v0.57.0...v0.58.0) (2026-11-11)
+
+
+### Devices 0.55.0
+
+#### Features
+
+* **pc:** pinch zoom and absolute volume
+
+
+### Web 0.56.0
+
+#### Features
+
+* **pc:** pinch zoom and absolute volume
+
+
+### Agent 0.51.0
+
+#### Features
+
+* **pc:** pinch zoom and absolute volume
+
 ## [0.57.0](https://github.com/n33miaz/uniover/compare/v0.56.0...v0.57.0) (2026-11-11)
 
 
