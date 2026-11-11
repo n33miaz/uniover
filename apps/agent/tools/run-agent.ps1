@@ -42,8 +42,6 @@ function Get-WindowsStartupNames {
     return $names
 }
 
-$startupNames = Get-WindowsStartupNames
-
 function Find-Uv {
     $found = Get-Command uv -ErrorAction SilentlyContinue
     if ($found) { return $found.Source }
@@ -427,7 +425,8 @@ function Get-Tail([string]$Text) {
 function Stop-VenvUsers {
     # Qualquer processo rodando do ambiente (icone da bandeja, agente que sobrou) prende o
     # uniover-agent.exe e faz o sync falhar para sempre. Antes de sincronizar, todos saem.
-    $venvPath = Join-Path $runtime 'venv'
+    $venvPath = $script:agentVenv
+    if (-not $venvPath) { $venvPath = Join-Path $runtime 'venv' }
     Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction SilentlyContinue | Where-Object {
         ($_.ProcessId -ne $PID) -and (
             ($_.ExecutablePath -and $_.ExecutablePath -like "$venvPath\*") -or
@@ -469,7 +468,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
         # Versao estavel (sem prova) com um ambiente que ja rodou: sobe com ele, como no ramo de pouco espaco. O sync que
         # estoura o prazo (disco cheio, rede lenta) nao pode manter o agente fora do ar enquanto ha um ambiente bom no lugar.
         # Em prova a versao precisa do ambiente novo: continua contando como falha (e volta para a anterior).
-        if (-not $KeepEnvironment -and (Test-Path -LiteralPath (Join-Path (Join-Path $runtime 'venv') 'Scripts\python.exe'))) {
+        if (-not $KeepEnvironment -and (Test-Path -LiteralPath (Join-Path (Get-VenvDir) 'Scripts\python.exe'))) {
             if ($lowDisk) { Note-LowDiskDiagnostic 'error' 'pouco espaco em disco: o sync estourou o prazo e o agente subiu com o ambiente atual' }
             $script:keptForDisk = $lowDisk
             Write-SupLog 'WARNING' 'subo o agente com o ambiente Python que ja existe'
@@ -485,7 +484,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
         Add-Diagnostic 'update.sync_failed' 'error' 'nao consegui preparar o ambiente Python da versao em prova'
         return $false
     }
-    $venv = Join-Path $runtime 'venv'
+    $venv = Get-VenvDir
     # Disco quase cheio: refazer o ambiente (centenas de MB) so pioraria. O ambiente que existe e mantido e o agente sobe
     # com ele; sem ambiente nenhum nao ha o que subir e a volta seguinte tenta de novo quando houver espaco.
     if ($lowDisk) {
@@ -510,12 +509,33 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     return $true
 }
 
+function Get-UpdateHandoverEnabled {
+    # `update_handover` (padrao DESLIGADO): a variavel UNIOVER_UPDATE_HANDOVER manda; sem ela vale a chave do config\agent.toml. Lida
+    # a cada tentativa de troca (ligar ou desligar vale na proxima). Desligada, o supervisor nunca sobe `run --handover`: a troca e a
+    # de reserva (versao preparada em segundo plano, ponteiro e reinicio).
+    try {
+        $value = [string][Environment]::GetEnvironmentVariable('UNIOVER_UPDATE_HANDOVER')
+        if ($value) { return ($value.Trim() -match '^(1|true|yes|on)$') }
+        $file = Join-Path $base 'config\agent.toml'
+        if (Test-Path -LiteralPath $file) {
+            $text = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8)
+            if ($text -match '(?mi)^\s*update_handover\s*=\s*(true|false)\b') { return ($Matches[1].ToLowerInvariant() -eq 'true') }
+        }
+    } catch { }
+    return $false
+}
+
 function Schedule-NextUpdate([int]$Failures = 0) {
     # Normal: 10 a 12 minutos. O agente encontra novas versoes sozinho, sem depender do botao da bandeja.
     # Apos falhas, tenta em 3, 6, 12, 24 e no maximo 30 minutos; evita uma consulta em laco sem atrasar horas.
     if ($Failures -gt 0) {
         $minutes = [Math]::Min(3 * [Math]::Pow(2, [Math]::Min($Failures - 1, 4)), 30)
         $when = (Get-Date).AddMinutes($minutes).AddSeconds((Get-Random -Minimum 0 -Maximum 120))
+    }
+    elseif (Test-Path -LiteralPath (Join-Path $runtime 'prepared.json')) {
+        # Uma versao ficou preparada e a troca esperou a TV ou o PC ficarem parados (ou outra coisa a segurou): volta a tentar em 1
+        # minuto, e nao em 10, para aplicar assim que houver 60 s de folga (o teto da espera e de 10 minutos).
+        $when = (Get-Date).AddSeconds(60 + (Get-Random -Minimum 0 -Maximum 15))
     }
     else {
         $when = (Get-Date).AddMinutes(10).AddSeconds((Get-Random -Minimum 0 -Maximum 120))
@@ -585,7 +605,7 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
     # So quando o ambiente existe e esta volta (ou uma anterior desta execucao) ja o sincronizou para ESTA versao: na primeira
     # volta o update roda antes do sync, e depois de uma volta atras o ambiente e o da versao rejeitada; ali o `uv run`
     # sincroniza sozinho, como sempre fez.
-    $venvPython = Join-Path $runtime 'venv\Scripts\python.exe'
+    $venvPython = Join-Path (Get-VenvDir) 'Scripts\python.exe'
     $keptOk = ($script:keptForDisk -and $script:noSyncLaunch)
     $usesKeptEnvironment = ($keptOk -and -not ($script:syncedVersion -and $script:syncedVersion -eq $before))
     if ((($script:syncedVersion -and $script:syncedVersion -eq $before) -or $keptOk) -and (Test-Path -LiteralPath $venvPython)) { $env:UV_NO_SYNC = '1' }
@@ -599,6 +619,26 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
     $exitCode = $run.ExitCode
     $output = $run.Output
     $after = Get-Version
+    # Uma versao ficou PREPARADA (codigo, ambiente e auto-diagnostico prontos, com o agente atual servindo o tempo todo): ela
+    # entra agora, sem esperar ociosidade. Com o agente de pe, a passagem sem queda (Invoke-Handover); sem ele, ou se a API ainda
+    # nao sabe fazer a passagem, o caminho de reserva: `self-update --apply` grava o ponteiro (esperando a TV e o PC ficarem
+    # parados) e quem chamou reinicia o agente.
+    if (-not $run.TimedOut -and $exitCode -eq 0 -and (Get-Command Get-PreparedSlot -ErrorAction SilentlyContinue)) {
+        $slot = Get-PreparedSlot
+        if ($null -ne $slot) {
+            $handover = 'skip'
+            if ($null -ne $process -and -not $process.HasExited -and (Get-Date) -ge $script:handoverRetryAt -and (Get-UpdateHandoverEnabled)) { $handover = Invoke-Handover $Uv $slot }
+            if ($handover -eq 'done' -or $handover -eq 'failed') { return $false }
+            if ($handover -eq 'unsupported') { $script:handoverRetryAt = (Get-Date).AddMinutes(30) }
+            if ($Forced) { $env:UNIOVER_UPDATE_FORCE = '1' }
+            try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" uniover-agent self-update --apply') $updateTimeoutSeconds }
+            finally { Remove-Item -LiteralPath 'Env:UNIOVER_UPDATE_FORCE' -ErrorAction SilentlyContinue }
+            Update-Layout
+            $exitCode = $run.ExitCode
+            $output = $run.Output
+            $after = Get-Version
+        }
+    }
     # O codigo de manutencao nao importou no ambiente apenas mantido (faltam pacotes dele): repetir a cada checagem so geraria o mesmo
     # erro. Registra uma vez e volta ao caminho normal (o update espera o sync completo da proxima subida).
     if ($usesKeptEnvironment -and -not $run.TimedOut -and $exitCode -ne 0 -and $before -eq $after -and $output -match 'ModuleNotFoundError|ImportError|No module named|Failed to spawn') {
@@ -694,6 +734,11 @@ function Note-Run([double]$Seconds) {
         [System.IO.File]::WriteAllText($trial, ($parts[0] + '|' + $falls), [System.Text.Encoding]::ASCII)
         return
     }
+    if ($script:pointerActive) {
+        # So grava o ponteiro de novo: a anterior esta inteira, com o ambiente dela.
+        [void](Invoke-PointerRollback 'a versao nova caiu repetidamente; voltei para a anterior' $true)
+        return
+    }
     $bad = Join-Path $runtime ('app.rejected-' + $parts[0].Substring(0, 12))
     Remove-Item -LiteralPath $bad -Recurse -Force -ErrorAction SilentlyContinue
     try {
@@ -712,7 +757,7 @@ function Note-Run([double]$Seconds) {
 # Nenhum processo novo pode abrir (nem piscar) uma janela. Este script ja roda num console oculto, e os filhos
 # chamados direto (`& $Uv ...`, `& taskkill.exe ...`) herdam esse console. Para o que precisa ficar vivo em paralelo
 # usamos a classe Process com CreateNoWindow: o Start-Process cria um console novo e so depois o esconde (pisca).
-function Start-Hidden([string]$File, [string]$Arguments, [bool]$NoSync = $false) {
+function Start-Hidden([string]$File, [string]$Arguments, [bool]$NoSync = $false, [hashtable]$Environment = $null) {
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $File
     $info.Arguments = $Arguments
@@ -721,6 +766,8 @@ function Start-Hidden([string]$File, [string]$Arguments, [bool]$NoSync = $false)
     # So no filho (o ambiente do supervisor nao muda): o `uv run` do agente e do icone nao faz sync implicito, sem prazo e sem
     # --frozen, num ambiente que este supervisor acabou de preparar (ou de manter) com prazo.
     if ($NoSync) { $info.EnvironmentVariables['UV_NO_SYNC'] = '1' }
+    # So no filho: a passagem sem queda sobe a versao nova com o ambiente e a pasta dela, sem mexer no deste supervisor.
+    if ($null -ne $Environment) { foreach ($name in $Environment.Keys) { $info.EnvironmentVariables[[string]$name] = [string]$Environment[$name] } }
     return [System.Diagnostics.Process]::Start($info)
 }
 
@@ -970,6 +1017,7 @@ function Test-RollbackReady {
         if (-not (Test-Path -LiteralPath $trial)) { return $false }
         $parts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
         if ($parts.Count -ne 2 -or $parts[0] -ne (Get-Version)) { return $false }
+        if ($script:pointerActive -and -not (Test-SlotReady $script:previousSlot)) { return $false }
         return ((Test-Path -LiteralPath (Join-Path $previous 'pyproject.toml')) -and (Test-Path -LiteralPath (Join-Path $previous 'tools\run-agent.ps1')))
     } catch { return $false }
 }
@@ -995,6 +1043,7 @@ function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedi
     # em `.deferred-lowdisk` (`sha|epoch`, o mesmo epoch da linha de `.deferred-versions`) e, se for a unica devolucao desse commit,
     # o primeiro adiamento dele expira quando o disco volta com folga (o `self-update` le).
     try {
+        if ($script:pointerActive) { return (Invoke-PointerRollback $Reason $Block $Cause) }
         if (-not (Test-Path -LiteralPath $previous)) { return $false }
         $bad = Get-Version
         $tag = 'manual'
@@ -1036,6 +1085,461 @@ function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedi
     }
 }
 
+function Get-VenvDir {
+    # O ambiente Python da versao em uso (o do ponteiro, ou runtime\venv no layout de sempre).
+    if ($script:agentVenv) { return $script:agentVenv }
+    return (Join-Path $runtime 'venv')
+}
+
+# --- Versao em uso: o ponteiro runtime\current.json ---------------------------------------------------------------------
+# Cada versao preparada mora em `app.staging\<sha>` com o proprio ambiente Python em `runtime\venv-<sha>`; nada e renomeado
+# (o ambiente instala o projeto em modo editavel, apontando para a pasta onde foi sincronizado). Trocar de versao e gravar
+# este arquivo, e a volta atras e grava-lo de novo com a anterior. Sem o arquivo (ou com ele ilegivel/incompleto) vale o
+# layout de sempre: `app` + `runtime\venv`, que nunca e apagado. O mesmo formato e lido pelo agente Python e pelo lancador.
+$script:pointerActive = $false
+$script:agentVenv = Join-Path $runtime 'venv'
+$script:currentSlot = $null
+$script:previousSlot = $null
+
+function Read-JsonFile([string]$Path) {
+    # Um JSON pequeno como hashtable; nulo se faltar, estiver ilegivel ou for grande demais (nao e nosso).
+    try {
+        if ((Get-Item -LiteralPath $Path -ErrorAction Stop).Length -gt 4096) { return $null }
+        Add-Type -AssemblyName System.Web.Extensions
+        $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+        return $serializer.DeserializeObject([System.IO.File]::ReadAllText($Path))
+    } catch { return $null }
+}
+
+function Resolve-InBase([string]$Relative) {
+    # Caminho relativo da instalacao para o completo. Nulo se for absoluto, tiver `..` ou sair da pasta da instalacao.
+    if (-not $Relative -or $Relative.Length -gt 260) { return $null }
+    if ([System.IO.Path]::IsPathRooted($Relative) -or $Relative -match '(^|[\\/])\.\.([\\/]|$)') { return $null }
+    try {
+        $full = [System.IO.Path]::GetFullPath((Join-Path $base $Relative))
+        $root = [System.IO.Path]::GetFullPath($base).TrimEnd('\') + '\'
+        if ($full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { return $full }
+    } catch { }
+    return $null
+}
+
+function Get-RelativeToBase([string]$Full) {
+    $root = [System.IO.Path]::GetFullPath($base).TrimEnd('\') + '\'
+    return [System.IO.Path]::GetFullPath($Full).Substring($root.Length)
+}
+
+function ConvertTo-Slot($Raw) {
+    # {sha, app, venv} do arquivo (caminhos relativos) para um hashtable de caminhos completos; nulo se invalido.
+    if ($null -eq $Raw -or $Raw -isnot [System.Collections.IDictionary]) { return $null }
+    $app = Resolve-InBase ([string]$Raw['app'])
+    $venv = Resolve-InBase ([string]$Raw['venv'])
+    if (-not $app -or -not $venv) { return $null }
+    $sha = [string]$Raw['sha']
+    if ($sha -notmatch '^[0-9a-f]{40}$') { $sha = $null }
+    return @{ sha = $sha; app = $app; venv = $venv }
+}
+
+function Test-SlotReady($Slot, [bool]$NeedEnvironment = $true) {
+    # A versao esta inteira: codigo, o supervisor dela e (para as preparadas) o ambiente Python.
+    if ($null -eq $Slot) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $Slot.app 'pyproject.toml')) -or -not (Test-Path -LiteralPath (Join-Path $Slot.app 'tools\run-agent.ps1'))) { return $false }
+    if ($NeedEnvironment -and -not (Test-Path -LiteralPath (Join-Path $Slot.venv 'Scripts\python.exe'))) { return $false }
+    return $true
+}
+
+function Update-Layout {
+    # Resolve de novo qual versao esta em uso: o ponteiro (se a versao dele esta inteira, senao a anterior dele) ou o layout
+    # de sempre. Define `$source`, `$previous`, o ambiente Python e `UNIOVER_APP_DIR` (que o agente e o icone leem).
+    $legacySource = Join-Path $base 'app'
+    $legacy = @{ sha = $null; app = $legacySource; venv = (Join-Path $runtime 'venv') }
+    $script:pointerActive = $false
+    $script:currentSlot = $legacy
+    $script:previousSlot = $null
+    $script:source = $legacySource
+    $script:previous = Join-Path $base 'app.previous'
+    $script:agentVenv = $legacy.venv
+    $pointer = Read-JsonFile (Join-Path $runtime 'current.json')
+    if ($null -ne $pointer -and $pointer -is [System.Collections.IDictionary]) {
+        $current = ConvertTo-Slot $pointer['current']
+        $before = ConvertTo-Slot $pointer['previous']
+        if (Test-SlotReady $current) {
+            $script:pointerActive = $true
+            $script:currentSlot = $current
+            $script:previousSlot = $before
+        }
+        elseif (Test-SlotReady $before) {
+            # A versao do ponteiro nao esta inteira (apagada, ambiente perdido): sobe a anterior, e o aviso diz.
+            Write-SupLog 'WARNING' 'a versao do ponteiro nao esta inteira; uso a anterior'
+            Add-Diagnostic 'update.pointer_unusable' 'warn' 'a versao em uso nao estava inteira; o agente subiu com a anterior'
+            $script:pointerActive = $true
+            $script:currentSlot = $before
+            $script:previousSlot = $null
+        }
+        elseif ($null -ne $current) {
+            Write-SupLog 'WARNING' 'o ponteiro aponta para uma versao incompleta e nao ha anterior; volto ao layout de sempre'
+        }
+    }
+    $script:source = $script:currentSlot.app
+    $script:agentVenv = $script:currentSlot.venv
+    if ($script:pointerActive -and $null -ne $script:previousSlot) { $script:previous = $script:previousSlot.app }
+    $env:UV_PROJECT_ENVIRONMENT = $script:agentVenv
+    $env:UNIOVER_APP_DIR = $script:source
+}
+
+function Write-Pointer($Current, $Previous) {
+    # Grava `runtime\current.json` de uma vez (temporario + Move-Item). Nao levanta erro: devolve se gravou.
+    try {
+        $body = @{ v = 1; current = @{ sha = $Current.sha; app = (Get-RelativeToBase $Current.app); venv = (Get-RelativeToBase $Current.venv) } }
+        if ($null -ne $Previous) { $body['previous'] = @{ sha = $Previous.sha; app = (Get-RelativeToBase $Previous.app); venv = (Get-RelativeToBase $Previous.venv) } }
+        Add-Type -AssemblyName System.Web.Extensions
+        $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+        $path = Join-Path $runtime 'current.json'
+        $temp = $path + '.tmp'
+        [System.IO.File]::WriteAllText($temp, $serializer.Serialize($body), (New-Object System.Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $temp -Destination $path -Force
+        return $true
+    } catch { return $false }
+}
+
+function Get-PreparedSlot {
+    # A versao que o `self-update` deixou pronta (runtime\prepared.json) e ainda esta inteira, ou nulo.
+    $slot = ConvertTo-Slot (Read-JsonFile (Join-Path $runtime 'prepared.json'))
+    if ($null -eq $slot -or -not $slot.sha) { return $null }
+    if ($slot.app -ne (Resolve-InBase ('app.staging\' + $slot.sha))) { return $null }
+    if (-not (Test-SlotReady $slot) -or -not (Test-Path -LiteralPath (Join-Path $slot.app '.version'))) { return $null }
+    return $slot
+}
+
+function Add-BlockedVersion([string]$Sha) {
+    if (-not $Sha) { return }
+    try {
+        if (-not (Select-String -LiteralPath $blocked -SimpleMatch $Sha -Quiet -ErrorAction SilentlyContinue)) {
+            Add-Content -LiteralPath $blocked -Value $Sha -Encoding ASCII
+        }
+    } catch { }
+}
+
+function Invoke-PointerRollback([string]$Reason, [bool]$Block, [string]$Cause = '') {
+    # Volta para a versao anterior do ponteiro: so grava o ponteiro de novo (nada e movido, o ambiente dela esta inteiro).
+    # A versao que sai fica bloqueada (ou, se a culpa foi do PC, so adiada) e a prova dela acaba. Devolve se voltou.
+    try {
+        if (-not $script:pointerActive -or -not (Test-SlotReady $script:previousSlot)) { return $false }
+        $bad = Get-Version
+        # O bloqueio vai antes do ponteiro: se algo parar no meio, a versao ruim nao volta a ser instalada.
+        if ($Block) { Add-BlockedVersion $bad }
+        if (-not (Write-Pointer $script:previousSlot $null)) { return $false }
+        Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
+        $blockedValue = $null
+        if ($Block) { $blockedValue = $bad }
+        elseif ($bad) {
+            $returnedAt = [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-versions') -Value ($bad + '|' + $returnedAt) -Encoding ASCII } catch { }
+            if ($Cause -eq 'lowdisk') {
+                try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-lowdisk') -Value ($bad + '|' + $returnedAt) -Encoding ASCII } catch { }
+            }
+        }
+        Update-Layout
+        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $blockedValue; checkedAt = (Get-UtcStamp (Get-Date)); reason = $Reason } | Out-Null
+        Write-SupLog 'WARNING' ('voltei para a versao anterior: ' + $Reason)
+        Add-Diagnostic 'update.rolled_back' 'warn' $Reason
+        return $true
+    } catch {
+        Write-SupLog 'ERROR' ('nao consegui voltar pelo ponteiro (' + $_.Exception.GetType().Name + '): ' + $_.Exception.Message)
+        return $false
+    }
+}
+
+# --- Janela de uma atualizacao: quanto tempo o agente ficou sem servir, medido (diagnostico `update.window`) -----------------
+# O supervisor anota o instante da troca em runtime\update-window.json; o agente anota quando conectou (runtime\connected.json,
+# `connectedAt`, e na passagem sem queda tambem `readyAt`, quando virou dono da TV e do PC, e o codigo `token` que o supervisor lhe passou). Quando as duas pontas existem, a
+# janela e fechada em um diagnostico so (tempos em segundos, sem caminhos). Sobrevive a um reinicio do supervisor.
+function ConvertTo-UtcTime($Text) {
+    try { return [DateTime]::Parse([string]$Text, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() } catch { return $null }
+}
+
+function Set-UpdateWindow([string]$Mode, [string]$Sha, [string]$Token = '', $NewStartedAt = $null, $OldExitedAt = $null) {
+    try {
+        $window = @{ mode = $Mode; sha = $Sha; at = (Get-UtcStamp (Get-Date)) }
+        if ($Token) { $window['token'] = $Token }
+        if ($null -ne $NewStartedAt) { $window['newStartedAt'] = (Get-UtcStamp $NewStartedAt) }
+        if ($null -ne $OldExitedAt) { $window['oldExitedAt'] = (Get-UtcStamp $OldExitedAt) }
+        Add-Type -AssemblyName System.Web.Extensions
+        $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+        $path = Join-Path $runtime 'update-window.json'
+        [System.IO.File]::WriteAllText(($path + '.tmp'), $serializer.Serialize($window), (New-Object System.Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath ($path + '.tmp') -Destination $path -Force
+    } catch { }
+}
+
+function Complete-UpdateWindow {
+    # Chamada a cada volta: sem janela aberta e so um Test-Path.
+    $path = Join-Path $runtime 'update-window.json'
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    $window = Read-JsonFile $path
+    if ($null -eq $window) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue; return }
+    $opened = ConvertTo-UtcTime $window['at']
+    if ($null -eq $opened -or ([DateTime]::UtcNow - $opened).TotalMinutes -gt 30) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue; return }
+    $marker = Read-JsonFile (Join-Path $runtime 'connected.json')
+    if ($null -eq $marker) { return }
+    $connected = ConvertTo-UtcTime $marker['connectedAt']
+    if ($null -eq $connected) { return }
+    $sha = [string]$window['sha']
+    if ($sha.Length -gt 12) { $sha = $sha.Substring(0, 12) }
+    if ([string]$window['mode'] -eq 'handover') {
+        # So conta a marca do processo novo desta passagem (a do antigo e de antes nao tem o mesmo codigo, que o supervisor
+        # passou so a ele por UNIOVER_WINDOW_TOKEN) e depois de ele virar o dono.
+        if (-not $window['token'] -or [string]$marker['token'] -ne [string]$window['token']) { return }
+        $ready = ConvertTo-UtcTime $marker['readyAt']
+        $started = ConvertTo-UtcTime $window['newStartedAt']
+        $oldExit = ConvertTo-UtcTime $window['oldExitedAt']
+        if ($null -eq $ready -or $null -eq $started -or $null -eq $oldExit) { return }
+        $detail = 'mode=handover sha=' + $sha + ' new_start_to_connected_s=' + [Math]::Round(($connected - $started).TotalSeconds, 1) +
+            ' connected_to_old_exit_s=' + [Math]::Round(($oldExit - $connected).TotalSeconds, 1) +
+            ' old_exit_to_ready_s=' + [Math]::Round(($ready - $oldExit).TotalSeconds, 1) +
+            ' total_s=' + [Math]::Round(($ready - $started).TotalSeconds, 1)
+    }
+    else {
+        # Troca com reinicio (caminho de reserva): do instante em que o agente antigo foi encerrado ate a primeira conexao.
+        if ($connected -lt $opened) { return }
+        $detail = 'mode=restart sha=' + $sha + ' kill_to_connected_s=' + [Math]::Round(($connected - $opened).TotalSeconds, 1)
+    }
+    Add-Diagnostic 'update.window' 'info' $detail
+    Write-SupLog 'INFO' ('janela da atualizacao: ' + $detail)
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+}
+
+function Stop-Tree($Process) {
+    if ($null -ne $Process -and -not $Process.HasExited) { & taskkill.exe /PID $Process.Id /T /F *> $null }
+}
+
+function Get-HandoverMark([string]$Token) {
+    # A marca que o processo da passagem grava em `connected.json`: so vale a que traz o codigo desta passagem.
+    $mark = Read-JsonFile (Join-Path $runtime 'connected.json')
+    if ($null -ne $mark -and [string]$mark['token'] -eq $Token) { return $mark }
+    return $null
+}
+
+function Stop-WhenGone($Process, [double]$Seconds) {
+    # Da a um processo que ja foi mandado sair o tempo de terminar o que tem em curso; passado o prazo, derruba a arvore dele.
+    $until = (Get-Date).AddSeconds($Seconds)
+    while (-not $Process.HasExited -and (Get-Date) -lt $until) { Touch-Alive; Start-Sleep -Milliseconds 200 }
+    Stop-Tree $Process
+}
+
+function Clear-OwnTrial([string]$Sha) {
+    # A prova gravada para a passagem que nao aconteceu nao vale: so se apaga a que e desta versao.
+    try {
+        $existing = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
+        if ($existing.Count -eq 2 -and $existing[0] -eq $Sha) { Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue }
+    } catch { }
+}
+
+function Add-DeferredVersion([string]$Sha) {
+    # Versao que nao deu certo por culpa possivel do PC (rede, API fora): nao e bloqueada, mas o self-update a adia (24 h, 72 h,
+    # uma semana), como as devolvidas por demora ou disco.
+    try { Add-Content -LiteralPath (Join-Path $runtime '.deferred-versions') -Value ($Sha + '|' + [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Encoding ASCII } catch { }
+}
+
+function Get-UpdateMutexName {
+    # O mesmo nome que o `self-update` (Python) calcula: caminho da instalacao sem barra final, em minusculas, SHA-256 (16 hex).
+    $key = $base.TrimEnd('\', '/').ToLowerInvariant()
+    $hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key))
+    return 'Local\UniOver-Update-' + (([System.BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant().Substring(0, 16))
+}
+
+function Invoke-Handover([string]$Uv, $Slot) {
+    # A passagem inteira roda sob a trava de atualizacao que `self-update` (preparar e aplicar) tambem toma: um `self-update` manual
+    # no meio dela apagaria candidatos e podaria a versao que esta subindo. Se a trava esta com outro, a passagem fica para a
+    # proxima checagem (nada foi iniciado). A versao em passagem tambem fica marcada em `handover-sha.txt`, que a poda respeita.
+    $mutex = $null
+    $owned = $false
+    try {
+        $mutex = New-Object System.Threading.Mutex($false, (Get-UpdateMutexName))
+        try { $owned = $mutex.WaitOne(0) }
+        catch [System.Threading.AbandonedMutexException] { $owned = $true }
+    } catch { $owned = $false }
+    if (-not $owned) {
+        if ($null -ne $mutex) { $mutex.Dispose() }
+        Write-SupLog 'INFO' 'outra atualizacao esta em andamento (trava da instalacao); a passagem fica para a proxima checagem'
+        return 'failed'
+    }
+    $marker = Join-Path $runtime 'handover-sha.txt'
+    try {
+        try { [System.IO.File]::WriteAllText($marker, [string]$Slot.sha, [System.Text.Encoding]::ASCII) } catch { }
+        return (Invoke-HandoverLocked $Uv $Slot)
+    }
+    finally {
+        Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+        try { $mutex.ReleaseMutex() } catch { }
+        $mutex.Dispose()
+    }
+}
+
+function Invoke-HandoverLocked([string]$Uv, $Slot) {
+    # Troca de versao SEM derrubar o uso: sobe o processo da versao nova (`run --handover`) enquanto o antigo ainda serve. O novo
+    # conecta e diz `handover` no hello; a API o faz dono da conexao e fecha o antigo com 4410; o antigo termina o que estava em
+    # curso, solta a TV e o PC e sai com 0; so entao o novo abre a TV e o canal direto. O ponteiro so muda depois de o antigo
+    # sair com o novo de pe: ate la, falhar nao custa nada (o antigo segue servindo).
+    # Devolve 'done', 'unsupported' (a API ainda nao sabe passar a conexao: o chamador usa o caminho de reserva) ou 'failed'.
+    $sha = $Slot.sha
+    $short = $sha.Substring(0, 12)
+    $old = $process
+    # A prova da versao nova vai ANTES de qualquer coisa: uma versao nunca fica no ar sem ela (e sem a volta atras que vem com
+    # ela). Ela nao vale enquanto a versao em uso for outra (so se aplica a versao que esta instalada).
+    try { [System.IO.File]::WriteAllText($trial, ($sha + '|0'), [System.Text.Encoding]::ASCII) }
+    catch {
+        Write-SupLog 'WARNING' 'nao consegui gravar a prova da versao nova (disco cheio?); nao faco a passagem agora'
+        Add-Diagnostic 'update.trial_unwritable' 'error' 'nao consegui gravar a prova da versao nova; a passagem ficou para depois'
+        return 'failed'
+    }
+    Remove-Item -LiteralPath (Join-Path $runtime 'connected.json') -Force -ErrorAction SilentlyContinue
+    $began = Get-Date
+    $token = [guid]::NewGuid().ToString('N')
+    # O prazo do agente conta do inicio do processo e nunca passa deste instante (o prazo do supervisor menos uma margem): ele
+    # desiste sozinho (codigo 5, "adiada") antes de o supervisor encerrar a nova.
+    $agentSeconds = [Math]::Max(1, $handoverSeconds - $handoverMarginSeconds)
+    $deadlineEpoch = [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + [int]$agentSeconds)
+    $environment = @{ UV_PROJECT_ENVIRONMENT = $Slot.venv; UNIOVER_APP_DIR = $Slot.app; UNIOVER_WINDOW_TOKEN = $token; UNIOVER_HANDOVER_DEADLINE = $deadlineEpoch }
+    $new = $null
+    try { $new = Start-Hidden $Uv ('run --project "' + $Slot.app + '" uniover-agent run --handover') $true $environment } catch { }
+    if ($null -eq $new) {
+        Clear-OwnTrial $sha
+        Write-SupLog 'WARNING' 'nao consegui iniciar o processo da versao nova; o agente atual segue servindo'
+        return 'failed'
+    }
+    # Sem tocar no Handle logo apos iniciar, o Windows PowerShell 5.1 devolve ExitCode nulo.
+    $null = $new.Handle
+    Write-SupLog 'INFO' ('passagem sem queda: versao ' + $short + ' iniciada (pid ' + $new.Id + '); a atual segue servindo')
+    $deadline = $began.AddSeconds($handoverSeconds)
+    $oldExitedAt = $null
+    while ($true) {
+        Touch-Alive
+        if ($new.HasExited) { break }
+        if ($old.HasExited) { $oldExitedAt = Get-Date; break }
+        if ((Get-Date) -ge $deadline) { break }
+        Start-Sleep -Milliseconds 400
+    }
+    if ($new.HasExited) {
+        $code = $null
+        try { $code = $new.ExitCode } catch { }
+        Clear-OwnTrial $sha
+        if ($old.HasExited) {
+            # Os dois sairam: o laco do supervisor reinicia o agente da versao em uso (a antiga).
+            Write-SupLog 'ERROR' ('a versao nova e a atual sairam juntas (codigo ' + $code + '); o agente reinicia pela versao em uso')
+            return 'failed'
+        }
+        if ($code -eq 6) {
+            Write-SupLog 'INFO' 'a API ainda nao sabe passar a conexao para uma versao nova; uso o caminho de reserva'
+            return 'unsupported'
+        }
+        # Depois da confirmacao da API (a nova conectou) a antiga ja foi mandada sair e nao reconecta: se a nova cai agora, so o
+        # reinicio pela versao em uso recoloca um agente no ar. A antiga termina o que tem em curso e, passado um instante, e
+        # derrubada, e o laco reinicia o agente na hora, sem esperar a deteccao de travamento.
+        $mark = Get-HandoverMark $token
+        $standing = 'o agente atual segue servindo'
+        if ($null -ne $mark -and [bool]$mark['connectedAt']) {
+            Stop-WhenGone $old $handoverOldGraceSeconds
+            $standing = 'o agente reinicia pela versao em uso'
+        }
+        if ($code -eq 5 -or $code -eq 7) {
+            # 5: a anterior nao largou a trava a tempo; 7: outro agente com a mesma identidade disputa. Nenhum dos dois e defeito da
+            # versao nova: tenta de novo na proxima checagem.
+            if ($code -eq 5) { Add-DeferredVersion $sha }
+            Write-SupLog 'WARNING' ('a passagem nao se completou (codigo ' + $code + '); ' + $standing)
+            Add-Diagnostic 'update.handover_failed' 'warn' ('a passagem para a versao nova nao se completou (codigo ' + $code + '); ' + $standing)
+            Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('a passagem para a versao nova nao se completou; ' + $standing) } | Out-Null
+            return 'failed'
+        }
+        # A versao nova caiu: o defeito e dela. Ela fica bloqueada.
+        Add-BlockedVersion $sha
+        Write-SupLog 'ERROR' ('a versao nova caiu ao subir (codigo ' + $code + '); bloqueada, ' + $standing)
+        Add-Diagnostic 'update.rolled_back' 'error' ('a versao nova caiu na passagem sem queda; foi bloqueada e ' + $standing)
+        Set-UpdateState @{ outcome = 'blocked'; blockedSha = $sha; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('a versao nova caiu na passagem; ' + $standing) } | Out-Null
+        return 'failed'
+    }
+    if ($null -eq $oldExitedAt) {
+        # Passou o prazo sem a antiga sair. Sem queda de qualquer jeito: a antiga segue servindo. Mas o motivo muda o que se faz com a
+        # versao: o processo novo grava `connected.json` (com o codigo desta passagem) quando conecta.
+        $mark = Get-HandoverMark $token
+        $connectedInTime = ($null -ne $mark -and [bool]$mark['connectedAt'])
+        if (-not $connectedInTime) {
+            # Nao conectou no prazo: rede ou API lentas (partida a frio, proxy, recusa passageira) sao do PC, nao da versao. Ela e
+            # encerrada e ADIADA (24 h, 72 h, uma semana), nunca bloqueada; uma que cai ao subir segue bloqueada (outro ramo).
+            Stop-Tree $new
+            Clear-OwnTrial $sha
+            Add-DeferredVersion $sha
+            Write-SupLog 'WARNING' ('a versao nova nao conectou em ' + [int]$handoverSeconds + ' s; encerrada e adiada, o agente atual segue servindo')
+            Add-Diagnostic 'update.handover_failed' 'warn' ('a versao nova nao conectou em ' + [int]$handoverSeconds + ' segundos na passagem sem queda; foi adiada e o agente atual segue servindo')
+            Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova nao conectou a tempo; adiada, o agente atual segue servindo' } | Out-Null
+            return 'failed'
+        }
+        # Conectou (a API confirmou: ela ja a promoveu e mandou a antiga sair, que nao reconecta), mas a antiga nao largou a trava:
+        # nao e defeito da versao nova. Quem tem de servir agora e a nova, entao e a ANTIGA que se derruba; a nova pega a trava, vira a
+        # dona e o ponteiro muda como numa passagem normal. Matar a nova deixaria o PC sem agente.
+        Write-SupLog 'ERROR' ('a versao nova conectou, mas a antiga nao saiu em ' + [int]$handoverSeconds + ' s; a antiga foi derrubada para a nova assumir')
+        Add-Diagnostic 'update.handover_forced' 'warn' ('a versao nova conectou mas a antiga nao saiu em ' + [int]$handoverSeconds + ' segundos; a antiga foi derrubada para a nova assumir')
+        Stop-Tree $old
+        $oldExitedAt = Get-Date
+        $takeoverBy = $oldExitedAt.AddSeconds($handoverTakeoverSeconds)
+        $ready = $false
+        while ($true) {
+            Touch-Alive
+            if ($new.HasExited) { break }
+            $again = Get-HandoverMark $token
+            if ($null -ne $again -and [bool]$again['readyAt']) { $ready = $true; break }
+            if ((Get-Date) -ge $takeoverBy) { break }
+            Start-Sleep -Milliseconds 400
+        }
+        if (-not $ready) {
+            # Nem derrubada a antiga a nova assumiu: sem ela nao ha como confirmar nem reverter. O laco reinicia o agente pela versao em uso.
+            Stop-Tree $new
+            Clear-OwnTrial $sha
+            Add-DeferredVersion $sha
+            Write-SupLog 'ERROR' ('a versao nova nao assumiu em ' + [int]$handoverTakeoverSeconds + ' s depois de a antiga ser derrubada; o agente reinicia pela versao em uso')
+            Add-Diagnostic 'update.handover_failed' 'error' 'a versao nova nao assumiu depois de a antiga ser derrubada; o agente reiniciou pela versao em uso'
+            Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova nao assumiu na passagem; o agente reiniciou pela versao em uso' } | Out-Null
+            return 'failed'
+        }
+    }
+    # A antiga saiu com a nova de pe: a nova e o agente agora. O ponteiro muda aqui (com tentativas: antivirus solta em instantes).
+    $oldCode = $null
+    try { $oldCode = $old.ExitCode } catch { }
+    $wrote = $false
+    for ($try = 1; $try -le 3 -and -not $wrote; $try++) {
+        $wrote = Write-Pointer $Slot $script:currentSlot
+        if (-not $wrote -and $try -lt 3) { Start-Sleep -Seconds 1 }
+    }
+    if (-not $wrote) {
+        # Sem o ponteiro a versao em uso e a antiga, e a nova nao poderia ser confirmada nem revertida: encerra a nova e deixa o
+        # laco reiniciar o agente pela versao em uso (a antiga ja saiu).
+        Stop-Tree $new
+        Clear-OwnTrial $sha
+        Write-SupLog 'ERROR' 'nao consegui gravar o ponteiro da versao nova; o agente reinicia pela versao em uso'
+        Add-Diagnostic 'update.pointer_unwritable' 'error' 'nao consegui gravar o ponteiro da versao nova; o agente reiniciou pela versao em uso'
+        return 'failed'
+    }
+    Update-Layout
+    # O ambiente da versao nova ja passou num sync completo (na preparacao): as proximas voltas nao o refazem.
+    $script:syncedVersion = $sha
+    $script:syncReal = $true
+    $script:noSyncLaunch = $true
+    $script:keptForDisk = $false
+    Remove-Item -LiteralPath (Join-Path $runtime 'prepared.json') -Force -ErrorAction SilentlyContinue
+    $script:process = $new
+    $script:started = $began
+    # A deteccao de travamento recomeca: o pulso que conta e o do processo novo.
+    $script:silent = 0
+    $script:lastWrite = $null
+    $script:previousLap = Get-Date
+    # O icone roda do ambiente da versao que saiu: o proximo Update-Tray o abre de novo, ja da nova.
+    Stop-Tree $script:tray
+    $script:tray = $null
+    Set-UpdateWindow 'handover' $sha $token $began $oldExitedAt
+    Set-UpdateState @{ outcome = 'updated'; checkedAt = (Get-UtcStamp (Get-Date)); latestSha = $sha; reason = $null; rolledBack = $null; blockedSha = $null } | Out-Null
+    Write-SupLog 'INFO' ('versao nova no ar sem queda, em prova: ' + $short + ' (a antiga saiu com codigo ' + $oldCode + ' ' + [int](((Get-Date) - $began).TotalSeconds) + ' s depois)')
+    return 'done'
+}
+
 # Os tempos do pulso e da confirmacao da versao em prova (os testes os encurtam por estas variaveis; sem elas valem os de producao).
 function Get-Setting([string]$Name, [double]$Default) {
     $value = 0.0
@@ -1049,6 +1553,9 @@ $confirmAfterSeconds = Get-Setting 'UNIOVER_SUPERVISOR_CONFIRM_SECONDS' 600
 $slowLapSeconds = [Math]::Max(60, $lapSeconds * 4)
 # Saida do agente que encontrou outro dono da instalacao (EXIT_ALREADY_RUNNING, em single_instance.py).
 $ownedElsewhereCode = 5
+# Saida do agente que viu outro agente da MESMA identidade (outra pasta, uma execucao manual) tomar a conexao duas vezes em poucos
+# minutos: ele ja registrou `agent.duplicate` e saiu para nao disputar. Nao e queda da versao: espera calma, sem contar contra a prova.
+$duplicateCode = 7
 $ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
 # Prazos de tudo que o supervisor espera: nada abaixo roda sem fim. O teto do self-update (2400 s) tem de passar da soma dos
 # limites internos dele (consulta, download, extracao, duas tentativas de uv sync, auto-diagnostico: 1863 s em
@@ -1056,6 +1563,15 @@ $ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
 # agente dar a atualizacao por interrompida (50 min). Um teste confere as duas desigualdades.
 $updateTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_UPDATE_TIMEOUT_SECONDS' 2400
 $syncTimeoutSeconds = Get-Setting 'UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS' 900
+# Passagem sem queda (so com `update_handover` ligada): quanto esperar a versao nova conectar e a antiga sair. O agente novo conta
+# o prazo dele do inicio do processo e nunca passa de este prazo menos a margem (`UNIOVER_HANDOVER_DEADLINE`, 10 s). Depois dele, com a nova ja confirmada, a antiga e derrubada e a nova tem mais
+# `handoverTakeoverSeconds` para virar a dona; uma nova que cai depois de confirmada deixa a antiga `handoverOldGraceSeconds` para
+# terminar o que tem em curso. Sem a passagem (API antiga) a troca volta ao caminho de reserva por 30 minutos.
+$handoverSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_SECONDS' 60
+$handoverMarginSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_MARGIN_SECONDS' 10
+$handoverTakeoverSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_TAKEOVER_SECONDS' 30
+$handoverOldGraceSeconds = Get-Setting 'UNIOVER_SUPERVISOR_HANDOVER_OLD_GRACE_SECONDS' 10
+$script:handoverRetryAt = [DateTime]::MinValue
 # Abaixo disto de espaco livre (MB) nenhuma atualizacao comeca e o ambiente Python nunca e apagado.
 $minFreeMb = Get-Setting 'UNIOVER_SUPERVISOR_MIN_FREE_MB' 600
 # De quanto em quanto tempo a atualizacao adiada por causa do ambiente apenas mantido volta a ser considerada (30 min).
@@ -1079,6 +1595,10 @@ if (-not $ownsSupervisor) {
     # 43: o lancador sabe que nao e um supervisor ruim e nao roda o fallback (copia antiga, possivelmente sem este mutex).
     exit 43
 }
+Update-Layout
+$startupNames = Get-WindowsStartupNames
+# Sobra de uma passagem que um supervisor morto nao terminou: a marca nao vale mais (a trava morreu com ele).
+Remove-Item -LiteralPath (Join-Path $runtime 'handover-sha.txt') -Force -ErrorAction SilentlyContinue
 Write-SupLog 'INFO' 'supervisor iniciado'
 Touch-Alive
 Remove-StaleChildOutputs
@@ -1110,6 +1630,7 @@ if ($timedOutRecently) { $nextUpdate = (Get-Date).AddMinutes(30); Write-SupLog '
 $tray = $null
 while ($true) {
     Touch-Alive
+    Update-Layout
     $uv = Find-Uv
     if (-not $uv -or -not (Test-Path -LiteralPath $source)) {
         Write-SupLog 'WARNING' 'sem uv ou sem a pasta do agente; espero 5 minutos'
@@ -1152,6 +1673,7 @@ while ($true) {
         $nextUpdate = Schedule-NextUpdate $updateFailures
         if ($updated) {
             Set-StopReason 'update'
+            Set-UpdateWindow 'restart' ([string](Get-Version))
             if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
             exit 42
         }
@@ -1212,6 +1734,7 @@ while ($true) {
     while (-not $process.HasExited) {
         Wait-Lap $lapSeconds $uv
         Touch-Alive
+        Complete-UpdateWindow
         $lap = Get-Date
         # Com o agente de pe ha um minuto: confere a versao do uv (uma vez), sem atrasar nada.
         if (-not $script:uvChecked -and (($lap - $started).TotalSeconds -ge $uvCheckAfterSeconds)) { Test-UvVersion $uv }
@@ -1274,6 +1797,7 @@ while ($true) {
             Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
             if (Invoke-Update $uv $forceUpdate) {
                 Set-StopReason 'update'
+                Set-UpdateWindow 'restart' ([string](Get-Version))
                 & taskkill.exe /PID $process.Id /T /F *> $null
                 $restartForUpdate = $true
                 if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
@@ -1335,6 +1859,11 @@ while ($true) {
             continue
         }
         # Com pulso: o lancador (e o autocuidado) leem o `supervisor-alive` e nao distinguem uma espera calma de um travamento.
+        Sleep-Beating $ownedElsewhereWait
+        continue
+    }
+    if (-not $restartForUpdate -and -not $hung -and $code -eq $duplicateCode) {
+        Write-SupLog 'WARNING' 'outro agente com a mesma identidade disputa a conexao; espero antes de tentar de novo'
         Sleep-Beating $ownedElsewhereWait
         continue
     }

@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.housekeeping import STANDARD_FOLDERS, tidy
 from uniover_agent.adapters.installation import (
     TASK_NAME,
@@ -63,7 +64,7 @@ def _installation_result(root: Path) -> CheckResult:  # noqa: PLR0911 - um retor
     missing = [name for name in STANDARD_FOLDERS if not (root / name).is_dir()]
     if missing:
         return CheckResult(False, "faltam pastas: " + ", ".join(missing), fixable=True)
-    app = root / "app"
+    app = current_pointer.current_app(root)
     try:
         version = (app / ".version").read_text(encoding="utf-8").strip()
     except OSError:
@@ -230,7 +231,7 @@ def startup_task_check(
 
     async def repair() -> str | None:
         def work() -> str | None:
-            app_tools = root / "app" / "tools"
+            app_tools = current_pointer.current_app(root) / "tools"
             for item in ("launcher.ps1", "launcher.vbs"):
                 source = app_tools / item
                 if source.is_file() and not (anchor / item).is_file():
@@ -380,7 +381,7 @@ def supervisor_check(  # noqa: PLR0913 - dependências injetadas deixam o teste 
 ) -> Check:
     """O supervisor (script do Windows) deu sinal de vida há pouco? Sem ele, ninguém reinicia."""
     alive = runtime / "supervisor-alive"
-    runner = runtime.parent / "app" / "tools" / "run-agent.ps1"
+    runner = current_pointer.current_app(runtime.parent) / "tools" / "run-agent.ps1"
 
     def launch(task: str) -> bool:
         try:

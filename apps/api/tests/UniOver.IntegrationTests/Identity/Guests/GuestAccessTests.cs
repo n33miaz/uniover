@@ -64,6 +64,14 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     ];
 
     /// <summary>
+    /// A telemetria de erros do app: por desenho <c>POST /api/v1/devices/client-events</c> aceita qualquer conta ativa, dona ou
+    /// convidada (o app do convidado também falha; a política é <c>devices:client-events-report</c>: papel dono ou convidado mais
+    /// conta ativa, sem permissão nomeada porque não dá acesso a nada além de gravar o próprio relato). O <c>GET</c> da mesma rota
+    /// é só do dono, e por isso a exceção é por método e caminho.
+    /// </summary>
+    private const string ClientEventsRoute = "/api/v1/devices/client-events";
+
+    /// <summary>
     /// As rotas do controle do PC: por papel o convidado entra, e o que o barra é a permissão <c>module:pc</c> de cada rota (o dono
     /// tem por padrão, o convidado só se concedida), que a varredura confere abaixo; a tabela vive aqui porque o controle do PC
     /// tem um conjunto fixo de nove rotas, todas com a mesma permissão.
@@ -90,6 +98,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     private static readonly string[] RoleExempt =
     [
         "/api/v1/devices/agents/{agentId}/ws",
+        "/api/v1/devices/agents/{agentId}/ws/handover",
     ];
 
     /// <summary>
@@ -105,6 +114,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
         || GuestPcRoutes.Contains(pattern)
         || GuestSessionRoutes.Contains(pattern)
+        || IsRoute("POST", ClientEventsRoute, method, pattern)
         || pattern == TvPermissionMap.OwnPairingRoute;
 
     private static bool IsRoute(string ruleMethod, string rulePattern, string method, string pattern) =>
@@ -199,8 +209,10 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
                 failures.Add($"{label}: convidado {(asGuest ? "alcança" : "não alcança")} e deveria {(guestExpected ? "alcançar" : "ser barrado")}");
             }
 
-            // O convidado que entra por papel numa rota da TV só passa se a rota também exige uma permissão nomeada.
-            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !policy.Requirements.OfType<PermissionRequirement>().Any())
+            // O convidado que entra por papel numa rota da TV só passa se a rota também exige uma permissão nomeada (a telemetria
+            // de erros e as rotas da própria sessão são a exceção, sem permissão: só gravam ou leem o que é da própria conta).
+            var telemetry = MethodsOf(endpoint).All(method => IsRoute("POST", ClientEventsRoute, method, pattern));
+            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !telemetry && !policy.Requirements.OfType<PermissionRequirement>().Any())
             {
                 failures.Add($"{label}: o convidado alcança por papel sem exigir uma permissão nomeada");
             }
@@ -238,9 +250,12 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             }
         }
 
-        // Em Aparelhos o convidado alcança só a aprovação do próprio computador; nada do que é do administrador.
+        // Em Aparelhos o convidado alcança só a aprovação do próprio computador e o relato de erros do app (o POST: o GET da mesma
+        // rota é do dono); nada do que é do administrador.
         allowed.Where(p => p.Contains("/devices/", StringComparison.Ordinal)).Distinct()
-            .Should().BeEquivalentTo(["/api/v1/devices/pairing/approve-own"]);
+            .Should().BeEquivalentTo(["/api/v1/devices/pairing/approve-own", ClientEventsRoute]);
+        allowedCalls.Should().Contain($"POST {ClientEventsRoute}");
+        allowedCalls.Should().NotContain($"GET {ClientEventsRoute}");
         allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !p.StartsWith("/api/v1/training/", StringComparison.Ordinal)
                 && !p.StartsWith("/api/v1/pc/", StringComparison.Ordinal) && !p.Contains("/devices/", StringComparison.Ordinal))
             .Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
@@ -290,6 +305,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             (HttpMethod.Patch, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}", new { customLabel = "Meu app" }),
             (HttpMethod.Put, "/api/v1/tv/shortcuts/order", new { ids = new[] { Guid.NewGuid() } }),
             (HttpMethod.Get, "/api/v1/devices/agents", null),
+            // A leitura da telemetria é só do dono (o convidado só a grava).
+            (HttpMethod.Get, "/api/v1/devices/client-events", null),
             (HttpMethod.Get, "/api/v1/tv/config", null),
             (HttpMethod.Put, "/api/v1/tv/config/agent", new { agentSlug = "pc-casa" }),
             (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/revoke", null),

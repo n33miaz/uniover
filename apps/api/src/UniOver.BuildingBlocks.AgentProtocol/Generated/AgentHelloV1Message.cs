@@ -56,6 +56,17 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("capabilities")]
         public AgentHelloV1BodyCapabilitiesItem[] Capabilities { get; set; }
 
+        /// <summary>
+        /// A execução nova pede que a anterior encerre sem tentar reconectar; exige o instanceId.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("handover")]
+        public bool? Handover { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("instanceId")]
+        public Guid? InstanceId { get; set; }
+
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("os")]
         [JsonConverter(typeof(AgentHelloV1MessageFluffyMinMaxLengthCheckConverter))]
@@ -123,7 +134,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcRtcV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcRtcV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -191,6 +202,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             {
                 case "agent.diagnostics.v1":
                     return AgentHelloV1BodyCapabilitiesItem.AgentDiagnosticsV1;
+                case "agent.handover.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.AgentHandoverV1;
                 case "agent.logs.v1":
                     return AgentHelloV1BodyCapabilitiesItem.AgentLogsV1;
                 case "agent.maintenance.v1":
@@ -303,6 +316,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             {
                 case AgentHelloV1BodyCapabilitiesItem.AgentDiagnosticsV1:
                     JsonSerializer.Serialize(writer, "agent.diagnostics.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.AgentHandoverV1:
+                    JsonSerializer.Serialize(writer, "agent.handover.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.AgentLogsV1:
                     JsonSerializer.Serialize(writer, "agent.logs.v1", options);

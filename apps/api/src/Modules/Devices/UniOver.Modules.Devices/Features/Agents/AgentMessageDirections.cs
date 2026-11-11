@@ -42,6 +42,7 @@ internal static class AgentMessageDirections
     public static FrozenSet<string> ToAgent { get; } = new[]
     {
         ApiKeepAlive,
+        AgentMessageTypes.AgentHandoverAcceptedV1,
         AgentMessageTypes.AgentLogsRequestV1,
         AgentMessageTypes.AgentMaintenanceV1,
         AgentMessageTypes.PcAppLaunchV1,

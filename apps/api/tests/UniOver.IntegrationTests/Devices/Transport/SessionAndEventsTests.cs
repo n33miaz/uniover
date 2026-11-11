@@ -27,6 +27,7 @@ public sealed class SessionAndEventsTests(PostgresFixture postgres)
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == true, "primeira conectada");
         await using var second = await app.ConnectAsync();
 
+        // Conexão comum (reconexão): a nova assume na hora e a antiga sai sem esperar nenhum quadro.
         var closed = await first.WaitForCloseAsync();
         closed.Description.Should().Be("replaced");
         closed.Status.Should().Be((WebSocketCloseStatus)4409);
@@ -54,6 +55,91 @@ public sealed class SessionAndEventsTests(PostgresFixture postgres)
 
         states.Count(c => !c).Should().Be(1);
         states.Count(c => c).Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task HelloWithHandover_ClosesTheOldWith4410_AndTheNewKeepsThePresence()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var ticket = await app.StreamTicketAsync();
+        using var events = await app.OpenEventsAsync(ticket);
+        using var reader = new SseReader(await events.Content.ReadAsStreamAsync(Ct));
+        (await reader.NextAsync())!.EventType.Should().Be("agent.presence.snapshot");
+
+        await using var first = await app.ConnectAsync();
+        // A antiga declara entender o 4410: só então a API a fecha com ele.
+        await first.SendHelloAsync("7.0.0", "agent.handover.v1");
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("agent.handover.v1") == true, "hello da primeira");
+        await using var second = await app.ConnectAsync(candidate: true);
+
+        // Candidata: até o hello a antiga segue a atual e aberta.
+        await Task.Delay(200, Ct);
+        first.State.Should().Be(WebSocketState.Open);
+        await second.SendHandoverHelloAsync("7.1.0");
+        // A nova recebe a confirmação da promoção (é por ela que o agente deixa de ser candidato).
+        var ack = await second.ReceiveAsync();
+        ack!.Value.GetProperty("type").GetString().Should().Be("agent.handover.accepted.v1");
+        ack.Value.GetProperty("body").GetProperty("instanceId").GetString().Should().NotBeNullOrEmpty();
+        var closed = await first.WaitForCloseAsync();
+        closed.Description.Should().Be("handover");
+        closed.Status.Should().Be((WebSocketCloseStatus)4410);
+
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "7.1.0", "hello da nova");
+        app.Presence.Get(app.Agent.Slug)!.Connected.Should().BeTrue();
+
+        await second.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "desconectada de verdade");
+
+        // No SSE, a única queda é a final: a saída da antiga na passagem nunca anuncia desconexão.
+        var states = new List<bool>();
+        while (true)
+        {
+            var frame = (await reader.NextAsync())!;
+            var connected = frame.Data!.Value.GetProperty("agents")[0].GetProperty("connected").GetBoolean();
+            states.Add(connected);
+            if (!connected)
+            {
+                break;
+            }
+        }
+
+        states.Count(c => !c).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HelloWithHandover_ClosesAnOldThatNeverDeclaredTheCapabilityWith4409()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var first = await app.ConnectAsync();
+        await first.SendHelloAsync("7.0.0");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "7.0.0", "hello da antiga");
+
+        await using var second = await app.ConnectAsync(candidate: true);
+        await second.SendHandoverHelloAsync("7.1.0");
+        (await second.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("agent.handover.accepted.v1");
+
+        // Sem a capacidade a antiga não entenderia o 4410: sai como substituída, que toda versão entende.
+        var closed = await first.WaitForCloseAsync();
+        closed.Description.Should().Be("replaced");
+        closed.Status.Should().Be((WebSocketCloseStatus)4409);
+    }
+
+    [Fact]
+    public async Task ACandidateThatDropsBeforeItsHello_LeavesTheOldSessionOpenAndTheAgentConnected()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var first = await app.ConnectAsync();
+        await first.SendHelloAsync("7.0.0");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "7.0.0", "hello da antiga");
+
+        await using var candidate = await app.ConnectAsync(candidate: true);
+        await candidate.DisposeAsync();
+        await Task.Delay(500, Ct);
+
+        first.State.Should().Be(WebSocketState.Open, "a antiga nunca fecha por causa de uma candidata que caiu");
+        first.Closed.Should().BeNull();
+        app.Presence.Get(app.Agent.Slug)!.Connected.Should().BeTrue();
     }
 
     [Fact]

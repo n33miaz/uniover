@@ -1,16 +1,21 @@
 """Conexão com a API: handler, cuidados remotos, vigia do endereço e laço `run`."""
 
 import asyncio
+import json
 import logging
+import os
 import random
 import shutil
 import sys
+import time
+import uuid
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from pathlib import Path
 from typing import Any
 
 from uniover_agent.adapters.absence_diary import AbsenceDiary
 from uniover_agent.adapters.agent_log_file import FileLogSource
+from uniover_agent.adapters.connection_marker import ConnectionMarker
 from uniover_agent.adapters.crash_trace import install_crash_trace, loop_exception_handler
 from uniover_agent.adapters.housekeeping import tidy
 from uniover_agent.adapters.installation import installation_base
@@ -24,6 +29,12 @@ from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
 from uniover_agent.adapters.pc_device_store import JsonDeviceStore
 from uniover_agent.adapters.run_state import RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
+from uniover_agent.adapters.single_instance import (
+    ALREADY_RUNNING_MESSAGE,
+    EXIT_ALREADY_RUNNING,
+    acquire,
+    acquire_slug,
+)
 from uniover_agent.adapters.startup_trace import mark_session_started
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
@@ -53,7 +64,10 @@ from uniover_agent.composition.pc import PcSetup, build_pc
 from uniover_agent.composition.system import (
     _NOT_PAIRED,
     EXIT_CREDENTIAL_REJECTED,
+    EXIT_DUPLICATE_AGENT,
+    EXIT_HANDOVER_UNSUPPORTED,
     EXIT_NOT_PAIRED,
+    EXIT_OK,
     EXIT_TV_MOVED,
     agent_version,
     build_version,
@@ -99,9 +113,15 @@ from uniover_agent.core import (
 from uniover_agent.core.api_features import (
     ADB_PERMISSION_FEATURE,
     FEATURES_TIMEOUT_SECONDS,
+    HANDOVER_FEATURE,
     NOT_PAIRED_FEATURE,
     WAKING_FEATURE,
     ApiFeatures,
+)
+from uniover_agent.core.connection import (
+    STOP_DUPLICATE,
+    STOP_HANDOVER,
+    STOP_HANDOVER_UNSUPPORTED,
 )
 from uniover_agent.core.diagnostics import (
     DIAGNOSTICS_CAPABILITY,
@@ -125,11 +145,38 @@ TIDY_TIMEOUT_SECONDS = 60.0
 # Quem entende o fechamento 4411 "reconecte já" (`ServerRestartNow`): a API só o usa com quem
 # declarou isto.
 RESTART_CAPABILITY = "transport.restart.v1"
+# Quem entende o fechamento 4410 (a passagem de versão): a API só o usa com a sessão que declarou
+# isto (senão a antiga sai como substituída).
+HANDOVER_CAPABILITY = HANDOVER_FEATURE
+# Passagem sem queda (`run --handover`): quanto esta execução espera a API confirmar que a promoveu
+# (`agent.handover.accepted.v1`) e quanto tenta saber se a API sabe fazer a passagem. O supervisor
+# desiste dela em 60 s contados do início do processo, e passa a ela, por esta variável, o instante
+# absoluto (epoch, em segundos) a que o prazo vale (com margem): os prazos daqui são contados do
+# começo desta execução e nunca passam dele. Depois da confirmação a antiga já foi mandada sair e
+# não reconecta, então esta execução NÃO desiste mais por prazo próprio: sair com ela deixaria o PC
+# sem agente (só o supervisor, que derruba a antiga, decide). Enquanto espera a trava, ela avisa no
+# registro a cada `HANDOVER_WAIT_LOG_SECONDS`.
+HANDOVER_DEADLINE_ENV = "UNIOVER_HANDOVER_DEADLINE"
+HANDOVER_CONFIRM_SECONDS = 40.0
+HANDOVER_WAIT_LOG_SECONDS = 30.0
+HANDOVER_PROBE_SECONDS = 15.0
+HANDOVER_POLL_SECONDS = 0.25
+# Comando que chega antes de esta execução ser a dona (a TV e o PC ainda são da antiga): é recusado
+# com este código, para quem o mandou saber já.
+AGENT_STARTING = "agent_starting"
+_STARTING_MESSAGE = "o agente está assumindo o PC; tente de novo em instantes"
+_KEEPALIVE_TYPE = "api.keepalive.v1"
+# Prazo de cada passo do encerramento: uma TV ou um canal que não fecha não prende a saída (a
+# trava da instalação só é solta com o processo morto, e o `uv` e o supervisor esperam por ela).
+SHUTDOWN_STEP_SECONDS = 10.0
+# O que a execução antiga ainda tem em curso termina em até isto antes de ela fechar tudo.
+HANDOVER_DRAIN_SECONDS = 2.0
 # Capacidades que uma API anterior recusaria no `hello` (ela não as conhece): só vão depois de a API
 # listá-las em `features`.
 API_LISTED_CAPABILITIES = frozenset(
     {
         RESTART_CAPABILITY,
+        HANDOVER_CAPABILITY,
         PAIR_CAPABILITY,
         PRESENCE_CAPABILITY,
         SETTINGS_OPEN_CAPABILITY,
@@ -345,26 +392,43 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     )
 
 
-async def supervise(
+class HandoverTimeout(Exception):  # noqa: N818 - nome do domínio
+    """A execução anterior não largou a trava da instalação a tempo."""
+
+
+async def supervise(  # noqa: PLR0913 - o vigia, o relógio e os ganchos da passagem, todos nomeados
     supervisor: ConnectionSupervisor,
     relocator: TvRelocator | None,
     *,
     clock: Clock | None = None,
     kit: DiagnosticsKit | None = None,
+    owner: asyncio.Event | None = None,
+    takeover: asyncio.Task[None] | None = None,
 ) -> bool:
     """Mantém a conexão com a API até ela acabar; devolve `True` se a TV mudou de endereço.
 
     Mudou de endereço: o novo já está gravado no arquivo, e a conexão com a API cai para `main`
     recomeçar com ele. Sem derrubá-la, o canal antigo, aberto, faria a API recusar o novo por
     "substituído" e custaria um minuto de espera.
+
+    Na passagem sem queda, `owner` abre quando esta execução já é a dona da instalação (o vigia do
+    endereço da TV só começa aí) e `takeover` é a tarefa que espera a anterior sair: se ela falhar
+    (`HandoverTimeout`), a falha sobe daqui.
     """
     connection = asyncio.create_task(supervisor.run())
+
+    async def locate() -> None:
+        if owner is not None:
+            await owner.wait()
+        assert relocator is not None  # noqa: S101 - só é agendada quando há vigia
+        await relocator.run()
+
     # Um erro do vigia do endereço não pode passar por "a TV mudou": ele é registrado e recomeça.
     watch = (
         asyncio.create_task(
             run_supervised(
                 "tv.endereco",
-                relocator.run,
+                locate,
                 clock=clock or SystemClock(),
                 recorder=kit.recorder if kit is not None else None,
             )
@@ -372,9 +436,16 @@ async def supervise(
         if relocator is not None
         else None
     )
-    tasks = [task for task in (connection, watch) if task is not None]
+    tasks = [task for task in (connection, watch, takeover) if task is not None]
     try:
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        waiting: set[asyncio.Task[Any]] = set(tasks)
+        while True:
+            done, waiting = await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+            if takeover is not None and takeover in done:
+                takeover.result()  # a espera falhou: sobe `HandoverTimeout`
+                if connection not in done and watch not in done:
+                    continue  # a passagem terminou bem: a conexão e o vigia seguem
+            break
         if connection.done():
             connection.result()
             return False
@@ -385,9 +456,100 @@ async def supervise(
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def run(  # noqa: PLR0912, PLR0915 - composição
-    settings: Settings, open_store: StoreFactory, kit: DiagnosticsKit | None = None
+def _acquire_all(agent_id: str) -> bool:
+    """As duas travas: a da instalação (uma execução por pasta) e a da identidade (uma por slug)."""
+    return acquire() and acquire_slug(agent_id)
+
+
+def _stop_reason_text(moved: bool, reason: str | None) -> str:
+    """O motivo de parar que fica no rastro da execução (`run-state.json`)."""
+    if moved:
+        return "tv_mudou_de_endereco"
+    return {
+        STOP_HANDOVER: "handover",
+        STOP_DUPLICATE: "agente_duplicado",
+        STOP_HANDOVER_UNSUPPORTED: "passagem_sem_rota",
+    }.get(reason or "", "credencial_recusada")
+
+
+def _handover_budget() -> float:
+    """Quantos segundos esta execução tem para a API confirmar a passagem, contados de agora (o
+    começo dela): o prazo próprio, limitado pelo instante absoluto que o supervisor passou."""
+    budget = HANDOVER_CONFIRM_SECONDS
+    raw = os.environ.get(HANDOVER_DEADLINE_ENV, "")
+    try:
+        left = float(raw) - time.time()
+    except ValueError:
+        return budget
+    return min(budget, max(1.0, left))
+
+
+async def _handover_features(
+    api_url: str, clock: Clock, limit: float = HANDOVER_PROBE_SECONDS
+) -> frozenset[str] | None:
+    """O que a API aceita, se ela diz saber passar a conexão para uma versão nova; senão `None`.
+
+    Pergunta por até alguns segundos, medidos no relógio (cada consulta pode gastar até
+    `FEATURES_TIMEOUT_SECONDS`, então contar só as esperas passaria do prazo). Sem resposta (API
+    dormindo, rede) também é "não": a passagem sem queda só vale com a API confirmando, e o
+    supervisor tem o caminho de reserva (troca com o agente parado)."""
+    started = clock.monotonic()
+    while True:
+        features = await fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS)
+        if features is not None:
+            return features if HANDOVER_FEATURE in features else None
+        if clock.monotonic() - started >= limit:
+            return None
+        await clock.sleep(2.0)
+
+
+def _command_to_refuse(raw: str | bytes) -> str | None:
+    """O `id` do comando da API que espera resposta; `None` para o que não espera (o batimento)."""
+    try:
+        message = json.loads(raw)
+    except ValueError:
+        return None
+    if (
+        not isinstance(message, dict)
+        or message.get("source") != "api"
+        or message.get("type") == _KEEPALIVE_TYPE
+    ):
+        return None
+    identifier = message.get("id")
+    if not isinstance(identifier, str):
+        return None
+    try:
+        return str(uuid.UUID(identifier))
+    except ValueError:
+        return None
+
+
+async def _close_within(what: str, step: Awaitable[Any]) -> None:
+    """Um passo do encerramento com prazo: estourar ou falhar é registrado e o resto segue."""
+    try:
+        async with asyncio.timeout(SHUTDOWN_STEP_SECONDS):
+            await step
+    except TimeoutError:
+        _log.warning(
+            "%s passou de %.0f s ao encerrar; sigo sem esperar", what, SHUTDOWN_STEP_SECONDS
+        )
+    except Exception:
+        _log.exception("falha ao encerrar: %s", what)
+
+
+async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
+    settings: Settings,
+    open_store: StoreFactory,
+    kit: DiagnosticsKit | None = None,
+    *,
+    handover: bool = False,
 ) -> int:
+    """Conecta e serve até a credencial ser recusada, a TV mudar de endereço ou outra assumir.
+
+    `handover` (`run --handover`): esta execução é a versão nova de uma passagem sem queda. Ela
+    conecta enquanto a antiga ainda serve e deixa para depois de a antiga sair tudo o que é
+    compartilhado ou físico (a trava da instalação, o rastro da execução, o diário e a fila de
+    diagnóstico, a TV, o canal direto do PC): nada disso tem dois donos ao mesmo tempo."""
     agent_id = settings.agent_id
     if not agent_id:
         print(_NOT_PAIRED, file=sys.stderr)
@@ -398,26 +560,72 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         return EXIT_NOT_PAIRED
     api_url = require_api_url(settings)
     clock = SystemClock()
+    # O que a API disse aceitar no momento da partida: a passagem sem queda já o perguntou, e o
+    # primeiro `hello` não pode sair mais pobre que o da execução que ela substitui.
+    known_features: frozenset[str] = frozenset()
+    # O prazo da confirmação conta do começo desta execução (a sondagem e a montagem entram nele).
+    confirm_deadline = clock.monotonic() + _handover_budget()
+    if handover and not settings.update_handover:
+        # A passagem está desligada nesta instalação (`update_handover`): nada é aberto, o
+        # supervisor usa o caminho de reserva.
+        _log.warning("a passagem sem queda está desligada (update_handover); uso a reserva")
+        return EXIT_HANDOVER_UNSUPPORTED
+    if handover:
+        probed = await _handover_features(
+            api_url, clock, min(HANDOVER_PROBE_SECONDS, confirm_deadline - clock.monotonic())
+        )
+        if probed is None:
+            # Antes de tudo: nada foi aberto nem gravado, o supervisor só troca de caminho.
+            _log.warning(
+                "a API não sabe passar a conexão para uma versão nova; uso o caminho de reserva"
+            )
+            return EXIT_HANDOVER_UNSUPPORTED
+        known_features = probed
+    elif not acquire_slug(agent_id):
+        # Outra pasta de instalação (ou uma execução manual) já serve esta identidade.
+        print(f"Erro: {ALREADY_RUNNING_MESSAGE}", file=sys.stderr)
+        _log.error("%s (mesma identidade)", ALREADY_RUNNING_MESSAGE)
+        return EXIT_ALREADY_RUNNING
     tray = TrayStatus(settings.tv_name, clock)
 
     kit = kit or build_diagnostics(clock)
     run_state = RunState(installation_base() / "runtime")
-    install_crash_trace(installation_base() / "logs", kit.recorder)
+    connection_mark = ConnectionMarker(installation_base() / "runtime")
+    # Aberto quando esta execução é a dona da instalação: sempre, salvo na passagem sem queda.
+    owner = asyncio.Event()
+    if not handover:
+        owner.set()
+    # Aberto quando a API confirma que promoveu esta execução (só na passagem sem queda).
+    accepted = asyncio.Event()
+
+    def handover_accepted() -> None:
+        connection_mark.connected()
+        accepted.set()
+
+    async def start_shared_state() -> None:
+        install_crash_trace(installation_base() / "logs", kit.recorder)
+        announce_start(run_state, kit, settings, build_version())
+        # Arruma a pasta (restos de atualização, estrutura): só mexe no que tem nome conhecido.
+        # Com prazo: uma pasta travada (disco cheio ou em disputa) não impede o agente de subir.
+        try:
+            async with asyncio.timeout(TIDY_TIMEOUT_SECONDS):
+                await asyncio.to_thread(tidy, installation_base())
+        except TimeoutError:
+            _log.warning(
+                "a arrumação da pasta passou de %.0f s; sigo sem ela", TIDY_TIMEOUT_SECONDS
+            )
+
     asyncio.get_running_loop().set_exception_handler(loop_exception_handler(kit.recorder))
-    announce_start(run_state, kit, settings, build_version())
-    # Arruma a pasta (restos de atualização, estrutura): só mexe no que tem nome conhecido.
-    # Com prazo: uma pasta travada (disco cheio ou em disputa) não impede o agente de subir.
-    try:
-        async with asyncio.timeout(TIDY_TIMEOUT_SECONDS):
-            await asyncio.to_thread(tidy, installation_base())
-    except TimeoutError:
-        _log.warning("a arrumação da pasta passou de %.0f s; sigo sem ela", TIDY_TIMEOUT_SECONDS)
+    if not handover:
+        await start_shared_state()
     gate = EnvelopeGate(agent_id)
     envelopes = EnvelopeFactory(agent_id, gate, clock)
     transport = WebSocketTransport(
         build_ws_url(api_url, agent_id),
         lambda: secrets.get(agent_id),
         user_agent=f"uniover-agent/{agent_version()}",
+        # A conexão da passagem se apresenta como candidata: a API só a promove com o hello válido.
+        handover_candidate=lambda: supervisor.handover_pending,
     )
     tv = build_tv(settings, clock, transport, envelopes, secrets)
     pc = build_pc(
@@ -487,8 +695,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
                     kind, severity, detail, component="tv_adb"
                 )
             )
-        for step in tv.prepare:
-            await step()
+        if not handover:
+            for step in tv.prepare:
+                await step()
     process = ProcessMessage(
         agent_id,
         gate,
@@ -542,7 +751,8 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         after_hello = [*after_hello, *pc.after_hello]
 
     diary = AbsenceDiary(installation_base() / "runtime" / "last-alive", clock)
-    diary.start()
+    if not handover:
+        diary.start()
     watch = ConnectionWatch()
     health = TaskHealth(clock)
     # O diagnóstico só é declarado e enviado depois de a API dizer que o aceita (uma API anterior
@@ -550,7 +760,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     # A consulta roda em segundo plano, com prazo curto: a primeira conexão nunca espera por ela, e
     # o `hello` repetido a cada 5 minutos passa a declarar a capacidade assim que a API a listar.
     features = ApiFeatures(
-        lambda: fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS), clock
+        lambda: fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS),
+        clock,
+        known=known_features,
     )
     refreshing: set[asyncio.Future[None]] = set()
 
@@ -608,10 +820,13 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         tray.disconnected()
         diary.disconnected()
         watch.disconnected_now()
+        # O anúncio que esperava a posse é desta sessão: a próxima conexão faz o dela.
+        while deferred_announce:
+            deferred_announce.pop().cancel()
 
-    async def on_connected() -> None:
-        mark_session_started()  # daqui em diante, o que cair não é falha de partida
+    async def announce_connected() -> None:
         if pc is not None and pc.direct is not None:
+            # Só quem é a dona do PC cuida do canal direto: ele volta a valer com a API.
             pc.on_lane(pc.direct.api_reconnected)
         tray.connected()
         diary.connected()
@@ -624,17 +839,58 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             await step()
         await delivery.after_hello()
 
+    deferred_announce: list[asyncio.Task[None]] = []
+
+    async def announce_when_owner() -> None:
+        await owner.wait()
+        try:
+            await announce_connected()
+        except Exception:
+            _log.exception("falha ao anunciar a conexão depois de virar a dona")
+
+    async def on_connected() -> None:
+        mark_session_started()  # daqui em diante, o que cair não é falha de partida
+        if not handover:
+            connection_mark.connected()
+        if owner.is_set():
+            await announce_connected()
+            return
+        # Na passagem sem queda, anunciar a TV e enviar a fila de diagnóstico esperam esta execução
+        # ser a dona (a antiga ainda os tem). A conexão não espera junto: a leitura precisa
+        # rodar para receber a confirmação da API (ela marca "conectou") e o fechamento.
+        deferred_announce.append(asyncio.create_task(announce_when_owner(), name="announce"))
+
     update_source = FileUpdateStatus(default_status_path(), agent_source_dir())
+
+    async def process_when_owner(raw: str | bytes) -> None:
+        if owner.is_set():
+            await process(raw)
+            return
+        # A TV e o PC ainda são da antiga: o comando é recusado na hora, sem prender a leitura do
+        # canal (que precisa seguir para ver a confirmação da API, o fechamento e os batimentos).
+        reply_to = _command_to_refuse(raw)
+        if reply_to is not None:
+            await transport.send(
+                envelopes.result(reply_to, ok=False, code=AGENT_STARTING, message=_STARTING_MESSAGE)
+            )
+
     supervisor = ConnectionSupervisor(
         transport,
-        process,
+        process_when_owner if handover else process,
         envelopes,
         clock,
         random.SystemRandom().random,
         agent_version=build_version(),
         capabilities=lambda: (
             "transport.keepalive.v1",
-            *declarable_capabilities((RESTART_CAPABILITY,), features.supports),
+            *declarable_capabilities(
+                (
+                    RESTART_CAPABILITY,
+                    # Desligada a passagem, a antiga sai como substituída (4409).
+                    *((HANDOVER_CAPABILITY,) if settings.update_handover else ()),
+                ),
+                features.supports,
+            ),
             LOGS_CAPABILITY,
             MAINTENANCE_CAPABILITY,
             *delivery.capabilities(),
@@ -655,6 +911,9 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         tv=(settings.tv_kind, settings.tv_host) if tv is not None and settings.tv_host else None,
         update_status=lambda: update_body(update_source.read()),
         on_startup_failure=delivery.connection_failed,
+        handover=handover,
+        # "Conectou" na passagem é a confirmação da API: o que o supervisor lê em `connected.json`.
+        on_handover_accepted=handover_accepted,
     )
     # A API passou a listar uma capacidade nova (ex.: depois de um deploy dela): declara já, sem
     # esperar o `hello` de 5 minutos.
@@ -716,12 +975,49 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         # O pareamento pelo app e o estado "não pareada" também dependem do que a API aceita.
         jobs = [*jobs, features.run]
     # Cada tarefa de fundo é supervisionada: erro vira registro e ocorrência, e ela recomeça.
-    background = [
-        asyncio.create_task(
-            keep_running(job.__qualname__, job, clock=clock, recorder=kit.recorder, health=health)
+    background: list[asyncio.Task[None]] = []
+
+    def start_background() -> None:
+        background.extend(
+            asyncio.create_task(
+                keep_running(
+                    job.__qualname__, job, clock=clock, recorder=kit.recorder, health=health
+                )
+            )
+            for job in jobs
         )
-        for job in jobs
-    ]
+
+    async def take_over() -> None:
+        """Passagem sem queda: espera a execução antiga largar a trava e só então abre o dela.
+
+        Sem a confirmação da API, a antiga não foi mandada sair: passado o prazo (contado do começo
+        desta execução, `HANDOVER_CONFIRM_SECONDS`) ela desiste (nada mudou para ninguém). Com a
+        confirmação, ela espera quanto for preciso (a antiga sai ao receber o 4410, ou o supervisor
+        a derruba)."""
+        logged = clock.monotonic()
+        while not await asyncio.to_thread(_acquire_all, agent_id):
+            now = clock.monotonic()
+            if not accepted.is_set():
+                if now >= confirm_deadline:
+                    _log.error("a API não confirmou a passagem a tempo")
+                    raise HandoverTimeout
+            elif now - logged >= HANDOVER_WAIT_LOG_SECONDS:
+                logged = now
+                _log.warning("a API me promoveu, mas a execução anterior ainda não largou a trava")
+            await clock.sleep(HANDOVER_POLL_SECONDS)
+        await start_shared_state()
+        if tv is not None:
+            for step in tv.prepare:
+                await step()
+        diary.start()
+        start_background()
+        owner.set()
+        connection_mark.ready()
+        _log.info("passagem concluída: esta execução é a dona do PC e da TV")
+
+    if not handover:
+        start_background()
+    takeover = asyncio.create_task(take_over(), name="takeover") if handover else None
     relocator = (
         build_relocator(
             settings,
@@ -737,39 +1033,77 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         else None
     )
     moved = False
+    timed_out = False
     stopped_because = "erro"
     try:
-        moved = await supervise(supervisor, relocator, clock=clock, kit=kit)
-        stopped_because = "tv_mudou_de_endereco" if moved else "credencial_recusada"
+        moved = await supervise(
+            supervisor, relocator, clock=clock, kit=kit, owner=owner, takeover=takeover
+        )
+        stopped_because = _stop_reason_text(moved, supervisor.stop_reason)
+        if supervisor.stop_reason == STOP_DUPLICATE:
+            kit.recorder.record(
+                "agent.duplicate",
+                "error",
+                "outro agente com a mesma identidade tomou a conexão duas vezes em poucos minutos; "
+                "este encerrou em vez de disputar",
+                component="main",
+            )
+    except HandoverTimeout:
+        stopped_because = "passagem_sem_dona"
+        timed_out = True
     except asyncio.CancelledError:
         stopped_because = "cancelado"
         raise
     finally:
         # Ao encerrar, fecha a sessão com a TV de forma limpa (não deixa o canal pendurado).
+        if takeover is not None:
+            takeover.cancel()
+            await asyncio.gather(takeover, return_exceptions=True)
         for task in background:
             task.cancel()
-        await asyncio.gather(*background, return_exceptions=True)
+        await _close_within(
+            "as tarefas de fundo", asyncio.gather(*background, return_exceptions=True)
+        )
         for refresh in list(refreshing):
             refresh.cancel()
-        await asyncio.gather(*refreshing, return_exceptions=True)
+        await _close_within(
+            "a consulta do que a API aceita", asyncio.gather(*refreshing, return_exceptions=True)
+        )
         if pc is not None:
-            await pc.close_direct()
+            await _close_within("o canal direto do PC", pc.close_direct())
         if pc is not None and pc.volume is not None:
-            await pc.volume.aclose()
-        await process.aclose()
+            await _close_within("o volume do PC", pc.volume.aclose())
+        if supervisor.stop_reason == STOP_HANDOVER:
+            # Uma versão nova já é a dona: o que está em curso (na TV e na faixa do PC) termina
+            # antes de tudo ser fechado.
+            await process.drain(HANDOVER_DRAIN_SECONDS)
+        # Fecha a faixa no laço dela (solta as teclas e os botões lá) e depois para a thread.
+        await _close_within("os comandos em curso", process.aclose())
         if pc is not None:
-            await pc.stop_input()
+            await _close_within("a thread da entrada do PC", pc.stop_input())
         if tv is not None:
-            await tv.manager.aclose()
+            await _close_within("a sessão com a TV", tv.manager.aclose())
             for close in tv.closers:
-                await close()
+                await _close_within("um recurso da TV", close())
         if publisher is not None:
-            await publisher.aclose()
+            await _close_within("o publicador do estado da TV", publisher.aclose())
         kit.recorder.flush_pending()
-        await kit.store.flush_appends()
-        run_state.end(stopped_because)
+        await _close_within("a fila de diagnóstico", kit.store.flush_appends())
+        if owner.is_set():
+            # Quem nunca chegou a ser a dona (a passagem não completou) não escreve no rastro dela.
+            run_state.end(stopped_because)
+    if timed_out:
+        return EXIT_ALREADY_RUNNING
+    if supervisor.stop_reason == STOP_HANDOVER_UNSUPPORTED:
+        # A API trocou de instância no meio e a nova não tem a rota da candidata: nada foi aberto.
+        return EXIT_HANDOVER_UNSUPPORTED
     if moved:
         return EXIT_TV_MOVED
+    if supervisor.stop_reason == STOP_HANDOVER:
+        _log.info("uma versão nova assumiu a conexão; saí de forma ordenada")
+        return EXIT_OK
+    if supervisor.stop_reason == STOP_DUPLICATE:
+        return EXIT_DUPLICATE_AGENT
     # `run` só devolve quando a credencial foi recusada; o token continua no cofre.
     print(
         "Token revogado ou inválido. Rode `uniover-agent pair` para parear de novo.",

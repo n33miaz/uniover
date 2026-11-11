@@ -10,6 +10,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>agent.diagnostics.v1</c>.</summary>
     public const string AgentDiagnosticsV1 = "agent.diagnostics.v1";
 
+    /// <summary>Tipo de mensagem <c>agent.handover.accepted.v1</c>.</summary>
+    public const string AgentHandoverAcceptedV1 = "agent.handover.accepted.v1";
+
     /// <summary>Tipo de mensagem <c>agent.hello.v1</c>.</summary>
     public const string AgentHelloV1 = "agent.hello.v1";
 
@@ -176,6 +179,7 @@ public static class AgentMessageTypes
     public static readonly IReadOnlyList<string> All =
     [
         AgentDiagnosticsV1,
+        AgentHandoverAcceptedV1,
         AgentHelloV1,
         AgentKeepaliveV1,
         AgentLogsRequestV1,

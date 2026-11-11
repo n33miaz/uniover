@@ -16,6 +16,15 @@ class ConnectionReplaced(TransportError):  # noqa: N818
     """Outra instância do mesmo agente assumiu a conexão (um dono por conexão)."""
 
 
+class HandoverRequested(TransportError):  # noqa: N818
+    """Uma execução nova assumiu; esta deve encerrar de modo limpo e sem reconectar."""
+
+
+class HandoverUnsupported(TransportError):  # noqa: N818
+    """A API não tem a rota da candidata da passagem (é uma versão anterior): a passagem sem queda
+    não existe com ela."""
+
+
 class ServerRestarting(TransportError):  # noqa: N818
     """O servidor avisou que reinicia (deploy, troca de instância): volta-se logo, sem espera."""
 

@@ -12,6 +12,7 @@ from uniover_agent.adapters.fakes import FakeClock, FakeTvRemote
 from uniover_agent.adapters.self_update import UpdateResult
 from uniover_agent.adapters.tv_use_marker import MARKER_FILE, TvUseMarker
 from uniover_agent.adapters.update_status import BUSY_REASON, FileUpdateStatus, record_result
+from uniover_agent.config import Settings
 from uniover_agent.core import TvSessionManager
 
 from .test_self_update import NEW, OLD, Installation
@@ -34,20 +35,38 @@ def mark_use(pc: Installation, seconds_ago: float, *, now: float = NOW) -> Path:
     return marker
 
 
+# Estes testes provam o mecanismo da espera na escala de antes (10 min parado, teto de 24 h); os
+# padrões de hoje (60 s e 10 min) têm o teste próprio do fim do arquivo.
+WINDOW = 600.0
+CEILING = 24 * 3600.0
+
+
 def update(
     pc: Installation, *, now: float = NOW, free: int = 50 * GIB, **kwargs: object
 ) -> UpdateResult:
+    kwargs.setdefault("tv_idle_seconds", WINDOW)
+    kwargs.setdefault("tv_max_defer_seconds", CEILING)
     return pc.update(NEW, wall=lambda: now, free_bytes=lambda _folder: free, **kwargs)
 
 
+def update_to(pc: Installation, sha: str, now: float) -> UpdateResult:
+    return pc.update(
+        sha,
+        wall=lambda: now,
+        free_bytes=lambda _f: 50 * GIB,
+        tv_idle_seconds=WINDOW,
+        tv_max_defer_seconds=CEILING,
+    )
+
+
 def test_the_tv_counts_as_in_use_only_inside_the_window(installed: Installation) -> None:
-    assert not module.tv_in_use(installed.source, NOW)  # sem a marca: parada, como antes
+    assert not module.tv_in_use(installed.source, NOW, WINDOW)  # sem a marca: parada, como antes
     mark_use(installed, 30)
-    assert module.tv_in_use(installed.source, NOW)
+    assert module.tv_in_use(installed.source, NOW, WINDOW)
     mark_use(installed, 599)
-    assert module.tv_in_use(installed.source, NOW)
+    assert module.tv_in_use(installed.source, NOW, WINDOW)
     mark_use(installed, 601)
-    assert not module.tv_in_use(installed.source, NOW)
+    assert not module.tv_in_use(installed.source, NOW, WINDOW)
     # A janela zerada desliga a espera.
     mark_use(installed, 1)
     assert not module.tv_in_use(installed.source, NOW, idle_seconds=0)
@@ -61,13 +80,13 @@ def mark_pc_use(pc: Installation, seconds_ago: float, *, now: float = NOW) -> Pa
 
 
 def test_the_pc_control_counts_as_in_use_only_inside_the_window(installed: Installation) -> None:
-    assert not module.control_in_use(installed.source, NOW)  # sem nenhuma marca: parado
+    assert not module.control_in_use(installed.source, NOW, WINDOW)  # sem nenhuma marca: parado
     mark_pc_use(installed, 30)
-    assert module.pc_in_use(installed.source, NOW)
-    assert module.control_in_use(installed.source, NOW)
-    assert not module.tv_in_use(installed.source, NOW), "a marca da TV continua só da TV"
+    assert module.pc_in_use(installed.source, NOW, WINDOW)
+    assert module.control_in_use(installed.source, NOW, WINDOW)
+    assert not module.tv_in_use(installed.source, NOW, WINDOW), "a marca da TV continua só da TV"
     mark_pc_use(installed, 601)
-    assert not module.control_in_use(installed.source, NOW)
+    assert not module.control_in_use(installed.source, NOW, WINDOW)
 
 
 def test_an_update_waits_while_the_pc_is_being_controlled_and_goes_ahead_after(
@@ -345,13 +364,13 @@ def test_the_oldest_start_of_the_wait_is_kept_when_the_candidate_changes(
     started = clock_start(installed)
     moment = NOW + 23 * 3600
     os.utime(marker, (moment, moment))
-    first = installed.update(other, wall=lambda: moment, free_bytes=lambda _f: 50 * GIB)
+    first = update_to(installed, other, moment)
     assert first.outcome == "deferred_busy"
     assert clock_start(installed) == started  # o commit novo só troca o sha informativo
     # 25 h depois da primeira espera o teto vale, mesmo com um commit novo no meio.
     later = NOW + 25 * 3600
     os.utime(marker, (later, later))
-    final = installed.update(other, wall=lambda: later, free_bytes=lambda _f: 50 * GIB)
+    final = update_to(installed, other, later)
     assert final.outcome != "deferred_busy"
     assert installed.downloads[-1] == other  # o teto venceu: seguiu para o download
 
@@ -509,3 +528,44 @@ def test_only_the_limits_the_configuration_changed_reach_the_update() -> None:
     assert _update_limits(Settings()) == {}
     changed = _update_limits(Settings(update_tv_idle_seconds=30, disk_warn_mb=4096))
     assert changed == {"tv_idle_seconds": 30.0, "resume_free_bytes": 4096 * 1024 * 1024}
+
+
+def test_the_update_is_applied_soon_by_default_and_the_handover_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A atualização é aplicada logo: com o uso no instante espera 60 s parado, no máximo 10 min.
+    # A passagem sem queda é opt-in (`update_handover`, ou `UNIOVER_UPDATE_HANDOVER`).
+    monkeypatch.delenv("UNIOVER_UPDATE_HANDOVER", raising=False)
+    settings = Settings()
+    assert settings.update_tv_idle_seconds == 60
+    assert settings.update_max_defer_seconds == 600
+    assert settings.update_handover is False
+    assert module.TV_IDLE_SECONDS == 60.0
+    assert module.TV_MAX_DEFER_SECONDS == 600.0
+    monkeypatch.setenv("UNIOVER_UPDATE_HANDOVER", "true")
+    assert Settings().update_handover is True
+
+
+def test_with_the_new_defaults_the_pc_is_in_use_only_for_the_last_minute(
+    installed: Installation,
+) -> None:
+    mark_use(installed, 59)
+    assert module.tv_in_use(installed.source, NOW)
+    mark_use(installed, 61)
+    assert not module.tv_in_use(installed.source, NOW)
+    # E a espera tem teto de 10 minutos: passado, a troca vai mesmo com o uso.
+    mark_use(installed, 1, now=NOW)
+    first = update(
+        installed,
+        tv_idle_seconds=module.TV_IDLE_SECONDS,
+        tv_max_defer_seconds=module.TV_MAX_DEFER_SECONDS,
+    )
+    assert first.outcome == "deferred_busy"
+    mark_use(installed, 1, now=NOW + 601)
+    late = update(
+        installed,
+        now=NOW + 601,
+        tv_idle_seconds=module.TV_IDLE_SECONDS,
+        tv_max_defer_seconds=module.TV_MAX_DEFER_SECONDS,
+    )
+    assert late.outcome != "deferred_busy"

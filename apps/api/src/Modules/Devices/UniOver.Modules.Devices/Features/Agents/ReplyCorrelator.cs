@@ -61,6 +61,12 @@ internal interface IReplyCorrelator
 
     /// <summary>Espera, até <paramref name="timeout"/>, não haver mais nenhum comando esperando resposta. Devolve se esvaziou.</summary>
     Task<bool> WaitForIdleAsync(TimeSpan timeout, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Espera, até <paramref name="timeout"/>, os comandos do agente que saíram pela <paramref name="session"/> terminarem. O que
+    /// foi enviado depois por outra sessão do mesmo agente não conta. Devolve se esvaziou.
+    /// </summary>
+    Task<bool> WaitForRepliesOnAsync(string agentId, object session, TimeSpan timeout, CancellationToken cancellationToken);
 }
 
 internal sealed class ReplyCorrelator(TimeProvider? time = null, IOptions<DevicesTransportOptions>? options = null) : IReplyCorrelator
@@ -158,10 +164,22 @@ internal sealed class ReplyCorrelator(TimeProvider? time = null, IOptions<Device
         }
     }
 
-    public async Task<bool> WaitForIdleAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    public Task<bool> WaitForIdleAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        WaitUntilAsync(() => _pending.IsEmpty, timeout, cancellationToken);
+
+    public Task<bool> WaitForRepliesOnAsync(string agentId, object session, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return WaitUntilAsync(
+            () => !_pending.Values.Any(p => string.Equals(p.AgentId, agentId, StringComparison.Ordinal) && p.IsAwaitingOn(session)),
+            timeout,
+            cancellationToken);
+    }
+
+    private async Task<bool> WaitUntilAsync(Func<bool> done, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var deadline = _time.GetUtcNow() + timeout;
-        while (!_pending.IsEmpty)
+        while (!done())
         {
             var left = deadline - _time.GetUtcNow();
             if (left <= TimeSpan.Zero)
@@ -254,6 +272,15 @@ internal sealed class ReplyCorrelator(TimeProvider? time = null, IOptions<Device
             lock (_gate)
             {
                 return FailLocked();
+            }
+        }
+
+        /// <summary>O comando saiu pela <paramref name="session"/> e ainda espera a resposta dela.</summary>
+        public bool IsAwaitingOn(object session)
+        {
+            lock (_gate)
+            {
+                return !_failed && !Completion.Task.IsCompleted && ReferenceEquals(_session, session);
             }
         }
 

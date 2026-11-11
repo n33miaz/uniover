@@ -419,7 +419,12 @@ def test_the_command_records_updating_and_then_the_result(
     seen: list[str] = []
 
     def fake(
-        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+        source: Path,
+        *,
+        sync: bool,
+        channel: str,
+        ignore_deferral: bool = False,
+        staged: bool = False,
     ) -> UpdateResult:
         seen.append(json.loads(default_status_path().read_text(encoding="utf-8"))["outcome"])
         return UpdateResult(False, "ok", "up_to_date", latest=LATEST)
@@ -435,7 +440,12 @@ def test_an_unexpected_crash_in_the_update_is_recorded_and_still_exits_zero(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     def boom(
-        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+        source: Path,
+        *,
+        sync: bool,
+        channel: str,
+        ignore_deferral: bool = False,
+        staged: bool = False,
     ) -> UpdateResult:
         raise RuntimeError("segredo uo_dev_XYZ")
 
@@ -458,7 +468,7 @@ def test_a_broken_state_folder_never_stops_the_update_itself(
     monkeypatch.setattr(
         maintenance_module,
         "self_update",
-        lambda source, *, sync, channel, ignore_deferral=False: UpdateResult(
+        lambda source, *, sync, channel, ignore_deferral=False, staged=False: UpdateResult(
             True, "agente atualizado"
         ),
     )
@@ -674,7 +684,7 @@ def test_a_deferred_check_gives_back_the_state_that_was_there_without_a_failure_
     monkeypatch.setattr(
         maintenance_module,
         "self_update",
-        lambda source, *, sync, channel, ignore_deferral=False: UpdateResult(
+        lambda source, *, sync, channel, ignore_deferral=False, staged=False: UpdateResult(
             False, "adiada", "deferred", latest=LATEST
         ),
     )
@@ -691,7 +701,12 @@ def test_the_owners_update_now_reaches_the_update_as_a_bypass_of_the_deferral(
     seen: list[bool] = []
 
     def fake(
-        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+        source: Path,
+        *,
+        sync: bool,
+        channel: str,
+        ignore_deferral: bool = False,
+        staged: bool = False,
     ) -> UpdateResult:
         seen.append(ignore_deferral)
         return UpdateResult(False, "ok", "up_to_date", latest=LATEST)

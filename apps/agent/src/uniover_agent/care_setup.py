@@ -16,6 +16,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.diagnostics_file import DiagnosticsLogHandler, FileDiagnosticStore
 from uniover_agent.adapters.installation import _is_real_installation, anchor_dir, installation_base
 from uniover_agent.adapters.log_offload import OffloadHandler
@@ -101,7 +102,7 @@ def build_checks(  # noqa: PLR0913 - cada argumento é uma peça que a montagem 
     root = installation_base()
     anchor = anchor_dir()
     checks: list[Check] = []
-    if (root / "app").is_dir():
+    if current_pointer.current_app(root).is_dir():
         checks.append(installation_check(root))
     real = sys.platform == "win32" and _is_real_installation(anchor)
     if real:

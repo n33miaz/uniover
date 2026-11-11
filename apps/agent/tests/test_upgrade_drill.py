@@ -9,7 +9,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import httpx
 import pytest
@@ -444,6 +444,7 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
         def __init__(self, _args: object) -> None:
             self.verdict = drill.Verdict()
             self.base = tmp_path
+            self.gateway = SimpleNamespace(handover_supported=True)
 
         def real_fingerprint(self) -> dict[str, object]:
             return {"processos reais": []}
@@ -461,6 +462,8 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
             return True
 
         def offer(self, label: str, *_args: object, **_kwargs: object) -> bool:
+            # As trocas comuns (e a recusa) rodam com uma API que NÃO sabe a passagem.
+            assert not self.gateway.handover_supported, label
             events.append(label)
             return True
 
@@ -470,6 +473,12 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
 
         def recover_interrupted_swap(self, _sha: str) -> bool:
             events.append("queda entre as renomeacoes")
+            return True
+
+        def offer_handover(self, label: str, *_args: object) -> bool:
+            # A passagem sem queda liga a API que a sabe (e as fases comuns a desligam de novo).
+            self.gateway.handover_supported = True
+            events.append(label)
             return True
 
         def rollback_after_sync_failure(self, _sha: str) -> bool:
@@ -501,6 +510,10 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
     # Logo depois da recusa por código quebrado e antes de qualquer troca de versão.
     assert events.index("sem indice") == broken + 1
     assert events.index("sem indice") < events.index("B. base -> candidata")
+    # A queda entre as renomeações é da troca clássica (a da base para a candidata): vem logo
+    # depois dela e antes do primeiro ponteiro; a passagem sem queda vem depois da troca de reserva.
+    names = [name for name in events if name.startswith(("B.", "C.", "C2.")) or "queda" in name]
+    assert [name.split(" ")[0] for name in names] == ["B.", "queda", "C.", "C2."]
 
 
 def test_stopping_the_drill_also_ends_an_update_process(

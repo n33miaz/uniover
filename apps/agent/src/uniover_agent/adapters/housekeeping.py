@@ -1,6 +1,7 @@
 r"""Arrumação automática da pasta de instalação, a cada vez que o agente sobe.
 
-A pasta é organizada em `app` (código), `runtime` (estado e ambiente Python), `config`, `logs`,
+A pasta é organizada em `app` (código), `app.staging` (versões preparadas), `runtime` (estado e
+ambiente Python), `config`, `logs`,
 `web`, `tv` (certificados) e `icons`. Com o tempo sobram restos das atualizações: versões recusadas,
 pastas candidatas que ficaram pela metade, arquivos temporários. Aqui eles saem sozinhos, sem que o
 dono precise saber que existem, e cada ação vai para o registro.
@@ -11,10 +12,13 @@ tocados.
 """
 
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
 from typing import Final
+
+from uniover_agent.adapters import current_pointer
 
 _log = logging.getLogger(__name__)
 
@@ -94,6 +98,22 @@ def tidy(root: Path, *, now: float | None = None) -> list[str]:
                 _remove(item, done, "resto de uma atualização que não terminou")
     except OSError:
         pass
+    done.extend(_prune_versions(root))
     for action in done:
         _log.info("arrumação da pasta: %s", action)
     return done
+
+
+def _prune_versions(root: Path) -> list[str]:
+    """As versões preparadas que ninguém usa mais saem; ficam a que espera e a que roda agora.
+
+    A que roda agora pode ainda não ser a do ponteiro (passagem sem queda em andamento): o
+    supervisor diz qual é por `UNIOVER_APP_DIR`."""
+    keep: set[str] = set()
+    prepared = current_pointer.read_prepared(root)
+    if prepared is not None and prepared.sha is not None:
+        keep.add(prepared.sha)
+    running = os.environ.get("UNIOVER_APP_DIR")
+    if running and Path(running).parent.name == current_pointer.STAGING_DIR:
+        keep.add(Path(running).name)
+    return current_pointer.prune(root, keep_extra=frozenset(keep))

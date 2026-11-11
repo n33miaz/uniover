@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.process import popen_hidden, run_hidden
 
 # Versão do lançador sem console que a tarefa usa; subir o número reaponta as tarefas já instaladas.
@@ -195,7 +196,9 @@ def migrate_layout(base: Path | None = None) -> Path:
     if config.exists():
         os.environ["UNIOVER_CONFIG_FILE"] = str(config)
     os.environ["UNIOVER_LOG_FILE"] = str(root / "logs" / "agent.log")
-    os.environ["UV_PROJECT_ENVIRONMENT"] = str(root / "runtime" / "venv")
+    if not os.environ.get("UNIOVER_APP_DIR"):
+        # Com o supervisor atual o ambiente já vem certo (cada versão preparada tem o seu).
+        os.environ["UV_PROJECT_ENVIRONMENT"] = str(root / "runtime" / "venv")
     _install_launcher(
         root,
         start_now=took_over_legacy_wrapper and can_take_over and base is None,
@@ -530,8 +533,9 @@ def _install_launcher(
     outra pasta para o resto.
     """
     anchor = anchor if anchor is not None else root
-    launcher = root / "app" / "tools" / "launcher.ps1"
-    runner = root / "app" / "tools" / "run-agent.ps1"
+    app = current_pointer.current_app(root)
+    launcher = app / "tools" / "launcher.ps1"
+    runner = app / "tools" / "run-agent.ps1"
     if not launcher.is_file() or not runner.is_file():
         return
     try:

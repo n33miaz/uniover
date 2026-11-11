@@ -359,7 +359,7 @@ async def test_run_serves_the_pc_commands_without_any_tv(
 
 
 async def hello_capabilities(
-    monkeypatch: pytest.MonkeyPatch, features: frozenset[str]
+    monkeypatch: pytest.MonkeyPatch, features: frozenset[str], *, handover: bool = False
 ) -> list[str]:
     """As capacidades do `hello` de um agente com o controle do PC, em API que lista `features`."""
 
@@ -389,7 +389,11 @@ async def hello_capabilities(
     silence_noisy_loggers()
     async with FakeApi(script) as api:
         settings = Settings(
-            api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True, pc_control=True
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            pc_control=True,
+            update_handover=handover,
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
     return list(api.received[0]["body"]["capabilities"])
@@ -525,6 +529,20 @@ async def test_the_volume_state_is_sent_only_after_the_api_lists_pc_volume(
     results = {m["correlationId"]: m["body"] for m in received if m["type"] == "command.result.v1"}
     assert results["0192f1e4-0000-7000-8000-0000000000e1"] == {"ok": True}
     assert audio.calls == [("level", 65)]
+
+
+async def test_the_hello_declares_the_handover_capability_only_when_the_api_lists_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "tv.pair.v1", "pc.key.v2"})
+    # Sem ela a API fecharia a antiga com 4409 e não 4410 (que só quem a declara entende).
+    assert "agent.handover.v1" not in await hello_capabilities(
+        monkeypatch, older_api, handover=True
+    )
+    listed = older_api | {"agent.handover.v1"}
+    assert "agent.handover.v1" in await hello_capabilities(monkeypatch, listed, handover=True)
+    # Com a passagem desligada (o padrão) nem a declara, mesmo com a API a listando.
+    assert "agent.handover.v1" not in await hello_capabilities(monkeypatch, listed)
 
 
 async def test_a_held_modifier_is_let_go_when_the_connection_drops_and_old_keys_still_work(

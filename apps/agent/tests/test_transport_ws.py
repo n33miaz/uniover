@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 
@@ -11,6 +12,7 @@ from uniover_agent.adapters.transport_ws import (
     PING_TIMEOUT_SECONDS,
     WebSocketTransport,
     build_ws_url,
+    candidate_url,
 )
 from uniover_agent.composition.connection import build_handler
 from uniover_agent.core import (
@@ -22,6 +24,8 @@ from uniover_agent.core import (
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
+    HandoverRequested,
+    HandoverUnsupported,
     ServerRestarting,
     ServerRestartNow,
     TransportError,
@@ -128,6 +132,9 @@ async def test_receives_raw_text_frames() -> None:
         (1000, "replaced", ConnectionReplaced),
         (4409, "replaced", ConnectionReplaced),
         (4409, "", ConnectionReplaced),
+        (4410, "handover", HandoverRequested),
+        (4410, "", HandoverRequested),
+        (1000, "handover", HandoverRequested),
         (4403, "revoked", CredentialRejected),
         (1008, "revoked", CredentialRejected),
         (4403, "", CredentialRejected),
@@ -275,6 +282,52 @@ async def test_invalid_message_from_server_is_not_executed_and_revocation_stops(
     assert clock.sleeps == []
 
 
+def test_the_candidate_route_is_the_channel_with_the_handover_suffix() -> None:
+    assert (
+        candidate_url("wss://api.exemplo.test/api/v1/devices/agents/pc-casa/ws")
+        == "wss://api.exemplo.test/api/v1/devices/agents/pc-casa/ws/handover"
+    )
+    assert candidate_url("ws://127.0.0.1:5000/a/ws/") == "ws://127.0.0.1:5000/a/ws/handover"
+
+
+async def test_the_candidate_route_is_used_only_while_the_handover_is_pending() -> None:
+    pending = {"now": True}
+
+    async def script(connection: ServerConnection) -> None:
+        await connection.close(1000, "fim")
+
+    async with FakeApi(script) as api:
+        candidate = WebSocketTransport(
+            api.url, lambda: TOKEN, open_timeout=5, handover_candidate=lambda: pending["now"]
+        )
+        await candidate.connect()
+        await candidate.close()
+        pending["now"] = False
+        await candidate.connect()
+        await candidate.close()
+        plain = transport_for(api)
+        await plain.connect()
+        await plain.close()
+    # Enquanto a promoção não é confirmada a conexão é candidata (rota própria, nunca um cabeçalho
+    # que uma API sem a passagem ignoraria); depois dela e numa conexão comum, é a rota de sempre.
+    plain_path = f"/api/v1/devices/agents/{AGENT_ID}/ws"
+    assert api.paths == [f"{plain_path}/handover", plain_path, plain_path]
+
+
+async def test_an_api_without_the_candidate_route_makes_the_candidate_give_up() -> None:
+    async with FakeApi(reject_status=404) as api:
+        candidate = WebSocketTransport(
+            api.url, lambda: TOKEN, open_timeout=5, handover_candidate=lambda: True
+        )
+        with pytest.raises(HandoverUnsupported):
+            await candidate.connect()
+        # Numa conexão comum um 404 é uma recusa qualquer da abertura, e não a passagem.
+        plain = transport_for(api)
+        with pytest.raises(TransportError) as raised:
+            await plain.connect()
+        assert not isinstance(raised.value, HandoverUnsupported)
+
+
 async def test_replaced_by_the_server_waits_longer() -> None:
     async def script(connection: ServerConnection) -> None:
         await connection.close(4409, "replaced")
@@ -288,7 +341,9 @@ async def test_replaced_by_the_server_waits_longer() -> None:
                 break
             await asyncio.sleep(0.02)
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
+        # O relógio falso não faz o tempo passar: uma segunda substituição seguida já vale como
+        # disputa e o laço pode ter parado sozinho (ver `test_a_second_replacement_...`).
+        with contextlib.suppress(asyncio.CancelledError):
             await task
     assert clock.sleeps[0] == 60
 

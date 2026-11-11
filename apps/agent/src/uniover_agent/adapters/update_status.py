@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.maintenance_signals import can_roll_back_to
 from uniover_agent.adapters.self_update import VERSION_FILE, UpdateResult, read_version
@@ -27,6 +28,9 @@ STATUS_FILE: Final = "update-status.json"
 DEFERRED_REASON: Final = (
     "uma versão nova voltou por demora ou disco deste PC; fica adiada (Atualizar agora tenta já)"
 )
+PREPARED_REASON: Final = (
+    "a versão nova está preparada e entra sem derrubar o agente (Atualizar agora entra já)"
+)
 BUSY_REASON: Final = (
     "a TV foi usada há pouco; a atualização espera ela ficar parada (Atualizar agora atualiza já)"
 )
@@ -35,7 +39,10 @@ _MAX_BYTES: Final = 16 * 1024
 
 
 def previous_dir(source: Path) -> Path:
-    """A versão anterior que a atualização guarda ao lado da `app` (`app.previous`)."""
+    """A versão anterior guardada: a do ponteiro, ou a `app.previous` ao lado da `app`."""
+    pointer = current_pointer.read(current_pointer.base_of(source))
+    if pointer is not None and pointer.previous is not None:
+        return pointer.previous.app
     return source.with_name(source.name + ".previous")
 
 
@@ -120,11 +127,17 @@ def record_updating(path: Path, now: datetime) -> None:
     record_status(path, {"outcome": "updating", "checkedAt": format_time(now), "reason": None})
 
 
+def _neutral_reason(outcome: str) -> str:
+    if outcome == "deferred_busy":
+        return BUSY_REASON
+    return PREPARED_REASON if outcome == "prepared" else DEFERRED_REASON
+
+
 def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
     """O que a checagem concluiu. Atualizar com sucesso encerra a volta atrás e o bloqueio."""
     if result.outcome is None:
         return
-    if result.outcome in {"deferred", "deferred_busy"}:
+    if result.outcome in {"deferred", "deferred_busy", "prepared"}:
         # Neutro: nada mudou. `record_updating` trocou o resultado por "atualizando"; devolve o
         # que havia (a volta atrás que acabou de acontecer, ou "em dia"), sem o rótulo de falha.
         state = _load(path)
@@ -135,7 +148,7 @@ def record_result(path: Path, result: UpdateResult, now: datetime) -> None:
                 "outcome": previous,
                 "checkedAt": format_time(now),
                 # Neutro, mas o dono vê por que não há atualização ("Atualizar agora" a força).
-                "reason": BUSY_REASON if result.outcome == "deferred_busy" else DEFERRED_REASON,
+                "reason": _neutral_reason(result.outcome),
                 **({"latestSha": result.latest} if result.latest is not None else {}),
             },
         )

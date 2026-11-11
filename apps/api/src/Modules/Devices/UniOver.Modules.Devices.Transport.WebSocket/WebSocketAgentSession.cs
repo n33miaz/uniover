@@ -10,10 +10,12 @@ namespace UniOver.Modules.Devices.Transport.WebSocket;
 /// Códigos de fechamento que o adaptador usa. Os de aplicação ficam na faixa 4000-4999; o agente decide pelo
 /// motivo (texto) e pelo código: <c>revoked</c> (4403) para de reconectar, <c>replaced</c> (4409) espera antes de tentar de novo,
 /// <c>server-restart</c> (4411) reconecta na hora (só vai a quem declarou <c>transport.restart.v1</c>).
+/// <c>handover</c> (4410) encerra sem reconectar (uma versão nova do mesmo agente assumiu a conexão).
 /// </summary>
 internal static class CloseCodes
 {
     public const WebSocketCloseStatus Replaced = (WebSocketCloseStatus)4409;
+    public const WebSocketCloseStatus Handover = (WebSocketCloseStatus)4410;
     public const WebSocketCloseStatus Revoked = (WebSocketCloseStatus)4403;
     public const WebSocketCloseStatus QueueFull = (WebSocketCloseStatus)1013;
     public const WebSocketCloseStatus ServerRestart = (WebSocketCloseStatus)4411;
@@ -21,6 +23,7 @@ internal static class CloseCodes
     public static (WebSocketCloseStatus Status, string Reason) For(AgentCloseReason reason) => reason switch
     {
         AgentCloseReason.Replaced => (Replaced, "replaced"),
+        AgentCloseReason.Handover => (Handover, "handover"),
         AgentCloseReason.Revoked => (Revoked, "revoked"),
         AgentCloseReason.PolicyViolation => (WebSocketCloseStatus.PolicyViolation, "policy_violation"),
         AgentCloseReason.Shutdown => ((WebSocketCloseStatus)1012, "service_restart"),
@@ -48,9 +51,11 @@ internal sealed class WebSocketAgentSession : IAgentSession
     private int _closing;
     private int _disposed;
 
-    public WebSocketAgentSession(string agentId, System.Net.WebSockets.WebSocket socket, DevicesTransportOptions options)
+    public WebSocketAgentSession(
+        string agentId, System.Net.WebSockets.WebSocket socket, DevicesTransportOptions options, bool handoverCandidate = false)
     {
         AgentId = agentId;
+        IsHandoverCandidate = handoverCandidate;
         _socket = socket;
         _options = options;
         _outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(options.QueueCapacity)
@@ -63,6 +68,8 @@ internal sealed class WebSocketAgentSession : IAgentSession
     }
 
     public string AgentId { get; }
+
+    public bool IsHandoverCandidate { get; }
 
     /// <summary>Termina quando a sessão foi descartada: o endpoint HTTP só devolve a requisição depois disso.</summary>
     public Task Completion => _completion.Task;

@@ -44,6 +44,7 @@ function Stop-Leftovers {
             $_.CommandLine -like "*$base\agent-src*" -or
             $_.CommandLine -like "*$base\venv*" -or
             $_.CommandLine -like "*$base\app\*" -or
+            $_.CommandLine -like "*$base\app.staging\*" -or
             $_.CommandLine -like "*$base\runtime\*"
         )
     }
@@ -62,6 +63,29 @@ $appNew = Join-Path $base 'app.new'
 $appPrevious = Join-Path $base 'app.previous'
 $runtimeDir = Join-Path $base 'runtime'
 $recoveryNoted = $false
+
+function Get-CurrentRunner {
+    # O supervisor da versao em uso: o do ponteiro (runtime\current.json, gravado pela atualizacao sem queda) quando a versao dele
+    # esta inteira, a anterior dele se ela nao esta, e a `app` de sempre no resto. Cada versao preparada mora em `app.staging\<sha>`.
+    $fallbackRunner = Join-Path $base 'app\tools\run-agent.ps1'
+    try {
+        $file = Join-Path $runtimeDir 'current.json'
+        if (-not (Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -gt 4096) { return $fallbackRunner }
+        Add-Type -AssemblyName System.Web.Extensions
+        $pointer = (New-Object System.Web.Script.Serialization.JavaScriptSerializer).DeserializeObject([System.IO.File]::ReadAllText($file))
+        $root = [System.IO.Path]::GetFullPath($base).TrimEnd('\') + '\'
+        foreach ($name in @('current', 'previous')) {
+            $slot = $pointer[$name]
+            if ($null -eq $slot) { continue }
+            $relative = [string]$slot['app']
+            if (-not $relative -or [System.IO.Path]::IsPathRooted($relative) -or $relative -match '(^|[\\/])\.\.([\\/]|$)') { continue }
+            $full = [System.IO.Path]::GetFullPath((Join-Path $base $relative))
+            if (-not $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+            if (Test-AppFolder $full $false) { return (Join-Path $full 'tools\run-agent.ps1') }
+        }
+    } catch { }
+    return $fallbackRunner
+}
 
 function Get-FolderVersion([string]$Folder) {
     try { $text = [System.IO.File]::ReadAllText((Join-Path $Folder '.version')).Trim() } catch { return $null }
@@ -394,6 +418,7 @@ $null = Send-Beacon 'bootstrap' 'ok' ([string](Get-FolderVersion $appDir))
 
 while ($true) {
     Restore-AppFolder
+    $current = Get-CurrentRunner
     if (Test-Path -LiteralPath $current) {
         $started = Get-Date
         $code = $null

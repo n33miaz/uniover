@@ -844,6 +844,8 @@ function Invoke-AutomaticInstall {
     Set-StartupNames
     Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
+    # Uma instalacao nova volta ao layout de sempre (`app`): o ponteiro de uma versao preparada de antes nao vale mais.
+    foreach ($stale in @('current.json', 'prepared.json')) { Remove-Item -LiteralPath (Join-Path $base ('runtime\' + $stale)) -Force -ErrorAction SilentlyContinue }
     Set-ConfigValues $config (Get-BaseConfig)
 
     Write-Host 'Preparando o UniOver (na primeira vez demora um pouco)...'
@@ -943,6 +945,8 @@ Get-AgentSource $source { param($Candidate) Test-Candidate $uv $Candidate }
 Set-StartupNames
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
+# Uma instalacao nova volta ao layout de sempre (`app`): o ponteiro de uma versao preparada de antes nao vale mais.
+foreach ($stale in @('current.json', 'prepared.json')) { Remove-Item -LiteralPath (Join-Path $base ('runtime\' + $stale)) -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Path (Split-Path $config -Parent) -Force | Out-Null
 $configLines = @()
 foreach ($entry in (Get-BaseConfig).GetEnumerator()) { $configLines += ($entry.Key + ' = ' + ($entry.Value | ConvertTo-Json -Compress)) }

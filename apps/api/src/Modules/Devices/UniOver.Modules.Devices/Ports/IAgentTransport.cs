@@ -9,6 +9,9 @@ public enum AgentCloseReason
     /// <summary>Outra conexão do mesmo agente tomou o lugar desta (um dono da conexão por agente).</summary>
     Replaced,
 
+    /// <summary>Uma versão nova do mesmo agente assumiu a conexão e esta deve encerrar sem reconectar.</summary>
+    Handover,
+
     /// <summary>O agente foi revogado: o token dele deixou de valer.</summary>
     Revoked,
 
@@ -36,6 +39,13 @@ public interface IAgentSession : IAsyncDisposable
 {
     /// <summary>Slug do agente (o mesmo do <c>source</c> do envelope, sem o prefixo <c>agent:</c>).</summary>
     string AgentId { get; }
+
+    /// <summary>
+    /// A conexão se apresentou, no upgrade, como CANDIDATA a assumir a do mesmo agente (passagem de uma versão para a
+    /// seguinte, sem queda). Candidata não é roteável nem fecha a antiga: só vira a atual com um <c>agent.hello.v1</c> válido
+    /// de passagem. Uma conexão comum (inclusive a que volta depois de um 4411) substitui a anterior na hora.
+    /// </summary>
+    bool IsHandoverCandidate => false;
 
     /// <summary>
     /// Próxima mensagem inteira (JSON em UTF-8), ou <c>null</c> quando a sessão acabou. O transporte recusa por conta

@@ -67,6 +67,12 @@ public sealed class DevicesTransportOptions
     /// <summary>Quanto esperar o agente responder ao fechamento antes de derrubar a conexão.</summary>
     public int CloseGraceSeconds { get; set; } = 2;
 
+    /// <summary>
+    /// Quanto a conexão CANDIDATA da passagem de versão espera para mandar o primeiro quadro (o <c>hello</c> de passagem). Sem ele
+    /// neste prazo ela é descartada, e a conexão antiga, que nunca sai por causa deste prazo, segue como a atual.
+    /// </summary>
+    public int HandoverHelloWaitSeconds { get; set; } = 5;
+
     /// <summary>Fluxo SSE de presença (limite por usuário, keep-alive e duração máxima).</summary>
     public SseStreamOptions Sse { get; set; } = new();
 
@@ -90,6 +96,8 @@ public sealed class DevicesTransportOptions
 
     public TimeSpan CloseGrace => TimeSpan.FromSeconds(CloseGraceSeconds);
 
+    public TimeSpan HandoverHelloWait => TimeSpan.FromSeconds(HandoverHelloWaitSeconds);
+
     /// <summary>Valores que quebrariam o transporte (zero ou negativo); o módulo prefere cair na partida a se comportar mal.</summary>
     public static bool IsValid(DevicesTransportOptions o)
     {
@@ -107,6 +115,7 @@ public sealed class DevicesTransportOptions
             && o.RefusalLimit >= 1
             && o.RefusalWindowSeconds >= 1
             && o.CloseGraceSeconds >= 0
+            && o.HandoverHelloWaitSeconds >= 1
             && o.Sse.IsValid();
     }
 }

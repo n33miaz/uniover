@@ -172,3 +172,37 @@ async def test_an_invalid_background_message_is_still_refused_by_the_gate() -> N
     (reply,) = transport.sent
     assert reply["body"]["ok"] is False
     assert reply["body"]["error"]["code"] == "invalid_message"
+
+
+async def test_draining_lets_what_is_running_finish_without_cancelling_it() -> None:
+    handlers = Handlers()
+    process, _ = build(handlers)
+    await process(dump(envelope(CLEANUP, REQUEST)))
+    await settle()
+    assert handlers.started == [CLEANUP]
+    draining = asyncio.create_task(process.drain(5.0))
+    await settle()
+    assert not draining.done()
+    # O comando termina sozinho dentro do prazo: nada foi cancelado.
+    handlers.release.set()
+    await asyncio.wait_for(draining, 2)
+    assert handlers.finished == [CLEANUP]
+    assert handlers.cancelled is False
+
+
+async def test_draining_gives_up_at_the_deadline_and_leaves_the_rest_to_close() -> None:
+    handlers = Handlers()
+    process, _ = build(handlers)
+    await process(dump(envelope(CLEANUP, REQUEST)))
+    await settle()
+    await process.drain(0.05)
+    # Passou o prazo e o comando continua: quem o cancela é o `aclose`.
+    assert handlers.finished == []
+    assert handlers.cancelled is False
+    await process.aclose()
+    assert handlers.cancelled is True
+
+
+async def test_draining_with_nothing_running_returns_at_once() -> None:
+    process, _ = build(Handlers())
+    await asyncio.wait_for(process.drain(60.0), 1)

@@ -104,15 +104,114 @@ na pasta de instalação (a própria pasta fixa, por padrão, então quem já ti
 
 | Pasta | O que guarda |
 |---|---|
-| `app`, `app.previous` | o código atual e a versão anterior (para voltar atrás); a candidata de uma atualização aparece como `app.new` por instantes |
-| `runtime` | ambiente Python (`venv`), estado das atualizações, fila de diagnóstico, sinais do supervisor, versões recusadas |
+| `app`, `app.previous` | o código de sempre (o da instalação, que nunca é apagado) e, nas instalações antigas, a versão anterior |
+| `app.staging\<sha>` | cada versão preparada por uma atualização, com o ambiente dela em `runtime\venv-<sha>`; ficam só a em uso e a anterior |
+| `runtime` | ambiente Python (`venv`), o ponteiro da versão em uso (`current.json`), estado das atualizações, fila de diagnóstico, sinais do supervisor, versões recusadas |
 | `config` | `agent.toml` |
 | `logs` | `agent.log` (agente), `supervisor.log` (supervisor e lançador), `crash.log` (falha fatal do interpretador), `instalacao.log` |
 | `web`, `tv`, `icons` | página de conexão, certificado da TV, ícones dos apps |
 
 Ao subir, o agente arruma a pasta sozinho (`adapters/housekeeping.py`): refaz as pastas que faltam, guarda só as duas
-versões recusadas mais novas e apaga restos de atualização com mais de um dia. Nunca toca em `app`, `app.previous`,
-configuração, certificado nem registros.
+versões recusadas mais novas, apaga restos de atualização com mais de um dia e as versões preparadas que ninguém usa mais.
+Nunca toca em `app`, `app.previous`, configuração, certificado nem registros.
+
+### Atualizar sem derrubar o uso (passagem sem queda)
+
+> **A passagem sem queda vem DESLIGADA.** A chave `update_handover` (`config\agent.toml`, ou a variável
+> `UNIOVER_UPDATE_HANDOVER=1`, que manda sobre o arquivo) a liga; o supervisor lê a chave a cada tentativa de troca e o
+> agente a lê na partida. Desligada, o supervisor nunca sobe `run --handover`, o agente não declara `agent.handover.v1`
+> (a API fecha com 4409, que toda versão entende) e a troca é a **reserva** (item 3): versão preparada em segundo plano,
+> ponteiro e reinício. A reserva é a que o ensaio prova em todas as fases; só a fase C2 liga a chave, para continuar
+> provando a passagem. Ela fica desligada até as pendências do fim desta seção serem tratadas.
+
+A atualização **prepara** a versão nova com o agente antigo servindo e a troca é gravar um ponteiro, não mover pastas
+(o ambiente Python instala o projeto em modo editável, apontando para a pasta onde foi sincronizado: nada de renomear a
+pasta de um agente vivo).
+
+1. **Preparar** (`uniover-agent self-update`, o do dia a dia): baixa e confere o pacote, extrai em `app.staging\<sha>`,
+   sincroniza o ambiente guardado em `runtime\venv-<sha>` e roda o auto-diagnóstico dele. Termina em `runtime\prepared.json`.
+   Preparar não derruba nada, então não espera a TV parar nem a versão atual sair de prova.
+   Preparar, aplicar e a passagem tomam a mesma trava de atualização (mutex `Local\UniOver-Update-<hash da pasta>`): um
+   `self-update` que chega no meio de uma passagem espera 5 s e desiste sem apagar nada, e a versão em passagem fica marcada
+   em `runtime\handover-sha.txt` para a poda nunca a apagar.
+2. **Trocar** assim que a versão está preparada, sem esperar ociosidade. Com `update_handover` ligada e a API que lista
+   `agent.handover.v1` em `devices/info`, o supervisor faz a **passagem**: sobe `uniover-agent run --handover` da versão nova (com a pasta e o
+   ambiente dela, só no processo filho) enquanto a antiga serve. A nova confere o que a API aceita (sem a capacidade, sai
+   com 6 e nada foi aberto), conecta como candidata, na **rota própria** `.../ws/handover` (uma API que não a conhece
+   responde 404, a candidata desiste com 6 e ninguém é substituído; um cabeçalho seria ignorado por ela e a candidata
+   viraria conexão comum), e diz `handover: true` e o `instanceId` no `hello`; só com ele válido a API a faz dona da
+   conexão (troca atômica), confirma com `agent.handover.accepted.v1` e fecha a antiga com **4410 `handover`**, que a
+   antiga entende como "terminar sem reconectar" (só se ela declarou `agent.handover.v1` no `hello`; senão sai com 4409
+   `replaced`): a API espera os comandos que a antiga recebeu responderem (até 5 s, e as respostas dela ainda valem),
+   o que estava em curso termina (até 2 s), as teclas seguradas são soltas, a TV e o canal direto fecham (cada passo com
+   prazo de 10 s) e ela sai com 0. Depois da confirmação a nova **não desiste mais por prazo próprio** (a antiga já foi
+   mandada sair e não reconecta; sair deixaria o PC sem agente): espera a trava quanto for preciso, e só antes da
+   confirmação desiste em 40 s (contados do começo do processo). A nova só abre o que é compartilhado ou físico (a trava da instalação, o rastro da
+   execução, o diário, a fila de diagnóstico, a TV, o canal direto, o vigia do endereço da TV) **depois** de a antiga
+   sair; um comando que chega antes é recusado na hora (`agent_starting`), sem prender a leitura do canal. Só então o
+   supervisor grava o ponteiro, mantém a versão anterior para voltar atrás e adota o processo novo.
+3. **Reserva** (o padrão: a passagem desligada, ou a API sem a capacidade, ou a passagem que não deu): a versão já está
+   preparada em segundo plano e `self-update --apply` a aplica **logo**, sem esperar ociosidade (pedido do dono), gravando
+   o ponteiro; o agente reinicia e sobe da versão nova (o ambiente já está pronto: nada de `uv sync` com o agente
+   parado). Como o reinício derruba o agente por uns 5 a 15 s, com a TV ou o controle do PC em uso naquele instante a
+   troca espera: só até haver **60 s sem uso** (`update_tv_idle_seconds`, padrão 60) e **no máximo 10 min** desde que
+   começou a esperar (`update_max_defer_seconds`, padrão 600), quando troca mesmo assim. Enquanto há versão preparada
+   esperando, o supervisor volta a tentar a cada ~1 min (e não a cada 10), para trocar assim que houver a folga.
+4. **Volta atrás**: a prova da versão nova (10 min) é gravada antes de qualquer troca. Se a nova cai ao subir na
+   passagem, é encerrada e **bloqueada** (o defeito é dela), e a antiga nunca parou. Se não conecta no prazo
+   (`UNIOVER_SUPERVISOR_HANDOVER_SECONDS`, 60 s), a causa é rede ou API lentas, do PC e não da versão: ela é encerrada e
+   **adiada** (24 h, 72 h, uma semana), nunca bloqueada. Os prazos do agente novo contam do começo do processo, e o
+   supervisor lhe passa o instante absoluto (`UNIOVER_HANDOVER_DEADLINE`, o prazo dele menos 10 s de margem) para ele
+   desistir sozinho (saída 5, "adiada") antes de o supervisor agir. Se ela conecta ("conectou" é a confirmação `agent.handover.accepted.v1` da API: só então o
+   `runtime\connected.json` dela traz o código da passagem) a API já mandou a antiga sair e ela não reconecta, então daí
+   em diante **só a nova pode servir**: se a antiga não sai em 60 s, é a **antiga** que o supervisor derruba (a nova pega
+   a trava, vira a dona e o ponteiro muda; se ela não assume em 30 s, `UNIOVER_SUPERVISOR_HANDOVER_TAKEOVER_SECONDS`, a
+   versão fica **adiada** e o agente reinicia pela versão em uso); e se a nova cai depois de conectada, a antiga ganha
+   10 s para terminar e é derrubada, e o laço reinicia o agente na hora, pela versão em uso (sem esperar a detecção de
+   travamento). A saída 5 ou 7 e a falta de assunção não são culpa da versão nova: ela fica **adiada** (24 h, 72 h, uma
+   semana), nunca bloqueada. Depois da troca, três quedas em prova regravam o ponteiro com a anterior e bloqueiam a
+   versão nova.
+5. **Duas execuções com a mesma identidade** não ficam trocando de lugar: além da trava da instalação, o agente toma uma
+   trava por identidade (`Local\UniOver-AgentSlug-<hash do agent_id>`, que vale para a máquina toda e, na passagem, só é
+   tomada depois de a antiga sair); duas substituições (`4409`) em 10 minutos fazem o agente sair (código 7) e registrar
+   `agent.duplicate`. O supervisor trata o 7 como o 5: espera calma, sem contar como queda da versão em prova.
+6. **Medida**: o supervisor registra `update.window` com os tempos (`mode=handover`: do início da nova até conectar, até a
+   antiga sair e até a nova virar a dona; `mode=restart`: do encerramento do agente até a primeira conexão).
+
+**Pendências da passagem** (achados da 4ª releitura, ainda NÃO corrigidos; por isso `update_handover` vem desligada):
+
+- **[ALTA] 4409 depois do ACK.** Um deploy da API no meio da passagem (ou uma queda curta da antiga dentro dos 5 s do
+  `DrainWait`, ou uma antiga sem `agent.handover.v1`) faz a nova receber 4409 pela rota comum e esperar 60 s
+  (`replaced_wait`) enquanto o supervisor, no prazo, derruba a antiga: o PC fica até ~60 s sem agente e uma tecla ou
+  botão que a antiga segurava fica apertado (`release_all` só conhece o que o próprio processo apertou). Correções
+  previstas: (a) a nova volta a ser candidata (mesmo `instanceId`) se recebe `ConnectionReplaced` antes de ser dona e
+  reconecta já; (b) o supervisor pede antes uma saída ordenada da antiga (sinal em `runtime\`, que ela atende com
+  `drain` e `aclose`) e só depois força; (c) a nova solta, de forma genérica, os modificadores e botões ao virar dona.
+- **[MÉDIA] Capacidades da TV somem do `hello` por até 5 min** depois da passagem: `tv.prepare` roda em `take_over`
+  depois do `hello` e nada o reenvia. Prever `supervisor.hello_now()` depois de `owner.set()` e cobrir no teste.
+- **[MÉDIA] Janela de recusa `agent_starting` longa:** `owner.set()` só roda depois de `start_shared_state()` (arrumação
+  da pasta, até 60 s) e de `tv.prepare` (ADB). Abrir `owner` logo depois da trava, arrumar em segundo plano e preparar a
+  TV com prazo próprio.
+- **[BAIXA]** Se o ACK se perde, a nova segue candidata para sempre (o `hello` periódico leva `handover`/`instanceId` e
+  toda reconexão vai à rota `/handover`; com a API revertida isso vira código 6 já sendo dona): zerar
+  `_handover_pending` também quando `take_over` pega a trava. E no supervisor o teste do código 6 vem antes da marca de
+  conexão.
+- **[BAIXA]** A sessão passada só entrega `command.result`: `agent.logs.v1` em curso na antiga é descartado
+  (`AgentHub`, aceitar também `AgentLogsV1` de `IsHandedOver`).
+- **[BAIXA]** A carência de 10 s da antiga pode ser menor que a soma das etapas de encerramento dela (cada uma com até
+  10 s): soltar as teclas logo no começo do `finally` quando o motivo é `STOP_HANDOVER`, ou subir a carência.
+- **[BAIXA]** Depois de uma passagem que falhou o reinício não é "na hora": o laço espera `Sleep-Beating` (5 s ou mais),
+  envia `child_exit` e registra `process.exited`, um alarme falso de queda. Marcar o fim da passagem e reiniciar sem
+  espera e sem esse diagnóstico.
+- **[INCERTO]** (a) o código `agent_starting` não é conhecido pela API nem pela web (o texto fixo em pt-BR do agente
+  pode chegar à tela: mapear o código na web com `$localize`); (b) `kit.recorder.flush_pending()` e
+  `kit.store.flush_appends()` rodam no `finally` mesmo quando a nova nunca virou dona (proteger com `if owner.is_set()`
+  se o append em disco não for atômico entre processos); (c) conferir se algum `transport.send` concorrente (uma recusa
+  `agent_starting` da conexão anterior) pode sair entre o `connect` e o `hello` da candidata, que a API descarta se o
+  primeiro quadro não for o `hello`.
+
+`runtime\current.json` guarda a versão em uso e a anterior (caminhos relativos à pasta da instalação, validados); sem o
+arquivo vale o layout de sempre (`app` + `runtime\venv`). O supervisor, o lançador e o agente leem o mesmo formato.
 
 ## Auto-diagnóstico, auto-reparo e ocorrências
 
@@ -482,9 +581,12 @@ ou Cofre de Credenciais: o ambiente do processo filho é redirecionado e o cofre
 (`origin/main`, ou `-BaseSha`) com as funções do instalador dela, sobe o supervisor com agente e ícone de verdade e
 força a atualização para a candidata (a árvore local, empacotada como o zip do GitHub; ou `-CandidateRef`). Confere:
 a troca (`app\.version`), o reinício do supervisor, agente e ícone da versão nova de pé por 45 s, nenhum processo
-da versão velha, nenhuma janela visível, um segundo ciclo candidata -> candidata+1, a recusa de uma candidata que
-não importa (a versão em uso segue rodando) e uma atualização presa na rede, que o supervisor
-interrompe no prazo. Termina com `APROVADO` ou `REPROVADO` (e o motivo), apaga a pasta
+da versão velha, nenhuma janela visível, um segundo ciclo candidata -> candidata+1 (pelo ponteiro, com uma API falsa
+que não sabe a passagem: caminho de reserva), uma terceira troca com a API falsa que a sabe (**passagem sem queda**: o
+mesmo lançador e supervisor, a API falsa nunca sem agente conectado, o `hello` com `handover` na rota da candidata, a
+confirmação `agent.handover.accepted.v1` e o fechamento 4410 da antiga, que antes precisa ter declarado `agent.handover.v1`: o
+ensaio espera o agente em uso saber que a API aceita a passagem, o que a consulta periódica dele faz em até 5 minutos), a recusa de uma candidata que não importa (a versão em uso segue rodando) e uma atualização presa na rede, que o
+supervisor interrompe no prazo. Termina com `APROVADO` ou `REPROVADO` (e o motivo), apaga a pasta
 temporária e só encerra os processos que ele mesmo criou; o código de saída é 0 só se aprovado. Leva de 4 a 8 minutos.
 
 O código publicado na `main` ainda não conhece o modo ensaio do `self_update.py` (`UNIOVER_UPDATE_DRILL=1` e

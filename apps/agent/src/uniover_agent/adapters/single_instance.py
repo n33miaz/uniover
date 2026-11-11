@@ -38,6 +38,12 @@ def mutex_name(base: Path) -> str:
     return f"Local\\UniOver-Agent-{digest}"
 
 
+def slug_mutex_name(agent_id: str) -> str:
+    """O nome da trava de uma identidade: vale para a máquina toda, não só para uma pasta."""
+    digest = hashlib.sha256(agent_id.strip().lower().encode("utf-8")).hexdigest()[:16]
+    return f"Local\\UniOver-AgentSlug-{digest}"
+
+
 def _acquire_windows(name: str) -> bool:
     import ctypes  # noqa: PLC0415 - só existe no Windows
     from ctypes import wintypes  # noqa: PLC0415
@@ -80,6 +86,22 @@ def _acquire_lockfile(path: Path) -> bool:
         _held[str(path)] = path
         return True
     return False
+
+
+def acquire_slug(agent_id: str) -> bool:
+    """Pega a trava desta identidade (o `agent_id`): outra pasta de instalação ou uma execução
+    manual com o mesmo slug se derrubariam no servidor mesmo com a trava da instalação livre.
+
+    No Windows; fora dele só a trava da instalação vale. `False` se outro processo já a tem."""
+    name = slug_mutex_name(agent_id)
+    if name in _held:
+        return True
+    if sys.platform != "win32":
+        return True
+    try:
+        return _acquire_windows(name)
+    except OSError:
+        return True
 
 
 def acquire(base: Path | None = None) -> bool:

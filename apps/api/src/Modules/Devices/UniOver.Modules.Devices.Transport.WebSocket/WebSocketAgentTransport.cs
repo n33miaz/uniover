@@ -25,7 +25,13 @@ internal sealed class WebSocketAgentTransport(
     public IAsyncEnumerable<IAgentSession> AcceptSessionsAsync(CancellationToken cancellationToken) =>
         _sessions.Reader.ReadAllAsync(cancellationToken);
 
-    public async Task HandleAsync(HttpContext context)
+    /// <summary>
+    /// Atende o upgrade. <paramref name="handoverCandidate"/> é a rota própria da versão nova do agente na passagem sem queda: a
+    /// sessão fica fora do roteamento até o <c>hello</c> de passagem. É rota, e não cabeçalho, para uma API que ainda não conhece a
+    /// passagem (a instância anterior, num deploy em andamento) responder 404 em vez de tratar a candidata como conexão comum e
+    /// substituir a que serve.
+    /// </summary>
+    public async Task HandleAsync(HttpContext context, bool handoverCandidate = false)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -49,7 +55,7 @@ internal sealed class WebSocketAgentTransport(
             DangerousEnableCompression = false,
         });
 
-        var session = new WebSocketAgentSession(slug, socket, settings);
+        var session = new WebSocketAgentSession(slug, socket, settings, handoverCandidate);
         if (!_sessions.Writer.TryWrite(session))
         {
             return;

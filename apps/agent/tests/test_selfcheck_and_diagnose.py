@@ -48,7 +48,12 @@ def test_the_update_receives_the_channel_of_the_settings(
     seen: list[str] = []
 
     def fake(
-        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+        source: Path,
+        *,
+        sync: bool,
+        channel: str,
+        ignore_deferral: bool = False,
+        staged: bool = False,
     ) -> UpdateResult:
         seen.append(channel)
         return UpdateResult(False, "ok", "up_to_date")
@@ -185,7 +190,7 @@ def run_update(monkeypatch: pytest.MonkeyPatch, result: UpdateResult) -> list[tu
     monkeypatch.setattr(
         maintenance_module,
         "self_update",
-        lambda source, *, sync, channel, ignore_deferral=False: result,
+        lambda source, *, sync, channel, ignore_deferral=False, staged=False: result,
     )
     kit = build_diagnostics(FakeClock())
     assert update_agent(sync=False, kit=kit) == EXIT_OK
@@ -217,7 +222,12 @@ def test_an_unexpected_crash_of_the_update_is_recorded_as_an_error(
     from uniover_agent.care_setup import build_diagnostics  # noqa: PLC0415
 
     def explode(
-        source: object, *, sync: bool, channel: str, ignore_deferral: bool = False
+        source: object,
+        *,
+        sync: bool,
+        channel: str,
+        ignore_deferral: bool = False,
+        staged: bool = False,
     ) -> UpdateResult:
         raise RuntimeError("falha qualquer em /home/pessoa")
 

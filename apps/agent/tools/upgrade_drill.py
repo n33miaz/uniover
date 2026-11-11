@@ -11,6 +11,17 @@ Como o código publicado na `main` ainda não tem o modo ensaio do `self_update.
 para a candidata usa `upgrade_drill_support/sitecustomize.py` (desvia só as duas URLs do GitHub);
 as trocas seguintes usam o modo ensaio da própria candidata (`UNIOVER_UPDATE_DRILL`).
 
+A partir da candidata a versão nova é PREPARADA (`app.staging\\<sha>` com o ambiente em
+`runtime\\venv-<sha>`, com o agente antigo servindo) e a troca é gravar o ponteiro
+`runtime\\current.json`. O ensaio cobre os dois jeitos de trocar, contra uma API falsa
+(`upgrade_drill_gateway.py`) que faz o que a de verdade faz na passagem:
+
+- com a API que sabe a passagem sem queda (`agent.handover.v1`): o supervisor sobe o processo novo
+  enquanto o antigo serve, a API passa a conexão e fecha o antigo com 4410, e o ensaio confere que
+  o supervisor e o lançador são os mesmos, que a API nunca ficou sem agente conectado e que o
+  agente antigo saiu;
+- com uma API que não a conhece: o caminho de reserva (ponteiro gravado, agente reiniciado).
+
 Nunca toca na instalação real, na tarefa agendada nem no Cofre de Credenciais: o ambiente do
 processo filho é todo redirecionado e o ensaio confere, no fim, que o real ficou igual. Só mata os
 processos que ele mesmo criou (pela pasta temporária). Saída: APROVADO/REPROVADO com o motivo.
@@ -39,6 +50,10 @@ from ctypes import wintypes
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# O ensaio roda como script (ou carregado por caminho nos testes): a API falsa mora ao lado dele.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import upgrade_drill_gateway
+
 REPO = Path(__file__).resolve().parents[3]
 AGENT_REL = "apps/agent"
 ICON_REL = "apps/web/public/icons/icon-192.png"
@@ -63,6 +78,9 @@ CREATE_NEW_CONSOLE = 0x00000010
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 # O agente e o ícone ficam de pé (sem cair) por este tempo depois de cada troca.
 STABLE_SECONDS = 45
+# Posicao, em `phases`, da troca da base para a candidata (classica) e da troca de reserva.
+PHASE_BASE_TO_CANDIDATE = 1
+PHASE_RESERVE_PATH = 2
 CONSOLE_HOSTS = frozenset({"conhost.exe", "openconsole.exe", "windowsterminal.exe"})
 
 
@@ -246,7 +264,7 @@ class Proc:
         return (self.pid, self.created)
 
 
-_ROLE = re.compile(r"uniover-agent(?:\.exe)?\"?\s+(run|tray)\s*$", re.IGNORECASE)
+_ROLE = re.compile(r"uniover-agent(?:\.exe)?\"?\s+(run|tray)(?:\s+--handover)?\s*$", re.IGNORECASE)
 
 
 def role(proc: Proc) -> str:
@@ -750,18 +768,48 @@ class Drill:
         )
         self.watch: WindowWatch | None = None
         self.server: http.server.ThreadingHTTPServer | None = None
+        # A API falsa do agente: a passagem sem queda precisa de uma API que a saiba (ou, de
+        # propósito, que não a saiba).
+        self.gateway = upgrade_drill_gateway.Gateway(handover=True)
         self.env: dict[str, str] = {}
         self.launcher: subprocess.Popen[bytes] | None = None
         self.uv = ""
 
     # ---- utilidades
 
+    def pointer(self) -> dict[str, dict[str, str | None]] | None:
+        """`runtime\\current.json`, ou `None` enquanto a instalação está no layout de sempre."""
+        try:
+            loaded = json.loads((self.base / "runtime" / "current.json").read_text("utf-8-sig"))
+        except OSError, json.JSONDecodeError:
+            return None
+        return (
+            loaded if isinstance(loaded, dict) and isinstance(loaded.get("current"), dict) else None
+        )
+
+    def slot_path(self, which: str, key: str) -> Path | None:
+        pointer = self.pointer()
+        slot = pointer.get(which) if pointer else None
+        value = slot.get(key) if isinstance(slot, dict) else None
+        return self.base / value if value else None
+
     @property
     def app(self) -> Path:
-        return self.base / "app"
+        """A pasta do código em uso: a do ponteiro (depois da primeira troca preparada) ou `app`."""
+        return self.slot_path("current", "app") or self.base / "app"
+
+    @property
+    def venv(self) -> Path:
+        """O ambiente Python em uso (o da versão preparada, ou `runtime\\venv`)."""
+        return self.slot_path("current", "venv") or self.base / "runtime" / "venv"
 
     def version(self) -> str:
         return read_text(self.app / ".version")
+
+    def previous_version(self) -> str:
+        """A versão a que dá para voltar: a anterior do ponteiro, ou `app.previous`."""
+        previous = self.slot_path("previous", "app") or self.base / "app.previous"
+        return read_text(previous / ".version")
 
     def blocked(self) -> list[str]:
         """Versões que o supervisor recusou depois de quedas repetidas (volta para a anterior)."""
@@ -883,6 +931,7 @@ class Drill:
         self.uv = uv
         cache = self.root / "uvcache" if self.args.cold_cache else None
         self.server, port = start_feed(self.feed)
+        self.gateway.start()
         self.env = build_env(
             dict(os.environ),
             root=self.root,
@@ -920,7 +969,7 @@ class Drill:
                 "-Uv",
                 self.uv,
                 "-ApiUrl",
-                self.env["UNIOVER_UPDATE_SOURCE_URL"],
+                self.gateway.url,
             ]
         )
         output = (done.stdout + done.stderr).decode("utf-8", errors="replace").strip()
@@ -1165,7 +1214,7 @@ class Drill:
         de um reinicio do PC, quem sobe e um lancador novo lido do disco.
         """
         say("\n== E. queda entre as renomeacoes da troca ==")
-        old = read_text(self.base / "app.previous" / ".version")
+        old = self.previous_version()
         delivered = (self.base / "launcher.ps1").read_bytes() == (
             self.app / "tools" / "launcher.ps1"
         ).read_bytes()
@@ -1198,7 +1247,7 @@ class Drill:
             ),
             self.verdict.check(
                 "a versao anterior continua guardada depois da recuperacao",
-                old == read_text(self.base / "app.previous" / ".version"),
+                old == self.previous_version(),
             ),
             self.verdict.check(
                 "a recuperacao deixa a versao promovida em teste",
@@ -1217,14 +1266,14 @@ class Drill:
     def rollback_after_sync_failure(self, bad: str) -> bool:
         """Faz tres syncs falharem na versao em teste e confere a volta automatica."""
         say("\n== F. sync falha depois da promocao ==")
-        previous = read_text(self.base / "app.previous" / ".version")
+        previous = self.previous_version()
         if not previous:
             return self.verdict.check(
                 "ha uma versao anterior para voltar depois da falha de sync", False
             )
         trial = self.base / "runtime" / "update-trial.txt"
         trial.write_text(f"{bad}|0", encoding="ascii")
-        marker = self.base / "runtime" / "venv" / "marca-antes-do-sync.txt"
+        marker = self.venv / "marca-antes-do-sync.txt"
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("ambiente que funcionava", encoding="utf-8")
         fake_bin = self.root / "sync-failure-bin"
@@ -1264,9 +1313,14 @@ class Drill:
                 and marker.read_text(encoding="utf-8") == "ambiente que funcionava",
             ),
             self.verdict.check(
+                # Sem ponteiro a pasta recusada vai para `runtime\\app.rejected-<sha>`; com ele nada
+                # se move (a volta é regravar o ponteiro) e a recusada só deixa de ser a em uso.
                 "a versao recusada foi bloqueada e saiu de teste",
                 not trial.exists()
-                and (self.base / "runtime" / f"app.rejected-{bad[:12]}").is_dir(),
+                and (
+                    self.pointer() is not None
+                    or (self.base / "runtime" / f"app.rejected-{bad[:12]}").is_dir()
+                ),
             ),
             self.verdict.check(
                 "a volta por sync fica registrada no estado, com a versao bloqueada",
@@ -1441,8 +1495,9 @@ class Drill:
         )
         results.append(
             self.verdict.check(
-                "a versao velha ficou em app.previous",
-                read_text(self.base / "app.previous" / ".version") == old_version,
+                "a versao velha ficou guardada para voltar (app.previous ou o ponteiro)",
+                self.previous_version() == old_version,
+                self.previous_version()[:12],
             )
         )
         results.append(
@@ -1459,6 +1514,160 @@ class Drill:
             )
         )
         return all(results)
+
+    def set_update_handover(self, enabled: bool) -> None:
+        """Liga ou desliga `update_handover` no `agent.toml` da instalacao do ensaio. Padrao:
+        DESLIGADA (o supervisor le o arquivo a cada troca)."""
+        path = self.base / "config" / "agent.toml"
+        text = read_text(path) if path.is_file() else ""
+        lines = [ln for ln in text.splitlines() if not ln.strip().startswith("update_handover")]
+        lines.append(f"update_handover = {'true' if enabled else 'false'}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+
+    def offer_handover(self, label: str, files: dict[str, bytes], sha: str) -> bool:
+        """A passagem sem queda so existe com a configuracao `update_handover` LIGADA (o padrao e
+        desligada e as demais fases rodam assim). Esta fase a liga de proposito, reinicia o agente
+        para ele declarar `agent.handover.v1` e desliga de novo no fim."""
+        say("  (config update_handover ligada so para esta fase)")
+        self.set_update_handover(True)
+        # O agente em uso subiu com a passagem desligada e so declara a capacidade na partida: o
+        # reinicio pedido ao supervisor o faz ler a configuracao de novo.
+        (self.base / "runtime" / "restart-now").touch()
+        try:
+            return self._offer_handover_enabled(label, files, sha)
+        finally:
+            self.set_update_handover(False)
+
+    def _offer_handover_enabled(self, label: str, files: dict[str, bytes], sha: str) -> bool:
+        """Oferece `sha` a um agente que roda de uma versão que SABE a passagem, com uma API que
+        também a sabe: a troca não pode derrubar nada.
+
+        O que se mede: o supervisor e o lançador são os mesmos (nada reiniciou), o agente antigo
+        saiu e um novo entrou, a API falsa nunca ficou sem agente conectado e o fechamento da antiga
+        foi o da passagem (4410), depois do `hello` que a pedia.
+        """
+        say(f"\n== {label} (passagem sem queda, codigo da candidata) ==")
+        phase_start = time.monotonic()
+        self.gateway.handover_supported = True
+        # O agente reiniciado (ver `offer_handover`) declara `agent.handover.v1` assim que a API a
+        # lista; so entao ela fecha a antiga com 4410.
+        if not self.verdict.check(
+            "o agente em uso soube que a API sabe a passagem (declarou agent.handover.v1)",
+            wait_until(self.gateway.current_declares_handover, self.args.timeout),
+        ):
+            return False
+        self.feed.offer(sha, zip_bytes(files, sha))
+        before = self.tree()
+        before_keys = {p.key for p in before}
+        launcher = self.roles(before, "launcher")
+        supervisor = self.roles(before, "supervisor")
+        agent_before = {p.key for p in self.roles(before, "agent")}
+        old_version = self.version()
+        starts_before = self.log_text().count(f"agente {AGENT_ID} iniciando")
+        since = time.time()
+        (self.base / "runtime" / "update-now").touch()
+        timeout = self.args.timeout
+        swapped = wait_until(lambda: self.version() == sha, timeout)
+        ok = self.verdict.check(
+            f"a versao entra pelo ponteiro (versao em uso = {sha[:12]})",
+            swapped,
+            f"ficou {self.version()[:12]}; bloqueadas: {self.blocked()}",
+        )
+        if not swapped:
+            return False
+
+        def handed_over() -> bool:
+            agents = {p.key for p in self.roles(self.tree(), "agent")}
+            return bool(agents) and not (agents & agent_before)
+
+        arrived = wait_until(handed_over, timeout)
+        ok &= self.verdict.check("o agente antigo saiu e um agente novo esta no ar", arrived)
+        # Dá tempo de o novo conectar e virar o dono antes de medir.
+        ready = wait_until(
+            lambda: (
+                (self.base / "runtime" / "connected.json").is_file()
+                and "readyAt" in read_text(self.base / "runtime" / "connected.json")
+            ),
+            timeout,
+        )
+        ok &= self.verdict.check("o agente novo conectou e virou o dono da TV e do PC", ready)
+        procs = self.tree()
+        ok &= self.verdict.check(
+            "o mesmo lancador e o mesmo supervisor: nada reiniciou",
+            [p.key for p in self.roles(procs, "launcher")] == [p.key for p in launcher]
+            and [p.key for p in self.roles(procs, "supervisor")] == [p.key for p in supervisor],
+        )
+        ok &= self.verdict.check(
+            "o hello pediu a passagem e a API fechou a antiga com 4410",
+            bool(self.gateway.hello_handovers(since)) and bool(self.gateway.handover_closes(since)),
+            str([(e.kind, e.detail) for e in self.gateway.snapshot() if e.at >= since][-8:]),
+        )
+        acks = self.gateway.acks(since)
+        events = self.gateway.snapshot()
+        # A promovida recebe a confirmação ANTES de a antiga fechar (só ela encerra a candidatura).
+        order = [e.kind for e in events if e.at >= since and e.kind in {"ack", "close-previous"}]
+        ok &= self.verdict.check(
+            "a API confirmou a promocao (agent.handover.accepted.v1) antes de fechar a antiga",
+            len(acks) == 1 and order[:2] == ["ack", "close-previous"],
+            f"confirmacoes: {len(acks)}; ordem: {order}",
+        )
+        ok &= self.verdict.check(
+            "nenhuma candidata foi descartada pela API falsa",
+            not self.gateway.dropped_candidates(since),
+            str([(e.kind, e.detail) for e in self.gateway.dropped_candidates(since)]),
+        )
+        gap = self.gateway.longest_gap_since(since)
+        ok &= self.verdict.check(
+            f"a API nunca ficou sem agente conectado (maior intervalo: {gap:.1f} s)",
+            self.gateway.connected() and gap == 0.0,
+        )
+        ok &= self.verdict.check(
+            "a versao velha ficou guardada como anterior no ponteiro",
+            self.previous_version() == old_version,
+            self.previous_version()[:12],
+        )
+        ok &= self.verdict.check(
+            "em prova, sem queda e sem bloqueio",
+            read_text(self.base / "runtime" / "update-trial.txt") == f"{sha}|0"
+            and not (self.base / "runtime" / ".blocked-versions").exists(),
+            read_text(self.base / "runtime" / "update-trial.txt"),
+        )
+        ok &= self.verdict.check(
+            "a versao nova preparada deixou de esperar a troca",
+            not (self.base / "runtime" / "prepared.json").exists(),
+        )
+        window = wait_until(
+            lambda: "mode=handover" in read_text(self.base / "logs" / "supervisor.log"), 60
+        )
+        line = [
+            row
+            for row in read_text(self.base / "logs" / "supervisor.log").splitlines()
+            if "mode=handover" in row
+        ]
+        ok &= self.verdict.check(
+            "a janela da passagem foi medida (update.window)",
+            window,
+            line[-1][-160:] if line else "",
+        )
+        starts = self.log_text().count(f"agente {AGENT_ID} iniciando")
+        ok &= self.verdict.check(
+            "o agente novo registrou 'iniciando' depois da passagem", starts > starts_before
+        )
+        survivors = [
+            f"{p.name}({p.pid},{role(p)})"
+            for p in procs
+            if p.key in agent_before and role(p) == "agent"
+        ]
+        ok &= self.verdict.check(
+            "nenhum agente da versao velha sobrou", not survivors, str(survivors)
+        )
+        ok &= self.verdict.check(
+            "sem restos da atualizacao", not self.leftovers(), str(self.leftovers())
+        )
+        del before_keys
+        say(f"  ({time.monotonic() - phase_start:.0f} s)")
+        return ok
 
     def windows_check(self) -> None:
         if self.watch is None:
@@ -1501,6 +1710,7 @@ class Drill:
             time.sleep(1)
         if self.server is not None:
             self.server.shutdown()
+        self.gateway.stop()
         if not self.args.keep_files:
             for _ in range(20):
                 shutil.rmtree(self.root, ignore_errors=True)
@@ -1531,6 +1741,10 @@ class Drill:
             "logs/supervisor.log",
             "runtime/update-trial.txt",
             "runtime/.blocked-versions",
+            "runtime/current.json",
+            "runtime/prepared.json",
+            "runtime/update-window.json",
+            "runtime/connected.json",
         ):
             with contextlib.suppress(OSError):
                 shutil.copyfile(self.base / name, folder / Path(name).name)
@@ -1573,6 +1787,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
     candidate_sha = fake_sha(files, "candidate")
     next_files = next_variant(files)
     next_sha = fake_sha(next_files, "next")
+    handover_files = next_variant(next_files)
+    handover_sha = fake_sha(handover_files, "handover")
     broken_files = broken_variant(files)
     broken_sha = fake_sha(broken_files, "broken")
     say("Ensaio de atualizacao do agente")
@@ -1583,7 +1799,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
     phases = [
         ("A. candidata quebrada (recusa, a base segue)", broken_files, broken_sha, False, "base"),
         ("B. base -> candidata", files, candidate_sha, True, "base"),
-        ("C. candidata -> candidata+1", next_files, next_sha, True, "candidata"),
+        (
+            "C. candidata -> candidata+1 (API sem passagem: caminho de reserva)",
+            next_files,
+            next_sha,
+            True,
+            "candidata",
+        ),
         (
             "D. candidata+1 recebe candidata quebrada (recusa)",
             broken_variant(next_files),
@@ -1607,6 +1829,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
         for index, (label, tree, sha, expect_swap, code) in enumerate(phases):
             if not proceed:
                 break
+            # As fases comuns rodam com uma API que NAO sabe a passagem sem queda: a troca usa o
+            # caminho de reserva (ponteiro gravado e agente reiniciado). A passagem tem a sua.
+            drill.gateway.handover_supported = False
             proceed = drill.offer(
                 label,
                 tree,
@@ -1628,10 +1853,30 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
             # troca o índice por um cache vazio para exercitar a recusa das dependências.
             if proceed and index == 0:
                 proceed = drill.refused_without_the_index(offline_files, offline_sha)
+            # A queda entre as renomeacoes e a troca classica (da base para a candidata): so existe
+            # enquanto a instalacao ainda esta no layout de sempre, antes do primeiro ponteiro.
+            if proceed and index == PHASE_BASE_TO_CANDIDATE:
+                proceed = drill.recover_interrupted_swap(candidate_sha) and drill.verdict.check(
+                    "a candidata recuperada terminou a prova antes de receber outra versao",
+                    wait_until(
+                        lambda: not (drill.base / "runtime" / "update-trial.txt").exists(),
+                        args.timeout,
+                    ),
+                )
+            # A passagem sem queda: o agente que roda a candidata+1 recebe a candidata+2 de uma API
+            # que sabe passar a conexao.
+            if proceed and index == PHASE_RESERVE_PATH:
+                proceed = drill.offer_handover(
+                    "C2. candidata+1 -> candidata+2", handover_files, handover_sha
+                ) and drill.verdict.check(
+                    "a candidata+2 terminou a prova antes de receber outra versao",
+                    wait_until(
+                        lambda: not (drill.base / "runtime" / "update-trial.txt").exists(),
+                        args.timeout,
+                    ),
+                )
         if proceed:
-            proceed = drill.recover_interrupted_swap(next_sha)
-        if proceed:
-            proceed = drill.rollback_after_sync_failure(next_sha)
+            proceed = drill.rollback_after_sync_failure(handover_sha)
         if proceed:
             proceed = drill.stuck_update_is_interrupted()
         say("")

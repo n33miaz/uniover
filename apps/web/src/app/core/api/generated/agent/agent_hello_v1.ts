@@ -3,6 +3,7 @@
 export type AgentHelloV1BodyCapabilitiesItem =
   | 'transport.keepalive.v1'
   | 'transport.restart.v1'
+  | 'agent.handover.v1'
   | 'agent.logs.v1'
   | 'agent.maintenance.v1'
   | 'agent.diagnostics.v1'
@@ -72,6 +73,11 @@ export interface AgentHelloV1Message {
 }
 export interface AgentHelloV1Body {
   agentVersion: string;
+  instanceId?: string;
+  /**
+   * A execução nova pede que a anterior encerre sem tentar reconectar; exige o instanceId.
+   */
+  handover?: boolean;
   capabilities: AgentHelloV1BodyCapabilitiesItem[];
   os?: string;
   tv?: AgentHelloV1BodyTv;

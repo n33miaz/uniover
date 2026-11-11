@@ -173,13 +173,13 @@ def test_the_exit_code_of_the_agent_is_reported_once_even_in_a_restart_loop(
     pc: Pc, api: FakeApi
 ) -> None:
     configure(pc.base, api.url)
-    pc.uv(["exit /b 7"])
+    pc.uv(["exit /b 9"])
     with pc.running():
         assert wait_for(lambda: pc.starts() >= 3, 90), pc.supervisor_log()
-        assert wait_for(lambda: api.count("child_exit.exit_7") >= 1, 40)
+        assert wait_for(lambda: api.count("child_exit.exit_9") >= 1, 40)
         time.sleep(3)
     # Várias quedas rápidas, uma baliza só por estágio+código; a de "abriu" não apaga a falha.
-    assert api.count("child_exit.exit_7") == 1
+    assert api.count("child_exit.exit_9") == 1
     assert api.count("child_spawn.ok") <= 1
 
 
@@ -214,15 +214,15 @@ def test_the_beacon_state_file_keeps_a_new_supervisor_from_repeating_it(
     pc: Pc, api: FakeApi
 ) -> None:
     configure(pc.base, api.url)
-    pc.uv(["exit /b 7"])
+    pc.uv(["exit /b 9"])
     with pc.running():
-        assert wait_for(lambda: api.count("child_exit.exit_7") >= 1, 60), pc.supervisor_log()
-    assert (pc.runtime / "beacon.child_exit.exit_7").is_file()
+        assert wait_for(lambda: api.count("child_exit.exit_9") >= 1, 60), pc.supervisor_log()
+    assert (pc.runtime / "beacon.child_exit.exit_9").is_file()
     starts = pc.starts()
     with pc.running():  # outro supervisor, minutos antes da janela acabar, com o mesmo erro
         assert wait_for(lambda: pc.starts() > starts, 40), pc.supervisor_log()
         settle_beacons(pc)
-    assert api.count("child_exit.exit_7") == 1
+    assert api.count("child_exit.exit_9") == 1
 
 
 def test_a_recovered_agent_clears_an_old_failure_even_inside_the_ten_minute_window(

@@ -30,6 +30,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/api.keepalive.v1.schema.json'
+      agentHandoverAccepted:
+        name: agent.handover.accepted.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.handover.accepted.v1.schema.json'
       tvKey:
         name: tv.key.v1
         contentType: application/json
@@ -314,6 +319,13 @@ operations:
     summary: A API mantém o canal WebSocket ativo no proxy.
     messages:
       - $ref: '#/channels/agentCommands/messages/apiKeepalive'
+  sendAgentHandoverAccepted:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API confirma ao agente que a conexão candidata da passagem de versão foi promovida.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/agentHandoverAccepted'
   receiveAgentKeepalive:
     action: receive
     channel:

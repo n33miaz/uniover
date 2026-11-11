@@ -94,6 +94,11 @@ def spread_steps(dx: int, dy: int, spread: PointerSpread) -> list[tuple[int, int
     return steps
 
 
+# Quanto o encerramento espera as tarefas da faixa obedecerem ao cancelamento antes de soltar
+# as teclas.
+CANCEL_WAIT_SECONDS: Final = 3.0
+
+
 class PcLane:
     """Enfileira (o portão já validou), executa e responde. Só roda no laço da faixa."""
 
@@ -142,6 +147,8 @@ class PcLane:
         self._running_direct: asyncio.Future[CommandResult] | None = None
         # Um comando da nuvem está sendo executado agora (a queda da conexão o cancela).
         self._running_cloud = False
+        # Quantos comandos executam agora (a passagem de versão espera a faixa ficar quieta).
+        self._executing = 0
         self._tasks: set[asyncio.Task[None]] = set()
         self._queue: deque[tuple[Command, float]] = deque()
         self._wakeup = asyncio.Event()
@@ -292,8 +299,33 @@ class PcLane:
         pending = list(self._tasks)
         for task in pending:
             task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        self._release_held_inputs()
+        try:
+            if pending:
+                # Com prazo: uma tarefa que ignore o cancelamento não impede soltar as teclas.
+                done, _ = await asyncio.wait(pending, timeout=CANCEL_WAIT_SECONDS)
+                for task in done:
+                    if not task.cancelled():
+                        task.exception()  # lida: não sobra "exceção nunca recuperada"
+                if len(done) < len(pending):
+                    _log.warning(
+                        "%d tarefa(s) da faixa do PC não obedeceram ao cancelamento",
+                        len(pending) - len(done),
+                    )
+        finally:
+            # Também quando quem encerra desiste de esperar: o que estava apertado é solto.
+            self._release_held_inputs()
+
+    async def drain(self, grace: float) -> None:
+        """Dá até `grace` segundos para o que está em curso na faixa terminar sozinho, sem cancelar
+        (a passagem para uma versão nova: um clique já começado termina em vez de ser cortado)."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + grace
+        # O consumidor da fila vive esperando comando novo: o que importa é a faixa estar quieta
+        # (nada na fila, nada executando, nenhum resultado por enviar).
+        while loop.time() < deadline and (  # noqa: ASYNC110 - estado de várias fontes, com prazo
+            self._queue or self._executing or self._result_tasks
+        ):
+            await asyncio.sleep(0.02)
 
     def _release_held_inputs(self) -> None:
         if self._release_inputs is None:
@@ -544,6 +576,7 @@ class PcLane:
         """
         inner: asyncio.Future[CommandResult] | None = None
         self._running_cloud = not from_direct
+        self._executing += 1
         try:
             if from_direct and command.type != POINTER_TYPE:
                 inner = asyncio.ensure_future(self._handle_command(command))
@@ -564,6 +597,7 @@ class PcLane:
             self._direct.pop(command.id, None)
             return None
         finally:
+            self._executing -= 1
             self._running_cloud = False
             if inner is not None and self._running_direct is inner:
                 self._running_direct = None
