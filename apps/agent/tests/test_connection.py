@@ -16,6 +16,7 @@ from uniover_agent.core import (
 )
 from uniover_agent.core.connection import (
     DUPLICATE_WINDOW_SECONDS,
+    NETWORK_WAKE_MIN_SECONDS,
     STOP_CREDENTIAL_REJECTED,
     STOP_DUPLICATE,
     STOP_HANDOVER,
@@ -59,6 +60,133 @@ def test_backoff_reset_returns_to_start() -> None:
         backoff.next_delay()
     backoff.reset()
     assert backoff.next_delay() == 1
+
+
+class WaitingClock(FakeClock):
+    """`sleep` espera o teste soltar; o relógio monotônico só anda quando o teste manda."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        await self.release.wait()
+
+
+class FakeWatcher:
+    def __init__(self, on_change: Callable[[], None]) -> None:
+        self._on_change = on_change
+        self.starts = 0
+        self.stops = 0
+
+    def start(self) -> None:
+        self.starts += 1
+
+    def stop(self) -> None:
+        self.stops += 1
+
+    def notify(self) -> None:
+        self._on_change()
+
+
+def network_supervisor(
+    clock: FakeClock, transport: FakeTransport
+) -> tuple[ConnectionSupervisor, dict[str, FakeWatcher]]:
+    holder: dict[str, FakeWatcher] = {}
+
+    def watcher_factory(on_change: Callable[[], None]) -> FakeWatcher:
+        holder["watcher"] = FakeWatcher(on_change)
+        return holder["watcher"]
+
+    supervisor = ConnectionSupervisor(
+        transport,
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=[],
+        network_watcher=watcher_factory,
+    )
+    return supervisor, holder
+
+
+async def settle(condition: Callable[[], bool]) -> bool:
+    for _ in range(200):
+        if condition():
+            return True
+        await asyncio.sleep(0)
+    return condition()
+
+
+async def test_network_change_wakes_common_reconnect_backoff_and_stops_the_observer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = WaitingClock()
+    transport = FakeTransport()
+    transport.connect_error = TransportError("sem rede")
+    supervisor, holder = network_supervisor(clock, transport)
+
+    with caplog.at_level(logging.INFO):
+        task = asyncio.create_task(supervisor.run())
+        assert await settle(lambda: len(clock.sleeps) == 1)
+        # O aviso chega de outra thread, como no Windows.
+        await asyncio.to_thread(holder["watcher"].notify)
+        assert await settle(lambda: transport.connects >= 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert holder["watcher"].starts == 1
+    assert holder["watcher"].stops == 1
+    assert [record.message for record in caplog.records].count("a rede mudou") == 1
+
+
+async def test_network_changes_wake_the_backoff_at_most_once_per_window() -> None:
+    clock = WaitingClock()
+    transport = FakeTransport()
+    transport.connect_error = TransportError("sem rede")
+    supervisor, holder = network_supervisor(clock, transport)
+
+    task = asyncio.create_task(supervisor.run())
+    assert await settle(lambda: len(clock.sleeps) == 1)
+    holder["watcher"].notify()
+    assert await settle(lambda: transport.connects == 2)
+    assert await settle(lambda: len(clock.sleeps) == 2)
+
+    # Oscilação logo depois do último despertar: o backoff não é anulado.
+    for _ in range(5):
+        holder["watcher"].notify()
+        await asyncio.sleep(0)
+    assert not await settle(lambda: transport.connects > 2)
+
+    clock.advance(NETWORK_WAKE_MIN_SECONDS)
+    holder["watcher"].notify()
+    assert await settle(lambda: transport.connects == 3)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_a_network_change_before_the_wait_started_does_not_skip_the_backoff() -> None:
+    clock = WaitingClock()
+    transport = FakeTransport()
+    supervisor, holder = network_supervisor(clock, transport)
+    supervisor._start_network_watcher()
+
+    # A conexão estava saudável quando a rede mudou: o aviso fica marcado até a próxima espera.
+    holder["watcher"].notify()
+    await asyncio.sleep(0)
+    wait = asyncio.create_task(supervisor._sleep_for_reconnect(30))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not wait.done()
+
+    clock.release.set()
+    await asyncio.wait_for(wait, timeout=2)
+    supervisor._stop_network_watcher()
 
 
 class Harness:

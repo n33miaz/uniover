@@ -24,6 +24,7 @@ from uniover_agent.adapters.local_networks import network_signature, same_networ
 from uniover_agent.adapters.loop_lag import LoopLagMonitor
 from uniover_agent.adapters.loop_watchdog import LoopWatchdog
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
+from uniover_agent.adapters.network_change import network_change_watcher
 from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
 from uniover_agent.adapters.pc_device_store import JsonDeviceStore
@@ -914,6 +915,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         handover=handover,
         # "Conectou" na passagem é a confirmação da API: o que o supervisor lê em `connected.json`.
         on_handover_accepted=handover_accepted,
+        # Windows: a reconexão acorda quando a rede muda; nos outros sistemas, nada muda.
+        network_watcher=network_change_watcher,
     )
     # A API passou a listar uma capacidade nova (ex.: depois de um deploy dela): declara já, sem
     # esperar o `hello` de 5 minutos.
