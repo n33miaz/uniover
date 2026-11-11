@@ -147,6 +147,28 @@ Em `UniOver.BuildingBlocks.Messaging`.
   seja, 6 h; o mínimo aceito é 60 s). Isso é deliberado: o banco do plano grátis só dorme se ficar sem
   consultas, e uma consulta a cada poucos segundos o manteria acordado o mês inteiro. Fila vazia significa
   nenhuma consulta.
+- **Os outros serviços em segundo plano seguem a mesma regra** (API parada = nenhuma consulta): o desligamento
+  agendado dorme até a hora do próximo pedido (sinal ao criar, mudar ou cancelar; teto
+  `Modules:Tv:PowerOffReserveMinutes`, padrão 360); as quedas de agente são decididas em memória (o laço agenda a
+  verificação para o último sinal mais o limite e só consulta o banco nesse instante, na partida, quando o
+  agente volta ou é revogado; teto `Modules:Devices:OutageReserveMinutes`, padrão 360); o último sinal
+  (`last_seen_at`) só é gravado ao conectar, ao desconectar e quando o hello traz algo novo, nunca por batimento
+  (o "visto agora" de quem está conectado vem da memória); a limpeza dos diagnósticos e da telemetria entra
+  na limpeza diária (`AuditPurge`).
+  - Os prazos ficam em memória como instantes do relógio de parede, e o sono é em passos de no máximo 1 min que
+    reconferem o relógio sem consultar o banco (um ajuste do relógio é notado em até 1 min); o banco só é
+    consultado ao chegar a hora, ao receber o sinal, na partida e na reserva.
+  - A queda de um agente nunca vale antes de `início deste processo + limite`: a instância que acabou de subir não
+    abre queda de quem ainda não teve tempo de reconectar nela. Ao receber o SIGTERM do deploy, a instância que sai
+    grava "visto agora" de todos os agentes conectados a ela.
+  - A primeira rodada do desligamento agendado é na partida (acha o pedido que ficou pendente quando uma instância
+    parou) e, nos 10 primeiros minutos, repete a cada 60 s (`PowerOffStartupPollSeconds`), o que cobre a
+    sobreposição do deploy. Em produção roda uma instância; com duas instâncias fixas, um pedido criado numa
+    delas só seria visto pela outra na reserva de 6 h (e passaria de 10 min de atraso), então esse desenho
+    pressupõe uma instância.
+  - Limitação aceita: com o batimento fora do banco, quem lê o resumo persistido (a lista de computadores) numa
+    instância que não tem o WebSocket do agente (só na sobreposição do deploy) vê "visto há" desde a última
+    conexão ou hello, não desde o último batimento. A instância que tem a conexão mostra o instante real.
 - Falhas fazem retry com backoff crescente; ao passar de `Messaging:MaxAttempts` a mensagem vai para
   `dead_letters`.
 - **Inbox idempotente**: o consumidor herda `IdempotentEventHandler<TContext, TEvent>`, que registra o par

@@ -9,21 +9,28 @@ using UniOver.Modules.Devices.Persistence;
 namespace UniOver.Modules.Devices.Features.Presence;
 
 /// <summary>
-/// Persiste um resumo da presença sem transformar cada batimento em escrita. A memória deste singleton evita até a
-/// consulta repetida; depois de um deploy a primeira mensagem confere a hora já guardada antes de voltar a gravar.
-/// O <c>hello</c> repetido e o mesmo estado de atualização também não geram escrita. Falha ao gravar só é registrada:
-/// o resumo é informativo e não pode derrubar a conexão do agente.
+/// Persiste um resumo da presença sem transformar cada batimento em escrita: o Neon gratuito dorme sem consulta, e um agente
+/// conectado dia e noite que gravasse "visto agora" todo minuto o manteria acordado o mês inteiro. O último sinal
+/// (<c>last_seen_at</c>) só é gravado ao conectar, ao desconectar e quando o <c>hello</c> traz algo novo (versão ou
+/// computador); enquanto o agente está conectado, quem mostra "visto agora" é a presença em memória (ver
+/// <c>AgentConnections</c>). O <c>hello</c> repetido e o mesmo estado de atualização não geram escrita nenhuma, nem consulta.
+/// Falha ao gravar só é registrada: o resumo é informativo e não pode derrubar a conexão do agente.
 /// </summary>
 internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scopes, ILogger<AgentPresencePersistence> logger)
 {
-    private static readonly TimeSpan LastSeenInterval = TimeSpan.FromMinutes(1);
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastSeenWrites = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, HelloDetails> _hellos = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, AgentUpdateInfo> _updates = new(StringComparer.Ordinal);
 
     private sealed record HelloDetails(string AgentVersion, AgentHostInfo? Host);
 
     public Task RecordConnectedAsync(string agentId, DateTimeOffset now, CancellationToken cancellationToken) =>
+        SaveAsync(agentId, now, forceLastSeen: true, agentVersion: null, host: null, update: null, cancellationToken);
+
+    /// <summary>
+    /// A instância vai parar (o deploy mandou o SIGTERM): grava "visto agora" de quem está conectado a ela. Sem batimento no banco,
+    /// o último sinal de um agente conectado há dias é antigo, e a instância que assume não pode achar que ele sumiu.
+    /// </summary>
+    public Task RecordSeenAsync(string agentId, DateTimeOffset now, CancellationToken cancellationToken) =>
         SaveAsync(agentId, now, forceLastSeen: true, agentVersion: null, host: null, update: null, cancellationToken);
 
     public Task RecordDisconnectedAsync(string agentId, DateTimeOffset now, CancellationToken cancellationToken) =>
@@ -45,9 +52,6 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
         CancellationToken cancellationToken) =>
         SaveAsync(agentId, now, forceLastSeen: false, agentVersion: null, host: null, update, cancellationToken);
 
-    public Task TouchAsync(string agentId, DateTimeOffset now, CancellationToken cancellationToken) =>
-        SaveAsync(agentId, now, forceLastSeen: false, agentVersion: null, host: null, update: null, cancellationToken);
-
     private async Task SaveAsync(
         string agentId,
         DateTimeOffset now,
@@ -60,14 +64,15 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
         var hello = agentVersion is null ? null : new HelloDetails(agentVersion, host);
         var helloChanged = hello is not null && !(_hellos.TryGetValue(agentId, out var knownHello) && knownHello == hello);
         var updateChanged = update is not null && !(_updates.TryGetValue(agentId, out var knownUpdate) && knownUpdate == update);
-        if (!forceLastSeen && !helloChanged && !updateChanged && IsRecent(agentId, now))
+        if (!forceLastSeen && !helloChanged && !updateChanged)
         {
             return;
         }
 
         try
         {
-            await WriteAsync(agentId, now, forceLastSeen, helloChanged ? hello : null, updateChanged ? update : null, cancellationToken);
+            // Um hello que muda a versão ou o computador também renova o último sinal; o de atualização, não.
+            await WriteAsync(agentId, now, forceLastSeen || helloChanged, helloChanged ? hello : null, updateChanged ? update : null, cancellationToken);
         }
 #pragma warning disable CA1031 // O resumo é informativo: falha do banco não pode derrubar a conexão do agente.
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -80,7 +85,7 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
     private async Task WriteAsync(
         string agentId,
         DateTimeOffset now,
-        bool forceLastSeen,
+        bool writeLastSeen,
         HelloDetails? hello,
         AgentUpdateInfo? update,
         CancellationToken cancellationToken)
@@ -109,8 +114,7 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
         // O último sinal só avança (comparar e trocar no banco): durante a troca de instância na publicação a instância antiga
         // ainda grava a queda da sua conexão enquanto a nova já gravou a conexão do mesmo agente, e o dado mais velho não pode
         // sobrescrever o mais novo. Linha nova entra já com o valor; a existente é atualizada abaixo, num só UPDATE condicional.
-        var wantsLastSeen = forceLastSeen || !IsRecent(snapshot.LastSeenAt, now);
-        if (wantsLastSeen && isNew)
+        if (writeLastSeen && isNew)
         {
             snapshot.RecordLastSeen(now);
         }
@@ -127,24 +131,14 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
 
         await db.SaveChangesAsync(cancellationToken);
 
-        if (wantsLastSeen && !isNew)
+        if (writeLastSeen && !isNew)
         {
             await db.AgentPresenceSnapshots
                 .Where(item => item.AgentId == agentIdValue.Value && (item.LastSeenAt == null || item.LastSeenAt < now))
                 .ExecuteUpdateAsync(set => set.SetProperty(item => item.LastSeenAt, now), cancellationToken);
         }
 
-        // Só depois de gravar: uma falha não pode fazer o cache achar que já está no banco. Se outra instância já tinha um sinal
-        // mais novo, o UPDATE não mudou nada e o cache fica com este instante: há um sinal recente no banco de qualquer forma.
-        if (wantsLastSeen)
-        {
-            _lastSeenWrites[agentId] = now;
-        }
-        else if (snapshot.LastSeenAt is { } lastSeen)
-        {
-            _lastSeenWrites.TryAdd(agentId, lastSeen);
-        }
-
+        // Só depois de gravar: uma falha não pode fazer a memória achar que já está no banco.
         if (hello is not null)
         {
             _hellos[agentId] = hello;
@@ -155,12 +149,6 @@ internal sealed partial class AgentPresencePersistence(IServiceScopeFactory scop
             _updates[agentId] = update;
         }
     }
-
-    private bool IsRecent(string agentId, DateTimeOffset now) =>
-        _lastSeenWrites.TryGetValue(agentId, out var lastSeen) && IsRecent(lastSeen, now);
-
-    private static bool IsRecent(DateTimeOffset? lastSeen, DateTimeOffset now) =>
-        lastSeen is not null && now >= lastSeen.Value && now - lastSeen.Value < LastSeenInterval;
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível gravar o resumo de presença do agente {AgentId} ({Error}).")]
     private partial void LogWriteFailed(string agentId, string error);

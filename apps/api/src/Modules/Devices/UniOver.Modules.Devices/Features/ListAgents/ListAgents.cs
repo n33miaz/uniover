@@ -10,8 +10,8 @@ using UniOver.Modules.Devices.Persistence;
 namespace UniOver.Modules.Devices.Features.ListAgents;
 
 /// <summary>
-/// <c>LastSeenAt</c> é o último sinal persistido do agente; a conexão e as mensagens só o atualizam no banco com
-/// intervalo mínimo de um minuto. Quando ele está conectado, a presença em memória traz o instante mais recente.
+/// <c>LastSeenAt</c> é o último sinal do agente: o persistido só é gravado ao conectar, ao desconectar e quando o <c>hello</c>
+/// traz algo novo (nunca por batimento). Quando ele está conectado, a presença em memória traz o instante mais recente.
 /// Os campos de manutenção vêm do <c>hello</c> do agente e ficam vazios até ele falar: <c>AgentVersion</c> e
 /// <c>AgentBuild</c> (o commit instalado, curto), <c>Os</c>, <c>TvKind</c> e <c>TvHost</c>. <c>CanReadLogs</c> e
 /// <c>CanMaintain</c> dizem o que o agente sabe fazer (falso = a tela pede para atualizar o agente).

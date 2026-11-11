@@ -45,6 +45,22 @@ internal sealed class FakeTimeProvider(DateTimeOffset start) : TimeProvider
         return timer;
     }
 
+    /// <summary>
+    /// Ajuste do relógio de parede (NTP, máquina retomada): o "agora" muda, mas os temporizadores (que contam tempo decorrido)
+    /// só disparam depois de o tempo decorrido passar (<see cref="Advance"/>): os vencimentos acompanham o salto.
+    /// </summary>
+    public void Jump(TimeSpan delta)
+    {
+        lock (_lock)
+        {
+            _now += delta;
+            foreach (var timer in _timers)
+            {
+                timer.Shift(delta);
+            }
+        }
+    }
+
     public void Advance(TimeSpan delta)
     {
         DateTimeOffset target;
@@ -92,6 +108,8 @@ internal sealed class FakeTimeProvider(DateTimeOffset start) : TimeProvider
             _period = period;
             Due = dueTime == Timeout.InfiniteTimeSpan ? null : now + dueTime;
         }
+
+        public void Shift(TimeSpan delta) => Due = Due + delta;
 
         public void Fired(DateTimeOffset now) =>
             Due = _period == Timeout.InfiniteTimeSpan || _period == TimeSpan.Zero ? null : now + _period;

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
+using UniOver.SharedKernel;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
@@ -23,7 +24,19 @@ internal sealed record SavePowerScheduleRequest(DateTimeOffset DueAtUtc, string?
 internal sealed record PowerScheduleView(Guid Id, DateTimeOffset DueAtUtc, string TimeZone, string Status, string? Result, string? Reason, long Version);
 internal sealed record PowerScheduleResponse(PowerScheduleView? Active, PowerScheduleView? Last);
 
-internal sealed class PowerScheduleHandler(TvDbContext db, ITvCurrentSelection selection, TimeProvider time)
+/// <summary>
+/// Avisa o laço dos desligamentos agendados que o trabalho mudou (criou, mudou ou cancelou um pedido): ele dorme até o
+/// próximo instante útil e, sem este aviso, só notaria a mudança na varredura de reserva. Em processo; outra instância
+/// notaria só pela reserva (e, na partida, pela varredura que toda instância nova faz).
+/// </summary>
+internal sealed class PowerScheduleSignal
+{
+    public WakeSignal Wake { get; } = new();
+
+    public void Notify() => Wake.Notify();
+}
+
+internal sealed class PowerScheduleHandler(TvDbContext db, ITvCurrentSelection selection, TimeProvider time, PowerScheduleSignal signal)
 {
     public async Task<PowerScheduleResponse> ReadAsync(CancellationToken ct)
     {
@@ -81,6 +94,8 @@ internal sealed class PowerScheduleHandler(TvDbContext db, ITvCurrentSelection s
             return (null, "changed");
         }
         await transaction.CommitAsync(ct);
+        // Só depois do commit: avisar antes faria o laço olhar uma linha ainda invisível e voltar a dormir.
+        signal.Notify();
         return (View(active), null);
     }
 
@@ -96,6 +111,7 @@ internal sealed class PowerScheduleHandler(TvDbContext db, ITvCurrentSelection s
             "cancel", true, null, null, client, time.GetUtcNow(), tvId));
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        signal.Notify();
         return true;
     }
 
@@ -143,10 +159,23 @@ internal static class PowerScheduleEndpoint
         new Dictionary<string, string[]> { ["schedule"] = ["Informe um horário UTC futuro (até sete dias) e um fuso IANA válido."] });
 }
 
+/// <summary>O que o laço dos desligamentos agendados precisa da fila: uma rodada de trabalho e o próximo instante em que há o que fazer.</summary>
+internal interface IPowerOffQueue
+{
+    /// <summary>Processa um pedido devido (ou recupera uma reserva vencida). Devolve 0 se não havia nada a fazer agora.</summary>
+    Task<int> RunOnceAsync(CancellationToken ct);
+
+    /// <summary>
+    /// O instante em que a fila volta a ter trabalho: o menor entre a hora combinada dos pedidos pendentes (ou o fim da espera de
+    /// uma nova tentativa, se for depois) e o fim da reserva dos que estão sendo enviados. Nulo se não há pedido em aberto.
+    /// </summary>
+    Task<DateTimeOffset?> NextWakeAsync(CancellationToken ct);
+}
+
 /// <summary>Reserva no banco antes de enviar; após uma queda, a operação ambígua termina como incerta e nunca é repetida.</summary>
 internal sealed class ScheduledPowerOffDispatcher(
     TvDbContext db, TimeProvider time, IAccessGrants grants, TvSelectionService selection,
-    IAgentDirectory agents, IAgentPresenceReader presence, ITvCommandSender sender, IOptions<TvModuleOptions> options)
+    IAgentDirectory agents, IAgentPresenceReader presence, ITvCommandSender sender, IOptions<TvModuleOptions> options) : IPowerOffQueue
 {
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
 
@@ -158,6 +187,17 @@ internal sealed class ScheduledPowerOffDispatcher(
 
     /// <summary>Quanto o pedido espera antes de ser tentado de novo quando o agente ainda não está pronto (sem sessão ou sem hello).</summary>
     internal static readonly TimeSpan NotReadyRetryAfter = TimeSpan.FromSeconds(15);
+
+    public async Task<DateTimeOffset?> NextWakeAsync(CancellationToken ct) =>
+        // Pendente: vale a hora combinada, ou o fim da espera da nova tentativa quando este é depois (a mesma regra de
+        // RunOnceAsync: due_at_utc <= agora E lease_until nulo ou <= agora). Enviando: o fim da reserva (a recuperação só age
+        // depois dele). Os outros estados não têm trabalho.
+        await db.PowerSchedules.AsNoTracking()
+            .Where(x => x.Status == Schedule.Pending || x.Status == Schedule.Dispatching)
+            .Select(x => x.Status == Schedule.Dispatching
+                ? x.LeaseUntil
+                : (x.LeaseUntil != null && x.LeaseUntil > x.DueAtUtc ? x.LeaseUntil : (DateTimeOffset?)x.DueAtUtc))
+            .MinAsync(ct);
 
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
@@ -253,23 +293,97 @@ internal sealed class ScheduledPowerOffDispatcher(
 
 }
 
-internal sealed partial class ScheduledPowerOffWorker(IServiceScopeFactory scopes, TimeProvider time, ILogger<ScheduledPowerOffWorker> logger) : BackgroundService
+/// <summary>
+/// Entrega os desligamentos agendados sem tique fixo: o Neon gratuito dorme depois de 5 min sem consulta e o plano tem um teto
+/// mensal de horas acordado, então um laço de segundos manteria o banco ligado o mês inteiro sem ninguém usar. Cada rodada
+/// esvazia o que está devido e pergunta ao banco o próximo instante útil (<see cref="IPowerOffQueue.NextWakeAsync"/>); o prazo da
+/// próxima rodada fica em memória, como instante do relógio de parede, e o laço dorme em passos de no máximo
+/// <see cref="MaxSleep"/>, reconferindo o relógio a cada passo SEM consultar o banco: um ajuste do relógio (NTP, VM retomada) é
+/// notado em até um minuto, em vez de a espera longa ser contada uma vez só. Só ao chegar a hora (ou ao ser acordado por
+/// <see cref="PowerScheduleSignal"/>: criou, mudou, cancelou) é que consulta. Sem pedido em aberto o prazo é o tempo de reserva
+/// (<c>PowerOffReserveMinutes</c>), que cobre o pedido criado por outra instância. Nos primeiros minutos da vida do processo o
+/// prazo é curto (<c>PowerOffStartupPollSeconds</c>): numa troca de instância a antiga ainda atende e pode receber um pedido
+/// que esta não viu, e o banco está acordado de qualquer forma. A primeira rodada é na própria partida, então um pedido que
+/// ficou pendente (a instância que o recebeu parou sem avisar ninguém) é encontrado por quem sobe.
+/// </summary>
+internal sealed partial class ScheduledPowerOffWorker(
+    IServiceScopeFactory scopes, TimeProvider time, PowerScheduleSignal signal, IOptions<TvModuleOptions> options,
+    ILogger<ScheduledPowerOffWorker> logger) : BackgroundService
 {
+    /// <summary>Folga mínima quando o instante já passou e nada foi tomado (outra instância segura a linha): evita laço apertado.</summary>
+    internal static readonly TimeSpan MinimumWait = TimeSpan.FromSeconds(1);
+
+    /// <summary>O maior sono seguido: depois dele o prazo (em memória) é recalculado pelo relógio, sem tocar no banco.</summary>
+    internal static readonly TimeSpan MaxSleep = TimeSpan.FromMinutes(1);
+
+    private static readonly TimeSpan FailureWait = TimeSpan.FromSeconds(15);
+
+    /// <summary>Teto da espera depois de falhas seguidas: muito abaixo de <see cref="ScheduledPowerOffDispatcher.MaxLateness"/>.</summary>
+    private static readonly TimeSpan MaxFailureWait = TimeSpan.FromMinutes(2);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15), time);
+        var startedAt = time.GetUtcNow();
+        var failures = 0;
+        var sweepAt = startedAt; // a primeira rodada é na partida
+        var signaled = false;
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (signaled || time.GetUtcNow() >= sweepAt)
+            {
+                signaled = false;
+                DateTimeOffset? next = null;
+                try
+                {
+                    await using var scope = scopes.CreateAsyncScope();
+                    var queue = scope.ServiceProvider.GetRequiredService<IPowerOffQueue>();
+                    while (await queue.RunOnceAsync(stoppingToken) != 0) { }
+                    next = await queue.NextWakeAsync(stoppingToken);
+                    failures = 0;
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+                catch (Exception ex)
+                {
+                    failures++;
+                    LogFailure(logger, ex.GetType().Name);
+                }
+
+                var now = time.GetUtcNow();
+                sweepAt = now + (failures > 0 ? FailureDelay(failures) : WaitFor(next, now, startedAt));
+            }
+
+            var sleep = sweepAt - time.GetUtcNow();
             try
             {
-                await using var scope = scopes.CreateAsyncScope();
-                var dispatcher = scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>();
-                while (await dispatcher.RunOnceAsync(stoppingToken) != 0) { }
+                signaled = await signal.Wake.WaitAsync(sleep < MaxSleep ? sleep : MaxSleep, time, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { LogFailure(logger, ex.GetType().Name); }
-            if (!await timer.WaitForNextTickAsync(stoppingToken)) break;
         }
+    }
+
+    /// <summary>Quanto falta para a próxima consulta: até o próximo instante útil, nunca além da reserva (ou da espera curta dos primeiros minutos).</summary>
+    internal TimeSpan WaitFor(DateTimeOffset? next, DateTimeOffset now, DateTimeOffset startedAt)
+    {
+        var settings = options.Value;
+        var cap = now - startedAt < settings.PowerOffStartupWindow ? settings.PowerOffStartupPoll : settings.PowerOffReserve;
+        if (next is null)
+        {
+            return cap;
+        }
+
+        var until = next.Value - now;
+        if (until <= TimeSpan.Zero)
+        {
+            until = MinimumWait;
+        }
+
+        return until < cap ? until : cap;
+    }
+
+    private static TimeSpan FailureDelay(int failures)
+    {
+        var delay = TimeSpan.FromSeconds(FailureWait.TotalSeconds * Math.Pow(2, Math.Min(failures - 1, 6)));
+        return delay < MaxFailureWait ? delay : MaxFailureWait;
     }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao processar desligamentos agendados ({Error}).")]

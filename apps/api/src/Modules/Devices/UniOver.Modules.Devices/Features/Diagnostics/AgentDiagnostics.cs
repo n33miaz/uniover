@@ -6,8 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Features.ClientEvents;
@@ -267,44 +266,24 @@ internal static class AgentDiagnosticsEndpoint
 }
 
 /// <summary>
-/// Apaga de hora em hora o que passou da retenção, de todos os agentes (ver <see cref="AgentDiagnosticsStore.PurgeExpiredAsync"/>) e
-/// também a telemetria de erros do app (ver <see cref="ClientEventStore.PurgeExpiredAsync"/>): é o mesmo trabalho de limpar rastro
-/// vencido, e um só laço de hora em hora basta para as duas tabelas.
+/// Apaga o que passou da retenção, de todos os agentes (ver <see cref="AgentDiagnosticsStore.PurgeExpiredAsync"/>) e também a
+/// telemetria de erros do app (ver <see cref="ClientEventStore.PurgeExpiredAsync"/>): é o mesmo trabalho de limpar rastro vencido.
+/// Entra na lista de trabalhos do serviço de retenção que já existe (<c>AuditPurge</c>, um despertar por dia): a retenção é de
+/// dias, e um laço de hora em hora acordaria o banco gratuito 24 vezes por dia para apagar quase nada.
 /// </summary>
-internal sealed partial class AgentDiagnosticsPurgeWorker(IServiceScopeFactory scopes, TimeProvider time, ILogger<AgentDiagnosticsPurgeWorker> logger)
-    : BackgroundService
+internal static class DiagnosticsRetentionRegistration
 {
-    public static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+    public const string JobName = "devices_diagnostics";
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public static IServiceCollection AddDiagnosticsRetention(this IServiceCollection services)
     {
-        using var timer = new PeriodicTimer(Interval, time);
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<AgentDiagnosticsStore>().PurgeExpiredAsync(stoppingToken);
-                await scope.ServiceProvider.GetRequiredService<ClientEventStore>().PurgeExpiredAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-#pragma warning disable CA1031 // A limpeza tenta de novo na próxima hora; nunca derruba o host.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                LogFailure(logger, ex.GetType().Name);
-            }
+        ArgumentNullException.ThrowIfNull(services);
 
-            if (!await timer.WaitForNextTickAsync(stoppingToken))
-            {
-                break;
-            }
-        }
+        services.AddSingleton(new AuditPurgeJob(
+            JobName,
+            async (provider, cancellationToken) =>
+                await provider.GetRequiredService<AgentDiagnosticsStore>().PurgeExpiredAsync(cancellationToken)
+                + await provider.GetRequiredService<ClientEventStore>().PurgeExpiredAsync(cancellationToken)));
+        return services;
     }
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao apagar o rastro vencido (diagnósticos dos agentes e telemetria do app) ({Error}).")]
-    private static partial void LogFailure(ILogger logger, string error);
 }
