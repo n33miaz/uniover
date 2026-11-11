@@ -347,6 +347,12 @@ mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagn
 - **O que o isolamento NÃO resolve.** As duas threads dividem o mesmo processo e o mesmo GIL: uma chamada em C que segura o
   GIL por muito tempo (a leitura das autoridades de certificado do Windows, por exemplo) para as duas, e o Windows ainda decide
   quem recebe CPU. O contexto TLS já é compartilhado (`ssl_contexts.py`); o resto é a prioridade e o conjunto de trabalho.
+- **Diagnóstico das paradas curtas** (só registra, `stall_dump`, padrão ligado). Os dois laços já pararam juntos por 0,3 a 4 s
+  algumas vezes por hora, com um processo vizinho sem parar: a causa está dentro do agente. `adapters/stall_dump.py` re-arma, a cada
+  250 ms, o `faulthandler.dump_traceback_later(0,65 s)` a partir do laço da entrada; se ele ficar 0,65 s sem voltar, a thread de C do
+  `faulthandler` (que não precisa do GIL) grava a pilha de TODAS as threads em `logs/stalls.log` (no máximo 1 a cada 10 min, 20 por
+  dia e 2 MB; o arquivo cheio vira `.1` na execução seguinte) e uma linha no `agent.log`. A linha de atraso de cada laço passa a trazer
+  também as falhas de página do minuto, o conjunto de trabalho e a maior pausa do GC (`adapters/process_memory.py`, `loop_lag.py`).
 - **Movimento atrasado é somado e aplicado** (decisão do dono de 10/11): só o que passa de 5 s é descartado (antes, 2 s). Os
   movimentos vizinhos que já esperam na faixa viram um só (o mesmo caminho: o movimento é relativo), sem atravessar clique nem
   tecla e sem misturar nuvem e canal direto. Um salto grande do ponteiro (acima de `pc_pointer_spread_min_px`, 12 px no maior

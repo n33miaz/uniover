@@ -240,6 +240,11 @@ class Settings(BaseSettings):
     # eventos próprio, numa thread com prioridade acima do normal: o resto do agente (TV, rede,
     # diagnóstico) não a atrasa. Desligar a devolve ao laço principal (só para isolar um defeito).
     pc_input_thread: bool = True
+    # Diagnóstico das paradas curtas do laço da entrada (0,3 a 4 s, algumas vezes por hora): se o
+    # laço fica 0,4 s sem responder, a pilha de todas as threads vai para `logs\stalls.log` (no
+    # máximo 1 a cada 10 min, 20 por dia, 2 MB). Só vale com a entrada isolada. Não muda o
+    # comportamento do agente; desligue só se o custo (um re-arme a cada 100 ms) incomodar.
+    stall_dump: bool = True
     # A primeira vez que um aparelho do app pede controle do PC, o dono confirma na tela do próprio
     # PC ("Permitir que <nome> controle este PC?"); a decisão fica guardada por aparelho. Só vale
     # com uma API que a oferece. Desligar tira a pergunta (vale a permissão da API).
