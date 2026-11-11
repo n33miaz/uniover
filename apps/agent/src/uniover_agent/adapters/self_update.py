@@ -31,6 +31,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from uniover_agent.adapters import current_pointer
+from uniover_agent.adapters.current_pointer import base_of
 from uniover_agent.adapters.process import run_hidden
 
 _log = logging.getLogger(__name__)
@@ -92,8 +94,10 @@ MIN_FREE_BYTES = 600 * 1024 * 1024
 DISK_RESUME_BYTES = 2 * 1024 * 1024 * 1024
 # A TV conta como em uso se alguém a usou há menos disto (a marca `runtime\tv-last-use`, ver
 # `tv_in_use`), e a atualização espera até este teto antes de ir assim mesmo.
-TV_IDLE_SECONDS = 600.0
-TV_MAX_DEFER_SECONDS = 24 * 3600.0
+# A atualização é aplicada logo; a espera só existe porque a troca por reinício derruba o agente
+# por uns 5 a 15 s (com a TV ou o PC em uso, espera ficar 60 s parado, no máximo 10 min).
+TV_IDLE_SECONDS = 60.0
+TV_MAX_DEFER_SECONDS = 600.0
 TV_LAST_USE_FILE = "tv-last-use"
 # A mesma marca para o controle do PC (ver `pc_in_use`): a atualização espera por qualquer uma.
 PC_LAST_USE_FILE = "pc-last-use"
@@ -261,7 +265,7 @@ def update_in_trial(source: Path) -> bool:
     trocaria por uma versão que ainda ninguém viu funcionar. O arquivo é do supervisor do Windows.
     """
     try:
-        text = (source.parent / "runtime" / "update-trial.txt").read_text(encoding="ascii")
+        text = (base_of(source) / "runtime" / "update-trial.txt").read_text(encoding="ascii")
     except OSError, ValueError:
         return False
     version = read_version(source)
@@ -269,7 +273,7 @@ def update_in_trial(source: Path) -> bool:
 
 
 def trial_marker(source: Path) -> Path:
-    return source.parent / "runtime" / "update-trial.txt"
+    return base_of(source) / "runtime" / "update-trial.txt"
 
 
 def write_trial_marker(source: Path, sha: str) -> None:
@@ -454,7 +458,7 @@ def lowdisk_deferred(source: Path) -> set[tuple[str, float]]:
     devolução) sabe ler. Uma linha com campo a mais seria ignorada por ela, e a versão devolvida
     seria reinstalada na hora."""
     try:
-        text = (source.parent / "runtime" / DEFERRED_LOWDISK_FILE).read_text(encoding="utf-8")
+        text = (base_of(source) / "runtime" / DEFERRED_LOWDISK_FILE).read_text(encoding="utf-8")
     except OSError:
         return set()
     marks: set[tuple[str, float]] = set()
@@ -483,7 +487,7 @@ def deferred_versions(source: Path, now: float, *, disk_ok: bool = False) -> set
     (demora, prova que não gravou com disco sobrando) também volta ao adiamento normal: sem isso o
     PC fraco repetiria o ciclo de instalar e voltar a cada checagem."""
     try:
-        path = source.parent / "runtime" / DEFERRED_VERSIONS_FILE
+        path = base_of(source) / "runtime" / DEFERRED_VERSIONS_FILE
         entries = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return set()
@@ -516,8 +520,8 @@ def deferred_versions(source: Path, now: float, *, disk_ok: bool = False) -> set
 def blocked_versions(source: Path) -> set[str]:
     """Commits recusados pelo monitor do Windows depois de uma queda repetida."""
     try:
-        runtime_file = source.parent / "runtime" / BLOCKED_VERSIONS_FILE
-        path = runtime_file if runtime_file.exists() else source.parent / BLOCKED_VERSIONS_FILE
+        runtime_file = base_of(source) / "runtime" / BLOCKED_VERSIONS_FILE
+        path = runtime_file if runtime_file.exists() else base_of(source) / BLOCKED_VERSIONS_FILE
         entries = path.read_text(encoding="utf-8").splitlines()
         return {line.strip() for line in entries if _SHA.fullmatch(line.strip())}
     except OSError:
@@ -546,13 +550,19 @@ def swap_directories(current: Path, new: Path, *, keep_previous: bool = False) -
 
 
 def candidate_env(source: Path) -> Path:
-    """Ambiente virtual **descartável** da candidata, ao lado dela (fora da pasta que é trocada).
+    """Ambiente virtual da candidata, fora da pasta dela.
+
+    Versão preparada (`app.staging\\<sha>`): o ambiente é GUARDADO (`runtime\\venv-<sha>`), porque
+    é o que o processo novo vai usar na troca, sem refazer nada com o agente fora do ar. Fora
+    disso (modo clássico) é **descartável**, ao lado dela.
 
     O ambiente do agente em execução (`UV_PROJECT_ENVIRONMENT`, `runtime\\venv`) não serve para
     validar a candidata: o `uv sync` de um projeto em outro caminho reinstala o próprio pacote
     nele (inclusive `Scripts\\uniover-agent.exe`, que o agente e esta atualização estão usando) e
     o Windows recusa trocar arquivo em uso. Foi o que fez `uv sync` falhar com `CalledProcessError`.
     """
+    if source.parent.name == current_pointer.STAGING_DIR:
+        return current_pointer.staged_venv(base_of(source), source.name)
     return source.with_name(source.name + ".venv")
 
 
@@ -593,10 +603,16 @@ def _run_uv(  # noqa: PLR0913 - cada argumento é um limite ou um caminho, todos
     environment: Path,
     pause: float,
     attempts: int = 1,
+    app_dir: Path | None = None,
 ) -> None:
-    """Roda o `uv` sem janela, com o ambiente descartável, e diz o motivo se falhar."""
+    """Roda o `uv` sem janela, com o ambiente da candidata, e diz o motivo se falhar.
+
+    `app_dir` é a pasta da candidata: o supervisor deixa `UNIOVER_APP_DIR` apontando para a versão
+    em uso, e a candidata não pode se achar nela."""
     uv = _find_uv()
     env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment)}
+    if app_dir is not None:
+        env["UNIOVER_APP_DIR"] = str(app_dir)
     reason = ""
     for attempt in range(1, attempts + 1):
         if attempt > 1:
@@ -637,10 +653,11 @@ def run_uv_sync(source: Path, *, pause: float = SYNC_PAUSE_SECONDS) -> None:
         ["sync", "--frozen", "--project", str(source), "--quiet"],
         what="a sincronização das dependências",
         timeout=SYNC_TIMEOUT_SECONDS,
-        cwd=source.parent,
+        cwd=base_of(source),
         environment=environment,
         pause=pause,
         attempts=SYNC_ATTEMPTS,
+        app_dir=source,
     )
 
 
@@ -664,9 +681,10 @@ def run_uv_check(source: Path) -> None:
         ],
         what="o auto-diagnóstico da versão nova",
         timeout=CHECK_TIMEOUT_SECONDS,
-        cwd=source.parent,
+        cwd=base_of(source),
         environment=candidate_env(source),
         pause=0.0,
+        app_dir=source,
     )
 
 
@@ -714,7 +732,7 @@ def pc_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -
 
     O agente em execução grava o instante do último comando `pc.*` executado como a data de
     `runtime\pc-last-use`, do mesmo jeito que faz com a TV. Sem o arquivo conta como parado."""
-    return _used_within(source.parent / "runtime" / PC_LAST_USE_FILE, now, idle_seconds)
+    return _used_within(base_of(source) / "runtime" / PC_LAST_USE_FILE, now, idle_seconds)
 
 
 def control_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -> bool:
@@ -732,7 +750,7 @@ def tv_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -
     if idle_seconds <= 0:
         return False
     try:
-        stamp = (source.parent / "runtime" / TV_LAST_USE_FILE).stat().st_mtime
+        stamp = (base_of(source) / "runtime" / TV_LAST_USE_FILE).stat().st_mtime
     except OSError:
         return False
     return -idle_seconds < now - stamp < idle_seconds
@@ -740,7 +758,7 @@ def tv_in_use(source: Path, now: float, idle_seconds: float = TV_IDLE_SECONDS) -
 
 def _clear_tv_wait(source: Path) -> None:
     try:
-        (source.parent / "runtime" / TV_WAIT_FILE).unlink(missing_ok=True)
+        (base_of(source) / "runtime" / TV_WAIT_FILE).unlink(missing_ok=True)
     except OSError:
         _log.debug("não consegui apagar a marca de espera pela TV")
 
@@ -776,7 +794,7 @@ def settle_tv_wait(source: Path, *, in_use: bool, max_defer_seconds: float) -> N
     janela inteira (`tv_in_use`) para este ponto ser alcançado."""
     if in_use and max_defer_seconds > 0:
         return
-    path = source.parent / "runtime" / TV_WAIT_FILE
+    path = base_of(source) / "runtime" / TV_WAIT_FILE
     state = _read_tv_wait(path)
     if state is None:
         return
@@ -805,7 +823,7 @@ def should_wait_for_tv(
     (disco), não espera: sem como contar, o teto não se faria valer."""
     if not in_use or max_defer_seconds <= 0:
         return False
-    path = source.parent / "runtime" / TV_WAIT_FILE
+    path = base_of(source) / "runtime" / TV_WAIT_FILE
     state = _read_tv_wait(path)
     since = state[1] if state is not None and state[1] <= now else now
     if state is None or state[1] > now or state[0] != sha:
@@ -817,7 +835,7 @@ def should_wait_for_tv(
 def mark_tv_busy_again(source: Path, sha: str) -> None:
     """A TV voltou a ser usada enquanto a candidata era preparada: a próxima checagem não pode
     apagar o relógio só porque a TV já estava parada quando ela começou."""
-    path = source.parent / "runtime" / TV_WAIT_FILE
+    path = base_of(source) / "runtime" / TV_WAIT_FILE
     state = _read_tv_wait(path)
     if state is not None:
         _write_tv_wait(path, sha, state[1], again=True)
@@ -837,6 +855,19 @@ def _low_disk_result(free: int | None, minimum: int, sha: str) -> UpdateResult |
         f"pouco espaço no disco ({free >> 20} MB livres); a atualização espera ter espaço",
         "failed",
         latest=sha,
+    )
+
+
+def _drop_prepared(base: Path, sha: str) -> None:
+    """A versão bloqueada ou adiada deixa de esperar a troca (o supervisor só age no preparado)."""
+    prepared = current_pointer.read_prepared(base)
+    if prepared is not None and prepared.sha == sha:
+        current_pointer.clear_prepared(base)
+
+
+def _prepared_result(sha: str) -> UpdateResult:
+    return UpdateResult(
+        False, "a versão nova está preparada e entra sem derrubar o agente", "prepared", latest=sha
     )
 
 
@@ -860,6 +891,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     resume_free_bytes: int = DISK_RESUME_BYTES,
     tv_idle_seconds: float = TV_IDLE_SECONDS,
     tv_max_defer_seconds: float = TV_MAX_DEFER_SECONDS,
+    staged: bool = False,
 ) -> UpdateResult:
     """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`.
@@ -868,26 +900,37 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     conferência dos arquivos contra a árvore do commit no GitHub, `uv sync --frozen` num ambiente só
     dela e o auto-diagnóstico dela. Qualquer falha deixa a instalação como estava.
 
-    Não troca a versão com a TV em uso (`tv_idle_seconds`): espera, no máximo `tv_max_defer_seconds`
-    desde a primeira vez que adiou. `ignore_deferral` (o "Atualizar agora" do dono) não espera.
+    Modo clássico: não troca a versão com a TV em uso (`tv_idle_seconds`): espera, no máximo
+    `tv_max_defer_seconds` desde a primeira vez que adiou. `ignore_deferral` (o "Atualizar agora" do
+    dono) não espera.
+
+    Modo preparado (`staged`, o do dia a dia): monta a versão em `app.staging\\<sha>` com o ambiente
+    guardado em `runtime\\venv-<sha>` e para aí (`prepared`), com o agente antigo servindo o tempo
+    todo. Quem troca é `apply_prepared` (ponteiro) ou o supervisor (passagem sem queda); por isso
+    aqui não se espera a TV nem a prova da versão atual: preparar não derruba nada.
     """
     if not source.is_dir():
         return UpdateResult(False, "agente não instalado pelo instalador; nada a atualizar")
-    if update_in_trial(source):
+    if not staged and update_in_trial(source):
         # `app.previous` é a última versão que se provou boa: a troca a apagaria.
         return UpdateResult(
             False, "a versão instalada ainda está em prova; atualizo quando ela se confirmar"
         )
+    base = base_of(source)
     sha: str | None = None
     started = monotonic()
 
     def tv_must_wait(candidate: str) -> bool:
-        return not ignore_deferral and should_wait_for_tv(
-            source,
-            wall(),
-            sha=candidate,
-            in_use=control_in_use(source, wall(), tv_idle_seconds),
-            max_defer_seconds=tv_max_defer_seconds,
+        return (
+            not staged
+            and not ignore_deferral
+            and should_wait_for_tv(
+                source,
+                wall(),
+                sha=candidate,
+                in_use=control_in_use(source, wall(), tv_idle_seconds),
+                max_defer_seconds=tv_max_defer_seconds,
+            )
         )
 
     def within_budget() -> None:
@@ -895,7 +938,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
             raise SelfUpdateError("a atualização passou do tempo máximo; fica para a próxima vez")
 
     try:
-        if not ignore_deferral:
+        if not ignore_deferral and not staged:
             settle_tv_wait(
                 source,
                 in_use=control_in_use(source, wall(), tv_idle_seconds),
@@ -905,10 +948,13 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
         within_budget()
         if read_version(source) == sha:
             _clear_tv_wait(source)
+            if staged:
+                current_pointer.clear_prepared(base)
             return UpdateResult(
                 False, "o agente já está na versão mais recente", "up_to_date", latest=sha
             )
         if sha in blocked_versions(source):
+            _drop_prepared(base, sha)
             return UpdateResult(
                 False,
                 "a versão nova caiu repetidamente; aguardando outro commit",
@@ -916,9 +962,10 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 latest=sha,
                 blocked=sha,
             )
-        free = free_bytes(source.parent)
+        free = free_bytes(base)
         disk_ok = free is None or free >= resume_free_bytes
         if not ignore_deferral and sha in deferred_versions(source, wall(), disk_ok=disk_ok):
+            _drop_prepared(base, sha)
             # "deferred" é interno (não existe no contrato): quem grava o estado devolve o que
             # havia.
             return UpdateResult(
@@ -927,6 +974,10 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 "deferred",
                 latest=sha,
             )
+        if staged:
+            already = current_pointer.read_prepared(base)
+            if already is not None and already.sha == sha:
+                return _prepared_result(sha)
         low = _low_disk_result(free, min_free_bytes, sha)
         if low is not None:
             return low
@@ -938,7 +989,7 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 "deferred_busy",
                 latest=sha,
             )
-        workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=source.parent))
+        workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=base))
         try:
             archive = workspace / "main.zip"
             download(sha, archive)
@@ -948,8 +999,14 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                 _log.info("pacote conferido: os arquivos batem com o commit %s", sha[:12])
             else:
                 _log.warning("não consegui conferir os arquivos contra o GitHub; sigo só com o zip")
-            new = source.with_name(source.name + ".new")
+            if staged:
+                new = current_pointer.staged_app(base, sha)
+                new.parent.mkdir(parents=True, exist_ok=True)
+            else:
+                new = source.with_name(source.name + ".new")
             shutil.rmtree(new, ignore_errors=True)
+            if staged:
+                shutil.rmtree(candidate_env(new), ignore_errors=True)
             try:
                 new.mkdir()
                 extract_agent(archive, new)
@@ -960,16 +1017,24 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
                     within_budget()
                 run_check(new)
                 within_budget()
-                # Baixar e montar leva minutos: a TV pode ter voltado a ser usada nesse intervalo.
-                if tv_must_wait(sha):
-                    raise _TvBusyAgain("a TV voltou a ser usada; a troca fica para quando parar")
-                promote(source, new, sha, record_trial)
-                _clear_tv_wait(source)
+                if staged:
+                    current_pointer.write_prepared(base, sha)
+                else:
+                    # Baixar e montar leva minutos: a TV pode ter voltado a ser usada nesse tempo.
+                    if tv_must_wait(sha):
+                        raise _TvBusyAgain(
+                            "a TV voltou a ser usada; a troca fica para quando parar"
+                        )
+                    promote(source, new, sha, record_trial)
+                    _clear_tv_wait(source)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
+                if staged:
+                    shutil.rmtree(candidate_env(new), ignore_errors=True)
                 raise
             finally:
-                shutil.rmtree(candidate_env(new), ignore_errors=True)
+                if not staged:
+                    shutil.rmtree(candidate_env(new), ignore_errors=True)
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
     except _TvBusyAgain:
@@ -987,5 +1052,95 @@ def self_update(  # noqa: PLR0911, PLR0912, PLR0913, PLR0915 - dependências inj
     except (SelfUpdateError, OSError) as exc:
         _log.warning("auto-atualização adiada: %s", exc)
         return UpdateResult(False, f"não atualizei agora: {exc}", "failed", latest=sha)
+    if staged:
+        # A versão que sobrou de uma preparação anterior (e que o ponteiro não usa) sai agora.
+        current_pointer.prune(base, keep_extra=frozenset({sha}))
+        _log.info("versão preparada: %s", sha[:12])
+        return _prepared_result(sha)
+    _log.info("agente atualizado")
+    return UpdateResult(True, "agente atualizado", "updated", latest=sha)
+
+
+def apply_prepared(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a troca testável
+    source: Path,
+    *,
+    ignore_deferral: bool = False,
+    tv_idle_seconds: float = TV_IDLE_SECONDS,
+    tv_max_defer_seconds: float = TV_MAX_DEFER_SECONDS,
+    record_trial: Callable[[Path, str], None] = write_trial_marker,
+    wall: Callable[[], float] = time.time,
+) -> UpdateResult:
+    """Troca para a versão preparada gravando o ponteiro; quem chama reinicia o agente.
+
+    É o caminho de reserva, para quando a passagem sem queda não é possível (a API ainda não a
+    conhece): aqui sim a troca derruba o agente por uns segundos, então ela espera a TV e o controle
+    do PC ficarem parados (no máximo `tv_max_defer_seconds`). A prova da versão nova é gravada ANTES
+    do ponteiro: uma versão nunca fica no ar sem ela (e sem a volta atrás que vem com ela)."""
+    base = base_of(source)
+    slot = current_pointer.read_prepared(base)
+    if slot is None or slot.sha is None:
+        return UpdateResult(False, "não há versão preparada para trocar")
+    sha = slot.sha
+    if read_version(source) == sha:
+        current_pointer.clear_prepared(base)
+        return UpdateResult(
+            False, "o agente já está na versão mais recente", "up_to_date", latest=sha
+        )
+    if sha in blocked_versions(source):
+        _drop_prepared(base, sha)
+        return UpdateResult(
+            False,
+            "a versão nova caiu repetidamente; aguardando outro commit",
+            "blocked",
+            latest=sha,
+            blocked=sha,
+        )
+    if update_in_trial(source):
+        return UpdateResult(
+            False, "a versão instalada ainda está em prova; troco quando ela se confirmar"
+        )
+    if not ignore_deferral:
+        settle_tv_wait(
+            source,
+            in_use=control_in_use(source, wall(), tv_idle_seconds),
+            max_defer_seconds=tv_max_defer_seconds,
+        )
+        if should_wait_for_tv(
+            source,
+            wall(),
+            sha=sha,
+            in_use=control_in_use(source, wall(), tv_idle_seconds),
+            max_defer_seconds=tv_max_defer_seconds,
+        ):
+            _log.info("troca adiada: a TV foi usada há pouco; espero ela ficar parada")
+            return UpdateResult(
+                False,
+                "a TV está em uso; a atualização espera ela ficar parada",
+                "deferred_busy",
+                latest=sha,
+            )
+    try:
+        record_trial(source, sha)
+    except OSError as exc:
+        return UpdateResult(
+            False,
+            "não atualizei agora: não consegui registrar a prova da versão nova "
+            f"({type(exc).__name__})",
+            "failed",
+            latest=sha,
+        )
+    try:
+        current_pointer.switch_to(base, slot)
+    except OSError as exc:
+        # A troca não houve: a prova da versão que não entrou não vale.
+        trial_marker(source).unlink(missing_ok=True)
+        return UpdateResult(
+            False,
+            f"não atualizei agora: não consegui gravar o ponteiro ({type(exc).__name__})",
+            "failed",
+            latest=sha,
+        )
+    _clear_tv_wait(source)
+    current_pointer.clear_prepared(base)
     _log.info("agente atualizado")
     return UpdateResult(True, "agente atualizado", "updated", latest=sha)

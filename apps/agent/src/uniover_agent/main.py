@@ -33,7 +33,12 @@ from uniover_agent.ports import SecretStore
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="uniover-agent", description="Agente local do UniOver.")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("run", help="conecta à API e roda em primeiro plano (padrão)")
+    run_parser = sub.add_parser("run", help="conecta à API e roda em primeiro plano (padrão)")
+    run_parser.add_argument(
+        "--handover",
+        action="store_true",
+        help="chamado pelo supervisor: conecta com a versão anterior ainda servindo e a substitui",
+    )
     pair_parser = sub.add_parser("pair", help="pareia este PC com um código curto")
     pair_parser.add_argument("--name", help="nome do agente (padrão: nome do computador)")
     pair_parser.add_argument(
@@ -69,6 +74,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     update_parser.add_argument(
         "--no-sync", action="store_true", help="não roda `uv sync` depois (o instalador faz)"
+    )
+    update_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="troca para a versão já preparada (espera a TV e o PC ficarem parados)",
     )
     diagnose_parser = sub.add_parser(
         "diagnose", help="confere a saúde deste agente (pasta, início automático, API, TV)"
@@ -133,7 +143,10 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
         # quem sabe disso é a migração, que só a seguir avisa por `UNIOVER_LEGACY_TAKEOVER`. Nesse
         # caso a trava é decidida depois dela; em todos os outros, antes.
         legacy = command == "run" and legacy_wrapper_start()
-        if command == "run" and not legacy and _other_instance_owns():
+        # A execução de uma passagem sem queda convive com a anterior até ela sair: a trava é
+        # tomada depois (`composition.connection`), quando a anterior a largar.
+        handover = bool(getattr(args, "handover", False))
+        if command == "run" and not legacy and not handover and _other_instance_owns():
             return EXIT_ALREADY_RUNNING
         # Também roda quando um wrapper antigo inicia o código novo pela primeira vez.
         migrate_layout()
@@ -182,7 +195,9 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
         if command == "tv-volume":
             return asyncio.run(tv.tv_volume(settings))
         if command == "self-update":
-            return maintenance.update_agent(sync=not args.no_sync, settings=settings, kit=kit)
+            return maintenance.update_agent(
+                sync=not args.no_sync, settings=settings, kit=kit, apply=args.apply
+            )
         if command == "diagnose":
             return asyncio.run(maintenance.diagnose(settings, repair=args.repair))
         if command == "pc-control":
@@ -198,7 +213,9 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             # deve abrir uma segunda conexão com a API.
             return system.EXIT_OK
         while True:
-            code = asyncio.run(connection.run(settings, open_store, kit))
+            code = asyncio.run(connection.run(settings, open_store, kit, handover=handover))
+            # Um recomeço (a TV mudou de endereço) já é desta execução, dona da instalação.
+            handover = False
             if code == system.EXIT_NOT_PAIRED:
                 record_startup_failure("nao_pareado", "sem agent_id ou sem token no cofre")
             elif code == system.EXIT_CREDENTIAL_REJECTED and not session_started():

@@ -18,6 +18,11 @@ EXIT_NOT_PAIRED = 2
 EXIT_CREDENTIAL_REJECTED = 3
 # A TV mudou de endereço: `main` recomeça o `run` já com o endereço novo.
 EXIT_TV_MOVED = 4
+# (5 é "outra instância já roda", em `single_instance`.) A API ainda não sabe passar a
+# conexão de uma versão para outra: o supervisor usa o caminho de reserva (agente parado).
+EXIT_HANDOVER_UNSUPPORTED = 6
+# Outro agente vivo com a mesma identidade disputa a conexão (duas substituições em poucos minutos).
+EXIT_DUPLICATE_AGENT = 7
 _NOT_PAIRED = "não pareado. Rode `uniover-agent pair` para parear este PC."
 
 

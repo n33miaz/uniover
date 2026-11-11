@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -13,9 +14,16 @@ from uniover_agent.core import (
     EnvelopeFactory,
     EnvelopeGate,
 )
+from uniover_agent.core.connection import (
+    DUPLICATE_WINDOW_SECONDS,
+    STOP_CREDENTIAL_REJECTED,
+    STOP_DUPLICATE,
+    STOP_HANDOVER,
+)
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
+    HandoverRequested,
     ServerRestarting,
     ServerRestartNow,
     TransportError,
@@ -354,3 +362,259 @@ async def test_keepalive_send_failure_closes_the_channel_so_the_loop_reconnects(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert transport.connects >= 2
+
+
+# ---- passagem para uma versão nova (handover) e disputa de identidade ----
+
+
+def _supervisor(  # noqa: PLR0913 - as variações que cada teste muda, todas por nome
+    transport: FakeTransport,
+    clock: FakeClock,
+    *,
+    handover: bool = False,
+    on_accepted: Callable[[], None] | None = None,
+    policy: BackoffPolicy | None = None,
+    rehello_interval: float = 300.0,
+    keepalive_interval: float = 25.0,
+) -> ConnectionSupervisor:
+    return ConnectionSupervisor(
+        transport,
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=["tv.remote"],
+        policy=policy,
+        handover=handover,
+        on_handover_accepted=on_accepted,
+        rehello_interval=rehello_interval,
+        keepalive_interval=keepalive_interval,
+    )
+
+
+async def test_handover_requested_stops_without_reconnecting() -> None:
+    transport = FakeTransport([["a", HandoverRequested("uma versão nova assumiu")]])
+    clock = FakeClock()
+    supervisor = _supervisor(transport, clock)
+    await asyncio.wait_for(supervisor.run(), timeout=2)
+    # Reconectar tiraria a versão nova do lugar: sem espera, sem segunda conexão.
+    assert transport.connects == 1
+    assert clock.sleeps == []
+    assert supervisor.stop_reason == STOP_HANDOVER
+
+
+async def test_the_stop_reason_tells_a_rejected_credential_apart() -> None:
+    transport = FakeTransport()
+    transport.connect_error = CredentialRejected("401")
+    supervisor = _supervisor(transport, FakeClock())
+    assert supervisor.stop_reason is None
+    await asyncio.wait_for(supervisor.run(), timeout=2)
+    assert supervisor.stop_reason == STOP_CREDENTIAL_REJECTED
+
+
+async def test_a_second_replacement_in_ten_minutes_stops_as_a_duplicate() -> None:
+    transport = FakeTransport([[ConnectionReplaced("outra")], [ConnectionReplaced("outra")]])
+    clock = FakeClock()
+    supervisor = _supervisor(transport, clock)
+    await asyncio.wait_for(supervisor.run(), timeout=2)
+    # A primeira substituição espera os 60 s de sempre; a segunda, em menos de 10 min, é disputa.
+    assert clock.sleeps == [POLICY.replaced_wait]
+    assert transport.connects == 2
+    assert supervisor.stop_reason == STOP_DUPLICATE
+
+
+async def test_replacements_far_apart_are_not_a_duplicate() -> None:
+    transport = FakeTransport([[ConnectionReplaced("outra")] for _ in range(3)])
+    clock = FakeClock()
+    # Cada espera passa da janela de 10 minutos: as substituições não se acumulam.
+    supervisor = _supervisor(
+        transport, clock, policy=BackoffPolicy(replaced_wait=DUPLICATE_WINDOW_SECONDS + 1)
+    )
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(200):
+        if transport.connects >= 3:
+            break
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert transport.connects >= 3
+    assert supervisor.stop_reason is None
+
+
+def _ack(instance_id: str | None, *, source: str = "api") -> str:
+    """A confirmação que a API manda à candidata promovida (`agent.handover.accepted.v1`)."""
+    return json.dumps(
+        {
+            "v": 1,
+            "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ec1",
+            "type": "agent.handover.accepted.v1",
+            "source": source,
+            "target": "agent:pc-casa",
+            "ts": "2026-11-10T14:00:00Z",
+            "correlationId": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ec0",
+            "body": {"instanceId": instance_id},
+        }
+    )
+
+
+async def _run_until(supervisor: ConnectionSupervisor, done: Callable[[], bool]) -> None:
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(400):
+        if done():
+            break
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_the_handover_stays_pending_after_the_hello_is_sent_until_the_api_confirms() -> None:
+    # O envio local do hello não prova que a API o leu: sem a confirmação segue candidata.
+    release = asyncio.Event()
+
+    class Blocking(FakeTransport):
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            await release.wait()
+            yield "nunca"
+
+    transport = Blocking()
+    supervisor = _supervisor(transport, FakeClock(), handover=True)
+    assert supervisor.handover_pending is True
+    await _run_until(supervisor, lambda: bool(transport.sent))
+    assert supervisor.handover_pending is True
+    assert _supervisor(FakeTransport(), FakeClock()).handover_pending is False
+
+
+async def test_a_drop_before_the_confirmation_keeps_the_next_connection_a_candidate() -> None:
+    candidate_flags: list[bool] = []
+
+    class Recording(FakeTransport):
+        async def connect(self) -> None:
+            candidate_flags.append(supervisor.handover_pending)
+            await super().connect()
+
+    # 1ª conexão: o hello sai e a conexão cai antes de a API ler. 2ª: a API confirma.
+    transport = Recording([[TransportError("caiu antes da admissão")], [], []])
+    accepted: list[bool] = []
+    supervisor = _supervisor(
+        transport, FakeClock(), handover=True, on_accepted=lambda: accepted.append(True)
+    )
+    await _run_until(supervisor, lambda: transport.connects >= 2)
+    # As duas conexões se apresentam como candidatas e os dois hellos pedem a passagem.
+    assert candidate_flags[:2] == [True, True]
+    hellos = [m["body"] for m in transport.sent if m["type"] == "agent.hello.v1"]
+    assert [h.get("handover") for h in hellos[:2]] == [True, True]
+    assert hellos[0]["instanceId"] == hellos[1]["instanceId"]
+    assert supervisor.handover_pending is True
+    assert accepted == []
+
+
+async def test_the_confirmation_with_its_instance_id_ends_the_candidacy_and_is_not_forwarded() -> (
+    None
+):
+    forwarded: list[str | bytes] = []
+    accepted: list[bool] = []
+    transport = FakeTransport()
+    clock = FakeClock()
+    supervisor = ConnectionSupervisor(
+        transport,
+        lambda raw: _collect(forwarded, raw),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=[],
+        handover=True,
+        on_handover_accepted=lambda: accepted.append(True),
+    )
+    assert supervisor.instance_id is not None
+    transport.sessions = [[_ack(supervisor.instance_id), "comando"]]
+    await _run_until(supervisor, lambda: "comando" in forwarded)
+    assert accepted == [True]
+    assert supervisor.handover_pending is False
+    # A confirmação é do canal: o resto do agente só vê o comando.
+    assert forwarded == ["comando"]
+
+
+async def _collect(into: list[str | bytes], raw: str | bytes) -> None:
+    into.append(raw)
+
+
+@pytest.mark.parametrize("variant", ["another-instance", "not-from-the-api", "no-instance"])
+async def test_a_confirmation_that_is_not_for_this_run_is_dropped_and_changes_nothing(
+    variant: str,
+) -> None:
+    accepted: list[bool] = []
+    transport = FakeTransport()
+    supervisor = _supervisor(
+        transport, FakeClock(), handover=True, on_accepted=lambda: accepted.append(True)
+    )
+    assert supervisor.instance_id is not None
+    wrong = {
+        "another-instance": _ack("0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8eff"),
+        "not-from-the-api": _ack(supervisor.instance_id, source="agent:pc-casa"),
+        "no-instance": _ack(None),
+    }[variant]
+    transport.sessions = [[wrong]]
+    await _run_until(
+        supervisor, lambda: transport.connects >= 1 and transport.closes >= 0 and False
+    )
+    assert accepted == []
+    assert supervisor.handover_pending is True
+
+
+async def test_the_hello_keeps_saying_handover_until_the_confirmation() -> None:
+    release = asyncio.Event()
+
+    class Blocking(FakeTransport):
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            await release.wait()
+            yield "nunca"
+
+    transport = Blocking()
+    supervisor = _supervisor(transport, FakeClock(), handover=True)
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(200):
+        if transport.sent:
+            break
+        await asyncio.sleep(0)
+    await supervisor.hello_now()  # o reenvio (do periódico ou de uma capacidade nova)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    hellos = [m["body"] for m in transport.sent if m["type"] == "agent.hello.v1"]
+    assert len(hellos) == 2
+    assert [h["handover"] for h in hellos] == [True, True]
+    # O identificador é desta execução e não muda entre os hellos.
+    assert hellos[0]["instanceId"] == hellos[1]["instanceId"]
+
+
+async def test_after_the_confirmation_the_hello_says_neither_handover_nor_instance_id() -> None:
+    transport = FakeTransport()
+    supervisor = _supervisor(transport, FakeClock(), handover=True)
+    assert supervisor.instance_id is not None
+    transport.sessions = [[_ack(supervisor.instance_id)]]
+    await _run_until(supervisor, lambda: supervisor.handover_pending is False)
+    assert supervisor.handover_pending is False
+    body = supervisor._hello()["body"]
+    # Uma API revertida (contrato fechado) recusaria os dois campos num hello comum.
+    assert "handover" not in body
+    assert "instanceId" not in body
+
+
+async def test_a_plain_hello_carries_neither_handover_nor_instance_id() -> None:
+    transport = FakeTransport([["a"]])
+    supervisor = _supervisor(transport, FakeClock())
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(200):
+        if transport.sent:
+            break
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    body = transport.sent[0]["body"]
+    assert "handover" not in body
+    assert "instanceId" not in body

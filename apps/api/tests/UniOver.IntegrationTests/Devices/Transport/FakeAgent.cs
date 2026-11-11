@@ -34,14 +34,19 @@ internal sealed class FakeAgent : IAsyncDisposable
     /// <summary>Código e motivo do fechamento pelo servidor, quando já ocorreu.</summary>
     public CloseInfo? Closed { get; private set; }
 
-    public static async Task<FakeAgent> ConnectAsync(TestServer server, string slug, string token)
+    public static async Task<FakeAgent> ConnectAsync(TestServer server, string slug, string token, bool candidate = false)
     {
         ArgumentNullException.ThrowIfNull(server);
 
         var client = server.CreateWebSocketClient();
-        client.ConfigureRequest = request => request.Headers.Authorization = $"Bearer {token}";
+        client.ConfigureRequest = request =>
+        {
+            request.Headers.Authorization = $"Bearer {token}";
+        };
         using var timeout = new CancellationTokenSource(Patience);
-        var socket = await client.ConnectAsync(new Uri($"wss://localhost/api/v1/devices/agents/{slug}/ws"), timeout.Token);
+        // A candidata da passagem tem rota própria: uma API sem a passagem responderia 404 a ela.
+        var route = candidate ? "ws/handover" : "ws";
+        var socket = await client.ConnectAsync(new Uri($"wss://localhost/api/v1/devices/agents/{slug}/{route}"), timeout.Token);
         return new FakeAgent(slug, socket);
     }
 
@@ -67,6 +72,18 @@ internal sealed class FakeAgent : IAsyncDisposable
         SendTextAsync(Envelope(
             "agent.hello.v1",
             new JsonObject { ["agentVersion"] = version, ["capabilities"] = new JsonArray([.. capabilities.Select(c => (JsonNode)JsonValue.Create(c)!)]) }));
+
+    /// <summary>O <c>hello</c> da versão nova na passagem: traz o identificador desta execução e pede que a antiga encerre sem reconectar.</summary>
+    public Task SendHandoverHelloAsync(string version = "1.2.4") =>
+        SendTextAsync(Envelope(
+            "agent.hello.v1",
+            new JsonObject
+            {
+                ["agentVersion"] = version,
+                ["capabilities"] = new JsonArray(),
+                ["instanceId"] = Guid.CreateVersion7().ToString(),
+                ["handover"] = true,
+            }));
 
     public async Task SendTextAsync(string text)
     {

@@ -89,6 +89,9 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     # A API dos testes "aceita o diagnóstico e a presença"; os testes do rollout trocam isto por
     # vazio ou `None`.
     monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
+    # A trava da identidade vale para a máquina toda: duas execuções dos testes (ou um agente de
+    # verdade) com o mesmo slug se recusariam. Os testes dela a pedem direto, com slug próprio.
+    monkeypatch.setattr(connection_module, "acquire_slug", lambda agent_id: True)
     monkeypatch.setattr(tv_locate, "http_json", no_json)
     monkeypatch.setattr(tv_locate, "ssdp_search", no_ssdp)
     monkeypatch.setattr(tv_locate, "arp_mac", no_mac)

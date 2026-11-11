@@ -1,7 +1,9 @@
 """Laço de conexão: reconecta com backoff para sempre, mas para quando a credencial é recusada."""
 
 import asyncio
+import json
 import logging
+import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
@@ -11,6 +13,8 @@ from uniover_agent.ports import (
     Clock,
     ConnectionReplaced,
     CredentialRejected,
+    HandoverRequested,
+    HandoverUnsupported,
     ServerRestarting,
     ServerRestartNow,
     Transport,
@@ -36,6 +40,18 @@ CLOSE_TIMEOUT_SECONDS: Final = 15.0
 # Cada passo declara até quando deve acabar; este é o atraso a mais que ainda se tolera antes de a
 # conexão ser dada por parada (ver `ConnectionSupervisor.is_stalled`).
 STALL_GRACE_SECONDS: Final = 120.0
+# Duas substituições (`replaced`) em 10 minutos: outra instância viva disputa a conexão.
+DUPLICATE_REPLACEMENTS: Final = 2
+DUPLICATE_WINDOW_SECONDS: Final = 10 * 60.0
+# Por que `ConnectionSupervisor.run` devolveu.
+STOP_CREDENTIAL_REJECTED: Final = "credential_rejected"
+STOP_HANDOVER: Final = "handover"
+STOP_DUPLICATE: Final = "duplicate"
+# A API não tem a rota da candidata da passagem (404): nada foi aberto, o supervisor usa o
+# caminho de reserva.
+STOP_HANDOVER_UNSUPPORTED: Final = "handover_unsupported"
+# A API confirma que promoveu esta conexão (candidata da passagem): só então deixa de ser candidato.
+HANDOVER_ACCEPTED_TYPE: Final = "agent.handover.accepted.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +121,15 @@ class ConnectionSupervisor:
         tv: tuple[str, str] | None = None,
         update_status: Callable[[], dict[str, Any] | None] | None = None,
         on_startup_failure: Callable[[BaseException, bool, int], Awaitable[None]] | None = None,
+        handover: bool = False,
+        on_handover_accepted: Callable[[], None] | None = None,
     ) -> None:
+        """`handover`: esta execução veio tomar o lugar de outra. Ela é CANDIDATA (rota própria da
+        conexão e `handover` no `hello`) até a API confirmar a promoção com
+        `agent.handover.accepted.v1`; antes disso toda reconexão dela é de novo candidata e nunca
+        substitui a antiga por engano. Depois da confirmação ela é uma conexão comum: o `hello`
+        deixa de trazer `handover` e `instanceId` (uma API revertida, de contrato fechado, recusaria
+        o campo)."""
         self._transport = transport
         self._process = process_message
         self._envelopes = envelopes
@@ -131,6 +155,17 @@ class ConnectionSupervisor:
         # e o laço abaixo as engole. Quem recebe (exceção, se foi inesperada, quantas já houve) pode
         # deixar um rastro para o dono. Nunca é chamado depois do primeiro `hello`.
         self._on_startup_failure = on_startup_failure
+        # Passagem sem queda: esta execução veio tomar o lugar de outra e segue candidata (em toda
+        # conexão e em todo `hello`) até a confirmação da API: o envio local do `hello` não prova
+        # API o leu, e uma queda antes disso faria a reconexão, sem o aviso, substituir a antiga. O
+        # identificador é só desta execução.
+        self._handover_pending = handover
+        self._on_handover_accepted = on_handover_accepted
+        self._instance_id = str(uuid.uuid4()) if handover else None
+        # Por que o laço parou (`run` devolve): `None` enquanto roda.
+        self.stop_reason: str | None = None
+        # Quando a API tirou esta execução do lugar por `replaced`, para barrar o laço de disputa.
+        self._replaced_at: list[float] = []
         self._hello_done = False
         self._failures_before_hello = 0
         self._in_session = False
@@ -142,6 +177,16 @@ class ConnectionSupervisor:
         self._generation = 0
         self._last_connected_at: float | None = None
         self._last_session_seconds = 0.0
+
+    @property
+    def handover_pending(self) -> bool:
+        """A API ainda não confirmou a promoção desta execução: a próxima conexão é de candidata."""
+        return self._handover_pending
+
+    @property
+    def instance_id(self) -> str | None:
+        """O identificador desta execução na passagem (`None` fora dela)."""
+        return self._instance_id
 
     def _expect(self, seconds: float) -> None:
         self._due_at = self._clock.monotonic() + seconds
@@ -190,6 +235,8 @@ class ConnectionSupervisor:
                 os_description=self._os_description,
                 tv=self._tv,
                 update=update,
+                instance_id=self._hello_instance_id(),
+                handover=self._handover_pending,
             )
         except ValueError:
             if update is None:
@@ -201,10 +248,18 @@ class ConnectionSupervisor:
                 self._declared(),
                 os_description=self._os_description,
                 tv=self._tv,
+                instance_id=self._hello_instance_id(),
+                handover=self._handover_pending,
             )
 
+    def _hello_instance_id(self) -> str | None:
+        """O identificador da execução só viaja enquanto ela é candidata (o `hello` de passagem)."""
+        return self._instance_id if self._handover_pending else None
+
     async def run(self) -> None:
-        """Roda até ser cancelado; devolve (sem erro) só quando a credencial é recusada.
+        """Roda até ser cancelado; só devolve (sem erro) para parar de vez (ver `stop_reason`):
+        a credencial foi recusada, uma versão nova assumiu a conexão (passagem sem queda) ou outro
+        agente com a mesma identidade disputa a vaga.
 
         Quem chamar deve tratar a devolução como "parar": o token continua guardado até o usuário
         decidir (não se apaga sozinho).
@@ -214,8 +269,17 @@ class ConnectionSupervisor:
                 await self._session()
             except CredentialRejected:
                 _log.error(REVOKED_MESSAGE)
+                self.stop_reason = STOP_CREDENTIAL_REJECTED
                 return
             except ConnectionReplaced:
+                if self._duplicate_detected():
+                    _log.error(
+                        "outra instância deste agente tomou a conexão duas vezes em %.0f min; "
+                        "encerro em vez de disputar",
+                        DUPLICATE_WINDOW_SECONDS / 60,
+                    )
+                    self.stop_reason = STOP_DUPLICATE
+                    return
                 wait = self._policy.replaced_wait
                 _log.warning(
                     "outra instância deste agente assumiu a conexão; nova tentativa em %.0f s", wait
@@ -235,6 +299,16 @@ class ConnectionSupervisor:
                 )
                 await self._sleep(wait)
                 continue
+            except HandoverUnsupported:
+                _log.warning("a API não tem a rota da passagem sem queda; esta execução desiste")
+                self.stop_reason = STOP_HANDOVER_UNSUPPORTED
+                return
+            except HandoverRequested:
+                # Uma versão nova conectou e a API a fez dona: esta termina sem reconectar (isso
+                # tiraria a nova do lugar).
+                _log.info("uma versão nova assumiu a conexão; encerro sem reconectar")
+                self.stop_reason = STOP_HANDOVER
+                return
             except ServerRestarting as exc:
                 # Não cresce a espera: o aviso é do próprio servidor, não falha de rede.
                 wait = self._policy.restart_wait * (0.5 + self._random())
@@ -259,6 +333,17 @@ class ConnectionSupervisor:
             delay = self._backoff.next_delay(self._recent_connection_cap())
             _log.info("reconectando em %.1f s", delay)
             await self._sleep(delay)
+
+    def _duplicate_detected(self) -> bool:
+        """Duas substituições seguidas em pouco tempo: há outro agente vivo com a mesma identidade.
+
+        Esperar 60 s e reconectar só tiraria o outro do lugar, e ele faria o mesmo comigo."""
+        now = self._clock.monotonic()
+        self._replaced_at = [
+            moment for moment in self._replaced_at if now - moment < DUPLICATE_WINDOW_SECONDS
+        ]
+        self._replaced_at.append(now)
+        return len(self._replaced_at) >= DUPLICATE_REPLACEMENTS
 
     def _recent_connection_cap(self) -> float | None:
         connected = self._last_connected_at
@@ -342,7 +427,36 @@ class ConnectionSupervisor:
         async for raw in self._transport.incoming():
             if generation != self._generation:
                 return
+            if self._take_handover_accepted(raw):
+                continue
             await self._process(raw)
+
+    def _take_handover_accepted(self, raw: str | bytes) -> bool:
+        """A confirmação da promoção (não segue para o resto do agente). Só vale com o `instanceId`
+        execução, vinda da API; a de outra execução, ou fora de hora, é descartada."""
+        if isinstance(raw, bytes):
+            if HANDOVER_ACCEPTED_TYPE.encode("ascii") not in raw:
+                return False
+        elif HANDOVER_ACCEPTED_TYPE not in raw:
+            return False
+        try:
+            message = json.loads(raw)
+        except ValueError:
+            return False
+        if not isinstance(message, dict) or message.get("type") != HANDOVER_ACCEPTED_TYPE:
+            return False
+        body = message.get("body")
+        if (
+            self._handover_pending
+            and message.get("source") == "api"
+            and isinstance(body, dict)
+            and body.get("instanceId") == self._instance_id
+        ):
+            self._handover_pending = False
+            _log.info("a API promoveu esta execução: a passagem foi confirmada")
+            if self._on_handover_accepted is not None:
+                self._on_handover_accepted()
+        return True
 
     async def _stop(self, tasks: list[asyncio.Task[None]]) -> None:
         """Cancela as tarefas da sessão e espera por elas, com prazo: uma que ignore o

@@ -636,3 +636,61 @@ async def test_without_the_staleness_hook_the_lane_does_not_sum_when_it_executes
         assert probe.log == ["click:DOWN", "move:1,0", "move:2,0"]
     finally:
         await lane.aclose()
+
+
+async def test_draining_lets_a_started_pc_command_finish_before_anything_is_closed() -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    await start_blocked_down(lab, process)
+    draining = asyncio.create_task(process.drain(5.0))
+    await settle()
+    assert not draining.done()  # espera o clique em curso
+    lab.pc_gate.set()
+    await asyncio.wait_for(draining, 2)
+    # Terminou sozinho (sem ser cancelado), e só o fechamento solta o que estava apertado.
+    assert lab.log == ["click:DOWN"]
+    await process.aclose()
+    assert lab.log == ["click:DOWN", "release"]
+
+
+async def test_draining_gives_up_after_the_grace_and_closing_still_releases_the_buttons() -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    await start_blocked_down(lab, process)
+    await asyncio.wait_for(process.drain(0.1), 2)
+    assert lab.log == []  # nada foi cancelado pelo prazo
+    await process.aclose()
+    assert lab.log == ["click:cancelled", "release"]
+
+
+async def test_the_buttons_are_released_even_when_a_command_ignores_the_cancellation() -> None:
+    released: list[bool] = []
+    stubborn_started = asyncio.Event()
+
+    finished = asyncio.Event()
+
+    async def stubborn(command: Command) -> CommandResult:
+        stubborn_started.set()
+        while not finished.is_set():
+            try:
+                await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                continue  # ignora o cancelamento: o encerramento não pode depender dele
+        return CommandResult(command.id, ResultStatus.OK)
+
+    clock = FakeClock()
+    gate = EnvelopeGate(AGENT_ID)
+    process = ProcessMessage(
+        AGENT_ID,
+        gate,
+        HandleCommand({"pc.click.v1": stubborn}, clock),
+        EnvelopeFactory(AGENT_ID, gate, clock),
+        FakeTransport(),
+        release_inputs=lambda: released.append(True),
+    )
+    await process(click("DOWN"))
+    await asyncio.wait_for(stubborn_started.wait(), 1)
+    await asyncio.wait_for(process.lane.aclose(), 10)  # não espera a teimosa para sempre
+    assert released == [True]
+    finished.set()  # deixa a tarefa teimosa terminar antes de o laço do teste fechar
+    await asyncio.sleep(0.2)

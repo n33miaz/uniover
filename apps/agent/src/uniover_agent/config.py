@@ -20,11 +20,15 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
 from uniover_agent.adapters.tv_adb_parsing import is_valid_package
 
 CONFIG_FILE_ENV = "UNIOVER_CONFIG_FILE"
+# A pasta do código que o supervisor pôs para rodar: vale mais que o ponteiro, que só muda depois
+# de uma passagem sem queda (a versão nova já roda e o ponteiro ainda aponta para a antiga).
+APP_DIR_ENV = "UNIOVER_APP_DIR"
 # Quantos IDs Tizen extras a lista `tv_samsung_apps` aceita.
 MAX_SAMSUNG_EXTRA_APPS = 32
 
@@ -65,8 +69,12 @@ def adb_key_backup_dir() -> Path:
 
 
 def agent_source_dir() -> Path:
-    """Onde o instalador põe o código do agente (e onde a auto-atualização o troca)."""
-    return installation_base() / "app"
+    r"""A pasta do código do agente em uso: a que o supervisor passou, a do ponteiro
+    (`runtime\current.json`) ou, sem nenhum dos dois, a `app` do instalador."""
+    chosen = os.environ.get(APP_DIR_ENV)
+    if chosen and Path(chosen).is_absolute():
+        return Path(chosen)
+    return current_pointer.current_app(installation_base())
 
 
 def config_path() -> Path:
@@ -170,10 +178,17 @@ class Settings(BaseSettings):
     # De que ramo do repositório o agente se atualiza (`develop` hoje; `main` quando a publicação
     # voltar).
     update_channel: str = DEFAULT_CHANNEL
-    # A atualização não troca a versão com a TV em uso: espera `update_tv_idle_seconds` sem uso (0
-    # desliga a espera) e, no máximo, `update_max_defer_seconds` desde que começou a esperar.
-    update_tv_idle_seconds: int = Field(default=10 * 60, ge=0, le=3600)
-    update_max_defer_seconds: int = Field(default=24 * 3600, ge=0, le=7 * 24 * 3600)
+    # A atualização é aplicada logo (sem esperar ociosidade), mas a troca por reinício derruba o
+    # agente por uns 5 a 15 s: com a TV ou o PC em uso no instante ela espera
+    # `update_tv_idle_seconds` sem uso (0 desliga a espera) e, no máximo, `update_max_defer_seconds`
+    # desde que começou a esperar (depois disso troca mesmo assim).
+    update_tv_idle_seconds: int = Field(default=60, ge=0, le=3600)
+    update_max_defer_seconds: int = Field(default=10 * 60, ge=0, le=7 * 24 * 3600)
+    # Passagem sem queda na atualização: o supervisor sobe a versão nova ao lado da atual e a API
+    # passa a conexão. DESLIGADA por padrão: sem ela a troca é a de reserva (versão preparada em
+    # segundo plano, ponteiro e reinício). Ligada, o agente também declara `agent.handover.v1`. O
+    # supervisor lê a mesma chave (agent.toml ou a variável `UNIOVER_UPDATE_HANDOVER`).
+    update_handover: bool = False
     # Alarme de espaço em disco da pasta do agente (diagnóstico uma vez por episódio): aviso abaixo
     # de `disk_warn_mb`, crítico abaixo de `disk_critical_mb` (o mínimo para atualizar; o
     # supervisor usa o mesmo, 600 MB). Uma versão devolvida por falta de espaço só volta a poder

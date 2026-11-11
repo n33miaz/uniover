@@ -52,7 +52,7 @@ internal sealed class TransportApp : IAsyncDisposable
         return new TransportApp(app, login, new PairedAgent(id, slug, token));
     }
 
-    public Task<FakeAgent> ConnectAsync() => FakeAgent.ConnectAsync(Server, Agent.Slug, Agent.Token);
+    public Task<FakeAgent> ConnectAsync(bool candidate = false) => FakeAgent.ConnectAsync(Server, Agent.Slug, Agent.Token, candidate);
 
     public Task<PairedAgent> PairAnotherAsync(string name) => PairAsync(name);
 

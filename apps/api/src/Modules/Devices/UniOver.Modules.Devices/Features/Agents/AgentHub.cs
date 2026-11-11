@@ -56,11 +56,35 @@ internal sealed partial class AgentHub(
             return;
         }
 
+        // Passagem sem queda: a conexão candidata (a da rota própria dela) fica FORA do roteamento até o primeiro quadro, que tem de
+        // ser um hello válido de passagem (handover true e instanceId). Qualquer outra coisa (a queda, o silêncio, outro quadro, um
+        // hello comum ou com handover falso) descarta a candidata e a antiga segue como a atual, sem fechamento algum: a antiga
+        // nunca sai por causa de uma candidata que não deu certo. Só a conexão da rota comum substitui a anterior na hora.
+        byte[]? firstFrame = null;
+        var handover = false;
+        Admission admitted = default;
+        if (session.IsHandoverCandidate)
+        {
+            var admission = await AdmitCandidateAsync(session, cancellationToken);
+            if (admission.Frame is null)
+            {
+                LogCandidateDropped(agentId, admission.Reason);
+                await CloseQuietlyAsync(session, admission.Reason);
+                await session.DisposeAsync();
+                return;
+            }
+
+            firstFrame = admission.Frame;
+            handover = true;
+            admitted = admission;
+        }
+
         var connectedAt = time.GetUtcNow();
         IAgentSession? previous;
+        var previousUnderstandsHandover = false;
         try
         {
-            previous = connections.Attach(session, connectedAt);
+            previous = connections.Attach(session, connectedAt, handover, out previousUnderstandsHandover);
         }
         catch (AgentSessionRevokedException)
         {
@@ -69,6 +93,13 @@ internal sealed partial class AgentHub(
             await session.DisposeAsync();
             return;
         }
+        if (handover)
+        {
+            // A confirmação é a PRIMEIRA coisa que a nova recebe: é por ela que o agente deixa de ser candidato. Enquanto não a
+            // recebe, toda reconexão dele se apresenta de novo como candidata e nunca substitui ninguém por engano.
+            await SendHandoverAcceptedAsync(session, admitted, cancellationToken);
+        }
+
         // Voltou: o resultado de um comando que ficou esperando na queda ainda pode chegar por esta sessão.
         correlator.Release(agentId);
         await persistedPresence.RecordConnectedAsync(agentId, connectedAt, cancellationToken);
@@ -76,26 +107,40 @@ internal sealed partial class AgentHub(
         var helloAccepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var heartbeat = SendKeepAlivesAsync(session, helloAccepted.Task, heartbeatStop.Token);
         LogConnected(agentId);
+        Task? closingPrevious = null;
+
         try
         {
             if (previous is not null)
             {
-                // Um dono da conexão por agente: a antiga sai com o motivo "replaced" (o agente que foi substituído
-                // não deve reconectar em loop disputando a vaga).
-                LogReplaced(agentId);
-                await CloseQuietlyAsync(previous, AgentCloseReason.Replaced);
+                // Um dono da conexão por agente, e a troca já aconteceu (atômica, no Attach): a antiga sai com "handover" se a
+                // nova entrou por uma passagem válida E ela declarou entender o 4410 (ela encerra sem reconectar); senão sai como
+                // "replaced" (espera antes de voltar), que qualquer versão entende.
+                if (handover && previousUnderstandsHandover)
+                {
+                    LogHandover(agentId);
+                    // Sem segurar a leitura da nova: a antiga termina o que tinha em curso e só então é fechada.
+                    closingPrevious = CloseAfterItsRepliesAsync(previous, cancellationToken);
+                }
+                else
+                {
+                    LogReplaced(agentId);
+                    await CloseQuietlyAsync(previous, AgentCloseReason.Replaced);
+                }
             }
 
             var refusals = new Queue<DateTimeOffset>();
             while (true)
             {
-                var frame = await session.ReceiveAsync(cancellationToken);
+                var frame = firstFrame ?? await session.ReceiveAsync(cancellationToken);
+                firstFrame = null;
                 if (frame is null)
                 {
                     break;
                 }
 
-                if (!await ProcessAsync(session, frame, refusals, helloAccepted, cancellationToken))
+                var accepted = await ProcessAsync(session, frame, refusals, helloAccepted, cancellationToken);
+                if (!accepted)
                 {
                     closeReason = AgentCloseReason.PolicyViolation;
                     break;
@@ -120,6 +165,11 @@ internal sealed partial class AgentHub(
         {
             await heartbeatStop.CancelAsync();
             await AwaitKeepAliveAsync(heartbeat);
+            if (closingPrevious is not null)
+            {
+                await closingPrevious;
+            }
+
             // Só a dona da conexão derruba a presença; quem foi substituída sai sem mexer (ver AgentConnections).
             var disconnectedAt = time.GetUtcNow();
             if (connections.Detach(session, disconnectedAt))
@@ -171,6 +221,24 @@ internal sealed partial class AgentHub(
         await Task.WhenAll(closing);
     }
 
+    /// <summary>
+    /// Fecha com 4410 a sessão que a passagem tirou do lugar, depois de esperar (até <see cref="DevicesTransportOptions.DrainWait"/>)
+    /// os comandos que ela recebeu terminarem: o resultado só chega pela conexão que o recebeu, e fechá-la já o perderia.
+    /// </summary>
+    private async Task CloseAfterItsRepliesAsync(IAgentSession previous, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await correlator.WaitForRepliesOnAsync(previous.AgentId, previous, options.Value.DrainWait, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // A API está parando: fecha já.
+        }
+
+        await CloseQuietlyAsync(previous, AgentCloseReason.Handover);
+    }
+
     private async Task<bool> WaitForPendingRepliesAsync(TimeSpan wait, CancellationToken cancellationToken)
     {
         try
@@ -186,7 +254,8 @@ internal sealed partial class AgentHub(
 
     /// <summary>Devolve <c>false</c> quando a sessão deve ser fechada por insistência em mensagens recusadas.</summary>
     private async Task<bool> ProcessAsync(
-        IAgentSession session, byte[] frame, Queue<DateTimeOffset> refusals, TaskCompletionSource helloAccepted, CancellationToken cancellationToken)
+        IAgentSession session, byte[] frame, Queue<DateTimeOffset> refusals, TaskCompletionSource helloAccepted,
+        CancellationToken cancellationToken)
     {
         var agentId = session.AgentId;
 
@@ -216,10 +285,21 @@ internal sealed partial class AgentHub(
 
         var now = time.GetUtcNow();
         var isCurrent = connections.IsCurrent(session);
+        if (!isCurrent && envelope.Type == AgentMessageTypes.CommandResultV1 && connections.IsHandedOver(session)
+            && !connections.IsRevoked(agentId))
+        {
+            // A sessão que uma passagem tirou do lugar ainda termina o que tinha em curso: o resultado de um comando que ela
+            // recebeu antes da troca chega por ela, e o correlator só o entrega a quem esperava por esse comando.
+            CompleteRequest(agentId, envelope);
+            return true;
+        }
+
         if (!isCurrent)
         {
-            // A sessão substituída ou revogada não pode entregar respostas nem disparar tratadores.
-            return false;
+            // A sessão substituída ou revogada não pode entregar respostas nem disparar tratadores. A revogada fecha por
+            // política; a substituída (que ainda espera o fechamento ou o aperto de mão dele) só tem o quadro descartado:
+            // fechá-la como queda comum faria o agente antigo reconectar e tirar a nova do lugar.
+            return !connections.IsRevoked(agentId);
         }
 
         connections.Touch(session, now);
@@ -621,6 +701,79 @@ internal sealed partial class AgentHub(
         }
     }
 
+    /// <summary>O que a conexão candidata trouxe: o primeiro quadro (já validado), o id do hello e o <c>instanceId</c>; sem quadro, o motivo do descarte.</summary>
+    private readonly record struct Admission(byte[]? Frame, Guid HelloId, Guid InstanceId, AgentCloseReason Reason);
+
+    /// <summary>
+    /// Espera o primeiro quadro da conexão candidata (por pouco tempo) e o confere ANTES de ela virar a atual. Só vale um
+    /// <c>agent.hello.v1</c> do próprio agente com <c>handover: true</c> e um <c>instanceId</c> UUID não nulo; qualquer outra
+    /// coisa, o silêncio ou a queda descartam a candidata sem tocar na conexão anterior.
+    /// </summary>
+    private async Task<Admission> AdmitCandidateAsync(IAgentSession candidate, CancellationToken cancellationToken)
+    {
+        using var wait = new CancellationTokenSource(options.Value.HandoverHelloWait, time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, wait.Token);
+        byte[]? frame;
+        try
+        {
+            frame = await candidate.ReceiveAsync(linked.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return Dropped(cancellationToken.IsCancellationRequested ? AgentCloseReason.Shutdown : AgentCloseReason.Normal);
+        }
+
+        if (frame is null)
+        {
+            return Dropped(AgentCloseReason.Normal);
+        }
+
+        var validation = validator.Validate(frame);
+        if (validation.IsFailure
+            || !string.Equals(validation.Value.Type, AgentMessageTypes.AgentHelloV1, StringComparison.Ordinal)
+            || !string.Equals(validation.Value.Source, $"agent:{candidate.AgentId}", StringComparison.Ordinal)
+            || !string.Equals(validation.Value.Target, OutboundEnvelopeFactory.ApiEndpoint, StringComparison.Ordinal))
+        {
+            return Dropped(AgentCloseReason.PolicyViolation);
+        }
+
+        var body = validation.Value.Body;
+        if (!body.TryGetProperty("handover", out var flag)
+            || flag.ValueKind != JsonValueKind.True
+            || !TryReadInstanceId(body, out var instanceId))
+        {
+            // Hello comum (ou com handover falso, ou sem instanceId válido) de uma conexão que se disse candidata: a candidata não
+            // substitui ninguém. Quem quer ser uma conexão comum conecta sem o cabeçalho.
+            return Dropped(AgentCloseReason.PolicyViolation);
+        }
+
+        return new Admission(frame, validation.Value.Id, instanceId, AgentCloseReason.Normal);
+    }
+
+    private static Admission Dropped(AgentCloseReason reason) => new(null, Guid.Empty, Guid.Empty, reason);
+
+    /// <summary>O <c>instanceId</c> da passagem: um UUID não nulo (o contrato também o exige quando há <c>handover: true</c>).</summary>
+    private static bool TryReadInstanceId(JsonElement body, out Guid instanceId)
+    {
+        instanceId = Guid.Empty;
+        return body.TryGetProperty("instanceId", out var instance)
+            && instance.ValueKind == JsonValueKind.String
+            && Guid.TryParse(instance.GetString(), out instanceId)
+            && instanceId != Guid.Empty;
+    }
+
+    /// <summary>A confirmação da promoção, só para a candidata que a pediu: leva o <c>instanceId</c> e responde ao id do hello.</summary>
+    private async Task SendHandoverAcceptedAsync(IAgentSession session, Admission admission, CancellationToken cancellationToken)
+    {
+        var body = new JsonObject { ["instanceId"] = admission.InstanceId.ToString() };
+        var ack = factory.Create(
+            AgentMessageTypes.AgentHandoverAcceptedV1, session.AgentId, admission.HelloId, JsonSerializer.SerializeToElement(body));
+        if (ack.IsFailure || !await session.SendAsync(ack.Value.Json, cancellationToken))
+        {
+            LogHandoverAckNotSent(session.AgentId);
+        }
+    }
+
     private async Task CloseQuietlyAsync(IAgentSession session, AgentCloseReason reason)
     {
         try
@@ -647,6 +800,15 @@ internal sealed partial class AgentHub(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Desligamento: ainda havia comandos esperando resposta; os agentes foram avisados mesmo assim.")]
     private partial void LogDrainTimedOut();
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Não consegui enviar a confirmação da passagem ao agente {AgentId}; ele segue candidato e se reapresenta ao reconectar.")]
+    private partial void LogHandoverAckNotSent(string agentId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Candidata à passagem do agente {AgentId} descartada ({Reason}); a conexão anterior segue como a atual.")]
+    private partial void LogCandidateDropped(string agentId, AgentCloseReason reason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Agente {AgentId}: uma versão nova assumiu a conexão (passagem), a anterior encerra sem reconectar.")]
+    private partial void LogHandover(string agentId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Mensagem do agente {AgentId} recusada: tipo {Type}, motivo {Reason}.")]
     private partial void LogRefused(string agentId, string type, string reason);

@@ -33,6 +33,9 @@ internal sealed class AgentConnections(
     private readonly Dictionary<string, IAgentSession> _sessions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingDrop> _drops = new(StringComparer.Ordinal);
     private readonly HashSet<string> _revokedAgents = new(StringComparer.Ordinal);
+
+    // As sessões que uma passagem de versão tirou do lugar e que ainda terminam o que tinham em curso (ver `IsHandedOver`).
+    private readonly HashSet<IAgentSession> _handedOver = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, HashSet<TaskCompletionSource<IAgentSession?>>> _waiters = new(StringComparer.Ordinal);
     private bool _draining;
 
@@ -58,8 +61,18 @@ internal sealed class AgentConnections(
         }
     }
 
+    /// <summary>A capacidade de quem entende o fechamento 4410: sem ela, a sessão que sai por uma passagem é fechada como substituída.</summary>
+    internal const string HandoverCapability = "agent.handover.v1";
+
     /// <summary>Torna <paramref name="session"/> a dona da conexão do agente e devolve a sessão que ela substituiu, se havia.</summary>
-    public IAgentSession? Attach(IAgentSession session, DateTimeOffset now)
+    public IAgentSession? Attach(IAgentSession session, DateTimeOffset now) => Attach(session, now, handover: false, out _);
+
+    /// <summary>
+    /// Como <see cref="Attach(IAgentSession, DateTimeOffset)"/>, dizendo se a entrada é uma passagem de versão. Nela, quem sai
+    /// só é tratado como "passada" (<paramref name="previousUnderstandsHandover"/>) se declarou <see cref="HandoverCapability"/>
+    /// no <c>hello</c>: a capacidade é lida antes de a presença do agente ser refeita pela entrada da nova sessão.
+    /// </summary>
+    public IAgentSession? Attach(IAgentSession session, DateTimeOffset now, bool handover, out bool previousUnderstandsHandover)
     {
         ArgumentNullException.ThrowIfNull(session);
         lock (_gate)
@@ -70,6 +83,14 @@ internal sealed class AgentConnections(
             }
 
             _sessions.TryGetValue(session.AgentId, out var previous);
+            previousUnderstandsHandover = handover
+                && previous is not null
+                && presence.Get(session.AgentId)?.Capabilities.Contains(HandoverCapability, StringComparer.Ordinal) == true;
+            if (previousUnderstandsHandover)
+            {
+                _handedOver.Add(previous!);
+            }
+
             _sessions[session.AgentId] = session;
             // Voltou dentro da graça: não há queda a anunciar.
             CancelDrop(session.AgentId);
@@ -94,6 +115,7 @@ internal sealed class AgentConnections(
         ArgumentNullException.ThrowIfNull(session);
         lock (_gate)
         {
+            _handedOver.Remove(session);
             if (!_sessions.TryGetValue(session.AgentId, out var current) || !ReferenceEquals(current, session))
             {
                 return false;
@@ -297,6 +319,27 @@ internal sealed class AgentConnections(
                 {
                 }
             }
+        }
+    }
+
+    /// <summary>Se o agente foi revogado: uma sessão dele que já não é a atual só é descartada em silêncio quando ele <b>não</b> está revogado.</summary>
+    public bool IsRevoked(string agentId)
+    {
+        lock (_gate)
+        {
+            return _revokedAgents.Contains(agentId);
+        }
+    }
+
+    /// <summary>
+    /// A sessão foi tirada do lugar por uma passagem de versão (e entende o fechamento 4410): ela segue aberta só o tempo de
+    /// terminar o que tinha em curso, e as respostas que ainda mandar valem, ao contrário das de uma sessão substituída.
+    /// </summary>
+    public bool IsHandedOver(IAgentSession session)
+    {
+        lock (_gate)
+        {
+            return _handedOver.Contains(session);
         }
     }
 

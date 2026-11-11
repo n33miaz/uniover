@@ -19,6 +19,8 @@ from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
+    HandoverRequested,
+    HandoverUnsupported,
     ServerRestarting,
     ServerRestartNow,
     TransportError,
@@ -37,12 +39,21 @@ PING_TIMEOUT_SECONDS: Final = 20.0
 OPEN_TIMEOUT_SECONDS: Final = 105.0
 
 _REPLACED_REASON: Final = "replaced"
+_HANDOVER_REASON: Final = "handover"
+# A versão nova da passagem sem queda conecta numa rota PRÓPRIA (`<canal>/handover`) e é, ali,
+# CANDIDATA a assumir a conexão: até o `hello` dela dizer `handover`, a API a deixa fora do
+# roteamento e não fecha a velha. Rota, e não cabeçalho, porque uma API que não conhece a passagem
+# (a instância anterior, numa troca em andamento) ignora um cabeçalho e trataria a candidata como
+# conexão comum, substituindo a que serve; uma rota que ela não tem responde 404 e ninguém sai.
+HANDOVER_PATH: Final = "/handover"
 _REVOKED_REASON: Final = "revoked"
 # Códigos que a API usa depois do upgrade: 4403 revogação, 4409 substituição, 4411 reinício.
 _REPLACED_CLOSE_CODE: Final = 4409
+_HANDOVER_CLOSE_CODE: Final = 4410
 # Códigos de aplicação que a API usa para recusa de credencial depois do upgrade.
 _CREDENTIAL_CLOSE_CODES: Final = frozenset({4401, 4403})
 _CREDENTIAL_STATUS: Final = frozenset({401, 403})
+_NOT_FOUND_STATUS: Final = 404
 # 4411 "server-restart": a API que vai parar manda reconectar já (a API só o envia a quem declarou
 # `transport.restart.v1`). Tem a volta mais curta de todas.
 _SERVER_RESTART_REASON: Final = "server-restart"
@@ -59,11 +70,20 @@ def build_ws_url(api_url: str, agent_id: str) -> str:
     return urlunsplit((scheme, parts.netloc, path, "", ""))
 
 
-def _close_outcome(close: Close | None) -> Exception | None:
+def candidate_url(url: str) -> str:
+    """O endereço da rota da candidata da passagem, a partir do canal comum."""
+    parts = urlsplit(url)
+    path = f"{parts.path.rstrip('/')}{HANDOVER_PATH}"
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+
+
+def _close_outcome(close: Close | None) -> Exception | None:  # noqa: PLR0911 - um retorno por código
     """Traduz o fechamento recebido do servidor: revogação e `replaced` têm tratamento próprio."""
     if close is None:
         return None
     reason = close.reason.strip().lower()
+    if reason == _HANDOVER_REASON or close.code == _HANDOVER_CLOSE_CODE:
+        return HandoverRequested("uma versão nova assumiu a conexão")
     if reason == _REPLACED_REASON or close.code == _REPLACED_CLOSE_CODE:
         return ConnectionReplaced("outra conexão do mesmo agente assumiu")
     if reason == _REVOKED_REASON or close.code in _CREDENTIAL_CLOSE_CODES:
@@ -94,6 +114,7 @@ class WebSocketTransport:
         open_timeout: float = OPEN_TIMEOUT_SECONDS,
         ping_interval: float = PING_INTERVAL_SECONDS,
         ping_timeout: float = PING_TIMEOUT_SECONDS,
+        handover_candidate: Callable[[], bool] | None = None,
     ) -> None:
         if url.startswith("ws://"):
             _log.warning("canal sem criptografia (ws://); só para desenvolvimento")
@@ -107,6 +128,9 @@ class WebSocketTransport:
         self._open_timeout = open_timeout
         self._ping_interval = ping_interval
         self._ping_timeout = ping_timeout
+        # Verdadeiro até a API confirmar a promoção: toda conexão da versão nova até lá é candidata
+        # (rota própria), e nenhuma delas substitui a antiga por engano.
+        self._handover_candidate = handover_candidate
         self._ws: ClientConnection | None = None
 
     @property
@@ -117,13 +141,16 @@ class WebSocketTransport:
         token = self._token_provider()
         if not token:
             raise CredentialRejected("não há token de dispositivo no cofre")
+        headers = {"Authorization": f"Bearer {token}"}
+        candidate = self._handover_candidate is not None and self._handover_candidate()
+        url = candidate_url(self._url) if candidate else self._url
         # O contexto TLS sai pronto de uma thread: criá-lo no laço a cada reconexão o travava.
         tls = await ssl_contexts.verified() if self._url.startswith("wss:") else None
         try:
             self._ws = await connect(
-                self._url,
+                url,
                 ssl=tls,
-                additional_headers={"Authorization": f"Bearer {token}"},
+                additional_headers=headers,
                 user_agent_header=self._user_agent,
                 ping_interval=self._ping_interval,
                 ping_timeout=self._ping_timeout,
@@ -136,6 +163,8 @@ class WebSocketTransport:
                 raise CredentialRejected(
                     f"o servidor recusou a credencial (HTTP {status})"
                 ) from None
+            if candidate and status == _NOT_FOUND_STATUS:
+                raise HandoverUnsupported("a API não tem a rota da passagem") from None
             raise TransportError(f"o servidor recusou a abertura (HTTP {status})") from None
         except (OSError, TimeoutError, InvalidHandshake, WebSocketException) as exc:
             # Só o nome da classe: a mensagem da biblioteca não deve carregar cabeçalhos.

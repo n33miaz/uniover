@@ -2,13 +2,15 @@
 
 O `run-agent.ps1` olha `runtime/update-now`, `runtime/restart-now` e `runtime/rollback-now` a cada
 15 segundos, apaga o arquivo e age (atualiza e reinicia só se há versão nova; reinicia o agente; ou
-volta à versão anterior guardada em `app.previous`). Nada aqui encerra o processo: sair por conta
+volta à versão anterior guardada: a do ponteiro ou `app.previous`). Nada aqui encerra o processo:
+sair por conta
 própria passaria pela contagem de quedas do supervisor, que pode reverter uma atualização em teste.
 """
 
 from pathlib import Path
 from typing import Final
 
+from uniover_agent.adapters.current_pointer import previous_app
 from uniover_agent.adapters.installation import installation_base
 
 # Arquivo que só as versões com manutenção remota têm. Voltar para uma versão sem ele deixaria o PC
@@ -25,7 +27,8 @@ class RuntimeFlagSignals:
     def __init__(self, runtime: Path | None = None, previous: Path | None = None) -> None:
         base = installation_base()
         self._runtime = runtime if runtime is not None else base / "runtime"
-        self._previous = previous if previous is not None else base / "app.previous"
+        self._base = base
+        self._previous = previous
 
     def _signal(self, name: str) -> None:
         self._runtime.mkdir(parents=True, exist_ok=True)
@@ -41,4 +44,7 @@ class RuntimeFlagSignals:
         self._signal("rollback-now")
 
     def previous_available(self) -> bool:
-        return can_roll_back_to(self._previous)
+        # Lido a cada pergunta: o ponteiro muda quando uma versão nova entra.
+        return can_roll_back_to(
+            self._previous if self._previous is not None else previous_app(self._base)
+        )

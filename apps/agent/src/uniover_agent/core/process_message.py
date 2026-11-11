@@ -209,19 +209,45 @@ class ProcessMessage:
             await previous
         await self._execute_detached(command)
 
+    async def drain(self, grace: float) -> None:
+        """Dá até `grace` segundos para o que está em curso terminar sozinho, sem cancelar.
+
+        Na passagem para uma versão nova: uma tecla já enviada à TV termina em vez de ser cortada
+        no meio. O que passar do prazo fica para o `aclose`."""
+
+        async def own() -> None:
+            pending = [task for task in self._tasks if not task.done()]
+            if pending:
+                await asyncio.wait(pending, timeout=grace)
+
+        async def lane() -> None:
+            # A faixa do PC roda no laço dela (a thread da entrada): é lá que o que está em curso
+            # termina.
+            if self._pc_host is None:
+                await self._lane.drain(grace)
+                return
+            try:
+                await self._pc_host.call(partial(self._lane.drain, grace), wait_seconds=grace + 1.0)
+            except TimeoutError, RuntimeError:
+                _log.warning("a faixa do PC não terminou o que tinha em curso a tempo")
+
+        await asyncio.gather(own(), lane())
+
     async def aclose(self) -> None:
         """Ao encerrar o agente: cancela o que ainda roda em tarefa (e espera terminar)."""
         pending = list(self._tasks)
         for task in pending:
             task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        if self._pc_host is None:
-            await self._lane.aclose()
-        else:
-            try:
-                await self._pc_host.call(self._lane.aclose, wait_seconds=_LANE_CLOSE_SECONDS)
-            except TimeoutError, RuntimeError:
-                _log.warning("a faixa do PC não encerrou a tempo")
+        try:
+            await asyncio.gather(*pending, return_exceptions=True)
+        finally:
+            if self._pc_host is None:
+                await self._lane.aclose()
+            else:
+                try:
+                    await self._pc_host.call(self._lane.aclose, wait_seconds=_LANE_CLOSE_SECONDS)
+                except TimeoutError, RuntimeError:
+                    _log.warning("a faixa do PC não encerrou a tempo")
 
     def connection_lost(self) -> None:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado

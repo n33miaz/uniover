@@ -252,12 +252,12 @@ def test_a_version_in_proof_with_a_mute_pulse_is_not_confirmed(pc: Pc) -> None:
 
 
 def test_the_exit_code_of_the_agent_is_logged_and_reported(pc: Pc) -> None:
-    pc.uv(["ping -n 2 127.0.0.1 > nul", "exit /b 7"])
+    pc.uv(["ping -n 2 127.0.0.1 > nul", "exit /b 9"])
     with pc.running():
-        assert wait_for(lambda: "codigo 7" in pc.supervisor_log(), 40)
+        assert wait_for(lambda: "codigo 9" in pc.supervisor_log(), 40)
         assert wait_for(lambda: any(i["kind"] == "process.exited" for i in pc.diagnostics()), 5)
         item = next(i for i in pc.diagnostics() if i["kind"] == "process.exited")
-        assert "codigo 7" in item["detail"]
+        assert "codigo 9" in item["detail"]
 
 
 def test_a_failed_sync_writes_why_in_the_supervisor_log(pc: Pc) -> None:

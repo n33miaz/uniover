@@ -26,6 +26,9 @@ WAKING_FEATURE: Final = "tv.state.waking"
 # A API aceita `adbPermission` (granted, missing, pending) no corpo de `tv.state.v1`; uma anterior
 # recusaria o campo e perderia o estado inteiro.
 ADB_PERMISSION_FEATURE: Final = "tv.state.adb_permission"
+# A API passa a conexão de uma versão do agente para a seguinte sem derrubar o canal (`hello` com
+# `instanceId` e `handover`, fechamento 4410 da antiga). Uma API anterior recusaria o `hello`.
+HANDOVER_FEATURE: Final = "agent.handover.v1"
 
 
 class ApiFeatures:
@@ -35,14 +38,17 @@ class ApiFeatures:
         clock: Clock,
         *,
         interval: float = CHECK_INTERVAL_SECONDS,
+        known: frozenset[str] = frozenset(),
     ) -> None:
         self._fetch = fetch
         self._clock = clock
         self._interval = interval
-        self._known: frozenset[str] = frozenset()
+        # O que já se sabe de uma consulta anterior (a da partida da passagem sem queda): o primeiro
+        # `hello` declara o mesmo que o da execução que esta substitui. Não dispara aviso nenhum.
+        self._known: frozenset[str] = known
         # A API já respondeu ao menos uma vez (mesmo com a lista vazia, que é uma API anterior): sem
         # isso "não listou" e "ainda não sei" seriam a mesma coisa.
-        self._answered = False
+        self._answered = bool(known)
         self._listeners: list[Callable[[], None]] = []
         # Chamado quando a API passa a listar algo que não listava: o `hello` já enviado não
         # declarou a capacidade nova, e esperar o próximo (5 min) a deixaria sem uso (a presença da

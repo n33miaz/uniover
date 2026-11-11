@@ -6,16 +6,18 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from uniover_agent.adapters.installation import migrate_layout
+from uniover_agent.adapters.installation import installation_base, migrate_layout
 from uniover_agent.adapters.self_update import (
     DEFAULT_CHANNEL,
     DISK_RESUME_BYTES,
     TV_IDLE_SECONDS,
     TV_MAX_DEFER_SECONDS,
     UpdateResult,
+    apply_prepared,
     self_update,
 )
 from uniover_agent.adapters.system_clock import SystemClock
+from uniover_agent.adapters.update_lock import update_lock
 from uniover_agent.adapters.update_status import (
     default_status_path,
     record_failure,
@@ -34,6 +36,8 @@ from uniover_agent.config import Settings, agent_source_dir
 from uniover_agent.core.self_care import SelfCare
 
 _log = logging.getLogger("uniover_agent")
+# Quanto um `self-update` espera a trava de atualização (a passagem a segura até 60 s).
+UPDATE_LOCK_WAIT_SECONDS = 5.0
 
 
 async def diagnose(settings: Settings, *, repair: bool) -> int:
@@ -59,23 +63,56 @@ async def diagnose(settings: Settings, *, repair: bool) -> int:
 
 
 def update_agent(
-    *, sync: bool, settings: Settings | None = None, kit: DiagnosticsKit | None = None
+    *,
+    sync: bool,
+    settings: Settings | None = None,
+    kit: DiagnosticsKit | None = None,
+    apply: bool = False,
 ) -> int:
-    """Atualiza o agente instalado pelo ramo do canal; se falhar, o atual continua valendo."""
+    """Prepara a versão nova do canal (ou, com `apply`, troca para a já preparada); se falhar, o
+    atual continua valendo. Preparar não derruba nada: a versão fica em `app.staging` com o
+    ambiente dela e quem troca é o supervisor (passagem sem queda) ou `apply` (reserva)."""
     migrate_layout()
+    # Preparar, aplicar e a passagem do supervisor usam a mesma trava: um `self-update` que
+    # chega no meio de uma passagem espera um pouco e desiste sem apagar nem podar nada.
+    with update_lock(installation_base(), wait_seconds=UPDATE_LOCK_WAIT_SECONDS) as held:
+        if not held:
+            _log.info("outra atualização está em andamento; esta fica para a próxima checagem")
+            print("Outra atualização está em andamento; tento de novo na próxima checagem.")
+            return EXIT_OK
+        return _update_locked(sync=sync, settings=settings, kit=kit, apply=apply)
+
+
+def _update_locked(
+    *, sync: bool, settings: Settings | None, kit: DiagnosticsKit | None, apply: bool
+) -> int:
     status_file = default_status_path()
     channel = settings.update_channel if settings is not None else DEFAULT_CHANNEL
     _safely(record_updating, status_file, datetime.now(UTC))
     try:
         # Um pedido explícito do dono (`update-now`), que o supervisor passa por esta variável, vale
         # mais que o adiamento de uma versão devolvida por culpa do PC.
-        result = self_update(
-            agent_source_dir(),
-            sync=sync,
-            channel=channel,
-            ignore_deferral=os.environ.get("UNIOVER_UPDATE_FORCE") == "1",
-            **_update_limits(settings),
-        )
+        forced = os.environ.get("UNIOVER_UPDATE_FORCE") == "1"
+        limits = _update_limits(settings)
+        if apply:
+            result = apply_prepared(
+                agent_source_dir(),
+                ignore_deferral=forced,
+                **{
+                    name: value
+                    for name, value in limits.items()
+                    if name in {"tv_idle_seconds", "tv_max_defer_seconds"}
+                },
+            )
+        else:
+            result = self_update(
+                agent_source_dir(),
+                sync=sync,
+                channel=channel,
+                ignore_deferral=forced,
+                staged=True,
+                **limits,
+            )
     except Exception as exc:
         # Não devia acontecer (a atualização devolve o motivo); se ocorrer, o estado diz que falhou.
         _log.exception("a auto-atualização falhou de forma inesperada")

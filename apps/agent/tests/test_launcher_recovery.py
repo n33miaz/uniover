@@ -251,3 +251,58 @@ def test_the_launcher_records_what_it_did_in_the_supervisor_log_and_the_diagnost
     entry = json.loads(lines[0])
     assert (entry["kind"], entry["component"]) == ("installation.restored", "launcher")
     assert entry["detail"].isascii()
+
+
+# ---- o ponteiro da versão em uso (`runtime\current.json`) ----
+
+
+def point_at(base: Path, current: str | None, previous: str | None = "app") -> None:
+    """Grava o ponteiro: `current`/`previous` são pastas relativas à instalação (ou `None`)."""
+
+    def slot(app: str | None) -> dict[str, str | None] | None:
+        return None if app is None else {"sha": None, "app": app, "venv": "runtime\\venv"}
+
+    body: dict[str, object] = {"v": 1, "current": slot(current)}
+    if previous is not None:
+        body["previous"] = slot(previous)
+    (base / "runtime").mkdir(exist_ok=True)
+    (base / "runtime" / "current.json").write_text(json.dumps(body), encoding="utf-8")
+
+
+def test_the_launcher_starts_the_supervisor_of_the_version_the_pointer_names(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "UniOver"
+    folder(base, "app", "de-sempre", OLD)
+    folder(base, f"app.staging/{NEW}", "preparada", NEW)
+    point_at(base, f"app.staging\\{NEW}")
+    assert run_launcher(tmp_path) == "preparada"
+
+
+def test_an_incomplete_version_in_the_pointer_falls_back_to_the_previous_one(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "UniOver"
+    folder(base, "app", "de-sempre", OLD)
+    folder(base, f"app.staging/{NEW}", "preparada", NEW, complete=False)
+    point_at(base, f"app.staging\\{NEW}")
+    assert run_launcher(tmp_path) == "de-sempre"
+
+
+@pytest.mark.parametrize("pointer", ["", "isto nao e json", '{"v":1}'])
+def test_an_unreadable_pointer_means_the_app_folder_from_before(
+    tmp_path: Path, pointer: str
+) -> None:
+    base = tmp_path / "UniOver"
+    folder(base, "app", "de-sempre", OLD)
+    (base / "runtime").mkdir()
+    (base / "runtime" / "current.json").write_text(pointer, encoding="ascii")
+    assert run_launcher(tmp_path) == "de-sempre"
+
+
+def test_a_pointer_that_leaves_the_installation_folder_is_ignored(tmp_path: Path) -> None:
+    base = tmp_path / "UniOver"
+    folder(base, "app", "de-sempre", OLD)
+    folder(tmp_path, "fora", "fora-da-pasta", NEW)
+    point_at(base, "..\\fora", previous=None)
+    assert run_launcher(tmp_path) == "de-sempre"

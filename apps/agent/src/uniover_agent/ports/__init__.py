@@ -48,6 +48,8 @@ from uniover_agent.ports.pc_lane import LaneHost
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
+    HandoverRequested,
+    HandoverUnsupported,
     Sender,
     ServerRestarting,
     ServerRestartNow,
@@ -140,6 +142,8 @@ __all__ = [
     "DirectPeer",
     "DirectPeerFactory",
     "DirectUnavailable",
+    "HandoverRequested",
+    "HandoverUnsupported",
     "IconCache",
     "IconToolError",
     "LaneHost",

@@ -483,6 +483,23 @@ def test_uv_check_uses_the_same_environment_without_syncing_again(
     assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app.new.venv")
 
 
+def test_the_candidate_never_finds_itself_in_the_folder_of_the_running_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # O supervisor deixa `UNIOVER_APP_DIR` na versão em uso; o sync e o auto-diagnóstico da
+    # candidata têm de enxergar a pasta DELA.
+    fake = FakeRun()
+    monkeypatch.setenv("UV", "C:/uv/uv.exe")
+    monkeypatch.setenv("UNIOVER_APP_DIR", str(tmp_path / "app"))
+    monkeypatch.setattr(subprocess, "run", fake)
+    candidate = tmp_path / "app.staging" / ("c" * 40)
+    run_uv_sync(candidate)
+    run_uv_check(candidate)
+    assert len(fake.calls) == 2
+    for _, kwargs in fake.calls:
+        assert kwargs["env"]["UNIOVER_APP_DIR"] == str(candidate)
+
+
 def test_uv_sync_without_uv_is_a_soft_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -573,7 +590,12 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
     seen: dict[str, object] = {}
 
     def fake(
-        source: Path, *, sync: bool, channel: str, ignore_deferral: bool = False
+        source: Path,
+        *,
+        sync: bool,
+        channel: str,
+        ignore_deferral: bool = False,
+        staged: bool = False,
     ) -> UpdateResult:
         seen.update(source=source, sync=sync, channel=channel)
         return UpdateResult(False, "não atualizei agora: sem rede")
@@ -588,6 +610,30 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
     }
     assert main(["self-update"]) == EXIT_OK
     assert seen["sync"] is True
+
+
+def test_the_command_prepares_the_new_version_and_only_applies_it_when_asked(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[str] = []
+
+    def prepare(source: Path, **kwargs: object) -> UpdateResult:
+        calls.append(f"preparar staged={kwargs['staged']}")
+        return UpdateResult(False, "a versão nova está preparada")
+
+    def apply(source: Path, **kwargs: object) -> UpdateResult:
+        calls.append(f"trocar forcar={kwargs['ignore_deferral']}")
+        return UpdateResult(False, "a TV está em uso")
+
+    monkeypatch.setattr(maintenance_module, "self_update", prepare)
+    monkeypatch.setattr(maintenance_module, "apply_prepared", apply)
+    assert main(["self-update"]) == EXIT_OK
+    assert "preparada" in capsys.readouterr().out
+    monkeypatch.setenv("UNIOVER_UPDATE_FORCE", "1")
+    assert main(["self-update", "--apply"]) == EXIT_OK
+    assert "TV" in capsys.readouterr().out
+    # O dia a dia só prepara (com o agente servindo); a troca é outro pedido.
+    assert calls == ["preparar staged=True", "trocar forcar=True"]
 
 
 def test_the_trial_marker_is_written_before_the_folders_are_swapped(

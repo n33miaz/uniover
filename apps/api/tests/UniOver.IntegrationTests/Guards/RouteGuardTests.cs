@@ -61,6 +61,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         // Canal do agente: cada abertura valida o token de dispositivo, então o limite segura tentativas em massa.
         ("GET", "/api/v1/devices/agents/{agentId}/ws", RateLimitPolicies.Pairing),
+        ("GET", "/api/v1/devices/agents/{agentId}/ws/handover", RateLimitPolicies.Pairing),
 
         // Manutenção remota de um agente (ver o registro, atualizar, reiniciar): limite por conta, baixo.
         ("POST", "/api/v1/devices/agents/{id:guid}/logs", RateLimitPolicies.Maintenance),

@@ -49,7 +49,7 @@ class EnvelopeFactory:
         self._gate.check_outbound(envelope)
         return envelope
 
-    def hello(
+    def hello(  # noqa: PLR0913 - os campos opcionais do hello, todos por nome
         self,
         agent_version: str,
         capabilities: Sequence[str],
@@ -57,10 +57,16 @@ class EnvelopeFactory:
         os_description: str | None = None,
         tv: tuple[str, str] | None = None,
         update: dict[str, Any] | None = None,
+        instance_id: str | None = None,
+        handover: bool = False,
     ) -> dict[str, Any]:
         """`agent.hello.v1`. `os_description`, `tv` (tipo, endereço) e `update` (estado da
         auto-atualização) são só informativos."""
         body: dict[str, Any] = {"agentVersion": agent_version, "capabilities": list(capabilities)}
+        if instance_id is not None:
+            body["instanceId"] = instance_id
+        if handover:
+            body["handover"] = True
         if os_description:
             body["os"] = os_description
         if tv is not None:
