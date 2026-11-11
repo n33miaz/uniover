@@ -42,6 +42,9 @@ public static class PermissionRules
     /// <summary>Modelo "só Treino": o módulo e nada da TV.</summary>
     public static IReadOnlyList<string> TrainingOnly { get; } = [AccessPermissions.TrainingModule];
 
+    /// <summary>Modelo "só Compras": o módulo e nada dos demais.</summary>
+    public static IReadOnlyList<string> ShoppingOnly { get; } = [AccessPermissions.ShoppingModule];
+
     /// <summary>
     /// Confere e normaliza: sem repetidas, na ordem do catálogo. Lista ausente ou vazia, item desconhecido (caixa e
     /// espaços contam), item nulo, lista sem nenhum módulo e ação sem o módulo dela são recusados. Nenhum erro repete o

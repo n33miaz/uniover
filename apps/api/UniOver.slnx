@@ -17,6 +17,8 @@
     <Project Path="src/Modules/Tv/UniOver.Modules.Tv.Contracts/UniOver.Modules.Tv.Contracts.csproj" />
     <Project Path="src/Modules/Training/UniOver.Modules.Training/UniOver.Modules.Training.csproj" />
     <Project Path="src/Modules/Training/UniOver.Modules.Training.Contracts/UniOver.Modules.Training.Contracts.csproj" />
+    <Project Path="src/Modules/Shopping/UniOver.Modules.Shopping/UniOver.Modules.Shopping.csproj" />
+    <Project Path="src/Modules/Shopping/UniOver.Modules.Shopping.Contracts/UniOver.Modules.Shopping.Contracts.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/UniOver.ArchitectureTests/UniOver.ArchitectureTests.csproj" />
@@ -25,5 +27,6 @@
     <Project Path="tests/UniOver.Modules.Identity.Tests/UniOver.Modules.Identity.Tests.csproj" />
     <Project Path="tests/UniOver.Modules.Tv.Tests/UniOver.Modules.Tv.Tests.csproj" />
     <Project Path="tests/UniOver.Modules.Training.Tests/UniOver.Modules.Training.Tests.csproj" />
+    <Project Path="tests/UniOver.Modules.Shopping.Tests/UniOver.Modules.Shopping.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Mesma versão do EF Core central (ver o módulo de Treino): sem isto o provedor do Npgsql puxa uma Relational mais antiga. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- Só para gerar as migrations e o bundle com o dotnet ef; não vai para quem referenciar o módulo. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniOver.Modules.Shopping.Contracts\UniOver.Modules.Shopping.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.SharedKernel\UniOver.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Persistence\UniOver.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="UniOver.Modules.Shopping.Tests" />
+    <InternalsVisibleTo Include="UniOver.IntegrationTests" />
+  </ItemGroup>
+</Project>
