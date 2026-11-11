@@ -4,8 +4,10 @@ Monta uma instalação ISOLADA numa pasta temporária (nada de `%LOCALAPPDATA%\\
 a versão BASE (padrão: `origin/main`), sobe o supervisor de verdade (lançador, `run-agent.ps1`,
 agente e ícone da bandeja, todos ocultos) e força a atualização, pelo mesmo caminho do dia a dia
 (arquivo `update-now` + `uniover-agent self-update`), para a CANDIDATA (a árvore local, empacotada
-como o zip do GitHub). Depois repete com "candidata+1" (prova que a versão nova se atualiza de
-novo) e confere o caminho de falha (uma candidata que não importa é recusada).
+como o zip do GitHub; o servidor local serve tambem a arvore de cada commit, no formato e no
+caminho do GitHub, para a conferencia obrigatoria da arvore rodar de verdade, e uma fase oferece um
+pacote adulterado, que tem de ser recusado). Depois repete com "candidata+1" (prova que a versão
+nova se atualiza de novo) e confere o caminho de falha (uma candidata que não importa é recusada).
 
 Como o código publicado na `main` ainda não tem o modo ensaio do `self_update.py`, a troca da base
 para a candidata usa `upgrade_drill_support/sitecustomize.py` (desvia só as duas URLs do GitHub);
@@ -190,22 +192,70 @@ def broken_variant(files: dict[str, bytes]) -> dict[str, bytes]:
 # --- servidor local que faz as vezes do GitHub -----------------------------------------------
 
 
+def git_blob_sha1(data: bytes) -> str:
+    """O hash que o git da a um arquivo (`blob <tamanho>\\0<bytes>`)."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+def tree_listing(files: dict[str, bytes]) -> bytes:
+    """A resposta de `GET /repos/<repo>/git/trees/<sha>?recursive=1`, no formato do GitHub.
+
+    Um item por arquivo, com o caminho a partir da raiz do repositorio e o hash do git do texto
+    normalizado em LF (o que o repositorio guarda; o zip do `git archive` pode sair em CRLF, e a
+    conferencia da atualizacao aceita os dois). E o que `self_update.fetch_git_tree` le.
+    """
+    entries = [
+        {
+            "path": name,
+            "mode": "100644",
+            "type": "blob",
+            "sha": git_blob_sha1(files[name].replace(b"\r\n", b"\n")),
+        }
+        for name in sorted(files)
+    ]
+    return json.dumps({"sha": "", "tree": entries, "truncated": False}).encode()
+
+
+def archive_files(archive: bytes) -> dict[str, bytes]:
+    """Os arquivos de um zip no formato do GitHub (sem a pasta `uniover-<sha>/`)."""
+    found: dict[str, bytes] = {}
+    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+        for info in bundle.infolist():
+            if info.is_dir():
+                continue
+            _, separator, name = info.filename.partition("/")
+            if separator:
+                found[name] = bundle.read(info)
+    return found
+
+
 class Feed:
-    """O que o "GitHub" do ensaio responde agora: o commit atual e os zips conhecidos."""
+    """O que o "GitHub" do ensaio responde agora: o commit atual, os zips e as arvores."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.sha = ""
         self.archives: dict[str, bytes] = {}
+        # A arvore de cada commit oferecido: e a que o "GitHub" diz ser o conteudo dele.
+        self.trees: dict[str, bytes] = {}
         self.hits: list[str] = []
         # Quanto a consulta ao commit demora a responder (a rede "presa" da fase G).
         self.stall_seconds = 0.0
 
-    def offer(self, sha: str, archive: bytes | None) -> None:
+    def offer(
+        self, sha: str, archive: bytes | None, tree_files: dict[str, bytes] | None = None
+    ) -> None:
+        """Oferece o commit `sha`. A arvore dele e a do zip, salvo `tree_files` (o conteudo
+        verdadeiro do commit, para o ensaio oferecer um pacote que NAO bate com ela)."""
         with self.lock:
             self.sha = sha
             if archive is not None:
                 self.archives[sha] = archive
+                try:
+                    truth = tree_files if tree_files is not None else archive_files(archive)
+                except zipfile.BadZipFile:
+                    return  # nao e um zip: sem arvore (o "GitHub" nao teria o que listar)
+                self.trees[sha] = tree_listing(truth)
 
     def downloads(self, sha: str) -> int:
         with self.lock:
@@ -218,10 +268,13 @@ def start_feed(feed: Feed) -> tuple[http.server.ThreadingHTTPServer, int]:
             with feed.lock:
                 feed.hits.append(self.path)
                 match = re.fullmatch(r"/archive/([0-9a-f]{40})\.zip", self.path)
+                tree = re.fullmatch(r"/tree/([0-9a-f]{40})", self.path)
                 if self.path == "/commit":
                     body, kind = json.dumps({"sha": feed.sha}).encode(), "application/json"
                 elif match and match.group(1) in feed.archives:
                     body, kind = feed.archives[match.group(1)], "application/zip"
+                elif tree and tree.group(1) in feed.trees:
+                    body, kind = feed.trees[tree.group(1)], "application/json"
                 else:
                     body, kind = b"", ""
             if not kind:
@@ -1117,6 +1170,34 @@ class Drill:
         back = self.stop_everything() and self.wait_ready()
         return self.verdict.check("o supervisor voltou ao ambiente normal", back) and bool(ok)
 
+    def refused_when_the_tree_differs(self, files: dict[str, bytes], sha: str) -> bool:
+        """Oferece um pacote ADULTERADO (um arquivo difere do commit) e confere a recusa.
+
+        O servidor do ensaio serve a arvore verdadeira do commit (a dos `files` honestos, no formato
+        do GitHub), e o zip tem um arquivo de `apps/agent` alterado: a conferencia da arvore, que e
+        obrigatoria enquanto a assinatura nao esta ativa, tem de rejeitar o pacote antes de
+        prepara-lo, e a versao em uso segue a mesma.
+        """
+        tampered = dict(files)
+        victim = f"{AGENT_REL}/pyproject.toml"
+        tampered[victim] = files[victim] + b"\n# adulterado depois do commit\n"
+        fake = fake_sha(tampered, "tampered")
+        before = self.version()
+        try:
+            return self.offer(
+                "E2. pacote adulterado (a arvore do commit nao bate: recusa)",
+                tampered,
+                fake,
+                expect_swap=False,
+                source="codigo da candidata",
+                refusal="difere do commit",
+                marker="atualização recusada",
+                tree_files=files,
+            )
+        finally:
+            # Sem bloqueio: o "GitHub" volta a dizer que a versao em uso e a atual.
+            self.feed.offer(before, None)
+
     def offer(  # noqa: PLR0913 - cada argumento descreve uma fase do roteiro
         self,
         label: str,
@@ -1126,10 +1207,15 @@ class Drill:
         expect_swap: bool,
         source: str,
         refusal: str = "verificação rápida",
+        marker: str = "auto-atualização adiada",
+        tree_files: dict[str, bytes] | None = None,
     ) -> bool:
+        """`marker` e a frase do log que anuncia a recusa (adiada por falha da verificacao, ou
+        "atualização recusada" quando o pacote e rejeitado); `tree_files`, o conteudo verdadeiro
+        do commit quando o pacote oferecido nao deve bater com ele."""
         say(f"\n== {label} ({source}) ==")
         phase_start = time.monotonic()
-        self.feed.offer(sha, zip_bytes(files, sha))
+        self.feed.offer(sha, zip_bytes(files, sha), tree_files)
         before = self.tree()
         before_keys = {p.key for p in before}
         launcher = self.roles(before, "launcher")
@@ -1138,7 +1224,7 @@ class Drill:
         trial_before = read_text(self.base / "runtime" / "update-trial.txt")
         log_before = self.log_text()
         starts_before = log_before.count(f"agente {AGENT_ID} iniciando")
-        deferred_before = log_before.count("auto-atualização adiada")
+        deferred_before = log_before.count(marker)
         (self.base / "runtime" / "update-now").touch()
         timeout = self.args.timeout
         ok = True
@@ -1158,12 +1244,8 @@ class Drill:
         else:
             asked = wait_until(lambda: self.feed.downloads(sha) > 0, timeout)
             ok &= self.verdict.check("a candidata recusada foi baixada e testada", asked)
-            refused = wait_until(
-                lambda: self.log_text().count("auto-atualização adiada") > deferred_before, timeout
-            )
-            reason = [
-                line for line in self.log_text().splitlines() if "auto-atualização adiada" in line
-            ]
+            refused = wait_until(lambda: self.log_text().count(marker) > deferred_before, timeout)
+            reason = [line for line in self.log_text().splitlines() if marker in line]
             ok &= self.verdict.check(
                 f"a candidata e recusada ({refusal})",
                 refused and refusal in (reason[-1] if reason else ""),
@@ -1939,6 +2021,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
                         args.timeout,
                     ),
                 )
+            # Ja com o codigo da candidata (a conferencia da arvore e dela): um pacote adulterado e
+            # recusado.
+            if proceed and index == PHASE_BASE_TO_CANDIDATE:
+                proceed = drill.refused_when_the_tree_differs(next_files, next_sha)
             # A passagem sem queda: o agente que roda a candidata+1 recebe a candidata+2 de uma API
             # que sabe passar a conexao.
             if proceed and index == PHASE_RESERVE_PATH:
