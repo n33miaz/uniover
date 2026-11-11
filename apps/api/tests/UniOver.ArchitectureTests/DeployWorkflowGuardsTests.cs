@@ -100,7 +100,35 @@ public partial class DeployWorkflowTests
         var uses = UsesLine().Matches(Workflow()).Select(m => m.Groups["action"].Value).ToList();
 
         uses.Should().NotBeEmpty();
-        uses.Should().OnlyContain(action => Regex.IsMatch(action, "^[\\w.-]+/[\\w./-]+@[0-9a-f]{40}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)),
-            "ação por tag ou ramo muda sem revisão; a pinagem por SHA é a regra do repositório");
+        uses.Should().OnlyContain(action => IsPinned(action) || IsLocalWorkflow(action),
+            "ação por tag ou ramo muda sem revisão; a pinagem por SHA é a regra do repositório (só um workflow reutilizável do próprio repositório dispensa o SHA)");
+    }
+
+    [Fact]
+    public void OnlyWorkflowsOfThisRepositoryMayBeReferencedWithoutAnSha()
+    {
+        // A exceção é estreita: `./.github/workflows/<arquivo>.yml` que EXISTE neste repositório. Ação ou workflow externo (mesmo
+        // com `..`, outro diretório, subpasta ou sem a extensão) continua exigindo o SHA.
+        IsLocalWorkflow("./.github/workflows/web-assets.yml").Should().BeTrue();
+        IsLocalWorkflow("./.github/workflows/nao-existe.yml").Should().BeFalse();
+        IsLocalWorkflow("./.github/workflows/../../fora.yml").Should().BeFalse();
+        IsLocalWorkflow("./.github/actions/x").Should().BeFalse();
+        IsLocalWorkflow("./.github/workflows/sub/web-assets.yml").Should().BeFalse();
+        IsLocalWorkflow("octo/repo/.github/workflows/web-assets.yml@main").Should().BeFalse();
+        IsLocalWorkflow("actions/checkout@v4").Should().BeFalse();
+        IsPinned("actions/checkout@v4").Should().BeFalse();
+        IsPinned("octo/repo/.github/workflows/x.yml@3d3c42e5aac5ba805825da76410c181273ba90b1").Should().BeTrue();
+    }
+
+    private static bool IsPinned(string action) =>
+        Regex.IsMatch(action, "^[\\w.-]+/[\\w./-]+@[0-9a-f]{40}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    /// <summary>Referência local a um workflow reutilizável do próprio repositório: <c>./.github/workflows/&lt;arquivo&gt;.yml</c>, que existe.</summary>
+    private static bool IsLocalWorkflow(string action)
+    {
+        var match = Regex.Match(action, "^\\./\\.github/workflows/(?<file>[\\w][\\w.-]*\\.ya?ml)$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        return match.Success
+            && !match.Groups["file"].Value.Contains("..", StringComparison.Ordinal)
+            && File.Exists(Path.GetFullPath(Path.Combine(ModuleDiscovery.ApiRoot, "..", "..", ".github", "workflows", match.Groups["file"].Value)));
     }
 }
