@@ -539,16 +539,21 @@ def test_the_interrupted_swap_phase_follows_how_the_base_swaps(
     # aponta (a fase da queda no meio da troca do ponteiro e a que vale). Base antiga: a classica.
     instance = object.__new__(drill.Drill)
     called: list[str] = []
+
+    def recovered(kind: str) -> bool:
+        called.append(kind)
+        return True
+
     monkeypatch.setattr(
         instance,
         "slot_path",
         lambda _which, _key: Path("current-slot") if pointer_in_use else None,
     )
     monkeypatch.setattr(
-        instance, "recover_interrupted_pointer_swap", lambda _sha: called.append("pointer") or True
+        instance, "recover_interrupted_pointer_swap", lambda _sha: recovered("pointer")
     )
     monkeypatch.setattr(
-        instance, "recover_interrupted_classic_swap", lambda _sha: called.append("classic") or True
+        instance, "recover_interrupted_classic_swap", lambda _sha: recovered("classic")
     )
     assert instance.recover_interrupted_swap("a" * 40)
     assert called == [expected]

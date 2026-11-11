@@ -47,6 +47,9 @@ from uniover_agent.ports import (
 )
 
 _log = logging.getLogger(__name__)
+# A biblioteca despeja no DEBUG a mensagem protobuf completa, inclusive o texto que o dono digita.
+# O adaptador já registra só metadados seguros, então não deixa esse logger reabrir o vazamento.
+logging.getLogger("androidtvremote2").setLevel(logging.INFO)
 
 CERT_FILE: Final = "cert.pem"
 KEY_FILE: Final = "key.pem"

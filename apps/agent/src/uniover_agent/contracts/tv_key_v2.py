@@ -33,7 +33,7 @@ class TvKeyV2Body(BaseModel):
     direction: Annotated[
         TvKeyV2BodyDirection | None,
         Field(title='TvKeyV2BodyDirection', validate_default=True),
-    ] = 'SHORT'
+    ] = TvKeyV2BodyDirection('SHORT')
 
 
 class TvKeyV2Message(BaseModel):

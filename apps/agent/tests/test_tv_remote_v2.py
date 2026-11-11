@@ -12,7 +12,7 @@ import typing
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import pytest
 from androidtvremote2 import (
@@ -46,6 +46,24 @@ from uniover_agent.ports import (
 )
 
 from .support_tv import FakeTvServer, write_certificate
+
+
+class _RemoteMessageProtocol(Protocol):
+    ime_counter: int
+    ime_field_counter: int
+
+    def _send_message(self, message: RemoteMessage, should_debug_log: bool = True) -> None: ...
+
+
+class _ClientWithRemoteMessageProtocol(Protocol):
+    _remote_message_protocol: _RemoteMessageProtocol
+
+
+def remote_message_protocol(adapter: AndroidTvRemoteV2) -> _RemoteMessageProtocol:
+    client = adapter._client
+    assert client is not None
+    # A biblioteca expõe este protocolo privado, fora do contrato público `RemoteClient`.
+    return cast(_ClientWithRemoteMessageProtocol, client)._remote_message_protocol
 
 
 def contract_keys(model: type[Any]) -> tuple[str, ...]:
@@ -192,7 +210,7 @@ async def test_ime_batches_use_the_echo_counters_and_the_configured_cursor(
         try:
             server.push_text_field("abcde", counter=17, start=5, end=5, app_counter=29)
             await eventually(lambda: bool(fields))
-            protocol = adapter._client._remote_message_protocol
+            protocol = remote_message_protocol(adapter)
             assert (protocol.ime_counter, protocol.ime_field_counter) == (29, 17)
             await adapter.send_text("café 123")
             await adapter.send_text("ação")
@@ -253,7 +271,7 @@ async def test_ime_batch_without_an_echo_uses_the_library_counters_and_hides_tex
         adapter = make_adapter(tmp_path, server.port, text_trace=True)
         await adapter.connect()
         try:
-            protocol = adapter._client._remote_message_protocol
+            protocol = remote_message_protocol(adapter)
             protocol.ime_counter = 3
             protocol.ime_field_counter = 5
             with caplog.at_level("INFO"):
@@ -275,7 +293,7 @@ async def test_ime_batch_disables_the_library_debug_log(
         adapter = make_adapter(tmp_path, server.port)
         await adapter.connect()
         try:
-            protocol = adapter._client._remote_message_protocol
+            protocol = remote_message_protocol(adapter)
             original = protocol._send_message
 
             def record(message: RemoteMessage, should_debug_log: bool = True) -> None:
@@ -643,6 +661,7 @@ class FakeProtocol:
         self.ime_field_counter = 0
         self.idle_resets = 0
         self.messages: list[RemoteMessage] = []
+        self.transport: _ClosingTransport | None = None
         self._handle_message: Callable[[bytes], None] = lambda raw: None
 
     def _send_message(self, message: RemoteMessage, should_debug_log: bool = True) -> None:
@@ -655,6 +674,11 @@ class FakeProtocol:
 
     def _reset_idle_disconnect_task(self) -> None:
         self.idle_resets += 1
+
+
+class _ClosingTransport:
+    def is_closing(self) -> bool:
+        return True
 
 
 def duplo_adapter(tmp_path: Path, library: FakeLibrary) -> AndroidTvRemoteV2:
@@ -775,7 +799,8 @@ async def test_text_without_a_library_protocol_means_unreachable(tmp_path: Path)
     library = FakeLibrary()
     adapter = duplo_adapter(tmp_path, library)
     await adapter.connect()
-    library._remote_message_protocol = None
+    # A ausência do atributo reproduz a biblioteca depois de já ter descartado o protocolo.
+    del library._remote_message_protocol
     try:
         with pytest.raises(TvUnreachable):
             await adapter.send_text("oi")
@@ -789,7 +814,7 @@ async def test_text_on_a_closing_transport_means_unreachable_instead_of_being_dr
     library = FakeLibrary()
     adapter = duplo_adapter(tmp_path, library)
     await adapter.connect()
-    library._remote_message_protocol.transport = types.SimpleNamespace(is_closing=lambda: True)
+    library._remote_message_protocol.transport = _ClosingTransport()
     try:
         with pytest.raises(TvUnreachable):
             await adapter.send_text("oi")
@@ -963,7 +988,7 @@ async def test_the_real_library_still_exposes_the_private_ime_api_the_adapter_us
         adapter = make_adapter(tmp_path, server.port)
         await adapter.connect()
         try:
-            protocol = adapter._client._remote_message_protocol
+            protocol = remote_message_protocol(adapter)
             assert callable(protocol._send_message)
             assert isinstance(protocol.ime_counter, int)
             assert isinstance(protocol.ime_field_counter, int)

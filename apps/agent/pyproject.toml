@@ -78,6 +78,7 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF", "PL", "N", "W"]
 strict = true
 python_version = "3.14"
 files = ["src", "tests"]
+mypy_path = ["typing_stubs"]
 plugins = ["pydantic.mypy"]
 exclude = ["src/uniover_agent/contracts/"]
 

@@ -36,7 +36,7 @@ class PcClickV2Body(BaseModel):
     action: Annotated[
         PcClickV2BodyAction | None,
         Field(title='PcClickV2BodyAction', validate_default=True),
-    ] = 'CLICK'
+    ] = PcClickV2BodyAction('CLICK')
     modifiers: Annotated[
         list[PcClickV2BodyModifiersItem] | None, Field(max_length=3)
     ] = None

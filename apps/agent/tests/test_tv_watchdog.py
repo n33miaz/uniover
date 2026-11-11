@@ -102,7 +102,8 @@ async def test_a_dead_service_is_restarted_at_once_and_the_session_is_released()
 
 async def test_repair_reopens_the_session_without_sending_a_key() -> None:
     rig = Rig()
-    rig.ports = [False] * 6 + [True]
+    ports: list[bool | Exception | None] = [False, False, False, False, False, False, True]
+    rig.ports = ports
     await rig.watchdog.handle()
     assert rig.restarts == 2
     assert rig.clock.monotonic() < 25
@@ -245,7 +246,8 @@ async def test_only_a_command_opening_the_session_may_cut_the_rest() -> None:
 
 async def test_an_attempt_that_raises_counts_and_the_next_one_can_work() -> None:
     rig = Rig(budget_seconds=31)
-    rig.ports = [False] * 6 + [True]  # o serviço só volta depois do 2º restart (aos 15 s)
+    ports: list[bool | Exception | None] = [False, False, False, False, False, False, True]
+    rig.ports = ports  # o serviço só volta depois do 2º restart (aos 15 s)
     rig.restart_script = [AdbCommandFailed("x"), None]
     await rig.watchdog.handle()
     assert rig.restarts == 2
