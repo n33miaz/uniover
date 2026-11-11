@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.60.0](https://github.com/n33miaz/uniover/compare/v0.59.0...v0.60.0) (2026-11-11)
+
+
+### Devices 0.57.0
+
+#### Features
+
+* **agent:** update without downtime
+
+
+### Web 0.58.0
+
+#### Features
+
+* **agent:** update without downtime
+
+
+### Agent 0.53.0
+
+#### Features
+
+* **agent:** update without downtime
+
 ## [0.59.0](https://github.com/n33miaz/uniover/compare/v0.58.0...v0.59.0) (2026-11-11)
 
 
