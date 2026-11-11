@@ -21,6 +21,7 @@ from .pc_app_launch_v1 import PcAppLaunchV1Message
 from .pc_apps_v1 import PcAppsV1Message
 from .pc_click_v1 import PcClickV1Message
 from .pc_click_v2 import PcClickV2Message
+from .pc_device_state_v1 import PcDeviceStateV1Message
 from .pc_key_v1 import PcKeyV1Message
 from .pc_key_v2 import PcKeyV2Message
 from .pc_media_v1 import PcMediaV1Message
@@ -79,6 +80,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.apps.v1": PcAppsV1Message,
     "pc.click.v1": PcClickV1Message,
     "pc.click.v2": PcClickV2Message,
+    "pc.device.state.v1": PcDeviceStateV1Message,
     "pc.key.v1": PcKeyV1Message,
     "pc.key.v2": PcKeyV2Message,
     "pc.media.v1": PcMediaV1Message,

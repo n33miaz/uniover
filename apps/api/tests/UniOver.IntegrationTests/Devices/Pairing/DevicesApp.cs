@@ -204,7 +204,7 @@ internal sealed class DevicesApp : IAsyncDisposable
 
     public async Task<HttpResponseMessage> SendAsync(
         HttpMethod method, string url, object? body = null, string? bearer = null, string? forwardedFor = null, string? userAgent = null,
-        Guid? idempotencyKey = null)
+        Guid? idempotencyKey = null, string? operationId = null)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
@@ -225,6 +225,11 @@ internal sealed class DevicesApp : IAsyncDisposable
         if (userAgent is not null)
         {
             request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+        }
+
+        if (operationId is not null)
+        {
+            request.Headers.TryAddWithoutValidation("X-Operation-Id", operationId);
         }
 
         if (method == HttpMethod.Post || method == HttpMethod.Put || method == HttpMethod.Patch || method == HttpMethod.Delete)

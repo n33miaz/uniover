@@ -21,16 +21,33 @@ const BASE = `${APP_CONFIG.apiBase}/v1/pc/rtc`;
 
 /** Esperas (ms) entre as tentativas de abrir o canal depois de uma falha; a última se repete. */
 export const DIRECT_BACKOFF_MS: readonly number[] = [5_000, 15_000, 60_000];
+/**
+ * A primeira reabertura depois de o canal ter PARADO (`stalled`) é bem mais curta que o recuo de uma falha: um solavanco
+ * de Wi-Fi não deve deixar a pessoa na nuvem lenta por 5 s. Só vale quando não houve outra reabertura assim há menos de
+ * {@link STABLE_MS} (um canal que para toda hora volta ao recuo de sempre, e cresce).
+ */
+export const STALLED_FIRST_RETRY_MS = 1_500;
 /** Quanto a coleta de candidatos pode levar antes de a oferta sair com o que já há. */
 export const GATHER_TIMEOUT_MS = 2_000;
 /** Prazo para os dois canais abrirem e o agente aceitar o token (o agente fecha em 15 s). */
 export const OPEN_TIMEOUT_MS = 12_000;
 /** De quanto em quanto tempo o sinal de vida vai ao agente (e dá o RTT). */
 export const PING_MS = 1_000;
-/** Sem resposta do sinal de vida por tanto tempo, o canal é dado como parado e a nuvem assume. */
-export const STALL_MS = 2_500;
+/**
+ * Sem resposta do sinal de vida por tanto tempo, o canal é SUSPEITO de parado. Wi-Fi com economia de energia dorme por
+ * 2 a 3 s sem perder o canal: só a SEGUNDA amostra seguida acima disto (o próximo sinal de vida) o derruba e a nuvem
+ * assume (ver {@link STALL_CONFIRMATIONS}).
+ */
+export const STALL_MS = 4_500;
+/** Quantas verificações seguidas do sinal de vida acima de {@link STALL_MS} dão o canal por parado. */
+export const STALL_CONFIRMATIONS = 2;
 /** O comando que não recebe a resposta do agente no canal: resultado incerto (a mesma regra da nuvem). */
 export const ACK_TIMEOUT_MS = 6_500;
+/**
+ * Intervalo mínimo entre duas mensagens de movimento no canal direto (a nuvem usa 32 ms): ele não cobra por pedido e o dedo
+ * gera 60 a 120 eventos por segundo. O agente aceita 240 por segundo.
+ */
+export const DIRECT_POINTER_INTERVAL_MS = 10;
 /** Reenvio do último total do ponteiro depois de uma pausa: cobre a mensagem perdida sem retransmissão. */
 export const POINTER_TAIL_MS = 60;
 /** Quanto antes do fim da vida do canal o app abre outro (a vida vem do agente, no `ready`). */
@@ -219,6 +236,10 @@ export class PcDirect {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private tailTimer: ReturnType<typeof setTimeout> | null = null;
   private lastPong = 0;
+  /** Verificações seguidas do sinal de vida acima de `STALL_MS` (o canal só cai na segunda). */
+  private stallStrikes = 0;
+  /** Quando foi a última reabertura rápida depois de um canal parado (para não repeti-la em laço). */
+  private lastStalledRetryAt = Number.NEGATIVE_INFINITY;
   private pingCount = 0;
   private readonly pingSentAt = new Map<number, number>();
   private lastRtt: number | null = null;
@@ -598,6 +619,7 @@ export class PcDirect {
     this.seq = 0;
     this.totals = { x: 0, y: 0, w: 0, h: 0 };
     this.lastPong = Date.now();
+    this.stallStrikes = 0;
     this.pingSentAt.clear();
     this.open.set(true);
     this.pingTimer = setInterval(() => this.ping(), PING_MS);
@@ -659,6 +681,7 @@ export class PcDirect {
     const message = parse(data);
     if (message?.['k'] !== 'pong' || typeof message['n'] !== 'number') return;
     this.lastPong = Date.now();
+    this.stallStrikes = 0;
     if (message['c'] === true) this.clockWaiter?.();
     const sent = this.pingSentAt.get(message['n']);
     if (sent !== undefined) {
@@ -685,8 +708,14 @@ export class PcDirect {
     const link = this.link;
     if (!link || !this.open()) return;
     if (Date.now() - this.lastPong > STALL_MS) {
-      this.teardown('stalled', { unexpected: true });
-      return;
+      // A primeira amostra só avisa (o sinal de vida logo abaixo é o teste); a segunda seguida derruba o canal.
+      this.stallStrikes++;
+      if (this.stallStrikes >= STALL_CONFIRMATIONS) {
+        this.teardown('stalled', { unexpected: true });
+        return;
+      }
+    } else {
+      this.stallStrikes = 0;
     }
     // O canal pediu renovação (vida perto do fim) e nada está segurado: troca agora, de modo transparente.
     if (this.renewPending && this.busyProbe?.() !== true) {
@@ -749,10 +778,9 @@ export class PcDirect {
         this.clearBackoff();
         queueMicrotask(() => this.evaluate());
       } else {
-        this.scheduleRetry();
+        this.scheduleRetry(reason);
       }
     }
-    void reason;
   }
 
   private discard(link: Link, keepalive = false): void {
@@ -774,10 +802,19 @@ export class PcDirect {
     this.revokedAtExpiry = this.session.expiresAt();
   }
 
-  private scheduleRetry(): void {
+  private scheduleRetry(reason?: string): void {
     if (!this.wanted || this.suspended || this.revoked || this.backoffTimer !== null) return;
-    const wait = DIRECT_BACKOFF_MS[Math.min(this.attempts, DIRECT_BACKOFF_MS.length - 1)] ?? 60_000;
-    this.attempts++;
+    const now = Date.now();
+    // O canal que PAROU (não o que falhou ao abrir) volta logo, uma vez por vida estável: não conta no recuo.
+    const quick =
+      reason === 'stalled' && this.attempts === 0 && now - this.lastStalledRetryAt >= STABLE_MS;
+    let wait = STALLED_FIRST_RETRY_MS;
+    if (quick) {
+      this.lastStalledRetryAt = now;
+    } else {
+      wait = DIRECT_BACKOFF_MS[Math.min(this.attempts, DIRECT_BACKOFF_MS.length - 1)] ?? 60_000;
+      this.attempts++;
+    }
     this.backoffTimer = setTimeout(() => {
       this.backoffTimer = null;
       this.evaluate();

@@ -14,6 +14,13 @@ class Command:
     # `ts` do envelope (ISO 8601, UTC): quando a API montou a mensagem. Quem se importa com a idade
     # dela (o sinal de presença) a confere; os demais ignoram.
     sent_at: str | None = None
+    # `operationId` do envelope (opcional): o mesmo código do pedido HTTP que originou o comando. Só
+    # entra no registro (ciclo, tipo, caminho e durações), nunca texto, teclas nem coordenadas.
+    operation_id: str | None = None
+    # O aparelho do app que originou o comando (`deviceId` e `deviceName` do envelope, opcionais): a
+    # aprovação de aparelho novo no PC se apoia neles.
+    device_id: str | None = None
+    device_name: str | None = None
 
 
 class ResultStatus(StrEnum):

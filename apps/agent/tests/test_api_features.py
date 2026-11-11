@@ -155,8 +155,13 @@ def _client_answering(response: httpx.Response | Exception) -> Any:
             httpx.Response(200, json={"module": "devices", "version": "1", "features": ["a", "b"]}),
             {"a", "b"},
         ),
-        (httpx.Response(200, json={"module": "devices", "version": "1"}), set()),
-        (httpx.Response(200, json={"features": "nao-e-lista"}), set()),
+        (httpx.Response(200, json={"module": "devices", "version": "1", "features": []}), set()),
+        # Um 200 sem a lista (página de manutenção em JSON, resposta torta) NÃO é "a API não aceita
+        # nada": é uma resposta que não diz nada.
+        (httpx.Response(200, json={"module": "devices", "version": "1"}), None),
+        (httpx.Response(200, json={"features": "nao-e-lista"}), None),
+        (httpx.Response(200, json={}), None),
+        (httpx.Response(200, json=[]), None),
         (httpx.Response(200, json={"features": ["a", 7, None]}), {"a"}),
         (httpx.Response(503), None),
         (httpx.Response(200, content=b"nao json"), None),
@@ -242,6 +247,34 @@ async def test_an_api_that_lists_diagnostics_gets_the_capability_and_the_events(
     hello = next(m for m in received if m["type"] == "agent.hello.v1")
     assert DIAGNOSTICS_CAPABILITY in hello["body"]["capabilities"]
     assert any(m["type"] == "agent.diagnostics.v1" for m in received)
+
+
+async def test_a_connection_made_before_the_api_answered_asks_again_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Partida sem rede: a primeira consulta falha. Ao conectar, o agente não espera o recuo (5 min):
+    # consulta já, e o hello seguinte já declara a capacidade.
+    calls: list[int] = []
+
+    async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
+        calls.append(1)
+        return None if len(calls) == 1 else frozenset({DIAGNOSTICS_CAPABILITY})
+
+    monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
+
+    async def script(connection: Any) -> None:
+        await asyncio.sleep(0.6)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    async with FakeApi(script) as api:
+        settings = Settings(api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True)
+        await run(settings, lambda: store)
+
+    hellos = [m for m in api.received if m["type"] == "agent.hello.v1"]
+    assert len(calls) >= 2  # bem antes do recuo de 15 s da consulta de fundo
+    assert DIAGNOSTICS_CAPABILITY in hellos[-1]["body"]["capabilities"]
 
 
 async def test_listeners_hear_only_real_changes_of_what_the_api_accepts() -> None:

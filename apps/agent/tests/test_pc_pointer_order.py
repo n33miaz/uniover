@@ -248,12 +248,12 @@ async def test_result_sends_are_bounded_and_the_oldest_is_abandoned(
             await process(click())
         await settle()
         await settle()
-    assert len(process._result_tasks) == MAX_PENDING_RESULTS
+    assert len(process.lane._result_tasks) == MAX_PENDING_RESULTS
     assert len([r for r in caplog.records if "acumulado" in r.getMessage()]) == 1
     rec.send_gate.set()
     await settle()
     assert len(transport.sent) == MAX_PENDING_RESULTS
-    assert not process._result_tasks
+    assert not process.lane._result_tasks
     await process.aclose()
 
 

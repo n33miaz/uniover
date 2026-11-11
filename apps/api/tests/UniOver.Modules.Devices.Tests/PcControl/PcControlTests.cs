@@ -631,8 +631,9 @@ public sealed class PcVolumeStoreTests
         var handler = new PcAgentMessageHandler(
             new PcAppsStore(),
             new PcRtcAnswers(TimeProvider.System),
-            new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!),
-            volume);
+            new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!, null!),
+            volume,
+            new PcDeviceStates(TimeProvider.System));
         var body = JsonDocument.Parse("{\"level\":62,\"muted\":true,\"at\":\"2026-11-09T14:00:00Z\"}").RootElement.Clone();
 
         handler.HandledTypes.Should().Contain(AgentMessageTypes.PcVolumeStateV1);
@@ -665,7 +666,7 @@ public sealed class PcAppsStoreTests
     public async Task TheAgentMessageHandler_StoresTheIdsAndNamesTheAgentSent()
     {
         var store = new PcAppsStore();
-        var handler = new PcAgentMessageHandler(store, new PcRtcAnswers(TimeProvider.System), new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!), new PcVolumeStore());
+        var handler = new PcAgentMessageHandler(store, new PcRtcAnswers(TimeProvider.System), new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!, null!), new PcVolumeStore(), new PcDeviceStates(TimeProvider.System));
         var body = JsonDocument.Parse(
             "{\"apps\":[{\"id\":\"navegador\",\"label\":\"Navegador\"},{\"id\":\"notas\",\"label\":\"Notas\"}],\"at\":\"2026-11-01T14:00:00Z\"}")
             .RootElement.Clone();

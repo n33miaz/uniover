@@ -4,12 +4,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from uniover_agent.adapters import pc_direct_network
 from uniover_agent.adapters.pc_direct_network import (
+    candidate_is_lan,
     filter_offer_candidates,
     is_lan_address,
     lan_host_addresses,
 )
+from uniover_agent.core.pc import lan
 
 
 @pytest.mark.parametrize(
@@ -49,7 +50,7 @@ def test_public_names_loopback_and_odd_addresses_are_not(address: str) -> None:
 
 
 def test_loopback_is_accepted_only_when_a_test_allows_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(pc_direct_network, "ALLOW_LOOPBACK", True)
+    monkeypatch.setattr(lan, "ALLOW_LOOPBACK", True)
 
     assert is_lan_address("127.0.0.1")
 
@@ -155,3 +156,62 @@ def test_the_ip_family_flags_are_honored(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert lan_host_addresses(True, False) == ["192.168.1.2", "10.1.1.5"]
     assert lan_host_addresses(False, True) == ["fd00::2"]
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "192.0.2.1",  # documentação (TEST-NET-1)
+        "198.18.0.1",  # benchmarking
+        "198.51.100.7",
+        "::ffff:192.168.1.5",  # IPv4 dentro de IPv6: não se confia
+        "fec0::1",  # site-local obsoleto
+        "2002:c0a8:101::1",  # 6to4
+    ],
+)
+def test_reserved_ranges_that_are_not_a_home_network_are_refused(address: str) -> None:
+    assert not is_lan_address(address)
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "192.168.1.9",
+        "10.1.2.3",
+        "172.16.0.1",
+        "172.31.255.254",
+        "169.254.9.9",
+        "fd12::7",
+        "fe80::1%12",
+    ],
+)
+def test_home_networks_are_accepted(address: str) -> None:
+    assert is_lan_address(address)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "candidate:1 1 udp 1 192.168.1.9 5000 typ host",
+        "a=candidate:1 1 UDP 1 192.168.1.9 5000 typ host generation 0",
+        "candidate:5 1 udp 1 fd00::7 5000 typ prflx raddr 0.0.0.0 rport 0",
+    ],
+)
+def test_a_udp_candidate_on_the_local_network_is_accepted(line: str) -> None:
+    assert candidate_is_lan(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "candidate:1 1 tcp 1 192.168.1.9 9 typ host tcptype active",
+        "candidate:2 1 udp 1 192.168.1.9 3478 typ relay",
+        "candidate:3 1 udp 1 8.8.8.8 5000 typ srflx",
+        "candidate:4 1 udp 1 meu-pc.local 5000 typ host",
+        "candidate:5 1 udp 1 192.168.1.9 5000 host",
+        "candidate:6 1 udp 1 192.168.1.9",
+        "",
+    ],
+)
+def test_other_candidates_are_refused(line: str) -> None:
+    assert not candidate_is_lan(line)

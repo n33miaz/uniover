@@ -20,6 +20,8 @@ from uniover_agent.adapters.loop_lag import LoopLagMonitor
 from uniover_agent.adapters.loop_watchdog import LoopWatchdog
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import fetch_api_features
+from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
+from uniover_agent.adapters.pc_device_store import JsonDeviceStore
 from uniover_agent.adapters.run_state import RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
 from uniover_agent.adapters.startup_trace import mark_session_started
@@ -74,12 +76,10 @@ from uniover_agent.core import (
     PC_CLICK_V2_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
-    PC_SILENT_TYPES,
     PC_TEXT_V2_CAPABILITY,
     PC_VOLUME_CAPABILITY,
     PC_ZOOM_CAPABILITY,
     PRESENCE_CAPABILITY,
-    RTC_SILENT_TYPES,
     RTC_TYPES,
     SETTINGS_OPEN_CAPABILITY,
     ConnectionSupervisor,
@@ -109,6 +109,8 @@ from uniover_agent.core.diagnostics import (
     DiagnosticsShipper,
 )
 from uniover_agent.core.disk_alarm import DiskAlarm
+from uniover_agent.core.pc.devices import DeviceApprovals
+from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
@@ -138,6 +140,8 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_ZOOM_CAPABILITY,
         PC_VOLUME_CAPABILITY,
         PC_RTC_CAPABILITY,
+        PC_OP_CAPABILITY,
+        PC_DEVICE_CAPABILITY,
     }
 )
 
@@ -450,7 +454,21 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             "(enlace instável); eles valem como chegaram",
             component="pc",
         ),
+        # A entrada do PC roda num laço próprio (thread dedicada, prioridade acima do normal): o
+        # resto do agente não a atrasa. Os avisos dela voltam a este laço sem prendê-la.
+        isolate_input=settings.pc_input_thread,
+        devices=(
+            DeviceApprovals(
+                JsonDeviceStore(installation_base() / "runtime" / "pc-devices.json"),
+                WindowsApprovalPrompt(),
+            )
+            if settings.pc_device_approval and settings.pc_control
+            else None
+        ),
+        exception_handler=loop_exception_handler(kit.recorder),
     )
+    if pc is not None:
+        pc.start()
     if tv is not None:
         # Um sinal de presença recusado por idade (relógio do PC fora de hora) vai ao diagnóstico; o
         # registrador junta as repetições, então o texto é fixo (sem a idade exata).
@@ -479,27 +497,18 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         ),
         envelopes,
         transport,
-        background_types=(
-            *(tv.background_commands if tv is not None else ()),
-            # A sinalização do canal direto corre em tarefa própria (a oferta espera a biblioteca).
-            *(RTC_TYPES if pc is not None and pc.direct is not None else ()),
-        ),
-        silent_types=(
-            *(PC_SILENT_TYPES if pc is not None else ()),
-            *(RTC_SILENT_TYPES if pc is not None and pc.direct is not None else ()),
-            *(tv.silent_commands if tv is not None else ()),
-        ),
+        background_types=tv.background_commands if tv is not None else (),
+        silent_types=tv.silent_commands if tv is not None else (),
         # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
         command_timeout_seconds=settings.tv_command_timeout_seconds if tv is not None else None,
         uncapped_types=tv.background_commands if tv is not None else (),
-        release_inputs=pc.release_all if pc is not None else None,
         observe_timestamp=pc.clock.observe if pc is not None else None,
-        # Comando de entrada que chega pela nuvem fecha antes o canal direto em uso.
-        on_cloud_pc_input=pc.direct.cloud_input
-        if pc is not None and pc.direct is not None
-        else None,
-        # Uma soltura que entra na faixa interrompe a espera do intervalo de um duplo clique.
-        on_release_queued=pc.pacer.hurry if pc is not None else None,
+        # A faixa do PC (e o canal direto) tem o laço dela: o comando de entrada que chega pela
+        # nuvem fecha antes o canal direto em uso, e a sinalização do canal corre em tarefa própria
+        # (a oferta espera a biblioteca), tudo lá dentro.
+        pc_lane=pc.lane if pc is not None else None,
+        pc_host=pc.host if pc is not None else None,
+        lane_detached_types=RTC_TYPES if pc is not None and pc.direct is not None else (),
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
@@ -508,11 +517,6 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             )
         ),
     )
-    if pc is not None:
-        pc.pacer.bind(process.release_waiting)
-    if pc is not None and pc.direct is not None:
-        # O canal direto usa a mesma faixa do PC e, ao fechar, solta o que ele segurava.
-        pc.direct.bind(process.submit_direct, process.direct_lost)
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []
     if tv is not None:
@@ -548,6 +552,29 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     features = ApiFeatures(
         lambda: fetch_api_features(api_url, wait_seconds=FEATURES_TIMEOUT_SECONDS), clock
     )
+    refreshing: set[asyncio.Future[None]] = set()
+
+    def start_refresh() -> None:
+        """Consulta o que a API aceita já (prazo curto), sem esperar a consulta de fundo."""
+        refresh = asyncio.ensure_future(features.refresh())
+        refreshing.add(refresh)
+        refresh.add_done_callback(refreshing.discard)
+
+    if pc is not None and pc.approvals is not None:
+        # A API listou a aprovação: o modo sem aprovação nunca mais volta (fica gravado).
+        # (na faixa do PC: é lá que o estado da aprovação vive)
+        approvals = pc.approvals
+        features.on_change(lambda: pc.on_lane(approvals.note_api))
+    if pc is not None:
+        # A aprovação só dispensa o aparelho se a API RESPONDEU e não a oferece; até lá (partida,
+        # consulta que falhou) o comando sem aparelho falha fechado.
+        pc.bind_device_api(
+            answered=lambda: features.answered,
+            supports=lambda: features.supports(PC_DEVICE_CAPABILITY),
+            # Aparelho aprovado que o agente não identifica por a API (instância antiga no rollout)
+            # deixou de listar a capacidade: nova consulta, no máximo a cada 15 s.
+            refresh=start_refresh,
+        )
     if tv is not None and publisher is not None:
         # `not_paired` vai como `disconnected` e `waking` (TV ligando) como o estado de antes até a
         # API aceitá-los: depois, o estado sai de novo.
@@ -576,17 +603,23 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     def on_disconnected() -> None:
         process.connection_lost()
         if pc is not None and pc.direct is not None:
-            # O canal direto não sobrevive à sessão que o autorizou.
-            pc.direct.api_disconnected()
+            # O canal direto segue uns segundos sem a API (queda curta) e fecha se ela não volta.
+            pc.on_lane(pc.direct.api_disconnected)
         tray.disconnected()
         diary.disconnected()
         watch.disconnected_now()
 
     async def on_connected() -> None:
         mark_session_started()  # daqui em diante, o que cair não é falha de partida
+        if pc is not None and pc.direct is not None:
+            pc.on_lane(pc.direct.api_reconnected)
         tray.connected()
         diary.connected()
         watch.connected_now()
+        if not features.answered:
+            # A API ainda não disse o que aceita (partida sem rede): consulta já, com prazo curto,
+            # em vez de esperar o recuo de até 5 min (sem a capacidade, todo aparelho fica barrado).
+            start_refresh()
         for step in after_hello:
             await step()
         await delivery.after_hello()
@@ -716,11 +749,16 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         for task in background:
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
-        if pc is not None and pc.direct is not None:
-            await pc.direct.aclose()
+        for refresh in list(refreshing):
+            refresh.cancel()
+        await asyncio.gather(*refreshing, return_exceptions=True)
+        if pc is not None:
+            await pc.close_direct()
         if pc is not None and pc.volume is not None:
             await pc.volume.aclose()
         await process.aclose()
+        if pc is not None:
+            await pc.stop_input()
         if tv is not None:
             await tv.manager.aclose()
             for close in tv.closers:

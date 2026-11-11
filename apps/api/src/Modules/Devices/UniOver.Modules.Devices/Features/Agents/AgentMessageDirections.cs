@@ -25,6 +25,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.CommandResultV1,
         AgentMessageTypes.PcAppsV1,
         AgentMessageTypes.PcVolumeStateV1,
+        AgentMessageTypes.PcDeviceStateV1,
         AgentMessageTypes.PcRtcAnswerV1,
         AgentMessageTypes.PcRtcClosedV1,
         AgentMessageTypes.TvAppsV1,

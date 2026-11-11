@@ -10,9 +10,9 @@ import {
   accelerationFor,
   scrollGainFor,
 } from '../input/pc-acceleration';
-import { PointerBatch, PointerBatcher } from '../input/pointer-batcher';
+import { DEFAULT_BATCHER, PointerBatch, PointerBatcher } from '../input/pointer-batcher';
 import { PcApi } from './pc-api';
-import { PcDirect } from './pc-direct';
+import { DIRECT_POINTER_INTERVAL_MS, PcDirect } from './pc-direct';
 import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
@@ -145,7 +145,17 @@ export class PcStore {
   private account = this.session.accountId();
   private readonly accelerator = new PointerAccelerator();
   private readonly scroller = new ScrollAccelerator();
-  private readonly batcher = new PointerBatcher((batch) => this.sendPointer(batch));
+  /**
+   * O agrupador do movimento. Pela nuvem cada pedido custa uma ida e volta e tem teto de taxa, então ele agrupa a ~30 por
+   * segundo; pelo canal direto não há custo por pedido, e um quadro do dedo (60 a 120 por segundo) não precisa esperar 32 ms:
+   * o intervalo cai para {@link DIRECT_POINTER_INTERVAL_MS}.
+   */
+  private readonly batcher = new PointerBatcher(
+    (batch) => this.sendPointer(batch),
+    DEFAULT_BATCHER,
+    undefined,
+    () => (this.direct.canUse() ? DIRECT_POINTER_INTERVAL_MS : DEFAULT_BATCHER.minIntervalMs),
+  );
   /**
    * Os pedidos do botão (`DOWN` e `UP`) saem em fila: um `UP` só parte depois que o `DOWN` anterior terminou (resposta,
    * erro ou tempo esgotado). São pedidos HTTP independentes, e um `UP` que passasse na frente do `DOWN` o deixaria apertado.
@@ -869,6 +879,12 @@ export class PcStore {
    * acabou antes (um pedido de movimento preso).
    */
   private async settleMoves(limit = MOVE_SETTLE_MS): Promise<boolean> {
+    // Com o canal direto em uso o movimento não tem HTTP para esperar: o clique leva o total do ponteiro e o que o dedo andou
+    // sai agora. Esperar aqui só atrasaria o toque (e o abandonaria sem motivo se o laço do celular engasgasse).
+    if (this.direct.canUse()) {
+      this.batcher.flush();
+      return true;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const giveUp = new Promise<boolean>((resolve) => {
       timer = setTimeout(() => resolve(false), limit);

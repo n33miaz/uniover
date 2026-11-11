@@ -291,6 +291,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.volume.state.v1.schema.json'
+      pcDeviceState:
+        name: pc.device.state.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.device.state.v1.schema.json'
       pcRtcAnswer:
         name: pc.rtc.answer.v1
         contentType: application/json
@@ -617,6 +622,7 @@ operations:
     summary: A API recebe o volume de agora do PC (nível e mudo).
     messages:
       - $ref: '#/channels/agentEvents/messages/pcVolumeState'
+      - $ref: '#/channels/agentEvents/messages/pcDeviceState'
   sendPcRtcOffer:
     action: send
     channel:

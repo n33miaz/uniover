@@ -14,7 +14,10 @@ import { PcStore } from './pc-store';
 function setup() {
   const calls: string[] = [];
   const lost: (() => void)[] = [];
+  // O canal direto está em uso agora? (`canUse` do `PcDirect`): o teste liga e desliga.
+  const usable = { value: false };
   const direct = {
+    canUse: vi.fn(() => usable.value),
     start: vi.fn(() => calls.push('direct.start')),
     stop: vi.fn(() => calls.push('direct.stop')),
     setBusyProbe: vi.fn(),
@@ -57,12 +60,78 @@ function setup() {
       { provide: PcDirect, useValue: direct },
     ],
   });
-  return { store: TestBed.inject(PcStore), api, direct, calls, lost };
+  return { store: TestBed.inject(PcStore), api, direct, calls, lost, usable };
 }
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('PcStore with the direct channel', () => {
+  /** Um pedido de movimento que nunca termina: o HTTP preso de uma nuvem lenta (ou um agente que engasgou). */
+  const stuckPointer = () => new Promise<void>(() => undefined);
+
+  it('over the cloud a click still waits for the moves already sent (and is abandoned if they never finish)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, api, usable } = setup();
+      usable.value = false;
+      store.watch();
+      api.pointer.mockImplementation(stuckPointer);
+      store.movePointer(30, 0, 16);
+      const click = store.click('LEFT');
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect((await click)?.kind).toBe('timeout'); // abandonado: o movimento não terminou
+      expect(api.click).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('with the direct channel in use a click does not wait for any HTTP and the finger movement goes out first', async () => {
+    const { store, api, usable, calls } = setup();
+    usable.value = true;
+    store.watch();
+    api.pointer.mockImplementation(stuckPointer);
+    store.movePointer(30, 0, 16);
+    calls.length = 0;
+
+    const result = await store.click('LEFT');
+
+    expect(result).toBeNull();
+    expect(api.pointer).toHaveBeenCalledTimes(1); // o que o dedo andou saiu antes do clique
+    expect(calls).toEqual(['click:LEFT:CLICK']);
+  });
+
+  it('the pointer batcher groups at 10 ms through the direct channel and at 32 ms through the cloud', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      const { store, api, usable } = setup();
+      store.watch();
+
+      const sentIn = async (direct: boolean): Promise<number> => {
+        usable.value = direct;
+        api.pointer.mockClear();
+        store.movePointer(5, 0, 16); // sai já (a primeira não espera taxa nenhuma)
+        await vi.advanceTimersByTimeAsync(1);
+        store.movePointer(5, 0, 16); // esta espera o intervalo mínimo
+        for (let ms = 1; ms <= 40; ms++) {
+          if (api.pointer.mock.calls.length >= 2) return ms;
+          await vi.advanceTimersByTimeAsync(1);
+        }
+        return 99;
+      };
+
+      const viaDirect = await sentIn(true);
+      await vi.advanceTimersByTimeAsync(100);
+      const viaCloud = await sentIn(false);
+
+      expect(viaDirect).toBeLessThanOrEqual(12);
+      expect(viaCloud).toBeGreaterThanOrEqual(30);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('opening the screen starts the channel, and closing it stops the channel before the release', async () => {
     const { store, calls } = setup();
     const stop = store.watch();

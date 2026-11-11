@@ -50,7 +50,9 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'pc.text.v2'
   | 'pc.click.v2'
   | 'pc.pointer.zoom.v1'
-  | 'pc.volume.v1';
+  | 'pc.volume.v1'
+  | 'pc.op.v1'
+  | 'pc.device.v1';
 export type AgentHelloV1BodyTvKind = 'android' | 'samsung';
 export type AgentHelloV1BodyUpdateOutcome =
   'not_checked' | 'updating' | 'updated' | 'up_to_date' | 'failed' | 'blocked' | 'rolled_back';

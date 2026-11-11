@@ -19,7 +19,17 @@ public sealed class OutboundEnvelopeFactory(AgentEnvelopeValidator validator, IC
     /// <param name="agentSlug">Slug do agente de destino (sem o prefixo <c>agent:</c>).</param>
     /// <param name="correlationId">Id da mensagem que esta responde, ou nulo.</param>
     /// <param name="body">Corpo da mensagem, como JSON.</param>
-    public Result<OutboundEnvelope> Create(string type, string agentSlug, Guid? correlationId, JsonElement body)
+    /// <param name="operationId">Opcional: o código da operação (<c>operationId</c>), só para agentes que o declararam.</param>
+    /// <param name="deviceId">Opcional: o aparelho do app (<c>deviceId</c>), só para agentes que declararam <c>pc.device.v1</c>.</param>
+    /// <param name="deviceName">Opcional: o nome do aparelho (<c>deviceName</c>).</param>
+    public Result<OutboundEnvelope> Create(
+        string type,
+        string agentSlug,
+        Guid? correlationId,
+        JsonElement body,
+        string? operationId = null,
+        string? deviceId = null,
+        string? deviceName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(type);
         ArgumentException.ThrowIfNullOrWhiteSpace(agentSlug);
@@ -44,6 +54,17 @@ public sealed class OutboundEnvelopeFactory(AgentEnvelopeValidator validator, IC
             else
             {
                 writer.WriteNull("correlationId");
+            }
+
+            if (operationId is not null)
+            {
+                writer.WriteString("operationId", operationId);
+            }
+
+            if (deviceId is not null && deviceName is not null)
+            {
+                writer.WriteString("deviceId", deviceId);
+                writer.WriteString("deviceName", deviceName);
             }
 
             writer.WritePropertyName("body");

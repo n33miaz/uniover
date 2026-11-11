@@ -14,6 +14,7 @@ from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.core import (
     ClickPacer,
     ClockOffset,
+    Command,
     DirectSettings,
     EnvelopeFactory,
     EnvelopeGate,
@@ -24,6 +25,7 @@ from uniover_agent.core import (
     pc_handlers,
     pc_rtc_handlers,
 )
+from uniover_agent.core.pc.devices import DeviceDecision
 from uniover_agent.core.pc.direct import (
     BYE_FLUSH_SECONDS,
     REFUSED_FAILED,
@@ -202,6 +204,7 @@ class Lab:
             release_inputs=self.pc.release_all,
             on_cloud_pc_input=self.service.cloud_input,
             on_release_queued=pacer.hurry if pacer is not None else None,
+            direct_active=lambda: self.service.holds_inputs,
         )
         if pacer is not None:
             pacer.bind(self.process.release_waiting)
@@ -728,16 +731,103 @@ async def test_a_new_offer_replaces_the_channel_and_releases_what_it_held(lab: L
     assert lab.closed == []  # a troca veio da API, que já sabe: nada de aviso de volta
 
 
-async def test_losing_the_api_connection_closes_the_channel_without_telling_the_api(
-    lab: Lab,
-) -> None:
-    peer = await lab.open_authenticated()
-    lab.service.api_disconnected()
-    await settle()
+async def test_losing_the_api_connection_keeps_the_channel_until_the_grace_runs_out() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, api_grace_seconds=0.15))
+    try:
+        peer = await lab.open_authenticated()
+        lab.service.api_disconnected()
+        await settle()
 
-    assert peer.closed
-    assert lab.pc.calls == [("release_all",)]
-    assert lab.closed == []
+        assert not peer.closed  # a queda curta da nuvem não derruba o canal
+        peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}))
+        await settle()
+        assert ("media", "MUTE", 1) in lab.pc.calls  # e ele segue comandando o PC
+
+        await asyncio.sleep(0.3)
+        assert peer.closed  # a API não voltou a tempo
+        assert lab.pc.calls[-1] == ("release_all",)
+        assert lab.closed == []  # sem API, não há a quem avisar
+    finally:
+        await lab.aclose()
+
+
+async def test_the_api_coming_back_cancels_the_grace() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, api_grace_seconds=0.1))
+    try:
+        peer = await lab.open_authenticated()
+        lab.service.api_disconnected()
+        await settle()
+        lab.service.api_reconnected()
+        await asyncio.sleep(0.3)
+
+        assert not peer.closed
+        assert lab.service.authenticated
+    finally:
+        await lab.aclose()
+
+
+async def test_a_revocation_closes_the_channel_at_once_even_during_the_grace() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, api_grace_seconds=30))
+    try:
+        peer = await lab.open_authenticated()
+        lab.service.api_disconnected()
+        await settle()
+        await lab.service.close(SESSION, "revoked")
+
+        assert peer.closed
+        assert lab.service.session_id is None
+        assert lab.closed == []
+    finally:
+        await lab.aclose()
+
+
+async def test_a_second_drop_restarts_the_grace_and_a_closed_channel_forgets_it() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, api_grace_seconds=0.15))
+    try:
+        peer = await lab.open_authenticated()
+        lab.service.api_disconnected()
+        await asyncio.sleep(0.1)
+        lab.service.api_disconnected()  # outra queda: o prazo recomeça
+        await asyncio.sleep(0.1)
+        assert not peer.closed
+
+        await lab.service.close(SESSION)
+        assert lab.service._grace is None  # fechado por outro motivo: nada fica esperando
+    finally:
+        await lab.aclose()
+
+
+async def test_dropping_the_api_connection_keeps_what_the_direct_channel_holds() -> None:
+    lab = Lab(DirectSettings(tick_seconds=0.005, api_grace_seconds=5))
+    try:
+        peer = await lab.open_authenticated()
+        peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "DOWN"}))
+        await settle()
+        lab.pc.calls.clear()
+
+        lab.process.connection_lost()  # a nuvem caiu: o arrasto do canal direto continua
+        lab.service.api_disconnected()
+        await settle()
+
+        assert ("release_all",) not in lab.pc.calls
+        peer.phone(
+            INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "UP"}, "c2")
+        )
+        await settle()
+        assert ("click", "LEFT", "UP") in lab.pc.calls
+        assert [a["i"] for a in peer.acks()][-1] == "c2"
+    finally:
+        await lab.aclose()
+
+
+async def test_dropping_the_api_connection_still_releases_what_the_cloud_holds() -> None:
+    lab = Lab()
+    try:
+        # Sem canal direto em uso, a queda da nuvem solta o que ela segurava, como sempre.
+        lab.process.connection_lost()
+        assert lab.pc.calls == [("release_all",)]
+    finally:
+        await lab.aclose()
 
 
 async def test_a_close_for_another_session_is_ignored(lab: Lab) -> None:
@@ -796,6 +886,86 @@ async def test_late_candidates_reach_the_peer_but_local_names_do_not(lab: Lab) -
     )
 
     assert lab.peer.candidates == [("candidate:1 1 udp 1 192.168.1.9 5000 typ host", "0", 0)]
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "candidate:1 1 tcp 1 192.168.1.9 9 typ host tcptype active",  # TCP
+        "candidate:2 1 udp 1 relay.exemplo.com 3478 typ relay",  # relay e nome
+        "candidate:3 1 udp 1 192.168.1.9 3478 typ relay raddr 0.0.0.0 rport 0",  # relay com IP
+        "candidate:4 1 udp 1 203.0.113.9 5000 typ srflx raddr 0.0.0.0 rport 0",  # público
+        "candidate:5 1 udp 1 100.64.1.1 5000 typ host",  # CGNAT
+        "candidate:6 1 udp 1 127.0.0.1 5000 typ host",  # loopback
+        "candidate:7 1 udp 1 2001:4860::1 5000 typ host",  # IPv6 global
+        "candidate:8 1 udp 1 ::ffff:192.168.1.9 5000 typ host",  # IPv4 mascarado
+        "candidate:9 1 udp 1 exemplo.com 5000 typ host",  # nome público
+        "candidate:10 1 udp 1 192.168.1.9",  # lixo
+        "",
+    ],
+)
+async def test_late_candidates_outside_the_local_network_never_reach_the_peer(
+    lab: Lab, candidate: str
+) -> None:
+    await lab.open()
+
+    await lab.service.add_candidate(SESSION, candidate, "0", 0)
+
+    assert lab.peer.candidates == []
+
+
+async def test_late_candidates_on_the_local_network_do_reach_the_peer(lab: Lab) -> None:
+    await lab.open()
+    lines = [
+        "candidate:1 1 udp 1 192.168.1.9 5000 typ host",
+        "candidate:2 1 udp 1 10.0.0.7 5000 typ host",
+        "candidate:3 1 udp 1 172.20.0.7 5000 typ host",
+        "candidate:4 1 udp 1 169.254.3.4 5000 typ host",
+        "candidate:5 1 udp 1 fd00::7 5000 typ host",
+        "candidate:6 1 udp 1 fe80::1%eth0 5000 typ host",
+    ]
+    for line in lines:
+        await lab.service.add_candidate(SESSION, line, "0", 0)
+
+    assert [c[0] for c in lab.peer.candidates] == lines
+
+
+async def test_the_channel_cycle_goes_to_the_log_without_secrets(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+    for n in range(3, 6):
+        peer.phone(POINTER_CHANNEL, {"k": "ping", "n": n, "t": int(time.time() * 1000), "r": 12})
+    await settle()
+    await lab.service.close(SESSION, "requested")
+
+    lines = [r.getMessage() for r in caplog.records if "canal direto" in r.getMessage()]
+    assert len(lines) == 2
+    assert "canal direto aberto" in lines[0]
+    assert "canal direto fechado" in lines[1]
+    assert "motivo requested" in lines[1]
+    assert "aberto por" in lines[1] and "RTT abaixo de 30 ms" in lines[1]
+    assert "movimentos perdidos 0" in lines[1]
+    text = caplog.text
+    assert TOKEN not in text and SDP not in text and "192.168" not in text
+
+
+async def test_a_channel_that_never_authenticated_is_logged_with_its_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    lab = Lab(DirectSettings(connect_timeout_seconds=0.05, tick_seconds=0.005))
+    try:
+        await lab.open()
+        await asyncio.sleep(0.15)
+
+        lines = [r.getMessage() for r in caplog.records if "canal direto" in r.getMessage()]
+        assert any(
+            "antes de autenticar" in line and "motivo connect_timeout" in line for line in lines
+        )
+    finally:
+        await lab.aclose()
 
 
 def offer_envelope(session: str = SESSION, token: str = TOKEN) -> str:
@@ -1332,7 +1502,7 @@ async def test_a_direct_move_that_was_running_never_reports_to_the_api_either() 
         await settle()
 
         assert lab.transport.sent == []
-        assert lab.process._direct_ids == set()  # nada ficou registrado
+        assert lab.process.lane._direct_ids == set()  # nada ficou registrado
     finally:
         await lab.aclose()
 
@@ -1348,7 +1518,7 @@ async def test_a_merged_or_discarded_move_leaves_no_id_behind() -> None:
         await settle()
         await settle()
 
-        assert lab.process._direct_ids == set()
+        assert lab.process.lane._direct_ids == set()
     finally:
         await lab.aclose()
 
@@ -1760,7 +1930,7 @@ async def test_a_click_waiting_for_its_gap_is_dropped_when_the_channel_closes() 
         assert ("click", "LEFT", "CLICK") not in lab.pc.calls[1:], "o toque não sai depois do canal"
         assert [a["i"] for a in peer.acks()] == ["first"], "e ninguém é avisado dele"
         assert lab.transport.sent == [], "nunca vira resposta para a API"
-        assert lab.process._running_direct is None
+        assert lab.process.lane._running_direct is None
     finally:
         fake.gate.set()
         await lab.aclose()
@@ -2134,3 +2304,138 @@ async def test_a_zoom_through_the_channel_never_leaves_the_ctrl_down_even_when_t
     assert len(downs) == len(ups) == 1, "o Ctrl foi apertado e solto uma vez, no mesmo lote"
     assert batches[0][0].vk == batches[0][-1].vk == 0x11
     assert len(batches) == 1, "a queda do canal não enviou mais nada ao teclado"
+
+
+# ---- aparelho novo: a oferta de um aparelho que o dono não aprovou é recusada ----------------------
+
+
+class _Approvals:
+    """O dono de mentira: decide por aparelho; só conta quantas vezes foi consultado."""
+
+    def __init__(self, decision: DeviceDecision) -> None:
+        self.decision = decision
+        self.checked: list[tuple[str | None, str | None]] = []
+
+    def check(self, device_id: str | None, device_name: str | None) -> DeviceDecision:
+        self.checked.append((device_id, device_name))
+        return self.decision
+
+
+@pytest.mark.parametrize(
+    ("decision", "code"),
+    [(DeviceDecision.PENDING, "device_pending"), (DeviceDecision.DENIED, "device_denied")],
+)
+async def test_an_offer_from_a_device_the_owner_has_not_approved_is_refused(
+    lab: Lab, decision: DeviceDecision, code: str
+) -> None:
+    approvals = _Approvals(decision)
+    lab.service._devices = approvals  # type: ignore[assignment]
+
+    with pytest.raises(DirectRefused) as refused:
+        await lab.service.open(
+            SESSION, SDP, TOKEN, 30, device_id="3fa9c10d7be2465a", device_name="iPhone"
+        )
+
+    assert refused.value.code == code
+    assert lab.peers == []  # nenhum par foi criado: nada de negociar com quem não foi aprovado
+    assert lab.service.session_id is None
+    assert approvals.checked == [("3fa9c10d7be2465a", "iPhone")]
+
+
+async def test_an_approved_device_opens_the_channel(lab: Lab) -> None:
+    approvals = _Approvals(DeviceDecision.APPROVED)
+    lab.service._devices = approvals  # type: ignore[assignment]
+
+    await lab.service.open(SESSION, SDP, TOKEN, 30, device_id="3fa9c10d7be2465a", device_name="x")
+
+    assert lab.service.session_id == SESSION
+    assert approvals.checked == [("3fa9c10d7be2465a", "x")]
+
+
+async def test_an_offer_without_a_device_is_decided_by_the_approval_not_waved_through(
+    lab: Lab,
+) -> None:
+    # Sem aparelho a decisão é de `DeviceApprovals.check(None, ...)`: passa só se a API confirmou que
+    # não faz a aprovação, e do contrário falha fechado (`device_unknown`).
+    closed_gate = _Approvals(DeviceDecision.UNKNOWN)
+    lab.service._devices = closed_gate  # type: ignore[assignment]
+    with pytest.raises(DirectRefused) as refused:
+        await lab.service.open(SESSION, SDP, TOKEN, 30)
+    assert refused.value.code == "device_unknown"
+    assert closed_gate.checked == [(None, None)] and lab.peers == []
+
+    legacy = _Approvals(DeviceDecision.APPROVED)
+    lab.service._devices = legacy  # type: ignore[assignment]
+    await lab.service.open(SESSION, SDP, TOKEN, 30)
+    assert lab.service.session_id == SESSION
+
+
+async def test_the_offer_handler_passes_the_device_of_the_envelope_and_answers_with_the_code(
+    lab: Lab,
+) -> None:
+    lab.service._devices = _Approvals(DeviceDecision.DENIED)  # type: ignore[assignment]
+    handlers = pc_rtc_handlers(lab.service, lab.transport, lab.envelopes)
+    command = Command(
+        "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e77",
+        "pc.rtc.offer.v1",
+        {
+            "sessionId": SESSION,
+            "sdp": SDP,
+            "token": TOKEN,
+            "tokenTtlSeconds": 30,
+            "maxLifetimeSeconds": 600,
+        },
+        device_id="3fa9c10d7be2465a",
+        device_name="iPhone",
+    )
+
+    result = await handlers["pc.rtc.offer.v1"](command)
+
+    assert (result.status.value, result.code) == ("rejected", "device_denied")
+    assert lab.transport.sent == []  # nenhuma resposta SDP saiu
+
+
+async def test_a_direct_command_carries_its_own_id_as_the_operation(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "c42"))
+    await settle()
+
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("operação")]
+    assert len(lines) == 1
+    assert "operação c42:" in lines[0] and "via canal direto" in lines[0]
+    assert "MUTE" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "command_id",
+    ["c1\nFALSO: operação x resultado ok", "c1\r", "com espaço", "c\u202e1", "", "x" * 41, "ação"],
+)
+async def test_a_command_id_outside_the_contract_pattern_never_reaches_the_log(
+    lab: Lab, caplog: pytest.LogCaptureFixture, command_id: str
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+    message = lab.command("pc.media.v1", {"action": "MUTE"}, command_id)
+
+    peer.phone(INPUT_CHANNEL, message)
+    await settle()
+
+    assert ("media", "MUTE", 1) not in lab.pc.calls  # recusado como violação, nunca executado
+    assert not [r for r in caplog.records if r.getMessage().startswith("operação")]
+    assert "FALSO" not in caplog.text
+
+
+async def test_a_command_id_in_the_pattern_is_the_operation_in_the_log(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+
+    peer.phone(INPUT_CHANNEL, lab.command("pc.media.v1", {"action": "MUTE"}, "Cmd_7-a"))
+    await settle()
+
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("operação")]
+    assert len(lines) == 1 and lines[0].startswith("operação Cmd_7-a:")

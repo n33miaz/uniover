@@ -3,6 +3,7 @@ import { Injectable, Injector, inject } from '@angular/core';
 import { firstValueFrom, type Observable } from 'rxjs';
 import { APP_CONFIG } from '../../../core/config/app-config';
 import { PcDirect, DirectNotSent, type DirectCommandType } from './pc-direct';
+import { OPERATION_HEADER, newOperationId } from './pc-operation';
 import {
   PC_TEXT_MAX_ERASE,
   clampClickGap,
@@ -89,7 +90,7 @@ export class PcApi {
     // O `keepalive` é da página que está morrendo: só a nuvem termina um pedido depois dela.
     if (!options.keepalive && this.direct.canUse() && (await this.viaDirect(type, body))) return;
     await this.cloud(
-      this.http.post(
+      this.commandPost(
         `${BASE}/click`,
         { ...body, ...this.numbered() },
         options.keepalive ? { keepalive: true } : {},
@@ -117,7 +118,7 @@ export class PcApi {
       (await this.viaDirect(keyNeedsV2(key, options) ? 'pc.key.v2' : 'pc.key.v1', body))
     )
       return;
-    await this.cloud(this.http.post(`${BASE}/key`, { ...body, ...this.numbered() }));
+    await this.cloud(this.commandPost(`${BASE}/key`, { ...body, ...this.numbered() }));
   }
 
   /**
@@ -135,7 +136,7 @@ export class PcApi {
     )
       return;
     await this.cloud(
-      this.http.post(
+      this.commandPost(
         `${BASE}/key/release`,
         { key, ...this.numbered() },
         options.keepalive ? { keepalive: true } : {},
@@ -145,7 +146,7 @@ export class PcApi {
 
   async text(text: string): Promise<void> {
     if (this.direct.canUse() && (await this.viaDirect('pc.text.v1', { text }))) return;
-    await this.cloud(this.http.post(`${BASE}/text`, { text, ...this.numbered() }));
+    await this.cloud(this.commandPost(`${BASE}/text`, { text, ...this.numbered() }));
   }
 
   /**
@@ -160,13 +161,13 @@ export class PcApi {
     if (edit.key !== undefined) body['key'] = edit.key;
     const type = textEditNeedsV2({ ...edit, erase }) ? 'pc.text.v2' : 'pc.text.v1';
     if (this.direct.canUse() && (await this.viaDirect(type, body))) return;
-    await this.cloud(this.http.post(`${BASE}/text`, { ...body, ...this.numbered() }));
+    await this.cloud(this.commandPost(`${BASE}/text`, { ...body, ...this.numbered() }));
   }
 
   async media(action: PcMediaAction, steps = 1): Promise<void> {
     const body = steps > 1 ? { action, steps } : { action };
     if (this.direct.canUse() && (await this.viaDirect('pc.media.v1', body))) return;
-    await this.cloud(this.http.post(`${BASE}/media`, { ...body, ...this.numbered() }));
+    await this.cloud(this.commandPost(`${BASE}/media`, { ...body, ...this.numbered() }));
   }
 
   /**
@@ -178,7 +179,7 @@ export class PcApi {
     if (clamped === 0) return;
     const body = { steps: clamped };
     if (this.direct.canUse() && (await this.viaDirect('pc.pointer.zoom.v1', body))) return;
-    await this.cloud(this.http.post(`${BASE}/zoom`, { ...body, ...this.numbered() }));
+    await this.cloud(this.commandPost(`${BASE}/zoom`, { ...body, ...this.numbered() }));
   }
 
   /**
@@ -191,16 +192,16 @@ export class PcApi {
     if (change.muted !== undefined) body['muted'] = change.muted;
     if (Object.keys(body).length === 0) return;
     if (this.direct.canUse() && (await this.viaDirect('pc.volume.v1', body))) return;
-    await this.cloud(this.http.post(`${BASE}/volume`, { ...body, ...this.numbered() }));
+    await this.cloud(this.commandPost(`${BASE}/volume`, { ...body, ...this.numbered() }));
   }
 
   /** Suspender e desligar só valem com `confirm: true`: a API recusa sem ele. */
   async power(action: PcPowerAction, confirm = false): Promise<void> {
-    await this.cloud(this.http.post(`${BASE}/power`, confirm ? { action, confirm } : { action }));
+    await this.cloud(this.commandPost(`${BASE}/power`, confirm ? { action, confirm } : { action }));
   }
 
   async launch(appId: string): Promise<void> {
-    await this.cloud(this.http.post(`${BASE}/apps/${encodeURIComponent(appId)}/launch`, null));
+    await this.cloud(this.commandPost(`${BASE}/apps/${encodeURIComponent(appId)}/launch`, null));
   }
 
   /**
@@ -226,6 +227,22 @@ export class PcApi {
   /** O número do próximo pedido da nuvem e a época desta página: o agente só os compara juntos. */
   private numbered(): { seq: number; epoch: string } {
     return { seq: this.direct.nextCloudSeq(), epoch: this.direct.cloudEpoch };
+  }
+
+  /**
+   * O pedido de comando pela nuvem (tudo menos o movimento do mouse) leva o código da operação em `X-Operation-Id`: a API o
+   * repassa ao agente e os dois registram o mesmo código (só tipo, caminho e durações, nunca o conteúdo), para seguir um toque
+   * perdido do celular até o PC. O movimento é de alta taxa e fica de fora.
+   */
+  private commandPost(
+    url: string,
+    body: unknown,
+    options: { keepalive?: boolean } = {},
+  ): Observable<unknown> {
+    return this.http.post(url, body, {
+      ...options,
+      headers: { [OPERATION_HEADER]: newOperationId() },
+    });
   }
 
   /** O pedido da nuvem, contado como em voo: o canal só assume quando nenhum está no ar (nada passa na frente de nada). */

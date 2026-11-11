@@ -275,6 +275,12 @@ class EnvelopeFactory:
         body: dict[str, Any] = {"level": level, "muted": muted, "at": self._utc_now()}
         return self._build("pc.volume.state.v1", body, None)
 
+    def pc_device_state(self, device_id: str, state: str) -> dict[str, Any]:
+        """`pc.device.state.v1`: a decisão do dono do PC sobre um aparelho (pendente, recusado,
+        aprovado). O identificador é o que a API mandou no envelope."""
+        body: dict[str, Any] = {"deviceId": device_id, "state": state, "at": self._utc_now()}
+        return self._build("pc.device.state.v1", body, None)
+
     def pc_rtc_answer(
         self, session_id: str, sdp: str, correlation_id: str | None
     ) -> dict[str, Any]:

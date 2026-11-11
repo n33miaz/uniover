@@ -40,6 +40,9 @@ class ApiFeatures:
         self._clock = clock
         self._interval = interval
         self._known: frozenset[str] = frozenset()
+        # A API já respondeu ao menos uma vez (mesmo com a lista vazia, que é uma API anterior): sem
+        # isso "não listou" e "ainda não sei" seriam a mesma coisa.
+        self._answered = False
         self._listeners: list[Callable[[], None]] = []
         # Chamado quando a API passa a listar algo que não listava: o `hello` já enviado não
         # declarou a capacidade nova, e esperar o próximo (5 min) a deixaria sem uso (a presença da
@@ -53,6 +56,11 @@ class ApiFeatures:
     def supports(self, feature: str) -> bool:
         return feature in self._known
 
+    @property
+    def answered(self) -> bool:
+        """A API já disse o que aceita (falha da consulta, partida ou API dormindo: ainda não)."""
+        return self._answered
+
     async def refresh(self) -> None:
         """Pergunta à API; resposta ausente (API dormindo, rede) não apaga o que já se sabia."""
         try:
@@ -60,6 +68,8 @@ class ApiFeatures:
         except Exception:
             _log.warning("não consegui consultar o que a API aceita", exc_info=True)
             return
+        if found is not None:
+            self._answered = True
         if found is not None and found != self._known:
             added = bool(found - self._known)
             self._known = found

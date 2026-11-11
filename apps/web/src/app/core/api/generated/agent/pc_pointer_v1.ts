@@ -11,6 +11,14 @@ export interface PcPointerV1Message {
   target: string;
   ts: string;
   correlationId: string | null;
+  /**
+   * O aparelho do app que originou o comando do PC (opcional): um código estável da sessão (a família da sessão do app). Vem junto com `deviceName`, o nome para mostrar ao dono na pergunta "Permitir que <nome> controle este PC?". Só vai a um agente que declarou a capacidade `pc.device.v1` (a aprovação de aparelho novo no PC) e vale também para a oferta do canal direto: o canal herda o aparelho da oferta.
+   */
+  deviceId?: string;
+  /**
+   * O nome do aparelho para a pergunta de aprovação no PC (ver `deviceId`): até 60 caracteres, sem texto de controle.
+   */
+  deviceName?: string;
   body: PcPointerV1Body;
 }
 export interface PcPointerV1Body {

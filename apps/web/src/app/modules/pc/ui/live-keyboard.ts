@@ -40,6 +40,8 @@ const UNCERTAIN_FAILURES: ReadonlySet<string> = new Set([
   'network',
   'unknown',
   'failed',
+  'locked',
+  'elevated',
 ]);
 
 /** Falhas que a tela já mostra pelo aviso de falha do `PcStore` (o motivo); as outras o campo mostra. */
@@ -48,6 +50,8 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
   'network',
   'unknown',
   'failed',
+  'locked',
+  'elevated',
   'session',
   'forbidden',
   'rate-limited',

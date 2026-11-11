@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
@@ -375,14 +376,17 @@ internal static class PcValidator
 /// <see cref="PcMessages"/>). Isso não cobre a sessão meio aberta (o socket já morto que a API ainda não notou), que pode
 /// entregar com atraso: quem descarta o <c>pc.*</c> velho, pela idade, é o agente (outra frente).
 /// </summary>
-internal sealed class PcControlHandler(
+internal sealed partial class PcControlHandler(
     PcAgentResolver resolver,
     PcAppsStore apps,
     PcVolumeStore volume,
     IAgentGateway gateway,
     PairingAuditWriter audit,
     DevicesDbContext db,
-    TimeProvider time)
+    TimeProvider time,
+    PcOriginReader origins,
+    PcDeviceStates deviceStates,
+    ILogger<PcControlHandler> logger)
 {
     /// <summary>
     /// Quanto tempo depois do <c>hello</c> a falta de uma capacidade ainda pode ser só o agente acabando de subir: ele manda um
@@ -424,7 +428,16 @@ internal sealed class PcControlHandler(
             return target.Failure;
         }
 
-        var message = PcMessages.Pointer(dx, dy, scrollX, scrollY);
+        // O agente descarta o movimento de um aparelho não aprovado sem responder (uma resposta por movimento só encheria o canal): quem
+        // avisa é ele, com um estado por aparelho (`pc.device.state.v1`, renovado a cada 10 s), e daqui o app recebe o 403 também.
+        var origin = origins.Read();
+        if (origin.DeviceId is not null && deviceStates.RefusalFor(target.Slug, origin.DeviceId) is { } refusal)
+        {
+            return PcProblems.DeviceRefused(refusal);
+        }
+
+        // O movimento leva o aparelho (a aprovação no PC), mas nunca a operação: é alta taxa e não entra no registro.
+        var message = PcMessages.WithOrigin(PcMessages.Pointer(dx, dy, scrollX, scrollY), target.Capabilities, origin, withOperation: false);
         var sent = await gateway.SendAsync(target.Slug, NumberedFor(target, message, request.Seq, null), cancellationToken);
         return sent.IsSuccess ? TypedResults.NoContent() : PcProblems.FromGateway(sent.Error);
     }
@@ -480,7 +493,13 @@ internal sealed class PcControlHandler(
             return problem;
         }
 
-        var reply = await gateway.RequestAsync(target.Slug, NumberedFor(target, message, seq, epoch), timeout, cancellationToken);
+        var origin = origins.Read();
+        var outbound = PcMessages.WithOrigin(NumberedFor(target, message, seq, epoch), target.Capabilities, origin, withOperation: true);
+        var started = time.GetTimestamp();
+        var reply = await gateway.RequestAsync(target.Slug, outbound, timeout, cancellationToken);
+        var elapsedMs = (long)time.GetElapsedTime(started).TotalMilliseconds;
+        var outcome = OutcomeOf(reply);
+        LogOperation(origin.OperationId, message.Type, "nuvem", elapsedMs, outcome);
         if (reply.IsFailure)
         {
             // Sem resposta no prazo o comando já estava com o agente e pode ter sido executado: fica na trilha. Sem sessão
@@ -498,7 +517,10 @@ internal sealed class PcControlHandler(
         if (!reply.Value.Ok)
         {
             await AuditFailedAttemptAsync(auditEvent, client, target.AgentId, userId, cancellationToken);
-            return RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
+            // O dono não aprovou este aparelho no PC (ainda ou nunca): 403 claro, e não "o agente não conseguiu".
+            return PcProblems.IsDeviceRefusal(reply.Value.Error?.Code)
+                ? PcProblems.DeviceRefused(reply.Value.Error!.Code)
+                : RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
         }
 
         if (auditEvent is not null)
@@ -529,6 +551,19 @@ internal sealed class PcControlHandler(
 
         return time.GetUtcNow() - helloAt < CapabilitySettle ? PcProblems.Reconnecting() : PcProblems.KeyUnsupported();
     }
+
+    /// <summary>O resultado em texto fixo para o registro: nunca o texto livre do agente, só o código estável dele.</summary>
+    private static string OutcomeOf(UniOver.SharedKernel.Result<AgentReply> reply) =>
+        reply.IsFailure
+            ? reply.Error.Code
+            : reply.Value.Ok ? "ok" : reply.Value.Error?.Code ?? "falhou";
+
+    /// <summary>
+    /// Uma linha por comando do PC que não é movimento: a operação (o <c>X-Operation-Id</c> do pedido, o mesmo que o agente registra), o tipo, o
+    /// caminho, quanto levou até o resultado e como terminou. Nunca o texto, as teclas nem as coordenadas.
+    /// </summary>
+    [LoggerMessage(Level = LogLevel.Information, Message = "Operação {OperationId}: {Type} via {Path}; {ElapsedMs} ms; resultado {Outcome}.")]
+    private partial void LogOperation(string operationId, string type, string path, long elapsedMs, string outcome);
 
     /// <summary>Grava a tentativa que o agente recusou ou deixou sem resposta; só as ações auditadas têm linha.</summary>
     private async Task AuditFailedAttemptAsync(
@@ -655,6 +690,7 @@ internal static class PcControlEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
