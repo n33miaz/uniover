@@ -232,6 +232,21 @@ describe('describeTarget', () => {
     ).toBe('Conta apagada');
   });
 
+  it('says in words what the direct channel carried, and never reads the sum as a key', () => {
+    expect(describeTarget(item({ action: 'tv.key', target: 'via=direct opened' }))).toBe(
+      'Canal direto aberto',
+    );
+    expect(
+      describeTarget(item({ action: 'tv.key', target: 'via=direct count=42 reason=idle' })),
+    ).toBe('42 teclas pelo canal direto');
+    expect(
+      describeTarget(item({ action: 'tv.key', target: 'via=direct count=1 reason=idle' })),
+    ).toBe('1 tecla pelo canal direto');
+    expect(
+      describeTarget(item({ action: 'tv.text', target: 'via=direct count=3 reason=requested' })),
+    ).toBe('3 textos pelo canal direto');
+  });
+
   it('puts the TV targets in words: the key, the number of characters (never the text), the shortcuts, the app', () => {
     expect(describeTarget(item({ action: 'tv.key', target: 'VOLUME_UP/SHORT' }))).toBe(
       'Tecla volume up',

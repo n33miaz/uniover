@@ -97,6 +97,7 @@ from uniover_agent.core import (
     PRESENCE_CAPABILITY,
     RTC_TYPES,
     SETTINGS_OPEN_CAPABILITY,
+    TV_RTC_CAPABILITY,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
@@ -188,6 +189,7 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_ZOOM_CAPABILITY,
         PC_VOLUME_CAPABILITY,
         PC_RTC_CAPABILITY,
+        TV_RTC_CAPABILITY,
         PC_OP_CAPABILITY,
         PC_DEVICE_CAPABILITY,
     }
@@ -727,6 +729,18 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             )
         ),
     )
+    # As teclas e o texto da TV pelo canal direto: só onde há TV, canal direto do PC e a opção
+    # ligada.
+    # A ponte leva o comando ao MESMO caminho das teclas da nuvem (`ProcessMessage`), no laço
+    # principal, sem prender o laço da entrada do PC.
+    tv_direct_capabilities: list[str] = []
+    if (
+        tv is not None
+        and pc is not None
+        and settings.tv_direct
+        and pc.bind_tv_direct(process.submit_direct_tv)
+    ):
+        tv_direct_capabilities.append(TV_RTC_CAPABILITY)
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []
     if tv is not None:
@@ -905,6 +919,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
                 if pc is not None
                 else ()
             ),
+            *declarable_capabilities(tv_direct_capabilities, features.supports),
         ),
         on_connected=on_connected,
         on_disconnected=on_disconnected,

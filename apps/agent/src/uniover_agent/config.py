@@ -228,6 +228,10 @@ class Settings(BaseSettings):
     # rede): ele não depende da nuvem para andar. Passado o prazo sem a API voltar, fecha. A
     # revogação (a API manda fechar) fecha na hora, qualquer que seja o prazo.
     pc_direct_api_grace_seconds: float = Field(default=30.0, ge=0, le=300)
+    # O canal direto também leva as teclas e o texto da TV (a oferta traz o escopo `tv`): o mesmo
+    # caminho das teclas da nuvem, só sem passar por ela. Desligado, a capacidade `tv.rtc.v1` nem é
+    # declarada e a TV segue só pela nuvem. Só vale com `pc_direct` ligado.
+    tv_direct: bool = True
     # A entrada do PC (mouse, teclado, mídia, zoom, volume e o canal direto) roda num laço de
     # eventos próprio, numa thread com prioridade acima do normal: o resto do agente (TV, rede,
     # diagnóstico) não a atrasa. Desligar a devolve ao laço principal (só para isolar um defeito).

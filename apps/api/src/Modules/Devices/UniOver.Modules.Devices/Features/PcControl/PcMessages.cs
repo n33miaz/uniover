@@ -48,6 +48,13 @@ internal static class PcMessages
     public const string RtcCapability = "pc.rtc.v1";
 
     /// <summary>
+    /// Capacidade de quem leva também as teclas e o texto da TV pelo canal direto (o escopo <c>tv</c> da oferta): o agente só a declara com TV
+    /// configurada, canal direto do PC e depois de a API a listar em <c>features</c>. Sem ela a oferta nem leva o campo <c>scopes</c> (o esquema
+    /// de um agente anterior é fechado) e a TV segue pela nuvem.
+    /// </summary>
+    public const string TvRtcCapability = "tv.rtc.v1";
+
+    /// <summary>
     /// Capacidade de quem aceita o <c>operationId</c> no envelope dos comandos do PC (o código do pedido HTTP, para ligar o registro da API ao do
     /// agente). O envelope de um agente anterior é fechado: sem a capacidade o campo nem sai.
     /// </summary>
@@ -307,7 +314,8 @@ internal static class PcMessages
         Live(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
 
     /// <summary>A oferta do canal direto, com o token de uso único que a primeira mensagem do canal precisa apresentar.</summary>
-    public static OutboundMessage RtcOffer(Guid sessionId, string sdp, string token, int tokenTtlSeconds, int maxLifetimeSeconds) =>
+    public static OutboundMessage RtcOffer(
+        Guid sessionId, string sdp, string token, int tokenTtlSeconds, int maxLifetimeSeconds, IReadOnlyList<string>? scopes = null) =>
         Live(AgentMessageTypes.PcRtcOfferV1, BodyOf(new PcRtcOfferV1Message
         {
             Body = new PcRtcOfferV1Body
@@ -317,6 +325,7 @@ internal static class PcMessages
                 Token = token,
                 TokenTtlSeconds = tokenTtlSeconds,
                 MaxLifetimeSeconds = maxLifetimeSeconds,
+                Scopes = scopes?.Select(name => name == "tv" ? PcRtcOfferV1BodyScopesItem.Tv : PcRtcOfferV1BodyScopesItem.Pc).ToArray(),
             },
         }.ToJson()));
 

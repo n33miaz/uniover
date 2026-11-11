@@ -10,10 +10,11 @@ export type PcRtcClosedV1BodyReason =
   | 'disconnected'
   | 'lifetime'
   | 'revoked'
-  | 'cloud';
+  | 'cloud'
+  | 'rescoped';
 
 /**
- * Agente para API: o canal direto da sessão fechou, com o motivo (a API grava a trilha). Sem resposta.
+ * Agente para API: o canal direto da sessão fechou, com o motivo (a API grava a trilha). `tvKeys` e `tvTexts` (opcionais, só de um canal com o escopo `tv`) contam as teclas e os textos da TV que o canal levou, para a trilha da TV: nenhuma tecla vai uma a uma ao registro, e esta soma é o que a API grava no lugar. Só vão a quem declara tv.rtc.v1. Sem resposta.
  */
 export interface PcRtcClosedV1Message {
   v: 1;
@@ -28,4 +29,6 @@ export interface PcRtcClosedV1Message {
 export interface PcRtcClosedV1Body {
   sessionId: string;
   reason: PcRtcClosedV1BodyReason;
+  tvKeys?: number;
+  tvTexts?: number;
 }

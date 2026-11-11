@@ -3,7 +3,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Tv.Contracts;
+using UniOver.SharedKernel;
 using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
@@ -49,7 +52,7 @@ internal sealed record TvAppsResponse(IReadOnlyList<TvAppOption> Items);
 /// </summary>
 internal sealed class ManageTvsHandler(
     TvDbContext db, IAgentDirectory agents, IAgentPresenceReader presence, TimeProvider time, ITvCommandAudit audit,
-    ITvCleanupSettingsPublisher cleanupPublisher)
+    ITvCleanupSettingsPublisher cleanupPublisher, IEventBus? events = null, IAccountRoleDirectory? roles = null)
 {
     public async Task<TvListResponse> ListAsync(IReadOnlyList<TvTarget> visible, bool isOwner, CancellationToken cancellationToken)
     {
@@ -159,6 +162,12 @@ internal sealed class ManageTvsHandler(
         var previousSlug = tv.AgentSlug;
         tv.Rebind(agentSlug, name, userId, now);
         var agentChanged = !string.Equals(previousSlug, agentSlug, StringComparison.Ordinal);
+        if (agentChanged)
+        {
+            // Ninguém mais leva as teclas desta TV pelo canal direto do computador antigo: o aviso sai na mesma transação da troca.
+            await PublishAccessRemovedAsync(previousSlug, null, cancellationToken);
+        }
+
         var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
         var maintenanceChanged = request.AutoMaintenanceEnabled is { } maintenance
             && tv.SetAutoMaintenance(maintenance, userId, now);
@@ -235,6 +244,7 @@ internal sealed class ManageTvsHandler(
         await db.CleanupReports.Where(report => report.TvId == id).ExecuteDeleteAsync(cancellationToken);
         db.TvMembers.RemoveRange(members);
         db.Tvs.Remove(tv);
+        await PublishAccessRemovedAsync(tv.AgentSlug, null, cancellationToken);
         await TvMembershipLedger.ReconcileAsync(db, id, [.. members.Select(m => m.UserId)], [], time.GetUtcNow(), cancellationToken);
         var now = time.GetUtcNow();
         db.TvRemovalAudit.Add(TvRemovalAuditEntry.Create(id, origin.UserId, tv.AgentSlug, kind, origin.Client, now));
@@ -337,7 +347,8 @@ internal sealed class ManageTvsHandler(
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await TvMembershipLedger.LockAsync(db, cancellationToken);
 
-        if (!await db.Tvs.AnyAsync(t => t.Id == id, cancellationToken))
+        var memberTv = await db.Tvs.AsNoTracking().SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (memberTv is null)
         {
             return null;
         }
@@ -349,12 +360,41 @@ internal sealed class ManageTvsHandler(
         var added = userIds.Where(userId => !present.Contains(userId)).ToList();
 
         var now = time.GetUtcNow();
+        // Lido antes de gravar: a pessoa sem nenhuma filiação enxergava a TV padrão e, ao entrar só nesta TV, deixa de enxergá-la.
+        IReadOnlyList<Guid> lostDefault = memberTv.IsDefault ? [] : await TvMembershipLedger.FirstMembershipsAsync(db, id, added, roles, cancellationToken);
         db.TvMembers.RemoveRange(removed);
         db.TvMembers.AddRange(added.Select(userId => TvMember.Create(id, userId, now)));
         await TvMembershipLedger.ReconcileAsync(db, id, [.. removed.Select(m => m.UserId)], added, now, cancellationToken);
+        if (removed.Count > 0)
+        {
+            // Quem saiu da TV deixa de levar teclas dela pelo canal direto (que não passa pela API a cada tecla): o aviso sai na outbox,
+            // na mesma transação da filiação, e o Devices o repete até fechar o canal.
+            await PublishAccessRemovedAsync(memberTv.AgentSlug, [.. removed.Select(m => m.UserId)], cancellationToken);
+        }
+
+        if (lostDefault.Count > 0)
+        {
+            // O canal direto com o escopo da TV no computador da TV padrão (que não passa pela API a cada tecla) segue aberto até vencer.
+            var defaultSlug = await db.Tvs.AsNoTracking().Where(t => t.IsDefault).Select(t => t.AgentSlug).FirstOrDefaultAsync(cancellationToken);
+            if (defaultSlug is not null)
+            {
+                await PublishAccessRemovedAsync(defaultSlug, lostDefault, cancellationToken);
+            }
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
         return new TvMembersResponse([.. userIds.Order()]);
+    }
+
+    /// <summary>Publica na outbox (sem salvar: o commit é o da mudança) que pessoas perderam a TV deste computador no canal direto.</summary>
+    private async Task PublishAccessRemovedAsync(string agentSlug, IReadOnlyList<Guid>? userIds, CancellationToken cancellationToken)
+    {
+        if (events is not null)
+        {
+            await events.PublishAsync(new TvDirectAccessRemoved(IdGenerator.NewId(), time.GetUtcNow(), agentSlug, userIds), cancellationToken);
+        }
     }
 
     /// <summary>A mudança já está gravada; se o agente não receber agora, recebe ao conectar de novo.</summary>

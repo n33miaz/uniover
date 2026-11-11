@@ -48,6 +48,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'pc.control.v1'
   | 'pc.key.v2'
   | 'pc.rtc.v1'
+  | 'tv.rtc.v1'
   | 'pc.text.v2'
   | 'pc.click.v2'
   | 'pc.pointer.zoom.v1'

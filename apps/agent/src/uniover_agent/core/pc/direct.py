@@ -14,6 +14,13 @@ módulo garante é o resto:
   pela mesma faixa e pelos mesmos handlers (idade, soltura de botão, registro sem o texto);
 - fechar o canal, por qualquer motivo, solta o que o PC ficou segurando e descarta o que dele
   esperava na faixa (como a queda da conexão com a API);
+- o canal tem ESCOPOS (`pc`, `tv`), decididos pela API na oferta: um canal só da TV nunca recebe o
+  ponteiro nem comando `pc.*`, não pede a aprovação do aparelho no PC e, ao fechar, não solta o que
+  o PC segura por outro caminho; um canal só do PC nunca leva tecla da TV. As teclas e o texto da TV
+  (`tv.key.v2`, `tv.key.v3`, `tv.text.v1`) viram os MESMOS comandos da nuvem e entram no mesmo
+  caminho
+  (sessão da TV, descarte por idade, junção de repetições) por uma ponte que leva o comando ao laço
+  principal sem prender este laço; `POWER` e as demais ações da TV só existem pela nuvem;
 - no máximo um canal por vez: uma oferta nova troca o par;
 - chegou comando de entrada pela nuvem enquanto o canal em uso existe: o canal fecha PRIMEIRO, de
   modo que um aperto atrasado do canal nunca cai depois de um soltar da nuvem;
@@ -41,7 +48,7 @@ import re
 import statistics
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
@@ -61,6 +68,7 @@ from uniover_agent.core.pc.devices import (
 from uniover_agent.core.pc.freshness import MAX_COMMAND_AGE_SECONDS
 from uniover_agent.core.pc.handlers import MAX_POINTER_DELTA, MAX_SCROLL_DELTA, POINTER_TYPE
 from uniover_agent.core.pc.lan import candidate_is_lan
+from uniover_agent.core.tv.handlers import KEY_MAX_AGE_SECONDS
 from uniover_agent.ports import Sender, TransportError
 from uniover_agent.ports.pc_direct import (
     INPUT_CHANNEL,
@@ -75,6 +83,11 @@ _log = logging.getLogger(__name__)
 
 # Declarada no `agent.hello.v1`, e só depois de a API listá-la em `features`.
 PC_RTC_CAPABILITY: Final = "pc.rtc.v1"
+# O canal também leva as teclas e o texto da TV (escopo `tv` da oferta); só após a API listá-la.
+TV_RTC_CAPABILITY: Final = "tv.rtc.v1"
+SCOPE_PC: Final = "pc"
+SCOPE_TV: Final = "tv"
+KNOWN_SCOPES: Final = frozenset({SCOPE_PC, SCOPE_TV})
 OFFER_TYPE: Final = "pc.rtc.offer.v1"
 CANDIDATE_TYPE: Final = "pc.rtc.candidate.v1"
 CLOSE_TYPE: Final = "pc.rtc.close.v1"
@@ -100,6 +113,13 @@ INPUT_TYPES: Final = frozenset(
         "pc.volume.v1",
     }
 )
+# O que o canal leva da TV (escopo `tv`): as teclas e o texto. Nunca o desligamento, abrir app nem
+# limpeza: a API confere a permissão de cada um e grava a trilha, e só ela os manda.
+TV_KEY_TYPES: Final = frozenset({"tv.key.v2", "tv.key.v3"})
+TV_TEXT_TYPE: Final = "tv.text.v1"
+TV_TYPES: Final = TV_KEY_TYPES | {TV_TEXT_TYPE}
+# A tecla que o canal da TV recusa (desligar tem rota própria, permissão própria e trilha na API).
+TV_BLOCKED_KEY: Final = "POWER"
 # As mensagens v2 do canal de entrada: o `ready` as lista, e o app só as manda a quem as lista.
 CHANNEL_V2_TYPES: Final = frozenset(
     {"pc.click.v2", "pc.text.v2", "pc.pointer.zoom.v1", "pc.volume.v1"}
@@ -147,6 +167,8 @@ REASON_CONNECT_TIMEOUT: Final = "connect_timeout"
 REASON_LIFETIME: Final = "lifetime"
 REASON_REVOKED: Final = "revoked"
 REASON_CLOUD: Final = "cloud"
+# A pessoa perdeu um dos escopos (o do PC ou o da TV) mas não o acesso todo: o app abre outro já.
+REASON_RESCOPED: Final = "rescoped"
 # Os motivos que o contrato aceita em `pc.rtc.close.v1` (a API manda) e em `pc.rtc.closed.v1`.
 KNOWN_REASONS: Final = frozenset(
     {
@@ -160,6 +182,7 @@ KNOWN_REASONS: Final = frozenset(
         REASON_LIFETIME,
         REASON_REVOKED,
         REASON_CLOUD,
+        REASON_RESCOPED,
     }
 )
 
@@ -174,8 +197,22 @@ REFUSED_CLOSED: Final = "rtc_closed"
 MAX_TOMBSTONES: Final = 64
 TOMBSTONE_MARGIN_SECONDS: Final = 60.0
 
+
+@dataclass(frozen=True, slots=True)
+class TvCounts:
+    """Quantas teclas e textos da TV um canal levou (a soma que vai à trilha da TV na API)."""
+
+    keys: int
+    texts: int
+
+
 Submit = Callable[[Command, Callable[[CommandResult], None] | None], None]
-NotifyClosed = Callable[[str, str], Awaitable[None]]
+# Leva um comando da TV (já validado) ao laço principal: `received_at` é o instante da chegada aqui
+# (relógio monotônico do processo), a resposta volta por `on_result`, neste laço, e `valid` diz se a
+# sessão do canal ainda vale (fechou ou foi revogada: o que ainda esperava não pode chegar à TV).
+TvSubmit = Callable[[Command, float, Callable[[CommandResult], None], Callable[[], bool]], None]
+# O motivo e, de um canal com escopo `tv`, quantas teclas e textos da TV ele levou.
+NotifyClosed = Callable[[str, str, TvCounts | None], Awaitable[None]]
 Record = Callable[[str, str, str], None]
 
 _UNREACHABLE_HINT: Final = (
@@ -204,6 +241,9 @@ class DirectSettings:
     max_presses_per_second: int = 100
     max_press_burst: int = 250
     max_text_chars_per_second: int = 600
+    # As teclas e o texto da TV: o teto da cloud é o limite de comandos da API; aqui um dedo
+    # apertando e segurando a seta (com `START_LONG` e `END_LONG`) nunca chega perto.
+    max_tv_per_second: int = 30
     tick_seconds: float = 0.5
     # Quanto o canal sobrevive à queda da conexão com a API: ele não depende da nuvem para andar,
     # mas sem a API (que o fecha na revogação) não vale ficar aberto sem prazo.
@@ -305,6 +345,9 @@ class _Session:
     text_rate: _Rate
     release_rate: _Rate
     pointer_rate: _Rate
+    tv_rate: _Rate
+    # O que a API concedeu a este canal (`pc`, `tv`); sem escopos na oferta, só o PC.
+    scopes: frozenset[str] = frozenset({SCOPE_PC})
     peer: DirectPeer | None = None
     # Os dois canais de dados abriram (o app chegou a este PC).
     opened: bool = False
@@ -327,6 +370,10 @@ class _Session:
     dropped: int = 0
     messages: int = 0
     rtts: list[int] = field(default_factory=list)
+    # As teclas e os textos da TV que o canal levou (a soma do fechamento), e os que a TV recusou.
+    tv_keys: int = 0
+    tv_texts: int = 0
+    tv_refused: int = 0
     watchdog: asyncio.Task[None] | None = None
     # Quando os dois canais de dados abriram e quando o app se autenticou (monotônico).
     opened_at: float | None = None
@@ -411,6 +458,8 @@ class PcDirectService:
         self._settings = settings or DirectSettings()
         self._monotonic = monotonic
         self._devices = devices
+        # A ponte para a TV (ligada por `bind_tv`): sem ela o escopo `tv` é recusado na oferta.
+        self._tv: TvSubmit | None = None
         self._current: _Session | None = None
         # As sessões que fecharam (id -> instante): uma oferta delas que chegue depois do fechamento
         # é recusada. O `pc.rtc.offer` espera a biblioteca carregar em tarefa própria e o `close` da
@@ -425,6 +474,15 @@ class PcDirectService:
         """Liga à faixa do PC: `submit` põe um comando nela; `direct_lost` solta o preso."""
         self._submit = submit
         self._direct_lost = direct_lost
+
+    def bind_tv(self, submit: TvSubmit) -> None:
+        """Liga a ponte da TV: o que o canal recebe de `tv.*` entra no caminho da nuvem."""
+        self._tv = submit
+
+    @property
+    def carries_tv(self) -> bool:
+        """Este agente sabe levar a TV pelo canal (só então `tv.rtc.v1` é declarada)."""
+        return self._tv is not None
 
     @property
     def session_id(self) -> str | None:
@@ -441,7 +499,13 @@ class PcDirectService:
     def holds_inputs(self) -> bool:
         """Há um canal autenticado que já comandou algo: o que o PC segura agora é dele."""
         current = self._current
-        return current is not None and current.authenticated and current.used and not current.closed
+        return (
+            current is not None
+            and SCOPE_PC in current.scopes
+            and current.authenticated
+            and current.used
+            and not current.closed
+        )
 
     # ---- sinalização (vem da API) -------------------------------------------------------------
 
@@ -455,12 +519,22 @@ class PcDirectService:
         *,
         device_id: str | None = None,
         device_name: str | None = None,
+        scopes: Iterable[str] | None = None,
     ) -> str:
         """Atende a oferta: troca o par anterior, aplica a oferta e devolve a resposta SDP.
 
-        De um aparelho que o dono não aprovou no PC (ou recusou) a oferta é recusada, e o app segue
-        pela nuvem, que também o recusa."""
-        if self._devices is not None:
+        `scopes` é o que a API concedeu ao canal (sem eles, só o PC). De um aparelho que o dono não
+        aprovou no PC (ou recusou) a oferta de escopo `pc` é recusada, e o app segue pela nuvem, que
+        também o recusa; um canal só da TV não depende dessa aprovação (a TV pela nuvem também
+        não)."""
+        granted = frozenset(scopes) if scopes is not None else frozenset({SCOPE_PC})
+        if not granted or not granted <= KNOWN_SCOPES:
+            raise DirectRefused(REFUSED_UNAVAILABLE)
+        if SCOPE_TV in granted and self._tv is None:
+            # A API só oferece o escopo a quem declarou `tv.rtc.v1`; chegar aqui é uma configuração
+            # que mudou no meio: a TV segue pela nuvem.
+            raise DirectRefused(REFUSED_UNAVAILABLE)
+        if SCOPE_PC in granted and self._devices is not None:
             decision = self._devices.check(device_id, device_name)
             if decision is not DeviceDecision.APPROVED:
                 raise DirectRefused(
@@ -477,7 +551,11 @@ class PcDirectService:
             if self._was_closed(session_id):
                 raise DirectRefused(REFUSED_CLOSED)
             if self._current is not None:
-                await self._finish(self._current, REASON_REPLACED, notify=False)
+                await self._finish(
+                    self._current,
+                    REASON_REPLACED,
+                    notify=self._has_tv_sum(self._current),
+                )
             now = self._monotonic()
             session = _Session(
                 id=session_id,
@@ -494,6 +572,8 @@ class PcDirectService:
                 text_rate=_Rate(settings.max_text_chars_per_second),
                 release_rate=_Rate(settings.max_release_per_second),
                 pointer_rate=_Rate(settings.max_pointer_per_second),
+                tv_rate=_Rate(settings.max_tv_per_second),
+                scopes=granted,
                 last_rx=now,
             )
             self._current = session
@@ -546,8 +626,12 @@ class PcDirectService:
         self._remember_closed(session_id)
         session = self._current
         if session is not None and session.id == session_id:
+            # A API sabe que fechou e não é avisada de volta, exceto pela soma da TV: as teclas
+            # que o canal levou só chegam à trilha da TV por este aviso.
             await self._finish(
-                session, reason if reason in KNOWN_REASONS else REASON_REQUESTED, notify=False
+                session,
+                reason if reason in KNOWN_REASONS else REASON_REQUESTED,
+                notify=self._has_tv_sum(session),
             )
 
     def api_disconnected(self) -> None:
@@ -604,7 +688,8 @@ class PcDirectService:
         if message_type not in CLOUD_INPUT_TYPES:
             return
         session = self._current
-        if session is None or session.closed or not session.used:
+        # Um canal sem o escopo `pc` não segura nada do PC: o que a nuvem faz com o PC não o afeta.
+        if session is None or session.closed or not session.used or SCOPE_PC not in session.scopes:
             return
         marker = session.cloud_marker
         same_page = epoch is not None and epoch == session.cloud_epoch
@@ -675,18 +760,28 @@ class PcDirectService:
                 session.authenticated = True
                 session.ready_at = now
                 _log.info(
-                    "canal direto aberto (sessão %s, negociação %.1f s)",
+                    "canal direto aberto (sessão %s, escopos %s, negociação %.1f s)",
                     session.id[:8],
+                    "+".join(sorted(session.scopes)),
                     now - session.created,
                 )
                 self._note_cloud_marker(session, data)
                 remaining = max(1, int(session.lifetime - (now - session.created)))
-                # `caps`: as mensagens v2 que este agente aceita no canal. Um agente anterior não
-                # manda o campo, e o app então não manda v2 pelo canal.
+                # `caps`: as mensagens v2 que este agente aceita no canal (e, com o escopo `tv`, as
+                # da TV). Um agente anterior não manda o campo: o app não manda v2 pelo canal.
+                # `sc`: os escopos que o canal tem, para o app saber de onde vem cada recusa.
+                caps = set(CHANNEL_V2_TYPES) if SCOPE_PC in session.scopes else set()
+                if SCOPE_TV in session.scopes:
+                    caps |= TV_TYPES
                 self._send(
                     session,
                     INPUT_CHANNEL,
-                    {"k": "ready", "life": remaining, "caps": sorted(CHANNEL_V2_TYPES)},
+                    {
+                        "k": "ready",
+                        "life": remaining,
+                        "caps": sorted(caps),
+                        "sc": sorted(session.scopes),
+                    },
                 )
             else:
                 _log.warning("canal direto recusado: a primeira mensagem não trouxe o token válido")
@@ -760,10 +855,15 @@ class PcDirectService:
             if violation:
                 self._violation(session)
 
+        if isinstance(message_type, str) and message_type in TV_TYPES and isinstance(body, dict):
+            self._on_tv_command(session, data, command_id, message_type, body, now, refuse)
+            return
         if (
             not isinstance(message_type, str)
             or message_type not in INPUT_TYPES
             or not isinstance(body, dict)
+            # Um canal sem o escopo `pc` não leva comando do PC: a API não o concedeu.
+            or SCOPE_PC not in session.scopes
         ):
             refuse("not_allowed", violation=True)
             return
@@ -809,6 +909,75 @@ class PcDirectService:
         # O código do comando do app é a operação dele no registro (nunca o corpo).
         self._submit(replace(accepted.command, operation_id=command_id), answered)
 
+    def _on_tv_command(  # noqa: PLR0913, PLR0917, PLR0911 - uma recusa por regra, cada uma com código
+        self,
+        session: _Session,
+        data: dict[str, Any],
+        command_id: str,
+        message_type: str,
+        body: dict[str, Any],
+        now: float,
+        refuse: Callable[..., None],
+    ) -> None:
+        """Uma tecla ou um texto da TV: validados aqui (esquema e tetos) e entregues à ponte, que os
+        leva ao MESMO caminho das teclas da nuvem. A resposta (`ack`) volta quando a TV responde."""
+        submit = self._tv
+        if SCOPE_TV not in session.scopes or submit is None:
+            refuse("not_allowed", violation=True)
+            return
+        is_key = message_type in TV_KEY_TYPES
+        text = body.get("text")
+        if is_key and body.get("key") == TV_BLOCKED_KEY:
+            refuse("not_allowed", violation=True)
+            return
+        text_cost = len(text) if isinstance(text, str) else 0
+        if not session.tv_rate.can(now) or (
+            text_cost and not session.text_rate.can(now, text_cost)
+        ):
+            refuse("rate_limited")
+            return
+        age = 0.0
+        if is_key:
+            # A tecla atrasada no caminho (rede, retransmissão) seria uma ação fora de hora.
+            sent_ms = _as_millis(data.get("ts"))
+            if sent_ms is None:
+                refuse("invalid_message", violation=True)
+                return
+            measured = self._age_of(session, sent_ms, release=False)
+            if measured is None:
+                refuse("not_ready")
+                return
+            if measured > KEY_MAX_AGE_SECONDS:
+                refuse("expired")
+                return
+            age = measured
+        accepted = self._validate(message_type, body, age)
+        if accepted is None:
+            refuse("invalid_message", violation=True)
+            return
+        session.tv_rate.charge(now)
+        if text_cost:
+            session.text_rate.charge(now, text_cost)
+        # Mensagem de conteúdo válido: a sequência de recusas recomeça (sem marcar o PC como usado).
+        session.violations = 0
+
+        def answered(result: CommandResult) -> None:
+            ok = result.status.value == "ok"
+            payload: dict[str, Any] = {"k": "ack", "i": command_id, "ok": ok}
+            # A soma da trilha da TV conta só o que a TV confirmou: o recusado (canal fechado, TV
+            # fora, tecla velha) fica em `tv_refused`, que só vai ao registro do agente.
+            if ok and is_key:
+                session.tv_keys += 1
+            elif ok:
+                session.tv_texts += 1
+            else:
+                session.tv_refused += 1
+                payload["c"] = result.code or result.status.value
+            self._send(session, INPUT_CHANNEL, payload)
+
+        # Lido no laço principal antes de a tecla chegar à TV: fechar o canal a invalida de uma vez.
+        submit(accepted.command, now, answered, lambda: not session.closed)
+
     @staticmethod
     def _rate_charges(
         session: _Session, message_type: str, body: dict[str, Any], *, release: bool
@@ -848,7 +1017,7 @@ class PcDirectService:
         if kind == "ping":
             self._on_ping(session, data)
             return
-        if kind != "ptr":
+        if kind != "ptr" or SCOPE_PC not in session.scopes:
             self._violation(session)
             return
         if not session.pointer_rate.allow(now):
@@ -996,7 +1165,7 @@ class PcDirectService:
         watchdog = session.watchdog
         if watchdog is not None and watchdog is not asyncio.current_task():
             watchdog.cancel()
-        if session.authenticated:
+        if session.authenticated and SCOPE_PC in session.scopes:
             try:
                 self._direct_lost()
             except Exception:
@@ -1023,9 +1192,22 @@ class PcDirectService:
         self._summarize(session, reason)
         if notify:
             try:
-                await self._notify_closed(session.id, reason)
+                await self._notify_closed(session.id, reason, self._tv_counts(session))
             except Exception:
                 _log.debug("aviso de canal fechado não enviado", exc_info=True)
+
+    @classmethod
+    def _has_tv_sum(cls, session: _Session) -> bool:
+        """O canal levou algo da TV: só então a API é avisada de um fechamento que ela pediu."""
+        counts = cls._tv_counts(session)
+        return counts is not None and (counts.keys > 0 or counts.texts > 0)
+
+    @staticmethod
+    def _tv_counts(session: _Session) -> TvCounts | None:
+        """A soma da TV do canal: só de um canal com o escopo `tv` que chegou a autenticar."""
+        if SCOPE_TV not in session.scopes or not session.authenticated:
+            return None
+        return TvCounts(session.tv_keys, session.tv_texts)
 
     def _summarize(self, session: _Session, reason: str) -> None:
         """O ciclo do canal: uma linha no registro (INFO) e, se autenticou, uma no diagnóstico.
@@ -1036,14 +1218,21 @@ class PcDirectService:
         median = statistics.median(session.rtts) if session.rtts else None
         if session.authenticated:
             _log.info(
-                "canal direto fechado (sessão %s): motivo %s; aberto por %.0f s; RTT %s; "
-                "movimentos perdidos %d; mensagens %d",
+                "canal direto fechado (sessão %s): motivo %s; escopos %s; aberto por %.0f s; "
+                "RTT %s; movimentos perdidos %d; mensagens %d%s",
                 session.id[:8],
                 reason,
+                "+".join(sorted(session.scopes)),
                 now - (session.ready_at if session.ready_at is not None else session.created),
                 _bucket(median, (10, 30, 100, 300)),
                 session.lost_pointers,
                 session.messages,
+                (
+                    f"; TV pelo canal: {session.tv_keys} teclas, {session.tv_texts} textos, "
+                    f"{session.tv_refused} recusados pela TV"
+                    if SCOPE_TV in session.scopes
+                    else ""
+                ),
             )
         else:
             _log.info(
@@ -1076,6 +1265,13 @@ class PcDirectService:
         task.add_done_callback(self._tasks.discard)
 
 
+def _scopes_of(value: object) -> list[str] | None:
+    """Os escopos da oferta (o esquema já os fixou); sem o campo, `None`: só o PC, como sempre."""
+    if not isinstance(value, list):
+        return None
+    return [item for item in value if isinstance(item, str)]
+
+
 def pc_rtc_handlers(
     service: PcDirectService, transport: Sender, envelopes: EnvelopeFactory
 ) -> dict[str, Handler]:
@@ -1094,6 +1290,7 @@ def pc_rtc_handlers(
                 int(body["maxLifetimeSeconds"]),
                 device_id=command.device_id,
                 device_name=command.device_name,
+                scopes=_scopes_of(body.get("scopes")),
             )
         except DirectRefused as refused:
             return CommandResult(

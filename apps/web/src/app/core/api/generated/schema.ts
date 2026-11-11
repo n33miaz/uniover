@@ -13359,11 +13359,15 @@ export interface components {
       sdpMLineIndex: null | number | string;
     };
     PcRtcOfferRequest: {
+      scopes?: null | string[];
       sdp: null | string;
+      /** Format: uuid */
+      tvId?: null | string;
     };
     PcRtcOfferResponse: {
       /** Format: int32 */
       expiresInSeconds: number | string;
+      scopes: string[];
       sdp: string;
       /** Format: uuid */
       sessionId: string;

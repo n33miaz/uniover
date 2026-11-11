@@ -295,9 +295,20 @@ class EnvelopeFactory:
             "pc.rtc.answer.v1", {"sessionId": session_id, "sdp": sdp}, correlation_id
         )
 
-    def pc_rtc_closed(self, session_id: str, reason: str) -> dict[str, Any]:
-        """`pc.rtc.closed.v1`: o canal direto da sessão fechou (o agente avisa a API)."""
-        return self._build("pc.rtc.closed.v1", {"sessionId": session_id, "reason": reason}, None)
+    def pc_rtc_closed(
+        self,
+        session_id: str,
+        reason: str,
+        tv_keys: int | None = None,
+        tv_texts: int | None = None,
+    ) -> dict[str, Any]:
+        """`pc.rtc.closed.v1`: o canal direto da sessão fechou (o agente avisa a API). `tv_keys` e
+        `tv_texts` só vão de um canal com o escopo `tv` (a soma que a trilha da TV recebe)."""
+        body: dict[str, Any] = {"sessionId": session_id, "reason": reason}
+        if tv_keys is not None and tv_texts is not None:
+            body["tvKeys"] = tv_keys
+            body["tvTexts"] = tv_texts
+        return self._build("pc.rtc.closed.v1", body, None)
 
     def tv_apps_v2(
         self,

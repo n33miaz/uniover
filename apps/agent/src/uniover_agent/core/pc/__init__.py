@@ -9,8 +9,10 @@ from uniover_agent.core.pc.direct import (
     PC_RTC_CAPABILITY,
     RTC_SILENT_TYPES,
     RTC_TYPES,
+    TV_RTC_CAPABILITY,
     DirectSettings,
     PcDirectService,
+    TvCounts,
     pc_rtc_handlers,
 )
 from uniover_agent.core.pc.handlers import (
@@ -40,6 +42,7 @@ from uniover_agent.core.pc.handlers import (
     pc_text_v2_handler,
     pc_zoom_handler,
 )
+from uniover_agent.core.pc.tv_bridge import TvDirectBridge
 from uniover_agent.core.pc.use import PcUseTracker
 from uniover_agent.core.pc.volume import PcVolumeAnnouncer, pc_volume_handler, volume_after_hello
 
@@ -60,6 +63,7 @@ __all__ = [
     "RTC_SILENT_TYPES",
     "RTC_TYPES",
     "SLEEP_DELAY_SECONDS",
+    "TV_RTC_CAPABILITY",
     "UNKNOWN_APP",
     "UNSUPPORTED",
     "ClickPacer",
@@ -69,6 +73,8 @@ __all__ = [
     "PcDirectService",
     "PcUseTracker",
     "PcVolumeAnnouncer",
+    "TvCounts",
+    "TvDirectBridge",
     "parse_favorites",
     "pc_app_launch_handler",
     "pc_apps_announcer",

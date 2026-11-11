@@ -116,8 +116,11 @@ public static class DevicesModule
         services.AddSingleton<PcRtcAnswers>();
         services.AddScoped<PcRtcClosures>();
         services.AddScoped<PcRtcHandler>();
+        services.AddScoped<PcRtcRevoker>();
         services.AddScoped<UniOver.Modules.Identity.Contracts.IUserAccessListener, PcRtcAccessListener>();
+        services.AddScoped<IIntegrationEventHandler<UniOver.Modules.Tv.Contracts.TvDirectAccessRemoved>, TvDirectAccessRemovedHandler>();
         services.AddAuthorizationBuilder()
+            .AddPolicy(PcRtcEndpoints.Policy, PcRtcEndpoints.ConfigurePolicy)
             .AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure)
             .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly)
             .AddPolicy(ClientEventPolicies.Report, ClientEventPolicies.ConfigureReport);

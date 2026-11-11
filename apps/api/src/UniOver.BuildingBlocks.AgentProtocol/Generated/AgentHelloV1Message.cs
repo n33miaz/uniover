@@ -134,7 +134,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcRtcV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcRtcV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -304,6 +304,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvPresenceV1;
                 case "tv.remote":
                     return AgentHelloV1BodyCapabilitiesItem.TvRemote;
+                case "tv.rtc.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvRtcV1;
                 case "tv.settings.open.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvSettingsOpenV1;
             }
@@ -469,6 +471,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvRemote:
                     JsonSerializer.Serialize(writer, "tv.remote", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvRtcV1:
+                    JsonSerializer.Serialize(writer, "tv.rtc.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvSettingsOpenV1:
                     JsonSerializer.Serialize(writer, "tv.settings.open.v1", options);

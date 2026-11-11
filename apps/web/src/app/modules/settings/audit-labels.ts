@@ -277,6 +277,11 @@ export function describeTarget(
   const target = item.target?.trim();
   if (!target) return null;
 
+  // As teclas e os textos que o canal direto levou não passam pela API um a um: a trilha guarda a abertura e a soma ao fechar.
+  if (target.startsWith(DIRECT_PREFIX) && (item.action === 'tv.key' || item.action === 'tv.text')) {
+    return describeDirect(item.action, target);
+  }
+
   // A ordem que veio de um atalho do iPhone leva `via=siri` no fim do alvo: o alvo de sempre, mais a porta por onde chegou.
   if (target.endsWith(SIRI_SUFFIX)) {
     const base = describeBaseTarget(item.action, target.slice(0, -SIRI_SUFFIX.length));
@@ -287,6 +292,24 @@ export function describeTarget(
 }
 
 const SIRI_SUFFIX = ' via=siri';
+
+/** O começo do alvo de um canal direto da TV: `via=direct opened` ou `via=direct count=N reason=motivo`. */
+const DIRECT_PREFIX = 'via=direct';
+
+function describeDirect(action: string, target: string): string {
+  const count = Number(/\bcount=(\d{1,7})\b/.exec(target)?.[1] ?? Number.NaN);
+  if (!Number.isInteger(count)) {
+    return $localize`:@@settings.audit.target.direct-opened:Canal direto aberto`;
+  }
+  if (action === 'tv.text') {
+    return count === 1
+      ? $localize`:@@settings.audit.target.direct-text-one:1 texto pelo canal direto`
+      : $localize`:@@settings.audit.target.direct-text-many:${count}:count: textos pelo canal direto`;
+  }
+  return count === 1
+    ? $localize`:@@settings.audit.target.direct-key-one:1 tecla pelo canal direto`
+    : $localize`:@@settings.audit.target.direct-key-many:${count}:count: teclas pelo canal direto`;
+}
 
 function describeBaseTarget(action: string, target: string): string | null {
   switch (action) {

@@ -245,6 +245,8 @@ class TextReconciler:
         self._pending_field: TextFieldStatus | None = None
         self._app: str | None = None
         self._lock = asyncio.Lock()
+        # A validade da edicao em curso (so o canal direto a da); lida e escrita sob a trava.
+        self._validate: Callable[[], None] | None = None
 
     @property
     def last_text(self) -> str:
@@ -321,7 +323,22 @@ class TextReconciler:
         self._last_at = self._monotonic()
         self._clear_doubt()  # outro campo, ou o valor real: a dúvida não vale mais
 
-    async def set_text(self, text: str, *, queued: float = 0.0) -> None:
+    def _check(self) -> None:
+        """Antes de planejar qualquer coisa: o canal que pediu esta edição ainda vale?"""
+        if self._validate is not None:
+            self._validate()
+
+    def _effect(self) -> TextControl:
+        """A TV, para um efeito (acordar, tecla, texto): o canal que pediu ainda vale?
+
+        Roda sob a trava das edições, então `_validate` é o da edição em curso. Com o canal fechado
+        (revogação, troca, queda) nada mais vai à TV: levanta `TvSessionError`."""
+        self._check()
+        return self._tv
+
+    async def set_text(
+        self, text: str, *, queued: float = 0.0, validate: Callable[[], None] | None = None
+    ) -> None:
         """Faz o campo ter `text`. Levanta `TvSessionError` se a TV não pôde ser alcançada.
 
         As chamadas entram uma por vez, na ordem; vazio apaga tudo o que o agente digitou. `queued`
@@ -333,9 +350,13 @@ class TextReconciler:
         try:
             async with self._lock:
                 trace.lock_wait = self._monotonic() - asked
+                # Só vale depois de obter a vez: quem esperava a trava foi revogado enquanto isso?
+                self._validate = validate
                 try:
+                    self._check()
                     await self._reconcile(target, trace)
                 finally:
+                    self._validate = None
                     pending, self._pending_field = self._pending_field, None
                     if pending is not None:
                         self._accept(pending)
@@ -363,7 +384,7 @@ class TextReconciler:
             return
         # Abre a sessão (e renova a hibernação) uma vez, antes de qualquer tecla.
         started = self._monotonic()
-        await self._tv.wake()
+        await self._effect().wake()
         trace.wake = self._monotonic() - started
         await self._apply(edit, trace)
         self._last_at = self._monotonic()
@@ -412,13 +433,13 @@ class TextReconciler:
             self._erase_left = len(self._last) + len(self._uncertain or "")
         trace.previous, trace.delete, trace.insert = len(self._last), self._erase_left, len(target)
         started = self._monotonic()
-        await self._tv.wake()
+        await self._effect().wake()
         trace.wake = self._monotonic() - started
         started = self._monotonic()
         sent = 0
         try:
             while self._erase_left > 0 and sent < MAX_DELETIONS:
-                await self._tv.send_key(DELETE_KEY)
+                await self._effect().send_key(DELETE_KEY)
                 self._erase_left -= 1
                 sent += 1
         finally:
@@ -465,7 +486,7 @@ class TextReconciler:
         started = self._monotonic()
         try:
             for _ in range(min(edit.delete, MAX_DELETIONS)):
-                await self._tv.send_key(DELETE_KEY)
+                await self._effect().send_key(DELETE_KEY)
                 self._last = self._last[:-1]
                 self._last_at = self._monotonic()
         finally:
@@ -495,7 +516,7 @@ class TextReconciler:
         else:
             trace.channel = CHANNEL_REMOTE
         trace.groups += 1
-        await self._tv.send_text(rest)
+        await self._effect().send_text(rest)
         self._remote_at = self._monotonic()
         self._typed(rest)
 
@@ -510,6 +531,7 @@ class TextReconciler:
         """
         pending = adb_text_groups(text, self._adb_group_chars)
         for index, group in enumerate(pending):
+            self._check()
             await self._settle_after_remote()
             self._echo = None
             try:
@@ -544,7 +566,7 @@ class TextReconciler:
             if index and self._key_pause > 0:
                 await self._sleep(self._key_pause)
             try:
-                await self._tv.send_key(key)
+                await self._effect().send_key(key)
             except ValueError:
                 # O adaptador não conhece a tecla (tabelas fora de sincronia). A mensagem dele
                 # cita a tecla, e a tecla é um caractere do texto: nada disso vai para o log.

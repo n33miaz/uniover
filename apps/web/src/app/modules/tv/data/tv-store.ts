@@ -8,6 +8,7 @@ import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import { TvAccess } from './tv-access';
 import { TvApi, tvEventsPath } from './tv-api';
+import { TvDirect } from './tv-direct';
 import { TvPresence } from './tv-presence';
 import type { TvCleanupReport, TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
@@ -160,6 +161,8 @@ export function isValidTvText(text: string): boolean {
 @Injectable({ providedIn: 'root' })
 export class TvStore {
   private readonly api = inject(TvApi);
+  /** O canal direto do aparelho: a tela da TV o pede aberto, e ele só leva as teclas com a sessão da TV aberta. */
+  private readonly direct = inject(TvDirect);
   private readonly stream = inject(StreamService);
   private readonly connectivity = inject(ConnectivityService);
   /** O comando que fica sem resposta ganha o aviso "A TV não está respondendo" (ver `SlowCommandWatch`). */
@@ -475,6 +478,13 @@ export class TvStore {
         this.hadControl = view && control;
       });
     });
+    // O canal direto só leva as teclas com a sessão da TV aberta (`hot`): dormindo ou acordando, o agente reabre a sessão antes de
+    // responder, e a espera da nuvem para isso é maior que a do canal.
+    effect(() => {
+      const state = this.state();
+      const live = state?.connection === 'hot' && state.agentOnline !== false;
+      untracked(() => this.direct.setLive(live));
+    });
   }
 
   start(): void {
@@ -485,6 +495,7 @@ export class TvStore {
     this.discardLegacyCaches();
     this.resolvedId = this.selection.tvId();
     this.hydrate();
+    this.direct.start();
     this.doc.addEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.addEventListener('online', this.onOnline);
     this.doc.defaultView?.addEventListener('pageshow', this.onPageShow);
@@ -496,6 +507,7 @@ export class TvStore {
   stop(): void {
     if (!this.started) return;
     this.started = false;
+    this.direct.stop();
     this.disconnect();
     this.doc.removeEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.removeEventListener('online', this.onOnline);

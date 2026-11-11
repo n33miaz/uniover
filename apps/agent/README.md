@@ -357,8 +357,21 @@ mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagn
   `pc_direct_api_grace_seconds` (30 s) e fecha se a API não voltar. A revogação continua fechando na hora quando a API está de
   volta, e a API refaz a que não alcançou o agente assim que ele reconecta (o agente manda `pc.apps.v1` a cada conexão). O que o
   canal segura (um arrasto) não é solto pela queda da nuvem.
-- **Ciclo do canal direto no `agent.log` (INFO):** `canal direto aberto (sessão xxxxxxxx, negociação n s)` e `canal direto fechado
-  (sessão xxxxxxxx): motivo m; aberto por n s; RTT <faixa>; movimentos perdidos n; mensagens n`, sem IP, SDP, candidato nem token.
+- **Ciclo do canal direto no `agent.log` (INFO):** `canal direto aberto (sessão xxxxxxxx, escopos pc+tv, negociação n s)` e `canal direto fechado
+  (sessão xxxxxxxx): motivo m; escopos pc+tv; aberto por n s; RTT <faixa>; movimentos perdidos n; mensagens n; TV pelo canal: n teclas, n textos, n
+  recusados pela TV`, sem IP, SDP, candidato nem token. Nenhuma tecla vai uma a uma ao registro.
+- **TV pelo canal direto (`tv.rtc.v1`, `tv_direct = true`).** Quando a oferta traz o escopo `tv` (a API o concede a quem pode controlar a TV deste
+  agente, no instante da oferta), o canal leva `tv.key.v2`, `tv.key.v3` e `tv.text.v1`. Não há caminho paralelo: o canal valida o esquema (o
+  mesmo portão da nuvem), confere a idade da tecla (mais de 1,5 s no caminho é `expired`, sem tocar na TV) e a entrega, por uma ponte
+  (`core/pc/tv_bridge.py`: `call_soon_threadsafe` para o laço principal e `post` na volta, nunca esperando), a
+  `ProcessMessage.submit_direct_tv`, que usa a MESMA fila de teclas da nuvem (ordem, descarte por idade de 1,5 s contado desde a chegada ao canal,
+  junção de repetições, `on_command` do agendador de limpeza) e só troca a resposta: ela volta pelo `ack` do canal, não pelo transporte. Com o
+  laço principal parado, a entrada do PC segue respondendo (sinal de vida, PC) e a ponte recusa com `busy` o que passa de 32 pendentes; a tecla que
+  esperou mais que 1,5 s é descartada quando o laço volta. A sessão do canal é conferida no laço principal antes de cada entrega e de novo antes de a tecla ir à TV: fechar o canal descarta as teclas que ainda esperavam (`channel_closed`). `POWER`, desligar, abrir app, limpar e as outras ações da TV só existem pela nuvem
+  (a API confere a permissão de cada uma e grava a trilha). Um canal só da TV nunca recebe o ponteiro nem `pc.*`, não pede a aprovação do aparelho
+  no PC e, ao fechar, não solta o que o PC segura; um canal só do PC não leva a TV. O `ready` lista os escopos (`sc`) e as mensagens que o canal
+  aceita (`caps`). Ao fechar por conta própria o agente soma `tvKeys` e `tvTexts` em `pc.rtc.closed.v1`, e a API grava a soma na trilha da TV. A
+  capacidade só é declarada com TV configurada, canal direto do PC e `tv_direct` ligado, e só depois de a API listá-la em `features`.
 - **Candidatos ICE tardios só da rede local:** UDP de IP privado (10/8, 172.16/12, 192.168/16), de enlace local (169.254/16,
   fe80::/10) ou ULA (fc00::/7); nome (inclusive `.local`), `relay`, TCP, CGNAT, loopback, `::ffff:` e endereço público são
   recusados no serviço e de novo no par. A conferência final do endereço do par **falha fechada**.

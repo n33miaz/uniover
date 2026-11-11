@@ -850,13 +850,13 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         var client = new UniOver.Modules.Devices.Security.ClientInfo(null, null);
         var sdp = new PcRtcOfferRequest(FakeSdp);
 
-        var refused = await handler.OfferAsync(Guid.NewGuid(), null, TimeSpan.FromSeconds(59), sdp, client, Ct);
+        var refused = await handler.OfferAsync(Guid.NewGuid(), true, null, TimeSpan.FromSeconds(59), sdp, client, Ct);
 
         refused.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(401, "menos que o piso: nem o piso se concede");
 
         var userId = await OwnerIdAsyncFromToken(app);
-        var offering = handler.OfferAsync(userId, null, TimeSpan.FromSeconds(75), sdp, client, Ct);
+        var offering = handler.OfferAsync(userId, true, null, TimeSpan.FromSeconds(75), sdp, client, Ct);
         var offer = await AnswerOfferAsync(agent);
         var granted = await offering.WaitAsync(FakeAgent.Patience, Ct);
 

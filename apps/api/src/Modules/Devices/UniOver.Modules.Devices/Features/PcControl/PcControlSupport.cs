@@ -208,6 +208,24 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
         return Choose(candidates, userId);
     }
 
+    /// <summary>
+    /// O agente pelo nome (o que controla uma TV), qualquer que seja o dono: quem decide se a pessoa pode usá-lo é quem chama (o módulo
+    /// TV, que conhece as filiações). Revogado ou nunca visto: nulo. Só vale o <c>hello</c> de uma sessão viva, como na outra rota.
+    /// </summary>
+    public async Task<PcTarget?> ResolveBySlugAsync(string slug, CancellationToken cancellationToken)
+    {
+        var row = await db.Agents.AsNoTracking()
+            .Where(a => a.RevokedAt == null && a.Slug == slug)
+            .Select(a => new { a.Id, a.Slug })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (row is null || presence.Get(slug) is not { } info)
+        {
+            return null;
+        }
+
+        return new PcTarget(row.Id, row.Slug, info.Connected, info.Capabilities, info.Connected && info.ConnectedSince is not null ? info.HelloAt : null);
+    }
+
     /// <summary>A regra pura: só os agentes da própria pessoa; o conectado primeiro e, entre iguais, o mais antigo.</summary>
     public static PcTarget? Choose(IEnumerable<PcCandidate> candidates, Guid userId)
     {
@@ -298,6 +316,25 @@ internal static class PcProblems
         statusCode: StatusCodes.Status409Conflict,
         title: "Este computador não oferece o canal direto.",
         type: ProblemDetailsExtensions.TypeBase + DirectUnavailableType);
+
+    public const string DirectBusyType = "pc-direct-busy";
+
+    /// <summary>
+    /// O canal do computador está com outra pessoa (o dono usando o PC, por exemplo) e um convidado nunca o toma: o app segue pela nuvem e
+    /// tenta de novo mais tarde, sem tratar como falha da conta.
+    /// </summary>
+    public static IResult DirectBusy() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "O canal direto deste computador está em uso por outra pessoa.",
+        type: ProblemDetailsExtensions.TypeBase + DirectBusyType);
+
+    public const string DirectForbiddenType = "pc-direct-forbidden";
+
+    /// <summary>A pessoa não pode levar nada pelo canal agora (sem a permissão pedida ou sem a TV): o app fica na nuvem, que também a recusaria.</summary>
+    public static IResult DirectForbidden() => Results.Problem(
+        statusCode: StatusCodes.Status403Forbidden,
+        title: "Você não tem acesso ao canal direto deste computador.",
+        type: ProblemDetailsExtensions.TypeBase + DirectForbiddenType);
 
     public const string DirectExpiredType = "pc-direct-expired";
 
@@ -495,7 +532,14 @@ internal sealed class PcAgentMessageHandler(
 
         if (string.Equals(message.Type, AgentMessageTypes.PcRtcClosedV1, StringComparison.Ordinal))
         {
-            await closures.AgentClosedAsync(message.AgentId, message.Body.GetProperty("sessionId").GetGuid(), cancellationToken);
+            // A soma de teclas e textos da TV só vem de um canal com o escopo da TV (campos opcionais do contrato).
+            await closures.AgentClosedAsync(
+                message.AgentId,
+                message.Body.GetProperty("sessionId").GetGuid(),
+                message.Body.TryGetProperty("reason", out var reason) ? reason.GetString() : null,
+                message.Body.TryGetProperty("tvKeys", out var keys) ? keys.GetInt32() : null,
+                message.Body.TryGetProperty("tvTexts", out var texts) ? texts.GetInt32() : null,
+                cancellationToken);
             return;
         }
 

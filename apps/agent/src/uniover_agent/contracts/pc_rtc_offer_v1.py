@@ -7,7 +7,11 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
+
+
+class PcRtcOfferV1BodyScopesItem(RootModel[Literal['pc', 'tv']]):
+    root: Annotated[Literal['pc', 'tv'], Field(title='PcRtcOfferV1BodyScopesItem')]
 
 
 class PcRtcOfferV1Body(BaseModel):
@@ -19,6 +23,9 @@ class PcRtcOfferV1Body(BaseModel):
     token: Annotated[str, Field(pattern='^[A-Za-z0-9_-]{32,86}$')]
     tokenTtlSeconds: Annotated[int, Field(ge=5, le=120)]
     maxLifetimeSeconds: Annotated[int, Field(ge=30, le=3600)]
+    scopes: Annotated[
+        list[PcRtcOfferV1BodyScopesItem] | None, Field(max_length=2, min_length=1)
+    ] = None
 
 
 class PcRtcOfferV1Message(BaseModel):

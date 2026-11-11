@@ -17,7 +17,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     /// <summary>
     /// Agente para API: o canal direto da sessão fechou, com o motivo (a API grava a trilha).
-    /// Sem resposta.
+    /// `tvKeys` e `tvTexts` (opcionais, só de um canal com o escopo `tv`) contam as teclas e os
+    /// textos da TV que o canal levou, para a trilha da TV: nenhuma tecla vai uma a uma ao
+    /// registro, e esta soma é o que a API grava no lugar. Só vão a quem declara tv.rtc.v1. Sem
+    /// resposta.
     /// </summary>
     public partial class PcRtcClosedV1Message
     {
@@ -53,9 +56,17 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
         [JsonPropertyName("sessionId")]
         public Guid SessionId { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("tvKeys")]
+        public long? TvKeys { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("tvTexts")]
+        public long? TvTexts { get; set; }
     }
 
-    public enum PcRtcClosedV1BodyReason { Cloud, ConnectTimeout, Disconnected, Failed, Idle, Lifetime, Replaced, Requested, Revoked, Shutdown };
+    public enum PcRtcClosedV1BodyReason { Cloud, ConnectTimeout, Disconnected, Failed, Idle, Lifetime, Replaced, Requested, Rescoped, Revoked, Shutdown };
 
     public partial class PcRtcClosedV1Message
     {
@@ -104,6 +115,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return PcRtcClosedV1BodyReason.Replaced;
                 case "requested":
                     return PcRtcClosedV1BodyReason.Requested;
+                case "rescoped":
+                    return PcRtcClosedV1BodyReason.Rescoped;
                 case "revoked":
                     return PcRtcClosedV1BodyReason.Revoked;
                 case "shutdown":
@@ -139,6 +152,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case PcRtcClosedV1BodyReason.Requested:
                     JsonSerializer.Serialize(writer, "requested", options);
+                    return;
+                case PcRtcClosedV1BodyReason.Rescoped:
+                    JsonSerializer.Serialize(writer, "rescoped", options);
                     return;
                 case PcRtcClosedV1BodyReason.Revoked:
                     JsonSerializer.Serialize(writer, "revoked", options);

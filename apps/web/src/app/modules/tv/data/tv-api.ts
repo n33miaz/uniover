@@ -3,6 +3,7 @@ import { Injectable, Injector, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../../core/api/generated/schema';
 import { APP_CONFIG } from '../../../core/config/app-config';
+import { TvDirect } from './tv-direct';
 import { TvSelection } from './tv-selection';
 import type { TvLayoutValue } from './tv-prefs';
 import {
@@ -67,11 +68,15 @@ export function tvEventsPath(tvId: string | null): string {
  * Com mais de uma TV visível, toda chamada leva `?tvId=` da TV escolhida (`TvSelection`), lida no instante da chamada: o
  * pedido que já saiu continua sendo da TV de quando saiu, mesmo que a pessoa troque de TV em seguida. Com uma só, nada
  * muda na URL (a API usa a única visível).
+ *
+ * As teclas e o texto saem pelo canal direto do aparelho (`TvDirect`) quando ele pode levá-los agora; senão, e sempre que o canal
+ * não puder, saem pela API como sempre. Quem chama não sabe por onde o comando foi. Todo o resto só existe pela nuvem.
  */
 @Injectable({ providedIn: 'root' })
 export class TvApi {
   private readonly injector = inject(Injector);
   private readonly selection = inject(TvSelection);
+  private readonly direct = inject(TvDirect);
 
   private get http(): HttpClient {
     return this.injector.get(HttpClient);
@@ -154,8 +159,11 @@ export class TvApi {
 
   /** `POWER` nunca passa aqui (a API responde 400): desligar é {@link powerOff}. */
   async sendKey(key: TvKey): Promise<void> {
+    // O canal leva a tecla (e o agente a põe na MESMA fila das teclas da nuvem); `false` é "nada saiu": a nuvem leva. Sem o canal o
+    // pedido da nuvem sai na hora, sem esperar nada.
+    if (this.direct.canUse() && (await this.direct.command('tv.key.v3', { key }))) return;
     const body: components['schemas']['SendKeyRequest'] = { key, direction: null };
-    await firstValueFrom(this.http.post(`${BASE}/keys`, body, this.target()));
+    await this.direct.trackCloud(firstValueFrom(this.http.post(`${BASE}/keys`, body, this.target())));
   }
 
   /** Abre na TV a tela de rede ou as configurações (lista fechada); só por toque da pessoa, nunca sozinho. */
@@ -165,8 +173,9 @@ export class TvApi {
   }
 
   async sendText(text: string): Promise<void> {
+    if (this.direct.canUse() && (await this.direct.command('tv.text.v1', { text }))) return;
     const body: components['schemas']['SendTextRequest'] = { text };
-    await firstValueFrom(this.http.post(`${BASE}/text`, body, this.target()));
+    await this.direct.trackCloud(firstValueFrom(this.http.post(`${BASE}/text`, body, this.target())));
   }
 
   /**

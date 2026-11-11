@@ -17,10 +17,13 @@ public enum UserAccessChangeKind
 
     /// <summary>Uma permissão de módulo foi retirada (<c>Module</c>, ex.: <c>module:pc</c>).</summary>
     ModuleRemoved = 3,
+
+    /// <summary>Uma permissão que não é de módulo foi retirada (<c>Permission</c>, ex.: <c>tv:control</c>): o canal direto da TV a exige.</summary>
+    PermissionRemoved = 4,
 }
 
 /// <summary>Uma mudança de acesso, já confirmada no banco. Só ids e nomes de módulo: nunca credencial.</summary>
-public sealed record UserAccessChange(Guid UserId, UserAccessChangeKind Kind, Guid? SessionId = null, string? Module = null);
+public sealed record UserAccessChange(Guid UserId, UserAccessChangeKind Kind, Guid? SessionId = null, string? Module = null, string? Permission = null);
 
 /// <summary>
 /// Quem precisa reagir na hora a uma mudança de acesso (o canal direto do controle do PC, que não passa pela API a cada

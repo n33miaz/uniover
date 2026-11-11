@@ -22,7 +22,13 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// tira do que resta do token de acesso da pessoa: o canal nunca vive mais que a sessão que
     /// o autorizou; o app abre outro antes do fim), que a primeira mensagem do canal precisa
     /// apresentar. O agente responde com pc.rtc.answer.v1 (mesmo correlationId) e
-    /// command.result.v1. Só vai a quem declara a capacidade pc.rtc.v1.
+    /// command.result.v1. `scopes` (opcional) diz o que o canal pode levar: `pc` (mouse,
+    /// teclado, mídia, zoom e volume do PC; exige o aparelho aprovado no PC) e/ou `tv` (as
+    /// teclas e o texto da TV que este agente controla, pelo mesmo caminho dos comandos tv.* da
+    /// nuvem; nunca o desligamento, abrir app nem limpeza). Sem `scopes` o canal é só do PC,
+    /// como sempre foi. Quem decide os escopos é a API, que os confere para a pessoa e para a TV
+    /// no momento da oferta; o agente só os aplica. `scopes` só vai a quem declara a capacidade
+    /// tv.rtc.v1. Só vai a quem declara a capacidade pc.rtc.v1.
     /// </summary>
     public partial class PcRtcOfferV1Message
     {
@@ -76,6 +82,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("maxLifetimeSeconds")]
         public long MaxLifetimeSeconds { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("scopes")]
+        public PcRtcOfferV1BodyScopesItem[]? Scopes { get; set; }
+
         [JsonPropertyName("sdp")]
         [JsonConverter(typeof(PcRtcOfferV1MessagePurpleMinMaxLengthCheckConverter))]
         public string Sdp { get; set; }
@@ -89,6 +99,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("tokenTtlSeconds")]
         public long TokenTtlSeconds { get; set; }
     }
+
+    public enum PcRtcOfferV1BodyScopesItem { Pc, Tv };
 
     public partial class PcRtcOfferV1Message
     {
@@ -106,9 +118,44 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             Converters =
             {
+                PcRtcOfferV1MessagePcRtcOfferV1BodyScopesItemConverter.Singleton,
                 PcRtcOfferV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
+    }
+
+    internal class PcRtcOfferV1MessagePcRtcOfferV1BodyScopesItemConverter : JsonConverter<PcRtcOfferV1BodyScopesItem>
+    {
+        public override bool CanConvert(Type t) => t == typeof(PcRtcOfferV1BodyScopesItem);
+
+        public override PcRtcOfferV1BodyScopesItem Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "pc":
+                    return PcRtcOfferV1BodyScopesItem.Pc;
+                case "tv":
+                    return PcRtcOfferV1BodyScopesItem.Tv;
+            }
+            throw new Exception("Cannot unmarshal type PcRtcOfferV1BodyScopesItem");
+        }
+
+        public override void Write(Utf8JsonWriter writer, PcRtcOfferV1BodyScopesItem value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case PcRtcOfferV1BodyScopesItem.Pc:
+                    JsonSerializer.Serialize(writer, "pc", options);
+                    return;
+                case PcRtcOfferV1BodyScopesItem.Tv:
+                    JsonSerializer.Serialize(writer, "tv", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type PcRtcOfferV1BodyScopesItem");
+        }
+
+        public static readonly PcRtcOfferV1MessagePcRtcOfferV1BodyScopesItemConverter Singleton = new PcRtcOfferV1MessagePcRtcOfferV1BodyScopesItemConverter();
     }
 
     internal class PcRtcOfferV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>

@@ -32,6 +32,8 @@ KEY_MAX_AGE_SECONDS: Final = 1.5
 # depois desta espera, que indica que a abertura da sessão segurou a fila.
 KEY_COALESCE_AFTER_SECONDS: Final = 0.3
 AGENT_TIMEOUT: Final = "agent_timeout"
+# O canal direto que mandou a tecla fechou antes de ela chegar à TV.
+CHANNEL_CLOSED: Final = "channel_closed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,15 @@ class TimedKeyCommand(Command):
 
     received_at: float = 0.0
     is_latest: Callable[[], bool] | None = None
+    # Só nas teclas do canal direto: a sessão dele ainda vale? Fechada, a tecla não chega à TV.
+    is_valid: Callable[[], bool] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedCommand(Command):
+    """Comando do canal direto com a validade da sessão que o mandou (como `TimedKeyCommand`)."""
+
+    is_valid: Callable[[], bool] | None = None
 
 
 class PackageLauncher(Protocol):
@@ -120,6 +131,9 @@ def tv_key_handler(
             nonlocal discarded_by_age
             if key == "POWER":
                 return
+            if isinstance(command, TimedKeyCommand) and command.is_valid is not None:
+                if not command.is_valid():
+                    raise TvSessionError(CHANNEL_CLOSED, "o canal direto fechou antes da tecla")
             received_at = command.received_at if isinstance(command, TimedKeyCommand) else arrived
             waited = monotonic() - received_at
             if waited > KEY_MAX_AGE_SECONDS:
@@ -139,6 +153,11 @@ def tv_key_handler(
                     )
 
         arrived = monotonic()
+        if isinstance(command, TimedKeyCommand) and command.is_valid is not None:
+            if not command.is_valid():
+                return CommandResult(
+                    command.id, ResultStatus.REJECTED, "o canal direto fechou", CHANNEL_CLOSED
+                )
         try:
             if key == "POWER":
                 await tv.send_key(key, str(direction))
@@ -183,14 +202,25 @@ def tv_text_handler(
         arrived = monotonic()
         latest += 1
         mine = latest
+        is_valid = command.is_valid if isinstance(command, ValidatedCommand) else None
+
+        def validate() -> None:
+            if is_valid is not None and not is_valid():
+                raise TvSessionError(CHANNEL_CLOSED, "o canal direto fechou antes do texto")
+
         async with turn:
             queued = monotonic() - arrived
+            # Só depois de obter a vez: quem esperava a trava foi revogado enquanto isso?
+            try:
+                validate()
+            except TvSessionError as exc:
+                return failed_result(command, exc)
             if mine != latest:
                 # Já existe um texto mais novo na fila; ele é quem vai para a TV.
                 _log.info("texto descartado: chegou um mais novo | ms vez=%d", round(queued * 1000))
                 return CommandResult(command.id, ResultStatus.OK)
             try:
-                await editor.set_text(text, queued=queued)
+                await editor.set_text(text, queued=queued, validate=validate)
             except TvSessionError as exc:
                 return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)
