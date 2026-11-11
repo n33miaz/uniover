@@ -686,7 +686,7 @@ async def test_an_opening_that_never_returns_ends_as_offline_and_frees_the_lock(
         await manager.wake()
     assert caught.value.code == TV_UNREACHABLE
     assert manager.offline  # entrou na espera crescente
-    assert not manager._lock.locked()  # type: ignore[attr-defined]
+    assert not manager._lock.locked()
     assert state_of(manager) is SessionState.HIBERNATING
     with pytest.raises(TvSessionError):
         await manager.wake()

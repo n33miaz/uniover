@@ -295,6 +295,19 @@ function dropPatternOnDates(node) {
   }
 }
 
+/** Os defaults de campos opcionais que são modelos-raiz precisam instanciar o modelo para o mypy. */
+function wrapPythonRootModelDefaults(code) {
+  const rootModels = new Set(
+    [...code.matchAll(/^class (\w+)\(RootModel/gm)].map((match) => match[1]),
+  );
+  return code.replace(
+    // `\r?` em cada fim de linha: no Windows o gerador entrega CRLF e o `$` não casa antes do `\r`.
+    /^(\s+\w+: Annotated\[\r?\n\s+(\w+) \| None,\r?\n[\s\S]*?^\s+\] = )('(?:[^']*)')(\r?)$/gm,
+    (whole, prefix, model, value, cr) =>
+      rootModels.has(model) ? `${prefix}${model}(${value})${cr}` : whole,
+  );
+}
+
 function generatePython(out, flat, schemasMeta) {
   const dir = GENERATED_PY_DIR;
   const tmp = join(out, ".tmp-py");
@@ -329,7 +342,7 @@ function generatePython(out, flat, schemasMeta) {
       "--custom-file-header", PY_HEADER,
       "--class-name", it.cls,
     ]);
-    write(out, `${dir}/${it.module}.py`, readFileSync(output, "utf8"));
+    write(out, `${dir}/${it.module}.py`, wrapPythonRootModelDefaults(readFileSync(output, "utf8")));
   }
   rmSync(tmp, { recursive: true, force: true });
 

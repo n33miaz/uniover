@@ -232,7 +232,7 @@ def make_killing(runner: FakeAdbRunner, clock: Clock | None = None, **extra: Any
 async def time_out(adb: AdbTv, times: int) -> None:
     for _ in range(times):
         with pytest.raises(AdbTimeout):
-            await adb._exec("version")  # type: ignore[attr-defined]
+            await adb._exec("version")
 
 
 async def test_the_adb_server_is_never_killed_unless_the_owner_opts_in() -> None:
@@ -304,13 +304,13 @@ async def test_disconnect_returns_without_waiting_for_a_long_adb_operation() -> 
     runner = authorized()
     adb = make(runner)
     await adb.connect()
-    await adb._lock.acquire()  # type: ignore[attr-defined]
+    await adb._lock.acquire()
     try:
         await asyncio.wait_for(adb.disconnect(), 0.01)
         assert not adb.connected
     finally:
-        adb._lock.release()  # type: ignore[attr-defined]
-    task = adb._disconnect_task  # type: ignore[attr-defined]
+        adb._lock.release()
+    task = adb._disconnect_task
     assert task is not None
     await task
     assert runner.calls[-1] == DISCONNECT
@@ -825,11 +825,11 @@ async def test_a_deferred_disconnect_does_not_drop_a_connection_opened_meanwhile
     runner = authorized()
     adb = make(runner)
     await adb.connect()
-    await adb._lock.acquire()  # type: ignore[attr-defined]
+    await adb._lock.acquire()
     await adb.disconnect()  # a trava está ocupada: o `adb disconnect` fica agendado
-    adb._connected = True  # type: ignore[attr-defined]  # outra abertura acontece antes dele
-    adb._lock.release()  # type: ignore[attr-defined]
-    task = adb._disconnect_task  # type: ignore[attr-defined]
+    adb._connected = True  # outra abertura acontece antes dele
+    adb._lock.release()
+    task = adb._disconnect_task
     assert task is not None
     await task
     assert DISCONNECT not in runner.calls
@@ -840,13 +840,13 @@ async def test_closing_the_adb_cancels_a_pending_deferred_disconnect() -> None:
     runner = authorized()
     adb = make(runner)
     await adb.connect()
-    await adb._lock.acquire()  # type: ignore[attr-defined]
+    await adb._lock.acquire()
     await adb.disconnect()
-    task = adb._disconnect_task  # type: ignore[attr-defined]
+    task = adb._disconnect_task
     assert task is not None
     await adb.aclose()
     assert task.cancelled()
-    adb._lock.release()  # type: ignore[attr-defined]
+    adb._lock.release()
     # O adiado foi cancelado, mas o encerramento esperou a trava só o prazo curto e desfez a
     # conexão não provada mesmo assim (o servidor do `adb` sobrevive ao agente e a religaria).
     assert runner.calls.count(DISCONNECT) == 1

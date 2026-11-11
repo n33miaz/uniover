@@ -160,7 +160,7 @@ async def test_a_tv_that_still_refuses_after_pairing_ends_up_not_paired_never_pa
     # O caminho de verdade: o gerenciador de sessão real, com a TV recusando o certificado.
     clock = FakeClock()
     remote = FakeTvRemote()
-    manager = TvSessionManager(clock, remote)  # type: ignore[arg-type]
+    manager = TvSessionManager(clock, remote)
     remote.connect_errors = [TvCertificateRefused("recusado") for _ in range(50)]
     for _ in range(3):
         with pytest.raises(TvSessionError):
