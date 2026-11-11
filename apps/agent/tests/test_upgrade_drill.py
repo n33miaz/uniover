@@ -516,6 +516,33 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
     assert [name.split(" ")[0] for name in names] == ["B.", "queda", "C.", "C2."]
 
 
+@pytest.mark.parametrize(
+    ("pointer_in_use", "expected"),
+    [(True, "pointer"), (False, "classic")],
+    ids=["pointer", "classic"],
+)
+def test_the_interrupted_swap_phase_follows_how_the_base_swaps(
+    monkeypatch: pytest.MonkeyPatch, pointer_in_use: bool, expected: str
+) -> None:
+    # Base com o ponteiro: simular o estado entre renomeacoes moveria a pasta que o ponteiro
+    # aponta (a fase da queda no meio da troca do ponteiro e a que vale). Base antiga: a classica.
+    instance = object.__new__(drill.Drill)
+    called: list[str] = []
+    monkeypatch.setattr(
+        instance,
+        "slot_path",
+        lambda _which, _key: Path("current-slot") if pointer_in_use else None,
+    )
+    monkeypatch.setattr(
+        instance, "recover_interrupted_pointer_swap", lambda _sha: called.append("pointer") or True
+    )
+    monkeypatch.setattr(
+        instance, "recover_interrupted_classic_swap", lambda _sha: called.append("classic") or True
+    )
+    assert instance.recover_interrupted_swap("a" * 40)
+    assert called == [expected]
+
+
 def test_stopping_the_drill_also_ends_an_update_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
