@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.59.0](https://github.com/n33miaz/uniover/compare/v0.58.0...v0.59.0) (2026-11-11)
+
+
+### Devices 0.56.0
+
+#### Features
+
+* **pc:** steady input, safer direct link and device approval
+
+
+### Web 0.57.0
+
+#### Features
+
+* **pc:** steady input, safer direct link and device approval
+
+
+### Agent 0.52.0
+
+#### Features
+
+* **pc:** steady input, safer direct link and device approval
+
 ## [0.58.0](https://github.com/n33miaz/uniover/compare/v0.57.0...v0.58.0) (2026-11-11)
 
 
