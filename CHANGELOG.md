@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.57.0](https://github.com/n33miaz/uniover/compare/v0.56.0...v0.57.0) (2026-11-11)
+
+
+### Training 0.44.0
+
+#### Features
+
+* **web:** apply updates without breaking work
+
+
+### Web 0.55.0
+
+#### Features
+
+* **web:** apply updates without breaking work
+
 ## [0.56.0](https://github.com/n33miaz/uniover/compare/v0.55.0...v0.56.0) (2026-11-11)
 
 
