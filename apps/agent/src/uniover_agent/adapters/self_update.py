@@ -29,6 +29,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -65,7 +66,7 @@ PRODUCTION_REF_URL = (
     f"https://raw.githubusercontent.com/{REPOSITORY}/main/apps/agent/tools/update-channel.json"
 )
 COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/{{channel}}"
-TREE_URL = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{{sha}}?recursive=1"
+TREE_URL = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{{sha}}"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
 MANIFEST_NAME = "uniover-agent-manifest.json"
 MANIFEST_URL = f"https://github.com/{REPOSITORY}/releases/latest/download/{MANIFEST_NAME}"
@@ -124,6 +125,10 @@ SYNC_TIMEOUT_SECONDS = 600
 SYNC_ATTEMPTS = 2
 SYNC_PAUSE_SECONDS = 3.0
 CHECK_TIMEOUT_SECONDS = 120
+# Conferência da árvore do commit no GitHub (ver `fetch_git_tree`): o prazo das novas tentativas
+# mais uma consulta que comece dentro dele (conexão e leitura de `_TIMEOUT`).
+TREE_RETRY_BUDGET_SECONDS = 60.0
+TREE_CHECK_SECONDS = TREE_RETRY_BUDGET_SECONDS + 75.0
 # O pior caso de uma atualização que ainda anda: tudo isto, em série. O teto de quem a executa por
 # fora (o supervisor, em `run-agent.ps1`) tem de passar disto, senão mata uma atualização lenta
 # mas legítima, e a próxima tentativa recomeça do zero. A soma vale também por dentro: a consulta
@@ -134,6 +139,7 @@ WORST_CASE_SECONDS = (
     FETCH_TIMEOUT_SECONDS
     + DOWNLOAD_DEADLINE_SECONDS
     + EXTRACT_SECONDS
+    + TREE_CHECK_SECONDS
     + SYNC_ATTEMPTS * SYNC_TIMEOUT_SECONDS
     + (SYNC_ATTEMPTS - 1) * SYNC_PAUSE_SECONDS
     + CHECK_TIMEOUT_SECONDS
@@ -191,9 +197,11 @@ def commit_url(channel: str = DEFAULT_CHANNEL, *, production_ref: str = PRODUCTI
     return COMMIT_URL.format(channel=branch) if origin is None else f"{origin}/commit"
 
 
-def tree_url(sha: str) -> str:
+def tree_url(sha: str, *, recursive: bool = True) -> str:
     origin = drill_origin()
-    return TREE_URL.format(sha=sha) if origin is None else f"{origin}/tree/{sha}"
+    if origin is not None:
+        return f"{origin}/tree/{sha}"
+    return TREE_URL.format(sha=sha) + ("?recursive=1" if recursive else "")
 
 
 def archive_url(sha: str) -> str:
@@ -530,42 +538,233 @@ def agent_blob_hashes(archive: Path) -> dict[str, tuple[str, str]]:
     return found
 
 
-def fetch_git_tree(sha: str) -> dict[str, str] | None:
-    """Os arquivos de `apps/agent` do commit segundo o GitHub (caminho -> hash do git).
+# Conferência da árvore no GitHub: o limite da API pública sem autenticação é de 60 consultas por
+# hora por IP, e uma queda de rede passageira não deve deixar o PC numa versão velha até a próxima
+# volta. Só erro transitório tem nova tentativa; as esperas vêm de `Retry-After`/`X-RateLimit-Reset`
+# quando o GitHub as manda (nunca abaixo do recuo) e o conjunto todo cabe em um prazo.
+TREE_BACKOFF_SECONDS = (2.0, 8.0)
+# Teto de consultas de uma conferência (o caminho de árvore truncada abre uma por diretório).
+_TREE_MAX_REQUESTS = 40
+_AGENT_DIR = "/".join(AGENT_PREFIX) + "/"
 
-    `None` quando não dá para conferir (rede, limite de consultas, árvore grande demais para a API).
-    Quem chama transforma isso em recusa: a atualização espera a próxima checagem, sem preparar o
-    pacote só com o zip.
-    """
-    try:
-        response = httpx.get(
-            tree_url(sha),
-            headers={"Accept": "application/vnd.github+json", "User-Agent": "uniover-agent"},
-            timeout=_TIMEOUT,
-        )
-        response.raise_for_status()
-        data = response.json()
-    except httpx.HTTPError, ValueError:
+
+def _rate_limited(response: httpx.Response) -> bool:
+    """403/429 que é o limite de consultas (e não uma recusa de permissão)."""
+    if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        return True
+    if response.status_code != httpx.codes.FORBIDDEN:
+        return False
+    if response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers:
+        return True
+    return "rate limit" in response.text.lower()
+
+
+def _server_wait(response: httpx.Response, wall: Callable[[], float]) -> float:
+    """Quanto o GitHub pediu para esperar (0 se não pediu)."""
+    retry_after = response.headers.get("retry-after", "")
+    if retry_after.isdigit():
+        return float(retry_after)
+    reset = response.headers.get("x-ratelimit-reset", "")
+    if response.headers.get("x-ratelimit-remaining") == "0" and reset.isdigit():
+        return max(0.0, float(reset) - wall())
+    return 0.0
+
+
+@dataclass
+class _Transient:
+    """Falha que vale outra tentativa: o motivo (sem URL nem endereço) e a espera pedida."""
+
+    reason: str
+    wait: float = 0.0
+
+
+@dataclass
+class _TreeClient:
+    """Consultas da árvore ao GitHub, com nova tentativa só nos erros transitórios."""
+
+    sleep: Callable[[float], None]
+    monotonic: Callable[[], float]
+    wall: Callable[[], float]
+    started: float = 0.0
+    requests: int = 0
+
+    def get_json(self, url: str) -> dict[str, Any] | None:
+        """O JSON da resposta, ou `None` quando não dá para obter (a recusa é de quem chama)."""
+        if self.requests == 0:
+            self.started = self.monotonic()
+        elif self.monotonic() - self.started >= TREE_RETRY_BUDGET_SECONDS:
+            _log.warning(
+                "conferência da árvore: o prazo de %.0f s acabou, desisto",
+                TREE_RETRY_BUDGET_SECONDS,
+            )
+            return None
+        self.requests += 1
+        if self.requests > _TREE_MAX_REQUESTS:
+            _log.warning("conferência da árvore: consultas demais, desisto")
+            return None
+        attempts = len(TREE_BACKOFF_SECONDS) + 1
+        for attempt in range(1, attempts + 1):
+            outcome = self._attempt(url)
+            if not isinstance(outcome, _Transient):
+                if outcome is not None and attempt > 1:
+                    _log.info("conferência da árvore: tentativa %d/%d deu certo", attempt, attempts)
+                return outcome
+            if attempt == attempts:
+                _log.warning(
+                    "conferência da árvore: tentativa %d/%d falhou (%s)",
+                    attempt,
+                    attempts,
+                    outcome.reason,
+                )
+                return None
+            pause = max(TREE_BACKOFF_SECONDS[attempt - 1], outcome.wait)
+            if self.monotonic() - self.started + pause > TREE_RETRY_BUDGET_SECONDS:
+                _log.warning(
+                    "conferência da árvore: tentativa %d/%d falhou (%s); a espera de %.0f s "
+                    "passa do prazo, desisto",
+                    attempt,
+                    attempts,
+                    outcome.reason,
+                    pause,
+                )
+                return None
+            _log.warning(
+                "conferência da árvore: tentativa %d/%d falhou (%s); nova tentativa em %.0f s",
+                attempt,
+                attempts,
+                outcome.reason,
+                pause,
+            )
+            self.sleep(pause)
         return None
-    if (
-        not isinstance(data, dict)
-        or data.get("truncated")
-        or not isinstance(data.get("tree"), list)
-    ):
+
+    def _attempt(self, url: str) -> dict[str, Any] | _Transient | None:
+        """Uma consulta: o JSON, `_Transient` (vale tentar de novo) ou `None` (definitivo)."""
+        try:
+            response = httpx.get(
+                url,
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "uniover-agent"},
+                timeout=_TIMEOUT,
+            )
+        except httpx.TransportError as exc:
+            return _Transient(f"rede, {type(exc).__name__}")
+        except httpx.HTTPError:
+            return None
+        return self._classify(response)
+
+    def _classify(self, response: httpx.Response) -> dict[str, Any] | _Transient | None:
+        status = response.status_code
+        if status >= httpx.codes.INTERNAL_SERVER_ERROR:
+            return _Transient(f"HTTP {status}")
+        if _rate_limited(response):
+            return _Transient(
+                f"limite de consultas, HTTP {status}", _server_wait(response, self.wall)
+            )
+        if not response.is_success:
+            _log.warning(
+                "conferência da árvore: o GitHub respondeu HTTP %d, sem nova tentativa", status
+            )
+            return None
+        try:
+            data = response.json()
+        except ValueError:
+            return None
+        return data if isinstance(data, dict) else None
+
+
+def _tree_entries(data: dict[str, Any], base: str) -> list[dict[str, Any]] | None:
+    """Itens da resposta com o caminho completo (`base` + caminho), ou `None` se malformada."""
+    tree = data.get("tree")
+    if not isinstance(tree, list):
         return None
-    prefix = "/".join(AGENT_PREFIX) + "/"
-    files: dict[str, str] = {}
-    for entry in data["tree"]:
+    entries: list[dict[str, Any]] = []
+    for entry in tree:
         if not isinstance(entry, dict):
             return None
-        path, kind, blob = entry.get("path"), entry.get("type"), entry.get("sha")
-        if not isinstance(path, str) or not path.startswith(prefix) or kind != "blob":
-            continue
-        if entry.get("mode") == "120000":
+        path = entry.get("path")
+        if isinstance(path, str):
+            entries.append({**entry, "path": base + path})
+    return entries
+
+
+def _collect_agent_blobs(entries: list[dict[str, Any]], files: dict[str, str]) -> bool:
+    """Acrescenta a `files` os blobs de `apps/agent`; `False` se algum item for inválido."""
+    for entry in entries:
+        path, kind, blob = entry["path"], entry.get("type"), entry.get("sha")
+        if not path.startswith(_AGENT_DIR) or kind != "blob" or entry.get("mode") == "120000":
             continue
         if not isinstance(blob, str):
+            return False
+        files[path.removeprefix(_AGENT_DIR)] = blob
+    return True
+
+
+def _walk_truncated(client: _TreeClient, sha: str, base: str, files: dict[str, str]) -> bool:
+    """Árvore truncada pela API: desce diretório a diretório, só pelo caminho do agente."""
+    data = client.get_json(tree_url(sha, recursive=False))
+    entries = _tree_entries(data, base) if data is not None else None
+    if data is None or entries is None or data.get("truncated"):
+        return False
+    if not _collect_agent_blobs(entries, files):
+        return False
+    for entry in entries:
+        if entry.get("type") != "tree":
+            continue
+        directory = entry["path"] + "/"
+        if not (_AGENT_DIR.startswith(directory) or directory.startswith(_AGENT_DIR)):
+            continue
+        sub = entry.get("sha")
+        if not isinstance(sub, str) or not _SHA.fullmatch(sub):
+            return False
+        # Só o que está dentro do agente tem chance de caber numa consulta recursiva; os
+        # ancestrais (`apps`) carregam o resto do repositório e se leem por diretório.
+        inside = directory.startswith(_AGENT_DIR)
+        walked = (
+            _fetch_subtree(client, sub, directory, files)
+            if inside
+            else _walk_truncated(client, sub, directory, files)
+        )
+        if not walked:
+            return False
+    return True
+
+
+def _fetch_subtree(client: _TreeClient, sha: str, base: str, files: dict[str, str]) -> bool:
+    data = client.get_json(tree_url(sha))
+    if data is None:
+        return False
+    if data.get("truncated"):
+        return _walk_truncated(client, sha, base, files)
+    entries = _tree_entries(data, base)
+    return entries is not None and _collect_agent_blobs(entries, files)
+
+
+def fetch_git_tree(
+    sha: str,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+    wall: Callable[[], float] = time.time,
+) -> dict[str, str] | None:
+    """Os arquivos de `apps/agent` do commit segundo o GitHub (caminho -> hash do git).
+
+    Erro transitório (rede, 5xx, limite de consultas) tem até três tentativas com recuo; 404,
+    resposta malformada e árvore que não bate não têm. Árvore truncada pela API é lida por
+    diretório, só no caminho do agente. `None` quando mesmo assim não dá para conferir: quem chama
+    transforma isso em recusa (fail-closed), sem preparar o pacote só com o zip.
+    """
+    client = _TreeClient(sleep=sleep, monotonic=monotonic, wall=wall)
+    data = client.get_json(tree_url(sha))
+    if data is None:
+        return None
+    files: dict[str, str] = {}
+    if data.get("truncated"):
+        if not _SHA.fullmatch(sha) or not _walk_truncated(client, sha, "", files):
             return None
-        files[path.removeprefix(prefix)] = blob
+    else:
+        entries = _tree_entries(data, "")
+        if entries is None or not _collect_agent_blobs(entries, files):
+            return None
     return files or None
 
 

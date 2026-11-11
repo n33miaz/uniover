@@ -155,31 +155,304 @@ def test_the_tree_from_github_keeps_only_agent_blobs(monkeypatch: pytest.MonkeyP
     )
 
 
+class Clock:
+    """Relógio e espera de mentira: `sleep` só avança o tempo e anota o pedido."""
+
+    def __init__(self, wall: float = 1_000_000.0) -> None:
+        self.now = 0.0
+        self.wall_start = wall
+        self.pauses: list[float] = []
+
+    def sleep(self, seconds: float) -> None:
+        self.pauses.append(seconds)
+        self.now += seconds
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def wall(self) -> float:
+        return self.wall_start + self.now
+
+    def fetch(self, sha: str = NEW) -> dict[str, str] | None:
+        return fetch_git_tree(sha, sleep=self.sleep, monotonic=self.monotonic, wall=self.wall)
+
+
+GOOD_ENTRIES = [{"path": "apps/agent/a.py", "type": "blob", "sha": "6" * 40, "mode": "100644"}]
+GOOD_TREE = {"a.py": "6" * 40}
+
+
+def sequence(
+    monkeypatch: pytest.MonkeyPatch, *answers: httpx.Response | Exception
+) -> tuple[list[httpx.Request], list[httpx.Response | Exception]]:
+    """Responde na ordem dada (um item por consulta); sobrar consulta é falha do teste."""
+    queue = list(answers)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        answer = queue.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    return patch_http(monkeypatch, handler), queue
+
+
 @pytest.mark.parametrize(
     "response",
     [
-        httpx.Response(403, json={"message": "rate limit"}),
+        httpx.Response(403, json={"message": "Forbidden"}),
+        httpx.Response(404, json={"message": "Not Found"}),
         httpx.Response(200, content=b"nao e json"),
         httpx.Response(200, json=["lista"]),
-        httpx.Response(200, json={"truncated": True, "tree": []}),
         httpx.Response(200, json={"tree": "nada"}),
         httpx.Response(200, json={"tree": [{"path": "apps/agent/a", "type": "blob"}]}),
         httpx.Response(200, json={"tree": [{"path": "README.md", "type": "blob", "sha": "1"}]}),
     ],
 )
-def test_a_tree_that_cannot_be_trusted_or_obtained_is_none(
+def test_a_tree_that_cannot_be_trusted_is_none_without_retrying(
     monkeypatch: pytest.MonkeyPatch, response: httpx.Response
 ) -> None:
-    patch_http(monkeypatch, lambda r: response)
-    assert fetch_git_tree(NEW) is None
+    requests = patch_http(monkeypatch, lambda r: response)
+    clock = Clock()
+    assert clock.fetch() is None
+    assert len(requests) == 1
+    assert clock.pauses == []
 
 
-def test_without_network_the_tree_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_without_network_it_retries_with_backoff_then_gives_up(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     def offline(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("sem rede")
+        raise httpx.ConnectError("sem rede em 10.1.2.3")
 
-    patch_http(monkeypatch, offline)
-    assert fetch_git_tree(NEW) is None
+    requests = patch_http(monkeypatch, offline)
+    clock = Clock()
+    with caplog.at_level("INFO", logger=module.__name__):
+        assert clock.fetch() is None
+    assert len(requests) == 3
+    assert clock.pauses == [2.0, 8.0]
+    lines = [r.getMessage() for r in caplog.records]
+    assert len(lines) == 3
+    assert all("github.com" not in line and "10.1.2.3" not in line for line in lines)
+    assert "tentativa 1/3" in lines[0]
+    assert "tentativa 3/3" in lines[2]
+
+
+def test_a_transient_failure_then_success_returns_the_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests, queue = sequence(
+        monkeypatch, httpx.ConnectTimeout("lento"), httpx.Response(502), github_tree(GOOD_ENTRIES)
+    )
+    clock = Clock()
+    assert clock.fetch() == GOOD_TREE
+    assert len(requests) == 3
+    assert queue == []
+    assert clock.pauses == [2.0, 8.0]
+
+
+@pytest.mark.parametrize(
+    "limited",
+    [
+        httpx.Response(403, json={"message": "API rate limit exceeded"}),
+        httpx.Response(403, headers={"X-RateLimit-Remaining": "0"}, json={"message": "x"}),
+        httpx.Response(429),
+    ],
+)
+def test_a_rate_limit_is_retried(monkeypatch: pytest.MonkeyPatch, limited: httpx.Response) -> None:
+    requests, _ = sequence(monkeypatch, limited, github_tree(GOOD_ENTRIES))
+    clock = Clock()
+    assert clock.fetch() == GOOD_TREE
+    assert len(requests) == 2
+    assert clock.pauses == [2.0]
+
+
+def test_retry_after_is_respected(monkeypatch: pytest.MonkeyPatch) -> None:
+    sequence(
+        monkeypatch, httpx.Response(429, headers={"Retry-After": "20"}), github_tree(GOOD_ENTRIES)
+    )
+    clock = Clock()
+    assert clock.fetch() == GOOD_TREE
+    assert clock.pauses == [20.0]
+
+
+def test_the_rate_limit_reset_time_is_respected(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = Clock()
+    reset = str(int(clock.wall_start) + 30)
+    sequence(
+        monkeypatch,
+        httpx.Response(403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset}),
+        github_tree(GOOD_ENTRIES),
+    )
+    assert clock.fetch() == GOOD_TREE
+    assert clock.pauses == [30.0]
+
+
+def test_a_wait_beyond_the_budget_gives_up_without_sleeping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = patch_http(
+        monkeypatch, lambda r: httpx.Response(429, headers={"Retry-After": "3600"})
+    )
+    clock = Clock()
+    assert clock.fetch() is None
+    assert len(requests) == 1
+    assert clock.pauses == []
+
+
+def test_the_total_wait_never_passes_the_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = patch_http(monkeypatch, lambda r: httpx.Response(429, headers={"Retry-After": "40"}))
+    clock = Clock()
+    assert clock.fetch() is None
+    # 40 s cabem no prazo de 60; os 40 s seguintes (80 no total) não.
+    assert clock.pauses == [40.0]
+    assert len(requests) == 2
+    assert clock.now <= module.TREE_RETRY_BUDGET_SECONDS
+
+
+def test_a_server_error_that_never_recovers_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = patch_http(monkeypatch, lambda r: httpx.Response(503))
+    clock = Clock()
+    assert clock.fetch() is None
+    assert len(requests) == 3
+
+
+# --- árvore truncada ----------------------------------------------------------------------------
+
+APPS, AGENT, SRC = "7" * 40, "c" * 40, "d" * 40
+
+
+def tree_item(path: str, sha: str, kind: str = "tree") -> dict[str, str]:
+    mode = "040000" if kind == "tree" else "100644"
+    return {"path": path, "type": kind, "sha": sha, "mode": mode}
+
+
+def truncated_repo(
+    monkeypatch: pytest.MonkeyPatch, **overrides: httpx.Response
+) -> list[httpx.Request]:
+    """O GitHub devolve a árvore recursiva truncada; ela se lê um diretório por vez."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sha = request.url.path.rsplit("/", 1)[1]
+        recursive = request.url.query == b"recursive=1"
+        if sha in overrides:
+            return overrides[sha]
+        if recursive and sha == NEW:
+            return github_tree([], truncated=True)
+        if recursive and sha == AGENT:
+            return github_tree(
+                [
+                    tree_item("pyproject.toml", "4" * 40, "blob"),
+                    tree_item("src", SRC),
+                    tree_item("src/a.py", "6" * 40, "blob"),
+                ]
+            )
+        if sha == APPS:
+            return github_tree([tree_item("agent", AGENT), tree_item("web", "f" * 40)])
+        if sha == NEW:
+            return github_tree(
+                [
+                    tree_item("README.md", "1" * 40, "blob"),
+                    tree_item("apps", APPS),
+                    tree_item("docs", "e" * 40),
+                ]
+            )
+        return httpx.Response(404)
+
+    return patch_http(monkeypatch, handler)
+
+
+def test_a_truncated_tree_is_read_directory_by_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = truncated_repo(monkeypatch)
+    assert Clock().fetch() == {"pyproject.toml": "4" * 40, "src/a.py": "6" * 40}
+    base = "https://api.github.com/repos/n33miaz/uniover/git/trees/"
+    asked = [str(r.url).removeprefix(base) for r in requests]
+    assert asked == [f"{NEW}?recursive=1", NEW, APPS, f"{AGENT}?recursive=1"]
+
+
+def test_a_truncated_agent_directory_is_walked_by_its_own_subdirectories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        sha = request.url.path.rsplit("/", 1)[1]
+        recursive = request.url.query == b"recursive=1"
+        if sha == NEW:
+            return (
+                github_tree([], truncated=True)
+                if recursive
+                else github_tree([tree_item("apps", APPS)])
+            )
+        if sha == APPS:
+            return github_tree([tree_item("agent", AGENT)])
+        if sha == AGENT and recursive:
+            return github_tree([], truncated=True)
+        if sha == AGENT:
+            return github_tree(
+                [tree_item("pyproject.toml", "4" * 40, "blob"), tree_item("src", SRC)]
+            )
+        if sha == SRC:
+            return github_tree([tree_item("a.py", "6" * 40, "blob")])
+        return httpx.Response(404)
+
+    patch_http(monkeypatch, handler)
+    assert Clock().fetch() == {"pyproject.toml": "4" * 40, "src/a.py": "6" * 40}
+
+
+def test_a_truncated_tree_without_the_agent_directory_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.query == b"recursive=1":
+            return github_tree([], truncated=True)
+        return github_tree([tree_item("README.md", "1" * 40, "blob")])
+
+    patch_http(monkeypatch, handler)
+    assert Clock().fetch() is None
+
+
+def test_a_truncated_tree_fails_closed_when_a_subtree_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    truncated_repo(monkeypatch, **{AGENT: httpx.Response(404)})
+    assert Clock().fetch() is None
+
+
+def test_a_truncated_tree_retries_transient_errors_in_a_subtree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    truncated_repo(monkeypatch, **{APPS: httpx.Response(503)})
+    clock = Clock()
+    assert clock.fetch() is None
+    # O prazo é um só para a conferência toda: três tentativas em `apps` (2 s + 8 s) e acabou.
+    assert clock.pauses == [2.0, 8.0]
+
+
+def test_no_new_query_leaves_once_the_budget_is_spent(monkeypatch: pytest.MonkeyPatch) -> None:
+    flat_answers = [
+        httpx.Response(429, headers={"Retry-After": "60"}),
+        github_tree([tree_item("apps", APPS)]),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.query == b"recursive=1":
+            return github_tree([], truncated=True)
+        return flat_answers.pop(0)
+
+    requests = patch_http(monkeypatch, handler)
+    clock = Clock()
+    assert clock.fetch() is None
+    # O recuo de 60 s consumiu o prazo: a descida para `apps` nem começa.
+    assert clock.pauses == [60.0]
+    assert len(requests) == 3
+
+
+def test_a_truncated_tree_for_a_non_sha_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_http(monkeypatch, lambda r: github_tree([], truncated=True))
+    assert Clock().fetch("main") is None
+
+
+def test_verify_tree_stays_fail_closed_when_the_fetch_gives_up(tmp_path: Path) -> None:
+    with pytest.raises(UpdateRejected, match="não consegui conferir a árvore"):
+        verify_tree(make_package(tmp_path / "a.zip"), NEW, lambda sha: None)
 
 
 # --- a atualização ------------------------------------------------------------------------------
