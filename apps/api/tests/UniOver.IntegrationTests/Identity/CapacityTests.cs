@@ -314,10 +314,10 @@ public sealed class CapacityTests(PostgresFixture postgres)
                 Extra = new Dictionary<string, string?> { ["Modules:Identity:Capacity:DatabaseLimitBytes"] = "1024" },
             });
 
-        // Seis execuções ao mesmo tempo, três em cada processo: todas terminam sem falha.
-        var runs = await Task.WhenAll(Enumerable.Range(0, 6).Select(i => Task.Run(() => RunJobAsync(i % 2 == 0 ? first : second), Ct)));
+        // Seis execuções, três em cada processo, liberadas juntas pela mesma barreira: a corrida que dois deploys podem produzir.
+        var results = await Race.RunTogetherAsync(6, i => RunJobAsync(i % 2 == 0 ? first : second), Ct);
 
-        runs.Should().OnlyContain(r => r.Succeeded);
+        results.Should().OnlyContain(r => r.Succeeded);
         await using var db = first.Db();
         (await db.CapacitySamples.AsNoTracking().CountAsync(Ct)).Should().Be(1);
         var open = await db.CapacityAlerts.AsNoTracking().Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct);

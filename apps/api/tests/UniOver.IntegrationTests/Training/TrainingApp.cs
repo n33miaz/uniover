@@ -54,6 +54,9 @@ internal sealed record TrainingAppOptions
     /// </summary>
     public bool FakeClock { get; init; }
 
+    /// <summary>Instante inicial do relógio falso, quando ele está ligado.</summary>
+    public DateTimeOffset? Start { get; init; }
+
     /// <summary>
     /// Interceptador de comandos SQL do <see cref="TrainingDbContext"/> da aplicação: os testes de corrida o usam para
     /// parar um pedido num ponto exato (entre dois comandos) e deixar outro passar, sem espera fixa.
@@ -131,8 +134,8 @@ internal sealed class TrainingApp : IAsyncDisposable
         var ownerEmail = "dono@uniover.test";
         var logs = new CapturingLoggerProvider();
         var time = options.FakeClock
-            ? new FakeTimeProvider(
-                new DateTimeOffset(DateTimeOffset.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero))
+            ? new FakeTimeProvider(options.Start ?? new DateTimeOffset(
+                DateTimeOffset.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero))
             : null;
 
         var settings = new Dictionary<string, string?>
