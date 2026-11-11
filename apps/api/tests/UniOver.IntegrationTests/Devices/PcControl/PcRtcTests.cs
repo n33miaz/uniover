@@ -1005,4 +1005,117 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         statuses.Should().Contain(HttpStatusCode.TooManyRequests);
         statuses.Take(20).Should().OnlyContain(s => s == HttpStatusCode.NotFound);
     }
+
+    // ---- reconciliar o canal que o agente segurou (a API pode ter reiniciado e perdido o registro) ----
+
+    private const string Reconcile = "pc.rtc.reconcile.v1";
+
+    private static Task<FakeAgent> ConnectReconcilingAsync(TransportApp app) =>
+        ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, Reconcile);
+
+    private static Task SendReconcileAsync(FakeAgent agent, Guid sessionId, string ticket) =>
+        agent.SendTextAsync(agent.Envelope(
+            Reconcile,
+            new JsonObject
+            {
+                ["sessions"] = new JsonArray(new JsonObject { ["sessionId"] = sessionId, ["ticket"] = ticket }),
+            }));
+
+    /// <summary>Fecha o canal aberto agora (a pedido do dono) e consome o aviso, para o próximo ser o do que se quer provar.</summary>
+    private static async Task CloseOpenChannelAsync(TransportApp app, FakeAgent agent, Guid sessionId)
+    {
+        using var closed = await PostAsync(app, $"{sessionId}/close", null);
+        closed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await agent.ReceiveAsync())!.Value.GetProperty("body").GetProperty("reason").GetString().Should().Be("requested");
+    }
+
+    [Fact]
+    public async Task TheOffer_CarriesTheSignedTicket_OnlyToAnAgentThatDeclaresTheReconcile()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var reconciling = await ConnectReconcilingAsync(app);
+
+        var (_, withTicket) = await OpenAsync(app, reconciling);
+
+        var body = withTicket.GetProperty("body");
+        body.GetProperty("ticket").GetString().Should().MatchRegex(@"^[A-Za-z0-9_-]{16,900}\.[A-Za-z0-9_-]{43}$");
+        body.TryGetProperty("userId", out _).Should().BeFalse("o agente não recebe nada além do bilhete opaco");
+    }
+
+    [Fact]
+    public async Task TheOffer_NeverCarriesTheTicket_ToAnAgentThatDoesNotDeclareTheReconcile()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+
+        var (_, offer) = await OpenAsync(app, agent);
+
+        offer.GetProperty("body").TryGetProperty("ticket", out _).Should().BeFalse("o esquema da oferta de um agente anterior é fechado");
+    }
+
+    [Fact]
+    public async Task AnAgentThatReconnectsWithTheTicketOfItsOpenChannel_GetsItConfirmed_AndARevocationThenFindsIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectReconcilingAsync(app);
+        var (answer, offer) = await OpenAsync(app, agent);
+        var sessionId = answer.GetProperty("sessionId").GetGuid();
+
+        await SendReconcileAsync(agent, sessionId, offer.GetProperty("body").GetProperty("ticket").GetString()!);
+
+        var confirmed = (await agent.ReceiveAsync())!.Value;
+        confirmed.GetProperty("type").GetString().Should().Be("pc.rtc.reconciled.v1");
+        confirmed.GetProperty("body").GetProperty("sessionIds").EnumerateArray().Select(i => i.GetGuid()).Should().Equal(sessionId);
+
+        await using (var scope = app.App.Services.CreateAsyncScope())
+        {
+            var listener = scope.ServiceProvider.GetServices<IUserAccessListener>().OfType<PcRtcAccessListener>().Single();
+            await listener.ChangedAsync(new UserAccessChange(await OwnerIdAsync(app), UserAccessChangeKind.AccountDisabled), Ct);
+        }
+
+        await ExpectRevokedCloseAsync(agent, sessionId);
+    }
+
+    [Fact]
+    public async Task ATicketThatWasAlteredOrIsNotTheApis_IsClosedAsRevoked_AndNeverConfirmed()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectReconcilingAsync(app);
+        var (answer, offer) = await OpenAsync(app, agent);
+        var sessionId = answer.GetProperty("sessionId").GetGuid();
+        var ticket = offer.GetProperty("body").GetProperty("ticket").GetString()!;
+        var forged = ticket[..20] + (ticket[20] == 'A' ? "B" : "A") + ticket[21..];
+
+        await SendReconcileAsync(agent, sessionId, forged);
+
+        await ExpectRevokedCloseAsync(agent, sessionId);
+    }
+
+    [Fact]
+    public async Task AChannelTheApiAlreadyClosed_IsNotResurrectedByTheAgentThatStillHoldsItsTicket()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectReconcilingAsync(app);
+        var (opened, offer) = await OpenAsync(app, agent);
+        var sessionId = opened.GetProperty("sessionId").GetGuid();
+        await CloseOpenChannelAsync(app, agent, sessionId);
+
+        await SendReconcileAsync(agent, sessionId, offer.GetProperty("body").GetProperty("ticket").GetString()!);
+
+        await ExpectRevokedCloseAsync(agent, sessionId);
+    }
+
+    [Fact]
+    public async Task AReconcileFromAConnectionThatDidNotDeclareTheCapability_IsIgnored()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (opened, _) = await OpenAsync(app, agent);
+        var sessionId = opened.GetProperty("sessionId").GetGuid();
+
+        await SendReconcileAsync(agent, sessionId, new string('a', 20) + "." + new string('b', 43));
+
+        // Nenhuma resposta: a próxima coisa que o agente recebe é o fechamento pedido agora pelo dono, não um revoked.
+        await ExpectStillOpenAsync(app, agent, sessionId);
+    }
 }

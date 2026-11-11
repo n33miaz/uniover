@@ -26,6 +26,14 @@ class PcRtcOfferV1Body(BaseModel):
     scopes: Annotated[
         list[PcRtcOfferV1BodyScopesItem] | None, Field(max_length=2, min_length=1)
     ] = None
+    ticket: Annotated[
+        str | None,
+        Field(
+            description='Bilhete opaco assinado pela API na oferta (HMAC sobre a sessão, quem abriu, a sessão de login, o aparelho, os escopos, a TV e o agente, com a validade do canal). O agente só o guarda e o devolve em pc.rtc.reconcile.v1; nunca o interpreta.',
+            max_length=1024,
+            pattern='^[A-Za-z0-9_-]{16,900}\\.[A-Za-z0-9_-]{43}$',
+        ),
+    ] = None
 
 
 class PcRtcOfferV1Message(BaseModel):

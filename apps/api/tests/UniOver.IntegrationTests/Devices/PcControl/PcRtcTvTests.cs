@@ -172,6 +172,71 @@ public sealed class PcRtcTvTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task AnOfferForPcAndTv_TheAgentRefusesForTheDevice_IsRepeatedForTheTvOnly_AndNeverLoops()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, TvRtc, "pc.device.v1");
+        var tvId = await SeedTvAsync(app);
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp, scopes = PcAndTv, tvId });
+        var first = (await agent.ReceiveAsync())!.Value;
+        first.GetProperty("body").GetProperty("scopes").EnumerateArray().Select(s => s.GetString()).Should().Equal("pc", "tv");
+        // O aparelho ainda não foi aprovado no PC: o agente é o primeiro a saber e recusa a oferta inteira, antes de criar o par.
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject
+        {
+            ["ok"] = false,
+            ["error"] = new JsonObject { ["code"] = "device_pending", ["message"] = "texto livre do agente" },
+        }, first.GetProperty("id").GetGuid()));
+
+        // A mesma oferta volta só com a TV (a aprovação do aparelho é do PC): o agente a atende e o app recebe o que ficou.
+        var second = await AnswerOfferAsync(agent);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        second.GetProperty("body").GetProperty("scopes").EnumerateArray().Select(s => s.GetString()).Should().Equal("tv");
+        second.GetProperty("body").GetProperty("sdp").GetString().Should().Be(FakeSdp);
+        second.TryGetProperty("deviceId", out _).Should().BeFalse("o canal só da TV não leva o aparelho");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await DevicesApp.JsonAsync(response)).GetProperty("scopes").EnumerateArray().Select(s => s.GetString()).Should().Equal("tv");
+    }
+
+    [Fact]
+    public async Task AnOfferWhoseTvDisappearsWhileTheAgentAccepts_IsRevoked_AndStillReplacesThePreviousChannel()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectWithTvAsync(app);
+        var tvId = await SeedTvAsync(app);
+        var (first, _) = await OfferAsync(app, agent, new { sdp = FakeSdp });
+        Guid firstId;
+        using (first)
+        {
+            firstId = (await DevicesApp.JsonAsync(first)).GetProperty("sessionId").GetGuid();
+        }
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp, scopes = PcAndTv, tvId });
+        var command = (await agent.ReceiveAsync())!.Value;
+        var secondId = command.GetProperty("body").GetProperty("sessionId").GetGuid();
+        // A TV some entre a primeira conferência e a aceitação do agente, sem o aviso da outbox (que o ouvinte acharia pela sessão).
+        await using (var tvs = TvApp.CreateContext(app.App.Database.OwnerConnection))
+        {
+            await tvs.Tvs.Where(t => t.Id == tvId).ExecuteDeleteAsync(Ct);
+        }
+
+        await agent.SendTextAsync(agent.Envelope(
+            "pc.rtc.answer.v1",
+            new JsonObject { ["sessionId"] = secondId, ["sdp"] = "ANSWER-SDP" },
+            command.GetProperty("id").GetGuid()));
+        await agent.SendTextAsync(agent.Envelope(
+            "command.result.v1", new JsonObject { ["ok"] = true }, command.GetProperty("id").GetGuid()));
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-direct-revoked");
+        // O agente já tinha trocado o par ao aceitar: o canal anterior sai do registro mesmo assim, e o novo nunca chega ao app.
+        await ExpectCloseAsync(agent, firstId, "replaced");
+        await ExpectCloseAsync(agent, secondId, "revoked");
+    }
+
+    [Fact]
     public async Task AGuestWithTheTvControl_GetsATvOnlyChannel_WithoutTheDeviceFieldsOfThePc()
     {
         await using var app = await TransportApp.StartAsync(postgres);

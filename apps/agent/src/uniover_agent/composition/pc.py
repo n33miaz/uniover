@@ -51,7 +51,12 @@ from uniover_agent.core import (
     volume_after_hello,
 )
 from uniover_agent.core.pc.devices import DeviceApprovals
-from uniover_agent.core.pc.direct import RTC_SILENT_TYPES, TvCounts
+from uniover_agent.core.pc.direct import (
+    RECONCILE_CAPABILITY,
+    RTC_SILENT_TYPES,
+    ReconcileClaim,
+    TvCounts,
+)
 from uniover_agent.core.pc.freshness import MAX_POINTER_AGE_SECONDS
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY, PC_SILENT_TYPES
 from uniover_agent.core.pc.lane import PcLane, PointerSpread
@@ -346,6 +351,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         handlers.update(pc_rtc_handlers(direct, sender, lane_envelopes))
         silent_types |= RTC_SILENT_TYPES
         capabilities.append(PC_RTC_CAPABILITY)
+        capabilities.append(RECONCILE_CAPABILITY)
     lane = PcLane(
         HandleCommand(handlers, clock_now),
         lane_envelopes,
@@ -426,6 +432,13 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
         except TransportError as exc:
             _log.debug("aviso de canal direto fechado não enviado (%s)", exc)
 
+    async def announce_reconcile(claim: ReconcileClaim) -> None:
+        envelope = envelopes.pc_rtc_reconcile(claim.session_id, claim.ticket)
+        if fire is not None:
+            fire(envelope)  # como o aviso de fechamento: não prende o laço da entrada
+            return
+        await sender.send(envelope)
+
     return PcDirectService(
         factory=factory or build_peer,
         agent_id=agent_id,
@@ -438,8 +451,10 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
             idle_seconds=settings.pc_direct_idle_seconds,
             max_lifetime_seconds=settings.pc_direct_max_lifetime_seconds,
             api_grace_seconds=settings.pc_direct_api_grace_seconds,
+            reconcile_seconds=settings.pc_direct_reconcile_seconds,
         ),
         devices=devices,
+        announce_reconcile=announce_reconcile,
     )
 
 

@@ -94,6 +94,7 @@ public static class IdentityModule
         services.AddSingleton<SystemSettingsService>();
         services.AddSingleton<UniOver.Modules.Identity.Contracts.ISystemSettings>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<UniOver.Modules.Identity.Contracts.IAccountRoleDirectory, UniOver.Modules.Identity.Adapters.AccountRoleDirectory>();
+        services.AddScoped<UniOver.Modules.Identity.Contracts.ISessionFamilyDirectory, UniOver.Modules.Identity.Adapters.SessionFamilyDirectory>();
 
         // Auditoria: a trilha de login é uma fonte (cada módulo com tabela de auditoria registra a sua) e este módulo junta
         // todas para o administrador. A retenção roda no banco; a aplicação só chama a função, periodicamente.

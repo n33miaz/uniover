@@ -95,6 +95,7 @@ from uniover_agent.core import (
     PC_VOLUME_CAPABILITY,
     PC_ZOOM_CAPABILITY,
     PRESENCE_CAPABILITY,
+    RECONCILE_CAPABILITY,
     RTC_TYPES,
     SETTINGS_OPEN_CAPABILITY,
     TV_RTC_CAPABILITY,
@@ -190,6 +191,7 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_VOLUME_CAPABILITY,
         PC_RTC_CAPABILITY,
         TV_RTC_CAPABILITY,
+        RECONCILE_CAPABILITY,
         PC_OP_CAPABILITY,
         PC_DEVICE_CAPABILITY,
     }
@@ -842,7 +844,10 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     async def announce_connected() -> None:
         if pc is not None and pc.direct is not None:
             # Só quem é a dona do PC cuida do canal direto: ele volta a valer com a API.
-            pc.on_lane(pc.direct.api_reconnected)
+            # Reconcilia o canal que ficou aberto só se a API a listou (e o `hello` a declara).
+            direct = pc.direct
+            reconcile = features.supports(RECONCILE_CAPABILITY)
+            pc.on_lane(lambda: direct.api_reconnected(reconcile=reconcile))
         tray.connected()
         diary.connected()
         watch.connected_now()

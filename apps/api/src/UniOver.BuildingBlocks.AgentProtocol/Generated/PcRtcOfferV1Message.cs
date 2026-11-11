@@ -28,7 +28,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// nuvem; nunca o desligamento, abrir app nem limpeza). Sem `scopes` o canal é só do PC,
     /// como sempre foi. Quem decide os escopos é a API, que os confere para a pessoa e para a TV
     /// no momento da oferta; o agente só os aplica. `scopes` só vai a quem declara a capacidade
-    /// tv.rtc.v1. Só vai a quem declara a capacidade pc.rtc.v1.
+    /// tv.rtc.v1. Só vai a quem declara a capacidade pc.rtc.v1. `ticket` (opcional) só vai a
+    /// quem declara pc.rtc.reconcile.v1.
     /// </summary>
     public partial class PcRtcOfferV1Message
     {
@@ -55,7 +56,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("deviceName")]
-        [JsonConverter(typeof(PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(PcRtcOfferV1MessageTentacledMinMaxLengthCheckConverter))]
         public string? DeviceName { get; set; }
 
         [JsonPropertyName("id")]
@@ -92,6 +93,16 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
         [JsonPropertyName("sessionId")]
         public Guid SessionId { get; set; }
+
+        /// <summary>
+        /// Bilhete opaco assinado pela API na oferta (HMAC sobre a sessão, quem abriu, a sessão de
+        /// login, o aparelho, os escopos, a TV e o agente, com a validade do canal). O agente só o
+        /// guarda e o devolve em pc.rtc.reconcile.v1; nunca o interpreta.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("ticket")]
+        [JsonConverter(typeof(PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter))]
+        public string? Ticket { get; set; }
 
         [JsonPropertyName("token")]
         public string Token { get; set; }
@@ -192,6 +203,33 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             var value = reader.GetString();
+            if (value.Length <= 1024)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length <= 1024)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter Singleton = new PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter();
+    }
+
+    internal class PcRtcOfferV1MessageTentacledMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
             if (value.Length >= 1 && value.Length <= 60)
             {
                 return value;
@@ -209,7 +247,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter Singleton = new PcRtcOfferV1MessageFluffyMinMaxLengthCheckConverter();
+        public static readonly PcRtcOfferV1MessageTentacledMinMaxLengthCheckConverter Singleton = new PcRtcOfferV1MessageTentacledMinMaxLengthCheckConverter();
     }
 
     internal class PcRtcOfferV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

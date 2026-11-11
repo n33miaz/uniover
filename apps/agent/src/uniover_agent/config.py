@@ -228,6 +228,10 @@ class Settings(BaseSettings):
     # rede): ele não depende da nuvem para andar. Passado o prazo sem a API voltar, fecha. A
     # revogação (a API manda fechar) fecha na hora, qualquer que seja o prazo.
     pc_direct_api_grace_seconds: float = Field(default=30.0, ge=0, le=300)
+    # Depois de reconectar, quanto a API tem para reconhecer o canal direto que o agente segurou
+    # (ela pode ter reiniciado e perdido o registro dele): sem a confirmação nesse prazo, o canal
+    # fecha.
+    pc_direct_reconcile_seconds: float = Field(default=10.0, ge=2, le=60)
     # O canal direto também leva as teclas e o texto da TV (a oferta traz o escopo `tv`): o mesmo
     # caminho das teclas da nuvem, só sem passar por ela. Desligado, a capacidade `tv.rtc.v1` nem é
     # declarada e a TV segue só pela nuvem. Só vale com `pc_direct` ligado.

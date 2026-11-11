@@ -5,6 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   DirectChannel,
   DirectNotSent,
+  DirectRetryCloud,
   PC_RTC_CAPABILITY,
   TV_RTC_CAPABILITY,
   type DirectTvTarget,
@@ -200,6 +201,14 @@ describe('TvDirect: the command', () => {
     const { direct, channel } = setup();
     channel.usable = true;
     channel.command.mockRejectedValueOnce(new DirectNotSent());
+
+    expect(await direct.command('tv.key.v3', { key: 'OK' })).toBe(false);
+  });
+
+  it('goes to the cloud when the agent refused before delivering the key', async () => {
+    const { direct, channel } = setup();
+    channel.usable = true;
+    channel.command.mockRejectedValueOnce(new DirectRetryCloud());
 
     expect(await direct.command('tv.key.v3', { key: 'OK' })).toBe(false);
   });

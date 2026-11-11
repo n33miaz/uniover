@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.rtc.reconciled.v1.schema.json",
+  "title": "pc.rtc.reconciled.v1",
+  "description": "API para agente: respostas a pc.rtc.reconcile.v1. As sessões em `sessionIds` foram reconhecidas e conferidas (com o direito de pé para todos os escopos) e seguem abertas. As demais saem de pc.rtc.close.v1. Só vai a quem declara pc.rtc.reconcile.v1. Sem resposta do agente.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.rtc.reconciled.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionIds"
+      ],
+      "properties": {
+        "sessionIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "../envelope.schema.json#/$defs/uuid"
+          }
+        }
+      }
+    }
+  }
+}

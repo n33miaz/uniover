@@ -55,6 +55,13 @@ internal static class PcMessages
     public const string TvRtcCapability = "tv.rtc.v1";
 
     /// <summary>
+    /// Capacidade de quem, ao reconectar, avisa os canais diretos que ficaram abertos (<c>pc.rtc.reconcile.v1</c>) para a API reconhecê-los
+    /// depois de reiniciar. Só a quem a declara a oferta leva o <c>ticket</c> (o esquema de um agente anterior
+    /// é fechado) e só a quem a declara a API aceita <c>pc.rtc.reconcile.v1</c> e manda <c>pc.rtc.reconciled.v1</c>.
+    /// </summary>
+    public const string RtcReconcileCapability = "pc.rtc.reconcile.v1";
+
+    /// <summary>
     /// Capacidade de quem aceita o <c>operationId</c> no envelope dos comandos do PC (o código do pedido HTTP, para ligar o registro da API ao do
     /// agente). O envelope de um agente anterior é fechado: sem a capacidade o campo nem sai.
     /// </summary>
@@ -315,7 +322,13 @@ internal static class PcMessages
 
     /// <summary>A oferta do canal direto, com o token de uso único que a primeira mensagem do canal precisa apresentar.</summary>
     public static OutboundMessage RtcOffer(
-        Guid sessionId, string sdp, string token, int tokenTtlSeconds, int maxLifetimeSeconds, IReadOnlyList<string>? scopes = null) =>
+        Guid sessionId,
+        string sdp,
+        string token,
+        int tokenTtlSeconds,
+        int maxLifetimeSeconds,
+        IReadOnlyList<string>? scopes = null,
+        string? ticket = null) =>
         Live(AgentMessageTypes.PcRtcOfferV1, BodyOf(new PcRtcOfferV1Message
         {
             Body = new PcRtcOfferV1Body
@@ -326,6 +339,7 @@ internal static class PcMessages
                 TokenTtlSeconds = tokenTtlSeconds,
                 MaxLifetimeSeconds = maxLifetimeSeconds,
                 Scopes = scopes?.Select(name => name == "tv" ? PcRtcOfferV1BodyScopesItem.Tv : PcRtcOfferV1BodyScopesItem.Pc).ToArray(),
+                Ticket = ticket,
             },
         }.ToJson()));
 
@@ -339,6 +353,13 @@ internal static class PcMessages
         Live(AgentMessageTypes.PcRtcCloseV1, BodyOf(new PcRtcCloseV1Message
         {
             Body = new PcRtcCloseV1Body { SessionId = sessionId, Reason = reason },
+        }.ToJson()));
+
+    /// <summary>A resposta a <c>pc.rtc.reconcile.v1</c>: a sessão foi reconhecida e conferida, e o canal segue aberto.</summary>
+    public static OutboundMessage RtcReconciled(Guid sessionId) =>
+        Live(AgentMessageTypes.PcRtcReconciledV1, BodyOf(new PcRtcReconciledV1Message
+        {
+            Body = new PcRtcReconciledV1Body { SessionIds = [sessionId] },
         }.ToJson()));
 
     /// <summary>

@@ -179,11 +179,15 @@ class Lab:
         self.closed: list[tuple[str, str]] = []
         self.tv_counts: list[TvCounts | None] = []
         self.records: list[tuple[str, str, str]] = []
+        self.claims: list[Any] = []
         self.ttl = ttl
 
         async def notify(session_id: str, reason: str, tv: TvCounts | None = None) -> None:
             self.closed.append((session_id, reason))
             self.tv_counts.append(tv)
+
+        async def announce_reconcile(claim: Any) -> None:
+            self.claims.append(claim)
 
         self.service = PcDirectService(
             factory=factory or self._factory,
@@ -193,6 +197,7 @@ class Lab:
             notify_closed=notify,
             record=lambda kind, severity, detail: self.records.append((kind, severity, detail)),
             settings=settings or DirectSettings(tick_seconds=0.005),
+            announce_reconcile=announce_reconcile,
         )
         handlers.update(pc_rtc_handlers(self.service, self.transport, self.envelopes))
         # A faixa e os `pc.rtc.*` usam os mesmos handlers do agente de verdade.
@@ -223,12 +228,16 @@ class Lab:
         return self.peers[-1]
 
     async def open(
-        self, token: str = TOKEN, session: str = SESSION, lifetime: int | None = None
+        self,
+        token: str = TOKEN,
+        session: str = SESSION,
+        lifetime: int | None = None,
+        **extra: Any,
     ) -> str:
-        return await self.service.open(session, SDP, token, self.ttl, lifetime)
+        return await self.service.open(session, SDP, token, self.ttl, lifetime, **extra)
 
-    async def open_authenticated(self, *, clock: bool = True) -> FakePeer:
-        await self.open()
+    async def open_authenticated(self, *, clock: bool = True, **extra: Any) -> FakePeer:
+        await self.open(**extra)
         self.peer.phone(INPUT_CHANNEL, {"k": "auth", "tok": TOKEN})
         await settle()
         if clock:

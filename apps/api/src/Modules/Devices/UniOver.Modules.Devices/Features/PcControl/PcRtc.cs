@@ -2,12 +2,15 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
@@ -92,6 +95,24 @@ internal sealed record PcRtcSession(
     bool RevokePending = false,
     PcRtcScopes Scopes = PcRtcScopes.Pc,
     Guid? TvId = null);
+
+/// <summary>O que o registro fez com a sessão que o agente disse ter aberto.</summary>
+internal enum PcRtcRestoreOutcome
+{
+    /// <summary>A API não a tinha: foi reconstruída e agora precisa ser conferida.</summary>
+    Restored,
+
+    /// <summary>A API já a tinha, íntegra: segue como está (e precisa ser conferida de novo).</summary>
+    Known,
+
+    /// <summary>Não vale: já foi fechada, está marcada para revogação ou o registro diz que é de outra pessoa.</summary>
+    Closed,
+
+    /// <summary>Outra sessão ocupa este PC agora: o agente a troca, então a dele sai.</summary>
+    Replaced,
+}
+
+internal sealed record PcRtcRestore(PcRtcRestoreOutcome Outcome, PcRtcSession? Session);
 
 /// <summary>Os limites do que o app pode pedir: o que a API deixaria passar e o contrato recusasse viraria 500 em vez de 400.</summary>
 internal static class PcRtcValidator
@@ -180,8 +201,18 @@ internal sealed class PcRtcSessions(TimeProvider time)
     /// </summary>
     public static readonly TimeSpan ClosedTvMemory = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Quanto o registro lembra que uma sessão saiu dele (fechada pela pessoa, pela API ou pelo agente): o agente que reconecta e a lista
+    /// como aberta não a ressuscita. Passa da vida máxima de um canal, que é até quando o agente poderia ainda segurá-la.
+    /// </summary>
+    public static readonly TimeSpan TombstoneMemory = PcRtcHandler.MaxLifetime + TokenLifetime;
+
+    /// <summary>Teto das lápides (uma por canal fechado): passando dele, as mais antigas saem primeiro.</summary>
+    public const int MaxTombstones = 256;
+
     private readonly object _gate = new();
     private readonly Dictionary<Guid, PcRtcSession> _sessions = [];
+    private readonly Dictionary<Guid, DateTimeOffset> _tombstones = [];
     private readonly Dictionary<Guid, (PcRtcSession Session, DateTimeOffset Until)> _closedTv = [];
 
     public PcRtcSession Open(
@@ -251,9 +282,74 @@ internal sealed class PcRtcSessions(TimeProvider time)
     private void Forget(PcRtcSession session)
     {
         _sessions.Remove(session.Id);
+        Remember(session.Id);
         if (session.TvId is not null)
         {
             _closedTv[session.Id] = (session, time.GetUtcNow() + ClosedTvMemory);
+        }
+    }
+
+    private void Remember(Guid sessionId)
+    {
+        var now = time.GetUtcNow();
+        foreach (var old in _tombstones.Where(t => t.Value <= now).Select(t => t.Key).ToList())
+        {
+            _tombstones.Remove(old);
+        }
+
+        _tombstones[sessionId] = now + TombstoneMemory;
+        while (_tombstones.Count > MaxTombstones)
+        {
+            _tombstones.Remove(_tombstones.MinBy(t => t.Value).Key);
+        }
+    }
+
+    /// <summary>
+    /// Reconstrói a sessão de um canal que o agente diz ter aberto (a API reiniciou e perdeu o registro, ou só a conexão caiu): mantém o id,
+    /// sob o mesmo trinco das demais operações. Nada é reconstruído de uma sessão que a API já fechou (lápide), que está marcada para
+    /// revogação ou que é de outra pessoa; e o agente só tem UM canal, então outra sessão viva neste PC (uma oferta em curso) vale mais que a
+    /// do agente, que vai ser trocada de qualquer jeito. Quem chama confere o direito DEPOIS de a sessão estar aqui, para uma revogação no
+    /// meio a encontrar.
+    /// </summary>
+    public PcRtcRestore Restore(PcRtcSession claimed)
+    {
+        ArgumentNullException.ThrowIfNull(claimed);
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            if (_tombstones.TryGetValue(claimed.Id, out var until) && until > now)
+            {
+                return new PcRtcRestore(PcRtcRestoreOutcome.Closed, null);
+            }
+
+            if (_sessions.TryGetValue(claimed.Id, out var known))
+            {
+                return known.UserId == claimed.UserId
+                    && string.Equals(known.AgentSlug, claimed.AgentSlug, StringComparison.Ordinal)
+                    && !known.RevokePending
+                        ? new PcRtcRestore(PcRtcRestoreOutcome.Known, known)
+                        : new PcRtcRestore(PcRtcRestoreOutcome.Closed, null);
+            }
+
+            if (_sessions.Values.Any(s => string.Equals(s.AgentSlug, claimed.AgentSlug, StringComparison.Ordinal)))
+            {
+                return new PcRtcRestore(PcRtcRestoreOutcome.Replaced, null);
+            }
+
+            _sessions[claimed.Id] = claimed;
+            return new PcRtcRestore(PcRtcRestoreOutcome.Restored, claimed);
+        }
+    }
+
+    /// <summary>
+    /// A sessão está no registro AGORA, é desta pessoa e não está marcada para revogação? Conferido sob o trinco, imediatamente antes de a
+    /// API confirmar o canal ao agente: uma revogação que chegou entre a conferência e a confirmação a tirou ou a marcou, e então não se confirma.
+    /// </summary>
+    public bool IsLiveAndClean(Guid sessionId, Guid userId)
+    {
+        lock (_gate)
+        {
+            return _sessions.TryGetValue(sessionId, out var session) && session.UserId == userId && !session.RevokePending;
         }
     }
 
@@ -328,11 +424,13 @@ internal sealed class PcRtcSessions(TimeProvider time)
     }
 
     /// <summary>Marca a sessão cuja revogação não alcançou o agente: ela fica no registro e o aviso é refeito quando o agente volta.</summary>
-    public void MarkRevokePending(Guid sessionId)
+    public void MarkRevokePending(Guid sessionId, string? agentSlug = null)
     {
         lock (_gate)
         {
-            if (_sessions.TryGetValue(sessionId, out var session))
+            // Com o agente dado, só marca a sessão DELE: um id alheio (um bilhete inválido que cita a sessão de outro PC) não marca a de ninguém.
+            if (_sessions.TryGetValue(sessionId, out var session)
+                && (agentSlug is null || string.Equals(session.AgentSlug, agentSlug, StringComparison.Ordinal)))
             {
                 _sessions[sessionId] = session with { RevokePending = true };
             }
@@ -526,7 +624,9 @@ internal sealed class PcRtcHandler(
     PcOriginReader origins,
     PcDeviceStates deviceStates,
     IAccessGrants grants,
-    ITvDirectChannels? tv = null)
+    ITvDirectChannels? tv = null,
+    PcRtcTickets? tickets = null,
+    TimeProvider? time = null)
 {
     /// <summary>O agente carrega a biblioteca na primeira oferta (cerca de um segundo) e junta os candidatos; o prazo dele é de 12 s, e o desta espera é maior para a recusa dele chegar antes.</summary>
     public static readonly TimeSpan OfferTimeout = TimeSpan.FromSeconds(15);
@@ -636,7 +736,18 @@ internal sealed class PcRtcHandler(
         var withPc = granted.HasFlag(PcRtcScopes.Pc);
         if (withPc && origin.DeviceId is not null && deviceStates.RefusalFor(target.Slug, origin.DeviceId) is { } refusal)
         {
-            return PcProblems.DeviceRefused(refusal);
+            // A aprovação é só do controle do PC. Quando a mesma oferta também pode levar a TV,
+            // conservamos esse escopo: o app recebe a lista concedida e não entra em recuo por um
+            // aparelho que o dono ainda não aprovou para o PC.
+            if (granted.HasFlag(PcRtcScopes.Tv))
+            {
+                granted &= ~PcRtcScopes.Pc;
+                withPc = false;
+            }
+            else
+            {
+                return PcProblems.DeviceRefused(refusal);
+            }
         }
 
         // No máximo um canal por PC: a oferta nova substitui a anterior (o agente também troca o par e solta o que segurava). As anteriores
@@ -656,7 +767,33 @@ internal sealed class PcRtcHandler(
         var maxLifetime = (int)Math.Min(lifetime.TotalSeconds, MaxLifetime.TotalSeconds);
         // Sem o escopo da TV a oferta é a de sempre (sem o campo): é a única que um agente anterior entende.
         var scopes = granted == PcRtcScopes.Pc ? null : PcRtcScopeNames.ToWire(granted);
-        var message = PcMessages.RtcOffer(session.Id, request.Sdp!, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds, maxLifetime, scopes);
+        // Quem sabe reconciliar (reconectar depois de a API reiniciar) leva um bilhete assinado pela API, que o agente só guarda e devolve; o
+        // esquema da oferta de um agente anterior é fechado, então o campo nem sai para ele. Sem a sessão de login não há bilhete (a API
+        // não teria como saber se ela ainda vale): o canal, se sobreviver a uma reinicialização, é reaberto pelo app.
+        var reconcilable = tickets is not null
+            && sessionFamily is not null
+            && target.Capabilities.Contains(PcMessages.RtcReconcileCapability, StringComparer.Ordinal);
+        var issuedAt = time?.GetUtcNow() ?? DateTimeOffset.UtcNow;
+        var ticket = reconcilable
+            ? tickets!.Issue(new PcRtcTicketClaims(
+                session.Id,
+                userId,
+                sessionFamily,
+                withPc ? origin.DeviceId : null,
+                granted,
+                granted.HasFlag(PcRtcScopes.Tv) ? tvId : null,
+                target.Slug,
+                issuedAt,
+                issuedAt + TimeSpan.FromSeconds(maxLifetime) + PcRtcSessions.TokenLifetime))
+            : null;
+        var message = PcMessages.RtcOffer(
+            session.Id,
+            request.Sdp!,
+            token,
+            (int)PcRtcSessions.TokenLifetime.TotalSeconds,
+            maxLifetime,
+            scopes,
+            ticket);
 
         // A oferta leva o aparelho (a aprovação no PC); o canal herda a decisão. Sem a capacidade, ou sem o escopo do PC, o campo nem sai.
         if (withPc)
@@ -678,6 +815,16 @@ internal sealed class PcRtcHandler(
             // revogação é descoberta depois, e o app não insiste.
             if (PcProblems.IsDeviceRefusal(reply.Value.Error?.Code))
             {
+                // A decisão do aparelho só vale para PC. O agente pode ser o primeiro a saber que ele está pendente ou recusado (a API ainda
+                // não o sabia); refazemos a oferta apenas para a TV. O mesmo SDP serve: o agente recusa pelo aparelho ANTES de criar o par,
+                // então nada ficou negociado. Só quando a oferta tinha o PC E a TV: a oferta só da TV não passa pela aprovação do aparelho,
+                // e um código desses vindo dela é do agente, não de algo a refazer (e não pode entrar em laço).
+                if (granted.HasFlag(PcRtcScopes.Pc) && granted.HasFlag(PcRtcScopes.Tv))
+                {
+                    return await OfferAsync(
+                        userId, isOwner, sessionFamily, lifetime,
+                        request with { Scopes = [PcRtcScopeNames.Tv] }, client, cancellationToken);
+                }
                 return PcProblems.DeviceRefused(reply.Value.Error!.Code);
             }
 
@@ -695,6 +842,16 @@ internal sealed class PcRtcHandler(
 
         // O agente aceitou a oferta e trocou o par: agora sim as anteriores saem do registro, com o aviso e a trilha.
         await ReplacePreviousAsync(previous, target.Slug, client, cancellationToken);
+
+        // A permissão pode ter caído entre a primeira conferência e a aceitação do agente (o ouvinte de revogação não achava a sessão: ela
+        // ainda não estava aceita). Reconfere com a MESMA regra da oferta (e do reconcile); se algum escopo caiu, nada do canal chega ao app.
+        // As anteriores já saíram acima: o agente as trocou ao aceitar, e elas não podem ficar no registro segurando o PC.
+        if (await PcRtcRights.StillValidAsync(resolver, grants, tv, userId, isOwner, granted, tvId, target.Slug, cancellationToken) != granted)
+        {
+            sessions.TakeOwned(session.Id, userId);
+            await CloseWithoutRequestAsync(target.Slug, session.Id);
+            return PcProblems.DirectRevoked();
+        }
 
         var answer = await pending.WaitAsync(AnswerGrace, cancellationToken);
         if (answer is null)
@@ -807,7 +964,7 @@ internal sealed partial class PcRtcRevoker(
     IAgentGateway gateway,
     PairingAuditWriter audit,
     DevicesDbContext db,
-    ILogger<PcRtcRevoker> logger)
+    ILogger<PcRtcRevoker> logger) : IPcRtcCloser
 {
     /// <summary>Nunca propaga falha: a mudança de acesso já vale, e o que não fechar agora fecha pela vida máxima do canal.</summary>
     public async Task CloseSafelyAsync(IReadOnlyList<(PcRtcSession Session, PcRtcCloseV1BodyReason Reason)> plan, string what)
@@ -838,7 +995,7 @@ internal sealed partial class PcRtcRevoker(
                 {
                     // O agente não foi alcançado: a sessão fica marcada e a revogação é refeita quando ele voltar (ele pode manter o canal
                     // direto por alguns segundos sem a API, e este é o que impede um canal revogado de viver até a vida máxima).
-                    sessions.MarkRevokePending(session.Id);
+                    sessions.MarkRevokePending(session.Id, session.AgentSlug);
                     continue;
                 }
 
@@ -992,6 +1149,354 @@ internal sealed class TvDirectAccessRemovedHandler(PcRtcSessions sessions, PcRtc
             .Select(session => (session, session.Scopes.HasFlag(PcRtcScopes.Pc) ? PcRtcCloseV1BodyReason.Rescoped : PcRtcCloseV1BodyReason.Revoked))
             .ToList();
     }
+}
+
+/// <summary>
+/// A regra única de "a pessoa ainda pode levar isto pelo canal deste PC": a oferta a usa depois de o agente aceitar, e o reconcile a usa
+/// para cada sessão que o agente diz ter aberto. Escopo a escopo: o PC é o módulo <c>module:pc</c> E o computador da própria pessoa; a TV
+/// é a que o módulo TV diz que ela pode controlar agora, e que é controlada por este mesmo agente.
+/// </summary>
+internal static class PcRtcRights
+{
+    /// <summary>O subconjunto de <paramref name="scopes"/> que ainda vale para <paramref name="userId"/> neste agente.</summary>
+    public static async Task<PcRtcScopes> StillValidAsync(
+        PcAgentResolver resolver,
+        IAccessGrants grants,
+        ITvDirectChannels? tv,
+        Guid userId,
+        bool isOwner,
+        PcRtcScopes scopes,
+        Guid? tvId,
+        string agentSlug,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(grants);
+
+        var valid = PcRtcScopes.None;
+        if (scopes.HasFlag(PcRtcScopes.Pc)
+            && await grants.HasAsync(userId, AccessPermissions.PcModule, cancellationToken)
+            && await resolver.ResolveAsync(userId, cancellationToken) is { } pc
+            && string.Equals(pc.Slug, agentSlug, StringComparison.Ordinal))
+        {
+            valid |= PcRtcScopes.Pc;
+        }
+
+        if (scopes.HasFlag(PcRtcScopes.Tv)
+            && tv is not null
+            && tvId is not null
+            && await tv.ResolveAsync(userId, isOwner, tvId, cancellationToken) is { } target
+            && target.TvId == tvId
+            && string.Equals(target.AgentSlug, agentSlug, StringComparison.Ordinal))
+        {
+            valid |= PcRtcScopes.Tv;
+        }
+
+        return valid;
+    }
+}
+
+/// <summary>O que o bilhete do canal afirma, tudo decidido pela API na oferta (o agente nunca escreve nele).</summary>
+/// <param name="Family">A sessão de login (família do refresh) que abriu o canal; sem ela a oferta não leva bilhete.</param>
+/// <param name="DeviceId">O aparelho que a oferta levou ao agente (só com o escopo do PC); o mesmo que a aprovação no PC conferiu.</param>
+/// <param name="ExpiresAt">O fim da vida máxima do canal (mais a janela do token): depois disso nem o agente mantém o canal.</param>
+internal sealed record PcRtcTicketClaims(
+    Guid SessionId,
+    Guid UserId,
+    Guid? Family,
+    string? DeviceId,
+    PcRtcScopes Scopes,
+    Guid? TvId,
+    string AgentSlug,
+    DateTimeOffset IssuedAt,
+    DateTimeOffset ExpiresAt);
+
+/// <summary>
+/// O bilhete assinado do canal direto: a prova, verificável depois de a API reiniciar, de que ELA abriu aquela sessão para aquela pessoa, com
+/// aqueles escopos, neste agente. O agente só o guarda e o devolve em <c>pc.rtc.reconcile.v1</c>; nada do que ele declara além disso é
+/// confiado. Formato <c>base64url(carga).base64url(HMAC-SHA256)</c>. A chave é derivada (HKDF, com um contexto próprio) da chave de assinatura
+/// do JWT que a API já tem: nenhum segredo novo, e a troca de chave segue a do JWT (a anterior ainda valida). Chave temporária (só em
+/// desenvolvimento) faz os bilhetes morrerem no reinício, que é o mesmo que acontece com as sessões.
+/// </summary>
+internal sealed class PcRtcTickets
+{
+    private const string Context = "uniover/pc-rtc-ticket/v1";
+    private const int MacBytes = 32;
+
+    private readonly byte[] _signing;
+    private readonly IReadOnlyList<byte[]> _verifying;
+
+    public PcRtcTickets(JwtKeySet keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        _signing = Derive(keys.SigningCredentials.Key);
+        _verifying = [.. keys.ValidationKeys.Select(Derive)];
+    }
+
+    private static byte[] Derive(SecurityKey key) =>
+        key is SymmetricSecurityKey symmetric
+            ? HKDF.DeriveKey(HashAlgorithmName.SHA256, symmetric.Key, MacBytes, salt: null, info: Encoding.UTF8.GetBytes(Context))
+            : throw new InvalidOperationException("A chave de assinatura do JWT precisa ser simétrica.");
+
+    public string Issue(PcRtcTicketClaims claims)
+    {
+        ArgumentNullException.ThrowIfNull(claims);
+
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new Payload(
+            1,
+            claims.SessionId,
+            claims.UserId,
+            claims.Family,
+            claims.DeviceId,
+            (int)claims.Scopes,
+            claims.TvId,
+            claims.AgentSlug,
+            claims.IssuedAt.ToUnixTimeSeconds(),
+            claims.ExpiresAt.ToUnixTimeSeconds()));
+        return Base64UrlEncoder.Encode(payload) + "." + Base64UrlEncoder.Encode(HMACSHA256.HashData(_signing, payload));
+    }
+
+    /// <summary>As afirmações do bilhete, ou nulo se ele foi adulterado, é de outro formato, não é de uma chave nossa ou já venceu.</summary>
+    public PcRtcTicketClaims? Read(string? ticket, DateTimeOffset now)
+    {
+        if (string.IsNullOrEmpty(ticket) || ticket.Length > 1024)
+        {
+            return null;
+        }
+
+        var dot = ticket.IndexOf('.', StringComparison.Ordinal);
+        if (dot <= 0 || dot == ticket.Length - 1)
+        {
+            return null;
+        }
+
+        byte[] payload;
+        byte[] mac;
+        try
+        {
+            payload = Base64UrlEncoder.DecodeBytes(ticket[..dot]);
+            mac = Base64UrlEncoder.DecodeBytes(ticket[(dot + 1)..]);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        // Percorre todas as chaves (sem parar na primeira que casa): o tempo não diz qual era.
+        var signed = false;
+        foreach (var key in _verifying)
+        {
+            signed |= CryptographicOperations.FixedTimeEquals(HMACSHA256.HashData(key, payload), mac);
+        }
+
+        if (!signed)
+        {
+            return null;
+        }
+
+        try
+        {
+            var body = JsonSerializer.Deserialize<Payload>(payload);
+            if (body is not { V: 1 } || body.Slug is null)
+            {
+                return null;
+            }
+
+            var claims = new PcRtcTicketClaims(
+                body.Sid,
+                body.Uid,
+                body.Fam,
+                body.Dev,
+                (PcRtcScopes)body.Sc,
+                body.Tv,
+                body.Slug,
+                DateTimeOffset.FromUnixTimeSeconds(body.Iat),
+                DateTimeOffset.FromUnixTimeSeconds(body.Exp));
+            return claims.ExpiresAt > now && (int)claims.Scopes is > 0 and <= 3 ? claims : null;
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentOutOfRangeException or OverflowException or FormatException)
+        {
+            // Carga assinada por nós mas fora do intervalo (instante impossível, número grande demais): nada se aproveita.
+            return null;
+        }
+    }
+
+    private sealed record Payload(
+        [property: System.Text.Json.Serialization.JsonPropertyName("v")] int V,
+        [property: System.Text.Json.Serialization.JsonPropertyName("sid")] Guid Sid,
+        [property: System.Text.Json.Serialization.JsonPropertyName("uid")] Guid Uid,
+        [property: System.Text.Json.Serialization.JsonPropertyName("fam")] Guid? Fam,
+        [property: System.Text.Json.Serialization.JsonPropertyName("dev")] string? Dev,
+        [property: System.Text.Json.Serialization.JsonPropertyName("sc")] int Sc,
+        [property: System.Text.Json.Serialization.JsonPropertyName("tv")] Guid? Tv,
+        [property: System.Text.Json.Serialization.JsonPropertyName("ag")] string? Slug,
+        [property: System.Text.Json.Serialization.JsonPropertyName("iat")] long Iat,
+        [property: System.Text.Json.Serialization.JsonPropertyName("exp")] long Exp);
+}
+
+/// <summary>O canal que o agente diz ter aberto (<c>pc.rtc.reconcile.v1</c>): só o id e o bilhete que a API deu; o resto o bilhete diz.</summary>
+internal sealed record PcRtcClaim(Guid SessionId, string Ticket);
+
+/// <summary>O que o reconciliador precisa saber de fora do registro: o agente da conexão e o direito de cada escopo agora.</summary>
+internal interface IPcRtcReconcileAuthority
+{
+    /// <summary>O agente pelo nome, com o que ele declarou no <c>hello</c> desta conexão; nulo se revogado ou desconhecido.</summary>
+    Task<PcTarget?> AgentAsync(string slug, CancellationToken cancellationToken);
+
+    /// <summary>O subconjunto de <paramref name="scopes"/> que ainda vale para a pessoa neste agente (a regra única da oferta).</summary>
+    Task<PcRtcScopes> ValidScopesAsync(Guid userId, PcRtcScopes scopes, Guid? tvId, string agentSlug, CancellationToken cancellationToken);
+}
+
+internal sealed class PcRtcReconcileAuthority(
+    PcAgentResolver resolver, IAccessGrants grants, IAccountRoleDirectory? roles = null, ITvDirectChannels? tv = null) : IPcRtcReconcileAuthority
+{
+    public Task<PcTarget?> AgentAsync(string slug, CancellationToken cancellationToken) => resolver.ResolveBySlugAsync(slug, cancellationToken);
+
+    public async Task<PcRtcScopes> ValidScopesAsync(
+        Guid userId, PcRtcScopes scopes, Guid? tvId, string agentSlug, CancellationToken cancellationToken)
+    {
+        var owner = roles is not null && (await roles.OwnersAmongAsync([userId], cancellationToken)).Contains(userId);
+        return await PcRtcRights.StillValidAsync(resolver, grants, tv, userId, owner, scopes, tvId, agentSlug, cancellationToken);
+    }
+}
+
+/// <summary>Quem fecha as sessões de um plano (avisa o agente, tira do registro e grava a trilha): o <see cref="PcRtcRevoker"/>.</summary>
+internal interface IPcRtcCloser
+{
+    Task CloseAsync(IReadOnlyList<(PcRtcSession Session, PcRtcCloseV1BodyReason Reason)> plan, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// O agente reconectou e diz ter um canal direto aberto: a API pode ter reiniciado e perdido o registro dele, e sem o registro uma
+/// revogação não acharia o canal (ele viveria até a vida máxima). NADA do que o agente declara é confiado: ele devolve o bilhete que a API
+/// assinou na oferta. A sessão só é reconstruída se o bilhete é dela e não venceu, é deste agente (o da conexão) e desta sessão, e se a sessão
+/// de login que abriu o canal ainda existe e não foi revogada; então se reconferem as permissões pelas regras da oferta. O que continua
+/// valendo é confirmado ao agente (<c>pc.rtc.reconciled.v1</c>); o resto é fechado com <c>revoked</c> (nada sobrou) ou <c>rescoped</c> (sobrou
+/// um escopo, e o app abre outro). As lápides em memória são só um reforço: a segurança está no bilhete e na sessão de login. Uma conexão que
+/// não declarou a capacidade é ignorada. Falhando no meio, a confirmação não sai e o agente fecha o canal pelo prazo dele.
+/// </summary>
+internal sealed partial class PcRtcReconciler(
+    IPcRtcReconcileAuthority authority,
+    ISessionFamilyDirectory families,
+    IAgentGateway gateway,
+    PcRtcSessions sessions,
+    IPcRtcCloser closer,
+    PcRtcTickets tickets,
+    PcDeviceStates deviceStates,
+    TimeProvider time,
+    ILogger<PcRtcReconciler> logger)
+{
+    public async Task ReconcileAsync(string agentSlug, IReadOnlyList<PcRtcClaim> claims, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(claims);
+
+        if (claims.Count == 0 || await authority.AgentAsync(agentSlug, cancellationToken) is not { Connected: true } agent)
+        {
+            return;
+        }
+
+        // Só quem declarou a capacidade no `hello` desta conexão reconcilia: um agente anterior (ou um token de agente que a API não conhece
+        // assim) nunca tem canal reconstruído por aqui.
+        if (!agent.Capabilities.Contains(PcMessages.RtcReconcileCapability, StringComparer.Ordinal))
+        {
+            LogIgnored();
+            return;
+        }
+
+        var close = new List<(PcRtcSession Session, PcRtcCloseV1BodyReason Reason)>();
+        var kept = new List<PcRtcSession>();
+        foreach (var claim in claims)
+        {
+            var now = time.GetUtcNow();
+            var ticket = tickets.Read(claim.Ticket, now);
+            if (ticket is null
+                || ticket.SessionId != claim.SessionId
+                || !string.Equals(ticket.AgentSlug, agentSlug, StringComparison.Ordinal))
+            {
+                // Adulterado, vencido, de outra sessão ou de outro agente: não é prova de nada. A pessoa do bilhete (se houver) nem é consultada.
+                LogRefused();
+                close.Add((new PcRtcSession(claim.SessionId, ticket?.UserId ?? Guid.Empty, agent.AgentId, agentSlug, now), PcRtcCloseV1BodyReason.Revoked));
+                continue;
+            }
+
+            var claimed = new PcRtcSession(
+                ticket.SessionId, ticket.UserId, agent.AgentId, agentSlug, ticket.IssuedAt < now ? ticket.IssuedAt : now, ticket.Family, false, ticket.Scopes, ticket.TvId);
+            var restore = sessions.Restore(claimed);
+            if (restore.Outcome is PcRtcRestoreOutcome.Closed or PcRtcRestoreOutcome.Replaced)
+            {
+                close.Add((claimed, restore.Outcome == PcRtcRestoreOutcome.Closed ? PcRtcCloseV1BodyReason.Revoked : PcRtcCloseV1BodyReason.Replaced));
+                continue;
+            }
+
+            // Já no registro (a revogação que chegar agora a encontra), confere de novo, com a regra da oferta.
+            var session = restore.Session!;
+            var valid = PcRtcScopes.None;
+            if (ticket.Family is { } family && await families.IsActiveAsync(session.UserId, family, cancellationToken))
+            {
+                valid = await authority.ValidScopesAsync(session.UserId, session.Scopes, session.TvId, agentSlug, cancellationToken);
+                // O aparelho que o dono do PC recusou (ou ainda não aprovou) não leva o PC, como na oferta.
+                if (valid.HasFlag(PcRtcScopes.Pc) && ticket.DeviceId is not null && deviceStates.RefusalFor(agentSlug, ticket.DeviceId) is not null)
+                {
+                    valid &= ~PcRtcScopes.Pc;
+                }
+            }
+
+            if (CloseReasonFor(session.Scopes, valid) is { } reason)
+            {
+                close.Add((session, reason));
+            }
+            else
+            {
+                kept.Add(session);
+            }
+        }
+
+        if (close.Count > 0)
+        {
+            await closer.CloseAsync(close, cancellationToken);
+        }
+
+        // As conferências têm awaits: uma revogação pode ter tirado a sessão (ou a marcado) desde que ela foi reconstruída. Só se confirma o que
+        // AINDA está lá e limpo, conferido sob o trinco do registro imediatamente antes de cada confirmação.
+        var confirmed = 0;
+        var late = new List<(PcRtcSession Session, PcRtcCloseV1BodyReason Reason)>();
+        foreach (var session in kept)
+        {
+            if (!sessions.IsLiveAndClean(session.Id, session.UserId))
+            {
+                late.Add((session, PcRtcCloseV1BodyReason.Revoked));
+                continue;
+            }
+
+            await gateway.SendAsync(agentSlug, PcMessages.RtcReconciled(session.Id), cancellationToken);
+            confirmed++;
+        }
+
+        if (late.Count > 0)
+        {
+            await closer.CloseAsync(late, cancellationToken);
+        }
+
+        LogReconciled(confirmed, close.Count + late.Count);
+    }
+
+    /// <summary>
+    /// O que fazer com um canal que pedia <paramref name="scopes"/> e agora só tem direito a <paramref name="valid"/>: nada (nulo, tudo de pé),
+    /// <c>rescoped</c> (sobrou um escopo, e o app abre outro com ele) ou <c>revoked</c> (nada sobrou). A mesma regra do ouvinte de acesso.
+    /// </summary>
+    internal static PcRtcCloseV1BodyReason? CloseReasonFor(PcRtcScopes scopes, PcRtcScopes valid) =>
+        (valid & scopes) == scopes
+            ? null
+            : (valid & scopes) == PcRtcScopes.None ? PcRtcCloseV1BodyReason.Revoked : PcRtcCloseV1BodyReason.Rescoped;
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Canais diretos reconciliados depois da reconexão do agente: {Confirmed} confirmados, {Closed} fechados.")]
+    private partial void LogReconciled(int confirmed, int closed);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Reconciliação do canal direto ignorada: a conexão do agente não declarou pc.rtc.reconcile.v1.")]
+    private partial void LogIgnored();
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Reconciliação do canal direto recusada: bilhete adulterado, vencido, de outra sessão ou de outro agente.")]
+    private partial void LogRefused();
 }
 
 internal static class PcRtcEndpoints

@@ -310,6 +310,13 @@ class EnvelopeFactory:
             body["tvTexts"] = tv_texts
         return self._build("pc.rtc.closed.v1", body, None)
 
+    def pc_rtc_reconcile(self, session_id: str, ticket: str) -> dict[str, Any]:
+        """`pc.rtc.reconcile.v1`: o canal direto que ficou aberto na reconexão, com o bilhete que a
+        API assinou na oferta (a API o reconhece e o confere de novo)."""
+        return self._build(
+            "pc.rtc.reconcile.v1", {"sessions": [{"sessionId": session_id, "ticket": ticket}]}, None
+        )
+
     def tv_apps_v2(
         self,
         apps: Sequence[tuple[str, str, AppIcon | None]],
