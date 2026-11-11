@@ -670,6 +670,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         # A entrada do PC roda num laço próprio (thread dedicada, prioridade acima do normal): o
         # resto do agente não a atrasa. Os avisos dela voltam a este laço sem prendê-la.
         isolate_input=settings.pc_input_thread,
+        # A pilha das paradas curtas do laço da entrada vai para `logs\stalls.log`.
+        stall_logs=installation_base() / "logs" if settings.stall_dump else None,
         devices=(
             DeviceApprovals(
                 JsonDeviceStore(installation_base() / "runtime" / "pc-devices.json"),

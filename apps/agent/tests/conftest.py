@@ -26,6 +26,14 @@ def no_real_scheduling(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_stall_dump(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O cão das paradas (`stall_dump`) grava em `logs/stalls.log` da instalação e usa o único
+    despejador do `faulthandler` do processo: nenhum teste o liga sem pedir (os dele passam o
+    `StallDumper` direto, com pasta própria)."""
+    monkeypatch.setenv("UNIOVER_STALL_DUMP", "0")
+
+
+@pytest.fixture(autouse=True)
 def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nenhum teste fala com a rede local: o teste de vida da TV, a leitura do REST Samsung, o
     ARP, o SSDP e o mDNS são trocados por respostas fixas (os testes que precisam de outra

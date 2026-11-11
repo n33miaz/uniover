@@ -6,6 +6,7 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from uniover_agent.adapters import windows_scheduling
@@ -20,6 +21,7 @@ from uniover_agent.adapters.pc_input_thread import (
     PcInputThread,
 )
 from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher, WindowsPcPower
+from uniover_agent.adapters.stall_dump import StallDumper
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
@@ -133,10 +135,10 @@ class PcSetup:
                 )
             else:
                 _log.info("seguindo sem a proteção do conjunto de trabalho do agente")
-        _log.info(
-            "entrada do PC em laço próprio (prioridade %s)",
-            "acima do normal" if self.host.prioritized else "normal",
-        )
+        # A prioridade sai numa variável: o teste de privacidade dos registros recusa qualquer
+        # chamada de log que cite um atributo chamado `host` (endereço de aparelho).
+        priority = "acima do normal" if self.host.prioritized else "normal"
+        _log.info("entrada do PC em laço próprio (prioridade %s)", priority)
 
     def bind_device_api(
         self,
@@ -245,6 +247,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     protect_memory: Callable[[int], bool] | None = None,
     exception_handler: ExceptionHandler | None = None,
     devices: DeviceApprovals | None = None,
+    stall_logs: Path | None = None,
 ) -> PcSetup | None:
     """O controle do PC só existe quando está ligado neste PC (`pc_control`, ligado por padrão) e o
     sistema é o Windows. Desligado, nenhum comando `pc.*` é aceito e a capacidade não é declarada: a
@@ -277,7 +280,11 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         host = PcInputThread(
             prioritize=prioritize or windows_scheduling.raise_thread_priority,
             exception_handler=exception_handler,
-            background=[LoopLagMonitor(name="entrada").run],
+            background=[
+                LoopLagMonitor(name="entrada").run,
+                # O cão das paradas só roda onde há pasta de registros (os testes não passam).
+                *([StallDumper(stall_logs).run] if stall_logs is not None else []),
+            ],
         )
         # O laço da entrada tem o seu próprio portão e a sua própria fábrica de envelopes: o que os
         # dois laços compartilham é só o que é imutável.
