@@ -6,6 +6,7 @@ using UniOver.Modules.Devices;
 using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Transport.WebSocket;
 using UniOver.Modules.Identity;
+using UniOver.Modules.Shopping;
 using UniOver.Modules.Training;
 using UniOver.Modules.Tv;
 
@@ -40,6 +41,8 @@ builder.Services.AddTvModule(builder.Configuration);
 // [composição: tv]
 builder.Services.AddTrainingModule(builder.Configuration);
 // [composição: training]
+builder.Services.AddShoppingModule(builder.Configuration);
+// [composição: shopping]
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddDevicesModule(builder.Configuration);
 // [composição: devices-transport]
@@ -86,6 +89,7 @@ app.MapDeploymentVersion(builder.Configuration, productVersion);
 app.MapDeadLetters().RequireAuthorization(UniOverAuth.OwnerPolicy).RequireRateLimiting(RateLimitPolicies.Commands);
 app.MapTvEndpoints();
 app.MapTrainingEndpoints();
+app.MapShoppingEndpoints();
 app.MapIdentityEndpoints();
 app.MapDevicesEndpoints();
 app.MapDevicesTransport();

@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\UniOver.Host\UniOver.Host.csproj" />
     <ProjectReference Include="..\..\src\Modules\Identity\UniOver.Modules.Identity\UniOver.Modules.Identity.csproj" />
     <ProjectReference Include="..\..\src\Modules\Tv\UniOver.Modules.Tv\UniOver.Modules.Tv.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Shopping\UniOver.Modules.Shopping\UniOver.Modules.Shopping.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />

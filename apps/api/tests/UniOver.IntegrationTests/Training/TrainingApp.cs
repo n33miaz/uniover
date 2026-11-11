@@ -22,6 +22,7 @@ using UniOver.Modules.Identity.Bootstrap;
 using UniOver.Modules.Training.Persistence;
 using UniOver.Modules.Training.Ports;
 using UniOver.Modules.Training.Ports.Foods;
+using UniOver.Modules.Shopping.Persistence;
 
 namespace UniOver.IntegrationTests.Training;
 
@@ -124,6 +125,12 @@ internal sealed class TrainingApp : IAsyncDisposable
             await devices.Database.MigrateAsync(TestContext.Current.CancellationToken);
         }
 
+        // O Host compõe Compras; migrá-lo aqui mantém esta fábrica fiel ao banco real sem iniciar serviço algum.
+        await using (var shopping = CreateShoppingContext(database.OwnerConnection))
+        {
+            await shopping.Database.MigrateAsync(TestContext.Current.CancellationToken);
+        }
+
         if (options.MigrateTraining)
         {
             await using var training = CreateContext(database.OwnerConnection);
@@ -197,6 +204,13 @@ internal sealed class TrainingApp : IAsyncDisposable
         var builder = new DbContextOptionsBuilder<TrainingDbContext>();
         ModuleDatabase.Configure(builder, connection, TrainingDbContext.SchemaName, typeof(TrainingDbContext).Assembly);
         return new TrainingDbContext(builder.Options);
+    }
+
+    public static ShoppingDbContext CreateShoppingContext(string connection)
+    {
+        var builder = new DbContextOptionsBuilder<ShoppingDbContext>();
+        ModuleDatabase.Configure(builder, connection, ShoppingDbContext.SchemaName, typeof(ShoppingDbContext).Assembly);
+        return new ShoppingDbContext(builder.Options);
     }
 
     /// <summary>Contexto com o papel dono, só para o teste inspecionar o banco.</summary>

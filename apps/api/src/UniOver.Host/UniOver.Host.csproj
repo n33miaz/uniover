@@ -17,5 +17,7 @@
     <ProjectReference Include="..\Modules\Tv\UniOver.Modules.Tv\UniOver.Modules.Tv.csproj" />
     <ProjectReference Include="..\Modules\Training\UniOver.Modules.Training\UniOver.Modules.Training.csproj" />
     <ProjectReference Include="..\Modules\Training\UniOver.Modules.Training.Contracts\UniOver.Modules.Training.Contracts.csproj" />
+    <ProjectReference Include="..\Modules\Shopping\UniOver.Modules.Shopping\UniOver.Modules.Shopping.csproj" />
+    <ProjectReference Include="..\Modules\Shopping\UniOver.Modules.Shopping.Contracts\UniOver.Modules.Shopping.Contracts.csproj" />
   </ItemGroup>
 </Project>

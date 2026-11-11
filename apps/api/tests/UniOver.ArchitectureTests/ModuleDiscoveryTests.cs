@@ -15,7 +15,7 @@ public class ModuleDiscoveryTests
         var names = DiscoveredModules.Select(m => m.Name).ToList();
 
         names.Should().HaveCountGreaterThanOrEqualTo(4);
-        names.Should().Contain(["Identity", "Tv", "Devices", "Training"]);
+        names.Should().Contain(["Identity", "Tv", "Devices", "Training", "Shopping"]);
     }
 
     [Fact]

@@ -10,8 +10,8 @@ public class AccessPermissionsTests
     public void TheCatalogIsClosedAndStable_TheseExactIdentifiersAreStoredInTheDatabase()
     {
         AccessPermissions.All.Should().Equal(
-            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts", "tv:history", "module:training", "module:pc");
-        AccessPermissions.Modules.Should().Equal("module:tv", "module:training", "module:pc");
+            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts", "tv:history", "module:training", "module:shopping", "module:pc");
+        AccessPermissions.Modules.Should().Equal("module:tv", "module:training", "module:shopping", "module:pc");
         AccessPermissions.All.Should().OnlyHaveUniqueItems();
     }
 
@@ -79,6 +79,7 @@ public class PermissionRulesTests
         // O controle do PC fica desligado por padrão para o convidado: só com a concessão explícita do dono.
         PermissionRules.TvControlOnly.Should().NotContain(AccessPermissions.PcModule);
         PermissionRules.TrainingOnly.Should().Equal("module:training");
+        PermissionRules.ShoppingOnly.Should().Equal("module:shopping");
         PermissionRules.Validate(PermissionRules.TvControlOnly.ToArray()).IsValid.Should().BeTrue();
         PermissionRules.Validate(PermissionRules.TrainingOnly.ToArray()).IsValid.Should().BeTrue();
     }
