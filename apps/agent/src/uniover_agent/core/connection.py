@@ -15,6 +15,8 @@ from uniover_agent.ports import (
     CredentialRejected,
     HandoverRequested,
     HandoverUnsupported,
+    NetworkChangeWatcher,
+    NetworkChangeWatcherFactory,
     ServerRestarting,
     ServerRestartNow,
     Transport,
@@ -49,6 +51,8 @@ STOP_HANDOVER: Final = "handover"
 STOP_DUPLICATE: Final = "duplicate"
 # A API não tem a rota da candidata da passagem (404): nada foi aberto, o supervisor usa o
 # caminho de reserva.
+# Intervalo mínimo entre duas antecipações da reconexão por aviso de mudança de rede.
+NETWORK_WAKE_MIN_SECONDS: Final = 5.0
 STOP_HANDOVER_UNSUPPORTED: Final = "handover_unsupported"
 # A API confirma que promoveu esta conexão (candidata da passagem): só então deixa de ser candidato.
 HANDOVER_ACCEPTED_TYPE: Final = "agent.handover.accepted.v1"
@@ -123,6 +127,7 @@ class ConnectionSupervisor:
         on_startup_failure: Callable[[BaseException, bool, int], Awaitable[None]] | None = None,
         handover: bool = False,
         on_handover_accepted: Callable[[], None] | None = None,
+        network_watcher: NetworkChangeWatcherFactory | None = None,
     ) -> None:
         """`handover`: esta execução veio tomar o lugar de outra. Ela é CANDIDATA (rota própria da
         conexão e `handover` no `hello`) até a API confirmar a promoção com
@@ -177,6 +182,10 @@ class ConnectionSupervisor:
         self._generation = 0
         self._last_connected_at: float | None = None
         self._last_session_seconds = 0.0
+        self._network_changed: asyncio.Event | None = None
+        self._last_network_wake: float | None = None
+        self._network_watcher_factory = network_watcher
+        self._network_watcher: NetworkChangeWatcher | None = None
 
     @property
     def handover_pending(self) -> bool:
@@ -203,6 +212,83 @@ class ConnectionSupervisor:
     async def _sleep(self, seconds: float) -> None:
         self._expect(seconds)
         await self._clock.sleep(seconds)
+
+    async def _sleep_for_reconnect(self, seconds: float) -> None:
+        """Espera o backoff comum, mas acorda se o Windows avisar que a rede mudou.
+
+        Só se chega aqui com a conexão caída. O aviso antecipa a tentativa no máximo uma vez por
+        `NETWORK_WAKE_MIN_SECONDS` (uma VPN ou um adaptador virtual que oscila não anula o
+        backoff), e uma mudança ocorrida antes desta espera, com a conexão saudável, não vale.
+        """
+        changed = self._network_changed
+        if changed is None:
+            await self._sleep(seconds)
+            return
+
+        changed.clear()
+        self._expect(seconds)
+        sleeper = asyncio.create_task(self._clock.sleep(seconds), name="reconnect-delay")
+        notification: asyncio.Task[bool] | None = None
+        try:
+            while True:
+                notification = asyncio.create_task(changed.wait(), name="network-change")
+                done, _ = await asyncio.wait(
+                    (sleeper, notification), return_when=asyncio.FIRST_COMPLETED
+                )
+                if sleeper in done:
+                    await sleeper
+                    return
+                changed.clear()
+                now = self._clock.monotonic()
+                last = self._last_network_wake
+                if last is None or now - last >= NETWORK_WAKE_MIN_SECONDS:
+                    self._last_network_wake = now
+                    return
+                # Cedo demais depois do último despertar: segue esperando o backoff.
+        finally:
+            tasks = [sleeper] if notification is None else [sleeper, notification]
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _start_network_watcher(self) -> None:
+        loop = asyncio.get_running_loop()
+
+        def on_change() -> None:
+            _log.info("a rede mudou")
+            changed = self._network_changed
+            if changed is not None:
+                try:
+                    loop.call_soon_threadsafe(changed.set)
+                except RuntimeError:
+                    # No encerramento do processo o laço já pode ter fechado.
+                    return
+
+        factory = self._network_watcher_factory
+        if factory is None:
+            return
+        try:
+            watcher = factory(on_change)
+        except Exception:
+            return
+        if watcher is None:
+            return
+        self._network_changed = asyncio.Event()
+        try:
+            watcher.start()
+        except Exception:
+            # A observação é só uma otimização; o backoff normal continua sendo suficiente.
+            self._network_changed = None
+            return
+        self._network_watcher = watcher
+
+    def _stop_network_watcher(self) -> None:
+        watcher = self._network_watcher
+        self._network_watcher = None
+        self._network_changed = None
+        if watcher is not None:
+            watcher.stop()
 
     async def hello_now(self) -> None:
         """Reenvia o `hello` já, na sessão aberta (as capacidades declaradas mudaram).
@@ -257,6 +343,13 @@ class ConnectionSupervisor:
         return self._instance_id if self._handover_pending else None
 
     async def run(self) -> None:
+        self._start_network_watcher()
+        try:
+            await self._run()
+        finally:
+            self._stop_network_watcher()
+
+    async def _run(self) -> None:
         """Roda até ser cancelado; só devolve (sem erro) para parar de vez (ver `stop_reason`):
         a credencial foi recusada, uma versão nova assumiu a conexão (passagem sem queda) ou outro
         agente com a mesma identidade disputa a vaga.
@@ -332,7 +425,7 @@ class ConnectionSupervisor:
                 _log.info("conexão encerrada pelo servidor após %.1f s", self._last_session_seconds)
             delay = self._backoff.next_delay(self._recent_connection_cap())
             _log.info("reconectando em %.1f s", delay)
-            await self._sleep(delay)
+            await self._sleep_for_reconnect(delay)
 
     def _duplicate_detected(self) -> bool:
         """Duas substituições seguidas em pouco tempo: há outro agente vivo com a mesma identidade.

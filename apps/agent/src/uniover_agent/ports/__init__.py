@@ -12,6 +12,7 @@ from uniover_agent.ports.app_icons import (
     IconCache,
     IconToolError,
 )
+from uniover_agent.ports.network_change import NetworkChangeWatcher, NetworkChangeWatcherFactory
 from uniover_agent.ports.pairing import (
     PairingClient,
     PairingDenied,
@@ -148,6 +149,8 @@ __all__ = [
     "IconToolError",
     "LaneHost",
     "LaunchableApp",
+    "NetworkChangeWatcher",
+    "NetworkChangeWatcherFactory",
     "PairingClient",
     "PairingDenied",
     "PairingError",
