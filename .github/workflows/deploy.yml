@@ -65,6 +65,8 @@ jobs:
     if: needs.channel.outputs.ref == github.ref_name
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.new.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,12 +75,29 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+      # Um merge sem versão nova (testes, documentação, dependências ainda sem release) não é publicação: a versão
+      # continua a da maior tag, que aponta para outro commit. Isso encerra a execução sem nada a fazer, em vez de
+      # falhar e abrir a issue de publicação. Qualquer outro problema de versão segue barrado pelo --verify abaixo.
+      - name: Ver se há versão nova
+        id: new
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < VERSION)
+          tag=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -n "$tag" ] && [ "v$version" = "$tag" ] && [ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            echo "::notice::VERSION $version já foi publicada em $tag: este push não traz versão nova e não é publicado"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Conferir a versão da publicação
+        if: steps.new.outputs.publish == 'true'
         run: node scripts/release-version.mjs --verify
 
   migrate:
     name: migrate
     needs: version
+    if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
