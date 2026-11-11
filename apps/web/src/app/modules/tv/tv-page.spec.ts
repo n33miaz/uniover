@@ -182,10 +182,12 @@ describe('TvPage', () => {
     it('shows the reason under the header when the buttons are off', async () => {
       store.canSend.set(false);
       store.disabledReason.set(
-        'O agente da TV está desligado, então os botões não funcionam agora.',
+        'O computador que controla a TV está desligado, então os botões não funcionam agora.',
       );
       await render();
-      expect(root.querySelector('.reason')?.textContent).toContain('agente da TV está desligado');
+      expect(root.querySelector('.reason')?.textContent).toContain(
+        'computador que controla a TV está desligado',
+      );
       expect(root.querySelector<HTMLButtonElement>('.power')!.disabled).toBe(true);
     });
   });
@@ -225,7 +227,7 @@ describe('TvPage', () => {
     const unconfigure = async () => {
       store.status.set('unconfigured');
       store.canSend.set(false);
-      store.disabledReason.set('Nenhum agente foi configurado para controlar a TV.');
+      store.disabledReason.set('Nenhum computador foi configurado para controlar a TV.');
       await render();
     };
 
@@ -330,12 +332,14 @@ describe('TvPage', () => {
       store.status.set('agent-off');
       store.canSend.set(false);
       store.disabledReason.set(
-        'O agente da TV está desligado, então os botões não funcionam agora.',
+        'O computador que controla a TV está desligado, então os botões não funcionam agora.',
       );
       await render();
       expect(root.querySelector('app-tv-control')).not.toBeNull();
       const row = root.querySelector('.reason-row')!;
-      expect(row.querySelector('.reason')?.textContent).toContain('agente da TV está desligado');
+      expect(row.querySelector('.reason')?.textContent).toContain(
+        'computador que controla a TV está desligado',
+      );
       const retry = row.querySelector<HTMLButtonElement>('button.retry')!;
       expect(retry.textContent?.trim()).toBe('Tentar de Novo');
 
@@ -360,7 +364,7 @@ describe('TvPage', () => {
       store.status.set('agent-off');
       store.canSend.set(false);
       store.disabledReason.set(
-        'O agente da TV está desligado, então os botões não funcionam agora.',
+        'O computador que controla a TV está desligado, então os botões não funcionam agora.',
       );
       await render();
       expect(root.querySelector<HTMLButtonElement>('.power')!.disabled).toBe(true);
@@ -436,7 +440,7 @@ describe('TvPage', () => {
       store.status.set('agent-off');
       store.canSend.set(false);
       store.disabledReason.set(
-        'O agente da TV está desligado, então os botões não funcionam agora.',
+        'O computador que controla a TV está desligado, então os botões não funcionam agora.',
       );
       await render();
       expect(root.querySelector('.seal')).toBeNull();
@@ -1554,7 +1558,9 @@ describe('TvPage by permission', () => {
   it('the "reason" line goes to whoever still has a button that goes dim, and not to a viewer, who has none', async () => {
     await open('guest', 'module:tv', 'tv:control');
     store.canSend.set(false);
-    store.disabledReason.set('O agente da TV está desligado, então os botões não funcionam agora.');
+    store.disabledReason.set(
+      'O computador que controla a TV está desligado, então os botões não funcionam agora.',
+    );
     await render();
     expect(root.querySelector('.reason')).not.toBeNull();
 

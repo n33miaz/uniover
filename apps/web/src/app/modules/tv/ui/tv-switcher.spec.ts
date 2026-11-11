@@ -43,7 +43,7 @@ describe('TvSwitcher', () => {
   it('says the state in words (the dot is only a drawing) and has a dot for each TV', () => {
     mount();
     const subs = rows().map((row) => row.querySelector('.ui-row-sub')?.textContent?.trim());
-    expect(subs).toEqual(['conectada', 'agente desligado']);
+    expect(subs).toEqual(['conectada', 'computador desligado']);
     expect(root.querySelectorAll('app-status-dot')).toHaveLength(2);
     expect(root.querySelector('app-status-dot svg')?.getAttribute('aria-hidden')).toBe('true');
   });

@@ -264,7 +264,7 @@ describe('LivrePage', () => {
     it('keeps "Voltar ao Original" on the screen, but off, when the agent is out of reach', async () => {
       api.get.mockResolvedValue(view({ available: false, supported: true }));
       await render();
-      expect(q('.ui-notice.warn').textContent).toContain('fora do ar');
+      expect(q('.ui-notice.warn').textContent).toContain('está desligado');
       expect(button('Aplicar na TV')).toBeUndefined();
       await open('Instalação');
       expect(button('Voltar ao Original')!.disabled).toBe(true);

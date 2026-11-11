@@ -58,7 +58,7 @@ describe('PowerSheet', () => {
 
   it('explains the reading only for an agent that does it, and describes the dialog with it', async () => {
     const dialog = root.querySelector('dialog')!;
-    expect(root.textContent).not.toContain('O agente só desliga se a TV estiver ligada');
+    expect(root.textContent).not.toContain('O app só desliga se a TV estiver ligada');
     expect(dialog.getAttribute('aria-describedby')).toBe('power-text');
 
     store.safePowerOff.set(true);
@@ -66,7 +66,7 @@ describe('PowerSheet', () => {
     await fixture.whenStable();
 
     expect(root.querySelector('#power-checked')?.textContent).toContain(
-      'O agente só desliga se a TV estiver ligada e confirma o resultado.',
+      'O app só desliga se a TV estiver ligada e confirma o resultado.',
     );
     expect(dialog.getAttribute('aria-describedby')).toBe('power-text power-checked');
   });
@@ -91,7 +91,7 @@ describe('PowerSheet', () => {
 
     it('shows why scheduling is unavailable without a safe online agent', () => {
       expect(row().textContent).toContain('Agendar');
-      expect(row().textContent).toContain('Agendamento disponível com TV configurada');
+      expect(row().textContent).toContain('O agendamento precisa da TV configurada');
       expect(row().querySelector('button, input')).toBeNull();
     });
 

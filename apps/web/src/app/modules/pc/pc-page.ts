@@ -71,7 +71,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
             </svg>
             <h2 i18n="@@pc.unavailable.title">Nenhum PC Seu Conectado</h2>
             <p i18n="@@pc.unavailable.text">
-              Instale o conector no seu PC e, nele, ligue o controle e reinicie o agente:
+              Instale o conector no seu PC e, nele, ligue o controle e reinicie o conector:
             </p>
             <code>{{ enableCommand }}</code>
             <a routerLink="/conectar" class="ui-btn" i18n="@@pc.unavailable.install">
@@ -87,7 +87,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
               <path [attr.d]="'M7.5 9.5h3l-3 3h3'" />
             </svg>
             <h2 i18n="@@pc.offline.title">PC Desconectado</h2>
-            <p i18n="@@pc.offline.text">Ligue o PC e espere o agente conectar.</p>
+            <p i18n="@@pc.offline.text">Ligue o PC e espere ele conectar.</p>
             <button type="button" class="ui-btn" (click)="retry()" i18n="@@pc.retry">
               Tentar de Novo
             </button>
@@ -102,7 +102,19 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
       <app-pc-switcher-bar class="switcher" [class.float]="fill()" />
 
       @if (store.notice(); as notice) {
-        <p class="notice" role="alert" [class.float]="fill()">{{ notice.message }}</p>
+        <div class="notice" role="alert" [class.float]="fill()">
+          <span>{{ notice.message }}</span>
+          @if (canRetryDeviceApproval(notice.kind)) {
+            <button
+              type="button"
+              class="ui-btn secondary"
+              (click)="retryDeviceApproval()"
+              i18n="@@pc.approval.retry"
+            >
+              Tentar de Novo
+            </button>
+          }
+        </div>
       }
       <app-slow-command-notice [module]="'pc'" />
     </section>
@@ -175,5 +187,14 @@ export class PcPage {
 
   protected retry(): void {
     void this.store.refresh();
+  }
+
+  protected canRetryDeviceApproval(kind: string): boolean {
+    // Recusado não tem botão: o computador guarda o Não por uma hora, e pedir de novo antes disso não muda nada.
+    return kind === 'device-pending' || kind === 'device-unknown';
+  }
+
+  protected retryDeviceApproval(): void {
+    void this.store.requestApproval();
   }
 }

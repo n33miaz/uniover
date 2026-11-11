@@ -101,9 +101,9 @@ describe('StatusIndicator', () => {
       ['loading', 'connecting', 'Reconectando…'],
       ['unresponsive', 'no-reply', 'Sem Resposta'],
       ['pc-off', 'pc-off', 'PC Desligado'],
-      ['agent-off', 'agent-off', 'Agente desligado'],
+      ['agent-off', 'agent-off', 'Computador desligado'],
       ['offline', 'offline', 'Sem rede'],
-      ['unconfigured', 'attention', 'Sem agente configurado'],
+      ['unconfigured', 'attention', 'Sem computador configurado'],
       ['not-paired', 'attention', 'TV não pareada'],
     ])('%s -> %s ("%s")', async (status, expectedPhase, title) => {
       await setStatus(status);
@@ -408,7 +408,7 @@ describe('StatusIndicator', () => {
       const notes = [...panel()!.querySelectorAll('.note:not(.time)')].map((el) =>
         el.textContent?.trim(),
       );
-      expect(notes).toEqual(['controle religado às 14:02', 'Reconectando ao servidor…']);
+      expect(notes).toEqual(['controle religado às 14:02', 'Reconectando…']);
     });
 
     it('does not say "reconectando" when the whole network is down', async () => {

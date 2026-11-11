@@ -134,7 +134,10 @@ describe('coming back to the app', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     TestBed.tick();
     expect(connectivity.serverState()).toBe('waking');
-    expect(banner()?.textContent).toContain('Acordando o servidor');
+    // A faixa só entra se o estado durar: um "iniciando" que some logo não pisca na tela.
+    await vi.advanceTimersByTimeAsync(2_000);
+    TestBed.tick();
+    expect(banner()?.textContent).toContain('O UniOver está iniciando');
   });
 
   it('a command that fails on the way back is not repeated by itself and the caller still hears about it', async () => {

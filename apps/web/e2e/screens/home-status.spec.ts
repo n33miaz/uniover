@@ -76,8 +76,8 @@ test.describe('Início: estado real da casa', () => {
       page,
     }, info) => {
       await openHome(page, scheme);
-      await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
-      await expect(indicator(page)).toHaveAttribute('title', 'Agente ligado');
+      await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador ligado');
+      await expect(indicator(page)).toHaveAttribute('title', 'Computador ligado');
       await expect(indicator(page)).toHaveClass(/\bok\b/);
       await expectCircle(page);
 
@@ -101,13 +101,13 @@ test.describe('Início: estado real da casa', () => {
       await expectNoA11yViolations(page);
     });
 
-    test(`agente desligado no tema ${scheme}: bolinha, print e acessibilidade`, async ({
+    test(`computador desligado no tema ${scheme}: bolinha, print e acessibilidade`, async ({
       page,
     }, info) => {
       tv.state = { ...AGENT_OFF };
       await openHome(page, scheme);
-      await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
-      await expect(indicator(page)).toHaveAttribute('title', 'Agente desligado');
+      await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador desligado');
+      await expect(indicator(page)).toHaveAttribute('title', 'Computador desligado');
       await expect(indicator(page)).toHaveClass(/\bwarn\b/);
       await expectCircle(page);
       await settle(page);
@@ -121,8 +121,8 @@ test.describe('Início: estado real da casa', () => {
   test('sem resposta, a bolinha avisa sem texto visível', async ({ context, page }) => {
     await context.route('**/api/v1/tv/state', (route) => route.abort('connectionrefused'));
     await openHome(page, 'light');
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente sem resposta');
-    await expect(indicator(page)).toHaveAttribute('title', 'Agente sem resposta');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador sem resposta');
+    await expect(indicator(page)).toHaveAttribute('title', 'Computador sem resposta');
     await expect(indicator(page)).toHaveClass(/\bwarn\b/);
     await expectCircle(page);
     await expect(page.locator('.chips')).toHaveCount(0);
@@ -130,11 +130,11 @@ test.describe('Início: estado real da casa', () => {
 
   test('segue o agente em tempo real pelo fluxo, sem exibir o vigia', async ({ page }) => {
     await openHome(page, 'light');
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador ligado');
     await emitSse(page, 'tv.state', AGENT_OFF);
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador desligado');
     await emitSse(page, 'tv.state', HOT_STATE);
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador ligado');
     await expect(page.getByText(/Vigia/)).toHaveCount(0);
   });
 
@@ -142,7 +142,7 @@ test.describe('Início: estado real da casa', () => {
     page,
   }) => {
     await openHome(page, 'light');
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador ligado');
     expect(await openStreams(page)).toBe(1);
     const reads = stateReads();
     expect(reads).toBeGreaterThanOrEqual(1);
@@ -156,7 +156,7 @@ test.describe('Início: estado real da casa', () => {
 
     tv.state = { ...AGENT_OFF };
     await page.getByRole('button', { name: /Início/ }).click();
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador desligado');
     expect(await openStreams(page)).toBe(1);
     expect(stateReads()).toBeGreaterThan(reads);
   });
@@ -174,10 +174,10 @@ test.describe('Início: estado real da casa', () => {
     identity.role = 'guest';
     tv.state = { ...HOT_STATE, agentLinked: true };
     await page.goto('/');
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador ligado');
     tv.state = { ...AGENT_OFF, agentLinked: true };
     await emitSse(page, 'tv.state', tv.state);
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador desligado');
   });
 
   test('sem agente vinculado à conta não há bolinha', async ({ page }) => {
@@ -193,7 +193,7 @@ test.describe('Início: estado real da casa', () => {
     tv.stateGate = new Promise<void>((resolve) => (release = resolve));
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto('/');
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Conectando ao agente', {
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Conectando ao computador', {
       timeout: 5000,
     });
     const animated = await indicator(page).evaluate((dot) => getComputedStyle(dot).animationName);
@@ -202,6 +202,6 @@ test.describe('Início: estado real da casa', () => {
     const still = await indicator(page).evaluate((dot) => getComputedStyle(dot).animationName);
     expect(still).toBe('none');
     release();
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador ligado');
   });
 });

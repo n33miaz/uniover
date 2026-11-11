@@ -89,6 +89,9 @@ export const VOLUME_REFRESH_MS = 450;
 /** Quanto tempo o aviso de toque abandonado fica na tela, mesmo que o movimento seguinte dê certo. */
 export const ABANDONED_NOTICE_MS = 4_000;
 
+/** Quanto esperar o computador contar à nuvem o estado deste celular antes de ler de novo (ver `requestApproval`). */
+export const APPROVAL_ECHO_MS = 1_500;
+
 /** Um pedido do botão que desistiu porque a conta mudou: não é falha do PC e não aparece para ninguém. */
 class AccountChanged extends Error {}
 
@@ -321,6 +324,24 @@ export class PcStore {
 
   refresh(): Promise<boolean> {
     return this.availability.refresh();
+  }
+
+  /**
+   * Refaz, sem mover o ponteiro, o pedido de confirmação deste celular no computador. Um movimento nulo não mexe em nada,
+   * e ao recebê-lo o computador abre a pergunta de novo (se a anterior sumiu há mais de 30 s).
+   *
+   * O computador não responde ao movimento de um celular sem confirmação: ele conta o estado à nuvem logo em seguida, e a
+   * nuvem passa a recusar na hora. Por isso um pedido aceito ainda não quer dizer "liberado": um segundo, pouco depois, lê o
+   * estado que o computador acabou de contar. Só quando esse também passa o aviso sai da tela.
+   */
+  async requestApproval(): Promise<PcFailure | null> {
+    const probe = () => this.command(() => this.api.pointer(0, 0));
+    const first = await probe();
+    if (first !== null) return first;
+    await new Promise<void>((resolve) => setTimeout(resolve, APPROVAL_ECHO_MS));
+    const second = await probe();
+    if (second === null && this.stickyNotice === null) this.notice.set(null);
+    return second;
   }
 
   /**

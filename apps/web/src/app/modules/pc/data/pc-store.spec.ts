@@ -11,6 +11,7 @@ import { CANCELLED } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
   ABANDONED_NOTICE_MS,
+  APPROVAL_ECHO_MS,
   DOWN_TIMEOUT_MS,
   HOLD_HEARTBEAT_MS,
   PC_POLL_MS,
@@ -596,6 +597,52 @@ describe('PcStore commands', () => {
     api.click.mockRejectedValueOnce(new HttpErrorResponse({ status: 504 }));
     expect((await store.toggleDrag())?.kind).toBe('timeout');
     expect(store.dragging()).toBe(false);
+  });
+});
+
+describe('PcStore asking the computer again to approve this phone', () => {
+  const pending = () =>
+    new HttpErrorResponse({
+      status: 403,
+      error: { type: 'https://uniover.dev/problems/pc-device-pending', title: 'x' },
+    });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('sends a null movement and keeps the notice while the computer still waits for the answer', async () => {
+    const { store, api } = setup();
+    api.pointer.mockRejectedValueOnce(pending());
+    const failure = await store.requestApproval();
+    expect(api.pointer).toHaveBeenCalledWith(0, 0);
+    expect(failure?.kind).toBe('device-pending');
+    expect(store.notice()?.kind).toBe('device-pending');
+  });
+
+  it('an accepted request is not taken as approval: the state the computer reports right after decides', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { store, api } = setup();
+    api.pointer.mockRejectedValueOnce(pending());
+    await store.requestApproval();
+    // O pedido chega ao computador (que não responde ao movimento) e a leitura seguinte traz "aguardando".
+    api.pointer.mockResolvedValueOnce(undefined).mockRejectedValueOnce(pending());
+    const asked = store.requestApproval();
+    await vi.advanceTimersByTimeAsync(APPROVAL_ECHO_MS - 1);
+    expect(api.pointer).toHaveBeenCalledTimes(2);
+    expect(store.notice()?.kind).toBe('device-pending');
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await asked)?.kind).toBe('device-pending');
+    expect(store.notice()?.kind).toBe('device-pending');
+  });
+
+  it('clears the notice once the computer has approved the phone', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { store, api } = setup();
+    api.pointer.mockRejectedValueOnce(pending());
+    await store.requestApproval();
+    const asked = store.requestApproval();
+    await vi.advanceTimersByTimeAsync(APPROVAL_ECHO_MS);
+    expect(await asked).toBeNull();
+    expect(store.notice()).toBeNull();
   });
 });
 

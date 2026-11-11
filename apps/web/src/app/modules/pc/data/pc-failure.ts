@@ -73,7 +73,10 @@ function agentErrorOf(error: unknown): string | null {
 export function pcFailureOf(error: unknown): PcFailure {
   const problem = problemOf(error);
   if (!problem) {
-    return { kind: 'unknown', message: $localize`:@@pc.error.unknown:Algo deu errado.` };
+    return {
+      kind: 'unknown',
+      message: $localize`:@@pc.error.unknown:Não deu certo. Tente de novo.`,
+    };
   }
   if (problem.isNetwork) {
     return {
@@ -90,19 +93,19 @@ export function pcFailureOf(error: unknown): PcFailure {
   if (problem.status === 403 && problem.kind === DEVICE_PENDING_PROBLEM) {
     return {
       kind: 'device-pending',
-      message: $localize`:@@pc.error.device-pending:Aprove este aparelho no PC.`,
+      message: $localize`:@@pc.error.device-pending:Apareceu uma pergunta na tela do computador: clique em Sim para liberar este celular. Ela some em 2 minutos; para ela voltar, toque em Tentar de Novo (se não aparecer, espere 30 segundos e toque outra vez).`,
     };
   }
   if (problem.status === 403 && problem.kind === DEVICE_UNKNOWN_PROBLEM) {
     return {
       kind: 'device-unknown',
-      message: $localize`:@@pc.error.device-unknown:O PC ainda não reconheceu este aparelho. Tente de novo.`,
+      message: $localize`:@@pc.error.device-unknown:O computador ainda está se preparando para reconhecer este celular. Toque em Tentar de Novo.`,
     };
   }
   if (problem.status === 403 && problem.kind === DEVICE_DENIED_PROBLEM) {
     return {
       kind: 'device-denied',
-      message: $localize`:@@pc.error.device-denied:O dono do PC não permitiu este aparelho.`,
+      message: $localize`:@@pc.error.device-denied:Alguém respondeu Não à pergunta no computador, e este celular ficou bloqueado por uma hora. Depois disso, use o controle de novo para a pergunta reaparecer.`,
     };
   }
   if (isPermissionDenied(problem)) {
@@ -118,7 +121,10 @@ export function pcFailureOf(error: unknown): PcFailure {
     };
   }
   if (problem.status === 400) {
-    return { kind: 'invalid', message: $localize`:@@pc.error.invalid:Pedido inválido.` };
+    return {
+      kind: 'invalid',
+      message: $localize`:@@pc.error.invalid:O PC não aceitou este pedido.`,
+    };
   }
   if (problem.status === 404) {
     return {
@@ -129,7 +135,7 @@ export function pcFailureOf(error: unknown): PcFailure {
   if (problem.status === 409 && problem.kind === KEY_UNSUPPORTED_PROBLEM) {
     return {
       kind: 'key-unsupported',
-      message: $localize`:@@pc.error.key-unsupported:Atualize o agente do PC para usar este comando.`,
+      message: $localize`:@@pc.error.key-unsupported:Este computador precisa de uma atualização para fazer isso.`,
     };
   }
   if (problem.status === 409) {

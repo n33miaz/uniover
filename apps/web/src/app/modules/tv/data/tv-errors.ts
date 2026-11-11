@@ -56,13 +56,13 @@ const ADB_UNREACHABLE_CODES = new Set(['adb_unreachable', 'adb_unavailable', 'ad
 function powerOffFailedMessage(code: string | null): string | null {
   switch (code) {
     case 'power_off_unsafe':
-      return $localize`:@@tv.error.power-off-unsafe:O agente não oferece mais o desligamento com confirmação. Nenhum comando foi enviado. Atualize a TV no app antes de tentar novamente.`;
+      return $localize`:@@tv.error.power-off-unsafe:O computador que controla a TV não consegue mais desligar com confirmação. Nada foi enviado. Atualize a TV no app antes de tentar de novo.`;
     case 'uncertain':
       return $localize`:@@tv.error.power-off-uncertain:Não deu para confirmar se a TV desligou, e a tecla não foi repetida. Olhe a TV antes de tentar de novo.`;
     case 'offline':
       return $localize`:@@tv.error.power-off-offline:A TV não respondeu ao controle e nada foi enviado. Ela pode já estar desligada.`;
     case 'failed':
-      return $localize`:@@tv.error.power-off-failed:O agente não conseguiu desligar a TV. Olhe a TV antes de tentar de novo.`;
+      return $localize`:@@tv.error.power-off-failed:Não deu para desligar a TV. Olhe a TV antes de tentar de novo.`;
     default:
       return null;
   }
@@ -90,13 +90,13 @@ function commandFailedMessage(code: string | null, context?: TvFailureContext): 
     return $localize`:@@tv.error.tv-unreachable:A TV não respondeu ao controle. Confira se ela está ligada e na rede.`;
   }
   if (code !== null && ADB_UNREACHABLE_CODES.has(code)) {
-    return $localize`:@@tv.error.adb-unreachable:A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.`;
+    return $localize`:@@tv.error.adb-unreachable:A TV não respondeu. Veja se ela está ligada e tente de novo.`;
   }
   if (code === 'adb_idle') {
-    return $localize`:@@tv.error.adb-idle:O ADB só conecta enquanto você usa a tela da TV. Toque de novo, ou em Atualizar lista.`;
+    return $localize`:@@tv.error.adb-idle:A ligação com a TV estava em descanso. Toque de novo, ou em Atualizar lista.`;
   }
   if (code === 'adb_identity') {
-    return $localize`:@@tv.error.adb-identity:Não deu para confirmar qual aparelho responde pelo ADB (a rede não mostra o endereço dele). Toque em Atualizar lista.`;
+    return $localize`:@@tv.error.adb-identity:Não deu para confirmar qual aparelho da rede é a TV. Toque em Atualizar lista.`;
   }
   if (code === 'cleanup_report_missing') {
     return $localize`:@@tv.error.cleanup-report-missing:A TV recebeu o pedido, mas não deu para confirmar o que foi limpo. Confira a TV.`;
@@ -201,7 +201,7 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
       return problem.kind === 'agent-not-configured'
         ? make(
             'not-configured',
-            $localize`:@@tv.error.not-configured:Nenhum agente foi configurado para controlar a TV.`,
+            $localize`:@@tv.error.not-configured:Nenhum computador foi configurado para controlar a TV.`,
           )
         : isReconnecting(error)
           ? make(
@@ -210,7 +210,7 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
             )
           : make(
               'agent-offline',
-              $localize`:@@tv.error.agent-offline:O agente da TV está desligado. Ligue o computador que controla a TV.`,
+              $localize`:@@tv.error.agent-offline:O computador que controla a TV está desligado ou sem internet. Ligue-o e tente de novo.`,
             );
     case 504:
       return make(

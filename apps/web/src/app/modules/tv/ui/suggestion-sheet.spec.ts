@@ -101,14 +101,16 @@ describe('SuggestionSheet', () => {
   it('dims the way to refresh the list while the agent cannot be reached, and says why', () => {
     mount([]);
     store.canSend.set(false);
-    store.disabledReason.set('O agente da TV está desligado, então os botões não funcionam agora.');
+    store.disabledReason.set(
+      'O computador que controla a TV está desligado, então os botões não funcionam agora.',
+    );
     fixture.detectChanges();
     const refresh = [...root.querySelectorAll<HTMLButtonElement>('button')].find(
       (b) => b.textContent?.trim() === 'Atualizar a lista de apps',
     )!;
     expect(refresh.disabled).toBe(true);
     expect(root.querySelector('.note + button + .note, button + .note')?.textContent).toContain(
-      'agente da TV está desligado',
+      'computador que controla a TV está desligado',
     );
     refresh.click();
     expect(openApps).not.toHaveBeenCalled();

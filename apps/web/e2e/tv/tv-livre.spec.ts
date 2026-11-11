@@ -564,7 +564,7 @@ test.describe('erros', () => {
   }) => {
     livre.view = livreView({ available: false });
     await openLivre(page);
-    await expect(page.getByText('O agente da TV está fora do ar.')).toBeVisible();
+    await expect(page.getByText('O computador que controla a TV está desligado.')).toBeVisible();
     await expect(button(applyBar(page), 'Aplicar na TV')).toHaveCount(0);
     await tab(page, 'Instalação').click();
     await expect(button(page, 'Voltar ao Original')).toBeVisible();
@@ -578,7 +578,7 @@ test.describe('erros', () => {
   test('a primeira leitura que falha mostra uma frase e "Tentar de Novo"', async ({ page }) => {
     livre.failures['/'] = { status: 503, kind: 'agent-offline' };
     await page.goto('/tv/livre');
-    await expect(page.getByRole('alert')).toContainText('agente da TV');
+    await expect(page.getByRole('alert')).toContainText('computador que controla a TV');
     delete livre.failures['/'];
     await button(page, 'Tentar de Novo').click();
     await expect(tabs(page)).toBeVisible();

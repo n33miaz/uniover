@@ -119,7 +119,7 @@ export class StatusIndicator {
     const watchdog = this.store.watchdogNote();
     if (watchdog) notes.push(watchdog);
     if (this.store.streamStatus() === 'reconnecting' && this.store.link() === 'ok') {
-      notes.push($localize`:@@tv.indicator.reconnecting:Reconectando ao servidor…`);
+      notes.push($localize`:@@tv.indicator.reconnecting:Reconectando…`);
     }
     return notes;
   });

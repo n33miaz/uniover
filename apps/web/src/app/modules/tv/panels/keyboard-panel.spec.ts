@@ -71,10 +71,12 @@ describe('KeyboardPanel', () => {
   it('says why typing will not reach the TV before anyone types, and only then', async () => {
     expect(root.querySelector('.blocked')).toBeNull();
     store.canSend.set(false);
-    store.disabledReason.set('O agente da TV está desligado, então os botões não funcionam agora.');
+    store.disabledReason.set(
+      'O computador que controla a TV está desligado, então os botões não funcionam agora.',
+    );
     await render();
     expect(root.querySelector('.blocked')?.textContent?.trim()).toBe(
-      'O agente da TV está desligado, então os botões não funcionam agora.',
+      'O computador que controla a TV está desligado, então os botões não funcionam agora.',
     );
     expect(root.querySelector('.blocked')?.getAttribute('role')).toBe('status');
     store.canSend.set(true);

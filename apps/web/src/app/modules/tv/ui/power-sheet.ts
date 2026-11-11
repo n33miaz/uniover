@@ -175,9 +175,9 @@ export class PowerSheet {
       case 'already_off':
         return $localize`:@@tv.power.schedule.result-already-off:TV já desligada`;
       case 'offline':
-        return $localize`:@@tv.power.schedule.result-offline:Agente offline`;
+        return $localize`:@@tv.power.schedule.result-offline:Computador desligado`;
       case 'unsupported':
-        return $localize`:@@tv.power.schedule.result-unsupported:Agente sem suporte`;
+        return $localize`:@@tv.power.schedule.result-unsupported:Computador desatualizado`;
       case 'uncertain':
         return $localize`:@@tv.power.schedule.result-uncertain:Estado incerto`;
       case 'missed':
@@ -185,11 +185,11 @@ export class PowerSheet {
       case 'failed':
         return $localize`:@@tv.power.schedule.result-failed:Falha ao desligar`;
       case 'tv_changed':
-        return $localize`:@@tv.power.schedule.result-tv-changed:Cancelado: a TV mudou de agente`;
+        return $localize`:@@tv.power.schedule.result-tv-changed:Cancelado: a TV mudou de computador`;
       case 'permission_removed':
         return $localize`:@@tv.power.schedule.result-permission:Cancelado: acesso retirado`;
       case 'agent_revoked':
-        return $localize`:@@tv.power.schedule.result-agent-revoked:Cancelado: agente revogado`;
+        return $localize`:@@tv.power.schedule.result-agent-revoked:Cancelado: computador removido`;
       default:
         return $localize`:@@tv.power.schedule.result-cancelled:Agendamento cancelado`;
     }

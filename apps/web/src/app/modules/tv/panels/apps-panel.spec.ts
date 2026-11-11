@@ -952,11 +952,11 @@ describe('AppsPanel', () => {
     it('is disabled with the reason while the remote cannot send', async () => {
       store.canSend.set(false);
       store.disabledReason.set(
-        'O agente da TV está desligado, então os botões não funcionam agora.',
+        'O computador que controla a TV está desligado, então os botões não funcionam agora.',
       );
       await render();
       expect(buttonByText('Buscar apps da TV').disabled).toBe(true);
-      expect(root.textContent).toContain('agente da TV está desligado');
+      expect(root.textContent).toContain('computador que controla a TV está desligado');
     });
 
     it('turns into the grid as soon as the apps arrive', async () => {
