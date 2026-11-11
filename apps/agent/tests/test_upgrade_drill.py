@@ -14,6 +14,7 @@ from types import ModuleType, SimpleNamespace
 import httpx
 import pytest
 
+from uniover_agent.adapters import self_update
 from uniover_agent.adapters.self_update import extract_agent
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools"
@@ -475,6 +476,10 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
             events.append("queda entre as renomeacoes")
             return True
 
+        def refused_when_the_tree_differs(self, *_args: object) -> bool:
+            events.append("arvore adulterada")
+            return True
+
         def offer_handover(self, label: str, *_args: object) -> bool:
             # A passagem sem queda liga a API que a sabe (e as fases comuns a desligam de novo).
             self.gateway.handover_supported = True
@@ -512,8 +517,14 @@ def test_the_broken_candidate_is_checked_before_the_offline_index_scenario(
     assert events.index("sem indice") < events.index("B. base -> candidata")
     # A queda entre as renomeações é da troca clássica (a da base para a candidata): vem logo
     # depois dela e antes do primeiro ponteiro; a passagem sem queda vem depois da troca de reserva.
-    names = [name for name in events if name.startswith(("B.", "C.", "C2.")) or "queda" in name]
-    assert [name.split(" ")[0] for name in names] == ["B.", "queda", "C.", "C2."]
+    # O pacote adulterado e recusado logo depois, ja com o codigo da candidata (a conferencia da
+    # arvore e dela).
+    names = [
+        name
+        for name in events
+        if name.startswith(("B.", "C.", "C2.")) or "queda" in name or "arvore" in name
+    ]
+    assert [name.split(" ")[0] for name in names] == ["B.", "queda", "arvore", "C.", "C2."]
 
 
 @pytest.mark.parametrize(
@@ -575,6 +586,82 @@ def test_the_local_feed_answers_the_commit_and_the_known_zips_only() -> None:
         assert feed.downloads(sha) == 1
     finally:
         server.shutdown()
+
+
+def test_the_local_feed_serves_the_commit_tree_the_update_checks_the_package_against(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A conferencia da arvore e obrigatoria sem assinatura ativa: o servidor do ensaio tem de
+    # servir, no formato e no caminho que `self_update` usa contra o GitHub, a arvore verdadeira
+    # de cada pacote oferecido, para a conferencia real rodar (e para recusar um pacote adulterado).
+    feed = drill.Feed()
+    server, port = drill.start_feed(feed)
+    monkeypatch.setenv("UNIOVER_UPDATE_DRILL", "1")
+    monkeypatch.setenv("UNIOVER_UPDATE_SOURCE_URL", f"http://127.0.0.1:{port}")
+    honest, other = "a" * 40, "b" * 40
+    # O conftest troca `fetch_git_tree` por uma resposta fixa (nenhum teste fala com a rede): aqui
+    # vale a de verdade, lida de uma copia do modulo.
+    real = load("self_update_real", Path(self_update.__file__))
+    try:
+        feed.offer(honest, drill.zip_bytes(FILES, honest))
+        # O formato do GitHub: itens com caminho da raiz, modo, tipo e hash do git.
+        listing = json.loads(
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/tree/{honest}").read()
+        )
+        assert listing["truncated"] is False
+        item = next(i for i in listing["tree"] if i["path"] == "apps/agent/pyproject.toml")
+        assert item["type"] == "blob"
+        assert item["mode"] == "100644"
+        assert item["sha"] == drill.git_blob_sha1(b"[project]\n")
+        assert real.fetch_git_tree(honest) is not None
+        # O pacote honesto passa na conferencia de verdade.
+        archive = tmp_path / "honest.zip"
+        archive.write_bytes(feed.archives[honest])
+        assert real.verify_tree(archive, honest)
+        # Pacote adulterado: o zip tem um arquivo diferente do que a arvore do commit diz.
+        tampered = {**FILES, "apps/agent/pyproject.toml": b"[project]\n# adulterado\n"}
+        feed.offer(other, drill.zip_bytes(tampered, other), tree_files=FILES)
+        bad = tmp_path / "bad.zip"
+        bad.write_bytes(feed.archives[other])
+        with pytest.raises(real.UpdateRejected, match="difere do commit"):
+            real.verify_tree(bad, other)
+        # Um arquivo a mais ou a menos no zip tambem nao bate.
+        extra = {**FILES, "apps/agent/extra.py": b"x = 1\n"}
+        feed.offer(other, drill.zip_bytes(extra, other), tree_files=FILES)
+        bad.write_bytes(feed.archives[other])
+        with pytest.raises(real.UpdateRejected, match="não são os do commit"):
+            real.verify_tree(bad, other)
+        # Commit que o servidor nao conhece: sem arvore (a conferencia nao e dispensada).
+        assert real.fetch_git_tree("c" * 40) is None
+    finally:
+        server.shutdown()
+
+
+def test_the_tree_phase_offers_a_tampered_package_with_the_true_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance = object.__new__(drill.Drill)
+    instance.feed = drill.Feed()
+    offered: dict[str, object] = {}
+    monkeypatch.setattr(instance, "version", lambda: "a" * 40)
+
+    def offer(label: str, files: dict[str, bytes], sha: str, **kwargs: object) -> bool:
+        offered.update(label=label, files=files, sha=sha, **kwargs)
+        return True
+
+    monkeypatch.setattr(instance, "offer", offer)
+    honest = {**FILES}
+    assert instance.refused_when_the_tree_differs(honest, "b" * 40)
+    tampered = offered["files"]
+    assert isinstance(tampered, dict)
+    # O pacote difere do verdadeiro em um arquivo de apps/agent, e a arvore servida e a verdadeira.
+    assert tampered != honest
+    assert offered["tree_files"] == honest
+    assert offered["expect_swap"] is False
+    assert offered["marker"] == "atualização recusada"
+    assert offered["sha"] != "b" * 40
+    # No fim o "GitHub" volta a dizer que a versao em uso e a atual.
+    assert instance.feed.sha == "a" * 40
 
 
 def test_the_child_shim_redirects_only_the_two_github_urls(
