@@ -43,6 +43,7 @@ from uniover_agent.core import (
     PcDirectService,
     PcUseTracker,
     PcVolumeAnnouncer,
+    TvDirectBridge,
     parse_favorites,
     pc_apps_announcer,
     pc_handlers,
@@ -50,10 +51,11 @@ from uniover_agent.core import (
     volume_after_hello,
 )
 from uniover_agent.core.pc.devices import DeviceApprovals
-from uniover_agent.core.pc.direct import RTC_SILENT_TYPES
+from uniover_agent.core.pc.direct import RTC_SILENT_TYPES, TvCounts
 from uniover_agent.core.pc.freshness import MAX_POINTER_AGE_SECONDS
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY, PC_SILENT_TYPES
 from uniover_agent.core.pc.lane import PcLane, PointerSpread
+from uniover_agent.core.pc.tv_bridge import Deliver
 from uniover_agent.ports import (
     Clock,
     DirectPeerFactory,
@@ -159,6 +161,29 @@ class PcSetup:
             self._device_fire(envelope)
         else:
             asyncio.ensure_future(self._device_send(envelope))  # noqa: RUF006 - aviso sem espera
+
+    def bind_tv_direct(self, deliver: Deliver) -> bool:
+        """Liga as teclas e o texto da TV ao canal direto: `deliver` é o ponto de entrada do laço
+        principal (`ProcessMessage.submit_direct_tv`). Falso sem canal direto neste agente."""
+        direct = self.direct
+        if direct is None:
+            return False
+        host, hop = self.host, self._main_call
+
+        def to_main(callback: Callable[..., None], *args: Any) -> None:
+            if hop is None:
+                callback(*args)
+            else:
+                hop(callback, *args)
+
+        def to_lane(callback: Callable[[], None]) -> None:
+            if host is None:
+                callback()
+            else:
+                host.post(callback)
+
+        direct.bind_tv(TvDirectBridge(deliver, to_main=to_main, to_lane=to_lane).submit)
+        return True
 
     def on_lane(self, callback: Callable[[], None]) -> None:
         """Roda `callback` no laço da faixa do PC (na ordem das chamadas): agora, sem a thread."""
@@ -386,8 +411,13 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
     record: Callable[[str, str, str], None] | None,
     devices: DeviceApprovals | None = None,
 ) -> PcDirectService:
-    async def notify_closed(session_id: str, reason: str) -> None:
-        envelope = envelopes.pc_rtc_closed(session_id, reason)
+    async def notify_closed(session_id: str, reason: str, tv: TvCounts | None) -> None:
+        envelope = envelopes.pc_rtc_closed(
+            session_id,
+            reason,
+            tv.keys if tv is not None else None,
+            tv.texts if tv is not None else None,
+        )
         if fire is not None:
             fire(envelope)  # o aviso não prende o laço da entrada se o principal estiver parado
             return

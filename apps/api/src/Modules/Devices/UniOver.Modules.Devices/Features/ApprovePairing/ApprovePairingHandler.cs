@@ -105,9 +105,10 @@ internal sealed class ApprovePairingHandler(
                 // Primeiro grava o lado que pode colidir no slug. Se ele falhar, o contexto da TV ainda não recebeu
                 // estado algum e a tentativa seguinte continua limpa; o commit só acontece depois dos dois schemas.
                 await db.SaveChangesAsync(cancellationToken);
+                Action? afterCommit = null;
                 if (command.CreateTv)
                 {
-                    await tvs.RegisterAsync(
+                    afterCommit = await tvs.RegisterAsync(
                         command.OwnTvOnly
                             ? new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, [command.UserId], CanBeDefault: false)
                             : new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, command.TvMemberIds),
@@ -117,6 +118,8 @@ internal sealed class ApprovePairingHandler(
                 }
 
                 await transaction.CommitAsync(cancellationToken);
+                // Só agora o que o módulo TV gravou na outbox dele está visível: é a hora de acordar a entrega.
+                afterCommit?.Invoke();
                 return ApprovalResult.Approved(new ApprovedAgent(agent.Id, agent.Slug, agent.Name, agent.Platform));
             }
             catch (DbUpdateConcurrencyException)

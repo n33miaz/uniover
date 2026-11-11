@@ -22,6 +22,7 @@ from uniover_agent.core import (
     PcDirectService,
     PcUseTracker,
     ProcessMessage,
+    TvCounts,
     pc_handlers,
     pc_rtc_handlers,
 )
@@ -176,11 +177,13 @@ class Lab:
             handlers["pc.click.v1"] = slow_click
         self.peers: list[FakePeer] = []
         self.closed: list[tuple[str, str]] = []
+        self.tv_counts: list[TvCounts | None] = []
         self.records: list[tuple[str, str, str]] = []
         self.ttl = ttl
 
-        async def notify(session_id: str, reason: str) -> None:
+        async def notify(session_id: str, reason: str, tv: TvCounts | None = None) -> None:
             self.closed.append((session_id, reason))
+            self.tv_counts.append(tv)
 
         self.service = PcDirectService(
             factory=factory or self._factory,

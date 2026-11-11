@@ -179,7 +179,10 @@ describe('PcDirect opening', () => {
     // O ponteiro sem ordem e sem retransmissão; a entrada ordenada e confiável.
     expect(pointer.options).toEqual({ ordered: false, maxRetransmits: 0 });
     expect(input.options).toEqual({ ordered: true });
-    expect(signaling.offer).toHaveBeenCalledWith(expect.stringContaining('a=fingerprint'));
+    expect(signaling.offer).toHaveBeenCalledWith(expect.stringContaining('a=fingerprint'), {
+      scopes: ['pc'],
+      tvId: null,
+    });
     expect(connection.remoteDescription).toEqual({ type: 'answer', sdp: 'ANSWER' });
     // A primeira (e única até o ready) mensagem do canal de entrada é o token que a API emitiu.
     expect(input.sent[0]).toEqual({

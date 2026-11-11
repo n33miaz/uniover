@@ -85,6 +85,7 @@ public static class TvModule
         services.AddModuleOutbox<TvDbContext>(Name);
         services.AddIntegrationEvent<TvStateChanged>(TvStateChanged.EventType);
         services.AddIntegrationEvent<TvWatchdogRecorded>(TvWatchdogRecorded.EventType);
+        services.AddIntegrationEvent<TvDirectAccessRemoved>(TvDirectAccessRemoved.EventType);
 
         // Em memória e atrás de portas, sempre como instância do contêiner (nada estático).
         services.AddSingleton<ITvStateStore, InMemoryTvStateStore>();
@@ -108,6 +109,7 @@ public static class TvModule
         services.AddScoped<ITvCommandAudit, EfCommandAudit>();
         services.AddScoped<ITvCurrentSelection, TvCurrentSelection>();
         services.AddScoped<TvSelectionService>();
+        services.AddScoped<ITvDirectChannels, TvDirectChannels>();
 
         // Auditoria: os comandos da TV são uma fonte da trilha do administrador. A retenção (30 dias) roda no banco; a aplicação só chama a função.
         services.AddScoped<IAuditSource, TvAuditSource>();

@@ -100,6 +100,13 @@ internal sealed class SetGuestPermissionsHandler(
                 await access.NotifyAsync(
                     new UserAccessChange(guestId, UserAccessChangeKind.ModuleRemoved, Module: grant.Permission));
             }
+
+            // Perder a permissão de controlar a TV (sem perder o módulo) também fecha o escopo da TV do canal direto.
+            foreach (var grant in removed.Where(g => string.Equals(g.Permission, AccessPermissions.TvControl, StringComparison.Ordinal)))
+            {
+                await access.NotifyAsync(
+                    new UserAccessChange(guestId, UserAccessChangeKind.PermissionRemoved, Permission: grant.Permission));
+            }
         }
 
         var summary = new GuestSummary(

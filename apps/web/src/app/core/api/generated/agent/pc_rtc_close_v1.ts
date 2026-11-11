@@ -10,10 +10,11 @@ export type PcRtcCloseV1BodyReason =
   | 'disconnected'
   | 'lifetime'
   | 'revoked'
-  | 'cloud';
+  | 'cloud'
+  | 'rescoped';
 
 /**
- * API para agente: o app (ou a API) fecha o canal direto da sessão; o agente solta o que o PC ficou segurando e não responde. `reason`: `requested` (o app pediu), `replaced` (uma oferta nova de outro aparelho tomou o lugar: o app que perdeu o canal não tenta de novo sozinho) ou `revoked` (a sessão, a senha, a conta ou a permissão da pessoa deixou de valer). O agente avisa o próprio fechamento com pc.rtc.closed.v1.
+ * API para agente: o app (ou a API) fecha o canal direto da sessão; o agente solta o que o PC ficou segurando e não responde. `reason`: `requested` (o app pediu), `replaced` (uma oferta nova de outro aparelho tomou o lugar: o app que perdeu o canal não tenta de novo sozinho), `revoked` (a sessão, a senha, a conta ou a permissão da pessoa deixou de valer) ou `rescoped` (a pessoa perdeu um dos escopos do canal, o do PC ou o da TV, mas não o acesso todo: o app abre outro já, com o que ainda vale; só vai a quem declara tv.rtc.v1). O agente avisa o próprio fechamento com pc.rtc.closed.v1.
  */
 export interface PcRtcCloseV1Message {
   v: 1;

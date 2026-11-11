@@ -4149,7 +4149,23 @@
       },
       "PcRtcOfferRequest": {
         "properties": {
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
           "sdp": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tvId": {
+            "format": "uuid",
             "type": [
               "null",
               "string"
@@ -4171,6 +4187,12 @@
               "string"
             ]
           },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "sdp": {
             "type": "string"
           },
@@ -4186,7 +4208,8 @@
           "sessionId",
           "sdp",
           "token",
-          "expiresInSeconds"
+          "expiresInSeconds",
+          "scopes"
         ],
         "type": "object"
       },

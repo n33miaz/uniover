@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Persistence;
 
@@ -68,5 +69,38 @@ internal static class TvMembershipLedger
             .Select(o => o.UserId)
             .ToListAsync(cancellationToken);
         db.TvMemberOptOuts.AddRange(lost.Except(marked).Select(userId => TvMemberOptOut.Create(userId, now)));
+    }
+
+    /// <summary>
+    /// Entre <paramref name="added"/>, quem ainda não tinha filiação em NENHUMA outra TV além de <paramref name="tvId"/>: pela regra da
+    /// seleção, quem não tem filiação enxerga a TV padrão, e ao ganhar a primeira filiação (numa TV que não é a padrão) passa a ver só
+    /// a dela e perde a padrão (menos o administrador, que vê todas e fica de fora, se <paramref name="roles"/> o conhece). Só vale com o bloqueio de <see cref="LockAsync"/> tomado e ANTES de gravar a mudança.
+    /// </summary>
+    public static async Task<IReadOnlyList<Guid>> FirstMembershipsAsync(
+        TvDbContext db, Guid tvId, IReadOnlyCollection<Guid> added, IAccountRoleDirectory? roles, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(added);
+
+        if (added.Count == 0)
+        {
+            return [];
+        }
+
+        var candidates = added.ToArray();
+        var already = await db.TvMembers.AsNoTracking()
+            .Where(m => m.TvId != tvId && candidates.Contains(m.UserId))
+            .Select(m => m.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var first = candidates.Except(already).ToArray();
+        if (first.Length == 0 || roles is null)
+        {
+            return first;
+        }
+
+        // O administrador enxerga todas as TVs (a seleção não olha a filiação dele): entrar numa TV não tira a padrão dele.
+        var owners = (await roles.OwnersAmongAsync(first, cancellationToken)).ToHashSet();
+        return [.. first.Where(userId => !owners.Contains(userId))];
     }
 }

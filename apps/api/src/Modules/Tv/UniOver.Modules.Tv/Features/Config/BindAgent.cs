@@ -4,7 +4,10 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Tv.Contracts;
+using UniOver.SharedKernel;
 using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
@@ -69,7 +72,8 @@ internal sealed class BindAgentHandler(
     ITvStreamPublisher stream,
     TvConfigView view,
     TimeProvider time,
-    ITvCleanupSettingsPublisher? cleanupPublisher = null)
+    ITvCleanupSettingsPublisher? cleanupPublisher = null,
+    IEventBus? events = null)
 {
     /// <summary>
     /// Passa o controle da TV para o computador escolhido. Devolve a configuração nova, ou nulo quando o computador não
@@ -120,6 +124,12 @@ internal sealed class BindAgentHandler(
             if (!changed)
             {
                 break;
+            }
+
+            if (events is not null && previousSlug is not null && !string.Equals(previousSlug, listing.Slug, StringComparison.Ordinal))
+            {
+                // Ninguém mais leva as teclas da TV pelo canal direto do computador antigo: o aviso sai na outbox, na mesma gravação da troca.
+                await events.PublishAsync(new TvDirectAccessRemoved(IdGenerator.NewId(), now, previousSlug, null), cancellationToken);
             }
 
             var entry = CommandAuditEntry.Create(

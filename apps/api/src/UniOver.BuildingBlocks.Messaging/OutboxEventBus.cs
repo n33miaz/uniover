@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using UniOver.SharedKernel;
@@ -32,16 +31,7 @@ internal sealed class OutboxEventBus(IServiceProvider services, OutboxModuleRegi
         }
 
         var context = (DbContext)services.GetRequiredService(registration.ContextType);
-        context.Set<OutboxMessage>().Add(new OutboxMessage
-        {
-            Id = integrationEvent.Id,
-            Type = type,
-            Payload = JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType(), EventJson.Options),
-            OccurredAt = integrationEvent.OccurredAt.ToUniversalTime(),
-            CreatedAt = time.GetUtcNow(),
-            Attempts = 0,
-            NextAttemptAt = time.GetUtcNow(),
-        });
+        context.Set<OutboxMessage>().Add(OutboxMessages.Create(integrationEvent, time.GetUtcNow()));
 
         return Task.CompletedTask;
     }
