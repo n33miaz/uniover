@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +17,7 @@ namespace UniOver.IntegrationTests.Training;
 public sealed class CatalogSeedingTests(PostgresFixture postgres)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+    private static readonly DateTimeOffset SeedStart = new(2026, 11, 11, 12, 0, 0, TimeSpan.Zero);
 
     private static SeedExercise Item(string sourceRef, string name, string instruction = "Faça o movimento.", string equipment = Equipment.Barbell) =>
         new(sourceRef, TextNormalizer.Slugify(name), name, [instruction], [Muscle.Chest], [Muscle.Triceps], equipment,
@@ -25,8 +25,14 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
 
     private static SeedDocument Document(int version, params SeedExercise[] items) => new(version, "abc", items);
 
+    private static async Task SeedAsync(TrainingApp app, SeedDocument document, TimeProvider? time = null)
+    {
+        await using var db = app.Db();
+        await new CatalogSeeder(db, new CatalogSeedSource(document), time ?? app.Time ?? TimeProvider.System).EnsureSeededAsync(Ct);
+    }
+
     private static CatalogSeeder SeederFor(TrainingApp app, SeedDocument document, TimeProvider? time = null) =>
-        new(app.Db(), new CatalogSeedSource(document), time ?? TimeProvider.System);
+        new(app.Db(), new CatalogSeedSource(document), time ?? app.Time ?? TimeProvider.System);
 
     [Fact]
     public async Task Startup_NeverTouchesTheTrainingModuleInTheDatabase()
@@ -59,20 +65,21 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
     [Fact]
     public async Task ProductionHost_StartsAndServesLiveness_WithAnUnreachableDatabase()
     {
-        // Prova a regra do Neon: com o banco fora do ar, a partida não pode consultar nada (nem a semente).
-        var settings = new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:Default"] = "Host=banco-inexistente.invalid;Database=d;Username=u;Password=p;Timeout=15",
-        };
+        // Prova a regra do Neon: com o banco fora do ar, a partida não pode consultar nada (nem a semente) nem esperar por ele.
+        // O ouvinte local aceita a conexão e nunca responde: quando o primeiro serviço de fundo fica preso nele, a sonda
+        // de vida ainda responde (a partida não depende do banco), sem relógio nem DNS.
+        using var database = new SilentDatabase();
+        var settings = new Dictionary<string, string?> { ["ConnectionStrings:Default"] = database.ConnectionString };
         await using var factory = new EdgeFactory("Production", settings);
         using var client = factory.CreateClient();
+        await database.Accepted.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
-        var clock = Stopwatch.StartNew();
-        var response = await client.GetAsync("/health/live", Ct);
-        clock.Stop();
+        using var response = await client.GetAsync("/health/live", Ct).WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+
+        // Solta os serviços de fundo presos no banco mudo antes de desligar o host (senão esperam o prazo da conexão).
+        database.Dispose();
     }
 
     [Fact]
@@ -378,12 +385,16 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
     [Fact]
     public async Task TwoSimultaneousFirstReads_LoadTheSeedOnce_WithoutError()
     {
-        await using var app = await TrainingApp.StartAsync(postgres);
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { FakeClock = true, Start = SeedStart });
         var items = Enumerable.Range(0, 60).Select(i => Item($"ref-{i}", $"Exercício {i}")).ToArray();
         var document = Document(1, items);
 
-        var tasks = Enumerable.Range(0, 6).Select(_ => Task.Run(() => SeederFor(app, document).EnsureSeededAsync(Ct), Ct)).ToArray();
-        await Task.WhenAll(tasks);
+        // Seis cargas liberadas juntas pela mesma barreira, cada uma com o próprio contexto.
+        await Race.RunTogetherAsync(6, async _ =>
+        {
+            await SeedAsync(app, document);
+            return 0;
+        }, Ct);
 
         await using var db = app.Db();
         (await db.Exercises.CountAsync(Ct)).Should().Be(60);
@@ -396,7 +407,8 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
         await using var app = await TrainingApp.StartAsync(postgres);
         var login = await app.LoginAsync();
 
-        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => app.PullAsync(login, limit: 5)));
+        // Oito pedidos liberados juntos pela mesma barreira.
+        var responses = await Race.RunTogetherAsync(8, _ => app.PullAsync(login, limit: 5), Ct);
 
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
         await using var db = app.Db();

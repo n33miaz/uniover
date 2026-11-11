@@ -113,6 +113,7 @@ WAIT_FOR_OWNER = [
     'set /p OWNER=<"%UNIOVER_TEST_AGENTS%.owner"',
     'tasklist /FI "PID eq %OWNER%" /NH 2>nul | "%SystemRoot%\\System32\\find.exe" "%OWNER%" > nul',
     f"if not errorlevel 1 exit /b {EXIT_ALREADY_RUNNING}",
+    'if defined UNIOVER_TEST_RUNNING_AGENTS echo x>>"%UNIOVER_TEST_RUNNING_AGENTS%"',
     "ping -n 300 127.0.0.1 > nul",
     "exit /b 0",
 ]
@@ -149,23 +150,38 @@ def make_stale(path: Path) -> None:
 
 def test_a_stalled_owner_is_stopped_and_the_agent_comes_back(pc: Pc) -> None:
     pc.uv(WAIT_FOR_OWNER, sync_lines=SYNC_COUNTED)
-    with pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
-        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
-        owner = start_owner(pc)
+    resumed = pc.runtime / "agent-resumed"
+    with pc.running(
+        UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT,
+        UNIOVER_TEST_RUNNING_AGENTS=str(resumed),
+    ):
+        # O agente falso nunca grava o pulso: sem o `heartbeat` o supervisor o da por mudo ~2 s
+        # depois de subir e o mataria antes de ele ver o dono; o sync da volta seguinte encerraria o
+        # dono (a linha de comando o denuncia). O pulso fica em dia ate o dono ser visto.
+        owner = None
         try:
-            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+            with heartbeat(pc.alive):
+                assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+                owner = start_owner(pc)
+                seen = wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+                assert seen, pc.supervisor_log()
             make_stale(pc.alive)  # o dono parou de dar sinal de vida
             assert wait_for(lambda: owner.poll() is not None, 90), pc.supervisor_log()
             kinds = {i["kind"] for i in pc.diagnostics()}
             assert "process.unresponsive" in kinds
-            assert wait_for(lambda: "mudo" in pc.supervisor_log(), 5)
-            # Sem o dono, o agente sobe de verdade (e fica).
+            assert "mudo" in pc.supervisor_log()
+            # Sem o dono, o agente sobe de verdade (e fica: com o pulso em dia, nada o reinicia).
             before = pc.starts()
-            assert wait_for(lambda: pc.starts() > before, 60), pc.supervisor_log()
-            time.sleep(float(OWNED_WAIT) + 1)
-            assert pc.starts() == before + 1
+            with heartbeat(pc.alive):
+                assert wait_for(lambda: pc.starts() > before, 60), pc.supervisor_log()
+                assert wait_for(resumed.exists, 60), pc.supervisor_log()
+                # Janela so para flagrar um defeito (reinicio); ela nunca decide um sucesso.
+                time.sleep(float(OWNED_WAIT) + 1)
+                assert pc.starts() == before + 1
+            assert resumed.read_text(encoding="ascii").splitlines() == ["x"]
         finally:
-            stop_owner(owner)
+            if owner is not None:
+                stop_owner(owner)
 
 
 def test_a_live_owner_is_left_alone_and_nothing_is_synced_meanwhile(pc: Pc) -> None:
@@ -189,7 +205,9 @@ def test_a_restart_request_is_honored_while_waiting_for_the_owner(pc: Pc) -> Non
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         owner = start_owner(pc)
         try:
-            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60), (
+                pc.supervisor_log()
+            )
             flag.write_text("", encoding="ascii")
             assert wait_for(lambda: not flag.exists(), 30), pc.supervisor_log()
             assert wait_for(lambda: owner.poll() is not None, 30), pc.supervisor_log()
@@ -209,7 +227,9 @@ def test_a_rollback_request_is_honored_while_waiting_for_the_owner(pc: Pc) -> No
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         owner = start_owner(pc)
         try:
-            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60)
+            assert wait_for(lambda: "outro agente ja roda" in pc.supervisor_log(), 60), (
+                pc.supervisor_log()
+            )
             flag.write_text("", encoding="ascii")
             assert wait_for(lambda: not flag.exists(), 30), pc.supervisor_log()
             assert wait_for((pc.base / "app" / "marker.txt").exists, 30), pc.supervisor_log()

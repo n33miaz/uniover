@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
@@ -15,26 +14,33 @@ namespace UniOver.IntegrationTests.Edge;
 /// </summary>
 public sealed class HealthReadyTests
 {
-    private const string UnreachableDatabase = "Host=banco-inexistente.invalid;Database=d;Username=u;Password=segredo-do-banco;Timeout=3";
+    // A porta local sem ouvinte falha sem depender de DNS ou de uma rede externa.
+    private const string UnavailableDatabase = "Host=127.0.0.1;Port=1;Database=d;Username=u;Password=segredo-do-banco;Timeout=1";
 
     [Fact]
     public async Task WithTheDatabaseDown_LiveStaysUp_AndReadyIs503WithoutLeakingTheConnection()
     {
-        var settings = new Dictionary<string, string?> { ["ConnectionStrings:Default"] = UnreachableDatabase };
+        // O banco aceita a conexão e não responde: o /health/ready fica preso nele e o /health/live tem de passar assim mesmo.
+        using var database = new SilentDatabase();
+        var settings = new Dictionary<string, string?> { ["ConnectionStrings:Default"] = database.ConnectionString };
         await using var factory = new EdgeFactory("Production", settings, withTestModule: true);
         using var client = factory.CreateClient();
+        var ct = TestContext.Current.CancellationToken;
 
-        var clock = Stopwatch.StartNew();
-        using var live = await client.GetAsync("/health/live", TestContext.Current.CancellationToken);
-        clock.Stop();
-        using var ready = await client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
+        var readyRequest = client.GetAsync("/health/ready", ct);
+        await database.Accepted.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        using var live = await client.GetAsync("/health/live", ct);
 
         live.StatusCode.Should().Be(HttpStatusCode.OK);
-        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2), "a sonda de vida não pode esperar o banco");
+        readyRequest.IsCompleted.Should().BeFalse("a sonda de vida não espera o banco: o ready segue preso nele");
+
+        database.Dispose();
+        using var ready = await readyRequest.WaitAsync(TimeSpan.FromSeconds(30), ct);
         ready.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        var body = await ready.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        var body = await ready.Content.ReadAsStringAsync(ct);
         body.Should().Be("Unhealthy");
-        body.Should().NotContain("inexistente").And.NotContain("segredo-do-banco");
+        body.Should().NotContain("127.0.0.1").And.NotContain("segredo-do-banco");
     }
 
     [Fact]
@@ -42,7 +48,7 @@ public sealed class HealthReadyTests
     {
         var settings = new Dictionary<string, string?>
         {
-            ["ConnectionStrings:Default"] = UnreachableDatabase,
+            ["ConnectionStrings:Default"] = UnavailableDatabase,
             ["RateLimiting:health-ready:Permitted"] = "2",
         };
         await using var factory = new EdgeFactory("Production", settings, withTestModule: true);
@@ -65,7 +71,7 @@ public sealed class HealthReadyTests
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
         var logger = new CountingLogger();
         var check = new DatabaseHealthCheck(
-            Options.Create(new DatabaseOptions { ConnectionString = UnreachableDatabase, ConnectionTimeoutSeconds = 3 }),
+            Options.Create(new DatabaseOptions { ConnectionString = UnavailableDatabase, ConnectionTimeoutSeconds = 3 }),
             time,
             logger);
         var ct = TestContext.Current.CancellationToken;
