@@ -1,8 +1,6 @@
 using System.Net.Http.Json;
 using AwesomeAssertions;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
-using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Identity.Domain;
@@ -12,9 +10,10 @@ namespace UniOver.IntegrationTests.Audit;
 
 /// <summary>
 /// O IP vira dado de auditoria (e chave do limite de taxa), então um cliente não pode escolhê-lo. Atrás do Render a cadeia
-/// de <c>X-Forwarded-For</c> traz o cliente seguido de saltos INTERNOS (10.x.x.x, em número e valor variáveis): vale o
-/// primeiro endereço PÚBLICO lido da direita para a esquerda, e tudo à esquerda dele (o que o cliente escreveu) é ignorado.
-/// A regra por peer (público ou privado, IPv6) está em <see cref="ForwardedChainTests"/>; aqui é o caminho inteiro, até a trilha.
+/// de <c>X-Forwarded-For</c> traz o cliente seguido da borda da Cloudflare e de saltos INTERNOS (10.x.x.x, em número e
+/// valor variáveis): vale o endereço logo à esquerda dos saltos internos e de no máximo UMA borda, e tudo à esquerda dele (o que
+/// o cliente escreveu) é ignorado. A regra por peer e por faixa (interna, Cloudflare, configurada, IPv6) está em
+/// <see cref="ForwardedChainTests"/>; aqui é o caminho inteiro, até a trilha.
 /// </summary>
 [Collection(PostgresGroup.Name)]
 public sealed class ClientIpTests(PostgresFixture postgres)
@@ -140,22 +139,5 @@ public sealed class ClientIpTests(PostgresFixture postgres)
 
         var item = page.GetProperty("items").EnumerateArray().Single();
         item.GetProperty("ip").GetString().Should().Be(RealClient);
-    }
-
-    [Fact]
-    public void TheForwardedHeadersOptions_TrustOnlyTheInternalNetworks_AndNeverAnEmptyList()
-    {
-        var options = ForwardedHeadersExtensions.CreateOptions();
-
-        options.ForwardLimit.Should().Be(ForwardedHeadersExtensions.ForwardLimit).And.BeInRange(2, 16,
-            "o Render põe mais de um salto interno: o limite de 1 lia o salto, não o cliente");
-        options.RequireHeaderSymmetry.Should().BeFalse();
-        options.ForwardedHeaders.Should().Be(ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto);
-
-        // Lista vazia significaria "confia em qualquer origem": o cliente escolheria o próprio IP.
-        options.KnownIPNetworks.Should().NotBeEmpty();
-        options.KnownProxies.Should().BeEmpty("os endereços de laço local entram como rede, na lista de redes");
-        options.KnownIPNetworks.Select(n => n.ToString()).Should().BeEquivalentTo(
-            "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10");
     }
 }
