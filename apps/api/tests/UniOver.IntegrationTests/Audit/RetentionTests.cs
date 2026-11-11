@@ -234,7 +234,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
         var results = await service.RunOnceAsync(Ct);
 
-        results.Select(r => r.Name).Should().BeEquivalentTo("identity.purge_audit", "devices.purge_audit", "tv.purge_audit", "tv.scrub_removal_audit", "identity.refresh_families", "identity.capacity_samples");
+        results.Select(r => r.Name).Should().BeEquivalentTo("identity.purge_audit", "devices.purge_audit", "tv.purge_audit", "tv.scrub_removal_audit", "identity.refresh_families", "identity.capacity_samples", "devices_diagnostics");
         results.Should().OnlyContain(r => r.Succeeded);
         foreach (var schema in new[] { Identity, Devices, Tv })
         {
@@ -275,7 +275,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
         var results = await service.RunOnceAsync(Ct);
 
-        results.Should().HaveCount(6, "uma limpeza por trilha mais as rotinas de famílias e de capacidade");
+        results.Should().HaveCount(7, "uma limpeza por trilha mais as rotinas de famílias, de capacidade e de diagnósticos");
         results.Should().OnlyContain(r => !r.Succeeded && r.Error != null && !r.Error.Contains(' ', StringComparison.Ordinal));
     }
 

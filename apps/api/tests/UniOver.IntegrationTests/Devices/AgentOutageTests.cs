@@ -1,8 +1,10 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Identity;
@@ -312,5 +314,90 @@ public sealed class AgentOutageTests(PostgresFixture postgres)
         var actions = (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("items").EnumerateArray()
             .Select(i => i.GetProperty("action").GetString()).ToList();
         actions.Should().Contain(["agent_offline", "agent_online"]);
+    }
+
+    [Fact]
+    public async Task AnAgentWhoseSnapshotIsDaysOld_IsNotAnOutageUntilTheLimitPassesFromTheStartOfThisProcess()
+    {
+        await using var app = await DevicesApp.StartAsync(postgres);
+        // Com o último sinal só gravado na conexão, o de um agente conectado há dias é antigo: quem acabou de subir (a instância
+        // nova do deploy) não abre queda antes de ter tido o limite inteiro para o agente reconectar nela.
+        await AddAgentAsync(app, "pc-sala", "PC da sala", app.Time.GetUtcNow().AddDays(-3));
+
+        await CheckAsync(app);
+        app.Time.Advance(TimeSpan.FromMinutes(9));
+        await CheckAsync(app);
+        await using (var early = app.Db())
+        {
+            (await early.AgentOutages.CountAsync(Ct)).Should().Be(0, "o processo tem 9 min: o agente ainda pode reconectar");
+        }
+
+        app.Time.Advance(TimeSpan.FromMinutes(2));
+        await CheckAsync(app);
+        await using var db = app.Db();
+        (await db.AgentOutages.CountAsync(Ct)).Should().Be(1, "passado o limite desde a partida, sem o agente falar");
+    }
+
+    [Fact]
+    public async Task LosingTheRaceToOpenAnOutage_DoesNotLeaveAPendingRecoveryOpen()
+    {
+        var race = new OpenOutagesRace();
+        await using var app = await DevicesApp.StartAsync(postgres, new DevicesAppOptions
+        {
+            CommandInterceptor = race,
+            // Só a conciliação manual do teste: o laço do host também consultaria (e consumiria a disputa armada).
+            ConfigureServices = services => services.Remove(services.Single(d =>
+                d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && d.ImplementationType == typeof(AgentOutageWorker))),
+        });
+        var presence = app.Services.GetRequiredService<IPresenceStore>();
+        var recovering = await AddAgentAsync(app, "pc-volta", "PC que voltou", app.Time.GetUtcNow());
+        var dropping = await AddAgentAsync(app, "pc-cai", "PC que caiu", app.Time.GetUtcNow());
+        await using (var seed = app.Db())
+        {
+            seed.AgentOutages.Add(AgentOutage.Open(IdGenerator.NewId(), recovering, app.Time.GetUtcNow(), app.Time.GetUtcNow()));
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        app.Time.Advance(TimeSpan.FromMinutes(11));
+        presence.MarkConnected("pc-volta", app.Time.GetUtcNow()); // o computador voltou: a queda dele deve fechar
+
+        // Entre a leitura das quedas abertas e a gravação, outra instância abre a queda do "pc-cai" (índice único).
+        race.OnOpenRead = () =>
+        {
+            using var other = app.Db();
+            other.AgentOutages.Add(AgentOutage.Open(IdGenerator.NewId(), dropping, app.Time.GetUtcNow(), app.Time.GetUtcNow().AddMinutes(-11)));
+            other.SaveChanges();
+        };
+        await CheckAsync(app);
+
+        race.Fired.Should().BeTrue("a disputa foi provocada");
+        await using var db = app.Db();
+        (await db.AgentOutages.SingleAsync(o => o.AgentId == recovering, Ct)).RecoveredAt
+            .Should().NotBeNull("a queda do computador que voltou fecha na mesma conciliação, sem esperar a reserva de 6 h");
+        (await db.AgentOutages.CountAsync(o => o.AgentId == dropping, Ct)).Should().Be(1, "uma queda por agente");
+        (await AuditCountAsync(app, PairingEvents.AgentOnline)).Should().Be(1);
+    }
+
+    /// <summary>Quando armado, na leitura das quedas abertas faz outra "instância" gravar uma queda antes do SaveChanges do monitor.</summary>
+    private sealed class OpenOutagesRace : DbCommandInterceptor
+    {
+        public Action? OnOpenRead { get; set; }
+
+        public bool Fired { get; private set; }
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            if (OnOpenRead is { } inject
+                && command.CommandText.Contains("agent_outages", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("recovered_at IS NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                OnOpenRead = null;
+                Fired = true;
+                inject();
+            }
+
+            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        }
     }
 }

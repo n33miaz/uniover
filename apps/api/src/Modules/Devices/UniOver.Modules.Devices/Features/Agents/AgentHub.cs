@@ -203,6 +203,15 @@ internal sealed partial class AgentHub(
     public async Task NotifyServerRestartAsync(CancellationToken cancellationToken)
     {
         var sessions = connections.BeginDraining();
+
+        // O último sinal de quem está conectado a esta instância vai ao banco (ele não é renovado por batimento). Vale para todos,
+        // tenham ou não o 4411: quem assume o agente não pode ver um sinal de dias atrás e abrir uma queda. Corre junto com o
+        // resto (não atrasa o aviso aos agentes) e é esperado no fim.
+        var seenAt = time.GetUtcNow();
+        var stamping = Task.Run(() => Task.WhenAll(
+            sessions.Select(session => persistedPresence.RecordSeenAsync(session.AgentId, seenAt, CancellationToken.None))),
+            CancellationToken.None);
+
         var wait = options.Value.DrainWait;
         if (wait > TimeSpan.Zero && !await WaitForPendingRepliesAsync(wait, cancellationToken))
         {
@@ -218,6 +227,7 @@ internal sealed partial class AgentHub(
             }
         }
 
+        closing.Add(stamping);
         await Task.WhenAll(closing);
     }
 
@@ -302,11 +312,9 @@ internal sealed partial class AgentHub(
             return !connections.IsRevoked(agentId);
         }
 
+        // O sinal de vida fica só em memória: "visto agora" de quem está conectado vem daqui, e o banco (que dorme sem
+        // consulta) só recebe o último sinal ao conectar, ao desconectar e quando o hello traz algo novo.
         connections.Touch(session, now);
-        if (isCurrent && envelope.Type is not AgentMessageTypes.AgentHelloV1 and not AgentMessageTypes.AgentUpdateStatusV1)
-        {
-            await persistedPresence.TouchAsync(agentId, now, cancellationToken);
-        }
 
         switch (envelope.Type)
         {

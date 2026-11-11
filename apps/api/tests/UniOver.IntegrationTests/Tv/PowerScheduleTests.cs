@@ -14,6 +14,9 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    // Os testes que chamam o despachante à mão rodam sem o laço do host (ele acordaria sozinho no instante combinado).
+    private static readonly TvAppOptions Manual = new() { ManualPowerOff = true };
+
     private static async Task<Guid> ConfigureAsync(TvApp app)
     {
         // A TV padrão já existe (a da instalação, ligada ao computador do teste): o agendamento é dela.
@@ -32,7 +35,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task SaveChangeAndCancel_KeepOneActiveScheduleAndRejectOldVersion()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         var due = app.Time.GetUtcNow().AddHours(1);
         var version = await ScheduleAsync(app, tvId, due);
@@ -67,7 +70,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task GuestWithoutPower_CannotReadOrCreateSchedule()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         var guest = await app.NewGuestAsync("Convidado", ["module:tv", "tv:control"], 88);
         using var read = await app.GetAsync($"/api/v1/tv/power/schedule?tvId={tvId}", guest.Login.AccessToken);
@@ -80,7 +83,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task ConcurrentCreations_LeaveOnlyOneActiveSchedule()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         var due = app.Time.GetUtcNow().AddHours(1);
         var url = $"/api/v1/tv/power/schedule?tvId={tvId}";
@@ -97,7 +100,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task GuestOfAnotherTv_CannotReadThisSchedule()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         var guest = await app.NewGuestAsync("Convidado", ["module:tv", "tv:power"], 90);
         await using (var db = app.Db())
@@ -114,7 +117,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task DueWhileOffline_IsRetriedInsteadOfClosed_AndEndsAsMissedOncePastTheCeiling()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
         app.Time.Advance(TimeSpan.FromSeconds(2));
@@ -143,7 +146,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task AgentThatDroppedForAMoment_IsRetriedAndThenReceivesTheSafePowerOff()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using (var first = await app.ConnectAndWaitAsync())
         {
@@ -179,7 +182,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task CancelledJustBeforeDue_IsNeverClaimed()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         var version = await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
         using (var cancel = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/power/schedule?tvId={tvId}&version={version}"))
@@ -194,7 +197,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task AlreadyOff_UsesOnlyTheSafeAgentOperation()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
@@ -218,7 +221,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task UncertainAgentReply_IsRecordedWithoutRetry()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
@@ -240,7 +243,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task ReboundTv_CancelsInsteadOfFollowingTheNewAgent()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
         await using (var db = app.Db())
@@ -261,7 +264,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task GuestRemovedFromTv_CancelsAtDispatch()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         var guest = await app.NewGuestAsync("Convidado", ["module:tv", "tv:power"], 89);
         using (var save = await app.SendAsync(HttpMethod.Put, $"/api/v1/tv/power/schedule?tvId={tvId}",
@@ -282,6 +285,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task RemovedPowerPermission_CancelsAtDispatch()
     {
+        // Sem o ajuste Manual: quem despacha é o laço do host, acordado no instante combinado.
         await using var app = await TvApp.StartAsync(postgres);
         var tvId = await ConfigureAsync(app);
         var guest = await app.NewGuestAsync("Convidado", ["module:tv", "tv:power"], 91);
@@ -291,10 +295,12 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
         await using (var identity = app.Identity())
             await identity.UserGrants.Where(x => x.UserId == guest.UserId && x.Permission == "tv:power").ExecuteDeleteAsync(Ct);
 
-        // A porta de permissões tem cache curto; o relógio avança além dele antes do disparo.
+        // A porta de permissões tem cache curto; o relógio avança além dele antes do disparo. O laço do host dorme até o
+        // instante combinado e o relógio falso só anda quando o teste manda: a cada olhada o relógio anda mais um pouco.
         app.Time.Advance(TimeSpan.FromSeconds(31));
         await TvApp.WaitUntilAsync(async () =>
         {
+            app.Time.Advance(TimeSpan.FromSeconds(1));
             await using var db = app.Db();
             return await db.PowerSchedules.AnyAsync(x => x.Status == Schedule.Cancelled && x.Reason == "permission_removed", Ct);
         }, "agendamento cancelado após retirada da permissão");
@@ -303,7 +309,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task AgentWithoutSafeCapability_IsNotSentAnyPowerCommand()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await agent.SendHelloAsync("1.0.0", "tv.remote");
@@ -315,6 +321,65 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
         (await scope.ServiceProvider.GetRequiredService<ScheduledPowerOffDispatcher>().RunOnceAsync(Ct)).Should().Be(1);
         await using var db = app.Db();
         (await db.PowerSchedules.SingleAsync(Ct)).Result.Should().Be("unsupported");
+    }
+
+    private static async Task<DateTimeOffset?> NextWakeAsync(TvApp app)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IPowerOffQueue>().NextWakeAsync(Ct);
+    }
+
+    [Fact]
+    public async Task NextWake_IsTheEarliestUsefulInstant_OfPendingRequestsAndDispatchLeases()
+    {
+        await using var app = await TvApp.StartAsync(postgres, Manual);
+        var tvId = await ConfigureAsync(app);
+        (await NextWakeAsync(app)).Should().BeNull("sem pedido em aberto o laço só dorme a reserva");
+
+        var due = app.Time.GetUtcNow().AddHours(1);
+        await ScheduleAsync(app, tvId, due);
+        (await NextWakeAsync(app)).Should().Be(due, "pendente: a hora combinada");
+
+        // Devolvido à fila (o agente não estava pronto): a espera da nova tentativa só conta depois da hora combinada.
+        await SetDueAgoAsync(app, TimeSpan.FromSeconds(30));
+        var retryAt = app.Time.GetUtcNow().AddSeconds(15);
+        await app.ExecuteSqlAsync($"UPDATE tv.power_schedules SET lease_until = '{retryAt:O}'");
+        (await NextWakeAsync(app)).Should().Be(retryAt, "já devido e em espera: acorda ao fim da espera, não em laço apertado");
+
+        var leaseEnds = app.Time.GetUtcNow().AddMinutes(2);
+        await app.ExecuteSqlAsync($"UPDATE tv.power_schedules SET status = 'dispatching', lease_until = '{leaseEnds:O}'");
+        (await NextWakeAsync(app)).Should().Be(leaseEnds, "enviando: a recuperação só age depois do fim da reserva");
+
+        await app.ExecuteSqlAsync("UPDATE tv.power_schedules SET status = 'completed', lease_until = NULL");
+        (await NextWakeAsync(app)).Should().BeNull("encerrado não tem trabalho");
+    }
+
+    [Fact]
+    public async Task TheHostLoop_SendsThePowerOffAtTheAgreedInstant_WithoutAnyPollingTick()
+    {
+        // Sem o ajuste Manual: o laço do host é quem dorme até a hora combinada, acordado pelo sinal do agendamento.
+        await using var app = await TvApp.StartAsync(postgres);
+        var tvId = await ConfigureAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.power.off.v1") == true,
+            "capacidade de desligamento seguro");
+
+        await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddMinutes(30));
+        var next = TvApp.NextCommandAsync(agent);
+        // O relógio falso só anda quando o teste manda; o laço pode ainda estar armando a espera, então o relógio segue em passos
+        // curtos (cada um alcança a hora combinada no máximo a 1 s dela) até o comando sair.
+        app.Time.Advance(TimeSpan.FromMinutes(29));
+        while (!next.IsCompleted)
+        {
+            app.Time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(20, Ct);
+        }
+
+        var command = await next;
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        await TvApp.ReplyAsync(agent, command);
+        await WaitForResultAsync(app, "off");
     }
 
     // Muda a hora combinada direto no banco: avançar o relógio em minutos faria o worker do próprio host agir no meio do caminho.
@@ -331,7 +396,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task DueLongerAgoThanTheCeiling_FinishesAsMissedWithAudit_AndSendsNothing()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
@@ -364,7 +429,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task DueJustInsideTheCeiling_StillSendsTheSafePowerOff()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
@@ -386,7 +451,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task ConnectedAgentWithoutCapabilitiesYet_IsRetriedNextRound_InsteadOfClosedAsUnsupported()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         // Conectado, mas o hello ainda não chegou: é a presença logo depois de a API subir.
         await using var agent = await app.ConnectAndWaitAsync();
@@ -422,7 +487,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task AnAgentWithoutCapabilitiesYet_DoesNotHoldBackTheScheduleOfAnotherTv()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvA = await ConfigureAsync(app);
         await using var agentA = await app.ConnectAndWaitAsync(); // sem hello: capacidades ainda desconhecidas
         var pairedB = await app.PairAsync("PC da outra TV", keepTv: true);
@@ -470,7 +535,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task ConnectedAgentThatNeverDeclaresCapabilities_EndsAsMissedWhenTheCeilingPasses()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
@@ -492,7 +557,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task ConcurrentWorkers_ClaimOneScheduleOnly()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
         await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.power.off.v1");
@@ -516,7 +581,7 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
     [Fact]
     public async Task ExpiredDispatch_IsMarkedUncertainWithoutRetry()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, Manual);
         var tvId = await ConfigureAsync(app);
         await ScheduleAsync(app, tvId, app.Time.GetUtcNow().AddSeconds(1));
         await using (var db = app.Db())

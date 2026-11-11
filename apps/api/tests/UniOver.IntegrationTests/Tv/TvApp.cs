@@ -50,6 +50,12 @@ internal sealed record TvAppOptions
     /// <summary>Limite da política dos Atalhos do iPhone (por IP); o padrão alto só cai nos testes que falam de limite.</summary>
     public int SiriPermitted { get; init; } = 100000;
 
+    /// <summary>
+    /// Tira do host o laço dos desligamentos agendados: o teste chama o despachante à mão e confere cada rodada. O laço de
+    /// verdade acorda no instante combinado (e o relógio falso o alcança num <c>Advance</c>), então ele chegaria antes do teste.
+    /// </summary>
+    public bool ManualPowerOff { get; init; }
+
     /// <summary>Slug do agente que controla a TV. O pareamento de "PC Casa" produz exatamente <c>pc-casa</c>.</summary>
     public string AgentId { get; init; } = TvApp.AgentSlug;
 
@@ -226,6 +232,12 @@ internal sealed class TvApp : IAsyncDisposable
             services.AddSingleton<TvEventsProbe>();
             services.AddScoped<IIntegrationEventHandler<TvStateChanged>, StateChangedProbeHandler>();
             services.AddScoped<IIntegrationEventHandler<TvWatchdogRecorded>, WatchdogProbeHandler>();
+            if (options.ManualPowerOff)
+            {
+                services.Remove(services.Single(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                    && d.ImplementationType == typeof(Modules.Tv.Features.PowerSchedule.ScheduledPowerOffWorker)));
+            }
+
             options.ConfigureServices?.Invoke(services);
         }));
 

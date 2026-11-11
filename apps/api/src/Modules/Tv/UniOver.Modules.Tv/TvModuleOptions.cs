@@ -45,7 +45,28 @@ public sealed class TvModuleOptions
     /// <summary>Espera antes de gravar uma mudança de estado, para juntar oscilações rápidas numa escrita só.</summary>
     public int StateDebounceSeconds { get; set; } = 2;
 
+    /// <summary>
+    /// Teto do sono do laço dos desligamentos agendados quando não há pedido em aberto (ou o próximo é mais distante). O laço
+    /// dorme até o próximo instante útil e é acordado por sinal ao criar, mudar ou cancelar; este tempo só cobre um pedido
+    /// criado por outra instância. Longo de propósito: cada despertar acorda o banco gratuito, que dorme sem consulta.
+    /// </summary>
+    public int PowerOffReserveMinutes { get; set; } = 360;
+
+    /// <summary>
+    /// Janela, a partir da partida do processo, em que o laço dorme só <see cref="PowerOffStartupPollSeconds"/>: numa troca de
+    /// instância a antiga ainda recebe pedidos que esta não viu por sinal, e o banco está acordado de qualquer forma.
+    /// </summary>
+    public int PowerOffStartupWindowMinutes { get; set; } = 10;
+
+    public int PowerOffStartupPollSeconds { get; set; } = 60;
+
     public SseStreamOptions Sse { get; set; } = new();
+
+    public TimeSpan PowerOffReserve => TimeSpan.FromMinutes(PowerOffReserveMinutes);
+
+    public TimeSpan PowerOffStartupWindow => TimeSpan.FromMinutes(PowerOffStartupWindowMinutes);
+
+    public TimeSpan PowerOffStartupPoll => TimeSpan.FromSeconds(PowerOffStartupPollSeconds);
 
     public TimeSpan CommandTimeout => TimeSpan.FromSeconds(CommandTimeoutSeconds);
 
@@ -69,6 +90,9 @@ public sealed class TvModuleOptions
             && options.PowerOffTimeoutSeconds >= options.HibernatingTimeoutSeconds
             && options.LivreTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
+            && options.PowerOffReserveMinutes is >= 1 and <= 24 * 60
+            && options.PowerOffStartupWindowMinutes is >= 0 and <= 60
+            && options.PowerOffStartupPollSeconds is >= 1 and <= 600
             && options.Sse.IsValid();
     }
 }

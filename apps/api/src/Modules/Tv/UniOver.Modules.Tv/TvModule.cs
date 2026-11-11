@@ -136,6 +136,8 @@ public static class TvModule
         services.AddScoped<PowerOffHandler>();
         services.AddScoped<PowerScheduleHandler>();
         services.AddScoped<ScheduledPowerOffDispatcher>();
+        services.AddScoped<IPowerOffQueue>(sp => sp.GetRequiredService<ScheduledPowerOffDispatcher>());
+        services.AddSingleton<PowerScheduleSignal>();
         services.AddHostedService<ScheduledPowerOffWorker>();
         services.AddScoped<LaunchShortcutHandler>();
         services.AddScoped<ListShortcutsHandler>();

@@ -82,14 +82,20 @@ public static class DevicesModule
         services.AddScoped<ListAgentsHandler>();
         services.AddScoped<RevokeAgentHandler>();
         services.AddScoped<AgentOutageMonitor>();
+        services.AddScoped<IOutageCheck>(sp => sp.GetRequiredService<AgentOutageMonitor>());
         services.AddScoped<AgentAlertsHandler>();
         services.AddSingleton<AgentBeaconGate>();
         services.AddScoped<AgentBeaconStore>();
         services.AddScoped<AgentDiagnosticsStore>();
         services.AddScoped<AgentDiagnosticsHandler>();
         services.AddScoped<ClientEventStore>();
+        // As quedas são decididas em memória: o laço escuta a presença e só consulta o banco no instante que vale uma queda.
+        services.AddSingleton<AgentOutageWake>();
+        services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<AgentOutageWake>());
+        services.AddScoped<IIntegrationEventHandler<AgentRevoked>, AgentOutageRevokedHandler>();
         services.AddHostedService<AgentOutageWorker>();
-        services.AddHostedService<AgentDiagnosticsPurgeWorker>();
+        // O rastro vencido (diagnósticos dos agentes e telemetria do app) entra no serviço de retenção diário, sem laço próprio.
+        services.AddDiagnosticsRetention();
         services.AddSingleton(sp => new PublishedBuild(
             sp.GetRequiredService<IConfiguration>()["RENDER_GIT_COMMIT"]?.Trim().ToLowerInvariant(),
             sp.GetRequiredService<TimeProvider>().GetUtcNow()));

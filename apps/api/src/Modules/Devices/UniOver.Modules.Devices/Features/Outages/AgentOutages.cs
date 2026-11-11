@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Domain;
@@ -16,20 +17,54 @@ using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Devices.Features.Outages;
 
+/// <summary>A conciliação das quedas (lê o banco), atrás de uma porta para o laço poder ser provado sem ele.</summary>
+internal interface IOutageCheck
+{
+    /// <summary>Abre e fecha as quedas devidas agora e devolve o próximo instante em que alguma vai valer.</summary>
+    Task<OutageCheck> CheckAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Vigia a presença dos agentes: o computador que fica sem sinal por mais que <c>devices.agent-offline-minutes</c> abre
 /// UMA queda (e uma linha de auditoria), e a volta a fecha (e registra de novo). Quem está conectado agora nunca conta como
 /// caído; quem não está vale pelo último sinal persistido, mas nunca antes do início deste processo: depois de um deploy ou
 /// de o serviço acordar, o retrato ainda é de quando a API dormia, e o computador precisa de tempo para reconectar.
+/// <para>
+/// <see cref="CheckAsync"/> é a conciliação inteira (lê o banco). Quem decide QUANDO rodá-la é o <see cref="AgentOutageWorker"/>, que
+/// não tem tique: ela devolve o próximo instante em que alguma queda vai valer, para o laço dormir até lá.
+/// </para>
 /// </summary>
 internal sealed class AgentOutageMonitor(
     DevicesDbContext db,
     IAgentPresenceReader presence,
     ISystemSettings settings,
     PublishedBuild build,
-    TimeProvider time)
+    TimeProvider time) : IOutageCheck
 {
-    public async Task CheckAsync(CancellationToken cancellationToken)
+    /// <summary>Folga depois do limite: a queda vale quando passa dele (estritamente), então o laço acorda um instante depois.</summary>
+    internal static readonly TimeSpan DueSlack = TimeSpan.FromSeconds(1);
+
+    /// <summary>Quando uma queda passa a valer para quem ficou sem sinal desde <paramref name="lastSignal"/>, nunca antes da partida deste processo.</summary>
+    internal static DateTimeOffset DueAt(DateTimeOffset lastSignal, DateTimeOffset startedAt, TimeSpan limit) =>
+        (lastSignal > startedAt ? lastSignal : startedAt) + limit + DueSlack;
+
+    public async Task<OutageCheck> CheckAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReconcileAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (db.ChangeTracker.Entries<AgentOutage>().Any(e => e.State == EntityState.Added))
+        {
+            // Outra instância abriu a mesma queda no mesmo instante (índice único): o aviso já existe. O SaveChanges falho
+            // desfez tudo o que esta passada tinha a gravar (inclusive as quedas que ela fechava), então a conciliação é refeita
+            // do zero, já enxergando a queda da outra instância; fechar uma queda não fica para a reserva de 6 h.
+            db.ChangeTracker.Clear();
+            return await ReconcileAsync(cancellationToken);
+        }
+    }
+
+    private async Task<OutageCheck> ReconcileAsync(CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
         var limit = TimeSpan.FromMinutes(await settings.AgentOfflineMinutesAsync(cancellationToken));
@@ -42,6 +77,7 @@ internal sealed class AgentOutageMonitor(
             .ToDictionaryAsync(s => s.AgentId, s => s.LastSeenAt, cancellationToken);
         var open = await db.AgentOutages.Where(o => o.RecoveredAt == null).ToDictionaryAsync(o => o.AgentId, cancellationToken);
 
+        DateTimeOffset? nextDue = null;
         foreach (var agent in agents)
         {
             open.TryGetValue(agent.Id, out var outage);
@@ -81,17 +117,15 @@ internal sealed class AgentOutageMonitor(
                 db.AgentOutages.Add(AgentOutage.Open(IdGenerator.NewId(), agent.Id, now, lastSeen));
                 Audit(PairingEvents.AgentOffline, agent.Id, now);
             }
+            else
+            {
+                var due = since + limit + DueSlack;
+                nextDue = nextDue is null || due < nextDue ? due : nextDue;
+            }
         }
 
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException) when (db.ChangeTracker.Entries<AgentOutage>().Any(e => e.State == EntityState.Added))
-        {
-            // Outra instância abriu a mesma queda no mesmo instante (índice único): o aviso já existe, e o próximo ciclo reconcilia.
-            db.ChangeTracker.Clear();
-        }
+        await db.SaveChangesAsync(cancellationToken);
+        return new OutageCheck(nextDue, limit);
     }
 
     private static DateTimeOffset? Latest(params DateTimeOffset?[] instants) => instants.Max();
@@ -100,35 +134,115 @@ internal sealed class AgentOutageMonitor(
         db.PairingAudit.Add(PairingAuditEntry.Create(eventName, agentId, null, null, null, null, now));
 }
 
-internal sealed partial class AgentOutageWorker(IServiceScopeFactory scopes, TimeProvider time, ILogger<AgentOutageWorker> logger)
+/// <summary>
+/// Vigia a presença sem tique: o Neon gratuito dorme depois de 5 min sem consulta e o plano tem um teto mensal de horas
+/// acordado, e uma conciliação por minuto o manteria ligado o mês inteiro com o computador do dono conectado e ninguém usando.
+/// A decisão de "caiu" é tomada em memória: quando a presença de um agente cai (depois da graça), o laço agenda a verificação
+/// para o último sinal mais o limite (<c>devices.agent-offline-minutes</c>) e dorme; só nesse instante, na partida (que reconstrói
+/// os pendentes a partir do banco), quando um agente volta (para fechar a queda aberta), quando um agente é revogado e na reserva
+/// (<c>OutageReserveMinutes</c>) é que consulta o banco. A queda nunca se perde: o instante vem do último sinal, que o banco guarda
+/// ao desconectar; e não dispara falsa: no instante a conciliação inteira reconfere a presença e o último sinal.
+/// <para>
+/// O limite usado para agendar é o da última conciliação; se o dono o muda, o novo vale na próxima conciliação (um limite menor
+/// só adianta o aviso até a reserva, nunca o perde).
+/// </para>
+/// </summary>
+internal sealed partial class AgentOutageWorker(
+    IServiceScopeFactory scopes, TimeProvider time, AgentOutageWake wake, PublishedBuild build,
+    IOptions<DevicesModuleOptions> options, ILogger<AgentOutageWorker> logger)
     : BackgroundService
 {
-    public static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    /// <summary>O maior sono seguido: depois dele os prazos (em memória) são recalculados pelo relógio de parede, sem tocar no banco.</summary>
+    internal static readonly TimeSpan MaxSleep = TimeSpan.FromMinutes(1);
+
+    private static readonly TimeSpan FailureWait = TimeSpan.FromSeconds(30);
+
+    private static readonly TimeSpan MaxFailureWait = TimeSpan.FromMinutes(15);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(Interval, time);
+        var reserve = options.Value.OutageReserve;
+        var checkNow = true;
+        var failures = 0;
+        DateTimeOffset? next = null;
+        DateTimeOffset reserveAt = time.GetUtcNow();
+        TimeSpan? limit = null;
         while (!stoppingToken.IsCancellationRequested)
         {
+            var now = time.GetUtcNow();
+            while (wake.TryDequeue(out var change))
+            {
+                if (change.Connected || limit is null)
+                {
+                    // Voltou (fecha a queda aberta, se houver) ou ainda não se sabe o limite: concilia.
+                    checkNow = true;
+                }
+                else
+                {
+                    var due = AgentOutageMonitor.DueAt(change.LastSignal ?? now, build.StartedAt, limit.Value);
+                    next = next is null || due < next ? due : next;
+                }
+            }
+
+            if (checkNow || reserveAt <= now || (next is not null && next <= now))
+            {
+                try
+                {
+                    await using var scope = scopes.CreateAsyncScope();
+                    var check = await scope.ServiceProvider.GetRequiredService<IOutageCheck>().CheckAsync(stoppingToken);
+                    next = check.NextDue;
+                    limit = check.Limit;
+                    failures = 0;
+                    reserveAt = now + reserve;
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+#pragma warning disable CA1031 // Nenhuma exceção derruba o laço: registra e tenta de novo depois.
+                catch (Exception ex)
+#pragma warning restore CA1031
+                {
+                    failures++;
+                    LogFailure(logger, ex.GetType().Name);
+                    // Sem o resultado não há prazo confiável: a nova tentativa refaz a conciliação inteira.
+                    next = null;
+                    reserveAt = now + FailureDelay(failures);
+                }
+
+                checkNow = false;
+                // Quem caiu durante a conciliação entra na fila: volta ao topo para agendá-lo antes de dormir.
+                continue;
+            }
+
+            // Os prazos são instantes do relógio de parede guardados em memória; o sono é em passos curtos e a cada passo o relógio
+            // é reconferido (um ajuste do relógio é notado em até um minuto), sem consultar o banco.
+            var wait = reserveAt - now;
+            if (next is not null && next - now < wait)
+            {
+                wait = next.Value - now;
+            }
+
+            if (wait > MaxSleep)
+            {
+                wait = MaxSleep;
+            }
+
             try
             {
-                await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<AgentOutageMonitor>().CheckAsync(stoppingToken);
+                await wake.Signal.WaitAsync(wait, time, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
-            catch (Exception ex)
-            {
-                LogFailure(logger, ex.GetType().Name);
-            }
-
-            if (!await timer.WaitForNextTickAsync(stoppingToken))
-            {
-                break;
-            }
         }
+    }
+
+    private static TimeSpan FailureDelay(int failures)
+    {
+        var delay = TimeSpan.FromSeconds(FailureWait.TotalSeconds * Math.Pow(2, Math.Min(failures - 1, 6)));
+        return delay < MaxFailureWait ? delay : MaxFailureWait;
     }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao vigiar a presença dos agentes ({Error}).")]
