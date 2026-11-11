@@ -1207,6 +1207,81 @@ class Drill:
         return False
 
     def recover_interrupted_swap(self, sha: str) -> bool:
+        """A queda no meio da troca de versao, no jeito que a base troca.
+
+        Base antiga (troca classica por renomeacao de pastas): `recover_interrupted_classic_swap`.
+        Base que ja usa o ponteiro `runtime\\current.json` (a troca e gravar um arquivo, sem
+        renomear a pasta da versao em uso): `recover_interrupted_pointer_swap`. Simular o estado
+        entre renomeacoes numa instalacao assim moveria a pasta que o PONTEIRO aponta e nao
+        exerceria nada do que de fato acontece.
+        """
+        if self.slot_path("current", "app") is not None:
+            return self.recover_interrupted_pointer_swap(sha)
+        return self.recover_interrupted_classic_swap(sha)
+
+    def recover_interrupted_pointer_swap(self, sha: str) -> bool:
+        """A queda logo depois de a troca por ponteiro gravar a prova e o ponteiro novo.
+
+        O ponteiro e escrito num arquivo temporario e renomeado (atomico): a queda deixa o
+        `current.json` inteiro (antigo ou novo) e, no pior caso, um `current.json.tmp` pela metade
+        ao lado. O ensaio para tudo como num reinicio do PC, deixa esse estado (o ponteiro da versao
+        instalada, a prova dela gravada como a troca a grava e um temporario truncado) e sobe so o
+        lancador: a versao tem de seguir a mesma, a anterior guardada e o ponteiro intacto, sem
+        recuperacao de `app.new` nem volta atras.
+        """
+        say("\n== E. queda no meio da troca do ponteiro ==")
+        pointer_file = self.base / "runtime" / "current.json"
+        before = pointer_file.read_bytes()
+        old = self.previous_version()
+        blocked_before = self.blocked()
+        delivered = (self.base / "launcher.ps1").read_bytes() == (
+            self.app / "tools" / "launcher.ps1"
+        ).read_bytes()
+        stopped = self.stop_everything()
+        leftover = pointer_file.with_name(pointer_file.name + ".tmp")
+        if not stopped:
+            return self.verdict.check(
+                "o ensaio parou tudo antes da queda simulada", False, f"parado={stopped}"
+            )
+        leftover.write_bytes(before[: len(before) // 2])
+        (self.base / "runtime" / "update-trial.txt").write_text(f"{sha}|0", encoding="ascii")
+        self.start_supervisor()
+        back = wait_until(
+            lambda: (
+                self.version() == sha
+                and bool(self.roles(self.tree(), "supervisor"))
+                and bool(self.roles(self.tree(), "agent"))
+            ),
+            self.args.timeout,
+        )
+        logs = read_text(self.base / "logs" / "supervisor.log") + self.log_text()
+        results = [
+            self.verdict.check(
+                "o lancador instalado e o da versao instalada (a atualizacao o entregou)", delivered
+            ),
+            self.verdict.check(
+                "depois da queda sobe a mesma versao, pelo ponteiro, com supervisor e agente",
+                back,
+                f"ficou {self.version()[:12]}",
+            ),
+            self.verdict.check(
+                "o ponteiro segue intacto (o temporario pela metade nao vale)",
+                pointer_file.read_bytes() == before,
+            ),
+            self.verdict.check(
+                "a versao anterior continua guardada", old == self.previous_version()
+            ),
+            self.verdict.check(
+                "nada foi bloqueado nem devolvido pela recuperacao",
+                self.blocked() == blocked_before
+                and "promovi app.new" not in logs
+                and "restaurei app.previous" not in logs,
+            ),
+        ]
+        leftover.unlink(missing_ok=True)
+        return all(results)
+
+    def recover_interrupted_classic_swap(self, sha: str) -> bool:
         """Deixa o estado entre as duas renomeacoes e espera o lancador conserta-lo.
 
         O lancador que recupera e o que o proprio agente instalado copiou para a raiz (e a unica
@@ -1853,8 +1928,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 - rote
             # troca o índice por um cache vazio para exercitar a recusa das dependências.
             if proceed and index == 0:
                 proceed = drill.refused_without_the_index(offline_files, offline_sha)
-            # A queda entre as renomeacoes e a troca classica (da base para a candidata): so existe
-            # enquanto a instalacao ainda esta no layout de sempre, antes do primeiro ponteiro.
+            # A queda no meio da troca da base para a candidata, no jeito que a base troca: entre as
+            # renomeacoes (base antiga, troca classica) ou logo depois de gravar o ponteiro (base
+            # que ja usa o ponteiro `current.json`).
             if proceed and index == PHASE_BASE_TO_CANDIDATE:
                 proceed = drill.recover_interrupted_swap(candidate_sha) and drill.verdict.check(
                     "a candidata recuperada terminou a prova antes de receber outra versao",
