@@ -49,9 +49,15 @@ class ConnectionMarker:
         if re.fullmatch(r"[0-9a-f]{32}", token):
             self._data["token"] = token
 
-    def connected(self) -> None:
-        """A primeira conexão deste processo (as reconexões não mudam a marca)."""
-        if "connectedAt" in self._data:
+    def connected(self, *, refresh: bool = False) -> None:
+        """A primeira conexão deste processo, ou a confirmação renovada da passagem.
+
+        Na passagem, um 4409 pode derrubar uma candidatura antes do ACK seguinte. O prazo para a
+        candidata tomar a instalação recomeça nesse ACK, portanto a marca também precisa
+        representar essa confirmação, e não a tentativa anterior. Nas reconexões comuns a primeira
+        marca continua sendo a medida da janela de reinício.
+        """
+        if not refresh and "connectedAt" in self._data:
             return
         self._data["connectedAt"] = _stamp(self._now())
         self._write()

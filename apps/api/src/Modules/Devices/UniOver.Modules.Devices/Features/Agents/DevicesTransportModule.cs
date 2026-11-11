@@ -56,7 +56,10 @@ public static class DevicesTransportModule
         services.AddSingleton<IAgentSessionCloser>(sp => sp.GetRequiredService<AgentConnections>());
         services.AddSingleton<IReplyCorrelator, ReplyCorrelator>();
         services.AddSingleton<IAgentLogReports, InMemoryAgentLogReports>();
-        services.AddSingleton<AgentHub>();
+        // A chave também vale no hub, não só na descoberta. É lida quando os singletons são
+        // criados; mudar Agent:Handover:Enabled exige reiniciar a API para alcançar conexões novas.
+        var handoverEnabled = configuration.GetValue("Agent:Handover:Enabled", true);
+        services.AddSingleton(sp => ActivatorUtilities.CreateInstance<AgentHub>(sp, handoverEnabled));
         services.AddSingleton<AgentGateway>();
         services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<AgentGateway>());
         services.AddHostedService<AgentTransportListener>();

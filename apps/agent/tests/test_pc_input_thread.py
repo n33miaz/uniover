@@ -80,6 +80,9 @@ class RecordingInput:
     def release_all(self) -> None:
         self._note("release_all")
 
+    def release_orphans(self) -> None:
+        self._note("release_orphans")
+
 
 class ThreadedTransport(FakeTransport):
     """Anota em que thread cada envio rodou: o transporte vive no laço principal."""

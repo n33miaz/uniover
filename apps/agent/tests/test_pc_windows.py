@@ -994,3 +994,48 @@ def test_measuring_a_refusal_only_reads_the_real_desktop_and_never_sends_input()
     assert cause in {"session_locked", "elevated_window", "failed"}
     assert "erro do Windows 5" in detail and "desktop de entrada" in detail
     assert "primeiro plano" in detail and "este processo" in detail
+
+
+def test_release_orphans_lets_go_of_the_modifiers_and_buttons_the_system_holds() -> None:
+    sent = Recorder()
+    down = {0xA2, 0x5B, 0x02}  # Ctrl esquerdo, Win esquerda e botão direito apertados por outro
+    pc = WindowsPcInput(sent, start_timer=Timers(), key_probe=lambda vk: vk in down)
+    pc.release_orphans()
+    assert len(sent.batches) == 1
+    (batch,) = sent.batches
+    assert [(e.kind, e.vk, bool(e.flags & KEY_UP)) for e in batch if e.kind == "keyboard"] == [
+        ("keyboard", 0x5B, True),
+        ("keyboard", 0xA2, True),
+    ]
+    assert batch[-1] == RIGHT_UP
+
+
+def test_release_orphans_sends_nothing_when_nothing_is_down() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers(), key_probe=lambda vk: False)
+    pc.release_orphans()
+    assert sent.batches == []
+
+
+def test_release_orphans_never_raises_when_the_system_refuses_or_the_probe_fails() -> None:
+    flaky = Flaky()
+    flaky.refuse_all = True
+    pc = WindowsPcInput(flaky, start_timer=Timers(), key_probe=lambda vk: vk == 0xA0)
+    pc.release_orphans()
+
+    def broken(vk: int) -> bool:
+        raise OSError("sem acesso ao estado do teclado")
+
+    WindowsPcInput(Recorder(), start_timer=Timers(), key_probe=broken).release_orphans()
+
+
+def test_release_orphans_forgets_a_button_this_process_held_and_the_system_let_go() -> None:
+    sent = Recorder()
+    down = {0x01}
+    pc = WindowsPcInput(sent, start_timer=Timers(), key_probe=lambda vk: vk in down)
+    pc.click("LEFT", "DOWN")
+    pc.release_orphans()
+    assert sent.batches[-1] == [LEFT_UP]
+    # Já solto: o `release_all` não manda a mesma soltura de novo.
+    pc.release_all()
+    assert len(sent.batches) == 2

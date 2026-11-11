@@ -8,6 +8,7 @@ Os tempos curtos vêm das variáveis `UNIOVER_SUPERVISOR_*`, como nos outros tes
 """
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -39,7 +40,25 @@ class HandoverPc(Pc):
         (self.runtime / "venv" / "Scripts").mkdir(parents=True)
         (self.runtime / "venv" / "Scripts" / "python.exe").write_bytes(b"")
 
-    def fake(self, handover_lines: list[str], apply_lines: list[str] | None = None) -> None:
+    def fake(
+        self,
+        handover_lines: list[str],
+        apply_lines: list[str] | None = None,
+        *,
+        old_obeys_exit_request: bool = False,
+    ) -> None:
+        """`old_obeys_exit_request`: o agente antigo atende o pedido de saída ordenada do supervisor
+        (`runtime/handover-exit`), como o agente de hoje; sem isto ele o ignora, como uma versão
+        que ainda não o conhece."""
+        exit_request = (
+            [
+                r'if exist "%LOCALAPPDATA%\UniOver\runtime\handover-exit" ('
+                r'copy /y "%LOCALAPPDATA%\UniOver\runtime\handover-exit" '
+                r'"%UNIOVER_TEST_LAUNCHED%.exitreq" >nul & exit /b 0)'
+            ]
+            if old_obeys_exit_request
+            else []
+        )
         lines = [
             "@echo off",
             'if "%~1"=="--version" goto version',
@@ -67,6 +86,7 @@ class HandoverPc(Pc):
             'echo %UNIOVER_APP_DIR%^|%UV_PROJECT_ENVIRONMENT%^|%~3 >"%UNIOVER_TEST_LAUNCHED%"',
             ":oldwait",
             'if exist "%UNIOVER_TEST_OLDSTOP%" exit /b 0',
+            *exit_request,
             "ping -n 2 127.0.0.1 > nul",
             "goto oldwait",
             ":handover",
@@ -175,6 +195,7 @@ def test_the_new_version_takes_over_while_the_old_one_serves_and_nothing_restart
         [
             # A API a fez dona e fechou a antiga: a antiga sai com 0 e a nova segue de pé.
             'echo x>"%UNIOVER_TEST_OLDSTOP%"',
+            f"echo {READY} >{MARK_FILE}",
             'echo x>>"%UNIOVER_TEST_HANDOVERS%.alive"',
             "ping -n 300 127.0.0.1 > nul",
             "exit /b 0",
@@ -219,10 +240,46 @@ def test_the_new_version_takes_over_while_the_old_one_serves_and_nothing_restart
         assert (pc.runtime / "supervisor-alive").exists()
 
 
-def test_the_window_of_a_handover_is_measured_when_the_new_one_is_ready(pc: HandoverPc) -> None:
+def test_an_old_one_that_exits_normally_still_requires_the_new_ready_mark(
+    pc: HandoverPc,
+) -> None:
+    # A antiga pode sair sozinha pelo 4410 antes de o supervisor observar a marca. Isto não basta:
+    # sem `readyAt` a candidata não chegou a servir e não pode ganhar o ponteiro nem a prova.
     pc.fake(
         [
             'echo x>"%UNIOVER_TEST_OLDSTOP%"',
+            ":alive",
+            'echo x>>"%UNIOVER_TEST_HANDOVERS%.alive"',
+            "ping -n 2 127.0.0.1 > nul",
+            "goto alive",
+        ]
+    )
+    with (
+        heartbeat(pc.alive),
+        pc.running(
+            UNIOVER_SUPERVISOR_HANDOVER_ASK_SECONDS="1",
+            UNIOVER_SUPERVISOR_HANDOVER_EXIT_SECONDS="1",
+            UNIOVER_SUPERVISOR_HANDOVER_MARGIN_SECONDS="1",
+            **pc.environment(),
+        ),
+    ):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        trigger_update(pc)
+        assert wait_for(lambda: "nao assumiu" in pc.supervisor_log(), 60), pc.supervisor_log()
+        assert not (pc.runtime / "current.json").exists()
+        assert pc.trial() is None
+        assert NEW in (pc.runtime / ".deferred-versions").read_text(encoding="ascii")
+        assert any(item["kind"] == "update.handover_failed" for item in pc.diagnostics())
+        assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
+
+
+def test_the_window_of_a_handover_is_measured_when_the_new_one_is_ready(pc: HandoverPc) -> None:
+    # O ponteiro só muda com `readyAt` da própria passagem; a janela abre aí e fecha na volta
+    # seguinte, medindo os três tempos (a marca de outra passagem não vale: outro código).
+    pc.fake(
+        [
+            'echo x>"%UNIOVER_TEST_OLDSTOP%"',
+            f"echo {READY} >{MARK_FILE}",
             "ping -n 300 127.0.0.1 > nul",
             "exit /b 0",
         ]
@@ -230,40 +287,31 @@ def test_the_window_of_a_handover_is_measured_when_the_new_one_is_ready(pc: Hand
     with heartbeat(pc.alive), pc.running(**pc.environment()):
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         trigger_update(pc)
-        window = pc.runtime / "update-window.json"
-        assert wait_for(window.exists, 60), pc.supervisor_log()
-        opened = json.loads(window.read_text(encoding="utf-8"))
-        assert opened["mode"] == "handover"
-        assert opened["sha"] == NEW
-        # O agente novo conta quando conectou e quando virou o dono: só aí a janela se fecha.
-        (pc.runtime / "connected.json").write_text(
-            json.dumps(
-                {
-                    "token": "0" * 32,  # de outra execução: a marca não vale
-                    "connectedAt": "2099-01-01T00:00:00.000Z",
-                    "readyAt": "2099-01-01T00:00:01.000Z",
-                }
-            ),
-            encoding="ascii",
-        )
-        time.sleep(2)
-        assert not any(item["kind"] == "update.window" for item in pc.diagnostics())
-        now = time.time()
-        stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now + 1)) + ".000Z"
-        later = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now + 3)) + ".000Z"
-        (pc.runtime / "connected.json").write_text(
-            json.dumps({"token": opened["token"], "connectedAt": stamp, "readyAt": later}),
-            encoding="ascii",
-        )
         assert wait_for(
-            lambda: any(item["kind"] == "update.window" for item in pc.diagnostics()), 30
+            lambda: any(item["kind"] == "update.window" for item in pc.diagnostics()), 90
         ), pc.supervisor_log()
         item = next(i for i in pc.diagnostics() if i["kind"] == "update.window")
         assert item["detail"].startswith("mode=handover sha=" + NEW[:12])
-        for field in ("new_start_to_connected_s", "connected_to_old_exit_s", "old_exit_to_ready_s"):
+        for field in ("new_start_to_connected_s", "connected_to_ready_s"):
             assert field in item["detail"]
         assert item["detail"].isascii()
-        assert not window.exists()
+        assert not (pc.runtime / "update-window.json").exists()
+
+
+def test_a_new_version_that_crashes_after_the_old_one_left_is_blocked(
+    pc: HandoverPc,
+) -> None:
+    # A saída espontânea da antiga não transforma uma queda da candidata em mero adiamento.
+    pc.fake(['echo x>"%UNIOVER_TEST_OLDSTOP%"', "ping -n 2 127.0.0.1 > nul", "exit /b 9"])
+    with heartbeat(pc.alive), pc.running(**pc.environment()):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        trigger_update(pc)
+        blocked = pc.runtime / ".blocked-versions"
+        assert wait_for(blocked.exists, 60), pc.supervisor_log()
+        assert NEW in blocked.read_text(encoding="ascii")
+        assert not (pc.runtime / "current.json").exists()
+        assert any(item["kind"] == "update.rolled_back" for item in pc.diagnostics())
+        assert pc.state()["outcome"] == "blocked"
 
 
 def test_a_new_version_that_crashes_on_start_is_blocked_and_the_old_one_never_stops(
@@ -358,8 +406,9 @@ def test_the_old_one_is_stopped_when_the_new_one_connected_and_then_takes_over(
     with (
         heartbeat(pc.alive),
         pc.running(
-            UNIOVER_SUPERVISOR_HANDOVER_SECONDS="3",
-            UNIOVER_SUPERVISOR_HANDOVER_TAKEOVER_SECONDS="30",
+            UNIOVER_SUPERVISOR_HANDOVER_SECONDS="20",
+            UNIOVER_SUPERVISOR_HANDOVER_ASK_SECONDS="1",
+            UNIOVER_SUPERVISOR_HANDOVER_EXIT_SECONDS="2",
             **pc.environment(),
         ),
     ):
@@ -368,6 +417,9 @@ def test_the_old_one_is_stopped_when_the_new_one_connected_and_then_takes_over(
         assert wait_for(lambda: "antiga foi derrubada" in pc.supervisor_log(), 60), (
             pc.supervisor_log()
         )
+        # Antes de derrubar, o supervisor pediu a saída ordenada (esta antiga não a conhece).
+        assert "pedi a saida ordenada" in pc.supervisor_log()
+        assert "nao saiu 1 s depois" in pc.supervisor_log()
         assert wait_for(lambda: "versao nova no ar sem queda" in pc.supervisor_log(), 60), (
             pc.supervisor_log()
         )
@@ -382,6 +434,94 @@ def test_the_old_one_is_stopped_when_the_new_one_connected_and_then_takes_over(
         time.sleep(3)
         assert alive.stat().st_size > size
         assert pc.starts() == 1
+
+
+def test_the_old_one_is_asked_to_leave_in_an_orderly_way_before_anything_is_stopped(
+    pc: HandoverPc,
+) -> None:
+    # A nova conectou (a API a promoveu) e a antiga segue de pé: passado o tempo de a API a
+    # mandar sair, o supervisor pede a saída ordenada, a antiga a atende e a passagem termina sem
+    # derrubar ninguém. O pedido leva o código da passagem e some no fim.
+    pc.fake(
+        [
+            f"echo {CONNECTED} >{MARK_FILE}",
+            "ping -n 6 127.0.0.1 > nul",
+            f"echo {READY} >{MARK_FILE}",
+            ":alive",
+            'echo x>>"%UNIOVER_TEST_HANDOVERS%.alive"',
+            "ping -n 2 127.0.0.1 > nul",
+            "goto alive",
+        ],
+        old_obeys_exit_request=True,
+    )
+    with heartbeat(pc.alive), pc.running(**pc.environment()):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        trigger_update(pc)
+        assert wait_for(lambda: "versao nova no ar sem queda" in pc.supervisor_log(), 60), (
+            pc.supervisor_log()
+        )
+        log = pc.supervisor_log()
+        assert "pedi a saida ordenada" in log
+        assert "nao saiu 4 s" in log
+        assert "antiga foi derrubada" not in log
+        assert pc.pointer()["current"]["sha"] == NEW
+        assert not (pc.runtime / "handover-exit").exists()
+        assert not (pc.runtime / "handover-exit.tmp").exists()
+        # O que a antiga leu: prefixo e código de 32 hexadecimais, sem quebra de linha.
+        request = Path(str(pc.launched) + ".exitreq").read_text(encoding="ascii")
+        assert re.fullmatch(r"handover-exit:[0-9a-f]{32}", request)
+        assert not any(i["kind"] == "update.handover_forced" for i in pc.diagnostics())
+        assert not (pc.runtime / ".blocked-versions").exists()
+        assert not (pc.runtime / ".deferred-versions").exists()
+        # Um só agente antigo foi lançado e ninguém o reiniciou.
+        time.sleep(3)
+        assert pc.starts() == 1
+
+
+def test_the_request_to_leave_also_comes_before_the_stop_when_the_deadline_passes(
+    pc: HandoverPc,
+) -> None:
+    # O prazo da passagem acaba antes do tempo de espera comum: o pedido sai nessa hora e a antiga
+    # tem `HANDOVER_EXIT_SECONDS` para atendê-lo.
+    pc.fake(
+        [
+            f"echo {CONNECTED} >{MARK_FILE}",
+            "ping -n 6 127.0.0.1 > nul",
+            f"echo {READY} >{MARK_FILE}",
+            ":alive",
+            'echo x>>"%UNIOVER_TEST_HANDOVERS%.alive"',
+            "ping -n 2 127.0.0.1 > nul",
+            "goto alive",
+        ],
+        old_obeys_exit_request=True,
+    )
+    with (
+        heartbeat(pc.alive),
+        pc.running(
+            UNIOVER_SUPERVISOR_HANDOVER_SECONDS="3",
+            UNIOVER_SUPERVISOR_HANDOVER_EXIT_SECONDS="20",
+            **pc.environment(),
+        ),
+    ):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        trigger_update(pc)
+        assert wait_for(lambda: "versao nova no ar sem queda" in pc.supervisor_log(), 60), (
+            pc.supervisor_log()
+        )
+        log = pc.supervisor_log()
+        assert "a antiga saiu de forma ordenada" in log
+        assert "antiga foi derrubada" not in log
+        assert not any(i["kind"] == "update.handover_forced" for i in pc.diagnostics())
+        assert pc.pointer()["current"]["sha"] == NEW
+        assert not (pc.runtime / "handover-exit").exists()
+
+
+def test_an_exit_request_left_by_a_dead_supervisor_is_dropped_on_start(pc: HandoverPc) -> None:
+    pc.fake(["exit /b 0"])
+    (pc.runtime / "handover-exit").write_text("a" * 32, encoding="ascii")
+    with heartbeat(pc.alive), pc.running(**pc.environment()):
+        assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
+        assert not (pc.runtime / "handover-exit").exists()
 
 
 def test_a_new_one_that_connected_but_never_takes_over_is_stopped_and_deferred(
@@ -400,7 +540,8 @@ def test_a_new_one_that_connected_but_never_takes_over_is_stopped_and_deferred(
         heartbeat(pc.alive),
         pc.running(
             UNIOVER_SUPERVISOR_HANDOVER_SECONDS="3",
-            UNIOVER_SUPERVISOR_HANDOVER_TAKEOVER_SECONDS="3",
+            UNIOVER_SUPERVISOR_HANDOVER_EXIT_SECONDS="2",
+            UNIOVER_SUPERVISOR_HANDOVER_MARGIN_SECONDS="1",
             **pc.environment(),
         ),
     ):
@@ -532,7 +673,14 @@ def test_with_the_handover_off_the_supervisor_never_starts_a_handover_process(
 
 
 def test_the_handover_can_be_turned_on_in_the_config_file(pc: HandoverPc) -> None:
-    pc.fake(['echo x>"%UNIOVER_TEST_OLDSTOP%"', "ping -n 300 127.0.0.1 > nul", "exit /b 0"])
+    pc.fake(
+        [
+            'echo x>"%UNIOVER_TEST_OLDSTOP%"',
+            f"echo {READY} >{MARK_FILE}",
+            "ping -n 300 127.0.0.1 > nul",
+            "exit /b 0",
+        ]
+    )
     environment = pc.environment()
     del environment["UNIOVER_UPDATE_HANDOVER"]
     (pc.base / "config").mkdir(exist_ok=True)
@@ -699,6 +847,7 @@ def test_the_handover_runs_under_the_update_lock_and_marks_the_version_it_is_pas
             r"set MARK=%LOCALAPPDATA%\UniOver\runtime\handover-sha.txt",
             'if exist "%MARK%" echo x>"%UNIOVER_TEST_DURING%"',
             'echo x>"%UNIOVER_TEST_OLDSTOP%"',
+            f"echo {READY} >{MARK_FILE}",
             "ping -n 300 127.0.0.1 > nul",
             "exit /b 0",
         ]

@@ -32,7 +32,8 @@ internal sealed partial class AgentHub(
     IServiceScopeFactory scopes,
     IOptions<DevicesTransportOptions> options,
     TimeProvider time,
-    ILogger<AgentHub> logger)
+    ILogger<AgentHub> logger,
+    bool handoverEnabled = true)
 {
     private const string InvalidMessageText = "A mensagem não cumpre o contrato.";
     private const string KeepAliveCapability = "transport.keepalive.v1";
@@ -746,6 +747,12 @@ internal sealed partial class AgentHub(
         }
 
         var body = validation.Value.Body;
+        if (!handoverEnabled)
+        {
+            // A descoberta pode já ter sido desligada, mas ela não é a fronteira de segurança:
+            // uma candidata que alcance a rota própria também não pode promover uma passagem.
+            return Dropped(AgentCloseReason.PolicyViolation);
+        }
         if (!body.TryGetProperty("handover", out var flag)
             || flag.ValueKind != JsonValueKind.True
             || !TryReadInstanceId(body, out var instanceId))

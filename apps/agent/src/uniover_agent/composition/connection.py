@@ -23,12 +23,12 @@ from uniover_agent.adapters.local_config import ConfigValue, update_config
 from uniover_agent.adapters.local_networks import network_signature, same_network
 from uniover_agent.adapters.loop_lag import LoopLagMonitor
 from uniover_agent.adapters.loop_watchdog import LoopWatchdog
-from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
+from uniover_agent.adapters.maintenance_signals import HandoverExitSignal, RuntimeFlagSignals
 from uniover_agent.adapters.network_change import network_change_watcher
 from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
 from uniover_agent.adapters.pc_device_store import JsonDeviceStore
-from uniover_agent.adapters.run_state import RunState
+from uniover_agent.adapters.run_state import PreviousRun, RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
 from uniover_agent.adapters.single_instance import (
     ALREADY_RUNNING_MESSAGE,
@@ -156,11 +156,13 @@ HANDOVER_CAPABILITY = HANDOVER_FEATURE
 # desiste dela em 60 s contados do início do processo, e passa a ela, por esta variável, o instante
 # absoluto (epoch, em segundos) a que o prazo vale (com margem): os prazos daqui são contados do
 # começo desta execução e nunca passam dele. Depois da confirmação a antiga já foi mandada sair e
-# não reconecta, então esta execução NÃO desiste mais por prazo próprio: sair com ela deixaria o PC
-# sem agente (só o supervisor, que derruba a antiga, decide). Enquanto espera a trava, ela avisa no
-# registro a cada `HANDOVER_WAIT_LOG_SECONDS`.
+# não reconecta, mas a candidata ainda precisa tomar a trava num prazo finito: se ficar presa, sai
+# com o mesmo código de adiamento para o supervisor reiniciar pela versão em uso. Enquanto espera a
+# trava, ela avisa no registro a cada `HANDOVER_WAIT_LOG_SECONDS`.
 HANDOVER_DEADLINE_ENV = "UNIOVER_HANDOVER_DEADLINE"
+HANDOVER_TAKEOVER_SECONDS_ENV = "UNIOVER_HANDOVER_TAKEOVER_SECONDS"
 HANDOVER_CONFIRM_SECONDS = 40.0
+HANDOVER_TAKEOVER_SECONDS = 30.0
 HANDOVER_WAIT_LOG_SECONDS = 30.0
 HANDOVER_PROBE_SECONDS = 15.0
 HANDOVER_POLL_SECONDS = 0.25
@@ -174,6 +176,12 @@ _KEEPALIVE_TYPE = "api.keepalive.v1"
 SHUTDOWN_STEP_SECONDS = 10.0
 # O que a execução antiga ainda tem em curso termina em até isto antes de ela fechar tudo.
 HANDOVER_DRAIN_SECONDS = 2.0
+# De quanto em quanto a execução em uso olha se o supervisor pediu a saída ordenada.
+HANDOVER_EXIT_POLL_SECONDS = 0.5
+# Prazo próprio do preparo da TV (ADB) de quem acabou de virar a dona: passado ele, a TV e os
+# comandos `tv.*` seguem sem esperar, e o preparo termina em segundo plano (as capacidades que ele
+# declara vão ao `hello` assim que acabar).
+HANDOVER_TV_PREPARE_SECONDS = 20.0
 # Capacidades que uma API anterior recusaria no `hello` (ela não as conhece): só vão depois de a API
 # listá-las em `features`.
 API_LISTED_CAPABILITIES = frozenset(
@@ -407,7 +415,7 @@ async def supervise(  # noqa: PLR0913 - o vigia, o relógio e os ganchos da pass
     *,
     clock: Clock | None = None,
     kit: DiagnosticsKit | None = None,
-    owner: asyncio.Event | None = None,
+    ready: asyncio.Event | None = None,
     takeover: asyncio.Task[None] | None = None,
 ) -> bool:
     """Mantém a conexão com a API até ela acabar; devolve `True` se a TV mudou de endereço.
@@ -416,15 +424,15 @@ async def supervise(  # noqa: PLR0913 - o vigia, o relógio e os ganchos da pass
     recomeçar com ele. Sem derrubá-la, o canal antigo, aberto, faria a API recusar o novo por
     "substituído" e custaria um minuto de espera.
 
-    Na passagem sem queda, `owner` abre quando esta execução já é a dona da instalação (o vigia do
-    endereço da TV só começa aí) e `takeover` é a tarefa que espera a anterior sair: se ela falhar
-    (`HandoverTimeout`), a falha sobe daqui.
+    Na passagem sem queda, `ready` abre quando esta execução já é a dona da instalação e a TV está
+    preparada (o vigia do endereço da TV só começa aí) e `takeover` é a tarefa que espera a anterior
+    sair: se ela falhar (`HandoverTimeout`), a falha sobe daqui.
     """
     connection = asyncio.create_task(supervisor.run())
 
     async def locate() -> None:
-        if owner is not None:
-            await owner.wait()
+        if ready is not None:
+            await ready.wait()
         assert relocator is not None  # noqa: S101 - só é agendada quando há vigia
         await relocator.run()
 
@@ -489,6 +497,21 @@ def _handover_budget() -> float:
     return min(budget, max(1.0, left))
 
 
+def _handover_takeover_budget() -> float:
+    """Prazo, após o ACK, para a candidata obter a trava da instalação.
+
+    O supervisor o deriva do pedido de saída, da espera ordenada e da margem. Assim a candidata
+    só desiste depois de a antiga poder ter sido derrubada e ainda haver tempo para assumir. Uma
+    execução manual conserva o padrão seguro.
+    """
+    raw = os.environ.get(HANDOVER_TAKEOVER_SECONDS_ENV, "")
+    try:
+        configured = float(raw)
+    except ValueError:
+        return HANDOVER_TAKEOVER_SECONDS
+    return configured if configured > 0 else HANDOVER_TAKEOVER_SECONDS
+
+
 async def _handover_features(
     api_url: str, clock: Clock, limit: float = HANDOVER_PROBE_SECONDS
 ) -> frozenset[str] | None:
@@ -508,8 +531,9 @@ async def _handover_features(
         await clock.sleep(2.0)
 
 
-def _command_to_refuse(raw: str | bytes) -> str | None:
-    """O `id` do comando da API que espera resposta; `None` para o que não espera (o batimento)."""
+def _command_to_refuse(raw: str | bytes) -> tuple[str, str] | None:
+    """O `id` e o tipo do comando da API que espera resposta; `None` para o que não espera (o
+    batimento)."""
     try:
         message = json.loads(raw)
     except ValueError:
@@ -524,7 +548,7 @@ def _command_to_refuse(raw: str | bytes) -> str | None:
     if not isinstance(identifier, str):
         return None
     try:
-        return str(uuid.UUID(identifier))
+        return str(uuid.UUID(identifier)), str(message.get("type", ""))
     except ValueError:
         return None
 
@@ -565,11 +589,15 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         return EXIT_NOT_PAIRED
     api_url = require_api_url(settings)
     clock = SystemClock()
+    # O pedido de saída ordenada só vale se for mais novo que a partida desta execução.
+    exit_signal = HandoverExitSignal()
     # O que a API disse aceitar no momento da partida: a passagem sem queda já o perguntou, e o
     # primeiro `hello` não pode sair mais pobre que o da execução que ela substitui.
     known_features: frozenset[str] = frozenset()
     # O prazo da confirmação conta do começo desta execução (a sondagem e a montagem entram nele).
     confirm_deadline = clock.monotonic() + _handover_budget()
+    # Quando a candidatura volta (4409 antes da posse) o prazo recomeça: ver `handover_restarted`.
+    confirm_until = [confirm_deadline]
     if handover and not settings.update_handover:
         # A passagem está desligada nesta instalação (`update_handover`): nada é aberto, o
         # supervisor usa o caminho de reserva.
@@ -600,16 +628,27 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     owner = asyncio.Event()
     if not handover:
         owner.set()
+    # Aberto quando a TV desta execução está preparada (ou o preparo passou do prazo próprio dele):
+    # sempre, salvo na passagem sem queda. Os comandos `tv.*`, o vigia do endereço da TV e o anúncio
+    # da conexão esperam por ele; o PC não.
+    tv_ready = asyncio.Event()
     # Aberto quando a API confirma que promoveu esta execução (só na passagem sem queda).
     accepted = asyncio.Event()
 
     def handover_accepted() -> None:
-        connection_mark.connected()
+        connection_mark.connected(refresh=True)
         accepted.set()
 
-    async def start_shared_state() -> None:
+    def handover_restarted() -> None:
+        # A confirmação que já veio era da conexão anterior: vale só a da candidatura de agora.
+        accepted.clear()
+        confirm_until[0] = clock.monotonic() + HANDOVER_CONFIRM_SECONDS
+
+    def begin_shared_state() -> PreviousRun | None:
         install_crash_trace(installation_base() / "logs", kit.recorder)
-        announce_start(run_state, kit, settings, build_version())
+        return announce_start(run_state, kit, settings, build_version())
+
+    async def tidy_folder() -> None:
         # Arruma a pasta (restos de atualização, estrutura): só mexe no que tem nome conhecido.
         # Com prazo: uma pasta travada (disco cheio ou em disputa) não impede o agente de subir.
         try:
@@ -620,8 +659,14 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
                 "a arrumação da pasta passou de %.0f s; sigo sem ela", TIDY_TIMEOUT_SECONDS
             )
 
+    async def start_shared_state() -> None:
+        begin_shared_state()
+        await tidy_folder()
+
     asyncio.get_running_loop().set_exception_handler(loop_exception_handler(kit.recorder))
     if not handover:
+        # Um pedido de saída que sobrou de uma passagem que não terminou não vale para esta.
+        exit_signal.clear()
         await start_shared_state()
     gate = EnvelopeGate(agent_id)
     envelopes = EnvelopeFactory(agent_id, gate, clock)
@@ -633,6 +678,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         handover_candidate=lambda: supervisor.handover_pending,
     )
     tv = build_tv(settings, clock, transport, envelopes, secrets)
+    if not handover or tv is None:
+        tv_ready.set()
     pc = build_pc(
         settings,
         transport,
@@ -865,6 +912,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
 
     async def announce_when_owner() -> None:
         await owner.wait()
+        await tv_ready.wait()
         try:
             await announce_connected()
         except Exception:
@@ -885,15 +933,22 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     update_source = FileUpdateStatus(default_status_path(), agent_source_dir())
 
     async def process_when_owner(raw: str | bytes) -> None:
-        if owner.is_set():
+        if owner.is_set() and tv_ready.is_set():
             await process(raw)
             return
-        # A TV e o PC ainda são da antiga: o comando é recusado na hora, sem prender a leitura do
-        # canal (que precisa seguir para ver a confirmação da API, o fechamento e os batimentos).
-        reply_to = _command_to_refuse(raw)
-        if reply_to is not None:
+        refusal = _command_to_refuse(raw)
+        if owner.is_set() and (refusal is None or not refusal[1].startswith("tv.")):
+            # Dona do PC, com a TV ainda sendo preparada: só os comandos da TV esperam.
+            await process(raw)
+            return
+        # A TV (e, antes da posse, o PC) ainda são da antiga ou estão sendo preparados: o comando é
+        # recusado na hora, sem prender a leitura do canal (que precisa seguir para ver a
+        # confirmação da API, o fechamento e os batimentos).
+        if refusal is not None:
             await transport.send(
-                envelopes.result(reply_to, ok=False, code=AGENT_STARTING, message=_STARTING_MESSAGE)
+                envelopes.result(
+                    refusal[0], ok=False, code=AGENT_STARTING, message=_STARTING_MESSAGE
+                )
             )
 
     supervisor = ConnectionSupervisor(
@@ -937,6 +992,9 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         handover=handover,
         # "Conectou" na passagem é a confirmação da API: o que o supervisor lê em `connected.json`.
         on_handover_accepted=handover_accepted,
+        # Tirada do lugar antes de ser a dona, a candidata volta já (sem os 60 s do `replaced`).
+        is_owner=owner.is_set,
+        on_handover_restarted=handover_restarted,
         # Windows: a reconexão acorda quando a rede muda; nos outros sistemas, nada muda.
         network_watcher=network_change_watcher,
     )
@@ -1012,33 +1070,93 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             for job in jobs
         )
 
+    async def prepare_tv() -> None:
+        """Preparo da TV (o ADB) de quem acabou de virar a dona, e o `hello` com o que ele declarou.
+
+        Roda como tarefa própria: passado `HANDOVER_TV_PREPARE_SECONDS` a passagem segue sem ele, e
+        ele termina quando terminar (cancelá-lo no meio deixaria a capacidade sem ser declarada).
+        Uma falha é registrada e nunca derruba a execução que já é a dona do PC."""
+        assert tv is not None  # noqa: S101 - só é agendada com TV
+        try:
+            for step in tv.prepare:
+                await step()
+        except Exception:
+            _log.exception("falha no preparo da TV depois da passagem; sigo sem ele")
+        # As capacidades do preparo não estavam no `hello` da candidata: sem o reenvio, a API só as
+        # leria no `hello` periódico, até 5 minutos depois.
+        try:
+            await supervisor.hello_now()
+        except Exception:
+            _log.warning("não consegui reenviar o hello depois do preparo da TV", exc_info=True)
+
+    handover_tasks: list[asyncio.Task[None]] = []
+
     async def take_over() -> None:
         """Passagem sem queda: espera a execução antiga largar a trava e só então abre o dela.
 
-        Sem a confirmação da API, a antiga não foi mandada sair: passado o prazo (contado do começo
-        desta execução, `HANDOVER_CONFIRM_SECONDS`) ela desiste (nada mudou para ninguém). Com a
-        confirmação, ela espera quanto for preciso (a antiga sai ao receber o 4410, ou o supervisor
-        a derruba)."""
+        Sem a confirmação da API da candidatura de agora, a antiga não foi mandada sair: passado o
+        prazo (contado do começo desta execução, `HANDOVER_CONFIRM_SECONDS`, e recomeçado se a
+        candidatura voltou) ela desiste (nada mudou para ninguém) e a trava nem é tentada. Com a
+        confirmação, ela espera o prazo de tomada da trava (a antiga sai ao receber o 4410, ou o
+        supervisor a derruba)."""
         logged = clock.monotonic()
-        while not await asyncio.to_thread(_acquire_all, agent_id):
+        accepted_at: float | None = None
+        takeover_budget = _handover_takeover_budget()
+        while True:
             now = clock.monotonic()
-            if not accepted.is_set():
-                if now >= confirm_deadline:
+            if accepted.is_set():
+                if accepted_at is None:
+                    accepted_at = now
+                if await asyncio.to_thread(_acquire_all, agent_id):
+                    break
+                if now >= accepted_at + takeover_budget:
+                    _log.error(
+                        "a API me promoveu, mas a execução anterior não largou a trava em %.0f s",
+                        takeover_budget,
+                    )
+                    raise HandoverTimeout
+                if now - logged >= HANDOVER_WAIT_LOG_SECONDS:
+                    logged = now
+                    _log.warning(
+                        "a API me promoveu, mas a execução anterior ainda não largou a trava"
+                    )
+            else:
+                # Sem a confirmação de agora (ou ela foi desfeita por um 4409): o prazo da trava
+                # só começa a contar da confirmação seguinte.
+                accepted_at = None
+                if now >= confirm_until[0]:
                     _log.error("a API não confirmou a passagem a tempo")
                     raise HandoverTimeout
-            elif now - logged >= HANDOVER_WAIT_LOG_SECONDS:
-                logged = now
-                _log.warning("a API me promoveu, mas a execução anterior ainda não largou a trava")
             await clock.sleep(HANDOVER_POLL_SECONDS)
-        await start_shared_state()
-        if tv is not None:
-            for step in tv.prepare:
-                await step()
+        previous = begin_shared_state()
+        if (
+            pc is not None
+            and pc.release_orphans is not None
+            and previous is not None
+            and previous.outcome != "clean"
+        ):
+            # A antiga NÃO saiu de forma ordenada (foi derrubada ou morreu): ela não soltou o que
+            # apertou. Numa saída ordenada ela mesma solta tudo, e o que está apertado agora pode
+            # ser de uma pessoa de verdade. Solto no laço da entrada, antes do primeiro comando.
+            pc.on_lane(pc.release_orphans)
         diary.start()
-        start_background()
+        # Dona logo depois da trava: o PC já atende. A arrumação da pasta e o preparo da TV (que
+        # podem levar dezenas de segundos) não seguram mais a recusa `agent_starting`.
         owner.set()
         connection_mark.ready()
-        _log.info("passagem concluída: esta execução é a dona do PC e da TV")
+        _log.info("passagem concluída: esta execução é a dona do PC")
+        handover_tasks.append(asyncio.create_task(tidy_folder(), name="tidy"))
+        if tv is not None:
+            preparing = asyncio.create_task(prepare_tv(), name="tv-prepare")
+            handover_tasks.append(preparing)
+            done, _ = await asyncio.wait({preparing}, timeout=HANDOVER_TV_PREPARE_SECONDS)
+            if not done:
+                _log.warning(
+                    "o preparo da TV passou de %.0f s; sigo sem esperar por ele",
+                    HANDOVER_TV_PREPARE_SECONDS,
+                )
+        tv_ready.set()
+        start_background()
 
     if not handover:
         start_background()
@@ -1057,12 +1175,24 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         if tv is not None
         else None
     )
+
+    async def watch_exit_request() -> None:
+        """A execução em uso sai de forma ordenada quando o supervisor pede (numa passagem sem
+        queda em que ela já foi substituída e não saiu sozinha). A execução da passagem só começa a
+        olhar depois de virar a dona (e ignora o pedido que leva o código dela)."""
+        await owner.wait()
+        while not exit_signal.requested():
+            await clock.sleep(HANDOVER_EXIT_POLL_SECONDS)
+        _log.info("o supervisor pediu a saída ordenada (passagem sem queda); encerro")
+        supervisor.request_stop(STOP_HANDOVER)
+
+    exit_watch = asyncio.create_task(watch_exit_request(), name="handover-exit")
     moved = False
     timed_out = False
     stopped_because = "erro"
     try:
         moved = await supervise(
-            supervisor, relocator, clock=clock, kit=kit, owner=owner, takeover=takeover
+            supervisor, relocator, clock=clock, kit=kit, ready=tv_ready, takeover=takeover
         )
         stopped_because = _stop_reason_text(moved, supervisor.stop_reason)
         if supervisor.stop_reason == STOP_DUPLICATE:
@@ -1081,9 +1211,16 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         raise
     finally:
         # Ao encerrar, fecha a sessão com a TV de forma limpa (não deixa o canal pendurado).
+        exit_watch.cancel()
         if takeover is not None:
             takeover.cancel()
-            await asyncio.gather(takeover, return_exceptions=True)
+        for task in handover_tasks:
+            task.cancel()
+        await asyncio.gather(
+            exit_watch,
+            *(task for task in (takeover, *handover_tasks) if task is not None),
+            return_exceptions=True,
+        )
         for task in background:
             task.cancel()
         await _close_within(

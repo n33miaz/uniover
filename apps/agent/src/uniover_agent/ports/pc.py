@@ -83,6 +83,13 @@ class PcInput(Protocol):
         """
         ...
 
+    def release_orphans(self) -> None:
+        """Solta todo modificador (Shift, Ctrl, Alt, Win) e todo botão do mouse que o sistema dá por
+        apertado, mesmo os que este processo não apertou (a execução anterior do agente saiu
+        segurando um). Só envia o que está apertado de verdade; sem nenhum, não faz nada. Nunca
+        levanta erro."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class VolumeState:

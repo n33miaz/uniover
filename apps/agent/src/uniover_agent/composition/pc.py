@@ -119,6 +119,9 @@ class PcSetup:
     _device_send: Callable[[dict[str, Any]], Awaitable[None]] = lambda envelope: asyncio.sleep(0)
     # Leva uma chamada do laço da entrada ao laço do agente (`None` sem a thread: é o mesmo laço).
     _main_call: Callable[..., None] | None = None
+    # Solta os modificadores e botões que a execução anterior do agente deixou apertados (a que esta
+    # substitui numa passagem sem queda); roda no laço da entrada, por `on_lane`.
+    release_orphans: Callable[[], None] | None = None
 
     def start(self) -> None:
         """Sobe o laço da entrada (se há) e pede a proteção da memória. Chamado uma vez, já no laço
@@ -403,6 +406,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         fire,
         sender.send,
         main_call,
+        release_orphans=pc_input.release_orphans,
     )
 
 

@@ -22,7 +22,7 @@ from uniover_agent.adapters.installation import _is_real_installation, anchor_di
 from uniover_agent.adapters.log_offload import OffloadHandler
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import probe_api
-from uniover_agent.adapters.run_state import RunState
+from uniover_agent.adapters.run_state import PreviousRun, RunState
 from uniover_agent.adapters.self_care_checks import (
     ConnectionWatch,
     api_check,
@@ -146,8 +146,10 @@ def describe_problems(results: list[tuple[str, bool, str]]) -> list[str]:
 
 def announce_start(
     run_state: RunState, kit: DiagnosticsKit, settings: Settings, version: str
-) -> None:
-    """Marca a execução como em andamento e registra como a anterior terminou (o rastro)."""
+) -> PreviousRun | None:
+    """Marca a execução como em andamento e registra como a anterior terminou (o rastro).
+
+    Devolve como a anterior terminou (`None`: sem rastro)."""
     previous = run_state.begin(version)
     if previous is not None and previous.outcome == "abrupt":
         kit.recorder.record("process.ended_abruptly", "warn", previous.detail, component="main")
@@ -160,6 +162,7 @@ def announce_start(
         f"agente {version} iniciado (atualiza pelo canal {settings.update_channel})",
         component="main",
     )
+    return previous
 
 
 async def roll_back_if_in_trial(outcome: Outcome, kit: DiagnosticsKit) -> None:

@@ -2,6 +2,8 @@ r"""Peças de apoio da passagem sem queda: a marca de conexão, a arrumação da
 pasta do código em uso (`UNIOVER_APP_DIR` e o ponteiro)."""
 
 import json
+import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from uniover_agent import config
 from uniover_agent.adapters import current_pointer as pointer
 from uniover_agent.adapters import housekeeping
 from uniover_agent.adapters.connection_marker import MARKER_FILE, TOKEN_ENV, ConnectionMarker
-from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
+from uniover_agent.adapters.maintenance_signals import HandoverExitSignal, RuntimeFlagSignals
 from uniover_agent.adapters.update_status import previous_dir
 
 from .test_current_pointer import NEW, OLD, OLDER, make_slot
@@ -31,17 +33,21 @@ def read(path: Path) -> dict[str, object]:
 # ---- marca de conexão ----
 
 
-def test_the_marker_says_when_the_run_connected_and_only_the_first_time(tmp_path: Path) -> None:
+def test_the_marker_rewrites_the_confirmation_time_when_a_handover_ack_is_renewed(
+    tmp_path: Path,
+) -> None:
     times = iter([moment(1), moment(2), moment(3)])
     marker = ConnectionMarker(tmp_path, pid=77, now=lambda: next(times))
     marker.connected()
     assert read(tmp_path) == {"pid": 77, "connectedAt": "2026-11-10T12:00:01.123Z"}
-    marker.connected()  # uma reconexão não muda a marca
+    marker.connected()  # uma reconexão comum preserva a medida da janela de reinício
     assert read(tmp_path)["connectedAt"] == "2026-11-10T12:00:01.123Z"
+    marker.connected(refresh=True)  # um novo ACK reinicia o prazo da passagem
+    assert read(tmp_path)["connectedAt"] == "2026-11-10T12:00:02.123Z"
     marker.ready()
-    assert read(tmp_path)["readyAt"] == "2026-11-10T12:00:02.123Z"
+    assert read(tmp_path)["readyAt"] == "2026-11-10T12:00:03.123Z"
     marker.ready()
-    assert read(tmp_path)["readyAt"] == "2026-11-10T12:00:02.123Z"
+    assert read(tmp_path)["readyAt"] == "2026-11-10T12:00:03.123Z"
     assert not list(tmp_path.glob("*.tmp"))
 
 
@@ -132,3 +138,29 @@ def test_installing_again_starts_from_the_layout_from_before_by_dropping_the_poi
         encoding="utf-8"
     )
     assert installer.count("'current.json', 'prepared.json'") == 2
+
+
+def test_the_exit_request_only_counts_when_well_formed_recent_and_not_for_this_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "handover-exit"
+    other, own = "a" * 32, "b" * 32
+    signal = HandoverExitSignal(tmp_path, own, started_at=time.time() - 5)
+    assert signal.requested() is False  # sem arquivo
+    path.write_text("handover-exit:" + other, encoding="ascii")
+    assert signal.requested() is True
+    path.write_text("handover-exit:" + own, encoding="ascii")
+    assert signal.requested() is False  # o código da própria passagem
+    with caplog.at_level("WARNING"):
+        for bad in ("", "handover-exit:", "handover-exit:" + other[:-1], other, "x" * 400):
+            path.write_text(bad, encoding="ascii")
+            assert signal.requested() is False
+            assert signal.requested() is False  # a mesma sobra não é registrada de novo
+    assert len([r for r in caplog.records if "ignorado" in r.getMessage()]) == 5
+    # Pedido bem formado mas gravado antes de esta execução começar.
+    path.write_text("handover-exit:" + other, encoding="ascii")
+    past = time.time() - 3600
+    os.utime(path, (past, past))
+    assert signal.requested() is False
+    signal.clear()
+    assert not path.exists()

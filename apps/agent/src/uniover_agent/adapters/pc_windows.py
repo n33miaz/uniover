@@ -106,6 +106,7 @@ def _start_timer(delay: float, callback: Callable[[], None]) -> _Cancelable:
 
 
 IS_WINDOWS = sys.platform == "win32"
+KeyProbe = Callable[[int], bool]
 _UNSUPPORTED = "o controle do PC só existe no Windows"
 _SHUTDOWN_NOTICE = "O UniOver vai desligar este computador. Para cancelar: shutdown /a"
 
@@ -292,6 +293,15 @@ if sys.platform == "win32":
                 cause, detail = CAUSE_UNKNOWN, f"erro do Windows {last_error}; sem medida ({exc})"
             raise PartialSendError(sent, len(inputs), cause, detail)
 
+    def _key_is_down(vk: int) -> bool:
+        # O estado "de agora" do teclado e do mouse, inclusive do que outro processo apertou por
+        # `SendInput`. O Windows responde sobre o botão físico: com os botões trocados, o esquerdo
+        # lógico é o direito físico.
+        user32 = ctypes.windll.user32
+        if vk in (0x01, 0x02) and user32.GetSystemMetrics(23):  # SM_SWAPBUTTON
+            vk = 3 - vk
+        return bool(user32.GetAsyncKeyState(vk) & 0x8000)
+
     def _lock_workstation() -> bool:
         return bool(ctypes.windll.user32.LockWorkStation())
 
@@ -303,6 +313,9 @@ else:
 
     def _send_input(inputs: Sequence[RawInput]) -> None:
         raise PcUnsupported(_UNSUPPORTED)
+
+    def _key_is_down(vk: int) -> bool:
+        return False
 
     def _lock_workstation() -> bool:
         raise PcUnsupported(_UNSUPPORTED)
@@ -330,8 +343,10 @@ class WindowsPcInput:
         monotonic: Callable[[], float] = time.monotonic,
         dead_man_seconds: float = DEAD_MAN_SECONDS,
         start_timer: TimerStarter = _start_timer,
+        key_probe: KeyProbe | None = None,
     ) -> None:
         self._send = send or _send_input
+        self._key_probe = key_probe or _key_is_down
         self._monotonic = monotonic
         self._dead_man = dead_man_seconds
         self._start_timer = start_timer
@@ -404,6 +419,29 @@ class WindowsPcInput:
             _log.warning("soltando à força o que ficou apertado no mouse e no teclado")
             self._release(self._held, self._pending_key_ups())
             self._sync_timer()
+
+    def release_orphans(self) -> None:
+        """Solta os modificadores e os botões do mouse que o Windows dá por apertados e que este
+        processo não apertou (os de uma execução anterior do agente, que saiu segurando uma tecla).
+
+        Só manda o que está apertado de verdade: um evento de soltura sem a tecla apertada ativaria
+        o menu da janela (Alt) ou o menu de contexto (botão direito). Nunca levanta erro."""
+        try:
+            with self._lock:
+                keys = {vk for vk, _ in pc_inputs.ORPHAN_MODIFIER_KEYS if self._key_probe(vk)}
+                buttons = [
+                    name for name, vk in pc_inputs.BUTTON_PROBE_KEYS.items() if self._key_probe(vk)
+                ]
+                events = pc_inputs.orphan_release_inputs(keys, buttons)
+                if not events:
+                    return
+                _log.warning(
+                    "soltando o que a execução anterior deixou apertado (%d evento(s))", len(events)
+                )
+                self._send(events)
+                self._held = self._held.difference(buttons)
+        except Exception as exc:
+            _log.warning("não foi possível soltar o que a execução anterior deixou: %s", exc)
 
     def _holding(self) -> bool:
         return bool(self._held or self._stuck or self._held_keys)
