@@ -295,24 +295,25 @@ async def test_after_the_confirmation_the_new_run_never_gives_up_waiting_for_the
 ) -> None:
     # A API já promoveu esta execução e mandou a antiga sair (que não reconecta): desistir agora
     # deixaria o PC sem agente. A trava demora bem mais que o prazo de confirmação e a nova ainda
-    # assim vira a dona quando ela vem.
+    # assim vira a dona quando ela vem. O prazo de confirmação folga o bastante para a conexão (numa
+    # máquina ocupada ela leva centenas de ms) e a trava só abre bem depois dele.
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
-    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 0.2)
+    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 1.0)
     monkeypatch.setattr(connection_module, "HANDOVER_WAIT_LOG_SECONDS", 0.1)
     first_try: list[float] = []
 
     def acquire(base: Path | None = None) -> bool:
         if not first_try:
             first_try.append(time.monotonic())
-        return time.monotonic() - first_try[0] >= 0.9
+        return time.monotonic() - first_try[0] >= 2.5
 
     monkeypatch.setattr(connection_module, "acquire", acquire)
     monkeypatch.setattr(connection_module, "acquire_slug", lambda agent_id: True)
 
     async def script(connection: ServerConnection) -> None:
         await accept(connection, json.loads(await connection.recv()))
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(4.0)
         await connection.close(4403, "revoked")
 
     silence_noisy_loggers()

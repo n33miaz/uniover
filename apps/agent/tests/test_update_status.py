@@ -20,6 +20,7 @@ from uniover_agent.adapters.self_update import (
     SelfUpdateError,
     SignedManifest,
     UpdateResult,
+    agent_blob_hashes,
     archive_url,
     self_update,
 )
@@ -619,11 +620,16 @@ def _git_archive_of_develop(destination: Path) -> Path | None:
 
 
 OLD_SUPERVISED_UPDATE = """
-import os, shutil, subprocess, sys
+import json, os, shutil, subprocess, sys
 from pathlib import Path
+from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import self_update
 
 source, archive, sha = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+# Sem assinatura ativa a conferência da árvore do commit é obrigatória; o commit do teste não existe
+# no GitHub, então a árvore verdadeira (a dos arquivos do pacote) é servida aqui.
+tree = json.loads(sys.argv[5])
+module.fetch_git_tree = lambda commit: tree
 
 def check(candidate):
     subprocess.run([sys.executable, "-c", sys.argv[4]], check=True, cwd=source.parent,
@@ -649,9 +655,18 @@ def test_the_code_published_in_develop_updates_itself_into_this_version(tmp_path
     zip_of_this_agent(archive, NEW)
     script = tmp_path / "old_update.py"
     script.write_text(OLD_SUPERVISED_UPDATE, encoding="utf-8")
+    tree = {path: hashes[0] for path, hashes in agent_blob_hashes(archive).items()}
 
     done = subprocess.run(  # noqa: S603 - o próprio interpretador, script do teste
-        [sys.executable, str(script), str(source), str(archive), NEW, CANDIDATE_CHECK],
+        [
+            sys.executable,
+            str(script),
+            str(source),
+            str(archive),
+            NEW,
+            CANDIDATE_CHECK,
+            json.dumps(tree),
+        ],
         check=False,
         env={**os.environ, "PYTHONPATH": str(old_src)},
         capture_output=True,
