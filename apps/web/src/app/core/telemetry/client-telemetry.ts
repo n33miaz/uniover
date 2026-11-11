@@ -1,10 +1,19 @@
 import { DOCUMENT } from '@angular/common';
-import { HttpClient, HttpContext, HttpErrorResponse } from '@angular/common/http';
-import { DestroyRef, Injectable, InjectionToken, Injector, inject } from '@angular/core';
+import { HttpClient, HttpContext, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import {
+  DestroyRef,
+  Injectable,
+  InjectionToken,
+  Injector,
+  effect,
+  inject,
+  untracked,
+} from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { version as appVersion } from '../../../../package.json';
 import type { components } from '../api/generated/schema';
 import { problemOf } from '../auth/api-problem';
+import { AUTH_CONFIG, AuthService } from '../auth/auth.service';
 import { APP_CONFIG } from '../config/app-config';
 import { ConnectivityService } from '../connectivity/connectivity.service';
 import { QUIET_REQUEST } from '../connectivity/quiet-request';
@@ -94,6 +103,8 @@ export const TELEMETRY_CONFIG = new InjectionToken<TelemetryConfig>('TELEMETRY_C
 export const CLIENT_EVENTS_PATH = `${APP_CONFIG.apiBase}/v1/devices/client-events`;
 /** A fila é de uma conta só: cada conta tem a sua chave (a sem conta, de antes, só se descarta). */
 const STORAGE_KEY = 'uniover.telemetry.queue';
+/** A última conta que usou esta fila: sobrevive ao logout para limpar a fila se outra entrar depois de recarregar. */
+const LAST_ACCOUNT_KEY = 'uniover.telemetry.last-account';
 
 /** Um registro na fila, marcado com a conta que o criou (a marca nunca sai do aparelho). */
 interface QueuedEvent {
@@ -149,6 +160,11 @@ export class ClientTelemetry {
     inject(DestroyRef).onDestroy(() => clearTimeout(this.timer));
     this.removeLegacyQueue();
     this.syncOwner();
+    // A troca de conta não pode esperar um novo erro, um envio ou uma leitura de `pending`: a fila anterior é privada.
+    effect(() => {
+      const account = this.session.accountId();
+      untracked(() => this.syncOwner(account));
+    });
     if (this.queue.length > 0) this.schedule(this.config.flushDelayMs);
   }
 
@@ -254,19 +270,32 @@ export class ClientTelemetry {
       owner === null ||
       !this.connectivity.online() ||
       this.connectivity.quiet() ||
-      this.session.status() !== 'authenticated' ||
-      // A sessão em uso tem de ser a da conta dona da fila: com o token de outra conta o registro iria para o nome errado.
-      !this.session.isSessionOf(owner)
+      this.session.status() !== 'authenticated'
     ) {
       this.schedule(this.config.retryMs);
       return;
     }
-    const batch = this.queue
-      .filter((item) => item.account === owner)
-      .slice(0, this.config.batchMax);
-    if (batch.length === 0) return;
     this.sending = true;
+    let batch: readonly QueuedEvent[] = [];
     try {
+      // O token é o da conta dona da fila (o `sub` dele), nunca o que o interceptador encontrasse na hora: outra aba pode
+      // trocar o cookie de refresh entre a checagem e o envio, e o lote de A não pode sair autenticado como B.
+      const lead = this.injector.get(AUTH_CONFIG).minLeadMs;
+      let token = this.session.bearerOf(owner, Date.now() + lead);
+      if (token === null) {
+        await this.injector.get(AuthService).accessToken();
+        // Depois de esperar, a conta em uso pode ser outra: a fila de A já foi descartada e nada sai.
+        this.syncOwner();
+        if (this.owner !== owner) return;
+        token = this.session.bearerOf(owner);
+      }
+      if (token === null) {
+        this.schedule(this.config.retryMs);
+        return;
+      }
+      // Sem nada assíncrono daqui até o `post`: o lote e o token são lidos no mesmo instante.
+      batch = this.queue.filter((item) => item.account === owner).slice(0, this.config.batchMax);
+      if (batch.length === 0) return;
       const http = this.injector.get(HttpClient);
       // Tipado pelo contrato gerado da API: se o servidor mudar a forma, aqui o compilador avisa.
       const body: components['schemas']['ClientEventsBody'] = {
@@ -275,6 +304,8 @@ export class ClientTelemetry {
       await firstValueFrom(
         http.post(CLIENT_EVENTS_PATH, body, {
           context: new HttpContext().set(QUIET_REQUEST, true),
+          // `Authorization` explícito: o interceptador só deixa passar, sem renovar nem repetir com outro token.
+          headers: new HttpHeaders({ Authorization: `Bearer ${token}` }),
         }),
       );
       this.discard(batch);
@@ -286,6 +317,8 @@ export class ClientTelemetry {
       if (status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429) {
         this.discard(batch);
       }
+      // Com o token explícito o interceptador não renova: um 401 pede a renovação aqui, e o lote espera.
+      if (status === 401) void this.injector.get(AuthService).renew();
       if (this.queue.length > 0) this.schedule(this.config.retryMs);
     } finally {
       this.sending = false;
@@ -302,21 +335,50 @@ export class ClientTelemetry {
    * A fila acompanha a conta em uso. Se ela mudou (saiu e entrou outra, ou saiu), o que era da anterior é descartado, da memória
    * e do aparelho: nunca é enviado com a sessão de outra conta.
    */
-  private syncOwner(): void {
-    const current = this.session.accountId();
+  private syncOwner(current = this.session.accountId()): void {
     if (current === this.owner) return;
     const previous = this.owner;
     this.owner = current;
     this.queue = [];
-    if (previous !== null) this.forget(previous);
-    if (current !== null) this.queue = this.load(current);
+    if (current === null) return;
+    // Depois de um reload, a instância anterior pode não ter visto o logout. A marca conserva a decisão de descarte para
+    // a próxima instância. Se a conta mudou, nenhuma fila anterior (nem uma sobra dela) atravessa essa fronteira.
+    const last = this.lastAccount();
+    const accountChanged = previous !== null || (last !== null && last !== current);
+    if (accountChanged) this.forgetQueues();
+    this.rememberAccount(current);
+    if (!accountChanged) this.queue = this.load(current);
   }
 
-  private forget(account: string): void {
+  private forgetQueues(): void {
     try {
-      this.doc.defaultView?.localStorage.removeItem(storageKey(account));
+      const storage = this.doc.defaultView?.localStorage;
+      if (!storage) return;
+      const obsolete: string[] = [];
+      for (let index = 0; index < storage.length; index++) {
+        const key = storage.key(index);
+        if (key?.startsWith(`${STORAGE_KEY}.`)) obsolete.push(key);
+      }
+      for (const key of obsolete) storage.removeItem(key);
     } catch {
       // Armazenamento bloqueado: não há o que apagar.
+    }
+  }
+
+  private lastAccount(): string | null {
+    try {
+      const account = this.doc.defaultView?.localStorage.getItem(LAST_ACCOUNT_KEY);
+      return account && account.length > 0 ? account : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private rememberAccount(account: string): void {
+    try {
+      this.doc.defaultView?.localStorage.setItem(LAST_ACCOUNT_KEY, account);
+    } catch {
+      // Armazenamento bloqueado: a proteção desta instância ainda vale na memória.
     }
   }
 
