@@ -77,6 +77,18 @@
     border-color: var(--a-accent);
   }
 }
+/*
+ * Os três pontos ficam sem fundo nem contorno, como o ponto de estado do outro lado (pedido do dono): o alvo segue com
+ * 44 px e o foco do teclado continua visível.
+ */
+.circle.bare {
+  border-color: transparent;
+  background: transparent;
+}
+.circle.bare:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
 .lead {
   display: flex;
   gap: var(--gap);

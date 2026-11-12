@@ -157,7 +157,7 @@ describe('TvPage', () => {
       ]);
     });
 
-    it('gives back, the menu and power the same circle', () => {
+    it('gives back, the menu and power the same 44 px target, and only the menu goes without a background', () => {
       const circles = [...root.querySelectorAll('.head .circle')];
       expect(circles).toHaveLength(3);
       expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
@@ -165,6 +165,7 @@ describe('TvPage', () => {
         'Mais opções',
         'Desligar a TV',
       ]);
+      expect(circles.map((c) => c.classList.contains('bare'))).toEqual([false, true, false]);
     });
 
     it('no longer has the connected and hibernation pills, nor any chip row', () => {
