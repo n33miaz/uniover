@@ -83,7 +83,11 @@ class HandoverPc(Pc):
             ":run",
             'if "%~6"=="--handover" goto handover',
             'echo x>>"%UNIOVER_TEST_AGENTS%"',
-            'echo %UNIOVER_APP_DIR%^|%UV_PROJECT_ENVIRONMENT%^|%~3 >"%UNIOVER_TEST_LAUNCHED%"',
+            # O `>` cria o arquivo vazio antes de escrever: quem espera o arquivo existir leria
+            # vazio. Grava ao lado e renomeia, já completo.
+            "echo %UNIOVER_APP_DIR%^|%UV_PROJECT_ENVIRONMENT%^|%~3"
+            ' >"%UNIOVER_TEST_LAUNCHED%.partial"',
+            'move /y "%UNIOVER_TEST_LAUNCHED%.partial" "%UNIOVER_TEST_LAUNCHED%" >nul',
             ":oldwait",
             'if exist "%UNIOVER_TEST_OLDSTOP%" exit /b 0',
             *exit_request,
@@ -298,6 +302,14 @@ def test_the_window_of_a_handover_is_measured_when_the_new_one_is_ready(pc: Hand
         assert not (pc.runtime / "update-window.json").exists()
 
 
+def outcome(pc: HandoverPc) -> object:
+    """O desfecho em `update-status.json`; nulo enquanto o supervisor ainda grava o arquivo."""
+    try:
+        return pc.state().get("outcome")
+    except OSError:
+        return None
+
+
 def test_a_new_version_that_crashes_after_the_old_one_left_is_blocked(
     pc: HandoverPc,
 ) -> None:
@@ -307,11 +319,12 @@ def test_a_new_version_that_crashes_after_the_old_one_left_is_blocked(
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         trigger_update(pc)
         blocked = pc.runtime / ".blocked-versions"
-        assert wait_for(blocked.exists, 60), pc.supervisor_log()
+        # O supervisor bloqueia, registra o diagnóstico e só então grava o estado: com o arquivo do
+        # bloqueio recém-criado, os outros dois ainda não estão lá (ou estão sendo gravados).
+        assert wait_for(lambda: outcome(pc) == "blocked", 60), pc.supervisor_log()
         assert NEW in blocked.read_text(encoding="ascii")
         assert not (pc.runtime / "current.json").exists()
         assert any(item["kind"] == "update.rolled_back" for item in pc.diagnostics())
-        assert pc.state()["outcome"] == "blocked"
 
 
 def test_a_new_version_that_crashes_on_start_is_blocked_and_the_old_one_never_stops(
