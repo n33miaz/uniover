@@ -103,6 +103,25 @@ public class DomainTests
         TvState.From(Snapshot(), agentOnline: true).AdbPermissionReason.Should().BeNull();
     }
 
+    [Fact]
+    public void State_CarriesTheWakeHints_OnlyWithTheAgentOnline()
+    {
+        var snapshot = new TvStateSnapshot("off", null, null, "disconnected", Now, WakeHints: [WakeHintText.Replug]);
+        TvState.From(snapshot, agentOnline: true).WakeHints.Should().Equal(WakeHintText.Replug);
+        TvState.From(snapshot, agentOnline: false).WakeHints.Should().BeNull();
+        TvState.From(Snapshot(), agentOnline: true).WakeHints.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("screenless_off", true)]
+    [InlineData("replug", true)]
+    [InlineData("network_standby_off", false)]
+    [InlineData(null, false)]
+    public void WakeHintText_KnowsOnlyTheContractValues(string? value, bool known)
+    {
+        WakeHintText.IsKnown(value).Should().Be(known);
+    }
+
     [Theory]
     [InlineData("tv_forgot", true)]
     [InlineData("never", true)]

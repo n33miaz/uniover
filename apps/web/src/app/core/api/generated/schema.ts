@@ -16001,6 +16001,7 @@ export interface components {
       updatedAt: null | string;
       /** Format: int32 */
       volume: null | number | string;
+      wakeHints?: null | string[];
     };
     TvSummary: {
       agentSlug: null | string;

@@ -182,6 +182,30 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         await AdbPermissionIsAsync(app, null);
     }
 
+    [Fact]
+    public async Task State_WithWakeHints_IsShownToTheScreen_AndDisappearsWhenTheAgentStopsSendingIt()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(wakeHints: ["screenless_off", "replug"])));
+        await WakeHintsAreAsync(app, "screenless_off,replug");
+
+        // O corpo sem o campo (nada a avisar) limpa o aviso na tela.
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody()));
+        await WakeHintsAreAsync(app, "");
+    }
+
+    private static async Task WakeHintsAreAsync(TvApp app, string expected) =>
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            using var response = await app.GetAsync("/api/v1/tv/state");
+            var json = await TvApp.JsonAsync(response);
+            var value = json.TryGetProperty("wakeHints", out var element) && element.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? string.Join(",", element.EnumerateArray().Select(item => item.GetString()))
+                : "";
+            return value == expected;
+        }, $"wakeHints = {expected}");
+
     private static async Task AdbPermissionReasonIsAsync(TvApp app, string? expected) =>
         await TvApp.WaitUntilAsync(async () =>
         {

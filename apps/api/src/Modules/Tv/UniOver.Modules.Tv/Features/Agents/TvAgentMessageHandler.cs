@@ -261,7 +261,8 @@ internal sealed partial class TvAgentMessageHandler(
             body.GetProperty("connection").GetString()!,
             message.Timestamp,
             ReadAdbPermission(body),
-            ReadAdbPermissionReason(body));
+            ReadAdbPermissionReason(body),
+            ReadWakeHints(body));
 
         // Um estado vindo do agente prova que ele está conectado.
         state.NoteOnline(message.AgentId, true);
@@ -283,6 +284,22 @@ internal sealed partial class TvAgentMessageHandler(
         && AdbPermissionText.IsReason(value.GetString())
             ? value.GetString()
             : null;
+
+    /// <summary>Os avisos de ligar pela rede (campo opcional): só os valores conhecidos passam; nenhum vira "nada a avisar".</summary>
+    private static string[]? ReadWakeHints(JsonElement body)
+    {
+        if (!body.TryGetProperty("wakeHints", out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var hints = value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String && WakeHintText.IsKnown(item.GetString()))
+            .Select(item => item.GetString()!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return hints.Length == 0 ? null : hints;
+    }
 
     private async Task StoreAppsAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {
