@@ -60,6 +60,8 @@ public sealed class ShoppingPurchase
     public decimal? TotalPaid { get; set; }
     public string? Store { get; set; }
     public string? ReceiptKey { get; set; }
+    /// <summary>O id da compra no Economize, quando ela veio de lá; nulo para as compras feitas aqui.</summary>
+    public string? ExternalRef { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

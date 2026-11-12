@@ -76,8 +76,13 @@ internal sealed class ShoppingConfiguration :
         builder.Property(x => x.TotalPaid).HasPrecision(12, 2);
         builder.Property(x => x.Store).HasMaxLength(ShoppingLimits.Store);
         builder.Property(x => x.ReceiptKey).HasMaxLength(ShoppingLimits.ReceiptKey);
+        builder.Property(x => x.ExternalRef).HasMaxLength(ShoppingLimits.ExternalRef);
         builder.HasOne<ShoppingGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.GroupId, x.Status, x.ClosedAt });
+
+        // Uma compra trazida de fora entra uma vez por grupo, mesmo apagada depois (apagar não pede para trazer de novo).
+        // As compras feitas aqui não têm referência e ficam fora do índice.
+        builder.HasIndex(x => new { x.GroupId, x.ExternalRef }).IsUnique().HasFilter("external_ref IS NOT NULL");
     }
 
     public void Configure(EntityTypeBuilder<PurchaseItem> builder)

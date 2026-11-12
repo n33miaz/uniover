@@ -6300,6 +6300,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/shopping/advice': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EconomizeAdviceResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/shopping/changes': {
     parameters: {
       query?: never;
@@ -6730,6 +6765,113 @@ export interface paths {
     };
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/shopping/import/economize': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EconomizeImportStatusResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EconomizeImportStatusResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/shopping/import/economize/file': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['EconomizeImportStatusResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Payload Too Large */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
     delete?: never;
     options?: never;
     head?: never;
@@ -14339,6 +14481,43 @@ export interface components {
       features: string[];
       module: string;
       version: string;
+    };
+    EconomizeAdviceResponse: {
+      available: boolean;
+      /** Format: date */
+      bestDay: null | string;
+      bestDayWeekday: null | string;
+      free: null | components['schemas']['EconomizeFreeResponse'];
+      /** Format: date-time */
+      generatedAt: null | string;
+      reason: null | string;
+      status: null | string;
+    };
+    EconomizeFreeResponse: {
+      /** Format: int64 */
+      committedAfterSalaryCents: null | number | string;
+      /** Format: int64 */
+      committedBeforeSalaryCents: null | number | string;
+      /** Format: int32 */
+      daysUntilSalary: null | number | string;
+      /** Format: int64 */
+      expectedSalaryCents: null | number | string;
+      /** Format: int64 */
+      freeCents: null | number | string;
+      /** Format: date */
+      salaryDate: null | string;
+      salaryKnown: boolean;
+    };
+    EconomizeImportStatusResponse: {
+      error: null | string;
+      /** Format: int32 */
+      existing: number | string;
+      finished: boolean;
+      /** Format: int32 */
+      ignored: number | string;
+      /** Format: int32 */
+      imported: number | string;
+      running: boolean;
     };
     ExerciseResponse: {
       category: null | string;

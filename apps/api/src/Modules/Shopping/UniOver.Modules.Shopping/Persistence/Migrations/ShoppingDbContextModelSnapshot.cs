@@ -486,6 +486,11 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("ExternalRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("external_ref");
+
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uuid")
                         .HasColumnName("group_id");
@@ -521,6 +526,11 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_purchases");
+
+                    b.HasIndex("GroupId", "ExternalRef")
+                        .IsUnique()
+                        .HasDatabaseName("ix_purchases_group_id_external_ref")
+                        .HasFilter("external_ref IS NOT NULL");
 
                     b.HasIndex("GroupId", "Status", "ClosedAt")
                         .HasDatabaseName("ix_purchases_group_id_status_closed_at");
