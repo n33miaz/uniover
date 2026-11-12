@@ -6,6 +6,7 @@ que o agente disse. Nada aqui toca na instalação real (a pasta é a do teste).
 
 import asyncio
 import json
+import logging
 import os
 import threading
 import time
@@ -103,13 +104,15 @@ async def test_a_handover_start_falls_back_when_the_handover_is_off_in_the_confi
 async def test_the_confirmation_deadline_counts_from_the_start_and_never_passes_the_supervisors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    now = 1_000.0
+    monkeypatch.setattr(time, "time", lambda: now)
     monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 40.0)
     monkeypatch.delenv(connection_module.HANDOVER_DEADLINE_ENV, raising=False)
     assert connection_module._handover_budget() == 40.0
-    monkeypatch.setenv(connection_module.HANDOVER_DEADLINE_ENV, str(time.time() + 12))
-    assert 10.0 < connection_module._handover_budget() <= 12.0
+    monkeypatch.setenv(connection_module.HANDOVER_DEADLINE_ENV, str(now + 12))
+    assert connection_module._handover_budget() == 12.0
     # Um prazo absoluto que já passou deixa só o mínimo (a execução desiste logo, sem bloquear).
-    monkeypatch.setenv(connection_module.HANDOVER_DEADLINE_ENV, str(time.time() - 30))
+    monkeypatch.setenv(connection_module.HANDOVER_DEADLINE_ENV, str(now - 30))
     assert connection_module._handover_budget() == 1.0
     monkeypatch.setenv(connection_module.HANDOVER_DEADLINE_ENV, "lixo")
     assert connection_module._handover_budget() == 40.0
@@ -222,8 +225,9 @@ async def test_the_new_run_connects_first_and_only_then_opens_what_belongs_to_th
                 )
             )
         )
-        # Já como dona (a antiga largou a trava na 3a tentativa), o comando seguinte executa.
-        await asyncio.sleep(1.0)
+        # Já como dona (a antiga largou a trava na 3a tentativa), o comando seguinte executa. A
+        # marca "pronta" é gravada logo depois de virar a dona, sem `await` no meio.
+        await wait_until(ready_mark_written)
         await connection.send(
             dump(
                 envelope(
@@ -234,7 +238,7 @@ async def test_the_new_run_connects_first_and_only_then_opens_what_belongs_to_th
                 )
             )
         )
-        await asyncio.sleep(0.5)
+        await wait_until(lambda: events.count("key") == 1)
         await connection.close(4403, "revoked")
 
     silence_noisy_loggers()
@@ -277,7 +281,7 @@ async def test_the_new_run_gives_up_when_the_api_never_confirms_the_handover(
 ) -> None:
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
-    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 0.3)
+    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 2.0)
     monkeypatch.setattr(connection_module, "acquire", lambda base=None: False)
     started: list[bool] = []
 
@@ -287,14 +291,24 @@ async def test_the_new_run_gives_up_when_the_api_never_confirms_the_handover(
 
     monkeypatch.setattr(connection_module, "announce_start", announce)
 
+    hellos: list[str | bytes] = []
+
     async def script(connection: ServerConnection) -> None:
-        await connection.recv()
-        await asyncio.sleep(5.0)
+        hellos.append(await connection.recv())
+        # Só a falta de confirmação pode fazer a candidata sair: o servidor nunca fecha antes dela.
+        async with asyncio.timeout(30):
+            await connection.wait_closed()
 
     async with FakeApi(script) as api:
-        code = await asyncio.wait_for(run(settings_for(api), store, handover=True), 10)
+        began = time.monotonic()
+        code = await asyncio.wait_for(run(settings_for(api), store, handover=True), 30)
+        elapsed = time.monotonic() - began
     # Código 5 ("outra instância já roda"): o supervisor mantém a antiga e tenta de novo depois.
     assert code == 5
+    # O prazo conta do começo da execução: desiste ao vencê-lo, nem antes nem muito depois.
+    assert_within_deadline(elapsed, 2.0)
+    # Desistiu já candidata (o hello chegou), e não antes de se apresentar.
+    assert len(hellos) == 1
     # Nunca foi a dona: não escreveu rastro nenhum de execução.
     assert started == []
     assert not (runtime() / "run-state.json").exists()
@@ -306,24 +320,31 @@ async def test_after_the_confirmation_the_new_run_waits_for_the_lock_within_its_
     # A API já promoveu esta execução e mandou a antiga sair (que não reconecta): desistir agora
     # deixaria o PC sem agente. A trava demora bem mais que o prazo de confirmação e a nova ainda
     # assim vira a dona quando ela vem. O prazo de confirmação folga o bastante para a conexão (numa
-    # máquina ocupada ela leva centenas de ms) e a trava só abre bem depois dele.
+    # máquina ocupada ela leva mais de 1 s) e a trava só abre depois de ele vencer, medido no fim
+    # real do prazo que a execução calculou (e não num tempo fixo, que a carga poderia encurtar).
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
-    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 1.0)
+    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 3.0)
     monkeypatch.setattr(connection_module, "HANDOVER_WAIT_LOG_SECONDS", 0.1)
-    first_try: list[float] = []
+    confirm_ends: list[float] = []
+    budget = connection_module._handover_budget
+
+    def spied_budget() -> float:
+        seconds = budget()
+        confirm_ends.append(time.monotonic() + seconds)
+        return seconds
+
+    monkeypatch.setattr(connection_module, "_handover_budget", spied_budget)
 
     def acquire(base: Path | None = None) -> bool:
-        if not first_try:
-            first_try.append(time.monotonic())
-        return time.monotonic() - first_try[0] >= 2.5
+        return time.monotonic() >= confirm_ends[-1] + 0.5
 
     monkeypatch.setattr(connection_module, "acquire", acquire)
     monkeypatch.setattr(connection_module, "acquire_slug", lambda agent_id: True)
 
     async def script(connection: ServerConnection) -> None:
         await accept(connection, json.loads(await connection.recv()))
-        await asyncio.sleep(4.0)
+        await wait_until(ready_mark_written, seconds=15)
         await connection.close(4403, "revoked")
 
     silence_noisy_loggers()
@@ -341,17 +362,26 @@ async def test_after_the_confirmation_the_new_run_defers_when_the_lock_never_arr
 ) -> None:
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
-    monkeypatch.setenv(connection_module.HANDOVER_TAKEOVER_SECONDS_ENV, "0.25")
+    monkeypatch.setenv(connection_module.HANDOVER_TAKEOVER_SECONDS_ENV, "2.0")
     monkeypatch.setattr(connection_module, "acquire", lambda base=None: False)
     monkeypatch.setattr(connection_module, "acquire_slug", lambda agent_id: True)
 
+    accepted_at: list[float] = []
+
     async def script(connection: ServerConnection) -> None:
-        await accept(connection, json.loads(await connection.recv()))
-        await asyncio.sleep(2.0)
+        hello = json.loads(await connection.recv())
+        # Marcado antes de a confirmação sair: o prazo da trava só pode contar depois disto.
+        accepted_at.append(time.monotonic())
+        await accept(connection, hello)
+        async with asyncio.timeout(30):
+            await connection.wait_closed()
 
     async with FakeApi(script) as api:
-        code = await asyncio.wait_for(run(settings_for(api), store, handover=True), 10)
+        code = await asyncio.wait_for(run(settings_for(api), store, handover=True), 30)
+        elapsed = time.monotonic() - accepted_at[0]
     assert code == EXIT_ALREADY_RUNNING
+    # O prazo da trava conta da confirmação: desiste ao vencê-lo, nem antes nem muito depois.
+    assert_within_deadline(elapsed, 2.0)
     marker = json.loads((runtime() / "connected.json").read_text(encoding="utf-8"))
     assert "connectedAt" in marker and "readyAt" not in marker
     assert not (runtime() / "run-state.json").exists()
@@ -410,7 +440,7 @@ async def test_the_old_run_exits_cleanly_and_releases_what_it_held_when_the_api_
                 )
             )
         )
-        await asyncio.sleep(0.4)
+        await wait_until(lambda: ("key", "ALT", (), 1, "DOWN") in pc_input.calls)
         await connection.close(4410, "handover")
 
     silence_noisy_loggers()
@@ -452,12 +482,19 @@ async def test_the_new_run_opens_the_tv_only_after_it_owns_the_installation(
         await connection.send(
             dump(envelope("tv.wake.v1", {}, id="0192f1e4-0000-7000-8000-0000000000e1"))
         )
-        # O primeiro foi recusado (a TV ainda é da antiga); já como dona, o seguinte a acorda.
-        await asyncio.sleep(0.8)
+        # O primeiro foi recusado (a TV ainda é da antiga); já como dona, o seguinte a acorda. O
+        # `hello` reenviado no fim do preparo da TV é o sinal de que ela está liberada.
+        seen: list[Any] = []
+        await next_frame(connection, "agent.hello.v1", seen)
+        assert [
+            (m["correlationId"], m["body"]["error"]["code"])
+            for m in seen
+            if m["type"] == "command.result.v1"
+        ] == [("0192f1e4-0000-7000-8000-0000000000e1", "agent_starting")]
         await connection.send(
             dump(envelope("tv.wake.v1", {}, id="0192f1e4-0000-7000-8000-0000000000e2"))
         )
-        await asyncio.sleep(1.2)
+        await wait_until(lambda: "tv-connect" in events)
         await connection.close(4403, "revoked")
 
     async with FakeApi(script) as api:
@@ -495,7 +532,7 @@ async def test_a_drop_between_the_local_send_and_the_admission_keeps_the_run_a_c
             await connection.close(1011, "caiu antes da admissão")
             return
         await accept(connection, hello)
-        await asyncio.sleep(1.0)
+        await wait_until(ready_mark_written)
         await connection.close(4403, "revoked")
 
     silence_noisy_loggers()
@@ -518,15 +555,22 @@ async def test_without_the_confirmation_the_supervisor_has_no_connected_mark(
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "acquire", lambda base=None: False)
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
-    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 0.5)
+    monkeypatch.setattr(connection_module, "HANDOVER_CONFIRM_SECONDS", 2.0)
+
+    hellos: list[str | bytes] = []
 
     async def script(connection: ServerConnection) -> None:
-        await connection.recv()
-        await asyncio.sleep(3.0)
+        hellos.append(await connection.recv())
+        async with asyncio.timeout(30):
+            await connection.wait_closed()
 
     async with FakeApi(script) as api:
-        code = await asyncio.wait_for(run(settings_for(api), store, handover=True), 15)
+        began = time.monotonic()
+        code = await asyncio.wait_for(run(settings_for(api), store, handover=True), 30)
+        elapsed = time.monotonic() - began
     assert code == 5
+    assert_within_deadline(elapsed, 2.0)
+    assert len(hellos) == 1
     assert not (runtime() / "connected.json").exists()
 
 
@@ -540,7 +584,7 @@ async def test_a_shutdown_step_that_never_ends_does_not_hold_the_exit(
 
     started = time.monotonic()
     await connection_module._close_within("um passo que nunca fecha", never())
-    assert time.monotonic() - started < 2.0
+    assert_within_deadline(time.monotonic() - started, 0.2)
 
     async def broken() -> None:
         raise RuntimeError("falhou")
@@ -560,11 +604,25 @@ def ready_mark_written() -> bool:
         return False
 
 
+# Folga sobre um prazo configurado: cobre a carga da máquina (laço e threads atrasados) sem deixar
+# passar uma espera que ignorasse o prazo (o padrão de produção é de dezenas de segundos).
+DEADLINE_MARGIN_SECONDS = 1.5
+
+
+def assert_within_deadline(elapsed: float, deadline: float) -> None:
+    """A espera acabou por causa do prazo: não antes dele, e não muito depois."""
+    # O relógio monotônico do Windows anda em passos de ~16 ms.
+    assert elapsed >= deadline - 0.05, f"saiu em {elapsed:.2f} s, antes do prazo de {deadline} s"
+    assert elapsed <= deadline + DEADLINE_MARGIN_SECONDS, (
+        f"saiu em {elapsed:.2f} s, prazo de {deadline} s + {DEADLINE_MARGIN_SECONDS} s de folga"
+    )
+
+
 async def wait_until(condition: Callable[[], bool], seconds: float = 10.0) -> None:
-    end = time.monotonic() + seconds
-    while not condition():
-        assert time.monotonic() < end, "a condição não veio a tempo"
-        await asyncio.sleep(0.02)
+    # Condições de fora do laço (arquivo, outra thread) não têm evento: consulta-as com prazo.
+    async with asyncio.timeout(seconds):
+        while not condition():  # noqa: ASYNC110
+            await asyncio.sleep(0.05)
 
 
 async def next_frame(connection: ServerConnection, frame_type: str, seen: list[Any]) -> Any:
@@ -659,13 +717,26 @@ async def test_a_run_that_is_not_a_handover_never_lets_go_of_what_it_did_not_pre
 
     async def script(connection: ServerConnection) -> None:
         await connection.recv()
-        await asyncio.sleep(0.4)
+        # Um comando atendido: a faixa da entrada é uma fila só, então uma soltura indevida na
+        # partida já teria passado por ela antes dele.
+        await connection.send(
+            dump(
+                envelope(
+                    "pc.key.v1",
+                    {"key": "A"},
+                    ts=now_stamp(),
+                    id="0192f1e4-0000-7000-8000-0000000000f3",
+                )
+            )
+        )
+        await next_frame(connection, "command.result.v1", [])
         await connection.close(4403, "revoked")
 
     silence_noisy_loggers()
     async with FakeApi(script) as api:
         code = await run(settings_for(api), store)
     assert code == EXIT_CREDENTIAL_REJECTED
+    assert any(call[:2] == ("key", "A") for call in pc_input.calls)
     assert ("release_orphans",) not in pc_input.calls
 
 
@@ -721,7 +792,11 @@ async def test_the_new_run_serves_the_pc_while_the_folder_is_tidied_in_the_backg
 
 
 def slow_tv_prepare(
-    monkeypatch: pytest.MonkeyPatch, gate: asyncio.Event, *, fail: bool = False
+    monkeypatch: pytest.MonkeyPatch,
+    gate: asyncio.Event,
+    *,
+    fail: bool = False,
+    finished: asyncio.Event | None = None,
 ) -> None:
     """Acrescenta ao preparo da TV um passo que espera `gate` e então declara uma capacidade (ou
     falha)."""
@@ -732,10 +807,14 @@ def slow_tv_prepare(
         assert setup is not None
 
         async def prepare() -> None:
-            await gate.wait()
-            if fail:
-                raise RuntimeError("o ADB falhou")
-            setup.capabilities.append("tv.focus-catalog.v1")
+            try:
+                await gate.wait()
+                if fail:
+                    raise RuntimeError("o ADB falhou")
+                setup.capabilities.append("tv.focus-catalog.v1")
+            finally:
+                if finished is not None:
+                    finished.set()
 
         setup.prepare.append(prepare)
         return setup
@@ -813,8 +892,9 @@ async def test_the_tv_capabilities_reach_the_api_as_soon_as_the_tv_prepare_ends(
 
 
 async def test_a_tv_prepare_that_takes_too_long_does_not_hold_the_tv_and_still_ends_in_a_hello(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.WARNING, logger="uniover_agent")
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
     monkeypatch.setattr(connection_module, "HANDOVER_TV_PREPARE_SECONDS", 0.3)
@@ -831,7 +911,12 @@ async def test_a_tv_prepare_that_takes_too_long_does_not_hold_the_tv_and_still_e
         hellos.append(first)
         await accept(connection, first)
         await wait_until(ready_mark_written)
-        await asyncio.sleep(1.0)  # passou o prazo do preparo: a TV segue sem ele
+        # O prazo do preparo venceu (o aviso sai logo antes de a TV ser liberada, sem `await` no
+        # meio) e o preparo segue preso: o comando da TV já é atendido.
+        await wait_until(
+            lambda: any("o preparo da TV passou de" in r.getMessage() for r in caplog.records)
+        )
+        assert not gate.is_set()
         await connection.send(
             dump(envelope("tv.wake.v1", {}, id="0192f1e4-0000-7000-8000-0000000000b1"))
         )
@@ -859,13 +944,14 @@ async def test_a_tv_prepare_that_fails_never_takes_the_new_owner_down(
     pc_input_patch(monkeypatch, FakeInput())
     gate = asyncio.Event()
     gate.set()
-    slow_tv_prepare(monkeypatch, gate, fail=True)
+    failed = asyncio.Event()
+    slow_tv_prepare(monkeypatch, gate, fail=True, finished=failed)
     seen: list[Any] = []
 
     async def script(connection: ServerConnection) -> None:
         await accept(connection, json.loads(await connection.recv()))
         await wait_until(ready_mark_written)
-        await asyncio.sleep(0.5)
+        await wait_until(failed.is_set)
         await connection.send(
             dump(
                 envelope(
@@ -894,7 +980,14 @@ async def test_a_4409_after_the_confirmation_brings_the_candidate_back_at_once(
     # do lugar com 4409. Em vez de esperar 60 s sem agente nenhum, volta na hora como candidata.
     monkeypatch.setattr(connection_module, "fetch_api_features", features_of(LISTED))
     monkeypatch.setattr(connection_module, "HANDOVER_POLL_SECONDS", 0.05)
-    monkeypatch.setattr(connection_module, "acquire", lambda base=None: False)
+    # A trava é tentada numa thread (`asyncio.to_thread`): o aviso é um evento de thread.
+    first_takeover_started = threading.Event()
+
+    def acquire(base: Path | None = None) -> bool:
+        first_takeover_started.set()
+        return False
+
+    monkeypatch.setattr(connection_module, "acquire", acquire)
     hellos: list[dict[str, Any]] = []
 
     async def script(connection: ServerConnection) -> None:
@@ -902,10 +995,9 @@ async def test_a_4409_after_the_confirmation_brings_the_candidate_back_at_once(
         hellos.append(hello)
         await accept(connection, hello)
         if len(hellos) == 1:
-            await asyncio.sleep(0.2)
+            await wait_until(first_takeover_started.is_set)
             await connection.close(4409, "replaced")
             return
-        await asyncio.sleep(0.5)
         await connection.close(4403, "revoked")
 
     silence_noisy_loggers()
@@ -940,7 +1032,7 @@ async def test_the_old_run_exits_in_an_orderly_way_when_the_supervisor_asks_for_
                 )
             )
         )
-        await asyncio.sleep(0.4)
+        await wait_until(lambda: any(call[:2] == ("key", "ALT") for call in pc_input.calls))
         (runtime() / "handover-exit").write_text("handover-exit:" + "c" * 32, encoding="ascii")
         # Quem fecha o canal é o agente, ao sair; sem isso o roteiro esperaria o teste inteiro.
         async with asyncio.timeout(15):
