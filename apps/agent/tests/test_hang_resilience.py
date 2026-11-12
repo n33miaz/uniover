@@ -98,15 +98,18 @@ async def _ignore(raw: str | bytes) -> None:
 
 
 async def run_until(
-    supervisor: ConnectionSupervisor, done: Callable[[], bool], seconds: float = 5.0
+    supervisor: ConnectionSupervisor, done: Callable[[], bool], seconds: float = 15.0
 ) -> None:
     task = asyncio.create_task(supervisor.run())
-    end = time.monotonic() + seconds
-    while not done() and not task.done() and time.monotonic() < end:  # noqa: ASYNC110
-        await asyncio.sleep(0.01)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    try:
+        async with asyncio.timeout(seconds):
+            while not done():
+                assert not task.done(), "o laço de conexão terminou antes da condição"
+                await asyncio.sleep(0.01)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
 
 @pytest.mark.parametrize("step", ["connect", "send", "close"])
@@ -166,17 +169,10 @@ async def test_a_dead_channel_whose_close_also_hangs_still_reconnects() -> None:
     assert transport.close_calls >= 1
 
 
-class RealClock:
-    """Relógio de verdade (os prazos do teste são de milissegundos)."""
-
-    def now(self) -> datetime:
-        return datetime.now(UTC)
-
-    def monotonic(self) -> float:
-        return time.monotonic()
-
-    async def sleep(self, seconds: float) -> None:
-        await asyncio.sleep(seconds)
+async def defied(transport: DefiantClose | DefiantConnect) -> None:
+    """Espera o passo preso receber (e ignorar) o cancelamento do prazo dele."""
+    async with asyncio.timeout(10):
+        await transport.defied.wait()
 
 
 class DefiantClose(FakeTransport):
@@ -184,20 +180,27 @@ class DefiantClose(FakeTransport):
 
     def __init__(self) -> None:
         super().__init__([[], []])
+        self.entered = asyncio.Event()
+        self.defied = asyncio.Event()
         self.release = asyncio.Event()
 
     async def close(self) -> None:
+        self.entered.set()
         while True:
             try:
-                await asyncio.sleep(0.01)
+                await self.release.wait()
+                return
             except asyncio.CancelledError:
                 if self.release.is_set():
                     raise
+                self.defied.set()
 
 
 async def test_a_connection_loop_that_ignores_its_deadlines_is_reported_as_stalled() -> None:
+    # O relógio é o do teste: o que se prova é a regra (prazo do passo mais a tolerância), e não
+    # quanto tempo de parede a máquina levou para chegar lá.
     transport = DefiantClose()
-    clock = RealClock()
+    clock = FakeClock()
     supervisor = ConnectionSupervisor(
         transport,
         _ignore,
@@ -214,11 +217,14 @@ async def test_a_connection_loop_that_ignores_its_deadlines_is_reported_as_stall
     task = asyncio.create_task(supervisor.run())
     try:
         # A sessão abre, a leitura acaba e o fechamento (que desobedece ao prazo) prende o laço.
-        await asyncio.sleep(0.05)
+        async with asyncio.timeout(10):
+            await transport.entered.wait()
         assert not supervisor.is_stalled(), "um laço que anda não pode ser dado por parado"
-        end = time.monotonic() + 3
-        while not supervisor.is_stalled() and time.monotonic() < end:  # noqa: ASYNC110
-            await asyncio.sleep(0.02)
+        # O prazo do fechamento estourou de verdade e o fechamento o ignorou: o laço está preso.
+        await defied(transport)
+        clock.advance(0.05 + 0.1)
+        assert not supervisor.is_stalled(), "dentro do prazo e da tolerância ainda não é parado"
+        clock.advance(0.01)
         assert supervisor.is_stalled()
     finally:
         transport.release.set()
@@ -258,20 +264,25 @@ class DefiantConnect(FakeTransport):
 
     def __init__(self) -> None:
         super().__init__([[], []])
+        self.entered = asyncio.Event()
+        self.defied = asyncio.Event()
         self.release = asyncio.Event()
 
     async def connect(self) -> None:
+        self.entered.set()
         while True:
             try:
-                await asyncio.sleep(0.01)
+                await self.release.wait()
+                return
             except asyncio.CancelledError:
                 if self.release.is_set():
                     raise
+                self.defied.set()
 
 
 async def test_an_open_that_ignores_its_deadline_makes_the_pulse_go_stale() -> None:
     transport = DefiantConnect()
-    clock = RealClock()
+    clock = FakeClock()
     supervisor = ConnectionSupervisor(
         transport,
         _ignore,
@@ -284,9 +295,13 @@ async def test_an_open_that_ignores_its_deadline_makes_the_pulse_go_stale() -> N
     )
     task = asyncio.create_task(supervisor.run())
     try:
-        end = time.monotonic() + 3
-        while not supervisor.is_stalled() and time.monotonic() < end:  # noqa: ASYNC110
-            await asyncio.sleep(0.02)
+        async with asyncio.timeout(10):
+            await transport.entered.wait()
+        assert not supervisor.is_stalled()
+        await defied(transport)
+        clock.advance(0.05 + 0.1)
+        assert not supervisor.is_stalled()
+        clock.advance(0.01)
         assert supervisor.is_stalled(), "a abertura passou do prazo e do atraso tolerado"
     finally:
         transport.release.set()
@@ -311,6 +326,8 @@ async def test_a_task_abandoned_by_a_session_never_touches_the_next_session() ->
     processed: list[str] = []
     blocked = asyncio.Event()
     wake = asyncio.Event()
+    next_session_ran = asyncio.Event()
+    stale_reader_reached_m2 = asyncio.Event()
 
     class TwoSessions(FakeTransport):
         def __init__(self) -> None:
@@ -323,6 +340,15 @@ async def test_a_task_abandoned_by_a_session_never_touches_the_next_session() ->
                 raise TransportError("canal quebrado")
             await super().send(message)
 
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            # Como o do transporte falso, mais o aviso de que a leitura abandonada retomou.
+            for item in self._current:
+                if isinstance(item, Exception):
+                    raise item
+                if item == "m2":
+                    stale_reader_reached_m2.set()
+                yield item
+
     async def process(raw: str | bytes) -> None:
         if raw == "m1":
             blocked.set()
@@ -332,6 +358,8 @@ async def test_a_task_abandoned_by_a_session_never_touches_the_next_session() ->
                 except asyncio.CancelledError:
                     continue
         processed.append(str(raw))
+        if raw == "s2":
+            next_session_ran.set()
 
     transport = TwoSessions()
     clock = FakeClock()
@@ -347,12 +375,12 @@ async def test_a_task_abandoned_by_a_session_never_touches_the_next_session() ->
         keepalive_interval=0.01,
     )
     task = asyncio.create_task(supervisor.run())
-    end = time.monotonic() + 5
-    while "s2" not in processed and time.monotonic() < end:  # noqa: ASYNC110
-        await asyncio.sleep(0.01)
+    async with asyncio.timeout(15):
+        await next_session_ran.wait()
     assert "s2" in processed, "a sessão seguinte não chegou a rodar"
     wake.set()  # a leitura abandonada acorda agora
-    await asyncio.sleep(0.2)
+    async with asyncio.timeout(10):
+        await stale_reader_reached_m2.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
