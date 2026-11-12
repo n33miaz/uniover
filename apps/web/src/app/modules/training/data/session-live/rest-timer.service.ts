@@ -20,7 +20,7 @@ export const REST_TICK_MS = 1000;
  * recarregar a página ou bloquear a tela não perde o descanso, e ao voltar o tempo restante é recalculado do relógio.
  *
  * O tique de 1 s só existe enquanto há timer **ativo** (não acabou) **e** a página está visível: nada de `setInterval`
- * à toa. Ao zerar durante o tique avisa uma vez (vibração e som, se disponíveis). Com a tela bloqueada o JavaScript é
+ * à toa. Ao zerar durante o tique avisa uma vez (só vibração, se disponível). Com a tela bloqueada o JavaScript é
  * suspenso e **não há aviso**; ao voltar, o descanso aparece como acabado, sem apitar (o aviso já não faz sentido).
  */
 @Injectable()
@@ -83,11 +83,6 @@ export class RestTimerService {
   /** Pula o descanso: apaga o timer. */
   async skip(): Promise<void> {
     await this.set(null);
-  }
-
-  /** Libera o som do aviso. A tela chama no toque de "Iniciar treino" (o navegador exige um gesto prévio). */
-  unlockAudio(): void {
-    this.alert.unlock();
   }
 
   private async set(endsAt: number | null): Promise<void> {

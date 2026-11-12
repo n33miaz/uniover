@@ -102,6 +102,30 @@ describe('FoodDiaryPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Iogurte natural');
   });
 
+  it('keeps a long food name available in its title in the diary and search results', async () => {
+    const fixture = await open();
+    const name = 'Iogurte Natural Integral Sem Lactose com Granola de Castanhas e Frutas Vermelhas';
+    const longEntry = localMeal('meal-long', { name, foodId: food.id });
+    const longFood = localFood('food-long', { name });
+    meals.entriesOf.mockResolvedValue([longEntry]);
+    mealRevision.update((value) => value + 1);
+    foods.searchOnline.mockResolvedValue({ status: 'ok', foods: [longFood] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector('#food-search') as HTMLInputElement;
+    input.value = 'iogurte';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button(fixture, 'Buscar').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const titles = Array.from(root.querySelectorAll<HTMLElement>('.food-name'), (el) => el.title);
+    expect(titles.filter((title) => title === name)).toHaveLength(2);
+  });
+
   it('selects the own food just saved even when saving it bumps the food revision with an empty search', async () => {
     const fixture = await open();
     const own = food;

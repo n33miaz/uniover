@@ -14,7 +14,7 @@ import { ExerciseThumb } from './exercise-thumb';
   template: `
     <app-exercise-thumb [slug]="exercise().slug" />
     <span class="text">
-      <span class="name">{{ exercise().name }}</span>
+      <span class="name" [attr.title]="exercise().name">{{ exercise().name }}</span>
       <span class="sub">{{ support() }}</span>
     </span>
     @if (exercise().source === 'own') {

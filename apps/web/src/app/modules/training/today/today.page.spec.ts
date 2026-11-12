@@ -434,8 +434,12 @@ describe('TodayPage', () => {
 
   describe('the workout', () => {
     /** Inicia o treino e para na tela do dia (a lista de exercícios), antes de abrir um exercício. */
-    async function atDay() {
+    async function atDay(exerciseName?: string) {
       const kit = await open();
+      if (exerciseName) {
+        const exercise = await kit.trainingDb.exercises.get('supino-reto');
+        await kit.trainingDb.exercises.put({ ...exercise!, name: exerciseName });
+      }
       await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
       await saveRoutine('Treino A', [
         item('a1', 'supino-reto', 0, { targetSets: 2, restSeconds: 120 }),
@@ -499,6 +503,25 @@ describe('TodayPage', () => {
       expect(
         buttons(document.body).some((node) => node.textContent?.includes('Exercícios do Treino')),
       ).toBe(false);
+    });
+
+    it('keeps a long exercise name in a title on the day card and live heading', async () => {
+      const name =
+        'Supino Inclinado com Barra em Banco Ajustável e Pegada Fechada para Peito e Tríceps';
+      const kit = await atDay(name);
+      const dayName = kit.el.querySelector<HTMLElement>('.exercise .name')!;
+      expect(dayName.title).toBe(name);
+
+      kit.el.querySelector<HTMLButtonElement>('.exercise')!.click();
+      await eventually(kit.fixture, () =>
+        expect(kit.harness.routeNativeElement?.matches('app-workout-exercise')).toBe(true),
+      );
+      await eventually(kit.fixture, () =>
+        expect(
+          kit.harness.routeNativeElement?.querySelector<HTMLElement>('app-live-session .name')
+            ?.title,
+        ).toBe(name),
+      );
     });
 
     it('goes back to the day screen when the last set of an exercise is concluded', async () => {

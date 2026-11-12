@@ -243,6 +243,13 @@ describe('logical parents of the training routes', () => {
     expect(trainingParent('/treino')).toBeNull();
     expect(trainingParent('/treino/exercicios/abc?from=search')).toBe('/treino/exercicios');
     expect(trainingParent('/treino/exercicios/abc/editar')).toBe('/treino/exercicios/abc');
+    expect(trainingParent('/treino/alimentacao')).toBe('/treino/corpo');
+    expect(trainingParent('/treino/corpo/avaliacoes')).toBe('/treino/corpo');
+    expect(trainingParent('/treino/corpo/avaliacoes/importar')).toBe('/treino/corpo/avaliacoes');
     expect(trainingParent('/treino/corpo/avaliacoes/nova')).toBe('/treino/corpo/avaliacoes');
+    expect(trainingParent('/treino/corpo/avaliacoes/exemplo')).toBe('/treino/corpo/avaliacoes');
+    expect(trainingParent('/treino/corpo/avaliacoes/exemplo/editar')).toBe(
+      '/treino/corpo/avaliacoes',
+    );
   });
 });

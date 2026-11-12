@@ -72,7 +72,7 @@ type SearchState =
           @for (entry of groupEntries(group.type); track entry.id) {
             <article class="entry">
               <div class="entry-main">
-                <strong>{{ entry.name }}</strong>
+                <strong class="food-name" [attr.title]="entry.name">{{ entry.name }}</strong>
                 <span i18n="@@training.food.entry-quantity"
                   >{{ entry.quantityGrams }} g · {{ entry.kcal }} kcal</span
                 >
@@ -216,8 +216,8 @@ type SearchState =
                       [class.selected]="selectedFood()?.id === food.id"
                       (click)="selectFood(food)"
                     >
-                      <span
-                        ><strong>{{ food.name }}</strong>
+                      <span>
+                        <strong class="food-name" [attr.title]="food.name">{{ food.name }}</strong>
                         @if (food.brand) {
                           <small>{{ food.brand }}</small>
                         }
@@ -236,7 +236,7 @@ type SearchState =
           </div>
           @if (selectedFood(); as food) {
             <div class="selected-food">
-              <strong>{{ food.name }}</strong>
+              <strong class="food-name" [attr.title]="food.name">{{ food.name }}</strong>
               <div class="field">
                 <label for="quantity" i18n="@@training.food.quantity">Quantidade em gramas</label>
                 <input

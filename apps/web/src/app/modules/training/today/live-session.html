@@ -59,7 +59,7 @@
         <div class="first">
           @if (exercise(); as ex) {
             <div class="top">
-              <h2 class="name">{{ ex.name }}</h2>
+              <h2 class="name" [attr.title]="ex.name">{{ ex.name }}</h2>
               <p class="sub">
                 <span class="routine">{{ heading() }}</span>
                 @if (positionText()) {

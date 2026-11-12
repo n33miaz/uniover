@@ -75,9 +75,11 @@ import { WorkoutDaySkeleton } from './workout-skeletons';
                   }
                 </span>
                 <span class="details">
-                  <span class="name">{{
-                    live.exercises().get(entry.exerciseId)?.name ?? unknownName
-                  }}</span>
+                  <span
+                    class="name"
+                    [attr.title]="live.exercises().get(entry.exerciseId)?.name ?? unknownName"
+                    >{{ live.exercises().get(entry.exerciseId)?.name ?? unknownName }}</span
+                  >
                   <span class="meta">{{
                     progressText(entry.doneSets, entry.targetSets, entry.skipped)
                   }}</span>

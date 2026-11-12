@@ -89,10 +89,15 @@ app-workout-day .details {
 }
 
 app-workout-day .name {
+  display: -webkit-box;
+  overflow: hidden;
   overflow-wrap: anywhere;
   font-size: 1.0625rem;
   font-weight: 750;
   line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 app-workout-day .meta {

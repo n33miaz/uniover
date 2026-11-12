@@ -42,6 +42,10 @@ const ROUTES = [
   '/treino/progresso',
   '/treino/corpo',
   '/treino/corpo/avaliacoes',
+  '/treino/corpo/avaliacoes/importar',
+  '/treino/corpo/avaliacoes/nova',
+  '/treino/corpo/avaliacoes/exemplo',
+  '/treino/corpo/avaliacoes/exemplo/editar',
   '/treino/alimentacao',
 ];
 
