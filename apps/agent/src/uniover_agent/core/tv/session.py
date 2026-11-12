@@ -356,10 +356,11 @@ class TvSessionManager:
 
     async def send_key(
         self, key: str, direction: str = "SHORT", *, validate: Callable[[], None] | None = None
-    ) -> None:
+    ) -> bool:
+        """Envia a tecla. `False` só para um `POWER` ignorado por repetir o anterior (ver
+        `_send_power`): nada foi enviado, de propósito."""
         if key == POWER_KEY and direction == "SHORT":
-            await self._send_power()
-            return
+            return await self._send_power()
         if key in VOLUME_KEYS and direction in {"SHORT", "START_LONG"}:
             # O nível empurrado ao abrir a sessão não prova que a TV continuará avisando
             # depois das teclas. Faça isso antes do envio: o callback pode vir durante ele.
@@ -367,6 +368,7 @@ class TvSessionManager:
         await self._run(lambda remote: remote.send_key(key, direction), validate=validate)
         if key in VOLUME_KEYS and direction in {"SHORT", "END_LONG"}:
             self._schedule_volume_read()
+        return True
 
     async def power_off(self) -> PowerOffResult:
         """Desliga a TV só depois de ler que ela está ligada; nunca a liga.
@@ -497,7 +499,7 @@ class TvSessionManager:
                 await self._clock.sleep(POWER_OFF_GONE_PAUSE_SECONDS)
         return True
 
-    async def _send_power(self) -> None:
+    async def _send_power(self) -> bool:
         """`POWER` com um toque só: repetido em `POWER_REPEAT_SECONDS` do anterior, não é enviado.
 
         O tempo conta da chegada à TV (e não do pedido): o pedido pode ter esperado a sessão abrir
@@ -513,17 +515,18 @@ class TvSessionManager:
             sent_at = self._power_sent_at
             if sent_at is not None and now - sent_at < POWER_REPEAT_SECONDS:
                 _log.info("POWER repetido logo após o anterior; não enviado para não religar a TV")
-                return
+                return False
             guard = self._wol_guard_until
             if guard is not None and now < guard:
                 _log.info("a TV está ligando (Wake-on-LAN); POWER não enviado para não desligá-la")
-                return
+                return False
             if await self._should_wake_on_lan():
                 await self._power_by_wake_on_lan()
             else:
                 await self._run(lambda remote: remote.send_key(POWER_KEY, "SHORT"))
                 self._expect_off = self._power is not False
             self._power_sent_at = self._clock.monotonic()
+            return True
 
     def _may_be_off(self) -> bool:
         """A última notícia da TV não a dá por ligada (desligada, nenhuma, ou já está offline)."""

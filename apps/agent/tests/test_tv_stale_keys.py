@@ -225,6 +225,7 @@ async def test_text_and_power_keep_their_existing_behavior() -> None:
     old = (clock.now() - timedelta(seconds=3)).isoformat().replace("+00:00", "Z")
     await process(dump(envelope("tv.text.v1", {"text": "oi"}, ts=old)))
     await process(dump(envelope("tv.key.v1", {"key": "POWER"}, ts=old)))
+    await finish_keys(process)
 
     assert remote.texts == ["oi"]
     assert remote.sent == [("POWER", "SHORT")]
@@ -237,7 +238,7 @@ async def test_a_key_stuck_opening_the_session_is_cut_and_does_not_block_the_nex
     await process(dump(key))
     await asyncio.wait_for(remote.opening.wait(), timeout=1)
     # O texto espera as teclas anteriores: sem o teto, ficaria preso junto com a tecla.
-    text = asyncio.create_task(process(dump(message("tv.text.v1", {"text": "oi"}, clock))))
+    await process(dump(message("tv.text.v1", {"text": "oi"}, clock)))
     for _ in range(100):
         if transport.sent:
             break
@@ -245,6 +246,6 @@ async def test_a_key_stuck_opening_the_session_is_cut_and_does_not_block_the_nex
     assert transport.sent[0]["correlationId"] == key["id"]
     assert transport.sent[0]["body"]["error"]["code"] == "tv_unreachable"
     remote.release.set()
-    await asyncio.wait_for(text, timeout=1)
+    await finish_keys(process)
     assert remote.sent == []
     assert remote.texts == ["oi"]

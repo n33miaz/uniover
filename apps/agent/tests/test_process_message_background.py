@@ -82,6 +82,7 @@ async def test_a_background_command_does_not_hold_the_next_message() -> None:
     # ...mas uma tecla que chega agora é atendida e respondida na hora.
     key = tv_key("HOME")
     await process(dump(key))
+    await settle()
     assert [m["correlationId"] for m in transport.sent] == [key["id"]]
     handlers.release.set()
     await settle()
@@ -89,11 +90,13 @@ async def test_a_background_command_does_not_hold_the_next_message() -> None:
     assert transport.sent[1]["body"] == {"ok": True}
 
 
-async def test_an_ordinary_command_still_runs_inside_the_message_loop() -> None:
+async def test_a_key_runs_outside_the_reader_and_is_answered_right_after() -> None:
     handlers = Handlers()
     process, transport = build(handlers)
     await process(dump(tv_key("HOME")))
-    # Sem `settle`: o resultado já saiu quando a chamada voltou.
+    # O leitor só a põe na cadeia: o resultado sai quando a tarefa dela roda.
+    assert transport.sent == []
+    await settle()
     assert len(transport.sent) == 1
 
 
@@ -158,9 +161,12 @@ async def test_closing_cancels_the_commands_still_running() -> None:
     await settle()
     await process.aclose()
     assert handlers.cancelled
-    assert transport.sent == []
-    # Fechar de novo, sem nada rodando, não faz nada.
+    # O comando cortado não fica sem resposta: sai uma, de encerramento.
+    (reply,) = transport.sent
+    assert reply["body"]["error"]["code"] == "agent_stopping"
+    # Fechar de novo, sem nada rodando, não faz nada (nem responde de novo).
     await process.aclose()
+    assert len(transport.sent) == 1
 
 
 async def test_an_invalid_background_message_is_still_refused_by_the_gate() -> None:

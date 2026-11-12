@@ -6,12 +6,14 @@ contrato), então um estado fora do contrato falha aqui e não na API.
 
 import base64
 import hashlib
+import threading
 from pathlib import Path
 
 import pytest
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.core import Command, EnvelopeFactory, EnvelopeGate, Handler, ResultStatus
+from uniover_agent.core.tv import livre as livre_module
 from uniover_agent.core.tv.livre import (
     LivreStateFile,
     PhotoStaging,
@@ -208,6 +210,33 @@ async def test_photo_pieces_are_accepted_and_the_photo_is_staged() -> None:
     second = await handler(chunk(1, 2, photo, photo[50:]))
 
     assert first.status is second.status is ResultStatus.OK
+    assert staging.take(PHOTO_ID) == photo
+
+
+async def test_only_the_final_check_of_the_photo_leaves_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop_thread = threading.get_ident()
+    checked_on: list[int] = []
+    original = livre_module.is_decodable_jpeg
+
+    def spy(photo: bytes) -> bool:
+        checked_on.append(threading.get_ident())
+        return original(photo)
+
+    monkeypatch.setattr(livre_module, "is_decodable_jpeg", spy)
+    staging = PhotoStaging(FakeClock())
+    handler = tv_livre_photo_handler(staging)
+    photo = jpeg_bytes()
+
+    first = await handler(chunk(0, 2, photo, photo[:50]))
+    assert checked_on == []  # um pedaço do meio só é guardado
+    second = await handler(chunk(1, 2, photo, photo[50:]))
+
+    assert first.status is second.status is ResultStatus.OK
+    assert len(checked_on) == 1
+    assert checked_on[0] != loop_thread
+    # Quem chamou esperou a conferência: a foto já está pronta para o `apply` seguinte.
     assert staging.take(PHOTO_ID) == photo
 
 

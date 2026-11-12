@@ -29,6 +29,12 @@ class Spy:
         return self._result or CommandResult(command.id, ResultStatus.OK)
 
 
+async def feed(process: ProcessMessage, raw: str | bytes) -> None:
+    """Entrega a mensagem e espera o que ela pôs na cadeia das teclas (o leitor não espera)."""
+    await process(raw)
+    await process.drain(1.0)
+
+
 def build(spy: Spy) -> tuple[ProcessMessage, FakeTransport]:
     clock = FakeClock()
     gate = EnvelopeGate(AGENT_ID)
@@ -47,7 +53,7 @@ async def test_valid_command_executes_and_replies_pointing_to_its_id() -> None:
     spy = Spy()
     process, transport = build(spy)
     command = tv_key("HOME")  # a API manda `correlationId: null`
-    await process(dump(command))
+    await feed(process, dump(command))
     assert [c.body for c in spy.calls] == [{"key": "HOME"}]
     (reply,) = transport.sent
     assert reply["type"] == "command.result.v1"
@@ -58,13 +64,13 @@ async def test_valid_command_executes_and_replies_pointing_to_its_id() -> None:
 async def test_reply_points_to_the_command_id_even_with_a_correlation_id() -> None:
     process, transport = build(Spy())
     command = tv_key("HOME", str(uuid.uuid4()))
-    await process(dump(command))
+    await feed(process, dump(command))
     assert transport.sent[0]["correlationId"] == command["id"]
 
 
 async def test_failed_handler_replies_not_ok() -> None:
     process, transport = build(Spy(RuntimeError("tv offline")))
-    await process(dump(tv_key("HOME")))
+    await feed(process, dump(tv_key("HOME")))
     (reply,) = transport.sent
     assert reply["body"]["ok"] is False
     assert reply["body"]["error"] == {"code": "failed", "message": "tv offline"}
@@ -73,7 +79,7 @@ async def test_failed_handler_replies_not_ok() -> None:
 async def test_result_code_from_the_handler_reaches_the_api() -> None:
     result = CommandResult("x", ResultStatus.FAILED, "a TV não respondeu", "tv_unreachable")
     process, transport = build(Spy(result))
-    await process(dump(tv_key("HOME")))
+    await feed(process, dump(tv_key("HOME")))
     assert transport.sent[0]["body"]["error"] == {
         "code": "tv_unreachable",
         "message": "a TV não respondeu",
@@ -98,7 +104,7 @@ async def test_invalid_message_never_reaches_handler_and_is_logged(
     spy = Spy()
     process, _ = build(spy)
     with caplog.at_level(logging.WARNING):
-        await process(raw)
+        await feed(process, raw)
     assert spy.calls == []
     assert "mensagem recusada" in caplog.text
     assert AGENT_ID in caplog.text
@@ -108,7 +114,7 @@ async def test_invalid_message_with_valid_id_gets_invalid_message_reply() -> Non
     spy = Spy()
     process, transport = build(spy)
     bad = tv_key("NOPE")
-    await process(dump(bad))
+    await feed(process, dump(bad))
     assert spy.calls == []
     (reply,) = transport.sent
     assert reply["correlationId"] == bad["id"]
@@ -119,7 +125,7 @@ async def test_invalid_message_with_valid_id_gets_invalid_message_reply() -> Non
 @pytest.mark.parametrize("raw", ["{quebrado", dump(tv_key(id="nao-e-uuid")), b"\0"])
 async def test_invalid_message_without_valid_id_is_only_logged(raw: str | bytes) -> None:
     process, transport = build(Spy())
-    await process(raw)
+    await feed(process, raw)
     assert transport.sent == []
 
 
@@ -128,7 +134,7 @@ async def test_log_does_not_contain_the_full_body(caplog: pytest.LogCaptureFixtu
     data = tv_key()
     data["body"]["extra"] = "CONTEUDO-QUE-NAO-PODE-VAZAR"
     with caplog.at_level(logging.DEBUG):
-        await process(dump(data))
+        await feed(process, dump(data))
     assert "CONTEUDO-QUE-NAO-PODE-VAZAR" not in caplog.text
 
 
@@ -143,7 +149,7 @@ async def test_known_by_contract_but_without_handler_is_rejected_by_core() -> No
         EnvelopeFactory(AGENT_ID, gate, clock),
         transport,
     )
-    await process(dump(tv_key("HOME")))
+    await feed(process, dump(tv_key("HOME")))
     (reply,) = transport.sent
     assert reply["body"]["ok"] is False
     assert reply["body"]["error"]["code"] == "rejected"
@@ -153,7 +159,7 @@ async def test_api_keepalive_is_accepted_without_executing_or_replying() -> None
     spy = Spy()
     process, transport = build(spy)
 
-    await process(dump(envelope("api.keepalive.v1", {})))
+    await feed(process, dump(envelope("api.keepalive.v1", {})))
 
     assert spy.calls == []
     assert transport.sent == []
@@ -172,6 +178,6 @@ async def test_a_silent_type_is_executed_but_never_answered() -> None:
         transport,
         silent_types={"tv.key.v1"},
     )
-    await process(dump(tv_key("HOME")))
+    await feed(process, dump(tv_key("HOME")))
     assert [c.body for c in spy.calls] == [{"key": "HOME"}]
     assert transport.sent == []

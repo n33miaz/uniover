@@ -260,7 +260,7 @@ async def test_apply_requires_the_launcher_to_be_installed(tmp_path: Path) -> No
 async def test_apply_sends_the_staged_photo_before_the_config(tmp_path: Path) -> None:
     livre, android, _, _ = await installed(tmp_path)
     photo = jpeg_bytes()
-    stage(livre, "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", photo)
+    await stage(livre, "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", photo)
     config = json.dumps({"wallpaper": {"type": "photo", "colors": ["#112233"]}})
 
     await livre.run(
@@ -667,12 +667,14 @@ async def test_audit_keeps_the_latest_entries_in_the_state_file(tmp_path: Path) 
 # --- foto ------------------------------------------------------------------------------------
 
 
-def stage(livre: TvLivre, photo_id: str, photo: bytes, chunk: int = 60) -> None:
+async def stage(livre: TvLivre, photo_id: str, photo: bytes, chunk: int = 60) -> None:
 
     digest = hashlib.sha256(photo).hexdigest()
     parts = [photo[i : i + chunk] for i in range(0, len(photo), chunk)]
     for index, part in enumerate(parts):
-        livre._photos.add(photo_id, index, len(parts), digest, base64.b64encode(part).decode())
+        await livre._photos.add(
+            photo_id, index, len(parts), digest, base64.b64encode(part).decode()
+        )
 
 
 async def test_photo_pieces_are_joined_in_any_order_and_checked(tmp_path: Path) -> None:
@@ -683,9 +685,9 @@ async def test_photo_pieces_are_joined_in_any_order_and_checked(tmp_path: Path) 
     digest = hashlib.sha256(photo).hexdigest()
     pieces = [photo[:100], photo[100:]]
 
-    staging.add("p", 1, 2, digest, base64.b64encode(pieces[1]).decode())
+    await staging.add("p", 1, 2, digest, base64.b64encode(pieces[1]).decode())
     assert staging.take("p") is None
-    staging.add("p", 0, 2, digest, base64.b64encode(pieces[0]).decode())
+    await staging.add("p", 0, 2, digest, base64.b64encode(pieces[0]).decode())
 
     assert staging.take("p") == photo
     assert staging.take("outra") is None
@@ -717,7 +719,7 @@ async def test_a_bad_photo_is_refused(mutate: str) -> None:
         data = base64.b64encode(photo).decode()
 
     with pytest.raises(LivreError) as raised:
-        staging.add("p", 0, 1, digest, data)
+        await staging.add("p", 0, 1, digest, data)
 
     assert raised.value.code == "invalid_photo"
     assert staging.take("p") is None
@@ -729,7 +731,7 @@ async def test_a_new_photo_replaces_the_old_one() -> None:
     first = jpeg_bytes(8, 8)
     second = jpeg_bytes(16, 16)
     for photo_id, photo in (("one", first), ("two", second)):
-        staging.add(
+        await staging.add(
             photo_id, 0, 1, hashlib.sha256(photo).hexdigest(), base64.b64encode(photo).decode()
         )
 
@@ -870,7 +872,9 @@ async def test_a_jpeg_that_does_not_decode_is_refused(broken: str) -> None:
     staging = PhotoStaging(FakeClock())
 
     with pytest.raises(LivreError) as raised:
-        staging.add("p", 0, 1, hashlib.sha256(photo).hexdigest(), base64.b64encode(photo).decode())
+        await staging.add(
+            "p", 0, 1, hashlib.sha256(photo).hexdigest(), base64.b64encode(photo).decode()
+        )
 
     assert raised.value.code == "invalid_photo"
 
