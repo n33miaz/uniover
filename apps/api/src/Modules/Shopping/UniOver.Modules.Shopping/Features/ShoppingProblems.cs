@@ -11,6 +11,10 @@ internal static class ShoppingProblems
     public const string PurchaseClosedType = "shopping-purchase-closed";
     public const string MemberElsewhereType = "shopping-member-in-another-group";
     public const string MembershipChangedType = "shopping-membership-changed";
+    public const string PurchaseAlreadyOpenType = "shopping-purchase-already-open";
+
+    /// <summary>O campo extra do problema "já existe uma compra aberta": o id dela, para o aparelho seguir nela.</summary>
+    public const string OpenPurchaseIdExtension = "openPurchaseId";
 
     public static IResult Unauthenticated() =>
         Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Sessão inválida ou expirada.");
@@ -39,6 +43,13 @@ internal static class ShoppingProblems
 
     public static IResult MembershipChanged() =>
         Conflict(MembershipChangedType, "Você não participa mais deste grupo. Atualize e tente de novo.");
+
+    public static IResult PurchaseAlreadyOpen(Guid id) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Já existe uma compra aberta neste grupo.",
+            type: ProblemDetailsExtensions.TypeBase + PurchaseAlreadyOpenType,
+            extensions: new Dictionary<string, object?> { [OpenPurchaseIdExtension] = id });
 
     private static IResult Conflict(string type, string title) =>
         Results.Problem(statusCode: StatusCodes.Status409Conflict, title: title, type: ProblemDetailsExtensions.TypeBase + type);

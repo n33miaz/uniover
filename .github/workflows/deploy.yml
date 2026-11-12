@@ -179,6 +179,7 @@ jobs:
               ("identity", 180),
               ("devices", 180),
               ("tv", 30),
+              ("shopping", 180),
           ]
 
           KEYS = {

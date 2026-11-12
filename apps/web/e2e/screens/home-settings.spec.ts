@@ -79,8 +79,8 @@ async function openHome(page: Page, scheme: Scheme) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(
     OWNER.displayName.split(' ')[0],
   );
-  // TV e Treino, que já têm tela, e os seis módulos planejados ("Em breve").
-  await expect(page.locator('article.card')).toHaveCount(8);
+  // TV, Treino e Compras, que já têm tela, e os seis módulos planejados ("Em breve").
+  await expect(page.locator('article.card')).toHaveCount(9);
   await settle(page);
 }
 
@@ -139,7 +139,7 @@ test.describe('Início', () => {
       await expect(sheet).toBeVisible();
       await expect(sheet.locator('.head .done')).toHaveText('Concluir');
       await expect(sheet.locator('.footer')).toHaveCount(0);
-      await expect(sheet.locator('.grip')).toHaveCount(8);
+      await expect(sheet.locator('.grip')).toHaveCount(9);
       await settle(page);
       // O foco inicial é o título (nenhuma seta ganha anel sem a pessoa ter tocado) e cada nome cabe numa linha, sem corte.
       await expect(sheet.getByRole('heading', { name: 'Personalizar' })).toBeFocused();
@@ -218,9 +218,17 @@ test.describe('Início', () => {
           `uniover.home.widgets.v1.${account}`,
           // Todos os módulos do catálogo desligados (os planejados entram ligados se não estiverem na lista).
           JSON.stringify(
-            ['tv', 'training', 'health', 'monitor', 'network', 'backup', 'notifications', 'pc'].map(
-              (id) => ({ id, size: 'small', enabled: false }),
-            ),
+            [
+              'tv',
+              'training',
+              'shopping',
+              'health',
+              'monitor',
+              'network',
+              'backup',
+              'notifications',
+              'pc',
+            ].map((id) => ({ id, size: 'small', enabled: false })),
           ),
         ),
       OWNER_ID,

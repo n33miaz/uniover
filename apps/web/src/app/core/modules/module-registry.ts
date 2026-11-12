@@ -62,6 +62,17 @@ export class ModuleRegistry {
       defaultSize: 'small',
     },
     {
+      id: 'shopping',
+      // Mora dentro do app principal (sem manifest nem escopo próprios), como o Controle do PC.
+      route: '/compras',
+      title: $localize`:@@module.shopping.title:Compras`,
+      description: $localize`:@@home.module.shopping-hint:Lista da casa e mercado`,
+      actionLabel: $localize`:@@module.shopping.action:Abrir compras`,
+      icon: 'launcher',
+      status: 'available',
+      defaultSize: 'small',
+    },
+    {
       id: 'health',
       title: $localize`:@@module.health.title:Saúde e Eventos`,
       description: $localize`:@@module.health.hint:Aparelhos e linha do tempo`,

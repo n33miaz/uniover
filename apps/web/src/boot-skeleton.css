@@ -69,6 +69,7 @@ html:not([data-boot]) .bs-boot .bs-home,
 html[data-boot='home'] .bs-boot .bs-home,
 html[data-boot='tv'] .bs-boot .bs-tv,
 html[data-boot='pc'] .bs-boot .bs-detail,
+html[data-boot='shopping'] .bs-boot .bs-detail,
 html[data-boot^='training-'] .bs-boot .bs-training,
 html[data-boot='settings'] .bs-boot .bs-settings,
 html[data-boot^='settings-'] .bs-boot .bs-detail,
@@ -87,6 +88,22 @@ html[data-boot='devices-connect'] .bs-boot .bs-plain {
 .bs-variant .bs-settings-system-content,
 .bs-variant .bs-settings-profile-content,
 .bs-variant .bs-settings-appearance-content {
+  display: none;
+}
+
+/* Compras abre na lista da casa: as linhas da lista, sem os cartões nem a moldura genérica. */
+html[data-boot='shopping'] .bs-detail-cards,
+.bs-root[data-boot-variant='shopping'] .bs-detail-cards,
+html[data-boot='shopping'] .bs-route-content,
+.bs-root[data-boot-variant='shopping'] .bs-route-content {
+  display: none;
+}
+html[data-boot='shopping'] .bs-settings-data-content,
+.bs-root[data-boot-variant='shopping'] .bs-settings-data-content {
+  display: flex;
+}
+html[data-boot='shopping'] .bs-settings-data-content .bs-icon,
+.bs-root[data-boot-variant='shopping'] .bs-settings-data-content .bs-icon {
   display: none;
 }
 

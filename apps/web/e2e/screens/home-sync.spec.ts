@@ -24,7 +24,7 @@ test.beforeEach(async ({ context, page }) => {
   await installFakeEventSource(page);
 });
 
-const HOME_CARDS = 8;
+const HOME_CARDS = 9;
 
 async function openHome(page: Page) {
   await page.goto('/');
@@ -264,7 +264,8 @@ test.describe('Pessoas e Sessões mostram o que cada um deixou', () => {
       ],
     };
     await page.goto('/ajustes/pessoas');
-    await expect(page.locator('.owner-usage .home-line')).toHaveText('Treino, TV');
+    // Compras não está na lista salva: módulo novo entra ligado, depois dos que a pessoa ordenou.
+    await expect(page.locator('.owner-usage .home-line')).toHaveText('Treino, TV, Compras');
   });
 
   test('o convidado não vê a Início nem as sessões de ninguém, e não consulta as rotas do dono', async ({

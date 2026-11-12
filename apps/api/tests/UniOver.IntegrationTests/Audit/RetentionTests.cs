@@ -38,7 +38,12 @@ public sealed class RetentionTests(PostgresFixture postgres)
         "tv", "command_audit", AuditRetentionPolicy.CommandDays, "detail",
         "INSERT INTO tv.command_audit (id, user_id, tv_id, command, ok, occurred_at, detail) VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now() - make_interval(days => {0}), '{1}')");
 
-    public static TheoryData<AuditSchema> Schemas => [Identity, Devices, Tv];
+    // A trilha de Compras não tem coluna livre: a marca vai no próprio evento (até 24 caracteres).
+    private static readonly AuditSchema Shopping = new(
+        "shopping", "member_audit", AuditRetentionPolicy.SecurityDays, "event",
+        "INSERT INTO shopping.member_audit (id, event, actor_user_id, target_user_id, occurred_at) VALUES (gen_random_uuid(), '{1}', gen_random_uuid(), gen_random_uuid(), now() - make_interval(days => {0}))");
+
+    public static TheoryData<AuditSchema> Schemas => [Identity, Devices, Tv, Shopping];
 
     private static Task InsertAsync(string connection, AuditSchema schema, int ageDays, string mark) =>
         ExecuteAsync(connection, string.Format(System.Globalization.CultureInfo.InvariantCulture, schema.InsertTemplate, ageDays, mark));
@@ -100,14 +105,14 @@ public sealed class RetentionTests(PostgresFixture postgres)
     {
         var database = await MigratedDatabaseAsync(postgres);
         var floor = schema.FloorDays;
-        await InsertAsync(database.OwnerConnection, schema, floor + 1, "vencida-mas-dentro-do-prazo-maior");
+        await InsertAsync(database.OwnerConnection, schema, floor + 1, "vencida-no-prazo-maior");
         await InsertAsync(database.OwnerConnection, schema, floor + 400, "antiga");
         await InsertAsync(database.OwnerConnection, schema, 1, "recente");
 
         var removed = await PurgeAsync(database.RuntimeConnection, schema, floor + 100);
 
         removed.Should().Be(1);
-        (await MarksAsync(database.OwnerConnection, schema)).Should().Equal(["recente", "vencida-mas-dentro-do-prazo-maior"]);
+        (await MarksAsync(database.OwnerConnection, schema)).Should().Equal(["recente", "vencida-no-prazo-maior"]);
     }
 
     [Theory]
@@ -223,7 +228,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
     public async Task ThePurgeService_CallsTheFunctionsThroughTheRealApplicationConnection()
     {
         var database = await MigratedDatabaseAsync(postgres);
-        foreach (var schema in new[] { Identity, Devices, Tv })
+        foreach (var schema in new[] { Identity, Devices, Tv, Shopping })
         {
             await InsertAsync(database.OwnerConnection, schema, schema.FloorDays + 10, "vencida");
             await InsertAsync(database.OwnerConnection, schema, 2, "recente");
@@ -234,9 +239,9 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
         var results = await service.RunOnceAsync(Ct);
 
-        results.Select(r => r.Name).Should().BeEquivalentTo("identity.purge_audit", "devices.purge_audit", "tv.purge_audit", "tv.scrub_removal_audit", "identity.refresh_families", "identity.capacity_samples", "devices_diagnostics");
+        results.Select(r => r.Name).Should().BeEquivalentTo("identity.purge_audit", "devices.purge_audit", "tv.purge_audit", "tv.scrub_removal_audit", "shopping.purge_audit", "identity.refresh_families", "identity.capacity_samples", "devices_diagnostics");
         results.Should().OnlyContain(r => r.Succeeded);
-        foreach (var schema in new[] { Identity, Devices, Tv })
+        foreach (var schema in new[] { Identity, Devices, Tv, Shopping })
         {
             var marks = await MarksAsync(database.OwnerConnection, schema);
 
@@ -275,7 +280,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
         var results = await service.RunOnceAsync(Ct);
 
-        results.Should().HaveCount(7, "uma limpeza por trilha mais as rotinas de famílias, de capacidade e de diagnósticos");
+        results.Should().HaveCount(8, "uma limpeza por trilha mais as rotinas de famílias, de capacidade e de diagnósticos");
         results.Should().OnlyContain(r => !r.Succeeded && r.Error != null && !r.Error.Contains(' ', StringComparison.Ordinal));
     }
 

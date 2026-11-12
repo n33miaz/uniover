@@ -75,6 +75,8 @@ public sealed class AppendOnlyTests(PostgresFixture postgres)
             "DELETE FROM identity.login_audit",
             "UPDATE devices.pairing_audit SET event = 'x'",
             "DELETE FROM devices.pairing_audit",
+            "UPDATE shopping.member_audit SET event = 'x'",
+            "DELETE FROM shopping.member_audit",
         })
         {
             var act = async () => await ExecuteAsync(database.RuntimeConnection, sql);
@@ -306,9 +308,10 @@ public sealed class AppendOnlyTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public void TheAppendOnlyRegistry_NamesTheThreeAuditTables()
+    public void TheAppendOnlyRegistry_NamesEveryAuditTable()
     {
-        AppendOnlyTables.All.Keys.Should().BeEquivalentTo("identity", "devices", "tv");
+        AppendOnlyTables.All.Keys.Should().BeEquivalentTo("identity", "devices", "tv", "shopping");
+        AppendOnlyTables.Of("shopping").Should().Equal("member_audit");
         AppendOnlyTables.Of("identity").Should().Equal("login_audit");
         AppendOnlyTables.Of("devices").Should().Equal("pairing_audit");
         AppendOnlyTables.Of("tv").Should().Equal("command_audit", "tv_removal_audit");

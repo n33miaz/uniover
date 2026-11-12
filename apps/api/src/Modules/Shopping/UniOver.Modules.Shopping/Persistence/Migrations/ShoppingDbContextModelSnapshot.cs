@@ -374,6 +374,39 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                     b.ToTable("members", "shopping");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingMemberAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("Event")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("event");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("TargetUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_member_audit");
+
+                    b.HasIndex("OccurredAt", "Id")
+                        .HasDatabaseName("ix_member_audit_occurred_at_id");
+
+                    b.ToTable("member_audit", "shopping");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingOperation", b =>
                 {
                     b.Property<Guid>("Id")

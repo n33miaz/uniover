@@ -110,6 +110,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/livre/restore", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/livre/sleep", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/livre/apps/visibility", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/shopping/operations", RateLimitPolicies.Commands),
 
         // Trocar o computador que controla a TV: ação rara de administrador, com o mesmo limite baixo das outras que pedem passkey.
         ("PUT", "/api/v1/tv/config/agent", RateLimitPolicies.Login),
@@ -407,6 +408,128 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
     }
 
     // O Treino: cada rota declara uma política NOMEADA e a permissão da tabela (rota -> permissão); a varredura morde quando não.
+
+    // Compras: a tabela é escrita por extenso (rota -> permissão). Rota nova só passa quando ganhar a sua linha aqui.
+    private const string ShoppingPrefix = "/api/v1/shopping/";
+
+    private static readonly (string Method, string Pattern, string Permission)[] ShoppingPermissions =
+    [
+        ("GET", "/api/v1/shopping/group", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/group/members", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/group/leave", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/changes", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/purchases", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/products/{id:guid}/last-price", AccessPermissions.ShoppingModule),
+        ("PUT", "/api/v1/shopping/group/members/{userId:guid}", AccessPermissions.ShoppingModule),
+        ("PUT", "/api/v1/shopping/products/{id:guid}", AccessPermissions.ShoppingModule),
+        ("PUT", "/api/v1/shopping/list-items/{id:guid}", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/purchases/{id:guid}/open", AccessPermissions.ShoppingModule),
+        ("PUT", "/api/v1/shopping/purchases/{id:guid}/budget", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/purchases/{id:guid}/close", AccessPermissions.ShoppingModule),
+        ("PUT", "/api/v1/shopping/purchases/{purchaseId:guid}/items/{id:guid}", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/operations", AccessPermissions.ShoppingModule),
+    ];
+
+    /// <summary>
+    /// O que há de errado nas rotas de Compras: toda rota do módulo cita uma política nomeada com a permissão da sua
+    /// linha, toda escrita tem limite de taxa, nenhuma rota de outro módulo carrega <c>module:shopping</c> e nenhuma
+    /// linha da tabela fica sem rota.
+    /// </summary>
+    private static async Task<List<string>> ShoppingViolationsAsync(IEnumerable<RouteEndpoint> endpoints, IAuthorizationPolicyProvider policies)
+    {
+        var found = new List<string>();
+        var covered = new HashSet<(string Method, string Pattern, string Permission)>();
+        foreach (var endpoint in endpoints)
+        {
+            var pattern = RouteInspector.Pattern(endpoint);
+            var label = RouteInspector.Describe(endpoint);
+            var authorize = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
+            var policy = authorize.Count == 0 ? null : await AuthorizationPolicy.CombineAsync(policies, authorize);
+            var permissions = policy?.Requirements.OfType<PermissionRequirement>().Select(r => r.Permission).ToList() ?? [];
+
+            if (!pattern.StartsWith(ShoppingPrefix, StringComparison.Ordinal))
+            {
+                found.AddRange(permissions
+                    .Where(p => p == AccessPermissions.ShoppingModule)
+                    .Select(p => $"{label}: rota fora de Compras com a permissão de Compras '{p}'"));
+                continue;
+            }
+
+            // Política NOMEADA em cada rota: `.RequireAuthorization()` sem nome cai na padrão e passaria despercebido.
+            if (authorize.Count == 0 || authorize.Any(a => string.IsNullOrWhiteSpace(a.Policy)))
+            {
+                found.Add($"{label}: rota de Compras sem política nomeada");
+                continue;
+            }
+
+            var methods = RouteInspector.Methods(endpoint);
+            if (methods.Count == 0)
+            {
+                found.Add($"{label}: rota de Compras sem método explícito");
+                continue;
+            }
+
+            foreach (var method in methods)
+            {
+                var rule = ShoppingPermissions.SingleOrDefault(r =>
+                    string.Equals(r.Method, method, StringComparison.OrdinalIgnoreCase) && r.Pattern == pattern);
+                if (rule == default)
+                {
+                    found.Add($"{method} {pattern}: rota de Compras fora da tabela de permissões (rota nova precisa de política e de uma linha aqui)");
+                    continue;
+                }
+
+                covered.Add(rule);
+                if (permissions.Count != 1 || permissions[0] != rule.Permission)
+                {
+                    found.Add($"{method} {pattern}: permissão [{string.Join(", ", permissions)}], deveria ser só '{rule.Permission}'");
+                }
+
+                if (!HttpMethods.IsGet(method) && endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName != RateLimitPolicies.Commands)
+                {
+                    found.Add($"{method} {pattern}: escrita de Compras sem o limite de taxa dos comandos");
+                }
+            }
+        }
+
+        found.AddRange(ShoppingPermissions.Except(covered).Select(r => $"{r.Method} {r.Pattern}: linha da tabela de Compras sem rota"));
+        return found;
+    }
+
+    [Theory]
+    [MemberData(nameof(Environments))]
+    public async Task EveryShoppingRoute_DeclaresANamedPolicyAndItsPermission_AsInTheTable(string environment)
+    {
+        await using var factory = await StartAsync(environment);
+        var routes = RoutesOf(factory);
+        var policies = factory.Services.GetRequiredService<IAuthorizationPolicyProvider>();
+
+        routes.Count(r => RouteInspector.Pattern(r).StartsWith(ShoppingPrefix, StringComparison.Ordinal))
+            .Should().BeGreaterThanOrEqualTo(ShoppingPermissions.Length, "a varredura precisa ter visto as rotas de Compras");
+        (await ShoppingViolationsAsync(routes, policies)).Should().BeEmpty(
+            "toda rota de Compras cita uma política nomeada com a permissão da sua linha, e nenhuma rota de outro módulo carrega a permissão de Compras");
+    }
+
+    [Fact]
+    public async Task ShoppingScan_RejectsARouteOutsideTheTable_ABarePolicy_AndAnotherPermission()
+    {
+        var policies = PermissionPolicies();
+        var shopping = new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.ShoppingModule) };
+        var unknown = Endpoint("/api/v1/shopping/coupons", new HttpMethodMetadata(["GET"]), shopping);
+        var bare = Endpoint("/api/v1/shopping/group", new HttpMethodMetadata(["GET"]), new Authorize());
+        var other = Endpoint(
+            "/api/v1/shopping/changes", new HttpMethodMetadata(["GET"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TrainingModule) });
+        var unlimited = Endpoint("/api/v1/shopping/operations", new HttpMethodMetadata(["POST"]), shopping);
+        var foreign = Endpoint("/api/v1/training/routines", new HttpMethodMetadata(["GET"]), shopping);
+
+        var violations = await ShoppingViolationsAsync([unknown, bare, other, unlimited, foreign], policies);
+
+        violations.Should().Contain(v => v.StartsWith("GET /api/v1/shopping/coupons:", StringComparison.Ordinal) && v.Contains("fora da tabela", StringComparison.Ordinal));
+        violations.Should().Contain(v => v.Contains("/api/v1/shopping/group", StringComparison.Ordinal) && v.Contains("sem política nomeada", StringComparison.Ordinal));
+        violations.Should().Contain(v => v.StartsWith("GET /api/v1/shopping/changes:", StringComparison.Ordinal) && v.Contains("module:training", StringComparison.Ordinal));
+        violations.Should().Contain(v => v.StartsWith("POST /api/v1/shopping/operations:", StringComparison.Ordinal) && v.Contains("limite de taxa", StringComparison.Ordinal));
+        violations.Should().Contain(v => v.Contains("/api/v1/training/routines", StringComparison.Ordinal) && v.Contains("fora de Compras", StringComparison.Ordinal));
+    }
 
     [Theory]
     [MemberData(nameof(Environments))]

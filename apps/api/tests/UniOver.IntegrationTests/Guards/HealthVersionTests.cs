@@ -50,7 +50,7 @@ public sealed class HealthVersionTests(PostgresFixture postgres)
         var published = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(RootFile("modules.json")))!;
 
         served.Should().Equal(published, "o recurso embutido no assembly é o modules.json da raiz");
-        served.Keys.Should().BeEquivalentTo("identity", "devices", "tv", "training", "web", "agent");
+        served.Keys.Should().BeEquivalentTo("identity", "devices", "tv", "training", "shopping", "web", "agent");
     }
 
     /// <summary>A versão do produto é a do arquivo VERSION da raiz do repositório (a mesma que a esteira publica).</summary>

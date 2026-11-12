@@ -102,3 +102,13 @@ public sealed class ShoppingChange
     public string Payload { get; set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; set; }
 }
+
+/// <summary>Trilha administrativa: só a entrada ou saída de uma pessoa, nunca os toques da lista ou do mercado.</summary>
+public sealed class ShoppingMemberAuditEntry
+{
+    public Guid Id { get; set; }
+    public string Event { get; set; } = string.Empty;
+    public Guid ActorUserId { get; set; }
+    public Guid TargetUserId { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+}

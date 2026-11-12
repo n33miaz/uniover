@@ -19,6 +19,7 @@ public sealed class ShoppingDbContext(DbContextOptions<ShoppingDbContext> option
     internal DbSet<PurchaseItem> PurchaseItems => Set<PurchaseItem>();
     internal DbSet<ShoppingOperation> Operations => Set<ShoppingOperation>();
     internal DbSet<ShoppingChange> Changes => Set<ShoppingChange>();
+    internal DbSet<ShoppingMemberAuditEntry> MemberAudit => Set<ShoppingMemberAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

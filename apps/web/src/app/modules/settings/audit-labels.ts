@@ -164,6 +164,11 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-livre-set-apps:Apps da TV desativados ou reativados`;
     case 'tv.livre.sleep':
       return $localize`:@@settings.audit.action.tv-livre-sleep:Modo Dormir ativado`;
+    // Compras
+    case 'shopping.member.add':
+      return $localize`:@@settings.audit.action.shopping-member-add:Pessoa incluída no grupo de compras`;
+    case 'shopping.member.remove':
+      return $localize`:@@settings.audit.action.shopping-member-remove:Pessoa saiu do grupo de compras`;
     default:
       return null;
   }
@@ -183,6 +188,8 @@ export function moduleLabel(code: string): string {
       return $localize`:@@settings.audit.module.devices:Dispositivos`;
     case 'tv':
       return $localize`:@@settings.audit.module.tv:TV`;
+    case 'shopping':
+      return $localize`:@@settings.audit.module.shopping:Compras`;
     default:
       return $localize`:@@settings.audit.module.other:Outro módulo`;
   }

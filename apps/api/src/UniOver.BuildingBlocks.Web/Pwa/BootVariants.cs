@@ -16,6 +16,7 @@ internal static partial class BootVariants
         (p => p is "/" or "/index.html", Home),
         (p => IsAt(p, "/tv"), "tv"),
         (p => IsAt(p, "/pc"), "pc"),
+        (p => IsAt(p, "/compras"), "shopping"),
         (p => p == "/treino/sessao/exercicio", "training-session-exercise"),
         (p => p == "/treino/sessao", "training-session"),
         (p => p == "/treino/glossario", "training-glossary"),

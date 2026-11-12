@@ -11,7 +11,7 @@ import { settle } from './screens/screen-helpers';
 
 const agentIndicator = (page: Page) => page.locator('.agent-status');
 const blocks = (page: Page) => page.locator('article.card');
-// TV e Treino, que já têm tela, e os seis planejados, que aparecem como "Em breve".
+// TV, Treino e Compras, que já têm tela, e os seis planejados, que aparecem como "Em breve".
 const PLANNED = [
   'Saúde e Eventos',
   'Monitor dos Serviços',
@@ -20,7 +20,7 @@ const PLANNED = [
   'Avisos',
   'Controle do PC',
 ];
-const MODULE_COUNT = 2 + PLANNED.length;
+const MODULE_COUNT = 3 + PLANNED.length;
 const status = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
 async function expectNoSeriousA11yViolations(page: Page) {
@@ -74,8 +74,8 @@ test.describe('início e navegação', () => {
       await expect(card).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     }
     await expect(page.locator('article[data-module="tv"]')).toHaveCSS('border-top-style', 'solid');
-    // Só TV e Treino levam a algum lugar.
-    await expect(page.locator('article.card a')).toHaveCount(2);
+    // Só TV, Treino e Compras levam a algum lugar.
+    await expect(page.locator('article.card a')).toHaveCount(3);
 
     // Passando pela tela inteira com o teclado, o foco nunca para dentro de um cartão planejado.
     const stops: string[] = [];
@@ -87,7 +87,7 @@ test.describe('início e navegação', () => {
         ),
       );
     }
-    expect(stops.filter((id) => id && !['tv', 'training'].includes(id))).toEqual([]);
+    expect(stops.filter((id) => id && !['tv', 'training', 'shopping'].includes(id))).toEqual([]);
   });
 
   test('TV e Treino ficam lado a lado, no mesmo tamanho, mesmo com um tamanho largo salvo', async ({
@@ -117,13 +117,11 @@ test.describe('início e navegação', () => {
   test('centraliza o último cartão ímpar do dono sem mudar sua largura', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('uniover.account-id', 'u1'));
     await page.goto('/');
-    await page.getByRole('button', { name: 'Editar', exact: true }).click();
-    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
-    await sheet.locator('li', { hasText: 'Controle do PC' }).getByRole('switch').uncheck();
-    await sheet.getByRole('button', { name: 'Concluir', exact: true }).click();
 
+    // O dono vê todos os módulos, e a conta deles é ímpar: o último fica sozinho na linha.
     const cards = blocks(page);
-    await expect(cards).toHaveCount(MODULE_COUNT - 1);
+    await expect(cards).toHaveCount(MODULE_COUNT);
+    expect(MODULE_COUNT % 2).toBe(1);
     const grid = (await page.locator('.grid').boundingBox())!;
     const first = (await cards.first().boundingBox())!;
     const last = (await cards.last().boundingBox())!;
@@ -283,7 +281,7 @@ test.describe('início e navegação', () => {
     await page.addInitScript(() => localStorage.setItem('uniover.account-id', 'u1'));
     await page.goto('/');
     const titles = blocks(page).locator('h3');
-    await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
+    await expect(titles).toHaveText(['TV', 'Treino', 'Compras', ...PLANNED]);
 
     await page.getByRole('button', { name: 'Editar' }).click();
     const sheet = page.getByRole('dialog', { name: 'Personalizar' });
@@ -320,7 +318,7 @@ test.describe('início e navegação', () => {
     await page.keyboard.press('Enter');
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
-    await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
+    await expect(titles).toHaveText(['TV', 'Treino', 'Compras', ...PLANNED]);
 
     // Concluir guarda a nova ordem.
     await page.getByRole('button', { name: 'Editar' }).click();
@@ -328,23 +326,27 @@ test.describe('início e navegação', () => {
     await page.keyboard.press('Enter');
     await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(sheet).toBeHidden();
-    await expect(titles).toHaveText(['Treino', 'TV', ...PLANNED]);
+    await expect(titles).toHaveText(['Treino', 'TV', 'Compras', ...PLANNED]);
 
     // A escolha fica no aparelho: sobrevive ao recarregamento.
     await page.reload();
-    await expect(titles).toHaveText(['Treino', 'TV', ...PLANNED]);
+    await expect(titles).toHaveText(['Treino', 'TV', 'Compras', ...PLANNED]);
 
     // Módulo desligado some da grade.
     await page.getByRole('button', { name: 'Editar' }).click();
     await sheet.locator('li', { hasText: 'Treino' }).getByRole('switch').uncheck();
     await sheet.getByRole('button', { name: 'Concluir' }).click();
-    await expect(titles).toHaveText(['TV', ...PLANNED]);
+    await expect(titles).toHaveText(['TV', 'Compras', ...PLANNED]);
 
     // Um módulo em breve também pode ser ocultado.
     await page.getByRole('button', { name: 'Editar' }).click();
     await sheet.locator('li', { hasText: 'Rede da Casa' }).getByRole('switch').uncheck();
     await sheet.getByRole('button', { name: 'Concluir' }).click();
-    await expect(titles).toHaveText(['TV', ...PLANNED.filter((name) => name !== 'Rede da Casa')]);
+    await expect(titles).toHaveText([
+      'TV',
+      'Compras',
+      ...PLANNED.filter((name) => name !== 'Rede da Casa'),
+    ]);
   });
 
   for (const scheme of ['light', 'dark'] as const) {

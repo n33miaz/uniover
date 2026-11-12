@@ -19,6 +19,29 @@ internal sealed record BudgetRequest(Guid OperationId, decimal? Budget);
 
 internal sealed record ClosePurchaseRequest(Guid OperationId, decimal TotalPaid, string? Store, string? ReceiptKey);
 
+/// <summary>Uma escrita guardada no aparelho, na forma da rota correspondente: <paramref name="Kind"/> diz qual.</summary>
+/// <param name="Id">O registro que a rota levaria no caminho (o produto, o item, a compra, a pessoa).</param>
+/// <param name="PurchaseId">Só para <see cref="OperationKinds.PurchaseItem"/>: a compra da linha.</param>
+/// <param name="Body">O corpo da rota, sem o <c>operationId</c> (o que vale é o do envelope).</param>
+internal sealed record ShoppingOperationRequest(Guid OperationId, string? Kind, Guid Id, Guid? PurchaseId, JsonElement? Body);
+
+internal sealed record ShoppingOperationsRequest(IReadOnlyList<ShoppingOperationRequest>? Operations);
+
+/// <summary>O desfecho de uma operação do lote: o status que a rota daria e, na recusa, o tipo do problema.</summary>
+/// <param name="OpenPurchaseId">Na recusa por já haver compra aberta, qual é ela.</param>
+internal sealed record ShoppingOperationResult(Guid OperationId, int Status, string? Type, Guid? OpenPurchaseId);
+
+internal static class OperationKinds
+{
+    public const string Member = "member";
+    public const string Product = "product";
+    public const string ListItem = "listItem";
+    public const string OpenPurchase = "openPurchase";
+    public const string Budget = "budget";
+    public const string ClosePurchase = "closePurchase";
+    public const string PurchaseItem = "purchaseItem";
+}
+
 internal sealed record GroupResponse(Guid Id, Guid OwnerUserId, bool IsOwner);
 
 internal sealed record MemberResponse(Guid UserId, bool IsOwner, bool Deleted, DateTimeOffset CreatedAt);

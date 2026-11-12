@@ -9,9 +9,11 @@ using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Guards;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.IntegrationTests.Training;
 using UniOver.IntegrationTests.Tv;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Shopping.Domain;
 using UniOver.Modules.Tv.Domain;
 
 namespace UniOver.IntegrationTests.Audit;
@@ -23,7 +25,7 @@ internal static class AuditKit
 
     public static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>Um banco novo com Identity, Devices e Tv migrados pelo papel dono (o que a esteira faz em produção).</summary>
+    /// <summary>Um banco novo com Identity, Devices, Tv e Shopping migrados pelo papel dono (o que a esteira faz em produção).</summary>
     public static async Task<TestDatabase> MigratedDatabaseAsync(PostgresFixture postgres)
     {
         ArgumentNullException.ThrowIfNull(postgres);
@@ -42,6 +44,11 @@ internal static class AuditKit
         await using (var tv = TvApp.CreateContext(database.OwnerConnection))
         {
             await tv.Database.MigrateAsync(Ct);
+        }
+
+        await using (var shopping = TrainingApp.CreateShoppingContext(database.OwnerConnection))
+        {
+            await shopping.Database.MigrateAsync(Ct);
         }
 
         NpgsqlConnection.ClearAllPools();
@@ -110,6 +117,13 @@ internal static class AuditKit
     {
         await using var db = TvApp.CreateContext(database.OwnerConnection);
         db.TvRemovalAudit.AddRange(entries);
+        await db.SaveChangesAsync(Ct);
+    }
+
+    public static async Task AddAsync(TestDatabase database, params ShoppingMemberAuditEntry[] entries)
+    {
+        await using var db = TrainingApp.CreateShoppingContext(database.OwnerConnection);
+        db.MemberAudit.AddRange(entries);
         await db.SaveChangesAsync(Ct);
     }
 
