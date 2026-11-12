@@ -238,7 +238,7 @@ internal static class ShoppingWrites
     /// Tira a pessoa do grupo próprio dela, se ele estiver vazio. O grupo é travado antes de ser conferido, para um
     /// produto criado no mesmo instante não ficar para trás. Devolve falso se o grupo tem conteúdo ou outras pessoas.
     /// </summary>
-    private static async Task<bool> LeaveEmptyGroupAsync(ShoppingDbContext db, ShoppingMember membership, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<bool> LeaveEmptyGroupAsync(ShoppingDbContext db, ShoppingMember membership, DateTimeOffset now, CancellationToken ct)
     {
         var groupId = membership.GroupId;
         await db.Database.ExecuteSqlAsync($"""SELECT 1 FROM "shopping"."groups" WHERE id = {groupId} FOR UPDATE""", ct);
@@ -255,6 +255,12 @@ internal static class ShoppingWrites
         // Gravado já (dentro da transação): a participação nova não pode ser incluída antes de a antiga virar lápide.
         membership.DeletedAt = now;
         await db.SaveChangesAsync(ct);
+
+        // O grupo fica sem ninguém: os convites dele que ainda esperavam deixam de valer, para ninguém entrar num grupo
+        // abandonado. Na mesma transação: se a entrada no grupo novo for desfeita, os convites voltam a valer.
+        await db.GroupInvites
+            .Where(x => x.GroupId == groupId && x.UsedAt == null && x.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
         return true;
     }
 
@@ -272,7 +278,8 @@ internal static class ShoppingWrites
         }
 
         var name = ShoppingRules.Clean(request.Name);
-        var section = ShoppingRules.Clean(request.Section) ?? string.Empty;
+        // Sem categoria escolhida, vale a da tabela de categorias pelo nome (a mesma regra do app).
+        var section = ShoppingRules.Clean(request.Section) ?? (name is null ? string.Empty : ShoppingCategories.Categorize(name));
         var unit = ShoppingRules.Clean(request.Unit);
         var size = ShoppingRules.Clean(request.Size);
         if (!request.Deleted)
@@ -517,7 +524,10 @@ internal static class ShoppingWrites
         }
     }
 
-    /// <summary>Abre a ida ao mercado a partir da lista: cada item marcado como "precisa" vira uma linha da compra.</summary>
+    /// <summary>
+    /// Abre a ida ao mercado. A partir da lista (o padrão), cada item marcado como "precisa" vira uma linha da compra; do
+    /// zero, a compra nasce vazia e só tem o que a pessoa puser nela.
+    /// </summary>
     private static async Task<IResult> OpenPurchaseAsync(
         Guid id, OpenPurchaseRequest? request, ICurrentUser current, ShoppingWriter writer, ShoppingDbContext db, CancellationToken cancellationToken)
     {
@@ -563,11 +573,16 @@ internal static class ShoppingWrites
                 GroupId = scope.GroupId,
                 Status = ShoppingPurchase.Open,
                 Budget = request.Budget,
+                FromList = request.FromList ?? true,
                 StartedAt = scope.Now,
                 UpdatedAt = scope.Now,
             };
             db.Purchases.Add(purchase);
             scope.Change(ChangeTypes.Purchase, id, purchase.ToResponse());
+            if (!purchase.FromList)
+            {
+                return WriteStep.Done(TypedResults.Ok(purchase.ToResponse()));
+            }
 
             var needed = await db.ListItems.AsNoTracking()
                 .Where(x => x.GroupId == scope.GroupId && x.Needed && x.DeletedAt == null)
@@ -738,7 +753,34 @@ internal static class ShoppingWrites
             {
                 return ShoppingProblems.Invalid("unitPrice", "O preço não é um valor válido.");
             }
+
+            if (!ShoppingRules.IsMoney(request.RegularPrice))
+            {
+                return ShoppingProblems.Invalid("regularPrice", "O preço normal não é um valor válido.");
+            }
+
+            // A promoção só faz sentido junto do preço pago e acima dele. Vale só quando o pedido grava o preço: o toque
+            // em "peguei" leva a linha como estava e não é recusado por ela.
+            if (request.Only != ChangedFields.Picked && request.RegularPrice is { } regular)
+            {
+                if (request.UnitPrice is not { } paid)
+                {
+                    return ShoppingProblems.Invalid("regularPrice", "O preço normal precisa do preço pago.");
+                }
+
+                if (regular <= paid)
+                {
+                    return ShoppingProblems.Invalid("regularPrice", "O preço normal deve ser maior que o preço pago.");
+                }
+            }
+
+            if (!ShoppingRules.Fits(ShoppingRules.Clean(request.PromoNote), ShoppingLimits.PromoNote))
+            {
+                return ShoppingProblems.Invalid("promoNote", $"A promoção aceita no máximo {ShoppingLimits.PromoNote} caracteres.");
+            }
         }
+
+        var promo = new ShoppingRules.Promo(request.RegularPrice, ShoppingRules.Clean(request.PromoNote));
 
         return await writer.RunAsync(actor, request.OperationId, ApplyAsync, ReplayAsync, cancellationToken);
 
@@ -815,7 +857,7 @@ internal static class ShoppingWrites
                 twin.Quantity = Math.Max(twin.Quantity, request.Quantity);
                 if (prices && request.UnitPrice is not null)
                 {
-                    ShoppingRules.Price(twin, request.UnitPrice, at);
+                    ShoppingRules.Price(twin, request.UnitPrice, at, promo);
                 }
 
                 twin.UpdatedAt = scope.Now;
@@ -844,6 +886,8 @@ internal static class ShoppingWrites
             {
                 item.Picked = false;
                 item.UnitPrice = null;
+                item.RegularPrice = null;
+                item.PromoNote = null;
                 item.PricedAt = null;
             }
 
@@ -854,7 +898,7 @@ internal static class ShoppingWrites
 
             if (prices)
             {
-                ShoppingRules.Price(item, request.UnitPrice, at);
+                ShoppingRules.Price(item, request.UnitPrice, at, promo);
             }
 
             item.DeletedAt = null;

@@ -37,6 +37,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3
 WORKDIR /src
 # Os esquemas do agente são embutidos no assembly do protocolo.
 COPY contracts/agent/ contracts/agent/
+# A tabela de categorias de Compras também (a mesma que o app usa).
+COPY contracts/shopping/ contracts/shopping/
 # As versões por módulo são embutidas no assembly (GET /health/version).
 COPY modules.json modules.json
 COPY apps/api/ apps/api/

@@ -16,7 +16,11 @@ internal sealed record ProductRequest(Guid OperationId, string? Name, string? Se
 internal sealed record ListItemRequest(
     Guid OperationId, Guid ProductId, decimal Quantity, string? Note, bool Needed, bool Deleted = false, string? Only = null);
 
-internal sealed record OpenPurchaseRequest(Guid OperationId, decimal? Budget);
+/// <param name="FromList">
+/// Falso: a compra começa do zero (nada da lista vira linha nem aparece no mercado). Ausente vale verdadeiro, como antes da
+/// opção existir: uma abertura guardada no aparelho por uma versão anterior segue igual.
+/// </param>
+internal sealed record OpenPurchaseRequest(Guid OperationId, decimal? Budget, bool? FromList = null);
 
 /// <param name="Only">
 /// O que a pessoa mudou na linha: <see cref="ChangedFields.Picked"/> (o toque em "peguei") ou
@@ -37,7 +41,9 @@ internal sealed record PurchaseItemRequest(
     bool Deleted = false,
     string? Only = null,
     DateTimeOffset? At = null,
-    DateTimeOffset? SentAt = null);
+    DateTimeOffset? SentAt = null,
+    decimal? RegularPrice = null,
+    string? PromoNote = null);
 
 internal static class ChangedFields
 {
@@ -79,6 +85,14 @@ internal static class OperationKinds
     public const string PurchaseItem = "purchaseItem";
 }
 
+/// <param name="Token">O segredo do link: aparece só nesta resposta. O banco guarda apenas o hash dele.</param>
+internal sealed record GroupInviteCreatedResponse(Guid Id, string Token, DateTimeOffset ExpiresAt);
+
+/// <summary>Um convite ainda válido do grupo, sem o segredo (que só existiu na criação).</summary>
+internal sealed record GroupInviteResponse(Guid Id, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
+
+internal sealed record AcceptGroupInviteRequest(string? Token);
+
 internal sealed record GroupResponse(Guid Id, Guid OwnerUserId, bool IsOwner);
 
 internal sealed record MemberResponse(Guid UserId, bool IsOwner, bool Deleted, DateTimeOffset CreatedAt);
@@ -100,10 +114,20 @@ internal sealed record PurchaseResponse(
     DateTimeOffset StartedAt,
     DateTimeOffset? ClosedAt,
     bool Deleted,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool FromList = true);
 
 internal sealed record PurchaseItemResponse(
-    Guid Id, Guid PurchaseId, Guid ProductId, decimal Quantity, decimal? UnitPrice, bool Picked, bool Deleted, DateTimeOffset UpdatedAt);
+    Guid Id,
+    Guid PurchaseId,
+    Guid ProductId,
+    decimal Quantity,
+    decimal? UnitPrice,
+    bool Picked,
+    bool Deleted,
+    DateTimeOffset UpdatedAt,
+    decimal? RegularPrice = null,
+    string? PromoNote = null);
 
 /// <summary>Uma compra na listagem, com o total corrente (a soma do que já foi pego e tem preço).</summary>
 internal sealed record PurchaseSummaryResponse(PurchaseResponse Purchase, decimal PickedTotal);
@@ -148,8 +172,19 @@ internal static class ShoppingMapping
             value.StartedAt,
             value.ClosedAt,
             value.DeletedAt is not null,
-            value.UpdatedAt);
+            value.UpdatedAt,
+            value.FromList);
 
     public static PurchaseItemResponse ToResponse(this PurchaseItem value) =>
-        new(value.Id, value.PurchaseId, value.ProductId, value.Quantity, value.UnitPrice, value.Picked, value.DeletedAt is not null, value.UpdatedAt);
+        new(
+            value.Id,
+            value.PurchaseId,
+            value.ProductId,
+            value.Quantity,
+            value.UnitPrice,
+            value.Picked,
+            value.DeletedAt is not null,
+            value.UpdatedAt,
+            value.RegularPrice,
+            value.PromoNote);
 }

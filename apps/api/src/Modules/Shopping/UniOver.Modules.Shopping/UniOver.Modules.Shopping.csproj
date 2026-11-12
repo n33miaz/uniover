@@ -16,6 +16,10 @@
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- A tabela de categorias é a mesma do app: o arquivo de contracts/ entra no assembly, sem cópia. -->
+    <EmbeddedResource Include="..\..\..\..\..\..\contracts\shopping\categories.json" LogicalName="UniOver.Modules.Shopping.categories.json" Link="Domain\categories.json" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="UniOver.Modules.Shopping.Tests" />
     <InternalsVisibleTo Include="UniOver.IntegrationTests" />
   </ItemGroup>

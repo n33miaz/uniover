@@ -161,7 +161,8 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
             AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.CommandDays);
         Strings(sources[0].GetProperty("actions")).Should().Contain(["pairing_approved", "agent_revoked"]);
         Strings(sources[1].GetProperty("actions")).Should().Contain([AuditEvents.PermissionsChanged, AuditEvents.AuditExported]);
-        Strings(sources[2].GetProperty("actions")).Should().Equal("shopping.member.add", "shopping.member.remove");
+        Strings(sources[2].GetProperty("actions")).Should().Equal(
+            "shopping.member.add", "shopping.member.remove", "shopping.member.join", "shopping.invite.create", "shopping.invite.revoke");
         Strings(sources[3].GetProperty("actions")).Should().Contain(["tv.key", "tv.shortcut.update"]);
         // A remoção de uma TV fica sem prazo (só o IP e o aparelho dela seguem os 180 dias): a tela não pode dizer só "30 dias".
         Strings(sources[0].GetProperty("permanentActions")).Should().BeEmpty();

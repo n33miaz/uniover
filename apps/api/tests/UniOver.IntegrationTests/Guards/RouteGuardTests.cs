@@ -435,6 +435,12 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/shopping/import/economize", AccessPermissions.ShoppingModule),
         ("GET", "/api/v1/shopping/import/economize", AccessPermissions.ShoppingModule),
         ("POST", "/api/v1/shopping/import/economize/file", AccessPermissions.ShoppingModule),
+
+        // Convites do grupo: criar, listar e cancelar só para quem criou o grupo (conferido na rota); aceitar, quem tem o módulo.
+        ("POST", "/api/v1/shopping/group/invites", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/group/invites", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/group/invites/{id:guid}/revoke", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/group/invites/accept", AccessPermissions.ShoppingModule),
     ];
 
     /// <summary>

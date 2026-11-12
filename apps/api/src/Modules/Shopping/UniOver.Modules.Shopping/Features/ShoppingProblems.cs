@@ -12,6 +12,8 @@ internal static class ShoppingProblems
     public const string MemberElsewhereType = "shopping-member-in-another-group";
     public const string MembershipChangedType = "shopping-membership-changed";
     public const string PurchaseAlreadyOpenType = "shopping-purchase-already-open";
+    public const string InviteInvalidType = "shopping-invite-invalid";
+    public const string TooManyInvitesType = "shopping-too-many-invites";
 
     /// <summary>O campo extra do problema "já existe uma compra aberta": o id dela, para o aparelho seguir nela.</summary>
     public const string OpenPurchaseIdExtension = "openPurchaseId";
@@ -43,6 +45,15 @@ internal static class ShoppingProblems
 
     public static IResult MembershipChanged() =>
         Conflict(MembershipChangedType, "Você não participa mais deste grupo. Atualize e tente de novo.");
+
+    /// <summary>Convite desconhecido, vencido, usado ou cancelado: a resposta não diz qual.</summary>
+    public static IResult InviteInvalid() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Este convite não vale mais. Peça outro.",
+            type: ProblemDetailsExtensions.TypeBase + InviteInvalidType);
+
+    public static IResult TooManyInvites() => Conflict(TooManyInvitesType, "Há convites demais esperando. Cancele algum antes.");
 
     public static IResult PurchaseAlreadyOpen(Guid id) =>
         Results.Problem(

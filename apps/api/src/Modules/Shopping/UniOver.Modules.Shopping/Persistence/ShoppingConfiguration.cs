@@ -14,7 +14,8 @@ internal sealed class ShoppingConfiguration :
     IEntityTypeConfiguration<ShoppingMergedId>,
     IEntityTypeConfiguration<ShoppingOperation>,
     IEntityTypeConfiguration<ShoppingChange>,
-    IEntityTypeConfiguration<ShoppingMemberAuditEntry>
+    IEntityTypeConfiguration<ShoppingMemberAuditEntry>,
+    IEntityTypeConfiguration<ShoppingGroupInvite>
 {
     /// <summary>As unicidades valem só para o que está vivo: a lápide não impede recriar o mesmo nome ou o mesmo item.</summary>
     private const string Alive = "deleted_at IS NULL";
@@ -73,6 +74,8 @@ internal sealed class ShoppingConfiguration :
         builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Status).HasMaxLength(10);
         builder.Property(x => x.Budget).HasPrecision(12, 2);
+        // As compras de antes da opção vieram todas da lista. A sentinela é `true`: o `false` sempre vai ao banco.
+        builder.Property(x => x.FromList).HasDefaultValue(true).HasSentinel(true);
         builder.Property(x => x.TotalPaid).HasPrecision(12, 2);
         builder.Property(x => x.Store).HasMaxLength(ShoppingLimits.Store);
         builder.Property(x => x.ReceiptKey).HasMaxLength(ShoppingLimits.ReceiptKey);
@@ -91,11 +94,14 @@ internal sealed class ShoppingConfiguration :
         {
             t.HasCheckConstraint("ck_purchase_items_quantity", "quantity > 0");
             t.HasCheckConstraint("ck_purchase_items_unit_price", "unit_price IS NULL OR unit_price >= 0");
+            t.HasCheckConstraint("ck_purchase_items_regular_price", "regular_price IS NULL OR regular_price >= 0");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Quantity).HasPrecision(12, 3);
         builder.Property(x => x.UnitPrice).HasPrecision(12, 2);
+        builder.Property(x => x.RegularPrice).HasPrecision(12, 2);
+        builder.Property(x => x.PromoNote).HasMaxLength(ShoppingLimits.PromoNote);
         builder.HasOne<ShoppingPurchase>().WithMany().HasForeignKey(x => x.PurchaseId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.PurchaseId, x.ProductId }).IsUnique().HasFilter(Alive);
@@ -136,5 +142,16 @@ internal sealed class ShoppingConfiguration :
         builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Event).HasMaxLength(24);
         builder.HasIndex(x => new { x.OccurredAt, x.Id });
+    }
+
+    public void Configure(EntityTypeBuilder<ShoppingGroupInvite> builder)
+    {
+        builder.ToTable("group_invites");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).ValueGeneratedNever();
+        builder.Property(x => x.TokenHash).HasMaxLength(32);
+        builder.HasIndex(x => x.TokenHash).IsUnique();
+        builder.HasIndex(x => x.GroupId);
+        builder.HasOne<ShoppingGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -19,6 +19,8 @@ contracts
 # Os esquemas do agente entram na API como recurso embutido (validação das mensagens).
 !contracts/agent/envelope.schema.json
 !contracts/agent/messages/*.schema.json
+# A tabela de categorias de Compras entra na API como recurso embutido.
+!contracts/shopping/categories.json
 **/.env
 **/.env.*
 *.md

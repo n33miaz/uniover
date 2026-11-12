@@ -11,6 +11,9 @@ internal static class ShoppingAuditEvents
 {
     public const string MemberAdded = "member_added";
     public const string MemberRemoved = "member_removed";
+    public const string MemberJoined = "member_joined";
+    public const string InviteCreated = "invite_created";
+    public const string InviteRevoked = "invite_revoked";
 }
 
 /// <summary>
@@ -22,11 +25,17 @@ internal static class ShoppingAuditActions
 {
     public const string MemberAdd = "shopping.member.add";
     public const string MemberRemove = "shopping.member.remove";
+    public const string MemberJoin = "shopping.member.join";
+    public const string InviteCreate = "shopping.invite.create";
+    public const string InviteRevoke = "shopping.invite.revoke";
 
     private static readonly (string Stored, string Action)[] Map =
     [
         (ShoppingAuditEvents.MemberAdded, MemberAdd),
         (ShoppingAuditEvents.MemberRemoved, MemberRemove),
+        (ShoppingAuditEvents.MemberJoined, MemberJoin),
+        (ShoppingAuditEvents.InviteCreated, InviteCreate),
+        (ShoppingAuditEvents.InviteRevoked, InviteRevoke),
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. Map.Select(m => m.Action)];

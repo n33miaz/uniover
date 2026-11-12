@@ -57,6 +57,9 @@ public sealed class ShoppingPurchase
     public Guid GroupId { get; set; }
     public string Status { get; set; } = Open;
     public decimal? Budget { get; set; }
+
+    /// <summary>Aberta a partir da lista da casa (o que "precisa" vira linha e aparece no mercado) ou do zero.</summary>
+    public bool FromList { get; set; } = true;
     public decimal? TotalPaid { get; set; }
     public string? Store { get; set; }
     public string? ReceiptKey { get; set; }
@@ -75,6 +78,12 @@ public sealed class PurchaseItem
     public Guid ProductId { get; set; }
     public decimal Quantity { get; set; }
     public decimal? UnitPrice { get; set; }
+
+    /// <summary>Na promoção, o preço normal da etiqueta; <see cref="UnitPrice"/> é o que se paga por unidade.</summary>
+    public decimal? RegularPrice { get; set; }
+
+    /// <summary>O texto curto da promoção ("leve 3 pague 2"). Anda junto com o preço.</summary>
+    public string? PromoNote { get; set; }
     public bool Picked { get; set; }
 
     /// <summary>Quando o preço foi informado (o relógio do aparelho, nunca à frente do servidor). Entre dois preços, vale o mais recente.</summary>
@@ -121,6 +130,25 @@ public sealed class ShoppingChange
     public Guid EntityId { get; set; }
     public string Payload { get; set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; set; }
+}
+
+/// <summary>
+/// Convite para entrar no grupo, por link ou QR. O segredo vai só no link (no fragmento); o banco guarda o SHA-256 dele.
+/// Uso único, com prazo, revogável por quem criou o grupo. Aceitar exige a permissão do módulo Compras.
+/// </summary>
+public sealed class ShoppingGroupInvite
+{
+    public Guid Id { get; set; }
+    public Guid GroupId { get; set; }
+    public byte[] TokenHash { get; set; } = [];
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? UsedAt { get; set; }
+    public Guid? UsedBy { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+
+    public bool IsPendingAt(DateTimeOffset now) => UsedAt is null && RevokedAt is null && now < ExpiresAt;
 }
 
 /// <summary>Trilha administrativa: só a entrada ou saída de uma pessoa, nunca os toques da lista ou do mercado.</summary>

@@ -1,0 +1,112 @@
+{
+  "$comment": "Categorias de mercado do módulo Compras, na ordem dos corredores. As palavras-chave estão normalizadas (minúsculas, sem acento); vence a mais longa que aparece inteira no nome do produto, com ou sem plural em s/es. A API (recurso embutido) e o app (cópia conferida por spec) leem esta mesma tabela.",
+  "fallback": "outros",
+  "categories": [
+    {
+      "key": "hortifruti",
+      "label": "Hortifrúti",
+      "keywords": [
+        "abacate", "abacaxi", "abobora", "abobrinha", "acelga", "agriao", "aipim", "alface", "alho", "alho poro",
+        "ameixa", "banana", "batata", "batata doce", "berinjela", "beterraba", "brocolis", "caqui", "cebola",
+        "cebolinha", "cenoura", "cheiro verde", "chuchu", "coentro", "couve", "couve flor", "espinafre", "fruta",
+        "gengibre", "goiaba", "hortela", "inhame", "jilo", "kiwi", "laranja", "legume", "limao", "limoes",
+        "mamao", "mandioca", "mandioquinha", "manga", "manjericao", "maracuja", "maca", "melancia", "melao",
+        "mexerica", "milho verde", "morango", "nectarina", "pepino", "pera", "pessego", "pimentao", "quiabo",
+        "rabanete", "repolho", "rucula", "salsa", "salsinha", "tangerina", "tomate", "uva", "vagem", "verdura"
+      ]
+    },
+    {
+      "key": "padaria",
+      "label": "Padaria",
+      "keywords": [
+        "baguete", "bisnaguinha", "bolo", "broa", "ciabatta", "croissant", "pao", "paes", "pao de forma",
+        "pao de queijo", "pao frances", "pao integral", "rosca", "sonho", "sovado", "torrada"
+      ]
+    },
+    {
+      "key": "mercearia",
+      "label": "Mercearia",
+      "keywords": [
+        "achocolatado", "acucar", "amendoim", "arroz", "atum", "aveia", "azeite", "azeitona", "bala", "biscoito",
+        "bolacha", "batata palha", "cafe", "caldo", "castanha", "cereal", "cha", "chocolate", "creme de leite",
+        "doce de leite", "ervilha", "extrato de tomate", "farinha", "farinha de trigo", "farofa", "feijao",
+        "fermento", "fuba", "gelatina", "geleia", "granola", "grao de bico", "ketchup", "leite condensado",
+        "leite de coco", "leite em po", "lentilha", "macarrao", "macarrao instantaneo", "maionese", "mel", "milho",
+        "miojo", "molho", "molho de tomate", "mostarda", "nescau", "oleo", "oregano", "palmito", "pimenta",
+        "pipoca", "polvilho", "sal", "salgadinho", "sardinha", "sopa", "tapioca", "tempero", "vinagre"
+      ]
+    },
+    {
+      "key": "carnes",
+      "label": "Carnes",
+      "keywords": [
+        "acem", "alcatra", "bacon", "bisteca", "calabresa", "camarao", "carne", "carne moida", "contra file",
+        "costela", "coxa", "coxinha da asa", "cupim", "file", "file de frango", "fraldinha", "frango", "linguica",
+        "lombo", "maminha", "musculo", "patinho", "peito de frango", "peixe", "picanha", "porco", "salmao",
+        "salsicha", "sobrecoxa", "tilapia"
+      ]
+    },
+    {
+      "key": "laticinios",
+      "label": "Laticínios e frios",
+      "keywords": [
+        "coalhada", "cream cheese", "iogurte", "leite", "leite fermentado", "manteiga", "margarina", "mortadela",
+        "mucarela", "mussarela", "nata", "ovo", "parmesao", "peito de peru", "petit suisse", "presunto", "queijo",
+        "queijo ralado", "requeijao", "ricota", "salame"
+      ]
+    },
+    {
+      "key": "congelados",
+      "label": "Congelados",
+      "keywords": [
+        "acai", "batata congelada", "congelado", "congelada", "empanado", "gelo", "hamburguer", "lasanha",
+        "nuggets", "pao de queijo congelado", "picole", "pizza", "polpa", "sorvete"
+      ]
+    },
+    {
+      "key": "bebidas",
+      "label": "Bebidas",
+      "keywords": [
+        "agua", "agua com gas", "agua de coco", "cachaca", "cerveja", "cha gelado", "coca", "coca cola",
+        "energetico", "guarana", "isotonico", "refri", "refrigerante", "suco", "vinho", "vodka", "whisky"
+      ]
+    },
+    {
+      "key": "limpeza",
+      "label": "Limpeza",
+      "keywords": [
+        "agua sanitaria", "alcool", "amaciante", "cloro", "desengordurante", "desinfetante", "detergente",
+        "esponja", "filme plastico", "guardanapo", "inseticida", "lava roupa", "limpa vidro", "lustra moveis",
+        "multiuso", "pano", "papel aluminio", "papel toalha", "rodo", "sabao", "sabao em barra", "sabao em po",
+        "saco de lixo", "tira manchas", "vassoura"
+      ]
+    },
+    {
+      "key": "higiene",
+      "label": "Higiene",
+      "keywords": [
+        "absorvente", "algodao", "aparelho de barbear", "condicionador", "cotonete", "creme dental", "curativo",
+        "desodorante", "enxaguante", "escova de dente", "fio dental", "hidratante", "lamina", "papel higienico",
+        "pasta de dente", "protetor solar", "sabonete", "shampoo", "xampu"
+      ]
+    },
+    {
+      "key": "bebe",
+      "label": "Bebê",
+      "keywords": [
+        "chupeta", "formula infantil", "fralda", "leite infantil", "lenco umedecido", "mamadeira", "papinha",
+        "pomada para assadura"
+      ]
+    },
+    {
+      "key": "pet",
+      "label": "Pet",
+      "keywords": ["areia de gato", "coleira", "petisco", "racao", "sache", "tapete higienico"]
+    },
+    {
+      "key": "outros",
+      "label": "Outros",
+      "keywords": []
+    }
+  ]
+}
