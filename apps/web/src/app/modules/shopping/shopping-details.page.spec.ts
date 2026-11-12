@@ -19,6 +19,7 @@ describe('ShoppingDetailsPage', () => {
     isOwner: boolean;
     revoked: string[];
     createFails: unknown;
+    pending: { id: string; createdAt: string; expiresAt: string }[];
   };
 
   async function render(role: 'owner' | 'guest' = 'owner'): Promise<void> {
@@ -38,6 +39,7 @@ describe('ShoppingDetailsPage', () => {
               if (people.createFails) throw people.createFails;
               return { id: 'inv-1', token: 'segredo_do_convite_123456', expiresAt: '2026-11-19' };
             },
+            invites: async () => people.pending.filter((p) => !people.revoked.includes(p.id)),
             revokeInvite: async (id: string) => {
               people.revoked.push(id);
             },
@@ -66,7 +68,7 @@ describe('ShoppingDetailsPage', () => {
     );
 
   beforeEach(() => {
-    people = { isOwner: true, revoked: [], createFails: null };
+    people = { isOwner: true, revoked: [], createFails: null, pending: [] };
   });
 
   afterEach(() => {
@@ -76,21 +78,46 @@ describe('ShoppingDetailsPage', () => {
 
   it('the group owner makes an invite and shows its QR and link; cancelling drops it', async () => {
     await render();
-    button('Gerar convite')!.click();
+    button('Gerar Convite')!.click();
     await settle();
 
     expect(el.querySelector('app-qr-code svg')).not.toBeNull();
     expect(text()).toContain('Vale 7 dias');
-    button('Cancelar convite')!.click();
+    button('Cancelar Convite')!.click();
     await settle();
     expect(people.revoked).toEqual(['inv-1']);
     expect(el.querySelector('app-qr-code')).toBeNull();
   });
 
+  it('lists the invites still waiting, each with its own Cancelar', async () => {
+    people.pending = [
+      { id: 'inv-a', createdAt: '2026-11-10T12:00:00Z', expiresAt: '2026-11-17T12:00:00Z' },
+      { id: 'inv-b', createdAt: '2026-11-11T12:00:00Z', expiresAt: '2026-11-18T12:00:00Z' },
+    ];
+    await render();
+    expect(text()).toContain('Esperando alguém');
+    const cancels = () => Array.from(el.querySelectorAll<HTMLButtonElement>('.waiting button'));
+    expect(cancels()).toHaveLength(2);
+    expect(cancels()[0].textContent?.trim()).toBe('Cancelar');
+    expect(cancels()[0].getAttribute('aria-label')).toContain('Cancelar o convite que vale até');
+
+    cancels()[0].click();
+    await settle();
+    expect(people.revoked).toEqual(['inv-a']);
+    expect(cancels()).toHaveLength(1);
+  });
+
+  it('a member who did not create the group is not asked for the invites', async () => {
+    people.isOwner = false;
+    people.pending = [{ id: 'inv-a', createdAt: '2026-11-10', expiresAt: '2026-11-17' }];
+    await render('guest');
+    expect(el.querySelector('.waiting')).toBeNull();
+  });
+
   it('says plainly when there are too many invites waiting', async () => {
     people.createFails = new ApiProblem(409, 'shopping-too-many-invites', 'x');
     await render();
-    button('Gerar convite')!.click();
+    button('Gerar Convite')!.click();
     await settle();
     expect(text()).toContain('Há convites demais esperando');
   });
@@ -98,7 +125,7 @@ describe('ShoppingDetailsPage', () => {
   it('a member who did not create the group sees no invite, and a guest sees no Economize', async () => {
     people.isOwner = false;
     await render('guest');
-    expect(button('Gerar convite')).toBeUndefined();
+    expect(button('Gerar Convite')).toBeUndefined();
     expect(text()).not.toContain('Economize');
   });
 
@@ -148,7 +175,7 @@ describe('ShoppingDetailsPage', () => {
     await settle();
 
     expect(button('Buscar no Economize')).toBeUndefined();
-    expect(text()).toContain('Escolher arquivo');
+    expect(text()).toContain('Escolher Arquivo');
   });
 
   it.each([

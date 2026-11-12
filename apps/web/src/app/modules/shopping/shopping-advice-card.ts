@@ -77,33 +77,37 @@ export function formatBestDay(iso: string): string {
       text-align: center;
     }
     .card {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      justify-content: space-between;
-      gap: var(--space-2) var(--space-3);
-      padding: var(--space-3) var(--space-4);
-      border-radius: var(--radius-lg);
+      gap: 2px var(--space-3);
+      padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+      border-radius: var(--radius);
       background: var(--a-accent-soft);
       color: var(--a-accent-ink);
+      font-size: var(--fs-small);
     }
     .free {
       display: flex;
-      flex-direction: column;
-      font-size: var(--fs-small);
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0 var(--space-2);
     }
     .free strong {
-      font-size: var(--fs-title);
+      font-size: var(--fs-body);
     }
     .money {
       font-variant-numeric: tabular-nums;
     }
     .day {
-      flex: 1 1 100%;
-      font-size: var(--fs-small);
+      grid-column: 1;
     }
     .use {
+      grid-column: 2;
+      grid-row: 1 / span 2;
       min-height: 36px;
+      padding: 0 var(--space-3);
+      font-size: var(--fs-small);
     }
   `,
 })

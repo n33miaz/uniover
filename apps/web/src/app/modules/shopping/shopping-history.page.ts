@@ -11,7 +11,7 @@ import { closedPurchases, purchaseLines, type MarketRow, type Purchase } from '.
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrls: ['./shopping-screen.css', './shopping-history.page.css'],
   template: `
-    <section class="screen" [attr.data-screen-ready]="'shopping-history'">
+    <section class="screen" [attr.data-screen-ready]="'shopping'">
       <ul class="ui-group">
         @for (past of history(); track past.id) {
           <li>

@@ -115,7 +115,7 @@ describe('Compras: the screens', () => {
       ).toBe(3);
 
       // O primeiro "Já tenho" é o das bananas (o hortifrúti vem primeiro).
-      button('Já tenho').click();
+      button('Já Tenho').click();
       await settle();
       expect(labels()).toEqual(['Padaria', 'Laticínios e frios']);
     });
@@ -146,10 +146,10 @@ describe('Compras: the screens', () => {
   describe('the market', () => {
     it('asks first: the list or from scratch', async () => {
       await mount(ShoppingMarketPage);
-      expect(text()).toContain('Usar a lista');
+      expect(text()).toContain('Usar a Lista');
       expect(text()).toContain('2 itens para pegar');
 
-      button('Começar do zero').click();
+      button('Começar do Zero').click();
       await settle();
       const purchase = openPurchase(store.snapshot())!;
       expect(purchase.fromList).toBe(false);
@@ -159,7 +159,7 @@ describe('Compras: the screens', () => {
 
     it('one field puts item, quantity and price, already picked, and the total follows', async () => {
       await mount(ShoppingMarketPage);
-      button('Usar a lista').click();
+      button('Usar a Lista').click();
       await settle();
 
       await type('input[name="entry"]', 'arroz 2x 12,90');
@@ -173,9 +173,57 @@ describe('Compras: the screens', () => {
       expect(text()).toContain('No carrinho');
     });
 
+    it('shows the line total before adding, and a package weight stays in the name', async () => {
+      await mount(ShoppingMarketPage);
+      button('Começar do Zero').click();
+      await settle();
+
+      await type('input[name="entry"]', 'banana 1,2kg 6,99');
+      expect(el.querySelector('.preview')?.textContent).toContain('total R$');
+      expect(el.querySelector('.preview')?.textContent).toContain('8,39');
+      await type('input[name="entry"]', 'arroz 5kg 24,90');
+      expect(el.querySelector('.preview')?.textContent).toContain('Arroz 5kg');
+      expect(el.querySelector('.preview')?.textContent).toContain('24,90');
+      await submit('form.ui-action-bar');
+
+      const purchase = openPurchase(store.snapshot())!;
+      const rice = marketRows(store.snapshot(), purchase).find(
+        (r) => r.product.name === 'Arroz 5kg',
+      )!;
+      expect(rice).toMatchObject({ quantity: 1, unitPrice: 24.9, picked: true });
+      expect(rice.product.unit ?? null).toBeNull();
+      expect(el.querySelector('.total strong')?.textContent).toContain('24,90');
+
+      await type('input[name="entry"]', 'pão 10');
+      await submit('form.ui-action-bar');
+      const bread = marketRows(store.snapshot(), purchase).find((r) => r.product.name === 'Pão')!;
+      expect(bread).toMatchObject({ quantity: 10, unitPrice: null });
+    });
+
+    it('refuses a regular price that is not above the price paid', async () => {
+      await mount(ShoppingMarketPage);
+      button('Usar a Lista').click();
+      await settle();
+
+      el.querySelector<HTMLButtonElement>('button.price')!.click();
+      await settle();
+      const dialog = el.querySelector('dialog')!;
+      await type('#shopping-sheet-price', '5,49');
+      Array.from(dialog.querySelectorAll('button'))
+        .find((b) => b.textContent!.trim() === 'Promoção')!
+        .click();
+      fixture.detectChanges();
+      await type('dialog input[aria-label="Preço normal"]', '4,99');
+      await submit('dialog form');
+
+      expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('maior que o de agora');
+      const purchase = openPurchase(store.snapshot())!;
+      expect(marketRows(store.snapshot(), purchase).every((r) => r.unitPrice === null)).toBe(true);
+    });
+
     it('typing an item that came from the list picks it, keeping the list quantity', async () => {
       await mount(ShoppingMarketPage);
-      button('Usar a lista').click();
+      button('Usar a Lista').click();
       await settle();
 
       await type('input[name="entry"]', 'leite 5,49');
@@ -189,7 +237,7 @@ describe('Compras: the screens', () => {
 
     it('a tap on the item picks it; the price opens the sheet with the promotion', async () => {
       await mount(ShoppingMarketPage);
-      button('Usar a lista').click();
+      button('Usar a Lista').click();
       await settle();
 
       el.querySelector<HTMLButtonElement>('button.pick')!.click();
@@ -219,7 +267,7 @@ describe('Compras: the screens', () => {
 
     it('closes the purchase with the total and goes to the history', async () => {
       await mount(ShoppingMarketPage);
-      button('Usar a lista').click();
+      button('Usar a Lista').click();
       await settle();
       await type('input[name="entry"]', 'leite 5,49');
       await submit('form.ui-action-bar');
