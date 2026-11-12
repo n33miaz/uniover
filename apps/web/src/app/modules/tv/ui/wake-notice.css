@@ -1,0 +1,59 @@
+:host {
+  display: contents;
+}
+
+/* O mesmo lugar do recado da permissão do ADB (logo abaixo do cabeçalho), que tem a vez quando aparece. */
+.notice {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + var(--gutter) + var(--tap) + 10px);
+  right: var(--gutter);
+  left: var(--gutter);
+  z-index: 6;
+  box-sizing: border-box;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 10px 14px;
+  border: 1px solid var(--a-line);
+  border-left: 4px solid var(--a-warn);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-2);
+  color: var(--a-ink);
+  font-size: 0.92rem;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.notice .ui-btn {
+  flex: 0 0 auto;
+}
+@starting-style {
+  .notice {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.notice-leave {
+  animation: notice-out var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes notice-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice {
+    transition: none;
+  }
+  .notice-leave {
+    animation: none;
+  }
+}

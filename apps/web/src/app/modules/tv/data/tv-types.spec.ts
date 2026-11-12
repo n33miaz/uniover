@@ -79,6 +79,19 @@ describe('parseState', () => {
     ).toBeNull();
   });
 
+  it('keeps only the known wake hints, from a connected agent, and leaves the field out when empty', () => {
+    expect(parseState({ ...base, wakeHints: ['replug', 'screenless_off'] })?.wakeHints).toEqual([
+      'replug',
+      'screenless_off',
+    ]);
+    expect(parseState({ ...base, wakeHints: ['network_standby_off', 3] })).not.toHaveProperty(
+      'wakeHints',
+    );
+    expect(
+      parseState({ ...base, agentOnline: false, wakeHints: ['screenless_off'] }),
+    ).not.toHaveProperty('wakeHints');
+  });
+
   it('carries the offline instant only while the agent is off', () => {
     const since = '2026-10-28T22:24:00Z';
     expect(parseState({ ...base, agentOnline: false, offlineSince: since })?.offlineSince).toBe(

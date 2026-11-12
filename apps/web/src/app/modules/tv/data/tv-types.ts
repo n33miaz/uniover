@@ -27,6 +27,12 @@ export type TvPower = 'on' | 'off' | 'unknown';
  */
 export type AdbPermission = 'granted' | 'missing' | 'pending';
 
+/**
+ * Avisos de ligar a TV pela rede (só TV TCL, `tv.state.v1`): `screenless_off` é o "Screenless service" desligado na TV;
+ * `replug` é ligar pela rede que ficou sem resposta, numa TV que liga sozinha quando a energia volta.
+ */
+export type TvWakeHint = 'screenless_off' | 'replug';
+
 /** O estado já normalizado: o gerador tipa `volume` como número ou texto e `connection`/`power` como texto livre. */
 export interface TvState {
   readonly power: TvPower;
@@ -41,6 +47,8 @@ export interface TvState {
   readonly adbPermission?: AdbPermission | null;
   /** O motivo do agente quando a permissão falta (`tv_forgot`: a TV esqueceu uma que tinha dado); texto curto e fixo. */
   readonly adbPermissionReason?: string | null;
+  /** Os avisos de ligar pela rede; ausente quando não há nada a avisar (ou o agente está fora). */
+  readonly wakeHints?: readonly TvWakeHint[];
 }
 
 /** Tipo da TV, como o agente a declara: muda o que o controle oferece (a Samsung não tem teclado nem limpeza). */
@@ -187,6 +195,15 @@ function toAdbReason(value: unknown, agentOnline: boolean): string | null {
   return agentOnline && typeof value === 'string' && /^[a-z_]{1,32}$/.test(value) ? value : null;
 }
 
+function toWakeHints(value: unknown, agentOnline: boolean): readonly TvWakeHint[] {
+  if (!agentOnline || !Array.isArray(value)) return [];
+  // Um aviso que esta versão não conhece fica de fora: nunca vira texto na tela.
+  const known = value.filter(
+    (item): item is TvWakeHint => item === 'screenless_off' || item === 'replug',
+  );
+  return [...new Set(known)];
+}
+
 function toPower(value: unknown): TvPower {
   return value === 'on' || value === 'off' ? value : 'unknown';
 }
@@ -209,6 +226,7 @@ export function parseState(value: unknown): TvState | null {
   if (!value || typeof value !== 'object') return null;
   const dto = value as Partial<TvStateDto>;
   const agentOnline = dto.agentOnline === true;
+  const wakeHints = toWakeHints((dto as { wakeHints?: unknown }).wakeHints, agentOnline);
   return {
     power: toPower(dto.power),
     volume: agentOnline ? toVolume(dto.volume) : null,
@@ -219,6 +237,7 @@ export function parseState(value: unknown): TvState | null {
     offlineSince: !agentOnline && typeof dto.offlineSince === 'string' ? dto.offlineSince : null,
     adbPermission: toAdbPermission(dto.adbPermission, agentOnline),
     adbPermissionReason: toAdbReason(dto.adbPermissionReason, agentOnline),
+    ...(wakeHints.length > 0 ? { wakeHints } : {}),
   };
 }
 

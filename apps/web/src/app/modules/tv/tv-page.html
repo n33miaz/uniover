@@ -196,6 +196,11 @@
   <app-tv-adb-permission />
 }
 
+@if (access.control() && !store.pcOff()) {
+  <!-- Ligar pela rede (TV TCL): o ajuste que falta na TV, ou tirar da tomada quando ela não ligou. -->
+  <app-tv-wake-notice />
+}
+
 @if (menuOpen() && hasMenu()) {
   <app-tv-panel #menuPanel [heading]="menuTitle" [opener]="menuOpener()" (closed)="menuClosed()">
     <app-tv-menu [appsLabel]="appsTitle()" (choose)="chooseFromMenu($event, menuPanel)" />
