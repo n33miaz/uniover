@@ -416,6 +416,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
     [
         ("GET", "/api/v1/shopping/group", AccessPermissions.ShoppingModule),
         ("GET", "/api/v1/shopping/group/members", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/group/people", AccessPermissions.ShoppingModule),
         ("POST", "/api/v1/shopping/group/leave", AccessPermissions.ShoppingModule),
         ("GET", "/api/v1/shopping/changes", AccessPermissions.ShoppingModule),
         ("GET", "/api/v1/shopping/purchases", AccessPermissions.ShoppingModule),

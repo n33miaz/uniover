@@ -32,6 +32,14 @@
     @if (notice(); as text) {
       <p class="ui-notice warn" role="alert">{{ text }}</p>
     }
+    @if (syncNotice(); as text) {
+      <p class="ui-notice warn sync-notice" role="alert">
+        <span>{{ text }}</span>
+        <button type="button" class="ui-btn" (click)="dismiss()" i18n="@@shopping.notice.dismiss">
+          Entendi
+        </button>
+      </p>
+    }
 
     @switch (view()) {
       @case ('list') {
@@ -82,6 +90,14 @@
             Compras anteriores
           </button>
         }
+        <button
+          type="button"
+          class="ui-btn block"
+          (click)="show('people')"
+          i18n="@@shopping.people.open"
+        >
+          Pessoas
+        </button>
 
         <form class="ui-action-bar" (submit)="$event.preventDefault(); add()">
           <div class="ui-action-bar-inner">
@@ -168,7 +184,7 @@
 
           @if (waiting()) {
             <p class="ui-notice" i18n="@@shopping.market.waiting">
-              A compra começa quando o sinal voltar.
+              Guardado no aparelho. Vai quando o sinal voltar.
             </p>
           }
 
@@ -179,8 +195,7 @@
                   type="button"
                   class="pick"
                   [attr.aria-pressed]="row.picked"
-                  [disabled]="waiting()"
-                  (click)="toggle(row)"
+                  (click)="toggle(row, priceInput)"
                 >
                   <span class="check" aria-hidden="true"></span>
                   <span class="ui-row-text">
@@ -202,9 +217,9 @@
                   autocomplete="off"
                   placeholder="R$"
                   i18n-placeholder="@@shopping.price.placeholder"
-                  [disabled]="waiting()"
                   [value]="row.unitPrice ?? ''"
                   (change)="price(row, priceInput)"
+                  (blur)="price(row, priceInput)"
                   [attr.aria-label]="priceLabel + ' ' + row.product.name"
                 />
               </li>
@@ -235,18 +250,20 @@
                 maxlength="80"
               />
             </div>
-            <button
-              type="submit"
-              class="ui-btn primary block"
-              [disabled]="waiting()"
-              i18n="@@shopping.finish"
-            >
+            <button type="submit" class="ui-btn primary block" i18n="@@shopping.finish">
               Fechar a compra
             </button>
           </form>
         } @else {
           <p class="empty" i18n="@@shopping.market.none">Nenhuma compra aberta.</p>
         }
+      }
+
+      @case ('people') {
+        <button type="button" class="ui-btn" (click)="show('list')" i18n="@@shopping.back">
+          Voltar à lista
+        </button>
+        <app-shopping-people (changed)="retry()" />
       }
 
       @case ('history') {

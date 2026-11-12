@@ -78,6 +78,34 @@
   <fieldset class="group">
     <legend class="legend">
       <span class="legend-in">
+        <app-settings-glyph name="cart" />
+        <span i18n="@@settings.people.group-shopping">Compras</span>
+      </span>
+    </legend>
+    <ul class="ui-group switches">
+      <li>
+        <label class="option">
+          <span class="option-text">
+            <span class="option-title">{{ optionText(shoppingModule) }}</span>
+            <span class="option-sub" i18n="@@settings.people.option.shopping-hint"
+              >Lista da casa e idas ao mercado.</span
+            >
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="has(shoppingModule)"
+            (change)="toggle(shoppingModule, $event)"
+          />
+        </label>
+      </li>
+    </ul>
+  </fieldset>
+
+  <fieldset class="group">
+    <legend class="legend">
+      <span class="legend-in">
         <app-settings-glyph name="desktop" />
         <span i18n="@@settings.people.group-pc">Controle do PC</span>
       </span>

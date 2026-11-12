@@ -20,6 +20,11 @@
   display: none;
 }
 
+.sync-notice {
+  align-items: center;
+  justify-content: space-between;
+}
+
 .block {
   display: flex;
   flex-direction: column;
@@ -146,11 +151,6 @@ ul {
   font: inherit;
   text-align: start;
   cursor: pointer;
-}
-
-.pick:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 .check {

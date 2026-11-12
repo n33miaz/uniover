@@ -1,4 +1,6 @@
 import {
+  adoptPurchase,
+  alignLines,
   applyChanges,
   budgetState,
   classifyResult,
@@ -279,4 +281,54 @@ describe('classifyResult', () => {
       expect(classifyResult(status)).toBe('retry');
     },
   );
+});
+
+describe('a purchase opened on the device, settled with the server', () => {
+  const line = { productId: 'milk', quantity: 1, unitPrice: null, picked: true };
+
+  it('does not show a second open purchase when the group already has one', () => {
+    const server = applyChanges(house(), [
+      change('purchase', 'theirs', { status: 'open', deleted: false }),
+    ]);
+    const snapshot = project(server, [operation('openPurchase', 'mine', {})]);
+
+    expect([...snapshot.purchases.keys()]).toEqual(['theirs']);
+  });
+
+  it('moves the items and the ceiling to the purchase of the server, and leaves the closing out', () => {
+    const item = operation('purchaseItem', 'local-milk', line, 'mine');
+    const budget = operation('budget', 'mine', { budget: 50 });
+    const close = operation('closePurchase', 'mine', { totalPaid: 10 });
+    const other = operation('listItem', 'li-milk', { productId: 'milk', needed: false });
+
+    const { changed, dropped } = adoptPurchase([item, budget, close, other], 'mine', 'theirs');
+
+    expect(changed).toEqual([
+      { ...item, purchaseId: 'theirs' },
+      { ...budget, entityId: 'theirs' },
+    ]);
+    expect(dropped).toEqual([close]);
+  });
+
+  it('puts a line made here on the line the server has for the same product', () => {
+    const server = applyChanges(house(), [
+      change('purchase', 'p1', { status: 'open', deleted: false }),
+      change('purchaseItem', 'server-milk', { ...line, purchaseId: 'p1', picked: false }),
+    ]);
+    const mine = operation('purchaseItem', 'local-milk', line, 'p1');
+    const known = operation('purchaseItem', 'server-milk', line, 'p1');
+
+    expect(alignLines(server, [mine, known])).toEqual([{ ...mine, entityId: 'server-milk' }]);
+  });
+
+  it('keeps one line per product when the server has none, and waits while the purchase is not there', () => {
+    const server = applyChanges(house(), [
+      change('purchase', 'p1', { status: 'open', deleted: false }),
+    ]);
+    const first = operation('purchaseItem', 'a', { ...line, productId: 'rice' }, 'p1');
+    const second = operation('purchaseItem', 'b', { ...line, productId: 'rice' }, 'p1');
+    const waiting = operation('purchaseItem', 'c', line, 'not-yet');
+
+    expect(alignLines(server, [first, second, waiting])).toEqual([{ ...second, entityId: 'a' }]);
+  });
 });

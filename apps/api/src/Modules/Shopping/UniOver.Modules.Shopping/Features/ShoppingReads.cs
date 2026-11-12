@@ -20,6 +20,7 @@ internal static class ShoppingReads
     {
         group.MapGet("/group", GroupAsync).Read().Produces<GroupResponse>();
         group.MapGet("/group/members", MembersAsync).Read().Produces<IReadOnlyList<MemberResponse>>();
+        group.MapGet("/group/people", PeopleAsync).Read().Produces<IReadOnlyList<PersonResponse>>();
         group.MapGet("/changes", ChangesAsync).Read().Produces<ChangesResponse>().ProducesProblem(StatusCodes.Status400BadRequest);
         group.MapGet("/purchases", PurchasesAsync).Read().Produces<IReadOnlyList<PurchaseSummaryResponse>>();
         group.MapGet("/products/{id:guid}/last-price", LastPriceAsync).Read().Produces<LastPriceResponse>().Produces(StatusCodes.Status204NoContent);
@@ -57,6 +58,44 @@ internal static class ShoppingReads
             .ThenBy(x => x.UserId)
             .ToListAsync(cancellationToken);
         return TypedResults.Ok(members.Select(x => x.ToResponse()).ToList());
+    }
+
+    /// <summary>
+    /// As pessoas do grupo, pelo nome, para a tela de pessoas. Quem criou o grupo recebe também quem pode ser incluído
+    /// (contas com a permissão do módulo que não estão neste grupo); os demais só veem quem já participa.
+    /// </summary>
+    private static async Task<IResult> PeopleAsync(
+        ICurrentUser current, ShoppingGroupService groups, ShoppingDbContext db, IAccountDirectory accounts, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return ShoppingProblems.Unauthenticated();
+        }
+
+        var self = await groups.GetForUserAsync(userId, cancellationToken);
+        var members = await db.Members.AsNoTracking()
+            .Where(x => x.GroupId == self.GroupId && x.DeletedAt == null)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.UserId)
+            .Select(x => new { x.UserId, x.IsOwner })
+            .ToListAsync(cancellationToken);
+
+        var ids = members.Select(x => x.UserId).ToList();
+        var names = (await accounts.NamesAsync(ids, cancellationToken)).ToDictionary(x => x.UserId, x => x.DisplayName);
+        var people = members
+            .Select(x => new PersonResponse(x.UserId, names.GetValueOrDefault(x.UserId, string.Empty), x.IsOwner, true))
+            .ToList();
+
+        if (self.IsOwner)
+        {
+            var inGroup = ids.ToHashSet();
+            var candidates = await accounts.WithPermissionAsync(AccessPermissions.ShoppingModule, cancellationToken);
+            people.AddRange(candidates
+                .Where(x => !inGroup.Contains(x.UserId))
+                .Select(x => new PersonResponse(x.UserId, x.DisplayName, false, false)));
+        }
+
+        return TypedResults.Ok((IReadOnlyList<PersonResponse>)people);
     }
 
     /// <summary>

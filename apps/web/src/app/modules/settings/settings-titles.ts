@@ -51,8 +51,18 @@ export function permissionLabels(permissions: readonly string[]): readonly strin
   if (has('module:training')) {
     labels.push($localize`:@@settings.permission.training:Usar o Treino`);
   }
+  if (has('module:shopping')) {
+    labels.push($localize`:@@settings.permission.shopping:Usar as Compras`);
+  }
   if (has('module:pc')) labels.push($localize`:@@settings.permission.pc:Controlar o PC`);
-  const known = new Set(['module:tv', ...tvActions, 'tv:history', 'module:training', 'module:pc']);
+  const known = new Set([
+    'module:tv',
+    ...tvActions,
+    'tv:history',
+    'module:training',
+    'module:shopping',
+    'module:pc',
+  ]);
   if (permissions.some((permission) => !known.has(permission))) {
     labels.push($localize`:@@settings.permission.additional:Permissão adicional`);
   }

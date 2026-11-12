@@ -134,7 +134,7 @@ public sealed class ShoppingIsolationTests(PostgresFixture postgres)
         var outsider = new ShoppingClient(app, (await app.NewGuestAsync("Sem compras", TrainingOnly, 97)).Login.AccessToken);
         var id = Guid.NewGuid();
 
-        foreach (var path in new[] { "/group", "/group/members", "/changes", "/purchases", $"/products/{id}/last-price" })
+        foreach (var path in new[] { "/group", "/group/members", "/group/people", "/changes", "/purchases", $"/products/{id}/last-price" })
         {
             using var response = await outsider.GetAsync(path);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden, path);
@@ -143,6 +143,7 @@ public sealed class ShoppingIsolationTests(PostgresFixture postgres)
         foreach (var (method, path) in new[]
         {
             (HttpMethod.Put, $"/group/members/{id}"),
+            (HttpMethod.Post, "/group/leave"),
             (HttpMethod.Put, $"/products/{id}"),
             (HttpMethod.Put, $"/list-items/{id}"),
             (HttpMethod.Post, $"/purchases/{id}/open"),
@@ -160,6 +161,51 @@ public sealed class ShoppingIsolationTests(PostgresFixture postgres)
 
         await using var db = TrainingApp.CreateShoppingContext(app.Database.OwnerConnection);
         (await db.Groups.CountAsync(Ct)).Should().Be(0, "quem não tem a permissão não chega a ganhar um grupo");
+    }
+
+    [Fact]
+    public async Task ThePeopleOfTheGroup_ComeByName_AndOnlyTheOwnerSeesWhoCanBeAdded()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var ownerLogin = await app.LoginAsync();
+        var ownerId = TrainingApp.UserIdOf(ownerLogin);
+        var owner = new ShoppingClient(app, ownerLogin.AccessToken);
+        var memberSession = await app.NewGuestAsync("Raphael", Shopping, 87);
+        var member = new ShoppingClient(app, memberSession.Login.AccessToken);
+        var candidateSession = await app.NewGuestAsync("Carla", Shopping, 88);
+        var outsiderSession = await app.NewGuestAsync("Só treino", TrainingOnly, 89);
+        await ShoppingClient.OkAsync(owner.WriteAsync(HttpMethod.Put, $"/group/members/{memberSession.UserId}", []));
+
+        // Quem criou o grupo vê quem participa e quem pode entrar: só contas com a permissão do módulo.
+        var people = (await ShoppingClient.OkAsync(owner.GetAsync("/group/people"))).EnumerateArray()
+            .Select(x => (
+                Id: x.GetProperty("userId").GetGuid(),
+                Name: x.GetProperty("name").GetString(),
+                IsOwner: x.GetProperty("isOwner").GetBoolean(),
+                IsMember: x.GetProperty("isMember").GetBoolean()))
+            .ToList();
+        people.Should().HaveCount(3);
+        people[0].Should().Match<(Guid Id, string? Name, bool IsOwner, bool IsMember)>(x => x.Id == ownerId && x.IsOwner && x.IsMember);
+        people[0].Name.Should().NotBeNullOrWhiteSpace();
+        people[1].Should().Be((memberSession.UserId, "Raphael", false, true));
+        people[2].Should().Be((candidateSession.UserId, "Carla", false, false));
+        people.Should().NotContain(x => x.Id == outsiderSession.UserId, "quem não tem a permissão não pode ser incluído");
+
+        // A resposta só carrega o id e o nome: nada de e-mail, papel ou permissões.
+        var raw = await ShoppingClient.OkAsync(owner.GetAsync("/group/people"));
+        raw.EnumerateArray().Should().OnlyContain(x => x.EnumerateObject().Count() == 4);
+
+        // Quem só participa vê as pessoas do grupo, nunca a lista de quem poderia entrar.
+        var seenByMember = (await ShoppingClient.OkAsync(member.GetAsync("/group/people"))).EnumerateArray()
+            .Select(x => x.GetProperty("userId").GetGuid())
+            .ToList();
+        seenByMember.Should().Equal(ownerId, memberSession.UserId);
+
+        // Retirada, a pessoa volta a ser alguém que pode entrar; e no grupo novo dela é ela quem cria.
+        await ShoppingClient.OkAsync(owner.WriteAsync(HttpMethod.Put, $"/group/members/{memberSession.UserId}", new() { ["deleted"] = true }));
+        var after = (await ShoppingClient.OkAsync(owner.GetAsync("/group/people"))).EnumerateArray().ToList();
+        after.Where(x => x.GetProperty("isMember").GetBoolean()).Select(x => x.GetProperty("userId").GetGuid()).Should().Equal(ownerId);
+        after.Where(x => !x.GetProperty("isMember").GetBoolean()).Select(x => x.GetProperty("name").GetString()).Should().Equal("Carla", "Raphael");
     }
 
     [Fact]

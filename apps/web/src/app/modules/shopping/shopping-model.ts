@@ -145,7 +145,8 @@ export function applyOperation(snapshot: Snapshot, operation: PendingOperation):
       });
     case 'openPurchase':
       // As linhas da compra nascem no servidor; até ele responder, a compra aparece aberta e as linhas saem da lista.
-      return snapshot.purchases.has(id)
+      // Com outra compra já aberta no grupo, esta não aparece: o servidor só aceita uma, e é nela que tudo vai parar.
+      return snapshot.purchases.has(id) || openPurchase(snapshot)
         ? snapshot
         : withEntity(snapshot, 'purchase', {
             id,
@@ -356,6 +357,63 @@ export function parseMoney(text: string): number | undefined | null {
   if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null;
   const value = Number(clean);
   return value <= MAX_MONEY ? value : null;
+}
+
+/** O `type` (sufixo) com que o servidor recusa abrir uma compra quando o grupo já tem uma aberta. */
+export const PURCHASE_ALREADY_OPEN = 'shopping-purchase-already-open';
+
+/**
+ * As escritas de uma compra aberta neste aparelho, passadas para a compra que o servidor já tinha aberta: os itens e o
+ * teto mudam de compra; o fechamento não vai junto (`dropped`), para ninguém fechar sem ver uma compra que é de todos.
+ */
+export function adoptPurchase(
+  pending: readonly PendingOperation[],
+  localId: string,
+  serverId: string,
+): {
+  readonly changed: readonly PendingOperation[];
+  readonly dropped: readonly PendingOperation[];
+} {
+  const changed: PendingOperation[] = [];
+  const dropped: PendingOperation[] = [];
+  for (const operation of pending) {
+    if (operation.kind === 'purchaseItem' && operation.purchaseId === localId) {
+      changed.push({ ...operation, purchaseId: serverId });
+    } else if (operation.kind === 'budget' && operation.entityId === localId) {
+      changed.push({ ...operation, entityId: serverId });
+    } else if (operation.kind === 'closePurchase' && operation.entityId === localId) {
+      dropped.push(operation);
+    }
+  }
+  return { changed, dropped };
+}
+
+/**
+ * As linhas de compra criadas neste aparelho, postas sobre as do servidor: uma compra tem uma linha por produto, e as
+ * linhas nascem no servidor quando a compra abre. Uma escrita cuja linha o servidor não conhece passa a usar a linha
+ * que ele tem para o mesmo produto; sem linha lá, todas as escritas do produto usam o id da primeira. Só entram as
+ * compras que o servidor já confirmou (a que ainda espera a abertura na fila fica como está).
+ */
+export function alignLines(
+  server: Snapshot,
+  pending: readonly PendingOperation[],
+): readonly PendingOperation[] {
+  const serverLine = new Map<string, string>();
+  for (const line of server.purchaseItems.values()) {
+    if (!line.deleted) serverLine.set(`${line.purchaseId}|${line.productId}`, line.id);
+  }
+  const first = new Map<string, string>();
+  const changed: PendingOperation[] = [];
+  for (const operation of pending) {
+    if (operation.kind !== 'purchaseItem' || !operation.purchaseId) continue;
+    if (!server.purchases.has(operation.purchaseId)) continue;
+    if (server.purchaseItems.has(operation.entityId)) continue;
+    const key = `${operation.purchaseId}|${String(operation.body['productId'])}`;
+    const target = serverLine.get(key) ?? first.get(key) ?? operation.entityId;
+    first.set(key, target);
+    if (target !== operation.entityId) changed.push({ ...operation, entityId: target });
+  }
+  return changed;
 }
 
 export type OperationOutcome = 'applied' | 'refused' | 'retry';
