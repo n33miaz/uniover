@@ -288,7 +288,12 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
         };
       });
     expect(await style(back)).toEqual(await style(powerButton(page)));
-    expect(await style(menuButton(page))).toEqual(await style(powerButton(page)));
+    // Os três pontos ficam sem fundo e sem contorno, como o ponto de estado à direita; o alvo segue com 44 px.
+    expect(await style(menuButton(page))).toEqual({
+      ...(await style(powerButton(page))),
+      border: 'rgba(0, 0, 0, 0)',
+      background: 'rgba(0, 0, 0, 0)',
+    });
 
     await screenshot(page, `test-results/tv-header-default-${info.project.name}.png`);
   });
@@ -1587,7 +1592,7 @@ async function openTvAsGuest(page: Page) {
 const settingsButton = (page: Page) => header(page).getByRole('link', { name: 'Configurações' });
 
 test.describe('cabeçalho da convidada: o mesmo topo do dono, sem engrenagem', () => {
-  test('a seta, os três pontos e o desligar são os mesmos círculos de 44 px; não há botão de configurações', async ({
+  test('a seta, os três pontos (sem fundo) e o desligar são alvos de 44 px; não há botão de configurações', async ({
     page,
   }, info) => {
     await openTvAsGuest(page);
@@ -1611,8 +1616,12 @@ test.describe('cabeçalho da convidada: o mesmo topo do dono, sem engrenagem', (
           radius: css.borderTopLeftRadius,
         };
       });
-    expect(await style(back)).toEqual(await style(menuButton(page)));
-    expect(await style(powerButton(page))).toEqual(await style(menuButton(page)));
+    expect(await style(back)).toEqual(await style(powerButton(page)));
+    expect(await style(menuButton(page))).toEqual({
+      ...(await style(powerButton(page))),
+      border: 'rgba(0, 0, 0, 0)',
+      background: 'rgba(0, 0, 0, 0)',
+    });
     await expectTitleCentered(page);
 
     await screenshot(page, `test-results/tv-header-guest-${info.project.name}.png`);
