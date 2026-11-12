@@ -13,7 +13,7 @@
 }
 
 .error {
-  color: var(--a-danger, #a32929);
+  color: var(--a-bad-ink);
 }
 
 .choice-group {

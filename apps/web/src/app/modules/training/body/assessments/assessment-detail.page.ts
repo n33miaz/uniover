@@ -441,7 +441,7 @@ import { AssessmentDetailSkeleton } from './assessment-skeletons';
       background: var(--a-surface-2);
     }
     .danger {
-      color: var(--a-danger, #a11);
+      color: var(--a-bad-ink);
       background: transparent;
     }
     .status {
@@ -508,7 +508,7 @@ import { AssessmentDetailSkeleton } from './assessment-skeletons';
     }
     .transfer-error {
       margin: 0;
-      color: var(--a-danger, #a11);
+      color: var(--a-bad-ink);
       font-size: var(--fs-small);
     }
     .transfer-actions {
