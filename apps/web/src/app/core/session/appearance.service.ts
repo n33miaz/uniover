@@ -18,6 +18,9 @@ export function themePreferenceStorageKey(accountId: string): string {
 
 const PREFERENCES: readonly ThemePreference[] = ['auto', 'light', 'dark'];
 
+/** Cor da barra do sistema em cada tema: o fundo (`--a-bg` do styles.css), para a barra emendar na tela. */
+export const THEME_BAR_COLORS = { light: '#f2f5f1', dark: '#101512' } as const;
+
 /**
  * Preferência de tema guardada só neste aparelho. Antes da sessão, usa uma chave visual de pré-sessão; depois, uma chave
  * da conta autenticada. Assim uma troca de conta na mesma aba reaplica imediatamente a escolha certa sem levar consigo a
@@ -65,6 +68,21 @@ export class AppearanceService {
   private apply(preference: ThemePreference): void {
     const theme = preference === 'auto' ? (this.media?.matches ? 'dark' : 'light') : preference;
     this.doc.documentElement.setAttribute('data-theme', theme);
+    this.applyBarColor(preference);
+  }
+
+  /**
+   * As duas `<meta name="theme-color">` do index.html escolhem a cor pela preferência do sistema. No automático cada uma
+   * fica com a do seu tema; com o tema fixado no app as duas recebem a do tema escolhido, para a barra não destoar.
+   */
+  private applyBarColor(preference: ThemePreference): void {
+    for (const meta of Array.from(
+      this.doc.head?.querySelectorAll('meta[name="theme-color"]') ?? [],
+    )) {
+      const own = meta.getAttribute('media')?.includes('dark') ? 'dark' : 'light';
+      const color = THEME_BAR_COLORS[preference === 'auto' ? own : preference];
+      if (meta.getAttribute('content') !== color) meta.setAttribute('content', color);
+    }
   }
 
   private openStorage(): Storage | null {

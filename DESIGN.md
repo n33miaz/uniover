@@ -55,7 +55,7 @@ Todos são custom properties em `:root` de `apps/web/src/styles.css`. Tema claro
 | Quem grava o atributo | `ThemeService` (segue o sistema) e `AppearanceService` (preferência `auto`, `light`, `dark`, guardada no aparelho) | `apps/web/src/app/core/theme/theme.service.ts:26-28`, `apps/web/src/app/core/session/appearance.service.ts:6-9,58-62` |
 | Escolha na tela | Três opções: Claro, Escuro, Automático | `apps/web/src/app/modules/settings/appearance.page.ts:28-32` |
 | `<meta name="color-scheme">` | `light dark` | `apps/web/src/index.html:11` |
-| Cor da barra do sistema | Não há `<meta name="theme-color">`; só o manifesto: `theme_color #3B6B4B`, `background_color #F2F5F1` | `apps/web/public/manifest.webmanifest:12-13` |
+| Cor da barra do sistema | `<meta name="theme-color">` por tema com o fundo (`#f2f5f1` claro, `#101512` escuro); com o tema fixado no app, o `AppearanceService` põe a cor dele nas duas. O manifesto guarda uma cor só (`theme_color #3B6B4B`, `background_color #F2F5F1`) | `apps/web/src/index.html`, `appearance.service.ts` |
 
 Regra para tokens novos: definir os dois temas; nunca trocar o valor de um token existente (telas dependem deles: `apps/web/src/styles.css:21-24`).
 
@@ -430,6 +430,6 @@ Inconsistências encontradas no código (reportar ao corrigir; o código atual m
 7. Dois serviços gravam `data-theme` (`ThemeService` e `AppearanceService`).
 8. `.ui-btn.secondary` só tem hover; no repouso é igual a `.ui-btn`.
 9. Ícones de módulo da Início usam `@media (prefers-color-scheme: dark)` sem a guarda `:not([data-theme='light'])` (`home-page.css:339-346`, `home-edit-sheet.css:156-159`): com sistema escuro e tema fixado em claro, o fundo do ícone sai escuro.
-10. Não há `<meta name="theme-color">`; a cor da barra do sistema vem só do manifesto.
+10. O manifesto aceita uma cor de barra só (`theme_color`); a cor por tema vem das `<meta name="theme-color">` do `index.html`.
 11. "Início" nomeia a tela inicial do app e também uma aba do Treino (`training.routes.ts:15`).
 12. Não há toast global nem tokens de z-index e de breakpoint.
