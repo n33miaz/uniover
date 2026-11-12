@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.63.0](https://github.com/n33miaz/uniover/compare/v0.62.1...v0.63.0) (2026-11-12)
+
+
+### Identity 0.45.0
+
+#### Features
+
+* **shopping:** add the shopping module API
+* **shopping:** add the shopping screens
+* **shopping:** add people and offline trips
+
+
+### Shopping 0.2.0
+
+#### Features
+
+* **shopping:** add the shopping module API
+* **shopping:** add the shopping screens
+* **shopping:** add people and offline trips
+
+
+### Web 0.60.0
+
+#### Features
+
+* **shopping:** add the shopping module API
+* **shopping:** add the shopping screens
+* **shopping:** add people and offline trips
+
 ## [0.62.1](https://github.com/n33miaz/uniover/compare/v0.62.0...v0.62.1) (2026-11-12)
 
 
