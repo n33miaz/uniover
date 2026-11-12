@@ -11,6 +11,7 @@ public static class ShoppingLimits
     public const int Store = 120;
     public const int ReceiptKey = 200;
     public const int ExternalRef = 200;
+    public const int PromoNote = 40;
 
     /// <summary>Cabe em <c>numeric(12,3)</c>.</summary>
     public const decimal MaxQuantity = 999_999.999m;
@@ -68,7 +69,8 @@ public static class ShoppingRules
     /// Grava o preço informado numa linha da compra se ele for o mais recente (no empate, o maior). Tirar o preço também
     /// é informar; "sem preço" numa linha que já não tinha preço não informa nada e não toma o lugar de ninguém.
     /// </summary>
-    public static void Price(PurchaseItem line, decimal? unitPrice, DateTimeOffset at)
+    /// <param name="promo">A promoção que anda com o preço: vale e some junto com ele (sem preço, sem promoção).</param>
+    public static void Price(PurchaseItem line, decimal? unitPrice, DateTimeOffset at, Promo? promo = null)
     {
         ArgumentNullException.ThrowIfNull(line);
         if (unitPrice is null && line.UnitPrice is null)
@@ -82,6 +84,11 @@ public static class ShoppingRules
         }
 
         line.UnitPrice = unitPrice;
+        line.RegularPrice = unitPrice is null ? null : promo?.RegularPrice;
+        line.PromoNote = unitPrice is null ? null : promo?.Note;
         line.PricedAt = at;
     }
+
+    /// <summary>O preço normal da etiqueta e o texto da promoção ("leve 3 pague 2"), os dois opcionais.</summary>
+    public sealed record Promo(decimal? RegularPrice, string? Note);
 }

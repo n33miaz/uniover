@@ -14,7 +14,7 @@ using UniOver.SharedKernel.Audit;
 namespace UniOver.Modules.Shopping;
 
 /// <summary>
-/// Compras: grupo, produtos, lista da casa e idas ao mercado. O módulo não registra serviço de fundo nem temporizador
+/// Compras: grupo (com convites por link), produtos, lista da casa e idas ao mercado. O módulo não registra serviço de fundo nem temporizador
 /// próprios, para o banco poder dormir (a limpeza da trilha entra na rodada diária que os outros módulos já têm). O
 /// único trabalho fora do pedido é o que um pedido dispara: a leitura do Economize e a importação das compras de lá.
 /// </summary>
@@ -54,6 +54,7 @@ public static class ShoppingModule
         // banco; a aplicação só chama a função, pelo serviço de limpeza que já existe (uma vez por dia, para todos os módulos).
         services.AddScoped<IAuditSource, ShoppingAuditSource>();
         services.AddAuditPurge<ShoppingDbContext>(configuration, ShoppingDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
+        services.AddShoppingInviteCleanup();
         return services;
     }
 
@@ -65,6 +66,7 @@ public static class ShoppingModule
         group.MapShoppingReads();
         group.MapShoppingWrites();
         group.MapEconomizeIntegration();
+        group.MapShoppingInvites();
         return endpoints;
     }
 }

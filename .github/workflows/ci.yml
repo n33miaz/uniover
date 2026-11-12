@@ -43,10 +43,12 @@ jobs:
             api:
               - 'apps/api/**'
               - 'modules.json'
+              - 'contracts/shopping/**'
               - '.github/workflows/ci.yml'
               - '.github/scripts/**'
             web:
               - 'apps/web/**'
+              - 'contracts/shopping/**'
               - '.github/workflows/ci.yml'
               - '.github/scripts/**'
             agent:

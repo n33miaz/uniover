@@ -186,6 +186,11 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("product_id");
 
+                    b.Property<string>("PromoNote")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("promo_note");
+
                     b.Property<Guid>("PurchaseId")
                         .HasColumnType("uuid")
                         .HasColumnName("purchase_id");
@@ -194,6 +199,11 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasPrecision(12, 3)
                         .HasColumnType("numeric(12,3)")
                         .HasColumnName("quantity");
+
+                    b.Property<decimal?>("RegularPrice")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("regular_price");
 
                     b.Property<decimal?>("UnitPrice")
                         .HasPrecision(12, 2)
@@ -218,6 +228,8 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                     b.ToTable("purchase_items", "shopping", t =>
                         {
                             t.HasCheckConstraint("ck_purchase_items_quantity", "quantity > 0");
+
+                            t.HasCheckConstraint("ck_purchase_items_regular_price", "regular_price IS NULL OR regular_price >= 0");
 
                             t.HasCheckConstraint("ck_purchase_items_unit_price", "unit_price IS NULL OR unit_price >= 0");
                         });
@@ -286,6 +298,59 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasName("pk_groups");
 
                     b.ToTable("groups", "shopping");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingGroupInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid?>("UsedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("used_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_group_invites");
+
+                    b.HasIndex("GroupId")
+                        .HasDatabaseName("ix_group_invites_group_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_group_invites_token_hash");
+
+                    b.ToTable("group_invites", "shopping");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingListItem", b =>
@@ -491,6 +556,12 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("external_ref");
 
+                    b.Property<bool>("FromList")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("from_list");
+
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uuid")
                         .HasColumnName("group_id");
@@ -568,6 +639,16 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_purchase_items_purchases_purchase_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingGroupInvite", b =>
+                {
+                    b.HasOne("UniOver.Modules.Shopping.Domain.ShoppingGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_group_invites_groups_group_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingListItem", b =>
