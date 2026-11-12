@@ -340,6 +340,37 @@ describe('TvAdbPermission', () => {
     expect(permission.phase()).toBe('expired');
   });
 
+  it('the accept may arrive before the refused answer of the tap: the proof still runs once', async () => {
+    permission.observe('pending'); // o aviso já estava na TV
+    let fail: (error: unknown) => void = () => undefined;
+    api.refreshShortcuts.mockReturnValueOnce(new Promise<void>((_, reject) => (fail = reject)));
+    const asking = permission.ask();
+    permission.observe('granted'); // o fluxo contou o aceite antes da resposta recusada
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.refreshShortcuts).toHaveBeenCalledTimes(2); // o pedido e a prova
+    agentSays('granted');
+    fail(unauthorized());
+    await asking;
+    await vi.advanceTimersByTimeAsync(CONFIRM_TOTAL_MS + 10);
+    expect(api.refreshShortcuts).toHaveBeenCalledTimes(2); // a recusa atrasada não gera outra prova
+    expect(permission.needs()).toBe(false);
+  });
+
+  it('an armed tap that ends without a refusal leaves no proof for a later accept', async () => {
+    permission.arm();
+    permission.disarm();
+    permission.observe('pending');
+    permission.observe('granted');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.refreshShortcuts).not.toHaveBeenCalled();
+    permission.arm();
+    permission.confirmed(); // o pedido deu certo
+    permission.observe('pending');
+    permission.observe('granted');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.refreshShortcuts).not.toHaveBeenCalled();
+  });
+
   describe('prompted() by the request of the person (Atualizar lista, TV Livre)', () => {
     it('checks the agent first: with "pending" the notice shows and the proof is armed', async () => {
       agentSays('pending');
