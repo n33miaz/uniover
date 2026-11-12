@@ -39,7 +39,7 @@ internal sealed partial class AgentGateway(
         }
 
         var droppable = IsPureMove(message);
-        return await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, droppable, pending: null, cancellationToken, cancellationToken)
+        return await DeliverAsync(agentId, message, envelope.Value, droppable, pending: null, cancellationToken, cancellationToken)
             ? Result.Success()
             : Result.Failure(AgentErrors.Offline);
     }
@@ -96,7 +96,7 @@ internal sealed partial class AgentGateway(
 
         var sentAt = time.GetUtcNow();
         var started = time.GetTimestamp();
-        if (!await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, droppable: false, pending, delivery.Token, cancellationToken))
+        if (!await DeliverAsync(agentId, message, envelope.Value, droppable: false, pending, delivery.Token, cancellationToken))
         {
             return Result.Failure<AgentReply>(AgentErrors.Offline);
         }
@@ -158,21 +158,36 @@ internal sealed partial class AgentGateway(
         return created;
     }
 
+    /// <summary>
+    /// O mesmo comando (mesmo <c>id</c>, que a espera da resposta já aguarda) com o <c>ts</c> de agora. O agente mede a idade
+    /// de uma tecla desde o <c>ts</c>: carimbada antes de esperar a sessão voltar, toda tecla de uma reconexão curta (deploy)
+    /// chegaria velha e seria descartada. Daqui em diante a fila da sessão conta, e o agente parado continua protegido.
+    /// </summary>
+    private byte[] Restamp(string agentId, OutboundMessage message, OutboundEnvelope envelope)
+    {
+        var created = factory.Create(
+            message.Type, agentId, correlationId: null, message.Body, message.OperationId, message.DeviceId, message.DeviceName,
+            envelope.Id);
+        return created.IsSuccess ? created.Value.Json : envelope.Json;
+    }
+
     /// <param name="pending">A espera do comando (pedido/resposta); nula no envio sem resposta. Só se envia se ela ainda não falhou.</param>
     /// <param name="cancellationToken">Cancela a espera por sessão: o do chamador e o da falha da espera.</param>
     /// <param name="callerToken">O do chamador: quando é ele que cancela, o cancelamento sobe como sempre.</param>
     private async Task<bool> DeliverAsync(
         string agentId,
-        byte[] json,
-        AgentDelivery delivery,
+        OutboundMessage message,
+        OutboundEnvelope envelope,
         bool droppable,
         IPendingReply? pending,
         CancellationToken cancellationToken,
         CancellationToken callerToken)
     {
+        var delivery = message.Delivery;
+        // Com a sessão de pé, o envelope acabou de ser montado: o `ts` dele já é o da saída.
         if (connections.TryGet(agentId, out var connected)
             && (pending is null || pending.TryBeginSend(connected))
-            && await connected.SendAsync(json, droppable, cancellationToken))
+            && await connected.SendAsync(envelope.Json, droppable, cancellationToken))
         {
             return true;
         }
@@ -205,9 +220,10 @@ internal sealed partial class AgentGateway(
             return false;
         }
 
+        // Depois da espera, o carimbo é refeito: a idade da tecla conta da saída para o agente, não do pedido.
         return session is not null
             && (pending is null || pending.TryBeginSend(session))
-            && await session.SendAsync(json, droppable, cancellationToken);
+            && await session.SendAsync(Restamp(agentId, message, envelope), droppable, cancellationToken);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Comando {Type} ao agente {AgentId} ({CommandId}) sem resposta no prazo; resposta tardia será descartada.")]

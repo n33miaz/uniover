@@ -9,6 +9,7 @@ import pytest
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport, FakeTvRemote
 from uniover_agent.core import (
+    ClockOffset,
     Command,
     EnvelopeFactory,
     EnvelopeGate,
@@ -55,8 +56,13 @@ class SlowRemote(FakeTvRemote):
 
 def build(
     command_timeout: float | None = None,
+    *,
+    api_clock: bool = False,
 ) -> tuple[ProcessMessage, FakeTransport, SlowRemote, AdvancingClock]:
+    """`api_clock`: liga a idade desde o envio (o `ClockOffset` dos batimentos da API), como em
+    produção; sem ele, a API anterior (a idade conta só desde a chegada)."""
     clock = AdvancingClock()
+    offset = ClockOffset(now=clock.now, monotonic=clock.monotonic)
     remote = SlowRemote()
     session = TvSessionManager(clock, remote)
     keys = tv_key_handler(session, monotonic=clock.monotonic)
@@ -78,6 +84,8 @@ def build(
         transport,
         monotonic=clock.monotonic,
         command_timeout_seconds=command_timeout,
+        observe_timestamp=offset.observe if api_clock else None,
+        timestamp_age=offset.age if api_clock else None,
     )
     return process, transport, remote, clock
 
@@ -146,6 +154,112 @@ async def test_envelope_clock_skew_does_not_expire_a_newly_received_key(
 
     assert remote.sent == [("UP", "SHORT")]
     assert transport.sent[0]["body"] == {"ok": True}
+
+
+# ---- idade desde o envio: a referência vem dos batimentos da API (`ClockOffset`) ----------------
+
+BEAT_SECONDS = 20.0  # o batimento da API em produção (`ApplicationKeepAliveSeconds`)
+
+
+def stamp(clock: AdvancingClock, seconds_ago: float = 0.0) -> str:
+    """O `ts` da API para algo montado `seconds_ago` s antes de agora (relógios iguais)."""
+    return (clock.now() - timedelta(seconds=seconds_ago)).isoformat().replace("+00:00", "Z")
+
+
+async def api_beats(process: ProcessMessage, clock: AdvancingClock, count: int = 2) -> None:
+    """Batimentos da API em dia (0,1 s no caminho): formam a referência de relógio."""
+    for _ in range(count):
+        clock.advance(BEAT_SECONDS)
+        beat = envelope("api.keepalive.v1", {}, ts=stamp(clock, 0.1))
+        await process(dump(beat))
+
+
+def results(transport: FakeTransport) -> list[str]:
+    return [
+        "ok" if m["body"]["ok"] else m["body"]["error"]["code"]
+        for m in transport.sent
+        if m["type"] == "command.result.v1"
+    ]
+
+
+async def test_a_key_that_left_the_api_long_ago_expires_even_if_it_just_arrived() -> None:
+    process, transport, remote, clock = build(api_clock=True)
+    remote.release.set()
+    await api_beats(process, clock)
+
+    late = message("tv.key.v3", {"key": "RIGHT"}, clock)
+    late["ts"] = stamp(clock, 2.0)
+    fresh = message("tv.key.v3", {"key": "LEFT"}, clock)
+    await process(dump(late))
+    await process(dump(fresh))
+    await finish_keys(process)
+
+    assert remote.sent == [("LEFT", "SHORT")]
+    # `expired` é o código de comando velho que a tela não mostra.
+    assert results(transport) == ["expired", "ok"]
+
+
+async def test_the_age_since_sending_adds_the_wait_inside_the_agent() -> None:
+    process, transport, remote, clock = build(api_clock=True)
+    await api_beats(process, clock)
+
+    command = message("tv.key.v3", {"key": "RIGHT"}, clock)
+    command["ts"] = stamp(clock, 1.0)  # 0,9 s além da referência: ainda vale ao chegar
+    await process(dump(command))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    clock.advance(0.7)  # a sessão demora: 1,6 s no total, mas só 0,7 s aqui dentro
+    remote.release.set()
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["expired"]
+
+
+async def test_an_agent_back_from_a_pause_presses_none_of_the_keys_held_in_the_socket() -> None:
+    process, transport, remote, clock = build(api_clock=True)
+    remote.release.set()
+    await api_beats(process, clock)
+
+    # O agente parou 90 s (paginado): a API seguiu mandando 20 teclas e os batimentos dela, que
+    # ficaram represados e chegam todos juntos, na ordem, quando o laço volta. Os 4 batimentos
+    # atrasados seguidos refariam a referência se contassem um a um (e as últimas teclas
+    # pareceriam novas): de uma rajada, contam como um.
+    paused_at = clock.monotonic()
+    queued: list[tuple[float, dict[str, Any]]] = []
+    for index in range(20):
+        sent = paused_at + 1.0 + index * 4.4
+        queued.append((sent, envelope("tv.key.v3", {"key": "RIGHT"})))
+    for beat in range(1, 5):
+        queued.append((paused_at + beat * BEAT_SECONDS, envelope("api.keepalive.v1", {})))
+    queued.sort(key=lambda item: item[0])
+    clock.advance(90.0)
+    for sent, frame in queued:
+        frame["ts"] = stamp(clock, clock.monotonic() - sent)
+        await process(dump(frame))
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["expired"] * 20
+
+    # A rajada de batimentos atrasados não mexeu na referência: a próxima tecla vale.
+    fresh = message("tv.key.v3", {"key": "OK"}, clock)
+    await process(dump(fresh))
+    await finish_keys(process)
+    assert remote.sent == [("OK", "SHORT")]
+
+
+async def test_without_a_clock_reference_the_age_counts_from_arrival_as_before() -> None:
+    # Sem batimentos da API ainda (recém-conectado, ou uma API anterior): vale como chegou.
+    process, transport, remote, clock = build(api_clock=True)
+    remote.release.set()
+    command = message("tv.key.v3", {"key": "UP"}, clock)
+    command["ts"] = stamp(clock, 120.0)
+
+    await process(dump(command))
+    await finish_keys(process)
+
+    assert remote.sent == [("UP", "SHORT")]
+    assert results(transport) == ["ok"]
 
 
 async def test_key_without_envelope_uses_handler_arrival_time() -> None:

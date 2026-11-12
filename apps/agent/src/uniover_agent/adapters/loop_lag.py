@@ -15,6 +15,8 @@ _MEGABYTE = 1024 * 1024
 _GENERATIONS = 3
 # Enquanto o conjunto de trabalho segue abaixo do piso, o aviso se repete a cada meia hora.
 FLOOR_REPEAT_SECONDS = 1_800.0
+# O maior `loopLagMs` que o contrato do `agent.keepalive.v1` aceita (10 minutos).
+KEEPALIVE_LAG_MAX_MS = 600_000
 
 
 class GcPauseTracker:
@@ -110,13 +112,24 @@ class LoopLagMonitor:
         self._gc = gc_pauses or GcPauseTracker()
         self._faults_before: int | None = None
         self._maximum = 0.0
+        self._keepalive_maximum = 0.0
         self._count = 0
 
     def observe(self, delay: float) -> None:
         """Acumula uma amostra; exposto para testar sem esperar um minuto."""
+        self._keepalive_maximum = max(self._keepalive_maximum, delay)
         if delay > self._threshold:
             self._maximum = max(self._maximum, delay)
             self._count += 1
+
+    def take_keepalive_lag_ms(self) -> int:
+        """Maior atraso do laço desde a última leitura, em milissegundos (zera a janela).
+
+        Vai no batimento; o teto é o do contrato (uma suspensão longa não vira mensagem inválida).
+        """
+        lag = self._keepalive_maximum
+        self._keepalive_maximum = 0.0
+        return min(round(lag * 1_000), KEEPALIVE_LAG_MAX_MS)
 
     def _extras(self) -> str:
         """Falhas de página do minuto, conjunto de trabalho e pausas do GC (zera as janelas)."""

@@ -15,6 +15,7 @@ from uniover_agent.core import (
     EnvelopeGate,
 )
 from uniover_agent.core.connection import (
+    APPLICATION_KEEPALIVE_SECONDS,
     DUPLICATE_WINDOW_SECONDS,
     NETWORK_WAKE_MIN_SECONDS,
     RECANDIDACY_LIMIT,
@@ -491,6 +492,47 @@ async def test_keepalive_send_failure_closes_the_channel_so_the_loop_reconnects(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert transport.connects >= 2
+
+
+async def test_the_keepalive_beats_every_five_seconds_and_carries_the_loop_lag_when_given() -> None:
+    assert APPLICATION_KEEPALIVE_SECONDS == 5.0
+    beats: list[dict[str, Any]] = []
+    release = asyncio.Event()
+
+    class Recording(FakeTransport):
+        async def send(self, message: dict[str, Any]) -> None:
+            if message["type"] == "agent.keepalive.v1":
+                beats.append(message["body"])
+            await super().send(message)
+
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            await release.wait()
+            raise TransportError("fechado")
+            yield
+
+    # Sem o campo aceito pela API, `None`: o batimento sai vazio, como o de sempre.
+    lags = iter([None, 12, 0])
+    clock = FakeClock()
+    supervisor = ConnectionSupervisor(
+        Recording(),
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=[],
+        keepalive_interval=0.01,
+        keepalive_lag_ms=lambda: next(lags, 0),
+    )
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(300):
+        if len(beats) >= 3:
+            break
+        await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert beats[:3] == [{}, {"loopLagMs": 12}, {"loopLagMs": 0}]
 
 
 # ---- passagem para uma versão nova (handover) e disputa de identidade ----

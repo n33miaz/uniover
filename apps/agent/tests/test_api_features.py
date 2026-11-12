@@ -13,7 +13,12 @@ from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore
 from uniover_agent.composition import connection as connection_module
 from uniover_agent.composition.connection import run
 from uniover_agent.config import Settings
-from uniover_agent.core.api_features import ApiFeatures
+from uniover_agent.core import ConnectionSupervisor
+from uniover_agent.core.api_features import (
+    KEEPALIVE_LOOP_LAG_FEATURE,
+    ApiFeatures,
+    LoopLagGate,
+)
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY
 
 # --- ApiFeatures --------------------------------------------------------------------------------
@@ -275,6 +280,124 @@ async def test_a_connection_made_before_the_api_answered_asks_again_at_once(
     hellos = [m for m in api.received if m["type"] == "agent.hello.v1"]
     assert len(calls) >= 2  # bem antes do recuo de 15 s da consulta de fundo
     assert DIAGNOSTICS_CAPABILITY in hellos[-1]["body"]["capabilities"]
+
+
+@pytest.mark.parametrize(
+    ("listed", "carries_lag"),
+    [(frozenset({KEEPALIVE_LOOP_LAG_FEATURE}), True), (frozenset(), False), (None, False)],
+)
+async def test_the_loop_lag_rides_the_keepalive_only_to_an_api_that_lists_it(
+    monkeypatch: pytest.MonkeyPatch, listed: frozenset[str] | None, carries_lag: bool
+) -> None:
+    # Uma API anterior recusaria cada batimento com o campo e, recusas seguidas, fecharia a
+    # conexão: para ela (ou sem resposta ainda), o batimento sai vazio como sempre.
+    class FastBeats(ConnectionSupervisor):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **{**kwargs, "keepalive_interval": 0.05})
+
+    monkeypatch.setattr(connection_module, "ConnectionSupervisor", FastBeats)
+    received = await _run_against_the_fake_api(monkeypatch, listed)
+
+    beats = [m["body"] for m in received if m["type"] == "agent.keepalive.v1"]
+    assert beats
+    if carries_lag:
+        assert any("loopLagMs" in body for body in beats)
+        assert all(set(body) <= {"loopLagMs"} for body in beats)
+    else:
+        assert all(body == {} for body in beats)
+
+
+def test_the_loop_lag_approval_belongs_to_the_connection_that_asked() -> None:
+    gate = LoopLagGate()
+    late = gate.checking()  # a consulta da conexão 0 ainda não voltou
+    gate.connection_lost(refused=False)
+    late()  # voltou depois da queda: não vale para a conexão nova
+    assert not gate.allows()
+    gate.checking()()
+    assert gate.allows()
+    gate.connection_lost(refused=False)
+    assert not gate.allows()  # cada conexão consulta de novo
+
+
+def test_a_policy_close_while_sending_the_loop_lag_keeps_the_next_connection_without_it() -> None:
+    gate = LoopLagGate()
+    gate.checking()()
+    gate.sent()
+    gate.connection_lost(refused=True)
+    gate.checking()()
+    assert not gate.allows()  # a conexão seguinte não manda, mesmo com a consulta dizendo que sim
+    gate.connection_lost(refused=False)
+    gate.checking()()
+    assert gate.allows()
+
+
+def test_a_policy_close_without_the_loop_lag_sent_blocks_nothing() -> None:
+    gate = LoopLagGate()
+    gate.checking()()
+    gate.connection_lost(refused=True)
+    gate.checking()()
+    assert gate.allows()
+
+
+async def test_an_api_that_closes_for_refusals_gets_the_next_connection_without_the_loop_lag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A consulta HTTP caiu na instância nova (lista o campo), mas o canal está na antiga, que recusa
+    # o batimento com o campo e fecha por política (1008). A conexão seguinte não o manda.
+    class FastBeats(ConnectionSupervisor):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **{**kwargs, "keepalive_interval": 0.05})
+
+    monkeypatch.setattr(connection_module, "ConnectionSupervisor", FastBeats)
+
+    async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
+        return frozenset({KEEPALIVE_LOOP_LAG_FEATURE})
+
+    monkeypatch.setattr(connection_module, "fetch_api_features", api_features)
+    beats: list[tuple[int, dict[str, Any]]] = []
+    connection_count = 0
+
+    async def script(connection: Any) -> None:
+        nonlocal connection_count
+        connection_count += 1
+        current = connection_count
+        try:
+            async with asyncio.timeout(3.0):
+                async for raw in connection:
+                    message = json.loads(raw)
+                    if message["type"] != "agent.keepalive.v1":
+                        continue
+                    beats.append((current, message["body"]))
+                    if current == 1 and "loopLagMs" in message["body"]:
+                        await connection.close(1008, "policy")
+                        return
+                    if current == 2 and len([b for c, b in beats if c == 2]) >= 5:
+                        break
+        except TimeoutError:
+            pass
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    async with FakeApi(script) as api:
+        settings = Settings(api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True)
+        await asyncio.wait_for(run(settings, lambda: store), timeout=20)
+
+    assert any("loopLagMs" in body for c, body in beats if c == 1)
+    second = [body for c, body in beats if c == 2]
+    assert second
+    assert all(body == {} for body in second)
+
+
+async def test_a_refresh_says_whether_the_api_answered() -> None:
+    answers: list[frozenset[str] | None] = [None, frozenset()]
+
+    async def fetch() -> frozenset[str] | None:
+        return answers.pop(0)
+
+    features = ApiFeatures(fetch, FakeClock())
+    assert await features.refresh() is False
+    assert await features.refresh() is True
 
 
 async def test_listeners_hear_only_real_changes_of_what_the_api_accepts() -> None:

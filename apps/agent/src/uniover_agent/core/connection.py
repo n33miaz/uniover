@@ -26,7 +26,9 @@ from uniover_agent.ports import (
 _log = logging.getLogger(__name__)
 
 REVOKED_MESSAGE: Final = "token revogado ou inválido; rode `uniover-agent pair`"
-APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
+# O batimento do agente (era 25 s): com 5 s, a API percebe em poucos segundos um agente que parou
+# (PC paginado) sem esperar um comando estourar o prazo. Uma API anterior aceita qualquer ritmo.
+APPLICATION_KEEPALIVE_SECONDS: Final = 5.0
 # O `hello` volta de tempos em tempos: se a API do momento o recusou (ainda não conhecia um campo
 # novo) ou foi trocada com o agente já conectado, ele passa a valer sem reiniciar o agente.
 REHELLO_SECONDS: Final = 300.0
@@ -125,6 +127,7 @@ class ConnectionSupervisor:
         on_connected: Callable[[], Awaitable[None]] | None = None,
         on_disconnected: Callable[[], None] | None = None,
         keepalive_interval: float = APPLICATION_KEEPALIVE_SECONDS,
+        keepalive_lag_ms: Callable[[], int | None] | None = None,
         rehello_interval: float = REHELLO_SECONDS,
         os_description: str | None = None,
         tv: tuple[str, str] | None = None,
@@ -163,6 +166,8 @@ class ConnectionSupervisor:
         self._on_connected = on_connected
         self._on_disconnected = on_disconnected
         self._keepalive_interval = keepalive_interval
+        # O atraso do laço que vai no batimento (`None`: batimento vazio, como numa API anterior).
+        self._keepalive_lag_ms = keepalive_lag_ms
         self._rehello_interval = rehello_interval
         # Opcionais do `hello` (sistema do PC; tipo e endereço da TV): só aparecem na tela do dono.
         self._os_description = os_description
@@ -660,8 +665,9 @@ class ConnectionSupervisor:
             await asyncio.sleep(self._keepalive_interval)
             if generation != self._generation:
                 return
+            lag_ms = self._keepalive_lag_ms() if self._keepalive_lag_ms is not None else None
             await self._bounded(
-                self._transport.send(self._envelopes.keepalive()),
+                self._transport.send(self._envelopes.keepalive(lag_ms)),
                 self._policy.send_timeout,
                 "o batimento",
             )

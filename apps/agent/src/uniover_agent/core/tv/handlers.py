@@ -36,6 +36,8 @@ KEY_COALESCE_AFTER_SECONDS: Final = 0.3
 AGENT_TIMEOUT: Final = "agent_timeout"
 # O canal direto que mandou a tecla fechou antes de ela chegar à TV.
 CHANNEL_CLOSED: Final = "channel_closed"
+# A tecla passou da validade contada desde o envio: o mesmo código dos comandos velhos do PC.
+EXPIRED: Final = "expired"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +46,10 @@ class TimedKeyCommand(Command):
 
     received_at: float = 0.0
     is_latest: Callable[[], bool] | None = None
+    # Idade desde o envio pela API, medida NA CHEGADA (pelo `ClockOffset`): a espera aqui dentro
+    # soma por cima. `None` sem referência de relógio (API antiga, recém-conectado, canal direto):
+    # a idade conta só desde a chegada, como antes.
+    sent_age: float | None = None
     # Só nas teclas do canal direto: a sessão dele ainda vale? Fechada, a tecla não chega à TV.
     is_valid: Callable[[], bool] | None = None
 
@@ -136,14 +142,18 @@ def tv_key_handler(
             if isinstance(command, TimedKeyCommand) and command.is_valid is not None:
                 if not command.is_valid():
                     raise TvSessionError(CHANNEL_CLOSED, "o canal direto fechou antes da tecla")
-            received_at = command.received_at if isinstance(command, TimedKeyCommand) else arrived
-            waited = monotonic() - received_at
-            if waited > KEY_MAX_AGE_SECONDS:
+            timed = command if isinstance(command, TimedKeyCommand) else None
+            waited = monotonic() - (timed.received_at if timed is not None else arrived)
+            sent_age = timed.sent_age if timed is not None else None
+            if (waited if sent_age is None else sent_age + waited) > KEY_MAX_AGE_SECONDS:
                 discarded_by_age += 1
                 # O total evita uma linha por tecla durante a rajada, sem identificar a TV.
                 if discarded_by_age == 1 or discarded_by_age % 10 == 0:
                     _log.info("teclas descartadas por idade: total=%d", discarded_by_age)
-                raise TvSessionError(AGENT_TIMEOUT, "a tecla expirou antes de chegar à TV")
+                # Medida desde o envio, é o "comando velho" de sempre (`expired`, que a tela cala);
+                # sem a referência, segue o código de antes.
+                code = AGENT_TIMEOUT if sent_age is None else EXPIRED
+                raise TvSessionError(code, "a tecla expirou antes de chegar à TV")
             if coalesce:
                 if isinstance(command, TimedKeyCommand):
                     superseded = command.is_latest is not None and not command.is_latest()

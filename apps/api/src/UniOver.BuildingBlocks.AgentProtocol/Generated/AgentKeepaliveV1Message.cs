@@ -48,6 +48,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     public partial class AgentKeepaliveV1Body
     {
+        /// <summary>
+        /// Maior atraso do laço principal do agente desde o batimento anterior, em milissegundos.
+        /// Opcional: os agentes anteriores não o mandam, e o agente só o manda à API que lista
+        /// agent.keepalive.loop_lag em features.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("loopLagMs")]
+        public long? LoopLagMs { get; set; }
     }
 
     public partial class AgentKeepaliveV1Message

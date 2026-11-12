@@ -490,6 +490,22 @@ async def test_a_single_future_stamped_beat_does_not_make_later_commands_look_ol
     assert await lab.run("pc.click.v1", {"button": "RIGHT"}, 10.0) == ("rejected", EXPIRED)
 
 
+async def test_late_beats_delivered_in_one_burst_count_as_one_and_do_not_rebase() -> None:
+    lab = Lab()
+    lab.beats(2)
+    base = lab.clock.offset
+    assert base is not None
+    # O agente voltou de uma parada: o socket entrega de uma vez os batimentos represados.
+    lab.elapsed += 90.0
+    for in_flight in (70.0, 50.0, 30.0, 10.0):
+        lab.heartbeat(in_flight)
+    assert lab.clock.offset == pytest.approx(base)
+    assert await lab.run("pc.click.v1", {"button": "LEFT"}, 20.0) == ("rejected", EXPIRED)
+    # Batimentos espaçados, todos altos, ainda refazem a estimativa (o relógio da API recuou).
+    lab.beats(3, in_flight=6.0)
+    assert lab.clock.offset == pytest.approx(base + 5.8)
+
+
 async def test_a_real_forward_step_of_the_api_clock_is_followed_after_three_beats() -> None:
     lab = Lab()
     lab.beats(2)

@@ -36,6 +36,11 @@ function agentErrorOf(error: unknown): string | null {
   return null;
 }
 
+/** Tecla recebida tarde: a pessoa já seguiu adiante, então não vira aviso na tela. */
+export function isExpiredInput(error: unknown): boolean {
+  return agentErrorOf(error) === 'expired';
+}
+
 /** O PC caiu há pouco e ainda conta como conectado: a API marca o problema com `reconnecting`. */
 function isReconnecting(error: unknown): boolean {
   return (

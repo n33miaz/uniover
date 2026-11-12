@@ -378,6 +378,7 @@ internal sealed partial class AgentHub(
                 break;
 
             case AgentKeepAliveType:
+                connections.RecordKeepalive(session, ReadLoopLag(envelope.Body), now);
                 break;
 
             case AgentMessageTypes.CommandResultV1:
@@ -391,6 +392,15 @@ internal sealed partial class AgentHub(
 
         return true;
     }
+
+    /// <summary>O atraso do laço do agente no batimento (opcional; o contrato já o limitou). Nunca lança: o que não for inteiro é nulo.</summary>
+    internal static int? ReadLoopLag(JsonElement body) =>
+        body.ValueKind == JsonValueKind.Object
+        && body.TryGetProperty("loopLagMs", out var lag)
+        && lag.ValueKind == JsonValueKind.Number
+        && lag.TryGetInt32(out var ms)
+            ? ms
+            : null;
 
     /// <summary>Os campos opcionais do <c>hello</c> que a tela do administrador mostra; já passaram pelo contrato (tamanho e forma).</summary>
     private static AgentHostInfo? ReadHost(JsonElement body)

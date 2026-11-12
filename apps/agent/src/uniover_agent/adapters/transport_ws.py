@@ -60,6 +60,8 @@ _SERVER_RESTART_REASON: Final = "server-restart"
 _SERVER_RESTART_CLOSE_CODE: Final = 4411
 # 1001 (indo embora) e 1012 (reinício do serviço): o servidor está trocando de instância.
 _RESTART_CLOSE_CODES: Final = frozenset({1001, 1012})
+# 1008: a API fechou por violação de política (recusou mensagens demais desta conexão).
+POLICY_VIOLATION_CODE: Final = 1008
 
 
 def build_ws_url(api_url: str, agent_id: str) -> str:
@@ -132,6 +134,9 @@ class WebSocketTransport:
         # (rota própria), e nenhuma delas substitui a antiga por engano.
         self._handover_candidate = handover_candidate
         self._ws: ClientConnection | None = None
+        # O código com que o servidor fechou a última conexão (`None`: ainda aberta, ou caiu sem
+        # quadro de fechamento). Quem monta o agente o lê ao saber da queda.
+        self.last_close_code: int | None = None
 
     @property
     def connected(self) -> bool:
@@ -144,6 +149,7 @@ class WebSocketTransport:
         headers = {"Authorization": f"Bearer {token}"}
         candidate = self._handover_candidate is not None and self._handover_candidate()
         url = candidate_url(self._url) if candidate else self._url
+        self.last_close_code = None
         # O contexto TLS sai pronto de uma thread: criá-lo no laço a cada reconexão o travava.
         tls = await ssl_contexts.verified() if self._url.startswith("wss:") else None
         try:
@@ -176,6 +182,7 @@ class WebSocketTransport:
             await ws.send(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
         except ConnectionClosed as exc:
             # O servidor pode ter fechado com `replaced`/revogação antes de o envio sair.
+            self.last_close_code = exc.rcvd.code if exc.rcvd is not None else None
             outcome = _close_outcome(exc.rcvd)
             if outcome is not None:
                 raise outcome from None
@@ -187,6 +194,7 @@ class WebSocketTransport:
             async for message in ws:
                 yield message
         except ConnectionClosed as exc:
+            self.last_close_code = exc.rcvd.code if exc.rcvd is not None else None
             outcome = _close_outcome(exc.rcvd)
             if outcome is not None:
                 raise outcome from None
@@ -200,7 +208,9 @@ class WebSocketTransport:
                 f"fechada pelo servidor (código {exc.rcvd.code}{reason})"
             ) from None
         # Fechamento limpo: ainda assim o motivo pode ser `replaced` ou revogação.
-        outcome = _close_outcome(ws.protocol.close_rcvd)
+        received = ws.protocol.close_rcvd
+        self.last_close_code = received.code if received is not None else None
+        outcome = _close_outcome(received)
         if outcome is not None:
             raise outcome
 

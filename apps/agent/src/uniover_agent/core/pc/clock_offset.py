@@ -42,6 +42,9 @@ _BUCKET_SECONDS: Final = 10.0
 LARGE_OFFSET_SECONDS: Final = 5.0
 # Batimentos seguidos fora do esperado que bastam para refazer a estimativa.
 REBASE_AFTER: Final = 3
+# Batimentos "altos demais" que chegam a menos disto um do outro são uma rajada (a fila do socket
+# entregue de uma vez depois de uma parada do agente) e contam como um só para refazer a estimativa.
+BURST_SECONDS: Final = 1.0
 # Quanto um batimento acima do mínimo precisa estar para contar como "alto demais" (também é a
 # diferença máxima entre os dois batimentos que confirmam a estimativa) e quanto abaixo para contar
 # como "baixo demais" (um carimbo no futuro).
@@ -101,6 +104,8 @@ class ClockOffset:
         # Batimentos seguidos fora do esperado: (monotônico - ts, agora - ts) de cada um.
         self._off_high: list[tuple[float, float]] = []
         self._off_low: list[tuple[float, float]] = []
+        # Quando chegou (monotônico) o último batimento que entrou na sequência "alto demais".
+        self._last_high_at = 0.0
         # O primeiro batimento de uma janela vazia espera um segundo que concorde: (início,
         # monotônico - ts, agora - ts).
         self._candidate: tuple[float, float, float] | None = None
@@ -144,7 +149,7 @@ class ClockOffset:
             self._off_low.clear()
             self._confirm(at, mono, wall)
             return
-        if self._is_outlier(mono, wall, offset):
+        if self._is_outlier(at, mono, wall, offset):
             if self._rebase_due():
                 self._rebase(at)
                 self._check_large()
@@ -212,8 +217,13 @@ class ClockOffset:
             self._rejected_pairs = 0
         self._candidate = (at, mono, wall)
 
-    def _is_outlier(self, mono: float, wall: float, offset: float) -> bool:
+    def _is_outlier(self, at: float, mono: float, wall: float, offset: float) -> bool:
         if mono > offset + HIGH_MARGIN_SECONDS:
+            if self._off_high and at - self._last_high_at < BURST_SECONDS:
+                # Da mesma rajada: batimentos represados entregues juntos (o agente voltando de
+                # uma parada) são atraso, não relógio da API que recuou. Contam como um só.
+                return True
+            self._last_high_at = at
             self._off_high.append((mono, wall))
             self._off_low.clear()
             return True

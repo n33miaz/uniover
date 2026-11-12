@@ -892,7 +892,7 @@ async def test_an_approved_device_does_not_wait_for_the_slow_features_cycle() ->
     features.on_added = hello_now
     clock = Clockwork()
     approvals = DeviceApprovals(Memory(), Prompt(), now=clock)
-    tasks: list[asyncio.Future[None]] = []
+    tasks: list[asyncio.Future[bool]] = []
 
     def ask_again() -> None:
         tasks.append(asyncio.ensure_future(features.refresh()))

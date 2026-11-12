@@ -1,4 +1,3 @@
-/* eslint-disable */
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
 /**
@@ -14,4 +13,9 @@ export interface AgentKeepaliveV1Message {
   correlationId: null;
   body: AgentKeepaliveV1Body;
 }
-export interface AgentKeepaliveV1Body {}
+export interface AgentKeepaliveV1Body {
+  /**
+   * Maior atraso do laço principal do agente desde o batimento anterior, em milissegundos. Opcional: os agentes anteriores não o mandam, e o agente só o manda à API que lista agent.keepalive.loop_lag em features.
+   */
+  loopLagMs?: number;
+}
