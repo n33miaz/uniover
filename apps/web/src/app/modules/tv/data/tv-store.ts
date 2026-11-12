@@ -978,6 +978,8 @@ export class TvStore {
       return false;
     }
     const done = this.slow.begin('tv');
+    // O aceite na TV pode chegar pelo fluxo antes da resposta recusada: a prova já sai armada daqui.
+    this.adbPermission.arm();
     try {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
@@ -988,13 +990,17 @@ export class TvStore {
       this.showNotice('info', $localize`:@@tv.apps.refreshed:Lista de apps atualizada.`);
       return true;
     } catch (error) {
-      if (!this.live(epoch)) return false;
+      if (!this.live(epoch)) {
+        this.adbPermission.disarm();
+        return false;
+      }
       // Atualizar lista é o pedido da pessoa que faz a TV mostrar o aviso: aceitar lá é o próximo passo.
       const unconfirmed = () => this.showNotice('error', adbNoPromptMessage());
       if (
         describeFailure(error).kind !== 'adb-permission' ||
         !this.adbPermission.prompted(unconfirmed)
       ) {
+        this.adbPermission.disarm();
         this.fail(error);
       }
       return false;

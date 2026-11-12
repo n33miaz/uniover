@@ -127,6 +127,19 @@ export class TvAdbPermission {
     return true;
   }
 
+  /**
+   * A pessoa tocou no pedido que põe o aviso na TV (Atualizar lista, "Pedir na TV"): a prova fica armada já no toque,
+   * porque o aceite (`granted`, pelo fluxo) pode chegar antes da resposta recusada do pedido. Quem chama desarma
+   * (`disarm`) quando o pedido termina sem precisar de prova; dar certo (`confirmed`) também desarma.
+   */
+  arm(): void {
+    this.proofsLeft = 1;
+  }
+
+  disarm(): void {
+    this.proofsLeft = 0;
+  }
+
   /** Uma tela passou a hospedar a folha e o recado (e deixou de hospedar, ao sair). */
   attach(): void {
     this.hosts += 1;
@@ -146,6 +159,7 @@ export class TvAdbPermission {
 
   /** Algo que usa o ADB deu certo: a permissão está valendo. */
   confirmed(): void {
+    this.proofsLeft = 0;
     this.needs.set(false);
     if (this.waiting()) this.endWaiting();
     this.sheetOpen.set(false);
@@ -238,6 +252,7 @@ export class TvAdbPermission {
   }
 
   private async request(): Promise<void> {
+    this.arm();
     try {
       await this.api.refreshShortcuts();
       // A TV já guardava a permissão: não houve aviso, e o pedido já a provou.
@@ -248,6 +263,7 @@ export class TvAdbPermission {
         // A folha segue "pedindo" até o agente contar o aviso (`pending`) ou o intervalo acabar.
         this.prompted();
       } else {
+        this.disarm();
         this.phase.set(this.failurePhase(failure.kind));
       }
     }
@@ -294,6 +310,9 @@ export class TvAdbPermission {
     if (wasWaiting && prove && this.proofsLeft > 0) {
       this.proofsLeft -= 1;
       void this.prove();
+    } else {
+      // Sem aviso à espera não há o que provar: a prova armada no toque não fica para um aceite de outro aparelho.
+      this.proofsLeft = 0;
     }
   }
 
