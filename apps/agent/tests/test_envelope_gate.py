@@ -127,6 +127,15 @@ def test_outbound_hello_is_valid_envelope() -> None:
     assert json.loads(json.dumps(hello)) == hello
 
 
+def test_outbound_keepalive_carries_optional_loop_lag() -> None:
+    keepalive = factory().keepalive(42)
+
+    assert keepalive["type"] == "agent.keepalive.v1"
+    assert keepalive["body"] == {"loopLagMs": 42}
+    # Sem o atraso (a API não aceita o campo), o corpo é o vazio de sempre.
+    assert factory().keepalive()["body"] == {}
+
+
 def test_outbound_failed_result_requires_error() -> None:
     # O `if/then/else` de `command.result.v1` só o JSON Schema reproduz: o modelo pydantic não.
     bad = factory().result(str(uuid.uuid4()), ok=True)

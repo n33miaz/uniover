@@ -76,6 +76,27 @@ public class AgentEnvelopeValidatorTests
     }
 
     [Fact]
+    public void Accepts_OptionalKeepaliveLoopLag()
+    {
+        var json = Mutate("agent.keepalive.v1", n => n["body"]!["loopLagMs"] = 42);
+
+        var result = Validator.Validate(json);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Body.GetProperty("loopLagMs").GetInt32().Should().Be(42);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(600001)]
+    public void Rejects_KeepaliveLoopLagOutsideTheContract(int loopLagMs)
+    {
+        var json = Mutate("agent.keepalive.v1", n => n["body"]!["loopLagMs"] = loopLagMs);
+
+        Validator.Validate(json).Error.Code.Should().Be(AgentEnvelopeValidator.SchemaViolation);
+    }
+
+    [Fact]
     public void Rejects_UnknownType_WithItsOwnCode()
     {
         var json = Mutate("tv.key.v1", n => n["type"] = "tv.dance.v1");
@@ -201,6 +222,21 @@ public class AgentEnvelopeValidatorTests
         accepted.Target.Should().Be("agent:pc-casa");
         accepted.CorrelationId.Should().Be(correlation);
         accepted.Timestamp.Should().Be(clock.UtcNow);
+    }
+
+    [Fact]
+    public void OutboundFactory_RestampsTheSameCommand_KeepingItsId()
+    {
+        var first = new FixedClock(new DateTimeOffset(2026, 11, 12, 14, 0, 0, TimeSpan.Zero));
+        var later = new FixedClock(first.UtcNow.AddSeconds(6));
+        using var body = JsonDocument.Parse("""{"key":"RIGHT"}""");
+        var original = new OutboundEnvelopeFactory(Validator, first).Create(AgentMessageTypes.TvKeyV1, "pc-casa", null, body.RootElement).Value;
+
+        var again = new OutboundEnvelopeFactory(Validator, later)
+            .Create(AgentMessageTypes.TvKeyV1, "pc-casa", null, body.RootElement, id: original.Id).Value;
+
+        again.Id.Should().Be(original.Id);
+        Validator.Validate(again.Json).Value.Timestamp.Should().Be(later.UtcNow);
     }
 
     [Fact]

@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Collection
+from dataclasses import dataclass
 from functools import partial
 from typing import Final
 
@@ -68,10 +70,21 @@ _STOPPING_MESSAGE: Final = (
 )
 _TV_KEY_PREFIX = "tv.key."
 _TEXT_TYPE = "tv.text.v1"
+# Os ids que já chegaram, só em memória (~60 KB no máximo): o mesmo id não executa duas vezes.
+RECENT_COMMAND_SECONDS: Final = 120.0
+RECENT_COMMAND_CAPACITY: Final = 512
 
 # Como o resultado de um comando volta a quem o pediu: pela nuvem (o transporte) ou, no canal
 # direto, pela resposta do próprio canal.
 Reply = Callable[[Command, CommandResult], Awaitable[None]]
+
+
+@dataclass(slots=True)
+class _RecentCommand:
+    """Quando o id chegou e, depois de terminar, a resposta que ele deu."""
+
+    accepted_at: float
+    result: CommandResult | None = None
 
 
 class ProcessMessage:
@@ -109,6 +122,7 @@ class ProcessMessage:
         uncapped_types: Collection[str] = (),
         release_inputs: Callable[[], None] | None = None,
         observe_timestamp: Callable[[str | None], None] | None = None,
+        timestamp_age: Callable[[str | None], float | None] | None = None,
         on_cloud_pc_input: Callable[[str, int | None, str | None], None] | None = None,
         on_release_queued: Callable[[], None] | None = None,
         pc_lane: PcLane | None = None,
@@ -136,6 +150,9 @@ class ProcessMessage:
         # Um comando `pc.*` não entra aí: se tivesse chegado atrasado, ensinaria a estimativa a
         # tratar o atraso como normal.
         self._observe_timestamp = observe_timestamp
+        # A idade de um comando desde o envio pela API, por essa mesma estimativa (`None`: ainda
+        # sem referência). As teclas da TV que chegam pela nuvem a usam para expirar.
+        self._timestamp_age = timestamp_age
         self._tasks: set[asyncio.Task[None]] = set()
         # A faixa do PC: ou a de fora (laço próprio) ou uma nesta mesma thread.
         self._lane = pc_lane or PcLane(
@@ -165,6 +182,7 @@ class ProcessMessage:
         # Por qual caminho a última tecla da TV chegou, e quantas vieram por ele desde a mudança.
         self._tv_path: str | None = None
         self._tv_path_count = 0
+        self._recent: OrderedDict[str, _RecentCommand] = OrderedDict()
 
     async def __call__(self, raw: str | bytes) -> None:
         outcome = self._gate.check_inbound(raw)
@@ -173,13 +191,16 @@ class ProcessMessage:
             return
 
         command = outcome.command
-        if self._on_command is not None:
-            self._on_command(command)
         if command.type == _KEEPALIVE_TYPE:
             if self._observe_timestamp is not None:
                 self._observe_timestamp(command.sent_at)
             # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
             return
+        if await self._is_repeat(command):
+            return
+        # Só o comando novo conta como uso (agendador da limpeza); o repetido não aconteceu de novo.
+        if self._on_command is not None:
+            self._on_command(command)
         if (
             command.type.startswith("tv.key.")
             and command.body.get("key") != "POWER"
@@ -195,11 +216,62 @@ class ProcessMessage:
         if command.type in self._lane_detached_types:
             self._to_lane(partial(self._lane.run_detached, command))
             return
-        if self._start_off_reader(command):
+        if not self._start_off_reader(command):
+            # Rápidos e sem ordem com as teclas (presença, pedaço de foto do TV Livre, tipo
+            # desconhecido): no próprio leitor, sem esperar nada que esteja na TV.
+            await self._execute(command)
+
+    async def _is_repeat(self, command: Command) -> bool:
+        """O mesmo id já chegou nos últimos 2 minutos: não executa de novo.
+
+        Se o primeiro já terminou, o repetido recebe a mesma resposta; em curso, a resposta do
+        primeiro (que leva o mesmo id) serve aos dois. Ficam de fora o fluxo sem resposta (o
+        movimento do mouse, dezenas por segundo, empurraria os outros ids para fora) e os `pc.*`,
+        entrada que a API nunca reenvia e que a faixa do PC (outro laço) responde por conta própria.
+        """
+        if command.type in self._silent_types or command.type.startswith(_PC_PREFIX):
+            return False
+        now = self._monotonic()
+        recent = self._recent
+        # A ordem é a de chegada: os mais antigos ficam na frente.
+        while recent and now - next(iter(recent.values())).accepted_at > RECENT_COMMAND_SECONDS:
+            recent.popitem(last=False)
+        previous = recent.get(command.id)
+        if previous is None:
+            if len(recent) >= RECENT_COMMAND_CAPACITY:
+                recent.popitem(last=False)
+            recent[command.id] = _RecentCommand(now)
+            return False
+        _log.info("comando %s repetido ignorado (id=%s)", command.type, command.id)
+        if previous.result is not None:
+            await self._reply_result(command, previous.result)
+        return True
+
+    def _remember_result(self, command: Command, result: CommandResult) -> None:
+        entry = self._recent.get(command.id)
+        if entry is not None:
+            entry.result = result
+
+    async def _reply_result(
+        self, command: Command, result: CommandResult, reply: Reply | None = None
+    ) -> None:
+        """Pelo canal direto o resultado volta pelo próprio canal; pela nuvem, pelo transporte."""
+        if reply is not None:
+            await reply(command, result)
             return
-        # Rápidos e sem ordem com as teclas (presença, pedaço de foto do TV Livre, tipo
-        # desconhecido): no próprio leitor, sem esperar nada que esteja na TV.
-        await self._execute(command)
+        if command.type in self._silent_types:
+            # Fluxo de alta taxa (o movimento do mouse): a API o manda sem esperar resposta, e uma
+            # resposta por movimento só encheria o canal e o registro dela.
+            return
+        # A API manda o comando com `correlationId` nulo e espera o resultado apontando o `id` dele.
+        await self._transport.send(
+            self._envelopes.result(
+                command.id,
+                ok=result.status.value == "ok",
+                code=result.code or result.status.value,
+                message=result.detail,
+            )
+        )
 
     def _start_off_reader(self, command: Command) -> bool:
         """Põe o comando numa tarefa (solta, na cadeia das teclas ou na faixa da manutenção) e diz
@@ -243,6 +315,13 @@ class ProcessMessage:
         modo que a ordem, o descarte por idade e a junção de repetições valem para as duas. Só a
         resposta muda (`reply`; sem ela, o transporte)."""
         self._note_tv_path(path)
+        # Pela nuvem, a idade desde o envio é lida AGORA, na chegada: batimentos atrasados que
+        # vêm logo atrás desta tecla (o agente voltando de uma parada) não a fazem parecer nova.
+        sent_age = (
+            self._timestamp_age(command.sent_at)
+            if path == PATH_CLOUD and self._timestamp_age is not None
+            else None
+        )
         key = command.body["key"]
         direction = command.body.get("direction") or "SHORT"
         is_latest = self._newest_press(key) if direction == "SHORT" else None
@@ -255,6 +334,7 @@ class ProcessMessage:
             received_at=received_at,
             is_latest=is_latest,
             is_valid=is_valid,
+            sent_age=sent_age,
         )
         task = asyncio.create_task(self._execute_key(timed, self._last_key_task, reply))
         self._chain(task, command, reply)
@@ -507,24 +587,8 @@ class ProcessMessage:
 
     async def _execute(self, command: Command, reply: Reply | None = None) -> None:
         result = await self._handle_command(command)
-        if reply is not None:
-            # Pelo canal direto o resultado volta pelo próprio canal, não pelo transporte da nuvem.
-            await reply(command, result)
-            return
-        if command.type in self._silent_types:
-            # Fluxo de alta taxa (o movimento do mouse): a API o manda sem esperar resposta, e uma
-            # resposta por movimento só encheria o canal e o registro dela.
-            return
-        # A API manda o comando com `correlationId` nulo e espera o resultado apontando o `id` dele.
-        ok = result.status.value == "ok"
-        await self._transport.send(
-            self._envelopes.result(
-                command.id,
-                ok=ok,
-                code=result.code or result.status.value,
-                message=result.detail,
-            )
-        )
+        self._remember_result(command, result)
+        await self._reply_result(command, result, reply)
 
     async def _execute_detached(self, command: Command, reply: Reply | None = None) -> None:
         # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
@@ -555,27 +619,11 @@ class ProcessMessage:
         else:
             return
         _log.warning("comando %s passou do tempo máximo (id=%s)", command.type, command.id)
-        if reply is not None:
-            await reply(
-                command,
-                CommandResult(
-                    command.id,
-                    ResultStatus.FAILED,
-                    "a TV demorou demais para responder",
-                    TV_UNREACHABLE,
-                ),
-            )
-            return
-        if command.type in self._silent_types:
-            return
-        await self._transport.send(
-            self._envelopes.result(
-                command.id,
-                ok=False,
-                code=TV_UNREACHABLE,
-                message="a TV demorou demais para responder",
-            )
+        result = CommandResult(
+            command.id, ResultStatus.FAILED, "a TV demorou demais para responder", TV_UNREACHABLE
         )
+        self._remember_result(command, result)
+        await self._reply_result(command, result, reply)
 
     async def _reject(self, rejected: Rejected) -> None:
         # Nunca o corpo recebido: só quem enviou o quê (tipo) e por quê.

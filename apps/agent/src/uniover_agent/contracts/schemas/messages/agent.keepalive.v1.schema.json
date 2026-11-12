@@ -14,6 +14,17 @@
     "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
     "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
     "correlationId": { "type": "null" },
-    "body": { "type": "object", "additionalProperties": false }
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "loopLagMs": {
+          "description": "Maior atraso do laço principal do agente desde o batimento anterior, em milissegundos. Opcional: os agentes anteriores não o mandam, e o agente só o manda à API que lista agent.keepalive.loop_lag em features.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        }
+      }
+    }
   }
 }

@@ -22,6 +22,7 @@ public sealed class OutboundEnvelopeFactory(AgentEnvelopeValidator validator, IC
     /// <param name="operationId">Opcional: o código da operação (<c>operationId</c>), só para agentes que o declararam.</param>
     /// <param name="deviceId">Opcional: o aparelho do app (<c>deviceId</c>), só para agentes que declararam <c>pc.device.v1</c>.</param>
     /// <param name="deviceName">Opcional: o nome do aparelho (<c>deviceName</c>).</param>
+    /// <param name="id">Opcional: o <c>id</c> de um envelope já montado, para carimbar de novo o mesmo comando (ver <c>AgentGateway</c>).</param>
     public Result<OutboundEnvelope> Create(
         string type,
         string agentSlug,
@@ -29,12 +30,13 @@ public sealed class OutboundEnvelopeFactory(AgentEnvelopeValidator validator, IC
         JsonElement body,
         string? operationId = null,
         string? deviceId = null,
-        string? deviceName = null)
+        string? deviceName = null,
+        Guid? id = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(type);
         ArgumentException.ThrowIfNullOrWhiteSpace(agentSlug);
 
-        var id = IdGenerator.NewId();
+        var envelopeId = id ?? IdGenerator.NewId();
         var timestamp = clock.UtcNow.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
         using var stream = new MemoryStream();
@@ -42,7 +44,7 @@ public sealed class OutboundEnvelopeFactory(AgentEnvelopeValidator validator, IC
         {
             writer.WriteStartObject();
             writer.WriteNumber("v", AgentEnvelopeValidator.SupportedVersion);
-            writer.WriteString("id", id);
+            writer.WriteString("id", envelopeId);
             writer.WriteString("type", type);
             writer.WriteString("source", ApiEndpoint);
             writer.WriteString("target", $"agent:{agentSlug}");
@@ -76,6 +78,6 @@ public sealed class OutboundEnvelopeFactory(AgentEnvelopeValidator validator, IC
         var validation = validator.Validate(json);
         return validation.IsFailure
             ? Result.Failure<OutboundEnvelope>(validation.Error)
-            : Result.Success(new OutboundEnvelope(id, json));
+            : Result.Success(new OutboundEnvelope(envelopeId, json));
     }
 }

@@ -116,9 +116,10 @@ class EnvelopeFactory:
         }
         return self._build("agent.logs.v1", body, correlation_id)
 
-    def keepalive(self) -> dict[str, Any]:
+    def keepalive(self, loop_lag_ms: int | None = None) -> dict[str, Any]:
         """`agent.keepalive.v1`: mantém o canal ativo sem efeito de negócio."""
-        return self._build("agent.keepalive.v1", {}, None)
+        body = {} if loop_lag_ms is None else {"loopLagMs": loop_lag_ms}
+        return self._build("agent.keepalive.v1", body, None)
 
     def result(
         self, correlation_id: str, *, ok: bool, code: str = "", message: str = ""

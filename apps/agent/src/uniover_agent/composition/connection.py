@@ -38,7 +38,11 @@ from uniover_agent.adapters.single_instance import (
 )
 from uniover_agent.adapters.startup_trace import mark_session_started
 from uniover_agent.adapters.system_clock import SystemClock
-from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
+from uniover_agent.adapters.transport_ws import (
+    POLICY_VIOLATION_CODE,
+    WebSocketTransport,
+    build_ws_url,
+)
 from uniover_agent.adapters.tray_status import TrayStatus
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
@@ -117,9 +121,11 @@ from uniover_agent.core.api_features import (
     ADB_PERMISSION_FEATURE,
     FEATURES_TIMEOUT_SECONDS,
     HANDOVER_FEATURE,
+    KEEPALIVE_LOOP_LAG_FEATURE,
     NOT_PAIRED_FEATURE,
     WAKING_FEATURE,
     ApiFeatures,
+    LoopLagGate,
 )
 from uniover_agent.core.connection import (
     STOP_DUPLICATE,
@@ -132,6 +138,7 @@ from uniover_agent.core.diagnostics import (
     DiagnosticsShipper,
 )
 from uniover_agent.core.disk_alarm import DiskAlarm
+from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY
 from uniover_agent.core.self_care import SelfCare
@@ -739,6 +746,10 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     )
     if pc is not None:
         pc.start()
+    # A diferença entre o relógio da API e o monotônico deste agente, medida pelos batimentos da
+    # API: uma só, a do PC quando há PC. As teclas da TV também contam a idade por ela, desde o
+    # envio, e não desde a chegada (um agente que volta de uma parada não aperta teclas presas).
+    api_clock = pc.clock if pc is not None else ClockOffset()
     if tv is not None:
         # Um sinal de presença recusado por idade (relógio do PC fora de hora) vai ao diagnóstico; o
         # registrador junta as repetições, então o texto é fixo (sem a idade exata).
@@ -773,7 +784,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
         command_timeout_seconds=settings.tv_command_timeout_seconds if tv is not None else None,
         uncapped_types=tv.background_commands if tv is not None else (),
-        observe_timestamp=pc.clock.observe if pc is not None else None,
+        observe_timestamp=api_clock.observe,
+        timestamp_age=api_clock.age,
         # A faixa do PC (e o canal direto) tem o laço dela: o comando de entrada que chega pela
         # nuvem fecha antes o canal direto em uso, e a sinalização do canal corre em tarefa própria
         # (a oferta espera a biblioteca), tudo lá dentro.
@@ -840,9 +852,17 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     )
     refreshing: set[asyncio.Future[None]] = set()
 
-    def start_refresh() -> None:
+    # Se o atraso do laço pode ir no batimento desta conexão (ver `announce_connected`).
+    loop_lag_gate = LoopLagGate()
+
+    def start_refresh(then: Callable[[], None] | None = None) -> None:
         """Consulta o que a API aceita já (prazo curto), sem esperar a consulta de fundo."""
-        refresh = asyncio.ensure_future(features.refresh())
+
+        async def refresh_then() -> None:
+            if await features.refresh() and then is not None:
+                then()
+
+        refresh = asyncio.ensure_future(refresh_then())
         refreshing.add(refresh)
         refresh.add_done_callback(refreshing.discard)
 
@@ -887,6 +907,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     await delivery.prepare()
 
     def on_disconnected() -> None:
+        loop_lag_gate.connection_lost(refused=transport.last_close_code == POLICY_VIOLATION_CODE)
         process.connection_lost()
         if pc is not None and pc.direct is not None:
             # O canal direto segue uns segundos sem a API (queda curta) e fecha se ela não volta.
@@ -908,10 +929,12 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         tray.connected()
         diary.connected()
         watch.connected_now()
-        if not features.answered:
-            # A API ainda não disse o que aceita (partida sem rede): consulta já, com prazo curto,
-            # em vez de esperar o recuo de até 5 min (sem a capacidade, todo aparelho fica barrado).
-            start_refresh()
+        # A cada conexão, consulta já o que a API aceita, com prazo curto: na partida sem rede, para
+        # não esperar o recuo de até 5 min (sem a capacidade, todo aparelho fica barrado); e porque
+        # a API do outro lado pode ter mudado (deploy ou volta de versão): o atraso do laço só vai
+        # no batimento depois de esta conexão confirmar que ela ainda o aceita (recusas seguidas do
+        # batimento fechariam a conexão).
+        start_refresh(then=loop_lag_gate.checking())
         for step in after_hello:
             await step()
         await delivery.after_hello()
@@ -959,6 +982,20 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
                 )
             )
 
+    # Atrasos menores que a parada do vigia também explicam lentidão do controle. O piso do
+    # conjunto de trabalho é metade do mínimo pedido ao Windows: medido no PC do dono, o agente
+    # fica em 38-48 MB sem nada o tirar da memória e caiu a 3-20 MB nas paradas de 12/11. O maior
+    # atraso entre dois batimentos vai neles, para a API que o aceita.
+    main_loop_lag = LoopLagMonitor(
+        working_set_floor=settings.pc_working_set_min_mb * 1024 * 1024 // 2
+    )
+
+    def keepalive_lag_ms() -> int | None:
+        if not loop_lag_gate.allows() or not features.supports(KEEPALIVE_LOOP_LAG_FEATURE):
+            return None
+        loop_lag_gate.sent()
+        return main_loop_lag.take_keepalive_lag_ms()
+
     supervisor = ConnectionSupervisor(
         transport,
         process_when_owner if handover else process,
@@ -1003,6 +1040,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         # Tirada do lugar antes de ser a dona, a candidata volta já (sem os 60 s do `replaced`).
         is_owner=owner.is_set,
         on_handover_restarted=handover_restarted,
+        keepalive_lag_ms=keepalive_lag_ms,
         # Windows: a reconexão acorda quando a rede muda; nos outros sistemas, nada muda.
         network_watcher=network_change_watcher,
     )
@@ -1018,10 +1056,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         tray.run,
         # Se o laço de eventos parar, a pilha de todas as threads vai para `crash.log`.
         LoopWatchdog(installation_base() / "logs").run,
-        # Atrasos menores que a parada do vigia também explicam lentidão do controle. O piso do
-        # conjunto de trabalho é metade do mínimo pedido ao Windows: medido no PC do dono, o agente
-        # fica em 38-48 MB sem nada o tirar da memória e caiu a 3-20 MB nas paradas de 12/11.
-        LoopLagMonitor(working_set_floor=settings.pc_working_set_min_mb * 1024 * 1024 // 2).run,
+        main_loop_lag.run,
     ]
     # O disco da instalação: um diagnóstico quando o espaço piora de nível e outro quando volta.
     root = installation_base()

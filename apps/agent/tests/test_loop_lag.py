@@ -4,7 +4,11 @@ import sys
 
 import pytest
 
-from uniover_agent.adapters.loop_lag import GcPauseTracker, LoopLagMonitor
+from uniover_agent.adapters.loop_lag import (
+    KEEPALIVE_LAG_MAX_MS,
+    GcPauseTracker,
+    LoopLagMonitor,
+)
 from uniover_agent.adapters.process_memory import MemoryCounters, read_memory_counters
 
 
@@ -41,6 +45,24 @@ def test_each_loop_reports_under_its_own_name(caplog: pytest.LogCaptureFixture) 
 
 
 # ---- memória do processo e pausas do GC junto da linha de atraso -------------------------------
+
+
+def test_keepalive_reports_and_resets_the_recent_loop_lag() -> None:
+    monitor = LoopLagMonitor()
+
+    monitor.observe(0.0124)
+    monitor.observe(0.0216)
+
+    assert monitor.take_keepalive_lag_ms() == 22
+    assert monitor.take_keepalive_lag_ms() == 0
+
+
+def test_the_keepalive_lag_never_passes_the_contract_ceiling() -> None:
+    monitor = LoopLagMonitor()
+
+    monitor.observe(3_600.0)  # uma hora parado (suspensão): o batimento ainda sai válido
+
+    assert monitor.take_keepalive_lag_ms() == KEEPALIVE_LAG_MAX_MS == 600_000
 
 
 def test_the_lag_line_carries_page_faults_working_set_and_gc(

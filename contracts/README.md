@@ -21,8 +21,11 @@ um `type` publicado. As duas versões convivem até o agente atualizar.
 
 ## Mensagens da TV
 
-`agent.keepalive.v1` e `api.keepalive.v1` são batimentos sem corpo, a cada 25 segundos, para atravessar proxies
-que descartam conexões WebSocket ociosas. O agente anuncia a capacidade `transport.keepalive.v1`; enquanto ela não
+`agent.keepalive.v1` e `api.keepalive.v1` são batimentos para atravessar proxies que descartam conexões WebSocket
+ociosas: o do agente sai a cada 5 segundos (25 nos agentes anteriores), o da API a cada `ApplicationKeepAliveSeconds`.
+O corpo do `agent.keepalive.v1` pode levar `loopLagMs` (o maior atraso do laço principal do agente desde o batimento
+anterior, em ms, até 600000); o agente só o manda à API que lista `agent.keepalive.loop_lag` em `features`, porque
+uma anterior recusaria o batimento. O agente anuncia a capacidade `transport.keepalive.v1`; enquanto ela não
 existe, a API não envia o batimento novo para preservar a compatibilidade durante a atualização.
 
 `transport.restart.v1` é a capacidade de quem entende o fechamento `4411` (motivo `server-restart`): a API que vai parar

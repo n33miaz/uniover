@@ -355,6 +355,59 @@ describe('TvStore', () => {
       expect(store.sentCount()).toBe(2);
     });
 
+    describe('keys the PC dropped for arriving late', () => {
+      const expired = () =>
+        new HttpErrorResponse({
+          status: 502,
+          error: { type: PROBLEM + 'command-failed', status: 502, agentError: 'expired' },
+        });
+      const LATE = 'O PC atrasou e algumas teclas foram ignoradas.';
+
+      it('stay silent while they are only one or two', async () => {
+        await started();
+        api.sendKey.mockRejectedValue(expired());
+        await expect(store.sendKey('RIGHT')).resolves.toBe(false);
+        await store.sendKey('RIGHT');
+        expect(store.notice()).toBeNull();
+      });
+
+      it('warn once when three or more expire within five seconds', async () => {
+        await started();
+        api.sendKey.mockRejectedValue(expired());
+        await store.sendKey('RIGHT');
+        await vi.advanceTimersByTimeAsync(2000);
+        await store.sendKey('RIGHT');
+        await vi.advanceTimersByTimeAsync(2000);
+        await store.sendKey('RIGHT');
+        expect(store.notice()).toEqual({ kind: 'error', text: LATE });
+
+        store.clearNotice();
+        await store.sendKey('RIGHT');
+        await store.sendKey('RIGHT');
+        expect(store.notice()).toBeNull();
+      });
+
+      it('do not warn when they are spread out', async () => {
+        await started();
+        api.sendKey.mockRejectedValue(expired());
+        for (let i = 0; i < 4; i++) {
+          await store.sendKey('RIGHT');
+          await vi.advanceTimersByTimeAsync(5100);
+        }
+        expect(store.notice()).toBeNull();
+      });
+
+      it('warn again for a new burst after a pause', async () => {
+        await started();
+        api.sendKey.mockRejectedValue(expired());
+        for (let i = 0; i < 3; i++) await store.sendKey('RIGHT');
+        store.clearNotice();
+        await vi.advanceTimersByTimeAsync(6000);
+        for (let i = 0; i < 3; i++) await store.sendKey('RIGHT');
+        expect(store.notice()).toEqual({ kind: 'error', text: LATE });
+      });
+    });
+
     it('counts nothing when the key is not sent at all', async () => {
       await started();
       online.set(false);

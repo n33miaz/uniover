@@ -86,7 +86,16 @@ public sealed class PresenceWritesTests
         ["capabilities"] = new JsonArray(JsonValue.Create("transport.keepalive.v1")),
     });
 
-    private static string KeepAlive() => Envelope("agent.keepalive.v1", []);
+    private static string KeepAlive(int? loopLagMs = null)
+    {
+        var body = new JsonObject();
+        if (loopLagMs is not null)
+        {
+            body["loopLagMs"] = loopLagMs;
+        }
+
+        return Envelope("agent.keepalive.v1", body);
+    }
 
     [Fact]
     public async Task HeartbeatsOfAConnectedAgent_NeverReachTheDatabase()
@@ -134,6 +143,59 @@ public sealed class PresenceWritesTests
         session.EndOfStream();
         await run;
         scopes.Created.Should().BeGreaterThan(afterHello, "desconectar grava o último sinal");
+    }
+
+    [Fact]
+    public async Task HeartbeatInterval_AndLoopLag_StayOnlyInConnectionMemory()
+    {
+        var time = new FakeTimeProvider(Start);
+        var options = Options.Create(new DevicesTransportOptions());
+        var presence = new InMemoryPresenceStore(time, options);
+        var connections = new AgentConnections(presence, new SseBroadcaster<PresenceUpdate>(new SseStreamOptions()), null, time, options);
+        var scopes = new CountingScopes(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+        var validator = new AgentEnvelopeValidator();
+        var hub = new AgentHub(
+            validator,
+            new OutboundEnvelopeFactory(validator, new FixedClock(Start)),
+            connections,
+            new AgentPresencePersistence(scopes, NullLogger<AgentPresencePersistence>.Instance),
+            new ReplyCorrelator(),
+            new InMemoryAgentLogReports(time),
+            scopes,
+            options,
+            time,
+            NullLogger<AgentHub>.Instance);
+        var session = new ScriptedSession();
+        var run = hub.RunSessionAsync(session, CancellationToken.None);
+
+        session.Push(Hello());
+        await WaitUntil(() => presence.Get(Slug)?.AgentVersion == "2.0.0", "hello aceito");
+        session.Push(KeepAlive());
+        await WaitUntil(() => connections.LastKeepalive(Slug) is not null, "batimento de um agente anterior, sem o campo");
+        connections.LastKeepalive(Slug)!.Should().Be(new AgentKeepaliveSample(Start, null, null));
+        var createdAfterHello = scopes.Created;
+
+        time.Advance(TimeSpan.FromSeconds(5));
+        session.Push(KeepAlive(37));
+        await WaitUntil(() => connections.LastKeepalive(Slug)?.LoopLagMs == 37, "atraso do laço");
+
+        connections.LastKeepalive(Slug).Should().Be(new AgentKeepaliveSample(Start.AddSeconds(5), TimeSpan.FromSeconds(5), 37));
+        scopes.Created.Should().Be(createdAfterHello, "o batimento, com ou sem o atraso do laço, nunca chega ao banco");
+        session.EndOfStream();
+        await run;
+        connections.LastKeepalive(Slug).Should().BeNull("a sessão acabou: o que ela contou não vale para a próxima");
+    }
+
+    [Theory]
+    [InlineData("""{}""", null)]
+    [InlineData("""{"loopLagMs":37}""", 37)]
+    [InlineData("""{"loopLagMs":1.5}""", null)]
+    [InlineData("""{"loopLagMs":99999999999}""", null)]
+    [InlineData("""{"loopLagMs":"37"}""", null)]
+    public void TheLoopLagIsRead_WithoutEverThrowing(string body, int? expected)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        AgentHub.ReadLoopLag(document.RootElement).Should().Be(expected);
     }
 
     private static async Task WaitUntil(Func<bool> condition, string what)

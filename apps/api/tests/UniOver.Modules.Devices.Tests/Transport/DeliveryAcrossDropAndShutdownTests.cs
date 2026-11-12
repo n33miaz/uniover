@@ -56,6 +56,33 @@ public sealed class CommandAcrossADropTests
     }
 
     [Fact]
+    public async Task ACommandHeldWhileTheAgentIsAway_IsStampedWhenItLeaves_WithTheSameId()
+    {
+        // O agente mede a idade de uma tecla desde o `ts`: o comando que esperou a sessão voltar (deploy, queda curta) sai
+        // carimbado na hora da saída, senão toda tecla da reconexão chegaria velha e seria descartada calada. O `id` é o mesmo
+        // que a espera da resposta aguarda.
+        var rig = new RestartRig();
+        var gateway = Gateway(rig);
+        var first = rig.Connect("pc-casa");
+        rig.Connections.Detach(first, rig.Time.GetUtcNow()).Should().BeTrue();
+        var sentAt = rig.Time.GetUtcNow();
+        var request = gateway.RequestAsync("pc-casa", Wake(), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await RestartRig.SettleAsync();
+
+        rig.Time.Advance(TimeSpan.FromSeconds(6));
+        await RestartRig.SettleAsync();
+        var second = new RecordingSession("pc-casa");
+        rig.Connections.Attach(second, rig.Time.GetUtcNow());
+        await RestartRig.SettleAsync();
+
+        var frame = JsonDocument.Parse(second.Sent.Should().ContainSingle().Subject).RootElement;
+        frame.GetProperty("ts").GetDateTimeOffset().Should().Be(sentAt.AddSeconds(6), "o carimbo é o da saída, não o do pedido");
+        var commandId = frame.GetProperty("id").GetGuid();
+        rig.Correlator.TryComplete("pc-casa", commandId, new AgentReply(commandId, true, null)).Should().BeTrue();
+        (await request.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ACommandThatAlreadyFailedToTheCaller_IsNeverSentWhenTheAgentComesBack()
     {
         var rig = new RestartRig();

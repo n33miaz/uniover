@@ -20,6 +20,7 @@ import {
   adbNoPromptMessage,
   describeFailure,
   forbiddenMessage,
+  isExpiredInput,
 } from './tv-errors';
 import { ReadWatch } from './tv-read-watch';
 import { withOrder } from './tv-order';
@@ -86,6 +87,9 @@ export const TV_TEXT_MAX = 200;
  */
 /** Quanto tempo o "+1 / -1" do volume sem leitura fica na pílula depois do último toque. */
 const VOLUME_NUDGE_MS = 2500;
+/** Teclas descartadas por chegarem velhas ao PC: tantas, dentro desta janela, viram um aviso. */
+const EXPIRED_KEYS_TO_WARN = 3;
+const EXPIRED_KEYS_WINDOW_MS = 5000;
 // O vigia do agente tem 4 min para religar o controle; o aviso dura um pouco mais que isso.
 const REPAIR_NOTE_MAX_MS = 5 * 60_000;
 const CACHE_KEY = 'uniover.tv.last-state';
@@ -431,6 +435,9 @@ export class TvStore {
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Quando chegaram as teclas descartadas por idade da rajada de agora, e se a rajada já avisou. */
+  private expiredKeys: number[] = [];
+  private expiredWarned = false;
   private watchdogTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly onVisibility = () => {
@@ -722,7 +729,10 @@ export class TvStore {
       if (this.live(epoch)) this.nudgeVolume(key);
       return true;
     } catch (error) {
-      if (this.live(epoch)) this.fail(error);
+      if (this.live(epoch)) {
+        if (isExpiredInput(error)) this.noteExpiredKey();
+        else this.fail(error);
+      }
       return false;
     } finally {
       done();
@@ -1394,6 +1404,23 @@ export class TvStore {
       (failure.kind === 'adb-device-changed' && this.adbPermission.deviceChanged());
     if (!handled) this.showNotice('error', failure.message);
     return failure;
+  }
+
+  /**
+   * Uma tecla que o PC recebeu tarde e descartou (`expired`): sozinha não vira aviso (a pessoa já seguiu adiante). Várias em
+   * poucos segundos querem dizer que o PC atrasou: o aviso sai uma vez por rajada (volta a valer depois de um respiro).
+   */
+  private noteExpiredKey(): void {
+    const now = Date.now();
+    this.expiredKeys = this.expiredKeys.filter((at) => now - at <= EXPIRED_KEYS_WINDOW_MS);
+    if (this.expiredKeys.length === 0) this.expiredWarned = false;
+    this.expiredKeys.push(now);
+    if (this.expiredKeys.length < EXPIRED_KEYS_TO_WARN || this.expiredWarned) return;
+    this.expiredWarned = true;
+    this.showNotice(
+      'error',
+      $localize`:@@tv.error.keys-expired:O PC atrasou e algumas teclas foram ignoradas.`,
+    );
   }
 
   private showNotice(kind: TvNotice['kind'], text: string): void {

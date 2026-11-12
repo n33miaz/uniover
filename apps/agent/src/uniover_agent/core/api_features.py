@@ -29,6 +29,54 @@ ADB_PERMISSION_FEATURE: Final = "tv.state.adb_permission"
 # A API passa a conexão de uma versão do agente para a seguinte sem derrubar o canal (`hello` com
 # `instanceId` e `handover`, fechamento 4410 da antiga). Uma API anterior recusaria o `hello`.
 HANDOVER_FEATURE: Final = "agent.handover.v1"
+# A API aceita `loopLagMs` no corpo do `agent.keepalive.v1`. Uma anterior recusaria cada batimento
+# com o campo e, recusas seguidas, fecharia a conexão: sem ela o batimento sai vazio, como sempre.
+KEEPALIVE_LOOP_LAG_FEATURE: Final = "agent.keepalive.loop_lag"
+
+
+class LoopLagGate:
+    """Quando o atraso do laço (`loopLagMs`) pode ir no batimento.
+
+    Só na conexão cuja PRÓPRIA consulta a `features` confirmou a API (geração da conexão): a
+    resposta de uma consulta feita para a conexão anterior não vale para a nova, que pode ter caído
+    noutra instância durante um deploy. E se a API fechou a conexão por violação de política (1008,
+    o que ela faz depois de recusar várias mensagens) enquanto o campo ia, a conexão seguinte não o
+    manda: a API não responde a um batimento recusado (ele não tem `correlationId`), então o
+    fechamento é o único aviso de recusa que chega.
+    """
+
+    def __init__(self) -> None:
+        self._generation = 0
+        self._approved = -1
+        self._blocked = -1
+        self._sent = False
+
+    def checking(self) -> Callable[[], None]:
+        """Começa a consulta desta conexão; o que devolve dá o aval, se a conexão ainda for esta."""
+        generation = self._generation
+
+        def approve() -> None:
+            if generation == self._generation and generation != self._blocked:
+                self._approved = generation
+
+        return approve
+
+    def allows(self) -> bool:
+        return self._approved == self._generation
+
+    def sent(self) -> None:
+        self._sent = True
+
+    def connection_lost(self, *, refused: bool) -> None:
+        """A conexão caiu; `refused`: a API a fechou por violação de política."""
+        if refused and self._sent:
+            _log.warning(
+                "a API fechou o canal por recusa depois de batimentos com o atraso do laço; a "
+                "próxima conexão não o manda"
+            )
+            self._blocked = self._generation + 1
+        self._generation += 1
+        self._sent = False
 
 
 class ApiFeatures:
@@ -67,16 +115,19 @@ class ApiFeatures:
         """A API já disse o que aceita (falha da consulta, partida ou API dormindo: ainda não)."""
         return self._answered
 
-    async def refresh(self) -> None:
-        """Pergunta à API; resposta ausente (API dormindo, rede) não apaga o que já se sabia."""
+    async def refresh(self) -> bool:
+        """Pergunta à API; resposta ausente (API dormindo, rede) não apaga o que já se sabia.
+
+        Diz se a API respondeu desta vez."""
         try:
             found = await self._fetch()
         except Exception:
             _log.warning("não consegui consultar o que a API aceita", exc_info=True)
-            return
-        if found is not None:
-            self._answered = True
-        if found is not None and found != self._known:
+            return False
+        if found is None:
+            return False
+        self._answered = True
+        if found != self._known:
             added = bool(found - self._known)
             self._known = found
             for listener in self._listeners:
@@ -91,6 +142,7 @@ class ApiFeatures:
                     _log.warning(
                         "não consegui reenviar o hello com a capacidade nova", exc_info=True
                     )
+        return True
 
     async def run(self) -> None:
         """Consulta de tempos em tempos: a resposta de hoje manda no próximo `hello`."""

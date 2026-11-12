@@ -31,6 +31,7 @@ internal sealed class AgentConnections(
 
     private readonly object _gate = new();
     private readonly Dictionary<string, IAgentSession> _sessions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AgentKeepaliveSample> _keepalives = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingDrop> _drops = new(StringComparer.Ordinal);
     private readonly HashSet<string> _revokedAgents = new(StringComparer.Ordinal);
 
@@ -92,6 +93,8 @@ internal sealed class AgentConnections(
             }
 
             _sessions[session.AgentId] = session;
+            // Sessão nova, batimentos novos: o intervalo não se mede contra a sessão anterior.
+            _keepalives.Remove(session.AgentId);
             // Voltou dentro da graça: não há queda a anunciar.
             CancelDrop(session.AgentId);
             if (_waiters.Remove(session.AgentId, out var waiters))
@@ -122,6 +125,7 @@ internal sealed class AgentConnections(
             }
 
             _sessions.Remove(session.AgentId);
+            _keepalives.Remove(session.AgentId);
             // Revogado não volta: sem graça, a queda vale na hora.
             if (_grace > TimeSpan.Zero && !_revokedAgents.Contains(session.AgentId))
             {
@@ -426,6 +430,34 @@ internal sealed class AgentConnections(
         }
     }
 
+    /// <summary>
+    /// O <c>agent.keepalive.v1</c> da sessão atual chegou: guarda, só em memória (o banco dorme), quando chegou, o intervalo
+    /// desde o anterior (o agente de agora bate a cada 5 s, o anterior a cada 25 s) e o atraso do laço que ele contou.
+    /// </summary>
+    public void RecordKeepalive(IAgentSession session, int? loopLagMs, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(session.AgentId, out var current) || !ReferenceEquals(current, session))
+            {
+                return;
+            }
+
+            var interval = _keepalives.TryGetValue(session.AgentId, out var previous) ? now - previous.ReceivedAt : (TimeSpan?)null;
+            _keepalives[session.AgentId] = new AgentKeepaliveSample(now, interval, loopLagMs);
+        }
+    }
+
+    /// <summary>O último batimento do agente conectado, ou nulo (sem sessão, ou nenhum batimento nesta sessão).</summary>
+    public AgentKeepaliveSample? LastKeepalive(string agentId)
+    {
+        lock (_gate)
+        {
+            return _keepalives.GetValueOrDefault(agentId);
+        }
+    }
+
     private void Announce(AgentPresenceInfo info)
     {
         events.Publish(new SseMessage<PresenceUpdate>(PresenceUpdate.ChangeEvent, new PresenceUpdate([info])));
@@ -512,6 +544,12 @@ internal sealed class AgentConnections(
         public ITimer? Timer { get; set; }
     }
 }
+
+/// <summary>
+/// Um batimento do agente: quando chegou, o intervalo desde o anterior da mesma sessão (nulo no primeiro) e o maior atraso do
+/// laço principal desde o anterior, em ms (nulo no agente que ainda não o manda).
+/// </summary>
+internal sealed record AgentKeepaliveSample(DateTimeOffset ReceivedAt, TimeSpan? Interval, int? LoopLagMs);
 
 internal sealed class AgentSessionRevokedException : Exception
 {
