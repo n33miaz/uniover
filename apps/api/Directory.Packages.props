@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
@@ -14,6 +15,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.14" />
     <PackageVersion Include="Fido2" Version="4.3.2" />
+    <!-- Vem pelo Fido2 na 9.0.0, que tem falha conhecida (GHSA-vmv3-wvjp-wqpj); a fixação transitiva sobe a versão nos projetos de teste; no servidor ela vem do próprio runtime. -->
+    <PackageVersion Include="System.Formats.Cbor" Version="10.0.15" />
     <PackageVersion Include="Fido2.AspNet" Version="4.3.1" />
     <!-- Validação de mensagens do agente contra o JSON Schema (usada pelo protocolo do agente). WebSocket e SSE são nativos do ASP.NET Core: sem pacote. -->
     <PackageVersion Include="JsonSchema.Net" Version="9.6.0" />
