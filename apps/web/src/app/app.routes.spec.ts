@@ -138,6 +138,16 @@ describe('app routes', () => {
     await harness.navigateByUrl('/convite');
     expect(harness.routeNativeElement?.matches('app-accept-invite-page')).toBe(true);
   });
+
+  it('serves the shopping invite outside the shell, with no guard to see the secret', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/compras/convite');
+    expect(harness.routeNativeElement?.matches('app-shopping-join-page')).toBe(true);
+    expect(harness.routeNativeElement?.closest('app-shell')).toBeNull();
+    const route = routes.find((candidate) => candidate.path === 'compras/convite');
+    expect(route?.canMatch).toBeUndefined();
+    expect(route?.canActivate).toBeUndefined();
+  });
 });
 
 describe('app routes for a guest', () => {

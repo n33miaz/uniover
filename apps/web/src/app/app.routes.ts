@@ -42,6 +42,14 @@ export const routes: Routes = [
     loadComponent: () => import('./core/auth/accept-invite.page').then((m) => m.AcceptInvitePage),
   },
   {
+    // O convite do grupo de Compras chega com o segredo no fragmento: fica fora da casca e sem guarda nenhum (nem de
+    // login, nem do módulo), para o segredo nunca ir parar no `?next=`. A própria tela o guarda, limpa o endereço e,
+    // sem sessão, manda para o login com `next=/compras/convite`. Vem antes da casca, que pegaria o caminho.
+    path: 'compras/convite',
+    loadComponent: () =>
+      import('./modules/shopping/shopping-join.page').then((m) => m.ShoppingJoinPage),
+  },
+  {
     // Primeiro acesso: a pergunta do nome fica fora da casca (e do guarda de boas-vindas, para nunca haver laço), mas
     // exige sessão: quem não entrou vai para a tela de entrada.
     path: 'boas-vindas',
@@ -73,17 +81,6 @@ export const routes: Routes = [
         data: { title: $localize`:@@module.training.title:Treino` },
         loadChildren: () =>
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
-      },
-      {
-        // O convite do grupo de Compras: fica fora do guarda do módulo, para quem ainda não tem a permissão ouvir o
-        // porquê (a API recusa de qualquer jeito). Vem antes de `compras`, que pegaria o caminho.
-        path: 'compras/convite',
-        data: {
-          title: $localize`:@@shopping.join.title:Convite`,
-          back: { link: '/', label: $localize`:@@shell.back-home-label:Voltar ao Início` },
-        },
-        loadComponent: () =>
-          import('./modules/shopping/shopping-join.page').then((m) => m.ShoppingJoinPage),
       },
       {
         path: 'compras',

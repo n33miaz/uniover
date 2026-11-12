@@ -33,7 +33,7 @@ async function shot(page: Page, testInfo: TestInfo, name: string) {
 const listField = (page: Page) => page.getByRole('textbox', { name: 'Adicionar à lista' });
 const entryField = (page: Page) => page.getByRole('textbox', { name: 'Item e preço' });
 const line = (page: Page, name: string) =>
-  page.locator('li.line', {
+  page.locator('li.row', {
     has: page.locator('.ui-row-title', { hasText: new RegExp(`^${name}$`) }),
   });
 const pick = (page: Page, name: string) => line(page, name).locator('button.pick');
@@ -48,10 +48,11 @@ async function openList(page: Page) {
   await settle(page);
 }
 
-async function add(page: Page, name: string) {
-  await listField(page).fill(name);
+/** Põe na lista o que foi digitado; `shown` é o nome como a lista o mostra ("2 pão francês" vira "Pão francês"). */
+async function add(page: Page, typed: string, shown = typed) {
+  await listField(page).fill(typed);
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-  await expect(page.locator('.ui-row-title', { hasText: name })).toBeVisible();
+  await expect(page.locator('.ui-row-title', { hasText: shown })).toBeVisible();
 }
 
 async function put(page: Page, text: string) {
@@ -87,7 +88,7 @@ test.describe('Compras: da lista ao mercado', () => {
   }, testInfo) => {
     await openList(page);
     await add(page, 'Leite');
-    await add(page, '2 pão francês');
+    await add(page, '2 pão francês', 'Pão francês');
     await add(page, 'Detergente');
     await expect(page.locator('h2.ui-section-label')).toHaveText([
       'Padaria',
@@ -105,6 +106,7 @@ test.describe('Compras: da lista ao mercado', () => {
     await pick(page, 'Leite').click();
     await expect(pick(page, 'Leite')).toHaveAttribute('aria-pressed', 'true');
     await put(page, 'arroz 2x 12,90');
+    await synced(page);
     await expect(page.locator('.total strong')).toContainText('25,80');
     await synced(page);
     const rice = shopping
@@ -149,7 +151,7 @@ test.describe('Compras: da lista ao mercado', () => {
     await page.getByRole('button', { name: /^Começar do zero/ }).click();
     await expect(page.getByText('Digite embaixo o que pegar')).toBeVisible();
     await put(page, 'café 15,90');
-    await expect(page.locator('li.line')).toHaveCount(1);
+    await expect(page.locator('li.row')).toHaveCount(1);
     await synced(page);
     expect(shopping.rows('purchase')[0].payload['fromList']).toBe(false);
   });
@@ -163,9 +165,12 @@ test.describe('Compras: da lista ao mercado', () => {
     await add(page, 'Pão');
     await synced(page);
 
+    // Com o service worker bloqueado no teste, a tela do mercado é carregada antes de o sinal cair (no app de verdade
+    // ela já está no aparelho).
+    await page.getByRole('link', { name: 'Ir ao mercado com a lista' }).click();
+    await expect(page.getByRole('button', { name: /^Usar a lista/ })).toBeVisible();
     await context.setOffline(true);
     identity.offline = true;
-    await page.getByRole('link', { name: 'Ir ao mercado com a lista' }).click();
     await page.getByRole('button', { name: /^Usar a lista/ }).click();
     await expect(page.getByText('Sem sinal')).toBeVisible();
     await expect(page.getByText('Guardado no aparelho. Vai quando o sinal voltar.')).toBeVisible();
@@ -179,7 +184,7 @@ test.describe('Compras: da lista ao mercado', () => {
 
     await expect(page.getByText('Guardado no aparelho')).toHaveCount(0);
     await expect(pick(page, 'Leite')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator('li.line')).toHaveCount(2);
+    await expect(page.locator('li.row')).toHaveCount(2);
     expect(shopping.rows('purchase')).toHaveLength(1);
     expect(
       shopping
@@ -222,6 +227,7 @@ test.describe('Compras: Detalhes', () => {
 
     await page.getByRole('button', { name: 'Gerar convite' }).click();
     await expect(page.getByRole('img', { name: 'QR do convite para as Compras' })).toBeVisible();
+    await page.locator('.invite').scrollIntoViewIfNeeded();
     expect(shopping.invites).toHaveLength(1);
     await expectNoHorizontalScroll(page);
     await shot(page, testInfo, 'detalhes');
@@ -298,6 +304,8 @@ test('no mercado, com o teclado aberto, o campo e as sugestões ficam inteiros a
   await pick(page, 'Banana').click();
   await put(page, 'arroz 2x 12,90');
   await synced(page);
+  await expect(page.locator('.cart li.row')).toHaveCount(2);
+  await expect(page.locator('.total strong')).toContainText('25,80');
 
   await entryField(page).focus();
   await entryField(page).fill('lei');

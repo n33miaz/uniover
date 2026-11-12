@@ -1,10 +1,9 @@
-<section class="screen" [attr.data-screen-ready]="'shopping-details'">
+<section class="screen" [attr.data-screen-ready]="'shopping'">
   <section class="block">
-    <h2 class="ui-section-label" i18n="@@shopping.details.who">Quem vê suas compras</h2>
+    <app-shopping-people (changed)="changed()" />
     <p class="hint left" i18n="@@shopping.details.who-hint">
       Quem está no grupo vê e mexe na lista, no Mercado Agora e no histórico.
     </p>
-    <app-shopping-people (changed)="changed()" />
   </section>
 
   @if (groupOwner()) {
@@ -28,14 +27,14 @@
                 (click)="share()"
                 i18n="@@shopping.invite.share"
               >
-                Enviar link
+                Enviar Link
               </button>
             }
             <button type="button" class="ui-btn" (click)="copy()">
               @if (copied()) {
                 <ng-container i18n="@@shopping.invite.copied">Copiado</ng-container>
               } @else {
-                <ng-container i18n="@@shopping.invite.copy">Copiar link</ng-container>
+                <ng-container i18n="@@shopping.invite.copy">Copiar Link</ng-container>
               }
             </button>
           </div>
@@ -45,7 +44,7 @@
             (click)="revokeInvite()"
             i18n="@@shopping.invite.revoke"
           >
-            Cancelar convite
+            Cancelar Convite
           </button>
         </div>
       } @else {
@@ -56,8 +55,29 @@
           (click)="createInvite()"
           i18n="@@shopping.invite.create"
         >
-          Gerar convite
+          Gerar Convite
         </button>
+      }
+      @if (waiting().length > 0) {
+        <h3 class="ui-section-label" i18n="@@shopping.invite.waiting">Esperando alguém</h3>
+        <ul class="ui-card waiting">
+          @for (pending of waiting(); track pending.id) {
+            <li>
+              <span class="ui-row-title" i18n="@@shopping.invite.until"
+                >Vale até {{ until(pending) }}</span
+              >
+              <button
+                type="button"
+                class="ui-btn plain-bad"
+                (click)="revokeInvite(pending.id)"
+                [attr.aria-label]="cancelLabel(pending)"
+                i18n="@@shopping.invite.cancel-pending"
+              >
+                Cancelar
+              </button>
+            </li>
+          }
+        </ul>
       }
       @if (inviteNotice(); as text) {
         <p class="ui-notice warn" role="alert">{{ text }}</p>
@@ -92,7 +112,7 @@
           </button>
         }
         <label class="ui-btn file" [class.disabled]="importing()">
-          <ng-container i18n="@@shopping.import.file">Escolher arquivo</ng-container>
+          <ng-container i18n="@@shopping.import.file">Escolher Arquivo</ng-container>
           <input
             #file
             type="file"

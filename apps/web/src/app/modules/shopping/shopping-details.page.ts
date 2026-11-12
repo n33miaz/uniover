@@ -12,7 +12,12 @@ import { QrCode } from '../../core/auth/qr/qr-code';
 import { SessionState } from '../../core/session/session-state';
 import { ShoppingEconomizeApi, type EconomizeImport } from './shopping-economize-api';
 import { ShoppingPeople } from './shopping-people';
-import { ShoppingPeopleApi, type CreatedGroupInvite } from './shopping-people-api';
+import { formatDay } from './shopping-format';
+import {
+  ShoppingPeopleApi,
+  type CreatedGroupInvite,
+  type GroupInvite,
+} from './shopping-people-api';
 import { ShoppingSession } from './shopping-session';
 
 /** De quanto em quanto tempo o andamento da busca no Economize é consultado, com a tela à vista. */
@@ -47,6 +52,12 @@ export class ShoppingDetailsPage {
   protected readonly inviteBusy = signal(false);
   protected readonly inviteNotice = signal<string | null>(null);
   protected readonly copied = signal(false);
+  /** Os convites que ainda esperam alguém (menos o que está à vista com o QR), cada um com "Cancelar". */
+  private readonly pendingInvites = signal<readonly GroupInvite[]>([]);
+  protected readonly waiting = computed(() => {
+    const shown = this.invite()?.id;
+    return this.pendingInvites().filter((pending) => pending.id !== shown);
+  });
   protected readonly link = computed(() => {
     const invite = this.invite();
     return invite ? `${location.origin}/compras/convite#${invite.token}` : '';
@@ -84,6 +95,27 @@ export class ShoppingDetailsPage {
     } catch {
       this.groupOwner.set(false);
     }
+    await this.loadInvites();
+  }
+
+  private async loadInvites(): Promise<void> {
+    if (!this.groupOwner()) {
+      this.pendingInvites.set([]);
+      return;
+    }
+    try {
+      this.pendingInvites.set(await this.people.invites());
+    } catch {
+      // Sem a lista, a tela segue: o convite novo e o QR não dependem dela.
+    }
+  }
+
+  protected until(invite: GroupInvite): string {
+    return formatDay(invite.expiresAt);
+  }
+
+  protected cancelLabel(invite: GroupInvite): string {
+    return $localize`:@@shopping.invite.cancel-pending-label:Cancelar o convite que vale até ${this.until(invite)}:day:`;
   }
 
   protected changed(): void {
@@ -98,6 +130,7 @@ export class ShoppingDetailsPage {
     this.copied.set(false);
     try {
       this.invite.set(await this.people.createInvite());
+      void this.loadInvites();
     } catch (error) {
       const problem = problemOf(error);
       this.inviteNotice.set(
@@ -112,12 +145,14 @@ export class ShoppingDetailsPage {
     }
   }
 
-  protected async revokeInvite(): Promise<void> {
-    const invite = this.invite();
-    if (!invite) return;
+  /** Cancela o convite à vista (sem argumento) ou um dos que esperam. */
+  protected async revokeInvite(id = this.invite()?.id): Promise<void> {
+    if (!id) return;
+    this.inviteNotice.set(null);
     try {
-      await this.people.revokeInvite(invite.id);
-      this.invite.set(null);
+      await this.people.revokeInvite(id);
+      if (this.invite()?.id === id) this.invite.set(null);
+      this.pendingInvites.update((list) => list.filter((pending) => pending.id !== id));
     } catch {
       this.inviteNotice.set($localize`:@@shopping.people.failed:Não deu certo. Tente de novo.`);
     }
