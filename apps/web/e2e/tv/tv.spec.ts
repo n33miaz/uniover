@@ -281,13 +281,13 @@ test.describe('controle: tela única, sem abas', () => {
   }) => {
     await openTv(page, '/tv/apps');
     await expect(appsDialog(page)).toBeVisible();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await page.keyboard.press('Escape');
     await expect(appsDialog(page)).toHaveCount(0);
 
     await page.goto('/tv/teclado');
     await expect(keyboardDialog(page)).toBeVisible();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     // Recarregar não reabre o painel: o parâmetro saiu do endereço.
     await page.reload();
     await expect(button(page, 'Mais opções')).toBeVisible();
@@ -2296,7 +2296,7 @@ test.describe('painel Teclado', () => {
     });
     await button(keyboardDialog(page), 'Fechar').click();
     await expect(keyboardDialog(page)).toHaveCount(0);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await expect(button(page, 'Teclado')).toBeFocused();
     await expect.poll(() => texts().at(-1)).toBe('xy');
     expect(texts()).toEqual(['bat', '', 'x', 'xy']);
@@ -2320,7 +2320,7 @@ test.describe('painel Teclado', () => {
     await keyboardField(page).fill('oi');
     await expect.poll(() => texts()).toEqual(['oi']);
     // O controle segue por trás (o endereço não mudou) e volta inteiro ao fechar.
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await page.keyboard.press('Escape');
     await expect(keyboardDialog(page)).toHaveCount(0);
     await button(page, 'Menu').click();

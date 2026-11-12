@@ -23,9 +23,9 @@ async function launch(context: BrowserContext, page: Page) {
 const path = (page: Page) => new URL(page.url()).pathname;
 const search = (page: Page) => new URL(page.url()).search;
 
-/** Hoje, sem treino na tela: o endereço não tem nada além de `/treino`. */
+/** Hoje, sem treino na tela: o endereço não tem nada além de `/treino/` (a raiz do módulo sai com a barra final). */
 async function expectToday(page: Page) {
-  await expect.poll(() => path(page) + search(page)).toBe('/treino');
+  await expect.poll(() => path(page) + search(page)).toBe('/treino/');
   await expect(page.locator('app-workout-day')).toHaveCount(0);
 }
 

@@ -131,7 +131,7 @@ test.describe('convidado que só tem o Treino', () => {
       'Backup de Fotos',
     ]);
     await page.locator('article[data-module="training"] a.card-link').click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(page.locator('app-training-page')).toBeVisible();
 
@@ -261,13 +261,13 @@ test.describe('convidado que tem a TV e o Treino', () => {
     await header.getByRole('button', { name: 'Voltar' }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.locator('article[data-module="tv"] a.card-link').click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
 
     // TV -> Início -> Treino.
     await page.locator('header.head').getByRole('link', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.locator('article[data-module="training"] a.card-link').click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
   });
 
@@ -295,7 +295,7 @@ test.describe('convidado que tem a TV e o Treino', () => {
     await page.goto('/ajustes');
     await expect(page).toHaveURL(/\/ajustes$/);
     await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toHaveCount(0);
-    await expect(page.locator('a[href="/tv"]')).toHaveCount(0);
+    await expect(page.locator('a[href="/tv/"]')).toHaveCount(0);
   });
 });
 

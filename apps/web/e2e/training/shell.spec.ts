@@ -48,7 +48,7 @@ test.describe('casca do Treino', () => {
     );
 
     await tabs.getByRole('link', { name: 'Início' }).click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
   });
 
   test('a aba Exercícios fica marcada na ficha, na lista filtrada e nas rotinas, e só ela', async ({
@@ -157,7 +157,7 @@ test.describe('casca do Treino', () => {
     await expect(card).toBeVisible();
     await expect(card).not.toContainText('Em Breve');
     await card.getByRole('link', { name: 'Ver treino' }).click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
     await expect(page.locator('app-training-page')).toBeVisible();
   });
 });

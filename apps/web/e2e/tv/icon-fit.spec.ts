@@ -461,7 +461,7 @@ test.describe('atalhos maiores e centralizados', () => {
     // Toda conta entra pela Início; a convidada abre a TV pelo cartão dela.
     await expect(page).toHaveURL(/\/$/);
     await page.locator('article[data-module="tv"] a.card-link').click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await showTv(page);
     await expect(
       page.locator('header.head').getByRole('link', { name: 'Voltar ao Início' }),
