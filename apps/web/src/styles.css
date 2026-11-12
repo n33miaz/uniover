@@ -46,8 +46,14 @@
   --fs-title: 1.25rem;
   --fs-display: 1.75rem;
 
-  /* Tamanho mínimo de toque. */
+  /*
+   * Tamanhos de alvo, num lugar só. `--tap` é o mínimo de toque (nenhum alvo fica abaixo dele); os controles da TV e do
+   * PC medem suas teclas por estes três: a tecla comum, o azulejo (atalhos e ícones de app) e a tecla grande.
+   */
   --tap: 44px;
+  --key: 52px;
+  --key-tile: 60px;
+  --key-lg: 64px;
 
   /*
    * Área segura de baixo, num lugar só. `--safe-inset` é o que o aparelho informa (home indicator do iPhone, barra de

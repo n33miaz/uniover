@@ -8,7 +8,7 @@
  * altura; as outras abas têm no mínimo essa e crescem com o conteúdo.
  */
 .pc {
-  --pc-bar: 52px;
+  --pc-bar: var(--key);
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -185,11 +185,11 @@
   bottom: calc(var(--pc-bar) + var(--space-2) + var(--space-3));
   left: var(--space-3);
 }
+/* O aviso de falha é o aviso padrão do app (`ui-notice bad`); aqui só o texto no meio e o botão embaixo dele. */
 .notice {
-  margin: 0;
-  color: var(--a-bad);
-  font-size: var(--fs-small);
-  font-weight: 650;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
   text-align: center;
 }
 /* Na tela do mouse o aviso flutua sobre a superfície, logo acima da barra de ações: em linha, empurraria a barra para baixo. */
@@ -200,9 +200,6 @@
   left: var(--space-3);
   z-index: 2;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--a-bad);
-  border-radius: var(--radius);
-  background: var(--a-surface);
 }
 /* O botão de pedir de novo a confirmação fica abaixo do texto do aviso. */
 .notice .ui-btn {

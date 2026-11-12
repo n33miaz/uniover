@@ -2,13 +2,16 @@
   display: contents;
 }
 
-/* Aviso passageiro: flutua sobre a fileira de baixo sem pegar o toque, para o controle seguir usável. */
+/*
+ * Aviso passageiro: flutua logo abaixo do cabeçalho (o mesmo lugar do recado da permissão) ou, quando há a linha do
+ * motivo, logo abaixo dela, sem pegar o toque e sem empurrar nada. Ali ele não tapa o volume, as direções nem as teclas
+ * de baixo; o que fica atrás dele segue tocável. Quem o posiciona é a linha sem altura da página (`toast-slot`).
+ */
 .toast {
-  position: fixed;
-  right: var(--gutter);
-  bottom: calc(var(--gutter) + var(--safe-bottom) + var(--kb-inset));
-  left: var(--gutter);
-  z-index: 5;
+  position: absolute;
+  top: 10px;
+  right: 0;
+  left: 0;
   max-width: 36rem;
   margin: 0 auto;
   padding: 12px 14px;
@@ -25,7 +28,7 @@
   border-left-color: var(--a-bad);
 }
 /*
- * O aviso sobe e aparece ao entrar (`@starting-style`) e desce e esmaece ao sair (`animate.leave`, que segura o
+ * O aviso desce e aparece ao entrar (`@starting-style`) e sobe e esmaece ao sair (`animate.leave`, que segura o
  * elemento até o fim da animação). Com "reduzir movimento" ele só aparece e some.
  */
 .toast {
@@ -36,7 +39,7 @@
 @starting-style {
   .toast {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-8px);
   }
 }
 .toast-leave {
@@ -45,8 +48,13 @@
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-8px);
   }
+}
+/* Um aviso por vez: um novo que entra enquanto o anterior ainda sai tira o anterior da tela na hora. */
+.toast-leave:has(~ .toast:not(.toast-leave)),
+.toast:not(.toast-leave) ~ .toast-leave {
+  display: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .toast {

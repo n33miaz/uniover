@@ -36,7 +36,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  min-height: 44px;
+  min-height: var(--tap);
   padding: 0 var(--space-2);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);

@@ -11,7 +11,7 @@
   gap: var(--space-3);
 }
 .who app-tv-app-icon {
-  --tile: 60px;
+  --tile: var(--key-tile);
   --tile-radius: 16px;
 }
 

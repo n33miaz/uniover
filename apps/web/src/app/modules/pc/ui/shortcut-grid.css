@@ -29,7 +29,7 @@
   justify-content: center;
   gap: 2px;
   min-width: 0;
-  min-height: 60px;
+  min-height: var(--key-tile);
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
@@ -95,7 +95,7 @@
 }
 .goto-input {
   width: 5.5rem;
-  min-height: 52px;
+  min-height: var(--key);
   padding: 0 var(--space-2);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
@@ -107,7 +107,7 @@
 }
 .goto-go {
   min-width: 64px;
-  min-height: 52px;
+  min-height: var(--key);
   border: 1px solid var(--a-accent);
   border-radius: var(--radius);
   background: var(--a-accent);

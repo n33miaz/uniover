@@ -103,7 +103,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
+  min-height: var(--tap);
 }
 h2 {
   font-size: 1.15rem;
@@ -112,8 +112,8 @@ h2 {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
   border: 0;
   border-radius: 50%;

@@ -336,7 +336,10 @@ test.describe('com o teclado aberto o que fica embaixo sobe com ele', () => {
     await expectClearOfBottom(page, save, KEYBOARD);
   });
 
-  test('o aviso passageiro da TV fica acima do teclado', async ({ context, page }) => {
+  test('o aviso passageiro da TV fica logo abaixo do cabeçalho, longe do teclado', async ({
+    context,
+    page,
+  }) => {
     const identity = await mockIdentityApi(context);
     const tv = await mockTvApi(context, identity);
     await installFakeEventSource(page);
@@ -358,5 +361,10 @@ test.describe('com o teclado aberto o que fica embaixo sobe com ele', () => {
     const toast = page.locator('.toast');
     await expect(toast).toBeVisible();
     await expectClearOfBottom(page, toast, KEYBOARD, false);
+    // O aviso mora em cima (logo abaixo do cabeçalho): o teclado, que sobe de baixo, nem chega perto dele.
+    const head = (await page.locator('header.head').boundingBox())!;
+    const box = (await toast.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(head.y + head.height);
+    expect(box.y + box.height).toBeLessThan(page.viewportSize()!.height / 2);
   });
 });

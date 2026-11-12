@@ -18,7 +18,11 @@ button:disabled,
   cursor: default;
 }
 
-/* Resposta imediata ao toque: o botão afunda um pouco e a cor da paleta aparece. Quem pediu menos movimento só vê a cor. */
+/*
+ * Resposta imediata ao toque, a mesma em todas as teclas: afunda um pouco, o fundo e a borda tomam a cor da paleta. Na
+ * pílula a borda é a da própria pílula e quem afunda é o ícone: a metade tocada é um retângulo recortado, que encolhido
+ * deixava um vão em volta. Quem pediu menos movimento só vê a cor.
+ */
 @media (prefers-reduced-motion: no-preference) {
   .round,
   .pill-btn {
@@ -27,8 +31,15 @@ button:disabled,
       background-color 120ms ease-out,
       border-color 120ms ease-out;
   }
+  /* Na pílula só a borda acompanha o toque: o fundo dela troca na hora com o tema, sem esmaecer por baixo do texto. */
+  .pill {
+    transition: border-color 120ms ease-out;
+  }
+  .pill-btn app-tv-icon {
+    transition: transform 90ms ease-out;
+  }
   .round.pressed,
-  .pill-btn.pressed {
+  .pill-btn.pressed app-tv-icon {
     transform: scale(0.93);
   }
 }
@@ -50,6 +61,9 @@ button:disabled,
 .round.pressed {
   border-color: var(--a-accent);
   background: var(--a-accent-soft);
+}
+.pill:has(.pill-btn.pressed) {
+  border-color: var(--a-accent);
 }
 
 .bottom {
@@ -107,7 +121,7 @@ button:disabled,
 }
 .pill-btn {
   flex: 1 1 0;
-  min-height: calc(52px * var(--key-scale));
+  min-height: calc(var(--key) * var(--key-scale));
   padding: 0;
   border: 0;
   background: transparent;

@@ -12,7 +12,7 @@
 .goto-input {
   box-sizing: border-box;
   min-width: 0;
-  min-height: 52px;
+  min-height: var(--key);
   padding: 0 var(--space-2);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
@@ -23,7 +23,7 @@
   text-align: center;
 }
 .goto-go {
-  min-height: 52px;
+  min-height: var(--key);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
   background: var(--a-surface);

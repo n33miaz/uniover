@@ -28,8 +28,8 @@
 .icon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -61,7 +61,7 @@
 
 /* O botão esquerdo travado até soltar: o mesmo "Arrastar" dos botões de clique. */
 .drag {
-  min-height: 52px;
+  min-height: var(--key);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
   background: var(--a-surface);

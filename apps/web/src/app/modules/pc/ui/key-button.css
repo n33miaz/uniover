@@ -3,7 +3,7 @@
   display: grid;
   place-items: center;
   min-width: 0;
-  min-height: 52px;
+  min-height: var(--key);
   padding: 0 var(--space-1);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);

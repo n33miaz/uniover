@@ -1379,6 +1379,61 @@ test.describe('aviso passageiro', () => {
     expect(leaving.removed, 'e depois saiu').toBe(true);
   });
 
+  test('fica logo abaixo do cabeçalho e, com a linha do motivo, abaixo dela (sem tapar o "Tentar de Novo")', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openTv(page);
+    tv.commandFailure = { status: 504, kind: 'agent-timeout' };
+    await keyButton(page, 'Mudo').click();
+    const toast = page.locator('.toast');
+    await expect(toast).toBeVisible();
+    const head = (await page.locator('header.head').boundingBox())!;
+    const alone = (await toast.boundingBox())!;
+    expect(alone.y).toBeGreaterThanOrEqual(head.y + head.height);
+    expect(alone.y - (head.y + head.height)).toBeLessThanOrEqual(16);
+    // Em cima, não embaixo: o aviso não chega às teclas de baixo.
+    const bottom = (await keyButton(page, 'Mudo').boundingBox())!;
+    expect(alone.y + alone.height).toBeLessThan(bottom.y);
+
+    // O agente cai com o aviso ainda na tela: a linha do motivo entra e o aviso desce para baixo dela.
+    tv.state = { ...tv.state, agentOnline: false, connection: 'disconnected', volume: null };
+    await emitSse(page, 'tv.state', tv.state);
+    const row = page.locator('.reason-row');
+    await expect(row.getByRole('button', { name: 'Tentar de Novo' })).toBeVisible();
+    await expect(toast).toBeVisible();
+    const reason = (await row.boundingBox())!;
+    const below = (await toast.boundingBox())!;
+    expect(below.y).toBeGreaterThanOrEqual(reason.y + reason.height);
+    expect(below.y - (reason.y + reason.height)).toBeLessThanOrEqual(16);
+  });
+
+  test('um aviso por vez: o novo troca o texto do anterior, e o mesmo repetido não recomeça', async ({
+    page,
+  }) => {
+    await openTv(page);
+    tv.commandFailure = { status: 504, kind: 'agent-timeout' };
+    await keyButton(page, 'Mudo').click();
+    const toast = page.locator('.toast');
+    await expect(toast).toHaveCount(1);
+    const first = (await toast.textContent())!.trim();
+    // Marca o elemento: se o aviso seguinte criasse outro, a marca sumiria (e o anterior ficaria saindo por baixo).
+    await toast.evaluate((el) => (el.dataset['mark'] = 'first'));
+
+    tv.commandFailure = { status: 500, kind: 'internal' };
+    await keyButton(page, 'Mudo').click();
+    await expect(toast).not.toHaveText(first);
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toHaveAttribute('data-mark', 'first');
+
+    const second = (await toast.textContent())!.trim();
+    await keyButton(page, 'Mudo').click();
+    await expect.poll(() => tv.count('/keys')).toBe(3);
+    await expect(toast).toHaveText(second);
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toHaveAttribute('data-mark', 'first');
+  });
+
   test('com "reduzir movimento" o aviso aparece inteiro e some sem passar pela saída', async ({
     page,
   }) => {

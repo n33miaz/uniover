@@ -1,7 +1,14 @@
 @if (notice(); as notice) {
-  @if (notice.kind === 'error') {
-    <p class="toast error" role="alert" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
-  } @else {
-    <p class="toast" role="status" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
-  }
+  <!--
+    Um aviso por vez: o elemento é um só enquanto houver aviso, e um aviso novo só troca o texto (e a cor) dele. Trocar o
+    elemento a cada aviso deixava o anterior saindo por baixo do novo, os dois empilhados.
+  -->
+  <p
+    class="toast"
+    [class.error]="notice.kind === 'error'"
+    [attr.role]="notice.kind === 'error' ? 'alert' : 'status'"
+    [animate.leave]="'toast-leave'"
+  >
+    {{ notice.text }}
+  </p>
 }
