@@ -28,7 +28,7 @@ const OTHER = '22222222-2222-4222-8222-222222222222';
 const DAY = 24 * 60 * 60 * 1000;
 
 /** O que a memória do aparelho guarda de um app para uma conta (nulo se nada). */
-function inAccount(scope: 'root' | 'tv' | 'treino', account: string): unknown {
+function inAccount(scope: 'root' | 'tv' | 'treino' | 'pc', account: string): unknown {
   return JSON.parse(localStorage.getItem(installHintKey(scope, account)) ?? 'null');
 }
 
@@ -159,10 +159,12 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(api.saveInstallHint).toHaveBeenCalledWith({ root: { never: true } });
     });
 
-    it.each<[string, string, 'root' | 'tv' | 'treino' | null]>([
+    it.each<[string, string, 'root' | 'tv' | 'treino' | 'pc' | null]>([
       ['a raiz aberta no endereço de partida', '/', 'root'],
       ['o Treino aberto no endereço de partida', '/treino/', 'treino'],
       ['a TV aberta no endereço de partida (sem a barra final)', '/tv', 'tv'],
+      ['o PC aberto no endereço de partida', '/pc/', 'pc'],
+      ['um endereço que só começa como o do PC', '/pcx', null],
       ['um link fundo dentro do app (pode ser de outro atalho)', '/treino/hoje', null],
       ['uma tela da raiz que não é a de partida', '/ajustes/aparencia', null],
     ])('iOS sem marcador de lançamento: %s', (_name, path, marked) => {
@@ -171,8 +173,9 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
         root: localStorage.getItem(installHintKey('root')),
         tv: localStorage.getItem(installHintKey('tv')),
         treino: localStorage.getItem(installHintKey('treino')),
+        pc: localStorage.getItem(installHintKey('pc')),
       };
-      for (const scope of ['root', 'tv', 'treino'] as const) {
+      for (const scope of ['root', 'tv', 'treino', 'pc'] as const) {
         expect(stored[scope] === null ? null : JSON.parse(stored[scope])).toEqual(
           scope === marked ? { installed: true } : null,
         );

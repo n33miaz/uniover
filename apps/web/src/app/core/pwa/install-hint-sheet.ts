@@ -15,7 +15,7 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../shared/ui/dialog-motion';
-import { InstallHintService, InstallMode } from './install-hint.service';
+import { InstallHintService, InstallMode, InstallScope } from './install-hint.service';
 
 /** Traços dos desenhos dos passos (grade de 24), no mesmo estilo dos outros ícones do app: só caminhos. */
 const SHARE_ICON = [
@@ -39,6 +39,17 @@ const COPY_ICON = [
 ] as const;
 
 type CopyState = 'idle' | 'copied' | 'failed';
+
+/**
+ * O aviso de quem abriu a tela de um app na janela instalada de outro, com o nome do app da tela (cada um tem o
+ * seu artigo). Um módulo novo com atalho próprio não compila sem a frase dele.
+ */
+const OTHER_WINDOW_NOTICE: Record<InstallScope, string> = {
+  root: $localize`:@@install.android.other-window.root:Você está na janela de outro app UniOver. Abra o endereço do UniOver no navegador para instalar o atalho próprio.`,
+  tv: $localize`:@@install.android.other-window.tv:Você está na janela de outro app UniOver. Abra o endereço da TV no navegador para instalar o atalho próprio.`,
+  treino: $localize`:@@install.android.other-window.treino:Você está na janela de outro app UniOver. Abra o endereço do Treino no navegador para instalar o atalho próprio.`,
+  pc: $localize`:@@install.android.other-window.pc:Você está na janela de outro app UniOver. Abra o endereço do Controle do PC no navegador para instalar o atalho próprio.`,
+};
 
 /**
  * Folha "Atalho na tela de início": explica, conforme o aparelho, como pôr o app na tela de início. No Chromium
@@ -79,6 +90,9 @@ export class InstallHintSheet {
   protected readonly safariIcon = SAFARI_ICON;
   protected readonly copyIcon = COPY_ICON;
   protected readonly foreignAppWindow = this.hint.foreignAppWindow;
+  protected readonly otherWindowNotice = computed(
+    () => OTHER_WINDOW_NOTICE[this.hint.screenScope()],
+  );
 
   /** A folha já está descendo: nada mais vale (nem instalar, nem fechar de novo). */
   protected readonly leaving = signal(false);

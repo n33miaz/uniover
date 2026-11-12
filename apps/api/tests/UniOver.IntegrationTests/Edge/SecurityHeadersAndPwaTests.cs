@@ -103,6 +103,9 @@ public partial class SecurityHeadersAndPwaTests
     [Theory]
     [InlineData("/tv/controle", "/tv/manifest.webmanifest", "/tv/apple-touch-icon.png")]
     [InlineData("/treino", "/treino/manifest.webmanifest", "/treino/apple-touch-icon.png")]
+    [InlineData("/pc", "/pc/manifest.webmanifest", "/pc/apple-touch-icon.png")]
+    [InlineData("/PC/", "/pc/manifest.webmanifest", "/pc/apple-touch-icon.png")]
+    [InlineData("/pcx", "href=\"/manifest.webmanifest\"", "href=\"/apple-touch-icon.png\"")]
     [InlineData("/outro/lugar", "href=\"/manifest.webmanifest\"", "href=\"/apple-touch-icon.png\"")]
     [InlineData("/", "href=\"/manifest.webmanifest\"", "href=\"/apple-touch-icon.png\"")]
     public async Task Manifest_IsChosenPerModuleOnTheServer(string path, string manifest, string icon)

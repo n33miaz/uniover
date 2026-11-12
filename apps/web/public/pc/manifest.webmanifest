@@ -1,0 +1,48 @@
+{
+  "id": "/pc/",
+  "name": "UniOver PC",
+  "short_name": "UniOver PC",
+  "description": "Controle do computador pelo UniOver.",
+  "start_url": "/pc/?uniover_app=pc",
+  "scope": "/pc/",
+  "related_applications": [
+    { "platform": "webapp", "url": "/pc/manifest.webmanifest", "id": "/pc/" }
+  ],
+  "display": "standalone",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "background_color": "#F2F5F1",
+  "theme_color": "#3B6B4B",
+  "icons": [
+    {
+      "src": "/pc/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pc/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pc/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pc/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pc/icons/monochrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ]
+}

@@ -33,6 +33,7 @@ function scopeOf(slug?: string): Scope {
 const ROOT = scopeOf();
 const TV = scopeOf('tv');
 const TRAINING = scopeOf('treino');
+const PC = scopeOf('pc');
 
 let identity: IdentityMock;
 
@@ -126,6 +127,25 @@ test.describe('head por módulo no cliente', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     await expectHead(page, TV);
     await expectTargetsRespond(page);
+  });
+
+  test('carga direta de /pc/ abre com o manifest, o ícone e o nome do PC; /pcx continua na raiz', async ({
+    page,
+  }) => {
+    identity.loggedIn = true;
+    await page.goto('/pc/');
+    await expectHead(page, PC);
+    await expectTargetsRespond(page);
+    for (const [selector, href] of [
+      ['head link[rel="icon"][type="image/svg+xml"]', '/pc/favicon.svg'],
+      ['head link[rel="icon"][type="image/png"]', '/pc/favicon-32.png'],
+    ]) {
+      await expect(page.locator(selector)).toHaveAttribute('href', href);
+      expect((await page.request.get(href)).status(), href).toBe(200);
+    }
+
+    await page.goto('/pcx');
+    await expectHead(page, ROOT);
   });
 
   test('convidada: o convite abre na raiz e, ao abrir a /tv pela Início sem recarregar, o head é o da TV', async ({

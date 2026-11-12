@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 
 // Módulos com manifest próprio (a mesma lista de src/app/core/modules/module-slugs.ts).
-const SCOPED_SLUGS = ['tv', 'treino'];
+const SCOPED_SLUGS = ['tv', 'treino', 'pc'];
 
 const CSP_TEMPLATE =
   "default-src 'self'; script-src 'self'; style-src 'self' 'nonce-{nonce}'; img-src 'self' data:; " +

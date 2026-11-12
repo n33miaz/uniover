@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Símbolo pc: monitor de contorno com haste e base, e na tela o ponteiro do mouse cheio (controle do computador). O fundo vai até as bordas (o sistema aplica a máscara). -->
+  <rect width="512" height="512" fill="#3B6B4B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(0 -6)">
+      <rect x="96" y="128" width="320" height="216" rx="30"/>
+      <path d="M256 344V396"/>
+      <path d="M186 396H326"/>
+      <path d="M188 166L324 228L266 249L243 306Z" fill="#FFFFFF" stroke="none"/>
+    </g>
+  </g>
+</svg>
