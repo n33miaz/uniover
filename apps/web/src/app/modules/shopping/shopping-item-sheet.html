@@ -1,0 +1,171 @@
+<dialog
+  #dialog
+  class="sheet ui-dialog"
+  aria-labelledby="shopping-sheet-title"
+  (cancel)="cancel($event)"
+>
+  @if (item(); as it) {
+    <span class="grabber" aria-hidden="true"></span>
+    <form class="body" (submit)="$event.preventDefault(); save()">
+      <header class="head">
+        <app-shopping-item-icon [product]="it.product" />
+        <h2 id="shopping-sheet-title" class="name">{{ it.product.name }}</h2>
+      </header>
+
+      @if (variants().length > 0) {
+        <div class="block">
+          <h3 class="ui-section-label" i18n="@@shopping.sheet.variant">Qual tipo?</h3>
+          <div class="chips">
+            @for (variant of variants(); track variant) {
+              <button type="button" class="chip" (click)="pickVariant(variant)">
+                {{ variant }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="block">
+        <h3 class="ui-section-label" i18n="@@shopping.sheet.category">Categoria</h3>
+        <div class="chips">
+          @for (key of categories; track key) {
+            <button
+              type="button"
+              class="chip"
+              [attr.aria-pressed]="current() === key"
+              (click)="category.emit(key)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="drawing(key)" /></svg>
+              {{ label(key) }}
+            </button>
+          }
+        </div>
+      </div>
+
+      <div class="block">
+        <label
+          class="ui-section-label"
+          for="shopping-sheet-quantity"
+          i18n="@@shopping.sheet.quantity"
+          >Quantidade</label
+        >
+        <div class="stepper">
+          <button
+            type="button"
+            class="ui-btn"
+            (click)="step(-1)"
+            aria-label="Menos"
+            i18n-aria-label="@@shopping.sheet.less"
+          >
+            −
+          </button>
+          <input
+            id="shopping-sheet-quantity"
+            class="ui-input"
+            [attr.inputmode]="'decimal'"
+            autocomplete="off"
+            [value]="quantity()"
+            (input)="quantity.set($any($event.target).value)"
+          />
+          @if (isKg()) {
+            <span class="unit">{{ kg }}</span>
+          }
+          <button
+            type="button"
+            class="ui-btn"
+            (click)="step(1)"
+            aria-label="Mais"
+            i18n-aria-label="@@shopping.sheet.more"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      @if (mode() === 'market') {
+        <div class="block">
+          <label class="ui-section-label" for="shopping-sheet-price">
+            @if (promo() === '3x2' || promo() === '2x1') {
+              <ng-container i18n="@@shopping.sheet.sticker">Preço da etiqueta</ng-container>
+            } @else if (isKg()) {
+              <ng-container i18n="@@shopping.sheet.price-kg">Preço do quilo</ng-container>
+            } @else {
+              <ng-container i18n="@@shopping.sheet.price">Preço</ng-container>
+            }
+          </label>
+          <input
+            #priceField
+            id="shopping-sheet-price"
+            class="ui-input price"
+            [attr.inputmode]="'decimal'"
+            [attr.enterkeyhint]="'done'"
+            autocomplete="off"
+            placeholder="0,00"
+            [value]="price()"
+            (input)="price.set($any($event.target).value)"
+          />
+          <div class="chips">
+            <button
+              type="button"
+              class="chip"
+              [attr.aria-pressed]="promo() === 'lower'"
+              (click)="promo.set(promo() === 'lower' ? 'off' : 'lower')"
+              i18n="@@shopping.sheet.promo"
+            >
+              Promoção
+            </button>
+            <button
+              type="button"
+              class="chip"
+              [attr.aria-pressed]="promo() === '3x2'"
+              (click)="promo.set(promo() === '3x2' ? 'off' : '3x2')"
+              i18n="@@shopping.promo.3x2-chip"
+            >
+              Leve 3 pague 2
+            </button>
+            <button
+              type="button"
+              class="chip"
+              [attr.aria-pressed]="promo() === '2x1'"
+              (click)="promo.set(promo() === '2x1' ? 'off' : '2x1')"
+              i18n="@@shopping.promo.2x1-chip"
+            >
+              Leve 2 pague 1
+            </button>
+          </div>
+          @if (promo() === 'lower') {
+            <input
+              class="ui-input"
+              [attr.inputmode]="'decimal'"
+              autocomplete="off"
+              placeholder="Preço normal"
+              i18n-placeholder="@@shopping.sheet.regular"
+              aria-label="Preço normal"
+              i18n-aria-label="@@shopping.sheet.regular"
+              [value]="regular()"
+              (input)="regular.set($any($event.target).value)"
+            />
+          }
+          @if (takePay(); as each) {
+            <p class="hint" i18n="@@shopping.sheet.each">Sai {{ each }} cada</p>
+          }
+        </div>
+      }
+
+      @if (error(); as text) {
+        <p class="ui-notice warn" role="alert">{{ text }}</p>
+      }
+
+      <div class="actions">
+        <button type="button" class="ui-btn quiet-bad" (click)="remove()">
+          @if (mode() === 'market') {
+            <ng-container i18n="@@shopping.sheet.remove-market">Tirar da Compra</ng-container>
+          } @else {
+            <ng-container i18n="@@shopping.sheet.remove-list">Tirar da Lista</ng-container>
+          }
+        </button>
+        <button type="submit" class="ui-btn primary" i18n="@@shopping.sheet.save">Guardar</button>
+      </div>
+    </form>
+  }
+</dialog>

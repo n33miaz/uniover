@@ -84,9 +84,10 @@ describe('ShoppingStore: two phones without signal', () => {
       expect(store.pendingCount()).toBe(0);
       expect(store.state()).toBe('synced');
       expect(names(store).sort()).toEqual(['Leite', 'Pão']);
+      // Na ordem dos corredores: a padaria vem antes dos laticínios.
       expect(listed(store)).toEqual([
-        { name: 'Leite', quantity: 3 },
         { name: 'Pão', quantity: 1 },
+        { name: 'Leite', quantity: 3 },
       ]);
     }
     // Quem chegou depois só fica sabendo que os repetidos viraram um; ninguém vê "recusada".

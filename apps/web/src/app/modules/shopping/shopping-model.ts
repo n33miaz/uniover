@@ -1,3 +1,5 @@
+import { categoryOf, categoryOrder, type CategoryKey } from './shopping-categories';
+
 /*
  * O estado de Compras no aparelho, em funções puras. A tela mostra o que o servidor já confirmou (o retrato) com as
  * escritas ainda não enviadas por cima: um toque aparece na hora, com ou sem sinal, e quem decide um conflito é o
@@ -25,6 +27,8 @@ export interface Purchase {
   readonly id: string;
   readonly status: 'open' | 'closed';
   readonly budget?: number | null;
+  /** Aberta a partir da lista (o padrão) ou do zero. Ausente vale `true` (compras de antes da opção). */
+  readonly fromList?: boolean;
   readonly totalPaid?: number | null;
   readonly store?: string | null;
   readonly startedAt?: string | null;
@@ -38,6 +42,10 @@ export interface PurchaseItem {
   readonly productId: string;
   readonly quantity: number;
   readonly unitPrice?: number | null;
+  /** Na promoção, o preço normal da etiqueta (o `unitPrice` é o que se paga por unidade). */
+  readonly regularPrice?: number | null;
+  /** O texto curto da promoção ("leve 3 pague 2"). */
+  readonly promoNote?: string | null;
   readonly picked: boolean;
   readonly deleted: boolean;
 }
@@ -161,6 +169,7 @@ export function applyOperation(snapshot: Snapshot, operation: PendingOperation):
             id,
             status: 'open',
             budget: (body['budget'] as number | undefined) ?? null,
+            fromList: body['fromList'] !== false,
             startedAt: new Date(operation.createdAt).toISOString(),
             deleted: false,
           });
@@ -179,15 +188,26 @@ export function applyOperation(snapshot: Snapshot, operation: PendingOperation):
       const current = snapshot.purchaseItems.get(id);
       const only = body['only'];
       const kept = current && !current.deleted ? current : null;
+      // A promoção anda com o preço: muda junto com ele e some quando ele some (como no servidor).
+      const unitPrice =
+        only === 'picked'
+          ? (kept?.unitPrice ?? null)
+          : ((body['unitPrice'] as number | undefined) ?? null);
+      const promo =
+        only === 'picked'
+          ? { regularPrice: kept?.regularPrice ?? null, promoNote: kept?.promoNote ?? null }
+          : {
+              regularPrice: (body['regularPrice'] as number | undefined) ?? null,
+              promoNote: String(body['promoNote'] ?? '').trim() || null,
+            };
       return withEntity(snapshot, 'purchaseItem', {
         id,
         purchaseId: operation.purchaseId ?? '',
         productId: String(body['productId']),
         quantity: only && kept ? kept.quantity : Number(body['quantity'] ?? 1),
-        unitPrice:
-          only === 'picked'
-            ? (kept?.unitPrice ?? null)
-            : ((body['unitPrice'] as number | undefined) ?? null),
+        unitPrice,
+        regularPrice: unitPrice === null ? null : promo.regularPrice,
+        promoNote: unitPrice === null ? null : promo.promoNote,
         picked: only === 'price' ? (kept?.picked ?? false) : body['picked'] === true,
         deleted: body['deleted'] === true,
       });
@@ -261,26 +281,51 @@ export interface ListRow {
 }
 
 export interface ListSection {
-  readonly name: string;
+  readonly category: CategoryKey;
   readonly rows: readonly ListRow[];
 }
 
-/** A lista da casa: só o que "precisa", por seção do mercado (a sem nome por último), em ordem alfabética. */
+/** Agrupa por categoria, na ordem dos corredores; dentro de cada uma, como `compare` mandar. */
+export function byCategory<T>(
+  rows: readonly T[],
+  productOf: (row: T) => Product,
+  compare: (a: T, b: T) => number,
+): readonly { readonly category: CategoryKey; readonly rows: readonly T[] }[] {
+  const groups = new Map<CategoryKey, T[]>();
+  for (const row of rows) {
+    const key = categoryOf(productOf(row));
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => categoryOrder(a) - categoryOrder(b))
+    .map(([category, list]) => ({ category, rows: list.sort(compare) }));
+}
+
+/** A lista da casa: só o que "precisa", por categoria (na ordem dos corredores), em ordem alfabética. */
 export function listSections(snapshot: Snapshot): readonly ListSection[] {
-  const sections = new Map<string, ListRow[]>();
+  const rows: ListRow[] = [];
   for (const item of snapshot.listItems.values()) {
     const product = snapshot.products.get(item.productId);
     if (!item.needed || item.deleted || !product || product.deleted) continue;
-    const rows = sections.get(product.section) ?? [];
     rows.push({ item, product });
-    sections.set(product.section, rows);
   }
-  return [...sections.entries()]
-    .map(([name, rows]) => ({
-      name,
-      rows: rows.sort((a, b) => a.product.name.localeCompare(b.product.name)),
-    }))
-    .sort((a, b) => Number(a.name === '') - Number(b.name === '') || a.name.localeCompare(b.name));
+  return byCategory(
+    rows,
+    (row) => row.product,
+    (a, b) => a.product.name.localeCompare(b.product.name),
+  );
+}
+
+/** Quantos itens a lista tem agora. */
+export function neededCount(snapshot: Snapshot): number {
+  let count = 0;
+  for (const item of snapshot.listItems.values()) {
+    const product = snapshot.products.get(item.productId);
+    if (item.needed && !item.deleted && product && !product.deleted) count++;
+  }
+  return count;
 }
 
 export function openPurchase(snapshot: Snapshot): Purchase | undefined {
@@ -301,6 +346,8 @@ export interface MarketRow {
   readonly product: Product;
   readonly quantity: number;
   readonly unitPrice: number | null;
+  readonly regularPrice: number | null;
+  readonly promoNote: string | null;
   readonly picked: boolean;
 }
 
@@ -320,26 +367,83 @@ export function marketRows(snapshot: Snapshot, purchase: Purchase): readonly Mar
       product,
       quantity: line.quantity,
       unitPrice: line.unitPrice ?? null,
+      regularPrice: line.regularPrice ?? null,
+      promoNote: line.promoNote ?? null,
       picked: line.picked,
     });
   }
-  for (const item of snapshot.listItems.values()) {
+  // Compra começada do zero: a lista da casa não entra.
+  const fromList = purchase.fromList !== false;
+  for (const item of fromList ? snapshot.listItems.values() : []) {
     const product = snapshot.products.get(item.productId);
     if (!item.needed || item.deleted || !product || product.deleted) continue;
     if (inPurchase.has(item.productId)) continue;
-    rows.push({ lineId: null, product, quantity: item.quantity, unitPrice: null, picked: false });
+    rows.push({
+      lineId: null,
+      product,
+      quantity: item.quantity,
+      unitPrice: null,
+      regularPrice: null,
+      promoNote: null,
+      picked: false,
+    });
   }
   return rows.sort(
     (a, b) =>
       Number(a.picked) - Number(b.picked) ||
-      a.product.section.localeCompare(b.product.section) ||
+      categoryOrder(categoryOf(a.product)) - categoryOrder(categoryOf(b.product)) ||
       a.product.name.localeCompare(b.product.name),
   );
 }
 
 const cents = (value: number): number => Math.round(value * 100);
 
+/** O que a promoção economizou nas linhas pegas: (preço normal - preço pago) x quantidade. */
+export function pickedSavings(rows: readonly MarketRow[]): number {
+  let total = 0;
+  for (const row of rows) {
+    if (
+      row.picked &&
+      row.unitPrice !== null &&
+      row.regularPrice !== null &&
+      row.regularPrice > row.unitPrice
+    ) {
+      total += cents(row.quantity * row.regularPrice) - cents(row.quantity * row.unitPrice);
+    }
+  }
+  return total / 100;
+}
+
+/** As linhas de uma compra (fechada ou não), para o detalhe do histórico. */
+export function purchaseLines(snapshot: Snapshot, purchaseId: string): readonly MarketRow[] {
+  const rows: MarketRow[] = [];
+  for (const line of snapshot.purchaseItems.values()) {
+    const product = snapshot.products.get(line.productId);
+    if (line.purchaseId !== purchaseId || line.deleted || !product) continue;
+    rows.push({
+      lineId: line.id,
+      product,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice ?? null,
+      regularPrice: line.regularPrice ?? null,
+      promoNote: line.promoNote ?? null,
+      picked: line.picked,
+    });
+  }
+  return rows.sort(
+    (a, b) =>
+      Number(b.picked) - Number(a.picked) ||
+      categoryOrder(categoryOf(a.product)) - categoryOrder(categoryOf(b.product)) ||
+      a.product.name.localeCompare(b.product.name),
+  );
+}
+
 /** O total corrente: o que já foi pego e tem preço. Somado em centavos, para 0,1 + 0,2 não virar 0,30000000000000004. */
+/** O total de uma linha (quantidade × preço), arredondado ao centavo como no total da compra. */
+export function lineTotal(quantity: number, unitPrice: number): number {
+  return cents(quantity * unitPrice) / 100;
+}
+
 export function pickedTotal(rows: readonly MarketRow[]): number {
   let total = 0;
   for (const row of rows) {

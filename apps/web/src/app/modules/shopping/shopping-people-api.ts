@@ -13,6 +13,19 @@ export interface ShoppingPerson {
   readonly isMember: boolean;
 }
 
+/** O convite recém-criado: o segredo só aparece aqui (o servidor guarda o hash). */
+export interface CreatedGroupInvite {
+  readonly id: string;
+  readonly token: string;
+  readonly expiresAt: string;
+}
+
+export interface GroupInvite {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+}
+
 export interface ShoppingGroup {
   readonly id: string;
   readonly isOwner: boolean;
@@ -46,5 +59,25 @@ export class ShoppingPeopleApi {
 
   leave(operationId: string): Promise<unknown> {
     return firstValueFrom(this.http.post(`${BASE}/group/leave`, { operationId }));
+  }
+
+  /** Só quem criou o grupo. Uso único, vale 7 dias. */
+  createInvite(): Promise<CreatedGroupInvite> {
+    return firstValueFrom(this.http.post<CreatedGroupInvite>(`${BASE}/group/invites`, {}));
+  }
+
+  invites(): Promise<readonly GroupInvite[]> {
+    return firstValueFrom(this.http.get<GroupInvite[]>(`${BASE}/group/invites`));
+  }
+
+  revokeInvite(id: string): Promise<unknown> {
+    return firstValueFrom(
+      this.http.post(`${BASE}/group/invites/${encodeURIComponent(id)}/revoke`, {}),
+    );
+  }
+
+  /** Entra no grupo do convite. */
+  acceptInvite(token: string): Promise<ShoppingGroup> {
+    return firstValueFrom(this.http.post<ShoppingGroup>(`${BASE}/group/invites/accept`, { token }));
   }
 }

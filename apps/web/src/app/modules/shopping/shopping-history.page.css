@@ -1,0 +1,34 @@
+.ui-group > li + li {
+  border-top: 1px solid var(--a-line);
+}
+
+.trip {
+  min-height: 56px;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-small);
+}
+
+.detail app-shopping-item-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.none {
+  padding: var(--space-2) 0;
+}

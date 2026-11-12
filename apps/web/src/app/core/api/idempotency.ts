@@ -32,6 +32,7 @@ const ROUTES: readonly { readonly method: string; readonly path: RegExp }[] = [
   { method: 'POST', path: new RegExp(`^devices/agents/${ID}/(maintenance|revoke)$`) },
   { method: 'PUT', path: new RegExp(`^shopping/group/members/${ID}$`) },
   { method: 'POST', path: /^shopping\/group\/leave$/ },
+  { method: 'POST', path: new RegExp(`^shopping/group/invites/${ID}/revoke$`) },
   { method: 'POST', path: /^training\/catalog\/imports\/wger$/ },
 ];
 

@@ -1,0 +1,185 @@
+/* Total e teto ficam à vista enquanto a lista rola. */
+.totals {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.totals.over {
+  border-color: var(--a-bad);
+}
+
+.total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.total strong {
+  font-size: var(--fs-display);
+  line-height: 1.1;
+}
+
+.totals.over .total strong {
+  color: var(--a-bad-ink);
+}
+
+.saved {
+  color: var(--a-ok-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.budget {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding-block: var(--space-2);
+}
+
+.budget-form {
+  display: grid;
+  grid-template-columns: 7rem auto;
+  gap: var(--space-2);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 60px;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+}
+
+/* A linha inteira é o alvo do "peguei"; o preço fica ao lado, num botão próprio. */
+.pick {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.check {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--a-ink3);
+  border-radius: 50%;
+}
+
+.picked .check {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  box-shadow: inset 0 0 0 4px var(--a-surface);
+}
+
+.picked .ui-row-title {
+  color: var(--a-ink2);
+}
+
+.cart .line {
+  min-height: 52px;
+}
+
+.price {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 5.5rem;
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--a-ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.price.empty-price {
+  color: var(--a-accent);
+}
+
+.was {
+  color: var(--a-ink3);
+  font-size: var(--fs-label);
+  font-weight: 400;
+}
+
+.preview {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.finish {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+/* A escolha ao entrar: dois botões grandes, um toque cada. */
+.choose {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 140px;
+  padding: var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.choice.primary {
+  border-color: transparent;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+.choice:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.choice-title {
+  font-size: var(--fs-title);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.choice-sub {
+  font-size: var(--fs-small);
+  opacity: 0.85;
+}

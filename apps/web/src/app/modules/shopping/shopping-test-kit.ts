@@ -107,7 +107,12 @@ export class MarketServer implements ShoppingTransport {
           this.put('product', twin.id, twin.payload);
           return { status: 200, entityId: twin.id };
         }
-        this.put('product', id, { name: body['name'], section: '', deleted: false });
+        this.put('product', id, {
+          name: body['name'],
+          section: body['section'] ?? '',
+          unit: body['unit'] ?? null,
+          deleted: false,
+        });
         return { status: 200, entityId: id };
       }
       case 'listItem': {
@@ -138,8 +143,9 @@ export class MarketServer implements ShoppingTransport {
         if (this.rows.has(id)) return { status: 200 };
         const open = this.rowsOf('purchase').find((row) => row.payload['status'] === 'open');
         if (open) return { status: 409, type: ALREADY_OPEN, openPurchaseId: open.id };
-        this.put('purchase', id, { status: 'open', deleted: false });
-        for (const item of this.rowsOf('listItem')) {
+        const fromList = body['fromList'] !== false;
+        this.put('purchase', id, { status: 'open', fromList, deleted: false });
+        for (const item of fromList ? this.rowsOf('listItem') : []) {
           if (item.payload['needed'] !== true) continue;
           this.put('purchaseItem', `server-line-${++this.lines}`, {
             purchaseId: id,
@@ -197,6 +203,10 @@ export class MarketServer implements ShoppingTransport {
           !(twin && !known && price === null);
         if (informed && operation.createdAt >= (this.pricedAt.get(target) ?? -Infinity)) {
           next['unitPrice'] = price;
+          // A promoção anda com o preço (some quando ele some), como no servidor.
+          next['regularPrice'] = price === null ? null : (body['regularPrice'] ?? null);
+          next['promoNote'] =
+            price === null ? null : String(body['promoNote'] ?? '').trim() || null;
           this.pricedAt.set(target, operation.createdAt);
         }
         this.put('purchaseItem', target, next);

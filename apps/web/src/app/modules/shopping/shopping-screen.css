@@ -1,0 +1,125 @@
+/* O que as telas de Compras têm em comum: a coluna, os blocos, as listas e os chips de escolha. */
+:host {
+  display: block;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+h2,
+h3,
+ul,
+p {
+  margin: 0;
+}
+
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ui-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.empty {
+  padding: var(--space-6) var(--space-4);
+  color: var(--a-ink2);
+  text-align: center;
+}
+
+.hint {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.line {
+  width: 60%;
+  height: 1rem;
+}
+
+/* Fileira de chips que rola de lado (sugestões, tipos, categorias): nunca quebra a tela em duas linhas altas. */
+.chips {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 0 var(--gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+}
+
+.chip.quiet {
+  border-style: dashed;
+  color: var(--a-ink2);
+}
+
+.chip svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Campo e botão lado a lado, o campo ocupando o resto. */
+.inline {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.inline .ui-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
