@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.62.0](https://github.com/n33miaz/uniover/compare/v0.61.0...v0.62.0) (2026-11-12)
+
+
+### Bug Fixes
+
+* **api:** resolve client IP behind Cloudflare
+
+
+### Identity 0.44.0
+
+#### Features
+
+* **tv:** keys over the direct channel
+
+#### Bug Fixes
+
+* **direct:** reconcile channel after API restart
+
+
+### Devices 0.58.0
+
+#### Features
+
+* **tv:** keys over the direct channel
+
+#### Bug Fixes
+
+* **direct:** reconcile channel after API restart
+* **api:** let the database sleep when idle
+* **agent:** finish the no-downtime handover gaps
+* **web:** plain error texts and module tab icons
+
+
+### TV 0.48.0
+
+#### Features
+
+* **tv:** keys over the direct channel
+
+#### Bug Fixes
+
+* **direct:** reconcile channel after API restart
+* **api:** let the database sleep when idle
+* **web:** plain error texts and module tab icons
+
+
+### Web 0.59.0
+
+#### Features
+
+* **tv:** keys over the direct channel
+
+#### Bug Fixes
+
+* **direct:** reconcile channel after API restart
+* **web:** plain error texts and module tab icons
+
+
+### Agent 0.55.0
+
+#### Features
+
+* **tv:** keys over the direct channel
+* **agent:** record stack on short loop stalls
+
+#### Bug Fixes
+
+* **direct:** reconcile channel after API restart
+* **agent:** finish the no-downtime handover gaps
+* **agent:** retry the update tree check
+
 ## [0.61.0](https://github.com/n33miaz/uniover/compare/v0.60.0...v0.61.0) (2026-11-11)
 
 
