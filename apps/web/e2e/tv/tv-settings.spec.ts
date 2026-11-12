@@ -196,6 +196,6 @@ test.describe('Se a internet cair', () => {
     await expectSound(page);
 
     await page.getByRole('link', { name: 'Voltar ao Controle' }).last().click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
   });
 });

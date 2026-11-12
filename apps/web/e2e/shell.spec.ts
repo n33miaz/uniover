@@ -44,7 +44,7 @@ test.describe('início e navegação', () => {
     await screenshot(page, `test-results/home-${info.project.name}.png`);
 
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     // A TV é uma tela só: não há barra de abas em /tv.
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);

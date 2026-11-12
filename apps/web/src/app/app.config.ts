@@ -1,4 +1,4 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, LocationStrategy } from '@angular/common';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
@@ -21,6 +21,7 @@ import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
+import { ScopePathLocationStrategy } from './core/pwa/scope-location.strategy';
 import { unsavedWorkInterceptor } from './core/pwa/unsaved-work';
 import { telemetryInterceptor } from './core/telemetry/telemetry.interceptor';
 
@@ -32,6 +33,8 @@ export const appConfig: ApplicationConfig = {
     // A tela nova entra pelas animações de entrada dela mesma (`ui-rise` e `ui-stagger`, em styles.css).
     // Um pedaço de código que sumiu (a casca aberta é de antes do deploy) atualiza o app sozinho em vez de deixar a tela vazia.
     provideRouter(routes, withNavigationErrorHandler(recoverFromChunkNavigationError)),
+    // A raiz de cada módulo com app próprio sai com a barra final (/tv/), dentro do escopo do app instalado.
+    { provide: LocationStrategy, useClass: ScopePathLocationStrategy },
     { provide: ErrorHandler, useClass: ChunkAwareErrorHandler },
     provideHttpClient(
       withFetch(),

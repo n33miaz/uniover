@@ -96,7 +96,7 @@ test.describe('head por módulo no cliente', () => {
     await markDocument(page);
 
     await page.getByRole('link', { name: 'Abrir controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     await expectHead(page, TV);
     await expectTargetsRespond(page);
@@ -108,7 +108,7 @@ test.describe('head por módulo no cliente', () => {
     await expectTargetsRespond(page);
 
     await page.getByRole('link', { name: 'Ver treino' }).click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expectHead(page, TRAINING);
     await expectTargetsRespond(page);
@@ -128,6 +128,38 @@ test.describe('head por módulo no cliente', () => {
     await expectHead(page, TV);
     await expectTargetsRespond(page);
   });
+
+  // O app instalado só considera "dele" o endereço que começa com o `scope` do manifest: fora dele o Chrome mostra a
+  // barra e a notificação do navegador por cima do app.
+  for (const slug of ['tv', 'treino', 'pc']) {
+    test(`o endereço de /${slug} fica dentro do escopo do app instalado, ao abrir e ao chegar pela Início`, async ({
+      page,
+    }) => {
+      identity.loggedIn = true;
+      const manifest = JSON.parse(
+        readFileSync(join(publicDir, slug, 'manifest.webmanifest'), 'utf8'),
+      ) as { scope: string; start_url: string };
+      const inScope = () => new URL(page.url()).pathname.startsWith(manifest.scope);
+
+      await page.goto(manifest.start_url);
+      await expect(page).toHaveTitle(scopeOf(slug).name);
+      // Depois de o roteador assentar (ele reescreve o endereço ao terminar a primeira navegação).
+      await page.waitForLoadState('networkidle');
+      expect(new URL(page.url()).pathname).toBe(manifest.scope);
+
+      // O PC só tem cartão aberto com um PC ligado (a simulação dele fica no spec do PC).
+      if (slug === 'pc') return;
+      await page.goto('/');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        /Bom dia|Boa tarde|Boa noite/,
+      );
+      const link = page.locator(`a.card-link[href^="/${slug}"]`);
+      await expect(link).toHaveAttribute('href', manifest.scope);
+      await link.click();
+      await expect(page).toHaveTitle(scopeOf(slug).name);
+      await expect.poll(inScope).toBe(true);
+    });
+  }
 
   test('carga direta de /pc/ abre com o manifest, o ícone e o nome do PC; /pcx continua na raiz', async ({
     page,
@@ -167,7 +199,7 @@ test.describe('head por módulo no cliente', () => {
     await expect(page).toHaveURL(/\/$/);
     await expectHead(page, ROOT);
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     await expectHead(page, TV);
     await expectTargetsRespond(page);

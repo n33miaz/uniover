@@ -241,7 +241,7 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     signInWith(CONTROL_ONLY);
     await page.goto('/tv/apps');
     await showTv(page);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     // Sem a grade de apps: o painel que abre é o das opções.
     await expect(page.getByRole('dialog', { name: 'Opções da TV' })).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Apps da TV' })).toHaveCount(0);
@@ -249,7 +249,7 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     await page.goto('/tv/teclado');
     await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
     await expect(page.getByRole('dialog', { name: 'Teclado' })).toBeVisible();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     expect(tv.denied).toEqual([]);
   });
 });
@@ -381,11 +381,11 @@ test.describe('(c) só ver', () => {
     signInWith(VIEW_ONLY);
     await page.goto('/tv/teclado');
     await showTv(page);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.goto('/tv/apps');
     await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/tv\/$/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });

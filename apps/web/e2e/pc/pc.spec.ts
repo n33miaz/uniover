@@ -82,7 +82,7 @@ test.describe('Início', () => {
     await page.goto('/');
     await expect(card).not.toContainText('Em Breve');
     await card.getByRole('link', { name: 'Controle do PC: Abrir controle' }).click();
-    await expect(page).toHaveURL(/\/pc$/);
+    await expect(page).toHaveURL(/\/pc\/$/);
     await expect(status(page)).toHaveText('Conectado');
   });
 
@@ -495,7 +495,7 @@ test.describe('Tela do mouse', () => {
   }) => {
     await page.goto('/pc/teclado');
     await expect(status(page)).toHaveText('Conectado');
-    await expect(page).toHaveURL(/\/pc\?teclado=1$/);
+    await expect(page).toHaveURL(/\/pc\/\?teclado=1$/);
     await expect(page.locator('.pad')).toBeVisible();
   });
 

@@ -310,7 +310,7 @@ test.describe('exercício, poucos dados e sem dados', () => {
       .locator('app-progress-evolution')
       .getByRole('link', { name: 'Ir para Hoje' })
       .click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
   });
 
   test('sem nenhum treino registrado, só explica o que fazer', async ({ page, context }) => {
@@ -322,7 +322,7 @@ test.describe('exercício, poucos dados e sem dados', () => {
     ).toBeVisible();
     await expect(page.locator('app-progress-evolution')).toHaveCount(0);
     await page.getByRole('link', { name: 'Ir para Hoje' }).click();
-    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page).toHaveURL(/\/treino\/$/);
   });
 
   test('um exercício sem 1RM possível (séries de mais de 10 repetições) oferece a carga máxima', async ({
