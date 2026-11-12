@@ -178,6 +178,10 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("picked");
 
+                    b.Property<DateTimeOffset?>("PricedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("priced_at");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid")
                         .HasColumnName("product_id");
@@ -407,6 +411,35 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                     b.ToTable("member_audit", "shopping");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingMergedId", b =>
+                {
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<string>("EntityType")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("entity_type");
+
+                    b.Property<Guid>("MergedId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("merged_id");
+
+                    b.Property<Guid>("CanonicalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("canonical_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("GroupId", "EntityType", "MergedId")
+                        .HasName("pk_merged_ids");
+
+                    b.ToTable("merged_ids", "shopping");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingOperation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -554,6 +587,16 @@ namespace UniOver.Modules.Shopping.Persistence.Migrations
                         .HasConstraintName("fk_members_groups_group_id");
 
                     b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingMergedId", b =>
+                {
+                    b.HasOne("UniOver.Modules.Shopping.Domain.ShoppingGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_merged_ids_groups_group_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Shopping.Domain.ShoppingPurchase", b =>

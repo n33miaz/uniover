@@ -103,6 +103,21 @@ describe('ShoppingPage', () => {
     expect(el.querySelector('.total strong')?.textContent).toContain('4,50');
   });
 
+  it('a tap on an item keeps the price someone else has just typed for it', async () => {
+    await click('Ir ao mercado');
+    // Outra pessoa do grupo digitou o preço do leite, e este aparelho ainda não viu.
+    const line = bench.server
+      .rowsOf('purchaseItem')
+      .find((row) => row.payload['productId'] === 'milk')!;
+    bench.server.put('purchaseItem', line.id, { ...line.payload, unitPrice: 9 });
+
+    await click('Leite');
+
+    const kept = bench.server.rowsOf('purchaseItem').find((row) => row.id === line.id)!;
+    expect(kept.payload).toMatchObject({ picked: true, unitPrice: 9 });
+    expect(market()).toContainEqual({ name: 'Leite', picked: 'true', price: '9' });
+  });
+
   it('keeps the price when the tap on the item comes right after typing it', async () => {
     await click('Ir ao mercado');
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Preço de Leite"]')!;

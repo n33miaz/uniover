@@ -11,6 +11,7 @@ internal sealed class ShoppingConfiguration :
     IEntityTypeConfiguration<ShoppingListItem>,
     IEntityTypeConfiguration<ShoppingPurchase>,
     IEntityTypeConfiguration<PurchaseItem>,
+    IEntityTypeConfiguration<ShoppingMergedId>,
     IEntityTypeConfiguration<ShoppingOperation>,
     IEntityTypeConfiguration<ShoppingChange>,
     IEntityTypeConfiguration<ShoppingMemberAuditEntry>
@@ -93,6 +94,16 @@ internal sealed class ShoppingConfiguration :
         builder.HasOne<ShoppingPurchase>().WithMany().HasForeignKey(x => x.PurchaseId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.PurchaseId, x.ProductId }).IsUnique().HasFilter(Alive);
+    }
+
+    public void Configure(EntityTypeBuilder<ShoppingMergedId> builder)
+    {
+        builder.ToTable("merged_ids");
+
+        // Dentro do grupo e da espécie: o id de um grupo nunca leva a um registro de outro, nem o de um produto a um item.
+        builder.HasKey(x => new { x.GroupId, x.EntityType, x.MergedId });
+        builder.Property(x => x.EntityType).HasMaxLength(24);
+        builder.HasOne<ShoppingGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
     }
 
     public void Configure(EntityTypeBuilder<ShoppingOperation> builder)

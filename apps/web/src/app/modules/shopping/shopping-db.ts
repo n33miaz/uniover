@@ -11,7 +11,8 @@ export interface StoredEntity {
 }
 
 export interface StoredMeta {
-  readonly key: 'cursor' | 'groupId';
+  /** `others`: as outras pessoas do grupo (ids, num texto JSON); é o que diz se há alguém para ver ao mesmo tempo. */
+  readonly key: 'cursor' | 'groupId' | 'others';
   readonly value: number | string;
 }
 

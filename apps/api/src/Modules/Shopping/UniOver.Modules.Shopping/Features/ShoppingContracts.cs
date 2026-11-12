@@ -9,11 +9,42 @@ internal sealed record MemberRequest(Guid OperationId, bool Deleted = false);
 
 internal sealed record ProductRequest(Guid OperationId, string? Name, string? Section, string? Unit, string? Size, bool Deleted = false);
 
-internal sealed record ListItemRequest(Guid OperationId, Guid ProductId, decimal Quantity, string? Note, bool Needed, bool Deleted = false);
+/// <param name="Only">
+/// O que a pessoa mudou num item que já existe: <see cref="ChangedFields.Needed"/> mexe só no "precisa" e deixa a
+/// quantidade e a observação como estão (o aparelho pode tê-las desatualizadas). Sem ele, o item inteiro é gravado.
+/// </param>
+internal sealed record ListItemRequest(
+    Guid OperationId, Guid ProductId, decimal Quantity, string? Note, bool Needed, bool Deleted = false, string? Only = null);
 
 internal sealed record OpenPurchaseRequest(Guid OperationId, decimal? Budget);
 
-internal sealed record PurchaseItemRequest(Guid OperationId, Guid ProductId, decimal Quantity, decimal? UnitPrice, bool Picked, bool Deleted = false);
+/// <param name="Only">
+/// O que a pessoa mudou na linha: <see cref="ChangedFields.Picked"/> (o toque em "peguei") ou
+/// <see cref="ChangedFields.Price"/> (o preço). O outro campo fica como está no servidor, para o toque de uma pessoa não
+/// apagar o preço que outra digitou. Sem ele, a linha inteira é gravada.
+/// </param>
+/// <param name="At">Quando a pessoa fez a mudança, no relógio do aparelho. Só decide entre dois preços; nunca vale à frente do servidor.</param>
+/// <param name="SentAt">
+/// Quando o aparelho enviou, no relógio dele. Com ele o servidor desconta a diferença entre os relógios
+/// (ver <see cref="ShoppingRules.ChangedAt"/>); sem ele, vale a hora em que a escrita chegou.
+/// </param>
+internal sealed record PurchaseItemRequest(
+    Guid OperationId,
+    Guid ProductId,
+    decimal Quantity,
+    decimal? UnitPrice,
+    bool Picked,
+    bool Deleted = false,
+    string? Only = null,
+    DateTimeOffset? At = null,
+    DateTimeOffset? SentAt = null);
+
+internal static class ChangedFields
+{
+    public const string Needed = "needed";
+    public const string Picked = "picked";
+    public const string Price = "price";
+}
 
 internal sealed record BudgetRequest(Guid OperationId, decimal? Budget);
 
@@ -23,13 +54,19 @@ internal sealed record ClosePurchaseRequest(Guid OperationId, decimal TotalPaid,
 /// <param name="Id">O registro que a rota levaria no caminho (o produto, o item, a compra, a pessoa).</param>
 /// <param name="PurchaseId">Só para <see cref="OperationKinds.PurchaseItem"/>: a compra da linha.</param>
 /// <param name="Body">O corpo da rota, sem o <c>operationId</c> (o que vale é o do envelope).</param>
-internal sealed record ShoppingOperationRequest(Guid OperationId, string? Kind, Guid Id, Guid? PurchaseId, JsonElement? Body);
+/// <param name="At">Quando a pessoa fez a mudança, no relógio do aparelho (ver <see cref="PurchaseItemRequest"/>).</param>
+internal sealed record ShoppingOperationRequest(Guid OperationId, string? Kind, Guid Id, Guid? PurchaseId, JsonElement? Body, DateTimeOffset? At = null);
 
-internal sealed record ShoppingOperationsRequest(IReadOnlyList<ShoppingOperationRequest>? Operations);
+/// <param name="SentAt">Quando o aparelho enviou o lote, no relógio dele (ver <see cref="PurchaseItemRequest"/>).</param>
+internal sealed record ShoppingOperationsRequest(IReadOnlyList<ShoppingOperationRequest>? Operations, DateTimeOffset? SentAt = null);
 
 /// <summary>O desfecho de uma operação do lote: o status que a rota daria e, na recusa, o tipo do problema.</summary>
 /// <param name="OpenPurchaseId">Na recusa por já haver compra aberta, qual é ela.</param>
-internal sealed record ShoppingOperationResult(Guid OperationId, int Status, string? Type, Guid? OpenPurchaseId);
+/// <param name="EntityId">
+/// O registro em que a operação assentou (produto, item da lista ou linha da compra). Difere do id enviado quando o
+/// grupo já tinha aquele registro e os dois foram juntados: o aparelho passa a usar este.
+/// </param>
+internal sealed record ShoppingOperationResult(Guid OperationId, int Status, string? Type, Guid? OpenPurchaseId, Guid? EntityId = null);
 
 internal static class OperationKinds
 {

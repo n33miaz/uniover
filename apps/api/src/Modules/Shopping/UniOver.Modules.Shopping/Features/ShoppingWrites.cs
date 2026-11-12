@@ -25,12 +25,15 @@ internal static class ShoppingWrites
     {
         group.MapPut("/group/members/{userId:guid}", PutMemberAsync).Write<MemberResponse>();
         group.MapPost("/group/leave", LeaveGroupAsync).Write<GroupResponse>();
-        group.MapPut("/products/{id:guid}", PutProductAsync).Write<ProductResponse>();
-        group.MapPut("/list-items/{id:guid}", PutListItemAsync).Write<ListItemResponse>();
+        // Produto, item e linha respondem 204 ao apagar pelo id de uma cópia juntada: nada muda.
+        group.MapPut("/products/{id:guid}", PutProductAsync).Write<ProductResponse>().Produces(StatusCodes.Status204NoContent);
+        group.MapPut("/list-items/{id:guid}", PutListItemAsync).Write<ListItemResponse>().Produces(StatusCodes.Status204NoContent);
         group.MapPost("/purchases/{id:guid}/open", OpenPurchaseAsync).Write<PurchaseResponse>();
         group.MapPut("/purchases/{id:guid}/budget", PutBudgetAsync).Write<PurchaseResponse>();
         group.MapPost("/purchases/{id:guid}/close", ClosePurchaseAsync).Write<PurchaseResponse>();
-        group.MapPut("/purchases/{purchaseId:guid}/items/{id:guid}", PutPurchaseItemAsync).Write<PurchaseItemResponse>();
+        group.MapPut("/purchases/{purchaseId:guid}/items/{id:guid}", PutPurchaseItemAsync)
+            .Write<PurchaseItemResponse>()
+            .Produces(StatusCodes.Status204NoContent);
         group.MapPost("/operations", OperationsAsync)
             .RequireAuthorization(ShoppingAuth.Module)
             .RequireRateLimiting(RateLimitPolicies.Commands)
@@ -41,7 +44,7 @@ internal static class ShoppingWrites
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
     }
 
-    private static void Write<TResponse>(this RouteHandlerBuilder builder) =>
+    private static RouteHandlerBuilder Write<TResponse>(this RouteHandlerBuilder builder) =>
         builder
             .RequireAuthorization(ShoppingAuth.Module)
             .RequireRateLimiting(RateLimitPolicies.Commands)
@@ -304,6 +307,14 @@ internal static class ShoppingWrites
 
         async Task<WriteStep> ApplyAsync(ShoppingScope scope, CancellationToken ct)
         {
+            var sent = id;
+            id = await CanonicalAsync(db, scope.GroupId, ChangeTypes.Product, id, ct);
+            if (request.Deleted && id != sent)
+            {
+                // Apagar pelo id juntado é apagar a cópia que o aparelho criou, não o registro que o grupo já tinha.
+                return WriteStep.Done(TypedResults.NoContent());
+            }
+
             var product = await db.Products.SingleOrDefaultAsync(x => x.Id == id && x.GroupId == scope.GroupId, ct);
             if (request.Deleted)
             {
@@ -324,9 +335,31 @@ internal static class ShoppingWrites
             }
 
             var normalized = ProductNames.Normalize(name!);
-            if (await db.Products.AnyAsync(x => x.GroupId == scope.GroupId && x.NormalizedName == normalized && x.DeletedAt == null && x.Id != id, ct))
+            var twin = await db.Products.SingleOrDefaultAsync(
+                x => x.GroupId == scope.GroupId && x.NormalizedName == normalized && x.DeletedAt == null && x.Id != id, ct);
+            if (twin is not null)
             {
-                return Reject(ShoppingProblems.Duplicate("Já existe um produto com esse nome neste grupo."));
+                if (product is not null)
+                {
+                    // Um produto que já existe e passaria a ter o nome de outro: isso é escolha de quem renomeia, não repetição.
+                    return Reject(ShoppingProblems.Duplicate("Já existe um produto com esse nome neste grupo."));
+                }
+
+                // Só se junta um id que ninguém usa: o de um registro de outro grupo é recusado como sempre foi, sem dizer de quem é.
+                if (await db.Products.AnyAsync(x => x.Id == id, ct))
+                {
+                    return Reject(ShoppingProblems.IdInUse());
+                }
+
+                // Dois aparelhos criaram o mesmo produto: fica um só. Cada campo é escolhido sem depender de quem chegou primeiro.
+                twin.Name = ShoppingRules.Prefer(twin.Name, name)!;
+                twin.Section = ShoppingRules.Prefer(twin.Section, section) ?? string.Empty;
+                twin.Unit = ShoppingRules.Prefer(twin.Unit, unit);
+                twin.Size = ShoppingRules.Prefer(twin.Size, size);
+                twin.UpdatedAt = scope.Now;
+                Merge(db, scope, ChangeTypes.Product, id, twin.Id);
+                scope.Change(ChangeTypes.Product, twin.Id, twin.ToResponse());
+                return WriteStep.Done(TypedResults.Ok(twin.ToResponse()));
             }
 
             if (product is null)
@@ -346,10 +379,18 @@ internal static class ShoppingWrites
             return WriteStep.Done(TypedResults.Ok(product.ToResponse()));
         }
 
-        async Task<IResult> ReplayAsync(Guid groupId, CancellationToken ct) =>
-            await db.Products.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.GroupId == groupId, ct) is { } product
+        async Task<IResult> ReplayAsync(Guid groupId, CancellationToken ct)
+        {
+            var canonical = await CanonicalAsync(db, groupId, ChangeTypes.Product, id, ct);
+            if (request.Deleted && canonical != id)
+            {
+                return TypedResults.NoContent();
+            }
+
+            return await db.Products.AsNoTracking().SingleOrDefaultAsync(x => x.Id == canonical && x.GroupId == groupId, ct) is { } product
                 ? TypedResults.Ok(product.ToResponse())
                 : ShoppingProblems.NotFound();
+        }
     }
 
     private static async Task<IResult> PutListItemAsync(
@@ -383,6 +424,14 @@ internal static class ShoppingWrites
 
         async Task<WriteStep> ApplyAsync(ShoppingScope scope, CancellationToken ct)
         {
+            var sent = id;
+            id = await CanonicalAsync(db, scope.GroupId, ChangeTypes.ListItem, id, ct);
+            if (request.Deleted && id != sent)
+            {
+                // Apagar pelo id juntado é apagar a cópia que o aparelho criou, não o item que o grupo já tinha.
+                return WriteStep.Done(TypedResults.NoContent());
+            }
+
             var item = await db.ListItems.SingleOrDefaultAsync(x => x.Id == id && x.GroupId == scope.GroupId, ct);
             if (request.Deleted)
             {
@@ -401,25 +450,52 @@ internal static class ShoppingWrites
                 return WriteStep.Done(TypedResults.Ok(item.ToResponse()));
             }
 
-            if (!await db.Products.AnyAsync(x => x.Id == request.ProductId && x.GroupId == scope.GroupId && x.DeletedAt == null, ct))
+            var productId = await CanonicalAsync(db, scope.GroupId, ChangeTypes.Product, request.ProductId, ct);
+            if (!await db.Products.AnyAsync(x => x.Id == productId && x.GroupId == scope.GroupId && x.DeletedAt == null, ct))
             {
                 return Reject(ShoppingProblems.Invalid("productId", "Produto não encontrado neste grupo."));
             }
 
-            if (await db.ListItems.AnyAsync(x => x.GroupId == scope.GroupId && x.ProductId == request.ProductId && x.DeletedAt == null && x.Id != id, ct))
+            var twin = await db.ListItems.SingleOrDefaultAsync(
+                x => x.GroupId == scope.GroupId && x.ProductId == productId && x.DeletedAt == null && x.Id != id, ct);
+            if (twin is not null)
             {
-                return Reject(ShoppingProblems.Duplicate("Este produto já está na lista."));
+                if (item is not null)
+                {
+                    return Reject(ShoppingProblems.Duplicate("Este produto já está na lista."));
+                }
+
+                // Só se junta um id que ninguém usa: o de um registro de outro grupo é recusado como sempre foi, sem dizer de quem é.
+                if (await db.ListItems.AnyAsync(x => x.Id == id, ct))
+                {
+                    return Reject(ShoppingProblems.IdInUse());
+                }
+
+                // Dois aparelhos puseram o mesmo produto na lista: fica um item só. "Precisa" vence, vale a maior quantidade.
+                twin.Needed |= request.Needed;
+                twin.Quantity = Math.Max(twin.Quantity, request.Quantity);
+                twin.Note = ShoppingRules.Prefer(twin.Note, note);
+                twin.UpdatedAt = scope.Now;
+                Merge(db, scope, ChangeTypes.ListItem, id, twin.Id);
+                scope.Change(ChangeTypes.ListItem, twin.Id, twin.ToResponse());
+                return WriteStep.Done(TypedResults.Ok(twin.ToResponse()));
             }
 
+            // Num item que já existe, o toque em "precisa" ou "já tenho" não regrava o resto com o que o aparelho tinha.
+            var whole = item is null || item.DeletedAt is not null || request.Only != ChangedFields.Needed;
             if (item is null)
             {
                 item = new ShoppingListItem { Id = id, GroupId = scope.GroupId, CreatedAt = scope.Now };
                 db.ListItems.Add(item);
             }
 
-            item.ProductId = request.ProductId;
-            item.Quantity = request.Quantity;
-            item.Note = note;
+            item.ProductId = productId;
+            if (whole)
+            {
+                item.Quantity = request.Quantity;
+                item.Note = note;
+            }
+
             item.Needed = request.Needed;
             item.DeletedAt = null;
             item.UpdatedAt = scope.Now;
@@ -427,10 +503,18 @@ internal static class ShoppingWrites
             return WriteStep.Done(TypedResults.Ok(item.ToResponse()));
         }
 
-        async Task<IResult> ReplayAsync(Guid groupId, CancellationToken ct) =>
-            await db.ListItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.GroupId == groupId, ct) is { } item
+        async Task<IResult> ReplayAsync(Guid groupId, CancellationToken ct)
+        {
+            var canonical = await CanonicalAsync(db, groupId, ChangeTypes.ListItem, id, ct);
+            if (request.Deleted && canonical != id)
+            {
+                return TypedResults.NoContent();
+            }
+
+            return await db.ListItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == canonical && x.GroupId == groupId, ct) is { } item
                 ? TypedResults.Ok(item.ToResponse())
                 : ShoppingProblems.NotFound();
+        }
     }
 
     /// <summary>Abre a ida ao mercado a partir da lista: cada item marcado como "precisa" vira uma linha da compra.</summary>
@@ -672,6 +756,14 @@ internal static class ShoppingWrites
                 return Reject(ShoppingProblems.PurchaseClosed());
             }
 
+            var sent = id;
+            id = await CanonicalAsync(db, scope.GroupId, ChangeTypes.PurchaseItem, id, ct);
+            if (request.Deleted && id != sent)
+            {
+                // Apagar pelo id juntado é apagar a cópia que o aparelho criou, não a linha que o grupo já tinha.
+                return WriteStep.Done(TypedResults.NoContent());
+            }
+
             var item = await db.PurchaseItems.SingleOrDefaultAsync(x => x.Id == id && x.PurchaseId == purchaseId, ct);
             if (request.Deleted)
             {
@@ -690,26 +782,81 @@ internal static class ShoppingWrites
                 return WriteStep.Done(TypedResults.Ok(item.ToResponse()));
             }
 
-            if (!await db.Products.AnyAsync(x => x.Id == request.ProductId && x.GroupId == scope.GroupId && x.DeletedAt == null, ct))
+            var productId = await CanonicalAsync(db, scope.GroupId, ChangeTypes.Product, request.ProductId, ct);
+            if (!await db.Products.AnyAsync(x => x.Id == productId && x.GroupId == scope.GroupId && x.DeletedAt == null, ct))
             {
                 return Reject(ShoppingProblems.Invalid("productId", "Produto não encontrado neste grupo."));
             }
 
-            if (await db.PurchaseItems.AnyAsync(x => x.PurchaseId == purchaseId && x.ProductId == request.ProductId && x.DeletedAt == null && x.Id != id, ct))
+            // O relógio do aparelho só decide entre dois preços, descontada a diferença para o do servidor, e nunca vale à
+            // frente dele.
+            var at = ShoppingRules.ChangedAt(request.At, request.SentAt, scope.Now);
+            var picks = request.Only != ChangedFields.Price;
+            var prices = request.Only != ChangedFields.Picked;
+
+            var twin = await db.PurchaseItems.SingleOrDefaultAsync(
+                x => x.PurchaseId == purchaseId && x.ProductId == productId && x.DeletedAt == null && x.Id != id, ct);
+            if (twin is not null)
             {
-                return Reject(ShoppingProblems.Duplicate("Este produto já está nesta compra."));
+                if (item is not null)
+                {
+                    return Reject(ShoppingProblems.Duplicate("Este produto já está nesta compra."));
+                }
+
+                // Só se junta um id que ninguém usa: o de um registro de outro grupo é recusado como sempre foi, sem dizer de quem é.
+                if (await db.PurchaseItems.AnyAsync(x => x.Id == id, ct))
+                {
+                    return Reject(ShoppingProblems.IdInUse());
+                }
+
+                // Dois aparelhos criaram a linha do mesmo produto: fica uma só. "Peguei" vence, vale a maior quantidade e,
+                // se a linha que chega traz preço, o preço informado por último.
+                twin.Picked |= picks && request.Picked;
+                twin.Quantity = Math.Max(twin.Quantity, request.Quantity);
+                if (prices && request.UnitPrice is not null)
+                {
+                    ShoppingRules.Price(twin, request.UnitPrice, at);
+                }
+
+                twin.UpdatedAt = scope.Now;
+                Merge(db, scope, ChangeTypes.PurchaseItem, id, twin.Id);
+                scope.Change(ChangeTypes.PurchaseItem, twin.Id, twin.ToResponse());
+                return WriteStep.Done(TypedResults.Ok(twin.ToResponse()));
             }
 
+            // Só muda o que a pessoa mudou: o toque não leva junto o preço que o aparelho tinha. Na linha que nasce (ou
+            // renasce) aqui, o campo que ela não mexeu entra neutro ("não peguei", sem preço): é o mesmo que a junção
+            // faria com ele, então o resultado não depende de qual aparelho chegou primeiro.
+            var fresh = item is null || item.DeletedAt is not null;
             if (item is null)
             {
                 item = new PurchaseItem { Id = id, PurchaseId = purchaseId, CreatedAt = scope.Now };
                 db.PurchaseItems.Add(item);
             }
 
-            item.ProductId = request.ProductId;
-            item.Quantity = request.Quantity;
-            item.UnitPrice = request.UnitPrice;
-            item.Picked = request.Picked;
+            item.ProductId = productId;
+            if (fresh || request.Only is null)
+            {
+                item.Quantity = request.Quantity;
+            }
+
+            if (fresh)
+            {
+                item.Picked = false;
+                item.UnitPrice = null;
+                item.PricedAt = null;
+            }
+
+            if (picks)
+            {
+                item.Picked = request.Picked;
+            }
+
+            if (prices)
+            {
+                ShoppingRules.Price(item, request.UnitPrice, at);
+            }
+
             item.DeletedAt = null;
             item.UpdatedAt = scope.Now;
             scope.Change(ChangeTypes.PurchaseItem, id, item.ToResponse());
@@ -718,10 +865,16 @@ internal static class ShoppingWrites
 
         async Task<IResult> ReplayAsync(Guid groupId, CancellationToken ct)
         {
+            var canonical = await CanonicalAsync(db, groupId, ChangeTypes.PurchaseItem, id, ct);
+            if (request.Deleted && canonical != id)
+            {
+                return TypedResults.NoContent();
+            }
+
             var item = await (
                 from line in db.PurchaseItems.AsNoTracking()
                 join purchase in db.Purchases.AsNoTracking() on line.PurchaseId equals purchase.Id
-                where line.Id == id && line.PurchaseId == purchaseId && purchase.GroupId == groupId
+                where line.Id == canonical && line.PurchaseId == purchaseId && purchase.GroupId == groupId
                 select line).SingleOrDefaultAsync(ct);
             return item is null ? ShoppingProblems.NotFound() : TypedResults.Ok(item.ToResponse());
         }
@@ -731,6 +884,27 @@ internal static class ShoppingWrites
         await db.Purchases.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.GroupId == groupId, ct) is { } purchase
             ? TypedResults.Ok(purchase.ToResponse())
             : ShoppingProblems.NotFound();
+
+    /// <summary>
+    /// O id que vale para um registro: o próprio, ou aquele a que ele foi juntado. A consulta é sempre dentro do grupo de
+    /// quem chama e da mesma espécie, então um id de outro grupo nunca é trocado por nada, nem o de um produto vira item.
+    /// </summary>
+    private static async Task<Guid> CanonicalAsync(ShoppingDbContext db, Guid groupId, string entityType, Guid id, CancellationToken ct) =>
+        await db.MergedIds.AsNoTracking()
+            .Where(x => x.GroupId == groupId && x.EntityType == entityType && x.MergedId == id)
+            .Select(x => (Guid?)x.CanonicalId)
+            .SingleOrDefaultAsync(ct) ?? id;
+
+    /// <summary>Anota que o id criado no aparelho passou a ser o registro que o grupo já tinha.</summary>
+    private static void Merge(ShoppingDbContext db, ShoppingScope scope, string entityType, Guid mergedId, Guid canonicalId) =>
+        db.MergedIds.Add(new ShoppingMergedId
+        {
+            GroupId = scope.GroupId,
+            EntityType = entityType,
+            MergedId = mergedId,
+            CanonicalId = canonicalId,
+            CreatedAt = scope.Now,
+        });
 
     public const int MaxOperations = 50;
 
@@ -768,7 +942,7 @@ internal static class ShoppingWrites
             IResult result;
             try
             {
-                result = await DispatchAsync(operation, current, writer, db, grants, cancellationToken);
+                result = await DispatchAsync(operation, request.SentAt, current, writer, db, grants, cancellationToken);
             }
             catch (JsonException)
             {
@@ -790,7 +964,14 @@ internal static class ShoppingWrites
         var status = (result as IStatusCodeHttpResult)?.StatusCode ?? StatusCodes.Status500InternalServerError;
         if (result is not ProblemHttpResult problem)
         {
-            return new ShoppingOperationResult(operationId, status, null, null);
+            Guid? entityId = (result as IValueHttpResult)?.Value switch
+            {
+                ProductResponse product => product.Id,
+                ListItemResponse item => item.Id,
+                PurchaseItemResponse line => line.Id,
+                _ => null,
+            };
+            return new ShoppingOperationResult(operationId, status, null, null, entityId);
         }
 
         var open = problem.ProblemDetails.Extensions.TryGetValue(ShoppingProblems.OpenPurchaseIdExtension, out var value) ? value as Guid? : null;
@@ -799,25 +980,29 @@ internal static class ShoppingWrites
 
     private static Task<IResult> DispatchAsync(
         ShoppingOperationRequest operation,
+        DateTimeOffset? sentAt,
         ICurrentUser current,
         ShoppingWriter writer,
         ShoppingDbContext db,
         IAccessGrants grants,
         CancellationToken ct) => operation.Kind switch
     {
-        OperationKinds.Member => PutMemberAsync(operation.Id, Read<MemberRequest>(operation), current, writer, db, grants, ct),
-        OperationKinds.Product => PutProductAsync(operation.Id, Read<ProductRequest>(operation), current, writer, db, ct),
-        OperationKinds.ListItem => PutListItemAsync(operation.Id, Read<ListItemRequest>(operation), current, writer, db, ct),
-        OperationKinds.OpenPurchase => OpenPurchaseAsync(operation.Id, Read<OpenPurchaseRequest>(operation), current, writer, db, ct),
-        OperationKinds.Budget => PutBudgetAsync(operation.Id, Read<BudgetRequest>(operation), current, writer, db, ct),
-        OperationKinds.ClosePurchase => ClosePurchaseAsync(operation.Id, Read<ClosePurchaseRequest>(operation), current, writer, db, ct),
+        OperationKinds.Member => PutMemberAsync(operation.Id, Read<MemberRequest>(operation, sentAt), current, writer, db, grants, ct),
+        OperationKinds.Product => PutProductAsync(operation.Id, Read<ProductRequest>(operation, sentAt), current, writer, db, ct),
+        OperationKinds.ListItem => PutListItemAsync(operation.Id, Read<ListItemRequest>(operation, sentAt), current, writer, db, ct),
+        OperationKinds.OpenPurchase => OpenPurchaseAsync(operation.Id, Read<OpenPurchaseRequest>(operation, sentAt), current, writer, db, ct),
+        OperationKinds.Budget => PutBudgetAsync(operation.Id, Read<BudgetRequest>(operation, sentAt), current, writer, db, ct),
+        OperationKinds.ClosePurchase => ClosePurchaseAsync(operation.Id, Read<ClosePurchaseRequest>(operation, sentAt), current, writer, db, ct),
         OperationKinds.PurchaseItem when operation.PurchaseId is { } purchaseId =>
-            PutPurchaseItemAsync(purchaseId, operation.Id, Read<PurchaseItemRequest>(operation), current, writer, db, ct),
+            PutPurchaseItemAsync(purchaseId, operation.Id, Read<PurchaseItemRequest>(operation, sentAt), current, writer, db, ct),
         _ => Task.FromResult(ShoppingProblems.Invalid("kind", "A operação não é reconhecida.")),
     };
 
-    /// <summary>O corpo da operação na forma do pedido da rota. O UUID que vale é sempre o do envelope, nunca um vindo no corpo.</summary>
-    private static T? Read<T>(ShoppingOperationRequest operation)
+    /// <summary>
+    /// O corpo da operação na forma do pedido da rota. O UUID que vale é sempre o do envelope, nunca um vindo no corpo; a
+    /// hora do envio do lote vale para cada operação dele.
+    /// </summary>
+    private static T? Read<T>(ShoppingOperationRequest operation, DateTimeOffset? sentAt)
         where T : class
     {
         if (operation.Body is not { ValueKind: JsonValueKind.Object } body)
@@ -835,6 +1020,16 @@ internal static class ShoppingWrites
         }
 
         node["operationId"] = operation.OperationId;
+        if (operation.At is { } at && !node.ContainsKey("at"))
+        {
+            node["at"] = at;
+        }
+
+        if (sentAt is { } sent && !node.ContainsKey("sentAt"))
+        {
+            node["sentAt"] = sent;
+        }
+
         return node.Deserialize<T>(OperationJson);
     }
 }
