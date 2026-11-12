@@ -2908,6 +2908,183 @@
         ],
         "type": "object"
       },
+      "EconomizeAdviceResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "bestDay": {
+            "format": "date",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "bestDayWeekday": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "free": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EconomizeFreeResponse"
+              }
+            ]
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "available",
+          "reason",
+          "generatedAt",
+          "status",
+          "bestDay",
+          "bestDayWeekday",
+          "free"
+        ],
+        "type": "object"
+      },
+      "EconomizeFreeResponse": {
+        "properties": {
+          "committedAfterSalaryCents": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "committedBeforeSalaryCents": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "daysUntilSalary": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "expectedSalaryCents": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "freeCents": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "salaryDate": {
+            "format": "date",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "salaryKnown": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "salaryKnown",
+          "salaryDate",
+          "daysUntilSalary",
+          "expectedSalaryCents",
+          "committedBeforeSalaryCents",
+          "committedAfterSalaryCents",
+          "freeCents"
+        ],
+        "type": "object"
+      },
+      "EconomizeImportStatusResponse": {
+        "properties": {
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "existing": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "finished": {
+            "type": "boolean"
+          },
+          "ignored": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "imported": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running",
+          "finished",
+          "imported",
+          "existing",
+          "ignored",
+          "error"
+        ],
+        "type": "object"
+      },
       "ExerciseResponse": {
         "properties": {
           "category": {
@@ -14920,6 +15097,25 @@
         ]
       }
     },
+    "/api/v1/shopping/advice": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomizeAdviceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
     "/api/v1/shopping/changes": {
       "get": {
         "parameters": [
@@ -15356,6 +15552,81 @@
         },
         "tags": [
           "ShoppingReads"
+        ]
+      }
+    },
+    "/api/v1/shopping/import/economize": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomizeImportStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "EconomizeIntegrationEndpoints"
+        ]
+      },
+      "post": {
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomizeImportStatusResponse"
+                }
+              }
+            },
+            "description": "Accepted"
+          }
+        },
+        "tags": [
+          "EconomizeIntegrationEndpoints"
+        ]
+      }
+    },
+    "/api/v1/shopping/import/economize/file": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EconomizeImportStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "413": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Payload Too Large"
+          }
+        },
+        "tags": [
+          "EconomizeIntegrationEndpoints"
         ]
       }
     },
@@ -22509,6 +22780,9 @@
     },
     {
       "name": "ShoppingWrites"
+    },
+    {
+      "name": "EconomizeIntegrationEndpoints"
     },
     {
       "name": "LoginEndpoint"

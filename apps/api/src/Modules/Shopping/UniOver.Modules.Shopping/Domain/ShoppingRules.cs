@@ -10,6 +10,7 @@ public static class ShoppingLimits
     public const int Note = 500;
     public const int Store = 120;
     public const int ReceiptKey = 200;
+    public const int ExternalRef = 200;
 
     /// <summary>Cabe em <c>numeric(12,3)</c>.</summary>
     public const decimal MaxQuantity = 999_999.999m;

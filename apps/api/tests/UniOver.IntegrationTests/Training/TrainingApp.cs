@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using UniOver.BuildingBlocks.Persistence;
@@ -23,6 +24,7 @@ using UniOver.Modules.Training.Persistence;
 using UniOver.Modules.Training.Ports;
 using UniOver.Modules.Training.Ports.Foods;
 using UniOver.Modules.Shopping.Persistence;
+using UniOver.Modules.Shopping.Infrastructure;
 
 namespace UniOver.IntegrationTests.Training;
 
@@ -39,6 +41,9 @@ internal sealed record TrainingAppOptions
     public IWgerClient? Wger { get; init; }
 
     public IOffClient? Off { get; init; }
+
+    /// <summary>O Economize em memória, para os testes de Compras; com ele a integração fica ligada.</summary>
+    public Func<HttpMessageHandler>? EconomizeHandler { get; init; }
 
     public string? OffContact { get; init; }
 
@@ -71,6 +76,9 @@ internal sealed record TrainingAppOptions
 /// </summary>
 internal sealed class TrainingApp : IAsyncDisposable
 {
+    /// <summary>Uma chave de integração de mentira, no formato que o Economize emite.</summary>
+    public const string EconomizeTestKey = "eco_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
     private readonly EdgeFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -157,6 +165,9 @@ internal sealed class TrainingApp : IAsyncDisposable
             ["Modules:Training:Import:Wger:DelayMs"] = "0",
             ["Modules:Training:Import:Wger:MaxItems"] = options.MaxItems.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Modules:Training:Import:Wger:PageSize"] = options.PageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["Modules:Shopping:Economize:Enabled"] = (options.EconomizeHandler is not null).ToString(),
+            ["Modules:Shopping:Economize:BaseUrl"] = "https://economize.test",
+            ["Modules:Shopping:Economize:ApiKey"] = EconomizeTestKey,
             ["UNIOVER_OWNER_EMAIL"] = ownerEmail,
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
@@ -186,6 +197,13 @@ internal sealed class TrainingApp : IAsyncDisposable
             {
                 services.RemoveAll<IOffClient>();
                 services.AddSingleton(off);
+            }
+
+            if (options.EconomizeHandler is not null)
+            {
+                // Só o cliente do Economize fala com o servidor em memória; os outros clientes ficam como estão.
+                services.Configure<HttpClientFactoryOptions>(HttpEconomizeClient.Name, http => http.HttpMessageHandlerBuilderActions.Add(builder =>
+                    builder.PrimaryHandler = options.EconomizeHandler()));
             }
 
             if (options.CommandInterceptor is { } commandInterceptor)

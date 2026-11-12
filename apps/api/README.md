@@ -166,6 +166,10 @@ Em `UniOver.BuildingBlocks.Messaging`.
     sobreposição do deploy. Em produção roda uma instância; com duas instâncias fixas, um pedido criado numa
     delas só seria visto pela outra na reserva de 6 h (e passaria de 10 min de atraso), então esse desenho
     pressupõe uma instância.
+  - O ritmo dos pedidos ao Economize (a chave aceita 60 por minuto) também é contado só na memória do processo
+    (`EconomizeThrottle`, no módulo Compras) e pressupõe uma instância: na sobreposição do deploy as duas podem somar
+    até o dobro por um instante, e o 429 do Economize é tentado de novo no `Retry-After`. Com instâncias fixas a
+    mais, o limitador precisa ser distribuído.
   - Limitação aceita: com o batimento fora do banco, quem lê o resumo persistido (a lista de computadores) numa
     instância que não tem o WebSocket do agente (só na sobreposição do deploy) vê "visto há" desde a última
     conexão ou hello, não desde o último batimento. A instância que tem a conexão mostra o instante real.

@@ -429,6 +429,12 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/shopping/purchases/{id:guid}/close", AccessPermissions.ShoppingModule),
         ("PUT", "/api/v1/shopping/purchases/{purchaseId:guid}/items/{id:guid}", AccessPermissions.ShoppingModule),
         ("POST", "/api/v1/shopping/operations", AccessPermissions.ShoppingModule),
+
+        // Economize: além do módulo, só o administrador (a política de dono não é permissão, então não entra aqui).
+        ("GET", "/api/v1/shopping/advice", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/import/economize", AccessPermissions.ShoppingModule),
+        ("GET", "/api/v1/shopping/import/economize", AccessPermissions.ShoppingModule),
+        ("POST", "/api/v1/shopping/import/economize/file", AccessPermissions.ShoppingModule),
     ];
 
     /// <summary>

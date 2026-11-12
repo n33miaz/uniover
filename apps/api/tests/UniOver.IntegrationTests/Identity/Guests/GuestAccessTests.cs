@@ -109,14 +109,24 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     /// alcança. A rota de administrador é identificada por método e caminho: <c>GET /tv/tvs</c> (listar as TVs de que o
     /// convidado é membro, com <c>module:tv</c>) divide o caminho com <c>POST /tv/tvs</c> (criar, só do administrador).
     /// </summary>
-    /// <summary>Compras: o convidado entra por papel em todas as rotas, e cada uma só abre com <c>module:shopping</c>.</summary>
+    /// <summary>
+    /// Compras: o convidado entra por papel em todas as rotas, e cada uma só abre com <c>module:shopping</c>; menos as do
+    /// Economize (<see cref="ShoppingOwnerRoutes"/>), que são só do administrador, porque a chave de lá é a dele.
+    /// </summary>
     private const string ShoppingPrefix = "/api/v1/shopping/";
+
+    private static readonly string[] ShoppingOwnerRoutes =
+    [
+        "/api/v1/shopping/advice",
+        "/api/v1/shopping/import/economize",
+        "/api/v1/shopping/import/economize/file",
+    ];
 
     private static bool IsGuestRoute(string method, string pattern) =>
         (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
         || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
         || GuestPcRoutes.Contains(pattern)
-        || pattern.StartsWith(ShoppingPrefix, StringComparison.Ordinal)
+        || (pattern.StartsWith(ShoppingPrefix, StringComparison.Ordinal) && !ShoppingOwnerRoutes.Contains(pattern))
         || GuestSessionRoutes.Contains(pattern)
         || IsRoute("POST", ClientEventsRoute, method, pattern)
         || pattern == TvPermissionMap.OwnPairingRoute;
@@ -265,13 +275,15 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
                 && !p.Contains("/devices/", StringComparison.Ordinal))
             .Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
 
-        // Em Compras o convidado entra por papel em todas as rotas, e cada uma só abre com a permissão module:shopping.
+        // Em Compras o convidado entra por papel em todas as rotas, menos as do Economize (só do administrador), e cada uma
+        // só abre com a permissão module:shopping.
         var shoppingRoutes = app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .Where(e => RouteInspector.Pattern(e).StartsWith(ShoppingPrefix, StringComparison.Ordinal))
             .ToList();
         shoppingRoutes.Should().NotBeEmpty();
+        shoppingRoutes.Select(RouteInspector.Pattern).Should().Contain(ShoppingOwnerRoutes);
         allowed.Where(p => p.StartsWith(ShoppingPrefix, StringComparison.Ordinal)).Distinct()
-            .Should().BeEquivalentTo(shoppingRoutes.Select(RouteInspector.Pattern).Distinct());
+            .Should().BeEquivalentTo(shoppingRoutes.Select(RouteInspector.Pattern).Except(ShoppingOwnerRoutes).Distinct());
         foreach (var endpoint in shoppingRoutes)
         {
             var shoppingPolicy = (await AuthorizationPolicy.CombineAsync(policies, endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()))!;
