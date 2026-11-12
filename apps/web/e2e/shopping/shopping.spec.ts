@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { Page, TestInfo } from '@playwright/test';
-import { IdentityMock, mockIdentityApi } from '../auth/identity-mock';
+import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { settle } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
@@ -99,8 +99,8 @@ test.describe('Compras: da lista ao mercado', () => {
     await expectNoHorizontalScroll(page);
     await shot(page, testInfo, 'lista');
 
-    await page.getByRole('link', { name: 'Ir ao mercado com a lista' }).click();
-    await page.getByRole('button', { name: /^Usar a lista/ }).click();
+    await page.getByRole('link', { name: 'Ir ao Mercado com a Lista' }).click();
+    await page.getByRole('button', { name: /^Usar a Lista/ }).click();
     await synced(page);
 
     await pick(page, 'Leite').click();
@@ -133,7 +133,7 @@ test.describe('Compras: da lista ao mercado', () => {
 
     await page.getByRole('button', { name: 'Terminei' }).click();
     await page.getByLabel('Loja').fill('Mercado da esquina');
-    await page.getByRole('button', { name: 'Fechar a compra' }).click();
+    await page.getByRole('button', { name: 'Fechar a Compra' }).click();
     await expect(page).toHaveURL(/\/compras\/historico$/);
     const trip = page.locator('button.trip', { hasText: 'Mercado da esquina' });
     await expect(trip).toContainText('25,80');
@@ -148,7 +148,7 @@ test.describe('Compras: da lista ao mercado', () => {
     await add(page, 'Leite');
     await synced(page);
     await page.goto('/compras/mercado');
-    await page.getByRole('button', { name: /^Começar do zero/ }).click();
+    await page.getByRole('button', { name: /^Começar do Zero/ }).click();
     await expect(page.getByText('Digite embaixo o que pegar')).toBeVisible();
     await put(page, 'café 15,90');
     await expect(page.locator('li.row')).toHaveCount(1);
@@ -167,11 +167,11 @@ test.describe('Compras: da lista ao mercado', () => {
 
     // Com o service worker bloqueado no teste, a tela do mercado é carregada antes de o sinal cair (no app de verdade
     // ela já está no aparelho).
-    await page.getByRole('link', { name: 'Ir ao mercado com a lista' }).click();
-    await expect(page.getByRole('button', { name: /^Usar a lista/ })).toBeVisible();
+    await page.getByRole('link', { name: 'Ir ao Mercado com a Lista' }).click();
+    await expect(page.getByRole('button', { name: /^Usar a Lista/ })).toBeVisible();
     await context.setOffline(true);
     identity.offline = true;
-    await page.getByRole('button', { name: /^Usar a lista/ }).click();
+    await page.getByRole('button', { name: /^Usar a Lista/ }).click();
     await expect(page.getByText('Sem sinal')).toBeVisible();
     await expect(page.getByText('Guardado no aparelho. Vai quando o sinal voltar.')).toBeVisible();
     await pick(page, 'Leite').click();
@@ -200,7 +200,7 @@ test.describe('Compras: da lista ao mercado', () => {
     await synced(page);
 
     shopping.refuseKind = 'listItem';
-    await rowButton(page, 'Já tenho', 'Leite').click();
+    await rowButton(page, 'Já Tenho', 'Leite').click();
 
     const notice = page.getByRole('alert');
     await expect(notice).toContainText(
@@ -225,15 +225,15 @@ test.describe('Compras: Detalhes', () => {
     await expect(members).toHaveText(['Neemias', 'Carla']);
     expect(shopping.memberCalls).toEqual(['add:u-carla', 'remove:u-raphael']);
 
-    await page.getByRole('button', { name: 'Gerar convite' }).click();
+    await page.getByRole('button', { name: 'Gerar Convite' }).click();
     await expect(page.getByRole('img', { name: 'QR do convite para as Compras' })).toBeVisible();
     await page.locator('.invite').scrollIntoViewIfNeeded();
     expect(shopping.invites).toHaveLength(1);
     await expectNoHorizontalScroll(page);
     await shot(page, testInfo, 'detalhes');
 
-    await page.getByRole('button', { name: 'Cancelar convite' }).click();
-    await expect(page.getByRole('button', { name: 'Gerar convite' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancelar Convite' }).click();
+    await expect(page.getByRole('button', { name: 'Gerar Convite' })).toBeVisible();
     expect(shopping.invites[0].revoked).toBe(true);
   });
 
@@ -245,6 +245,47 @@ test.describe('Compras: Detalhes', () => {
     });
     await page.goto('/compras/convite#convite-valido-000000000000000000');
     await expect(page).toHaveURL(/\/compras$/);
+  });
+
+  test('quem abre o link sem ter entrado passa pelo login e entra no grupo com o mesmo convite', async ({
+    page,
+  }) => {
+    identity.loggedIn = false;
+    const token = 'convite-de-quem-nao-entrou-000000000';
+    shopping.invites.push({ id: 'inv-8', token, revoked: false });
+    const accepted: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().endsWith('/group/invites/accept')) {
+        accepted.push((request.postDataJSON() as { token: string }).token);
+      }
+    });
+
+    // Todo endereço por que a aba passa: só o link colado leva o segredo.
+    const visited: string[] = [];
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) visited.push(frame.url());
+    });
+
+    await page.goto(`/compras/convite#${token}`);
+    await expect(page).toHaveURL(/\/entrar/);
+    expect(page.url()).not.toContain(token);
+    expect(new URL(page.url()).searchParams.get('next')).toBe('/compras/convite');
+    await page.getByLabel('E-mail').fill(OWNER.email);
+    await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/compras$/);
+    expect(accepted).toEqual([token]);
+    expect(page.url()).not.toContain(token);
+    // O navegador anuncia o link colado (às vezes duas vezes) antes de a tela o limpar; daí em diante, nenhum o leva.
+    const cleaned = visited.findIndex((url) => !url.includes(token));
+    expect(cleaned).toBeGreaterThan(0);
+    expect(
+      visited.slice(0, cleaned).every((url) => url.endsWith(`/compras/convite#${token}`)),
+    ).toBe(true);
+    expect(visited.slice(cleaned).filter((url) => url.includes(token))).toEqual([]);
+    expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain(token);
+    expect(await page.evaluate(() => location.hash)).toBe('');
   });
 
   test('quem só participa vê as pessoas e pode sair, com um segundo toque', async ({ page }) => {
@@ -259,7 +300,7 @@ test.describe('Compras: Detalhes', () => {
       'Neemias',
     ]);
     await expect(page.getByRole('button', { name: /^Tirar/ })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Gerar convite' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Gerar Convite' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Sair do grupo' }).click();
     expect(shopping.memberCalls).toEqual([]);
     await page.getByRole('button', { name: 'Sair mesmo? Toque de novo' }).click();
@@ -300,7 +341,7 @@ test('no mercado, com o teclado aberto, o campo e as sugestões ficam inteiros a
   for (const name of ['Leite', 'Pão', 'Banana', 'Feijão', 'Café']) await add(page, name);
   await synced(page);
   await page.goto('/compras/mercado');
-  await page.getByRole('button', { name: /^Usar a lista/ }).click();
+  await page.getByRole('button', { name: /^Usar a Lista/ }).click();
   await pick(page, 'Banana').click();
   await put(page, 'arroz 2x 12,90');
   await synced(page);
@@ -326,7 +367,7 @@ test('no mercado, com o teclado aberto, o campo e as sugestões ficam inteiros a
   for (const target of [
     page.locator('form.ui-action-bar'),
     entryField(page),
-    page.getByRole('button', { name: 'Pôr', exact: true }),
+    page.getByRole('button', { name: 'Adicionar', exact: true }),
     page.locator('.chips').getByRole('button', { name: 'Leite', exact: true }),
   ]) {
     const box = (await target.boundingBox())!;
