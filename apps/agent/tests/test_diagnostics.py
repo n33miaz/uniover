@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -209,6 +210,114 @@ async def test_file_append_runs_in_a_thread_and_keeps_the_queued_order(tmp_path:
     await store.flush_appends()
 
     assert wrote_on and all(identifier != main_thread for identifier in wrote_on)
+    assert [event.detail for event in store.take(10)] == ["falha 1", "falha 2"]
+
+
+async def test_a_cancelled_waiter_does_not_cancel_the_shared_file_write(tmp_path: Path) -> None:
+    # O envio periódico espera as escritas e é cancelado quando a conexão cai; o encerramento espera
+    # as mesmas escritas logo depois. O cancelamento de quem esperava não pode parar a escrita
+    # (nem chegar ao encerramento como se ele mesmo tivesse sido cancelado).
+    store = FileDiagnosticStore(tmp_path)
+    writing = threading.Event()
+    release = threading.Event()
+    original = store.append_confirmed
+
+    def append(event: DiagnosticEvent) -> bool:
+        writing.set()
+        release.wait(5)
+        return original(event)
+
+    store.append_confirmed = append  # type: ignore[method-assign]
+    store.append(make_event(1))
+    store.append(make_event(2))
+    waiter = asyncio.create_task(store.flush_appends())
+    await asyncio.to_thread(writing.wait, 5)
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    release.set()
+
+    await store.flush_appends()
+
+    assert [event.detail for event in store.take(10)] == ["falha 1", "falha 2"]
+
+
+async def test_a_write_cancelled_before_its_thread_starts_keeps_the_event_queued(
+    tmp_path: Path,
+) -> None:
+    # A tarefa compartilhada é cancelada com a escrita ainda na fila do executor (a única thread
+    # está ocupada): o evento em voo não pode sumir, e a escrita seguinte grava cada um uma vez.
+    store = FileDiagnosticStore(tmp_path)
+    writes: list[str] = []
+    original = store.append_confirmed
+
+    def append(event: DiagnosticEvent) -> bool:
+        writes.append(event.detail)
+        return original(event)
+
+    store.append_confirmed = append  # type: ignore[method-assign]
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(executor)
+    busy = threading.Event()
+    release = threading.Event()
+
+    def occupy() -> None:
+        busy.set()
+        release.wait(5)
+
+    blocker = loop.run_in_executor(None, occupy)
+    assert busy.wait(5)
+    store.append(make_event(1))
+    store.append(make_event(2))
+    task = store._append_task
+    assert task is not None
+    await asyncio.sleep(0)  # a tarefa chega à espera da thread, que nem começou
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    release.set()
+    await blocker
+
+    await store.flush_appends()
+
+    assert writes == ["falha 1", "falha 2"]
+    assert [event.detail for event in store.take(10)] == ["falha 1", "falha 2"]
+
+
+async def test_a_write_cancelled_while_its_thread_runs_is_written_exactly_once(
+    tmp_path: Path,
+) -> None:
+    # Cancelar a tarefa não interrompe a thread que já grava: ela termina e consome o evento, e a
+    # tarefa nova não o grava de novo.
+    store = FileDiagnosticStore(tmp_path)
+    writes: list[str] = []
+    writing = threading.Event()
+    release = threading.Event()
+    original = store.append_confirmed
+
+    def append(event: DiagnosticEvent) -> bool:
+        writes.append(event.detail)
+        writing.set()
+        release.wait(5)
+        return original(event)
+
+    store.append_confirmed = append  # type: ignore[method-assign]
+    store.append(make_event(1))
+    store.append(make_event(2))
+    task = store._append_task
+    assert task is not None
+    await asyncio.to_thread(writing.wait, 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # A tarefa nova começa com a primeira thread ainda gravando, e só então ela termina.
+    flushing = asyncio.create_task(store.flush_appends())
+    await asyncio.sleep(0)
+    release.set()
+    await flushing
+
+    assert writes == ["falha 1", "falha 2"]
     assert [event.detail for event in store.take(10)] == ["falha 1", "falha 2"]
 
 

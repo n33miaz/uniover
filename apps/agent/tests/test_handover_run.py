@@ -593,6 +593,28 @@ async def test_a_shutdown_step_that_never_ends_does_not_hold_the_exit(
     await connection_module._close_within("um passo que falha", broken())
 
 
+async def test_a_shutdown_step_cancelled_from_inside_does_not_stop_the_rest() -> None:
+    # Uma tarefa interna cancelada por outro (a escrita da fila que o envio periódico esperava)
+    # faz o passo levantar `CancelledError` sem que o encerramento tenha sido cancelado: é falha
+    # do passo, e os seguintes (soltar o que está apertado) ainda rodam.
+    async def cancelled_inside() -> None:
+        inner = asyncio.get_running_loop().create_future()
+        inner.cancel()
+        await inner
+
+    await connection_module._close_within("um passo cancelado por dentro", cancelled_inside())
+
+    # Já o cancelamento de quem encerra segue adiante.
+    async def closing() -> None:
+        await connection_module._close_within("um passo longo", asyncio.Event().wait())
+
+    task = asyncio.create_task(closing())
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 # ---- 4409 depois do ACK, hello da TV e janela `agent_starting` da passagem ----
 
 
