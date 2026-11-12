@@ -371,8 +371,23 @@ internal static class PcProblems
     public static IResult FromGateway(UniOver.SharedKernel.Error error)
     {
         ArgumentNullException.ThrowIfNull(error);
-        return error.Code == AgentErrors.OfflineCode ? Reconnecting() : RemoteCareProblems.FromGateway(error);
+        return error.Code switch
+        {
+            AgentErrors.OfflineCode => Reconnecting(),
+            AgentErrors.StalledCode => Stalled(),
+            _ => RemoteCareProblems.FromGateway(error),
+        };
     }
+
+    /// <summary>
+    /// O PC está conectado, mas mudo (laço parado): o comando não saiu. Mesmo tipo do "reconectando", que a tela de antes já
+    /// entende sem marcar o PC como desconectado; a de agora lê <c>stalled</c> e diz "PC lento".
+    /// </summary>
+    public static IResult Stalled() => Results.Problem(
+        statusCode: StatusCodes.Status503ServiceUnavailable,
+        title: "O PC está lento e não respondeu. Tente de novo em instantes.",
+        type: ProblemDetailsExtensions.TypeBase + ReconnectingType,
+        extensions: new Dictionary<string, object?> { ["stalled"] = true });
 }
 
 /// <summary>

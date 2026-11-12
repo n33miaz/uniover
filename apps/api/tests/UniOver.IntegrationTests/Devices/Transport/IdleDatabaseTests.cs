@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
+using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +9,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Training.Persistence;
@@ -200,5 +204,92 @@ public sealed class IdleDatabaseTests(PostgresFixture postgres)
         }, "queda encerrada na volta");
         await using var check = app.App.Db();
         (await check.PairingAudit.CountAsync(a => a.Event == "agent_online", Ct)).Should().Be(1);
+    }
+
+    private static OutboundMessage Key() =>
+        new("tv.key.v1", JsonSerializer.SerializeToElement(TransportApp.TvKeyBody()));
+
+    /// <summary>Um pedido que deve falhar na hora: sem andar o relógio falso, e em menos de um segundo de relógio real.</summary>
+    private static async Task<TimeSpan> FailsAtOnceAsync(TransportApp app)
+    {
+        var clock = Stopwatch.StartNew();
+        var result = await app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(8), Ct).WaitAsync(TimeSpan.FromSeconds(5), Ct);
+        clock.Stop();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(AgentErrors.StalledCode);
+        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        return clock.Elapsed;
+    }
+
+    /// <summary>O agente responde ao próximo comando que chegar: o pedido sai e volta com sucesso.</summary>
+    private static async Task AnswersAsync(TransportApp app, FakeAgent agent)
+    {
+        var request = app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(8), Ct);
+        var command = (await agent.ReceiveAsync())!.Value;
+        command.GetProperty("type").GetString().Should().Be("tv.key.v1");
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject { ["ok"] = true }, command.GetProperty("id").GetGuid()));
+        (await request.WaitAsync(FakeAgent.Patience, Ct)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AMuteAgent_FailsCommandsAtOnce_AndRecovers_WithoutASingleQuery()
+    {
+        var counter = new CommandCounter();
+        await using var app = await TransportApp.StartAsync(postgres, Options(counter));
+        await using var agent = await app.ConnectAsync();
+        await agent.SendHelloAsync("1.2.3", "tv.remote", "transport.keepalive.v1");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "1.2.3", "hello aceito");
+        await RunAsync(app, agent, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(30));
+        await Task.Delay(300, Ct);
+
+        counter.Enabled = true;
+
+        var health = app.App.Services.GetRequiredService<AgentHealth>();
+
+        // Sem uso: o PC paginado fica mudo (socket aberto). Aos 34 s ainda é um batimento atrasado; aos 35 s, "sem resposta".
+        app.App.Time.Advance(TimeSpan.FromSeconds(34));
+        health.Of(app.Agent.Slug).Should().Be(AgentHealthState.Ready);
+        app.App.Time.Advance(TimeSpan.FromSeconds(1));
+        health.Of(app.Agent.Slug).Should().Be(AgentHealthState.Unresponsive);
+        app.Presence.Get(app.Agent.Slug)!.Connected.Should().BeTrue("o socket segue aberto: a presença não muda");
+        await FailsAtOnceAsync(app);
+        await FailsAtOnceAsync(app);
+
+        // Voltou a falar (o batimento depois da pausa): pronto de novo, e o comando sai e é respondido.
+        await KeepAliveAsync(agent);
+        await TransportApp.WaitUntilAsync(() => health.Of(app.Agent.Slug) == AgentHealthState.Ready, "pronto depois do batimento");
+        await AnswersAsync(app, agent);
+
+        // Com uso, a TV demorando: dois comandos estouram o prazo juntos com o batimento em dia. É só lento, e o seguinte sai.
+        var slow = new[]
+        {
+            app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(8), Ct),
+            app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(8), Ct),
+        };
+        (await agent.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("tv.key.v1");
+        (await agent.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("tv.key.v1");
+        app.App.Time.Advance(TimeSpan.FromSeconds(8));
+        foreach (var missed in slow)
+        {
+            (await missed.WaitAsync(FakeAgent.Patience, Ct)).Error.Code.Should().Be(AgentErrors.TimeoutCode);
+        }
+
+        health.Of(app.Agent.Slug).Should().Be(AgentHealthState.Slow);
+        await AnswersAsync(app, agent);
+        health.Of(app.Agent.Slug).Should().Be(AgentHealthState.Ready);
+
+        // O laço para no meio do uso: aos 35 s sem nada, "sem resposta", e o comando volta na hora.
+        app.App.Time.Advance(TimeSpan.FromSeconds(35));
+        health.Of(app.Agent.Slug).Should().Be(AgentHealthState.Unresponsive);
+        var fast = await FailsAtOnceAsync(app);
+
+        // Voltou: o batimento o tira do mudo e a resposta seguinte confirma.
+        await KeepAliveAsync(agent);
+        await TransportApp.WaitUntilAsync(() => health.Of(app.Agent.Slug) == AgentHealthState.Ready, "pronto depois do batimento");
+        await AnswersAsync(app, agent);
+
+        await Task.Delay(300, Ct);
+        counter.Enabled = false;
+        counter.Count.Should().Be(0, $"a saúde é só memória: medir, falhar na hora e voltar não consultam o banco ({counter.Summary}); falha rápida em {fast.TotalMilliseconds} ms");
     }
 }

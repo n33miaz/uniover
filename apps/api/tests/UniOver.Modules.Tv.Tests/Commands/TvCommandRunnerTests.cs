@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Adapters;
@@ -129,6 +130,26 @@ public class TvCommandRunnerTests
         row.Ok.Should().BeFalse();
         row.ErrorCode.Should().Be("agent_reconnecting", "a tela diz que o PC está reconectando, não que está desligado");
         stream.States.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AConnectedButMuteAgent_KeepsItsCode_AndTheScreenSaysSlowWithoutMarkingItDown()
+    {
+        // O gateway recusou na hora (agent_stalled): o PC está verde e não está reconectando, então o código passa como veio.
+        var (runner, _, audit, stream, _) = Build(TvSendOutcome.Failed(TvSendStatus.AgentOffline, "agent_stalled"));
+
+        var outcome = await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
+
+        outcome.ErrorCode.Should().Be("agent_stalled");
+        audit.Entries.Should().ContainSingle().Which.ErrorCode.Should().Be("agent_stalled");
+        stream.States.Should().BeEmpty("o PC não caiu: a tela não pode mostrá-lo desligado");
+
+        var problem = TvProblems.Fail(outcome).Should().BeOfType<ProblemHttpResult>().Subject;
+        problem.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        problem.ProblemDetails.Type.Should().EndWith("/agent-offline");
+        // `reconnecting` é o que o app de antes (em cache no celular) lê; `stalled` é o que o de agora usa para dizer "PC lento".
+        problem.ProblemDetails.Extensions["reconnecting"].Should().Be(true);
+        problem.ProblemDetails.Extensions["stalled"].Should().Be(true);
     }
 
     [Fact]

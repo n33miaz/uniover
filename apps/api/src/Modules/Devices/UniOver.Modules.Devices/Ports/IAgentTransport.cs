@@ -56,6 +56,16 @@ public interface IAgentSession : IAsyncDisposable
     /// <summary>Entrega o envelope ao agente. <c>false</c> quando a sessão já fechou ou não consegue acompanhar (fila cheia: ela é fechada).</summary>
     ValueTask<bool> SendAsync(ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Como <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/>, dizendo se o envelope pode ser descartado
+    /// (<paramref name="droppable"/>: um movimento puro do mouse, sem rolagem). O movimento é relativo: descartá-lo muda a
+    /// posição final do ponteiro, troca aceita para ele não chegar em rajada atrasada. O transporte que sabe descartar o faz
+    /// quando ele envelhece na fila ou quando ela está quase cheia, devolvendo <c>true</c> e mantendo a conexão; o que não sabe
+    /// trata como qualquer outro.
+    /// </summary>
+    ValueTask<bool> SendAsync(ReadOnlyMemory<byte> envelope, bool droppable, CancellationToken cancellationToken) =>
+        SendAsync(envelope, cancellationToken);
+
     /// <summary>Fecha a sessão com o motivo. Pode ser chamado mais de uma vez; as seguintes não fazem nada.</summary>
     Task CloseAsync(AgentCloseReason reason, CancellationToken cancellationToken);
 }

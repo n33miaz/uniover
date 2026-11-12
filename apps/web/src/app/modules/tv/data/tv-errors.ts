@@ -46,6 +46,19 @@ function isReconnecting(error: unknown): boolean {
   );
 }
 
+/**
+ * O PC está conectado, mas não responde (o laço dele parou): a API recusa na hora, sem enviar, e marca o problema com
+ * `stalled` (junto com `reconnecting`, que é o que a versão anterior do app lê).
+ */
+function isStalled(error: unknown): boolean {
+  return (
+    error instanceof HttpErrorResponse &&
+    !!error.error &&
+    typeof error.error === 'object' &&
+    (error.error as { stalled?: unknown }).stalled === true
+  );
+}
+
 /** Códigos do canal ADB do agente: a TV não atendeu pelo ADB (desligada, fora da rede ou sem responder a tempo). */
 const ADB_UNREACHABLE_CODES = new Set(['adb_unreachable', 'adb_unavailable', 'adb_timeout']);
 
@@ -203,15 +216,20 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
             'not-configured',
             $localize`:@@tv.error.not-configured:Nenhum computador foi configurado para controlar a TV.`,
           )
-        : isReconnecting(error)
+        : isStalled(error)
           ? make(
               'agent-reconnecting',
-              $localize`:@@tv.error.agent-reconnecting:Reconectando ao PC… Tente de novo em instantes.`,
+              $localize`:@@tv.error.agent-stalled:O PC que controla a TV está lento e não respondeu. Tente de novo em instantes.`,
             )
-          : make(
-              'agent-offline',
-              $localize`:@@tv.error.agent-offline:O computador que controla a TV está desligado ou sem internet. Ligue-o e tente de novo.`,
-            );
+          : isReconnecting(error)
+            ? make(
+                'agent-reconnecting',
+                $localize`:@@tv.error.agent-reconnecting:Reconectando ao PC… Tente de novo em instantes.`,
+              )
+            : make(
+                'agent-offline',
+                $localize`:@@tv.error.agent-offline:O computador que controla a TV está desligado ou sem internet. Ligue-o e tente de novo.`,
+              );
     case 504:
       return make(
         'timeout',

@@ -33,13 +33,17 @@ internal sealed partial class AgentHub(
     IOptions<DevicesTransportOptions> options,
     TimeProvider time,
     ILogger<AgentHub> logger,
-    bool handoverEnabled = true)
+    bool handoverEnabled = true,
+    AgentHealth? agentHealth = null)
 {
     private const string InvalidMessageText = "A mensagem não cumpre o contrato.";
     private const string KeepAliveCapability = "transport.keepalive.v1";
     private const string RestartCapability = "transport.restart.v1";
     private const string AgentKeepAliveType = "agent.keepalive.v1";
     private const string ApiKeepAliveType = "api.keepalive.v1";
+
+    // A saúde de cada agente, só em memória; sem ela (montagens de teste do hub sozinho) nada é medido.
+    private readonly AgentHealth? health = agentHealth;
 
     public async Task RunSessionAsync(IAgentSession session, CancellationToken cancellationToken)
     {
@@ -86,6 +90,8 @@ internal sealed partial class AgentHub(
         try
         {
             previous = connections.Attach(session, connectedAt, handover, out previousUnderstandsHandover);
+            // Sessão nova, medição nova: o que a anterior deixou (mudo, lento) não vale para esta.
+            health?.Reset(agentId);
         }
         catch (AgentSessionRevokedException)
         {
@@ -175,6 +181,7 @@ internal sealed partial class AgentHub(
             var disconnectedAt = time.GetUtcNow();
             if (connections.Detach(session, disconnectedAt))
             {
+                health?.Forget(agentId);
                 // Agente que costuma voltar em segundos (graça de presença): os comandos já enviados esperam a volta por um prazo
                 // curto em vez de falhar na hora. Revogado, ou sem graça, não volta: falham já.
                 if (connections.IsInGrace(agentId))
@@ -316,6 +323,7 @@ internal sealed partial class AgentHub(
         // O sinal de vida fica só em memória: "visto agora" de quem está conectado vem daqui, e o banco (que dorme sem
         // consulta) só recebe o último sinal ao conectar, ao desconectar e quando o hello traz algo novo.
         connections.Touch(session, now);
+        health?.OnFrame(agentId);
 
         switch (envelope.Type)
         {
@@ -336,6 +344,7 @@ internal sealed partial class AgentHub(
                     now,
                     host,
                     update);
+                health?.Watch(agentId, capabilities.Contains(KeepAliveCapability, StringComparer.Ordinal));
                 if (isCurrent)
                 {
                     await persistedPresence.RecordHelloAsync(agentId, version, host, update, now, cancellationToken);
