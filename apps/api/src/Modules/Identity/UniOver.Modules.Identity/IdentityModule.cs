@@ -68,10 +68,14 @@ public static class IdentityModule
 
         services.AddOptions<PasswordRecoveryEmailOptions>()
             .Bind(configuration.GetSection(IdentityModuleOptions.SectionName + ":RecoveryEmail"))
-            .Validate(o => o.IsValid(), "RecoveryEmail exige chave, remetente e URL HTTPS quando habilitado.")
+            .Validate(o => o.IsValid(), "RecoveryEmail exige provedor, credenciais, remetente e URL HTTPS quando habilitado.")
             .ValidateOnStart();
-        services.AddHttpClient<IRecoveryEmailSender, ResendRecoveryEmailSender>(client =>
-            client.Timeout = TimeSpan.FromSeconds(8));
+        if (string.Equals(configuration[IdentityModuleOptions.SectionName + ":RecoveryEmail:Provider"], "Gmail", StringComparison.Ordinal))
+            services.AddHttpClient<IRecoveryEmailSender, GmailRecoveryEmailSender>(client =>
+                client.Timeout = TimeSpan.FromSeconds(12));
+        else
+            services.AddHttpClient<IRecoveryEmailSender, ResendRecoveryEmailSender>(client =>
+                client.Timeout = TimeSpan.FromSeconds(8));
         services.AddSingleton<RecoveryEmailQueue>();
         services.AddSingleton<IHostedService, RecoveryEmailWorker>();
 
