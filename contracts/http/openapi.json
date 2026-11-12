@@ -7949,6 +7949,15 @@
               "integer",
               "string"
             ]
+          },
+          "wakeHints": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           }
         },
         "required": [

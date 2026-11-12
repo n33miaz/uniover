@@ -498,7 +498,8 @@ internal sealed class TvApp : IAsyncDisposable
         agent.SendTextAsync(agent.Envelope("command.result.v1", result ?? Ok(), command.GetProperty("id").GetGuid()));
 
     public static JsonObject StateBody(
-        string power = "on", int? volume = 12, string? app = "com.exemplo.video", string connection = "hot", string? adbPermission = null, string? adbPermissionReason = null)
+        string power = "on", int? volume = 12, string? app = "com.exemplo.video", string connection = "hot", string? adbPermission = null, string? adbPermissionReason = null,
+        string[]? wakeHints = null)
     {
         var body = new JsonObject
         {
@@ -515,6 +516,11 @@ internal sealed class TvApp : IAsyncDisposable
         if (adbPermissionReason is not null)
         {
             body["adbPermissionReason"] = adbPermissionReason;
+        }
+
+        if (wakeHints is not null)
+        {
+            body["wakeHints"] = new JsonArray(wakeHints.Select(hint => (JsonNode?)JsonValue.Create(hint)).ToArray());
         }
 
         return body;

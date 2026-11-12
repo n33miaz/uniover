@@ -45,12 +45,25 @@ public static class AdbPermissionText
         !string.IsNullOrEmpty(value) && value.Length <= 32 && value.All(c => c is (>= 'a' and <= 'z') or '_');
 }
 
+/// <summary>Valores de <c>wakeHints</c>, os mesmos do contrato com o agente: avisos de ligar a TV TCL pela rede.</summary>
+public static class WakeHintText
+{
+    /// <summary>O "Screenless service" da TV está desligado: ligar pelo celular pode não funcionar.</summary>
+    public const string ScreenlessOff = "screenless_off";
+
+    /// <summary>Ligar pela rede não deu resposta, e a TV liga sozinha quando a energia volta: tirar da tomada resolve.</summary>
+    public const string Replug = "replug";
+
+    public static bool IsKnown(string? value) => value is ScreenlessOff or Replug;
+}
+
 /// <summary>
 /// Última leitura do estado que o agente mandou (o volume e a permissão do ADB só vivem aqui, em memória).
 /// <c>AdbPermission</c> é <c>null</c> quando o agente não disse (Samsung, agente antigo, ADB ainda sem resposta).
 /// </summary>
 public sealed record TvStateSnapshot(
-    string Power, int? Volume, string? App, string Connection, DateTimeOffset UpdatedAt, string? AdbPermission = null, string? AdbPermissionReason = null)
+    string Power, int? Volume, string? App, string Connection, DateTimeOffset UpdatedAt, string? AdbPermission = null, string? AdbPermissionReason = null,
+    IReadOnlyList<string>? WakeHints = null)
 {
     /// <summary>
     /// Só <c>power</c>, <c>app</c> e <c>connection</c> valem gravação e evento: mudar apenas o volume não escreve nada
@@ -79,7 +92,8 @@ public sealed record TvState(
     bool AgentLinked = true,
     DateTimeOffset? OfflineSince = null,
     string? AdbPermission = null,
-    string? AdbPermissionReason = null)
+    string? AdbPermissionReason = null,
+    IReadOnlyList<string>? WakeHints = null)
 {
     /// <summary>
     /// Sem agente conectado não há sessão com a TV: a conexão é sempre <c>disconnected</c> e o volume (que só o
@@ -95,7 +109,7 @@ public sealed record TvState(
         }
 
         return agentOnline
-            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked, null, snapshot.AdbPermission, snapshot.AdbPermissionReason)
+            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked, null, snapshot.AdbPermission, snapshot.AdbPermissionReason, snapshot.WakeHints)
             : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt, agentLinked, since);
     }
 }
