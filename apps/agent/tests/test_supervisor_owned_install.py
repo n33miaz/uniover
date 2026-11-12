@@ -170,14 +170,20 @@ def test_a_stalled_owner_is_stopped_and_the_agent_comes_back(pc: Pc) -> None:
             kinds = {i["kind"] for i in pc.diagnostics()}
             assert "process.unresponsive" in kinds
             assert "mudo" in pc.supervisor_log()
+
             # Sem o dono, o agente sobe de verdade (e fica: com o pulso em dia, nada o reinicia).
-            before = pc.starts()
+            # Conta as partidas no log a partir do encerramento: o supervisor pode subir o agente
+            # antes de o teste ver o dono morto, e uma contagem feita aqui ja a incluiria.
+            def starts_after_stop() -> int:
+                log = pc.supervisor_log()
+                return log.split("vou encerra", 1)[-1].count("agente iniciado")
+
             with heartbeat(pc.alive):
-                assert wait_for(lambda: pc.starts() > before, 60), pc.supervisor_log()
+                assert wait_for(lambda: starts_after_stop() >= 1, 60), pc.supervisor_log()
                 assert wait_for(resumed.exists, 60), pc.supervisor_log()
                 # Janela so para flagrar um defeito (reinicio); ela nunca decide um sucesso.
                 time.sleep(float(OWNED_WAIT) + 1)
-                assert pc.starts() == before + 1
+                assert starts_after_stop() == 1, pc.supervisor_log()
             assert resumed.read_text(encoding="ascii").splitlines() == ["x"]
         finally:
             if owner is not None:
