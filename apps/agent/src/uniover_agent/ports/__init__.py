@@ -90,7 +90,7 @@ from uniover_agent.ports.tv_channel import (
     TvPortClosed,
     TvUnreachable,
 )
-from uniover_agent.ports.tv_cleanup import CleanupDayStore, TvAdbCleanup
+from uniover_agent.ports.tv_cleanup import CleanupDayStore, TvAdbCleanup, WakeSettings
 from uniover_agent.ports.tv_driver import TextFieldStatus, TvDriver
 from uniover_agent.ports.tv_remote import TvRemote
 
@@ -192,6 +192,7 @@ __all__ = [
     "TvUnreachable",
     "UserRequest",
     "VolumeState",
+    "WakeSettings",
     "adb_text_groups",
     "current_user_request",
     "is_adb_typable",

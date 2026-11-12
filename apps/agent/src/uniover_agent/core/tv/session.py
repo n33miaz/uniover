@@ -235,6 +235,7 @@ class TvSessionManager:
         self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
         self._session_opened: list[Callable[[float], None]] = []
+        self._wake_failed: list[Callable[[], None]] = []
         self._repair_callbacks: list[tuple[Callable[[], None], Callable[[], None]]] = []
         self._last_emitted: TvState | None = None
         self._tasks: set[asyncio.Task[None]] = set()
@@ -286,6 +287,10 @@ class TvSessionManager:
     def on_session_opened(self, callback: Callable[[float], None]) -> None:
         """Avisa quando a TV acabou de responder e a sessão Remote v2 ficou pronta."""
         self._session_opened.append(callback)
+
+    def on_wake_failed(self, callback: Callable[[], None]) -> None:
+        """Avisa quando o Wake-on-LAN saiu e a TV não respondeu dentro da espera."""
+        self._wake_failed.append(callback)
 
     def on_needs_repair(
         self, callback: Callable[[], None], *, on_command: Callable[[], None] | None = None
@@ -584,6 +589,11 @@ class TvSessionManager:
             "enviei o Wake-on-LAN, mas a TV não respondeu; "
             "confira se ela aceita ligar pela rede (ligar com celular)"
         )
+        for callback in self._wake_failed:
+            try:
+                callback()
+            except Exception:
+                _log.exception("falha ao avisar que a TV não ligou pela rede")
 
     async def launch_link(self, link: str) -> None:
         await self._run(lambda remote: remote.launch_link(link))

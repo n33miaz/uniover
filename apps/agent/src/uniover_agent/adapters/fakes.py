@@ -13,6 +13,7 @@ from uniover_agent.ports import (
     PollResult,
     TextFieldStatus,
     TvUnreachable,
+    WakeSettings,
 )
 
 
@@ -216,6 +217,8 @@ class FakeTvAdb:
             "animator_duration_scale": "1.0",
         }
         self.background_modes: dict[str, str | None] = {}
+        # Os ajustes de ligar pela rede que o dublê "lê" (uma Android TV de outra marca por padrão).
+        self.wake: WakeSettings = WakeSettings(tcl=False, screenless=None, power_restore=None)
 
     @property
     def connected(self) -> bool:
@@ -291,6 +294,10 @@ class FakeTvAdb:
     async def accessibility_packages(self) -> frozenset[str]:
         self._cleanup_step("accessibility")
         return self.accessibility
+
+    async def wake_settings(self) -> WakeSettings:
+        self._cleanup_step("wake-settings")
+        return self.wake
 
     async def running_packages(self) -> frozenset[str]:
         self._cleanup_step("running")

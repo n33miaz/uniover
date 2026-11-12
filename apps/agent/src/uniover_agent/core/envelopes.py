@@ -135,11 +135,13 @@ class EnvelopeFactory:
         connection: WireConnection | None = None,
         adb_permission: str | None = None,
         adb_permission_reason: str | None = None,
+        wake_hints: Sequence[str] = (),
     ) -> dict[str, Any]:
         """`connection` troca o valor da sessão pelo do fio (o publicador decide, por API).
 
         `adb_permission` (`granted`, `missing` ou `pending`) só entra no corpo quando dito: o
-        campo é opcional no contrato e uma API anterior o recusaria.
+        campo é opcional no contrato e uma API anterior o recusaria. `wake_hints` idem, e só sai
+        quando há algo a avisar.
         """
         body: dict[str, Any] = {
             "power": state.power,
@@ -151,6 +153,8 @@ class EnvelopeFactory:
             body["adbPermission"] = adb_permission
             if adb_permission_reason is not None:
                 body["adbPermissionReason"] = adb_permission_reason
+        if wake_hints:
+            body["wakeHints"] = list(wake_hints)
         return self._build("tv.state.v1", body, None)
 
     def tv_apps(

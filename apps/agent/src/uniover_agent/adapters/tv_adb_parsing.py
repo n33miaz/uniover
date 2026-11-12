@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from uniover_agent.ports import LaunchableApp, is_adb_typable
+from uniover_agent.ports import LaunchableApp, WakeSettings, is_adb_typable
 
 # Mesmo padrão do contrato (`tv.app.launch.v1` com `kind=package`).
 PACKAGE_PATTERN: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+")
@@ -237,6 +237,44 @@ def parse_setting_value(text: str) -> str | None:
     if not lines or lines[0].lower() == _SETTING_NULL:
         return None
     return lines[0]
+
+
+# Os ajustes de ligar pela rede, numa ida só ao shell: cada leitura sai numa linha com rótulo,
+# para que uma propriedade vazia (`getprop` de outra marca) não desloque as outras. Só leitura:
+# nada aqui grava na TV. Fontes, conferidas numa TCL C06 (Android TV 11): o menu Sistema > Energia
+# grava o "Screenless service" em `Settings.Secure smart_audio_switch` (`null` até ser ligado), e
+# `persist.tcl.powerloss=true` acompanha o "liga quando a energia volta" observado nela.
+WAKE_SETTINGS_COMMAND: Final = (
+    "echo uniover_maker=$(getprop ro.product.manufacturer);"
+    " echo uniover_brand=$(getprop ro.product.brand);"
+    " echo uniover_powerloss=$(getprop persist.tcl.powerloss);"
+    " echo uniover_screenless=$(settings get secure smart_audio_switch)"
+)
+_TCL: Final = "tcl"
+_WAKE_LINE: Final = re.compile(r"^uniover_(maker|brand|powerloss|screenless)=(.*)$")
+
+
+def parse_wake_settings(text: str) -> WakeSettings | None:
+    """A saída de `WAKE_SETTINGS_COMMAND`; `None` quando nem o fabricante veio (leitura falhou).
+
+    Só `1` liga o Screenless service e só `0` ou `null` o desligam: qualquer outra coisa é "não
+    sei", para nunca virar aviso falso.
+    """
+    values: dict[str, str] = {}
+    for line in clean_lines(text):
+        match = _WAKE_LINE.match(line)
+        if match is not None:
+            values[match.group(1)] = match.group(2).strip()
+    if "maker" not in values:
+        return None
+    screenless_raw = values.get("screenless", "").lower()
+    screenless = {"1": True, "0": False, _SETTING_NULL: False}.get(screenless_raw)
+    power_raw = values.get("powerloss", "").lower()
+    power_restore = {"true": True, "false": False}.get(power_raw)
+    # Fabricante ou marca: qual dos dois diz "TCL" nesta TV ainda não foi conferido (a impressão
+    # digital do sistema começa pela marca), então qualquer um basta.
+    tcl = _TCL in (values["maker"].lower(), values.get("brand", "").lower())
+    return WakeSettings(tcl, screenless, power_restore)
 
 
 def parse_component_packages(value: str | None) -> frozenset[str]:

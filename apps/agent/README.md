@@ -1028,6 +1028,35 @@ falharam, com o `requestId` do pedido) e `command.result.v1`. O registro (`INFO`
 
 A primeira execução deve ser feita com a TV ligada, sabendo que **o app que estiver passando vai fechar**.
 
+## Ligar a TV TCL pela rede: conferência dos ajustes
+
+Ligar a TV pelo app (Wake-on-LAN) depende de ajustes da própria TV. O agente **só lê** um deles e conta ao app quando
+está desligado; nunca grava nada na TV e nunca abre o aviso de permissão do ADB (a leitura usa a mesma trava dos outros
+caminhos automáticos: só um canal que a pessoa já liberou).
+
+A leitura vai junto da avaliação diária da limpeza (a primeira sessão do dia, e a primeira depois de o agente subir):
+nenhum laço novo, um comando fixo por dia, `argv` em lista:
+
+```
+echo uniover_maker=$(getprop ro.product.manufacturer); echo uniover_powerloss=$(getprop persist.tcl.powerloss); echo uniover_screenless=$(settings get secure smart_audio_switch)
+```
+
+| Ajuste no menu da TV | Onde fica | Como o agente sabe | Certeza |
+|---|---|---|---|
+| Screenless service | Configurações > Sistema > Energia | `settings get secure smart_audio_switch`: `1` ligado; `0` ou `null` desligado | média: o menu grava essa chave numa TCL C06 (Android TV 11), lido pelo ADB em 09/11; outros modelos TCL não conferidos |
+| Networked standby | Configurações > Rede e Internet | não sabe: o serviço próprio da TCL grava (`setNetworkWakeupMode`), sem chave em `settings` | só citado no passo a passo do app |
+| Quick Start | Configurações > Sistema > Energia | não sabe: também pelo serviço da TCL (`strSuspendSetStatus`) | só citado no passo a passo do app |
+| Liga quando a energia volta | (de fábrica) | `getprop persist.tcl.powerloss` = `true` | média: valor lido na C06; que ela liga sozinha quando a energia volta é o observado em casa, ainda não medido |
+
+Em TV de outra marca (`ro.product.manufacturer` diferente de TCL) nada é avisado. O que sai no `tv.state.v1`
+(`wakeHints`, só para a API que lista `tv.state.wake_hints`):
+
+- `screenless_off`: o Screenless service está desligado; o app mostra o caminho no menu para ligá-lo;
+- `replug`: o Wake-on-LAN saiu e a TV não respondeu na espera, numa TV com `persist.tcl.powerloss=true`; o app sugere
+  tirar da tomada e ligar de novo. Some quando a TV volta a responder.
+
+Leitura que falha (TV fora, ADB sem permissão) não muda nada: vale a última conhecida.
+
 ## TV Livre (launcher próprio da Android TV)
 
 Só para Android TV e Google TV com Android 9 ou mais, e só com o `adb` neste PC. O agente anuncia a capacidade

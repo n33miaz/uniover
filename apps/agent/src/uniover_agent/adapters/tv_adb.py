@@ -37,6 +37,7 @@ from uniover_agent.adapters.adb_authorization import (
 from uniover_agent.adapters.process import exec_hidden
 from uniover_agent.adapters.tv_adb_parsing import (
     SETTINGS_ACTIONS,
+    WAKE_SETTINGS_COMMAND,
     AdbOutput,
     DeviceState,
     am_start_succeeded,
@@ -60,6 +61,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
     parse_playback_sessions,
     parse_running_packages,
     parse_setting_value,
+    parse_wake_settings,
     quote_for_device_shell,
 )
 from uniover_agent.core.priority_lock import PriorityLock
@@ -77,6 +79,7 @@ from uniover_agent.ports import (
     AdbUnreachable,
     LaunchableApp,
     UserRequest,
+    WakeSettings,
     current_user_request,
     is_user_initiated,
 )
@@ -1160,6 +1163,18 @@ class AdbTv:
         output = await self._locked_shell("settings get secure enabled_accessibility_services")
         self._require_success(output, "a TV não informou os serviços de acessibilidade")
         return parse_component_packages(parse_setting_value(output.text))
+
+    async def wake_settings(self) -> WakeSettings:
+        """Os ajustes de ligar pela rede, num comando fixo de leitura (`getprop`, `settings get`).
+
+        Nunca grava: religar o Screenless service é do dono, pelo menu da TV.
+        """
+        output = await self._locked_shell(WAKE_SETTINGS_COMMAND)
+        self._require_success(output, "a TV não informou os ajustes de ligar pela rede")
+        settings = parse_wake_settings(output.text)
+        if settings is None:
+            raise AdbCommandFailed("a TV não informou os ajustes de ligar pela rede")
+        return settings
 
     async def running_packages(self) -> frozenset[str]:
         output = await self._locked_shell("ps -A")

@@ -254,6 +254,24 @@ async def test_wake_on_lan_with_no_answer_is_logged_by_the_background_task(
     assert rig.remote.sent == []
 
 
+async def test_wake_on_lan_with_no_answer_tells_who_listens_and_an_answer_does_not() -> None:
+    wol = Wol()
+    rig = Rig(wake_on_lan=wol)
+    failed: list[str] = []
+    rig.manager.on_wake_failed(lambda: failed.append("sem resposta"))
+    await rig.manager.send_key("POWER")
+    await rig.manager.settle()
+    assert failed == ["sem resposta"]
+
+    wol2 = Wol()
+    rig2 = Rig(wake_on_lan=wol2)
+    rig2.manager.on_wake_failed(lambda: failed.append("não devia"))
+    acordando(rig2, wol2)
+    await rig2.manager.send_key("POWER")
+    await rig2.manager.settle()
+    assert failed == ["sem resposta"]
+
+
 async def test_power_again_while_the_tv_is_booting_is_refused_for_a_minute() -> None:
     wol = Wol()
     rig = Rig(wake_on_lan=wol)

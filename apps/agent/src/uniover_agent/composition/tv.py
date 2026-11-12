@@ -116,6 +116,7 @@ from uniover_agent.core.tv.livre import (
     tv_livre_photo_handler,
 )
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY, TvPairing
+from uniover_agent.core.tv.wake_settings import WakeSettingsCheck
 from uniover_agent.ports import (
     AdbPermissionSink,
     AdbUnauthorized,
@@ -170,6 +171,8 @@ class TvSetup:
     on_presence_refused: Callable[[float], None] | None = None
     # O estado da permissão do ADB (preenchido pelo canal ADB): o publicador o conta ao app.
     adb_permission: AdbPermissionTracker | None = None
+    # Os ajustes de ligar pela rede (só Android TV com `adb`): o publicador os conta ao app.
+    wake_check: WakeSettingsCheck | None = None
     # Rodam depois de um pareamento novo da Android TV (pedido da pessoa): o ADB apaga o registro.
     on_paired: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
     # Chamados quando `tv.adb` é declarado fora da partida (autorização dada depois).
@@ -731,6 +734,20 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
     # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
     cleanup = TvCleanup(adb, clock, keep=keep, allow_app_closing=False)
+    # Os ajustes de ligar pela rede: lidos uma vez por dia, junto da avaliação da limpeza leve.
+    wake_check = WakeSettingsCheck(adb)
+    setup.wake_check = wake_check
+    manager.on_session_opened(wake_check.tv_answered)
+    manager.on_wake_failed(wake_check.wake_failed)
+
+    async def read_wake_settings() -> bool:
+        # Só com a permissão do ADB já dada: a leitura nunca é o que faz a TV pedir permissão, nem
+        # muda o que o app mostra sobre ela.
+        permission = setup.adb_permission
+        if permission is None or permission.state != "granted":
+            return False
+        return await wake_check.check()
+
     scheduler = TvCleanupScheduler(
         cleanup,
         adb,
@@ -740,6 +757,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         lambda: setup.manager.snapshot().app,
         lambda: light_settings.focus_active,
         CleanupDayFile(installation_base() / "runtime"),
+        wake_check=read_wake_settings,
     )
 
     async def configure_cleanup(command: Command) -> CommandResult:

@@ -123,6 +123,7 @@ from uniover_agent.core.api_features import (
     HANDOVER_FEATURE,
     KEEPALIVE_LOOP_LAG_FEATURE,
     NOT_PAIRED_FEATURE,
+    WAKE_HINTS_FEATURE,
     WAKING_FEATURE,
     ApiFeatures,
     LoopLagGate,
@@ -823,6 +824,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             reports_adb_permission=lambda: features.supports(ADB_PERMISSION_FEATURE),
             adb_permission=lambda: tv.adb_permission.state if tv.adb_permission else None,
             adb_permission_reason=lambda: tv.adb_permission.reason if tv.adb_permission else None,
+            reports_wake_hints=lambda: features.supports(WAKE_HINTS_FEATURE),
+            wake_hints=lambda: tv.wake_check.hints if tv.wake_check else (),
         )
         tv.manager.subscribe(publisher.publish)
         tv.manager.subscribe(tray.tv_state)
@@ -888,6 +891,9 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         if tv.adb_permission is not None:
             # Cada mudança da permissão do ADB (pedida, aceita, perdida) chega ao celular na hora.
             tv.adb_permission.on_change(lambda: publisher.publish(tv.manager.snapshot()))
+        if tv.wake_check is not None:
+            # Um ajuste de ligar pela rede desligado (ou a TV que não ligou) chega ao celular.
+            tv.wake_check.on_change(lambda: publisher.publish(tv.manager.snapshot()))
     if pc is not None and pc.volume is not None:
         volume = pc.volume
         # O nível só sobe depois de a API listar a capacidade (uma anterior recusaria o tipo), e
