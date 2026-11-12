@@ -26,6 +26,8 @@ class TvStatePublisher:
         reports_adb_permission: Callable[[], bool] = lambda: False,
         adb_permission: Callable[[], str | None] = lambda: None,
         adb_permission_reason: Callable[[], str | None] = lambda: None,
+        reports_wake_hints: Callable[[], bool] = lambda: False,
+        wake_hints: Callable[[], tuple[str, ...]] = tuple,
     ) -> None:
         self._transport = transport
         self._envelopes = envelopes
@@ -39,6 +41,9 @@ class TvStatePublisher:
         self._reports_adb_permission = reports_adb_permission
         self._adb_permission = adb_permission
         self._adb_permission_reason = adb_permission_reason
+        # Os avisos de ligar pela rede (TCL), também só para a API que conhece o campo.
+        self._reports_wake_hints = reports_wake_hints
+        self._wake_hints = wake_hints
         self._pending: TvState | None = None
         self._task: asyncio.Task[None] | None = None
 
@@ -59,7 +64,8 @@ class TvStatePublisher:
         permission = self._adb_permission() if self._reports_adb_permission() else None
         # O motivo só interessa ao app quando a permissão falta (é ele que decide se abre a folha).
         reason = self._adb_permission_reason() if permission == "missing" else None
-        return self._envelopes.tv_state(state, self._wire(state), permission, reason)
+        hints = self._wake_hints() if self._reports_wake_hints() else ()
+        return self._envelopes.tv_state(state, self._wire(state), permission, reason, hints)
 
     def _wire(self, state: TvState) -> WireConnection:
         if state.waking and self._reports_waking():

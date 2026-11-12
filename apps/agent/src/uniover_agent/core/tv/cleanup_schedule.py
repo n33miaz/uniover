@@ -11,7 +11,7 @@ avaliei hoje" é guardado em disco, para um reinício do agente não repetir a a
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Final
@@ -80,6 +80,7 @@ class TvCleanupScheduler:
         foreground: Callable[[], str | None],
         is_focused: Callable[[], bool] = lambda: False,
         day_store: CleanupDayStore | None = None,
+        wake_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         self._cleanup = cleanup
         self._adb = adb
@@ -104,6 +105,12 @@ class TvCleanupScheduler:
         self._wake_task: asyncio.Task[None] | None = None
         self._last_deep_skip: str | None = None
         self._closed = False
+        # A conferência dos ajustes de ligar pela rede pega carona no mesmo gatilho diário: uma
+        # leitura curta na primeira sessão do dia (e na primeira depois de o agente subir). O dia
+        # só conta como feito quando a TV respondeu: senão a sessão seguinte tenta de novo.
+        self._wake_check = wake_check
+        self._wake_check_day: date | None = None
+        self._pending_wake_check = False
 
     def configure(
         self,
@@ -137,6 +144,8 @@ class TvCleanupScheduler:
         self._last_session_ms = round(elapsed * 1000)
         if self._configuration.light_enabled and self._light_day != today:
             self._pending_light = True
+        if self._wake_check is not None and self._wake_check_day != today:
+            self._pending_wake_check = True
         if elapsed > SLOW_SESSION_SECONDS:
             self._slow_session = True
             if self._configuration.light_enabled:
@@ -174,6 +183,11 @@ class TvCleanupScheduler:
         if self._is_focused():
             # Enquanto há mídia confirmada, a limpeza (até a leve) espera; o gatilho fica pendente.
             return
+        if self._pending_wake_check and self._wake_check is not None:
+            self._pending_wake_check = False
+            today = self._today()
+            if await self._wake_check():
+                self._wake_check_day = today
         if (
             self._pending_light
             and self._configuration.light_enabled

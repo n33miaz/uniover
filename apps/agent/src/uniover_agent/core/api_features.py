@@ -26,6 +26,8 @@ WAKING_FEATURE: Final = "tv.state.waking"
 # A API aceita `adbPermission` (granted, missing, pending) no corpo de `tv.state.v1`; uma anterior
 # recusaria o campo e perderia o estado inteiro.
 ADB_PERMISSION_FEATURE: Final = "tv.state.adb_permission"
+# Os avisos de ligar pela rede (`wakeHints`) no `tv.state.v1`: só para a API que aceita o campo.
+WAKE_HINTS_FEATURE: Final = "tv.state.wake_hints"
 # A API passa a conexão de uma versão do agente para a seguinte sem derrubar o canal (`hello` com
 # `instanceId` e `handover`, fechamento 4410 da antiga). Uma API anterior recusaria o `hello`.
 HANDOVER_FEATURE: Final = "agent.handover.v1"

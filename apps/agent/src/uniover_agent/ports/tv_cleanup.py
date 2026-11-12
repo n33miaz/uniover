@@ -9,6 +9,7 @@ campo `null` do Android, por exemplo) **não** é falha: volta como vazio ou `No
 importa para quem decide o que proteger: ler errado não pode virar "nada a proteger".
 """
 
+from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
@@ -30,6 +31,22 @@ class CleanupDayStore(Protocol):
     def save(self, day: date) -> None:
         """Grava o dia; falha de disco só vai para o registro."""
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class WakeSettings:
+    """O que a TV conta, numa leitura só, dos ajustes que a deixam ligar pela rede.
+
+    `tcl`: o fabricante ou a marca (`ro.product.manufacturer`, `ro.product.brand`) é TCL; nas
+    outras marcas os dois campos abaixo não querem dizer nada. `screenless`: o "Screenless
+    service" (`settings get secure smart_audio_switch`), `None` quando a saída não trouxe a linha
+    ou trouxe algo que não se entende. `power_restore`: a TV liga sozinha quando a energia volta
+    (`getprop persist.tcl.powerloss`), `None` quando não há valor.
+    """
+
+    tcl: bool
+    screenless: bool | None
+    power_restore: bool | None
 
 
 class TvAdbCleanup(Protocol):
@@ -101,6 +118,10 @@ class TvAdbCleanup(Protocol):
 
     async def kill_background(self) -> None:
         """`am kill-all`: encerra só processos de fundo e em cache (nunca o app da frente)."""
+        ...
+
+    async def wake_settings(self) -> WakeSettings:
+        """Lê, sem gravar nada, os ajustes de ligar pela rede. Só um comando curto no shell."""
         ...
 
     async def force_stop(self, package: str) -> None:
