@@ -119,8 +119,12 @@ def test_launcher_runs_its_fallback_when_updated_wrapper_is_missing(tmp_path: Pa
     base = tmp_path / "UniOver"
     base.mkdir()
     marker = tmp_path / "fallback.txt"
+    # O `Set-Content` cria o arquivo e o mantém aberto sem deixar ler até terminar: o marcador
+    # existir não quer dizer que já dá para lê-lo. Grava ao lado e renomeia, já fechado.
     (base / "run-agent.fallback.ps1").write_text(
-        "Set-Content -LiteralPath $env:UNIOVER_TEST_MARKER -Value fallback\n",
+        "$partial = $env:UNIOVER_TEST_MARKER + '.partial'\n"
+        "Set-Content -LiteralPath $partial -Value fallback\n"
+        "Move-Item -LiteralPath $partial -Destination $env:UNIOVER_TEST_MARKER\n",
         encoding="ascii",
     )
     environment = os.environ | {
