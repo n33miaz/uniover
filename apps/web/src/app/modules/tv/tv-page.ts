@@ -21,6 +21,7 @@ import { TvRoundKeys } from './data/tv-round-keys';
 import { TvStore } from './data/tv-store';
 import { AppsPanel } from './panels/apps-panel';
 import { AdbPermissionNotice } from './ui/adb-permission';
+import { WakeNotice } from './ui/wake-notice';
 import { KeyboardPanel } from './panels/keyboard-panel';
 import { MoreKeysPanel } from './panels/more-keys-panel';
 import { CustomizeSheet } from './ui/customize-sheet';
@@ -68,6 +69,7 @@ const TITLE_MEDIUM_MAX = 12;
     TvToast,
     SlowCommandNotice,
     AdbPermissionNotice,
+    WakeNotice,
     ControlPage,
     ViewOnlyPage,
     StatusIndicator,

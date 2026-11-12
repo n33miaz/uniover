@@ -25,6 +25,13 @@ describe('SetupGuidePage', () => {
     await fixture.whenStable();
     expect(root.textContent).toContain('Ela deve aparecer no controle');
     expect(root.querySelector('a[href="/ajustes/sistema"]')).not.toBeNull();
+    // Ligar pelo celular: os ajustes da Android TV, só o caminho no menu (o app não grava nada na TV).
+    expect(root.querySelector('.wake summary')?.textContent?.trim()).toBe(
+      'Para ligar pelo celular',
+    );
+    const wake = (root.querySelector('.wake p')?.textContent ?? '').replace(/\s+/g, ' ');
+    expect(wake).toContain('Rede e Internet > Networked standby');
+    expect(wake).toContain('Energia > Quick Start e Screenless service');
   });
 
   it('offers the three Remote Service checks without claiming automatic diagnosis', async () => {

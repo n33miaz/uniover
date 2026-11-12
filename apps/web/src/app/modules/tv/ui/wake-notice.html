@@ -1,0 +1,17 @@
+@if (hint(); as current) {
+  <p class="notice" role="status" [animate.leave]="'notice-leave'">
+    @if (current === 'replug') {
+      <span class="text" i18n="@@tv.wake.replug">
+        A TV não ligou pela rede. Tire da tomada e ligue de novo.
+      </span>
+    } @else {
+      <span class="text" i18n="@@tv.wake.screenless-off">
+        Para ligar a TV pelo celular, ative nela: Configurações &gt; Sistema &gt; Energia &gt;
+        Screenless service.
+      </span>
+    }
+    <button type="button" class="ui-btn secondary" (click)="dismiss(current)" i18n="@@tv.wake.ok">
+      Ok
+    </button>
+  </p>
+}
