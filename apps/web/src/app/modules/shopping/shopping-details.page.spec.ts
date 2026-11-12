@@ -153,7 +153,7 @@ describe('ShoppingDetailsPage', () => {
     await vi.advanceTimersByTimeAsync(0);
     fixture.detectChanges();
 
-    expect(text()).toContain('12 compras trazidas, 4 já existiam.');
+    expect(text()).toContain('12 compras trazidas, 4 já existiam, 1 puladas.');
   });
 
   it('hides the fetch when the integration is off, keeping the file', async () => {

@@ -252,8 +252,13 @@ export class ShoppingDetailsPage {
       this.importError.set(this.stateFailure(state.error));
       return;
     }
+    const skipped =
+      state.ignored > 0
+        ? $localize`:@@shopping.import.skipped:, ${state.ignored}:ignored: puladas`
+        : '';
     this.importResult.set(
-      $localize`:@@shopping.import.done:${state.imported}:imported: compras trazidas, ${state.existing}:existing: já existiam.`,
+      $localize`:@@shopping.import.done:${state.imported}:imported: compras trazidas, ${state.existing}:existing: já existiam` +
+        `${skipped}.`,
     );
     void this.session.store()?.sync();
   }
