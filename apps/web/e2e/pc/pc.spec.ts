@@ -290,6 +290,32 @@ test.describe('Mouse', () => {
     await expect(tabs(page).getByRole('link')).toHaveText(['Mouse', 'Atalhos', 'Mídia', 'Mais']);
   });
 
+  test('em 360 px de largura as sete teclas rápidas têm 44 px e não se encostam', async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await openPc(page);
+    const bar = page.getByRole('group', { name: 'Teclas rápidas', exact: true });
+    const boxes = await bar.evaluate((el) =>
+      [...el.children].map((key) => {
+        const r = key.getBoundingClientRect();
+        return { left: r.left, right: r.right, width: r.width, height: r.height };
+      }),
+    );
+    expect(boxes).toHaveLength(7);
+    for (const box of boxes) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i].left - boxes[i - 1].right).toBeGreaterThanOrEqual(2);
+    }
+    await expectNoHorizontalScroll(page);
+    expect(await smallTargets(page)).toEqual([]);
+    await screenshot(page, join(SHOTS, `pc-keys-360-${info.project.name}.png`));
+  });
+
   test('print do Mouse', async ({ page }, info) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await openPc(page);

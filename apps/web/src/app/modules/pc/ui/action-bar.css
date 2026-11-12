@@ -4,11 +4,14 @@
   gap: var(--space-1);
 }
 
-/* Sete espaços iguais, de largura a largura: nunca rola nem fica atrás da barra de abas. */
+/*
+ * Sete espaços iguais, de largura a largura: nunca rola nem fica atrás da barra de abas. Em tela estreita (360 px) o
+ * respiro entre as teclas encolhe antes delas, para cada uma manter o alvo de 44 px.
+ */
 .bar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: var(--space-1);
+  gap: clamp(2px, calc((100% - 7 * var(--tap) - 1px) / 6), var(--space-1));
 }
 
 /* As teclas armadas, uma fileira acima da barra enquanto o teclado do celular está aberto. */
