@@ -23,7 +23,14 @@
         "app": { "type": ["string", "null"] },
         "connection": { "enum": ["hot", "hibernating", "disconnected", "not_paired", "waking"] },
         "adbPermission": { "enum": ["granted", "missing", "pending"] },
-        "adbPermissionReason": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+        "adbPermissionReason": { "type": "string", "pattern": "^[a-z_]{1,32}$" },
+        "wakeHints": {
+          "type": "array",
+          "items": { "enum": ["screenless_off", "replug"] },
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 2
+        }
       }
     }
   }
