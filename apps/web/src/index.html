@@ -9,6 +9,12 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="color-scheme" content="light dark" />
+    <!--
+      Cor da barra do sistema: o fundo de cada tema (`--a-bg`). O manifesto só aceita uma cor; estas valem por cima dele no
+      app instalado e no navegador. Com o tema fixado no app, o AppearanceService põe a cor do tema escolhido nas duas.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f5f1" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101512" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
     <!--uniover:manifest-->

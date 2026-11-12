@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { TestBed } from '@angular/core/testing';
 import {
   AppearanceService,
   PRE_SESSION_THEME_PREFERENCE_KEY,
+  THEME_BAR_COLORS,
   THEME_PREFERENCE_KEY,
   themePreferenceStorageKey,
 } from './appearance.service';
@@ -55,6 +58,58 @@ describe('AppearanceService', () => {
     service().set('light');
     expect(attr()).toBe('light');
     expect(localStorage.getItem(PRE_SESSION_THEME_PREFERENCE_KEY)).toBe('light');
+  });
+
+  describe('system bar color', () => {
+    const colors = () =>
+      Array.from(document.head.querySelectorAll('meta[name="theme-color"]')).map((m) => [
+        m.getAttribute('media'),
+        m.getAttribute('content'),
+      ]);
+
+    beforeEach(() => {
+      for (const scheme of ['light', 'dark']) {
+        const meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        meta.setAttribute('media', `(prefers-color-scheme: ${scheme})`);
+        meta.setAttribute('content', '#000000');
+        document.head.append(meta);
+      }
+    });
+    afterEach(() =>
+      document.head.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove()),
+    );
+
+    it('uses the same colors as the theme background and the index.html tags', () => {
+      const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
+      const index = readFileSync(resolve(process.cwd(), 'src/index.html'), 'utf8');
+      const bg = (block: string) => block.match(/--a-bg:\s*(#[0-9a-f]{6})/i)![1].toLowerCase();
+      expect(bg(styles.split(':root[data-theme=')[0])).toBe(THEME_BAR_COLORS.light);
+      expect(bg(styles.split(":root[data-theme='dark']")[1])).toBe(THEME_BAR_COLORS.dark);
+      for (const scheme of ['light', 'dark'] as const) {
+        expect(index).toContain(
+          `<meta name="theme-color" media="(prefers-color-scheme: ${scheme})" content="${THEME_BAR_COLORS[scheme]}" />`,
+        );
+      }
+    });
+
+    it('keeps each scheme with its own background while automatic', () => {
+      service().restore();
+      expect(colors()).toEqual([
+        ['(prefers-color-scheme: light)', '#f2f5f1'],
+        ['(prefers-color-scheme: dark)', '#101512'],
+      ]);
+    });
+
+    it('paints both with the chosen theme when the app fixes one, and goes back on automatic', () => {
+      systemDark = true;
+      service().set('light');
+      expect(colors().map(([, c]) => c)).toEqual(['#f2f5f1', '#f2f5f1']);
+      service().set('dark');
+      expect(colors().map(([, c]) => c)).toEqual(['#101512', '#101512']);
+      service().set('auto');
+      expect(colors().map(([, c]) => c)).toEqual(['#f2f5f1', '#101512']);
+    });
   });
 
   it('restores the pre-session preference on a fresh load', () => {
