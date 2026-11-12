@@ -562,6 +562,14 @@ async def _close_within(what: str, step: Awaitable[Any]) -> None:
         _log.warning(
             "%s passou de %.0f s ao encerrar; sigo sem esperar", what, SHUTDOWN_STEP_SECONDS
         )
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None and current.cancelling():
+            # Quem encerra foi cancelado: o cancelamento é dele e segue.
+            raise
+        # Uma tarefa interna foi cancelada por outro (a escrita da fila que o envio periódico
+        # esperava, por exemplo): é falha deste passo, e os seguintes ainda soltam o que ficou.
+        _log.warning("um passo interno foi cancelado ao encerrar: %s", what)
     except Exception:
         _log.exception("falha ao encerrar: %s", what)
 

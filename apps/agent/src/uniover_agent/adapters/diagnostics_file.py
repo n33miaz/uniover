@@ -126,6 +126,8 @@ class FileDiagnosticStore:
         self._leased: dict[str, float] = {}
         self._lock = threading.Lock()
         self._queued: list[DiagnosticEvent] = []
+        # Uma escrita da fila por vez, mesmo com uma thread de uma tarefa cancelada ainda gravando.
+        self._append_lock = threading.Lock()
         self._append_task: asyncio.Task[None] | None = None
 
     def append(self, event: DiagnosticEvent) -> None:
@@ -141,14 +143,42 @@ class FileDiagnosticStore:
 
     async def _append_queued(self) -> None:
         while self._queued:
-            event = self._queued.pop(0)
-            await asyncio.to_thread(self.append_confirmed, event)
+            await asyncio.to_thread(self._append_next)
+
+    def _append_next(self) -> None:
+        """Grava o primeiro da fila e só então o tira dela (roda na thread da escrita).
+
+        Quem consome é a própria thread, depois da escrita: se a tarefa for cancelada antes de a
+        thread começar, o evento continua no começo da fila e a próxima tarefa o grava; se for
+        cancelada com a thread já gravando, `to_thread` não a interrompe, e é ela que o tira da
+        fila. A trava faz uma thread nova esperar a que ainda grava, e por isso nenhum evento é
+        gravado duas vezes."""
+        with self._append_lock:
+            if not self._queued:
+                return
+            event = self._queued[0]
+            try:
+                self.append_confirmed(event)
+            finally:
+                # Uma falha também consome (como antes): repetir para sempre travaria a fila.
+                self._queued.pop(0)
 
     async def flush_appends(self) -> None:
-        """Espera as escritas já enfileiradas antes de emprestar eventos para envio."""
-        task = self._append_task
-        if task is not None:
-            await task
+        """Espera as escritas já enfileiradas antes de emprestar eventos para envio.
+
+        A tarefa de escrita é uma só para todos que esperam (o envio periódico e o encerramento):
+        `asyncio.wait` não a cancela quando quem espera é cancelado, e se ela mesma tiver sido
+        cancelada o que ainda está na fila é escrito por uma nova. O cancelamento de quem chama
+        continua chegando a quem chama."""
+        while True:
+            task = self._append_task
+            if task is None or task.done():
+                if not self._queued:
+                    return
+                task = self._append_task = asyncio.create_task(self._append_queued())
+            await asyncio.wait({task})
+            if not task.cancelled() and task.exception() is not None:
+                _log.warning("a escrita da fila do diagnóstico falhou", exc_info=task.exception())
 
     def append_confirmed(self, event: DiagnosticEvent) -> bool:
         """Como `append`, e diz se a linha chegou ao arquivo (quem decide repetir precisa saber)."""
