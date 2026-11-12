@@ -143,7 +143,7 @@ describe('ShoppingStore', () => {
     expect(server.batches).toEqual([['milk', 'li-milk', 'bread', 'li-bread']]);
     expect(store.pendingCount()).toBe(0);
     expect(store.state()).toBe('synced');
-    expect(names(store)).toEqual(['Leite', 'Pão']);
+    expect(names(store)).toEqual(['Pão', 'Leite']);
   });
 
   it('keeps the confirmed list across a restart: the snapshot is stored with the cursor', async () => {
@@ -188,7 +188,7 @@ describe('ShoppingStore', () => {
     const store = await open();
     await addToList(store, 'milk', 'Leite');
     await addToList(store, 'bread', 'Pão');
-    expect(names(store)).toEqual(['Leite', 'Pão']);
+    expect(names(store)).toEqual(['Pão', 'Leite']);
 
     server.refuse = new Set(['bread', 'li-bread']);
     online = true;
@@ -211,7 +211,7 @@ describe('ShoppingStore', () => {
 
     expect(store.pendingCount()).toBe(1);
     expect(store.state()).toBe('attention');
-    expect(names(store)).toEqual(['Leite', 'Pão']);
+    expect(names(store)).toEqual(['Pão', 'Leite']);
 
     server.later.clear();
     await store.sync();

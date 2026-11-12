@@ -75,6 +75,17 @@ export const routes: Routes = [
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
       },
       {
+        // O convite do grupo de Compras: fica fora do guarda do módulo, para quem ainda não tem a permissão ouvir o
+        // porquê (a API recusa de qualquer jeito). Vem antes de `compras`, que pegaria o caminho.
+        path: 'compras/convite',
+        data: {
+          title: $localize`:@@shopping.join.title:Convite`,
+          back: { link: '/', label: $localize`:@@shell.back-home-label:Voltar ao Início` },
+        },
+        loadComponent: () =>
+          import('./modules/shopping/shopping-join.page').then((m) => m.ShoppingJoinPage),
+      },
+      {
         path: 'compras',
         canMatch: [moduleGuard('shopping')],
         data: { title: $localize`:@@module.shopping.title:Compras` },

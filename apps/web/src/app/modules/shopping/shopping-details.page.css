@@ -1,0 +1,46 @@
+.left {
+  text-align: start;
+}
+
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.invite app-qr-code {
+  display: block;
+  width: min(100%, 220px);
+}
+
+.invite .hint {
+  text-align: center;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.row .ui-btn {
+  flex: 1 1 0;
+}
+
+.plain-bad {
+  border-color: transparent;
+  background: none;
+  color: var(--a-bad-ink);
+}
+
+.file {
+  cursor: pointer;
+}
+
+.file.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}

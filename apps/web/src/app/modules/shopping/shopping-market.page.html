@@ -1,0 +1,268 @@
+<section
+  class="screen"
+  [class.ui-has-action-bar]="!!purchase()"
+  [attr.data-screen-ready]="'shopping-market'"
+>
+  @if (!actions.store()) {
+    <div class="ui-group" aria-hidden="true">
+      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
+      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
+    </div>
+    <p class="ui-visually-hidden" role="status" i18n="@@shopping.loading">Abrindo a lista</p>
+  } @else {
+    @if (notice(); as text) {
+      <p class="ui-notice warn" role="alert">{{ text }}</p>
+    }
+
+    @if (purchase(); as current) {
+      <app-shopping-advice-card
+        [budgetEmpty]="current.budget === null || current.budget === undefined"
+        (useAsBudget)="useAsBudget($event)"
+      />
+
+      <div class="totals" [class.over]="(budget()?.over ?? 0) > 0">
+        <p class="total">
+          <span class="ui-section-label" i18n="@@shopping.total">Total</span>
+          <strong class="money">{{ money(total()) }}</strong>
+          @if (savings() > 0) {
+            <span class="saved" i18n="@@shopping.saved">Economizou {{ money(savings()) }}</span>
+          }
+        </p>
+        @if (editingBudget()) {
+          <form class="budget-form" (submit)="$event.preventDefault(); saveBudget(budgetInput)">
+            <input
+              #budgetInput
+              class="ui-input"
+              [attr.inputmode]="'decimal'"
+              autocomplete="off"
+              [value]="budgetField()"
+              aria-label="Teto"
+              i18n-aria-label="@@shopping.budget"
+            />
+            <button type="submit" class="ui-btn" i18n="@@shopping.budget.save">Guardar</button>
+          </form>
+        } @else {
+          <button type="button" class="ui-btn budget" (click)="editingBudget.set(true)">
+            @if (budget(); as state) {
+              <span class="ui-section-label" i18n="@@shopping.budget">Teto</span>
+              <span class="money">{{ money(current.budget) }}</span>
+              @if (state.over > 0) {
+                <span class="ui-row-sub" i18n="@@shopping.budget.over"
+                  >Passou {{ money(state.over) }}</span
+                >
+              } @else {
+                <span class="ui-row-sub" i18n="@@shopping.budget.left"
+                  >Faltam {{ money(state.left) }}</span
+                >
+              }
+            } @else {
+              <ng-container i18n="@@shopping.budget.set">Definir teto</ng-container>
+            }
+          </button>
+        }
+      </div>
+
+      @if (waiting()) {
+        <p class="ui-notice" i18n="@@shopping.market.waiting">
+          Guardado no aparelho. Vai quando o sinal voltar.
+        </p>
+      }
+
+      @for (section of toPick(); track section.category) {
+        <section class="block">
+          <h2 class="ui-section-label">{{ label(section.category) }}</h2>
+          <ul class="ui-group">
+            @for (row of section.rows; track row.product.id) {
+              <ng-container
+                [ngTemplateOutlet]="line"
+                [ngTemplateOutletContext]="{ $implicit: row }"
+              />
+            }
+          </ul>
+        </section>
+      }
+
+      @if (inCart().length > 0) {
+        <section class="block">
+          <h2 class="ui-section-label" i18n="@@shopping.market.cart">No carrinho</h2>
+          <ul class="ui-group cart">
+            @for (row of inCart(); track row.product.id) {
+              <ng-container
+                [ngTemplateOutlet]="line"
+                [ngTemplateOutletContext]="{ $implicit: row }"
+              />
+            }
+          </ul>
+        </section>
+      }
+
+      @if (rows().length === 0) {
+        <p class="empty" i18n="@@shopping.market.empty">Digite embaixo o que pegar, com o preço.</p>
+      }
+
+      @if (closing()) {
+        <form class="ui-card finish" (submit)="$event.preventDefault(); finish(paid, place)">
+          <div class="ui-field">
+            <label for="shopping-paid" i18n="@@shopping.paid">Total pago</label>
+            <input
+              #paid
+              id="shopping-paid"
+              class="ui-input"
+              [attr.inputmode]="'decimal'"
+              autocomplete="off"
+              [placeholder]="money(total())"
+            />
+          </div>
+          <div class="ui-field">
+            <label for="shopping-store" i18n="@@shopping.store">Loja</label>
+            <input #place id="shopping-store" class="ui-input" autocomplete="off" maxlength="80" />
+          </div>
+          <button type="submit" class="ui-btn primary block" i18n="@@shopping.finish">
+            Fechar a compra
+          </button>
+        </form>
+      } @else if (rows().length > 0) {
+        <button
+          type="button"
+          class="ui-btn block"
+          (click)="closing.set(true)"
+          i18n="@@shopping.finish.open"
+        >
+          Terminei
+        </button>
+      }
+
+      <form class="ui-action-bar" (submit)="$event.preventDefault(); add()">
+        <div class="ui-action-bar-inner">
+          @if (suggestions().length > 0) {
+            <div class="chips" aria-label="Sugestões" i18n-aria-label="@@shopping.suggestions">
+              @for (name of suggestions(); track name) {
+                <button type="button" class="chip" (click)="suggest(name, entry)">
+                  {{ name }}
+                </button>
+              }
+            </div>
+          } @else if (preview(); as text) {
+            <p class="preview" [attr.aria-live]="'polite'">{{ text }}</p>
+          } @else if (variantRow(); as row) {
+            <div class="chips" aria-label="Qual tipo?" i18n-aria-label="@@shopping.sheet.variant">
+              <span class="chip quiet" aria-hidden="true">{{ row.product.name }}:</span>
+              @for (option of variants(row); track option) {
+                <button type="button" class="chip" (click)="variant(row, option)">
+                  {{ option }}
+                </button>
+              }
+              <button
+                type="button"
+                class="chip quiet"
+                (click)="lastAdded.set(null)"
+                aria-label="Deixar assim"
+                i18n-aria-label="@@shopping.variant.skip"
+              >
+                ✕
+              </button>
+            </div>
+          }
+          <div class="inline">
+            <input
+              #entry
+              class="ui-input"
+              name="entry"
+              autocomplete="off"
+              [attr.autocapitalize]="'sentences'"
+              [attr.enterkeyhint]="'done'"
+              maxlength="100"
+              [value]="draft()"
+              (input)="draft.set($any($event.target).value)"
+              placeholder="leite 5,49 · arroz 2x 12,90"
+              i18n-placeholder="@@shopping.entry.placeholder"
+              aria-label="Item e preço"
+              i18n-aria-label="@@shopping.entry.label"
+            />
+            <button
+              type="submit"
+              class="ui-btn primary"
+              [disabled]="!draft().trim()"
+              i18n="@@shopping.entry.submit"
+            >
+              Pôr
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <app-shopping-item-sheet
+        [item]="sheetItem()"
+        [focusPrice]="sheetPrice()"
+        [mode]="'market'"
+        (category)="category($event)"
+        (variant)="sheetVariant($event)"
+        (saved)="saved($event)"
+        (removed)="removed()"
+        (closed)="open.set(null)"
+      />
+    } @else {
+      <div class="choose">
+        <button
+          type="button"
+          class="choice primary"
+          [disabled]="listCount() === 0"
+          (click)="start(true)"
+        >
+          <span class="choice-title" i18n="@@shopping.market.use-list">Usar a lista</span>
+          <span class="choice-sub">
+            @if (listCount() > 0) {
+              <ng-container i18n="@@shopping.market.list-count"
+                >{{ listCount() }} itens para pegar</ng-container
+              >
+            } @else {
+              <ng-container i18n="@@shopping.market.list-empty">A lista está vazia</ng-container>
+            }
+          </span>
+        </button>
+        <button type="button" class="choice" (click)="start(false)">
+          <span class="choice-title" i18n="@@shopping.market.scratch">Começar do zero</span>
+          <span class="choice-sub" i18n="@@shopping.market.scratch-hint"
+            >Digite o que for pegando</span
+          >
+        </button>
+      </div>
+      @if (listCount() === 0) {
+        <a class="ui-btn block" routerLink="/compras/lista" i18n="@@shopping.market.make-list"
+          >Fazer a lista antes</a
+        >
+      }
+    }
+  }
+</section>
+
+<ng-template #line let-row>
+  <li class="line" [class.picked]="row.picked">
+    <button type="button" class="pick" [attr.aria-pressed]="row.picked" (click)="toggle(row)">
+      <span class="check" aria-hidden="true"></span>
+      <app-shopping-item-icon [product]="row.product" />
+      <span class="ui-row-text">
+        <span class="ui-row-title">{{ row.product.name }}</span>
+        @if (sub(row); as text) {
+          <span class="ui-row-sub">{{ text }}</span>
+        }
+      </span>
+    </button>
+    <button
+      type="button"
+      class="price"
+      [class.empty-price]="row.unitPrice === null"
+      (click)="open.set({ productId: row.product.id, price: true })"
+    >
+      @if (row.unitPrice !== null) {
+        <span class="money">{{ money(row.unitPrice) }}</span>
+        @if (row.regularPrice !== null && row.regularPrice > row.unitPrice) {
+          <s class="was money">{{ money(row.regularPrice) }}</s>
+        }
+      } @else {
+        <ng-container i18n="@@shopping.price.add">Preço</ng-container>
+      }
+      <span class="ui-visually-hidden" i18n="@@shopping.price.of">de {{ row.product.name }}</span>
+    </button>
+  </li>
+</ng-template>

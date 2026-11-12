@@ -62,7 +62,10 @@ describe('app routes', () => {
     ['/tv', 'app-tv-page'],
     ['/tv/livre', 'app-livre-page'],
     ['/treino', 'app-training-page'],
-    ['/compras', 'app-shopping-page'],
+    ['/compras', 'app-shopping-hub-page'],
+    ['/compras/lista', 'app-shopping-list-page'],
+    ['/compras/mercado', 'app-shopping-market-page'],
+    ['/compras/historico', 'app-shopping-history-page'],
     ['/ajustes', 'app-settings-page'],
     ['/ajustes/perfil', 'app-profile-page'],
     ['/ajustes/aparencia', 'app-appearance-page'],
@@ -251,14 +254,14 @@ describe('app routes for a guest', () => {
       signInAs(TRAINING);
       const { url: landed, root } = await go('/compras');
       expect(landed).toBe('/');
-      expect(root.querySelector('app-shopping-page')).toBeNull();
+      expect(root.querySelector('app-shopping-hub-page')).toBeNull();
     });
 
     it('opens Compras for a guest who has its permission', async () => {
       signInAs(['module:shopping']);
       const { url: landed, root } = await go('/compras');
       expect(landed).toBe('/compras');
-      expect(root.querySelector('app-shopping-page')).not.toBeNull();
+      expect(root.querySelector('app-shopping-hub-page')).not.toBeNull();
     });
 
     it.each([

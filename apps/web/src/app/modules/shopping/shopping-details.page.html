@@ -1,0 +1,117 @@
+<section class="screen" [attr.data-screen-ready]="'shopping-details'">
+  <section class="block">
+    <h2 class="ui-section-label" i18n="@@shopping.details.who">Quem vê suas compras</h2>
+    <p class="hint left" i18n="@@shopping.details.who-hint">
+      Quem está no grupo vê e mexe na lista, no Mercado Agora e no histórico.
+    </p>
+    <app-shopping-people (changed)="changed()" />
+  </section>
+
+  @if (groupOwner()) {
+    <section class="block">
+      <h2 class="ui-section-label" i18n="@@shopping.invite.title">Convidar</h2>
+      @if (invite(); as current) {
+        <div class="ui-card invite">
+          <app-qr-code
+            [value]="link()"
+            label="QR do convite para as Compras"
+            i18n-label="@@shopping.invite.qr-label"
+          />
+          <p class="hint" i18n="@@shopping.invite.qr-hint">
+            A pessoa aponta a câmera. Vale 7 dias, para uma pessoa.
+          </p>
+          <div class="row">
+            @if (canShare) {
+              <button
+                type="button"
+                class="ui-btn primary"
+                (click)="share()"
+                i18n="@@shopping.invite.share"
+              >
+                Enviar link
+              </button>
+            }
+            <button type="button" class="ui-btn" (click)="copy()">
+              @if (copied()) {
+                <ng-container i18n="@@shopping.invite.copied">Copiado</ng-container>
+              } @else {
+                <ng-container i18n="@@shopping.invite.copy">Copiar link</ng-container>
+              }
+            </button>
+          </div>
+          <button
+            type="button"
+            class="ui-btn plain-bad"
+            (click)="revokeInvite()"
+            i18n="@@shopping.invite.revoke"
+          >
+            Cancelar convite
+          </button>
+        </div>
+      } @else {
+        <button
+          type="button"
+          class="ui-btn primary block"
+          [disabled]="inviteBusy()"
+          (click)="createInvite()"
+          i18n="@@shopping.invite.create"
+        >
+          Gerar convite
+        </button>
+      }
+      @if (inviteNotice(); as text) {
+        <p class="ui-notice warn" role="alert">{{ text }}</p>
+      }
+      @if (admin()) {
+        <p class="hint left">
+          <ng-container i18n="@@shopping.invite.no-account"
+            >Para quem ainda não tem conta, crie antes em</ng-container
+          >
+          <a routerLink="/ajustes/pessoas" i18n="@@shopping.invite.people-link"
+            >Configurações, Pessoas</a
+          >
+          <ng-container i18n="@@shopping.invite.no-account-end">, com Compras.</ng-container>
+        </p>
+      }
+    </section>
+  }
+
+  @if (admin()) {
+    <section class="block">
+      <h2 class="ui-section-label" i18n="@@shopping.import.title">Trazer do Economize</h2>
+      <div class="row">
+        @if (!economizeOff()) {
+          <button
+            type="button"
+            class="ui-btn"
+            [disabled]="importing()"
+            (click)="startImport()"
+            i18n="@@shopping.import.fetch"
+          >
+            Buscar no Economize
+          </button>
+        }
+        <label class="ui-btn file" [class.disabled]="importing()">
+          <ng-container i18n="@@shopping.import.file">Escolher arquivo</ng-container>
+          <input
+            #file
+            type="file"
+            [attr.accept]="'.json,application/json'"
+            class="ui-visually-hidden"
+            [disabled]="importing()"
+            (change)="chooseFile(file)"
+          />
+        </label>
+      </div>
+      @if (importing()) {
+        <p class="hint left" role="status" i18n="@@shopping.import.running">Trazendo as compras…</p>
+      }
+      @if (importResult(); as text) {
+        <p class="ui-notice" role="status">{{ text }}</p>
+      }
+      @if (importError(); as text) {
+        <p class="ui-notice warn" role="alert">{{ text }}</p>
+      }
+    </section>
+  }
+</section>

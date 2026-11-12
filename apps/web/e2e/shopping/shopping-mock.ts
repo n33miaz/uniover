@@ -53,6 +53,10 @@ export interface ShoppingMock {
   people: MockPerson[];
   /** Os pedidos de pessoas: `add:<id>`, `remove:<id>`, `leave`. */
   readonly memberCalls: string[];
+  /** Os convites criados (o segredo de cada um) e os cancelados. */
+  readonly invites: { readonly id: string; readonly token: string; revoked: boolean }[];
+  /** A resposta do conselho do Economize (`GET /advice`). */
+  advice: Record<string, unknown>;
 }
 
 function json(route: Route, status: number, body: unknown) {
@@ -111,6 +115,8 @@ export async function mockShoppingApi(
       { userId: 'u-carla', name: 'Carla', isOwner: false, isMember: false },
     ],
     memberCalls: [],
+    invites: [],
+    advice: { available: false, reason: 'disabled' },
   };
 
   function apply(operation: Operation): Result {
@@ -141,7 +147,12 @@ export async function mockShoppingApi(
           merged.set(id, twin.id);
           return { status: 200, entityId: twin.id };
         }
-        put('product', id, { name: body['name'], section: '', deleted: false });
+        put('product', id, {
+          name: body['name'],
+          section: body['section'] ?? '',
+          unit: body['unit'] ?? null,
+          deleted: false,
+        });
         return { status: 200, entityId: id };
       }
       case 'listItem': {
@@ -173,8 +184,14 @@ export async function mockShoppingApi(
             openPurchaseId: open.id,
           };
         }
-        put('purchase', id, { status: 'open', startedAt: '2026-11-12T12:00:00Z', deleted: false });
-        for (const item of of('listItem')) {
+        const fromList = body['fromList'] !== false;
+        put('purchase', id, {
+          status: 'open',
+          fromList,
+          startedAt: '2026-11-12T12:00:00Z',
+          deleted: false,
+        });
+        for (const item of fromList ? of('listItem') : []) {
           if (item.payload['needed'] !== true) continue;
           put('purchaseItem', `00000000-0000-7000-8000-${String(++lines).padStart(12, '0')}`, {
             purchaseId: id,
@@ -296,6 +313,46 @@ export async function mockShoppingApi(
       mock.memberCalls.push(`${body.deleted ? 'remove' : 'add'}:${person.userId}`);
       person.isMember = !body.deleted;
       return json(route, 200, { userId: person.userId, isOwner: false, deleted: !!body.deleted });
+    }
+    if (method === 'GET' && path === '/advice') return json(route, 200, mock.advice);
+    if (method === 'GET' && path === '/group/invites') {
+      return json(
+        route,
+        200,
+        mock.invites
+          .filter((invite) => !invite.revoked)
+          .map((invite) => ({
+            id: invite.id,
+            createdAt: '2026-11-12T12:00:00Z',
+            expiresAt: '2026-11-19T12:00:00Z',
+          })),
+      );
+    }
+    if (method === 'POST' && path === '/group/invites') {
+      const invite = {
+        id: `inv-${mock.invites.length + 1}`,
+        token: `convite-de-teste-${String(mock.invites.length + 1).padStart(26, '0')}`,
+        revoked: false,
+      };
+      mock.invites.push(invite);
+      return json(route, 200, {
+        id: invite.id,
+        token: invite.token,
+        expiresAt: '2026-11-19T12:00:00Z',
+      });
+    }
+    const revoke = /^\/group\/invites\/([^/]+)\/revoke$/.exec(path);
+    if (method === 'POST' && revoke) {
+      const invite = mock.invites.find((candidate) => candidate.id === revoke[1]);
+      if (!invite) return problem(route, 404, 'not-found');
+      invite.revoked = true;
+      return route.fulfill({ status: 204 });
+    }
+    if (method === 'POST' && path === '/group/invites/accept') {
+      const body = request.postDataJSON() as { token?: string };
+      const invite = mock.invites.find((candidate) => candidate.token === body.token);
+      if (!invite || invite.revoked) return problem(route, 410, 'shopping-invite-invalid');
+      return json(route, 200, { id: 'g1', ownerUserId: 'u-raphael', isOwner: false });
     }
     if (method === 'POST' && path === '/group/leave') {
       mock.memberCalls.push('leave');

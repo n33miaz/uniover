@@ -169,6 +169,12 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.shopping-member-add:Pessoa incluída no grupo de compras`;
     case 'shopping.member.remove':
       return $localize`:@@settings.audit.action.shopping-member-remove:Pessoa saiu do grupo de compras`;
+    case 'shopping.member.join':
+      return $localize`:@@settings.audit.action.shopping-member-join:Pessoa entrou no grupo de compras por convite`;
+    case 'shopping.invite.create':
+      return $localize`:@@settings.audit.action.shopping-invite-create:Convite de compras criado`;
+    case 'shopping.invite.revoke':
+      return $localize`:@@settings.audit.action.shopping-invite-revoke:Convite de compras cancelado`;
     default:
       return null;
   }

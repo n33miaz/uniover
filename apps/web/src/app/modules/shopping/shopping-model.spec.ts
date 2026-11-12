@@ -9,6 +9,9 @@ import {
   findProduct,
   listSections,
   marketRows,
+  neededCount,
+  pickedSavings,
+  purchaseLines,
   openPurchase,
   parseMoney,
   pickedTotal,
@@ -97,11 +100,22 @@ describe('applyChanges', () => {
 });
 
 describe('listSections', () => {
-  it('shows only what is needed, by section, the unnamed section last', () => {
-    expect(listSections(house()).map((s) => [s.name, s.rows.map((r) => r.product.name)])).toEqual([
-      ['Frios', ['Leite']],
-      ['', ['Pão']],
+  it('shows only what is needed, by category in the order of the aisles', () => {
+    // "Frios" não é categoria conhecida: vale a do nome (Leite → laticínios); o pão sem seção vai para a padaria.
+    expect(
+      listSections(house()).map((s) => [s.category, s.rows.map((r) => r.product.name)]),
+    ).toEqual([
+      ['padaria', ['Pão']],
+      ['laticinios', ['Leite']],
     ]);
+  });
+
+  it('follows the category chosen by the person over the one of the name', () => {
+    const snapshot = project(house(), [
+      operation('product', 'milk', { name: 'Leite', section: 'bebidas' }),
+    ]);
+    expect(listSections(snapshot).map((s) => s.category)).toEqual(['padaria', 'bebidas']);
+    expect(neededCount(snapshot)).toBe(2);
   });
 });
 
@@ -116,7 +130,7 @@ describe('project (pending writes over the server snapshot)', () => {
       listSections(snapshot)
         .flatMap((s) => s.rows)
         .map((r) => r.product.name),
-    ).toEqual(['Leite', 'Ovos', 'Pão']);
+    ).toEqual(['Pão', 'Leite', 'Ovos']);
   });
 
   it('applies the writes in the order they were made: the last touch wins', () => {
@@ -330,5 +344,91 @@ describe('a purchase opened on the device, settled with the server', () => {
     const waiting = operation('purchaseItem', 'c', line, 'not-yet');
 
     expect(alignLines(server, [first, second, waiting])).toEqual([{ ...second, entityId: 'a' }]);
+  });
+});
+
+describe('a purchase from scratch and the promotion', () => {
+  it('a purchase opened from scratch leaves the list out of the market', () => {
+    const snapshot = project(house(), [operation('openPurchase', 'p1', { fromList: false })]);
+    const purchase = openPurchase(snapshot)!;
+
+    expect(purchase.fromList).toBe(false);
+    expect(marketRows(snapshot, purchase)).toEqual([]);
+  });
+
+  it('an opening without the choice (older devices) uses the list, as before', () => {
+    const snapshot = project(house(), [operation('openPurchase', 'p1', {})]);
+    const purchase = openPurchase(snapshot)!;
+
+    expect(purchase.fromList).toBe(true);
+    expect(marketRows(snapshot, purchase).map((r) => r.product.name)).toEqual(['Pão', 'Leite']);
+  });
+
+  it('the promotion travels with the price: a pick keeps it, clearing the price clears it', () => {
+    const open = project(house(), [operation('openPurchase', 'p1', { fromList: false })]);
+    const line = { productId: 'milk', quantity: 3 };
+    const priced = project(open, [
+      operation(
+        'purchaseItem',
+        'l1',
+        {
+          ...line,
+          unitPrice: 3.33,
+          regularPrice: 4.99,
+          promoNote: ' leve 3 pague 2 ',
+          picked: true,
+        },
+        'p1',
+      ),
+    ]);
+    expect(priced.purchaseItems.get('l1')).toMatchObject({
+      unitPrice: 3.33,
+      regularPrice: 4.99,
+      promoNote: 'leve 3 pague 2',
+    });
+
+    const picked = project(priced, [
+      operation('purchaseItem', 'l1', { ...line, picked: false, only: 'picked' }, 'p1'),
+    ]);
+    expect(picked.purchaseItems.get('l1')?.promoNote).toBe('leve 3 pague 2');
+
+    const cleared = project(picked, [
+      operation(
+        'purchaseItem',
+        'l1',
+        { ...line, unitPrice: null, regularPrice: 4.99, picked: false, only: 'price' },
+        'p1',
+      ),
+    ]);
+    expect(cleared.purchaseItems.get('l1')).toMatchObject({
+      unitPrice: null,
+      regularPrice: null,
+      promoNote: null,
+    });
+  });
+
+  it('sums what the promotion saved on what was picked, and lists the lines of a past purchase', () => {
+    const snapshot = project(house(), [
+      operation('openPurchase', 'p1', { fromList: false }),
+      operation(
+        'purchaseItem',
+        'l1',
+        { productId: 'milk', quantity: 3, unitPrice: 3.33, regularPrice: 4.99, picked: true },
+        'p1',
+      ),
+      operation(
+        'purchaseItem',
+        'l2',
+        { productId: 'bread', quantity: 1, unitPrice: 1, regularPrice: 2, picked: false },
+        'p1',
+      ),
+    ]);
+    const purchase = openPurchase(snapshot)!;
+
+    expect(pickedSavings(marketRows(snapshot, purchase))).toBe(4.98);
+    expect(purchaseLines(snapshot, 'p1').map((r) => [r.product.name, r.picked])).toEqual([
+      ['Leite', true],
+      ['Pão', false],
+    ]);
   });
 });

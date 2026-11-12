@@ -1,0 +1,109 @@
+<section class="screen ui-has-action-bar" [attr.data-screen-ready]="'shopping-list'">
+  @if (!actions.store()) {
+    <div class="ui-group" aria-hidden="true">
+      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
+      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
+    </div>
+    <p class="ui-visually-hidden" role="status" i18n="@@shopping.loading">Abrindo a lista</p>
+  } @else {
+    @if (count() > 0) {
+      <a class="ui-btn primary block go" routerLink="/compras/mercado">
+        @if (actions.purchase()) {
+          <ng-container i18n="@@shopping.market.continue">Continuar a compra</ng-container>
+        } @else {
+          <ng-container i18n="@@shopping.list.go">Ir ao mercado com a lista</ng-container>
+        }
+      </a>
+    }
+
+    @for (section of sections(); track section.category) {
+      <section class="block">
+        <h2 class="ui-section-label">{{ label(section.category) }}</h2>
+        <ul class="ui-group">
+          @for (row of section.rows; track row.item.id) {
+            <li class="item">
+              <button type="button" class="open" (click)="open.set(row)">
+                <app-shopping-item-icon [product]="row.product" />
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ row.product.name }}</span>
+                  @if (quantity(row); as amount) {
+                    <span class="ui-row-sub">{{ amount }}</span>
+                  }
+                </span>
+              </button>
+              <button type="button" class="ui-btn have" (click)="drop(row)">
+                <ng-container i18n="@@shopping.list.drop">Já tenho</ng-container>
+                <span class="ui-visually-hidden">: {{ row.product.name }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      </section>
+    } @empty {
+      <p class="empty" i18n="@@shopping.list.empty">Nada na lista ainda.</p>
+    }
+
+    <form class="ui-action-bar" (submit)="$event.preventDefault(); add()">
+      <div class="ui-action-bar-inner">
+        @if (suggestions().length > 0) {
+          <div class="chips" aria-label="Sugestões" i18n-aria-label="@@shopping.suggestions">
+            @for (name of suggestions(); track name) {
+              <button type="button" class="chip" (click)="add(name)">{{ name }}</button>
+            }
+          </div>
+        } @else if (variantRow(); as row) {
+          <div class="chips" aria-label="Qual tipo?" i18n-aria-label="@@shopping.sheet.variant">
+            <span class="chip quiet" aria-hidden="true">{{ row.product.name }}:</span>
+            @for (option of variants(row); track option) {
+              <button type="button" class="chip" (click)="variant(row, option)">
+                {{ option }}
+              </button>
+            }
+            <button
+              type="button"
+              class="chip quiet"
+              (click)="lastAdded.set(null)"
+              aria-label="Deixar assim"
+              i18n-aria-label="@@shopping.variant.skip"
+            >
+              ✕
+            </button>
+          </div>
+        }
+        <div class="inline">
+          <input
+            class="ui-input"
+            name="product"
+            autocomplete="off"
+            [attr.enterkeyhint]="'done'"
+            maxlength="80"
+            [value]="draft()"
+            (input)="draft.set($any($event.target).value)"
+            placeholder="Adicionar à lista"
+            i18n-placeholder="@@shopping.add.placeholder"
+            aria-label="Adicionar à lista"
+            i18n-aria-label="@@shopping.add.placeholder"
+          />
+          <button
+            type="submit"
+            class="ui-btn primary"
+            [disabled]="!draft().trim()"
+            i18n="@@shopping.add.submit"
+          >
+            Adicionar
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <app-shopping-item-sheet
+      [item]="sheetItem()"
+      [mode]="'list'"
+      (category)="category($event)"
+      (variant)="sheetVariant($event)"
+      (saved)="saved($event)"
+      (removed)="removed()"
+      (closed)="open.set(null)"
+    />
+  }
+</section>

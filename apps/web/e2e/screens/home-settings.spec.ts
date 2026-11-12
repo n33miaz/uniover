@@ -210,6 +210,19 @@ test.describe('Início', () => {
     await expect(page.locator('.agent-alert')).toHaveCount(0);
   });
 
+  test('o cartão de Compras leva a sacola de compras e abre o módulo', async ({ page }) => {
+    await openHome(page, 'light');
+    const card = page.locator('article[data-module="shopping"]');
+    await expect(card).toBeVisible();
+    // A alça da sacola, o mesmo desenho de design/icons/compras.svg.
+    await expect(card.locator('app-module-app-icon path').nth(1)).toHaveAttribute(
+      'd',
+      'M200 236V164A56 56 0 0 1 312 164V236',
+    );
+    await card.locator('a.card-link').click();
+    await expect(page).toHaveURL(/\/compras$/);
+  });
+
   test('estado vazio da Início com todos os módulos ocultos', async ({ page }, info) => {
     await page.addInitScript(
       (account) =>
