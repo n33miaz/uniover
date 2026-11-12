@@ -146,7 +146,7 @@ async function open(page: Page, scheme: Scheme = 'light') {
   // Movimento reduzido: as animações de entrada saem do caminho e o axe mede as cores finais (o executor da CI é lento).
   await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
   await page.goto('/ajustes/auditoria');
-  await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Atividades' })).toBeVisible();
 }
 
 async function openWithRows(page: Page, scheme: Scheme = 'light') {
@@ -189,9 +189,9 @@ test.describe('Configurações > Auditoria', () => {
   test('a linha Auditoria da lista leva à tela e a seta volta para a lista', async ({ page }) => {
     audit.items = seedTrail();
     await page.goto('/ajustes');
-    await page.getByRole('link', { name: /^Auditoria/ }).click();
+    await page.getByRole('link', { name: /^Atividades/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/auditoria$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Atividades' })).toBeVisible();
     await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
@@ -369,7 +369,7 @@ test.describe('Configurações > Auditoria', () => {
     expect(file).not.toContain('"success"');
 
     await expect(
-      page.getByText('Arquivo baixado. Esta exportação ficou registrada na auditoria.'),
+      page.getByText('Arquivo baixado. Esta exportação ficou registrada em Atividades.'),
     ).toBeVisible();
     const exported = audit.exportRequests();
     expect(exported).toHaveLength(1);
@@ -438,7 +438,7 @@ test.describe('Configurações > Auditoria para quem não é administrador', () 
     signInAsGuest();
     await page.goto('/ajustes');
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
-    await expect(page.getByText('Auditoria')).toHaveCount(0);
+    await expect(page.getByText('Atividades')).toHaveCount(0);
     await expect(page.locator('a[href="/ajustes/auditoria"]')).toHaveCount(0);
 
     await page.goto('/ajustes/auditoria');

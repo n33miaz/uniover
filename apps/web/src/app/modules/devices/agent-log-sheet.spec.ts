@@ -61,7 +61,7 @@ describe('AgentLogSheet', () => {
     const output = el.querySelector('pre')!;
     expect(output.textContent).toBe(LOG.text);
     expect(output.getAttribute('tabindex')).toBe('0');
-    expect(output.getAttribute('aria-label')).toBe('Registro do agente');
+    expect(output.getAttribute('aria-label')).toBe('Registro do computador');
     expect(el.textContent).toContain('2 linhas, as mais recentes.');
     expect(api.logs).toHaveBeenCalledExactlyOnceWith('a1');
   });
@@ -69,7 +69,7 @@ describe('AgentLogSheet', () => {
   it('says so when the agent cut the oldest lines to fit', async () => {
     api.logs.mockResolvedValue({ ...LOG, truncated: true });
     const { el } = await render();
-    expect(el.textContent).toContain('Só o fim coube no limite do canal.');
+    expect(el.textContent).toContain('Só o fim coube no espaço disponível.');
   });
 
   it('shows an empty log in words and keeps copy off', async () => {
@@ -119,12 +119,12 @@ describe('AgentLogSheet', () => {
   });
 
   it.each([
-    ['agent-outdated', 409, 'Atualize o agente neste computador'],
-    ['agent-offline', 503, 'O agente está desconectado'],
-    ['agent-timeout', 504, 'O agente não respondeu a tempo'],
+    ['agent-outdated', 409, 'Atualize o programa neste computador'],
+    ['agent-offline', 503, 'O computador está desconectado'],
+    ['agent-timeout', 504, 'O computador não respondeu a tempo'],
     ['logs-in-progress', 409, 'Já há um pedido de registro em andamento'],
-    ['command-failed', 502, 'O agente não conseguiu ler o registro agora'],
-    ['logs-missing', 502, 'O agente não conseguiu ler o registro agora'],
+    ['command-failed', 502, 'O computador não conseguiu ler o registro agora'],
+    ['logs-missing', 502, 'O computador não conseguiu ler o registro agora'],
     ['internal-error', 500, 'Não foi possível ver o registro agora'],
   ])('explains %s in plain words and keeps no text on screen', async (kind, status, text) => {
     api.logs.mockRejectedValue(problem(kind, status));
@@ -137,9 +137,7 @@ describe('AgentLogSheet', () => {
   it('explains a lost connection and a rate limit', async () => {
     api.logs.mockRejectedValue(new HttpErrorResponse({ status: 0 }));
     const first = await render();
-    expect(first.el.querySelector('[role="alert"]')?.textContent).toContain(
-      'Sem conexão com o servidor',
-    );
+    expect(first.el.querySelector('[role="alert"]')?.textContent).toContain('Sem conexão');
     api.logs.mockRejectedValue(new HttpErrorResponse({ status: 429 }));
     const second = await render();
     expect(second.el.querySelector('[role="alert"]')?.textContent).toContain(

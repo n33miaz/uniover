@@ -7,7 +7,7 @@
       <app-loading-skeleton
         [kind]="'log'"
         i18n-label="@@devices.log.loading"
-        label="Pedindo o registro ao agente…"
+        label="Pedindo o registro ao computador…"
         [reload]="false"
         (retried)="load()"
       />
@@ -21,7 +21,7 @@
           class="output ui-selectable"
           tabindex="0"
           i18n-aria-label="@@devices.log.output-label"
-          aria-label="Registro do agente"
+          aria-label="Registro do computador"
           >{{ current.text }}</pre>
       }
     }

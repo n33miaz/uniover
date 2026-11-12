@@ -72,8 +72,8 @@
       <p class="empty bad ui-rise">
         <app-settings-glyph name="alert" />
         <span i18n="@@settings.guests.load-failed"
-          >Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for
-          confirmada.</span
+          >Não foi possível carregar os convidados agora. Eles aparecem quando o acesso for
+          confirmado.</span
         >
       </p>
     } @else {
@@ -115,7 +115,7 @@
                 </div>
                 @if (guest.disabledAt) {
                   <span class="revoked ui-chip bad" i18n="@@settings.guests.revoked"
-                    >Acesso revogado</span
+                    >Acesso removido</span
                   >
                 } @else if (guest.pausedAt) {
                   <span class="paused ui-chip warn" i18n="@@settings.guests.paused-chip"
@@ -140,7 +140,7 @@
                   "
                   i18n="@@settings.guests.sessions"
                 >
-                  Sessões
+                  Acessos
                 </button>
                 @if (openedSessionGuestId() === guest.id) {
                   <app-sessions-section [guestId]="guest.id" [guestName]="guest.displayName" />
@@ -170,7 +170,7 @@
                           (click)="revokeGuest(guest)"
                           i18n="@@settings.guests.revoke-access"
                         >
-                          Revogar acesso
+                          Tirar o Acesso
                         </button>
                       </div>
                     </div>
@@ -208,7 +208,7 @@
                       (click)="revokingGuestId.set(guest.id)"
                       i18n="@@settings.guests.revoke-access"
                     >
-                      Revogar acesso
+                      Tirar o Acesso
                     </button>
                   </div>
                 }
@@ -255,7 +255,7 @@
                     (click)="revokeInvite(invite)"
                     i18n="@@settings.guests.revoke"
                   >
-                    Revogar
+                    Remover Convite
                   </button>
                 </div>
               } @else {
@@ -267,7 +267,7 @@
                     (click)="revokingInviteId.set(invite.id)"
                     i18n="@@settings.guests.revoke"
                   >
-                    Revogar
+                    Remover Convite
                   </button>
                 </div>
               }

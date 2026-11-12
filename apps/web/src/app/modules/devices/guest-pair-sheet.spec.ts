@@ -168,7 +168,7 @@ describe('GuestPairSheet', () => {
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(el.querySelector('.error')?.textContent).toContain(
-        'Peça ao administrador para revogar um.',
+        'Peça ao administrador para tirar o acesso de um.',
       );
     });
   });

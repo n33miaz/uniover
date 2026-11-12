@@ -633,7 +633,7 @@ export class TvEditSheet implements OnInit {
     }
     switch (problem?.status) {
       case 0:
-        return $localize`:@@settings.system.tv.sheet.error.network:Sem conexão com o servidor. Tente de novo.`;
+        return $localize`:@@settings.system.tv.sheet.error.network:Sem conexão. Tente de novo.`;
       case 400:
         if (
           problem.fieldErrors['restrictedBackgroundPackages'] ||

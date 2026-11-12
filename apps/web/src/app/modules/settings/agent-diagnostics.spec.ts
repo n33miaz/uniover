@@ -9,8 +9,10 @@ import {
 describe('agent diagnostics', () => {
   it('names every kind the agent sends in plain words', () => {
     expect(kindLabel('background.failed')).toBe('Tarefa de fundo falhou');
-    expect(kindLabel('process.crashed')).toBe('O agente caiu');
-    expect(kindLabel('process.unresponsive')).toBe('O agente travou e foi reiniciado');
+    expect(kindLabel('process.crashed')).toBe('O programa do computador fechou');
+    expect(kindLabel('process.unresponsive')).toBe(
+      'O programa do computador travou e foi reiniciado',
+    );
     expect(kindLabel('repair.done')).toBe('Reparo feito');
     expect(kindLabel('repair.failed')).toBe('Reparo não funcionou');
     expect(kindLabel('check.failed')).toBe('Verificação falhou');
@@ -18,7 +20,7 @@ describe('agent diagnostics', () => {
     expect(kindLabel('update.rolled_back')).toBe('Voltou para a versão anterior');
     expect(kindLabel('update.failed')).toBe('Atualização falhou');
     expect(kindLabel('startup.task_missing')).toBe('Início automático refeito');
-    expect(kindLabel('agent.started')).toBe('Agente iniciado');
+    expect(kindLabel('agent.started')).toBe('Programa do computador iniciado');
     expect(kindLabel('diagnostics.dropped')).toBe('Eventos descartados');
   });
 

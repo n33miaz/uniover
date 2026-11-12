@@ -289,7 +289,7 @@ describe('TvEditSheet', () => {
 
     it('says when there is no free computer', async () => {
       const { el, button } = await render(null, []);
-      expect(el.textContent).toContain('Nenhum computador livre. Pareie um em Dispositivos.');
+      expect(el.textContent).toContain('Nenhum computador livre. Conecte um em Dispositivos.');
       expect(button('Salvar').disabled).toBe(true);
     });
   });
@@ -902,7 +902,7 @@ describe('TvEditSheet', () => {
 
       api.updateTv.mockRejectedValueOnce(new HttpErrorResponse({ status: 0 }));
       await save();
-      expect(error()).toBe('Sem conexão com o servidor. Tente de novo.');
+      expect(error()).toBe('Sem conexão. Tente de novo.');
     });
 
     it('cancels without any request, saying nothing changed', async () => {

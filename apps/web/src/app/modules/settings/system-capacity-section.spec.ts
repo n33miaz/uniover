@@ -81,7 +81,7 @@ describe('SystemCapacitySection', () => {
     const root = await render();
     const meters = Array.from(root.querySelectorAll<HTMLElement>('.meter'));
     expect(meters).toHaveLength(3);
-    expect(meters[0].textContent).toContain('Banco');
+    expect(meters[0].textContent).toContain('Dados');
     expect(meters[0].textContent).toContain('14,7 MB de 1 GB');
     expect(meters[0].textContent).toContain('1,4% · Folga');
     expect(meters[0].dataset['band']).toBe('green');
@@ -129,7 +129,7 @@ describe('SystemCapacitySection', () => {
     const root = await render();
     const bars = Array.from(root.querySelectorAll<HTMLElement>('[role="meter"]'));
     expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual([
-      'Banco',
+      'Dados',
       'Memória',
       'Horas do Mês',
     ]);
@@ -201,7 +201,7 @@ describe('SystemCapacitySection', () => {
     const root = fixture.nativeElement as HTMLElement;
     const alert = root.querySelector('.alert');
     expect(alert?.textContent).toContain('Capacidade em Risco');
-    expect(alert?.textContent).toContain('Horas do Mês, Banco');
+    expect(alert?.textContent).toContain('Horas do Mês, Dados');
 
     root.querySelector<HTMLButtonElement>('.alert button')?.click();
     await fixture.whenStable();

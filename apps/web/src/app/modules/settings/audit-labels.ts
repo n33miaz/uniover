@@ -19,11 +19,11 @@ export function knownActionLabel(code: string): string | null {
     case 'login_locked':
       return $localize`:@@settings.audit.action.login-locked:Entrada bloqueada`;
     case 'refresh_succeeded':
-      return $localize`:@@settings.audit.action.refresh-succeeded:Sessão renovada`;
+      return $localize`:@@settings.audit.action.refresh-succeeded:Acesso renovado`;
     case 'refresh_reuse_detected':
-      return $localize`:@@settings.audit.action.refresh-reuse:Sessão antiga reutilizada`;
+      return $localize`:@@settings.audit.action.refresh-reuse:Acesso anterior usado de novo`;
     case 'refresh_recovered':
-      return $localize`:@@settings.audit.action.refresh-recovered:Sessão recuperada depois de uma resposta perdida`;
+      return $localize`:@@settings.audit.action.refresh-recovered:Acesso recuperado`;
     case 'logout':
       return $localize`:@@settings.audit.action.logout:Saiu da conta`;
     case 'owner_created':
@@ -43,15 +43,15 @@ export function knownActionLabel(code: string): string | null {
     case 'guest_invite_accepted':
       return $localize`:@@settings.audit.action.invite-accepted:Convite aceito`;
     case 'guest_invite_revoked':
-      return $localize`:@@settings.audit.action.invite-revoked:Convite revogado`;
+      return $localize`:@@settings.audit.action.invite-revoked:Convite removido`;
     case 'guest_paused':
       return $localize`:@@settings.audit.action.guest-paused:Acesso pausado`;
     case 'guest_resumed':
       return $localize`:@@settings.audit.action.guest-resumed:Acesso retomado`;
     case 'guest_revoked':
-      return $localize`:@@settings.audit.action.guest-revoked:Acesso revogado`;
+      return $localize`:@@settings.audit.action.guest-revoked:Acesso removido`;
     case 'session_revoked':
-      return $localize`:@@settings.audit.action.session-revoked:Sessão encerrada`;
+      return $localize`:@@settings.audit.action.session-revoked:Acesso encerrado`;
     case 'permissions_changed':
       return $localize`:@@settings.audit.action.permissions-changed:Permissões alteradas`;
     case 'profile_updated':
@@ -63,32 +63,32 @@ export function knownActionLabel(code: string): string | null {
     case 'qr_login_succeeded':
       return $localize`:@@settings.audit.action.qr-login-succeeded:Computador entrou pelo QR`;
     case 'audit_exported':
-      return $localize`:@@settings.audit.action.audit-exported:Auditoria exportada`;
+      return $localize`:@@settings.audit.action.audit-exported:Atividades exportadas`;
     // Dispositivos
     case 'pairing_started':
-      return $localize`:@@settings.audit.action.pairing-started:Pareamento iniciado`;
+      return $localize`:@@settings.audit.action.pairing-started:Conexão do computador iniciada`;
     case 'pairing_approved':
-      return $localize`:@@settings.audit.action.pairing-approved:Pareamento aprovado`;
+      return $localize`:@@settings.audit.action.pairing-approved:Conexão do computador aprovada`;
     case 'pairing_denied':
-      return $localize`:@@settings.audit.action.pairing-denied:Pareamento recusado`;
+      return $localize`:@@settings.audit.action.pairing-denied:Conexão do computador recusada`;
     case 'pairing_expired':
-      return $localize`:@@settings.audit.action.pairing-expired:Pareamento expirou`;
+      return $localize`:@@settings.audit.action.pairing-expired:Código do computador venceu`;
     case 'pairing_token_issued':
-      return $localize`:@@settings.audit.action.pairing-token:Acesso do aparelho liberado`;
+      return $localize`:@@settings.audit.action.pairing-token:Acesso do computador liberado`;
     case 'agent_revoked':
-      return $localize`:@@settings.audit.action.agent-revoked:Aparelho revogado`;
+      return $localize`:@@settings.audit.action.agent-revoked:Acesso do computador removido`;
     case 'agent_logs_viewed':
-      return $localize`:@@settings.audit.action.agent-logs-viewed:Registro do aparelho visto`;
+      return $localize`:@@settings.audit.action.agent-logs-viewed:Registro do computador visto`;
     case 'agent_update_requested':
-      return $localize`:@@settings.audit.action.agent-update-requested:Atualização do aparelho pedida`;
+      return $localize`:@@settings.audit.action.agent-update-requested:Atualização do programa pedida`;
     case 'agent_restart_requested':
-      return $localize`:@@settings.audit.action.agent-restart-requested:Reinício do aparelho pedido`;
+      return $localize`:@@settings.audit.action.agent-restart-requested:Reinício do programa pedido`;
     case 'agent_offline':
       return $localize`:@@settings.audit.action.agent-offline:Computador sem sinal`;
     case 'agent_online':
       return $localize`:@@settings.audit.action.agent-online:Computador de volta`;
     case 'agent_rollback_requested':
-      return $localize`:@@settings.audit.action.agent-rollback-requested:Volta do aparelho à versão anterior pedida`;
+      return $localize`:@@settings.audit.action.agent-rollback-requested:Volta do programa à versão anterior pedida`;
     case 'pc_lock':
       return $localize`:@@settings.audit.action.pc-lock:PC bloqueado`;
     case 'pc_sleep':
@@ -147,7 +147,7 @@ export function knownActionLabel(code: string): string | null {
     case 'tv.siri.create':
       return $localize`:@@settings.audit.action.tv-siri-create:Chave dos Atalhos criada`;
     case 'tv.siri.revoke':
-      return $localize`:@@settings.audit.action.tv-siri-revoke:Chave dos Atalhos revogada`;
+      return $localize`:@@settings.audit.action.tv-siri-revoke:Chave dos Atalhos removida`;
     case 'tv.siri.denied':
       return $localize`:@@settings.audit.action.tv-siri-denied:Atalho recusado`;
     case 'tv.livre.refresh':
@@ -306,16 +306,16 @@ const DIRECT_PREFIX = 'via=direct';
 function describeDirect(action: string, target: string): string {
   const count = Number(/\bcount=(\d{1,7})\b/.exec(target)?.[1] ?? Number.NaN);
   if (!Number.isInteger(count)) {
-    return $localize`:@@settings.audit.target.direct-opened:Canal direto aberto`;
+    return $localize`:@@settings.audit.target.direct-opened:Conexão direta aberta`;
   }
   if (action === 'tv.text') {
     return count === 1
-      ? $localize`:@@settings.audit.target.direct-text-one:1 texto pelo canal direto`
-      : $localize`:@@settings.audit.target.direct-text-many:${count}:count: textos pelo canal direto`;
+      ? $localize`:@@settings.audit.target.direct-text-one:1 texto pela conexão direta`
+      : $localize`:@@settings.audit.target.direct-text-many:${count}:count: textos pela conexão direta`;
   }
   return count === 1
-    ? $localize`:@@settings.audit.target.direct-key-one:1 tecla pelo canal direto`
-    : $localize`:@@settings.audit.target.direct-key-many:${count}:count: teclas pelo canal direto`;
+    ? $localize`:@@settings.audit.target.direct-key-one:1 tecla pela conexão direta`
+    : $localize`:@@settings.audit.target.direct-key-many:${count}:count: teclas pela conexão direta`;
 }
 
 function describeBaseTarget(action: string, target: string): string | null {

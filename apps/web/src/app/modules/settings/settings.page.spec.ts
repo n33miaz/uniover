@@ -101,7 +101,7 @@ describe('SettingsPage (a list of screens)', () => {
           title: 'Sistema',
           href: '/ajustes/sistema',
         },
-        { title: 'Auditoria', href: '/ajustes/auditoria' },
+        { title: 'Atividades', href: '/ajustes/auditoria' },
         { title: 'Sobre', href: '/ajustes/sobre' },
       ]);
     });
@@ -118,7 +118,7 @@ describe('SettingsPage (a list of screens)', () => {
       expect(link.closest('section')?.querySelector('h2')?.textContent?.trim()).toBe(
         'Administração',
       );
-      expect(link.textContent?.trim().startsWith('Auditoria')).toBe(true);
+      expect(link.textContent?.trim().startsWith('Atividades')).toBe(true);
       expect(el.textContent).not.toContain('Em breve');
     });
 

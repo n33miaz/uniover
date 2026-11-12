@@ -186,7 +186,7 @@ describe('GuestsSection', () => {
       const { el } = await render();
       const rows = Array.from(el.querySelectorAll('.person'));
       const caio = rows.find((row) => row.textContent?.includes('Caio'))!;
-      expect(caio.querySelector('.revoked')?.textContent).toContain('Acesso revogado');
+      expect(caio.querySelector('.revoked')?.textContent).toContain('Acesso removido');
       expect(caio.querySelectorAll('button')).toHaveLength(0);
       expect(caio.querySelector('.abilities')).toBeNull();
     });
@@ -197,10 +197,10 @@ describe('GuestsSection', () => {
         row.textContent?.includes('Bia'),
       )!;
       expect(Array.from(bia.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual([
-        'Sessões',
+        'Acessos',
         'Permissões',
         'Pausar',
-        'Revogar acesso',
+        'Tirar o Acesso',
       ]);
       const permissions = Array.from(bia.querySelectorAll('button')).find(
         (b) => b.textContent?.trim() === 'Permissões',
@@ -216,7 +216,7 @@ describe('GuestsSection', () => {
         row.textContent?.includes('Bia'),
       )!;
       const toggle = Array.from(bia.querySelectorAll('button')).find(
-        (b) => b.textContent?.trim() === 'Sessões',
+        (b) => b.textContent?.trim() === 'Acessos',
       )!;
       toggle.click();
       fixture.detectChanges();
@@ -224,7 +224,7 @@ describe('GuestsSection', () => {
       fixture.detectChanges();
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
       expect(api.sessions).toHaveBeenCalledWith('t', 'g1');
-      expect(bia.textContent).toContain('Sessões de Bia');
+      expect(bia.textContent).toContain('Acessos de Bia');
     });
 
     it('draws no empty block: with no pending invite there is no pending heading and no empty line', async () => {
@@ -404,7 +404,7 @@ describe('GuestsSection', () => {
         'confira o nome e o que a pessoa poderá fazer',
       ],
       [new ApiProblem(429, 'rate-limited', 'x'), 'Muitas tentativas seguidas'],
-      [new ApiProblem(0, 'network', 'x'), 'Sem conexão com o servidor'],
+      [new ApiProblem(0, 'network', 'x'), 'Sem conexão'],
       [new ApiProblem(500, 'boom', 'x'), 'Não foi possível criar o convite agora'],
       [
         new HttpErrorResponse({
@@ -517,23 +517,23 @@ describe('GuestsSection', () => {
     it('revokes a pending invite after a confirming click, then reloads', async () => {
       api.revokeGuestInvite.mockResolvedValue(undefined);
       const { fixture, el } = await render();
-      button(el, 'Revogar')!.click();
+      button(el, 'Remover Convite')!.click();
       fixture.detectChanges();
       api.guestInvites.mockResolvedValue([]);
-      button(el, 'Revogar')!.click();
+      button(el, 'Remover Convite')!.click();
       await vi.waitFor(() => expect(api.revokeGuestInvite).toHaveBeenCalledWith('t', 'i1'));
-      await vi.waitFor(() => expect(el.textContent).toContain('Convite revogado.'));
+      await vi.waitFor(() => expect(el.textContent).toContain('Convite removido.'));
     });
 
     it('revokes a guest only after the question, which does not talk about the TV only', async () => {
       api.revokeGuest.mockResolvedValue(undefined);
       const { fixture, el } = await render();
-      button(el, 'Revogar acesso')!.click();
+      button(el, 'Tirar o Acesso')!.click();
       fixture.detectChanges();
       expect(el.querySelector('.question')?.textContent).toContain('poucos minutos');
       expect(el.querySelector('.question')?.textContent).not.toContain('TV');
       expect(api.revokeGuest).not.toHaveBeenCalled();
-      button(el, 'Revogar acesso')!.click();
+      button(el, 'Tirar o Acesso')!.click();
       await vi.waitFor(() => expect(api.revokeGuest).toHaveBeenCalledWith('t', 'g1'));
     });
 
@@ -541,7 +541,7 @@ describe('GuestsSection', () => {
       const { el } = await render();
       expect(
         Array.from(el.querySelectorAll('button')).filter(
-          (b) => b.textContent?.trim() === 'Revogar acesso',
+          (b) => b.textContent?.trim() === 'Tirar o Acesso',
         ),
       ).toHaveLength(1);
     });
@@ -625,7 +625,7 @@ describe('GuestsSection', () => {
       );
       await vi.waitFor(() => expect(api.guests).toHaveBeenCalledTimes(2));
       expect(el.querySelector('app-people-permissions-sheet .error')?.textContent).toContain(
-        'já foi revogado',
+        'já foi removido',
       );
     });
   });

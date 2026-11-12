@@ -15,7 +15,7 @@ const SECTIONS = [
   { row: /^Pessoas e Permissões/, path: '/ajustes/pessoas', title: 'Pessoas e Permissões' },
   { row: /^Dispositivos/, path: '/ajustes/dispositivos', title: 'Dispositivos' },
   { row: /^Sistema/, path: '/ajustes/sistema', title: 'Sistema' },
-  { row: /^Auditoria/, path: '/ajustes/auditoria', title: 'Auditoria' },
+  { row: /^Atividades/, path: '/ajustes/auditoria', title: 'Atividades' },
   { row: /^Sobre/, path: '/ajustes/sobre', title: 'Sobre' },
 ] as const;
 

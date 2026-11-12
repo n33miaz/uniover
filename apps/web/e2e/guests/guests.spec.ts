@@ -151,9 +151,9 @@ test.describe('convite do dono (passkey)', () => {
     }
     await expectNoHorizontalScroll(page);
 
-    await page.getByRole('button', { name: `Revogar o convite de ${GUEST.displayName}` }).click();
-    await page.getByRole('button', { name: 'Revogar', exact: true }).click();
-    await expect(page.getByText('Convite revogado.')).toBeVisible();
+    await page.getByRole('button', { name: `Remover convite de ${GUEST.displayName}` }).click();
+    await page.getByRole('button', { name: 'Remover Convite', exact: true }).click();
+    await expect(page.getByText('Convite removido.')).toBeVisible();
     await page.getByRole('tab', { name: 'Pessoas' }).click();
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     expect(identity.invites[0].status).toBe('revoked');
@@ -382,7 +382,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       'href',
       '/ajustes/dispositivos',
     );
-    for (const name of ['Pessoas e Permissões', 'Auditoria', 'Sistema']) {
+    for (const name of ['Pessoas e Permissões', 'Atividades', 'Sistema']) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
     await expect(page.locator('a.ui-row .ui-row-sub')).toHaveCount(0);
@@ -416,7 +416,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     // Segurança da convidada: só as próprias sessões, sem passkeys.
     await page.goto('/ajustes/seguranca');
     await expect(page.getByRole('heading', { level: 1, name: 'Segurança' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Sessões de Acesso' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Aparelhos com Acesso' })).toBeVisible();
     await expect(page.getByText(/passkey/i)).toHaveCount(0);
     // Salvar o nome também é só da própria conta.
     await page.goto('/ajustes/perfil');

@@ -21,7 +21,7 @@ describe('ConnectSheet', () => {
     expect(dialog.getAttribute('aria-labelledby')).toBe('connect-title');
     expect(el.querySelector('h2')?.textContent).toBe('Conectar este PC');
     expect(Array.from(el.querySelectorAll('ol > li')).map((li) => li.textContent?.trim())).toEqual([
-      'Baixar e abrir o conector',
+      'Baixar e abrir o programa',
       'Escanear o QR com o celular',
       'Aceitar na TV',
     ]);
@@ -35,7 +35,7 @@ describe('ConnectSheet', () => {
   it('downloads the connector file from the site', async () => {
     const { el } = await render();
     const link = el.querySelector<HTMLAnchorElement>('a.primary')!;
-    expect(link.textContent?.trim()).toBe('Baixar conector');
+    expect(link.textContent?.trim()).toBe('Baixar Programa');
     expect(link.getAttribute('href')).toBe('/conectar/conectar-uniover.cmd');
     expect(link.getAttribute('download')).toBe('conectar-uniover.cmd');
   });

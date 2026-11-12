@@ -130,8 +130,8 @@ describe('AuditFilterSheet', () => {
     click('Dispositivos');
     expect(chips('Ação')).toEqual([
       'Todas as ações',
-      'Pareamento aprovado',
-      'Aparelho revogado',
+      'Conexão do computador aprovada',
+      'Acesso do computador removido',
       'Tecla enviada à TV',
       'TV desligada',
     ]);

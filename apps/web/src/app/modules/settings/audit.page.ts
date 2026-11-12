@@ -374,7 +374,7 @@ export class AuditPage {
             }
           : {
               tone: 'ok',
-              text: $localize`:@@settings.audit.export.done:Arquivo baixado. Esta exportação ficou registrada na auditoria.`,
+              text: $localize`:@@settings.audit.export.done:Arquivo baixado. Esta exportação ficou registrada em Atividades.`,
             },
       );
     } catch (error) {
@@ -410,7 +410,7 @@ export class AuditPage {
   private exportError(error: unknown): string {
     const problem = problemOf(error);
     if (problem?.isNetwork) {
-      return $localize`:@@settings.audit.export.network:Sem conexão com o servidor. O arquivo não foi baixado; tente de novo quando a rede voltar.`;
+      return $localize`:@@settings.audit.export.network:Sem conexão. O arquivo não foi baixado; tente de novo quando a rede voltar.`;
     }
     if (problem?.status === 400) {
       return $localize`:@@settings.audit.export.invalid:Esses filtros não foram aceitos para a exportação. Mude os filtros e tente de novo.`;

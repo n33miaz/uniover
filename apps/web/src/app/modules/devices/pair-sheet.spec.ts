@@ -208,7 +208,7 @@ describe('PairSheet', () => {
     button('Aprovar').click();
     await vi.waitFor(() => {
       fixture.detectChanges();
-      expect(el.textContent).toContain('não foi confirmada com a passkey');
+      expect(el.textContent).toContain('não foi confirmada com a passkey. Nada foi conectado.');
     });
     expect(outcomes).toEqual([]);
     expect(api.approve).toHaveBeenCalledTimes(1);
@@ -221,7 +221,7 @@ describe('PairSheet', () => {
     button('Aprovar').click();
     await vi.waitFor(() => {
       fixture.detectChanges();
-      expect(el.textContent).toContain('Sem conexão com o servidor');
+      expect(el.textContent).toContain('Sem conexão');
     });
   });
 

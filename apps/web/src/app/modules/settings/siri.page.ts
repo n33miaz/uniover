@@ -260,10 +260,10 @@ export class SiriPage {
       this.confirmingId.set(null);
       if (this.created()?.id === key.id) this.finish();
       await this.refreshKeys();
-      this.say({ text: $localize`:@@settings.siri.revoked:Chave revogada.`, error: false });
+      this.say({ text: $localize`:@@settings.siri.revoked:Chave removida.`, error: false });
     } catch {
       this.say({
-        text: $localize`:@@settings.siri.revoke-failed:Não foi possível revogar agora.`,
+        text: $localize`:@@settings.siri.revoke-failed:Não foi possível remover agora.`,
         error: true,
       });
     } finally {
@@ -297,11 +297,11 @@ export class SiriPage {
   }
 
   protected revokeLabel(key: SiriKey): string {
-    return $localize`:@@settings.siri.revoke-label:Revogar ${key.name}:name:`;
+    return $localize`:@@settings.siri.revoke-label:Remover ${key.name}:name:`;
   }
 
   protected revokeQuestion(key: SiriKey): string {
-    return $localize`:@@settings.siri.revoke-question:Revogar ${key.name}:name:? Os atalhos que usam esta chave param de funcionar.`;
+    return $localize`:@@settings.siri.revoke-question:Remover ${key.name}:name:? Os atalhos que usam esta chave param de funcionar.`;
   }
 
   protected howLabel(key: SiriKey): string {
@@ -354,13 +354,13 @@ export class SiriPage {
   private createError(error: unknown): string {
     const problem = problemOf(error);
     if (problem?.status === 409) {
-      return $localize`:@@settings.siri.too-many:Já existem ${SIRI_MAX_KEYS}:max: chaves. Revogue uma antes de criar outra.`;
+      return $localize`:@@settings.siri.too-many:Já existem ${SIRI_MAX_KEYS}:max: chaves. Remova uma antes de criar outra.`;
     }
     if (problem?.status === 403) {
       return $localize`:@@settings.siri.unconfirmed:A criação não foi confirmada com a passkey.`;
     }
     if (problem?.isNetwork) {
-      return $localize`:@@settings.siri.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@settings.siri.network:Sem conexão. Tente de novo.`;
     }
     return $localize`:@@settings.siri.create-failed:Não foi possível criar a chave.`;
   }

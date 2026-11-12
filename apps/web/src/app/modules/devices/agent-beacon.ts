@@ -47,30 +47,30 @@ export function codeReason(code: string, stage?: string | null): string | null {
   if (exit) {
     const exitCode = Number(exit[1]);
     return stage === 'supervisor'
-      ? $localize`:@@devices.startup.code.supervisor-exit:o supervisor fechou (código ${exitCode}:code:)`
-      : $localize`:@@devices.startup.code.agent-exit:o agente fechou (código ${exitCode}:code:)`;
+      ? $localize`:@@devices.startup.code.supervisor-exit:o iniciador do programa fechou (código ${exitCode}:code:)`
+      : $localize`:@@devices.startup.code.agent-exit:o programa fechou (código ${exitCode}:code:)`;
   }
   switch (code) {
     case 'no_app':
-      return $localize`:@@devices.startup.code.no-app:faltam os arquivos do agente`;
+      return $localize`:@@devices.startup.code.no-app:faltam os arquivos do programa`;
     case 'no_uv':
-      return $localize`:@@devices.startup.code.no-uv:faltou o uv no PC`;
+      return $localize`:@@devices.startup.code.no-uv:faltou um componente no PC (uv)`;
     case 'sync_failed':
       return $localize`:@@devices.startup.code.sync-failed:falhou ao preparar o ambiente`;
     case 'stale':
-      return $localize`:@@devices.startup.code.stale:o supervisor travou e foi reiniciado`;
+      return $localize`:@@devices.startup.code.stale:o iniciador do programa travou e foi reiniciado`;
     case 'unresponsive':
-      return $localize`:@@devices.startup.code.unresponsive:o agente parou de responder`;
+      return $localize`:@@devices.startup.code.unresponsive:o programa parou de responder`;
     case 'no_config':
       return $localize`:@@devices.startup.code.no-config:falta a configuração`;
     case 'vault_unreadable':
-      return $localize`:@@devices.startup.code.vault:não leu a credencial guardada`;
+      return $localize`:@@devices.startup.code.vault:não conseguiu ler o acesso salvo`;
     case 'net_unreachable':
       return $localize`:@@devices.startup.code.net:sem acesso à rede`;
     case 'crash_loop':
       return stage === 'child_exit'
-        ? $localize`:@@devices.startup.code.crash-loop-repeated:o agente caiu várias vezes seguidas`
-        : $localize`:@@devices.startup.code.crash-loop:o agente fecha ao abrir`;
+        ? $localize`:@@devices.startup.code.crash-loop-repeated:o programa fechou várias vezes seguidas`
+        : $localize`:@@devices.startup.code.crash-loop:o programa fecha ao abrir`;
     case 'blocked_sac':
       return $localize`:@@devices.startup.code.blocked-sac:o Windows bloqueou o programa`;
     case 'blocked_av':
@@ -90,15 +90,15 @@ export function stageLabel(stage: string): string | null {
     case 'bootstrap':
       return $localize`:@@devices.startup.stage.bootstrap:abertura`;
     case 'supervisor':
-      return $localize`:@@devices.startup.stage.supervisor:supervisor`;
+      return $localize`:@@devices.startup.stage.supervisor:iniciador do programa`;
     case 'child_spawn':
-      return $localize`:@@devices.startup.stage.child-spawn:abertura do agente`;
+      return $localize`:@@devices.startup.stage.child-spawn:abertura do programa`;
     case 'child_exit':
-      return $localize`:@@devices.startup.stage.child-exit:saída do agente`;
+      return $localize`:@@devices.startup.stage.child-exit:saída do programa`;
     case 'selftest':
       return $localize`:@@devices.startup.stage.selftest:autoteste`;
     case 'hello_sent':
-      return $localize`:@@devices.startup.stage.hello-sent:contato com o servidor`;
+      return $localize`:@@devices.startup.stage.hello-sent:contato com o serviço`;
     default:
       return null;
   }
@@ -108,7 +108,7 @@ export function stageLabel(stage: string): string | null {
 export function rejectionText(reason: string): string {
   switch (reason) {
     case 'protocol':
-      return $localize`:@@devices.startup.reject.protocol:Versão do agente recusada`;
+      return $localize`:@@devices.startup.reject.protocol:Versão do programa recusada`;
     default:
       // invalid_token, wrong_agent e o que vier de novo: para o dono é a mesma coisa, a credencial não vale.
       return $localize`:@@devices.startup.reject.invalid:Credencial recusada`;
@@ -152,7 +152,7 @@ export function startupLine(
   if (beacon.rejectReason === 'protocol' && beacon.rejectedAt !== null) {
     return {
       text: connected
-        ? $localize`:@@devices.startup.reject.protocol-connected:Conectado, mas a versão do agente foi recusada`
+        ? $localize`:@@devices.startup.reject.protocol-connected:Conectado, mas a versão do programa foi recusada`
         : rejectionText('protocol'),
       failed: true,
       at: beacon.rejectedAt,

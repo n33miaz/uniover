@@ -134,10 +134,10 @@ export class GuestPairSheet {
       return $localize`:@@devices.guest-pair.error.password:Senha incorreta. Confira e tente de novo.`;
     }
     if (problem?.kind === 'guest-agent-limit') {
-      return $localize`:@@devices.guest-pair.error.limit:Você já tem o máximo de computadores conectados. Peça ao administrador para revogar um.`;
+      return $localize`:@@devices.guest-pair.error.limit:Você já tem o máximo de computadores conectados. Peça ao administrador para tirar o acesso de um.`;
     }
     if (problem && isStepUpRequired(problem)) {
-      return $localize`:@@devices.guest-pair.error.unconfirmed:A senha não foi confirmada. Nada foi pareado.`;
+      return $localize`:@@devices.guest-pair.error.unconfirmed:A senha não foi confirmada. Nada foi conectado.`;
     }
     if (problem?.status === 404) {
       return $localize`:@@devices.guest-pair.error.not-found:Código inválido ou vencido. Confira o que o PC mostra e tente de novo.`;
@@ -152,7 +152,7 @@ export class GuestPairSheet {
       return $localize`:@@devices.guest-pair.error.invalid:Confira o código e o nome da TV (letras, números, espaço e . _ ( ) -).`;
     }
     if (problem?.isNetwork) {
-      return $localize`:@@devices.guest-pair.error.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@devices.guest-pair.error.network:Sem conexão. Tente de novo.`;
     }
     return $localize`:@@devices.guest-pair.error.failed:Não foi possível aprovar agora. Tente de novo.`;
   }

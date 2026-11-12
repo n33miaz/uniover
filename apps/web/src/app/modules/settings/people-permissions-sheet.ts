@@ -130,7 +130,7 @@ export class PeoplePermissionsSheet {
     }
     switch (problem?.status) {
       case 0:
-        return $localize`:@@settings.people.sheet.error.network:Sem conexão com o servidor. Nada foi alterado. Tente de novo.`;
+        return $localize`:@@settings.people.sheet.error.network:Sem conexão. Nada foi alterado. Tente de novo.`;
       case 400:
         return $localize`:@@settings.people.sheet.error.invalid:Essa combinação de permissões não foi aceita. Confira as opções e tente de novo.`;
       case 403:
@@ -139,7 +139,7 @@ export class PeoplePermissionsSheet {
         return $localize`:@@settings.people.sheet.error.not-found:Essa pessoa não está mais na lista. Atualizamos a lista; nada foi alterado.`;
       case 409:
         return isGone(problem)
-          ? $localize`:@@settings.people.sheet.error.revoked:O acesso dessa pessoa já foi revogado, então as permissões não podem mais mudar. Atualizamos a lista.`
+          ? $localize`:@@settings.people.sheet.error.revoked:O acesso dessa pessoa já foi removido, então as permissões não podem mais mudar. Atualizamos a lista.`
           : $localize`:@@settings.people.sheet.error.conflict:Outra mudança aconteceu ao mesmo tempo. Nada foi alterado: confira e salve de novo.`;
       case 429: {
         const seconds = problem?.retryAfterSeconds;

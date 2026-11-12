@@ -98,7 +98,7 @@ describe('SecuritySection', () => {
 
   it('explains that the passkey only confirms dangerous actions and does not log in', async () => {
     const { el } = await render();
-    expect(el.querySelector('.hint')?.textContent).toContain('só confirma ações sensíveis');
+    expect(el.querySelector('.hint')?.textContent).toContain('só confirma ações importantes');
     expect(el.querySelector('.hint')?.textContent).toContain('por e-mail e senha');
   });
 
@@ -237,7 +237,9 @@ describe('SecuritySection', () => {
       button(el, 'Remover')!.click();
       fixture.detectChanges();
       button(el, 'Remover')!.click();
-      await vi.waitFor(() => expect(el.textContent).toContain('não foi confirmada com a passkey'));
+      await vi.waitFor(() =>
+        expect(el.textContent).toContain('A remoção não foi confirmada com a passkey.'),
+      );
       expect(api.removePasskey).toHaveBeenCalledTimes(1);
       expect(el.querySelectorAll('.item')).toHaveLength(1);
     });

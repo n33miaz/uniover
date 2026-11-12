@@ -101,7 +101,7 @@ test.describe('Pessoas: a lista', () => {
       TV_SUMMARY,
       'Usar o Treino',
     ]);
-    await expect(page.locator('.revoked')).toHaveText('Acesso revogado');
+    await expect(page.locator('.revoked')).toHaveText('Acesso removido');
     await expect(page.getByRole('button', { name: /^Permissões de Carla/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Convites' }).click();
     await expect(page.getByRole('heading', { level: 2, name: 'Convites pendentes' })).toBeVisible();
@@ -407,7 +407,7 @@ test.describe('Pessoas: mudar o que alguém pode fazer', () => {
     {
       name: 'sem rede',
       arrange: (page: Page) => dropConnection(page, `/guests/${RAPHAEL.id}/permissions`),
-      text: 'Sem conexão com o servidor',
+      text: 'Sem conexão',
     },
   ] as const;
 
@@ -440,7 +440,7 @@ test.describe('Pessoas: mudar o que alguém pode fazer', () => {
     await sheet.getByRole('switch', { name: 'Ver a TV' }).check();
     await sheet.getByRole('button', { name: 'Salvar' }).click();
 
-    await expect(sheet.getByRole('alert')).toContainText('já foi revogado');
+    await expect(sheet.getByRole('alert')).toContainText('já foi removido');
     await expect(sheet.getByRole('button', { name: 'Salvar' })).toBeDisabled();
     await sheet.getByRole('button', { name: 'Fechar' }).click();
     await expect(sheet).toHaveCount(0);

@@ -10,7 +10,7 @@ export const SETTINGS_TITLES = {
   security: $localize`:@@settings.route.security:Segurança`,
   siri: $localize`:@@settings.route.siri:Atalhos da Siri`,
   people: $localize`:@@settings.route.people:Pessoas e Permissões`,
-  audit: $localize`:@@settings.route.audit:Auditoria`,
+  audit: $localize`:@@settings.route.audit:Atividades`,
   system: $localize`:@@settings.route.system:Sistema`,
   tvPeople: $localize`:@@settings.route.tv-people:TVs por Pessoa`,
   tvHistory: $localize`:@@settings.route.tv-history:Histórico`,

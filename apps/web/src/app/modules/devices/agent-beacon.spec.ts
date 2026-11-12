@@ -70,20 +70,22 @@ describe('startupLine', () => {
   });
 
   it('gives each new agent code a plain reason', () => {
-    expect(codeReason('no_app')).toBe('faltam os arquivos do agente');
-    expect(codeReason('no_uv', 'supervisor')).toBe('faltou o uv no PC');
+    expect(codeReason('no_app')).toBe('faltam os arquivos do programa');
+    expect(codeReason('no_uv', 'supervisor')).toBe('faltou um componente no PC (uv)');
     expect(codeReason('sync_failed', 'supervisor')).toBe('falhou ao preparar o ambiente');
     expect(codeReason('disk_full', 'supervisor')).toBe('o disco está cheio');
-    expect(codeReason('stale', 'supervisor')).toBe('o supervisor travou e foi reiniciado');
-    expect(codeReason('crash_loop', 'child_exit')).toBe('o agente caiu várias vezes seguidas');
-    expect(codeReason('crash_loop')).toBe('o agente fecha ao abrir');
-    expect(codeReason('unresponsive', 'child_exit')).toBe('o agente parou de responder');
+    expect(codeReason('stale', 'supervisor')).toBe(
+      'o iniciador do programa travou e foi reiniciado',
+    );
+    expect(codeReason('crash_loop', 'child_exit')).toBe('o programa fechou várias vezes seguidas');
+    expect(codeReason('crash_loop')).toBe('o programa fecha ao abrir');
+    expect(codeReason('unresponsive', 'child_exit')).toBe('o programa parou de responder');
   });
 
   it('reads the exit code out of exit_N, by who exited', () => {
-    expect(codeReason('exit_3', 'child_exit')).toBe('o agente fechou (código 3)');
-    expect(codeReason('exit_1', 'supervisor')).toBe('o supervisor fechou (código 1)');
-    expect(codeReason('exit_-1', 'child_exit')).toBe('o agente fechou (código -1)');
+    expect(codeReason('exit_3', 'child_exit')).toBe('o programa fechou (código 3)');
+    expect(codeReason('exit_1', 'supervisor')).toBe('o iniciador do programa fechou (código 1)');
+    expect(codeReason('exit_-1', 'child_exit')).toBe('o programa fechou (código -1)');
     expect(codeReason('exit_')).toBeNull();
     expect(codeReason('exit_abc')).toBeNull();
     expect(codeReason('exit_1x')).toBeNull();
@@ -96,14 +98,14 @@ describe('startupLine', () => {
       beacon({ stage: 'child_exit', code: 'exit_7', at: LATER }),
     );
     expect(line).toEqual({
-      text: 'Não conseguiu iniciar: o agente fechou (código 7)',
+      text: 'Não conseguiu iniciar: o programa fechou (código 7)',
       failed: true,
       at: LATER,
       verified: false,
     });
     expect(
       startupLine(false, SEEN, beacon({ stage: 'supervisor', code: 'no_uv', at: LATER }))?.text,
-    ).toBe('Não conseguiu iniciar: faltou o uv no PC');
+    ).toBe('Não conseguiu iniciar: faltou um componente no PC (uv)');
     expect(
       startupLine(false, SEEN, beacon({ stage: 'child_exit', code: 'exit_', at: LATER }))?.text,
     ).toBe('Não conseguiu iniciar');
@@ -119,7 +121,7 @@ describe('startupLine', () => {
   it('shows the last stage reached when the start itself went fine', () => {
     const line = startupLine(false, SEEN, beacon({ stage: 'supervisor', code: 'ok', at: LATER }));
     expect(line).toEqual({
-      text: 'Última etapa: supervisor',
+      text: 'Última etapa: iniciador do programa',
       failed: false,
       at: LATER,
       verified: false,
@@ -162,7 +164,7 @@ describe('startupLine', () => {
     }
     expect(
       startupLine(false, SEEN, beacon({ rejectReason: 'protocol', rejectedAt: LATER }))?.text,
-    ).toBe('Versão do agente recusada');
+    ).toBe('Versão do programa recusada');
   });
 
   it('lets only a refusal that needs a real token win over a newer anonymous beacon', () => {
@@ -202,7 +204,7 @@ describe('startupLine', () => {
   it('shows the protocol refusal while connected, as "connected but refused"', () => {
     const line = startupLine(true, SEEN, beacon({ rejectReason: 'protocol', rejectedAt: LATER }));
     expect(line).toEqual({
-      text: 'Conectado, mas a versão do agente foi recusada',
+      text: 'Conectado, mas a versão do programa foi recusada',
       failed: true,
       at: LATER,
       verified: true,
@@ -216,10 +218,10 @@ describe('startupLine', () => {
     const clue = beacon({ rejectReason: 'protocol', rejectedAt: refusedAt });
 
     expect(startupLine(true, droppedAt, clue)?.text).toBe(
-      'Conectado, mas a versão do agente foi recusada',
+      'Conectado, mas a versão do programa foi recusada',
     );
     expect(startupLine(false, droppedAt, clue)).toEqual({
-      text: 'Versão do agente recusada',
+      text: 'Versão do programa recusada',
       failed: true,
       at: refusedAt,
       verified: true,

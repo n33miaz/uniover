@@ -94,9 +94,9 @@ describe('SessionsSection', () => {
 
   it('ends the other sessions only after confirmation', async () => {
     const { fixture, click } = await render();
-    click('Encerrar as outras');
+    click('Encerrar os Outros');
     expect(api.revokeOtherSessions).not.toHaveBeenCalled();
-    click('Encerrar as outras');
+    click('Encerrar os Outros');
     await fixture.whenStable();
     expect(api.revokeOtherSessions).toHaveBeenCalledWith('jwt');
   });
@@ -115,7 +115,7 @@ describe('SessionsSection', () => {
   it('uses the administrator route for a guest and never offers the bulk action', async () => {
     const { fixture, el } = await render('guest-1');
     expect(api.sessions).toHaveBeenCalledWith('jwt', 'guest-1');
-    expect(el.textContent).not.toContain('Encerrar as outras');
+    expect(el.textContent).not.toContain('Encerrar os Outros');
     el.querySelector<HTMLButtonElement>('li button')!.click();
     fixture.detectChanges();
     el.querySelector<HTMLButtonElement>('.confirm .danger')!.click();

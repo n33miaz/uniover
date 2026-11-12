@@ -618,7 +618,9 @@ describe('AuditPage', () => {
       expect(api.export).toHaveBeenCalledExactlyOnceWith({ ...EMPTY_QUERY, outcome: 'failure' });
       expect(download.save).toHaveBeenCalledTimes(1);
       expect(download.save.mock.calls[0][1]).toBe('auditoria-20261021-1500.csv');
-      expect(t.text()).toContain('Arquivo baixado. Esta exportação ficou registrada na auditoria.');
+      expect(t.text()).toContain(
+        'Arquivo baixado. Esta exportação ficou registrada em Atividades.',
+      );
     });
 
     it('uses a name of its own when the server sends none', async () => {
@@ -646,7 +648,7 @@ describe('AuditPage', () => {
       const t = await render();
       for (const [error, expected] of [
         [problem(400), 'Esses filtros não foram aceitos'],
-        [networkProblem(), 'Sem conexão com o servidor'],
+        [networkProblem(), 'Sem conexão'],
         [problem(429), 'Muitas tentativas seguidas'],
         [problem(500), 'Não foi possível exportar agora'],
       ] as const) {

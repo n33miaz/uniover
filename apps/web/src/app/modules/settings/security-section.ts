@@ -218,7 +218,7 @@ export class SecuritySection {
       return $localize`:@@settings.passkeys.rate-limited:Muitas tentativas seguidas. Espere um pouco.`;
     }
     if (problem?.isNetwork) {
-      return $localize`:@@settings.passkeys.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@settings.passkeys.network:Sem conexão. Tente de novo.`;
     }
     return $localize`:@@settings.passkeys.add-failed:Não foi possível cadastrar a passkey.`;
   }
@@ -226,13 +226,13 @@ export class SecuritySection {
   private removeError(error: unknown): string {
     const problem: ApiProblem | null = problemOf(error);
     if (problem?.kind === 'last-passkey') {
-      return $localize`:@@settings.passkeys.last:Esta é a última passkey: cadastre outra antes de remover.`;
+      return $localize`:@@settings.passkeys.last:Esta é a última passkey. Cadastre outra antes de remover.`;
     }
     if (problem?.status === 403) {
       return $localize`:@@settings.passkeys.remove-unconfirmed:A remoção não foi confirmada com a passkey.`;
     }
     if (problem?.isNetwork) {
-      return $localize`:@@settings.passkeys.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@settings.passkeys.network:Sem conexão. Tente de novo.`;
     }
     return $localize`:@@settings.passkeys.remove-failed:Não foi possível remover a passkey.`;
   }

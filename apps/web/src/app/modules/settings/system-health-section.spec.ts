@@ -58,13 +58,13 @@ describe('SystemHealthSection', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll('.metric'),
     );
     expect(metrics).toHaveLength(5);
-    expect(metrics[0].textContent).toContain('Agente');
+    expect(metrics[0].textContent).toContain('Computadores');
     expect(metrics[0].textContent).toContain('Ligado');
     expect(metrics[0].textContent).toContain('PC da sala');
     expect(metrics[1].textContent).toContain('TV');
     expect(metrics[1].textContent).toContain('On-line');
     expect(metrics[1].textContent).toContain('TV da sala');
-    expect(metrics[2].textContent).toContain('API');
+    expect(metrics[2].textContent).toContain('Serviço');
     expect(metrics[2].textContent).toContain('OK');
     expect(metrics[3].textContent).toContain('abc1234');
     expect(metrics[4].textContent).toContain('Eventos');
@@ -115,7 +115,7 @@ describe('SystemHealthSection', () => {
       ['TV', '0.44.2'],
       ['Treino', '0.42.15'],
       ['Site', '0.43.1'],
-      ['Agente', '0.42.16'],
+      ['Programa do computador', '0.42.16'],
       ['novo', '1.0.0'],
     ]);
     // Os cinco cartões de leitura continuam sendo só cinco: os módulos são uma lista à parte.

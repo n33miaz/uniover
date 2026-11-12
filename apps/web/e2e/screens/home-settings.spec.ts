@@ -329,9 +329,9 @@ test.describe('Configurações', () => {
       await expect(page.getByText('Bruno', { exact: true })).toBeVisible();
 
       // Confirmação de revogar acesso.
-      await page.getByRole('button', { name: 'Revogar acesso de Bruno' }).click();
+      await page.getByRole('button', { name: 'Tirar o acesso de Bruno' }).click();
       await expect(page.getByText('poucos minutos')).toBeVisible();
-      await page.getByRole('group', { name: /Revogar o acesso de Bruno/ }).scrollIntoViewIfNeeded();
+      await page.getByRole('group', { name: /Tirar o acesso de Bruno/ }).scrollIntoViewIfNeeded();
       await screenshot(page, printPath(info, 'settings-confirm-guest', scheme));
       await expectNoA11yViolations(page);
       await page.getByRole('button', { name: 'Cancelar' }).click();
@@ -421,7 +421,7 @@ test.describe('Configurações', () => {
   }, info) => {
     mock.offline = true;
     await page.goto('/ajustes/perfil');
-    await expect(page.locator('.session')).toContainText('Sessão a confirmar');
+    await expect(page.locator('.session')).toContainText('Acesso a confirmar');
     await settle(page);
     await screenshot(page, printPath(info, 'settings-pending', 'light'), { fullPage: true });
     await expectNoA11yViolations(page);

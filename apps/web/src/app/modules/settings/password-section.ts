@@ -84,7 +84,7 @@ export class PasswordSection {
       if (problem.status === 400)
         return $localize`:@@settings.password.invalid-new:Confira a nova senha e tente novamente.`;
       if (problem.isNetwork)
-        return $localize`:@@settings.password.network:Sem conexão com o servidor. Tente novamente.`;
+        return $localize`:@@settings.password.network:Sem conexão. Tente novamente.`;
     }
     return $localize`:@@settings.password.failed:Não foi possível trocar a senha agora.`;
   }

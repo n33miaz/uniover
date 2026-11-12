@@ -273,7 +273,7 @@ describe('SiriPage', () => {
   });
 
   it.each([
-    [409, 'Revogue uma antes de criar outra'],
+    [409, 'Remova uma antes de criar outra'],
     [403, 'não foi confirmada com a passkey'],
     [500, 'Não foi possível criar a chave'],
   ])('explains a %i from the API in plain words', async (status, expected) => {
@@ -293,7 +293,7 @@ describe('SiriPage', () => {
     const { el, click, fixture } = await render();
     api.keys.mockResolvedValue([]);
 
-    await click(/Revogar iPhone do dono|Revogar/);
+    await click(/Remover iPhone do dono|Remover/);
     expect(api.revoke).not.toHaveBeenCalled();
     expect(el.textContent).toContain('param de funcionar');
 
@@ -302,14 +302,14 @@ describe('SiriPage', () => {
     fixture.detectChanges();
 
     expect(api.revoke).toHaveBeenCalledWith('k1');
-    expect(el.textContent).toContain('Chave revogada');
+    expect(el.textContent).toContain('Chave removida');
     expect(el.textContent).not.toContain('iPhone do dono');
   });
 
   it('can be cancelled while asking to revoke', async () => {
     const { el, click } = await render();
 
-    await click(/Revogar/);
+    await click(/Remover/);
     await click('Cancelar');
 
     expect(el.querySelector('.confirm')).toBeNull();
