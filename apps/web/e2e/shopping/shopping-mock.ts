@@ -22,7 +22,17 @@ interface Result {
   readonly status: number;
   readonly type?: string;
   readonly openPurchaseId?: string;
+  /** O registro em que a operação assentou (o que o grupo já tinha, quando os dois foram juntados). */
+  readonly entityId?: string;
 }
+
+const sameName = (a: unknown, b: unknown): boolean =>
+  String(a ?? '')
+    .trim()
+    .toLocaleLowerCase('pt-BR') ===
+  String(b ?? '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
 
 export interface MockPerson {
   userId: string;
@@ -69,7 +79,9 @@ function permissionsOf(identity: IdentityMock): readonly string[] {
 /**
  * Simula a API de Compras com as regras da real que a tela usa: login e `module:shopping` em toda rota; cada operação
  * do lote aplicada uma vez só; uma compra aberta por grupo (a segunda abertura é recusada e diz qual é a aberta); as
- * linhas da compra nascem aqui, uma por item que "precisa"; uma linha por produto em cada compra.
+ * linhas da compra nascem aqui, uma por item que "precisa"; uma linha por produto em cada compra. Criar o que o grupo já
+ * tem (o mesmo nome de produto, o mesmo produto na lista ou na compra) junta os dois e responde 200 com o registro que
+ * vale; apagar pelo id da cópia juntada responde 204 sem mudar nada.
  */
 export async function mockShoppingApi(
   context: BrowserContext,
@@ -78,6 +90,8 @@ export async function mockShoppingApi(
   const rows = new Map<string, Row>();
   const feed: { sequence: number; entityType: string; entityId: string; payload: unknown }[] = [];
   const applied = new Map<string, Result>();
+  /** O id criado num aparelho para algo que já existia aqui, e o registro que vale. */
+  const merged = new Map<string, string>();
   let lines = 0;
 
   const put = (type: string, id: string, payload: Record<string, unknown>) => {
@@ -100,16 +114,55 @@ export async function mockShoppingApi(
   };
 
   function apply(operation: Operation): Result {
-    const { id, body } = operation;
+    const id = merged.get(operation.id) ?? operation.id;
+    const sent = operation.body;
+    const productId = sent['productId'] as string | undefined;
+    const body: Record<string, unknown> = productId
+      ? { ...sent, productId: merged.get(productId) ?? productId }
+      : sent;
+    const known = rows.get(id);
     if (mock.refuseKind === operation.kind)
       return { status: 409, type: `${PROBLEM_BASE}shopping-duplicate` };
+    if (body['deleted'] === true && operation.kind !== 'openPurchase') {
+      if (merged.has(operation.id)) return { status: 204 };
+      if (!known) return { status: 404 };
+      put(known.type, id, { ...known.payload, deleted: true });
+      return { status: 200, entityId: id };
+    }
     switch (operation.kind) {
-      case 'product':
+      case 'product': {
+        const twin = of('product').find(
+          (row) =>
+            row.id !== id &&
+            row.payload['deleted'] !== true &&
+            sameName(row.payload['name'], body['name']),
+        );
+        if (twin && !known) {
+          merged.set(id, twin.id);
+          return { status: 200, entityId: twin.id };
+        }
         put('product', id, { name: body['name'], section: '', deleted: false });
-        return { status: 200 };
-      case 'listItem':
+        return { status: 200, entityId: id };
+      }
+      case 'listItem': {
+        const twin = of('listItem').find(
+          (row) =>
+            row.id !== id &&
+            row.payload['deleted'] !== true &&
+            row.payload['productId'] === body['productId'],
+        );
+        if (twin && !known) {
+          merged.set(id, twin.id);
+          put('listItem', twin.id, {
+            ...twin.payload,
+            needed: twin.payload['needed'] === true || body['needed'] === true,
+            quantity: Math.max(Number(twin.payload['quantity']), Number(body['quantity'])),
+          });
+          return { status: 200, entityId: twin.id };
+        }
         put('listItem', id, { ...body, deleted: false });
-        return { status: 200 };
+        return { status: 200, entityId: id };
+      }
       case 'openPurchase': {
         if (rows.has(id)) return { status: 200 };
         const open = of('purchase').find((row) => row.payload['status'] === 'open');
@@ -170,9 +223,34 @@ export async function mockShoppingApi(
             line.payload['purchaseId'] === purchase.id &&
             line.payload['productId'] === body['productId'],
         );
-        if (twin) return { status: 409, type: `${PROBLEM_BASE}shopping-duplicate` };
-        put('purchaseItem', id, { ...body, purchaseId: purchase.id, deleted: false });
-        return { status: 200 };
+        const only = body['only'];
+        if (twin && !known) {
+          // Junta: "peguei" vence, a maior quantidade, e o preço se a linha que chega mexeu nele.
+          merged.set(id, twin.id);
+          const price = only !== 'picked' && body['unitPrice'] != null;
+          put('purchaseItem', twin.id, {
+            ...twin.payload,
+            picked:
+              twin.payload['picked'] === true || (only !== 'price' && body['picked'] === true),
+            quantity: Math.max(Number(twin.payload['quantity']), Number(body['quantity'])),
+            ...(price ? { unitPrice: body['unitPrice'] } : {}),
+          });
+          return { status: 200, entityId: twin.id };
+        }
+        // Na linha que nasce aqui, o que a pessoa não mexeu entra neutro; na que existe, só muda o que ela mexeu.
+        const base = known ? known.payload : { unitPrice: null, picked: false };
+        const fields: Record<string, unknown> = { ...body };
+        delete fields['only'];
+        put('purchaseItem', id, {
+          ...base,
+          ...fields,
+          ...(only === 'picked' ? { unitPrice: base['unitPrice'] ?? null } : {}),
+          ...(only === 'price' ? { picked: base['picked'] === true } : {}),
+          ...(only && known ? { quantity: base['quantity'] } : {}),
+          purchaseId: purchase.id,
+          deleted: false,
+        });
+        return { status: 200, entityId: id };
       }
       default:
         return { status: 400 };
@@ -252,6 +330,7 @@ export async function mockShoppingApi(
             status: result.status,
             type: result.type ?? null,
             openPurchaseId: result.openPurchaseId ?? null,
+            entityId: result.entityId ?? null,
           };
         }),
       );

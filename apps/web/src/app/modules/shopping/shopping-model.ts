@@ -79,6 +79,11 @@ export interface PendingOperation {
   readonly purchaseId?: string;
   readonly body: Readonly<Record<string, unknown>>;
   readonly createdAt: number;
+  /**
+   * Já saiu do aparelho ao menos uma vez (gravado antes do envio). Sem resposta não dá para saber se o servidor a
+   * aplicou, então ela não é mais descartada junto com o "apagar" do mesmo registro (ver `ShoppingStore.enqueue`).
+   */
+  readonly sent?: true;
 }
 
 export function emptySnapshot(): Snapshot {
@@ -134,15 +139,19 @@ export function applyOperation(snapshot: Snapshot, operation: PendingOperation):
         deleted: body['deleted'] === true,
       });
     }
-    case 'listItem':
+    case 'listItem': {
+      // Num item que já existe, `only: 'needed'` mexe só no "precisa": a quantidade e a observação ficam como estão.
+      const current = snapshot.listItems.get(id);
+      const kept = body['only'] === 'needed' && current && !current.deleted ? current : null;
       return withEntity(snapshot, 'listItem', {
         id,
         productId: String(body['productId']),
-        quantity: Number(body['quantity'] ?? 1),
-        note: (body['note'] as string | undefined) ?? null,
+        quantity: kept ? kept.quantity : Number(body['quantity'] ?? 1),
+        note: kept ? (kept.note ?? null) : ((body['note'] as string | undefined) ?? null),
         needed: body['needed'] === true,
         deleted: body['deleted'] === true,
       });
+    }
     case 'openPurchase':
       // As linhas da compra nascem no servidor; até ele responder, a compra aparece aberta e as linhas saem da lista.
       // Com outra compra já aberta no grupo, esta não aparece: o servidor só aceita uma, e é nela que tudo vai parar.
@@ -164,16 +173,25 @@ export function applyOperation(snapshot: Snapshot, operation: PendingOperation):
           })
         : snapshot;
     }
-    case 'purchaseItem':
+    case 'purchaseItem': {
+      // `only` diz o que a pessoa mudou ("peguei" ou o preço); o resto fica como está, para o toque de uma pessoa não
+      // apagar o preço que outra digitou. Na linha que nasce aqui, o que ela não mexeu entra neutro, como no servidor.
+      const current = snapshot.purchaseItems.get(id);
+      const only = body['only'];
+      const kept = current && !current.deleted ? current : null;
       return withEntity(snapshot, 'purchaseItem', {
         id,
         purchaseId: operation.purchaseId ?? '',
         productId: String(body['productId']),
-        quantity: Number(body['quantity'] ?? 1),
-        unitPrice: (body['unitPrice'] as number | undefined) ?? null,
-        picked: body['picked'] === true,
+        quantity: only && kept ? kept.quantity : Number(body['quantity'] ?? 1),
+        unitPrice:
+          only === 'picked'
+            ? (kept?.unitPrice ?? null)
+            : ((body['unitPrice'] as number | undefined) ?? null),
+        picked: only === 'price' ? (kept?.picked ?? false) : body['picked'] === true,
         deleted: body['deleted'] === true,
       });
+    }
     case 'closePurchase': {
       const purchase = snapshot.purchases.get(id);
       if (!purchase || purchase.status === 'closed') return snapshot;
@@ -386,6 +404,52 @@ export function adoptPurchase(
     }
   }
   return { changed, dropped };
+}
+
+/**
+ * A escrita com os ids que o servidor disse que valem: o registro dela e o produto a que ela se refere. Devolve a mesma
+ * escrita quando nada muda.
+ */
+export function withIds(
+  operation: PendingOperation,
+  ids: ReadonlyMap<string, string>,
+): PendingOperation {
+  // O "apagar" pelo id daqui segue com ele: no servidor, apagar a cópia juntada não apaga o registro que ficou (que é de
+  // outra pessoa também). Levado ao id que vale, ele apagaria esse registro.
+  const entityId = operation.body['deleted'] === true ? undefined : ids.get(operation.entityId);
+  const productId = ids.get(String(operation.body['productId'] ?? ''));
+  if (!entityId && !productId) return operation;
+  return {
+    ...operation,
+    ...(entityId ? { entityId } : {}),
+    ...(productId ? { body: { ...operation.body, productId } } : {}),
+  };
+}
+
+/**
+ * O que acertar na fila depois de um envio. `ids`: registros criados aqui que o grupo já tinha (outro aparelho criou o
+ * mesmo produto, o mesmo item, a mesma linha) e foram juntados; as escritas que ainda esperam passam a usar o registro
+ * que vale. `purchase`: a compra aberta aqui que deu lugar à que o grupo já tinha (ver `adoptPurchase`).
+ */
+export function settleQueue(
+  pending: readonly PendingOperation[],
+  ids: ReadonlyMap<string, string>,
+  purchase: { readonly from: string; readonly to: string } | null,
+): {
+  readonly changed: readonly PendingOperation[];
+  readonly dropped: readonly PendingOperation[];
+} {
+  const changed = new Map<string, PendingOperation>();
+  const queue = pending.map((operation) => {
+    const next = withIds(operation, ids);
+    if (next !== operation) changed.set(next.id, next);
+    return next;
+  });
+  if (!purchase) return { changed: [...changed.values()], dropped: [] };
+  const adopted = adoptPurchase(queue, purchase.from, purchase.to);
+  for (const operation of adopted.changed) changed.set(operation.id, operation);
+  for (const operation of adopted.dropped) changed.delete(operation.id);
+  return { changed: [...changed.values()], dropped: adopted.dropped };
 }
 
 /**

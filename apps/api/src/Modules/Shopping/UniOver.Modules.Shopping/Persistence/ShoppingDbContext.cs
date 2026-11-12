@@ -17,6 +17,7 @@ public sealed class ShoppingDbContext(DbContextOptions<ShoppingDbContext> option
     internal DbSet<ShoppingListItem> ListItems => Set<ShoppingListItem>();
     internal DbSet<ShoppingPurchase> Purchases => Set<ShoppingPurchase>();
     internal DbSet<PurchaseItem> PurchaseItems => Set<PurchaseItem>();
+    internal DbSet<ShoppingMergedId> MergedIds => Set<ShoppingMergedId>();
     internal DbSet<ShoppingOperation> Operations => Set<ShoppingOperation>();
     internal DbSet<ShoppingChange> Changes => Set<ShoppingChange>();
     internal DbSet<ShoppingMemberAuditEntry> MemberAudit => Set<ShoppingMemberAuditEntry>();

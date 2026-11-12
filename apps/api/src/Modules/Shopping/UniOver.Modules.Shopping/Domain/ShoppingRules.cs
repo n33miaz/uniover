@@ -31,4 +31,56 @@ public static class ShoppingRules
 
     /// <summary>Dinheiro opcional (preço, teto, total): ausente ou entre zero e o que a coluna guarda.</summary>
     public static bool IsMoney(decimal? value) => value is null or (>= 0 and <= ShoppingLimits.MaxMoney);
+
+    /// <summary>
+    /// De dois textos do mesmo campo em registros juntados, qual fica: o que existe; havendo os dois, o primeiro na ordem
+    /// dos caracteres. A escolha não depende de qual aparelho chegou antes.
+    /// </summary>
+    public static string? Prefer(string? first, string? second)
+    {
+        if (string.IsNullOrEmpty(first))
+        {
+            return string.IsNullOrEmpty(second) ? first : second;
+        }
+
+        return string.IsNullOrEmpty(second) || string.CompareOrdinal(first, second) <= 0 ? first : second;
+    }
+
+    /// <summary>
+    /// Quando a pessoa fez a mudança, no relógio do servidor. O aparelho conta quando fez (<paramref name="at"/>) e quando
+    /// enviou (<paramref name="sentAt"/>), os dois no relógio dele: a diferença entre os relógios sai da conta, então um
+    /// aparelho atrasado ou adiantado não perde nem ganha por isso. Nunca fica à frente de <paramref name="now"/>; sem as
+    /// duas horas (aparelho de versão anterior), vale a hora de chegada.
+    /// </summary>
+    public static DateTimeOffset ChangedAt(DateTimeOffset? at, DateTimeOffset? sentAt, DateTimeOffset now)
+    {
+        if (at is not { } told || sentAt is not { } sent)
+        {
+            return now;
+        }
+
+        var corrected = told + (now - sent);
+        return corrected < now ? corrected : now;
+    }
+
+    /// <summary>
+    /// Grava o preço informado numa linha da compra se ele for o mais recente (no empate, o maior). Tirar o preço também
+    /// é informar; "sem preço" numa linha que já não tinha preço não informa nada e não toma o lugar de ninguém.
+    /// </summary>
+    public static void Price(PurchaseItem line, decimal? unitPrice, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        if (unitPrice is null && line.UnitPrice is null)
+        {
+            return;
+        }
+
+        if (line.PricedAt is { } known && (at < known || (at == known && (unitPrice ?? -1) < (line.UnitPrice ?? -1))))
+        {
+            return;
+        }
+
+        line.UnitPrice = unitPrice;
+        line.PricedAt = at;
+    }
 }

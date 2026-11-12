@@ -3532,6 +3532,12 @@
               "string"
             ]
           },
+          "only": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "operationId": {
             "format": "uuid",
             "type": "string"
@@ -5397,9 +5403,22 @@
       },
       "PurchaseItemRequest": {
         "properties": {
+          "at": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "deleted": {
             "default": false,
             "type": "boolean"
+          },
+          "only": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "operationId": {
             "format": "uuid",
@@ -5417,6 +5436,13 @@
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": [
               "number",
+              "string"
+            ]
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": [
+              "null",
               "string"
             ]
           },
@@ -6572,6 +6598,13 @@
       },
       "ShoppingOperationRequest": {
         "properties": {
+          "at": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "body": {
             "oneOf": [
               {
@@ -6615,6 +6648,13 @@
       },
       "ShoppingOperationResult": {
         "properties": {
+          "entityId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "openPurchaseId": {
             "format": "uuid",
             "type": [
@@ -6658,6 +6698,13 @@
             "type": [
               "null",
               "array"
+            ]
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
             ]
           }
         },
@@ -15361,6 +15408,9 @@
             },
             "description": "OK"
           },
+          "204": {
+            "description": "No Content"
+          },
           "400": {
             "content": {
               "application/problem\u002Bjson": {
@@ -15563,6 +15613,9 @@
               }
             },
             "description": "OK"
+          },
+          "204": {
+            "description": "No Content"
           },
           "400": {
             "content": {
@@ -16176,6 +16229,9 @@
               }
             },
             "description": "OK"
+          },
+          "204": {
+            "description": "No Content"
           },
           "400": {
             "content": {

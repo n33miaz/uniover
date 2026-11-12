@@ -6771,6 +6771,13 @@ export interface paths {
             'application/json': components['schemas']['ListItemResponse'];
           };
         };
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
         /** @description Bad Request */
         400: {
           headers: {
@@ -6952,6 +6959,13 @@ export interface paths {
           content: {
             'application/json': components['schemas']['ProductResponse'];
           };
+        };
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
         };
         /** @description Bad Request */
         400: {
@@ -7498,6 +7512,13 @@ export interface paths {
           content: {
             'application/json': components['schemas']['PurchaseItemResponse'];
           };
+        };
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
         };
         /** @description Bad Request */
         400: {
@@ -14473,6 +14494,7 @@ export interface components {
       deleted: boolean;
       needed: boolean;
       note: null | string;
+      only?: null | string;
       /** Format: uuid */
       operationId: string;
       /** Format: uuid */
@@ -14925,8 +14947,11 @@ export interface components {
       nextCursor: null | string;
     };
     PurchaseItemRequest: {
+      /** Format: date-time */
+      at?: null | string;
       /** @default false */
       deleted: boolean;
+      only?: null | string;
       /** Format: uuid */
       operationId: string;
       picked: boolean;
@@ -14934,6 +14959,8 @@ export interface components {
       productId: string;
       /** Format: double */
       quantity: number | string;
+      /** Format: date-time */
+      sentAt?: null | string;
       /** Format: double */
       unitPrice: null | number | string;
     };
@@ -15215,6 +15242,8 @@ export interface components {
       weightKg: null | number | string;
     };
     ShoppingOperationRequest: {
+      /** Format: date-time */
+      at?: null | string;
       body: null | components['schemas']['JsonElement'];
       /** Format: uuid */
       id: string;
@@ -15226,6 +15255,8 @@ export interface components {
     };
     ShoppingOperationResult: {
       /** Format: uuid */
+      entityId?: null | string;
+      /** Format: uuid */
       openPurchaseId: null | string;
       /** Format: uuid */
       operationId: string;
@@ -15235,6 +15266,8 @@ export interface components {
     };
     ShoppingOperationsRequest: {
       operations: null | components['schemas']['ShoppingOperationRequest'][];
+      /** Format: date-time */
+      sentAt?: null | string;
     };
     SiriCommandOk: {
       /** Format: int32 */

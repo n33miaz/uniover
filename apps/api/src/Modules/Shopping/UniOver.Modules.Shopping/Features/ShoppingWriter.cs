@@ -35,7 +35,9 @@ internal readonly record struct WriteStep(IResult Result, bool Commit)
 /// <para>
 /// A escrita abre uma transação e trava a linha do grupo. Com isso: (1) a sequência do feed sai na ordem em que as escritas
 /// do grupo assentam, então quem lê "depois do cursor X" nunca perde uma linha que assentou atrasada; (2) duas escritas no
-/// mesmo registro não se atropelam, vale a última que o servidor recebeu, não o relógio do aparelho; (3) a mesma operação
+/// mesmo registro não se atropelam, vale a última que o servidor recebeu (menos o preço da linha da compra, que vale pelo
+/// momento em que a pessoa o informou: o relógio do aparelho, descontada a diferença para o do servidor, ver
+/// <see cref="ShoppingRules.ChangedAt"/>); (3) a mesma operação
 /// enviada duas vezes ao mesmo tempo é aplicada uma vez só.
 /// </para>
 /// </summary>

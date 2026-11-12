@@ -2,7 +2,6 @@ import { signal } from '@angular/core';
 import type { ShoppingDb, StoredEntity } from './shopping-db';
 import {
   PURCHASE_ALREADY_OPEN,
-  adoptPurchase,
   alignLines,
   applyChanges,
   applyOperation,
@@ -12,12 +11,30 @@ import {
   marketRows,
   openPurchase,
   project,
+  settleQueue,
   withEntity,
+  withIds,
   type Change,
   type OperationKind,
   type PendingOperation,
   type Snapshot,
 } from './shopping-model';
+
+/** Uma pessoa do grupo, como vem no feed. */
+interface MemberRow {
+  readonly isOwner?: boolean;
+  readonly deleted?: boolean;
+}
+
+function readIds(value: unknown): readonly string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const ids: unknown = JSON.parse(value);
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Quantas operações vão num envio (o máximo que o servidor aceita). */
 export const BATCH_SIZE = 50;
@@ -29,13 +46,19 @@ export interface OperationResult {
   readonly type?: string | null;
   /** Na recusa por já haver compra aberta no grupo, qual é ela. */
   readonly openPurchaseId?: string | null;
+  /**
+   * O registro em que a operação assentou. Difere do id enviado quando o grupo já tinha aquele registro (outro aparelho
+   * criou o mesmo produto, item ou linha) e os dois foram juntados.
+   */
+  readonly entityId?: string | null;
 }
 
 /**
  * O que a tela precisa contar à pessoa sobre o último envio. `refused`: o servidor não aceitou uma mudança e ela foi
- * desfeita. `merged`: o grupo já tinha uma compra aberta, e o que foi marcado aqui passou para ela.
+ * desfeita. `merged`: o grupo já tinha uma compra aberta, e o que foi marcado aqui passou para ela. `joined`: algo criado
+ * aqui já existia no grupo e os dois viraram um só (nada se perdeu).
  */
-export type SyncNotice = 'refused' | 'merged';
+export type SyncNotice = 'refused' | 'merged' | 'joined';
 
 export interface ChangesPage {
   readonly groupId: string;
@@ -72,7 +95,8 @@ export type SyncState = 'synced' | 'pending' | 'offline' | 'attention';
  * qualquer tentativa de envio: fechar o app no meio não perde nada. O envio sai em lotes, na ordem de gravação; cada
  * operação leva o próprio UUID, então reenviar depois de uma resposta perdida não a aplica de novo. Só sai da fila o
  * que o servidor aplicou ou recusou de vez; depois do envio o feed traz o que vale, e é ele que resolve um conflito.
- * Não há temporizador: as tentativas saem ao gravar, ao abrir a tela, quando a rede volta e quando a tela reaparece.
+ * As tentativas saem ao gravar, ao abrir a tela, quando a rede volta e quando a tela reaparece; com outra pessoa no grupo
+ * (`shared`) e a tela à vista, quem a hospeda (`ShoppingSession`) também consulta o feed a cada poucos segundos.
  */
 export class ShoppingStore {
   /** O que a tela mostra: o retrato do servidor com as escritas pendentes por cima. */
@@ -90,11 +114,22 @@ export class ShoppingStore {
   readonly ready = signal(false);
   /** O preço pago da última vez, por produto, para a compra aberta. */
   readonly lastPrices = signal<ReadonlyMap<string, number>>(new Map());
+  /** Há outra pessoa neste grupo (alguém que pode estar mexendo na lista agora). */
+  readonly shared = signal(false);
+  /**
+   * Conta cada mudança vista aqui: uma escrita da pessoa ou algo novo no feed. É o que diz a quem consulta o feed que a
+   * lista está em uso (ver `LiveWatch`); a consulta que volta vazia não conta.
+   */
+  readonly activity = signal(0);
 
   private server = emptySnapshot();
   private pending: PendingOperation[] = [];
   private cursor = 0;
   private groupId: string | null = null;
+  /** As pessoas do grupo que não o criaram (para quem o criou, as outras; para as outras, elas mesmas). */
+  private others = new Set<string>();
+  /** O aparelho já leu o feed numa versão que não guardava as pessoas: elas são relidas uma vez (ver `recallOthers`). */
+  private othersUnknown = false;
   private running: Promise<void> | null = null;
   private again = false;
   private closed = false;
@@ -109,11 +144,12 @@ export class ShoppingStore {
 
   /** Lê o que ficou no aparelho: o retrato, o cursor e a fila (inclusive o que não foi enviado antes de o app fechar). */
   async load(): Promise<void> {
-    const [entities, operations, cursor, groupId] = await Promise.all([
+    const [entities, operations, cursor, groupId, others] = await Promise.all([
       this.db.entities.toArray(),
       this.db.operations.orderBy('seq').toArray(),
       this.db.meta.get('cursor'),
       this.db.meta.get('groupId'),
+      this.db.meta.get('others'),
     ]);
     let server = emptySnapshot();
     for (const row of entities) {
@@ -123,18 +159,31 @@ export class ShoppingStore {
     this.pending = operations;
     this.cursor = typeof cursor?.value === 'number' ? cursor.value : 0;
     this.groupId = typeof groupId?.value === 'string' ? groupId.value : null;
+    this.others = new Set(readIds(others?.value));
+    this.othersUnknown = others === undefined && this.cursor > 0;
+    this.shared.set(this.others.size > 0);
     this.publish();
     if (this.pending.length > 0) this.state.set(this.ports.online() ? 'pending' : 'offline');
     this.ready.set(true);
   }
 
-  /** Guarda uma escrita no aparelho e a mostra na tela; o envio é tentado em seguida, sem a tela esperar por ele. */
+  /**
+   * Guarda uma escrita no aparelho e a mostra na tela; o envio é tentado em seguida, sem a tela esperar por ele. Apagar
+   * algo que nasceu aqui e ainda não saiu do aparelho só tira da fila o que foi feito com ele (ver `dropUnsent`).
+   */
   async enqueue(
     kind: OperationKind,
     entityId: string,
     body: Readonly<Record<string, unknown>>,
     purchaseId?: string,
   ): Promise<void> {
+    this.activity.update((count) => count + 1);
+    if (body['deleted'] === true && (await this.dropUnsent(kind, entityId))) {
+      this.notice.set(null);
+      this.publish();
+      void this.sync();
+      return;
+    }
     const operation: PendingOperation = {
       id: this.ports.newId(),
       kind,
@@ -159,6 +208,70 @@ export class ShoppingStore {
     this.notice.set(null);
     this.publish();
     void this.sync();
+  }
+
+  /**
+   * Apagar o que foi criado aqui e o servidor nunca recebeu: a criação e o que veio depois dela saem da fila, e o
+   * "apagar" nem entra. Enviados, o servidor podia juntar a criação a um registro igual do grupo e o "apagar" chegaria
+   * por um id que não é mais de ninguém daqui. Só vale se nada da fila já saiu do aparelho (sem resposta não se sabe
+   * se o servidor aplicou) e se nenhuma outra escrita depende do registro (o item de um produto, por exemplo). O resto
+   * da fila fica na mesma ordem: só há remoção.
+   */
+  private async dropUnsent(kind: OperationKind, entityId: string): Promise<boolean> {
+    if (!this.unknownToServer(kind, entityId)) return false;
+    const dropped = await this.db.transaction('rw', this.db.operations, async () => {
+      const stored = await this.db.operations.orderBy('seq').toArray();
+      const mine = stored.filter(
+        (operation) => operation.kind === kind && operation.entityId === entityId,
+      );
+      const ids = new Set(mine.map((operation) => operation.id));
+      // Uma escrita deste registro que ainda está sendo gravada existe só na memória: na dúvida, nada é descartado.
+      const unsaved = this.pending.some(
+        (operation) =>
+          operation.kind === kind && operation.entityId === entityId && !ids.has(operation.id),
+      );
+      const needed = stored.some(
+        (operation) => !ids.has(operation.id) && operation.body['productId'] === entityId,
+      );
+      if (mine.length === 0 || unsaved || needed || mine.some((operation) => operation.sent)) {
+        return null;
+      }
+      await this.db.operations.bulkDelete(mine.map((operation) => operation.seq!));
+      return ids;
+    });
+    if (!dropped) return false;
+    this.pending = this.pending.filter((operation) => !dropped.has(operation.id));
+    return true;
+  }
+
+  private unknownToServer(kind: OperationKind, entityId: string): boolean {
+    switch (kind) {
+      case 'product':
+        return !this.server.products.has(entityId);
+      case 'listItem':
+        return !this.server.listItems.has(entityId);
+      case 'purchaseItem':
+        return !this.server.purchaseItems.has(entityId);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Marca o lote como enviado antes de enviá-lo, numa transação: o que `dropUnsent` descartou antes dela não sai, e o
+   * que sai já não pode ser descartado. Devolve o lote como está gravado agora.
+   */
+  private async markSent(batch: readonly PendingOperation[]): Promise<PendingOperation[]> {
+    return this.db.transaction('rw', this.db.operations, async () => {
+      const current = (
+        await this.db.operations.bulkGet(batch.map((operation) => operation.seq!))
+      ).filter((operation): operation is PendingOperation => operation !== undefined);
+      const marked = current.map((operation) =>
+        operation.sent ? operation : { ...operation, sent: true as const },
+      );
+      await this.db.operations.bulkPut(marked);
+      return marked;
+    });
   }
 
   /** Envia a fila e traz o feed. Uma execução por vez; um pedido que chega durante outra roda logo depois dela. */
@@ -231,20 +344,28 @@ export class ShoppingStore {
       }
       aligned = false;
 
-      const results = await this.transport.send(batch);
+      const sending = await this.markSent(batch);
+      if (sending.length === 0) continue;
+      const results = await this.transport.send(sending);
       const byId = new Map(results.map((result) => [result.operationId, result]));
       // Sem desfecho na resposta, a operação fica: só sai da fila o que o servidor disse ter aplicado ou recusado.
-      const settled = batch.filter(
+      const settled = sending.filter(
         (operation) => classifyResult(byId.get(operation.id)?.status ?? 0) !== 'retry',
       );
       let adopt: { readonly from: string; readonly to: string } | null = null;
       let notice: SyncNotice | null = null;
+      // O que foi criado aqui e o grupo já tinha: o servidor juntou os dois e disse qual registro vale.
+      const ids = new Map<string, string>();
       for (const operation of settled) {
         const result = byId.get(operation.id)!;
         if (classifyResult(result.status) !== 'refused') {
+          if (result.entityId && result.entityId !== operation.entityId) {
+            ids.set(operation.entityId, result.entityId);
+          }
           // Aplicada: o retrato já a mostra, sem esperar o feed. Senão, entre sair da fila e o feed chegar, o que a
-          // pessoa acabou de fazer sumiria da tela por um instante (e um campo em uso seria refeito, vazio).
-          this.server = applyOperation(this.server, operation);
+          // pessoa acabou de fazer sumiria da tela por um instante (e um campo em uso seria refeito, vazio). Ela entra
+          // com os ids que valem: com o id daqui, o registro juntado apareceria duas vezes.
+          this.server = applyOperation(this.server, withIds(operation, ids));
           continue;
         }
         const open = result.openPurchaseId;
@@ -266,26 +387,28 @@ export class ShoppingStore {
       const purchase = adopt;
       await this.db.transaction('rw', this.db.operations, async () => {
         await this.db.operations.bulkDelete(settled.map((operation) => operation.seq!));
-        if (!purchase) return;
+        if (!purchase && ids.size === 0) return;
         const stored = await this.db.operations.orderBy('seq').toArray();
-        const adopted = adoptPurchase(stored, purchase.from, purchase.to);
-        await this.db.operations.bulkDelete(adopted.dropped.map((operation) => operation.seq!));
-        await this.db.operations.bulkPut([...adopted.changed]);
+        const saved = settleQueue(stored, ids, purchase);
+        await this.db.operations.bulkDelete(saved.dropped.map((operation) => operation.seq!));
+        await this.db.operations.bulkPut([...saved.changed]);
       });
-      let moved = new Map<string, PendingOperation>();
-      if (purchase) {
-        const adopted = adoptPurchase(this.pending, purchase.from, purchase.to);
-        for (const operation of adopted.dropped) gone.add(operation.id);
-        moved = new Map(adopted.changed.map((operation) => [operation.id, operation]));
-        // Só há o que contar se algo mudou de compra: a abertura repetida da própria compra não é notícia.
-        if (moved.size > 0 || adopted.dropped.length > 0) notice ??= 'merged';
-      }
+      const waiting = settleQueue(
+        this.pending.filter((operation) => !gone.has(operation.id)),
+        ids,
+        purchase,
+      );
+      for (const operation of waiting.dropped) gone.add(operation.id);
+      const moved = new Map(waiting.changed.map((operation) => [operation.id, operation]));
+      // Só há o que contar se algo mudou de compra: a abertura repetida da própria compra não é notícia.
+      if (purchase && (moved.size > 0 || waiting.dropped.length > 0)) notice ??= 'merged';
+      if (ids.size > 0) notice ??= 'joined';
       this.pending = this.pending
         .filter((operation) => !gone.has(operation.id))
         .map((operation) => moved.get(operation.id) ?? operation);
       if (notice) this.notice.set(notice);
       this.publish();
-      if (settled.length < batch.length) return false;
+      if (settled.length < sending.length) return false;
     }
   }
 
@@ -318,6 +441,7 @@ export class ShoppingStore {
 
   /** Traz o feed depois do cursor. O retrato e o cursor são gravados juntos: ou os dois avançam, ou nenhum. */
   private async pull(): Promise<void> {
+    if (this.othersUnknown) await this.recallOthers();
     for (;;) {
       const page = await this.transport.changes(this.cursor);
       if (this.groupId !== null && page.groupId !== this.groupId && this.cursor > 0) {
@@ -341,13 +465,24 @@ export class ShoppingStore {
           });
         }
       }
+      if (page.items.length > 0) this.activity.update((count) => count + 1);
+      const others = new Set(this.others);
+      for (const change of page.items) {
+        const member = change.entityType === 'member' ? (change.payload as MemberRow | null) : null;
+        if (!member || member.isOwner) continue;
+        if (member.deleted) others.delete(change.entityId);
+        else others.add(change.entityId);
+      }
       await this.db.transaction('rw', this.db.entities, this.db.meta, async () => {
         await this.db.entities.bulkPut(rows);
         await this.db.meta.bulkPut([
           { key: 'cursor', value: page.nextCursor },
           { key: 'groupId', value: page.groupId },
+          { key: 'others', value: JSON.stringify([...others]) },
         ]);
       });
+      this.others = others;
+      this.shared.set(others.size > 0);
       this.server = applyChanges(this.server, page.items);
       this.cursor = page.nextCursor;
       this.groupId = page.groupId;
@@ -358,14 +493,41 @@ export class ShoppingStore {
     }
   }
 
+  /**
+   * As pessoas do grupo, relidas do começo do feed: só acontece uma vez, no aparelho que já tinha passado por elas
+   * antes de o app guardá-las. Nada do retrato muda; reler é só olhar de novo o que o servidor já contou.
+   */
+  private async recallOthers(): Promise<void> {
+    const others = new Set<string>();
+    let after = 0;
+    for (;;) {
+      const page = await this.transport.changes(after);
+      for (const change of page.items) {
+        const member = change.entityType === 'member' ? (change.payload as MemberRow | null) : null;
+        if (!member || member.isOwner) continue;
+        if (member.deleted) others.delete(change.entityId);
+        else others.add(change.entityId);
+      }
+      after = page.nextCursor;
+      if (!page.hasMore) break;
+    }
+    await this.db.meta.put({ key: 'others', value: JSON.stringify([...others]) });
+    this.others = others;
+    this.othersUnknown = false;
+    this.shared.set(others.size > 0);
+  }
+
   private async reset(groupId: string): Promise<void> {
     await this.db.transaction('rw', this.db.entities, this.db.meta, async () => {
       await this.db.entities.clear();
       await this.db.meta.bulkPut([
         { key: 'cursor', value: 0 },
         { key: 'groupId', value: groupId },
+        { key: 'others', value: '[]' },
       ]);
     });
+    this.others = new Set();
+    this.shared.set(false);
     this.server = emptySnapshot();
     this.cursor = 0;
     this.groupId = groupId;

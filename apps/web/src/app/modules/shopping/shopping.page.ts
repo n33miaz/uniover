@@ -74,6 +74,8 @@ export class ShoppingPage {
         return $localize`:@@shopping.notice.refused:Uma mudança não foi aceita e foi desfeita. Confira a lista.`;
       case 'merged':
         return $localize`:@@shopping.notice.merged:Já havia uma compra aberta. O que você marcou foi para ela.`;
+      case 'joined':
+        return $localize`:@@shopping.notice.joined:Juntamos itens repetidos.`;
       default:
         return null;
     }
@@ -126,6 +128,7 @@ export class ShoppingPage {
       quantity: item?.quantity ?? 1,
       note: item?.note ?? null,
       needed: true,
+      only: 'needed',
     });
   }
 
@@ -136,6 +139,7 @@ export class ShoppingPage {
       quantity: row.item.quantity,
       note: row.item.note ?? null,
       needed: false,
+      only: 'needed',
     });
   }
 
@@ -188,10 +192,18 @@ export class ShoppingPage {
       const now = this.rows().find((row) => row.product.id === productId);
       const wanted = purchase && now ? change(now) : null;
       if (!purchase || !now || !wanted) return;
+      // O servidor fica sabendo o que a pessoa mudou, e só mexe nisso: o toque em "peguei" não leva junto o preço que
+      // este aparelho tinha (outra pessoa pode ter digitado um mais novo), nem o preço leva o "peguei".
+      const only =
+        wanted.unitPrice === now.unitPrice
+          ? { only: 'picked' }
+          : wanted.picked === now.picked
+            ? { only: 'price' }
+            : {};
       await this.store()?.enqueue(
         'purchaseItem',
         now.lineId ?? uuidV7(),
-        { productId, quantity: now.quantity, ...wanted },
+        { productId, quantity: now.quantity, ...wanted, ...only },
         purchase.id,
       );
     });

@@ -141,10 +141,10 @@ public sealed class ShoppingEndpointsTests(PostgresFixture postgres)
         var owner = new ShoppingClient(app, (await app.LoginAsync()).AccessToken);
         var sugar = await owner.NewProductAsync("Açúcar");
 
-        using (var duplicate = await owner.WriteAsync(HttpMethod.Put, $"/products/{Guid.NewGuid()}", new() { ["name"] = " acucar " }))
-        {
-            duplicate.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        }
+        // O mesmo nome criado de novo (outro aparelho, sem sinal) não vira um segundo produto: a resposta é o que já existe.
+        var again = await ShoppingClient.OkAsync(owner.WriteAsync(HttpMethod.Put, $"/products/{Guid.NewGuid()}", new() { ["name"] = " acucar " }));
+        again.GetProperty("id").GetGuid().Should().Be(sugar);
+        again.GetProperty("name").GetString().Should().Be("Açúcar");
 
         using (var missing = await owner.WriteAsync(HttpMethod.Put, $"/products/{Guid.NewGuid()}", new() { ["deleted"] = true }))
         {

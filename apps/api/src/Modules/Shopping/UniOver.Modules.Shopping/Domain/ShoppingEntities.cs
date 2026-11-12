@@ -74,9 +74,27 @@ public sealed class PurchaseItem
     public decimal Quantity { get; set; }
     public decimal? UnitPrice { get; set; }
     public bool Picked { get; set; }
+
+    /// <summary>Quando o preço foi informado (o relógio do aparelho, nunca à frente do servidor). Entre dois preços, vale o mais recente.</summary>
+    public DateTimeOffset? PricedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+}
+
+/// <summary>
+/// Um id criado num aparelho sem sinal para algo que o grupo já tinha (o mesmo produto, o mesmo item da lista, a mesma
+/// linha da compra). O registro foi juntado ao que existia; quem ainda usa o id antigo é levado ao que vale.
+/// </summary>
+public sealed class ShoppingMergedId
+{
+    public Guid GroupId { get; set; }
+
+    /// <summary>De que espécie é o registro (produto, item da lista, linha da compra): um id juntado só vale na própria.</summary>
+    public string EntityType { get; set; } = string.Empty;
+    public Guid MergedId { get; set; }
+    public Guid CanonicalId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>
