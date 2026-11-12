@@ -4,6 +4,7 @@ export type TvStateV1BodyPower = 'on' | 'off' | 'unknown';
 export type TvStateV1BodyConnection =
   'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking';
 export type TvStateV1BodyAdbPermission = 'granted' | 'missing' | 'pending';
+export type TvStateV1BodyWakeHintsItem = 'screenless_off' | 'replug';
 
 /**
  * Agente para API: estado atual da TV.
@@ -25,4 +26,10 @@ export interface TvStateV1Body {
   connection: TvStateV1BodyConnection;
   adbPermission?: TvStateV1BodyAdbPermission;
   adbPermissionReason?: string;
+  /**
+   * @minItems 1
+   * @maxItems 2
+   */
+  wakeHints?:
+    [TvStateV1BodyWakeHintsItem] | [TvStateV1BodyWakeHintsItem, TvStateV1BodyWakeHintsItem];
 }

@@ -30,6 +30,12 @@ class TvStateV1BodyAdbPermission(RootModel[Literal['granted', 'missing', 'pendin
     ]
 
 
+class TvStateV1BodyWakeHintsItem(RootModel[Literal['screenless_off', 'replug']]):
+    root: Annotated[
+        Literal['screenless_off', 'replug'], Field(title='TvStateV1BodyWakeHintsItem')
+    ]
+
+
 class TvStateV1Body(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -44,6 +50,9 @@ class TvStateV1Body(BaseModel):
         TvStateV1BodyAdbPermission | None, Field(title='TvStateV1BodyAdbPermission')
     ] = None
     adbPermissionReason: Annotated[str | None, Field(pattern='^[a-z_]{1,32}$')] = None
+    wakeHints: Annotated[
+        list[TvStateV1BodyWakeHintsItem] | None, Field(max_length=2, min_length=1)
+    ] = None
 
 
 class TvStateV1Message(BaseModel):

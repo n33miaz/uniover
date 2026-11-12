@@ -66,6 +66,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
         [JsonPropertyName("volume")]
         public long? Volume { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("wakeHints")]
+        public TvStateV1BodyWakeHintsItem[]? WakeHints { get; set; }
     }
 
     public enum TvStateV1BodyAdbPermission { Granted, Missing, Pending };
@@ -73,6 +77,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     public enum TvStateV1BodyConnection { Disconnected, Hibernating, Hot, NotPaired, Waking };
 
     public enum TvStateV1BodyPower { Off, On, Unknown };
+
+    public enum TvStateV1BodyWakeHintsItem { Replug, ScreenlessOff };
 
     public partial class TvStateV1Message
     {
@@ -93,6 +99,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                 TvStateV1MessageTvStateV1BodyAdbPermissionConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyConnectionConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyPowerConverter.Singleton,
+                TvStateV1MessageTvStateV1BodyWakeHintsItemConverter.Singleton,
                 TvStateV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
@@ -223,6 +230,40 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         }
 
         public static readonly TvStateV1MessageTvStateV1BodyPowerConverter Singleton = new TvStateV1MessageTvStateV1BodyPowerConverter();
+    }
+
+    internal class TvStateV1MessageTvStateV1BodyWakeHintsItemConverter : JsonConverter<TvStateV1BodyWakeHintsItem>
+    {
+        public override bool CanConvert(Type t) => t == typeof(TvStateV1BodyWakeHintsItem);
+
+        public override TvStateV1BodyWakeHintsItem Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "replug":
+                    return TvStateV1BodyWakeHintsItem.Replug;
+                case "screenless_off":
+                    return TvStateV1BodyWakeHintsItem.ScreenlessOff;
+            }
+            throw new Exception("Cannot unmarshal type TvStateV1BodyWakeHintsItem");
+        }
+
+        public override void Write(Utf8JsonWriter writer, TvStateV1BodyWakeHintsItem value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case TvStateV1BodyWakeHintsItem.Replug:
+                    JsonSerializer.Serialize(writer, "replug", options);
+                    return;
+                case TvStateV1BodyWakeHintsItem.ScreenlessOff:
+                    JsonSerializer.Serialize(writer, "screenless_off", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type TvStateV1BodyWakeHintsItem");
+        }
+
+        public static readonly TvStateV1MessageTvStateV1BodyWakeHintsItemConverter Singleton = new TvStateV1MessageTvStateV1BodyWakeHintsItemConverter();
     }
 
     internal class TvStateV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>
