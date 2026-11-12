@@ -23,7 +23,17 @@ import { PwaUpdateService } from './pwa-update.service';
         <div class="ui-collapse" [animate.leave]="'leaving'">
           <div class="ui-collapse-inner">
             <div class="banner">
-              @if (pwa.navigationBlocked()) {
+              @if (pwa.updateError()) {
+                <span role="alert">
+                  @if (pwa.updateHeldByTabs()) {
+                    <span i18n="@@pwa.update-failed-tabs"
+                      >Não deu para atualizar. Feche as outras abas do UniOver.</span
+                    >
+                  } @else {
+                    <span i18n="@@pwa.update-failed">Não deu para atualizar agora.</span>
+                  }
+                </span>
+              } @else if (pwa.navigationBlocked()) {
                 <span i18n="@@pwa.update-blocked"
                   >Há uma versão nova: salve ou descarte para continuar</span
                 >
@@ -42,16 +52,13 @@ import { PwaUpdateService } from './pwa-update.service';
               >
                 @if (pwa.applyingUpdate() || pwa.updateDeciding()) {
                   <span i18n="@@pwa.updating">Atualizando…</span>
+                } @else if (pwa.updateError()) {
+                  <span i18n="@@pwa.update-retry">Tentar de Novo</span>
                 } @else {
                   <span i18n="@@pwa.update">Atualizar</span>
                 }
               </button>
             </div>
-            @if (pwa.updateError()) {
-              <p class="error" role="alert" i18n="@@pwa.update-error">
-                Não foi possível ativar a nova versão. Tente novamente.
-              </p>
-            }
           </div>
         </div>
       }
@@ -155,13 +162,6 @@ import { PwaUpdateService } from './pwa-update.service';
       font: inherit;
       font-weight: 600;
       cursor: pointer;
-    }
-    .error {
-      margin: 0;
-      padding: 4px var(--gutter) 8px;
-      background: var(--a-accent-soft);
-      color: var(--a-ink);
-      font-size: var(--fs-small);
     }
   `,
 })

@@ -96,7 +96,8 @@ test.beforeEach(async ({ page }) => {
   await setControl('/owner?on=0');
 });
 
-test.afterEach(async ({}, info) => {
+test.afterEach(async () => {
+  const info = test.info();
   await info.attach('diagnostico', { body: diagnostics.join('\n') || '(nada)' });
   if (info.status !== info.expectedStatus)
     console.log(`[diagnostico] ${info.title}\n${diagnostics.join('\n')}`);
@@ -379,6 +380,99 @@ test.describe('atualização quando o worker novo demora ou é substituído', ()
     // O toque deixa a página sob o worker mais novo: nada esperando e nenhum aviso de versão.
     await expect(banner(page)).toHaveCount(0);
     await expect.poll(async () => (await registrationState(page)).waiting).toBeNull();
+  });
+
+  /** Duas abas do dono abertas na Início, já sob o worker (os pedidos delas, e o fluxo de eventos, nascem com ele no comando). */
+  async function openTwoOwnerTabs(page: Page, context: BrowserContext): Promise<string> {
+    await setControl('/owner?on=1');
+    await openVersionA(page);
+    await page.reload();
+    await expect(homeCards(page).first()).toBeVisible();
+    const other = await context.newPage();
+    await other.goto(`${origin}/`);
+    await expect(homeCards(other).first()).toBeVisible();
+    await page.bringToFront();
+    return mainScript(page);
+  }
+
+  /**
+   * O defeito do dono (12/11, "cliquei umas 3 vezes e depois de carregar a notificação volta"): com o fluxo de eventos da
+   * TV aberto, o worker antigo tinha sempre um pedido em curso (ele repassava a API) e, no Chrome, o worker novo não assume
+   * enquanto isso. O prazo de 8 s estourava e, com outra aba aberta (o registro não pode ser desfeito), a página recarregava
+   * sob o worker antigo: casca antiga, aviso de volta, a cada toque. Agora a API não passa pelo worker e um toque basta.
+   */
+  test('com outra aba aberta e o fluxo de eventos ligado, um toque troca a versão sem estourar o prazo', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    const before = await openTwoOwnerTabs(page, context);
+
+    await setControl('/use?v=b');
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect(banner(page)).toBeVisible({ timeout: BANNER_TIMEOUT_MS });
+
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    const tappedAt = Date.now();
+    await banner(page).getByRole('button', { name: 'Atualizar' }).click();
+    await expect
+      .poll(() => page.evaluate(() => performance.timeOrigin).catch(() => timeOrigin), {
+        message: 'a página recarregou',
+        timeout: 20_000,
+      })
+      .not.toBe(timeOrigin);
+    // Bem abaixo do prazo de ativação (8 s): o worker novo assumiu assim que foi pedido.
+    expect(Date.now() - tappedAt).toBeLessThan(7_500);
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 20_000 });
+    expect(await mainScript(page)).not.toBe(before);
+    await expect(banner(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Tentar de Novo' })).toHaveCount(0);
+  });
+
+  /**
+   * A atualização que não termina nunca vira laço: com outra aba aberta e o worker novo sem assumir no prazo, a página
+   * não recarrega na versão antiga. O aviso diz uma vez que não deu, com "Tentar de Novo", e quando o worker enfim assume
+   * a página recarrega sozinha, uma vez, já na versão nova.
+   */
+  test('worker novo que não obedece com outra aba aberta: avisa uma vez, sem recarregar na versão antiga', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+    const before = await openTwoOwnerTabs(page, context);
+
+    await setControl('/use?v=b');
+    await setControl('/sw-delay?ms=25000');
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect(banner(page)).toBeVisible({ timeout: BANNER_TIMEOUT_MS });
+
+    let documents = 0;
+    page.on('load', () => documents++);
+    await banner(page).getByRole('button', { name: 'Atualizar' }).click();
+    const retry = page.getByRole('button', { name: 'Tentar de Novo' });
+    await expect(retry).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('alert')).toHaveText(
+      'Não deu para atualizar. Feche as outras abas do UniOver.',
+    );
+    await expect(skeleton(page)).toHaveCount(0);
+    await expect(banner(page)).toHaveCount(0);
+    expect(documents).toBe(0);
+    expect(await mainScript(page)).toBe(before);
+
+    // O pedido de troca ficou de pé: quando o worker novo enfim obedece, a página recarrega uma vez e fica na versão nova.
+    await expect
+      .poll(() => mainScript(page).catch(() => before), { timeout: 40_000 })
+      .not.toBe(before);
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 20_000 });
+    await expect(retry).toHaveCount(0);
+    await expect(banner(page)).toHaveCount(0);
+    expect(documents).toBe(1);
   });
 });
 

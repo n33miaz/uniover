@@ -181,7 +181,13 @@ export class PwaUpdateService {
 
   readonly updateReady = signal(false);
   readonly applyingUpdate = signal(false);
+  /**
+   * A atualização pedida não terminou: o worker novo não assumiu a página e recarregar só devolveria a versão antiga (e o
+   * aviso, em laço). O aviso diz isso uma vez e oferece "Tentar de Novo"; nada tenta de novo sozinho.
+   */
   readonly updateError = signal(false);
+  /** A atualização não terminou porque há outra aba do app aberta (o aviso pede para fechá-la). */
+  readonly updateHeldByTabs = signal(false);
   /** O toque no aviso com trabalho não salvo (nesta aba ou noutra) abre a confirmação antes de recarregar. */
   readonly confirmingUpdate = signal<UpdateConfirmation | null>(null);
   /**
@@ -398,6 +404,8 @@ export class PwaUpdateService {
   private canApplyAutomatically(win: Window, registration: ServiceWorkerRegistration): boolean {
     if (this.applying || this.deciding || this.reloading || this.checking) return false;
     if (this.bootRefreshing() || this.confirmingUpdate() !== null) return false;
+    // Uma troca que já falhou nesta página só se repete pelo toque em "Tentar de Novo".
+    if (this.updateError()) return false;
     const waiting = registration.waiting;
     const controller = win.navigator.serviceWorker?.controller ?? null;
     // Sem worker no comando é a primeira instalação; com o próprio worker esperando no comando, ele é a versão atual.
@@ -497,6 +505,7 @@ export class PwaUpdateService {
   private proceed(): void {
     this.confirmingUpdate.set(null);
     this.updateError.set(false);
+    this.updateHeldByTabs.set(false);
     this.cancelDeferral();
     // `refreshByTap` liga `applyingUpdate` na hora, então não há intervalo em que o botão volte a "Atualizar".
     void this.refreshByTap();
@@ -777,6 +786,12 @@ export class PwaUpdateService {
   /**
    * O toque confirmado: faz o worker novo assumir a página, limpa os caches de execução e recarrega (último recurso: se o
    * worker não assumiu, desfaz o registro para a recarga vir da rede). É a única via que ativa um worker que espera.
+   *
+   * A página só recarrega quando a recarga traz a versão nova. Se o worker novo não assumiu e o registro não pôde ser desfeito
+   * (outra aba aberta, rede fora), recarregar sob o worker antigo devolveria a casca antiga com o mesmo aviso, e cada toque
+   * repetiria isso. Então a tela volta para a pessoa com o aviso de que não deu (`updateError`), sem recarga e sem nova
+   * tentativa automática. O pedido de troca continua de pé no worker: se ele assumir depois, a página recarrega sozinha, uma
+   * vez (`onControllerChange`).
    */
   private async refreshByTap(): Promise<void> {
     this.applying = true;
@@ -785,15 +800,37 @@ export class PwaUpdateService {
     try {
       tookOver = await this.takeOverNewWorker();
     } catch {
-      // Qualquer tropeço aqui ainda termina na recarga abaixo: o toque nunca vira um beco sem saída.
+      // Um tropeço aqui conta como "não assumiu": o último recurso abaixo decide.
     }
     await this.clearRuntimeCaches();
-    // Último recurso: o worker novo não assumiu. Recarregar sob o worker antigo só devolve a casca antiga (ele a serve do
-    // próprio precache) e o aviso voltaria; então o registro é desfeito para a recarga vir da rede e a página nova
-    // registrar o worker de novo.
-    // Desfazer o registro e o precache quebra os pedaços das outras abas: só com uma aba aberta (ver `otherTabsMayBeOpen`).
-    if (!tookOver && !(await this.otherTabsMayBeOpen())) await this.dropStaleWorker();
+    if (!tookOver) {
+      // Desfazer o registro e o precache quebra os pedaços das outras abas: só com uma aba aberta (ver `otherTabsMayBeOpen`).
+      const others = await this.otherTabsMayBeOpen();
+      const outcome = others ? this.pendingWorkerOutcome() : await this.dropStaleWorker();
+      if (outcome === 'kept') {
+        this.failUpdate(others);
+        return;
+      }
+    }
     this.reload();
+  }
+
+  /** Sem desfazer nada: há um worker mais novo esperando ou instalando (que a recarga não ativaria)? */
+  private pendingWorkerOutcome(): 'kept' | 'nothing-newer' {
+    const registration = this.registration;
+    return registration && (registration.waiting || registration.installing)
+      ? 'kept'
+      : 'nothing-newer';
+  }
+
+  /** A atualização não terminou: devolve a tela, com o aviso dizendo isso uma vez. */
+  private failUpdate(heldByTabs: boolean): void {
+    this.applying = false;
+    this.applyingUpdate.set(false);
+    this.noticeFromDeferral = false;
+    this.updateReady.set(true);
+    this.updateHeldByTabs.set(heldByTabs);
+    this.updateError.set(true);
   }
 
   /**
@@ -922,15 +959,19 @@ export class PwaUpdateService {
    * saber se a rede responde de verdade. Só desregistrar não basta: o registro continua valendo para esta página até ela
    * fechar e a recarga ainda seria servida do precache antigo; sem o precache o worker busca a página na rede, e a
    * página nova registra o worker de novo (que remonta o precache).
+   *
+   * Devolve o que aconteceu: `dropped` (registro e precache desfeitos, a recarga vem da rede), `nothing-newer` (não há
+   * worker mais novo, o atual é o certo) ou `kept` (há um mais novo, mas o antigo ficou: uma recarga devolveria a casca antiga).
    */
-  private async dropStaleWorker(): Promise<void> {
+  private async dropStaleWorker(): Promise<'dropped' | 'nothing-newer' | 'kept'> {
     const win = this.win;
     const registration = this.registration;
-    if (!win || !registration || typeof win.fetch !== 'function') return;
+    if (!win || !registration) return 'nothing-newer';
+    if (typeof win.fetch !== 'function') return 'kept';
     try {
       // Sem nenhum worker mais novo (esperando, instalando ou achado agora) não há o que desfazer: o worker atual é o certo e
       // o precache dele é o que abre o app sem rede.
-      if (!(await this.newerWorkerExists(registration))) return;
+      if (!(await this.newerWorkerExists(registration))) return 'nothing-newer';
       const reachable = await this.withTimeout(
         win
           .fetch('/health/version', { cache: 'no-store', credentials: 'same-origin' })
@@ -938,13 +979,14 @@ export class PwaUpdateService {
           .catch(() => false),
         UPDATE_CACHE_CLEAR_TIMEOUT_MS,
       );
-      if (!reachable) return;
+      if (!reachable) return 'kept';
       await this.withTimeout(registration.unregister(), UPDATE_CACHE_CLEAR_TIMEOUT_MS);
       // Sem registro, `checkForUpdate` registra de novo (a recarga que segue também o faz).
       this.registration = undefined;
       await this.deleteCaches((name) => name.startsWith('workbox-precache'));
+      return 'dropped';
     } catch {
-      // Sem desfazer o worker a recarga ainda acontece.
+      return 'kept';
     }
   }
 

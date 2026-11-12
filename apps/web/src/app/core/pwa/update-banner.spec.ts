@@ -84,16 +84,36 @@ describe('UpdateBanner', () => {
     service.applyingUpdate.set(true);
     await fixture.whenStable();
 
-    expect(el.querySelector('.error')).toBeNull();
+    expect(el.querySelector('[role="alert"]')).toBeNull();
     expect(el.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true);
     expect(el.textContent).toContain('Atualizando…');
 
     service.applyingUpdate.set(false);
     service.updateError.set(true);
     await fixture.whenStable();
-    expect(el.querySelector('.error')?.textContent).toContain(
-      'Não foi possível ativar a nova versão',
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain(
+      'Não deu para atualizar agora.',
     );
+  });
+
+  it('says once that the update did not finish and offers "Tentar de Novo" instead of the plain notice', async () => {
+    const { service, fixture, el } = mount();
+    const apply = vi.spyOn(service, 'applyUpdate').mockResolvedValue();
+    service.updateReady.set(true);
+    service.updateHeldByTabs.set(true);
+    service.updateError.set(true);
+    await fixture.whenStable();
+
+    expect(el.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(el.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+      'Não deu para atualizar. Feche as outras abas do UniOver.',
+    );
+    expect(el.textContent).not.toContain('Nova versão disponível');
+    const button = el.querySelector<HTMLButtonElement>('button')!;
+    expect(button.textContent?.trim()).toBe('Tentar de Novo');
+    expect(button.disabled).toBe(false);
+    button.click();
+    expect(apply).toHaveBeenCalledTimes(1);
   });
 
   describe('the confirmation dialog', () => {
