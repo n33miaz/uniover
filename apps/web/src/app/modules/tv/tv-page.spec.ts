@@ -196,14 +196,14 @@ describe('TvPage', () => {
     it('shows an error as an alert and an info as a status', async () => {
       store.notice.set({ kind: 'error', text: 'A TV não respondeu a tempo.' });
       await render();
-      expect(root.querySelector('.toast[role="alert"]')?.textContent).toBe(
+      expect(root.querySelector('.toast[role="alert"]')?.textContent?.trim()).toBe(
         'A TV não respondeu a tempo.',
       );
 
       store.notice.set({ kind: 'info', text: 'Texto enviado para a TV.' });
       await render();
       expect(root.querySelector('.toast[role="alert"]')).toBeNull();
-      expect(root.querySelector('.toast[role="status"]')?.textContent).toBe(
+      expect(root.querySelector('.toast[role="status"]')?.textContent?.trim()).toBe(
         'Texto enviado para a TV.',
       );
 
