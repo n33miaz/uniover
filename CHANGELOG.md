@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.62.1](https://github.com/n33miaz/uniover/compare/v0.62.0...v0.62.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **deps:** move the .NET images to 10.0.15
+
 ## [0.62.0](https://github.com/n33miaz/uniover/compare/v0.61.0...v0.62.0) (2026-11-12)
 
 
