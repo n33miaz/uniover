@@ -21,6 +21,8 @@ $env:UV_PROJECT_ENVIRONMENT = Join-Path $runtime 'venv'
 $env:PYTHONUTF8 = '1'
 # O agente sabe que tem um supervisor (o auto-reparo so pede reinicio a quem o atende).
 $env:UNIOVER_SUPERVISED = '1'
+# "<pid>:<hora de criacao>": o agente so devolve a prioridade normal ao supervisor que se declarou e nasceu nessa hora.
+try { $env:UNIOVER_SUPERVISOR_PROCESS = ([string]$PID) + ':' + [System.Diagnostics.Process]::GetCurrentProcess().StartTime.ToFileTimeUtc() } catch { }
 # O uv.lock manda em todo comando do uv deste supervisor: um `uv run` sem isto refaria a resolucao se achasse o lock
 # "desatualizado" (um uv anterior a 0.9.8 nao entende o `exclude-dependencies` do pyproject e traria de volta o pacote
 # `av`, uns 70 MB com bibliotecas GPL). O `uv sync --frozen` ja era assim; isto estende o mesmo a `uv run`.

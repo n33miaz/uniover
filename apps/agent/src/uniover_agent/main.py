@@ -2,12 +2,14 @@
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 from collections.abc import Sequence
 
 from pydantic import ValidationError
 
+from uniover_agent.adapters import windows_scheduling
 from uniover_agent.adapters.installation import legacy_wrapper_start, migrate_layout
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.single_instance import (
@@ -131,6 +133,17 @@ def _other_instance_owns() -> bool:
     return True
 
 
+def _keep_responsive() -> None:
+    """A tarefa agendada dá ao agente e a quem o vigia CPU, memória e E/S baixas: devolve ao
+    normal. Uma falha aqui (ctypes, Windows antigo) nunca impede a partida."""
+    try:
+        windows_scheduling.keep_agent_responsive()
+    except Exception:
+        logging.getLogger("uniover_agent").warning(
+            "não consegui devolver a prioridade do agente ao normal; sigo assim", exc_info=True
+        )
+
+
 def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None
 ) -> int:
@@ -212,6 +225,8 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             # O lançador novo já foi destacado; o wrapper legado fica sem o código antigo e não
             # deve abrir uma segunda conexão com a API.
             return system.EXIT_OK
+        # Uma vez por processo (o laço abaixo recomeça quando a TV muda de endereço).
+        _keep_responsive()
         while True:
             code = asyncio.run(connection.run(settings, open_store, kit, handover=handover))
             # Um recomeço (a TV mudou de endereço) já é desta execução, dona da instalação.

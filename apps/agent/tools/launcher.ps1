@@ -330,8 +330,11 @@ if ([int]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNC
 $resumeGapSeconds = 60.0
 $forcedGap = 0.0
 if ([double]::TryParse([string][Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_RESUME_GAP_SECONDS'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$forcedGap) -and $forcedGap -gt 0) { $resumeGapSeconds = $forcedGap }
-# Gancho de teste: "<apos s>:<salto s>" faz o relogio da vigia saltar uma vez, como uma suspensao.
+# Ganchos de teste, "<apos s>:<salto s>", uma vez cada: UNIOVER_LAUNCHER_TEST_CLOCK_JUMP salta o relogio como uma
+# suspensao (o tempo acordado nao anda); UNIOVER_LAUNCHER_TEST_STALL, como o lancador parado (o tempo acordado anda junto).
 $clockSkew = 0.0
+$tickSkew = 0.0
+$awakeSkew = 0.0
 $jumpAfter = -1.0
 $jumpBy = 0.0
 $jumpSpec = [Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_TEST_CLOCK_JUMP')
@@ -339,10 +342,59 @@ if ($jumpSpec -and $jumpSpec -match '^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$') {
     $jumpAfter = [double]::Parse($Matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
     $jumpBy = [double]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture)
 }
+$stallAfter = -1.0
+$stallBy = 0.0
+$stallSpec = [Environment]::GetEnvironmentVariable('UNIOVER_LAUNCHER_TEST_STALL')
+if ($stallSpec -and $stallSpec -match '^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$') {
+    $stallAfter = [double]::Parse($Matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
+    $stallBy = [double]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+# Suspensao do PC ou lancador parado? Os dois fazem o relogio saltar entre duas voltas. O GetTickCount64 anda durante a
+# suspensao; o QueryUnbiasedInterruptTime nao (so conta o tempo acordado). Medido em 12/11: sob pouca memoria o
+# Windows tirou o lancador da memoria e ele ficou ate 290 s sem rodar, e cada parada era registrada como "suspensao do
+# PC" (nao houve nenhuma). Sem o Add-Type (disco cheio, compilador bloqueado) o salto segue sem diagnostico, como antes.
+$script:awakeClock = $false
+try {
+    Add-Type -Namespace UniOverLauncher -Name WatchClock -ErrorAction Stop -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern ulong GetTickCount64();
+[DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool QueryUnbiasedInterruptTime(out ulong unbiasedTime);
+'@
+    $script:awakeClock = $true
+} catch { }
 
 function Get-WatchNow {
     # UTC: no fim do horario de verao a hora local volta uma hora e o silencio do supervisor pareceria menor (ou maior).
     return [DateTime]::UtcNow.AddSeconds($script:clockSkew)
+}
+
+function Get-ElapsedClocks {
+    # [segundos desde a partida do PC, segundos acordado], ou $null sem os dois relogios.
+    if (-not $script:awakeClock) { return $null }
+    $awake = [uint64]0
+    try { if (-not [UniOverLauncher.WatchClock]::QueryUnbiasedInterruptTime([ref]$awake)) { return $null } } catch { return $null }
+    return @(([double][UniOverLauncher.WatchClock]::GetTickCount64() / 1000.0 + $script:tickSkew), ([double]$awake / 1e7 + $script:awakeSkew))
+}
+
+function Get-GapReport([double]$WallGap, $Before, $After) {
+    # O que explica um salto do relogio entre duas voltas da vigia, em texto para o registro, e o nivel.
+    $wall = [int]$WallGap
+    if ($null -eq $Before -or $null -eq $After) {
+        return @(('o relogio saltou ' + $wall + ' s (suspensao do PC ou lancador parado; sem como distinguir)'), 'INFO')
+    }
+    $total = $After[0] - $Before[0]
+    $awake = $After[1] - $Before[1]
+    $suspended = [Math]::Max(0.0, $total - $awake)
+    $stalled = [Math]::Max(0.0, $awake - ($pollMs / 1000.0))
+    if ($suspended -ge ($resumeGapSeconds / 2)) {
+        $text = 'o relogio saltou ' + $wall + ' s: o PC ficou suspenso ' + [int]$suspended + ' s'
+        if ($stalled -gt $resumeGapSeconds) { $text += ' e o lancador ficou ' + [int]$stalled + ' s sem rodar (memoria/disco)' }
+        return @($text, 'INFO')
+    }
+    if ($stalled -gt $resumeGapSeconds) {
+        return @(('o relogio saltou ' + $wall + ' s sem suspensao do PC: o processo do lancador ficou ' + [int]$stalled + ' s sem rodar (memoria/disco)'), 'WARNING')
+    }
+    return @(('o relogio saltou ' + $wall + ' s sem suspensao nem parada (a hora do PC foi ajustada)'), 'INFO')
 }
 
 function Stop-SupervisorTree($Process) {
@@ -367,6 +419,9 @@ function Invoke-Supervisor([string]$Script) {
     $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $Script + '"'
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
+    # "<pid>:<hora de criacao>": o agente so devolve a prioridade normal ao lancador que se declarou e nasceu nessa hora
+    # (nunca a um PowerShell interativo da pessoa nem a um pid reaproveitado).
+    try { $info.EnvironmentVariables['UNIOVER_LAUNCHER_PROCESS'] = ([string]$PID) + ':' + [System.Diagnostics.Process]::GetCurrentProcess().StartTime.ToFileTimeUtc() } catch { }
     $process = [System.Diagnostics.Process]::Start($info)
     $startedAt = Get-WatchNow
     $limit = $staleSeconds
@@ -384,19 +439,33 @@ function Invoke-Supervisor([string]$Script) {
     # um arquivo que ja existe, e sem ele um supervisor sadio pareceria mudo.
     try { if (-not (Test-Path -LiteralPath $alive)) { New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null; [System.IO.File]::WriteAllText($alive, 'x', [System.Text.Encoding]::ASCII) } } catch { }
     $previous = $startedAt
+    $previousClocks = Get-ElapsedClocks
     $resumedAt = $startedAt
     while (-not $process.WaitForExit($pollMs)) {
         $now = Get-WatchNow
         if ($jumpAfter -ge 0 -and ($now - $startedAt).TotalSeconds -ge $jumpAfter) {
             $script:clockSkew += $jumpBy
+            $script:tickSkew += $jumpBy
             $jumpAfter = -1.0
             $now = Get-WatchNow
         }
+        if ($stallAfter -ge 0 -and ($now - $startedAt).TotalSeconds -ge $stallAfter) {
+            $script:clockSkew += $stallBy
+            $script:tickSkew += $stallBy
+            $script:awakeSkew += $stallBy
+            $stallAfter = -1.0
+            $now = Get-WatchNow
+        }
+        $clocks = Get-ElapsedClocks
         if (($now - $previous).TotalSeconds -gt $resumeGapSeconds) {
+            # Suspenso ou parado, o supervisor esteve na mesma situacao: o prazo dele recomeca nos dois casos (matar um
+            # supervisor paginado sob pouca memoria so pioraria). O que muda e o registro dizer qual foi.
             $resumedAt = $now
-            Write-LauncherLog ('o relogio saltou ' + [int](($now - $previous).TotalSeconds) + ' s (suspensao do PC); o prazo do supervisor recomeca agora') 'INFO'
+            $report = Get-GapReport ($now - $previous).TotalSeconds $previousClocks $clocks
+            Write-LauncherLog ($report[0] + '; o prazo do supervisor recomeca agora') $report[1]
         }
         $previous = $now
+        $previousClocks = $clocks
         $last = $resumedAt
         try { $stamp = (Get-Item -LiteralPath $alive -ErrorAction Stop).LastWriteTimeUtc.AddSeconds($script:clockSkew); if ($stamp -gt $last) { $last = $stamp } } catch { }
         $silent = ($now - $last).TotalSeconds

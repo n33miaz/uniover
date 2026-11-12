@@ -23,6 +23,9 @@ def no_real_scheduling(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(windows_scheduling, "raise_thread_priority", lambda: True)
     monkeypatch.setattr(windows_scheduling, "protect_working_set", lambda minimum_mb: True)
+    # Nem a prioridade do processo de teste e dos ancestrais dele (o terminal de quem roda).
+    monkeypatch.setattr(windows_scheduling, "keep_agent_responsive", lambda: None)
+    monkeypatch.setattr(windows_scheduling, "restore_normal_priority", lambda pid=None: None)
 
 
 @pytest.fixture(autouse=True)
