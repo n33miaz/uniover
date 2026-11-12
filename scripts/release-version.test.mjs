@@ -347,6 +347,8 @@ test('cada arquivo pertence ao módulo dos seus caminhos', () => {
   assert.deepEqual(modulesForFile(`${API}/Devices/UniOver.Modules.Devices.Transport.WebSocket/Hub.cs`), ['devices']);
   assert.deepEqual(modulesForFile(`${API}/Identity/UniOver.Modules.Identity/IdentityModule.cs`), ['identity']);
   assert.deepEqual(modulesForFile(`${API}/Training/UniOver.Modules.Training/X.cs`), ['training']);
+  assert.deepEqual(modulesForFile(`${API}/Shopping/UniOver.Modules.Shopping/X.cs`), ['shopping']);
+  assert.deepEqual(modulesForFile('apps/web/src/app/modules/shopping/shopping.page.ts'), ['shopping']);
   assert.deepEqual(modulesForFile('apps/web/src/app/modules/tv/tv.page.ts'), ['tv']);
   assert.deepEqual(modulesForFile('apps/web/src/app/modules/settings/profile.page.ts'), ['identity']);
   assert.deepEqual(modulesForFile('apps/web/src/app/modules/pc/pc-page.ts'), ['devices']);
@@ -484,6 +486,7 @@ test('prepare sobe só os módulos cujos arquivos mudaram, pelo tipo dos commits
       devices: '0.4.0',
       tv: '0.5.0',
       training: '1.0.0',
+      shopping: '0.4.0',
       web: '0.4.0',
       agent: '0.4.1',
     });

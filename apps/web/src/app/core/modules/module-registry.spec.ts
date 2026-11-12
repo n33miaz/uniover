@@ -7,10 +7,11 @@ import { SCOPED_MODULE_SLUGS } from './module-slugs';
 describe('ModuleRegistry', () => {
   const registry = () => TestBed.inject(ModuleRegistry);
 
-  it('lists TV and Treino first, then the planned modules in order', () => {
+  it('lists TV, Treino and Compras first, then the planned modules in order', () => {
     expect(registry().modules.map((m) => [m.id, m.status])).toEqual([
       ['tv', 'available'],
       ['training', 'available'],
+      ['shopping', 'available'],
       ['health', 'soon'],
       ['monitor', 'soon'],
       ['network', 'soon'],
@@ -23,7 +24,7 @@ describe('ModuleRegistry', () => {
   it('titles the planned modules in pt-BR', () => {
     expect(
       registry()
-        .modules.slice(2)
+        .modules.slice(3)
         .map((m) => m.title),
     ).toEqual([
       'Saúde e Eventos',
@@ -38,10 +39,10 @@ describe('ModuleRegistry', () => {
   it('only modules with a screen have a slug, and the slugs match the service worker list', () => {
     const withSlug = registry().modules.flatMap((m) => (m.slug ? [m.slug] : []));
     expect(withSlug).toEqual([...SCOPED_MODULE_SLUGS]);
-    // Controle do PC tem tela no app principal; os demais planejados ainda não têm caminho nem ação.
+    // Compras e Controle do PC têm tela no app principal; os demais planejados ainda não têm caminho nem ação.
     for (const planned of registry().modules.slice(2)) {
       expect(planned.slug, planned.id).toBeUndefined();
-      if (planned.id === 'pc') continue;
+      if (planned.id === 'pc' || planned.id === 'shopping') continue;
       expect(planned.route, planned.id).toBeUndefined();
       expect(planned.actionLabel, planned.id).toBeUndefined();
     }
@@ -65,6 +66,7 @@ describe('ModuleRegistry', () => {
     const tv = registry().find('tv')!;
     expect(registry().path(tv)).toBe('/tv');
     expect(registry().path(registry().find('training')!)).toBe('/treino');
+    expect(registry().path(registry().find('shopping')!)).toBe('/compras');
     expect(registry().path(registry().find('health')!)).toBeNull();
     expect(registry().find('nada')).toBeUndefined();
   });

@@ -795,7 +795,9 @@ export class UpdateSkeleton {
   protected readonly drawing = computed(() => {
     const variant = this.variant();
     if (variant.startsWith('training-')) return 'training';
-    if (variant.startsWith('settings-') || variant === 'pc') return 'detail';
+    if (variant.startsWith('settings-') || variant === 'pc' || variant === 'shopping') {
+      return 'detail';
+    }
     if (variant.startsWith('auth-') || variant === 'devices-connect') return 'plain';
     return variant;
   });

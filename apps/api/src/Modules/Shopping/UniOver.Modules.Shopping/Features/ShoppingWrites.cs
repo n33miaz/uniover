@@ -2,7 +2,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Http.HttpResults;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Shopping.Audit;
 using UniOver.Modules.Shopping.Domain;
 using UniOver.Modules.Shopping.Persistence;
 
@@ -15,15 +19,26 @@ namespace UniOver.Modules.Shopping.Features;
 /// </summary>
 internal static class ShoppingWrites
 {
+    private static readonly JsonSerializerOptions OperationJson = new(JsonSerializerDefaults.Web);
+
     public static void MapShoppingWrites(this IEndpointRouteBuilder group)
     {
         group.MapPut("/group/members/{userId:guid}", PutMemberAsync).Write<MemberResponse>();
+        group.MapPost("/group/leave", LeaveGroupAsync).Write<GroupResponse>();
         group.MapPut("/products/{id:guid}", PutProductAsync).Write<ProductResponse>();
         group.MapPut("/list-items/{id:guid}", PutListItemAsync).Write<ListItemResponse>();
         group.MapPost("/purchases/{id:guid}/open", OpenPurchaseAsync).Write<PurchaseResponse>();
         group.MapPut("/purchases/{id:guid}/budget", PutBudgetAsync).Write<PurchaseResponse>();
         group.MapPost("/purchases/{id:guid}/close", ClosePurchaseAsync).Write<PurchaseResponse>();
         group.MapPut("/purchases/{purchaseId:guid}/items/{id:guid}", PutPurchaseItemAsync).Write<PurchaseItemResponse>();
+        group.MapPost("/operations", OperationsAsync)
+            .RequireAuthorization(ShoppingAuth.Module)
+            .RequireRateLimiting(RateLimitPolicies.Commands)
+            .Produces<IReadOnlyList<ShoppingOperationResult>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
     }
 
     private static void Write<TResponse>(this RouteHandlerBuilder builder) =>
@@ -42,6 +57,78 @@ internal static class ShoppingWrites
     private static IResult MissingBody() => ShoppingProblems.Invalid("body", "O corpo é obrigatório.");
 
     private static WriteStep Reject(IResult result) => WriteStep.Rejected(result);
+
+    /// <summary>
+    /// Quem entrou como membro pode sair. A conta recebe de imediato outro grupo vazio, sem depender da próxima leitura.
+    /// </summary>
+    private static async Task<IResult> LeaveGroupAsync(
+        MemberRequest? request,
+        ICurrentUser current,
+        ShoppingWriter writer,
+        ShoppingGroupService groups,
+        ShoppingDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } actor)
+        {
+            return ShoppingProblems.Unauthenticated();
+        }
+
+        if (request is null)
+        {
+            return MissingBody();
+        }
+
+        // O reenvio chega depois de a pessoa já estar no grupo novo, e a operação ficou anotada no antigo: o escritor a
+        // tomaria por operação de outro grupo. Por isso a operação já aplicada por esta conta é respondida aqui.
+        if (await db.Operations.AsNoTracking().AnyAsync(x => x.Id == request.OperationId && x.ActorUserId == actor, cancellationToken))
+        {
+            var now = await groups.GetForUserAsync(actor, cancellationToken);
+            return TypedResults.Ok(new GroupResponse(now.GroupId, now.Group!.OwnerUserId, now.IsOwner));
+        }
+
+        return await writer.RunAsync(actor, request.OperationId, ApplyAsync, ReplayAsync, cancellationToken);
+
+        Task<IResult> ReplayAsync(Guid groupId, CancellationToken _) =>
+            Task.FromResult<IResult>(TypedResults.Ok(new GroupResponse(groupId, actor, true)));
+
+        async Task<WriteStep> ApplyAsync(ShoppingScope scope, CancellationToken ct)
+        {
+            if (scope.IsOwner)
+            {
+                return Reject(ShoppingProblems.Invalid("group", "Quem criou o grupo não pode sair dele."));
+            }
+
+            var member = await db.Members.SingleAsync(x => x.GroupId == scope.GroupId && x.UserId == actor && x.DeletedAt == null, ct);
+            var own = await MoveToOwnGroupAsync(db, scope, member, ct);
+            return WriteStep.Done(TypedResults.Ok(new GroupResponse(own.Id, actor, true)));
+        }
+    }
+
+    /// <summary>
+    /// Tira a pessoa do grupo e lhe dá, na mesma transação, um grupo só dela, vazio. Assim uma escrita offline que chegar
+    /// depois não recria a participação no grupo antigo nem fica sem destino. A lápide é gravada antes da participação
+    /// nova: as duas têm a mesma conta, e só uma participação viva por conta é aceita.
+    /// </summary>
+    private static async Task<ShoppingGroup> MoveToOwnGroupAsync(ShoppingDbContext db, ShoppingScope scope, ShoppingMember member, CancellationToken ct)
+    {
+        member.DeletedAt = scope.Now;
+        scope.Change(ChangeTypes.Member, member.UserId, member.ToResponse());
+        db.MemberAudit.Add(new ShoppingMemberAuditEntry
+        {
+            Id = Guid.CreateVersion7(),
+            Event = ShoppingAuditEvents.MemberRemoved,
+            ActorUserId = scope.ActorId,
+            TargetUserId = member.UserId,
+            OccurredAt = scope.Now,
+        });
+        await db.SaveChangesAsync(ct);
+
+        var own = new ShoppingGroup { Id = Guid.CreateVersion7(), OwnerUserId = member.UserId, CreatedAt = scope.Now };
+        db.Groups.Add(own);
+        db.Members.Add(new ShoppingMember { GroupId = own.Id, UserId = member.UserId, IsOwner = true, CreatedAt = scope.Now });
+        return own;
+    }
 
     /// <summary>
     /// Só quem criou o grupo inclui ou remove pessoas. Quem entra precisa ter a permissão do módulo. Quem já abriu o
@@ -91,8 +178,7 @@ internal static class ShoppingWrites
 
                 if (member.DeletedAt is null)
                 {
-                    member.DeletedAt = scope.Now;
-                    scope.Change(ChangeTypes.Member, userId, member.ToResponse());
+                    await MoveToOwnGroupAsync(db, scope, member, ct);
                 }
 
                 return WriteStep.Done(TypedResults.Ok(member.ToResponse()));
@@ -128,6 +214,14 @@ internal static class ShoppingWrites
             }
 
             scope.Change(ChangeTypes.Member, userId, member.ToResponse());
+            db.MemberAudit.Add(new ShoppingMemberAuditEntry
+            {
+                Id = Guid.CreateVersion7(),
+                Event = ShoppingAuditEvents.MemberAdded,
+                ActorUserId = scope.ActorId,
+                TargetUserId = userId,
+                OccurredAt = scope.Now,
+            });
             return WriteStep.Done(TypedResults.Ok(member.ToResponse()));
         }
 
@@ -369,6 +463,16 @@ internal static class ShoppingWrites
                 return WriteStep.Done(TypedResults.Ok(existing.ToResponse()));
             }
 
+            // Uma compra aberta por grupo: o grupo está travado, então duas aberturas ao mesmo tempo não passam juntas.
+            var open = await db.Purchases.AsNoTracking()
+                .Where(x => x.GroupId == scope.GroupId && x.Status == ShoppingPurchase.Open && x.DeletedAt == null)
+                .OrderBy(x => x.StartedAt)
+                .FirstOrDefaultAsync(ct);
+            if (open is not null)
+            {
+                return Reject(ShoppingProblems.PurchaseAlreadyOpen(open.Id));
+            }
+
             var purchase = new ShoppingPurchase
             {
                 Id = id,
@@ -494,6 +598,25 @@ internal static class ShoppingWrites
                 purchase.ClosedAt = scope.Now;
                 purchase.UpdatedAt = scope.Now;
                 scope.Change(ChangeTypes.Purchase, id, purchase.ToResponse());
+
+                // A lista da casa continua existindo, mas o que foi pego deixa de estar pendente nela.
+                var pickedProducts = await db.PurchaseItems
+                    .Where(x => x.PurchaseId == id && x.Picked && x.DeletedAt == null)
+                    .Select(x => x.ProductId)
+                    .Distinct()
+                    .ToListAsync(ct);
+                if (pickedProducts.Count != 0)
+                {
+                    var listItems = await db.ListItems
+                        .Where(x => x.GroupId == scope.GroupId && x.Needed && x.DeletedAt == null && pickedProducts.Contains(x.ProductId))
+                        .ToListAsync(ct);
+                    foreach (var listItem in listItems)
+                    {
+                        listItem.Needed = false;
+                        listItem.UpdatedAt = scope.Now;
+                        scope.Change(ChangeTypes.ListItem, listItem.Id, listItem.ToResponse());
+                    }
+                }
             }
 
             return WriteStep.Done(TypedResults.Ok(purchase.ToResponse()));
@@ -608,4 +731,110 @@ internal static class ShoppingWrites
         await db.Purchases.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.GroupId == groupId, ct) is { } purchase
             ? TypedResults.Ok(purchase.ToResponse())
             : ShoppingProblems.NotFound();
+
+    public const int MaxOperations = 50;
+
+    /// <summary>
+    /// Aplica até cinquenta escritas guardadas no aparelho, na ordem recebida. Cada uma passa pela mesma rotina da sua
+    /// rota (mesmo grupo de quem chama, mesma validação, mesma idempotência) e tem a própria transação: uma recusa não
+    /// desfaz as anteriores nem impede as seguintes. A resposta traz o desfecho de cada operação.
+    /// </summary>
+    private static async Task<IResult> OperationsAsync(
+        ShoppingOperationsRequest? request,
+        ICurrentUser current,
+        ShoppingWriter writer,
+        ShoppingDbContext db,
+        IAccessGrants grants,
+        CancellationToken cancellationToken)
+    {
+        if (current.UserId is null)
+        {
+            return ShoppingProblems.Unauthenticated();
+        }
+
+        if (request?.Operations is not { Count: > 0 and <= MaxOperations } operations || operations.Any(x => x is null))
+        {
+            return ShoppingProblems.Invalid("operations", $"Envie entre 1 e {MaxOperations} operações.");
+        }
+
+        if (operations.Any(x => x.OperationId == Guid.Empty))
+        {
+            return ShoppingProblems.Invalid("operationId", "Cada operação precisa de um UUID.");
+        }
+
+        var results = new List<ShoppingOperationResult>(operations.Count);
+        foreach (var operation in operations)
+        {
+            IResult result;
+            try
+            {
+                result = await DispatchAsync(operation, current, writer, db, grants, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                result = ShoppingProblems.Invalid("body", "O corpo da operação não é válido.");
+            }
+
+            results.Add(ToResult(operation.OperationId, result));
+
+            // Cada operação começa sem nada rastreado da anterior.
+            db.ChangeTracker.Clear();
+        }
+
+        return TypedResults.Ok((IReadOnlyList<ShoppingOperationResult>)results);
+    }
+
+    /// <summary>O desfecho de uma operação do lote. Um resultado sem status conhecido conta como falha, nunca como aplicado.</summary>
+    private static ShoppingOperationResult ToResult(Guid operationId, IResult result)
+    {
+        var status = (result as IStatusCodeHttpResult)?.StatusCode ?? StatusCodes.Status500InternalServerError;
+        if (result is not ProblemHttpResult problem)
+        {
+            return new ShoppingOperationResult(operationId, status, null, null);
+        }
+
+        var open = problem.ProblemDetails.Extensions.TryGetValue(ShoppingProblems.OpenPurchaseIdExtension, out var value) ? value as Guid? : null;
+        return new ShoppingOperationResult(operationId, status, problem.ProblemDetails.Type, open);
+    }
+
+    private static Task<IResult> DispatchAsync(
+        ShoppingOperationRequest operation,
+        ICurrentUser current,
+        ShoppingWriter writer,
+        ShoppingDbContext db,
+        IAccessGrants grants,
+        CancellationToken ct) => operation.Kind switch
+    {
+        OperationKinds.Member => PutMemberAsync(operation.Id, Read<MemberRequest>(operation), current, writer, db, grants, ct),
+        OperationKinds.Product => PutProductAsync(operation.Id, Read<ProductRequest>(operation), current, writer, db, ct),
+        OperationKinds.ListItem => PutListItemAsync(operation.Id, Read<ListItemRequest>(operation), current, writer, db, ct),
+        OperationKinds.OpenPurchase => OpenPurchaseAsync(operation.Id, Read<OpenPurchaseRequest>(operation), current, writer, db, ct),
+        OperationKinds.Budget => PutBudgetAsync(operation.Id, Read<BudgetRequest>(operation), current, writer, db, ct),
+        OperationKinds.ClosePurchase => ClosePurchaseAsync(operation.Id, Read<ClosePurchaseRequest>(operation), current, writer, db, ct),
+        OperationKinds.PurchaseItem when operation.PurchaseId is { } purchaseId =>
+            PutPurchaseItemAsync(purchaseId, operation.Id, Read<PurchaseItemRequest>(operation), current, writer, db, ct),
+        _ => Task.FromResult(ShoppingProblems.Invalid("kind", "A operação não é reconhecida.")),
+    };
+
+    /// <summary>O corpo da operação na forma do pedido da rota. O UUID que vale é sempre o do envelope, nunca um vindo no corpo.</summary>
+    private static T? Read<T>(ShoppingOperationRequest operation)
+        where T : class
+    {
+        if (operation.Body is not { ValueKind: JsonValueKind.Object } body)
+        {
+            return null;
+        }
+
+        var node = new JsonObject();
+        foreach (var property in body.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, "operationId", StringComparison.OrdinalIgnoreCase))
+            {
+                node[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+            }
+        }
+
+        node["operationId"] = operation.OperationId;
+        return node.Deserialize<T>(OperationJson);
+    }
 }

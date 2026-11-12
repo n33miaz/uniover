@@ -687,7 +687,7 @@ describe('GuestsSection', () => {
           }),
         ]);
         const { el } = await render();
-        expect(homeText(el)).toEqual(['Treino, TV']);
+        expect(homeText(el)).toEqual(['Treino, TV, Compras']);
       });
 
       it('leaves out what the person turned off and says so when nothing is left', async () => {
@@ -703,7 +703,7 @@ describe('GuestsSection', () => {
           guest('g1', 'Bia', null, ['module:tv', 'module:training', 'tv:control']),
         ]);
         const { el } = await render();
-        expect(homeText(el)).toEqual(['Treino', 'Nenhum módulo']);
+        expect(homeText(el)).toEqual(['Treino, Compras', 'Nenhum módulo']);
       });
 
       it('shows a guest only what the permissions of that guest allow', async () => {

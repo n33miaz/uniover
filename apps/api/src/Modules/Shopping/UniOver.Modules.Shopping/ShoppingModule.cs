@@ -5,14 +5,17 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Shopping.Audit;
 using UniOver.Modules.Shopping.Features;
 using UniOver.Modules.Shopping.Persistence;
+using UniOver.SharedKernel.Audit;
 
 namespace UniOver.Modules.Shopping;
 
 /// <summary>
 /// Compras: grupo, produtos, lista da casa e idas ao mercado. Tudo acontece dentro de um pedido HTTP: o módulo não
-/// registra serviço de fundo nem temporizador, para o banco poder dormir.
+/// registra serviço de fundo nem temporizador próprios, para o banco poder dormir (a limpeza da trilha entra na
+/// rodada diária que os outros módulos já têm).
 /// </summary>
 public static class ShoppingModule
 {
@@ -29,6 +32,11 @@ public static class ShoppingModule
         services.AddScoped<IIdempotencyGateway<ShoppingDbContext>, ShoppingIdempotencyGateway>();
         services.AddScoped<ShoppingGroupService>();
         services.AddScoped<ShoppingWriter>();
+
+        // Auditoria: quem entrou e quem saiu de um grupo é uma fonte da trilha do administrador. A retenção roda no
+        // banco; a aplicação só chama a função, pelo serviço de limpeza que já existe (uma vez por dia, para todos os módulos).
+        services.AddScoped<IAuditSource, ShoppingAuditSource>();
+        services.AddAuditPurge<ShoppingDbContext>(configuration, ShoppingDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
         return services;
     }
 

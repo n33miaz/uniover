@@ -41,7 +41,7 @@ async function openHome(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(
     OWNER.displayName.split(' ')[0],
   );
-  await expect(page.locator('article.card')).toHaveCount(8);
+  await expect(page.locator('article.card')).toHaveCount(9);
   await settle(page);
 }
 
@@ -84,7 +84,7 @@ test.describe('troca de tela', () => {
     // Voltar pela seta: a Início volta inteira e clicável, e a folha de edição abre.
     await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName.split(' ')[0]);
-    await expect(page.locator('article.card')).toHaveCount(8);
+    await expect(page.locator('article.card')).toHaveCount(9);
     await settle(page);
     await page.getByRole('button', { name: 'Editar' }).click();
     await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
@@ -212,7 +212,7 @@ test.describe('movimento reduzido', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
       OWNER.displayName.split(' ')[0],
     );
-    await expect(page.locator('article.card')).toHaveCount(8);
+    await expect(page.locator('article.card')).toHaveCount(9);
     expect(await longAnimations(page)).toEqual([]);
 
     await page.getByRole('button', { name: 'Editar' }).click();

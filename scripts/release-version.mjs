@@ -22,8 +22,8 @@ const BREAKING_SUBJECT = /^\w+(?:\([^)]*\))?!:/;
 const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:/m;
 
 // Os módulos versionados, na ordem em que aparecem no modules.json e no CHANGELOG. As chaves são as do arquivo.
-export const MODULE_NAMES = ['identity', 'devices', 'tv', 'training', 'web', 'agent'];
-const MODULE_LABELS = { identity: 'Identity', devices: 'Devices', tv: 'TV', training: 'Training', web: 'Web', agent: 'Agent' };
+export const MODULE_NAMES = ['identity', 'devices', 'tv', 'training', 'shopping', 'web', 'agent'];
+const MODULE_LABELS = { identity: 'Identity', devices: 'Devices', tv: 'TV', training: 'Training', shopping: 'Shopping', web: 'Web', agent: 'Agent' };
 
 // Os caminhos de cada módulo (prefixos, com a barra final nas pastas). Regras:
 //  - O módulo de API traz a pasta inteira (o projeto, os Contracts e o transporte), a pasta de tela com o mesmo assunto e
@@ -66,6 +66,7 @@ const MODULE_PATHS = {
     'contracts/tv-launcher/',
   ],
   training: ['apps/api/src/Modules/Training/', 'apps/web/src/app/modules/training/'],
+  shopping: ['apps/api/src/Modules/Shopping/', 'apps/web/src/app/modules/shopping/'],
   agent: ['apps/agent/'],
 };
 // Prefixos que valem em vez dos de MODULE_PATHS (o arquivo é só do módulo indicado).

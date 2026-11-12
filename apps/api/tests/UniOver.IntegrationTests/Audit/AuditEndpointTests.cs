@@ -11,6 +11,7 @@ using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Shopping.Domain;
 using UniOver.Modules.Tv.Domain;
 using UniOver.SharedKernel.Audit;
 using static UniOver.IntegrationTests.Audit.AuditKit;
@@ -123,6 +124,29 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Owner_ReadsWhoJoinedAndLeftAShoppingGroup_FilteredByPersonAndAction()
+    {
+        var (app, owner, ownerId) = await StartAsync();
+        await using var lifetime = app;
+        var guestId = Guid.NewGuid();
+        await AddAsync(
+            app.Database,
+            new ShoppingMemberAuditEntry { Id = Guid.CreateVersion7(), Event = "member_added", ActorUserId = ownerId, TargetUserId = guestId, OccurredAt = T0 },
+            new ShoppingMemberAuditEntry { Id = Guid.CreateVersion7(), Event = "member_removed", ActorUserId = guestId, TargetUserId = guestId, OccurredAt = T0.AddMinutes(1) });
+
+        var all = Items(await GetJsonAsync(app, owner.AccessToken, "?" + Window));
+        all.Select(i => i.GetProperty("module").GetString()).Should().Equal("shopping", "shopping");
+        all.Select(i => i.GetProperty("action").GetString()).Should().Equal("shopping.member.remove", "shopping.member.add");
+
+        var added = Items(await GetJsonAsync(app, owner.AccessToken, $"?{Window}&action=shopping.member.add")).Should().ContainSingle().Subject;
+        added.GetProperty("actor").GetProperty("id").GetGuid().Should().Be(ownerId);
+        added.GetProperty("outcome").GetString().Should().Be("success");
+
+        Items(await GetJsonAsync(app, owner.AccessToken, $"?{Window}&person={ownerId}")).Should().ContainSingle();
+        Items(await GetJsonAsync(app, owner.AccessToken, $"?{Window}&outcome=failure")).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Sources_ListsTheModulesWithTheirRetentionAndActions()
     {
         var (app, owner, _) = await StartAsync();
@@ -132,16 +156,18 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
 
         var sources = body.GetProperty("sources").EnumerateArray().ToList();
-        sources.Select(s => s.GetProperty("module").GetString()).Should().Equal("devices", "identity", "tv");
+        sources.Select(s => s.GetProperty("module").GetString()).Should().Equal("devices", "identity", "shopping", "tv");
         sources.Select(s => s.GetProperty("retentionDays").GetInt32()).Should().Equal(
-            AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.CommandDays);
+            AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.SecurityDays, AuditRetentionPolicy.CommandDays);
         Strings(sources[0].GetProperty("actions")).Should().Contain(["pairing_approved", "agent_revoked"]);
         Strings(sources[1].GetProperty("actions")).Should().Contain([AuditEvents.PermissionsChanged, AuditEvents.AuditExported]);
-        Strings(sources[2].GetProperty("actions")).Should().Contain(["tv.key", "tv.shortcut.update"]);
+        Strings(sources[2].GetProperty("actions")).Should().Equal("shopping.member.add", "shopping.member.remove");
+        Strings(sources[3].GetProperty("actions")).Should().Contain(["tv.key", "tv.shortcut.update"]);
         // A remoção de uma TV fica sem prazo (só o IP e o aparelho dela seguem os 180 dias): a tela não pode dizer só "30 dias".
         Strings(sources[0].GetProperty("permanentActions")).Should().BeEmpty();
         Strings(sources[1].GetProperty("permanentActions")).Should().BeEmpty();
-        Strings(sources[2].GetProperty("permanentActions")).Should().Equal("tv.remove");
+        Strings(sources[2].GetProperty("permanentActions")).Should().BeEmpty();
+        Strings(sources[3].GetProperty("permanentActions")).Should().Equal("tv.remove");
         Strings(body.GetProperty("outcomes")).Should().Equal("success", "failure", "denied");
     }
 

@@ -12,7 +12,8 @@ internal sealed class ShoppingConfiguration :
     IEntityTypeConfiguration<ShoppingPurchase>,
     IEntityTypeConfiguration<PurchaseItem>,
     IEntityTypeConfiguration<ShoppingOperation>,
-    IEntityTypeConfiguration<ShoppingChange>
+    IEntityTypeConfiguration<ShoppingChange>,
+    IEntityTypeConfiguration<ShoppingMemberAuditEntry>
 {
     /// <summary>As unicidades valem só para o que está vivo: a lápide não impede recriar o mesmo nome ou o mesmo item.</summary>
     private const string Alive = "deleted_at IS NULL";
@@ -110,5 +111,14 @@ internal sealed class ShoppingConfiguration :
         builder.Property(x => x.EntityType).HasMaxLength(24);
         builder.Property(x => x.Payload).HasColumnType("jsonb");
         builder.HasIndex(x => new { x.GroupId, x.Sequence });
+    }
+
+    public void Configure(EntityTypeBuilder<ShoppingMemberAuditEntry> builder)
+    {
+        builder.ToTable("member_audit");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).ValueGeneratedNever();
+        builder.Property(x => x.Event).HasMaxLength(24);
+        builder.HasIndex(x => new { x.OccurredAt, x.Id });
     }
 }

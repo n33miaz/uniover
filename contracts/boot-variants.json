@@ -9,6 +9,8 @@
     { "path": "/tv/controle", "variant": "tv" },
     { "path": "/pc", "variant": "pc" },
     { "path": "/pc/teclado", "variant": "pc" },
+    { "path": "/compras", "variant": "shopping" },
+    { "path": "/compras/", "variant": "shopping" },
     { "path": "/treino", "variant": "training-today" },
     { "path": "/treino/", "variant": "training-today" },
     { "path": "/treino/sessao", "variant": "training-session" },

@@ -75,6 +75,13 @@ export const routes: Routes = [
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
       },
       {
+        path: 'compras',
+        canMatch: [moduleGuard('shopping')],
+        data: { title: $localize`:@@module.shopping.title:Compras` },
+        loadChildren: () =>
+          import('./modules/shopping/shopping.routes').then((m) => m.SHOPPING_ROUTES),
+      },
+      {
         // O módulo mora dentro do app principal (sem manifest nem escopo próprios, ao contrário da TV e do Treino).
         path: 'pc',
         canMatch: [moduleGuard('pc')],

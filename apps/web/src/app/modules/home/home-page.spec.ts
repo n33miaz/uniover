@@ -163,7 +163,7 @@ describe('HomePage', () => {
 
   it('keeps all modules for the owner, TV and Treino first and then the planned ones, in order', async () => {
     const { el } = await render();
-    expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
+    expect(titles(el)).toEqual(['TV', 'Treino', 'Compras', ...PLANNED]);
     expect(el.querySelectorAll('li.widget.wide')).toHaveLength(0);
   });
 
@@ -174,17 +174,18 @@ describe('HomePage', () => {
     el.querySelector<HTMLButtonElement>('button.edit')!.click();
     await fixture.whenStable();
     expect(el.querySelector('app-home-edit-sheet [data-id="tv-livre"]')).toBeNull();
-    expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(8);
+    expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(9);
   });
 
   it('links only the modules that have a screen', async () => {
     const { el } = await render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('article a'));
-    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/tv', '/treino']);
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/tv', '/treino', '/compras']);
     // O nome acessível leva a ação junto do nome que se vê.
     expect(links.map((a) => a.getAttribute('aria-label'))).toEqual([
       'TV: Abrir controle',
       'Treino: Ver treino',
+      'Compras: Abrir compras',
     ]);
     expect(el.querySelectorAll('article .card-action')).toHaveLength(0);
     expect(el.querySelector('article[data-module="tv"] app-home-soon-badge')).toBeNull();
@@ -222,12 +223,12 @@ describe('HomePage', () => {
       expect(label.parentElement?.matches('article.card.planned')).toBe(true);
     }
     expect(el.querySelectorAll('article .card-action')).toHaveLength(0);
-    expect(el.querySelectorAll('article a.card-link')).toHaveLength(2);
+    expect(el.querySelectorAll('article a.card-link')).toHaveLength(3);
   });
 
   it('hides a module that was turned off', async () => {
     storeAll((id) => id !== 'tv');
-    expect(titles((await render()).el)).toEqual(['Treino', ...PLANNED]);
+    expect(titles((await render()).el)).toEqual(['Treino', 'Compras', ...PLANNED]);
   });
 
   it('hides a planned module that was turned off', async () => {
@@ -245,7 +246,7 @@ describe('HomePage', () => {
       ]),
     );
     const { el } = await render();
-    expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
+    expect(titles(el)).toEqual(['Treino', 'TV', 'Compras', ...PLANNED]);
     expect(
       el
         .querySelector('article[data-module="training"]')
@@ -416,6 +417,22 @@ describe('HomePage', () => {
     expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(4);
   });
 
+  it('shows the Compras card only to a guest who has its permission', async () => {
+    TestBed.inject(SessionState).setUser({
+      id: ACCOUNT,
+      email: 'convidado@exemplo.com',
+      displayName: 'Convidado',
+      role: 'guest',
+      permissions: ['module:shopping'],
+    });
+    const { el } = await render();
+    expect(titles(el)).toContain('Compras');
+    expect(titles(el)).not.toContain('Treino');
+    expect(
+      el.querySelector('article[data-module="shopping"] a.card-link')?.getAttribute('href'),
+    ).toBe('/compras');
+  });
+
   it('marca o último cartão ímpar, em uso ou Em breve, para centralizar', async () => {
     storeAll((id) => id === 'tv');
     const owner = await render();
@@ -440,7 +457,7 @@ describe('HomePage', () => {
     loading.set(true);
     const { el } = await render();
     expect(el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(3);
-    expect(el.querySelectorAll('article.card')).toHaveLength(8);
+    expect(el.querySelectorAll('article.card')).toHaveLength(9);
     loading.set(false);
     expect((await render()).el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(0);
   });
@@ -456,14 +473,14 @@ describe('HomePage', () => {
   it('draws an app icon of its own for every module, planned ones included', async () => {
     const { el } = await render();
     const icons = Array.from(el.querySelectorAll('article app-module-app-icon.ico'));
-    expect(icons).toHaveLength(8);
+    expect(icons).toHaveLength(9);
     const drawings = icons.map((icon) =>
       Array.from(icon.querySelectorAll('svg path'))
         .map((path) => path.getAttribute('d'))
         .join('|'),
     );
     expect(drawings.every((drawing) => drawing.length > 0)).toBe(true);
-    expect(new Set(drawings).size).toBe(8);
+    expect(new Set(drawings).size).toBe(9);
   });
 
   it('shows a friendly empty state when every module is hidden, and it opens the editor', async () => {
@@ -493,12 +510,12 @@ describe('HomePage', () => {
     sheet.dispatchEvent(new Event('cancel', { cancelable: true }));
     await fixture.whenStable();
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
-    expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
+    expect(titles(el)).toEqual(['TV', 'Treino', 'Compras', ...PLANNED]);
 
     await press('button.edit');
     await press('.moves .down');
     await press('.done'); // Concluir
-    expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
+    expect(titles(el)).toEqual(['Treino', 'TV', 'Compras', ...PLANNED]);
     expect(JSON.parse(localStorage.getItem(KEY)!)[0].id).toBe('training');
   });
 
