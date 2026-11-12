@@ -14,7 +14,7 @@ interface AppIconDefinition {
   readonly parts: readonly IconPart[];
 }
 
-// Os mesmos desenhos de `design/icons/tv.svg`, `treino.svg` e `pc.svg` (grade de 512), só com caminhos: o desenho vem de
+// Os mesmos desenhos de `design/icons/tv.svg`, `treino.svg`, `pc.svg` e `compras.svg` (grade de 512), só com caminhos: o desenho vem de
 // dados, sem atributo solto no modelo. O fundo quadrado fica por conta do próprio componente.
 const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
   tv: {
@@ -57,6 +57,14 @@ const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
       { kind: 'line', d: 'M256 344V396' },
       { kind: 'line', d: 'M186 396H326' },
       { kind: 'solid', d: 'M188 166L324 228L266 249L243 306Z' },
+    ],
+  },
+  bag: {
+    parts: [
+      { kind: 'line', d: 'M136 192H376L356 408A28 28 0 0 1 328 434H184A28 28 0 0 1 156 408Z' },
+      { kind: 'line', d: 'M200 236V164A56 56 0 0 1 312 164V236' },
+      { kind: 'solid', d: 'M188 236a12 12 0 1 0 24 0a12 12 0 1 0 -24 0Z' },
+      { kind: 'solid', d: 'M300 236a12 12 0 1 0 24 0a12 12 0 1 0 -24 0Z' },
     ],
   },
 };

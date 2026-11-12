@@ -18,6 +18,18 @@ const MODULE_PRODUCT_NAMES: Record<ScopedModuleSlug, string> = {
 const APPLE_TITLE_META = 'apple-mobile-web-app-title';
 
 /**
+ * Módulos que moram dentro do app principal (sem manifest nem escopo) mas têm o próprio ícone da aba: o resto do head
+ * (manifest, nome, ícone da tela de início) segue o da raiz. O arquivo fica em `public/<pasta>/favicon*`.
+ */
+const TAB_ICON_ROUTES: readonly string[] = ['compras'];
+
+/** A pasta do ícone da aba de um caminho de módulo sem escopo, ou `null` (vale o da raiz). */
+export function tabIconOf(path: string): string | null {
+  const segment = (path.split(/[?#]/, 1)[0].split('/')[1] ?? '').toLowerCase();
+  return TAB_ICON_ROUTES.includes(segment) ? segment : null;
+}
+
+/**
  * Escopo de um caminho, pela mesma regra do servidor (`PwaIndexRenderer`): vale o primeiro segmento, sem diferenciar
  * maiúsculas, e só se for igual a um módulo da lista (`/tvx` não é da TV). Qualquer outro caminho é da raiz (`null`).
  * Consulta e fragmento (`/convite#segredo`) ficam de fora.
@@ -82,8 +94,10 @@ export class ModuleHeadService {
       this.setLink('manifest', `${prefix}/manifest.webmanifest`);
       this.setLink('apple-touch-icon', `${prefix}/apple-touch-icon.png`);
       // O ícone da aba (e o que o navegador usa em atalhos e no histórico) também é o do módulo.
-      this.setLink('icon', `${prefix}/favicon.svg`, '[type="image/svg+xml"]');
-      this.setLink('icon', `${prefix}/favicon-32.png`, '[type="image/png"]');
+      const own = slug ? null : tabIconOf(path);
+      const tab = own ? `/${own}` : prefix;
+      this.setLink('icon', `${tab}/favicon.svg`, '[type="image/svg+xml"]');
+      this.setLink('icon', `${tab}/favicon-32.png`, '[type="image/png"]');
       if (this.doc.title !== name) this.title.setTitle(name);
       if (this.meta.getTag(`name="${APPLE_TITLE_META}"`)?.content !== name) {
         this.meta.updateTag({ name: APPLE_TITLE_META, content: name });

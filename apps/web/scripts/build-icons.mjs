@@ -19,6 +19,9 @@ const SETS = [
   { svg: 'tv', dir: 'tv' },
   { svg: 'treino', dir: 'treino' },
   { svg: 'pc', dir: 'pc' },
+  // Compras mora dentro do app principal (sem manifest nem escopo): só o ícone da aba. Os SVGs maskable e mono ficam
+  // prontos na mesma família para quando o módulo ganhar escopo próprio.
+  { svg: 'compras', dir: 'compras', tabOnly: true },
 ];
 
 async function render(file, size, { opaque }) {
@@ -36,8 +39,13 @@ async function write(path, buffer) {
   console.log(`[icons] ${relative(publicDir, path).split(sep).join('/')}`);
 }
 
-for (const { svg, dir } of SETS) {
+for (const { svg, dir, tabOnly } of SETS) {
   const out = (name) => join(publicDir, dir, name);
+  if (tabOnly) {
+    await write(out('favicon.svg'), await readFile(join(designDir, `${svg}.svg`)));
+    await write(out('favicon-32.png'), await render(`${svg}.svg`, 32, { opaque: false }));
+    continue;
+  }
   await write(out('apple-touch-icon.png'), await render(`${svg}.svg`, 180, { opaque: true }));
   for (const size of [192, 512]) {
     await write(out(`icons/icon-${size}.png`), await render(`${svg}.svg`, size, { opaque: true }));

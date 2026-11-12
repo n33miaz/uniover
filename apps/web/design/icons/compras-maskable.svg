@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Versão maskable: sacola de compras com alças. Reduzida para caber no círculo central de segurança (raio de 40% do lado). -->
+  <rect width="512" height="512" fill="#3B6B4B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" transform="translate(256 256) scale(0.86) translate(-256 -256)">
+    <path d="M136 192H376L356 408A28 28 0 0 1 328 434H184A28 28 0 0 1 156 408Z"/>
+    <path d="M200 236V164A56 56 0 0 1 312 164V236"/>
+    <circle cx="200" cy="236" r="12" fill="#FFFFFF" stroke="none"/>
+    <circle cx="312" cy="236" r="12" fill="#FFFFFF" stroke="none"/>
+  </g>
+</svg>

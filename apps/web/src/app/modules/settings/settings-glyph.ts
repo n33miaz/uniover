@@ -58,6 +58,12 @@ const GLYPHS = {
       ['solid', 'M10.4 8.6l4.2 2.4-4.2 2.4z'],
     ],
   },
+  bag: {
+    layers: [
+      ['fill', 'M5.6 9h12.8l-.9 10.2a1.4 1.4 0 0 1-1.4 1.3H7.9a1.4 1.4 0 0 1-1.4-1.3z'],
+      ['line', 'M5.6 9h12.8l-.9 10.2a1.4 1.4 0 0 1-1.4 1.3H7.9a1.4 1.4 0 0 1-1.4-1.3z M9.4 11V7.4a2.6 2.6 0 0 1 5.2 0V11'],
+    ],
+  },
   dumbbell: {
     layers: [
       ['fill', 'M5.2 7.5h2.1v9H5.2z M16.7 7.5h2.1v9h-2.1z'],
@@ -278,6 +284,7 @@ const MODULE_GLYPHS: Record<ModuleIconName, SettingsGlyphName> = {
   activity: 'dumbbell',
   // Os Ajustes não listam o TV Livre; o desenho da TV basta para o mapa ficar completo.
   launcher: 'tv',
+  bag: 'bag',
   health: 'health',
   monitor: 'monitor',
   network: 'network',
