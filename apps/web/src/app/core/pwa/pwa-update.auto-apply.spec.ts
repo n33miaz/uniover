@@ -8,6 +8,8 @@ import {
   PWA_ENABLED,
   PwaUpdateService,
   TAB_LOCK_NAME,
+  UPDATE_ACTIVATE_TIMEOUT_MS,
+  UPDATE_CACHE_CLEAR_TIMEOUT_MS,
   UPDATE_POLL_MS,
 } from './pwa-update.service';
 import { LIST_CLIENTS_TIMEOUT_MS } from './sw-clients';
@@ -205,6 +207,34 @@ describe('PwaUpdateService: troca automática do worker', () => {
       navigate();
       await settle();
       expect(waiting.skips).toHaveBeenCalledTimes(1);
+    });
+
+    it('never retries by itself after an update that did not finish: only the tap on "Tentar de Novo" does', async () => {
+      // A guarda da troca automática segura a primeira navegação: o pedido de troca vem só do toque.
+      const { waiting, service } = await booted();
+      const reload = stubReload();
+      // A rede não responde: o worker novo não assume e o registro não pode ser desfeito.
+      Object.defineProperty(window, 'fetch', {
+        value: vi.fn().mockResolvedValue({ ok: false }),
+        configurable: true,
+      });
+      sessionStorage.setItem(AUTO_APPLY_KEY, String(Date.now()));
+      vi.useFakeTimers();
+      await service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS + UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+      expect(service.updateError()).toBe(true);
+      expect(waiting.skips).toHaveBeenCalledTimes(1);
+
+      // Passada a janela da guarda, nem a navegação nem a aba indo para o fundo pedem a troca de novo.
+      await vi.advanceTimersByTimeAsync(AUTO_APPLY_GUARD_MS + 1);
+      navigate();
+      await vi.advanceTimersByTimeAsync(5_000);
+      visibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(waiting.skips).toHaveBeenCalledTimes(1);
+      expect(reload).not.toHaveBeenCalled();
+      expect(service.updateError()).toBe(true);
     });
   });
 

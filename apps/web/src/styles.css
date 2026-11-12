@@ -480,11 +480,6 @@ button.ui-row:active {
   background: currentColor;
 }
 
-.ui-dot.hollow {
-  background: none;
-  box-shadow: inset 0 0 0 2px currentColor;
-}
-
 /* Botões: `primary`, `secondary` e `danger`; `block` ocupa a linha toda. */
 .ui-btn {
   display: inline-flex;
@@ -1031,42 +1026,7 @@ html:has(> body > #boot-skeleton) {
   color: var(--a-ink2);
 }
 
-/* Rodapé que só avisa ("Em breve"): ocupa o lugar de uma ação, com a mesma altura, mas não é controle. */
-.ui-quiet {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--tap);
-  margin: 0;
-  padding: 0 14px;
-  border: 1px dashed var(--a-line);
-  border-radius: var(--radius);
-  color: var(--a-ink2);
-  font-weight: 650;
-}
-
-/* Variações: chip com contorno (faixa de informações) e ladrilho grande (cartão de módulo). */
-.ui-chip.outlined {
-  min-height: 32px;
-  padding: 4px 12px;
-  border: 1px solid var(--a-line);
-  background: var(--a-surface);
-  color: var(--a-ink2);
-  box-shadow: var(--shadow-1);
-}
-
-.ui-chip.outlined.ok {
-  border-color: color-mix(in srgb, var(--a-ok) 32%, var(--a-line));
-  background: var(--a-ok-soft);
-  color: var(--a-ok-ink);
-}
-
-.ui-chip.outlined.warn {
-  border-color: color-mix(in srgb, var(--a-warn) 36%, var(--a-line));
-  background: var(--a-warn-soft);
-  color: var(--a-warn-ink);
-}
-
+/* Variação: ladrilho grande (cartão de módulo). */
 .ui-tile.lg {
   width: 48px;
   height: 48px;

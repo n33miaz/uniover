@@ -359,7 +359,7 @@ describe('PwaUpdateService', () => {
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps the worker, and still reloads, when the network does not answer', async () => {
+    it('keeps the worker and does not reload into the old version when the network does not answer: it says so once', async () => {
       const { registration, service } = setup({});
       await flush();
       const reload = stubReload();
@@ -374,7 +374,16 @@ describe('PwaUpdateService', () => {
       // Sem rede o app depende do worker para abrir: nada de desfazer o registro.
       expect(registration.unregister).not.toHaveBeenCalled();
       expect(caches.delete).not.toHaveBeenCalled();
-      expect(reload).toHaveBeenCalledTimes(1);
+      // Recarregar sob o worker antigo só devolveria a casca antiga com o mesmo aviso: a tela volta com o aviso de falha.
+      expect(reload).not.toHaveBeenCalled();
+      expect(service.updateError()).toBe(true);
+      expect(service.updateHeldByTabs()).toBe(false);
+      expect(service.showSkeleton()).toBe(false);
+      expect(service.updateReady()).toBe(true);
+      // Nada tenta de novo sozinho.
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(registration.waiting?.postMessage).toHaveBeenCalledTimes(1);
+      expect(reload).not.toHaveBeenCalled();
     });
 
     it('does not count a replaced worker as taking over: it retries with the one that replaced it', async () => {
@@ -1566,10 +1575,12 @@ describe('PwaUpdateService', () => {
       });
     });
 
-    it('does not undo the registration or the precache on a tap when another tab may be open', async () => {
+    it('does not undo the registration or the precache on a tap when another tab may be open, and does not reload into the old version', async () => {
       stubFetch();
       stubLocks(2);
-      const { service, registration } = setupWaiting();
+      const { service, registration, container, waiting } = setupWaiting();
+      const requests = () =>
+        waiting.postMessage.mock.calls.filter(([message]) => message?.type === 'SKIP_WAITING');
       await flush();
       const caches = stubCaches(['workbox-precache-v1']);
       const reload = stubReload();
@@ -1583,7 +1594,77 @@ describe('PwaUpdateService', () => {
 
       expect(registration.unregister).not.toHaveBeenCalled();
       expect(caches.delete).not.toHaveBeenCalledWith('workbox-precache-v1');
+      // O defeito do dono: aqui a página recarregava sob o worker antigo e o aviso voltava a cada toque. Agora fica na tela,
+      // sem recarga, dizendo uma vez que não deu e por quê.
+      expect(reload).not.toHaveBeenCalled();
+      expect(service.updateError()).toBe(true);
+      expect(service.updateHeldByTabs()).toBe(true);
+      expect(service.showSkeleton()).toBe(false);
+
+      // Nem as navegações seguintes repetem a troca sozinhas.
+      navigated();
+      navigated();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(requests()).toHaveLength(1);
+      expect(reload).not.toHaveBeenCalled();
+
+      // "Tentar de Novo" pede a troca outra vez; o worker assume e a página recarrega uma única vez.
+      const again = service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+      await again;
+      expect(service.updateError()).toBe(false);
+      expect(requests()).toHaveLength(2);
+      registration.waiting = null;
+      container.dispatchEvent(new Event('controllerchange'));
+      await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
       expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads once, by itself, if the worker takes over after the update was reported as failed', async () => {
+      stubFetch();
+      stubLocks(2);
+      const { service, registration, container } = setupWaiting();
+      await flush();
+      stubCaches([]);
+      const reload = stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      const decided = service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+      await decided;
+      await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS + UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+      expect(service.updateError()).toBe(true);
+      expect(reload).not.toHaveBeenCalled();
+
+      // O pedido de troca ficou de pé no worker: quando o antigo larga (a outra aba fechou), o novo assume.
+      registration.waiting = null;
+      container.dispatchEvent(new Event('controllerchange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reload).toHaveBeenCalledTimes(1);
+      container.dispatchEvent(new Event('controllerchange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('still reloads on a tap with another tab open when nothing newer is left waiting', async () => {
+      stubFetch();
+      stubLocks(2);
+      const { service, registration, waiting } = setupWaiting();
+      await flush();
+      stubCaches([]);
+      const reload = stubReload();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      const decided = service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(OTHER_TABS_ANSWER_TIMEOUT_MS);
+      await decided;
+      // O worker que recebeu o pedido foi descartado e nenhum outro ficou esperando: não há versão mais nova a ativar.
+      registration.waiting = null;
+      waiting.state = 'redundant';
+      waiting.dispatchEvent(new Event('statechange'));
+      await vi.advanceTimersByTimeAsync(UPDATE_INSTALL_TIMEOUT_MS + UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(service.updateError()).toBe(false);
     });
 
     it('treats a tab that is open but does not answer within ~500 ms as clean, so a frozen tab never blocks the tap', async () => {

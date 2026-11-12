@@ -339,14 +339,13 @@ Ativo marcado por `aria-current="page"`, calculado pelo caminho (`nested`, `also
 
 ### 5.9 Estado: ponto, chip, aviso
 
-- **`.ui-chip`**: pílula `min-height: 26px`, padding `2px 10px`, fundo `--a-elev`, `0.8125rem`, peso 650; tons `.accent`, `.ok`, `.warn`, `.bad` (fundo `-soft`, texto `-ink`); `.outlined` 32px com borda e sombra (`434-467`, `1037-1056`).
-- **`.ui-dot`**: 8px, cor `currentColor`; `.hollow` vazado (anel de 2px) (`469-480`). Estado nunca só por cor: forma cheia ou vazada.
+- **`.ui-chip`**: pílula `min-height: 26px`, padding `2px 10px`, fundo `--a-elev`, `0.8125rem`, peso 650; tons `.accent`, `.ok`, `.warn`, `.bad` (fundo `-soft`, texto `-ink`) (`434-467`).
+- **`.ui-dot`**: 8px, cor `currentColor` (`469-480`). Estado nunca só por cor: o ponto vem com texto ou forma.
 - **Ponto de estado do agente na Início**: 9px; `--a-ok`, `--a-warn`, `--a-ink3` (neutro); conectando usa `--a-accent` com halo leve de 1.8s (`home-page.css:98-126`); tem `role="status"` e rótulo.
 - **Ponto de estado da TV `app-status-dot`**: 24px (`1.5rem`), cada fase com cor e forma: conectada (cheio, `--a-ok`), dormindo (anel, `--dot-sleep`), conectando (alvo que pulsa, `--a-ok`), sem resposta (cheio com exclamação, `--a-warn`), agente desligado (anel com traço, `--a-ink3`), PC desligado (monitor dormindo, `--a-ink3`), sem rede (círculo cortado, `--a-bad`), atenção (exclamação, `--a-bad`) (`apps/web/src/app/modules/tv/ui/status-dot.css:55-93`, `status-dot.ts:6-14`). Pulso só sem movimento reduzido.
 - **Pílula de estado do PC**: verde primeiro, estado antes de tudo; pronto usa `--a-ok-soft`/`--a-ok-ink`, desconectado usa ponto vazado (`apps/web/src/app/modules/pc/pc-page.css:15-60`).
 - **`.ui-notice`** (aviso em linha): tom por `--tone` (padrão `--a-accent`; `.ok`, `.warn`, `.bad`), fundo 10% do tom sobre `--a-surface`, borda 1px 32% do tom sobre `--a-line`, raio `--radius`, padding `--space-3 --space-4`, `--fs-small`, peso 600, texto em `--a-ink` (`611-636`). Variante de entrada: fundo 9%, borda 34%, ícone 22px (`auth-notice.css:1-40`).
 - **Toast / aviso passageiro**: não definido globalmente. Existe só na TV: fixo embaixo (`bottom: gutter + safe-bottom + kb-inset`), até 36rem, borda esquerda 4px `--a-accent` (`--a-bad` no erro), sombra `0 6px 20px rgb(0 0 0 / 0.18)`, entra por `@starting-style` (`tv-page.css:328-348`, `349-380`). Sem toque (`pointer-events: none`).
-- **Rodapé que só avisa** `.ui-quiet`: borda tracejada, altura do alvo, não é controle (`styles.css:1022-1034`).
 
 ### 5.10 Vazio e erro
 

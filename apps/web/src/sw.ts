@@ -7,7 +7,7 @@ import {
 } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { ExpirationPlugin } from 'workbox-expiration';
-import { CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { CacheFirst } from 'workbox-strategies';
 import { SCOPED_MODULE_SLUGS } from './app/core/modules/module-slugs';
 import { createClaimPolicy } from './app/core/pwa/sw-claim';
 import { LIST_CLIENTS_MESSAGE, answerClientsQuery } from './app/core/pwa/sw-clients';
@@ -49,12 +49,10 @@ cleanupOutdatedCaches();
 // do servidor, já com o manifest do módulo e o nonce da CSP trocados). O `index.html` cru não entra.
 precacheAndRoute(self.__WB_MANIFEST);
 
-// A API nunca fica em cache. Só `GET` passa por aqui; `POST` e afins seguem direto para a rede, e o reenvio
-// de escritas feitas offline é da fila do app, não do service worker.
-registerRoute(
-  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/api/'),
-  new NetworkOnly(),
-);
+// A API não passa pelo worker: sem rota para `/api/`, ele não responde e o navegador busca direto na rede (nada fica em
+// cache). Responder aqui, mesmo só repassando, prendia o worker a cada pedido em aberto, e o fluxo de eventos
+// (`EventSource`) fica aberto por minutos: no Chrome o worker novo não assume enquanto o antigo tem pedido em curso, então
+// o toque em "Atualizar" estourava o prazo e, com outra aba aberta, a página recarregava na versão antiga, em laço.
 
 // Ilustrações dos exercícios: não entram no precache; ficam em cache na primeira vez que são vistas (ou quando o
 // app as aquece com rede). Os arquivos nunca mudam de conteúdo para o mesmo nome, então vale cache primeiro.
