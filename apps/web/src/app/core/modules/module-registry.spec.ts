@@ -76,6 +76,10 @@ describe('ModuleRegistry', () => {
     expect(registry().find('nada')).toBeUndefined();
   });
 
+  it('draws Compras as a shopping bag', () => {
+    expect(registry().find('shopping')!.icon).toBe('bag');
+  });
+
   describe('the PC control card', () => {
     const available = signal(false);
 

@@ -40,6 +40,14 @@ const GLYPHS = {
       ],
     ],
   },
+  // Compras: sacola com alças.
+  bag: {
+    box: '0 0 24 24',
+    layers: [
+      ['fill', 'M5.6 9h12.8l-.9 10.2a1.4 1.4 0 0 1-1.4 1.3H7.9a1.4 1.4 0 0 1-1.4-1.3z'],
+      ['line', 'M5.6 9h12.8l-.9 10.2a1.4 1.4 0 0 1-1.4 1.3H7.9a1.4 1.4 0 0 1-1.4-1.3z M9.4 11V7.4a2.6 2.6 0 0 1 5.2 0V11'],
+    ],
+  },
   dumbbell: {
     box: '0 0 24 24',
     layers: [
@@ -240,6 +248,7 @@ const MODULE_GLYPHS: Record<ModuleIconName, HomeGlyphName> = {
   tv: 'tv',
   activity: 'dumbbell',
   launcher: 'launcher',
+  bag: 'bag',
   health: 'health',
   monitor: 'monitor',
   network: 'network',

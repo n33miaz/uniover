@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, Routes, provideRouter } from '@angular/router';
-import { ModuleHeadService, moduleScopeOf } from './module-head.service';
+import { ModuleHeadService, moduleScopeOf, tabIconOf } from './module-head.service';
 
 @Component({ template: '' })
 class Blank {}
@@ -12,6 +12,7 @@ const ROUTES: Routes = [
   { path: 'treino', component: Blank },
   { path: 'pc', component: Blank },
   { path: 'pcx', component: Blank },
+  { path: 'compras', component: Blank },
   { path: 'convite', component: Blank },
   { path: 'entrar', component: Blank },
   { path: 'atalho-da-tv', redirectTo: 'tv' },
@@ -127,6 +128,19 @@ describe('moduleScopeOf', () => {
   });
 });
 
+describe('tabIconOf', () => {
+  it.each([
+    ['/compras', 'compras'],
+    ['/compras/mercado', 'compras'],
+    ['/Compras?x=1', 'compras'],
+    ['/comprass', null],
+    ['/', null],
+    ['/tv', null],
+  ])('%s has the tab icon of %s', (path, folder) => {
+    expect(tabIconOf(path)).toBe(folder);
+  });
+});
+
 describe('ModuleHeadService', () => {
   afterEach(() => {
     window.history.replaceState(null, '', '/');
@@ -166,6 +180,14 @@ describe('ModuleHeadService', () => {
     await router.navigateByUrl('/pcx');
     expect(head()).toEqual(ROOT);
     expect(tabIcons()).toEqual(['/favicon.svg', '/favicon-32.png']);
+  });
+
+  it('a module without scope keeps the root head but shows its own tab icon', async () => {
+    seedTabIcons();
+    const { router } = setup('/');
+    await router.navigateByUrl('/compras');
+    expect(tabIcons()).toEqual(['/compras/favicon.svg', '/compras/favicon-32.png']);
+    expect(head()).toEqual(ROOT);
   });
 
   it('without tab icon links in the page none is created', () => {

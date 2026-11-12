@@ -4,7 +4,16 @@ import { ScopedModuleSlug } from './module-slugs';
 
 export type ModuleStatus = 'available' | 'soon';
 export type ModuleIconName =
-  'tv' | 'activity' | 'launcher' | 'health' | 'monitor' | 'network' | 'backup' | 'bell' | 'desktop';
+  | 'tv'
+  | 'activity'
+  | 'launcher'
+  | 'bag'
+  | 'health'
+  | 'monitor'
+  | 'network'
+  | 'backup'
+  | 'bell'
+  | 'desktop';
 export type WidgetSize = 'small' | 'wide';
 
 export interface ModuleDefinition {
@@ -69,7 +78,7 @@ export class ModuleRegistry {
       title: $localize`:@@module.shopping.title:Compras`,
       description: $localize`:@@home.module.shopping-hint:Lista da casa e mercado`,
       actionLabel: $localize`:@@module.shopping.action:Abrir compras`,
-      icon: 'launcher',
+      icon: 'bag',
       status: 'available',
       defaultSize: 'small',
     },
