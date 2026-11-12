@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { PcArmed } from './data/pc-armed';
@@ -75,9 +76,29 @@ describe('PcPage', () => {
     open('ready');
     store.notice.set(FAILURE);
     fixture.detectChanges();
-    expect(root.querySelector('.notice')?.getAttribute('role')).toBe('alert');
+    expect(root.querySelector('.notice.ui-notice.bad')?.getAttribute('role')).toBe('alert');
     expect(root.querySelector('.notice')?.textContent).toContain('O PC está desconectado.');
     expect(root.querySelector('router-outlet')).not.toBeNull();
+  });
+
+  it('one notice at a time: while the open tab shows its own notice in the same place, this one waits', () => {
+    open('ready');
+    const shown = signal(true);
+    const page = fixture.componentInstance as unknown as {
+      onActivate(page: object): void;
+      onDeactivate(): void;
+    };
+    page.onActivate({ fillsScreen: true, toastShown: shown });
+    store.notice.set(FAILURE);
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')).toBeNull();
+    shown.set(false); // o da aba saiu: o desta casca volta
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')?.textContent).toContain('O PC está desconectado.');
+    shown.set(true);
+    page.onDeactivate(); // outra aba: nada mais o esconde
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')).not.toBeNull();
   });
 
   it('explains the PC confirmation and can ask for it again', () => {

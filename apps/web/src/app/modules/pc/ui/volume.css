@@ -1,13 +1,13 @@
 :host {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  grid-template-columns: var(--key-lg) minmax(0, 1fr) var(--key-lg);
   gap: var(--space-2);
 }
 
 .vol {
   display: grid;
   place-items: center;
-  min-height: 64px;
+  min-height: var(--key-lg);
   padding: 0;
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
@@ -47,7 +47,7 @@ svg {
   position: relative;
   display: grid;
   align-items: center;
-  min-height: 64px;
+  min-height: var(--key-lg);
   border: 1px solid var(--a-line);
   border-radius: var(--radius-pill);
   background: var(--a-elev);

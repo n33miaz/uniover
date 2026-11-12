@@ -43,7 +43,7 @@ button:disabled {
   gap: 6px;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: var(--tap);
   padding: 8px 0 6px;
   border: 0;
   border-radius: var(--radius-sm, 12px);
@@ -62,7 +62,7 @@ button:disabled {
   flex: 0 0 auto;
 }
 .art app-tv-app-icon {
-  --tile: 60px;
+  --tile: var(--key-tile);
 }
 
 /* Marca discreta de quem está no controle: um alfinete num disco no canto do ícone. */
@@ -130,8 +130,8 @@ button:disabled {
 .move {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
   border: 1px solid var(--a-line);
   border-radius: 50%;

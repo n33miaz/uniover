@@ -9,6 +9,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
@@ -146,7 +147,7 @@ interface Ring {
         />
       }
       @if (error(); as message) {
-        <p class="toast" role="alert">{{ message }}</p>
+        <p class="toast ui-notice bad" role="alert">{{ message }}</p>
       }
     </div>
     <p id="pad-help" class="sr-only" i18n="@@pc.pad.help">
@@ -249,6 +250,13 @@ export class MousePage {
   protected readonly typing = signal(false);
   private readonly keyboard = viewChild.required(PcLiveKeyboard);
   protected readonly error = signal<string | null>(null);
+  /**
+   * Um aviso por vez: o aviso de falha da casca (`store.notice`) flutua no mesmo lugar, logo acima da barra. Enquanto o
+   * desta tela está à vista a casca esconde o dela (este é o mais novo), e uma falha nova da casca apaga o desta tela.
+   */
+  readonly toastShown = computed(() => this.error() !== null);
+  /** O aviso da casca que já estava lá quando o desta tela entrou (a mesma falha, contada de outro jeito). */
+  private noticeAtFail: unknown = null;
   /** Uma pressão longa apertou o botão (vale na hora, antes de a resposta do PC chegar: o iOS não vibra). */
   private readonly pressing = signal(false);
   protected readonly draggingLabel = $localize`:@@pc.pad.dragging:Arrastando`;
@@ -309,6 +317,10 @@ export class MousePage {
   });
 
   constructor() {
+    effect(() => {
+      const notice = this.store.notice();
+      if (notice && notice !== this.noticeAtFail) untracked(() => this.clearError());
+    });
     // O endereço antigo do teclado chega aqui com `?teclado`: onde o navegador deixa, o teclado já abre. No iOS o foco só
     // vale dentro de um toque, então a pessoa toca no botão do teclado.
     afterNextRender(() => {
@@ -557,7 +569,13 @@ export class MousePage {
     this.store.endGesture();
   }
 
+  private clearError(): void {
+    clearTimeout(this.errorTimer);
+    this.error.set(null);
+  }
+
   protected fail(message: string): void {
+    this.noticeAtFail = this.store.notice();
     this.error.set(message);
     clearTimeout(this.errorTimer);
     this.errorTimer = setTimeout(() => this.error.set(null), ERROR_MS);

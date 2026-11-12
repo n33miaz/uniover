@@ -225,6 +225,19 @@ h1 {
 }
 
 /*
+ * Onde o aviso passageiro se apoia: uma linha sem altura logo depois do cabeçalho e da linha do motivo (a margem desfaz
+ * o vão da coluna, para ela não empurrar nada). Se a página rolou, a linha gruda no alto e o aviso segue à vista.
+ */
+.toast-slot {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + var(--gutter));
+  z-index: 5;
+  flex: none;
+  height: 0;
+  margin-top: -6px;
+}
+
+/*
  * PC desligado: os controles ficam esmaecidos (e inertes, ver o `inert` da página) e o selo fica no centro da tela, por
  * cima deles. É um estado a mais, só para o PC confirmado desligado; nos outros casos nada disto aparece.
  */

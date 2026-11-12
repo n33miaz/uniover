@@ -72,7 +72,7 @@ const CANCEL_WINDOW_MS = 5 * 60_000;
       </div>
     }
     @if (message(); as text) {
-      <p class="error" role="alert">{{ text }}</p>
+      <p class="error ui-notice bad" role="alert">{{ text }}</p>
     }
 
     @if (pending(); as action) {

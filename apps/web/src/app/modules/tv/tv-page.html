@@ -114,6 +114,37 @@
     </div>
   </header>
 
+  <!--
+    O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. Com o
+    agente fora do ar a ação é tentar de novo; sem rede ou com o servidor acordando o controle volta sozinho. Com o PC
+    confirmado desligado o aviso é o selo no centro (abaixo), e esta linha não repete o mesmo recado.
+  -->
+  @if (
+    access.view() &&
+      !unconfigured() &&
+      !store.pcOff() &&
+      !notPaired() &&
+      (access.control() || access.power() || access.launch()) &&
+      store.disabledReason();
+    as reason
+  ) {
+    <div class="reason-row" [attr.data-link]="store.link()">
+      <p class="reason">{{ reason }}</p>
+      @if (canRetry()) {
+        <button type="button" class="retry ui-btn" [disabled]="retrying()" (click)="retry()">
+          <span i18n="@@tv.reason.retry">Tentar de Novo</span>
+        </button>
+      }
+    </div>
+  }
+  <!--
+    O aviso passageiro flutua a partir daqui: logo abaixo do cabeçalho ou, quando há a linha do motivo, logo abaixo dela
+    (em cima ele taparia o motivo e o "Tentar de Novo").
+  -->
+  <div class="toast-slot">
+    <app-tv-toast [notice]="showToast() ? store.notice() : null" />
+  </div>
+
   @if (!access.view()) {
     <!-- Conta sem acesso à TV (por exemplo, só o Treino): nenhuma chamada é feita e a tela diz isso em uma frase. -->
     <div class="blocked">
@@ -137,27 +168,6 @@
       }
     </section>
   } @else {
-    <!--
-      O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. Com o
-      agente fora do ar a ação é tentar de novo; sem rede ou com o servidor acordando o controle volta sozinho. Com o PC
-      confirmado desligado o aviso é o selo no centro (abaixo), e esta linha não repete o mesmo recado.
-    -->
-    @if (
-      !store.pcOff() &&
-        !notPaired() &&
-        (access.control() || access.power() || access.launch()) &&
-        store.disabledReason();
-      as reason
-    ) {
-      <div class="reason-row" [attr.data-link]="store.link()">
-        <p class="reason">{{ reason }}</p>
-        @if (canRetry()) {
-          <button type="button" class="retry ui-btn" [disabled]="retrying()" (click)="retry()">
-            <span i18n="@@tv.reason.retry">Tentar de Novo</span>
-          </button>
-        }
-      </div>
-    }
     <!-- Com o PC desligado os controles ficam esmaecidos e inertes (nada neles funcionaria); o selo fala por eles. -->
     @if (access.control()) {
       <app-tv-control
@@ -179,8 +189,6 @@
     }
   }
 </div>
-
-<app-tv-toast [notice]="showToast() ? store.notice() : null" />
 <app-slow-command-notice [module]="'tv'" />
 
 @if (access.launch()) {

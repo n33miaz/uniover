@@ -112,7 +112,8 @@ Múltiplos de 4 (`apps/web/src/styles.css:26-33`).
 | `--space-6` | 24px |
 | `--space-8` | 32px |
 | `--gutter` | 16px (margem lateral da página; `styles.css:19`) |
-| `--tap` | 44px (tamanho mínimo de toque; `styles.css:50`) |
+| `--tap` | 44px (tamanho mínimo de toque; `styles.css:53`) |
+| `--key` / `--key-tile` / `--key-lg` | 52px / 60px / 64px (tecla comum, azulejo e tecla grande dos controles da TV e do PC) |
 
 ### 3.4 Raios
 

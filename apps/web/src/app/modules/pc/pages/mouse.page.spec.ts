@@ -754,8 +754,24 @@ describe('MousePage', () => {
       bar('Enter').click();
       await flush();
       settle();
-      expect(root.querySelector('.toast')?.getAttribute('role')).toBe('alert');
+      expect(root.querySelector('.toast.ui-notice.bad')?.getAttribute('role')).toBe('alert');
       expect(root.querySelector('.toast')?.textContent).toContain('O PC está desconectado.');
+    });
+
+    it('one notice at a time: this one is the newest while shown, and a new failure of the module replaces it', async () => {
+      // A falha que a casca já contava continua a mesma: o aviso desta tela (mais novo) fica, e a casca esconde o dela.
+      store.notice.set({ kind: 'offline', message: 'O PC está desconectado.' });
+      store.sendKey.mockResolvedValueOnce({ kind: 'offline', message: 'O PC está desconectado.' });
+      bar('Enter').click();
+      await flush();
+      settle();
+      expect(root.querySelectorAll('.toast')).toHaveLength(1);
+      expect(fixture.componentInstance.toastShown()).toBe(true);
+      // Uma falha nova da casca (no mesmo lugar, acima da barra) tira o desta tela: nada empilhado.
+      store.notice.set({ kind: 'timeout', message: 'O PC não respondeu a tempo.' });
+      settle();
+      expect(root.querySelectorAll('.toast')).toHaveLength(0);
+      expect(fixture.componentInstance.toastShown()).toBe(false);
     });
 
     it('a typed text that may have been lost says so, and a key that timed out leaves it to the failure notice', async () => {

@@ -3,7 +3,7 @@
   grid-template-columns: auto minmax(0, 1fr) minmax(5ch, auto);
   align-items: center;
   gap: var(--space-3);
-  min-height: 52px;
+  min-height: var(--key);
   padding: 0 var(--space-3);
   border: 1px solid var(--a-line);
   border-radius: var(--radius);

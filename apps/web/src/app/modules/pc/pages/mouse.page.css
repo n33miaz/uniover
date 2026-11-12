@@ -131,8 +131,8 @@
   right: var(--space-1);
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -171,17 +171,11 @@
 .toast {
   position: absolute;
   right: var(--space-3);
-  bottom: calc(var(--space-3) + 52px);
+  bottom: calc(var(--space-3) + var(--pc-bar));
   left: var(--space-3);
   z-index: 3;
-  margin: 0;
+  justify-content: center;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--a-bad);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  color: var(--a-bad);
-  font-size: var(--fs-small);
-  font-weight: 650;
   text-align: center;
 }
 
@@ -191,7 +185,7 @@
   gap: var(--space-2);
 }
 .buttons .ui-btn {
-  min-height: 52px;
+  min-height: var(--key);
   padding: 0 var(--space-2);
 }
 .buttons .ui-btn.on {

@@ -71,7 +71,7 @@ app-tv-cleanup-sheet {
 
 .primary,
 .secondary {
-  min-height: 44px;
+  min-height: var(--tap);
   white-space: nowrap;
   padding: 0 16px;
   border-radius: var(--radius);
@@ -155,7 +155,7 @@ app-tv-cleanup-sheet {
 .icon-btn {
   display: grid;
   place-items: center;
-  width: 44px;
+  width: var(--tap);
   padding: 0;
 }
 .icon-btn[aria-disabled='true'] {

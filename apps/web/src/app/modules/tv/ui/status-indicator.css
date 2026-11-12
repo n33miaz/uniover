@@ -7,8 +7,8 @@
 .trigger {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   /* O ponto desliza 3 px para o desligar (o alvo segue com os 44 px; só o desenho se aproxima). */
   padding: 0 0 0 6px;
   border: 0;
@@ -100,7 +100,7 @@
 }
 
 .action {
-  min-height: 44px;
+  min-height: var(--tap);
   margin-top: 4px;
   padding: 0 16px;
   border: 0;

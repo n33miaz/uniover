@@ -102,7 +102,9 @@ describe('PowerPage', () => {
     store.power.mockResolvedValueOnce(FAILURE);
     action('Bloquear').click();
     await settle();
-    expect(root.querySelector('.error')?.textContent).toContain('O PC está desconectado.');
+    expect(root.querySelector('.error.ui-notice.bad')?.textContent).toContain(
+      'O PC está desconectado.',
+    );
   });
 
   it('is all disabled while the PC is not connected', () => {

@@ -998,6 +998,7 @@ test.describe('Digitação ao vivo', () => {
     await page.getByRole('button', { name: 'Enter', exact: true }).click();
     await field.pressSequentially('oi');
     await expect(page.locator('.toast')).toContainText('O texto não foi enviado.');
+    await expect(page.locator('.notice')).toHaveCount(0); // um aviso por vez
     expect(typed()).toBe('');
     pc.commandFailure = null;
     await field.pressSequentially('z');
@@ -1020,7 +1021,9 @@ test.describe('Digitação ao vivo', () => {
     pc.commandFailure = { status: 504, kind: 'timeout' };
     await field.pressSequentially('a');
     await expect(page.locator('.toast')).toContainText('Parte do texto pode não ter chegado.');
-    // O motivo vem do aviso de falha da tela, sem repetir.
+    // Um aviso por vez: o motivo (o aviso de falha da tela) espera o desta conta sair, sem os dois empilhados.
+    await expect(page.locator('.notice')).toHaveCount(0);
+    await expect(page.locator('.toast')).toHaveCount(0, { timeout: 8_000 });
     await expect(page.locator('.notice')).toContainText('O PC não respondeu a tempo.');
     pc.commandFailure = null;
     await field.pressSequentially('z');

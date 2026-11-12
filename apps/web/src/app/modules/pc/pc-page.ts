@@ -94,15 +94,15 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
           </div>
         }
         @default {
-          <router-outlet (activate)="onActivate($event)" (deactivate)="fill.set(false)" />
+          <router-outlet (activate)="onActivate($event)" (deactivate)="onDeactivate()" />
         }
       }
 
       <!-- Com o Alt segurado a barra do "Trocar janela" acompanha qualquer aba: ninguém fica sem como soltá-lo. -->
       <app-pc-switcher-bar class="switcher" [class.float]="fill()" />
 
-      @if (store.notice(); as notice) {
-        <div class="notice" role="alert" [class.float]="fill()">
+      @if (!pageToast() && store.notice(); as notice) {
+        <div class="notice ui-notice bad" role="alert" [class.float]="fill()">
           <span>{{ notice.message }}</span>
           @if (canRetryDeviceApproval(notice.kind)) {
             <button
@@ -130,6 +130,9 @@ export class PcPage {
   private readonly screen = viewChild.required<ElementRef<HTMLElement>>('screen');
   /** A aba aberta pede a altura toda (a do mouse); as outras crescem com o conteúdo. */
   protected readonly fill = signal(false);
+  /** A aba aberta mostra agora um aviso próprio no mesmo lugar (o do mouse): um aviso por vez, o dela é o mais novo. */
+  private readonly pageToastShown = signal<(() => boolean) | null>(null);
+  protected readonly pageToast = computed(() => this.pageToastShown()?.() ?? false);
   /** A altura que sobra entre o cabeçalho e a barra de abas, em pixels; `null` até a primeira medida. */
   protected readonly height = signal<number | null>(null);
   /** A altura medida da barra de abas (a folga da barra do "Trocar janela" acima dela); `null` até a primeira medida. */
@@ -183,6 +186,13 @@ export class PcPage {
 
   protected onActivate(page: object): void {
     this.fill.set('fillsScreen' in page && page.fillsScreen === true);
+    const shown = 'toastShown' in page ? page.toastShown : null;
+    this.pageToastShown.set(typeof shown === 'function' ? () => Boolean(shown()) : null);
+  }
+
+  protected onDeactivate(): void {
+    this.fill.set(false);
+    this.pageToastShown.set(null);
   }
 
   protected retry(): void {

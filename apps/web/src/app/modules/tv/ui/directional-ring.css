@@ -122,8 +122,8 @@
   left: 31%;
   width: 38%;
   height: 38%;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--tap);
+  min-height: var(--tap);
   padding: 0;
   border: 3px solid var(--a-surface);
   border-radius: 50%;

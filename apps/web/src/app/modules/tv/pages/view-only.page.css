@@ -8,7 +8,7 @@
 
 .view {
   /* Lado do azulejo dos atalhos: o mesmo do controle (60 px, o do ícone grande do painel Apps). */
-  --tv-top: 60px;
+  --tv-top: var(--key-tile);
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
