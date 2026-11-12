@@ -244,7 +244,7 @@ test.describe('Pessoas e Sessões mostram o que cada um deixou', () => {
     await page
       .locator('li.person')
       .filter({ hasText: 'Raphael' })
-      .getByRole('button', { name: 'Sessões' })
+      .getByRole('button', { name: 'Acessos' })
       .click();
     await expect(page.getByText('iPhone · App Instalado')).toBeVisible();
     await expect(page.getByText('iPhone · Safari')).toBeVisible();

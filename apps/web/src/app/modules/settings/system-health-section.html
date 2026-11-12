@@ -17,7 +17,7 @@
       i18n-aria-label="@@settings.system.health.metrics-label"
     >
       <article class="metric">
-        <span class="metric-label" i18n="@@settings.system.health.metric-agent">Agente</span>
+        <span class="metric-label" i18n="@@settings.system.health.metric-agent">Computadores</span>
         <strong [class.ok]="agentTone() === 'ok'" [class.bad]="agentTone() === 'bad'">
           {{ agentMetric() }}
         </strong>
@@ -31,17 +31,15 @@
         <span class="metric-detail">{{ tvDetail() }}</span>
       </article>
       <article class="metric">
-        <span class="metric-label" i18n="@@settings.system.health.metric-api">API</span>
+        <span class="metric-label" i18n="@@settings.system.health.metric-api">Serviço</span>
         <strong class="ok">{{ apiMetric() }}</strong>
-        <span class="metric-detail" i18n="@@settings.system.health.api-detail"
-          >Resposta do servidor</span
-        >
+        <span class="metric-detail" i18n="@@settings.system.health.api-detail">Respondendo</span>
       </article>
       <article class="metric">
         <span class="metric-label" i18n="@@settings.system.health.metric-version">Versão</span>
         <strong>{{ versionMetric() }}</strong>
         <span class="metric-detail" i18n="@@settings.system.health.version-detail"
-          >API publicada</span
+          >Versão do serviço</span
         >
       </article>
       <article class="metric wide">

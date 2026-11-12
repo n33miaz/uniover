@@ -205,7 +205,7 @@ export class PairSheet {
   private approveError(error: unknown): string {
     const problem = problemOf(error);
     if (problem && isStepUpRequired(problem)) {
-      return $localize`:@@devices.pair.error.unconfirmed:A aprovação não foi confirmada com a passkey. Nada foi pareado.`;
+      return $localize`:@@devices.pair.error.unconfirmed:A aprovação não foi confirmada com a passkey. Nada foi conectado.`;
     }
     return this.commonError(
       problem,
@@ -222,7 +222,7 @@ export class PairSheet {
 
   private commonError(problem: ApiProblem | null, fallback: string): string {
     if (problem?.status === 404) {
-      return $localize`:@@devices.pair.error.not-found:Código inválido ou vencido. Confira o que o agente mostra e tente de novo.`;
+      return $localize`:@@devices.pair.error.not-found:Código inválido ou vencido. Confira o que o PC mostra e tente de novo.`;
     }
     if (problem?.status === 429) {
       const seconds = problem.retryAfterSeconds;
@@ -231,10 +231,10 @@ export class PairSheet {
         : $localize`:@@devices.pair.error.rate-limited:Muitas tentativas seguidas. Espere um pouco e tente de novo.`;
     }
     if (problem?.status === 400) {
-      return $localize`:@@devices.pair.error.invalid:Confira o código e o nome do dispositivo (letras, números, espaço e . _ ( ) -).`;
+      return $localize`:@@devices.pair.error.invalid:Confira o código e o nome do computador (letras, números, espaço e . _ ( ) -).`;
     }
     if (problem?.isNetwork) {
-      return $localize`:@@devices.pair.error.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@devices.pair.error.network:Sem conexão. Tente de novo.`;
     }
     return fallback;
   }

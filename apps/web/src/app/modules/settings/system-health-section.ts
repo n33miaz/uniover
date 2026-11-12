@@ -69,7 +69,7 @@ export class SystemHealthSection {
 
   protected agentMetric(): string {
     const list = this.agents() ?? [];
-    if (list.length === 0) return $localize`:@@settings.system.health.agent-none:Nenhum agente`;
+    if (list.length === 0) return $localize`:@@settings.system.health.agent-none:Nenhum computador`;
     const connected = list.filter((agent) => agent.connected).length;
     return connected === list.length
       ? $localize`:@@settings.system.health.agent-ready:Ligado`
@@ -157,7 +157,7 @@ export class SystemHealthSection {
   }
 
   protected versionMetric(): string {
-    // O identificador completo do commit não cabe no cartão: os sete primeiros caracteres bastam para reconhecê-lo.
+    // O identificador completo da versão não cabe no cartão: os sete primeiros caracteres bastam para reconhecê-la.
     return this.commit()?.slice(0, 7) ?? $localize`:@@settings.system.health.version-none:—`;
   }
 }
@@ -176,7 +176,7 @@ function moduleLabel(key: string): string {
     case 'web':
       return $localize`:@@settings.system.health.module-web:Site`;
     case 'agent':
-      return $localize`:@@settings.system.health.module-agent:Agente`;
+      return $localize`:@@settings.system.health.module-agent:Programa do computador`;
     default:
       return key;
   }

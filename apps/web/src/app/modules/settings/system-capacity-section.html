@@ -71,16 +71,18 @@
         >
       </article>
       <article class="fact">
-        <span class="fact-label" i18n="@@settings.system.capacity.neon">Neon (Computação)</span>
+        <span class="fact-label" i18n="@@settings.system.capacity.neon">Neon (Processamento)</span>
         <strong i18n="@@settings.system.capacity.not-measured">Não medido</strong>
         <span class="fact-detail" i18n="@@settings.system.capacity.neon-detail"
-          >Só o painel do Neon sabe</span
+          >Veja no painel do Neon</span
         >
       </article>
     </div>
 
     <section class="block ui-group" aria-labelledby="capacity-tables-title">
-      <h3 id="capacity-tables-title" i18n="@@settings.system.capacity.tables">Maiores Tabelas</h3>
+      <h3 id="capacity-tables-title" i18n="@@settings.system.capacity.tables">
+        O Que Ocupa Mais Espaço
+      </h3>
       <ol class="tables ui-plain">
         @for (table of data.database.tables; track table.schema + table.name) {
           <li>
@@ -93,7 +95,7 @@
 
     <section class="block ui-group" aria-labelledby="capacity-growth-title">
       <h3 id="capacity-growth-title" i18n="@@settings.system.capacity.growth">
-        Crescimento do Banco
+        Crescimento dos Dados
       </h3>
       @if (growthState() === 'few') {
         <p class="few" i18n="@@settings.system.capacity.few">

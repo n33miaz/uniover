@@ -50,7 +50,7 @@ test.describe('página pública /conectar', () => {
       await expect(page).toHaveURL(/\/conectar$/);
       await expect(page.getByRole('heading', { level: 1, name: 'Conectar este PC' })).toBeVisible();
 
-      const link = page.getByRole('link', { name: 'Baixar o conector' });
+      const link = page.getByRole('link', { name: 'Baixar o Programa' });
       await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
       await expect(link).toHaveAttribute('download', 'conectar-uniover.cmd');
       expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -89,7 +89,7 @@ test.describe('página pública /conectar', () => {
       await page.goto('/conectar');
       const login = page.getByRole('link', { name: 'Entrar' });
       await expect(login).toHaveAttribute('href', '/entrar?next=%2Fconectar');
-      await expect(page.getByRole('link', { name: 'Baixar o conector' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Baixar o Programa' })).toBeVisible();
       await expect(page.getByText('Você entrou como')).toHaveCount(0);
 
       await login.click();
@@ -101,7 +101,7 @@ test.describe('página pública /conectar', () => {
     }, info) => {
       identity.loggedIn = true;
       await page.goto('/conectar');
-      await expect(page.getByRole('link', { name: 'Baixar o conector' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Baixar o Programa' })).toBeVisible();
       await expect(page.locator('app-shell')).toHaveCount(0);
       await expect(page.getByText(`Você entrou como ${identity.owner.displayName}.`)).toBeVisible();
       await expect(page.getByRole('link', { name: 'Entrar' })).toHaveCount(0);
@@ -122,9 +122,9 @@ test.describe('página pública /conectar', () => {
     await page.goto('/conectar');
     await expect(page.getByRole('heading', { level: 1, name: 'Conectar este PC' })).toBeVisible();
     await expect(
-      page.getByText('O conector é para PC com Windows. Abra esta página nele.'),
+      page.getByText('Este programa é para PC com Windows. Abra esta página nele.'),
     ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Baixar o conector' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Baixar o Programa' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
     await screenshot(page, info.outputPath('conectar-other.png'));
@@ -150,9 +150,9 @@ test.describe('convidado com a TV', () => {
 
     await expect(page.getByRole('button', { name: 'Aprovar este computador' })).toBeVisible();
     await expect(page.getByText('Peça ao administrador para aprovar.')).toHaveCount(0);
-    const link = page.getByRole('link', { name: 'Baixar conector' });
+    const link = page.getByRole('link', { name: 'Baixar Programa' });
     await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
-    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Conectar computador' })).toHaveCount(0);
     expect(devices.requests).toHaveLength(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
@@ -163,7 +163,7 @@ test.describe('convidado com a TV', () => {
     seedGuest(['module:training']);
     await page.goto('/ajustes/dispositivos');
     await expect(page.getByText('Peça ao administrador para aprovar.')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Baixar conector' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Baixar Programa' })).toHaveCount(0);
     await page.goto('/ajustes');
     await expect(page.getByRole('link', { name: /^Dispositivos/ })).toHaveCount(0);
   });
@@ -255,7 +255,7 @@ test.describe('convidado com a TV', () => {
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
 
     await expect(
-      sheet.getByText('Peça ao administrador para revogar um.', { exact: false }),
+      sheet.getByText('Peça ao administrador para tirar o acesso de um.', { exact: false }),
     ).toBeVisible();
     expect(devices.tvs).toEqual([]);
   });
@@ -290,7 +290,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
     await expect(sheet).toBeVisible();
     const person = sheet.getByRole('switch', { name: 'Raphael' });
     await expect(person).not.toBeChecked();
@@ -300,7 +300,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     await screenshot(page, info.outputPath('pair-for-whom.png'));
 
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Computador PC de casa conectado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([
       // Sem apelido a TV se chama só "TV": nem o nome do computador nem o da pessoa viram o nome dela.
@@ -314,9 +314,9 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Computador PC de casa conectado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([{ name: 'TV', agentSlug: devices.agents[0].slug, memberIds: [] }]);
   });

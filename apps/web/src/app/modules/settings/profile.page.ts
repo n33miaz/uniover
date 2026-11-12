@@ -93,13 +93,13 @@ export class ProfilePage {
   protected readonly sessionText = computed(() => {
     switch (this.status()) {
       case 'authenticated':
-        return $localize`:@@settings.session.active:Sessão ativa.`;
+        return $localize`:@@settings.session.active:Acesso ativo.`;
       case 'pending':
-        return $localize`:@@settings.session.pending:Sessão a confirmar: sem conexão com o servidor. Nada foi apagado e o app confirma sozinho quando a conexão voltar.`;
+        return $localize`:@@settings.session.pending:Acesso a confirmar: sem conexão. Nada foi apagado e o app confirma sozinho quando a conexão voltar.`;
       case 'anonymous':
-        return $localize`:@@settings.session.anonymous:Sem sessão.`;
+        return $localize`:@@settings.session.anonymous:Sem acesso.`;
       default:
-        return $localize`:@@settings.session.unknown:Verificando a sessão…`;
+        return $localize`:@@settings.session.unknown:Verificando o acesso…`;
     }
   });
 

@@ -63,7 +63,7 @@ describe('PasswordSection', () => {
       'old-password',
       'new-password-123',
     );
-    expect(root.textContent).toContain('outras sessões serão encerradas em até 10 minutos');
+    expect(root.textContent).toContain('outros acessos serão encerrados em até 10 minutos');
     for (const input of root.querySelectorAll<HTMLInputElement>('input'))
       expect(input.value).toBe('');
   });

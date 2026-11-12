@@ -69,7 +69,7 @@ describe('SystemPage configuration', () => {
 
   it('shows current values and source, then saves a changed limit', async () => {
     const { fixture, el } = await render('owner');
-    expect(el.textContent).toContain('do servidor');
+    expect(el.textContent).toContain('do serviço');
     const limit = el.querySelector<HTMLInputElement>('#guest-limit')!;
     expect(limit.value).toBe('2');
     limit.value = '4';

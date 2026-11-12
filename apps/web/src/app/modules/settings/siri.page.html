@@ -157,13 +157,13 @@
   } @else if (keys() !== null && tvs() !== null) {
     @if ((tvs()?.length ?? 0) === 0) {
       <p class="empty ui-card" i18n="@@settings.siri.no-tv">
-        Nenhuma TV configurada ainda. Pareie um computador em Dispositivos primeiro.
+        Nenhuma TV configurada ainda. Conecte um computador em Dispositivos primeiro.
       </p>
     } @else if (atLimit()) {
       <p class="ui-notice warn">
         <app-settings-glyph name="alert" />
         <span i18n="@@settings.siri.limit"
-          >Você chegou ao limite de {{ maxKeys }} chaves. Revogue uma para criar outra.</span
+          >Você chegou ao limite de {{ maxKeys }} chaves. Remova uma para criar outra.</span
         >
       </p>
     } @else {
@@ -219,7 +219,7 @@
                         (click)="revoke(key)"
                         i18n="@@settings.siri.revoke"
                       >
-                        Revogar
+                        Remover
                       </button>
                     </div>
                   </div>
@@ -242,7 +242,7 @@
                     (click)="ask(key)"
                   >
                     <app-settings-glyph name="trash" />
-                    <span i18n="@@settings.siri.revoke">Revogar</span>
+                    <span i18n="@@settings.siri.revoke">Remover</span>
                   </button>
                 </div>
               }

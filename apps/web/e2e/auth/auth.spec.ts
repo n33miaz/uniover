@@ -180,7 +180,7 @@ test.describe('entrada e sessão', () => {
     expect(mock.refreshCalls).toBe(before + 1);
 
     await page.goto('/ajustes/perfil');
-    await expect(page.getByText('Sessão ativa.')).toBeVisible();
+    await expect(page.getByText('Acesso ativo.')).toBeVisible();
     await page.getByRole('button', { name: 'Sair' }).click();
     await expect(page).toHaveURL(/\/entrar$/);
     expect(mock.loggedIn).toBe(false);
@@ -310,13 +310,13 @@ test.describe('entrada e sessão', () => {
     await expect(page).toHaveURL(/\/ajustes\/perfil$/);
     // O aviso global (raiz do app) e o texto do Perfil mostram o mesmo estado.
     await expect(page.locator('app-session-notice .notice')).toBeVisible();
-    await expect(page.locator('.session')).toContainText('Sessão a confirmar');
+    await expect(page.locator('.session')).toContainText('Acesso a confirmar');
     expect(await page.evaluate((key) => localStorage.getItem(key), MODULE_PREFS_KEY)).toBe('[]');
 
     // A rede volta: a sessão é confirmada sozinha, sem digitar nada.
     mock.offline = false;
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await expect(page.getByText('Sessão ativa.')).toBeVisible();
+    await expect(page.getByText('Acesso ativo.')).toBeVisible();
   });
 });
 
@@ -341,7 +341,7 @@ test.describe('ajustes', () => {
       'TVs por Pessoa',
       'Dispositivos',
       'Sistema',
-      'Auditoria',
+      'Atividades',
       'Sobre',
     ]);
     await expect(rows).toHaveCount(9);
@@ -352,7 +352,7 @@ test.describe('ajustes', () => {
       ['Pessoas', '/ajustes/pessoas'],
       ['TVs por Pessoa', '/ajustes/tvs-por-pessoa'],
       ['Dispositivos', '/ajustes/dispositivos'],
-      ['Auditoria', '/ajustes/auditoria'],
+      ['Atividades', '/ajustes/auditoria'],
       ['Sistema', '/ajustes/sistema'],
       ['Sobre', '/ajustes/sobre'],
     ]) {
@@ -401,7 +401,7 @@ test.describe('ajustes', () => {
   test('a Segurança mostra as passkeys', async ({ page }) => {
     await page.getByRole('link', { name: /^Segurança/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/seguranca$/);
-    await expect(page.getByText('A passkey só confirma ações sensíveis')).toBeVisible();
+    await expect(page.getByText('A passkey só confirma ações importantes')).toBeVisible();
   });
 
   test('tema escuro fica salvo no aparelho e volta ao recarregar', async ({ page }) => {
@@ -466,7 +466,7 @@ test.describe('casca offline com o service worker', () => {
     await page.goto('/ajustes/perfil');
     await expect(page).toHaveURL(/\/ajustes\/perfil$/);
     await expect(page.locator('app-session-notice .notice')).toBeVisible();
-    await expect(page.locator('.session')).toContainText('Sessão a confirmar');
+    await expect(page.locator('.session')).toContainText('Acesso a confirmar');
     await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
     expect(await page.evaluate((key) => localStorage.getItem(key), MODULE_PREFS_KEY)).toBe('[]');
     await context.setOffline(false);

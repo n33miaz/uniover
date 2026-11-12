@@ -167,7 +167,7 @@ test.describe('Configurações > Sistema > Erros dos Agentes', () => {
       await open(page, scheme);
 
       await expect(
-        errors(page).getByRole('heading', { level: 2, name: 'Erros dos Agentes' }),
+        errors(page).getByRole('heading', { level: 2, name: 'Erros dos Computadores' }),
       ).toBeVisible();
       const rows = errors(page).locator('li.event');
       await expect(rows).toHaveCount(3);
@@ -207,7 +207,7 @@ test.describe('Configurações > Sistema > TVs', () => {
     await preparePasskey(page, browserName);
     await open(page);
     await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('2');
-    await expect(page.getByText('do servidor').first()).toBeVisible();
+    await expect(page.getByText('do serviço').first()).toBeVisible();
     await page.getByLabel('Computadores por Convidado').fill('4');
     await page.getByRole('button', { name: 'Salvar Dispositivos' }).click();
     if (browserName === 'chromium') {
@@ -313,7 +313,7 @@ test.describe('Configurações > Sistema > TVs', () => {
       await open(page, scheme, false);
 
       await expect(page.getByText('Nenhuma TV ainda.')).toBeVisible();
-      await expect(page.getByText('Todo computador pareado já tem uma TV.')).toBeVisible();
+      await expect(page.getByText('Todo computador conectado já tem uma TV.')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
         'href',
         '/ajustes/dispositivos',

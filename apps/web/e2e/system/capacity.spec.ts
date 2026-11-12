@@ -54,7 +54,7 @@ test.describe('Configurações > Sistema > Capacidade', () => {
       await open(page, scheme);
 
       await expect(meters(page)).toHaveCount(3);
-      await expect(meters(page).nth(0)).toContainText('Banco');
+      await expect(meters(page).nth(0)).toContainText('Dados');
       await expect(meters(page).nth(0)).toContainText('14,7 MB de 1 GB');
       await expect(meters(page).nth(0)).toContainText('1,4% · Folga');
       await expect(meters(page).nth(0)).toHaveAttribute('data-band', 'green');
@@ -134,7 +134,7 @@ test.describe('Configurações > Sistema > Capacidade', () => {
 
     const alert = card(page).locator('.alert');
     await expect(alert).toContainText('Capacidade em Risco');
-    await expect(alert).toContainText('Horas do Mês, Banco');
+    await expect(alert).toContainText('Horas do Mês, Dados');
     await check(page, info, 'capacity-alert', 'light');
 
     await alert.getByRole('button', { name: 'Dispensar' }).click();

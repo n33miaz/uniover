@@ -19,7 +19,7 @@ test('the owner reviews and ends another session in Security', async ({ page, co
   await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await page.goto('/ajustes/seguranca');
-  await expect(page.getByRole('heading', { name: 'Sessões de Acesso' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aparelhos com Acesso' })).toBeVisible();
   await expect(page.getByText('Chrome · Windows')).toBeVisible();
   await expectNoHorizontalScroll(page);
   // Os detalhes (e o Encerrar de cada sessão) vêm dobrados: o Chromium não dá caixa ao que está fechado, então abre-se tudo
@@ -39,11 +39,11 @@ test('the owner reviews and ends another session in Security', async ({ page, co
   expect(violations.map((violation) => violation.id)).toEqual([]);
   await screenshot(page, `test-results/sessions-${info.project.name}.png`, { fullPage: true });
 
-  await page.getByRole('button', { name: 'Encerrar as outras' }).click();
+  await page.getByRole('button', { name: 'Encerrar os Outros' }).click();
   expect(mock.sessions).toHaveLength(2);
   await page
-    .getByRole('group', { name: 'Confirmar outras sessões' })
-    .getByRole('button', { name: 'Encerrar as outras' })
+    .getByRole('group', { name: 'Confirmar outros acessos' })
+    .getByRole('button', { name: 'Encerrar os Outros' })
     .click();
   await expect(page.getByText('Chrome · Windows')).toHaveCount(0);
   expect(mock.sessions).toHaveLength(1);
@@ -75,8 +75,8 @@ test('the owner ends a guest session without revoking the account', async ({ pag
   await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await page.goto('/ajustes/pessoas');
-  await page.getByRole('button', { name: 'Sessões' }).click();
-  await expect(page.getByRole('heading', { name: 'Sessões de Bia' })).toBeVisible();
+  await page.getByRole('button', { name: 'Acessos' }).click();
+  await expect(page.getByRole('heading', { name: 'Acessos de Bia' })).toBeVisible();
   await expect(page.getByText('Chrome · Android')).toBeVisible();
   await expectNoHorizontalScroll(page);
   // Os detalhes e o Encerrar vêm dobrados atrás do nome do aparelho.
@@ -86,6 +86,6 @@ test('the owner ends a guest session without revoking the account', async ({ pag
     .getByRole('group', { name: 'Confirmar encerramento' })
     .getByRole('button', { name: 'Encerrar', exact: true })
     .click();
-  await expect(page.getByText('Nenhuma sessão ativa.')).toBeVisible();
+  await expect(page.getByText('Nenhum acesso ativo.')).toBeVisible();
   expect(mock.guests[0].disabledAt).toBeNull();
 });

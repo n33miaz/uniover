@@ -1,13 +1,13 @@
 <dialog #dialog class="sheet ui-dialog" aria-labelledby="pair-title" (cancel)="cancel($event)">
   <span class="grabber" aria-hidden="true"></span>
   <form (submit)="approve($event)" novalidate>
-    <h2 id="pair-title" i18n="@@devices.pair.title">Parear dispositivo</h2>
+    <h2 id="pair-title" i18n="@@devices.pair.title">Conectar computador</h2>
     <p class="hint" i18n="@@devices.pair.hint">
-      Rode o agente no PC e digite o código que ele mostrar. Ao aprovar, o dispositivo passa a
+      Abra o programa no PC e digite o código que ele mostrar. Ao aprovar, o computador passa a
       receber comandos da casa.
     </p>
 
-    <label for="pair-code" i18n="@@devices.pair.code">Código do dispositivo</label>
+    <label for="pair-code" i18n="@@devices.pair.code">Código do computador</label>
     <input
       id="pair-code"
       class="code ui-input"
@@ -47,7 +47,7 @@
       </p>
     }
 
-    <label for="pair-name" i18n="@@devices.pair.name">Nome do dispositivo</label>
+    <label for="pair-name" i18n="@@devices.pair.name">Nome do computador</label>
     <input
       id="pair-name"
       class="ui-input"

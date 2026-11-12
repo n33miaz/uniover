@@ -43,9 +43,9 @@ test.describe('link do QR do agente', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto(DEEP_LINK);
-    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByLabel('Código do dispositivo')).toHaveValue('BCDF-2345');
+    await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
     await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeEnabled();
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
     await expectNoHorizontalScroll(page);
@@ -53,7 +53,7 @@ test.describe('link do QR do agente', () => {
     await screenshot(page, info.outputPath('deep-link.png'));
 
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Computador PC de casa conectado.')).toBeVisible();
     expect(devices.openCodes.size).toBe(0);
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
   });
@@ -70,9 +70,9 @@ test.describe('link do QR do agente', () => {
     await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
-    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByLabel('Código do dispositivo')).toHaveValue('BCDF-2345');
+    await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
   });
 
@@ -116,11 +116,11 @@ test.describe('conectar este PC', () => {
       const sheet = page.getByRole('dialog', { name: 'Conectar este PC' });
       await expect(sheet).toBeVisible();
       await expect(sheet.getByRole('listitem')).toHaveText([
-        'Baixar e abrir o conector',
+        'Baixar e abrir o programa',
         'Escanear o QR com o celular',
         'Aceitar na TV',
       ]);
-      const link = sheet.getByRole('link', { name: 'Baixar conector' });
+      const link = sheet.getByRole('link', { name: 'Baixar Programa' });
       await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
       await expect(link).toHaveAttribute('download', 'conectar-uniover.cmd');
       const box = await link.boundingBox();
@@ -155,7 +155,7 @@ test.describe('conectar este PC', () => {
   test('fora do Windows não oferece o download e explica em uma linha', async ({ page }, info) => {
     identity.loggedIn = true;
     await page.goto('/ajustes/dispositivos');
-    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Conectar computador' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Conectar este PC' })).toHaveCount(0);
     await expect(
       page.getByText('Para conectar um PC, abra esta tela nele (Windows).'),

@@ -254,7 +254,7 @@ describe('PeoplePermissionsSheet', () => {
       const { error, button, saved } = await fail(
         problem(403, 'step-up-required', { code: 'step_up_required' }),
       );
-      expect(error()).toContain('não foi confirmada com a passkey');
+      expect(error()).toContain('não foi confirmada com a passkey. Nada foi alterado.');
       expect(error()).toContain('Nada foi alterado');
       expect(button('Salvar').disabled).toBe(false);
       expect(saved).toHaveLength(0);
@@ -275,7 +275,7 @@ describe('PeoplePermissionsSheet', () => {
 
     it('409 for a revoked guest: explains the access is gone and refreshes the list', async () => {
       const { error, button, outdated } = await fail(problem(409, 'guest-revoked'));
-      expect(error()).toContain('já foi revogado');
+      expect(error()).toContain('já foi removido');
       expect(outdated()).toBe(1);
       expect(button('Salvar').disabled).toBe(true);
     });
@@ -302,7 +302,7 @@ describe('PeoplePermissionsSheet', () => {
 
     it('no connection: says nothing changed and to try again', async () => {
       const { error } = await fail(new HttpErrorResponse({ status: 0 }));
-      expect(error()).toContain('Sem conexão com o servidor');
+      expect(error()).toContain('Sem conexão');
       expect(error()).toContain('Nada foi alterado');
     });
 

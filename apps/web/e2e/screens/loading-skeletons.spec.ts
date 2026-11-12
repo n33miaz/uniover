@@ -183,7 +183,7 @@ const SETTINGS_SCREENS: readonly Screen[] = [
   {
     path: '/ajustes/dispositivos',
     hold: '**/api/v1/devices/agents',
-    done: (page) => page.getByText(/Nenhum (aparelho|dispositivo) pareado\./),
+    done: (page) => page.getByText(/Nenhum computador conectado\./),
     setup: async (context) => void (await mockDevicesApi(context, identity)),
   },
   {

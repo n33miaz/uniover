@@ -182,12 +182,12 @@ test.describe('Configurações > Segurança > Atalhos da Siri', () => {
   test('revoga uma chave depois de perguntar', async ({ page }) => {
     siri.keys.push({ ...OLD_KEY });
     await open(page);
-    await page.getByRole('button', { name: 'Revogar iPhone do dono' }).click();
+    await page.getByRole('button', { name: 'Remover iPhone do dono' }).click();
     await expect(page.getByText(/param de funcionar/)).toBeVisible();
     expect(siri.requests.filter((r) => r.method === 'DELETE')).toHaveLength(0);
 
-    await page.getByRole('button', { name: 'Revogar', exact: true }).click();
-    await expect(page.getByText('Chave revogada.')).toBeVisible();
+    await page.getByRole('button', { name: 'Remover', exact: true }).click();
+    await expect(page.getByText('Chave removida.')).toBeVisible();
     await expect(page.locator('li.item')).toHaveCount(0);
     expect(siri.requests.filter((r) => r.method === 'DELETE').map((r) => r.path)).toEqual([
       '/siri/tokens/key-0',

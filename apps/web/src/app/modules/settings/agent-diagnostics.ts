@@ -51,9 +51,9 @@ export function kindLabel(kind: string): string {
     case 'background.failed':
       return $localize`:@@settings.system.agent-errors.kind.background-failed:Tarefa de fundo falhou`;
     case 'process.crashed':
-      return $localize`:@@settings.system.agent-errors.kind.process-crashed:O agente caiu`;
+      return $localize`:@@settings.system.agent-errors.kind.process-crashed:O programa do computador fechou`;
     case 'process.unresponsive':
-      return $localize`:@@settings.system.agent-errors.kind.process-unresponsive:O agente travou e foi reiniciado`;
+      return $localize`:@@settings.system.agent-errors.kind.process-unresponsive:O programa do computador travou e foi reiniciado`;
     case 'repair.done':
       return $localize`:@@settings.system.agent-errors.kind.repair-done:Reparo feito`;
     case 'repair.failed':
@@ -69,7 +69,7 @@ export function kindLabel(kind: string): string {
     case 'startup.task_missing':
       return $localize`:@@settings.system.agent-errors.kind.startup-task-missing:Início automático refeito`;
     case 'agent.started':
-      return $localize`:@@settings.system.agent-errors.kind.agent-started:Agente iniciado`;
+      return $localize`:@@settings.system.agent-errors.kind.agent-started:Programa do computador iniciado`;
     case 'disk.low':
       return $localize`:@@settings.system.agent-errors.kind.disk-low:Pouco espaço em disco`;
     case 'disk.recovered':

@@ -155,11 +155,11 @@ export class GuestsSection {
   }
 
   protected revokeInviteLabel(invite: GuestInviteSummary): string {
-    return $localize`:@@settings.guests.revoke-invite-label:Revogar o convite de ${invite.displayName}:name:`;
+    return $localize`:@@settings.guests.revoke-invite-label:Remover convite de ${invite.displayName}:name:`;
   }
 
   protected revokeGuestLabel(guest: GuestSummary): string {
-    return $localize`:@@settings.guests.revoke-guest-label:Revogar acesso de ${guest.displayName}:name:`;
+    return $localize`:@@settings.guests.revoke-guest-label:Tirar o acesso de ${guest.displayName}:name:`;
   }
 
   protected permissionsLabel(guest: GuestSummary): string {
@@ -167,7 +167,7 @@ export class GuestsSection {
   }
 
   protected revokeGuestQuestion(guest: GuestSummary): string {
-    return $localize`:@@settings.guests.revoke-guest-question:Revogar o acesso de ${guest.displayName}:name:? A pessoa deixa de ter acesso em poucos minutos.`;
+    return $localize`:@@settings.guests.revoke-guest-question:Tirar o acesso de ${guest.displayName}:name:? A pessoa perde o acesso em poucos minutos.`;
   }
 
   protected value(event: Event): string {
@@ -259,9 +259,12 @@ export class GuestsSection {
       await this.auth.authorized((token) => this.api.revokeGuestInvite(token, invite.id));
       this.revokingInviteId.set(null);
       await this.load();
-      this.say($localize`:@@settings.guests.invite-revoked:Convite revogado.`, false);
+      this.say($localize`:@@settings.guests.invite-revoked:Convite removido.`, false);
     } catch {
-      this.say($localize`:@@settings.guests.revoke-failed:Não foi possível revogar agora.`, true);
+      this.say(
+        $localize`:@@settings.guests.revoke-failed:Não foi possível fazer isso agora.`,
+        true,
+      );
     } finally {
       this.busy.set(false);
     }
@@ -305,9 +308,12 @@ export class GuestsSection {
       await this.auth.authorized((token) => this.api.revokeGuest(token, guest.id));
       this.revokingGuestId.set(null);
       await this.load();
-      this.say($localize`:@@settings.guests.guest-revoked:Acesso revogado.`, false);
+      this.say($localize`:@@settings.guests.guest-revoked:Acesso removido.`, false);
     } catch {
-      this.say($localize`:@@settings.guests.revoke-failed:Não foi possível revogar agora.`, true);
+      this.say(
+        $localize`:@@settings.guests.revoke-failed:Não foi possível fazer isso agora.`,
+        true,
+      );
     } finally {
       this.busy.set(false);
     }
@@ -429,7 +435,7 @@ export class GuestsSection {
   private createError(error: unknown): string {
     const problem = problemOf(error);
     if (problem?.kind === 'too-many-invites') {
-      return $localize`:@@settings.guests.too-many:Há convites pendentes demais. Revogue algum antes de criar outro.`;
+      return $localize`:@@settings.guests.too-many:Há convites pendentes demais. Remova um antes de criar outro.`;
     }
     if (problem?.status === 403) {
       return $localize`:@@settings.guests.unconfirmed:O convite não foi criado: falta a confirmação com a passkey. Cadastre uma passkey em Segurança e tente de novo.`;
@@ -441,7 +447,7 @@ export class GuestsSection {
       return $localize`:@@settings.guests.rate-limited:Muitas tentativas seguidas. Espere um pouco.`;
     }
     if (problem?.isNetwork) {
-      return $localize`:@@settings.guests.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@settings.guests.network:Sem conexão. Tente de novo.`;
     }
     return $localize`:@@settings.guests.create-failed:Não foi possível criar o convite agora.`;
   }

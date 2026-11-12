@@ -187,7 +187,7 @@ describe('SystemTvSection', () => {
     api.tvConfig.mockResolvedValue(config([CASA_PC, AMIGO_PC]));
     const { el, add } = await render();
     expect(add()).toBeNull();
-    expect(el.textContent).toContain('Todo computador pareado já tem uma TV');
+    expect(el.textContent).toContain('Todo computador conectado já tem uma TV');
     expect(el.querySelector('a.devices-link')?.getAttribute('href')).toBe('/ajustes/dispositivos');
   });
 

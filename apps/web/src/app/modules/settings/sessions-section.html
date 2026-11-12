@@ -5,7 +5,7 @@
   }
   @if (sessions(); as list) {
     @if (list.length === 0) {
-      <p class="ui-card empty" i18n="@@settings.sessions.empty">Nenhuma sessão ativa.</p>
+      <p class="ui-card empty" i18n="@@settings.sessions.empty">Nenhum acesso ativo.</p>
     } @else {
       <ul class="sessions">
         @for (item of list; track item.id) {
@@ -30,7 +30,7 @@
                     aria-label="Confirmar encerramento"
                     i18n-aria-label="@@settings.sessions.confirm-label"
                   >
-                    <p i18n="@@settings.sessions.confirm">Encerrar esta sessão?</p>
+                    <p i18n="@@settings.sessions.confirm">Encerrar este acesso?</p>
                     <div class="actions">
                       <button
                         type="button"
@@ -72,10 +72,10 @@
           <div
             class="confirm ui-notice bad"
             role="group"
-            aria-label="Confirmar outras sessões"
+            aria-label="Confirmar outros acessos"
             i18n-aria-label="@@settings.sessions.confirm-others-label"
           >
-            <p i18n="@@settings.sessions.confirm-others">Encerrar todas as outras sessões?</p>
+            <p i18n="@@settings.sessions.confirm-others">Encerrar todos os outros acessos?</p>
             <div class="actions">
               <button
                 type="button"
@@ -92,7 +92,7 @@
                 (click)="revokeOthers()"
                 i18n="@@settings.sessions.end-others"
               >
-                Encerrar as outras
+                Encerrar os Outros
               </button>
             </div>
           </div>
@@ -103,14 +103,14 @@
             (click)="confirmingOthers.set(true)"
             i18n="@@settings.sessions.end-others"
           >
-            Encerrar as outras
+            Encerrar os Outros
           </button>
         }
       }
     }
   } @else if (failed()) {
     <div class="ui-notice bad" role="alert">
-      <span i18n="@@settings.sessions.load-failed">Não foi possível carregar as sessões.</span>
+      <span i18n="@@settings.sessions.load-failed">Não foi possível carregar os acessos.</span>
       <button type="button" class="secondary ui-btn" (click)="retry()" i18n="@@settings.retry">
         Tentar de novo
       </button>
@@ -120,7 +120,7 @@
       [kind]="'cards'"
       [count]="2"
       i18n-label="@@settings.sessions.loading"
-      label="Carregando sessões…"
+      label="Carregando acessos…"
       [reload]="false"
       (retried)="retry()"
     />

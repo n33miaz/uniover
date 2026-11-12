@@ -49,11 +49,11 @@ export class SystemCapacitySection {
     return [
       {
         key: 'database',
-        label: $localize`:@@settings.system.capacity.database:Banco`,
+        label: $localize`:@@settings.system.capacity.database:Dados`,
         value: $localize`:@@settings.system.capacity.of:${formatBytes(database.bytes)}:used: de ${formatBytes(database.limitBytes)}:limit:`,
         percent: database.percent,
         band: database.band,
-        estimate: $localize`:@@settings.system.capacity.database-note:Tamanho lógico do Postgres; o provedor pode medir um pouco diferente.`,
+        estimate: $localize`:@@settings.system.capacity.database-note:Espaço usado pelos dados. A medição pode variar um pouco.`,
       },
       {
         key: 'memory',
@@ -148,13 +148,13 @@ export class SystemCapacitySection {
 
   protected metricName(metric: string): string {
     return metric === 'database'
-      ? $localize`:@@settings.system.capacity.database:Banco`
+      ? $localize`:@@settings.system.capacity.database:Dados`
       : metric === 'memory'
         ? $localize`:@@settings.system.capacity.memory:Memória`
         : $localize`:@@settings.system.capacity.hours:Horas do Mês`;
   }
 
-  /** "Banco, Memória" quando mais de uma métrica passou do vermelho. */
+  /** "Dados, Memória" quando mais de uma métrica passou do vermelho. */
   protected alertMetrics(): string {
     return (this.report()?.alerts ?? []).map((alert) => this.metricName(alert.metric)).join(', ');
   }
@@ -185,7 +185,7 @@ export class SystemCapacitySection {
 
   protected sparkLabel(): string {
     const count = this.series().length;
-    return $localize`:@@settings.system.capacity.spark-label:Tamanho do banco nos últimos ${count}:count: dias com amostra`;
+    return $localize`:@@settings.system.capacity.spark-label:Tamanho dos dados nos últimos ${count}:count: dias com amostra`;
   }
 
   protected readonly sparkWidth = SPARK_WIDTH;

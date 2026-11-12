@@ -109,7 +109,7 @@ describe('DevicesPage', () => {
     const { el } = await render();
     const item = el.querySelector('.item')!;
     expect(item.querySelector('.name')?.textContent).toBe('PC de casa');
-    expect(item.textContent).toContain('Pareado em');
+    expect(item.textContent).toContain('Adicionado em');
     expect(item.textContent).toContain('Ativo');
     expect(item.querySelector('.last-seen')?.textContent).toContain('Visto há');
   });
@@ -204,7 +204,7 @@ describe('DevicesPage', () => {
       const { el } = await render();
       expect(el.querySelector('.connection')?.textContent).toContain('Conectado agora');
       const line = el.querySelector('.startup')!;
-      expect(line.textContent).toContain('Conectado, mas a versão do agente foi recusada');
+      expect(line.textContent).toContain('Conectado, mas a versão do programa foi recusada');
       expect(line.getAttribute('role')).toBeNull();
       // Vem do hub, com o agente autenticado: não leva o selo de não verificado.
       expect(line.textContent).not.toContain('não verificado');
@@ -237,11 +237,11 @@ describe('DevicesPage', () => {
   it('shows what the agent told about the computer: version, system, TV and connection', async () => {
     const { el } = await render();
     const item = el.querySelector('.item')!;
-    expect(item.querySelector('.version')?.textContent).toBe('Versão 0.1.0 · 3f2a9c1');
+    expect(item.querySelector('.version')?.textContent).toBe('Versão 0.1.0');
     expect(item.textContent).toContain('Sistema: Windows 11 (10.0.26200)');
     expect(item.querySelector('.tv')?.textContent).toBe('Android TV · 192.168.0.20');
     expect(item.querySelector('.connection')?.textContent).toContain('Conectado agora');
-    expect(item.querySelector('.status-summary')?.textContent).toContain('Agente');
+    expect(item.querySelector('.status-summary')?.textContent).toContain('Programa');
     expect(item.querySelector('.status-summary')?.textContent).toContain('TV');
   });
 
@@ -315,9 +315,7 @@ describe('DevicesPage', () => {
       const update = await updateText(withUpdate({}));
       expect(update.querySelector('.update-state')?.textContent).toContain('Atualizado');
       expect(update.querySelector('.update-state')?.classList).toContain('ok');
-      expect(update.querySelector('.update-installed')?.textContent).toContain(
-        'Instalada: 3f2a9c1',
-      );
+      expect(update.querySelector('.update-installed')?.textContent).toContain('Instalada em');
       expect(update.querySelector('.update-installed')?.textContent).toContain('2026');
       expect(update.querySelector('.update-newest')?.textContent).toContain('a mesma instalada');
       expect(update.querySelector('.update-check')?.textContent).toContain('sem novidade');
@@ -335,7 +333,9 @@ describe('DevicesPage', () => {
       expect(state.textContent).toContain('Atualização pendente');
       expect(state.textContent).toContain('próxima checagem em');
       expect(state.classList).toContain('warn');
-      expect(update.querySelector('.update-newest')?.textContent).toContain('a1b2c3d');
+      expect(update.querySelector('.update-newest')?.textContent).toContain(
+        'Há uma versão nova disponível',
+      );
     });
 
     it('says why and when the update failed', async () => {
@@ -359,7 +359,7 @@ describe('DevicesPage', () => {
       );
       expect(blocked.querySelector('.update-state')?.textContent).toContain('bloqueada');
       expect(blocked.querySelector('.update-rollback')?.textContent).toContain(
-        'a versão a1b2c3d não será instalada de novo',
+        'a versão com problema não será instalada de novo',
       );
     });
 
@@ -374,7 +374,7 @@ describe('DevicesPage', () => {
     it('says "versão desconhecida" and asks to update an old agent that never told its state', async () => {
       const update = await updateText({ ...PC });
       expect(update.querySelector('.update-state')?.textContent).toContain(
-        'Versão desconhecida: atualize o agente',
+        'Versão desconhecida: atualize o programa',
       );
       expect(update.querySelector('.update-state')?.classList).toContain('warn');
       expect(update.querySelector('.update-installed')).toBeNull();
@@ -406,7 +406,7 @@ describe('DevicesPage', () => {
       const { fixture, el, button } = await render();
       button('Voltar para a Versão Anterior').click();
       fixture.detectChanges();
-      expect(el.textContent).toContain('para a versão anterior (0a1b2c3)');
+      expect(el.textContent).toContain('Voltar o programa de PC de casa para a versão anterior?');
       expect(api.maintain).not.toHaveBeenCalled();
       el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
       await vi.waitFor(() => {
@@ -463,7 +463,7 @@ describe('DevicesPage', () => {
     fixture.detectChanges();
     expect(el.querySelector('app-agent-log-sheet')).toBeNull();
     expect(api.logs).not.toHaveBeenCalled();
-    expect(el.querySelector('.message')?.textContent).toContain('Atualize o agente');
+    expect(el.querySelector('.message')?.textContent).toContain('Atualize o programa');
     button('Atualizar Agora').click();
     fixture.detectChanges();
     expect(api.maintain).not.toHaveBeenCalled();
@@ -474,7 +474,7 @@ describe('DevicesPage', () => {
     const { fixture, el, button } = await render();
     button('Atualizar Agora').click();
     fixture.detectChanges();
-    expect(el.textContent).toContain('Atualizar o agente de PC de casa agora?');
+    expect(el.textContent).toContain('Atualizar o programa de PC de casa agora?');
     expect(api.maintain).not.toHaveBeenCalled();
     el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
     await vi.waitFor(() => {
@@ -487,14 +487,14 @@ describe('DevicesPage', () => {
 
   it('can cancel the restart without asking anything', async () => {
     const { fixture, el, button } = await render();
-    button('Reiniciar o Agente').click();
+    button('Reiniciar o Programa').click();
     fixture.detectChanges();
-    expect(el.textContent).toContain('Reiniciar o agente de PC de casa?');
+    expect(el.textContent).toContain('Reiniciar o programa de PC de casa?');
     button('Cancelar').click();
     fixture.detectChanges();
     expect(api.maintain).not.toHaveBeenCalled();
     expect(el.querySelector('.maintenance-confirm')).toBeNull();
-    expect(button('Reiniciar o Agente')).toBeDefined();
+    expect(button('Reiniciar o Programa')).toBeDefined();
   });
 
   it('restarts after the confirmation and reports a refusal of the passkey', async () => {
@@ -509,7 +509,7 @@ describe('DevicesPage', () => {
       }),
     );
     const { fixture, el, button } = await render();
-    button('Reiniciar o Agente').click();
+    button('Reiniciar o Programa').click();
     fixture.detectChanges();
     el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
     await vi.waitFor(() => {
@@ -522,9 +522,9 @@ describe('DevicesPage', () => {
   });
 
   it.each([
-    ['agent-offline', 'O agente está desconectado'],
-    ['agent-timeout', 'O agente não respondeu a tempo'],
-    ['agent-outdated', 'Atualize o agente'],
+    ['agent-offline', 'O computador está desconectado'],
+    ['agent-timeout', 'O computador não respondeu a tempo'],
+    ['agent-outdated', 'Atualize o programa'],
   ])('explains a %s answer in plain words', async (kind, text) => {
     api.maintain.mockRejectedValueOnce(
       new HttpErrorResponse({
@@ -533,7 +533,7 @@ describe('DevicesPage', () => {
       }),
     );
     const { fixture, el, button } = await render();
-    button('Reiniciar o Agente').click();
+    button('Reiniciar o Programa').click();
     fixture.detectChanges();
     el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
     await vi.waitFor(() => {
@@ -547,25 +547,25 @@ describe('DevicesPage', () => {
     const { fixture, el, button } = await render();
     expect(button('Ver Registro').disabled).toBe(true);
     expect(button('Atualizar Agora').disabled).toBe(true);
-    expect(button('Reiniciar o Agente').disabled).toBe(true);
-    expect(button('Revogar').disabled).toBe(false);
+    expect(button('Reiniciar o Programa').disabled).toBe(true);
+    expect(button('Tirar o Acesso').disabled).toBe(false);
     api.list.mockResolvedValue([PC]);
     TestBed.inject(ConnectivityService).online.set(false);
     fixture.detectChanges();
-    expect(button('Revogar').disabled).toBe(true);
+    expect(button('Tirar o Acesso').disabled).toBe(true);
     expect(el.textContent).toContain('Sem conexão');
   });
 
   it('explains the empty state', async () => {
     api.list.mockResolvedValue([]);
     const { el } = await render();
-    expect(el.textContent).toContain('Nenhum dispositivo pareado.');
+    expect(el.textContent).toContain('Nenhum computador conectado.');
   });
 
   it('offers a retry when the list cannot be loaded', async () => {
     api.list.mockRejectedValueOnce(new HttpErrorResponse({ status: 0 }));
     const { fixture, el, button } = await render();
-    expect(el.textContent).toContain('Não foi possível carregar os dispositivos');
+    expect(el.textContent).toContain('Não foi possível carregar os computadores');
     button('Tentar de novo').click();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -574,7 +574,7 @@ describe('DevicesPage', () => {
 
   it('opens the pairing sheet and, after approving, shows the message and reloads the list', async () => {
     const { fixture, el, button } = await render();
-    button('Parear Dispositivo').click();
+    button('Conectar Computador').click();
     await fixture.whenStable();
     fixture.detectChanges();
     const code = el.querySelector<HTMLInputElement>('#pair-code')!;
@@ -588,14 +588,16 @@ describe('DevicesPage', () => {
       expect(el.querySelectorAll('.item')).toHaveLength(2);
     });
     expect(el.querySelector('app-pair-sheet')).toBeNull();
-    expect(el.querySelector('.message')?.textContent).toContain('Dispositivo PC de casa pareado.');
+    expect(el.querySelector('.message')?.textContent).toContain('Computador PC de casa conectado.');
   });
 
   it('confirms inline before revoking and marks the item as revoked', async () => {
     const { fixture, el, button } = await render();
-    button('Revogar').click();
+    button('Tirar o Acesso').click();
     fixture.detectChanges();
-    expect(el.textContent).toContain('Revogar o PC de casa? Ele para de receber comandos na hora.');
+    expect(el.textContent).toContain(
+      'Tirar o acesso de PC de casa? Ele para de receber comandos na hora.',
+    );
     expect(api.revoke).not.toHaveBeenCalled();
     el.querySelector<HTMLButtonElement>('.danger')!.click();
     await vi.waitFor(() => {
@@ -603,19 +605,19 @@ describe('DevicesPage', () => {
       expect(el.querySelector('.chip.revoked')).not.toBeNull();
     });
     expect(api.revoke).toHaveBeenCalledExactlyOnceWith('a1');
-    expect(el.textContent).toContain('Dispositivo revogado.');
+    expect(el.textContent).toContain('Acesso do computador removido.');
     expect(el.querySelector('.item .actions')).toBeNull();
   });
 
   it('keeps the item when revoking fails and says so', async () => {
     api.revoke.mockRejectedValue(new HttpErrorResponse({ status: 500 }));
     const { fixture, el, button } = await render();
-    button('Revogar').click();
+    button('Tirar o Acesso').click();
     fixture.detectChanges();
     el.querySelector<HTMLButtonElement>('.danger')!.click();
     await vi.waitFor(() => {
       fixture.detectChanges();
-      expect(el.textContent).toContain('Não foi possível revogar agora.');
+      expect(el.textContent).toContain('Não foi possível tirar o acesso agora.');
     });
     expect(el.querySelector('.chip.active')).not.toBeNull();
   });
@@ -624,8 +626,8 @@ describe('DevicesPage', () => {
     const { fixture, el, button } = await render();
     TestBed.inject(ConnectivityService).online.set(false);
     fixture.detectChanges();
-    expect(button('Parear Dispositivo').disabled).toBe(true);
-    expect(button('Revogar').disabled).toBe(true);
+    expect(button('Conectar Computador').disabled).toBe(true);
+    expect(button('Tirar o Acesso').disabled).toBe(true);
     expect(el.textContent).toContain('Sem conexão: isto precisa de rede.');
   });
 
@@ -767,7 +769,7 @@ describe('DevicesPage', () => {
         b.textContent?.trim(),
       );
       expect(main).toEqual(['Ver Registro', 'Atualizar Agora']);
-      expect(danger).toEqual(['Reiniciar o Agente', 'Revogar']);
+      expect(danger).toEqual(['Reiniciar o Programa', 'Tirar o Acesso']);
     });
 
     it('has no back link of its own: the header arrow is the only one', async () => {
@@ -891,7 +893,7 @@ describe('DevicesPage deep link and connector', () => {
     });
     const { el } = await open('/ajustes/dispositivos');
     const link = el.querySelector<HTMLAnchorElement>('a.download')!;
-    expect(link.textContent?.trim()).toBe('Baixar conector');
+    expect(link.textContent?.trim()).toBe('Baixar Programa');
     expect(link.getAttribute('href')).toBe('/conectar/conectar-uniover.cmd');
     // Sem lista de aparelhos nem "Parear aparelho" (isso é do administrador): só a aprovação do próprio PC.
     expect(Array.from(el.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual([

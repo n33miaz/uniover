@@ -121,7 +121,7 @@ export class SystemPage {
   protected source(key: SystemSettingKey): string {
     return this.setting(key)?.source === 'app'
       ? $localize`:@@settings.system.config.source-app:do app`
-      : $localize`:@@settings.system.config.source-server:do servidor`;
+      : $localize`:@@settings.system.config.source-server:do serviço`;
   }
 
   protected async save(key: SystemSettingKey, value: string | number | boolean): Promise<void> {

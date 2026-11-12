@@ -272,7 +272,7 @@ test.describe('Configurações > Sistema > TVs', () => {
     seed(false);
     await open(page);
     await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
-    await expect(page.getByText('Todo computador pareado já tem uma TV')).toBeVisible();
+    await expect(page.getByText('Todo computador conectado já tem uma TV')).toBeVisible();
     await check(page, info, 'tvs-sem-livre', 'light');
   });
 

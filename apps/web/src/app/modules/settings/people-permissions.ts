@@ -142,7 +142,7 @@ export function permissionSummary(permissions: readonly string[]): string {
 
 /** O aviso de quando nada está ligado; aparece no lugar do resumo e é a razão de "Gerar convite" e "Salvar" ficarem apagados. */
 export function noModuleText(): string {
-  return $localize`:@@settings.people.no-module:Ligue ao menos um módulo. Para tirar todo o acesso, revogue a pessoa.`;
+  return $localize`:@@settings.people.no-module:Ligue ao menos um módulo. Para tirar todo o acesso, use Tirar o Acesso.`;
 }
 
 /** A frase de cada interruptor, em linguagem de gente (os rótulos curtos do resumo ficam em `permissionLabels`). */

@@ -2,7 +2,7 @@
   @if (!canManage) {
     @if (canPairSelf) {
       <p class="empty ui-rise" role="status" i18n="@@devices.guest-pair.intro">
-        Baixe o conector no PC e aprove aqui.
+        Baixe o programa no PC e aprove aqui.
       </p>
       @if (message(); as text) {
         <p class="message ui-notice ok ui-rise" role="status">{{ text }}</p>
@@ -29,7 +29,7 @@
           download="conectar-uniover.cmd"
           i18n-download="@@devices.connect.download-file"
           i18n="@@devices.connect.download"
-          >Baixar conector</a
+          >Baixar Programa</a
         >
       } @else {
         <p class="windows-only" i18n="@@devices.connect.windows-only">
@@ -83,7 +83,7 @@
       @if (agents(); as list) {
         @if (list.length === 0) {
           <p class="empty ui-rise" i18n="@@devices.empty">
-            Nenhum dispositivo pareado. Instale o conector no PC.
+            Nenhum computador conectado. Instale o programa no PC.
           </p>
         } @else {
           <ul class="list ui-plain ui-stagger">
@@ -98,7 +98,7 @@
                     <div class="chips">
                       @if (agent.revoked) {
                         <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
-                          >Revogado</span
+                          >Sem acesso</span
                         >
                       } @else {
                         <span class="chip active ui-chip accent" i18n="@@devices.state.active"
@@ -114,7 +114,7 @@
                       i18n-aria-label="@@devices.summary-label"
                     >
                       <div>
-                        <dt i18n="@@devices.summary.agent">Agente</dt>
+                        <dt i18n="@@devices.summary.agent">Programa</dt>
                         <dd
                           class="connection"
                           [class.ok]="agent.connected"
@@ -202,7 +202,7 @@
                             (click)="confirmRevoke(agent)"
                             i18n="@@devices.revoke"
                           >
-                            Revogar
+                            Tirar o Acesso
                           </button>
                         </div>
                       </div>
@@ -299,7 +299,7 @@
                               (click)="askMaintenance(agent, 'restart')"
                               i18n="@@devices.restart"
                             >
-                              Reiniciar o Agente
+                              Reiniciar o Programa
                             </button>
                             <button
                               type="button"
@@ -309,7 +309,7 @@
                               (click)="askRevoke(agent)"
                               i18n="@@devices.revoke"
                             >
-                              Revogar
+                              Tirar o Acesso
                             </button>
                           </div>
                         </div>
@@ -323,7 +323,7 @@
         }
       } @else if (loadFailed()) {
         <p class="empty bad ui-rise" role="alert" i18n="@@devices.load-failed">
-          Não foi possível carregar os dispositivos agora.
+          Não foi possível carregar os computadores agora.
         </p>
         <button
           type="button"
@@ -404,7 +404,7 @@
           (click)="openPair()"
           i18n="@@devices.pair"
         >
-          Parear Dispositivo
+          Conectar Computador
         </button>
       </div>
       @if (!windowsPc) {

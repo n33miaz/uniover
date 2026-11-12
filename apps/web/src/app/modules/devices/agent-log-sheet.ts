@@ -54,7 +54,7 @@ export class AgentLogSheet implements OnInit {
     if (log.lines === 0) return $localize`:@@devices.log.empty:O registro está vazio.`;
     const base = $localize`:@@devices.log.lines:${log.lines}:count: linhas, as mais recentes.`;
     return log.truncated
-      ? `${base} ${$localize`:@@devices.log.truncated:Só o fim coube no limite do canal.`}`
+      ? `${base} ${$localize`:@@devices.log.truncated:Só o fim coube no espaço disponível.`}`
       : base;
   });
 
@@ -114,20 +114,20 @@ export class AgentLogSheet implements OnInit {
   private errorText(error: unknown): string {
     const problem = problemOf(error);
     if (problem?.isNetwork) {
-      return $localize`:@@devices.log.error.network:Sem conexão com o servidor. Tente de novo.`;
+      return $localize`:@@devices.log.error.network:Sem conexão. Tente de novo.`;
     }
     switch (problem?.kind) {
       case 'agent-outdated':
-        return $localize`:@@devices.log.error.outdated:Atualize o agente neste computador para ver o registro. Quando ele atualizar sozinho, tente de novo.`;
+        return $localize`:@@devices.log.error.outdated:Atualize o programa neste computador para ver o registro. Depois, tente de novo.`;
       case 'agent-offline':
-        return $localize`:@@devices.log.error.offline:O agente está desconectado. Ligue o PC e tente de novo.`;
+        return $localize`:@@devices.log.error.offline:O computador está desconectado. Ligue o PC e tente de novo.`;
       case 'agent-timeout':
-        return $localize`:@@devices.log.error.timeout:O agente não respondeu a tempo. Tente de novo.`;
+        return $localize`:@@devices.log.error.timeout:O computador não respondeu a tempo. Tente de novo.`;
       case 'logs-in-progress':
         return $localize`:@@devices.log.error.busy:Já há um pedido de registro em andamento. Espere um instante.`;
       case 'command-failed':
       case 'logs-missing':
-        return $localize`:@@devices.log.error.failed:O agente não conseguiu ler o registro agora.`;
+        return $localize`:@@devices.log.error.failed:O computador não conseguiu ler o registro agora.`;
       default:
         return problem?.status === 429
           ? $localize`:@@devices.log.error.rate-limited:Muitos pedidos seguidos. Espere um pouco e tente de novo.`

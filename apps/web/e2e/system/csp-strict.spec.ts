@@ -72,7 +72,7 @@ test.describe('CSP estrita: nenhuma violação de estilo nas telas lazy', () => 
     await mockAuditApi(context, identity);
     await installFakeEventSource(page);
     await page.goto('/ajustes/auditoria');
-    await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Atividades' })).toBeVisible();
     await page.getByRole('button', { name: /filtr/i }).first().click();
     await page.waitForLoadState('networkidle');
     await expectEveryStylesheetApplied(page);

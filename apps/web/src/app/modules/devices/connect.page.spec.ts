@@ -28,7 +28,7 @@ describe('ConnectPage', () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
     const el = await render();
     const link = el.querySelector<HTMLAnchorElement>('a.download')!;
-    expect(link.textContent?.trim()).toBe('Baixar o conector');
+    expect(link.textContent?.trim()).toBe('Baixar o Programa');
     expect(link.getAttribute('href')).toBe('/conectar/conectar-uniover.cmd');
     expect(link.getAttribute('download')).toBe('conectar-uniover.cmd');
     expect(Array.from(el.querySelectorAll('ol > li')).map((li) => li.textContent?.trim())).toEqual([
@@ -79,6 +79,6 @@ describe('ConnectPage', () => {
   it('on other systems only says the connector is for a Windows PC', async () => {
     const el = await render();
     expect(el.querySelector('a.download')).toBeNull();
-    expect(el.textContent).toContain('O conector é para PC com Windows. Abra esta página nele.');
+    expect(el.textContent).toContain('Este programa é para PC com Windows. Abra esta página nele.');
   });
 });

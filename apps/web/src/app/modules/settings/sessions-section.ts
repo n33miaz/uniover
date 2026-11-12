@@ -56,8 +56,8 @@ export class SessionsSection {
   protected title(): string {
     const name = this.guestName();
     return name
-      ? $localize`:@@settings.sessions.guest-title:Sessões de ${name}:name:`
-      : $localize`:@@settings.sessions.title:Sessões de Acesso`;
+      ? $localize`:@@settings.sessions.guest-title:Acessos de ${name}:name:`
+      : $localize`:@@settings.sessions.title:Aparelhos com Acesso`;
   }
 
   protected device(item: LoginSession): string {
@@ -120,10 +120,10 @@ export class SessionsSection {
       await this.auth.authorized((token) => this.api.revokeSession(token, item.id, this.guestId()));
       this.confirmingId.set(null);
       await this.load(this.guestId());
-      this.note.set($localize`:@@settings.sessions.revoked:Sessão encerrada.`);
+      this.note.set($localize`:@@settings.sessions.revoked:Acesso encerrado.`);
     } catch {
       this.note.set(
-        $localize`:@@settings.sessions.revoke-failed:Não foi possível encerrar a sessão agora.`,
+        $localize`:@@settings.sessions.revoke-failed:Não foi possível encerrar o acesso agora.`,
       );
     } finally {
       this.busy.set(false);
@@ -137,10 +137,10 @@ export class SessionsSection {
       await this.auth.authorized((token) => this.api.revokeOtherSessions(token));
       this.confirmingOthers.set(false);
       await this.load(null);
-      this.note.set($localize`:@@settings.sessions.others-revoked:Outras sessões encerradas.`);
+      this.note.set($localize`:@@settings.sessions.others-revoked:Outros acessos encerrados.`);
     } catch {
       this.note.set(
-        $localize`:@@settings.sessions.revoke-failed:Não foi possível encerrar a sessão agora.`,
+        $localize`:@@settings.sessions.revoke-failed:Não foi possível encerrar o acesso agora.`,
       );
     } finally {
       this.busy.set(false);

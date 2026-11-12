@@ -331,7 +331,7 @@ describe('ProfilePage', () => {
   describe('session', () => {
     it('says the session is active and signs out', async () => {
       const { fixture, el } = await render();
-      expect(el.querySelector('.session')?.textContent).toContain('Sessão ativa.');
+      expect(el.querySelector('.session')?.textContent).toContain('Acesso ativo.');
       expect(el.querySelector('.session')?.classList.contains('ok')).toBe(true);
 
       el.querySelector<HTMLButtonElement>('button.secondary')!.click();
@@ -343,7 +343,7 @@ describe('ProfilePage', () => {
     it('says the session is pending, without alarm, when the server cannot confirm it', async () => {
       api.refresh.mockRejectedValue(networkProblem());
       const { el } = await render();
-      expect(el.querySelector('.session')?.textContent).toContain('Sessão a confirmar');
+      expect(el.querySelector('.session')?.textContent).toContain('Acesso a confirmar');
       expect(el.querySelector('.session')?.textContent).toContain('Nada foi apagado');
       expect(el.querySelector('.session')?.classList.contains('warn')).toBe(true);
       expect(el.querySelector('.session')?.classList.contains('bad')).toBe(false);
@@ -355,7 +355,7 @@ describe('ProfilePage', () => {
       el.querySelector<HTMLButtonElement>('button.secondary')!.click();
       await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/entrar'));
       fixture.detectChanges();
-      expect(el.textContent).toContain('sessão encerrada só neste aparelho');
+      expect(el.textContent).toContain('acesso encerrado só neste aparelho');
     });
   });
 
