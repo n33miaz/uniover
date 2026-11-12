@@ -247,7 +247,7 @@ async function wipeSiteData(page: Page) {
  */
 async function storedMemory(
   page: Page,
-  scope: 'root' | 'tv' | 'treino' = 'root',
+  scope: 'root' | 'tv' | 'treino' | 'pc' = 'root',
 ): Promise<Record<string, unknown> | null> {
   return page.evaluate((app) => {
     const own = Object.keys(localStorage).find(
@@ -830,9 +830,9 @@ async function simulateDisplayModeStandalone(page: Page) {
  * quem já instalou nem para quem já respondeu, nem depois de o Safari apagar os dados do site, atualizar a conta ou recarregar.
  */
 test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de novo', () => {
-  test.beforeEach(async ({}, info) => {
+  test.beforeEach(() => {
     test.skip(
-      info.project.name !== 'iphone-12',
+      test.info().project.name !== 'iphone-12',
       'o relato é do iPhone (Safari e app da tela de início)',
     );
   });

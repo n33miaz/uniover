@@ -30,7 +30,7 @@ function lateToolStyle(page: Page, pattern: RegExp, detail: string): boolean {
  * Chaves onde o app guarda a escolha de "Não mostrar de novo" da folha do atalho na tela de início: uma por app
  * (a raiz e cada módulo com manifest próprio).
  */
-const INSTALL_HINT_KEYS = ['', '.tv', '.treino'].map(
+const INSTALL_HINT_KEYS = ['', '.tv', '.treino', '.pc'].map(
   (suffix) => `uniover.install-hint.v1${suffix}`,
 );
 

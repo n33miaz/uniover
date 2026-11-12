@@ -18,6 +18,7 @@ const SETS = [
   { svg: 'core', dir: '' },
   { svg: 'tv', dir: 'tv' },
   { svg: 'treino', dir: 'treino' },
+  { svg: 'pc', dir: 'pc' },
 ];
 
 async function render(file, size, { opaque }) {

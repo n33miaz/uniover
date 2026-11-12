@@ -12,6 +12,7 @@ const ROOT_PRODUCT_NAME = 'UniOver';
 const MODULE_PRODUCT_NAMES: Record<ScopedModuleSlug, string> = {
   tv: 'UniOver TV',
   treino: 'UniOver Treino',
+  pc: 'UniOver PC',
 };
 
 const APPLE_TITLE_META = 'apple-mobile-web-app-title';

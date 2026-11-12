@@ -10,6 +10,8 @@ const ROUTES: Routes = [
   { path: '', component: Blank },
   { path: 'tv', component: Blank },
   { path: 'treino', component: Blank },
+  { path: 'pc', component: Blank },
+  { path: 'pcx', component: Blank },
   { path: 'convite', component: Blank },
   { path: 'entrar', component: Blank },
   { path: 'atalho-da-tv', redirectTo: 'tv' },
@@ -62,6 +64,7 @@ function expected(prefix: string, name: string) {
 const ROOT = expected('', 'UniOver');
 const TV = expected('/tv', 'UniOver TV');
 const TRAINING = expected('/treino', 'UniOver Treino');
+const PC = expected('/pc', 'UniOver PC');
 
 /** O que o servidor entrega no lugar do marcador do index.html (e o título fixo do arquivo). */
 function seedServerHead(prefix: string) {
@@ -95,6 +98,12 @@ describe('moduleScopeOf', () => {
     ['/tv/qualquer/coisa', 'tv'],
     ['/treino', 'treino'],
     ['/treino/hoje', 'treino'],
+    ['/pc', 'pc'],
+    ['/pc/', 'pc'],
+    ['/PC?aba=1', 'pc'],
+    ['/pcx', null],
+    ['/pc-antigo', null],
+    ['/ajustes/pc', null],
     // A regra é por segmento: nome que apenas começa igual não é do módulo.
     ['/tvx', null],
     ['/tv-box', null],
@@ -138,7 +147,24 @@ describe('ModuleHeadService', () => {
     expect(tabIcons()).toEqual(['/tv/favicon.svg', '/tv/favicon-32.png']);
     await router.navigateByUrl('/treino');
     expect(tabIcons()).toEqual(['/treino/favicon.svg', '/treino/favicon-32.png']);
+    await router.navigateByUrl('/pc');
+    expect(tabIcons()).toEqual(['/pc/favicon.svg', '/pc/favicon-32.png']);
+    await router.navigateByUrl('/pcx');
+    expect(tabIcons()).toEqual(['/favicon.svg', '/favicon-32.png']);
     await router.navigateByUrl('/entrar');
+    expect(tabIcons()).toEqual(['/favicon.svg', '/favicon-32.png']);
+  });
+
+  it('the PC is an app of its own: manifest, home screen icon, tab icon and name', async () => {
+    seedServerHead('');
+    seedTabIcons();
+    const { router } = setup('/');
+    await router.navigateByUrl('/pc');
+    expect(head()).toEqual(PC);
+    expect(tabIcons()).toEqual(['/pc/favicon.svg', '/pc/favicon-32.png']);
+    // Um caminho que só começa igual continua sendo da raiz.
+    await router.navigateByUrl('/pcx');
+    expect(head()).toEqual(ROOT);
     expect(tabIcons()).toEqual(['/favicon.svg', '/favicon-32.png']);
   });
 

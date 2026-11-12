@@ -45,7 +45,7 @@ self.addEventListener('activate', (event) => {
 });
 cleanupOutdatedCaches();
 
-// A casca: JS/CSS/fontes com hash e as páginas `/`, `/tv/` e `/treino/` (o build as acrescenta; elas vêm
+// A casca: JS/CSS/fontes com hash e as páginas `/`, `/tv/`, `/treino/` e `/pc/` (o build as acrescenta; elas vêm
 // do servidor, já com o manifest do módulo e o nonce da CSP trocados). O `index.html` cru não entra.
 precacheAndRoute(self.__WB_MANIFEST);
 

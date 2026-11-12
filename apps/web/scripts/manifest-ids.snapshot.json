@@ -10,5 +10,9 @@
   "/treino/manifest.webmanifest": {
     "id": "/treino/",
     "scope": "/treino/"
+  },
+  "/pc/manifest.webmanifest": {
+    "id": "/pc/",
+    "scope": "/pc/"
   }
 }

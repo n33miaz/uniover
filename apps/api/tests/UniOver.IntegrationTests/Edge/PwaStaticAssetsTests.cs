@@ -44,6 +44,8 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
         Directory.CreateDirectory(Path.Combine(_webRoot, "treino"));
         File.WriteAllText(Path.Combine(_webRoot, "treino", "manifest.webmanifest"), "{}");
         File.WriteAllText(Path.Combine(_webRoot, "treino", "chunk-ZZ99zz99.js"), "export const x = 1;");
+        Directory.CreateDirectory(Path.Combine(_webRoot, "pc"));
+        File.WriteAllText(Path.Combine(_webRoot, "pc", "manifest.webmanifest"), "{}");
         File.WriteAllText(Path.Combine(_webRoot, "chunk-ZZ99zz99.js.map"), "{}");
         File.WriteAllText(Path.Combine(_webRoot, "favicon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
         _factory = new EdgeFactory("Production", Production, webRoot: _webRoot);
@@ -172,9 +174,11 @@ public sealed class PwaStaticAssetsTests : IAsyncLifetime
     [InlineData("/boot-skeleton.js")]
     [InlineData("/manifest.webmanifest")]
     [InlineData("/treino/manifest.webmanifest")]
+    [InlineData("/pc/manifest.webmanifest")]
     [InlineData("/")]
     [InlineData("/index.html")]
     [InlineData("/treino")]
+    [InlineData("/pc")]
     public async Task ServiceWorker_Manifests_BootScript_AndTheIndex_MustRevalidateOnEveryUse(string path)
     {
         using var client = _factory.CreateClient();

@@ -21,6 +21,7 @@ const SCOPES = [
     manifest: '/treino/manifest.webmanifest',
     touch: '/treino/apple-touch-icon.png',
   },
+  { page: '/pc/', manifest: '/pc/manifest.webmanifest', touch: '/pc/apple-touch-icon.png' },
 ];
 
 test.describe('manifest por módulo', () => {

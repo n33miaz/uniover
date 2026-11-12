@@ -39,10 +39,15 @@ describe('ModuleRegistry', () => {
   it('only modules with a screen have a slug, and the slugs match the service worker list', () => {
     const withSlug = registry().modules.flatMap((m) => (m.slug ? [m.slug] : []));
     expect(withSlug).toEqual([...SCOPED_MODULE_SLUGS]);
-    // Compras e Controle do PC têm tela no app principal; os demais planejados ainda não têm caminho nem ação.
+    // Compras tem tela no app principal e o Controle do PC tem tela e app próprios; os demais planejados ainda
+    // não têm caminho nem ação.
     for (const planned of registry().modules.slice(2)) {
+      if (planned.id === 'pc') {
+        expect(planned.route, planned.id).toBeUndefined();
+        continue;
+      }
       expect(planned.slug, planned.id).toBeUndefined();
-      if (planned.id === 'pc' || planned.id === 'shopping') continue;
+      if (planned.id === 'shopping') continue;
       expect(planned.route, planned.id).toBeUndefined();
       expect(planned.actionLabel, planned.id).toBeUndefined();
     }

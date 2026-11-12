@@ -401,7 +401,7 @@ test.describe('casca offline e service worker', () => {
     await waitForServiceWorkerControl(page);
     const manifest = page.locator('head link[rel="manifest"]');
 
-    for (const url of ['/tv/', '/tv', '/treino/']) {
+    for (const url of ['/tv/', '/tv', '/treino/', '/pc/']) {
       const slug = url.split('/')[1];
       await page.goto(url);
       await expect(manifest).toHaveAttribute('href', `/${slug}/manifest.webmanifest`);

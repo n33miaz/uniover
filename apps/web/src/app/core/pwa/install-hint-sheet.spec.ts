@@ -149,6 +149,38 @@ describe('InstallHintSheet', () => {
     });
   });
 
+  describe('Android na janela instalada de outro app UniOver', () => {
+    afterEach(() => {
+      sessionStorage.removeItem('uniover.app-window');
+      history.replaceState(null, '', '/');
+    });
+
+    for (const [path, name] of [
+      ['/tv', 'da TV'],
+      ['/treino', 'do Treino'],
+      ['/pc', 'do Controle do PC'],
+    ] as const) {
+      it(`em ${path}, manda abrir o endereço ${name} (e não o de outro módulo)`, async () => {
+        sessionStorage.setItem('uniover.app-window', 'root');
+        history.replaceState(null, '', path);
+        const { el, button } = await render({ userAgent: UA.android, standalone: true });
+        const notice = el.querySelector('.ui-notice')?.textContent?.replace(/\s+/g, ' ').trim();
+        expect(notice).toBe(
+          `Você está na janela de outro app UniOver. Abra o endereço ${name} no navegador para instalar o atalho próprio.`,
+        );
+        expect(button('Copiar endereço')).toBeTruthy();
+      });
+    }
+
+    it('na tela do app geral aberta na janela de um módulo, o endereço é o do UniOver', async () => {
+      sessionStorage.setItem('uniover.app-window', 'tv');
+      const { el } = await render({ userAgent: UA.android, standalone: true });
+      expect(el.querySelector('.ui-notice')?.textContent).toContain(
+        'Abra o endereço do UniOver no',
+      );
+    });
+  });
+
   describe('iPhone no Chrome, no Edge ou no Firefox', () => {
     it('traz os mesmos passos, com a ressalva do lugar do Compartilhar e do iOS 16.4', async () => {
       const { el, stepTitles } = await render({ userAgent: UA.chrome });

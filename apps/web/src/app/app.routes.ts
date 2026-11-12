@@ -82,7 +82,7 @@ export const routes: Routes = [
           import('./modules/shopping/shopping.routes').then((m) => m.SHOPPING_ROUTES),
       },
       {
-        // O módulo mora dentro do app principal (sem manifest nem escopo próprios, ao contrário da TV e do Treino).
+        // Como a TV e o Treino, tem manifest e escopo próprios (`public/pc/manifest.webmanifest`).
         path: 'pc',
         canMatch: [moduleGuard('pc')],
         data: { title: $localize`:@@module.pc.title:Controle do PC` },

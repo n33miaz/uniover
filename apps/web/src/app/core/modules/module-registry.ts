@@ -10,8 +10,9 @@ export type WidgetSize = 'small' | 'wide';
 export interface ModuleDefinition {
   readonly id: string;
   /**
-   * Primeiro segmento do caminho; também é o escopo do manifest do módulo. Só módulo que já tem tela tem `slug`:
-   * um módulo apenas planejado não ganha rota, manifest nem escopo no service worker, e a Início o mostra sem link.
+   * Primeiro segmento do caminho; também é o escopo do manifest do módulo. Só módulo que já tem tela tem `slug`
+   * (o Controle do PC tem, mesmo aparecendo como "Em Breve" para a conta sem computador): um módulo apenas planejado
+   * não ganha rota, manifest nem escopo no service worker, e a Início o mostra sem link.
    */
   readonly slug?: ScopedModuleSlug;
   /** Caminho de uma tela dentro de outro módulo ou do app principal, sem manifest nem escopo próprios. */
@@ -114,7 +115,7 @@ export class ModuleRegistry {
     },
     {
       id: 'pc',
-      route: '/pc',
+      slug: 'pc',
       liveWith: 'pc-agent',
       title: $localize`:@@module.pc.title:Controle do PC`,
       description: $localize`:@@module.pc.hint:Mouse, teclado, mídia e energia`,

@@ -32,10 +32,7 @@
       }
     } @else if (mode() === 'android-manual') {
       @if (foreignAppWindow()) {
-        <p class="ui-notice" i18n="@@install.android.other-window">
-          Você está na janela de outro app UniOver. Abra o endereço do Treino no navegador para
-          instalar o atalho próprio.
-        </p>
+        <p class="ui-notice">{{ otherWindowNotice() }}</p>
         <button #copyButton type="button" class="copy secondary ui-btn" (click)="copyAddress()">
           <span i18n="@@install.copy.action">Copiar endereço</span>
         </button>

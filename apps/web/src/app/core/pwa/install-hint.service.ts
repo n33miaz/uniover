@@ -269,6 +269,8 @@ export class InstallHintService {
   private readonly windowScope: InstallScope | null = this.readWindowScope();
   /** O escopo da tela aberta agora (muda com a navegação interna sem recarregar). */
   private readonly scope = signal<InstallScope>(this.loadScope);
+  /** O app da tela aberta agora, para quem precisa dizer de qual módulo é o atalho. */
+  readonly screenScope = this.scope.asReadonly();
   /** Escopos em que a pessoa confirmou, nesta página, que o app já está instalado. */
   private readonly ackedScopes = signal<ReadonlySet<InstallScope>>(new Set());
   /** Uma carga pedida para instalar (marcador no endereço): a folha deve abrir assim que o pedido chegar. */
@@ -775,7 +777,7 @@ export class InstallHintService {
       const launched = new URL(win.location.href).searchParams.get(APP_LAUNCH_PARAM);
       if (launched === this.loadScope) win.sessionStorage.setItem(APP_WINDOW_KEY, launched);
       const saved = win.sessionStorage.getItem(APP_WINDOW_KEY);
-      return saved === 'root' || saved === 'tv' || saved === 'treino' ? saved : null;
+      return ALL_SCOPES.find((scope) => scope === saved) ?? null;
     } catch {
       return null;
     }
