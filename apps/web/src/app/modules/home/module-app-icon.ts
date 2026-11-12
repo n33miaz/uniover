@@ -88,40 +88,38 @@ const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
     }
   `,
   styles: `
-    /* Os módulos que já existem usam a cor da marca; os planejados ficam em verde-cinza discreto. */
+    /*
+     * Os módulos que já existem usam a cor da marca; os planejados ficam em verde-cinza discreto. No escuro o verde claro
+     * é bom para texto, mas não para o desenho branco dentro do ícone: o fundo escurece. Mesma guarda da paleta do
+     * styles.css (o tema fixado no app vale mais que o do sistema), aqui e não lá para não pesar no pacote inicial.
+     */
     :host {
-      --bg-ready: var(--a-accent);
-      --bg-planned: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
+      --a-module-app: var(--a-accent);
+      --a-module-app-planned: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
       display: inline-flex;
       flex: none;
       width: var(--module-icon-size, 56px);
       height: var(--module-icon-size, 56px);
       overflow: hidden;
       border-radius: var(--module-icon-radius, var(--radius-sm));
-      background: var(--bg-ready);
+      background: var(--a-module-app);
       color: var(--a-on-module-app, #fff);
     }
 
     :host(.planned) {
-      background: var(--bg-planned);
+      background: var(--a-module-app-planned);
     }
 
-    /* O verde claro do tema escuro é bom para texto, mas não para o desenho branco dentro do ícone. */
     @media (prefers-color-scheme: dark) {
-      :host {
-        --bg-ready: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
-        --bg-planned: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+      :host-context(:root:not([data-theme='light'])) {
+        --a-module-app: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+        --a-module-app-planned: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
       }
     }
 
-    :host-context([data-theme='dark']) {
-      --bg-ready: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
-      --bg-planned: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
-    }
-
-    :host-context([data-theme='light']) {
-      --bg-ready: var(--a-accent);
-      --bg-planned: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
+    :host-context(:root[data-theme='dark']) {
+      --a-module-app: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+      --a-module-app-planned: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
     }
 
     svg,

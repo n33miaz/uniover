@@ -429,7 +429,7 @@ Inconsistências encontradas no código (reportar ao corrigir; o código atual m
 6. Paleta escura duplicada (`styles.css:116-138` e `140-160`): alterar sempre os dois blocos.
 7. Dois serviços gravam `data-theme` (`ThemeService` e `AppearanceService`).
 8. `.ui-btn.secondary` só tem hover; no repouso é igual a `.ui-btn`.
-9. Ícones de módulo da Início usam `@media (prefers-color-scheme: dark)` sem a guarda `:not([data-theme='light'])` (`home-page.css:339-346`, `home-edit-sheet.css:156-159`): com sistema escuro e tema fixado em claro, o fundo do ícone sai escuro.
+9. O fundo dos ícones de módulo da Início vem dos tokens `--a-module-app` e `--a-module-app-planned` do próprio ícone (`module-app-icon.ts`), com a mesma guarda da paleta do `styles.css`: o tema fixado no app vale mais que o do sistema.
 10. O manifesto aceita uma cor de barra só (`theme_color`); a cor por tema vem das `<meta name="theme-color">` do `index.html`.
 11. "Início" nomeia a tela inicial do app e também uma aba do Treino (`training.routes.ts:15`).
 12. Não há toast global nem tokens de z-index e de breakpoint.
