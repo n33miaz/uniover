@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.64.0](https://github.com/n33miaz/uniover/compare/v0.63.0...v0.64.0) (2026-11-12)
+
+
+### Identity 0.45.1
+
+#### Bug Fixes
+
+* **web:** plain words on the admin screens
+
+
+### Devices 0.58.1
+
+#### Bug Fixes
+
+* **web:** plain words on the admin screens
+* **web:** unify tv and pc touch feedback
+
+
+### TV 0.48.1
+
+#### Bug Fixes
+
+* **web:** unify tv and pc touch feedback
+* **web:** arm the adb proof at the tap
+
+
+### Web 0.61.0
+
+#### Features
+
+* **web:** PC module icon and install scope
+
+#### Bug Fixes
+
+* **web:** plain words on the admin screens
+* **web:** unify tv and pc touch feedback
+* **web:** stop the update notice from looping
+
 ## [0.63.0](https://github.com/n33miaz/uniover/compare/v0.62.1...v0.63.0) (2026-11-12)
 
 
