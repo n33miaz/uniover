@@ -116,6 +116,8 @@ internal static class RemoteCareProblems
     {
         AgentErrors.OfflineCode => Offline(),
         AgentErrors.TimeoutCode => Timeout(),
+        // Conectado, mas mudo: nada foi enviado, e "não respondeu a tempo" é o que a pessoa vê (sem esperar o prazo).
+        AgentErrors.StalledCode => Timeout(),
         _ => Problem(StatusCodes.Status500InternalServerError, "internal-error", "Não foi possível montar o pedido."),
     };
 

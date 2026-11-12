@@ -48,6 +48,8 @@ internal sealed class DevicesGatewayCommandSender(IAgentGateway gateway, TimePro
     private static TvSendOutcome Map(string code, TimeSpan elapsed) => code switch
     {
         AgentErrors.OfflineCode => TvSendOutcome.Failed(TvSendStatus.AgentOffline, code, latency: elapsed),
+        // Conectado, mas mudo: nada saiu. Indisponível como o "fora do ar", com o código próprio para a tela dizer "PC lento".
+        AgentErrors.StalledCode => TvSendOutcome.Failed(TvSendStatus.AgentOffline, code, latency: elapsed),
         AgentErrors.TimeoutCode => TvSendOutcome.Failed(TvSendStatus.AgentTimeout, code, latency: elapsed),
         _ => TvSendOutcome.Failed(TvSendStatus.InvalidMessage, code, latency: elapsed),
     };

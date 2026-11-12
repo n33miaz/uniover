@@ -170,4 +170,14 @@ describe('describeFailure while the PC is reconnecting', () => {
     expect(failure.kind).toBe('agent-reconnecting');
     expect(failure.message).toBe('Reconectando ao PC… Tente de novo em instantes.');
   });
+
+  it('says a connected PC that stopped answering is slow, without marking it off', () => {
+    const failure = describeFailure(
+      http(503, 'agent-offline', { reconnecting: true, stalled: true }),
+    );
+    expect(failure.kind).toBe('agent-reconnecting');
+    expect(failure.message).toBe(
+      'O PC que controla a TV está lento e não respondeu. Tente de novo em instantes.',
+    );
+  });
 });

@@ -73,6 +73,29 @@ public sealed class DevicesTransportOptions
     /// </summary>
     public int HandoverHelloWaitSeconds { get; set; } = 5;
 
+    /// <summary>
+    /// De quanto em quanto o AGENTE manda o <c>agent.keepalive.v1</c> (25 s hoje, mesmo ocioso; não é o batimento da API,
+    /// <see cref="ApplicationKeepAliveSeconds"/>). Os limites da saúde (<see cref="AgentHealth"/>) derivam dele: o silêncio que
+    /// marca "sem resposta" (<see cref="HealthSilence"/>, 1,4 intervalo) e o calado que faz um prazo estourado contar como
+    /// "mudo" (<see cref="HealthMuteAfter"/>, 1,2 intervalo). Com um batimento mais curto, basta mudar este número.
+    /// </summary>
+    public int AgentKeepAliveSeconds { get; set; } = 25;
+
+    /// <summary>
+    /// Quantos prazos estourados "mudos" (o agente calado há <see cref="HealthMuteAfter"/>, cada um enviado depois do anterior)
+    /// marcam "sem resposta" antes do silêncio completo. Dois: um só pode ser um comando legitimamente demorado.
+    /// </summary>
+    public int HealthStalledMisses { get; set; } = 2;
+
+    /// <summary>
+    /// Idade a partir da qual um movimento puro do mouse ainda na fila de saída é descartado em vez de enviado. O movimento é
+    /// RELATIVO: descartá-lo muda a posição final do ponteiro (o que já ficou para trás não é refeito), troca aceita para que o
+    /// mouse não chegue em rajada atrasada nem derrube a conexão. Por isso só o movimento puro é descartado; o que leva rolagem
+    /// sempre sai (a rolagem perdida não volta). Também limita a fila: os movimentos ocupam no máximo três quartos dela, e o que
+    /// passar disso é descartado (os cliques, as teclas e a rolagem sempre têm lugar).
+    /// </summary>
+    public int StaleInputMilliseconds { get; set; } = 1000;
+
     /// <summary>Fluxo SSE de presença (limite por usuário, keep-alive e duração máxima).</summary>
     public SseStreamOptions Sse { get; set; } = new();
 
@@ -98,6 +121,17 @@ public sealed class DevicesTransportOptions
 
     public TimeSpan HandoverHelloWait => TimeSpan.FromSeconds(HandoverHelloWaitSeconds);
 
+    /// <summary>Sem nenhum quadro por isto, o agente está "sem resposta": 1,4 batimento (35 s com o de 25 s).</summary>
+    public TimeSpan HealthSilence => TimeSpan.FromSeconds(AgentKeepAliveSeconds * 1.4);
+
+    /// <summary>Um prazo estourado só conta como "mudo" com o agente calado há isto: 1,2 batimento (30 s com o de 25 s).</summary>
+    public TimeSpan HealthMuteAfter => TimeSpan.FromSeconds(AgentKeepAliveSeconds * 1.2);
+
+    public TimeSpan StaleInput => TimeSpan.FromMilliseconds(StaleInputMilliseconds);
+
+    /// <summary>Quantos movimentos do mouse cabem na fila de saída (três quartos dela, ao menos um).</summary>
+    public int DroppableQueueLimit => Math.Max(1, QueueCapacity * 3 / 4);
+
     /// <summary>Valores que quebrariam o transporte (zero ou negativo); o módulo prefere cair na partida a se comportar mal.</summary>
     public static bool IsValid(DevicesTransportOptions o)
     {
@@ -116,6 +150,9 @@ public sealed class DevicesTransportOptions
             && o.RefusalWindowSeconds >= 1
             && o.CloseGraceSeconds >= 0
             && o.HandoverHelloWaitSeconds >= 1
+            && o.AgentKeepAliveSeconds is >= 1 and <= 300
+            && o.HealthStalledMisses is >= 1 and <= 10
+            && o.StaleInputMilliseconds is >= 100 and <= 60_000
             && o.Sse.IsValid();
     }
 }

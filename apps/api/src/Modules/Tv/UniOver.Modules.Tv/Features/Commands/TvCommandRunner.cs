@@ -91,7 +91,8 @@ internal sealed partial class TvCommandRunner(
             outcome = await sender.PostAsync(agentId, message, cancellationToken);
         }
 
-        if (outcome.Status == TvSendStatus.AgentOffline)
+        // O PC conectado, mas mudo, segue verde e não está reconectando: o código dele (agent_stalled) passa como veio.
+        if (outcome.Status == TvSendStatus.AgentOffline && outcome.ErrorCode != AgentErrors.StalledCode)
         {
             // Ainda verde (dentro da graça de presença): o PC está reconectando, não desligado. Mesmo status, outro código,
             // para a tela dizer "reconectando" em vez de afirmar uma queda que ainda não se confirmou.

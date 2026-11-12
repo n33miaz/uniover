@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Features.Presence;
 
 namespace UniOver.Modules.Devices.Features.Events;
@@ -22,6 +23,7 @@ internal static class StreamEventsEndpoint
     private static IResult Handle(
         ICurrentUser current,
         IAgentPresenceReader presence,
+        AgentHealth health,
         SseBroadcaster<PresenceUpdate> broadcaster,
         TimeProvider time,
         IHostApplicationLifetime lifetime)
@@ -34,7 +36,11 @@ internal static class StreamEventsEndpoint
 
         var subscription = broadcaster.Subscribe(
             userId.ToString(),
-            () => [new SseMessage<PresenceUpdate>(PresenceUpdate.SnapshotEvent, new PresenceUpdate(presence.All()))]);
+            () => [new SseMessage<PresenceUpdate>(PresenceUpdate.SnapshotEvent, new PresenceUpdate(WithHealth(presence.All(), health)))]);
         return SseResults.Stream(subscription, broadcaster.Options, time, lifetime.ApplicationStopping);
     }
+
+    /// <summary>O instantâneo leva a saúde de quem está conectado e é medido, para quem reabre o fluxo não perdê-la.</summary>
+    private static List<AgentPresenceInfo> WithHealth(IReadOnlyList<AgentPresenceInfo> agents, AgentHealth health) =>
+        [.. agents.Select(a => a.Connected && health.Describe(a.AgentId) is { } state ? a with { Health = state } : a)];
 }

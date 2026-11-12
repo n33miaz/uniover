@@ -43,7 +43,8 @@ public sealed record AgentUpdateInfo(
 /// <see cref="Capabilities"/> vêm do <c>agent.hello.v1</c> e ficam vazios até ele chegar. <see cref="DisconnectedAt"/>
 /// é o instante em que a sessão caiu (nulo enquanto conectado). <see cref="HelloAt"/> é quando chegou o PRIMEIRO <c>hello</c> da sessão
 /// de agora (os seguintes não o mudam): nulo enquanto ele não chegou nesta conexão (e para um agente só "esperado de volta"), e então as
-/// <see cref="Capabilities"/> não são confiáveis.
+/// <see cref="Capabilities"/> não são confiáveis. <see cref="Health"/> é a saúde medida da conexão (<c>ready</c>, <c>slow</c> ou
+/// <c>unresponsive</c>), só nos eventos SSE e só para o agente medido; nula (e fora do JSON) no resto.
 /// </summary>
 public sealed record AgentPresenceInfo(
     string AgentId,
@@ -55,7 +56,8 @@ public sealed record AgentPresenceInfo(
     DateTimeOffset? DisconnectedAt = null,
     [property: JsonIgnore] AgentHostInfo? Host = null,
     [property: JsonIgnore] AgentUpdateInfo? Update = null,
-    [property: JsonIgnore] DateTimeOffset? HelloAt = null);
+    [property: JsonIgnore] DateTimeOffset? HelloAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Health = null);
 
 /// <summary>Consulta a presença dos agentes (a escrita é do Devices).</summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1716", Justification = "O nome Get da consulta é parte do contrato público pedido pela tarefa.")]

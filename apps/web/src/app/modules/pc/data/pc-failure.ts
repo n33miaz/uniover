@@ -60,6 +60,16 @@ export const DEVICE_UNKNOWN_PROBLEM = 'pc-device-unknown';
 export const SESSION_LOCKED_CODE = 'session_locked';
 export const ELEVATED_WINDOW_CODE = 'elevated_window';
 
+/** O PC está conectado, mas não responde: a API recusa na hora com o mesmo tipo do "reconectando" e a marca `stalled`. */
+function isStalled(error: unknown): boolean {
+  return (
+    error instanceof HttpErrorResponse &&
+    !!error.error &&
+    typeof error.error === 'object' &&
+    (error.error as { stalled?: unknown }).stalled === true
+  );
+}
+
 /** O código do agente (`failed`, `unknown_app`...) vem numa extensão do problema que o leitor comum do app descarta. */
 function agentErrorOf(error: unknown): string | null {
   if (error instanceof HttpErrorResponse && error.error && typeof error.error === 'object') {
@@ -147,7 +157,9 @@ export function pcFailureOf(error: unknown): PcFailure {
   if (problem.status === 503 && problem.kind === RECONNECTING_PROBLEM) {
     return {
       kind: 'reconnecting',
-      message: $localize`:@@pc.error.reconnecting:O PC está reconectando.`,
+      message: isStalled(error)
+        ? $localize`:@@pc.error.stalled:O PC está lento e não respondeu.`
+        : $localize`:@@pc.error.reconnecting:O PC está reconectando.`,
     };
   }
   if (problem.status === 503) {

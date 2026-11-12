@@ -54,6 +54,18 @@ describe('pcFailureOf', () => {
     expect(offline.message).toBe('O PC está desconectado.');
   });
 
+  it('says a connected PC that stopped answering is slow, keeping the reconnecting kind', () => {
+    const stalled = pcFailureOf(
+      http(503, {
+        type: 'https://uniover.dev/problems/agent-reconnecting',
+        title: 'x',
+        stalled: true,
+      }),
+    );
+    expect(stalled.kind).toBe('reconnecting');
+    expect(stalled.message).toBe('O PC está lento e não respondeu.');
+  });
+
   it('only a 503 can be a reconnecting PC', () => {
     expect(
       pcFailureOf(http(502, { type: 'https://uniover.dev/problems/agent-reconnecting' })).kind,

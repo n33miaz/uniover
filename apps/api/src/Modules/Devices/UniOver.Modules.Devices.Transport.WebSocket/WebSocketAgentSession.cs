@@ -42,7 +42,7 @@ internal sealed class WebSocketAgentSession : IAgentSession
 {
     private readonly System.Net.WebSockets.WebSocket _socket;
     private readonly DevicesTransportOptions _options;
-    private readonly Channel<byte[]> _outbound;
+    private readonly Channel<OutboundFrame> _outbound;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _stop = new();
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -50,6 +50,7 @@ internal sealed class WebSocketAgentSession : IAgentSession
     private readonly Task _writer;
     private int _closing;
     private int _disposed;
+    private int _droppableQueued;
 
     public WebSocketAgentSession(
         string agentId, System.Net.WebSockets.WebSocket socket, DevicesTransportOptions options, bool handoverCandidate = false)
@@ -58,7 +59,7 @@ internal sealed class WebSocketAgentSession : IAgentSession
         IsHandoverCandidate = handoverCandidate;
         _socket = socket;
         _options = options;
-        _outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(options.QueueCapacity)
+        _outbound = Channel.CreateBounded<OutboundFrame>(new BoundedChannelOptions(options.QueueCapacity)
         {
             SingleReader = true,
             SingleWriter = false,
@@ -137,14 +138,40 @@ internal sealed class WebSocketAgentSession : IAgentSession
         }
     }
 
-    public ValueTask<bool> SendAsync(ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken)
+    public ValueTask<bool> SendAsync(ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken) =>
+        SendAsync(envelope, droppable: false, cancellationToken);
+
+    /// <summary>
+    /// Um movimento puro do mouse (<paramref name="droppable"/>) nunca derruba a conexão: com a fila tomada por movimentos (três
+    /// quartos dela) o novo é descartado, e o que envelhece na fila não sai (ver <see cref="WriteLoopAsync"/>). Os demais
+    /// envelopes têm sempre o quarto restante; se nem ele basta, o agente não acompanha e a conexão fecha como antes.
+    /// </summary>
+    public ValueTask<bool> SendAsync(ReadOnlyMemory<byte> envelope, bool droppable, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _closing) != 0)
         {
             return ValueTask.FromResult(false);
         }
 
-        if (_outbound.Writer.TryWrite(envelope.ToArray()))
+        if (droppable)
+        {
+            if (Interlocked.Increment(ref _droppableQueued) > _options.DroppableQueueLimit)
+            {
+                Interlocked.Decrement(ref _droppableQueued);
+                return ValueTask.FromResult(true);
+            }
+
+            if (_outbound.Writer.TryWrite(new OutboundFrame(envelope.ToArray(), true, Stopwatch.GetTimestamp())))
+            {
+                return ValueTask.FromResult(true);
+            }
+
+            Interlocked.Decrement(ref _droppableQueued);
+            // Fila completa (fechando, ou tomada pelos outros envelopes): o movimento é só descartado.
+            return ValueTask.FromResult(Volatile.Read(ref _closing) == 0);
+        }
+
+        if (_outbound.Writer.TryWrite(new OutboundFrame(envelope.ToArray(), false, 0)))
         {
             return ValueTask.FromResult(true);
         }
@@ -210,6 +237,17 @@ internal sealed class WebSocketAgentSession : IAgentSession
         {
             await foreach (var frame in _outbound.Reader.ReadAllAsync(_stop.Token))
             {
+                if (frame.Droppable)
+                {
+                    Interlocked.Decrement(ref _droppableQueued);
+                    // Um movimento puro que esperou demais (o agente parou de ler) não sai: chegaria em rajada atrasada. Ele é
+                    // relativo, então a posição final muda; a troca é aceita, e por isso a rolagem nunca é descartável.
+                    if (Stopwatch.GetElapsedTime(frame.EnqueuedAt) > _options.StaleInput)
+                    {
+                        continue;
+                    }
+                }
+
                 await _sendLock.WaitAsync(_stop.Token);
                 try
                 {
@@ -218,7 +256,7 @@ internal sealed class WebSocketAgentSession : IAgentSession
                         return;
                     }
 
-                    await _socket.SendAsync(frame, WebSocketMessageType.Text, true, _stop.Token);
+                    await _socket.SendAsync(frame.Json, WebSocketMessageType.Text, true, _stop.Token);
                 }
                 finally
                 {
@@ -347,3 +385,6 @@ internal sealed class WebSocketAgentSession : IAgentSession
         }
     }
 }
+
+/// <summary>Um envelope na fila de saída: <c>Droppable</c> é o movimento do mouse, com o instante em que entrou (para a idade).</summary>
+internal readonly record struct OutboundFrame(ReadOnlyMemory<byte> Json, bool Droppable, long EnqueuedAt);

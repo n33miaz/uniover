@@ -410,6 +410,22 @@ internal sealed class AgentConnections(
         }
     }
 
+    /// <summary>
+    /// A saúde do agente mudou (<see cref="AgentHealth"/>): vai só ao SSE, com a presença de agora. Os ouvintes de presença ficam
+    /// de fora de propósito: alguns deles leem o banco a cada aviso (a TV procura a dela), e a saúde muda sem o agente conectar
+    /// nem cair. Sem sessão viva não há o que avisar (a queda tem o aviso próprio).
+    /// </summary>
+    public void AnnounceHealth(string agentId, string health)
+    {
+        lock (_gate)
+        {
+            if (_sessions.ContainsKey(agentId) && presence.Get(agentId) is { Connected: true } info)
+            {
+                events.Publish(new SseMessage<PresenceUpdate>(PresenceUpdate.ChangeEvent, new PresenceUpdate([info with { Health = health }])));
+            }
+        }
+    }
+
     private void Announce(AgentPresenceInfo info)
     {
         events.Publish(new SseMessage<PresenceUpdate>(PresenceUpdate.ChangeEvent, new PresenceUpdate([info])));

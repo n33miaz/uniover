@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Ports;
 
@@ -49,6 +50,12 @@ internal static class TvProblems
         {
             // O PC caiu há pouco e ainda conta como conectado: a tela diz "reconectando", não "desligado".
             extensions = new Dictionary<string, object?> { ["reconnecting"] = true };
+        }
+        else if (outcome.Status == TvSendStatus.AgentOffline && outcome.ErrorCode == AgentErrors.StalledCode)
+        {
+            // Conectado, mas mudo (laço parado): a tela nova diz "PC lento" por `stalled`; a de antes, em cache no celular, lê
+            // `reconnecting` e diz "reconectando", sem marcar o PC como desligado.
+            extensions = new Dictionary<string, object?> { ["reconnecting"] = true, ["stalled"] = true };
         }
 
         return Results.Problem(

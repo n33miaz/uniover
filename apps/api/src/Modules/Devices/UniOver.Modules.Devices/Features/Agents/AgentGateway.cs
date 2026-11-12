@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol;
+using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Ports;
 using UniOver.SharedKernel;
@@ -10,7 +12,9 @@ namespace UniOver.Modules.Devices.Features.Agents;
 /// <summary>
 /// Entrega comandos de outros módulos aos agentes. Monta o envelope pela fábrica do protocolo (que só o devolve
 /// se o próprio validador o aceita: erro de quem chama vira <c>invalid_message</c>, nunca uma mensagem inválida
-/// no fio) e, no pedido/resposta, espera o <c>command.result.v1</c> que aponta para o <c>id</c> do comando.
+/// no fio) e, no pedido/resposta, espera o <c>command.result.v1</c> que aponta para o <c>id</c> do comando. Cada resposta e
+/// cada prazo estourado alimentam a saúde do agente (<see cref="AgentHealth"/>); com o agente conectado mas mudo, o pedido
+/// falha na hora (<c>agent_stalled</c>) em vez de esperar o prazo inteiro.
 /// </summary>
 internal sealed partial class AgentGateway(
     AgentConnections connections,
@@ -18,8 +22,12 @@ internal sealed partial class AgentGateway(
     IReplyCorrelator correlator,
     IOptions<DevicesTransportOptions> options,
     TimeProvider time,
-    ILogger<AgentGateway> logger) : IAgentGateway
+    ILogger<AgentGateway> logger,
+    AgentHealth? agentHealth = null) : IAgentGateway
 {
+    // Sem a saúde registrada (montagens de teste do gateway sozinho) nada é medido, e o gateway segue como antes.
+    private readonly AgentHealth? health = agentHealth;
+
     public async Task<Result> SendAsync(string agentId, OutboundMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
@@ -30,7 +38,8 @@ internal sealed partial class AgentGateway(
             return Result.Failure(envelope.Error);
         }
 
-        return await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, pending: null, cancellationToken, cancellationToken)
+        var droppable = IsPureMove(message);
+        return await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, droppable, pending: null, cancellationToken, cancellationToken)
             ? Result.Success()
             : Result.Failure(AgentErrors.Offline);
     }
@@ -48,6 +57,15 @@ internal sealed partial class AgentGateway(
 
         var wait = timeout > TimeSpan.Zero ? timeout : options.Value.RequestTimeout;
         var commandId = envelope.Value.Id;
+
+        // Conectado, mas mudo: o comando não sai (nada fica pendurado no agente para executar ao acordar) e a resposta volta
+        // já. Só com sessão viva: sem ela vale a espera da reconexão de sempre, e a saúde já foi esquecida na queda.
+        // A soltura de um botão ou de uma tecla nunca é recusada: sem ela o botão ficaria preso no PC quando ele voltar.
+        if (connections.TryGet(agentId, out _) && health?.IsUnresponsive(agentId) == true && !IsRelease(message))
+        {
+            LogStalledFastFail(agentId, message.Type);
+            return Result.Failure<AgentReply>(AgentErrors.Stalled);
+        }
 
         // A espera entra no dicionário antes do envio: o agente pode responder antes do SendAsync voltar.
         using var pending = correlator.Expect(agentId, commandId);
@@ -76,18 +94,23 @@ internal sealed partial class AgentGateway(
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
 
-        if (!await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, pending, delivery.Token, cancellationToken))
+        var sentAt = time.GetUtcNow();
+        var started = time.GetTimestamp();
+        if (!await DeliverAsync(agentId, envelope.Value.Json, message.Delivery, droppable: false, pending, delivery.Token, cancellationToken))
         {
             return Result.Failure<AgentReply>(AgentErrors.Offline);
         }
 
         try
         {
-            return Result.Success(await pending.Reply.WaitAsync(wait, time, cancellationToken));
+            var reply = await pending.Reply.WaitAsync(wait, time, cancellationToken);
+            health?.OnReply(agentId, time.GetElapsedTime(started), wait);
+            return Result.Success(reply);
         }
         catch (TimeoutException)
         {
             LogRequestTimedOut(agentId, message.Type, commandId);
+            health?.OnTimeout(agentId, sentAt);
             return Result.Failure<AgentReply>(AgentErrors.Timeout);
         }
         catch (AgentDisconnectedException)
@@ -95,6 +118,26 @@ internal sealed partial class AgentGateway(
             return Result.Failure<AgentReply>(AgentErrors.Offline);
         }
     }
+
+    /// <summary>Movimento do mouse sem rolagem: o único envelope que a fila pode descartar (a rolagem perdida não volta).</summary>
+    internal static bool IsPureMove(OutboundMessage message) =>
+        string.Equals(message.Type, AgentMessageTypes.PcPointerV1, StringComparison.Ordinal)
+        && message.Body.ValueKind == JsonValueKind.Object
+        && IsZeroOrAbsent(message.Body, "scrollX")
+        && IsZeroOrAbsent(message.Body, "scrollY");
+
+    /// <summary>Soltura de botão ou tecla do PC (<c>action: UP</c>, como no <c>pc.click.v1</c> e no <c>pc.key.v2</c>).</summary>
+    internal static bool IsRelease(OutboundMessage message) =>
+        message.Type.StartsWith("pc.", StringComparison.Ordinal)
+        && message.Body.ValueKind == JsonValueKind.Object
+        && message.Body.TryGetProperty("action", out var action)
+        && action.ValueKind == JsonValueKind.String
+        && string.Equals(action.GetString(), "UP", StringComparison.Ordinal);
+
+    private static bool IsZeroOrAbsent(JsonElement body, string name) =>
+        !body.TryGetProperty(name, out var value)
+        || value.ValueKind == JsonValueKind.Null
+        || (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && number == 0);
 
     private Result<OutboundEnvelope> Build(string agentId, OutboundMessage message)
     {
@@ -122,13 +165,14 @@ internal sealed partial class AgentGateway(
         string agentId,
         byte[] json,
         AgentDelivery delivery,
+        bool droppable,
         IPendingReply? pending,
         CancellationToken cancellationToken,
         CancellationToken callerToken)
     {
         if (connections.TryGet(agentId, out var connected)
             && (pending is null || pending.TryBeginSend(connected))
-            && await connected.SendAsync(json, cancellationToken))
+            && await connected.SendAsync(json, droppable, cancellationToken))
         {
             return true;
         }
@@ -163,11 +207,14 @@ internal sealed partial class AgentGateway(
 
         return session is not null
             && (pending is null || pending.TryBeginSend(session))
-            && await session.SendAsync(json, cancellationToken);
+            && await session.SendAsync(json, droppable, cancellationToken);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Comando {Type} ao agente {AgentId} ({CommandId}) sem resposta no prazo; resposta tardia será descartada.")]
     private partial void LogRequestTimedOut(string agentId, string type, Guid commandId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Comando {Type} ao agente {AgentId} recusado na hora: o agente está conectado, mas não responde.")]
+    private partial void LogStalledFastFail(string agentId, string type);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Mensagem de saída {Type} para o agente {AgentId} recusada pelo contrato ({Reason}).")]
     private partial void LogOutboundRejected(string agentId, string type, string reason);
