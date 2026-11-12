@@ -46,6 +46,9 @@ internal sealed record GroupResponse(Guid Id, Guid OwnerUserId, bool IsOwner);
 
 internal sealed record MemberResponse(Guid UserId, bool IsOwner, bool Deleted, DateTimeOffset CreatedAt);
 
+/// <summary>Uma pessoa na tela de pessoas do grupo: quem já participa (<c>IsMember</c>) ou quem pode ser incluído.</summary>
+internal sealed record PersonResponse(Guid UserId, string Name, bool IsOwner, bool IsMember);
+
 internal sealed record ProductResponse(Guid Id, string Name, string Section, string? Unit, string? Size, bool Deleted, DateTimeOffset UpdatedAt);
 
 internal sealed record ListItemResponse(Guid Id, Guid ProductId, decimal Quantity, string? Note, bool Needed, bool Deleted, DateTimeOffset UpdatedAt);

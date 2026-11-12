@@ -4762,6 +4762,30 @@
         ],
         "type": "object"
       },
+      "PersonResponse": {
+        "properties": {
+          "isMember": {
+            "type": "boolean"
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "name",
+          "isOwner",
+          "isMember"
+        ],
+        "type": "object"
+      },
       "PersonUsage": {
         "properties": {
           "activeSessions": {
@@ -15243,6 +15267,48 @@
         },
         "tags": [
           "ShoppingWrites"
+        ]
+      }
+    },
+    "/api/v1/shopping/group/people": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "ShoppingReads"
         ]
       }
     },

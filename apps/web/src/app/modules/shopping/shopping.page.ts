@@ -16,19 +16,21 @@ import {
   type Product,
   type Purchase,
 } from './shopping-model';
+import { ShoppingPeople } from './shopping-people';
 import { ShoppingSession } from './shopping-session';
 
-type View = 'list' | 'market' | 'history';
+type View = 'list' | 'market' | 'history' | 'people';
 
 const MONEY = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const DAY = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /**
- * Compras: a lista da casa, o modo mercado (um toque = peguei, preço opcional, total e teto no topo) e as compras
+ * Compras: a lista da casa, o modo mercado (um toque = peguei, preço opcional e à parte, total e teto no topo) e as compras
  * anteriores. A tela lê e grava só no aparelho (`ShoppingStore`); o envio e o feed correm por trás.
  */
 @Component({
   selector: 'app-shopping-page',
+  imports: [ShoppingPeople],
   templateUrl: './shopping.page.html',
   styleUrl: './shopping.page.css',
   providers: [ShoppingSession],
@@ -44,6 +46,7 @@ export class ShoppingPage {
   protected readonly notice = signal<string | null>(null);
   protected readonly editingBudget = signal(false);
   protected readonly priceLabel = $localize`:@@shopping.price:Preço de`;
+  private lineWrites: Promise<void> = Promise.resolve();
 
   protected readonly snapshot = computed(() => this.store()?.snapshot() ?? emptySnapshot());
   protected readonly syncState = computed(() => this.store()?.state() ?? 'synced');
@@ -55,7 +58,7 @@ export class ShoppingPage {
     const purchase = this.purchase();
     return purchase ? marketRows(this.snapshot(), purchase) : [];
   });
-  /** A compra foi aberta sem sinal e o servidor ainda não montou as linhas dela. */
+  /** A compra foi aberta sem sinal e ainda não chegou ao servidor (dá para marcar; o envio sai quando o sinal voltar). */
   protected readonly waiting = computed(() => {
     const purchase = this.purchase();
     return !!purchase && this.store()?.unconfirmedPurchase() === purchase.id;
@@ -64,6 +67,17 @@ export class ShoppingPage {
   protected readonly budget = computed(() => budgetState(this.total(), this.purchase()?.budget));
   protected readonly history = computed(() => closedPurchases(this.snapshot()));
   protected readonly lastPrices = computed(() => this.store()?.lastPrices() ?? new Map());
+  /** O recado do último envio: uma mudança que o servidor não aceitou nunca some calada. */
+  protected readonly syncNotice = computed(() => {
+    switch (this.store()?.notice()) {
+      case 'refused':
+        return $localize`:@@shopping.notice.refused:Uma mudança não foi aceita e foi desfeita. Confira a lista.`;
+      case 'merged':
+        return $localize`:@@shopping.notice.merged:Já havia uma compra aberta. O que você marcou foi para ela.`;
+      default:
+        return null;
+    }
+  });
 
   protected money(value: number | null | undefined): string {
     return MONEY.format(value ?? 0);
@@ -80,6 +94,10 @@ export class ShoppingPage {
 
   protected retry(): void {
     void this.store()?.sync();
+  }
+
+  protected dismiss(): void {
+    this.store()?.notice.set(null);
   }
 
   protected show(view: View): void {
@@ -128,9 +146,16 @@ export class ShoppingPage {
     this.show('market');
   }
 
-  /** Um toque = peguei (outro toque desfaz). */
-  protected async toggle(row: MarketRow): Promise<void> {
-    await this.putLine(row, !row.picked, row.unitPrice);
+  /**
+   * Um toque = peguei (outro toque desfaz). O preço que estiver digitado no campo vai junto: no Safari do iPhone o
+   * toque num botão não tira o foco do campo, então o preço ainda não teria sido gravado.
+   */
+  protected async toggle(row: MarketRow, input?: HTMLInputElement): Promise<void> {
+    const typed = input ? parseMoney(input.value) : null;
+    await this.putLine(row.product.id, (now) => ({
+      picked: !now.picked,
+      unitPrice: typed === null ? now.unitPrice : (typed ?? null),
+    }));
   }
 
   /** O preço é opcional: vazio tira o preço; um texto que não é dinheiro não é enviado. */
@@ -143,20 +168,35 @@ export class ShoppingPage {
     }
     this.notice.set(null);
     const unitPrice = value ?? null;
-    if (unitPrice === row.unitPrice) return;
-    // Quem digita o preço está com o produto na mão.
-    await this.putLine(row, row.picked || unitPrice !== null, unitPrice);
+    // O preço não marca nada: "peguei" é sempre um toque à parte.
+    await this.putLine(row.product.id, (now) =>
+      unitPrice === now.unitPrice ? null : { picked: now.picked, unitPrice },
+    );
   }
 
-  private async putLine(row: MarketRow, picked: boolean, unitPrice: number | null): Promise<void> {
-    const purchase = this.purchase();
-    if (!purchase) return;
-    await this.store()?.enqueue(
-      'purchaseItem',
-      row.lineId ?? uuidV7(),
-      { productId: row.product.id, quantity: row.quantity, unitPrice, picked },
-      purchase.id,
-    );
+  /**
+   * Grava uma mudança na linha de um produto. As mudanças saem uma por vez, e cada uma parte do que a anterior deixou:
+   * quem digita o preço e toca em "peguei" logo em seguida dispara as duas quase juntas, e a segunda não pode partir da
+   * linha como a tela a desenhou antes da primeira (o preço se perderia, ou o produto ganharia duas linhas).
+   */
+  private putLine(
+    productId: string,
+    change: (now: MarketRow) => { picked: boolean; unitPrice: number | null } | null,
+  ): Promise<void> {
+    const write = this.lineWrites.then(async () => {
+      const purchase = this.purchase();
+      const now = this.rows().find((row) => row.product.id === productId);
+      const wanted = purchase && now ? change(now) : null;
+      if (!purchase || !now || !wanted) return;
+      await this.store()?.enqueue(
+        'purchaseItem',
+        now.lineId ?? uuidV7(),
+        { productId, quantity: now.quantity, ...wanted },
+        purchase.id,
+      );
+    });
+    this.lineWrites = write.catch(() => undefined);
+    return write;
   }
 
   protected async saveBudget(input: HTMLInputElement): Promise<void> {
@@ -174,6 +214,9 @@ export class ShoppingPage {
   }
 
   protected async finish(paid: HTMLInputElement, place: HTMLInputElement): Promise<void> {
+    // O fechamento entra na fila depois das escritas de linha ainda em curso: fechar antes faria o servidor recusar o
+    // preço ou o "peguei" que vinha logo atrás.
+    await this.lineWrites;
     const purchase = this.purchase();
     if (!purchase) return;
     // Sem valor digitado, vale o total que a tela somou.

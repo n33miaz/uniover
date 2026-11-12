@@ -1,7 +1,11 @@
 import { signal } from '@angular/core';
 import type { ShoppingDb, StoredEntity } from './shopping-db';
 import {
+  PURCHASE_ALREADY_OPEN,
+  adoptPurchase,
+  alignLines,
   applyChanges,
+  applyOperation,
   classifyResult,
   emptySnapshot,
   isEntityType,
@@ -21,7 +25,17 @@ export const BATCH_SIZE = 50;
 export interface OperationResult {
   readonly operationId: string;
   readonly status: number;
+  /** Na recusa, o tipo do problema (o mesmo que a rota daria). */
+  readonly type?: string | null;
+  /** Na recusa por já haver compra aberta no grupo, qual é ela. */
+  readonly openPurchaseId?: string | null;
 }
+
+/**
+ * O que a tela precisa contar à pessoa sobre o último envio. `refused`: o servidor não aceitou uma mudança e ela foi
+ * desfeita. `merged`: o grupo já tinha uma compra aberta, e o que foi marcado aqui passou para ela.
+ */
+export type SyncNotice = 'refused' | 'merged';
 
 export interface ChangesPage {
   readonly groupId: string;
@@ -65,10 +79,12 @@ export class ShoppingStore {
   readonly snapshot = signal<Snapshot>(emptySnapshot());
   readonly pendingCount = signal(0);
   /**
-   * A compra que o aparelho abriu e o servidor ainda não confirmou (ou `null`). As linhas de uma compra nascem no
-   * servidor: até ele responder, a tela não deixa marcar nada nela, para um toque não virar uma linha repetida.
+   * A compra que o aparelho abriu e o servidor ainda não confirmou (ou `null`). Dá para marcar e pôr preço nela sem
+   * sinal: quando o servidor responde, o que foi marcado vai para as linhas que ele criou (ver `alignLines`).
    */
   readonly unconfirmedPurchase = signal<string | null>(null);
+  /** O recado do último envio, até a pessoa fazer outra mudança ou dispensá-lo. */
+  readonly notice = signal<SyncNotice | null>(null);
   readonly state = signal<SyncState>('synced');
   /** O banco do aparelho já foi lido (a tela pode mostrar a lista, mesmo sem rede). */
   readonly ready = signal(false);
@@ -127,8 +143,20 @@ export class ShoppingStore {
       createdAt: this.ports.now(),
       ...(purchaseId ? { purchaseId } : {}),
     };
-    const seq = await this.db.operations.add(operation);
-    this.pending = [...this.pending, { ...operation, seq }];
+    // Entra na memória já, e na tela só depois de gravada: um envio em curso que acerte as linhas da fila neste meio
+    // tempo (ver `align`) acerta esta também, em vez de ela reaparecer com o id antigo.
+    this.pending = [...this.pending, operation];
+    let seq: number;
+    try {
+      seq = await this.db.operations.add(operation);
+    } catch (error) {
+      this.pending = this.pending.filter((candidate) => candidate.id !== operation.id);
+      throw error;
+    }
+    this.pending = this.pending.map((candidate) =>
+      candidate.id === operation.id ? { ...candidate, seq } : candidate,
+    );
+    this.notice.set(null);
     this.publish();
     void this.sync();
   }
@@ -184,22 +212,108 @@ export class ShoppingStore {
 
   /** Esvazia a fila em lotes. Devolve falso se alguma operação ficou para depois (o envio para ali, para não martelar). */
   private async flush(): Promise<boolean> {
+    let aligned = false;
     for (;;) {
-      const batch = await this.db.operations.orderBy('seq').limit(BATCH_SIZE).toArray();
-      if (batch.length === 0) return true;
+      const queue = await this.db.operations.orderBy('seq').limit(BATCH_SIZE).toArray();
+      if (queue.length === 0) return true;
+      // A abertura de uma compra fecha o lote: o que vem depois dela depende da resposta (a compra pode ser outra, e
+      // as linhas nascem no servidor), então só é enviado depois de acertado com o que o servidor disser.
+      const opening = queue.findIndex((operation) => operation.kind === 'openPurchase');
+      const batch = opening < 0 ? queue : queue.slice(0, opening + 1);
+
+      // Uma linha de compra criada aqui só é enviada depois de o aparelho ver as linhas que o servidor tem: é o que
+      // impede duas linhas do mesmo produto (a segunda seria recusada e o toque, perdido). A conferência é sobre o
+      // lote lido do banco, e o lote é lido de novo depois de acertado.
+      if (!aligned && this.hasNewLines(batch)) {
+        await this.pull();
+        aligned = true;
+        continue;
+      }
+      aligned = false;
 
       const results = await this.transport.send(batch);
-      const status = new Map(results.map((result) => [result.operationId, result.status]));
+      const byId = new Map(results.map((result) => [result.operationId, result]));
       // Sem desfecho na resposta, a operação fica: só sai da fila o que o servidor disse ter aplicado ou recusado.
       const settled = batch.filter(
-        (operation) => classifyResult(status.get(operation.id) ?? 0) !== 'retry',
+        (operation) => classifyResult(byId.get(operation.id)?.status ?? 0) !== 'retry',
       );
-      const done = new Set(settled.map((operation) => operation.id));
-      await this.db.operations.bulkDelete(settled.map((operation) => operation.seq!));
-      this.pending = this.pending.filter((operation) => !done.has(operation.id));
+      let adopt: { readonly from: string; readonly to: string } | null = null;
+      let notice: SyncNotice | null = null;
+      for (const operation of settled) {
+        const result = byId.get(operation.id)!;
+        if (classifyResult(result.status) !== 'refused') {
+          // Aplicada: o retrato já a mostra, sem esperar o feed. Senão, entre sair da fila e o feed chegar, o que a
+          // pessoa acabou de fazer sumiria da tela por um instante (e um campo em uso seria refeito, vazio).
+          this.server = applyOperation(this.server, operation);
+          continue;
+        }
+        const open = result.openPurchaseId;
+        if (
+          operation.kind === 'openPurchase' &&
+          open &&
+          result.type?.endsWith(PURCHASE_ALREADY_OPEN)
+        ) {
+          // O grupo já tinha uma compra aberta: vale a do servidor, e o que foi marcado aqui passa para ela.
+          adopt = { from: operation.entityId, to: open };
+        } else {
+          notice = 'refused';
+        }
+      }
+
+      // A fila gravada e a da memória são acertadas cada uma pelo que tem: uma escrita que ainda está sendo gravada
+      // existe só na memória, e não pode voltar ao banco por aqui.
+      const gone = new Set(settled.map((operation) => operation.id));
+      const purchase = adopt;
+      await this.db.transaction('rw', this.db.operations, async () => {
+        await this.db.operations.bulkDelete(settled.map((operation) => operation.seq!));
+        if (!purchase) return;
+        const stored = await this.db.operations.orderBy('seq').toArray();
+        const adopted = adoptPurchase(stored, purchase.from, purchase.to);
+        await this.db.operations.bulkDelete(adopted.dropped.map((operation) => operation.seq!));
+        await this.db.operations.bulkPut([...adopted.changed]);
+      });
+      let moved = new Map<string, PendingOperation>();
+      if (purchase) {
+        const adopted = adoptPurchase(this.pending, purchase.from, purchase.to);
+        for (const operation of adopted.dropped) gone.add(operation.id);
+        moved = new Map(adopted.changed.map((operation) => [operation.id, operation]));
+        // Só há o que contar se algo mudou de compra: a abertura repetida da própria compra não é notícia.
+        if (moved.size > 0 || adopted.dropped.length > 0) notice ??= 'merged';
+      }
+      this.pending = this.pending
+        .filter((operation) => !gone.has(operation.id))
+        .map((operation) => moved.get(operation.id) ?? operation);
+      if (notice) this.notice.set(notice);
       this.publish();
       if (settled.length < batch.length) return false;
     }
+  }
+
+  /** O lote leva uma linha de compra que o servidor ainda não conhece? (A abertura, se houver, é a última do lote.) */
+  private hasNewLines(batch: readonly PendingOperation[]): boolean {
+    return batch.some(
+      (operation) =>
+        operation.kind === 'purchaseItem' && !this.server.purchaseItems.has(operation.entityId),
+    );
+  }
+
+  /**
+   * Põe as linhas criadas aqui sobre as que o servidor tem (ver `alignLines`). Vale o que está gravado no banco; a
+   * memória acompanha pelo id da operação, inclusive a escrita que ainda está sendo gravada.
+   */
+  private async align(): Promise<void> {
+    const stored = await this.db.operations.orderBy('seq').toArray();
+    const changed = alignLines(this.server, stored);
+    if (changed.length > 0) await this.db.operations.bulkPut([...changed]);
+    const line = new Map(
+      alignLines(this.server, this.pending).map((operation) => [operation.id, operation.entityId]),
+    );
+    for (const operation of changed) line.set(operation.id, operation.entityId);
+    if (line.size === 0) return;
+    this.pending = this.pending.map((operation) => {
+      const entityId = line.get(operation.id);
+      return entityId ? { ...operation, entityId } : operation;
+    });
   }
 
   /** Traz o feed depois do cursor. O retrato e o cursor são gravados juntos: ou os dois avançam, ou nenhum. */
@@ -237,6 +351,8 @@ export class ShoppingStore {
       this.server = applyChanges(this.server, page.items);
       this.cursor = page.nextCursor;
       this.groupId = page.groupId;
+      // Antes de a tela ver o retrato novo: senão o mesmo produto apareceria em duas linhas por um instante.
+      if (!page.hasMore) await this.align();
       this.publish();
       if (!page.hasMore) return;
     }

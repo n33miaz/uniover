@@ -2,6 +2,7 @@ import { permissionLabels } from './settings-titles';
 
 export const TV_MODULE = 'module:tv';
 export const TRAINING_MODULE = 'module:training';
+export const SHOPPING_MODULE = 'module:shopping';
 export const PC_MODULE = 'module:pc';
 
 /** As ações da TV: cada uma só vale com o módulo da TV (a API recusa a lista que traga uma sem ele). */
@@ -26,9 +27,15 @@ export const TV_PICKER_ACTIONS: readonly string[] = TV_ACTIONS.filter(
 );
 
 /** O catálogo fechado de permissões da API, na ordem em que ela o devolve (a mesma ordem vale para o que a tela envia). */
-export const CATALOG: readonly string[] = [TV_MODULE, ...TV_ACTIONS, TRAINING_MODULE, PC_MODULE];
+export const CATALOG: readonly string[] = [
+  TV_MODULE,
+  ...TV_ACTIONS,
+  TRAINING_MODULE,
+  SHOPPING_MODULE,
+  PC_MODULE,
+];
 
-const MODULES: readonly string[] = [TV_MODULE, TRAINING_MODULE, PC_MODULE];
+const MODULES: readonly string[] = [TV_MODULE, TRAINING_MODULE, SHOPPING_MODULE, PC_MODULE];
 
 /** Modelo "só controlar a TV": o mesmo que a API concede a um convite sem lista (a TV inteira, menos editar atalhos). */
 export const TV_CONTROL_ONLY: readonly string[] = [
@@ -153,6 +160,8 @@ export function permissionOptionLabel(permission: string): string {
       return $localize`:@@settings.people.option.tv-edit:Editar e reordenar atalhos`;
     case TRAINING_MODULE:
       return $localize`:@@settings.people.option.training:Usar o Treino`;
+    case SHOPPING_MODULE:
+      return $localize`:@@settings.people.option.shopping:Usar as Compras`;
     case PC_MODULE:
       return $localize`:@@settings.people.option.pc:Controlar o PC`;
     default:

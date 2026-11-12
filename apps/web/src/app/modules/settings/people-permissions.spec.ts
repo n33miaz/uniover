@@ -27,6 +27,7 @@ describe('people permissions', () => {
         'tv:edit-shortcuts',
         'tv:history',
         'module:training',
+        'module:shopping',
         'module:pc',
       ]);
     });
@@ -103,6 +104,7 @@ describe('people permissions', () => {
       expect(hasModule(['tv:control'])).toBe(false);
       expect(hasModule(['module:tv'])).toBe(true);
       expect(hasModule(['module:training'])).toBe(true);
+      expect(hasModule(['module:shopping'])).toBe(true);
       expect(hasModule(['module:pc'])).toBe(true);
     });
 
@@ -173,6 +175,7 @@ describe('people permissions', () => {
     it('says only "see the TV" when that is all there is', () => {
       expect(permissionSummary(['module:tv'])).toBe('Ver a TV');
       expect(permissionSummary(['module:pc'])).toBe('Controlar o PC');
+      expect(permissionSummary(['module:shopping'])).toBe('Usar as Compras');
       expect(permissionSummary(['module:training', 'module:pc'])).toBe(
         'Usar o Treino · Controlar o PC',
       );
@@ -201,6 +204,7 @@ describe('people permissions', () => {
         expect(permissionOptionLabel(permission)).not.toMatch(/:/);
       }
       expect(permissionOptionLabel('module:pc')).toBe('Controlar o PC');
+      expect(permissionOptionLabel('module:shopping')).toBe('Usar as Compras');
       expect(permissionOptionLabel('tv:control')).toBe('Usar o controle e o teclado');
       expect(permissionOptionLabel('tv:launch')).toBe('Abrir apps e atualizar a lista');
       expect(permissionOptionLabel('tv:edit-shortcuts')).toBe('Editar e reordenar atalhos');

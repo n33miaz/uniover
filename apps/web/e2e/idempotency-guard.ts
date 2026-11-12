@@ -16,6 +16,8 @@ const ROUTES: readonly { readonly method: string; readonly path: RegExp }[] = [
   { method: 'DELETE', path: new RegExp(`^identity/passkeys/${ID}$`) },
   { method: 'POST', path: /^devices\/pairing\/(approve|approve-own|deny)$/ },
   { method: 'POST', path: new RegExp(`^devices/agents/${ID}/(maintenance|revoke)$`) },
+  { method: 'PUT', path: new RegExp(`^shopping/group/members/${ID}$`) },
+  { method: 'POST', path: /^shopping\/group\/leave$/ },
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

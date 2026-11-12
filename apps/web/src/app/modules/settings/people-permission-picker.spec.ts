@@ -55,6 +55,7 @@ describe('PeoplePermissionPicker', () => {
       'Modelos prontos',
       'TV',
       'Treino',
+      'Compras',
       'Controle do PC',
     ]);
     expect(options().map((o) => o.text)).toEqual([
@@ -64,15 +65,16 @@ describe('PeoplePermissionPicker', () => {
       'Abrir apps e atualizar a lista',
       'Editar e reordenar atalhos',
       'Usar o Treino',
+      'Usar as Compras',
       'Controlar o PC',
     ]);
   });
 
   it('groups with fieldset and legend, and every switch is a real labelled switch', async () => {
     const { el } = await render();
-    expect(el.querySelectorAll('fieldset')).toHaveLength(4);
+    expect(el.querySelectorAll('fieldset')).toHaveLength(5);
     const switches = el.querySelectorAll<HTMLInputElement>('input[role="switch"]');
-    expect(switches).toHaveLength(7);
+    expect(switches).toHaveLength(8);
     for (const input of Array.from(switches)) {
       expect(input.type).toBe('checkbox');
       expect(input.closest('label')?.textContent?.trim().length).toBeGreaterThan(0);
@@ -97,6 +99,16 @@ describe('PeoplePermissionPicker', () => {
     expect(list()).toEqual(['module:training', 'module:pc']);
     await flip('Controlar o PC');
     expect(list()).toEqual(['module:training']);
+  });
+
+  it('grants the Shopping module on its own, in the order the API keeps', async () => {
+    const { flip, option, list } = await render(['module:training', 'module:pc']);
+    expect(option('Usar as Compras').checked).toBe(false);
+    await flip('Usar as Compras');
+    expect(list()).toEqual(['module:training', 'module:shopping', 'module:pc']);
+    await flip('Usar o Treino');
+    await flip('Controlar o PC');
+    expect(list()).toEqual(['module:shopping']);
   });
 
   it('turning on a TV action turns on "see the TV" first', async () => {

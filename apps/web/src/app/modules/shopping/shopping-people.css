@@ -1,0 +1,45 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+h2,
+ul,
+p {
+  margin: 0;
+}
+
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+.ui-row {
+  align-items: center;
+}
+
+.ui-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ui-row-title {
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+.line {
+  width: 60%;
+}

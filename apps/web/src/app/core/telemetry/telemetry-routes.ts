@@ -156,6 +156,7 @@ export const API_ROUTES: readonly string[] = [
   '/api/v1/shopping/group/leave',
   '/api/v1/shopping/group/members',
   '/api/v1/shopping/group/members/:id',
+  '/api/v1/shopping/group/people',
   '/api/v1/shopping/list-items/:id',
   '/api/v1/shopping/operations',
   '/api/v1/shopping/products/:id',

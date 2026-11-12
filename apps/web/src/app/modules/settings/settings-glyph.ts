@@ -222,6 +222,9 @@ const GLYPHS = {
     ],
   },
   plus: { layers: [['line', 'M12 5v14 M5 12h14']] },
+  cart: {
+    layers: [['line', 'M3.5 5h2.5l2 10h9.5l2-7.5H7 M9.5 19.5h.01 M16.5 19.5h.01']],
+  },
   close: { layers: [['line', 'M6 6l12 12 M18 6L6 18']] },
   // Círculo cortado: "recusado" (a forma diz o que a cor sozinha não diria).
   ban: {

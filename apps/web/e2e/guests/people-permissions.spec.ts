@@ -169,7 +169,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       pick: 'Personalizado',
       expected: [...ALL_PERMISSIONS],
       summary:
-        'Controlar a TV · Desligar a TV · Abrir apps · Editar atalhos · Usar o Treino · Controlar o PC',
+        'Controlar a TV · Desligar a TV · Abrir apps · Editar atalhos · Usar o Treino · Usar as Compras · Controlar o PC',
     },
   ] as const;
 
@@ -190,6 +190,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       if (scenario.pick === 'Personalizado') {
         await page.getByRole('switch', { name: 'Editar e reordenar atalhos' }).check();
         await page.getByRole('switch', { name: 'Usar o Treino' }).check();
+        await page.getByRole('switch', { name: 'Usar as Compras' }).check();
         await page.getByRole('switch', { name: 'Controlar o PC' }).check();
       }
       await page.getByRole('button', { name: 'Gerar convite' }).click();

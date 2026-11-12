@@ -1,0 +1,84 @@
+@switch (state()) {
+  @case ('loading') {
+    <div class="ui-group" aria-hidden="true">
+      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
+      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
+    </div>
+    <p class="ui-visually-hidden" role="status" i18n="@@shopping.people.loading">
+      Abrindo as pessoas
+    </p>
+  }
+  @case ('failed') {
+    <p class="ui-notice warn" role="alert" i18n="@@shopping.people.load-failed">
+      Não deu para abrir as pessoas.
+    </p>
+    <button type="button" class="ui-btn block" (click)="load()" i18n="@@shopping.people.retry">
+      Tentar de novo
+    </button>
+  }
+  @case ('ready') {
+    @if (notice(); as text) {
+      <p class="ui-notice warn" role="alert">{{ text }}</p>
+    }
+
+    <section class="block">
+      <h2 class="ui-section-label" i18n="@@shopping.people.members">Quem divide a lista</h2>
+      <ul class="ui-group members">
+        @for (person of members(); track person.userId) {
+          <li class="ui-row">
+            <span class="ui-row-text">
+              <span class="ui-row-title">{{ name(person) }}</span>
+              @if (person.isOwner) {
+                <span class="ui-row-sub" i18n="@@shopping.people.owner">Criou o grupo</span>
+              }
+            </span>
+            @if (owner() && !person.isOwner) {
+              <button type="button" class="ui-btn" [disabled]="busy()" (click)="remove(person)">
+                <ng-container i18n="@@shopping.people.remove">Tirar</ng-container>
+                <span class="ui-visually-hidden">: {{ name(person) }}</span>
+              </button>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+
+    @if (owner()) {
+      <section class="block">
+        <h2 class="ui-section-label" i18n="@@shopping.people.candidates">Adicionar</h2>
+        @if (candidates().length > 0) {
+          <ul class="ui-group candidates">
+            @for (person of candidates(); track person.userId) {
+              <li class="ui-row">
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ name(person) }}</span>
+                </span>
+                <button type="button" class="ui-btn" [disabled]="busy()" (click)="add(person)">
+                  <ng-container i18n="@@shopping.people.add">Adicionar</ng-container>
+                  <span class="ui-visually-hidden">: {{ name(person) }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="hint" i18n="@@shopping.people.no-candidates">
+            Ninguém para adicionar. Dê acesso às Compras em Ajustes, Pessoas.
+          </p>
+        }
+      </section>
+    } @else {
+      <button type="button" class="ui-btn block" [disabled]="busy()" (click)="leave()">
+        @if (leaving()) {
+          <ng-container i18n="@@shopping.people.leave-confirm"
+            >Sair mesmo? Toque de novo</ng-container
+          >
+        } @else {
+          <ng-container i18n="@@shopping.people.leave">Sair do grupo</ng-container>
+        }
+      </button>
+      @if (leaving()) {
+        <p class="hint" i18n="@@shopping.people.leave-hint">Você fica com uma lista nova, vazia.</p>
+      }
+    }
+  }
+}
