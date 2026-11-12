@@ -173,6 +173,11 @@ def is_decodable_jpeg(photo: bytes) -> bool:
     return True
 
 
+def _photo_matches(photo: bytes, sha256: str) -> bool:
+    """JPEG que decodifica e tem o hash anunciado (roda numa thread: é a parte pesada)."""
+    return is_decodable_jpeg(photo) and hashlib.sha256(photo).hexdigest() == sha256
+
+
 class PhotoStaging:
     """Junta os pedaços da foto do fundo e a guarda, na memória, até o `apply` que a cita."""
 
@@ -183,8 +188,12 @@ class PhotoStaging:
         self._ready: bytes | None = None
         self._since = 0.0
 
-    def add(self, photo_id: str, index: int, total: int, sha256: str, data: str) -> None:
-        """Guarda um pedaço; ao completar, confere tamanho, JPEG e hash (senão `LivreError`)."""
+    async def add(self, photo_id: str, index: int, total: int, sha256: str, data: str) -> None:
+        """Guarda um pedaço; ao completar, confere tamanho, JPEG e hash (senão `LivreError`).
+
+        Os pedaços chegam pelo leitor da conexão, na ordem. Só a conferência final (decodificar
+        até 400 KiB de JPEG e o hash) vai para uma thread: o laço segue livre e quem chama ainda
+        espera por ela, então o `apply` que vem depois já encontra a foto pronta."""
         now = self._clock.monotonic()
         if photo_id != self._photo_id or now - self._since > PHOTO_TTL_SECONDS:
             self._photo_id, self._parts, self._ready, self._since = photo_id, {}, None, now
@@ -199,8 +208,7 @@ class PhotoStaging:
         valid = (
             len(self._parts) == total
             and 0 < len(photo) <= MAX_PHOTO_BYTES
-            and is_decodable_jpeg(photo)
-            and hashlib.sha256(photo).hexdigest() == sha256
+            and await asyncio.to_thread(_photo_matches, photo, sha256)
         )
         if not valid:
             self._reset()
@@ -866,7 +874,7 @@ def tv_livre_photo_handler(photos: PhotoStaging) -> Handler:
     async def handle(command: Command) -> CommandResult:
         body = command.body
         try:
-            photos.add(
+            await photos.add(
                 str(body["photoId"]),
                 int(body["index"]),
                 int(body["total"]),

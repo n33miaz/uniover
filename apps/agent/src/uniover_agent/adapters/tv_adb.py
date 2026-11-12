@@ -62,6 +62,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
     parse_setting_value,
     quote_for_device_shell,
 )
+from uniover_agent.core.priority_lock import PriorityLock
 from uniover_agent.ports import (
     AdbCommandFailed,
     AdbDeviceChanged,
@@ -253,8 +254,11 @@ class AdbTv:
         self._kill_server_cooldown = kill_server_cooldown
         self._run: Runner = runner or run_process
         self._monotonic = monotonic
-        # Um comando por vez: o `adb` só atende bem um cliente e a TV tem pouca memória.
-        self._lock = asyncio.Lock()
+        # Um comando por vez: o `adb` só atende bem um cliente e a TV tem pouca memória. A entrada
+        # da pessoa (digitar, abrir app ou tela) pega a vez à frente da lista de apps, dos ícones e
+        # da limpeza (`urgent`); sem entrada esperando, a manutenção segue, e numa digitação longa
+        # ela ganha a vez depois de algumas seguidas ou de 2 s esperando.
+        self._lock = PriorityLock(monotonic=monotonic)
         self._connected = False
         self._blocked_until = 0.0
         self._blocked_error: AdbError | None = None
@@ -1078,7 +1082,7 @@ class AdbTv:
             raise ValueError("nome de pacote inválido")
         if activity is not None and not is_valid_activity(activity):
             raise ValueError("nome de atividade inválido")
-        async with self._lock:
+        async with self._lock.urgent():
             await self._ensure_connected_locked()
             if activity is None:
                 for app in await self._launchable_locked():
@@ -1103,7 +1107,7 @@ class AdbTv:
         action = SETTINGS_ACTIONS.get(screen)
         if action is None:
             raise ValueError("tela de configurações desconhecida")
-        async with self._lock:
+        async with self._lock.urgent():
             await self._ensure_connected_locked()
             started = await self._shell(f"am start -a {action}")
             if not am_start_succeeded(started.text):
@@ -1114,7 +1118,7 @@ class AdbTv:
             raise ValueError("texto longo demais para o ADB")
         command = input_text_command(text)
         asked = self._monotonic()
-        async with self._lock:
+        async with self._lock.urgent():
             self.last_input_wait_seconds = self._monotonic() - asked
             try:
                 await self._ensure_connected_locked()

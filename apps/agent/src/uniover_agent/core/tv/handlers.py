@@ -23,6 +23,8 @@ DEFAULT_LINK_SCHEMES: Final = frozenset({"https", "http", "market", "vnd.youtube
 POWER_OFF_CAPABILITY: Final = "tv.power.off.v1"
 
 KEY_BLOCKED: Final = "key_blocked"
+# Um `POWER` ignorado por repetir o anterior (resultado interno; no fio continua `ok`).
+POWER_IGNORED: Final = "power_repeat_ignored"
 UNSUPPORTED: Final = "unsupported"
 LINK_SCHEME_BLOCKED: Final = "link_scheme_not_allowed"
 INVALID_TARGET: Final = "invalid_target"
@@ -64,7 +66,7 @@ class TvControl(Protocol):
 
     async def send_key(
         self, key: str, direction: str = "SHORT", *, validate: Callable[[], None] | None = None
-    ) -> None: ...
+    ) -> bool | None: ...
 
     async def launch_link(self, link: str) -> None: ...
 
@@ -160,7 +162,17 @@ def tv_key_handler(
                 )
         try:
             if key == "POWER":
-                await tv.send_key(key, str(direction))
+                sent = await tv.send_key(key, str(direction))
+                if sent is False:
+                    # De propósito: um segundo POWER logo após o anterior religaria a TV (toque
+                    # duplo, reenvio). O contrato só tem `ok` para o sucesso; o código fica no
+                    # resultado interno e no registro.
+                    return CommandResult(
+                        command.id,
+                        ResultStatus.OK,
+                        "POWER ignorado: repete o anterior ou a TV ainda está ligando",
+                        POWER_IGNORED,
+                    )
             else:
                 await tv.send_key(key, str(direction), validate=validate)
         except TvSessionError as exc:

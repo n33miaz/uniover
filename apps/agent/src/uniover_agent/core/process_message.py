@@ -37,6 +37,37 @@ PATH_CLOUD: Final = "nuvem"
 PATH_DIRECT: Final = "canal direto"
 # O código com que o caminho direto recusa o que a nuvem trataria de outro jeito.
 NOT_ALLOWED: Final = "not_allowed"
+# Entrada da pessoa na TV: entra na cadeia das teclas (a mesma ordem de chegada), sem prender o
+# leitor. As teclas (inclusive POWER) também entram nela.
+ORDERED_TYPES: Final = frozenset(
+    {
+        "tv.text.v1",
+        "tv.wake.v1",
+        "tv.power.off.v1",
+        "tv.app.launch.v1",
+        "tv.settings.open.v1",
+    }
+)
+# Manutenção pedida pelo app: faixa própria, um por vez, com o teto dos comandos; nem o leitor
+# nem as teclas esperam por ela.
+MAINTENANCE_TYPES: Final = frozenset(
+    {
+        "tv.apps.refresh.v1",
+        "tv.adb.rebind.v1",
+        "tv.cleanup.config.v1",
+        "agent.logs.request.v1",
+        "agent.maintenance.v1",
+    }
+)
+# Resposta de quem foi aceito e não terminou quando o agente fecha (encerramento ou passagem para a
+# versão nova, depois do prazo do `drain`): todo comando aceito recebe uma resposta só.
+AGENT_STOPPING: Final = "agent_stopping"
+_STOPPING_MESSAGE: Final = (
+    "o agente está encerrando ou trocando de versão; o comando pode não ter terminado, "
+    "tente de novo em instantes"
+)
+_TV_KEY_PREFIX = "tv.key."
+_TEXT_TYPE = "tv.text.v1"
 
 # Como o resultado de um comando volta a quem o pediu: pela nuvem (o transporte) ou, no canal
 # direto, pela resposta do próprio canal.
@@ -46,10 +77,12 @@ Reply = Callable[[Command, CommandResult], Awaitable[None]]
 class ProcessMessage:
     """Valida a mensagem, executa o comando e responde.
 
-    As mensagens comuns são atendidas uma a uma. Comandos em `background_types` e teclas cujo
-    handler confere a idade rodam em tarefa própria: a recepção não espera a TV abrir a sessão.
-    Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos. Comandos em
-    `silent_types` são executados mas não respondidos.
+    O leitor nunca espera a TV. Teclas, texto, POWER e os outros comandos de entrada
+    (`ordered_types`) entram numa cadeia só, em tarefas encadeadas na ordem de chegada. A manutenção
+    (`maintenance_types`: lista de apps, rebind, diagnóstico) corre noutra cadeia, um comando por
+    vez, cada um com o teto `command_timeout_seconds` contado quando chega a vez dele. Comandos em
+    `background_types` rodam em tarefa própria, soltos. O resto (presença, pedaço de foto) é rápido
+    e é atendido no próprio leitor. Comandos em `silent_types` são executados mas não respondidos.
 
     Os comandos `pc.*` correm numa faixa à parte (`PcLane`): um só consumidor os executa um após o
     outro, na ordem de chegada (apertar, mover, soltar), sem esperar as teclas da TV e sem que
@@ -82,6 +115,8 @@ class ProcessMessage:
         pc_host: LaneHost | None = None,
         lane_detached_types: Collection[str] = (),
         direct_active: Callable[[], bool] | None = None,
+        ordered_types: Collection[str] = ORDERED_TYPES,
+        maintenance_types: Collection[str] = MAINTENANCE_TYPES,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -119,6 +154,13 @@ class ProcessMessage:
         self._lane_detached_types = frozenset(lane_detached_types)
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
+        self._ordered_types = frozenset(ordered_types)
+        self._maintenance_types = frozenset(maintenance_types)
+        # A faixa da manutenção: a última tarefa dela (a próxima espera esta terminar).
+        self._last_maintenance_task: asyncio.Task[None] | None = None
+        # Os comandos aceitos em tarefa que ainda não terminaram (e quem os responde): ao fechar,
+        # os que foram cancelados sem resposta recebem `agent_stopping`.
+        self._unanswered: dict[asyncio.Task[None], tuple[Command, Reply | None]] = {}
         self._latest_key: dict[str, int] = {}
         # Por qual caminho a última tecla da TV chegou, e quantas vieram por ele desde a mudança.
         self._tv_path: str | None = None
@@ -153,14 +195,41 @@ class ProcessMessage:
         if command.type in self._lane_detached_types:
             self._to_lane(partial(self._lane.run_detached, command))
             return
-        if command.type in self._background_types:
-            task = asyncio.create_task(self._execute_detached(command))
-            self._tasks.add(task)
-            task.add_done_callback(self._tasks.discard)
+        if self._start_off_reader(command):
             return
-        # Texto e POWER preservam a ordem que tinham no laço serial com as teclas anteriores.
-        await asyncio.gather(*tuple(self._key_tasks))
+        # Rápidos e sem ordem com as teclas (presença, pedaço de foto do TV Livre, tipo
+        # desconhecido): no próprio leitor, sem esperar nada que esteja na TV.
         await self._execute(command)
+
+    def _start_off_reader(self, command: Command) -> bool:
+        """Põe o comando numa tarefa (solta, na cadeia das teclas ou na faixa da manutenção) e diz
+        se pôs. O leitor nunca espera por elas."""
+        if command.type in self._background_types:
+            self._track(asyncio.create_task(self._execute_detached(command)), command, None)
+        elif command.type == _TEXT_TYPE:
+            # O texto espera as teclas anteriores e não tem o teto delas (o editor confere o seu).
+            task = asyncio.create_task(self._execute_text(command, self._last_key_task, None))
+            self._chain(task, command, None)
+        elif command.type.startswith(_TV_KEY_PREFIX) or command.type in self._ordered_types:
+            # POWER, abrir app, ligar e desligar: na cadeia das teclas, com o teto dos comandos.
+            # Aqui nada é juntado nem descartado por idade; a sessão é quem ignora um POWER que
+            # repete o anterior em poucos segundos (o toque duplo religaria a TV).
+            task = asyncio.create_task(self._execute_after(command, self._last_key_task))
+            self._chain(task, command, None)
+        elif command.type in self._maintenance_types:
+            # Um por vez, na ordem de chegada; o teto conta a partir da vez de cada um.
+            task = asyncio.create_task(self._execute_after(command, self._last_maintenance_task))
+            self._last_maintenance_task = task
+            self._track(task, command, None)
+        else:
+            return False
+        return True
+
+    async def _execute_after(self, command: Command, previous: asyncio.Task[None] | None) -> None:
+        """Espera a vez na cadeia e executa com o teto; um anterior que falhou não a trava."""
+        if previous is not None:
+            await asyncio.wait([previous])
+        await self._execute_detached(command)
 
     def _start_key(
         self,
@@ -188,15 +257,29 @@ class ProcessMessage:
             is_valid=is_valid,
         )
         task = asyncio.create_task(self._execute_key(timed, self._last_key_task, reply))
-        self._chain(task)
+        self._chain(task, command, reply)
 
-    def _chain(self, task: asyncio.Task[None]) -> None:
+    def _chain(self, task: asyncio.Task[None], command: Command, reply: Reply | None) -> None:
         """Entra na cadeia das teclas (a ordem de chegada vale para quem vem depois)."""
         self._last_key_task = task
-        self._tasks.add(task)
         self._key_tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
         task.add_done_callback(self._key_tasks.discard)
+        self._track(task, command, reply)
+
+    def _track(self, task: asyncio.Task[None], command: Command, reply: Reply | None) -> None:
+        """Guarda a tarefa de um comando aceito até ela terminar (ver `aclose`)."""
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        if reply is None and command.type in self._silent_types:
+            return  # sem resposta por natureza
+        self._unanswered[task] = (command, reply)
+        task.add_done_callback(self._settled)
+
+    def _settled(self, task: asyncio.Task[None]) -> None:
+        # Terminou por conta própria: a resposta já saiu (ou o envio falhou e foi registrado).
+        # Cancelada, fica para o `aclose` responder.
+        if not task.cancelled():
+            self._unanswered.pop(task, None)
 
     def _note_tv_path(self, path: str) -> None:
         """Conta as teclas por caminho e deixa uma linha no registro quando o caminho muda."""
@@ -259,7 +342,9 @@ class ProcessMessage:
             self._chain(
                 asyncio.create_task(
                     self._execute_text(command, self._last_key_task, reply, is_valid)
-                )
+                ),
+                command,
+                reply,
             )
         else:
             on_result(refused)
@@ -268,12 +353,12 @@ class ProcessMessage:
         self,
         command: Command,
         previous: asyncio.Task[None] | None,
-        reply: Reply,
+        reply: Reply | None,
         is_valid: Callable[[], bool] | None = None,
     ) -> None:
         if previous is not None:
             await asyncio.wait([previous])
-        if is_valid is not None and not is_valid():
+        if is_valid is not None and not is_valid() and reply is not None:
             await reply(
                 command,
                 CommandResult(command.id, ResultStatus.REJECTED, "canal fechado", "channel_closed"),
@@ -281,15 +366,21 @@ class ProcessMessage:
             return
         try:
             # O texto leva a validade ao handler: conferida ao obter a vez e antes de cada efeito.
-            checked = ValidatedCommand(
-                command.id,
-                command.type,
-                command.body,
-                command.correlation_id,
-                command.sent_at,
-                is_valid=is_valid,
+            checked = (
+                command
+                if is_valid is None
+                else ValidatedCommand(
+                    command.id,
+                    command.type,
+                    command.body,
+                    command.correlation_id,
+                    command.sent_at,
+                    is_valid=is_valid,
+                )
             )
             await self._execute(checked, reply)
+        except TransportError as exc:
+            _log.debug("resultado de %s não enviado (%s)", command.type, exc)
         except Exception:
             _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
 
@@ -364,12 +455,19 @@ class ProcessMessage:
         await asyncio.gather(own(), lane())
 
     async def aclose(self) -> None:
-        """Ao encerrar o agente: cancela o que ainda roda em tarefa (e espera terminar)."""
+        """Ao encerrar o agente: cancela o que ainda roda em tarefa (e espera terminar).
+
+        Todo comando aceito termina com uma resposta só: o que foi cancelado sem responder (em
+        curso ou ainda na fila, depois do prazo do `drain` na passagem para a versão nova) recebe
+        `agent_stopping`. A versão nova nunca recebe esses comandos (a API os mandou a esta
+        conexão), então nada é executado duas vezes. Com o transporte já fechado a resposta não
+        sai; aí vale o prazo de espera da própria API para o comando."""
         pending = list(self._tasks)
         for task in pending:
             task.cancel()
         try:
             await asyncio.gather(*pending, return_exceptions=True)
+            await self._answer_stopping()
         finally:
             if self._pc_host is None:
                 await self._lane.aclose()
@@ -378,6 +476,29 @@ class ProcessMessage:
                     await self._pc_host.call(self._lane.aclose, wait_seconds=_LANE_CLOSE_SECONDS)
                 except TimeoutError, RuntimeError:
                     _log.warning("a faixa do PC não encerrou a tempo")
+
+    async def _answer_stopping(self) -> None:
+        unanswered = list(self._unanswered.values())
+        self._unanswered.clear()
+        for command, reply in unanswered:
+            try:
+                if reply is not None:
+                    await reply(
+                        command,
+                        CommandResult(
+                            command.id, ResultStatus.FAILED, _STOPPING_MESSAGE, AGENT_STOPPING
+                        ),
+                    )
+                else:
+                    await self._transport.send(
+                        self._envelopes.result(
+                            command.id, ok=False, code=AGENT_STOPPING, message=_STOPPING_MESSAGE
+                        )
+                    )
+            except TransportError as exc:
+                _log.debug("resposta de encerramento de %s não enviada (%s)", command.type, exc)
+            except Exception:
+                _log.exception("falha ao responder %s ao encerrar", command.type)
 
     def connection_lost(self) -> None:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado

@@ -430,6 +430,25 @@ async def test_commands_never_overlap() -> None:
     assert runner.max_running == 1
 
 
+async def test_typing_goes_ahead_of_the_app_list_waiting_for_the_lock() -> None:
+    runner = authorized()
+    runner.script[shell(LEANBACK_QUERY)] = ok(LEANBACK_SAMPLE)
+    runner.script[shell(PM_THIRD_PARTY)] = ok(THIRD_PARTY_SAMPLE)
+    runner.script[shell("input text 'a'")] = ok("")
+    adb = make(runner)
+    await adb.connect()
+    # Uma consulta segura a trava; a lista chega antes da digitação, mas a digitação passa.
+    async with adb._lock:
+        listing = asyncio.create_task(adb.list_apps())
+        await asyncio.sleep(0)
+        typing = asyncio.create_task(adb.input_text("a"))
+        await asyncio.sleep(0)
+    await asyncio.gather(listing, typing)
+    commands = runner.shell_commands()
+    assert commands.index("input text 'a'") < commands.index(LEANBACK_QUERY)
+    assert runner.max_running == 1
+
+
 # --- lista de apps ------------------------------------------------------------------------------
 
 

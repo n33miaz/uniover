@@ -26,6 +26,7 @@ from uniover_agent.core import (
     tv_text_handler,
     tv_wake_handler,
 )
+from uniover_agent.core.tv.handlers import POWER_IGNORED
 from uniover_agent.core.tv.session import POWER_REPEAT_SECONDS
 from uniover_agent.ports import TvUnreachable
 
@@ -227,7 +228,10 @@ async def test_a_second_power_right_after_the_first_is_not_sent() -> None:
     rig = Rig()
     first = await rig.power()
     second = await rig.handler(Command("2", "tv.key.v1", {"key": "POWER"}))
+    # A proteção é de propósito: o segundo não sai, e o resultado diz que foi ignorado.
     assert (first.status, second.status) == (ResultStatus.OK, ResultStatus.OK)
+    assert first.code == ""
+    assert second.code == POWER_IGNORED
     assert rig.remote.sent == [("POWER", "SHORT")]
 
 
