@@ -58,6 +58,44 @@ test.describe('início e navegação', () => {
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
   });
 
+  test('o fundo dos ícones da Início segue o tema do app, mesmo contra o do celular', async ({
+    page,
+  }, info) => {
+    const iconColors = () =>
+      page
+        .locator('article.card:not(.planned) app-module-app-icon')
+        .evaluateAll((els) => [...new Set(els.map((el) => getComputedStyle(el).backgroundColor))]);
+    const results: Record<string, string[]> = {};
+    for (const [system, app] of [
+      ['light', 'light'],
+      ['dark', 'dark'],
+      ['dark', 'light'],
+      ['light', 'dark'],
+    ] as const) {
+      await page.emulateMedia({ colorScheme: system });
+      await page.goto('/');
+      await expect(blocks(page)).toHaveCount(MODULE_COUNT);
+      // O tema fixado no app é o atributo da raiz (o que a tela Aparência grava).
+      await page.evaluate(
+        (theme) => document.documentElement.setAttribute('data-theme', theme),
+        app,
+      );
+      results[`${system}/${app}`] = await iconColors();
+      if (system === 'dark' && app === 'light') {
+        await settle(page);
+        await screenshot(
+          page,
+          `test-results/home-icons-dark-phone-light-app-${info.project.name}.png`,
+        );
+      }
+    }
+    // Uma cor por tema do app, igual à do tema puro: o do celular não vaza para o ícone.
+    expect(results['light/light']).toHaveLength(1);
+    expect(results['dark/light']).toEqual(results['light/light']);
+    expect(results['light/dark']).toEqual(results['dark/dark']);
+    expect(results['dark/dark']).not.toEqual(results['light/light']);
+  });
+
   test('módulo em breve é só um cartão calmo: sem link, sem botão, sem foco', async ({ page }) => {
     await page.goto('/');
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
