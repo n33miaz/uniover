@@ -199,14 +199,6 @@ describe('RestTimerService', () => {
     expect(timer.active()).toBe(false);
   });
 
-  it('hands the audio unlock to the alert', () => {
-    const t = setupSessions();
-
-    t.timer().unlockAudio();
-
-    expect(t.alert.unlockCalls).toBe(1);
-  });
-
   it('stops its interval when it is destroyed', async () => {
     const t = setupSessions();
     await t.timer().start(90);

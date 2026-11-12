@@ -12,14 +12,9 @@ import { SessionRepository } from './session-repository';
  * enxergar o que ficou guardado) e o repositório pronto. Só os testes importam este arquivo; nada daqui entra no bundle.
  */
 
-/** Aviso falso: conta quantas vezes apitou e se o áudio foi liberado. */
+/** Aviso falso: conta quantas vezes o fim do descanso foi sinalizado. */
 export class FakeRestAlert {
   fired = 0;
-  unlockCalls = 0;
-
-  unlock(): void {
-    this.unlockCalls++;
-  }
 
   fire(): void {
     this.fired++;

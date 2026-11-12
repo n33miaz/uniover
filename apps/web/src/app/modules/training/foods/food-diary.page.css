@@ -91,8 +91,13 @@ h2 {
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
-.entry-main strong {
+.food-name {
+  display: -webkit-box;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .entry-actions {
   display: flex;
@@ -210,6 +215,8 @@ button:disabled {
 }
 .food-result > span:first-child {
   display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .food-result > span:last-child {
   flex: 0 0 auto;
