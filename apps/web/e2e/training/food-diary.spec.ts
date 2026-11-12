@@ -122,7 +122,19 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Salvar Alterações' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro revisado']);
       await expectSynced(page, SYNC_WAIT);
-      await page.getByRole('button', { name: 'Apagar Registro revisado' }).click();
+      // O vermelho de apagar vem do tema (o mesmo do resto do app), não de uma cor fixa que ignora o escuro.
+      const remove = page.getByRole('button', { name: 'Apagar Registro revisado' });
+      const themed = await page.evaluate(() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--a-bad-ink)';
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      });
+      await expect(remove).toHaveCSS('color', themed);
+      expect(themed).not.toBe('rgb(163, 41, 41)');
+      await remove.click();
       await page.getByRole('button', { name: 'Confirmar' }).click();
       await expect(page.getByText('Nada Registrado Neste Dia')).toBeVisible();
       expect(cspViolations).toEqual([]);

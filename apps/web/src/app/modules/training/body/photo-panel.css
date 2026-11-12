@@ -44,7 +44,7 @@ h2 {
   outline-offset: 2px;
 }
 .error {
-  color: var(--a-danger, #a32929);
+  color: var(--a-bad-ink);
   font-size: var(--fs-small);
 }
 .grid {

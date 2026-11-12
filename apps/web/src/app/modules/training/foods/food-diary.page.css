@@ -116,7 +116,7 @@ h2 {
   font-size: var(--fs-small);
 }
 .danger {
-  color: var(--a-danger, #a32929);
+  color: var(--a-bad-ink);
 }
 .editor {
   display: grid;
@@ -254,7 +254,7 @@ button:disabled {
   background: var(--a-surface-2);
 }
 .error {
-  color: var(--a-danger, #a32929);
+  color: var(--a-bad-ink);
 }
 .form-actions {
   display: flex;

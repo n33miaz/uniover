@@ -12,7 +12,7 @@
 }
 .error {
   margin: 0;
-  color: var(--a-danger, #a32929);
+  color: var(--a-bad-ink);
   font-size: var(--fs-small);
 }
 .confirm {
@@ -28,7 +28,7 @@
   align-self: flex-start;
   min-height: var(--tap);
   border: 0;
-  color: var(--a-danger, #a32929);
+  color: var(--a-bad-ink);
   background: transparent;
   font: inherit;
 }

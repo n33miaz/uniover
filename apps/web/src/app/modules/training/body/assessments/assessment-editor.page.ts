@@ -360,7 +360,7 @@ function todayKey(): string {
     }
     .remove {
       justify-self: start;
-      color: var(--a-danger, #a11);
+      color: var(--a-bad-ink);
       background: transparent;
     }
     .status {
