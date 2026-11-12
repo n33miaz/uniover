@@ -15,11 +15,13 @@ O supervisor do Windows deixou de jogar fora a saída dele: o que ele diz vai pa
 """
 
 import asyncio
+import errno
 import faulthandler
 import logging
 import sys
 import threading
 import time
+from asyncio import proactor_events
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, TextIO
@@ -110,12 +112,61 @@ def install_crash_trace(logs: Path, recorder: DiagnosticsRecorder) -> None:
     threading.excepthook = thread_hook
 
 
+_TASK_REPR_LIMIT: Final = 400
+
+
+# `WSAECONNRESET`: o par derrubou a conexão.
+_WSA_CONNECTION_RESET: Final = 10054
+# Privado do asyncio (e fora dos tipos publicados): buscado pelo nome, comparado por identidade.
+_PROACTOR_CONNECTION_LOST: Final = getattr(
+    proactor_events._ProactorBasePipeTransport, "_call_connection_lost", None
+)
+
+
+def is_benign_proactor_reset(context: dict[str, Any]) -> bool:
+    """O asyncio do Windows (3.14) chama `sock.shutdown` sem proteção ao fechar um transporte cujo
+    par já derrubou a conexão: sai um `ConnectionResetError` (10054) de
+    `_ProactorBasePipeTransport._call_connection_lost` depois de o protocolo já saber da perda. Não
+    é defeito do agente (a conexão já tinha caído e o protocolo foi avisado); o soquete fica para o
+    coletor fechar.
+
+    Só esse caso exato: o erro 10054 (ou `ECONNRESET`) E o callback ser o método do próprio
+    `asyncio.proactor_events` (não qualquer função com esse nome). O resto continua erro gravado."""
+    error = context.get("exception")
+    if not isinstance(error, ConnectionResetError):
+        return False
+    if getattr(error, "winerror", None) != _WSA_CONNECTION_RESET and error.errno not in {
+        errno.ECONNRESET,
+        _WSA_CONNECTION_RESET,
+    }:
+        return False
+    callback = getattr(context.get("handle"), "_callback", None)
+    function = getattr(callback, "__func__", None)
+    return function is not None and function is _PROACTOR_CONNECTION_LOST
+
+
+def describe_loop_context(context: dict[str, Any]) -> str:
+    """A mensagem do laço e, quando há, QUAL tarefa: "Task was destroyed but it is pending!" sem
+    a tarefa (o nome da corrotina e onde ela parou) não diz o que perdeu a referência."""
+    message = str(context.get("message", "erro no laço de eventos"))
+    task = context.get("task") or context.get("future")
+    if task is None:
+        return message
+    described = repr(task)
+    if len(described) > _TASK_REPR_LIMIT:
+        described = described[:_TASK_REPR_LIMIT] + "..."
+    return f"{message} ({described})"
+
+
 def loop_exception_handler(recorder: DiagnosticsRecorder) -> Any:
     """Tratador para `loop.set_exception_handler`: tarefa que falhou sem ninguém esperar por ela."""
 
     def handle(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
         error = context.get("exception")
-        message = str(context.get("message", "erro no laço de eventos"))
+        if is_benign_proactor_reset(context):
+            _log.info("o par derrubou a conexão antes do fechamento (aviso conhecido do asyncio)")
+            return
+        message = describe_loop_context(context)
         _log.error(
             "%s",
             message,

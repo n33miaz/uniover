@@ -291,8 +291,37 @@ def test_a_pc_that_slept_does_not_get_its_healthy_supervisor_killed(tmp_path: Pa
         assert wait_for(lambda: starts(tmp_path) >= 1, 60)
         log = base / "logs" / "supervisor.log"
         assert wait_for(lambda: log.exists() and "o relogio saltou" in log.read_text("utf-8"), 40)
+        assert "o PC ficou suspenso 100 s" in log.read_text("utf-8")
+        assert "sem rodar" not in log.read_text("utf-8")
         time.sleep(12)
         assert starts(tmp_path) == 1, "a suspensão do PC não é um supervisor travado"
+    finally:
+        stop(launcher)
+
+
+def test_a_launcher_that_stood_still_says_so_instead_of_blaming_a_suspension(
+    tmp_path: Path,
+) -> None:
+    # 12/11: sob pouca memória o lançador ficou até 290 s sem rodar e registrava "suspensão do PC",
+    # que não houve. O relógio e o tempo acordado andam juntos: é parada do processo, não suspensão.
+    # O prazo do supervisor (que esteve na mesma situação) recomeça igual.
+    base = tmp_path / "UniOver"
+    app = folder(base, "app", "x", CURRENT)
+    (base / "runtime").mkdir()
+    (app / "tools" / "run-agent.ps1").write_text(
+        counting_supervisor(touches=True), encoding="ascii"
+    )
+    launcher = run_launcher(tmp_path, stale="4", extra={"UNIOVER_LAUNCHER_TEST_STALL": "6:100"})
+    try:
+        assert wait_for(lambda: starts(tmp_path) >= 1, 60)
+        log = base / "logs" / "supervisor.log"
+        assert wait_for(lambda: log.exists() and "sem rodar" in log.read_text("utf-8"), 40)
+        text = log.read_text("utf-8")
+        assert "sem suspensao do PC" in text
+        assert "ficou suspenso" not in text
+        assert "WARNING launcher: o relogio saltou" in text
+        time.sleep(12)
+        assert starts(tmp_path) == 1, "uma parada por memória não é um supervisor travado"
     finally:
         stop(launcher)
 

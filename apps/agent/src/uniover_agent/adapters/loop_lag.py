@@ -13,6 +13,8 @@ _log = logging.getLogger(__name__)
 
 _MEGABYTE = 1024 * 1024
 _GENERATIONS = 3
+# Enquanto o conjunto de trabalho segue abaixo do piso, o aviso se repete a cada meia hora.
+FLOOR_REPEAT_SECONDS = 1_800.0
 
 
 class GcPauseTracker:
@@ -88,7 +90,16 @@ class LoopLagMonitor:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         memory: Callable[[], MemoryCounters | None] = read_memory_counters,
         gc_pauses: GcPauseTracker | None = None,
+        working_set_floor: int = 0,
+        floor_repeat: float = FLOOR_REPEAT_SECONDS,
     ) -> None:
+        """`working_set_floor` (bytes; 0 desliga): abaixo disto o conjunto de trabalho só cai
+        porque o Windows (ou um limpador de memória) tirou o agente da memória, e isso é avisado
+        na hora, com ou sem atraso no minuto. Um só medidor por processo deve ter o piso."""
+        self._floor = working_set_floor
+        self._floor_repeat = floor_repeat
+        self._below_since: float | None = None
+        self._floor_warned_at: float | None = None
         self._name = name
         self._interval = interval
         self._threshold = threshold
@@ -117,7 +128,40 @@ class LoopLagMonitor:
             if self._faults_before is not None:
                 faults = sample.page_faults - self._faults_before
             self._faults_before = sample.page_faults
+            self._check_floor(working_set, faults)
         return format_extras(faults, working_set, longest, counts)
+
+    def _check_floor(self, working_set: int, faults: int | None) -> None:
+        """Avisa quando o conjunto de trabalho cai abaixo do piso: uma vez ao cair e de novo a
+        cada `floor_repeat` enquanto continuar abaixo; e uma linha quando volta."""
+        if self._floor <= 0:
+            return
+        now = self._monotonic()
+        if working_set >= self._floor:
+            if self._below_since is not None:
+                _log.info(
+                    "conjunto de trabalho do agente de volta a %.0f MB (ficou abaixo de %.0f MB "
+                    "por %.0f s)",
+                    working_set / _MEGABYTE,
+                    self._floor / _MEGABYTE,
+                    now - self._below_since,
+                )
+            self._below_since = None
+            self._floor_warned_at = None
+            return
+        if self._below_since is None:
+            self._below_since = now
+        if self._floor_warned_at is not None and now - self._floor_warned_at < self._floor_repeat:
+            return
+        self._floor_warned_at = now
+        _log.warning(
+            "o agente foi tirado da memória: conjunto de trabalho %.0f MB, abaixo do esperado "
+            "(%.0f MB)%s; cada ação volta do disco e o controle pode parar por segundos (o "
+            "Windows sob pouca memória ou um limpador de memória)",
+            working_set / _MEGABYTE,
+            self._floor / _MEGABYTE,
+            f", falhas de página +{faults} no minuto" if faults is not None else "",
+        )
 
     def report(self) -> None:
         # Sempre lê (mesmo sem atraso) para as janelas valerem só o último minuto; só escreve quando

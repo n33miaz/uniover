@@ -374,7 +374,16 @@ mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagn
   que o PC segura e os limites de taxa são os de sempre.
 - **Memória.** O processo pede ao Windows um conjunto de trabalho mínimo duro (`SetProcessWorkingSetSizeEx`,
   `pc_working_set_min_mb`, padrão 64 MB, 0 desliga). Medido: o Windows aceita sem administrador (32 e 64 MB). Se recusar, o agente
-  segue sem a proteção e registra.
+  segue sem a proteção e registra. Medido em 12/11, o mínimo sozinho não basta: com ele em vigor o agente estava em 38 MB, e um
+  `EmptyWorkingSet` (o que faz um limpador como o Mem Reduct) esvazia o processo mesmo assim. A causa provável das paradas de
+  minutos (medida a prioridade, não ainda a melhora sob carga) é a prioridade herdada da tarefa agendada (prioridade 7): CPU abaixo do normal, memória 2 e E/S 1 no lançador, no supervisor e
+  no agente, ou seja, as páginas dele eram as primeiras a sair e voltavam do disco na fila mais lenta. Na partida o agente
+  devolve ao normal (nunca acima) CPU, memória e E/S, desliga o EcoQoS, e faz o mesmo nos ancestrais PowerShell (lançador e
+  supervisor) que se declararam no ambiente (`UNIOVER_LAUNCHER_PROCESS`/`UNIOVER_SUPERVISOR_PROCESS`, pid e hora de
+  criação) e nasceram na hora declarada; um PowerShell interativo ou um pid reaproveitado fica como está. A linha de atraso avisa quando o conjunto de trabalho cai abaixo de metade do mínimo (o agente foi tirado da
+  memória). Bancada: `uv run python tools/check_memory_protection.py` confere tudo num processo filho.
+- **Suspensão ou parada?** O lançador distingue as duas pelo `QueryUnbiasedInterruptTime` (não anda na suspensão) contra o
+  `GetTickCount64` (anda): "o PC ficou suspenso X s" ou "o processo do lançador ficou X s sem rodar (memória/disco)".
 - **O que o isolamento NÃO resolve.** As duas threads dividem o mesmo processo e o mesmo GIL: uma chamada em C que segura o
   GIL por muito tempo (a leitura das autoridades de certificado do Windows, por exemplo) para as duas, e o Windows ainda decide
   quem recebe CPU. O contexto TLS já é compartilhado (`ssl_contexts.py`); o resto é a prioridade e o conjunto de trabalho.

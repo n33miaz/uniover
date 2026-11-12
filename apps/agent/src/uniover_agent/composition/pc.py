@@ -78,6 +78,10 @@ from uniover_agent.ports import (
 _log = logging.getLogger("uniover_agent")
 
 
+# Os avisos de aparelho enviados sem espera, vivos até terminarem (ver `_announce_device`).
+_DETACHED: set[asyncio.Future[None]] = set()
+
+
 @dataclass(slots=True)
 class PcSetup:
     """O controle do PC, quando ligado: os comandos `pc.*`, a capacidade e o aviso dos favoritos."""
@@ -170,7 +174,11 @@ class PcSetup:
         if self._device_fire is not None:
             self._device_fire(envelope)
         else:
-            asyncio.ensure_future(self._device_send(envelope))  # noqa: RUF006 - aviso sem espera
+            # Aviso sem espera, mas com referência forte: o asyncio só guarda uma fraca, e o
+            # coletor destruiria a tarefa pendente ("Task was destroyed but it is pending!").
+            task = asyncio.ensure_future(self._device_send(envelope))
+            _DETACHED.add(task)
+            task.add_done_callback(_DETACHED.discard)
 
     def bind_tv_direct(self, deliver: Deliver) -> bool:
         """Liga as teclas e o texto da TV ao canal direto: `deliver` é o ponto de entrada do laço

@@ -1018,8 +1018,10 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         tray.run,
         # Se o laço de eventos parar, a pilha de todas as threads vai para `crash.log`.
         LoopWatchdog(installation_base() / "logs").run,
-        # Atrasos menores que a parada do vigia também explicam lentidão do controle.
-        LoopLagMonitor().run,
+        # Atrasos menores que a parada do vigia também explicam lentidão do controle. O piso do
+        # conjunto de trabalho é metade do mínimo pedido ao Windows: medido no PC do dono, o agente
+        # fica em 38-48 MB sem nada o tirar da memória e caiu a 3-20 MB nas paradas de 12/11.
+        LoopLagMonitor(working_set_floor=settings.pc_working_set_min_mb * 1024 * 1024 // 2).run,
     ]
     # O disco da instalação: um diagnóstico quando o espaço piora de nível e outro quando volta.
     root = installation_base()
