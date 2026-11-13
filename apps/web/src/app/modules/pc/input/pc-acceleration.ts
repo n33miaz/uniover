@@ -61,41 +61,73 @@ export class PointerAccelerator {
 }
 
 /**
- * A sensibilidade do ponteiro que a pessoa escolhe. O Windows já aplica a própria aceleração ao movimento relativo que o
- * agente envia ("aprimorar a precisão do ponteiro"); por isso o padrão é `normal`, 1 pixel do dedo para 1 do ponteiro, sem
- * curva por cima. `boosted` devolve a curva do app (mais rápido com o dedo veloz) para quem a prefere.
+ * A sensibilidade do ponteiro que a pessoa escolhe, num controle deslizante de 1 a 7. O Windows já aplica a própria aceleração
+ * ao movimento relativo que o agente envia ("aprimorar a precisão do ponteiro"); por isso o padrão (4, o meio) é 1 pixel do
+ * dedo para 1 do ponteiro, sem curva por cima. Os níveis de antes ficaram no meio da escala: Baixa é o 2, Normal o 4, Alta o 6.
+ * A "Acelerada" de antes virou o interruptor `acceleration` no nível 5 (a curva do app, mais rápida com o dedo veloz).
  */
-export type PointerSensitivity = 'low' | 'normal' | 'high' | 'boosted';
+export type SensitivityLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-export const POINTER_SENSITIVITIES: readonly PointerSensitivity[] = [
-  'low',
-  'normal',
-  'high',
-  'boosted',
-];
+export const SENSITIVITY_LEVELS: readonly SensitivityLevel[] = [1, 2, 3, 4, 5, 6, 7];
+/** O nível do meio: o padrão do ponteiro e da rolagem. */
+export const DEFAULT_LEVEL: SensitivityLevel = 4;
+
+/** O ganho de cada nível do ponteiro (o índice é o nível menos 1). */
+export const POINTER_GAINS: readonly number[] = [0.5, 0.7, 0.85, 1, 1.3, 1.6, 2.1];
+
+/** O valor guardado é um nível válido (um inteiro de 1 a 7). */
+export function isSensitivityLevel(value: unknown): value is SensitivityLevel {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7;
+}
+
+/** As escolhas de antes do controle deslizante, guardadas como texto: viram o nível equivalente. */
+export type LegacyPointerSensitivity = 'low' | 'normal' | 'high' | 'boosted';
+
+export const LEGACY_POINTER_LEVEL: Readonly<
+  Record<
+    LegacyPointerSensitivity,
+    { readonly level: SensitivityLevel; readonly acceleration: boolean }
+  >
+> = {
+  low: { level: 2, acceleration: false },
+  normal: { level: 4, acceleration: false },
+  high: { level: 6, acceleration: false },
+  // A curva do app parte de 1,3 por pixel: é o nível 5 com a aceleração ligada, exatamente.
+  boosted: { level: 5, acceleration: true },
+};
 
 const flat = (gain: number): AccelerationConfig => ({ baseGain: gain, slope: 0, maxGain: gain });
 
-const SENSITIVITY_CONFIG: Readonly<Record<PointerSensitivity, AccelerationConfig>> = {
-  low: flat(0.7),
-  normal: flat(1),
-  high: flat(1.6),
-  boosted: DEFAULT_ACCELERATION,
-};
-
-export function accelerationFor(sensitivity: PointerSensitivity): AccelerationConfig {
-  return SENSITIVITY_CONFIG[sensitivity];
+/**
+ * A curva de um nível: plana (o ganho do nível) ou, com `acceleration`, a curva do app escalada para partir do ganho do nível
+ * (no nível 5 é a curva do app sem mudança).
+ */
+export function accelerationFor(level: SensitivityLevel, acceleration = false): AccelerationConfig {
+  const gain = POINTER_GAINS[level - 1];
+  if (!acceleration) return flat(gain);
+  if (gain === DEFAULT_ACCELERATION.baseGain) return DEFAULT_ACCELERATION;
+  const scale = gain / DEFAULT_ACCELERATION.baseGain;
+  return {
+    baseGain: gain,
+    slope: DEFAULT_ACCELERATION.slope * scale,
+    maxGain: DEFAULT_ACCELERATION.maxGain * scale,
+  };
 }
 
-/** O quanto a rolagem rende por pixel do dedo, separado da sensibilidade do ponteiro. */
-export type ScrollSensitivity = 'low' | 'normal' | 'high';
+/** O ganho de cada nível da rolagem (separado do ponteiro; o índice é o nível menos 1). */
+export const SCROLL_GAINS: readonly number[] = [0.4, 0.6, 0.8, 1, 1.3, 1.6, 2.2];
 
-export const SCROLL_SENSITIVITIES: readonly ScrollSensitivity[] = ['low', 'normal', 'high'];
+export type LegacyScrollSensitivity = 'low' | 'normal' | 'high';
 
-const SCROLL_GAIN: Readonly<Record<ScrollSensitivity, number>> = { low: 0.6, normal: 1, high: 1.6 };
+export const LEGACY_SCROLL_LEVEL: Readonly<Record<LegacyScrollSensitivity, SensitivityLevel>> = {
+  low: 2,
+  normal: 4,
+  high: 6,
+};
 
-export function scrollGainFor(sensitivity: ScrollSensitivity): number {
-  return SCROLL_GAIN[sensitivity];
+/** O quanto a rolagem rende por pixel do dedo no nível escolhido. */
+export function scrollGainFor(level: SensitivityLevel): number {
+  return SCROLL_GAINS[level - 1];
 }
 
 /** Um clique da roda do Windows, em unidades de roda. */
