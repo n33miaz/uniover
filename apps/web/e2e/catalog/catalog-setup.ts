@@ -1,18 +1,12 @@
 import { BrowserContext, Page } from '@playwright/test';
+import { afterFrames, settle } from '../screens/screen-helpers';
 import { GUEST, IdentityMock, TV_CONTROL_ONLY, mockIdentityApi } from '../auth/identity-mock';
 import { DevicesMock, mockDevicesApi } from '../devices/devices-mock';
 import { PcMock, mockPcApi } from '../pc/pc-mock';
 import { AuditMock, mockAuditApi } from '../settings/audit-mock';
 import { SiriMock, mockSiriApi } from '../settings/siri-mock';
 import { SystemMock, mockSystemApi } from '../system/system-mock';
-import {
-  HOT_STATE,
-  TvMock,
-  emitSse,
-  installFakeEventSource,
-  mockTvApi,
-  sseUrls,
-} from '../tv/tv-mock';
+import { HOT_STATE, TvMock, emitSse, installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { LivreMock, mockLivreApi } from '../tv/livre-mock';
 
 /** Todos os simuladores de API do e2e numa conta só, registrados na mesma ordem que os testes de cada módulo usam. */
@@ -79,8 +73,18 @@ export function asGuest(identity: IdentityMock, permissions: readonly string[]):
 export const TV_ONLY: readonly string[] = TV_CONTROL_ONLY;
 
 /**
- * Espera a tela sair de qualquer espera: o esqueleto da abertura some, nenhuma região ocupada sobra e um respiro curto
- * deixa as entradas escalonadas terminarem. Para estados de "carregando" não se usa: a captura é justamente a espera.
+ * Espera a tela parar de mexer: dois quadros para o que o último evento pediu ser desenhado, e então as animações finitas
+ * (as entradas escalonadas, inclusive as que ainda estão no atraso) terminarem. Por condição: sob carga espera mais.
+ */
+export async function still(page: Page): Promise<void> {
+  await afterFrames(page);
+  await settle(page);
+  await afterFrames(page);
+}
+
+/**
+ * Espera a tela sair de qualquer espera: o esqueleto da abertura some, nenhuma região ocupada sobra e as entradas
+ * escalonadas terminam. Para estados de "carregando" não se usa: a captura é justamente a espera.
  */
 export async function calm(page: Page): Promise<void> {
   await page.waitForLoadState('load');
@@ -98,7 +102,7 @@ export async function calm(page: Page): Promise<void> {
       timeout: 20_000,
     })
     .catch(() => undefined);
-  await page.waitForTimeout(450);
+  await still(page);
 }
 
 /** Abre o endereço e espera a tela sossegar. */
@@ -109,15 +113,16 @@ export async function open(page: Page, url: string): Promise<void> {
 
 /** Entrega à TV aberta o instantâneo que a API manda ao abrir o fluxo (estado e atalhos), como o app o recebe. */
 export async function feedTv(page: Page, tv: TvMock, state = tv.state): Promise<void> {
-  await page.evaluate(() => undefined);
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    if ((await sseUrls(page)).length > 0) break;
-    await page.waitForTimeout(100);
-  }
+  await page
+    .waitForFunction(
+      () => (window as unknown as { __sse?: { urls(): string[] } }).__sse?.urls().length,
+      null,
+      { timeout: 10_000 },
+    )
+    .catch(() => undefined);
   await emitSse(page, 'tv.state', state);
   await emitSse(page, 'tv.shortcuts', tv.shortcuts);
-  await page.waitForTimeout(450);
+  await still(page);
 }
 
 export { HOT_STATE };
@@ -151,5 +156,5 @@ export async function waitSkeleton(page: Page): Promise<void> {
       { timeout: 8000 },
     )
     .catch(() => undefined);
-  await page.waitForTimeout(250);
+  await still(page);
 }

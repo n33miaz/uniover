@@ -1,8 +1,8 @@
 import { OWNER } from '../auth/identity-mock';
 import { dropConnection, failWith } from '../auth/entry-helpers';
-import { test } from '../fixtures';
+import { expect, test } from '../fixtures';
 import { snap } from './catalog-kit';
-import { bootStack, hold, open, waitSkeleton } from './catalog-setup';
+import { bootStack, hold, open, still, waitSkeleton } from './catalog-setup';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
@@ -29,7 +29,8 @@ test('sem sessão: entrar, recuperar senha, redefinir, conectar e convite', asyn
   await snap(page, { ...login, state: 'campos vazios, ao enviar', kind: 'validação' }, async () => {
     await open(page, '/entrar');
     await submit();
-    await page.waitForTimeout(300);
+    await expect(page.getByLabel('E-mail')).toHaveAttribute('aria-invalid', 'true');
+    await still(page);
   });
   await snap(page, { ...login, state: 'e-mail ou senha incorretos', kind: 'erro' }, async () => {
     await open(page, '/entrar');
@@ -66,7 +67,12 @@ test('sem sessão: entrar, recuperar senha, redefinir, conectar e convite', asyn
       .filter({ hasText: /Enviar|Continuar|Recuperar/ })
       .first()
       .click();
-    await page.waitForTimeout(800);
+    await page
+      .getByRole('status')
+      .filter({ hasText: 'Se este e-mail' })
+      .or(page.getByRole('alert'))
+      .waitFor();
+    await still(page);
   });
 
   const reset = { module: M, route: '/redefinir-senha' };
@@ -100,7 +106,8 @@ test('sem sessão: entrar, recuperar senha, redefinir, conectar e convite', asyn
       await page.getByLabel('Senha', { exact: true }).fill('curta1');
       await page.getByLabel('Repita a senha').fill('curta');
       await page.getByLabel('Repita a senha').blur();
-      await page.waitForTimeout(300);
+      await page.locator('#invite-confirmation-status').waitFor();
+      await still(page);
     },
   );
   await snap(page, { ...invite, url: '/convite', state: 'sem link', kind: 'erro' }, () =>
@@ -124,7 +131,8 @@ test('com sessão: boas-vindas e confirmação de entrada pelo QR', async ({ con
     await open(page, '/boas-vindas');
     await page.getByLabel('Seu nome').fill('');
     await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.waitForTimeout(300);
+    await expect(page.getByLabel('Seu nome')).toHaveAttribute('aria-invalid', 'true');
+    await still(page);
   });
   s.identity.owner.confirmed = true;
 
