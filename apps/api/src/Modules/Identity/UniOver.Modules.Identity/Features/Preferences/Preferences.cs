@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.SystemSettings;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 
@@ -17,7 +18,8 @@ internal sealed record HomeEntryDto(string? Id, bool Enabled);
 /// <param name="Version">Zero enquanto a conta nunca gravou; sobe um a cada gravação.</param>
 /// <param name="UpdatedAt">Quando a última gravação aconteceu; nulo se nunca houve.</param>
 /// <param name="Home">Os módulos na ordem escolhida; nulo quando a conta usa a Início padrão.</param>
-internal sealed record AccountPreferencesResponse(int Version, DateTimeOffset? UpdatedAt, IReadOnlyList<HomeEntryDto>? Home);
+/// <param name="SoonModules">Os módulos "em breve" que o dono liberou para a Início de todas as contas; vazio por padrão. Não é da conta: é da casa.</param>
+internal sealed record AccountPreferencesResponse(int Version, DateTimeOffset? UpdatedAt, IReadOnlyList<HomeEntryDto>? Home, IReadOnlyList<string> SoonModules);
 
 /// <param name="BaseVersion">A versão que o aparelho tinha lido; sem ela não há como saber se algo mais novo seria apagado.</param>
 /// <param name="Home">A Início completa (substitui a anterior); nulo volta ao padrão.</param>
@@ -29,14 +31,14 @@ internal sealed record SavePreferencesResult(bool Saved, AccountPreferencesRespo
 /// As preferências da própria conta: o que a pessoa personalizou vale em qualquer aparelho. Ninguém lê nem grava as de
 /// outra conta por esta rota (o id vem sempre do token); quem vê um resumo das dos outros é o dono, em Pessoas.
 /// </summary>
-internal sealed class PreferencesHandler(IdentityDbContext db, TimeProvider time)
+internal sealed class PreferencesHandler(IdentityDbContext db, TimeProvider time, SystemSettingsService settings)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public async Task<AccountPreferencesResponse> GetAsync(Guid userId, CancellationToken cancellationToken)
     {
         var row = await db.AccountPreferences.AsNoTracking().SingleOrDefaultAsync(p => p.UserId == userId, cancellationToken);
-        return ToResponse(row);
+        return ToResponse(row, await settings.HomeSoonModulesAsync(cancellationToken));
     }
 
     /// <summary>
@@ -95,11 +97,11 @@ internal sealed class PreferencesHandler(IdentityDbContext db, TimeProvider time
         }
     }
 
-    private static AccountPreferencesResponse ToResponse(AccountPreferences? row) =>
+    private static AccountPreferencesResponse ToResponse(AccountPreferences? row, IReadOnlyList<string> soonModules) =>
         row is null
-            ? new AccountPreferencesResponse(0, null, null)
+            ? new AccountPreferencesResponse(0, null, null, soonModules)
             : new AccountPreferencesResponse(
-                row.Version, row.UpdatedAt, ReadHome(row.HomeJson)?.Select(e => new HomeEntryDto(e.Id, e.Enabled)).ToList());
+                row.Version, row.UpdatedAt, ReadHome(row.HomeJson)?.Select(e => new HomeEntryDto(e.Id, e.Enabled)).ToList(), soonModules);
 }
 
 internal static class PreferencesEndpoint

@@ -172,4 +172,68 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
         (await settings.TvDeepCleanupEnabledAsync(Ct)).Should().BeTrue();
         (await settings.TvDeepCleanupMemoryThresholdMbAsync(Ct)).Should().Be(160);
     }
+
+    [Fact]
+    public async Task OwnerReleasesSoonModules_AndEveryAccountReadsThemWithItsPreferences()
+    {
+        const string preferences = "/api/v1/identity/me/preferences";
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
+        var owner = await app.LoginAsync();
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterAsync(owner, authenticator);
+
+        // Por padrão nenhum "em breve" aparece na Início de ninguém.
+        using var before = await app.SendAsync(HttpMethod.Get, preferences, bearer: guest.Login.AccessToken);
+        (await PasskeyApp.JsonAsync(before)).GetProperty("soonModules").GetArrayLength().Should().Be(0);
+
+        using var confirm = await app.ConfirmAsync(owner, authenticator, StepUpActions.SystemSettingsChange);
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+        string[] released = ["health", "backup", "health"];
+        using var saved = await app.SendAsync(HttpMethod.Put, Route + "/" + SystemSettingKeys.HomeSoonModules,
+            new { value = released }, owner.AccessToken);
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PasskeyApp.JsonAsync(saved)).GetProperty("value").EnumerateArray().Select(item => item.GetString())
+            .Should().Equal("health", "backup");
+
+        foreach (var token in new[] { guest.Login.AccessToken, owner.AccessToken })
+        {
+            using var after = await app.SendAsync(HttpMethod.Get, preferences, bearer: token);
+            after.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await PasskeyApp.JsonAsync(after)).GetProperty("soonModules").EnumerateArray().Select(item => item.GetString())
+                .Should().Equal("health", "backup");
+        }
+    }
+
+    [Fact]
+    public async Task SoonModulesRejectsWhatIsNotAListOfModuleIds()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterAsync(owner, authenticator);
+
+        string[] upper = ["Health"];
+        string[] spaced = ["saude e eventos"];
+        object[] number = [7];
+        object[] invalid =
+        [
+            new { value = "health" },
+            new { value = upper },
+            new { value = spaced },
+            new { value = number },
+            new { value = Enumerable.Range(0, 21).Select(index => "modulo-" + index).ToArray() },
+        ];
+        foreach (var body in invalid)
+        {
+            using var confirm = await app.ConfirmAsync(owner, authenticator, StepUpActions.SystemSettingsChange);
+            confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var response = await app.SendAsync(HttpMethod.Put, Route + "/" + SystemSettingKeys.HomeSoonModules,
+                body, owner.AccessToken);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        await using var db = app.Db();
+        (await db.SystemSettings.CountAsync(Ct)).Should().Be(0);
+    }
 }
