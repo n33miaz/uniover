@@ -91,8 +91,8 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert {"tv.apps.refresh.v1", "tv.app.launch.v1"} <= set(setup.handlers)
     assert len(setup.prepare) == 2  # o ADB e o TV Livre
     assert len(setup.after_hello) == 1
-    # Anunciante da lista, temporizador da limpeza e laço do modo foco.
-    assert len(setup.background) == 3
+    # Tempos das teclas, anunciante da lista, temporizador da limpeza e laço do modo foco.
+    assert len(setup.background) == 4
     # A capacidade só vem depois do teste de conexão (passo de preparação).
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
 

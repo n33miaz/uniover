@@ -94,7 +94,7 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
         "tv.pair.v1",
     }
     assert "tv.pair.v1" in setup.background_commands
-    assert setup.background == []
+    assert len(setup.background) == 1  # só o resumo dos tempos das teclas
     assert setup.after_hello == []
 
 

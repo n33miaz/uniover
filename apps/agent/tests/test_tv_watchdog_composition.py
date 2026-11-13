@@ -38,7 +38,7 @@ def test_without_the_adb_there_is_nothing_to_restart_with_and_no_watchdog(
     setup = make_tv(Settings(tv_host=TV_HOST))
     assert setup is not None
     assert setup.watchdog is None
-    assert setup.background == []
+    assert len(setup.background) == 1  # só o resumo dos tempos das teclas
 
 
 def test_the_owner_can_turn_the_watchdog_off(

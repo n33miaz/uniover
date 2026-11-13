@@ -3,13 +3,14 @@
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Final, Protocol
 from urllib.parse import urlsplit
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import FreshKeyHandler, Handler
+from uniover_agent.core.tv.key_timing import OUTCOME_OK, KeyTimings
 from uniover_agent.core.tv.session import PowerOffResult, TvSessionError
 from uniover_agent.core.tv.text_edit import TextReconciler
 
@@ -52,6 +53,10 @@ class TimedKeyCommand(Command):
     sent_age: float | None = None
     # Só nas teclas do canal direto: a sessão dele ainda vale? Fechada, a tecla não chega à TV.
     is_valid: Callable[[], bool] | None = None
+    # Por onde chegou (nuvem ou canal direto) e o instante da chegada em `perf_counter_ns`: só para
+    # medir os trechos da tecla (`KeyTimings`); `0` sem medida.
+    path: str | None = None
+    received_ns: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,8 +106,13 @@ def tv_key_handler(
     *,
     blocked_keys: frozenset[str] = frozenset(),
     monotonic: Callable[[], float] = time.monotonic,
+    timings: KeyTimings | None = None,
+    clock_ns: Callable[[], int] = time.perf_counter_ns,
 ) -> Handler:
     """Trata `tv.key.v1`, `v2` e `v3` (a direção existe nas duas últimas).
+
+    Com `timings`, cada tecla que passou pela fila (`TimedKeyCommand` com `received_ns`) deixa ali
+    quanto levou em cada trecho: fila, sessão e envio (medidos por `clock_ns`), além da idade.
 
     Nenhuma tecla é recusada por padrão, nem `POWER`: quem decide o desligamento é o app (a folha
     de confirmação) e a API (a rota própria, que a rota genérica de teclas recusa). Quem montar o
@@ -113,7 +123,7 @@ def tv_key_handler(
     latest: dict[str, int] = {}
     discarded_by_age = 0
 
-    async def handle(command: Command) -> CommandResult:
+    async def send(command: Command, ready: list[int] | None) -> CommandResult:
         nonlocal discarded_by_age
         key = command.body.get("key")
         if not isinstance(key, str) or not key:
@@ -163,6 +173,10 @@ def tv_key_handler(
                     raise TvSessionError(
                         AGENT_TIMEOUT, "a tecla foi substituída por um toque mais recente"
                     )
+            if ready is not None:
+                # A sessão chama esta conferência logo antes de entregar a tecla ao driver: a
+                # última vale (uma reabertura no meio fica no trecho da sessão).
+                ready[0] = clock_ns()
 
         arrived = monotonic()
         if isinstance(command, TimedKeyCommand) and command.is_valid is not None:
@@ -191,7 +205,48 @@ def tv_key_handler(
 
     # O receptor só pode seguir lendo mensagens durante a abertura da TV se este handler estiver
     # instalado: é ele que impede o envio tardio ao driver.
-    return FreshKeyHandler(handle)
+    return FreshKeyHandler(_timed_keys(send, timings, clock_ns))
+
+
+def _timed_keys(
+    send: Callable[[Command, list[int] | None], Awaitable[CommandResult]],
+    timings: KeyTimings | None,
+    clock_ns: Callable[[], int],
+) -> Handler:
+    """Mede os trechos de cada tecla que passou pela fila; `send` marca em `ready[0]` o instante
+    em que a sessão ficou pronta (a última conferência antes de ir ao driver)."""
+
+    async def handle(command: Command) -> CommandResult:
+        if (
+            timings is None
+            or not isinstance(command, TimedKeyCommand)
+            or not command.received_ns
+            or command.body.get("key") == "POWER"
+        ):
+            return await send(command, None)
+        started = clock_ns()
+        ready = [0]
+        outcome = "interrompida"
+        try:
+            result = await send(command, ready)
+            outcome = OUTCOME_OK if result.status is ResultStatus.OK else result.code or "recusada"
+            return result
+        finally:
+            done = clock_ns()
+            if outcome != OUTCOME_OK:
+                # Sem tecla entregue, o tempo depois da vez é todo da sessão (abrir, falhar).
+                ready[0] = 0
+            timings.record(
+                key=str(command.body.get("key")),
+                path=command.path,
+                outcome=outcome,
+                age=command.sent_age,
+                queue_ns=max(0, started - command.received_ns),
+                session_ns=(ready[0] or done) - started,
+                send_ns=done - ready[0] if ready[0] else None,
+            )
+
+    return handle
 
 
 def tv_text_handler(

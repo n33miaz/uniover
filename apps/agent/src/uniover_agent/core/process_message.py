@@ -142,8 +142,10 @@ class ProcessMessage:
         maintenance_types: Collection[str] = MAINTENANCE_TYPES,
         power_store: PowerIdStore | None = None,
         wall_clock: Callable[[], float] = time.time,
+        clock_ns: Callable[[], int] = time.perf_counter_ns,
     ) -> None:
         self._agent_id = agent_id
+        self._clock_ns = clock_ns
         self._gate = gate
         self._handle_command = handle_command
         self._envelopes = envelopes
@@ -415,6 +417,12 @@ class ProcessMessage:
             is_latest=is_latest,
             is_valid=is_valid,
             sent_age=sent_age,
+            path=path,
+            # Só para medir os trechos da tecla (fila, sessão, envio) no registro do agente. Pelo
+            # canal direto a tecla chegou antes (`received_at`): a pausa do laço principal até aqui
+            # conta como fila (ela não tem a idade da API para mostrá-la).
+            received_ns=self._clock_ns()
+            - max(0, round((self._monotonic() - received_at) * 1_000_000_000)),
         )
         task = asyncio.create_task(self._execute_key(timed, self._last_key_task, reply))
         self._chain(task, command, reply)
