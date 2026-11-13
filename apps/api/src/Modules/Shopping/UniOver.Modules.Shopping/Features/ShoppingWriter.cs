@@ -47,12 +47,17 @@ internal sealed class ShoppingWriter(ShoppingDbContext db, ShoppingGroupService 
 
     /// <param name="apply">Valida e altera as entidades; devolve a resposta e se a escrita assenta.</param>
     /// <param name="replay">A resposta de uma operação já aplicada: o estado atual do registro, lido só dentro do grupo.</param>
+    /// <param name="alsoLockGroup">
+    /// Outro grupo que a escrita vai precisar travar (o de quem está sendo incluído). Travado junto com o de quem chama,
+    /// na ordem global de <see cref="ShoppingGroupLocks"/>, antes de qualquer outra coisa.
+    /// </param>
     public async Task<IResult> RunAsync(
         Guid userId,
         Guid operationId,
         Func<ShoppingScope, CancellationToken, Task<WriteStep>> apply,
         Func<Guid, CancellationToken, Task<IResult>> replay,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? alsoLockGroup = null)
     {
         if (operationId == Guid.Empty)
         {
@@ -62,7 +67,7 @@ internal sealed class ShoppingWriter(ShoppingDbContext db, ShoppingGroupService 
         var groupId = (await groups.GetForUserAsync(userId, cancellationToken)).GroupId;
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlAsync($"""SELECT 1 FROM "shopping"."groups" WHERE id = {groupId} FOR UPDATE""", cancellationToken);
+        await ShoppingGroupLocks.LockAsync(db, alsoLockGroup is { } other ? new[] { groupId, other } : [groupId], cancellationToken);
 
         // Relido com o grupo travado: a remoção de uma pessoa também passa por aqui, então não há escrita de quem já saiu.
         var member = await db.Members.AsNoTracking()

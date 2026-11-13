@@ -11,6 +11,7 @@ internal static class ShoppingProblems
     public const string PurchaseClosedType = "shopping-purchase-closed";
     public const string MemberElsewhereType = "shopping-member-in-another-group";
     public const string MembershipChangedType = "shopping-membership-changed";
+    public const string GroupChangedType = "shopping-group-changed";
     public const string PurchaseAlreadyOpenType = "shopping-purchase-already-open";
     public const string InviteInvalidType = "shopping-invite-invalid";
     public const string TooManyInvitesType = "shopping-too-many-invites";
@@ -45,6 +46,12 @@ internal static class ShoppingProblems
 
     public static IResult MembershipChanged() =>
         Conflict(MembershipChangedType, "Você não participa mais deste grupo. Atualize e tente de novo.");
+
+    /// <summary>
+    /// O grupo de quem entra mudou entre a leitura e a trava: nada foi feito, e tentar de novo vale. Não é o caso de "tem
+    /// lista com itens" (<see cref="MemberElsewhere"/>), que pede esvaziar ou sair.
+    /// </summary>
+    public static IResult GroupChanged() => Conflict(GroupChangedType, "A situação mudou. Tente de novo.");
 
     /// <summary>Convite desconhecido, vencido, usado ou cancelado: a resposta não diz qual.</summary>
     public static IResult InviteInvalid() =>

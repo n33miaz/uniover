@@ -215,7 +215,6 @@ internal static class ShoppingInvites
             return ShoppingProblems.InviteInvalid();
         }
 
-        var now = time.GetUtcNow();
         var invite = await db.GroupInvites.AsNoTracking().SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
         if (invite is null)
         {
@@ -230,18 +229,19 @@ internal static class ShoppingInvites
             return TypedResults.Ok(new GroupResponse(mine.GroupId, mine.Group!.OwnerUserId, mine.IsOwner));
         }
 
-        if (!invite.IsPendingAt(now))
+        // Recusa cedo, sem travar nada, o que já não vale (o que vale mesmo é conferido de novo com os grupos travados).
+        if (!invite.IsPendingAt(time.GetUtcNow()))
         {
             return ShoppingProblems.InviteInvalid();
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        // Os dois grupos são travados sempre na mesma ordem: dois aceites cruzados não se esperam um ao outro para sempre.
-        foreach (var groupId in new[] { invite.GroupId, mine.GroupId }.Order())
-        {
-            await db.Database.ExecuteSqlAsync($"""SELECT 1 FROM "shopping"."groups" WHERE id = {groupId} FOR UPDATE""", cancellationToken);
-        }
+        // Os dois grupos são travados sempre na mesma ordem (a mesma da inclusão direta): pedidos cruzados não se esperam.
+        await ShoppingGroupLocks.LockAsync(db, [invite.GroupId, mine.GroupId], cancellationToken);
+
+        // A hora é lida depois da espera pela trava: um convite que venceu enquanto o pedido esperava não é aceito.
+        var now = time.GetUtcNow();
 
         // Quem criou o grupo precisa continuar nele: um grupo que o dono deixou não recebe mais ninguém.
         var owner = await db.Groups.AsNoTracking().Where(x => x.Id == invite.GroupId).Select(x => x.OwnerUserId).SingleAsync(cancellationToken);
@@ -261,6 +261,12 @@ internal static class ShoppingInvites
 
         // Relido com os grupos travados. Sem commit nas saídas abaixo: a transação desfaz a reivindicação.
         var elsewhere = await db.Members.SingleOrDefaultAsync(x => x.UserId == actor && x.DeletedAt == null, cancellationToken);
+        if (elsewhere is not null && elsewhere.GroupId != invite.GroupId && elsewhere.GroupId != mine.GroupId)
+        {
+            // A pessoa mudou de grupo entre a leitura e a trava: o grupo novo não está travado na ordem. Recusa; tentar de novo vale.
+            return ShoppingProblems.GroupChanged();
+        }
+
         if (elsewhere is not null && elsewhere.GroupId != invite.GroupId
             && !await ShoppingWrites.LeaveEmptyGroupAsync(db, elsewhere, now, cancellationToken))
         {

@@ -157,7 +157,16 @@ internal static class ShoppingWrites
             return MissingBody();
         }
 
-        return await writer.RunAsync(actor, request.OperationId, ApplyAsync, ReplayAsync, cancellationToken);
+        // O grupo atual de quem entra é lido (sem trava) só para ser travado junto com o de quem inclui, na ordem global:
+        // o aceite de convite trava os dois na mesma ordem, então os dois caminhos juntos não se esperam.
+        var guestGroup = request.Deleted
+            ? null
+            : await db.Members.AsNoTracking()
+                .Where(x => x.UserId == userId && x.DeletedAt == null)
+                .Select(x => (Guid?)x.GroupId)
+                .SingleOrDefaultAsync(cancellationToken);
+
+        return await writer.RunAsync(actor, request.OperationId, ApplyAsync, ReplayAsync, cancellationToken, guestGroup);
 
         async Task<WriteStep> ApplyAsync(ShoppingScope scope, CancellationToken ct)
         {
@@ -198,6 +207,12 @@ internal static class ShoppingWrites
             }
 
             var elsewhere = await db.Members.SingleOrDefaultAsync(x => x.UserId == userId && x.DeletedAt == null, ct);
+            if (elsewhere is not null && elsewhere.GroupId != scope.GroupId && elsewhere.GroupId != guestGroup)
+            {
+                // A pessoa mudou de grupo entre a leitura e a trava: o grupo novo não está travado na ordem. Recusa; tentar de novo vale.
+                return Reject(ShoppingProblems.GroupChanged());
+            }
+
             if (elsewhere is not null)
             {
                 if (!await LeaveEmptyGroupAsync(db, elsewhere, scope.Now, ct))
