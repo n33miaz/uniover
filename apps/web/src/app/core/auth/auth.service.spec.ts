@@ -802,6 +802,20 @@ describe('AuthService', () => {
       expect(call).toHaveBeenCalledTimes(1);
     });
 
+    it('rethrows the original 403 without repeating when the dialog chunk fails to load', async () => {
+      const auth = service();
+      // O pedaço do diálogo não carregou (sem rede ou cache antigo): o import() rejeita.
+      vi.spyOn(
+        auth as unknown as { importStepUp(): Promise<unknown> },
+        'importStepUp',
+      ).mockRejectedValue(new Error('ChunkLoadError'));
+      const original = stepUpProblem();
+      const call = vi.fn().mockRejectedValue(original);
+      await expect(auth.authorized(call)).rejects.toBe(original);
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(stepUp.confirm).not.toHaveBeenCalled();
+    });
+
     it('does not enter a loop when the step-up is still required after confirming', async () => {
       stepUp.confirm.mockResolvedValue(true);
       const call = vi.fn().mockRejectedValue(stepUpProblem());
