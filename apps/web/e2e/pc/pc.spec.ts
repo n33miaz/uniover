@@ -435,7 +435,7 @@ test.describe('Tela do mouse', () => {
   });
 
   test('segurar apagar repete, e soltar para (nunca fica apagando)', async ({ page }) => {
-    const landed = trackPosts(page, pc);
+    const posts = trackPosts(page, pc);
     await openPc(page);
     const erase = page.getByRole('button', { name: 'Apagar', exact: true });
     const box = (await erase.boundingBox())!;
@@ -444,7 +444,7 @@ test.describe('Tela do mouse', () => {
     await expect.poll(() => pc.sent('/key').length).toBeGreaterThanOrEqual(3);
     await page.mouse.up();
     // Passado o que já estava a caminho, nada mais sai.
-    await landed('/key');
+    await posts.landed('/key');
     const settled = pc.sent('/key').length;
     // Prova de ausência: a repetição roda a cada BATCH_EVERY_MS (120 ms); três rodadas sem pedido novo bastam.
     await page.waitForTimeout(360);
@@ -736,7 +736,7 @@ test.describe('Gestos', () => {
   test('um gesto rápido segue rolando depois dos dedos saírem, e um toque novo para', async ({
     page,
   }) => {
-    const landed = trackPosts(page, pc);
+    const posts = trackPosts(page, pc);
     await openPc(page);
     const { x, y } = await padCenter(page);
     const steps: FingerStep[] = [
@@ -752,13 +752,13 @@ test.describe('Gestos', () => {
     await fingers(page, steps);
     const scrolled = () =>
       pc.sent('/pointer').reduce((sum, body) => sum + Math.abs(Number(body['scrollY'] ?? 0)), 0);
-    await landed('/pointer');
+    await posts.landed('/pointer');
     const atRelease = scrolled();
     // Os dedos já saíram, e a rolagem continua.
     await expect.poll(scrolled).toBeGreaterThan(atRelease);
     // Um toque novo para na hora: depois dele nada mais rola.
     await fingers(page, [{ type: 'down', id: 1, x, y }]);
-    await landed('/pointer');
+    await posts.drained('/pointer');
     const afterTouch = scrolled();
     // Prova de ausência: a rolagem sozinha manda a cada quadro (lote de 32 ms); seis lotes sem pedido novo bastam.
     await page.waitForTimeout(200);
@@ -806,7 +806,7 @@ test.describe('Gestos', () => {
   test('a rolagem que segue sozinha para quando a página vai para o segundo plano', async ({
     page,
   }) => {
-    const landed = trackPosts(page, pc);
+    const posts = trackPosts(page, pc);
     await openPc(page);
     const { x, y } = await padCenter(page);
     const steps: FingerStep[] = [
@@ -821,7 +821,7 @@ test.describe('Gestos', () => {
     steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
     await fingers(page, steps);
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
-    await landed('/pointer');
+    await posts.drained('/pointer');
     const scrolled = () => pc.sent('/pointer').length;
     const after = scrolled();
     // Prova de ausência: a rolagem sozinha manda a cada quadro (lote de 32 ms); seis lotes sem pedido novo bastam.
@@ -830,7 +830,7 @@ test.describe('Gestos', () => {
   });
 
   test('com "reduzir movimento" a rolagem não segue sozinha', async ({ page }) => {
-    const landed = trackPosts(page, pc);
+    const posts = trackPosts(page, pc);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await openPc(page);
     const { x, y } = await padCenter(page);
@@ -845,7 +845,7 @@ test.describe('Gestos', () => {
     steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
     steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
     await fingers(page, steps);
-    await landed('/pointer');
+    await posts.drained('/pointer');
     const settled = pc.sent('/pointer').length;
     // Prova de ausência: a rolagem sozinha mandaria a cada quadro (lote de 32 ms); seis lotes sem pedido novo bastam.
     await page.waitForTimeout(200);
@@ -1784,12 +1784,12 @@ test.describe('Teclas do pc.key.v2', () => {
     test('manda lotes com repeat: o primeiro toque é uma tecla só, e soltar para tudo', async ({
       page,
     }) => {
-      const landed = trackPosts(page, pc);
+      const posts = trackPosts(page, pc);
       await openPc(page);
       await holdDown(page, page.getByRole('button', { name: 'Apagar', exact: true }));
       await expect.poll(() => keyBodies().length).toBeGreaterThanOrEqual(3);
       await page.mouse.up();
-      await landed('/key');
+      await posts.landed('/key');
       const settled = keyBodies().length;
       // Prova de ausência: a repetição roda a cada BATCH_EVERY_MS (120 ms); três rodadas sem pedido novo bastam.
       await page.waitForTimeout(360);
