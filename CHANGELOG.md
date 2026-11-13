@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.66.0](https://github.com/n33miaz/uniover/compare/v0.65.0...v0.66.0) (2026-11-13)
+
+
+### Devices 0.60.0
+
+#### Features
+
+* **agent:** drop stale commands and repeats
+* **pc:** sensitivity as a slider
+* **pc:** echo the typed text
+* **api:** accept tv wake hints in state
+
+#### Bug Fixes
+
+* **api:** derive agent health from its own beat
+* **pc:** keep the quick keys at 44 px on 360
+
+
+### TV 0.50.0
+
+#### Features
+
+* **agent:** drop stale commands and repeats
+* **contracts:** add wake hints to tv state
+* **api:** accept tv wake hints in state
+* **web:** show tv wake notice and setup step
+
+#### Bug Fixes
+
+* **tv:** drop the background of the menu dots
+
+
+### Training 0.44.1
+
+#### Bug Fixes
+
+* **training:** one back arrow and long names
+* **training:** take the danger red from the theme
+
+
+### Web 0.63.0
+
+#### Features
+
+* **agent:** drop stale commands and repeats
+* **pc:** sensitivity as a slider
+* **contracts:** add wake hints to tv state
+* **api:** accept tv wake hints in state
+
+#### Bug Fixes
+
+* **training:** one back arrow and long names
+* **tv:** drop the background of the menu dots
+* **training:** take the danger red from the theme
+* **web:** color the system bar by theme
+* **home:** theme the module icon colors
+* **pc:** keep the quick keys at 44 px on 360
+* **web:** keep module roots inside the app scope
+
+
+### Agent 0.56.0
+
+#### Features
+
+* **agent:** drop stale commands and repeats
+* **contracts:** add wake hints to tv state
+* **agent:** check tcl wake settings daily
+
 ## [0.65.0](https://github.com/n33miaz/uniover/compare/v0.64.0...v0.65.0) (2026-11-13)
 
 
