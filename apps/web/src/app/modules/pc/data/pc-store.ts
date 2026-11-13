@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { ResumeGrace } from '../../../core/connectivity/resume-grace';
 import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { PcAvailability, type PcVolumeLevel } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
@@ -143,6 +144,7 @@ export class PcStore {
   private readonly prefs = inject(PcPrefs);
   /** O comando sem resposta ganha o aviso "O PC não está respondendo"; a falha vai para a telemetria privada. */
   private readonly slow = inject(SlowCommandWatch);
+  private readonly resumeGrace = inject(ResumeGrace);
   private readonly telemetry = inject(ClientTelemetry);
   /** A conta de quem é o estado de movimento e de arrastar guardado aqui (o store vive a aba toda, as contas não). */
   private account = this.session.accountId();
@@ -290,14 +292,22 @@ export class PcStore {
     // `pagehide` com `persisted === false`: a página morre de verdade (não vai para o cache de volta e avance).
     const onPageHide = (event: Event) =>
       this.releaseOnHide((event as PageTransitionEvent).persisted === false);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void this.availability.refresh();
-        // O botão continua apertado (o soltar ao esconder não passou): o sinal de vida volta.
-        this.heartbeatAllowed = true;
-        if (this.holding()) this.startHeartbeat();
-      } else onHide();
+    // O botão continua apertado (o soltar ao esconder não passou): o sinal de vida volta.
+    const resumeHeartbeat = () => {
+      this.heartbeatAllowed = true;
+      if (this.holding()) this.startHeartbeat();
     };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') resumeHeartbeat();
+      else onHide();
+    };
+    // A volta ao app (aba de novo à vista ou página restaurada do cache, o caso do Safari do iPhone) vem da carência, que
+    // junta numa volta só os dois avisos que alguns navegadores dão: uma leitura do estado por volta, não duas.
+    const offResume = this.resumeGrace.subscribe((event) => {
+      if (event !== 'begin') return;
+      void this.availability.refresh();
+      resumeHeartbeat();
+    });
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('pagehide', onPageHide);
     // O canal direto é um acelerador opcional: tenta abrir com a tela e, se cair, a tela solta o que o PC segurava.
@@ -308,6 +318,7 @@ export class PcStore {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pagehide', onPageHide);
+      offResume();
       offLost();
       this.direct.setBusyProbe(null);
       // O canal fecha primeiro (o agente solta o que o PC segurava) e o `UP` que segue vai pela nuvem.

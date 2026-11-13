@@ -2151,6 +2151,32 @@ describe('PcStore watch', () => {
     stop();
     vi.restoreAllMocks();
   });
+
+  it('reads the status at once when the page comes back from the back-forward cache (iPhone Safari)', () => {
+    const { store, availability } = setup();
+    const stop = store.watch();
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+    expect(availability.refresh).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(availability.refresh).toHaveBeenCalledTimes(2);
+    stop();
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(availability.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('a return announced by both "visible" and a restored page reads the status once', () => {
+    const { store, availability } = setup();
+    const stop = store.watch();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(availability.refresh).toHaveBeenCalledTimes(2);
+    stop();
+    vi.restoreAllMocks();
+  });
 });
 
 describe('PcStore when the account changes', () => {
