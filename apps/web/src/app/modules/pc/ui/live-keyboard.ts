@@ -376,6 +376,8 @@ export class PcLiveKeyboard {
   private onFailure(failure: PcFailure, kind: InputKind, droppedEdits: boolean): void {
     // Falhou uma tecla e o que se digitou depois dela foi descartado: o PC não tem esse texto, então o campo recomeça igual.
     if (kind === 'edit' || droppedEdits) this.reset();
+    // O eco não pode seguir mostrando como digitado o que talvez não chegou.
+    this.recordEcho((echo) => echo.failed());
     if (failure.kind === 'cancelled' || (droppedEdits && kind === 'key')) {
       this.failed.emit(this.notSent);
     } else if (kind === 'edit' && UNCERTAIN_FAILURES.has(failure.kind)) {

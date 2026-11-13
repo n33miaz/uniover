@@ -467,6 +467,20 @@ describe('PcLiveKeyboard', () => {
       }
     });
 
+    it('a failed send marks the echo, so it never claims text the PC may not have', async () => {
+      store.sendText.mockResolvedValueOnce({
+        kind: 'timeout',
+        message: 'O PC não respondeu a tempo.',
+      });
+      fixture.componentInstance.open();
+      type(SENTINEL + 'abc');
+      await flush();
+      expect(echoLine()).toBe('abc[⚠]');
+      // O campo recomeçou; apagar agora não finge que tirou o "c".
+      fixture.componentInstance.press('BACKSPACE');
+      expect(echoLine()).toBe('abc[⚠][⌫]');
+    });
+
     it('does not change what is sent to the PC', async () => {
       fixture.componentInstance.open();
       type(SENTINEL + 'ab');

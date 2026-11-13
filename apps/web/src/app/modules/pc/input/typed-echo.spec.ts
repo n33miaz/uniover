@@ -117,6 +117,14 @@ describe('TypedEcho', () => {
     expect(keyLabel('F4', ['ALT'])).toBe('Alt+F4');
   });
 
+  it('a failed send leaves a warning that Backspace does not take back', () => {
+    const echo = new TypedEcho();
+    echo.edit({ erase: 0, insert: 'ab' });
+    echo.failed();
+    echo.key('BACKSPACE');
+    expect(line(echo)).toBe('ab[⚠][⌫]');
+  });
+
   it('clearing forgets everything', () => {
     const echo = new TypedEcho();
     echo.edit({ erase: 0, insert: 'segredo' });

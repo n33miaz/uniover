@@ -31,6 +31,9 @@ export const ECHO_VISIBLE_TOKENS = 60;
 /** O apagar que o eco não sabe desfazer (depois de uma seta ou de um atalho). */
 const ERASE_SYMBOL = '⌫';
 
+/** O envio falhou: o texto antes dele pode não ter chegado. */
+export const FAILED_SYMBOL = '⚠';
+
 const KEY_ECHO: Readonly<Record<PcKey, { readonly text: string } | { readonly symbol: string }>> = {
   ENTER: { symbol: '⏎' },
   BACKSPACE: { symbol: ERASE_SYMBOL },
@@ -192,6 +195,14 @@ export class TypedEcho {
       if (last.erasable) this.tokens.pop();
       else this.push({ kind: 'key', value: ERASE_SYMBOL, erasable: false });
     }
+  }
+
+  /**
+   * Um envio falhou: o que o eco mostra antes disto pode não ter chegado ao PC. Entra um aviso que o Backspace não desfaz (o
+   * eco não sabe mais o que o PC tem).
+   */
+  failed(): void {
+    this.push({ kind: 'key', value: FAILED_SYMBOL, erasable: false });
   }
 
   clear(): void {

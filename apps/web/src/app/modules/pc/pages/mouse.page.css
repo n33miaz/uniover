@@ -185,7 +185,7 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  min-height: 36px;
+  min-height: var(--tap);
   padding-inline-start: var(--space-3);
   border-radius: var(--radius);
   background: var(--a-surface);
@@ -226,7 +226,7 @@
   flex: none;
   place-items: center;
   width: var(--tap);
-  height: 36px;
+  height: var(--tap);
   margin-inline-start: auto;
   padding: 0;
   border: 0;
