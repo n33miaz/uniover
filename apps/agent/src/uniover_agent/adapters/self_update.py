@@ -1047,7 +1047,9 @@ def run_uv_sync(source: Path, *, pause: float = SYNC_PAUSE_SECONDS) -> None:
     environment = candidate_env(source)
     shutil.rmtree(environment, ignore_errors=True)
     _run_uv(
-        ["sync", "--frozen", "--project", str(source), "--quiet"],
+        # `--compile-bytecode`: a versão nova sobe sem compilar as dependências na primeira partida
+        # (o supervisor também liga `UV_COMPILE_BYTECODE`; isto vale para o `self-update` à mão).
+        ["sync", "--frozen", "--compile-bytecode", "--project", str(source), "--quiet"],
         what="a sincronização das dependências",
         timeout=SYNC_TIMEOUT_SECONDS,
         cwd=base_of(source),

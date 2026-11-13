@@ -380,6 +380,8 @@ def test_the_zip_comment_is_checked_before_anything_is_extracted() -> None:
 def test_the_install_uses_locked_dependencies_and_checks_the_version_before_going_on() -> None:
     text = INSTALLER.read_text(encoding="utf-8")
     assert "sync --frozen --project $source" in text
+    # Bytecode compilado no preparo: a primeira partida não compila as dependências.
+    assert "$env:UV_COMPILE_BYTECODE = '1'" in text
     assert "uniover_agent.selfcheck" in text
     automatic = text[
         text.index("function Invoke-AutomaticInstall") : text.index("# --- Modo manual")
