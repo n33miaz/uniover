@@ -1,7 +1,7 @@
 /* Título centrado, como nas outras telas de entrada; o resto ocupa a largura toda do cartão. */
 h1 {
   margin-bottom: var(--space-5);
-  font-size: min(1.75rem, calc(0.9rem + 3vw));
+  font-size: var(--auth-title);
   font-weight: 750;
   letter-spacing: -0.02em;
   text-align: center;

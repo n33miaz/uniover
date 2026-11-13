@@ -49,9 +49,7 @@ test.describe('convite: boas-vindas', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
     await expect(page.getByText('Este acesso fica registrado: data, IP e aparelho.')).toBeVisible();
-    await expect(
-      page.getByText('Você pode recuperar a senha pelo e-mail depois de criar a conta.'),
-    ).toBeVisible();
+    await expect(page.getByText('recuperar a senha')).toHaveCount(0);
     expect(await page.evaluate(() => document.body.innerText)).not.toContain(invite.token);
     await expectNoHorizontalScroll(page);
   });
@@ -118,10 +116,7 @@ test.describe('convite: requisitos ao vivo', () => {
     await password(page).fill('dez-letras');
     await expect(rule).toHaveAttribute('data-state', 'met');
     await expect(rule).toContainText('cumprido');
-    await expect(password(page)).toHaveAttribute(
-      'aria-describedby',
-      'invite-password-rules invite-password-hint',
-    );
+    await expect(password(page)).toHaveAttribute('aria-describedby', 'invite-password-rules');
   });
 
   test('a força é só conselho, nomeada por extenso, e não impede o envio de uma senha longa o bastante', async ({
