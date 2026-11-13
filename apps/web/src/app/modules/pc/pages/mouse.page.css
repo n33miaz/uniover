@@ -179,6 +179,78 @@
   text-align: center;
 }
 
+/* O eco do que se digita: uma linha só, discreta, logo acima da barra. Mostra o fim (o começo some pela esquerda). */
+.echo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--tap);
+  padding-inline-start: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+.echo-line {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre;
+  /* O começo que não cabe some aos poucos pela esquerda. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--space-4, 20px));
+  mask-image: linear-gradient(to right, transparent, #000 var(--space-4, 20px));
+}
+.echo-text,
+.echo-key {
+  flex: none;
+}
+.echo-text {
+  color: var(--a-ink);
+}
+.echo-key {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  color: var(--a-ink2);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.echo-toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--a-ink3);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.echo-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.echo-toggle:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: -3px;
+}
+
 .buttons {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
