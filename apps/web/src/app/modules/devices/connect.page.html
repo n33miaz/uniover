@@ -1,71 +1,73 @@
-<app-auth-layout [attr.data-screen-ready]="'devices-connect'">
-  <h1 i18n="@@devices.connect-page.title">Conectar este PC</h1>
+<app-auth-layout [attr.data-screen-ready]="'devices-connect'" [aside]="hasQr()">
+  <div class="pane">
+    <h1 i18n="@@devices.connect-page.title">Conectar este PC</h1>
 
-  @if (signedIn()) {
-    <p class="who ui-notice ok" role="status">
-      @if (accountName(); as name) {
-        <span i18n="@@devices.connect-page.signed-in-as">Você entrou como {{ name }}.</span>
-      } @else {
-        <span i18n="@@devices.connect-page.signed-in">Você entrou na sua conta.</span>
-      }
-    </p>
-  }
+    @if (signedIn()) {
+      <p class="who ui-notice ok" role="status">
+        @if (accountName(); as name) {
+          <span i18n="@@devices.connect-page.signed-in-as">Você entrou como {{ name }}.</span>
+        } @else {
+          <span i18n="@@devices.connect-page.signed-in">Você entrou na sua conta.</span>
+        }
+      </p>
+    }
 
-  @if (windowsPc) {
-    <a
-      class="download primary ui-btn block"
-      [attr.href]="connectorUrl"
-      download="conectar-uniover.cmd"
-      i18n-download="@@devices.connect.download-file"
-      i18n="@@devices.connect-page.download"
-      >Baixar o Programa</a
-    >
+    @if (windowsPc) {
+      <a
+        class="download primary ui-btn block"
+        [attr.href]="connectorUrl"
+        download="conectar-uniover.cmd"
+        i18n-download="@@devices.connect.download-file"
+        i18n="@@devices.connect-page.download"
+        >Baixar o Programa</a
+      >
 
-    <ol class="steps">
-      <li i18n="@@devices.connect-page.step-open">Abra o arquivo baixado</li>
-      @if (signedIn()) {
-        <li i18n="@@devices.connect-page.step-approve">
-          Na janela que abrir, toque em Aprovar neste computador
-        </li>
-      } @else {
-        <li i18n="@@devices.connect-page.step-scan">
-          Escaneie o QR da tela com o celular de quem administra
-        </li>
-      }
-      <li i18n="@@devices.connect-page.step-accept">Toque em Permitir na TV</li>
-    </ol>
+      <ol class="steps">
+        <li i18n="@@devices.connect-page.step-open">Abra o arquivo baixado</li>
+        @if (signedIn()) {
+          <li i18n="@@devices.connect-page.step-approve">
+            Na janela que abrir, toque em Aprovar neste computador
+          </li>
+        } @else {
+          <li i18n="@@devices.connect-page.step-scan">
+            Escaneie o QR da tela com o celular de quem administra
+          </li>
+        }
+        <li i18n="@@devices.connect-page.step-accept">Toque em Permitir na TV</li>
+      </ol>
 
-    <section class="warnings" aria-labelledby="connect-warnings">
-      <h2 id="connect-warnings" class="ui-section-label" i18n="@@devices.connect-page.warnings">
-        Se aparecer um aviso
-      </h2>
-      <ul class="ui-plain">
-        <li i18n="@@devices.connect-page.warning-browser">
-          <span class="where">Edge ou Chrome</span>
-          <span><strong>Manter</strong> → <strong>Manter mesmo assim</strong></span>
-        </li>
-        <li i18n="@@devices.connect-page.warning-smartscreen">
-          <span class="where">Windows</span>
-          <span><strong>Mais informações</strong> → <strong>Executar assim mesmo</strong></span>
-        </li>
-      </ul>
-    </section>
-  } @else {
-    <p class="windows-only ui-notice" role="status" i18n="@@devices.connect-page.windows-only">
-      Este programa é para PC com Windows. Abra esta página nele.
-    </p>
-  }
+      <section class="warnings" aria-labelledby="connect-warnings">
+        <h2 id="connect-warnings" class="ui-section-label" i18n="@@devices.connect-page.warnings">
+          Se aparecer um aviso
+        </h2>
+        <ul class="ui-plain">
+          <li i18n="@@devices.connect-page.warning-browser">
+            <span class="where">Edge ou Chrome</span>
+            <span><strong>Manter</strong> → <strong>Manter mesmo assim</strong></span>
+          </li>
+          <li i18n="@@devices.connect-page.warning-smartscreen">
+            <span class="where">Windows</span>
+            <span><strong>Mais informações</strong> → <strong>Executar assim mesmo</strong></span>
+          </li>
+        </ul>
+      </section>
+    } @else {
+      <p class="windows-only ui-notice" role="status" i18n="@@devices.connect-page.windows-only">
+        Este programa é para PC com Windows. Abra esta página nele.
+      </p>
+    }
+
+    @if (!signedIn()) {
+      <p class="login">
+        <a
+          routerLink="/entrar"
+          [queryParams]="{ next: '/conectar' }"
+          i18n="@@devices.connect-page.login"
+          >Entrar</a
+        >
+      </p>
+    }
+  </div>
 
   <app-qr-login />
-
-  @if (!signedIn()) {
-    <p class="login">
-      <a
-        routerLink="/entrar"
-        [queryParams]="{ next: '/conectar' }"
-        i18n="@@devices.connect-page.login"
-        >Entrar</a
-      >
-    </p>
-  }
 </app-auth-layout>
