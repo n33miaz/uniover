@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { test } from '../fixtures';
+import { expect, test } from '../fixtures';
 import { livreView } from '../tv/livre-mock';
 import { HOT_STATE } from '../tv/tv-mock';
 import { READY } from '../pc/pc-mock';
@@ -13,6 +13,7 @@ import {
   feedTv,
   hold,
   open,
+  still,
   waitSkeleton,
 } from './catalog-setup';
 
@@ -80,6 +81,20 @@ test('TV: controle, painéis e estados', async ({ page }) => {
   const M = 'TV';
   const tv = { module: M, route: '/tv', url: '/tv' };
   const dot = (n: number) => page.getByRole('button', { name: `Página ${n} de 3`, exact: true });
+  const indicator = page.getByRole('button', { name: /^Estado do controle:/ });
+  /** O palco rola suave até a página; o destaque dos pontos segue a rolagem e só fica no ponto quando ela para. */
+  const showPage = async (n: number) => {
+    await dot(n).click();
+    await expect(dot(n)).toHaveAttribute('aria-current', 'true');
+    await page.waitForFunction(
+      (x) =>
+        document
+          .querySelector<HTMLElement>('app-page-dots .thumb')
+          ?.style.getPropertyValue('--x') === x,
+      `${17 + 44 * (n - 1)}px`,
+    );
+    await still(page);
+  };
 
   let release!: () => void;
   await snap(
@@ -87,8 +102,11 @@ test('TV: controle, painéis e estados', async ({ page }) => {
     { ...tv, state: 'conectando (estado ainda não chegou)', kind: 'carregando' },
     async () => {
       s.tv.stateGate = new Promise<void>((resolve) => (release = resolve));
+      const asked = page.waitForRequest((request) => request.url().includes('/api/v1/tv/state'));
       await page.goto('/tv');
-      await page.waitForTimeout(1500);
+      await asked;
+      await indicator.waitFor();
+      await still(page);
     },
   );
   release?.();
@@ -103,13 +121,11 @@ test('TV: controle, painéis e estados', async ({ page }) => {
   );
   await snap(page, { ...tv, state: 'página 2 (números)', kind: 'com dados' }, async () => {
     await openTv(page);
-    await dot(2).click();
-    await page.waitForTimeout(500);
+    await showPage(2);
   });
   await snap(page, { ...tv, state: 'página 3 (touchpad)', kind: 'com dados' }, async () => {
     await openTv(page);
-    await dot(3).click();
-    await page.waitForTimeout(500);
+    await showPage(3);
   });
   await snap(page, { ...tv, state: 'menu (Mais opções)', kind: 'folha' }, async () => {
     await openTv(page);
@@ -129,8 +145,9 @@ test('TV: controle, painéis e estados', async ({ page }) => {
   );
   await snap(page, { ...tv, state: 'ponto de estado aberto', kind: 'folha' }, async () => {
     await openTv(page);
-    await page.getByRole('button', { name: /^Estado do controle:/ }).click();
-    await page.waitForTimeout(400);
+    await indicator.click();
+    await expect(indicator).toHaveAttribute('aria-expanded', 'true');
+    await still(page);
   });
   await snap(page, { ...tv, state: 'confirmar desligar', kind: 'folha' }, async () => {
     await openTv(page);
@@ -254,7 +271,8 @@ test('PC', async ({ page }) => {
         .getByRole('button', { name: /Suspender/ })
         .first()
         .click();
-      await page.waitForTimeout(500);
+      await page.getByRole('dialog', { name: /Suspender/ }).waitFor();
+      await still(page);
     },
   );
 });

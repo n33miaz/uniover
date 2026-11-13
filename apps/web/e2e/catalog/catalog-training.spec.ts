@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { test } from '../fixtures';
+import { expect, test } from '../fixtures';
 import { PROGRESS_EXERCISE_IDS } from '../training/progress-seed';
 import { BENCH_URL, openProgress, startProgress } from '../training/progress-support';
 import { installClock, openToday, beginWorkout } from '../training/support/today-pages';
@@ -12,7 +12,7 @@ import {
 import { SEED_EXERCISE_IDS, SEED_ROUTINE_IDS } from '../training/support/training-seed';
 import { openTraining, startTraining, waitForCatalog } from '../training/support/training-pages';
 import { recordGap, snap } from './catalog-kit';
-import { calm, waitSkeleton } from './catalog-setup';
+import { calm, still, waitSkeleton } from './catalog-setup';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
@@ -69,19 +69,21 @@ test('Exercícios e Rotinas: biblioteca, ficha, formulários e rotinas', async (
     await page.getByRole('button', { name: 'Peito', exact: true }).click();
     await page.getByRole('button', { name: 'Equipamento' }).click();
     await page.getByRole('button', { name: 'Barra', exact: true }).click();
-    await page.waitForTimeout(400);
+    await still(page);
   });
   await snap(page, { ...lib, state: 'busca com resultado', kind: 'com dados' }, async () => {
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('supino');
-    await page.waitForTimeout(400);
+    await expect(page.locator('.list .ui-row').first()).toContainText(/supino/i);
+    await still(page);
   });
   await snap(page, { ...lib, state: 'busca sem resultado', kind: 'vazio' }, async () => {
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('zzzz');
-    await page.waitForTimeout(400);
+    await expect(page.locator('.list .ui-row')).toHaveCount(0);
+    await still(page);
   });
 
   const map = { module: M, route: '/treino/exercicios/mapa', url: '/treino/exercicios/mapa' };
@@ -284,7 +286,7 @@ test('Hoje: início, treino em andamento e programas', async ({ context, page })
     async () => {
       await openToday(page);
       await beginWorkout(page, /Treino/);
-      await page.waitForTimeout(500);
+      await still(page);
     },
   );
   await snap(
@@ -297,7 +299,7 @@ test('Hoje: início, treino em andamento e programas', async ({ context, page })
       kind: 'com dados',
       scheme: 'dark',
     },
-    () => page.waitForTimeout(100),
+    () => still(page),
   );
   await snap(
     page,
@@ -310,7 +312,8 @@ test('Hoje: início, treino em andamento e programas', async ({ context, page })
     },
     async () => {
       await page.getByRole('button', { name: 'Concluir Série' }).click();
-      await page.waitForTimeout(800);
+      await page.locator('app-rest-card').waitFor();
+      await still(page);
     },
   );
   await snap(
@@ -423,15 +426,24 @@ test('Corpo, avaliações e alimentação', async ({ context, page }) => {
   await snap(page, { ...corpo, state: 'resumo, sem registros', kind: 'vazio' }, async () => {
     await show(page, '/treino/corpo');
     await page.getByRole('button', { name: 'Entendi' }).click();
-    await page.waitForTimeout(500);
+    await expect(page.getByRole('button', { name: 'Entendi' })).toBeHidden();
+    await calm(page);
   });
   await snap(page, { ...corpo, state: 'aba Registros', kind: 'vazio' }, async () => {
     await page.getByRole('button', { name: 'Registros', exact: true }).click();
-    await page.waitForTimeout(500);
+    await expect(page.getByRole('button', { name: 'Registros', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await calm(page);
   });
   await snap(page, { ...corpo, state: 'aba Fotos', kind: 'vazio' }, async () => {
     await page.getByRole('button', { name: 'Fotos' }).click();
-    await page.waitForTimeout(500);
+    await expect(page.getByRole('button', { name: 'Fotos' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await calm(page);
   });
   await snap(page, { ...corpo, state: 'registrar peso', kind: 'folha' }, async () => {
     await page.getByRole('button', { name: 'Resumo' }).click();
