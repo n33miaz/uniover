@@ -9,6 +9,7 @@ import {
   inject,
   input,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
 import { PcArmed } from '../data/pc-armed';
@@ -18,6 +19,7 @@ import { PcStore } from '../data/pc-store';
 import type { PcKey, PcLetter, PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { PADDING_CHAR, fieldDiff, fieldState, type FieldState } from '../input/live-typing';
+import { TypedEcho, type EchoSegment } from '../input/typed-echo';
 
 /**
  * O que o campo escondido guarda antes de qualquer coisa digitada: alguns espaços de largura zero. Sem eles, apagar com o
@@ -62,7 +64,8 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
 
 /**
  * A digitação ao vivo: um campo escondido que recebe o teclado do celular, e cada mudança dele vai ao PC na hora, sem
- * botão de enviar. Mostra nada e guarda nada (pode ser uma senha). Cada mudança vira "apagar n, digitar o resto" por pontos de
+ * botão de enviar. O campo não mostra nada e nada é guardado (pode ser uma senha): o eco do que se digitou (`echo`) vive só
+ * na memória, só no modo teclado, e a tela decide se o mostra. Cada mudança vira "apagar n, digitar o resto" por pontos de
  * código; enquanto um pedido está em voo o que se digita se junta num só (`LiveTyper`). Enter e Tab saem como tecla, nunca
  * como texto. Toda tecla da tela (barra de ações, painel, atalhos) passa por aqui também, para nunca ultrapassar o texto
  * digitado antes dela. O campo recebe o foco no toque do botão do teclado (no iOS o teclado só abre dentro do toque).
@@ -136,6 +139,14 @@ export class PcLiveKeyboard {
   private mirror: FieldState = fieldState(SENTINEL);
   /** O valor do campo logo depois (para desfazer uma letra que virou atalho). */
   private lastValue = SENTINEL;
+  /**
+   * O que se digitou no PC nesta sessão de digitação, só para a tela mostrar. Só na memória (o campo do PC pode ser uma senha):
+   * não vai a armazenamento nem a registro, e se esvazia ao abrir e ao fechar o teclado.
+   */
+  private readonly typedEcho = new TypedEcho();
+  private readonly echoView = signal<readonly EchoSegment[]>([]);
+  /** O eco para a tela: o fim do que se digitou, em trechos (texto e teclas). */
+  readonly echo = this.echoView.asReadonly();
 
   private readonly maybeLost = $localize`:@@pc.live.maybe-lost:Parte do texto pode não ter chegado.`;
   private readonly notSent = $localize`:@@pc.live.not-sent:O texto não foi enviado.`;
@@ -146,6 +157,7 @@ export class PcLiveKeyboard {
     effect(() => {
       if (this.disabled() && this.wanted) {
         this.wanted = false;
+        this.clearEcho();
         this.typing.emit(false);
       }
     });
@@ -237,6 +249,7 @@ export class PcLiveKeyboard {
     if (!this.wanted) {
       this.wanted = true;
       this.shrunk = false;
+      this.clearEcho();
       this.typing.emit(true);
     }
     this.field().nativeElement.focus();
@@ -269,6 +282,7 @@ export class PcLiveKeyboard {
     // Enter e Tab, e qualquer tecla com modificador (Ctrl+Z, Ctrl+Backspace...), mexem no texto do PC por fora do campo.
     else if (key === 'ENTER' || key === 'TAB' || modifiers.length > 0) this.reset();
     this.input.sendKey(key, modifiers);
+    this.recordEcho((echo) => echo.key(key, modifiers));
   }
 
   /**
@@ -282,6 +296,7 @@ export class PcLiveKeyboard {
       for (let erased = 0; erased < count; erased++) this.dropLast();
     } else if (modifiers.length > 0) this.reset();
     this.input.sendKeyRepeat(key, count, modifiers);
+    this.recordEcho((echo) => echo.repeat(key, count, modifiers));
   }
 
   /**
@@ -297,6 +312,7 @@ export class PcLiveKeyboard {
     tick();
     const modifiers = this.armed.take();
     this.input.sendKey('BACKSPACE', modifiers);
+    this.recordEcho((echo) => echo.key('BACKSPACE', modifiers));
     if (modifiers.length > 0) this.reset();
   }
 
@@ -304,7 +320,20 @@ export class PcLiveKeyboard {
   private endMode(): void {
     if (!this.wanted) return;
     this.wanted = false;
+    this.clearEcho();
     this.typing.emit(false);
+  }
+
+  /** Anota no eco o que acabou de ir ao PC, só no modo teclado (é a sessão de digitação que a tela mostra). */
+  private recordEcho(apply: (echo: TypedEcho) => void): void {
+    if (!this.wanted) return;
+    apply(this.typedEcho);
+    this.echoView.set(this.typedEcho.view());
+  }
+
+  private clearEcho(): void {
+    this.typedEcho.clear();
+    this.echoView.set(this.typedEcho.view());
   }
 
   /** A janela encolheu (o teclado do sistema abriu) e voltou ao tamanho cheio (o sistema o fechou): o modo teclado acaba. */
@@ -347,6 +376,8 @@ export class PcLiveKeyboard {
   private onFailure(failure: PcFailure, kind: InputKind, droppedEdits: boolean): void {
     // Falhou uma tecla e o que se digitou depois dela foi descartado: o PC não tem esse texto, então o campo recomeça igual.
     if (kind === 'edit' || droppedEdits) this.reset();
+    // O eco não pode seguir mostrando como digitado o que talvez não chegou.
+    this.recordEcho((echo) => echo.failed());
     if (failure.kind === 'cancelled' || (droppedEdits && kind === 'key')) {
       this.failed.emit(this.notSent);
     } else if (kind === 'edit' && UNCERTAIN_FAILURES.has(failure.kind)) {
@@ -366,7 +397,10 @@ export class PcLiveKeyboard {
     // Com uma tecla armada, uma letra sozinha é o atalho (Ctrl armado e "c" é Ctrl+C), não texto: sai como tecla e some do campo.
     if (armed.size > 0 && diff.erase === 0 && /^[a-z]$/i.test(diff.insert)) {
       field.value = this.lastValue;
-      this.input.sendKey(diff.insert.toUpperCase() as PcLetter, this.armed.take());
+      const letter = diff.insert.toUpperCase() as PcLetter;
+      const modifiers = this.armed.take();
+      this.input.sendKey(letter, modifiers);
+      this.recordEcho((echo) => echo.key(letter, modifiers));
       // Ctrl+A, Ctrl+V, Ctrl+Z...: o texto do PC mudou por fora do campo.
       this.reset();
       return;
@@ -381,6 +415,7 @@ export class PcLiveKeyboard {
     this.mirror = after;
     this.lastValue = field.value;
     this.input.edit(diff);
+    this.recordEcho((echo) => echo.edit(diff));
   }
 
   protected onKeydown(event: KeyboardEvent): void {

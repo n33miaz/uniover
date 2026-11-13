@@ -377,6 +377,119 @@ describe('PcLiveKeyboard', () => {
     fixture.componentInstance.press('BACKSPACE');
     expect(fixture.componentInstance.pending).toBe(2);
   });
+  describe('the echo of what is typed', () => {
+    /** O eco como uma linha só, com as teclas entre colchetes. */
+    const echoLine = () =>
+      fixture.componentInstance
+        .echo()
+        .map((segment) => (segment.kind === 'key' ? `[${segment.value}]` : segment.value))
+        .join('');
+
+    it('shows what goes to the PC while the keyboard mode is on, with erasing and special keys', async () => {
+      fixture.componentInstance.open();
+      type(SENTINEL + 'oi');
+      await flush();
+      type(SENTINEL + 'oii');
+      await flush();
+      type(SENTINEL + 'oi');
+      await flush();
+      fixture.componentInstance.press('ENTER');
+      fixture.componentInstance.press('LEFT');
+      fixture.componentInstance.pressRepeat('RIGHT', 2);
+      expect(echoLine()).toBe('oi[⏎][←][→][→]');
+    });
+
+    it('the Backspace of the screen and of the phone take the last character back', async () => {
+      fixture.componentInstance.open();
+      type(SENTINEL + 'abc');
+      await flush();
+      fixture.componentInstance.press('BACKSPACE');
+      expect(echoLine()).toBe('ab');
+      fixture.componentInstance.pressRepeat('BACKSPACE', 2);
+      expect(echoLine()).toBe('');
+    });
+
+    it('a letter turned into a shortcut by an armed key shows as the shortcut', () => {
+      fixture.componentInstance.open();
+      TestBed.inject(PcArmed).toggle('CTRL');
+      type(SENTINEL + 'v');
+      expect(echoLine()).toBe('[Ctrl+V]');
+    });
+
+    it('records nothing outside the keyboard mode', () => {
+      fixture.componentInstance.press('ENTER');
+      type(SENTINEL + 'x');
+      expect(fixture.componentInstance.echo()).toEqual([]);
+    });
+
+    it('closing the keyboard clears it, and opening again starts empty', async () => {
+      fixture.componentInstance.open();
+      type(SENTINEL + 'segredo');
+      await flush();
+      expect(echoLine()).toBe('segredo');
+      fixture.componentInstance.close();
+      expect(fixture.componentInstance.echo()).toEqual([]);
+      fixture.componentInstance.open();
+      expect(fixture.componentInstance.echo()).toEqual([]);
+    });
+
+    it('losing the PC clears it too', async () => {
+      fixture.componentInstance.open();
+      type(SENTINEL + 'abc');
+      await flush();
+      fixture.componentRef.setInput('disabled', true);
+      fixture.detectChanges();
+      expect(fixture.componentInstance.echo()).toEqual([]);
+    });
+
+    it('nothing typed is ever written to storage or to the console', async () => {
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      const logs = [
+        vi.spyOn(console, 'log'),
+        vi.spyOn(console, 'info'),
+        vi.spyOn(console, 'warn'),
+        vi.spyOn(console, 'debug'),
+      ];
+      try {
+        fixture.componentInstance.open();
+        type(SENTINEL + 'senha123');
+        await flush();
+        fixture.componentInstance.press('ENTER');
+        fixture.componentInstance.close();
+        const written = setItem.mock.calls.map((call) => call.join(' ')).join(' ');
+        expect(written).not.toContain('senha');
+        for (const log of logs) {
+          const said = log.mock.calls.map((call) => call.join(' ')).join(' ');
+          expect(said).not.toContain('senha');
+        }
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('a failed send marks the echo, so it never claims text the PC may not have', async () => {
+      store.sendText.mockResolvedValueOnce({
+        kind: 'timeout',
+        message: 'O PC não respondeu a tempo.',
+      });
+      fixture.componentInstance.open();
+      type(SENTINEL + 'abc');
+      await flush();
+      expect(echoLine()).toBe('abc[⚠]');
+      // O campo recomeçou; apagar agora não finge que tirou o "c".
+      fixture.componentInstance.press('BACKSPACE');
+      expect(echoLine()).toBe('abc[⚠][⌫]');
+    });
+
+    it('does not change what is sent to the PC', async () => {
+      fixture.componentInstance.open();
+      type(SENTINEL + 'ab');
+      await flush();
+      fixture.componentInstance.press('TAB');
+      expect(store.sendText.mock.calls).toEqual([['ab']]);
+      expect(store.sendKey.mock.calls).toEqual([['TAB', []]]);
+    });
+  });
 });
 
 describe('PcLiveKeyboard: round two', () => {
