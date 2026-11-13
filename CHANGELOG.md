@@ -1,5 +1,81 @@
 # Changelog
 
+## [0.67.0](https://github.com/n33miaz/uniover/compare/v0.66.0...v0.67.0) (2026-11-13)
+
+
+### Devices 0.61.0
+
+#### Features
+
+* **api:** parity numbers kept in memory
+* **web:** parity numbers in system health
+* **web:** phone sign-in beside form on desktop
+* **pc:** add per-app remotes
+
+#### Bug Fixes
+
+* **web:** PC and Treino refresh on iPhone return
+* **web:** one-line entry titles sized by card
+
+
+### TV 0.50.1
+
+#### Bug Fixes
+
+* **web:** one TV refresh per return
+
+
+### Training 0.44.2
+
+#### Bug Fixes
+
+* **web:** PC and Treino refresh on iPhone return
+
+
+### Shopping 0.3.1
+
+#### Bug Fixes
+
+* **web:** quiet return to the app in Compras
+* **web:** one-line entry titles sized by card
+
+
+### Web 0.64.0
+
+#### Features
+
+* **api:** parity numbers kept in memory
+* **web:** parity numbers in system health
+* **web:** phone sign-in beside form on desktop
+* **pc:** add per-app remotes
+
+#### Bug Fixes
+
+* **web:** quiet return to the app in Compras
+* **web:** keep submit above the keyboard
+* **web:** one-line entry titles sized by card
+
+
+### Agent 0.57.0
+
+#### Features
+
+* **agent:** explain lost internet in the tray
+* **tv:** find the TV fast after a power loss
+* **pc:** add per-app remotes
+
+#### Bug Fixes
+
+* **agent:** drop net reason when agent is silent
+* **agent:** never replay a repeated POWER id
+* **agent:** automatic ADB reads never reconnect
+* **agent:** answer repeated commands off the reader
+
+#### Performance Improvements
+
+* **agent:** keep the tray process light
+* **agent:** compile bytecode when preparing
+
 ## [0.66.0](https://github.com/n33miaz/uniover/compare/v0.65.0...v0.66.0) (2026-11-13)
 
 
