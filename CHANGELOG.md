@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.65.0](https://github.com/n33miaz/uniover/compare/v0.64.0...v0.65.0) (2026-11-13)
+
+
+### Devices 0.59.0
+
+#### Features
+
+* **api:** measure agent health in memory
+
+
+### TV 0.49.0
+
+#### Features
+
+* **api:** measure agent health in memory
+
+
+### Shopping 0.3.0
+
+#### Features
+
+* **shopping:** merge offline duplicates
+* **shopping:** bring economize advice and trips
+* **shopping:** group invites, categories, promos
+* **shopping:** list, market now, history, details
+
+#### Bug Fixes
+
+* **shopping:** one marker, quick entry, layout
+
+
+### Web 0.62.0
+
+#### Features
+
+* **shopping:** merge offline duplicates
+* **shopping:** bring economize advice and trips
+* **shopping:** group invites, categories, promos
+* **shopping:** shopping bag icon
+* **shopping:** list, market now, history, details
+
+#### Bug Fixes
+
+* **shopping:** one marker, quick entry, layout
+
+
+### Agent 0.55.1
+
+#### Bug Fixes
+
+* **agent:** keep closing after a step is cancelled
+* **agent:** keep the agent in memory under load
+* **agent:** keep reading while a slow command runs
+
 ## [0.64.0](https://github.com/n33miaz/uniover/compare/v0.63.0...v0.64.0) (2026-11-12)
 
 
