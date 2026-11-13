@@ -17,10 +17,12 @@ public static class SystemSettingKeys
     public const string TvLightCleanupEnabled = "tv.light-cleanup-enabled";
     public const string TvDeepCleanupEnabled = "tv.deep-cleanup-enabled";
     public const string TvDeepCleanupMemoryThresholdMb = "tv.deep-cleanup-memory-threshold-mb";
+    /// <summary>Os módulos "em breve" que a Início mostra a todas as contas (ids do catálogo do app); vazio por padrão.</summary>
+    public const string HomeSoonModules = "home.soon-modules";
     public static IReadOnlyList<string> All { get; } =
     [
         OffContact, MaxComputersPerGuest, AgentOfflineMinutes,
-        TvLightCleanupEnabled, TvDeepCleanupEnabled, TvDeepCleanupMemoryThresholdMb,
+        TvLightCleanupEnabled, TvDeepCleanupEnabled, TvDeepCleanupMemoryThresholdMb, HomeSoonModules,
     ];
 }
 
@@ -66,6 +68,15 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
     public async Task<int> TvDeepCleanupMemoryThresholdMbAsync(CancellationToken cancellationToken = default) =>
         (await ReadAsync(SystemSettingKeys.TvDeepCleanupMemoryThresholdMb, cancellationToken)).Value.GetInt32();
 
+    /// <summary>Os ids dos módulos "em breve" liberados para a Início; um valor guardado que não lê vale como nenhum.</summary>
+    public async Task<IReadOnlyList<string>> HomeSoonModulesAsync(CancellationToken cancellationToken = default)
+    {
+        var value = (await ReadAsync(SystemSettingKeys.HomeSoonModules, cancellationToken)).Value;
+        return value.ValueKind == JsonValueKind.Array
+            ? [.. value.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!)]
+            : [];
+    }
+
     private JsonElement EnvironmentValue(string key)
     {
         object value = key switch
@@ -82,6 +93,7 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
                 configuration["Modules:Tv:LightCleanupEnabled"], out var lightEnabled) || lightEnabled,
             SystemSettingKeys.TvDeepCleanupEnabled => !bool.TryParse(
                 configuration["Modules:Tv:DeepCleanupEnabled"], out var deepEnabled) || deepEnabled,
+            SystemSettingKeys.HomeSoonModules => Array.Empty<string>(),
             _ => throw new ArgumentOutOfRangeException(nameof(key)),
         };
         return JsonSerializer.SerializeToElement(value);

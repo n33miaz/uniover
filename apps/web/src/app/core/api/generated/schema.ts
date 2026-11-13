@@ -14254,6 +14254,7 @@ export interface components {
     };
     AccountPreferencesResponse: {
       home: null | components['schemas']['HomeEntryDto'][];
+      soonModules: string[];
       /** Format: date-time */
       updatedAt: null | string;
       /** Format: int32 */

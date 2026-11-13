@@ -54,6 +54,12 @@
               "array"
             ]
           },
+          "soonModules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": [
@@ -73,7 +79,8 @@
         "required": [
           "version",
           "updatedAt",
-          "home"
+          "home",
+          "soonModules"
         ],
         "type": "object"
       },

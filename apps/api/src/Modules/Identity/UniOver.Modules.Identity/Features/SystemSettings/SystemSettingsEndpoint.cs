@@ -106,10 +106,28 @@ internal static class SystemSettingsEndpoint
                 if (!value.TryGetInt32(out var threshold) || threshold is < 64 or > 512) return false;
                 json = threshold.ToString(CultureInfo.InvariantCulture);
                 return true;
+            case SystemSettingKeys.HomeSoonModules when value.ValueKind == JsonValueKind.Array:
+                var ids = new List<string>();
+                foreach (var item in value.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String || item.GetString() is not { } id || !IsHomeModuleId(id)) return false;
+                    if (!ids.Contains(id, StringComparer.Ordinal)) ids.Add(id);
+                }
+                if (ids.Count > MaxHomeSoonModules) return false;
+                json = JsonSerializer.Serialize(ids);
+                return true;
             default:
                 return false;
         }
     }
+
+    /// <summary>Mesma forma que a Início aceita para o id de um módulo: minúsculas, dígitos e hífen, de 1 a 40 caracteres.</summary>
+    private static bool IsHomeModuleId(string id) =>
+        id.Length is >= 1 and <= 40
+        && (char.IsAsciiLetterLower(id[0]) || char.IsAsciiDigit(id[0]))
+        && id.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
+
+    private const int MaxHomeSoonModules = 20;
 
     private static async Task<IResult> ResetAsync(
         string key, HttpContext http, ICurrentUser current, IdentityDbContext db, SystemSettingsService settings,
