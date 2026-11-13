@@ -136,6 +136,14 @@ $stateLabel.ImageScaling = [System.Windows.Forms.ToolStripItemImageScaling]::Non
 $stateLabel.Margin = New-Object System.Windows.Forms.Padding(4, 4, 4, 8)
 $stateLabel.AccessibleName = 'Estado do agente: iniciando'
 [void]$menu.Items.Add($stateLabel)
+# O que fazer quando a rede caiu (sem internet, servidor fora, PC sem rede): o texto vem do agente
+# e o item so aparece quando ha aviso.
+$hintLabel = New-Object System.Windows.Forms.ToolStripLabel('')
+$hintLabel.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular)
+$hintLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$hintLabel.Margin = New-Object System.Windows.Forms.Padding(4, 0, 4, 8)
+$hintLabel.Available = $false
+[void]$menu.Items.Add($hintLabel)
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $actionItems = @()
 foreach ($entry in $initial.menu) {
@@ -224,6 +232,7 @@ function Apply-Theme {
     $menu.ForeColor = $foreground
     $heading.ForeColor = $accent
     $caption.ForeColor = $muted
+    $hintLabel.ForeColor = $muted
     $stateLabel.BackColor = $statusSurface
     $stateLabel.ForeColor = $statusInk
     $dot = $accent
@@ -315,6 +324,10 @@ $timer.add_Tick({
         $script:stateCode = [string]$view.code
         $stateLabel.Text = [string]$view.status
         $stateLabel.AccessibleName = 'Estado do agente: ' + [string]$view.status
+        $hintLines = @($view.hint | Where-Object { $_ })
+        $hintLabel.Text = $hintLines -join "`r`n"
+        $hintLabel.AccessibleName = $hintLines -join ' '
+        $hintLabel.Available = ($hintLines.Count -gt 0)
         Apply-Theme
         $title = [string]$view.title
         $icon.Text = $title.Substring(0, [Math]::Min(63, $title.Length))

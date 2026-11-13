@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from uniover_agent.adapters.api_reach import ApiReach
 from uniover_agent.adapters.fakes import FakeClock
 from uniover_agent.adapters.tray_status import (
     RETRY_CYCLES,
@@ -21,6 +22,7 @@ from uniover_agent.adapters.tray_status import (
     read_tray_inputs,
 )
 from uniover_agent.core.domain import TvState
+from uniover_agent.core.net_status import NetworkPresence, OpenFailure
 from uniover_agent.core.tray_model import view_of
 
 
@@ -38,8 +40,63 @@ def test_tray_status_writes_connected_tv_state_atomically(
 
     saved = json.loads((runtime(tmp_path) / "tray-status.json").read_text())
     since = datetime.fromisoformat(saved.pop("since"))
-    assert saved == {"connected": True, "power": "on", "tv_name": "Sala"}
+    assert saved == {"connected": True, "power": "on", "tv_name": "Sala", "net": None}
     assert abs(datetime.now(UTC) - since) < timedelta(minutes=1)
+
+
+@pytest.mark.parametrize(
+    ("failure", "up", "expected"),
+    [
+        ("dns", True, "no_internet"),
+        ("server", True, "api_down"),
+        ("dns", False, "no_network"),
+        ("other", True, None),
+    ],
+)
+def test_a_drop_carries_the_reason_the_transport_noted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure: OpenFailure,
+    up: bool,
+    expected: str | None,
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    moments = iter([0.0, 30.0, 60.0])
+    reach = ApiReach(lambda: next(moments))
+    status = TrayStatus("Sala", reach=reach)
+    status.connected()
+    for _ in range(3):  # "sem internet" só com a falha repetida ao longo de um minuto
+        reach.failed(failure, NetworkPresence(up))
+        status.disconnected()
+    now = datetime.now(UTC) + timedelta(minutes=5)
+
+    saved = json.loads((runtime(tmp_path) / "tray-status.json").read_text(encoding="utf-8"))
+    assert saved["net"] == expected
+    assert read_tray_inputs(now).net_problem == expected
+    assert view_of(read_tray_inputs(now)).problem == expected
+
+
+def test_reconnecting_clears_the_reason(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    reach = ApiReach()
+    status = TrayStatus("Sala", reach=reach)
+    reach.failed("dns", NetworkPresence(False))
+    status.disconnected()
+    reach.opened()
+    status.connected()
+
+    assert read_tray_inputs(datetime.now(UTC)).net_problem is None
+
+
+def test_an_unknown_or_missing_reason_reads_as_unknown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    runtime(tmp_path).mkdir(parents=True)
+    state = runtime(tmp_path) / "tray-status.json"
+    for raw in ({"connected": False}, {"connected": False, "net": "vazou"}):
+        state.write_text(json.dumps(raw), encoding="utf-8")
+        assert read_tray_inputs(datetime.now(UTC)).net_problem is None
 
 
 def test_since_changes_only_when_the_connection_changes(

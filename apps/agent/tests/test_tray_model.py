@@ -8,6 +8,7 @@ from uniover_agent.core.tray_model import (
     BALLOON_FRESH_FOR,
     HEARTBEAT_STALE,
     MENU,
+    NET_PROBLEM_AFTER,
     RECONNECT_GRACE,
     TrayInputs,
     decide_state,
@@ -143,6 +144,79 @@ def test_status_summary_is_short_and_has_no_personal_data() -> None:
         "Atualização: falhou; veja o registro",
         "Versão: aaaaaaaaaaaa",
     ]
+
+
+class TestNetProblem:
+    def drop(self, problem: str | None, seconds: float = 300, **changes: object) -> TrayInputs:
+        return inputs(
+            connected=False,
+            since=NOW - timedelta(seconds=seconds),
+            net_problem=problem,
+            **changes,
+        )
+
+    @pytest.mark.parametrize(
+        ("problem", "title", "status"),
+        [
+            ("no_internet", "UniOver: sem internet em casa", "Sem internet em casa"),
+            ("api_down", "UniOver: servidor fora do ar", "Servidor fora do ar"),
+            ("no_network", "UniOver: PC sem rede", "PC sem rede"),
+        ],
+    )
+    def test_each_reason_names_itself_and_keeps_the_icon(
+        self, problem: str, title: str, status: str
+    ) -> None:
+        view = view_of(self.drop(problem))
+
+        assert view.problem == problem
+        assert (view.title, view.status_text) == (title, status)
+        # A cor do ícone continua a do estado: só o texto muda.
+        assert view.icon_file == "error.ico"
+        assert view.hint
+
+    def test_the_advice_for_no_internet_is_the_usb_cable(self) -> None:
+        hint = view_of(self.drop("no_internet")).hint
+
+        assert "cabo USB" in hint
+        assert "Wi-Fi de casa" in hint
+
+    def test_a_short_drop_has_no_reason_yet(self) -> None:
+        fresh = view_of(self.drop("no_internet", seconds=NET_PROBLEM_AFTER.total_seconds() - 1))
+        later = view_of(self.drop("no_internet", seconds=NET_PROBLEM_AFTER.total_seconds() + 1))
+
+        assert (fresh.problem, fresh.hint, fresh.title) == (None, "", "UniOver: reconectando")
+        assert (later.state, later.problem) == ("reconnecting", "no_internet")
+
+    def test_connected_or_updating_ignores_an_old_reason(self) -> None:
+        connected = inputs(net_problem="no_internet")
+        updating = self.drop(
+            "no_internet", update_outcome="updating", update_checked_at=NOW - timedelta(minutes=1)
+        )
+
+        assert view_of(connected).problem is None
+        assert view_of(updating).problem is None
+
+    def test_without_a_reason_the_texts_stay_as_they_were(self) -> None:
+        view = view_of(self.drop(None))
+
+        assert (view.title, view.status_text, view.hint) == (
+            "UniOver: sem conexão",
+            "Sem conexão",
+            "",
+        )
+
+    def test_the_title_fits_the_tray_even_with_the_seal(self) -> None:
+        for problem in ("no_internet", "api_down", "no_network"):
+            view = view_of(self.drop(problem, update_outcome="failed", update_checked_at=NOW))
+            assert view.attention
+            assert len(view.title) <= 63  # o host corta a legenda em 63 caracteres
+
+    def test_status_carries_the_advice(self) -> None:
+        current = self.drop("no_internet")
+        lines = status_summary(view_of(current), current, None).splitlines()
+
+        assert lines[0] == "Agente: sem internet em casa"
+        assert "cabo USB" in lines[1]
 
 
 class TestBalloon:

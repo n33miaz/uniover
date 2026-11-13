@@ -38,6 +38,37 @@ def test_host_state_keeps_the_menu_model_and_attention(tmp_path: Path) -> None:
     assert data["balloon"]["message"] == "Veja o registro"
 
 
+def test_host_state_names_the_drop_reason_and_the_advice_in_short_lines(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    tray_host._write_state(
+        state, TrayView("error", False, "UniOver: sem internet em casa", "no_internet"), tmp_path
+    )
+
+    data = json.loads(state.read_text(encoding="utf-8"))
+    assert data["status"] == "Sem internet em casa"
+    # A cor do ponto e o ícone seguem o estado de sempre.
+    assert data["code"] == "error"
+    assert data["icon"].endswith("error.ico")
+    assert len(data["hint"]) > 1
+    assert all(len(line) <= 46 for line in data["hint"])
+    assert "cabo USB" in " ".join(data["hint"])
+
+
+def test_host_state_without_a_reason_has_no_advice(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    tray_host._write_state(state, TrayView("reconnecting", False, "UniOver"), tmp_path)
+
+    data = json.loads(state.read_text(encoding="utf-8"))
+    assert (data["status"], data["hint"]) == ("Reconectando", [])
+
+
+def test_the_host_script_shows_the_advice_only_when_there_is_one() -> None:
+    text = tray_host.host_script().read_text(encoding="ascii")
+
+    assert "$hintLabel.Available = $false" in text
+    assert "$hintLabel.Available = ($hintLines.Count -gt 0)" in text
+
+
 @pytest.mark.parametrize("state", ["connected", "reconnecting", "error", "updating"])
 def test_host_state_carries_an_ascii_code_the_script_compares_instead_of_the_text(
     tmp_path: Path, state: str
