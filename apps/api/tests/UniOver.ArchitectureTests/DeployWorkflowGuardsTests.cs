@@ -76,6 +76,17 @@ public partial class DeployWorkflowTests
         notify.Should().Contain("always()", "roda também quando um job anterior falhou");
         notify.Should().Contain("needs.channel.outputs.ref == github.ref_name", "só na branch de produção");
         notify.Should().Contain("Publicação falhou").And.Contain("gh issue close");
+        notify.Should().Contain("body=\"@$MENTION ", "a menção é o que faz o GitHub notificar o dono, na abertura e em cada comentário");
+        notify.Should().Contain("github.repository_owner");
+    }
+
+    [Fact]
+    public void TheAlertDrill_NeverPublishes_NorTouchesTheRealIssue()
+    {
+        Job("version").Should().Contain("&& !inputs.alert_drill", "o ensaio pula version e, com ele, tudo o que publica");
+        Workflow().Should().Contain("inputs.alert_drill && 'deploy-alert-drill' || 'deploy-production'", "o ensaio não toma o lugar de uma publicação na fila");
+        Job("alert-drill").Should().NotContain("secrets.").And.NotContain("environment:");
+        Job("notify").Should().Contain("title=\"Ensaio do alerta de publicação\"", "o ensaio usa outra issue e nunca comenta nem fecha a real");
     }
 
     [Fact]
