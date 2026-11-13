@@ -18,16 +18,14 @@ describe('QrLoginPanel', () => {
     expiresIn,
   });
 
-  /** Computador com mouse; `short` liga só a consulta de altura baixa. */
-  function stubMedia(short: boolean) {
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query.includes('max-height') ? short : true,
-    }));
+  /** Computador com mouse (ponteiro preciso com `hover`). */
+  function stubMedia() {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
   }
 
   beforeEach(() => {
     vi.useFakeTimers();
-    stubMedia(false);
+    stubMedia();
     api.qrStart.mockReset();
     api.qrPoll.mockReset().mockResolvedValue({ status: 'pending' });
     auth.init.mockReset().mockResolvedValue(undefined);
@@ -47,13 +45,28 @@ describe('QrLoginPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  async function render() {
+  /** `open`: toca em "Entrar com o celular" (quando o botão existe), que é o que pede o primeiro QR. */
+  async function render(open = true) {
     const fixture = TestBed.createComponent(QrLoginPanel);
     const signedIn = vi.fn();
     fixture.componentInstance.signedIn.subscribe(signedIn);
     await settle(fixture);
-    return { fixture, el: fixture.nativeElement as HTMLElement, signedIn };
+    const el = fixture.nativeElement as HTMLElement;
+    if (open) {
+      openButton(el)?.click();
+      await settle(fixture);
+    }
+    return { fixture, el, signedIn };
   }
+
+  const openButton = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === 'Entrar com o celular',
+    );
+  const buttonNamed = (el: HTMLElement, name: string) =>
+    [...el.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === name,
+    );
 
   async function settle(fixture: { detectChanges: () => void }, ms = 0) {
     await vi.advanceTimersByTimeAsync(ms);
@@ -66,7 +79,6 @@ describe('QrLoginPanel', () => {
     api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
     const { el } = await render();
 
-    expect(el.querySelector('summary')?.textContent).toBe('Entrar com o celular');
     expect(el.querySelector('app-qr-code svg path')).not.toBeNull();
     expect(el.querySelector('app-qr-code svg')?.getAttribute('aria-label')).toBe(
       'QR para entrar pelo celular',
@@ -75,45 +87,95 @@ describe('QrLoginPanel', () => {
     expect(el.innerHTML).not.toContain('segredo-de-consulta');
   });
 
-  it('starts open on a tall window', async () => {
+  it('shows only the button and asks nothing of the server until it is tapped', async () => {
     api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
-    const { el } = await render();
-    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(true);
-  });
+    const { fixture, el } = await render(false);
 
-  it('starts collapsed on a short window, with the QR already prepared', async () => {
-    stubMedia(true);
-    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
-    const { el } = await render();
-    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(false);
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(openButton(el)).toBeDefined();
+    expect(el.querySelector('app-qr-code')).toBeNull();
+    await settle(fixture, 30_000);
+    expect(api.qrStart).not.toHaveBeenCalled();
+    expect(api.qrPoll).not.toHaveBeenCalled();
+
+    // Pelo teclado (foco no botão): o botão sai, e o foco vai para o "Fechar", que fica no lugar dele.
+    openButton(el)!.focus();
+    openButton(el)!.click();
+    await settle(fixture);
+    expect(api.qrStart).toHaveBeenCalledTimes(1);
     expect(el.querySelector('app-qr-code svg path')).not.toBeNull();
+    expect(openButton(el)).toBeUndefined();
+    expect(document.activeElement).toBe(buttonNamed(el, 'Fechar'));
   });
 
-  it('keeps the panel open once the person opened it on a short window', async () => {
-    stubMedia(true);
+  it('leaves the focus in the field when the button is clicked with the mouse', async () => {
     api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
+    const field = document.body.appendChild(document.createElement('input'));
+    try {
+      const { fixture, el } = await render(false);
+      field.focus();
+      openButton(el)!.click(); // o mousedown do botão não tira o foco do campo
+      await settle(fixture);
+      expect(el.querySelector('app-qr-code')).not.toBeNull();
+      expect(document.activeElement).toBe(field);
+    } finally {
+      field.remove();
+    }
+  });
+
+  it('closing stops the polls, forgets the QR and brings the button back', async () => {
+    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta', 60));
+    const idle = vi.getTimerCount();
     const { fixture, el } = await render();
-    const details = el.querySelector<HTMLDetailsElement>('.qr')!;
-    expect(details.open).toBe(false);
-    details.open = true;
-    details.dispatchEvent(new Event('toggle'));
-    await settle(fixture, 3_000);
-    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(true);
-    details.open = false;
-    details.dispatchEvent(new Event('toggle'));
     await settle(fixture, 1_000);
-    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(false);
+    expect(api.qrPoll).toHaveBeenCalledTimes(1);
+
+    buttonNamed(el, 'Fechar')!.click();
+    await settle(fixture);
+    expect(el.querySelector('app-qr-code')).toBeNull();
+    expect(openButton(el)).toBeDefined();
+    expect(vi.getTimerCount()).toBe(idle);
+    await settle(fixture, 30_000);
+    expect(api.qrPoll).toHaveBeenCalledTimes(1);
+    expect(api.qrStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the QR when the tab is hidden, and waits for a new tap when it comes back', async () => {
+    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
+    const { fixture, el } = await render();
+    await settle(fixture, 1_000);
+    expect(api.qrPoll).toHaveBeenCalledTimes(1);
+
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await settle(fixture, 30_000);
+    expect(api.qrPoll).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('app-qr-code')).toBeNull();
+
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await settle(fixture, 5_000);
+    expect(api.qrStart).toHaveBeenCalledTimes(1);
+    expect(openButton(el)).toBeDefined();
+    visibility.mockRestore();
+  });
+
+  it('stops listening to the tab once the screen is gone', async () => {
+    const remove = vi.spyOn(document, 'removeEventListener');
+    const { fixture } = await render(false);
+    fixture.destroy();
+    expect(remove).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
   });
 
   it('stays out of the way on a phone (no fine pointer) and for someone who already has a session', async () => {
     vi.stubGlobal('matchMedia', () => ({ matches: false }));
-    const phone = await render();
+    const phone = await render(false);
     expect(api.qrStart).not.toHaveBeenCalled();
     expect(text(phone.el)).toBe('');
 
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     status.set('authenticated');
-    const signedAlready = await render();
+    const signedAlready = await render(false);
     expect(api.qrStart).not.toHaveBeenCalled();
     expect(text(signedAlready.el)).toBe('');
   });
@@ -239,20 +301,6 @@ describe('QrLoginPanel', () => {
     expect(api.qrPoll).toHaveBeenCalledTimes(3);
   });
 
-  it('does not poll while the tab is hidden', async () => {
-    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
-    const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-    const { fixture } = await render();
-
-    await settle(fixture, 5_000);
-    expect(api.qrPoll).not.toHaveBeenCalled();
-
-    hidden.mockReturnValue('visible');
-    await settle(fixture, 1_000);
-    expect(api.qrPoll).toHaveBeenCalledTimes(1);
-    hidden.mockRestore();
-  });
-
   it('stops everything when the screen goes away', async () => {
     api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
     const { fixture } = await render();
@@ -266,11 +314,10 @@ describe('QrLoginPanel', () => {
 
   describe('the wait between two polls', () => {
     it('leaves no timer pending when the screen goes away while it waits', async () => {
-      // Recolhido: abrir o <details> faz o jsdom agendar o evento de alternância, um temporizador que não é do painel.
-      stubMedia(true);
       api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
       const idle = vi.getTimerCount();
       const { fixture } = await render();
+      await settle(fixture, 1_000);
       // Esperando a próxima consulta há um temporizador a mais do que antes de a tela nascer.
       expect(vi.getTimerCount()).toBe(idle + 1);
 
@@ -292,19 +339,6 @@ describe('QrLoginPanel', () => {
       expect(vi.getTimerCount()).toBe(idle);
       await vi.advanceTimersByTimeAsync(10_000);
       expect(api.qrPoll).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not keep a timer going for a tab that stays hidden once the screen is gone', async () => {
-      api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
-      const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-      const idle = vi.getTimerCount();
-      const { fixture } = await render();
-      await settle(fixture, 3_000);
-      expect(vi.getTimerCount()).toBe(idle + 1);
-
-      fixture.destroy();
-      expect(vi.getTimerCount()).toBe(idle);
-      hidden.mockRestore();
     });
 
     it('keeps a single wait going when the QR is renewed, never one for each QR it showed', async () => {

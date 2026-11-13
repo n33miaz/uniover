@@ -69,6 +69,41 @@ describe('LoginPage', () => {
   const submitButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.submit')!;
   const notice = (el: HTMLElement) => el.querySelector<HTMLElement>('app-auth-notice');
 
+  it('keeps a single column on a phone, with both shortcuts side by side under the form', async () => {
+    const el = await render();
+    const layout = el.querySelector('app-auth-layout')!;
+    expect(layout.classList.contains('with-aside')).toBe(false);
+    expect(el.querySelector('app-qr-login')?.textContent?.trim()).toBe('');
+    const links = [...el.querySelectorAll('.pane .alt a')].map((a) => a.textContent?.trim());
+    expect(links).toEqual(['Esqueci minha senha', 'Conectar um PC']);
+  });
+
+  it('puts the button to sign in with the phone beside the form on a computer, without asking for a QR', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const qrStart = vi.fn().mockReturnValue(new Promise(() => undefined));
+    Object.assign(api, { qrStart });
+    try {
+      const el = await render();
+      const phoneButton = () =>
+        [...el.querySelectorAll('app-qr-login button')].find(
+          (b) => b.textContent?.trim() === 'Entrar com o celular',
+        );
+      // A sessão é conferida (sem conta) antes de o botão aparecer: algumas voltas do laço de eventos.
+      for (let i = 0; i < 20 && !phoneButton(); i++) {
+        await new Promise((resolve) => setTimeout(resolve));
+        harness.fixture.detectChanges();
+      }
+      expect(phoneButton()).toBeDefined();
+      expect(el.querySelector('app-auth-layout')!.classList.contains('with-aside')).toBe(true);
+      // O formulário e os atalhos numa coluna, o botão do QR na outra; nenhum QR pedido sem o toque.
+      expect(el.querySelector('.pane form')).not.toBeNull();
+      expect(el.querySelector('.pane app-qr-login')).toBeNull();
+      expect(qrStart).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(api, 'qrStart');
+    }
+  });
+
   it('has labeled fields with the right autocomplete and keyboard hints, inside the shared frame', async () => {
     const el = await render();
     expect(el.querySelector('app-auth-layout main')).not.toBeNull();
@@ -89,7 +124,9 @@ describe('LoginPage', () => {
     expect(password.autocomplete).toBe('current-password');
     expect(password.type).toBe('password');
     expect(password.getAttribute('enterkeyhint')).toBe('go');
-    expect(el.querySelector('a[href="/recuperar-senha"]')?.textContent).toContain('Esqueci minha senha');
+    expect(el.querySelector('a[href="/recuperar-senha"]')?.textContent).toContain(
+      'Esqueci minha senha',
+    );
     expect(el.textContent).not.toMatch(/lembrar de mim/i);
   });
 

@@ -2,11 +2,15 @@ import { DOCUMENT } from '@angular/common';
 import {
   Component,
   DestroyRef,
+  ElementRef,
   InjectionToken,
+  Injector,
+  afterNextRender,
   computed,
   inject,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { ApiProblem } from '../api-problem';
 import { LoadingSkeleton } from '../../../shared/ui/skeleton/loading-skeleton';
@@ -15,8 +19,12 @@ import { AuthGlyph } from '../auth-glyph';
 import { AuthService } from '../auth.service';
 import { QrCode } from './qr-code';
 
-/** Em que ponto está a entrada pelo QR (o QR que vence é trocado por outro sem passar por um estado próprio). */
-export type QrPanelPhase = 'idle' | 'starting' | 'waiting' | 'approved' | 'denied' | 'error';
+/**
+ * Em que ponto está a entrada pelo QR: `idle` é fora de jogo (celular, sessão aberta), `ready` é o botão à espera do
+ * toque. O QR que vence é trocado por outro sem passar por um estado próprio.
+ */
+export type QrPanelPhase =
+  'idle' | 'ready' | 'starting' | 'waiting' | 'approved' | 'denied' | 'error';
 
 export interface QrPanelConfig {
   /** Intervalo entre duas consultas (24 por minuto cabem folgados no limite da API). */
@@ -38,7 +46,9 @@ export const QR_PANEL_CONFIG = new InjectionToken<QrPanelConfig>('QR_PANEL_CONFI
  * num celular não há como escanear a própria tela, e cada QR custa uma linha no servidor. Some também para quem já tem
  * sessão.
  *
- * O QR se renova sozinho antes de vencer. O segredo de consulta fica só na memória deste componente (nunca no QR, na
+ * O QR só é gerado quando a pessoa toca em "Entrar com o celular": antes disso o servidor não é chamado e nenhum QR de
+ * entrada fica exposto num computador que outros usam. Fechar o bloco, esconder a aba ou sair da tela encerra o QR e
+ * as consultas; para voltar, outro toque. Enquanto está aberto, o QR se renova sozinho antes de vencer. O segredo de consulta fica só na memória deste componente (nunca no QR, na
  * URL nem no armazenamento do navegador); quem o tem e consulta recebe a sessão UMA vez.
  */
 @Component({
@@ -58,10 +68,15 @@ export class QrLoginPanel {
 
   protected readonly phase = signal<QrPanelPhase>('idle');
   protected readonly link = signal('');
-  protected readonly visible = computed(() => this.phase() !== 'idle');
-  protected readonly spinning = computed(() => this.phase() === 'starting');
-  /** Em altura baixa (celular em pé, janela curta) o bloco nasce recolhido: o formulário de senha vem primeiro. */
-  protected readonly startOpen = signal(true);
+  /** Lido pela página: com o bloco à vista, o cartão largo o põe ao lado do formulário (ver `AuthLayout.aside`). */
+  readonly visible = computed(() => this.phase() !== 'idle');
+  /** Há QR em preparo ou na tela (com consultas ao servidor): é o que fechar, esconder a aba ou sair encerra. */
+  private readonly active = computed(
+    () => this.phase() === 'starting' || this.phase() === 'waiting',
+  );
+  private readonly closeButton = viewChild<ElementRef<HTMLButtonElement>>('close');
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** Cada ciclo (um QR) tem um número; o que ficou para trás (renovação, destruição) se reconhece por ele e para. */
   private cycle = 0;
@@ -70,24 +85,48 @@ export class QrLoginPanel {
   private waiting: { timer: ReturnType<typeof setTimeout>; release: () => void } | null = null;
 
   constructor() {
+    // Aba escondida: ninguém está olhando o QR. Encerra (não só pausa): ao voltar, a pessoa toca de novo.
+    const onVisibility = () => {
+      if (this.doc.visibilityState === 'hidden' && this.active()) this.stop();
+    };
+    this.doc.addEventListener('visibilitychange', onVisibility);
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
       this.cycle++;
       this.cancelWait();
+      this.doc.removeEventListener('visibilitychange', onVisibility);
     });
     const win = this.doc.defaultView;
     // Só em computador; sem `matchMedia` (ambiente sem tela) o bloco nem tenta.
     if (!win?.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return;
-    this.startOpen.set(!win.matchMedia('(max-height: 700px)').matches);
     void this.auth.init().then(() => {
       if (this.destroyed || this.auth.status() === 'authenticated') return;
-      void this.run();
+      this.phase.set('ready');
     });
+  }
+
+  /**
+   * "Entrar com o celular": só aqui o primeiro QR é pedido. Se o foco estava no botão (teclado), passa ao "Fechar",
+   * que fica no lugar dele; com o mouse o foco fica onde estava, sem tirar a pessoa do campo nem acender o aviso dele.
+   */
+  protected start(): void {
+    const focusedHere = this.host.nativeElement.contains(this.doc.activeElement);
+    void this.run();
+    if (!focusedHere) return;
+    afterNextRender(() => this.closeButton()?.nativeElement.focus(), { injector: this.injector });
   }
 
   /** "Gerar outro QR" / "Tentar de novo". */
   protected retry(): void {
     void this.run();
+  }
+
+  /** "Fechar" (ou a aba escondida): para as consultas, esquece o QR e volta ao botão. */
+  protected stop(): void {
+    this.cycle++;
+    this.cancelWait();
+    this.link.set('');
+    this.phase.set('ready');
   }
 
   private async run(): Promise<void> {
@@ -118,12 +157,6 @@ export class QrLoginPanel {
       await this.wait(wait);
       if (mine !== this.cycle) return;
       wait = this.config.pollMs;
-
-      // Aba escondida não consulta: o QR não está sendo olhado. Ao voltar, o tempo decide se renova.
-      if (this.doc.visibilityState === 'hidden') {
-        if (Date.now() >= renewAt) return void this.run();
-        continue;
-      }
 
       try {
         const result = await this.api.qrPoll(started.pollSecret);

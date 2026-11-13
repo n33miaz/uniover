@@ -9,16 +9,15 @@
   border-top: 1px solid var(--a-line);
 }
 
-summary {
-  min-height: var(--tap);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  text-align: center;
-  cursor: pointer;
-}
-
-.qr[open] summary {
-  margin-bottom: var(--space-4);
+/* Na janela larga o bloco fica ao lado do formulário (ver `AuthLayout.aside`): a linha que separa passa para o lado. */
+@media (min-width: 900px) {
+  .qr {
+    margin-top: 0;
+    padding-top: 0;
+    padding-left: var(--space-6);
+    border-top: 0;
+    border-left: 1px solid var(--a-line);
+  }
 }
 
 /* Altura mínima do palco: a troca entre "gerando", o QR e os avisos não faz o cartão pular. */
