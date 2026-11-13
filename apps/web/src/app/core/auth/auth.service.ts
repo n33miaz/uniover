@@ -14,7 +14,7 @@ import { AuthApi, MeResponse, TokenResponse } from './auth-api';
 import { DEVICE_KEYS, recoveryMessage } from './device-keys';
 import { REFRESH_MARKER } from './refresh-marker';
 import { safeNextUrl } from './next-url';
-import { StepUpService } from './step-up/step-up.service';
+import type { StepUpService } from './step-up/step-up.service';
 
 export interface AuthConfig {
   /**
@@ -243,8 +243,9 @@ export class AuthService {
       }
 
       if ((options.stepUp ?? true) && isStepUpRequired(problem) && problem.action) {
-        const confirmed = await this.injector.get(StepUpService).confirm(problem.action);
-        if (!confirmed) throw error;
+        // Sem o diálogo (pedaço que não carregou: sem rede ou cache antigo) a confirmação fica indisponível: sobe o 403 original.
+        const stepUp = await this.loadStepUp();
+        if (!stepUp || !(await stepUp.confirm(problem.action))) throw error;
         return final(call(await this.validToken()));
       }
       this.noteDenied(error, options);
@@ -518,6 +519,21 @@ export class AuthService {
     const changed = this.session.setUser(me);
     if (changed) this.forbiddenGapMs = this.config.userMinGapMs;
     else if (trigger === 'forbidden') this.forbiddenGapMs = this.config.userMaxAgeMs;
+  }
+
+  /** O pedaço do diálogo de confirmação (separado só para os testes simularem a falha do carregamento). */
+  private importStepUp() {
+    return import('./step-up/step-up.service');
+  }
+
+  /** O diálogo de confirmação carrega sob demanda; falhar em carregá-lo não pode trocar o erro da chamada por um de pedaço. */
+  private async loadStepUp(): Promise<StepUpService | null> {
+    try {
+      const { StepUpService } = await this.importStepUp();
+      return this.injector.get(StepUpService);
+    } catch {
+      return null;
+    }
   }
 
   /** Recusa de acesso (e não a da passkey): a tela pode estar oferecendo o que a conta perdeu; relê a conta uma vez. */
