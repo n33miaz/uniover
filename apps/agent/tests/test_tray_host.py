@@ -10,9 +10,9 @@ from typing import Any, cast
 import pytest
 
 from uniover_agent.adapters import tray_host
-from uniover_agent.adapters.self_update import DRILL_ENV
 from uniover_agent.adapters.tray_assets import assets_dir
 from uniover_agent.adapters.tray_controller import TrayController
+from uniover_agent.adapters.update_basics import DRILL_ENV
 from uniover_agent.core.tray_model import TrayView
 
 

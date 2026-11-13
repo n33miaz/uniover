@@ -18,9 +18,9 @@ from uniover_agent.adapters.self_update import (
     drill_origin,
     latest_commit,
     manifest_url,
-    read_version,
     self_update,
 )
+from uniover_agent.adapters.update_basics import DRILL_ENV, read_version
 
 ORIGIN = "http://127.0.0.1:50123"
 
@@ -31,7 +31,7 @@ def fixture_manifest(_: bytes, sha: str) -> SignedManifest:
 
 @pytest.fixture
 def drill(monkeypatch: pytest.MonkeyPatch) -> str:
-    monkeypatch.setenv(module.DRILL_ENV, "1")
+    monkeypatch.setenv(DRILL_ENV, "1")
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, ORIGIN)
     return ORIGIN
 
@@ -53,7 +53,7 @@ def test_the_origin_is_ignored_without_the_mode_variable(monkeypatch: pytest.Mon
 def test_only_the_exact_mode_value_turns_the_drill_on(
     monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
-    monkeypatch.setenv(module.DRILL_ENV, mode)
+    monkeypatch.setenv(DRILL_ENV, mode)
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, ORIGIN)
     assert drill_origin() is None
 
@@ -66,7 +66,7 @@ def test_the_drill_points_both_requests_at_the_local_server(drill: str) -> None:
 
 
 def test_a_trailing_slash_on_the_origin_is_tolerated(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(module.DRILL_ENV, "1")
+    monkeypatch.setenv(DRILL_ENV, "1")
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, f"{ORIGIN}/")
     assert commit_url() == f"{ORIGIN}/commit"
 
@@ -87,7 +87,7 @@ def test_a_trailing_slash_on_the_origin_is_tolerated(monkeypatch: pytest.MonkeyP
 def test_a_drill_without_a_valid_local_origin_is_refused_instead_of_falling_back(
     monkeypatch: pytest.MonkeyPatch, origin: str
 ) -> None:
-    monkeypatch.setenv(module.DRILL_ENV, "1")
+    monkeypatch.setenv(DRILL_ENV, "1")
     monkeypatch.setenv(module.DRILL_SOURCE_ENV, origin)
     with pytest.raises(SelfUpdateError, match="modo ensaio"):
         drill_origin()
@@ -98,7 +98,7 @@ def test_a_drill_without_a_valid_local_origin_is_refused_instead_of_falling_back
 
 
 def test_a_drill_without_any_origin_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(module.DRILL_ENV, "1")
+    monkeypatch.setenv(DRILL_ENV, "1")
     with pytest.raises(SelfUpdateError, match="modo ensaio"):
         drill_origin()
 

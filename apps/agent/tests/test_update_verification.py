@@ -15,13 +15,13 @@ from uniover_agent.adapters.self_update import (
     UpdateRejected,
     agent_blob_hashes,
     fetch_git_tree,
-    read_version,
     run_uv_sync,
     self_update,
     update_in_trial,
     verify_archive,
     verify_tree,
 )
+from uniover_agent.adapters.update_basics import read_version
 
 FILES = {
     "pyproject.toml": b"[project]\r\nname = 'x'\r\n",

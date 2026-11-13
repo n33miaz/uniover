@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from uniover_agent.adapters import self_update as module
+from uniover_agent.adapters import update_basics
 from uniover_agent.adapters.fakes import FakeClock, FakeTvRemote
-from uniover_agent.adapters.self_update import UpdateResult
 from uniover_agent.adapters.tv_use_marker import MARKER_FILE, TvUseMarker
+from uniover_agent.adapters.update_basics import UpdateResult
 from uniover_agent.adapters.update_status import BUSY_REASON, FileUpdateStatus, record_result
 from uniover_agent.config import Settings
 from uniover_agent.core import TvSessionManager
@@ -517,7 +518,7 @@ def test_the_tv_is_checked_again_right_before_the_swap(installed: Installation) 
 
 
 def read_version(pc: Installation) -> str | None:
-    return module.read_version(pc.source)
+    return update_basics.read_version(pc.source)
 
 
 def test_only_the_limits_the_configuration_changed_reach_the_update() -> None:

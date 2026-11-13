@@ -6,12 +6,11 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, Final
 
 from pydantic import ValidationError
 
-from uniover_agent.adapters import windows_scheduling
 from uniover_agent.adapters.installation import legacy_wrapper_start, migrate_layout
-from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.single_instance import (
     ALREADY_RUNNING_MESSAGE,
     EXIT_ALREADY_RUNNING,
@@ -24,12 +23,31 @@ from uniover_agent.adapters.startup_trace import (
     session_started,
 )
 from uniover_agent.adapters.system_clock import SystemClock
-from uniover_agent.adapters.tv_locate import identify_tv
-from uniover_agent.adapters.tv_pairing import ask_code_in_window
-from uniover_agent.care_setup import DiagnosticsKit, attach_log_handler, build_diagnostics
-from uniover_agent.composition import connection, maintenance, pairing, pc, system, tv
+from uniover_agent.composition import system
 from uniover_agent.config import ConfigError, Settings
 from uniover_agent.ports import SecretStore
+
+if TYPE_CHECKING:
+    from uniover_agent.adapters.tv_discovery import TvKindName
+    from uniover_agent.care_setup import DiagnosticsKit
+    from uniover_agent.core.tv.locator import TvIdentity
+
+# Cada comando importa só o que usa: a bandeja (`tray`) é um processo à parte que fica aberto o
+# dia todo e não carrega a conexão, a TV, o cofre nem a atualização. O auto-diagnóstico da versão
+# nova (`selfcheck`) importa todos estes, para uma candidata quebrada não passar por ele.
+LAZY_MODULES: Final = (
+    "uniover_agent.adapters.secret_store_keyring",
+    "uniover_agent.adapters.tv_locate",
+    "uniover_agent.adapters.tv_pairing",
+    "uniover_agent.adapters.windows_scheduling",
+    "uniover_agent.care_setup",
+    "uniover_agent.composition.connection",
+    "uniover_agent.composition.maintenance",
+    "uniover_agent.composition.pairing",
+    "uniover_agent.composition.pc",
+    "uniover_agent.composition.tv",
+)
+_KEYRING_STORE: Final = "uniover_agent.adapters.secret_store_keyring"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -101,6 +119,22 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+async def identify_tv(kind: TvKindName, host: str) -> TvIdentity | None:
+    """`tv_locate.identify_tv`, carregado só quando o `tv-pair` precisa."""
+    from uniover_agent.adapters.tv_locate import identify_tv as identify  # noqa: PLC0415
+
+    return await identify(kind, host)
+
+
+def _expected_errors() -> tuple[type[Exception], ...]:
+    """Os erros que viram uma frase (configuração e cofre), e não um rastro.
+
+    O cofre só é importado quando um comando o abre (ele carrega o keyring): se o módulo dele não
+    está carregado, nenhum `SecretStoreError` pode ter sido levantado."""
+    store = sys.modules.get(_KEYRING_STORE)
+    return (ConfigError,) if store is None else (ConfigError, store.SecretStoreError)
+
+
 class InvalidSettingsError(ConfigError):
     """A configuração recusada pelo pydantic; `fields` são os nomes dos campos (nunca valores)."""
 
@@ -137,6 +171,8 @@ def _keep_responsive() -> None:
     """A tarefa agendada dá ao agente e a quem o vigia CPU, memória e E/S baixas: devolve ao
     normal. Uma falha aqui (ctypes, Windows antigo) nunca impede a partida."""
     try:
+        from uniover_agent.adapters import windows_scheduling  # noqa: PLC0415
+
         windows_scheduling.keep_agent_responsive()
     except Exception:
         logging.getLogger("uniover_agent").warning(
@@ -144,7 +180,7 @@ def _keep_responsive() -> None:
         )
 
 
-def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
+def main(  # noqa: PLR0911, PLR0912, PLR0915 - um retorno e uma importação por comando
     argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None
 ) -> int:
     args = _parser().parse_args(argv)
@@ -169,15 +205,23 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
         system.configure_logging(settings.log_level, settings.log_file)
         kit: DiagnosticsKit | None = None
         if command in {"run", "self-update"} and settings.self_care:
+            from uniover_agent.care_setup import attach_log_handler, build_diagnostics  # noqa: PLC0415
+
             # Daqui em diante, todo erro registrado vira também uma ocorrência de diagnóstico.
             kit = build_diagnostics(SystemClock())
             attach_log_handler(kit)
 
         def open_store() -> SecretStore:
             # O cofre só é aberto quando o comando precisa dele.
-            return secrets or KeyringSecretStore()
+            if secrets is not None:
+                return secrets
+            from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore  # noqa: PLC0415
+
+            return KeyringSecretStore()
 
         if command == "pair":
+            from uniover_agent.composition import pairing  # noqa: PLC0415
+
             return asyncio.run(
                 pairing.pair(
                     settings,
@@ -189,8 +233,14 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
                 )
             )
         if command == "status":
+            from uniover_agent.composition import pairing  # noqa: PLC0415
+
             return asyncio.run(pairing.status(settings, open_store))
+        if command in {"tv-pair", "tv-find", "tv-volume"}:
+            from uniover_agent.composition import tv  # noqa: PLC0415
         if command == "tv-pair":
+            from uniover_agent.adapters.tv_pairing import ask_code_in_window  # noqa: PLC0415
+
             return asyncio.run(
                 tv.tv_pair(
                     settings,
@@ -207,6 +257,8 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             return asyncio.run(tv.tv_find(args.kind))
         if command == "tv-volume":
             return asyncio.run(tv.tv_volume(settings))
+        if command in {"self-update", "diagnose"}:
+            from uniover_agent.composition import maintenance  # noqa: PLC0415
         if command == "self-update":
             return maintenance.update_agent(
                 sync=not args.no_sync, settings=settings, kit=kit, apply=args.apply
@@ -214,6 +266,8 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
         if command == "diagnose":
             return asyncio.run(maintenance.diagnose(settings, repair=args.repair))
         if command == "pc-control":
+            from uniover_agent.composition import pc  # noqa: PLC0415
+
             return pc.pc_control(settings, args.state)
         if command == "tray":
             # pystray e Pillow sao opcionais para o processo principal: sem bandeja, a TV segue
@@ -225,6 +279,8 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
             # O lançador novo já foi destacado; o wrapper legado fica sem o código antigo e não
             # deve abrir uma segunda conexão com a API.
             return system.EXIT_OK
+        from uniover_agent.composition import connection  # noqa: PLC0415
+
         # Uma vez por processo (o laço abaixo recomeça quando a TV muda de endereço).
         _keep_responsive()
         while True:
@@ -240,7 +296,7 @@ def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
                 return code
             # O endereço novo da TV já está no arquivo: recomeça lendo a configuração de novo.
             settings = _load_settings()
-    except (ConfigError, SecretStoreError) as exc:
+    except _expected_errors() as exc:
         print(f"Erro: {exc}", file=sys.stderr)
         if command == "run" and not session_started():
             reason = "configuracao" if isinstance(exc, ConfigError) else "cofre"

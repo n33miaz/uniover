@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from uniover_agent import selfcheck
-from uniover_agent.adapters.self_update import UpdateResult
+from uniover_agent.adapters.update_basics import UpdateResult
 from uniover_agent.composition import maintenance as maintenance_module
 from uniover_agent.composition.maintenance import update_agent
 from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK

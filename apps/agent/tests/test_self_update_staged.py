@@ -14,11 +14,11 @@ from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
     SignedManifest,
-    UpdateResult,
     apply_prepared,
     candidate_env,
     self_update,
 )
+from uniover_agent.adapters.update_basics import UpdateResult, read_version
 
 OLD = "a" * 40
 NEW = "b" * 40
@@ -82,7 +82,7 @@ class Pc:
         return self_update(self.source, **options)
 
     def installed(self) -> str | None:
-        return module.read_version(pointer.current_app(self.base))
+        return read_version(pointer.current_app(self.base))
 
     def trial(self) -> str | None:
         path = self.base / "runtime" / "update-trial.txt"
@@ -106,7 +106,7 @@ def test_preparing_builds_the_new_version_beside_the_old_one_and_stops_there(pc:
     assert pc.installed() == OLD
     assert pointer.read(pc.base) is None
     staged = pointer.staged_app(pc.base, NEW)
-    assert module.read_version(staged) == NEW
+    assert read_version(staged) == NEW
     assert (staged / "tools" / "run-agent.ps1").is_file()
     # O ambiente é o guardado da versão, e o sync e o auto-diagnóstico rodaram NELA.
     assert pc.synced == [staged]
@@ -201,7 +201,7 @@ def test_applying_writes_the_pointer_and_keeps_the_old_one_to_go_back(pc: Pc) ->
     # A anterior é o layout de sempre, intacto, com o ambiente dele.
     assert resolved.previous == pointer.legacy_slot(pc.base)
     assert pc.installed() == NEW
-    assert module.read_version(pc.source) == OLD
+    assert read_version(pc.source) == OLD
     assert pc.trial() == f"{NEW}|0"
     assert pointer.read_prepared(pc.base) is None
 
