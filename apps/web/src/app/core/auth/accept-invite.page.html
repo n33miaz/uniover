@@ -31,7 +31,7 @@
           toggleLabel="Mostrar senha"
           i18n-toggleLabel="@@auth.invite.show-password"
           [invalid]="lengthRule() === 'invalid'"
-          [describedBy]="'invite-password-rules invite-password-hint'"
+          [describedBy]="'invite-password-rules'"
           [(value)]="password"
           (valueChange)="scheduleAnnouncement()"
         >
@@ -64,10 +64,6 @@
               }
             </li>
           </ul>
-
-          <p id="invite-password-hint" class="hint" i18n="@@auth.invite.password-hint">
-            Você pode recuperar a senha pelo e-mail depois de criar a conta.
-          </p>
         </app-auth-field>
 
         <app-auth-field

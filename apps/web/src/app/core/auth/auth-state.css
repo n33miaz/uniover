@@ -57,7 +57,7 @@
 
 /* Título curto numa linha só de 360 a 430px (o tamanho acompanha a largura); a quebra equilibrada é a reserva. */
 h1 {
-  font-size: clamp(1.25rem, 6.4vw, 1.5rem);
+  font-size: min(1.5rem, var(--auth-title));
   font-weight: 750;
   letter-spacing: -0.02em;
   text-wrap: balance;

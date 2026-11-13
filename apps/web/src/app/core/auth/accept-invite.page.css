@@ -1,10 +1,11 @@
 /* Título centrado, como nas outras telas de entrada; os rótulos e os campos seguem à esquerda, na largura toda. */
 h1 {
   margin-bottom: var(--space-6);
-  font-size: 1.75rem;
+  font-size: var(--auth-title);
   font-weight: 750;
   letter-spacing: -0.02em;
   text-align: center;
+  text-wrap: balance;
 }
 
 form {
@@ -100,13 +101,6 @@ app-auth-field {
   color: var(--a-bad);
 }
 
-.hint {
-  margin: var(--space-2) 0 0;
-  text-wrap: pretty;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
 /* Confirmação: indicador (não erro). "Conferem" é boa notícia; a divergência só aparece depois do foco sair ou de um envio. */
 .status {
   display: flex;
@@ -173,10 +167,13 @@ app-auth-field {
 }
 
 /*
- * Celular em pé e baixo: espaços menores, para o botão de enviar aparecer sem rolar. O requisito dos caracteres e o
- * aviso de que não há recuperação de senha ficam.
+ * Celular em pé e baixo: espaços menores, para o botão de enviar aparecer sem rolar. O requisito dos caracteres fica.
  */
 @media (max-height: 700px) and (max-width: 559px) {
+  h1 {
+    margin-bottom: var(--space-4);
+  }
+
   app-auth-field {
     margin-bottom: var(--space-3);
   }
@@ -188,10 +185,6 @@ app-auth-field {
 
   .rules {
     gap: var(--space-1);
-  }
-
-  .hint {
-    margin-top: var(--space-1);
   }
 
   .messages:not(:empty) {
