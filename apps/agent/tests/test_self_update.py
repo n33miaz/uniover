@@ -461,6 +461,7 @@ def test_uv_sync_runs_in_a_throwaway_environment_and_never_in_the_running_one(
         "C:/uv/uv.exe",
         "sync",
         "--frozen",
+        "--compile-bytecode",
         "--project",
         str(candidate),
         "--quiet",

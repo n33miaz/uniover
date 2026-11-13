@@ -27,6 +27,10 @@ $ErrorActionPreference = 'Stop'
 # O uv.lock manda em todo comando do uv do instalador (`uv run` incluido): um uv anterior a 0.9.8 nao entende o
 # `exclude-dependencies` do pyproject e, sem isto, refaria a resolucao trazendo o pacote `av` (uns 70 MB, bibliotecas GPL).
 $env:UV_FROZEN = '1'
+# Bytecode compilado no preparo (`uv sync`): sem ele, a primeira partida depois de uma atualizacao ou de uma paginacao
+# compila uns 800 modulos (medido: 4,4 s contra 1,1 s; ate 12 s no PC do dono). Custa +1,2 s no sync novo e +0,4 s no que
+# nao muda nada; o codigo do proprio agente e compilado pelo auto-diagnostico da candidata, que importa tudo.
+$env:UV_COMPILE_BYTECODE = '1'
 # A barra de progresso do Windows PowerShell 5.1 deixa o download dezenas de vezes mais lento.
 $ProgressPreference = 'SilentlyContinue'
 try {

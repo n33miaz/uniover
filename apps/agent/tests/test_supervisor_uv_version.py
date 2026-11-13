@@ -119,11 +119,16 @@ def test_a_uv_that_does_not_say_its_version_is_left_alone(pc: Pc) -> None:
 
 def test_every_uv_command_of_the_supervisor_runs_frozen(pc: Pc, tmp_path: Path) -> None:
     # `UV_FROZEN`: um `uv run` não refaz a resolução (que, num uv antigo, traria o `av` de volta).
+    # `UV_COMPILE_BYTECODE`: o sync deixa as dependências compiladas (partida fria mais curta).
     seen = tmp_path / "frozen.txt"
     pc.uv(
-        ['echo [%UV_FROZEN%]>>"%UNIOVER_TEST_FROZEN%"', "ping -n 300 127.0.0.1 > nul", "exit /b 0"]
+        [
+            'echo [%UV_FROZEN%][%UV_COMPILE_BYTECODE%]>>"%UNIOVER_TEST_FROZEN%"',
+            "ping -n 300 127.0.0.1 > nul",
+            "exit /b 0",
+        ]
     )
     with heartbeat(pc.alive), pc.running(UNIOVER_TEST_FROZEN=str(seen)):
         settle_agent(pc)
         assert wait_for(seen.exists, 20)
-    assert seen.read_text("ascii").split()[0] == "[1]"
+    assert seen.read_text("ascii").split()[0] == "[1][1]"

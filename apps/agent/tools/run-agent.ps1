@@ -27,6 +27,10 @@ try { $env:UNIOVER_SUPERVISOR_PROCESS = ([string]$PID) + ':' + [System.Diagnosti
 # "desatualizado" (um uv anterior a 0.9.8 nao entende o `exclude-dependencies` do pyproject e traria de volta o pacote
 # `av`, uns 70 MB com bibliotecas GPL). O `uv sync --frozen` ja era assim; isto estende o mesmo a `uv run`.
 $env:UV_FROZEN = '1'
+# Bytecode compilado no preparo (`uv sync`): sem ele, a primeira partida depois de uma atualizacao ou de uma paginacao
+# compila uns 800 modulos (medido: 4,4 s contra 1,1 s; ate 12 s no PC do dono). Custa +1,2 s no sync novo e +0,4 s no que
+# nao muda nada; o codigo do proprio agente e compilado pelo auto-diagnostico da candidata, que importa tudo.
+$env:UV_COMPILE_BYTECODE = '1'
 
 function Get-WindowsStartupNames {
     # Os dois rotulos vivem no mesmo arquivo que o instalador e o agente Python leem.
