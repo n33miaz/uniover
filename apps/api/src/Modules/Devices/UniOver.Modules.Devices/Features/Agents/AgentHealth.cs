@@ -21,17 +21,20 @@ internal enum AgentHealthState
 /// entram os sinais que já chegam pela conexão:
 /// <list type="bullet">
 /// <item>qualquer quadro do agente (o <c>agent.keepalive.v1</c> sai a cada
-/// <see cref="DevicesTransportOptions.AgentKeepAliveSeconds"/>, 25 s hoje, mesmo ocioso);</item>
+/// 5 s no agente de agora e 25 s no anterior, mesmo ocioso);</item>
 /// <item>a resposta de cada comando e quanto ela levou, comparada ao prazo do próprio comando;</item>
 /// <item>os prazos estourados, que só contam como "mudo" quando nem o batimento chegou.</item>
 /// </list>
 /// <para>
-/// Os limites derivam do intervalo do batimento, para valerem com o de 25 s de hoje e com um mais curto depois:
-/// <see cref="AgentHealthState.Unresponsive"/> com <see cref="DevicesTransportOptions.HealthSilence"/> (1,4 batimento: 35 s) sem
-/// quadro nenhum, com ou sem uso; ou com <see cref="DevicesTransportOptions.HealthStalledMisses"/> prazos estourados "mudos",
-/// cada um com o agente calado há ao menos <see cref="DevicesTransportOptions.HealthMuteAfter"/> (1,2 batimento: 30 s) e enviado
-/// depois do prazo mudo anterior (prazos que estouram juntos contam um só). Um prazo estourado com o batimento em dia (a TV
-/// abrindo a sessão devagar) é só "lento": o comando seguinte continua saindo. Qualquer quadro tira do "mudo"; a resposta em
+/// Os limites derivam do intervalo do batimento MEDIDO na sessão (<see cref="AgentConnections.LastKeepalive"/>), não de uma
+/// constante: o agente de agora bate a cada 5 s e o anterior a cada 25 s, e os dois convivem. Ver <see cref="SilenceFor"/> e
+/// <see cref="MuteAfterFor"/>: com 25 s, 35 s e 30 s (como sempre); com 5 s, os pisos de 15 s (3 batimentos perdidos) e 10 s.
+/// O intervalo configurado (<see cref="DevicesTransportOptions.AgentKeepAliveSeconds"/>, 25 s, o mais folgado) vale até o
+/// segundo batimento da sessão e é o teto do medido.
+/// <see cref="AgentHealthState.Unresponsive"/> com o silêncio sem quadro nenhum, com ou sem uso; ou com
+/// <see cref="DevicesTransportOptions.HealthStalledMisses"/> prazos estourados "mudos", cada um com o agente calado há ao menos
+/// o limite de "mudo" e enviado depois do prazo mudo anterior (prazos que estouram juntos contam um só). Um prazo estourado
+/// com o batimento em dia (a TV abrindo a sessão devagar) é só "lento": o comando seguinte continua saindo. Qualquer quadro tira do "mudo"; a resposta em
 /// dia tira do "lento". Só vale para o agente que declarou
 /// <c>transport.keepalive.v1</c>: sem o batimento, o silêncio de um agente ocioso não diria nada e, como o comando que falha
 /// na hora não sai, nada o tiraria do "mudo".
@@ -44,10 +47,11 @@ internal enum AgentHealthState
 /// </summary>
 internal sealed class AgentHealth : IDisposable
 {
+    private static readonly TimeSpan MinSilence = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan MinMuteAfter = TimeSpan.FromSeconds(10);
     private readonly TimeProvider _time;
     private readonly AgentConnections? _connections;
-    private readonly TimeSpan _silence;
-    private readonly TimeSpan _muteAfter;
+    private readonly TimeSpan _configuredBeat;
     private readonly int _stalledMisses;
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _agents = new(StringComparer.Ordinal);
@@ -58,8 +62,7 @@ internal sealed class AgentHealth : IDisposable
         ArgumentNullException.ThrowIfNull(options);
         _time = time;
         _connections = connections;
-        _silence = options.Value.HealthSilence;
-        _muteAfter = options.Value.HealthMuteAfter;
+        _configuredBeat = TimeSpan.FromSeconds(options.Value.AgentKeepAliveSeconds);
         _stalledMisses = options.Value.HealthStalledMisses;
     }
 
@@ -143,7 +146,7 @@ internal sealed class AgentHealth : IDisposable
 
         entry.Slow = true;
         var now = _time.GetUtcNow();
-        if (entry.LastFrameAt > sentAt || now - entry.LastFrameAt < _muteAfter)
+        if (entry.LastFrameAt > sentAt || now - entry.LastFrameAt < MuteAfterFor(BeatOf(agentId, entry)))
         {
             // Chegou algo depois do envio, ou o batimento ainda está em dia: o laço está vivo, o comando só demorou.
             entry.SilentMisses = 0;
@@ -190,25 +193,60 @@ internal sealed class AgentHealth : IDisposable
         _ => "ready",
     };
 
-    /// <summary>Quem chama segura o lock: anota o quadro e rearma o temporizador do silêncio.</summary>
+    /// <summary>
+    /// Sem nenhum quadro por isto, o agente está "sem resposta": 1,4 batimento, com o piso de 15 s. Com o de 25 s, 35 s (como
+    /// sempre); com o de 5 s, o piso: 3 batimentos perdidos (um batimento curto atrasado pela rede não é PC parado).
+    /// </summary>
+    internal static TimeSpan SilenceFor(TimeSpan beat) => Max(MinSilence, beat * 1.4);
+
+    /// <summary>
+    /// Um prazo estourado só conta como "mudo" com o agente calado há isto: 1,2 batimento, com o piso de 10 s (2 batimentos de
+    /// 5 s). Com o de 25 s, 30 s (como sempre). Sempre abaixo de <see cref="SilenceFor"/>.
+    /// </summary>
+    internal static TimeSpan MuteAfterFor(TimeSpan beat) => Max(MinMuteAfter, beat * 1.2);
+
+    private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
+
+    /// <summary>
+    /// O intervalo do batimento medido nesta sessão: o maior dos dois últimos (um par de batimentos colados, depois de um
+    /// atrasado pela rede, não aperta os limites), nunca acima do configurado (a volta de um PC paginado mede a pausa
+    /// inteira, e ela não afrouxa os limites além dos de sempre). Sem medida ainda, o configurado. Quem chama segura o lock.
+    /// </summary>
+    private TimeSpan BeatOf(string agentId, Entry entry)
+    {
+        if (_connections?.LastKeepalive(agentId) is { Interval: { } interval } sample
+            && sample.ReceivedAt != entry.LastBeatAt
+            && interval > TimeSpan.Zero)
+        {
+            entry.LastBeatAt = sample.ReceivedAt;
+            entry.PreviousInterval = entry.LastInterval;
+            entry.LastInterval = interval;
+        }
+
+        var measured = Max(entry.LastInterval ?? TimeSpan.Zero, entry.PreviousInterval ?? TimeSpan.Zero);
+        return measured > TimeSpan.Zero && measured < _configuredBeat ? measured : _configuredBeat;
+    }
+
+    /// <summary>Quem chama segura o lock: anota o quadro e rearma o temporizador do silêncio pelo batimento desta sessão.</summary>
     private void Seen(string agentId, Entry entry)
     {
         entry.LastFrameAt = _time.GetUtcNow();
         entry.Silent = false;
+        entry.SilenceAfter = SilenceFor(BeatOf(agentId, entry));
         if (entry.Timer is null)
         {
-            entry.Timer = _time.CreateTimer(_ => OnSilence(agentId, entry), null, _silence, Timeout.InfiniteTimeSpan);
+            entry.Timer = _time.CreateTimer(_ => OnSilence(agentId, entry), null, entry.SilenceAfter, Timeout.InfiniteTimeSpan);
         }
         else
         {
-            entry.Timer.Change(_silence, Timeout.InfiniteTimeSpan);
+            entry.Timer.Change(entry.SilenceAfter, Timeout.InfiniteTimeSpan);
         }
     }
 
     private void OnSilence(string agentId, Entry fired) => Change(agentId, entry =>
     {
         // Um temporizador de uma sessão anterior (já trocada) não vale para a de agora.
-        if (ReferenceEquals(entry, fired) && entry.Watched && _time.GetUtcNow() - entry.LastFrameAt >= _silence)
+        if (ReferenceEquals(entry, fired) && entry.Watched && _time.GetUtcNow() - entry.LastFrameAt >= entry.SilenceAfter)
         {
             entry.Silent = true;
         }
@@ -250,6 +288,16 @@ internal sealed class AgentHealth : IDisposable
 
         public DateTimeOffset LastFrameAt { get; set; }
 
+        /// <summary>O silêncio que vale desde o último quadro (do batimento medido quando ele chegou).</summary>
+        public TimeSpan SilenceAfter { get; set; }
+
+        /// <summary>Quando chegou o último batimento já contado e os dois últimos intervalos medidos (nulos sem medida).</summary>
+        public DateTimeOffset LastBeatAt { get; set; }
+
+        public TimeSpan? LastInterval { get; set; }
+
+        public TimeSpan? PreviousInterval { get; set; }
+
         public int SilentMisses { get; set; }
 
         public DateTimeOffset LastMuteMissAt { get; set; }
@@ -270,6 +318,9 @@ internal sealed class AgentHealth : IDisposable
 
         public void Clear()
         {
+            LastBeatAt = default;
+            LastInterval = null;
+            PreviousInterval = null;
             SilentMisses = 0;
             LastMuteMissAt = DateTimeOffset.MinValue;
             Slow = false;
