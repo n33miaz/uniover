@@ -71,6 +71,35 @@ const banner = (page: Page) =>
 const noController = (page: Page) =>
   page.evaluate(() => navigator.serviceWorker.controller === null);
 
+/**
+ * O ciclo do worker terminou nesta aba: ele comanda a página, está `activated` e não há outro instalando nem esperando.
+ * O aviso só nasce de `statechange` para `installed` ou de um worker em espera, e esses eventos chegam à aba antes de o
+ * estado dela virar `activated`: daqui em diante não há de onde vir um aviso tardio. Dois quadros deixam o Angular pintar.
+ */
+async function lifecycleSettled(page: Page): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const registration = await navigator.serviceWorker.getRegistration();
+          const active = registration?.active;
+          return (
+            !!active &&
+            active.state === 'activated' &&
+            !registration.installing &&
+            !registration.waiting &&
+            navigator.serviceWorker.controller?.scriptURL === active.scriptURL
+          );
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))),
+  );
+}
+
 test.describe('primeira visita com o worker ainda instalando', () => {
   test('o worker que instala e assume a página não acende o aviso de versão nova', async ({
     page,
@@ -82,8 +111,8 @@ test.describe('primeira visita com o worker ainda instalando', () => {
     expect(await noController(page)).toBe(true);
     await expect(banner(page)).toHaveCount(0);
     await waitForServiceWorkerControl(page);
-    // Quando o worker assume, dá tempo de qualquer aviso tardio aparecer.
-    await page.waitForTimeout(2_000);
+    // Quando o worker assume, espera o ciclo dele acabar: um aviso tardio já teria aparecido.
+    await lifecycleSettled(page);
     await expect(banner(page)).toHaveCount(0);
   });
 
@@ -98,7 +127,7 @@ test.describe('primeira visita com o worker ainda instalando', () => {
     await page.goto(`${origin}/`);
     await expect(page.locator('article.card').first()).toBeVisible();
     await waitForServiceWorkerControl(page);
-    await page.waitForTimeout(2_000);
+    await lifecycleSettled(page);
     await expect(banner(page)).toHaveCount(0);
   });
 
@@ -113,7 +142,7 @@ test.describe('primeira visita com o worker ainda instalando', () => {
     for (const [index, path] of paths.entries()) await pages[index].goto(`${origin}${path}`);
     for (const open of pages) await expect(banner(open)).toHaveCount(0);
     await waitForServiceWorkerControl(page);
-    await page.waitForTimeout(3_000);
+    for (const open of pages) await lifecycleSettled(open);
     for (const open of pages) await expect(banner(open)).toHaveCount(0);
   });
 });
