@@ -47,6 +47,7 @@ from uniover_agent.ports.pc_direct import (
     PeerCallbacks,
 )
 from uniover_agent.ports.pc_lane import LaneHost
+from uniover_agent.ports.power_ids import PowerIdStore
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
@@ -173,6 +174,7 @@ __all__ = [
     "PollPending",
     "PollResult",
     "PollSlowDown",
+    "PowerIdStore",
     "SecretStore",
     "Sender",
     "ServerRestartNow",

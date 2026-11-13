@@ -28,6 +28,7 @@ from uniover_agent.adapters.network_change import network_change_watcher
 from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
 from uniover_agent.adapters.pc_device_store import JsonDeviceStore
+from uniover_agent.adapters.power_id_file import PowerIdFile
 from uniover_agent.adapters.run_state import PreviousRun, RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
 from uniover_agent.adapters.single_instance import (
@@ -791,6 +792,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         ),
         envelopes,
         transport,
+        # Os ids de POWER já aceitos sobrevivem a reinício e hibernação (POWER alterna a TV).
+        power_store=PowerIdFile(installation_base() / "runtime"),
         background_types=tv.background_commands if tv is not None else (),
         silent_types=tv.silent_commands if tv is not None else (),
         # Comandos de fundo (limpeza, TV Livre, busca) são longos por natureza: só teclas têm teto.
@@ -1190,6 +1193,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
                     _log.error("a API não confirmou a passagem a tempo")
                     raise HandoverTimeout
             await clock.sleep(HANDOVER_POLL_SECONDS)
+        # Sob a trava, antes de virar dona: a antiga ainda gravou POWER depois que esta nascer.
+        await process.refresh_power_ids()
         previous = begin_shared_state()
         if (
             pc is not None
