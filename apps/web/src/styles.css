@@ -60,11 +60,13 @@
    * gestos do Android quando o app ocupa a tela toda); `--safe-floor` é um piso para Android com barra de gestos que
    * não informa nada (inset 0) e deixaria o botão colado na borda. Todo rodapé, folha, aviso e botão fixo embaixo usa
    * `--safe-bottom`, nunca `env(safe-area-inset-bottom)` solto. `--kb-inset` é quanto o teclado virtual cobre da
-   * janela (posto por `watchKeyboardInset`; 0 quando o navegador já encolhe a página sozinho).
+   * janela (posto por `watchKeyboardInset`; 0 quando o navegador já encolhe a página sozinho). Com o teclado aberto
+   * (`--kb-inset` vale ao menos 80 px) `--safe-bottom` vira 0: ele cobre o home indicator, mas o iOS segue informando o
+   * inset, e todo rodapé que sobe por `--kb-inset` somaria os dois.
    */
   --safe-inset: env(safe-area-inset-bottom, 0px);
   --safe-floor: 0px;
-  --safe-bottom: max(var(--safe-inset), var(--safe-floor));
+  --safe-bottom: max(0px, max(var(--safe-inset), var(--safe-floor)) - var(--kb-inset) * 100);
   --kb-inset: 0px;
 
   /* Movimento: curtos, sem rebote; quem tem `prefers-reduced-motion` cai no estado final. */
