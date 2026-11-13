@@ -532,7 +532,9 @@ import { AssessmentDetailSkeleton } from './assessment-skeletons';
       height: 100dvh;
       max-width: none;
       max-height: none;
-      padding: var(--space-3);
+      box-sizing: border-box;
+      padding: calc(var(--space-3) + env(safe-area-inset-top)) var(--space-3)
+        calc(var(--space-3) + var(--safe-bottom));
       border: 0;
       background: var(--a-surface);
       color: var(--a-ink);
@@ -547,7 +549,7 @@ import { AssessmentDetailSkeleton } from './assessment-skeletons';
     .preview img {
       display: block;
       max-width: 100%;
-      max-height: calc(100dvh - 80px);
+      max-height: calc(100dvh - 80px - env(safe-area-inset-top) - var(--safe-bottom));
       margin: 0 auto;
       object-fit: contain;
     }
