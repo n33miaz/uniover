@@ -136,6 +136,8 @@ def net_problem(state: TrayState, inputs: TrayInputs) -> NetProblem | None:
     """O motivo vale só para "reconectando" ou "sem conexão", e depois de um minuto de queda."""
     if state not in {"reconnecting", "error"} or inputs.net_problem is None:
         return None
+    if inputs.heartbeat_age is not None and inputs.heartbeat_age > HEARTBEAT_STALE:
+        return None  # o agente parou: o motivo gravado por ele já não vale (o cabo não resolve)
     if inputs.since is None or inputs.now - inputs.since < NET_PROBLEM_AFTER:
         return None
     return inputs.net_problem
