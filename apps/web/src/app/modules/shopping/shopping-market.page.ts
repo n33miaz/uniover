@@ -7,6 +7,7 @@ import { categoryLabel, variantsOf, type CategoryKey } from './shopping-categori
 import { parseEntry } from './shopping-entry';
 import { formatMoney, formatQuantity, moneyField } from './shopping-format';
 import { ShoppingItemIcon } from './shopping-item-icon';
+import { ShoppingOpening } from './shopping-opening';
 import { ShoppingItemSheet, type SheetResult } from './shopping-item-sheet';
 import {
   budgetState,
@@ -29,7 +30,14 @@ import { suggestNames } from './shopping-suggest';
  */
 @Component({
   selector: 'app-shopping-market-page',
-  imports: [NgTemplateOutlet, RouterLink, ShoppingAdviceCard, ShoppingItemIcon, ShoppingItemSheet],
+  imports: [
+    NgTemplateOutlet,
+    RouterLink,
+    ShoppingAdviceCard,
+    ShoppingItemIcon,
+    ShoppingItemSheet,
+    ShoppingOpening,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrls: ['./shopping-screen.css', './shopping-market.page.css'],
   templateUrl: './shopping-market.page.html',

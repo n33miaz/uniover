@@ -4,11 +4,7 @@
   [attr.data-screen-ready]="'shopping'"
 >
   @if (!actions.store()) {
-    <div class="ui-group" aria-hidden="true">
-      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
-      <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
-    </div>
-    <p class="ui-visually-hidden" role="status" i18n="@@shopping.loading">Abrindo a lista</p>
+    <app-shopping-opening />
   } @else {
     @if (notice(); as text) {
       <p class="ui-notice warn" role="alert">{{ text }}</p>

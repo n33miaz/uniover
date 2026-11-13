@@ -160,6 +160,12 @@ export class ShoppingSession {
   /** As Compras da conta em uso, ou `null` enquanto a conta não é conhecida ou o banco dela não foi lido. */
   readonly store = signal<ShoppingStore | null>(null);
 
+  /**
+   * O banco do aparelho não abriu (bloqueado, sem espaço, modo privado). Enquanto for verdade a tela diz isso e oferece
+   * `retry`, em vez de ficar para sempre na espera.
+   */
+  readonly failed = signal(false);
+
   /** Cada abertura leva um número: só a mais recente publica as Compras; a que perdeu a corrida se fecha. */
   private generation = 0;
 
@@ -242,6 +248,11 @@ export class ShoppingSession {
     return true;
   }
 
+  /** Tenta abrir de novo o banco da conta em uso, depois de uma falha. */
+  retry(): void {
+    if (this.accountId !== null) void this.open(this.accountId);
+  }
+
   private async use(accountId: string | null): Promise<void> {
     if (accountId === this.accountId) return;
     this.accountId = accountId;
@@ -252,6 +263,7 @@ export class ShoppingSession {
     const generation = ++this.generation;
     this.store()?.close();
     this.store.set(null);
+    this.failed.set(false);
     if (accountId === null) return;
 
     let store: ShoppingStore | null = null;
@@ -265,8 +277,9 @@ export class ShoppingSession {
       });
       await store.load();
     } catch {
-      // Sem armazenamento no aparelho (modo privado): a tela fica na espera em vez de mostrar uma lista que não guarda.
+      // Sem armazenamento no aparelho: nada de lista que não guarda. A tela diz o que houve e oferece tentar de novo.
       store?.close();
+      if (generation === this.generation) this.failed.set(true);
       return;
     }
     if (generation !== this.generation) {

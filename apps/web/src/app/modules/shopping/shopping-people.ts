@@ -12,6 +12,8 @@ import { ShoppingPeopleApi, type ShoppingPerson } from './shopping-people-api';
 
 /** O `type` (sufixo) da recusa de incluir quem já tem a própria lista com itens ou outras pessoas. */
 const MEMBER_ELSEWHERE = 'shopping-member-in-another-group';
+/** O `type` da recusa de quem mudou de grupo no meio do pedido: nada foi feito, tentar de novo vale. */
+const GROUP_CHANGED = 'shopping-group-changed';
 
 /**
  * As pessoas do grupo de compras: quem divide a lista, quem pode entrar e a saída. Só quem criou o grupo adiciona e
@@ -107,6 +109,9 @@ export class ShoppingPeople {
   private failure(kind: string | undefined, network: boolean): string {
     if (kind === MEMBER_ELSEWHERE) {
       return $localize`:@@shopping.people.elsewhere:Essa pessoa já tem uma lista com itens. Ela precisa esvaziar a dela antes.`;
+    }
+    if (kind === GROUP_CHANGED) {
+      return $localize`:@@shopping.group-changed:A situação mudou. Tente de novo.`;
     }
     return network
       ? $localize`:@@shopping.people.offline:Sem sinal. Tente de novo quando voltar.`

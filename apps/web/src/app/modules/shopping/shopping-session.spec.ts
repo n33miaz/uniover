@@ -81,6 +81,39 @@ describe('ShoppingSession', () => {
     opened = [];
   });
 
+  it('a database that does not open shows a failure, not a wait without end, and retry opens it', async () => {
+    const session = start();
+    expect(session.failed()).toBe(false);
+    opened[0].breakDown();
+    await settle();
+
+    expect(session.store()).toBeNull();
+    expect(session.failed()).toBe(true);
+    expect(opened[0].closed).toBe(true);
+
+    session.retry();
+    expect(session.failed()).toBe(false);
+    expect(opened).toHaveLength(2);
+    opened[1].finish();
+    await settle();
+
+    expect(session.failed()).toBe(false);
+    expect(session.store()).not.toBeNull();
+  });
+
+  it('a failed opening of an account the person has left is not shown as a failure of the new one', async () => {
+    const session = start();
+    account.set('b');
+    TestBed.tick();
+    opened[0].breakDown();
+    await settle();
+
+    expect(session.failed()).toBe(false);
+    opened[1].finish();
+    await settle();
+    expect(session.store()).not.toBeNull();
+  });
+
   it('switching A, B, A while the first opening waits keeps one store of A and closes the one that lost', async () => {
     const session = start();
     account.set('b');

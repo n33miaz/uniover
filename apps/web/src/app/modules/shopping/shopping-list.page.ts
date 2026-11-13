@@ -5,6 +5,7 @@ import { categoryLabel, variantsOf, type CategoryKey } from './shopping-categori
 import { parseEntry } from './shopping-entry';
 import { formatQuantity } from './shopping-format';
 import { ShoppingItemIcon } from './shopping-item-icon';
+import { ShoppingOpening } from './shopping-opening';
 import { ShoppingItemSheet, type SheetItem, type SheetResult } from './shopping-item-sheet';
 import { listSections, type ListRow } from './shopping-model';
 import { suggestNames } from './shopping-suggest';
@@ -16,7 +17,7 @@ import { suggestNames } from './shopping-suggest';
  */
 @Component({
   selector: 'app-shopping-list-page',
-  imports: [RouterLink, ShoppingItemIcon, ShoppingItemSheet],
+  imports: [RouterLink, ShoppingItemIcon, ShoppingItemSheet, ShoppingOpening],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrls: ['./shopping-screen.css', './shopping-list.page.css'],
   templateUrl: './shopping-list.page.html',

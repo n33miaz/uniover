@@ -1,6 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ShoppingActions } from './shopping-actions';
+import { ShoppingOpening } from './shopping-opening';
+import { ShoppingSession } from './shopping-session';
 import { closedPurchases, neededCount, pickedTotal } from './shopping-model';
 import { formatDay, formatMoney } from './shopping-format';
 
@@ -18,17 +21,18 @@ const ICONS = {
  */
 @Component({
   selector: 'app-shopping-hub-page',
-  imports: [RouterLink],
+  imports: [RouterLink, NgTemplateOutlet, ShoppingOpening],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrls: ['./shopping-screen.css', './shopping-hub.page.css'],
   template: `
     <section class="screen" [attr.data-screen-ready]="'shopping'">
       @if (!actions.store()) {
-        <div class="ui-group" aria-hidden="true">
-          <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
-          <div class="ui-row"><span class="ui-skeleton ui-wait line"></span></div>
-        </div>
-        <p class="ui-visually-hidden" role="status" i18n="@@shopping.loading">Abrindo a lista</p>
+        <app-shopping-opening />
+        @if (failed()) {
+          <div class="ui-group">
+            <ng-container *ngTemplateOutlet="details" />
+          </div>
+        }
       } @else {
         <nav class="paths" aria-label="Compras" i18n-aria-label="@@shopping.hub.label">
           <a class="path" routerLink="lista">
@@ -89,22 +93,26 @@ const ICONS = {
               </span>
             </span>
           </a>
-          <a class="ui-row" routerLink="detalhes">
-            <span class="ui-tile" aria-hidden="true"
-              ><svg viewBox="0 0 24 24"><path [attr.d]="icons.gear" /></svg
-            ></span>
-            <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@shopping.details.title">Detalhes</span>
-              <span class="ui-row-sub" i18n="@@shopping.hub.details-hint">Quem vê e convites</span>
-            </span>
-          </a>
+          <ng-container *ngTemplateOutlet="details" />
         </div>
       }
     </section>
+    <ng-template #details>
+      <a class="ui-row" routerLink="detalhes">
+        <span class="ui-tile" aria-hidden="true"
+          ><svg viewBox="0 0 24 24"><path [attr.d]="icons.gear" /></svg
+        ></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@shopping.details.title">Detalhes</span>
+          <span class="ui-row-sub" i18n="@@shopping.hub.details-hint">Quem vê e convites</span>
+        </span>
+      </a>
+    </ng-template>
   `,
 })
 export class ShoppingHubPage {
   protected readonly actions = inject(ShoppingActions);
+  protected readonly failed = inject(ShoppingSession).failed;
   protected readonly icons = ICONS;
 
   protected readonly listCount = computed(() => neededCount(this.actions.snapshot()));
