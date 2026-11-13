@@ -1,7 +1,10 @@
 import { HttpClient } from '@angular/common/http';
 import { DestroyRef, Injectable, effect, inject, signal, untracked } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { Observable, TimeoutError, catchError, firstValueFrom, throwError, timeout } from 'rxjs';
+import { networkProblem, problemOf } from '../../core/auth/api-problem';
 import { APP_CONFIG } from '../../core/config/app-config';
+import { ConnectivityService } from '../../core/connectivity/connectivity.service';
+import { ResumeGrace } from '../../core/connectivity/resume-grace';
 import { uuidV7 } from '../../core/offline-queue/uuid-v7';
 import { AccountScope } from '../../core/session/account-scope';
 import { SHOPPING_DB_FACTORY } from './shopping-db';
@@ -84,11 +87,30 @@ export class LiveWatch {
   }
 }
 
+/**
+ * O prazo de cada pedido de Compras. Um pedido que fica pendurado (a conexão morreu sem aviso, comum logo ao voltar ao
+ * app) prenderia o envio para sempre em "Salvando": passado o prazo, o pedido é cancelado e conta como sem resposta,
+ * como uma queda de rede (o envio fica na fila e sai de novo).
+ */
+export const SHOPPING_REQUEST_TIMEOUT_MS = 15_000;
+
+/** O pedido com prazo: esgotado, é cancelado e vira "sem resposta do servidor". */
+function withDeadline<T>(request: Observable<T>): Promise<T> {
+  return firstValueFrom(
+    request.pipe(
+      timeout({ first: SHOPPING_REQUEST_TIMEOUT_MS }),
+      catchError((error: unknown) =>
+        throwError(() => (error instanceof TimeoutError ? networkProblem() : error)),
+      ),
+    ),
+  );
+}
+
 /** A conversa com a API: o lote de operações, o feed e o preço da última vez. */
 export function httpShoppingTransport(http: HttpClient): ShoppingTransport {
   return {
     send: (operations: readonly PendingOperation[]) =>
-      firstValueFrom(
+      withDeadline(
         http.post<OperationResult[]>(`${BASE}/operations`, {
           // A hora do envio, no mesmo relógio de `at`: o servidor desconta a diferença entre os dois relógios, então um
           // aparelho com a hora errada não perde (nem ganha) a disputa entre dois preços.
@@ -105,9 +127,9 @@ export function httpShoppingTransport(http: HttpClient): ShoppingTransport {
         }),
       ),
     changes: (after: number) =>
-      firstValueFrom(http.get<ChangesPage>(`${BASE}/changes`, { params: { after } })),
+      withDeadline(http.get<ChangesPage>(`${BASE}/changes`, { params: { after } })),
     lastPrice: async (productId: string) => {
-      const found = await firstValueFrom(
+      const found = await withDeadline(
         http.get<{ unitPrice: number } | null>(`${BASE}/products/${productId}/last-price`),
       );
       return found?.unitPrice ?? null;
@@ -127,8 +149,13 @@ export class ShoppingSession {
   private readonly http = inject(HttpClient);
   private readonly account = inject(AccountScope);
   private readonly openDb = inject(SHOPPING_DB_FACTORY);
+  /** O "tem rede" do app, que não cai pelo "offline" de um instante que o navegador diz logo ao voltar. */
+  private readonly connectivity = inject(ConnectivityService);
+  private readonly grace = inject(ResumeGrace);
   private accountId: string | null = null;
   private readonly live = new LiveWatch(() => void this.store()?.sync());
+  /** A tentativa guardada para o fim da carência da volta ao app (ver `holdFailure`). */
+  private cancelGraceRetry: (() => void) | null = null;
 
   /** As Compras da conta em uso, ou `null` enquanto a conta não é conhecida ou o banco dela não foi lido. */
   readonly store = signal<ShoppingStore | null>(null);
@@ -156,24 +183,34 @@ export class ShoppingSession {
     const sync = (): void => void this.store()?.sync();
     const watch = (): void => this.watch(this.store()?.shared() ?? false);
     const touched = (): void => this.live.wake();
-    const online = (): void => {
+    // A rede voltou: envia o que esperava. Vem do estado de conexão do app, que segura o "offline" de um instante da volta.
+    effect(() => {
+      const online = this.connectivity.online();
+      untracked(() => {
+        if (online) sync();
+        watch();
+      });
+    });
+    // Saiu de vista: a consulta periódica para. A volta é tratada abaixo, pela carência.
+    const hidden = (): void => {
+      if (document.visibilityState === 'hidden') watch();
+    };
+    // Voltou ao app (aba de volta à vista ou página restaurada do cache, o caso do Safari do iPhone): a lista guardada já
+    // está na tela; o envio e o feed saem em silêncio.
+    const offGrace = this.grace.subscribe((event) => {
+      if (event !== 'begin') return;
       sync();
       watch();
-    };
-    const visible = (): void => {
-      if (document.visibilityState === 'visible') sync();
-      watch();
-      if (document.visibilityState === 'visible') this.live.wake();
-    };
-    window.addEventListener('online', online);
-    window.addEventListener('offline', watch);
-    document.addEventListener('visibilitychange', visible);
+      this.live.wake();
+    });
+    document.addEventListener('visibilitychange', hidden);
     document.addEventListener('pointerdown', touched, { passive: true });
     document.addEventListener('keydown', touched);
     inject(DestroyRef).onDestroy(() => {
-      window.removeEventListener('online', online);
-      window.removeEventListener('offline', watch);
-      document.removeEventListener('visibilitychange', visible);
+      offGrace();
+      this.cancelGraceRetry?.();
+      this.cancelGraceRetry = null;
+      document.removeEventListener('visibilitychange', hidden);
       document.removeEventListener('pointerdown', touched);
       document.removeEventListener('keydown', touched);
       this.live.stop();
@@ -184,11 +221,21 @@ export class ShoppingSession {
 
   /** Liga a consulta periódica só enquanto ela serve a alguém: grupo com mais gente, tela à vista e rede. */
   private watch(shared: boolean): void {
-    this.live.set(
-      shared,
-      document.visibilityState === 'visible',
-      typeof navigator === 'undefined' || navigator.onLine,
-    );
+    this.live.set(shared, document.visibilityState === 'visible', this.connectivity.online());
+  }
+
+  /**
+   * Falha sem resposta logo ao voltar ao app: a tela fica como estava e a tentativa sai de novo quando a carência acabar;
+   * se falhar de novo fora dela, aí sim conta.
+   */
+  private holdFailure(error: unknown): boolean {
+    if (problemOf(error)?.isNetwork !== true || !this.grace.active()) return false;
+    this.cancelGraceRetry?.();
+    this.cancelGraceRetry = this.grace.afterEnd(() => {
+      this.cancelGraceRetry = null;
+      void this.store()?.sync();
+    });
+    return true;
   }
 
   private async use(accountId: string | null): Promise<void> {
@@ -199,10 +246,11 @@ export class ShoppingSession {
     if (accountId === null) return;
 
     const store = new ShoppingStore(this.openDb(accountId), httpShoppingTransport(this.http), {
-      online: () => typeof navigator === 'undefined' || navigator.onLine,
+      online: () => this.connectivity.online(),
       canSend: () => this.account.isSessionOf(accountId),
       now: () => Date.now(),
       newId: uuidV7,
+      holdFailure: (error) => this.holdFailure(error),
     });
     try {
       await store.load();

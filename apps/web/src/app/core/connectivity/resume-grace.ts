@@ -49,8 +49,14 @@ export class ResumeGrace {
       this.wasHidden = false;
       this.begin();
     };
+    // Há navegadores que, na mesma volta, avisam `visibilitychange` E `pageshow` persistido (em qualquer ordem): é uma volta
+    // só. A página restaurada só abre outra carência se ficou oculta desde a última volta ou se a carência já acabou;
+    // senão cada módulo leria e enviaria tudo em dobro.
     const onPageShow = (event: Event) => {
-      if ((event as PageTransitionEvent).persisted) this.begin();
+      if (!(event as PageTransitionEvent).persisted) return;
+      if (this._active() && !this.wasHidden) return;
+      this.wasHidden = false;
+      this.begin();
     };
     this.doc.addEventListener('visibilitychange', onVisibility);
     win?.addEventListener('pageshow', onPageShow);

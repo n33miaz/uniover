@@ -377,3 +377,62 @@ test('no mercado, com o teclado aberto, o campo e as sugestões ficam inteiros a
   await expectNoHorizontalScroll(page);
   await shot(page, testInfo, 'mercado');
 });
+
+test.describe('Compras: voltar ao app', () => {
+  /** O app volta do segundo plano: a página fica oculta e depois à vista de novo, como o navegador faz. */
+  const comeBack = (page: Page) =>
+    page.evaluate(() => {
+      const set = (value: string) => {
+        Object.defineProperty(document, 'visibilityState', { value, configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+      set('hidden');
+      set('visible');
+    });
+
+  test('a lista segue na tela e o envio que cai na volta é refeito em silêncio, sem pedir para tentar de novo', async ({
+    context,
+    page,
+  }) => {
+    await openList(page);
+    await add(page, 'Leite');
+    await synced(page);
+
+    // Sem sinal, a pessoa põe mais um item e fecha o app; o sinal volta enquanto ele está em segundo plano.
+    await context.setOffline(true);
+    identity.offline = true;
+    await add(page, 'Pão');
+    await expect(page.getByText('Sem sinal')).toBeVisible();
+
+    // O primeiro envio depois da volta sai numa conexão que o sistema já derrubou.
+    let dropped = 0;
+    await page.route('**/api/v1/shopping/operations', (route) => {
+      if (route.request().method() === 'POST' && dropped === 0) {
+        dropped++;
+        return route.abort('internetdisconnected');
+      }
+      return route.fallback();
+    });
+    // Guarda se o botão de tentar de novo chegou a aparecer, nem que por um instante.
+    await page.evaluate(() => {
+      const win = window as unknown as Record<string, unknown>;
+      win['sawRetry'] = false;
+      new MutationObserver(() => {
+        if (document.body.textContent?.includes('Tentar Enviar de Novo')) win['sawRetry'] = true;
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+
+    await comeBack(page);
+    identity.offline = false;
+    await context.setOffline(false);
+
+    await expect.poll(() => dropped).toBe(1);
+    await expect(page.locator('.ui-row-title', { hasText: 'Leite' })).toBeVisible();
+    await expect(page.locator('.ui-row-title', { hasText: 'Pão' })).toBeVisible();
+    await expect(page.locator('.sync')).toBeEmpty({ timeout: 15_000 });
+    expect(
+      await page.evaluate(() => (window as unknown as Record<string, unknown>)['sawRetry']),
+    ).toBe(false);
+    expect(shopping.rows('product').map((row) => row.payload['name'])).toContain('Pão');
+  });
+});

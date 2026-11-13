@@ -51,6 +51,30 @@ describe('ResumeGrace', () => {
     expect(grace.active()).toBe(true);
   });
 
+  it('a return announced by both "visible" and a restored page is one return, in either order', () => {
+    const grace = TestBed.inject(ResumeGrace);
+    const begins: string[] = [];
+    grace.subscribe((event) => {
+      if (event === 'begin') begins.push(event);
+    });
+    const restored = () => {
+      const event = new Event('pageshow') as PageTransitionEvent;
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+    };
+
+    setVisibility('hidden');
+    setVisibility('visible');
+    restored();
+    expect(begins).toHaveLength(1);
+
+    // A volta seguinte (a página ficou oculta de novo) conta, com o aviso de restauração vindo primeiro desta vez.
+    setVisibility('hidden');
+    restored();
+    setVisibility('visible');
+    expect(begins).toHaveLength(2);
+  });
+
   it('a new return while it is open starts the time again', async () => {
     const grace = TestBed.inject(ResumeGrace);
     grace.begin();
