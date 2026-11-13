@@ -9,6 +9,7 @@ describe('SystemHealthSection', () => {
     tvs: vi.fn(),
     deploymentVersion: vi.fn(),
     deadLetters: vi.fn(),
+    parity: vi.fn(),
   };
 
   beforeEach(() => {
@@ -40,6 +41,7 @@ describe('SystemHealthSection', () => {
     system.deadLetters
       .mockReset()
       .mockResolvedValue({ total: 0, items: [], unavailableModules: [] });
+    system.parity.mockReset().mockResolvedValue({ windowMinutes: 30, agents: [] });
     TestBed.configureTestingModule({
       providers: [{ provide: SystemApi, useValue: system }],
     });
@@ -212,5 +214,83 @@ describe('SystemHealthSection', () => {
       expect(el.querySelector('app-loading-skeleton')).toBeNull();
     });
     expect(el.querySelectorAll('.metric')).toHaveLength(5);
+  });
+
+  async function ownerView() {
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const values = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('.parity-list dd')).map((dd) => dd.textContent?.trim());
+
+  it('shows the four parity numbers of each computer, with the goal and the reference', async () => {
+    system.parity.mockResolvedValue({
+      windowMinutes: 30,
+      agents: [
+        {
+          agentId: 'sala',
+          directSeconds: 270,
+          cloudSeconds: 30,
+          directPercent: 90,
+          replySamples: 40,
+          replyP50Ms: 210,
+          replyP95Ms: 460,
+          loopLagSamples: 300,
+          loopLagP99Ms: 140,
+          unanswered: 2,
+        },
+      ],
+    });
+    const root = await ownerView();
+
+    const parity = root.querySelector('.parity');
+    expect(parity?.textContent).toContain('Resposta do controle · 30 min');
+    expect(parity?.querySelector('.parity-name')?.textContent).toContain('PC da sala');
+    expect(values(root)).toEqual(['90%', '210 ms típico · 460 ms lento', '140 ms', '2']);
+    const cells = Array.from(root.querySelectorAll('.parity-list dd'));
+    expect(cells[0].classList).toContain('ok');
+    expect(cells[2].classList).toContain('bad');
+    expect(cells[3].classList).toContain('bad');
+    expect(parity?.textContent).toContain('Meta: direta 90% ou mais, atraso até 100 ms');
+    expect(parity?.textContent).toContain('No Unified Remote, em casa: 5 a 20 ms');
+  });
+
+  it('shows a dash for what was not measured yet, such as the loop lag of an older computer program', async () => {
+    system.parity.mockResolvedValue({
+      windowMinutes: 30,
+      agents: [
+        {
+          agentId: 'sala',
+          directSeconds: 0,
+          cloudSeconds: 12,
+          directPercent: 0,
+          replySamples: 3,
+          replyP50Ms: null,
+          replyP95Ms: null,
+          loopLagSamples: 0,
+          loopLagP99Ms: null,
+          unanswered: 0,
+        },
+      ],
+    });
+    const root = await ownerView();
+
+    expect(values(root)).toEqual(['0%', '—', '—', 'Nenhum']);
+    expect(root.querySelectorAll('.parity-list dd')[3].classList).toContain('ok');
+  });
+
+  it('lists a computer with no use in the window with dashes, and keeps the card when the reading fails', async () => {
+    system.parity.mockRejectedValue(new Error('boom'));
+    const root = await ownerView();
+
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(root.querySelectorAll('.metric')).toHaveLength(5);
+    expect(values(root)).toEqual(['—', '—', '—', '—']);
   });
 });

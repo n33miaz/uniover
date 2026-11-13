@@ -73,6 +73,51 @@
         </ul>
       </section>
     }
+    @if (parityRows().length > 0) {
+      <section class="parity" aria-labelledby="health-parity-title">
+        <h3 id="health-parity-title" class="modules-title" i18n="@@settings.system.health.parity">
+          Resposta do controle · {{ parityWindow() }} min
+        </h3>
+        @for (row of parityRows(); track row.slug) {
+          <div class="parity-pc">
+            <span class="parity-name">{{ row.name }}</span>
+            <dl class="parity-list">
+              <div>
+                <dt i18n="@@settings.system.health.parity-direct">Ligação direta</dt>
+                <dd [class.ok]="row.directTone === 'ok'" [class.bad]="row.directTone === 'bad'">
+                  {{ row.direct }}
+                </dd>
+              </div>
+              <div>
+                <dt i18n="@@settings.system.health.parity-reply">Pela internet</dt>
+                <dd>{{ row.reply }}</dd>
+              </div>
+              <div>
+                <dt i18n="@@settings.system.health.parity-lag">Atraso no PC</dt>
+                <dd [class.ok]="row.lagTone === 'ok'" [class.bad]="row.lagTone === 'bad'">
+                  {{ row.lag }}
+                </dd>
+              </div>
+              <div>
+                <dt i18n="@@settings.system.health.parity-unanswered">Sem resposta</dt>
+                <dd
+                  [class.ok]="row.unansweredTone === 'ok'"
+                  [class.bad]="row.unansweredTone === 'bad'"
+                >
+                  {{ row.unanswered }}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        }
+        <p class="parity-ref" i18n="@@settings.system.health.parity-goal">
+          Meta: direta 90% ou mais, atraso até 100 ms, nenhum sem resposta.
+        </p>
+        <p class="parity-ref" i18n="@@settings.system.health.parity-reference">
+          No Unified Remote, em casa: 5 a 20 ms por tecla (estimado).
+        </p>
+      </section>
+    }
     @if (deadLetters(); as dead) {
       @if (dead.total > 0) {
         <details class="dead">
