@@ -16,6 +16,7 @@ using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Domain;
+using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
@@ -74,6 +75,9 @@ internal static class PcRtcScopeNames
         return scopes;
     }
 }
+
+/// <summary>O TOTAL de segundos com tecla ou mouse que o app mandou por este canal desde que ele abriu (a parte "direta" da paridade).</summary>
+internal sealed record PcRtcUsageRequest(int? TotalSeconds);
 
 internal sealed record PcRtcCandidateRequest(string? Candidate, string? SdpMid, int? SdpMLineIndex);
 
@@ -214,6 +218,23 @@ internal sealed class PcRtcSessions(TimeProvider time)
     private readonly Dictionary<Guid, PcRtcSession> _sessions = [];
     private readonly Dictionary<Guid, DateTimeOffset> _tombstones = [];
     private readonly Dictionary<Guid, (PcRtcSession Session, DateTimeOffset Until)> _closedTv = [];
+    private readonly Dictionary<Guid, (Guid UserId, string AgentSlug, DateTimeOffset OpenedAt, DateTimeOffset Until)> _closedUsage = [];
+
+    // O total de uso já aceito de cada sessão: o app manda o TOTAL acumulado, então repetir não soma de novo, e o aceito nunca passa do
+    // tempo que de fato correu desde a abertura do canal (mais a folga).
+    private readonly Dictionary<Guid, int> _usage = [];
+
+    /// <summary>Teto do total de uso de uma sessão (a vida de um canal é bem menor: isto só barra número absurdo).</summary>
+    public const int MaxUsageTotalSeconds = 3_600;
+
+    /// <summary>Folga do tempo corrido no aceite do uso (o segundo em andamento, a ida da requisição).</summary>
+    public static readonly TimeSpan UsageSlack = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// O app conta o uso do canal à API a cada minuto e ao fechar; o fechamento (dele, do agente ou da API) tira a sessão daqui antes
+    /// de a última contagem chegar. A sessão fica lembrada por este tempo só para a contagem final ainda valer (paridade).
+    /// </summary>
+    public static readonly TimeSpan ClosedUsageMemory = TimeSpan.FromMinutes(2);
 
     public PcRtcSession Open(
         Guid userId, Guid agentId, string agentSlug, Guid? sessionFamily = null, PcRtcScopes scopes = PcRtcScopes.Pc, Guid? tvId = null)
@@ -283,9 +304,94 @@ internal sealed class PcRtcSessions(TimeProvider time)
     {
         _sessions.Remove(session.Id);
         Remember(session.Id);
+        RememberUsage(session);
         if (session.TvId is not null)
         {
             _closedTv[session.Id] = (session, time.GetUtcNow() + ClosedTvMemory);
+        }
+    }
+
+    private void RememberUsage(PcRtcSession session)
+    {
+        var now = time.GetUtcNow();
+        _closedUsage[session.Id] = (session.UserId, session.AgentSlug, session.OpenedAt, now + ClosedUsageMemory);
+        PruneUsageLocked(now);
+        while (_closedUsage.Count > MaxTombstones)
+        {
+            var oldest = _closedUsage.MinBy(c => c.Value.Until).Key;
+            _closedUsage.Remove(oldest);
+            _usage.Remove(oldest);
+        }
+    }
+
+    /// <summary>Quem chama segura o trinco: some o que já não pode receber uso (fechada há mais do prazo, ou que saiu sem lembrança).</summary>
+    private void PruneUsageLocked(DateTimeOffset now)
+    {
+        foreach (var old in _closedUsage.Where(c => c.Value.Until <= now).Select(c => c.Key).ToList())
+        {
+            _closedUsage.Remove(old);
+        }
+
+        foreach (var orphan in _usage.Keys.Where(id => !_sessions.ContainsKey(id) && !_closedUsage.ContainsKey(id)).ToList())
+        {
+            _usage.Remove(orphan);
+        }
+    }
+
+    /// <summary>Quem chama segura o trinco: o agente e a abertura da sessão que pode receber uso desta pessoa agora, ou nada.</summary>
+    private (string AgentSlug, DateTimeOffset OpenedAt)? UsageSessionLocked(Guid sessionId, Guid userId, DateTimeOffset now)
+    {
+        if (_sessions.TryGetValue(sessionId, out var live))
+        {
+            // Viva, desta pessoa e dentro da vida máxima de um canal (a esquecida pelo agente não conta).
+            return live.UserId == userId && now - live.OpenedAt <= PcRtcHandler.MaxLifetime + TokenLifetime
+                ? (live.AgentSlug, live.OpenedAt)
+                : null;
+        }
+
+        return _closedUsage.TryGetValue(sessionId, out var closed) && closed.UserId == userId && closed.Until > now
+            ? (closed.AgentSlug, closed.OpenedAt)
+            : null;
+    }
+
+    /// <summary>
+    /// A sessão pode receber o uso do canal desta pessoa: viva (dentro da vida máxima) ou fechada há pouco (a contagem final chega depois
+    /// do fechamento). É só memória: é o que autoriza a rota do uso, sem consultar permissão nenhuma no banco (a oferta já autorizou).
+    /// </summary>
+    public bool AcceptsUsage(Guid sessionId, Guid userId)
+    {
+        lock (_gate)
+        {
+            return UsageSessionLocked(sessionId, userId, time.GetUtcNow()) is not null;
+        }
+    }
+
+    /// <summary>
+    /// Registra o TOTAL de segundos de uso que o app contou nesta sessão e devolve o agente e quanto disso é novo. O aceito da sessão
+    /// nunca passa do tempo que correu desde a abertura do canal mais <see cref="UsageSlack"/> (o novo de cada envio, então, nunca passa do
+    /// tempo desde o último aceite mais a folga): repetir o mesmo total soma zero, e um total inflado só vale o tempo real, por mais que
+    /// se repita. Nulo: a sessão não pode receber uso desta pessoa.
+    /// </summary>
+    public (string AgentSlug, int Added)? RecordUsage(Guid sessionId, Guid userId, int total)
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            PruneUsageLocked(now);
+            if (UsageSessionLocked(sessionId, userId, now) is not { } target)
+            {
+                return null;
+            }
+
+            var accepted = _usage.GetValueOrDefault(sessionId);
+            var ceiling = (int)Math.Ceiling(Math.Max(0, (now - target.OpenedAt + UsageSlack).TotalSeconds));
+            var added = Math.Max(0, Math.Min(total, ceiling) - accepted);
+            if (added > 0)
+            {
+                _usage[sessionId] = accepted + added;
+            }
+
+            return (target.AgentSlug, added);
         }
     }
 
@@ -1516,6 +1622,20 @@ internal static class PcRtcEndpoints
 
     private static readonly string ModulePolicy = Policy;
 
+    /// <summary>
+    /// A rota do uso do canal não pede permissão de módulo: para um convidado, conferir a permissão lê o banco quando o cache esfria, e o
+    /// app manda o uso a cada minuto. Quem autoriza é a sessão do canal, em memória, que a oferta já autorizou: ela existe, é da mesma
+    /// conta do token e não venceu (ver <see cref="PcRtcSessions.AcceptsUsage"/>). O papel (dono ou convidado) vem da claim do token,
+    /// também sem banco.
+    /// </summary>
+    public const string UsagePolicy = "devices:direct-channel-usage";
+
+    public static void ConfigureUsagePolicy(AuthorizationPolicyBuilder policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        policy.RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest).AddRequirements(new PcRtcUsageRequirement());
+    }
+
     /// <summary>Mapeia as rotas do canal direto em <c>/api/v1/pc/rtc</c>. Todas pedem <c>module:pc</c> ou <c>tv:control</c> e o balde de limite próprio.</summary>
     public static void MapPcRtc(this IEndpointRouteBuilder endpoints)
     {
@@ -1545,6 +1665,17 @@ internal static class PcRtcEndpoints
             .ProducesProblem(StatusCodes.Status410Gone)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        // O uso do canal (só a contagem de segundos, nada do que foi digitado): memória só, sem banco e sem o agente.
+        group.MapPost("/{sessionId:guid}/usage", Usage)
+            .RequireAuthorization(UsagePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcRtc)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         group.MapPost("/{sessionId:guid}/close", CloseAsync)
             .RequireAuthorization(ModulePolicy)
@@ -1613,5 +1744,58 @@ internal static class PcRtcEndpoints
         }
 
         return await handler.CloseAsync(userId, sessionId, ClientInfo.From(http), cancellationToken);
+    }
+
+    /// <summary>
+    /// O app conta os segundos em que mandou tecla ou mouse pelo canal (a API não os vê: o canal é direto) e manda aqui o TOTAL da
+    /// sessão a cada minuto e ao fechar. Repetir o total não soma de novo, e o aceito nunca passa do tempo que o canal está aberto. A política só deixa passar a sessão da própria pessoa, viva ou fechada há pouco (a última contagem chega depois do
+    /// fechamento).
+    /// </summary>
+    private static IResult Usage(
+        Guid sessionId, PcRtcUsageRequest? request, ICurrentUser current, PcRtcSessions sessions, AgentParity parity)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        if (request?.TotalSeconds is not { } total || total < 1 || total > PcRtcSessions.MaxUsageTotalSeconds)
+        {
+            return ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["totalSeconds"] = [$"Mande o total de 1 a {PcRtcSessions.MaxUsageTotalSeconds} segundos."],
+            });
+        }
+
+        // A política já conferiu a sessão; ela pode ter saído da memória entre a política e aqui.
+        if (sessions.RecordUsage(sessionId, userId, total) is not { } usage)
+        {
+            return TypedResults.NotFound();
+        }
+
+        parity.OnDirectUse(usage.AgentSlug, usage.Added);
+        return TypedResults.NoContent();
+    }
+}
+
+/// <summary>A sessão do canal na rota do uso pode receber o uso de quem pede (ver <see cref="PcRtcEndpoints.UsagePolicy"/>).</summary>
+internal sealed class PcRtcUsageRequirement : IAuthorizationRequirement
+{
+}
+
+/// <summary>Autoriza o uso do canal só pela memória: a sessão da rota, viva ou fechada há pouco, é desta conta. Nenhuma consulta.</summary>
+internal sealed class PcRtcUsageAuthorizer(PcRtcSessions sessions) : AuthorizationHandler<PcRtcUsageRequirement>
+{
+    protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, PcRtcUsageRequirement requirement)
+    {
+        if (context.Resource is HttpContext http
+            && Guid.TryParse(http.GetRouteValue("sessionId") as string, out var sessionId)
+            && Guid.TryParse(context.User.FindFirst(UniOverAuth.SubjectClaim)?.Value, out var userId)
+            && sessions.AcceptsUsage(sessionId, userId))
+        {
+            context.Succeed(requirement);
+        }
+
+        return Task.CompletedTask;
     }
 }

@@ -154,6 +154,7 @@ public sealed class PresenceWritesTests
         var connections = new AgentConnections(presence, new SseBroadcaster<PresenceUpdate>(new SseStreamOptions()), null, time, options);
         var scopes = new CountingScopes(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
         var validator = new AgentEnvelopeValidator();
+        var parity = new AgentParity(time);
         var hub = new AgentHub(
             validator,
             new OutboundEnvelopeFactory(validator, new FixedClock(Start)),
@@ -164,7 +165,8 @@ public sealed class PresenceWritesTests
             scopes,
             options,
             time,
-            NullLogger<AgentHub>.Instance);
+            NullLogger<AgentHub>.Instance,
+            agentParity: parity);
         var session = new ScriptedSession();
         var run = hub.RunSessionAsync(session, CancellationToken.None);
 
@@ -181,6 +183,16 @@ public sealed class PresenceWritesTests
 
         connections.LastKeepalive(Slug).Should().Be(new AgentKeepaliveSample(Start.AddSeconds(5), TimeSpan.FromSeconds(5), 37));
         scopes.Created.Should().Be(createdAfterHello, "o batimento, com ou sem o atraso do laço, nunca chega ao banco");
+
+        // O "atraso no PC" da paridade sai do batimento guardado: com amostras bastantes, tem valor.
+        foreach (var lag in new[] { 12, 9, 41, 7 })
+        {
+            time.Advance(TimeSpan.FromSeconds(5));
+            session.Push(KeepAlive(lag));
+        }
+
+        await WaitUntil(() => parity.Of(Slug).LoopLagSamples == 5, "cinco batimentos com o atraso do laço");
+        parity.Of(Slug).LoopLagP99Ms.Should().Be(41);
         session.EndOfStream();
         await run;
         connections.LastKeepalive(Slug).Should().BeNull("a sessão acabou: o que ela contou não vale para a próxima");

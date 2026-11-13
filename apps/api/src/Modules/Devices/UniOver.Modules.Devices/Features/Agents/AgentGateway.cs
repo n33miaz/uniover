@@ -23,10 +23,14 @@ internal sealed partial class AgentGateway(
     IOptions<DevicesTransportOptions> options,
     TimeProvider time,
     ILogger<AgentGateway> logger,
-    AgentHealth? agentHealth = null) : IAgentGateway
+    AgentHealth? agentHealth = null,
+    AgentParity? agentParity = null) : IAgentGateway
 {
     // Sem a saúde registrada (montagens de teste do gateway sozinho) nada é medido, e o gateway segue como antes.
     private readonly AgentHealth? health = agentHealth;
+
+    // Os números da paridade (Ajustes > Sistema): segundos de uso pela nuvem, resposta dos comandos de entrada, sem resposta.
+    private readonly AgentParity? parity = agentParity;
 
     public async Task<Result> SendAsync(string agentId, OutboundMessage message, CancellationToken cancellationToken = default)
     {
@@ -39,9 +43,13 @@ internal sealed partial class AgentGateway(
         }
 
         var droppable = IsPureMove(message);
-        return await DeliverAsync(agentId, message, envelope.Value, droppable, pending: null, cancellationToken, cancellationToken)
-            ? Result.Success()
-            : Result.Failure(AgentErrors.Offline);
+        if (!await DeliverAsync(agentId, message, envelope.Value, droppable, pending: null, cancellationToken, cancellationToken))
+        {
+            return Result.Failure(AgentErrors.Offline);
+        }
+
+        NoteCloudInput(agentId, message.Type);
+        return Result.Success();
     }
 
     public async Task<Result<AgentReply>> RequestAsync(
@@ -101,21 +109,38 @@ internal sealed partial class AgentGateway(
             return Result.Failure<AgentReply>(AgentErrors.Offline);
         }
 
+        NoteCloudInput(agentId, message.Type);
         try
         {
             var reply = await pending.Reply.WaitAsync(wait, time, cancellationToken);
-            health?.OnReply(agentId, time.GetElapsedTime(started), wait);
+            var latency = time.GetElapsedTime(started);
+            health?.OnReply(agentId, latency, wait);
+            if (AgentParity.IsInput(message.Type))
+            {
+                parity?.OnReply(agentId, latency);
+            }
+
             return Result.Success(reply);
         }
         catch (TimeoutException)
         {
             LogRequestTimedOut(agentId, message.Type, commandId);
             health?.OnTimeout(agentId, sentAt);
+            parity?.OnUnanswered(agentId);
             return Result.Failure<AgentReply>(AgentErrors.Timeout);
         }
         catch (AgentDisconnectedException)
         {
             return Result.Failure<AgentReply>(AgentErrors.Offline);
+        }
+    }
+
+    /// <summary>Um comando de entrada saiu pela nuvem: conta o segundo de uso (a parte "nuvem" da paridade).</summary>
+    private void NoteCloudInput(string agentId, string type)
+    {
+        if (AgentParity.IsInput(type))
+        {
+            parity?.OnCloudInput(agentId);
         }
     }
 

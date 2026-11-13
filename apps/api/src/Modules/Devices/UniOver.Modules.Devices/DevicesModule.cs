@@ -10,6 +10,7 @@ using UniOver.Modules.Devices.Adapters;
 using UniOver.Modules.Devices.Audit;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
+using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Features.ApprovePairing;
 using UniOver.Modules.Devices.Features.Beacons;
 using UniOver.Modules.Devices.Features.ClientEvents;
@@ -124,6 +125,7 @@ public static class DevicesModule
 
         // Canal direto (WebRTC): sessões e esperas em memória da instância; a API só faz a sinalização autenticada.
         services.AddSingleton<PcRtcSessions>();
+        services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, PcRtcUsageAuthorizer>();
         services.AddSingleton<PcRtcAnswers>();
         services.AddScoped<PcRtcClosures>();
         services.AddScoped<PcRtcHandler>();
@@ -136,6 +138,7 @@ public static class DevicesModule
         services.AddScoped<IIntegrationEventHandler<UniOver.Modules.Tv.Contracts.TvDirectAccessRemoved>, TvDirectAccessRemovedHandler>();
         services.AddAuthorizationBuilder()
             .AddPolicy(PcRtcEndpoints.Policy, PcRtcEndpoints.ConfigurePolicy)
+            .AddPolicy(PcRtcEndpoints.UsagePolicy, PcRtcEndpoints.ConfigureUsagePolicy)
             .AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure)
             .AddPolicy(PairingPolicies.ApproveOwnPermissionOnly, PairingPolicies.ConfigurePermissionOnly)
             .AddPolicy(ClientEventPolicies.Report, ClientEventPolicies.ConfigureReport);
@@ -158,6 +161,7 @@ public static class DevicesModule
         group.MapRevokeAgent();
         group.MapAgentAlerts();
         group.MapAgentDiagnostics();
+        group.MapAgentParity();
         group.MapAgentBeacons();
         group.MapAgentBeacon();
         group.MapClientEventsReport();

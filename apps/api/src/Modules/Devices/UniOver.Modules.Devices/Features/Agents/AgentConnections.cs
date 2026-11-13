@@ -433,19 +433,22 @@ internal sealed class AgentConnections(
     /// <summary>
     /// O <c>agent.keepalive.v1</c> da sessão atual chegou: guarda, só em memória (o banco dorme), quando chegou, o intervalo
     /// desde o anterior (o agente de agora bate a cada 5 s, o anterior a cada 25 s) e o atraso do laço que ele contou.
+    /// Devolve o batimento guardado (o que <see cref="LastKeepalive"/> passa a ler), ou nulo se a sessão já não é a atual.
     /// </summary>
-    public void RecordKeepalive(IAgentSession session, int? loopLagMs, DateTimeOffset now)
+    public AgentKeepaliveSample? RecordKeepalive(IAgentSession session, int? loopLagMs, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(session);
         lock (_gate)
         {
             if (!_sessions.TryGetValue(session.AgentId, out var current) || !ReferenceEquals(current, session))
             {
-                return;
+                return null;
             }
 
             var interval = _keepalives.TryGetValue(session.AgentId, out var previous) ? now - previous.ReceivedAt : (TimeSpan?)null;
-            _keepalives[session.AgentId] = new AgentKeepaliveSample(now, interval, loopLagMs);
+            var sample = new AgentKeepaliveSample(now, interval, loopLagMs);
+            _keepalives[session.AgentId] = sample;
+            return sample;
         }
     }
 

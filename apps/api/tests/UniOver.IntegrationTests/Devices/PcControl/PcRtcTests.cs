@@ -260,6 +260,76 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         own.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [Fact]
+    public async Task TheDirectUse_CountsOnlyForTheOwnSession_NeverMoreThanTheTimeOpen_AndShowsInTheParity()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectDirectAsync(app);
+        var (answer, _) = await OpenAsync(app, agent);
+        var sessionId = answer.GetProperty("sessionId").GetGuid();
+        var stranger = await GuestSeed.CreateGuestAsync(
+            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", ["module:pc"]);
+
+        using (var other = await PostAsync(app, $"{sessionId}/usage", new { totalSeconds = 30 }, stranger.Login.AccessToken))
+        {
+            other.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a sessão do canal é quem autoriza, e ela não é desta pessoa");
+        }
+
+        foreach (var invalid in new object?[] { null, new { totalSeconds = 0 }, new { totalSeconds = PcRtcSessions.MaxUsageTotalSeconds + 1 } })
+        {
+            using var bad = await PostAsync(app, $"{sessionId}/usage", invalid);
+            bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        // Um minuto de canal aberto: o total de 30 s vale inteiro.
+        app.App.Time.Advance(TimeSpan.FromMinutes(1));
+        using (var own = await PostAsync(app, $"{sessionId}/usage", new { totalSeconds = 30 }))
+        {
+            own.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        // Inflar, repetindo 600 s: só vale até o tempo de canal aberto mais a folga (65 s no total), por mais que se repita.
+        for (var i = 0; i < 3; i++)
+        {
+            using var inflated = await PostAsync(app, $"{sessionId}/usage", new { totalSeconds = 600 });
+            inflated.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        using (var closed = await PostAsync(app, $"{sessionId}/close", null))
+        {
+            closed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        // A última contagem chega depois do fechamento (o app fecha e conta ao mesmo tempo; o agente pode fechar antes): ainda vale.
+        app.App.Time.Advance(TimeSpan.FromSeconds(10));
+        using (var tail = await PostAsync(app, $"{sessionId}/usage", new { totalSeconds = 70 }))
+        {
+            tail.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        using (var strangerTail = await PostAsync(app, $"{sessionId}/usage", new { totalSeconds = 70 }, stranger.Login.AccessToken))
+        {
+            strangerTail.StatusCode.Should().Be(HttpStatusCode.Forbidden, "fechada ou não, a sessão de outra pessoa não vale para ela");
+        }
+
+        app.App.Time.Advance(PcRtcSessions.ClosedUsageMemory);
+        using (var late = await PostAsync(app, $"{sessionId}/usage", new { totalSeconds = 80 }))
+        {
+            late.StatusCode.Should().Be(HttpStatusCode.Forbidden, "passado o prazo, a sessão fechada não conta mais");
+        }
+
+        using var read = await app.App.SendAsync(HttpMethod.Get, "/api/v1/devices/agents/parity", bearer: app.Login.AccessToken);
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pc = (await DevicesApp.JsonAsync(read)).GetProperty("agents").EnumerateArray()
+            .Single(a => a.GetProperty("agentId").GetString() == app.Agent.Slug);
+        pc.GetProperty("directSeconds").GetInt32().Should().Be(70, "30, depois até 65 (o tempo aberto e a folga), e o total final de 70");
+        pc.GetProperty("directPercent").GetInt32().Should().Be(100);
+
+        using var guestRead = await app.App.SendAsync(
+            HttpMethod.Get, "/api/v1/devices/agents/parity", bearer: stranger.Login.AccessToken);
+        guestRead.StatusCode.Should().Be(HttpStatusCode.Forbidden, "os números são só do dono");
+    }
+
     // ---- candidatos e a vida curta do token ----
 
     [Fact]

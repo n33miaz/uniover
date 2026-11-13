@@ -34,7 +34,8 @@ internal sealed partial class AgentHub(
     TimeProvider time,
     ILogger<AgentHub> logger,
     bool handoverEnabled = true,
-    AgentHealth? agentHealth = null)
+    AgentHealth? agentHealth = null,
+    AgentParity? agentParity = null)
 {
     private const string InvalidMessageText = "A mensagem não cumpre o contrato.";
     private const string KeepAliveCapability = "transport.keepalive.v1";
@@ -44,6 +45,9 @@ internal sealed partial class AgentHub(
 
     // A saúde de cada agente, só em memória; sem ela (montagens de teste do hub sozinho) nada é medido.
     private readonly AgentHealth? health = agentHealth;
+
+    // Os números da paridade (o atraso do laço chega no batimento), só em memória; sem eles nada é medido.
+    private readonly AgentParity? parity = agentParity;
 
     public async Task RunSessionAsync(IAgentSession session, CancellationToken cancellationToken)
     {
@@ -378,7 +382,13 @@ internal sealed partial class AgentHub(
                 break;
 
             case AgentKeepAliveType:
-                connections.RecordKeepalive(session, ReadLoopLag(envelope.Body), now);
+                // A paridade lê o atraso do laço do mesmo lugar que a saúde: o batimento guardado (o de uma sessão
+                // substituída não é guardado nem contado).
+                if (connections.RecordKeepalive(session, ReadLoopLag(envelope.Body), now)?.LoopLagMs is { } loopLag)
+                {
+                    parity?.OnLoopLag(agentId, loopLag);
+                }
+
                 break;
 
             case AgentMessageTypes.CommandResultV1:

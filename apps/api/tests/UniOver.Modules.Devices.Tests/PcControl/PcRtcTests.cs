@@ -115,6 +115,61 @@ public sealed class PcRtcSessionsTests
     }
 
     [Fact]
+    public void TheDirectUse_AcceptsTheTotalOnlyUpToTheTimeThatPassed_AndARepeatAddsNothing()
+    {
+        var (sessions, time) = Build();
+        var session = sessions.Open(Alice, Guid.NewGuid(), "pc-casa");
+
+        // Um minuto depois de abrir: o app manda 50 s de uso. Vale (cabe no minuto).
+        time.Advance(TimeSpan.FromMinutes(1));
+        sessions.RecordUsage(session.Id, Alice, 50).Should().Be(("pc-casa", 50));
+
+        // Inflar: 600 s logo depois, vinte vezes. Só vale até o tempo de canal aberto (60 s) mais a folga (5 s): 15 s, uma vez.
+        sessions.RecordUsage(session.Id, Alice, 600).Should().Be(("pc-casa", 15));
+        for (var i = 0; i < 20; i++)
+        {
+            sessions.RecordUsage(session.Id, Alice, 600).Should().Be(("pc-casa", 0), "repetir não soma, nem com a folga");
+        }
+
+        // Repetir um total já aceito (o envio final que sai duas vezes) soma zero; passado o tempo, o novo vale até ele.
+        time.Advance(TimeSpan.FromSeconds(30));
+        sessions.RecordUsage(session.Id, Alice, 55).Should().Be(("pc-casa", 0));
+        sessions.RecordUsage(session.Id, Alice, 80).Should().Be(("pc-casa", 15));
+
+        // Outra pessoa nunca conta na sessão de Alice.
+        sessions.AcceptsUsage(session.Id, Bruno).Should().BeFalse();
+        sessions.RecordUsage(session.Id, Bruno, 100).Should().BeNull();
+    }
+
+    [Fact]
+    public void TheDirectUse_StillCountsBrieflyAfterTheChannelCloses_ThenNever()
+    {
+        var (sessions, time) = Build();
+        var session = sessions.Open(Alice, Guid.NewGuid(), "pc-casa");
+        time.Advance(TimeSpan.FromSeconds(40));
+        sessions.TakeOwned(session.Id, Alice).Should().NotBeNull();
+
+        // A última contagem chega depois do fechamento.
+        sessions.AcceptsUsage(session.Id, Alice).Should().BeTrue();
+        sessions.RecordUsage(session.Id, Alice, 30).Should().Be(("pc-casa", 30));
+        sessions.AcceptsUsage(session.Id, Bruno).Should().BeFalse();
+
+        time.Advance(PcRtcSessions.ClosedUsageMemory);
+        sessions.AcceptsUsage(session.Id, Alice).Should().BeFalse();
+        sessions.RecordUsage(session.Id, Alice, 60).Should().BeNull();
+    }
+
+    [Fact]
+    public void TheDirectUse_OfAChannelPastItsMaximumLife_IsRefused()
+    {
+        var (sessions, time) = Build();
+        var session = sessions.Open(Alice, Guid.NewGuid(), "pc-casa");
+        time.Advance(PcRtcHandler.MaxLifetime + PcRtcSessions.TokenLifetime + TimeSpan.FromSeconds(1));
+
+        sessions.AcceptsUsage(session.Id, Alice).Should().BeFalse("o agente já fechou um canal tão velho");
+    }
+
+    [Fact]
     public void TheNegotiationWindowClosesWithTheTokenLifetime_ButTheSessionStaysUntilClosed()
     {
         var (sessions, time) = Build();
