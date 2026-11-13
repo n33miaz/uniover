@@ -77,6 +77,9 @@ RECENT_COMMAND_CAPACITY: Final = 512
 # longa e que nenhuma outra tecla expulsa. Só os ids de POWER entram aqui (no ritmo de uma pessoa).
 RECENT_POWER_SECONDS: Final = 24 * 60 * 60.0
 RECENT_POWER_CAPACITY: Final = 256
+# Respostas de comandos repetidos aguardando o envio (fora do leitor): passado o teto, a resposta
+# repetida é descartada (o primeiro envio já foi feito; a API reenvia o pedido se ainda precisar).
+MAX_PENDING_REPEAT_REPLIES: Final = 64
 
 # Como o resultado de um comando volta a quem o pediu: pela nuvem (o transporte) ou, no canal
 # direto, pela resposta do próprio canal.
@@ -193,6 +196,9 @@ class ProcessMessage:
         self._tv_path_count = 0
         self._recent: OrderedDict[str, _RecentCommand] = OrderedDict()
         self._recent_power: OrderedDict[str, _RecentCommand] = OrderedDict()
+        # As respostas repetidas saem numa cadeia própria, fora do leitor, na ordem de chegada.
+        self._last_repeat_reply: asyncio.Task[None] | None = None
+        self._pending_repeat_replies = 0
 
     async def __call__(self, raw: str | bytes) -> None:
         outcome = self._gate.check_inbound(raw)
@@ -268,8 +274,42 @@ class ProcessMessage:
             return False
         _log.info("comando %s repetido ignorado (id=%s)", command.type, command.id)
         if previous.result is not None:
-            await self._reply_result(command, previous.result)
+            self._reply_repeat(command, previous.result)
         return True
+
+    def _reply_repeat(self, command: Command, result: CommandResult) -> None:
+        """Manda a resposta de um repetido já concluído sem prender o leitor.
+
+        Um websocket sob pressão faria o `send` esperar, e com ele o leitor: teclas e batimentos
+        ficariam na fila e expirariam. A resposta vai numa cadeia (a ordem de chegada vale), com
+        teto de pendentes.
+        """
+        if self._pending_repeat_replies >= MAX_PENDING_REPEAT_REPLIES:
+            _log.warning(
+                "resposta repetida de %s descartada: envio atrasado (id=%s)",
+                command.type,
+                command.id,
+            )
+            return
+        self._pending_repeat_replies += 1
+        task = asyncio.create_task(self._send_repeat(command, result, self._last_repeat_reply))
+        self._last_repeat_reply = task
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _send_repeat(
+        self, command: Command, result: CommandResult, previous: asyncio.Task[None] | None
+    ) -> None:
+        try:
+            if previous is not None:
+                await asyncio.wait([previous])
+            await self._reply_result(command, result)
+        except TransportError as exc:
+            _log.debug("resposta repetida de %s não enviada (%s)", command.type, exc)
+        except Exception:
+            _log.exception("falha ao responder o repetido %s (id=%s)", command.type, command.id)
+        finally:
+            self._pending_repeat_replies -= 1
 
     def _remember_result(self, command: Command, result: CommandResult) -> None:
         entry = (self._recent_power if _is_power(command) else self._recent).get(command.id)
