@@ -402,6 +402,34 @@ describe('TrainingSync', () => {
       await vi.waitFor(() => expect(t.pull.calls).toHaveLength(2));
     });
 
+    it('pulls when the page comes back from the back-forward cache (the iPhone Safari case)', async () => {
+      const t = setup();
+      await t.sync().start();
+      expect(t.pull.calls).toHaveLength(1);
+
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+      await Promise.resolve();
+      expect(t.pull.calls).toHaveLength(1);
+
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      await vi.waitFor(() => expect(t.pull.calls).toHaveLength(2));
+    });
+
+    it('a return announced by both "visible" and a restored page pulls once', async () => {
+      const t = setup();
+      await t.sync().start();
+      expect(t.pull.calls).toHaveLength(1);
+
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      await vi.waitFor(() => expect(t.pull.calls).toHaveLength(2));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(t.pull.calls).toHaveLength(2);
+    });
+
     it('the manual button sends what is queued and then pulls', async () => {
       const t = setup();
       await t.sync().start();

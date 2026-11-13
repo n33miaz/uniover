@@ -176,14 +176,15 @@ export class TrainingSync {
     });
     const win = this.doc.defaultView;
     const onOnline = () => void this.request();
-    const onVisibility = () => {
-      if (this.doc.visibilityState === 'visible') void this.request();
-    };
+    // A volta ao app (aba de novo à vista ou página restaurada do cache, o caso do Safari do iPhone) vem da carência, que
+    // junta numa volta só os dois avisos que alguns navegadores dão: uma passada por volta, não duas.
+    const offResume = this.resumeGrace.subscribe((event) => {
+      if (event === 'begin') void this.request();
+    });
     win?.addEventListener('online', onOnline);
-    this.doc.addEventListener('visibilitychange', onVisibility);
     inject(DestroyRef).onDestroy(() => {
       win?.removeEventListener('online', onOnline);
-      this.doc.removeEventListener('visibilitychange', onVisibility);
+      offResume();
     });
 
     // Um envio da fila que terminou (o carimbo mudou) é motivo para puxar: se foi o último, a fila esvaziou.
