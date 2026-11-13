@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
+import { DirectUsage } from '../../../core/direct/direct-usage';
 import { status } from '../pc-test-kit';
 import {
   ACK_TIMEOUT_MS,
@@ -306,6 +307,24 @@ describe('PcDirect opening', () => {
 });
 
 describe('PcDirect pointer', () => {
+  it('counts what the channel carried for the parity reading, and reports it when the channel closes', async () => {
+    const { direct, connections } = setup();
+    const usage = TestBed.inject(DirectUsage);
+    const note = vi.spyOn(usage, 'note');
+    const flushUsage = vi.spyOn(usage, 'flush').mockImplementation(() => undefined);
+    const { input } = await openChannel(direct, connections);
+
+    direct.sendPointer(4, 2, 0, 0);
+    const key = direct.command('pc.key.v1', { key: 'A' });
+    const sent = input.last('cmd')!;
+    input.receive({ k: 'ack', i: sent['i'], ok: true });
+    await key;
+    expect(note.mock.calls).toEqual([['s1'], ['s1']]);
+
+    direct.stop();
+    expect(flushUsage).toHaveBeenCalledWith({ ended: 's1', keepalive: false });
+  });
+
   it('sends accumulated totals with a growing sequence number', async () => {
     const { direct, connections } = setup();
     const { pointer } = await openChannel(direct, connections);

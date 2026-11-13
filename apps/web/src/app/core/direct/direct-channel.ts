@@ -13,6 +13,7 @@ import { firstValueFrom } from 'rxjs';
 import { APP_CONFIG } from '../config/app-config';
 import { PcAvailability } from '../modules/pc-availability';
 import { SessionState } from '../session/session-state';
+import { DirectUsage } from './direct-usage';
 
 /** A capacidade que o agente do PC declara quando oferece o canal direto (WebRTC). */
 export const PC_RTC_CAPABILITY = 'pc.rtc.v1';
@@ -298,6 +299,7 @@ export class DirectChannel {
   private readonly session = inject(SessionState);
   private readonly signaling = inject(DirectSignaling);
   private readonly factory = inject(PC_RTC_FACTORY);
+  private readonly usage = inject(DirectUsage);
 
   /** Quem quer o canal aberto agora (a tela do PC, a da TV): ele só fecha de vez quando não sobra ninguém. */
   private readonly owners = new Set<DirectOwner>();
@@ -553,6 +555,7 @@ export class DirectChannel {
     const heartbeat = dx === 0 && dy === 0 && scrollX === 0 && scrollY === 0;
     this.seq++;
     this.emitPointer(link, heartbeat);
+    this.usage.note(link.sessionId);
     // Uma pausa depois do último movimento: o mesmo total outra vez (o agente ignora se a primeira chegou).
     if (this.tailTimer !== null) clearTimeout(this.tailTimer);
     this.tailTimer = setTimeout(() => {
@@ -603,6 +606,7 @@ export class DirectChannel {
       this.pending.set(id, { resolve, reject, timer, retryByCloud: type.startsWith('tv.') });
       try {
         link.input.send(JSON.stringify(message));
+        this.usage.note(link.sessionId);
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -973,6 +977,8 @@ export class DirectChannel {
       waiting.reject(new HttpErrorResponse({ status: 504 }));
     }
     this.pending.clear();
+    // O uso do canal que ainda não foi contado à API sai agora, com a sessão que fecha.
+    this.usage.flush({ ended: link.sessionId, keepalive: options.keepalive === true });
     this.discard(link, options.keepalive === true);
     if (options.unexpected === true && wasOpen) {
       for (const listener of [...this.lostListeners]) listener();

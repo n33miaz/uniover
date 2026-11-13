@@ -129,3 +129,68 @@
   font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
 }
+
+/* Os quatro números da paridade com o Unified Remote, um bloco por computador, no mesmo painel das versões. */
+.parity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  padding: var(--space-3);
+}
+
+.parity .modules-title {
+  margin: 0;
+}
+
+.parity-pc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.parity-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.parity-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.parity-list div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.parity-list dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.parity-list dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.parity-list .ok {
+  color: var(--a-ok-ink);
+}
+
+.parity-list .bad {
+  color: var(--a-bad-ink);
+}
+
+.parity-ref {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}

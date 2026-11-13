@@ -1,7 +1,15 @@
 import { Component, effect, inject, signal, untracked } from '@angular/core';
 import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
-import { DeadLetterEntry, DeadLetterReport, HealthAgent, SystemApi, TvItem } from './system-api';
+import {
+  AgentParity,
+  DeadLetterEntry,
+  DeadLetterReport,
+  HealthAgent,
+  ParityReport,
+  SystemApi,
+  TvItem,
+} from './system-api';
 
 /** Um módulo e a versão dele, como a lista de Módulos mostra. */
 export interface ModuleRow {
@@ -9,6 +17,23 @@ export interface ModuleRow {
   readonly label: string;
   readonly version: string;
 }
+
+/** Os quatro números da paridade de um computador, já em texto, e se cada um cumpre a meta. */
+export interface ParityRow {
+  readonly slug: string;
+  readonly name: string;
+  readonly direct: string;
+  readonly directTone: 'ok' | 'bad' | '';
+  readonly reply: string;
+  readonly lag: string;
+  readonly lagTone: 'ok' | 'bad' | '';
+  readonly unanswered: string;
+  readonly unansweredTone: 'ok' | 'bad' | '';
+}
+
+/** As metas da revisão estratégica de 11/11 (D8): direto em 90% do uso, atraso do laço até 100 ms, nenhum comando sem resposta. */
+export const PARITY_DIRECT_GOAL = 90;
+export const PARITY_LAG_GOAL_MS = 100;
 
 /**
  * Leitura resumida do que já existe: a presença mais recente do agente, a TV vinculada e o commit da API. Não cria
@@ -31,6 +56,8 @@ export class SystemHealthSection {
   /** Os eventos internos que esgotaram as tentativas. `null` até chegar; fica `null` se a leitura falhar (o resto da Saúde segue). */
   protected readonly deadLetters = signal<DeadLetterReport | null>(null);
   protected readonly deadLettersFailed = signal(false);
+  /** Os números da paridade; `null` até chegar ou se a leitura falhar (a tela mostra "—"). */
+  protected readonly parity = signal<ParityReport | null>(null);
   protected readonly dateFormat = new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'short',
     timeStyle: 'short',
@@ -52,6 +79,7 @@ export class SystemHealthSection {
     this.failed.set(false);
     // Em paralelo e à parte: uma falha aqui não derruba o cartão inteiro da Saúde (a leitura nunca rejeita).
     void this.loadDeadLetters();
+    void this.loadParity();
     try {
       const [agents, tvs, version] = await Promise.all([
         this.system.agents(),
@@ -131,6 +159,24 @@ export class SystemHealthSection {
     }
   }
 
+  private async loadParity(): Promise<void> {
+    try {
+      this.parity.set(await this.system.parity());
+    } catch {
+      this.parity.set(null);
+    }
+  }
+
+  /** Um bloco por computador pareado; o que não tem uso na janela fica com "—". */
+  protected parityRows(): readonly ParityRow[] {
+    const byAgent = new Map((this.parity()?.agents ?? []).map((item) => [item.agentId, item]));
+    return (this.agents() ?? []).map((agent) => parityRow(agent, byAgent.get(agent.slug) ?? null));
+  }
+
+  protected parityWindow(): number {
+    return this.parity()?.windowMinutes ?? 30;
+  }
+
   protected deadMetric(): string {
     const report = this.deadLetters();
     if (!report) return $localize`:@@settings.system.health.dead-unknown:—`;
@@ -160,6 +206,36 @@ export class SystemHealthSection {
     // O identificador completo da versão não cabe no cartão: os sete primeiros caracteres bastam para reconhecê-la.
     return this.commit()?.slice(0, 7) ?? $localize`:@@settings.system.health.version-none:—`;
   }
+}
+
+const NONE = '—';
+
+/** Os números de um computador em texto curto; `null` (sem leitura ou sem uso) vira "—". */
+export function parityRow(agent: HealthAgent, item: AgentParity | null): ParityRow {
+  const direct = item?.directPercent ?? null;
+  const lag = item?.loopLagP99Ms ?? null;
+  return {
+    slug: agent.slug,
+    name: agent.name,
+    direct: direct === null ? NONE : `${direct}%`,
+    directTone: direct === null ? '' : direct >= PARITY_DIRECT_GOAL ? 'ok' : 'bad',
+    reply: replyText(item),
+    lag: lag === null ? NONE : `${lag} ms`,
+    lagTone: lag === null ? '' : lag <= PARITY_LAG_GOAL_MS ? 'ok' : 'bad',
+    unanswered:
+      item === null
+        ? NONE
+        : item.unanswered === 0
+          ? $localize`:@@settings.system.health.parity-unanswered-none:Nenhum`
+          : String(item.unanswered),
+    unansweredTone: item === null ? '' : item.unanswered === 0 ? 'ok' : 'bad',
+  };
+}
+
+/** A mediana e o percentil 95, sem o jargão: "típico" e "lento". */
+function replyText(item: AgentParity | null): string {
+  if (item?.replyP50Ms == null || item.replyP95Ms == null) return NONE;
+  return $localize`:@@settings.system.health.parity-reply-value:${item.replyP50Ms}:typical: ms típico · ${item.replyP95Ms}:slow: ms lento`;
 }
 
 /** O nome de cada módulo em português. Um módulo que a tela não conhece aparece com o próprio identificador. */

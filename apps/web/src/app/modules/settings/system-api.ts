@@ -192,6 +192,57 @@ export interface HealthAgent {
 }
 
 /**
+ * Os quatro números da paridade com o Unified Remote de um computador, nos últimos `windowMinutes` (só em memória na API: some
+ * quando ela reinicia). Cada número é `null` quando ainda não há o que medir; a tela mostra "—". Tipo local: o OpenAPI gerado
+ * descreve todo número como `number | string`, e o JSON traz números.
+ */
+export interface AgentParity {
+  readonly agentId: string;
+  /** Segundos com tecla ou mouse pelo canal direto e pela nuvem. */
+  readonly directSeconds: number;
+  readonly cloudSeconds: number;
+  /** A parte do tempo de uso que foi direta (0 a 100). */
+  readonly directPercent: number | null;
+  /** Do envio na API à resposta do computador, comandos de tecla, mouse e texto pela nuvem. */
+  readonly replySamples: number;
+  readonly replyP50Ms: number | null;
+  readonly replyP95Ms: number | null;
+  /** O maior atraso do laço da entrada no computador, percentil 99 por batimento; `null` com o programa que ainda não o manda. */
+  readonly loopLagSamples: number;
+  readonly loopLagP99Ms: number | null;
+  /** Comandos que ficaram sem resposta no prazo. */
+  readonly unanswered: number;
+}
+
+export interface ParityReport {
+  readonly windowMinutes: number;
+  readonly agents: readonly AgentParity[];
+}
+
+const count = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+const maybe = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+
+function readParity(value: unknown): AgentParity | null {
+  if (!value || typeof value !== 'object') return null;
+  const dto = value as Record<string, unknown>;
+  if (typeof dto['agentId'] !== 'string') return null;
+  return {
+    agentId: dto['agentId'],
+    directSeconds: count(dto['directSeconds']),
+    cloudSeconds: count(dto['cloudSeconds']),
+    directPercent: maybe(dto['directPercent']),
+    replySamples: count(dto['replySamples']),
+    replyP50Ms: maybe(dto['replyP50Ms']),
+    replyP95Ms: maybe(dto['replyP95Ms']),
+    loopLagSamples: count(dto['loopLagSamples']),
+    loopLagP99Ms: maybe(dto['loopLagP99Ms']),
+    unanswered: count(dto['unanswered']),
+  };
+}
+
+/**
  * Um evento interno que esgotou as tentativas de entrega e saiu da fila (dead letter). Sem o conteúdo: `module` é quem o
  * gerou, `lastError` só o tipo da falha. Local enquanto os tipos HTTP gerados não incluem esta rota.
  */
@@ -290,6 +341,20 @@ export class SystemApi {
       total: typeof dto?.total === 'number' ? dto.total : 0,
       items: Array.isArray(dto?.items) ? dto.items : [],
       unavailableModules: Array.isArray(dto?.unavailableModules) ? dto.unavailableModules : [],
+    };
+  }
+
+  /** Os números da paridade de cada computador com uso recente (só o administrador; a API só lê a memória). */
+  async parity(): Promise<ParityReport> {
+    const dto = await firstValueFrom(
+      this.http.get<{ windowMinutes?: unknown; agents?: unknown }>(
+        `${APP_CONFIG.apiBase}/v1/devices/agents/parity`,
+      ),
+    );
+    const agents = Array.isArray(dto?.agents) ? dto.agents : [];
+    return {
+      windowMinutes: count(dto?.windowMinutes) || 30,
+      agents: agents.map(readParity).filter((item): item is AgentParity => item !== null),
     };
   }
 
