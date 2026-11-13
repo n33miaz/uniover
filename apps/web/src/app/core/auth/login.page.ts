@@ -51,6 +51,9 @@ export class LoginPage {
   private readonly emailField = viewChild.required<AuthField>('emailField');
   private readonly passwordField = viewChild.required<AuthField>('passwordField');
   private readonly notice = viewChild(AuthNotice);
+  /** O QR de entrar pelo celular, quando aparece (só no computador), vai para o lado do formulário na janela larga. */
+  private readonly qr = viewChild(QrLoginPanel);
+  protected readonly hasQr = computed(() => this.qr()?.visible() ?? false);
 
   protected readonly email = signal('');
   protected readonly password = signal('');

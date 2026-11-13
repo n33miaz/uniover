@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuthLayout } from '../../core/auth/auth-layout';
 import { AuthService } from '../../core/auth/auth.service';
@@ -29,6 +29,9 @@ export class ConnectPage {
     () => this.session.status() === 'authenticated' || this.session.status() === 'pending',
   );
   protected readonly accountName = computed(() => this.session.user()?.displayName ?? null);
+  /** O QR de entrar pelo celular, quando aparece (só no computador), vai para o lado dos passos na janela larga. */
+  private readonly qr = viewChild(QrLoginPanel);
+  protected readonly hasQr = computed(() => this.qr()?.visible() ?? false);
 
   constructor() {
     // Só descobre se há sessão (renovando o cookie); nunca leva a outra tela, porque a página é pública.

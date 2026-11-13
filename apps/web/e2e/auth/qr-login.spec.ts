@@ -74,6 +74,12 @@ async function openPhone(
   return { context, page, identity };
 }
 
+/** O QR só existe depois do toque em "Entrar com o celular" (nada é pedido ao servidor antes). */
+async function openQr(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Entrar com o celular', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+}
+
 test.describe('computador: o bloco "Entrar com o celular"', () => {
   test.use(desktop);
 
@@ -90,7 +96,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   }, info) => {
     await page.goto('/entrar?next=%2Fconectar');
 
-    await expect(page.locator('summary', { hasText: 'Entrar com o celular' })).toBeVisible();
+    await openQr(page);
     const code = page.getByRole('img', { name: 'QR para entrar pelo celular' });
     await expect(code).toBeVisible();
     await expect(code.locator('path')).toHaveAttribute('d', /^M\d+ \d+h\d+v1h-\d+z/);
@@ -111,7 +117,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
 
   test('não tem violação séria de acessibilidade', async ({ page }) => {
     await page.goto('/entrar');
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
 
     const results = await new AxeBuilder({ page }).analyze();
 
@@ -124,7 +130,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   }, info) => {
     const phone = await openPhone(browser, qr, true);
     await page.goto('/entrar?next=%2Fconectar');
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
 
     const entry = qr.requests[0];
     await phone.page.goto(`/entrar/qr?codigo=${entry.code}`);
@@ -162,7 +168,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   test('a conta que entrou pelo QR é a do celular, com o papel dela', async ({ page, browser }) => {
     const phone = await openPhone(browser, qr, true, 'guest');
     await page.goto('/entrar');
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
     await phone.page.goto(`/entrar/qr?codigo=${qr.requests[0].code}`);
     await phone.page.getByRole('button', { name: 'Confirmar', exact: true }).click();
 
@@ -177,7 +183,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   }, info) => {
     const phone = await openPhone(browser, qr, true);
     await page.goto('/entrar');
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
     await phone.page.goto(`/entrar/qr?codigo=${qr.requests[0].code}`);
 
     await phone.page.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -199,7 +205,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   test('o QR se renova sozinho antes de vencer, com código e segredo novos', async ({ page }) => {
     qr.expiresIn = 6; // a tela troca o QR 5 s antes do fim: aqui, na primeira consulta
     await page.goto('/entrar');
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
 
     await expect.poll(() => qr.requests.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
     expect(qr.requests[1].code).not.toBe(qr.requests[0].code);
@@ -210,7 +216,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   test('um QR que já foi confirmado não vale de novo no celular', async ({ page, browser }) => {
     const phone = await openPhone(browser, qr, true);
     await page.goto('/entrar');
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
     const code = qr.requests[0].code;
     await phone.page.goto(`/entrar/qr?codigo=${code}`);
     await phone.page.getByRole('button', { name: 'Confirmar', exact: true }).click();
@@ -227,8 +233,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   }, info) => {
     const phone = await openPhone(browser, qr, true);
     await page.goto('/conectar');
-    await expect(page.locator('summary', { hasText: 'Entrar com o celular' })).toBeVisible();
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await openQr(page);
     await screenshot(page, info.outputPath('pc-conectar-qr.png'), { fullPage: true });
 
     await phone.page.goto(`/entrar/qr?codigo=${qr.requests[0].code}`);
@@ -239,6 +244,52 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
     await expect(page).toHaveURL(/\/conectar$/);
     expect(pc.loggedIn).toBe(true);
     await phone.context.close();
+  });
+
+  test('nada é pedido antes do toque; fechar e esconder a aba encerram o QR', async ({
+    page,
+  }, info) => {
+    await page.goto('/entrar');
+    const open = page.getByRole('button', { name: 'Entrar com o celular', exact: true });
+    await expect(open).toBeVisible();
+    // Sem toque, nenhum QR (nem consulta) por um bom tempo.
+    await page.waitForTimeout(3_000);
+    expect(pc.requests.some((r) => r.path.startsWith('/auth/qr'))).toBe(false);
+    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toHaveCount(0);
+    await screenshot(page, info.outputPath('pc-entrar-antes-do-toque.png'));
+
+    await openQr(page);
+    expect(qr.requests).toHaveLength(1);
+    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toHaveCount(0);
+    await expect(open).toBeVisible();
+    const qrCalls = () => pc.requests.filter((r) => r.path.startsWith('/auth/qr')).length;
+    const afterClose = qrCalls();
+    await page.waitForTimeout(3_000);
+    expect(qrCalls()).toBe(afterClose);
+
+    // Aba escondida: o QR se encerra e não volta sozinho.
+    await openQr(page);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toHaveCount(0);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'visible',
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect(open).toBeVisible();
+    const afterHide = qrCalls();
+    await page.waitForTimeout(3_000);
+    expect(qrCalls()).toBe(afterHide);
+    expect(qr.requests).toHaveLength(2);
   });
 
   test('quem já tem sessão neste computador não vê o bloco nem pede QR', async ({ page }) => {
@@ -280,7 +331,9 @@ test.describe('celular: a tela de confirmar', () => {
       phone.page.getByRole('heading', { level: 1, name: 'Entrar', exact: true }),
     ).toBeVisible();
     // No celular o bloco do QR não aparece: não há como escanear a própria tela.
-    await expect(phone.page.locator('summary', { hasText: 'Entrar com o celular' })).toHaveCount(0);
+    await expect(
+      phone.page.getByRole('button', { name: 'Entrar com o celular', exact: true }),
+    ).toHaveCount(0);
     expect(phone.identity.requests.some((r) => r.path === '/auth/qr/start')).toBe(false);
 
     await phone.page.getByLabel('E-mail').fill(GUEST.email);

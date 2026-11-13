@@ -1,99 +1,100 @@
-<app-auth-layout [attr.data-screen-ready]="'auth-login'">
-  <h1 i18n="@@auth.login.title">Entrar</h1>
+<app-auth-layout [attr.data-screen-ready]="'auth-login'" [aside]="hasQr()">
+  <div class="pane">
+    <h1 i18n="@@auth.login.title">Entrar</h1>
 
-  <form (submit)="submit($event)" novalidate>
-    <app-auth-field
-      #emailField
-      [fieldId]="'login-email'"
-      [name]="'email'"
-      label="E-mail"
-      i18n-label="@@auth.login.email"
-      [kind]="'email'"
-      [autocomplete]="'username'"
-      [enterKeyHint]="'next'"
-      [error]="emailError()"
-      [(value)]="email"
-      (blurred)="emailTouched.set(true)"
-    />
-
-    <app-auth-field
-      #passwordField
-      [fieldId]="'login-password'"
-      [name]="'password'"
-      label="Senha"
-      i18n-label="@@auth.login.password"
-      [kind]="'password'"
-      [autocomplete]="'current-password'"
-      [enterKeyHint]="'go'"
-      toggleLabel="Mostrar senha"
-      i18n-toggleLabel="@@auth.login.show-password"
-      [error]="passwordError()"
-      [(value)]="password"
-      (blurred)="passwordTouched.set(true)"
-    />
-
-    @if (factorRequired()) {
+    <form (submit)="submit($event)" novalidate>
       <app-auth-field
-        [fieldId]="'login-factor'"
-        [name]="'one-time-code'"
-        label="Código do autenticador ou recuperação"
-        i18n-label="@@auth.login.factor"
-        [kind]="'text'"
-        [autocomplete]="'one-time-code'"
-        [enterKeyHint]="'go'"
-        [(value)]="factor"
+        #emailField
+        [fieldId]="'login-email'"
+        [name]="'email'"
+        label="E-mail"
+        i18n-label="@@auth.login.email"
+        [kind]="'email'"
+        [autocomplete]="'username'"
+        [enterKeyHint]="'next'"
+        [error]="emailError()"
+        [(value)]="email"
+        (blurred)="emailTouched.set(true)"
       />
-    }
 
-    <div class="messages" [attr.aria-live]="'polite'">
-      @if (banner(); as notice) {
-        <!-- Um elemento novo a cada troca de papel: o "pronto" que fecha uma espera também é anunciado. -->
-        @if (notice.role === 'alert') {
-          <app-auth-notice
-            [tone]="notice.tone"
-            [role]="'alert'"
-            [icon]="notice.icon"
-            [heading]="notice.heading"
-            [detail]="notice.detail"
-            [countdown]="notice.waiting ? countdown() : null"
-          />
-        } @else {
-          <app-auth-notice
-            [tone]="notice.tone"
-            [role]="'status'"
-            [icon]="notice.icon"
-            [heading]="notice.heading"
-          />
+      <app-auth-field
+        #passwordField
+        [fieldId]="'login-password'"
+        [name]="'password'"
+        label="Senha"
+        i18n-label="@@auth.login.password"
+        [kind]="'password'"
+        [autocomplete]="'current-password'"
+        [enterKeyHint]="'go'"
+        toggleLabel="Mostrar senha"
+        i18n-toggleLabel="@@auth.login.show-password"
+        [error]="passwordError()"
+        [(value)]="password"
+        (blurred)="passwordTouched.set(true)"
+      />
+
+      @if (factorRequired()) {
+        <app-auth-field
+          [fieldId]="'login-factor'"
+          [name]="'one-time-code'"
+          label="Código do autenticador ou recuperação"
+          i18n-label="@@auth.login.factor"
+          [kind]="'text'"
+          [autocomplete]="'one-time-code'"
+          [enterKeyHint]="'go'"
+          [(value)]="factor"
+        />
+      }
+
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (banner(); as notice) {
+          <!-- Um elemento novo a cada troca de papel: o "pronto" que fecha uma espera também é anunciado. -->
+          @if (notice.role === 'alert') {
+            <app-auth-notice
+              [tone]="notice.tone"
+              [role]="'alert'"
+              [icon]="notice.icon"
+              [heading]="notice.heading"
+              [detail]="notice.detail"
+              [countdown]="notice.waiting ? countdown() : null"
+            />
+          } @else {
+            <app-auth-notice
+              [tone]="notice.tone"
+              [role]="'status'"
+              [icon]="notice.icon"
+              [heading]="notice.heading"
+            />
+          }
         }
-      }
-    </div>
+      </div>
 
-    <!--
-          Sem roubar o foco do campo no toque: se o campo em foco tinha um aviso para sumir ou aparecer ao perder o foco
-          (Caps Lock, "senhas diferentes"), a tela se deslocava entre apertar e soltar e o clique se perdia.
-        -->
-    <button
-      type="submit"
-      class="submit ui-btn primary block"
-      (mousedown)="$event.preventDefault()"
-      [disabled]="sending() || blocked()"
-    >
-      @if (sending()) {
-        <span class="ui-spinner" aria-hidden="true"></span>
-        <span i18n="@@auth.login.busy">Entrando…</span>
-      } @else {
-        <span i18n="@@auth.login.submit">Entrar</span>
-      }
-    </button>
-  </form>
+      <!--
+            Sem roubar o foco do campo no toque: se o campo em foco tinha um aviso para sumir ou aparecer ao perder o foco
+            (Caps Lock, "senhas diferentes"), a tela se deslocava entre apertar e soltar e o clique se perdia.
+          -->
+      <button
+        type="submit"
+        class="submit ui-btn primary block"
+        (mousedown)="$event.preventDefault()"
+        [disabled]="sending() || blocked()"
+      >
+        @if (sending()) {
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@auth.login.busy">Entrando…</span>
+        } @else {
+          <span i18n="@@auth.login.submit">Entrar</span>
+        }
+      </button>
+    </form>
 
-  <p class="alt"><a routerLink="/recuperar-senha" i18n="@@auth.login.forgot-password">Esqueci minha senha</a></p>
+    <!-- Atalhos discretos: a senha esquecida e, para quem está no PC sem conta, o conector (baixado sem entrar). -->
+    <p class="alt">
+      <a routerLink="/recuperar-senha" i18n="@@auth.login.forgot-password">Esqueci minha senha</a>
+      <a routerLink="/conectar" i18n="@@auth.login.connect-pc">Conectar um PC</a>
+    </p>
+  </div>
 
   <!-- No computador, a outra forma de entrar: o QR que o celular confirma (o bloco some sozinho em celular). -->
   <app-qr-login (signedIn)="onQrSignedIn()" />
-
-  <!-- Quem está no PC sem conta baixa o conector aqui, sem entrar. -->
-  <p class="alt">
-    <a routerLink="/conectar" i18n="@@auth.login.connect-pc">Conectar um PC</a>
-  </p>
 </app-auth-layout>
