@@ -42,12 +42,14 @@ async function openTv(page: Page, url = '/tv', state = s.tv.state): Promise<void
 test('Início', async ({ page }) => {
   const M = 'Início';
   const home = { module: M, route: '/', url: '/' };
+  let release: (() => void) | undefined;
   await snap(page, { ...home, state: 'esperando a TV responder', kind: 'carregando' }, async () => {
-    const release = await hold(page, '**/api/v1/tv/state');
+    release = await hold(page, '**/api/v1/tv/state');
     await page.goto('/');
     await waitSkeleton(page);
-    release();
   });
+  // Solta só depois da captura: a resposta não pode chegar antes da foto do esqueleto.
+  release?.();
   await snap(page, { ...home, state: 'dono, TV ligada e PC conectado', kind: 'com dados' }, () =>
     open(page, '/'),
   );
@@ -204,12 +206,14 @@ test('TV: configurar e TV Livre', async ({ page }) => {
     open(page, '/tv/configurar'),
   );
   const livre = { module: M, route: '/tv/livre', url: '/tv/livre' };
+  let release: (() => void) | undefined;
   await snap(page, { ...livre, state: 'esperando o agente', kind: 'carregando' }, async () => {
-    const release = await hold(page, '**/api/v1/tv/livre**');
+    release = await hold(page, '**/api/v1/tv/livre**');
     await page.goto('/tv/livre');
     await waitSkeleton(page);
-    release();
   });
+  // Solta só depois da captura: a resposta não pode chegar antes da foto do esqueleto.
+  release?.();
   await snap(page, { ...livre, state: 'ainda não instalado', kind: 'vazio' }, () =>
     open(page, '/tv/livre'),
   );

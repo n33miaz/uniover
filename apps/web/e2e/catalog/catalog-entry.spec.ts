@@ -145,12 +145,14 @@ test('com sessão: boas-vindas e confirmação de entrada pelo QR', async ({ con
     status: 'pending',
   });
   const qr = { module: M, route: '/entrar/qr', url: `/entrar/qr?codigo=${code}` };
+  let release: (() => void) | undefined;
   await snap(page, { ...qr, state: 'carregando', kind: 'carregando' }, async () => {
-    const release = await hold(page, '**/api/v1/identity/auth/qr/info');
+    release = await hold(page, '**/api/v1/identity/auth/qr/info');
     await page.goto(qr.url);
     await waitSkeleton(page);
-    release();
   });
+  // Solta só depois da captura: a resposta não pode chegar antes da foto do esqueleto.
+  release?.();
   await snap(page, { ...qr, state: 'pedido do computador', kind: 'padrão' }, () =>
     open(page, qr.url),
   );
