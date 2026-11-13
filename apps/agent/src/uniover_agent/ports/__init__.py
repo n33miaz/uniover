@@ -30,6 +30,7 @@ from uniover_agent.ports.pairing import (
 )
 from uniover_agent.ports.pc import (
     PcAudio,
+    PcForeground,
     PcInput,
     PcInputRefused,
     PcLauncher,
@@ -161,6 +162,7 @@ __all__ = [
     "PairingTicket",
     "PairingUnavailable",
     "PcAudio",
+    "PcForeground",
     "PcInput",
     "PcInputRefused",
     "PcLauncher",

@@ -1,0 +1,143 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* A barra de endereço: o campo toma a largura e a seta abre (Ctrl+L, o texto e Enter). */
+.address {
+  display: flex;
+  gap: var(--space-2);
+}
+.field {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--key);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  /* 16 px ou mais: o Safari do iPhone não dá zoom ao focar. */
+  font-size: max(16px, 1rem);
+}
+.field::placeholder {
+  color: var(--a-ink3);
+}
+.field:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+.go {
+  display: grid;
+  place-items: center;
+  width: var(--key);
+  min-height: var(--key);
+  padding: 0;
+  border: 1px solid var(--a-accent);
+  border-radius: var(--radius);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.go:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.go:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* A grade: três colunas de largura igual, desenho em cima e o rótulo curto embaixo (o mesmo ladrilho dos atalhos). */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: var(--key-tile);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.cell:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--a-accent-soft);
+}
+.cell:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cell:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+.name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.char {
+  font-size: 1.6rem;
+  font-weight: 650;
+  line-height: 1;
+}
+.digits .cell {
+  min-height: var(--key-lg);
+}
+
+svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A linha de aviso: uma frase curta, centrada; vazia não tem altura (e segue lá para o leitor de tela). */
+.notice {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+/* Fechar a aba: segurar enche o botão; o menu do toque longo do iPhone não aparece. */
+.cell.hold {
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+.cell.holding {
+  background: var(--a-accent-soft);
+  border-color: var(--a-accent);
+}

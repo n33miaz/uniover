@@ -17,12 +17,15 @@ describe('MorePage', () => {
 
   it('has one wide row per subject, with no explanatory text', () => {
     const rows = [...root.querySelectorAll('.row')].map((row) => row.textContent?.trim());
-    expect(rows).toEqual(['Energia', 'Ajustes']);
+    expect(rows).toEqual(['Controles', 'Energia', 'Ajustes']);
     expect(root.querySelectorAll('p')).toHaveLength(0);
   });
 
-  it('Power is a link to its own screen', () => {
-    expect(root.querySelector('a.row')?.getAttribute('href')).toBe('/pc/energia');
+  it('Controls and Power are links to their own screens', () => {
+    expect([...root.querySelectorAll('a.row')].map((a) => a.getAttribute('href'))).toEqual([
+      '/pc/controles',
+      '/pc/energia',
+    ]);
   });
 
   it('Settings opens the settings sheet', async () => {

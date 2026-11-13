@@ -27,7 +27,11 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// hexadecimais aleatórios, sorteados quando a página abre. Sem ela o `seq` não diz de qual
     /// página vem (uma página reaberta recomeça a contagem), então o agente só trata o pedido
     /// como anterior à troca de caminho quando a época é a mesma que o app declarou no canal
-    /// direto. A API só a repassa a um agente que declara `pc.rtc.v1`.
+    /// direto. A API só a repassa a um agente que declara `pc.rtc.v1`. `target` (opcional) é o
+    /// programa que precisa estar em primeiro plano no PC (`browser`: Chrome, Edge, Firefox,
+    /// Brave ou Opera; `spotify`; `vlc`): se a janela da frente é de outro programa, o agente
+    /// não aperta nada e recusa com `app_not_in_front`. A API só o repassa a um agente que
+    /// declara `pc.target.v1`; sem ele o comando vai para a janela da frente, como sempre.
     /// </summary>
     public partial class PcTextV1Message
     {
@@ -97,10 +101,16 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("seq")]
         public long? Seq { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("target")]
+        public PcTextV1BodyTarget? Target { get; set; }
+
         [JsonPropertyName("text")]
         [JsonConverter(typeof(PcTextV1MessagePurpleMinMaxLengthCheckConverter))]
         public string Text { get; set; }
     }
+
+    public enum PcTextV1BodyTarget { Browser, Spotify, Vlc };
 
     public partial class PcTextV1Message
     {
@@ -118,9 +128,49 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             Converters =
             {
+                PcTextV1MessagePcTextV1BodyTargetConverter.Singleton,
                 PcTextV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
+    }
+
+    internal class PcTextV1MessagePcTextV1BodyTargetConverter : JsonConverter<PcTextV1BodyTarget>
+    {
+        public override bool CanConvert(Type t) => t == typeof(PcTextV1BodyTarget);
+
+        public override PcTextV1BodyTarget Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "browser":
+                    return PcTextV1BodyTarget.Browser;
+                case "spotify":
+                    return PcTextV1BodyTarget.Spotify;
+                case "vlc":
+                    return PcTextV1BodyTarget.Vlc;
+            }
+            throw new Exception("Cannot unmarshal type PcTextV1BodyTarget");
+        }
+
+        public override void Write(Utf8JsonWriter writer, PcTextV1BodyTarget value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case PcTextV1BodyTarget.Browser:
+                    JsonSerializer.Serialize(writer, "browser", options);
+                    return;
+                case PcTextV1BodyTarget.Spotify:
+                    JsonSerializer.Serialize(writer, "spotify", options);
+                    return;
+                case PcTextV1BodyTarget.Vlc:
+                    JsonSerializer.Serialize(writer, "vlc", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type PcTextV1BodyTarget");
+        }
+
+        public static readonly PcTextV1MessagePcTextV1BodyTargetConverter Singleton = new PcTextV1MessagePcTextV1BodyTargetConverter();
     }
 
     internal class PcTextV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>

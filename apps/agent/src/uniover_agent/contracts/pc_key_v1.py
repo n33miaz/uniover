@@ -25,6 +25,12 @@ class PcKeyV1BodyModifiersItem(RootModel[Literal['CTRL', 'ALT', 'SHIFT', 'WIN']]
     ]
 
 
+class PcKeyV1BodyTarget(RootModel[Literal['browser', 'spotify', 'vlc']]):
+    root: Annotated[
+        Literal['browser', 'spotify', 'vlc'], Field(title='PcKeyV1BodyTarget')
+    ]
+
+
 class PcKeyV1Body(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -35,6 +41,7 @@ class PcKeyV1Body(BaseModel):
     )
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
     epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
+    target: Annotated[PcKeyV1BodyTarget | None, Field(title='PcKeyV1BodyTarget')] = None
 
 
 class PcKeyV1Message(BaseModel):

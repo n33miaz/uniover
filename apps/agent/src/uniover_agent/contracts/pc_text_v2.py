@@ -14,6 +14,12 @@ class PcTextV2BodyKey(RootModel[Literal['ENTER', 'TAB']]):
     root: Annotated[Literal['ENTER', 'TAB'], Field(title='PcTextV2BodyKey')]
 
 
+class PcTextV2BodyTarget(RootModel[Literal['browser', 'spotify', 'vlc']]):
+    root: Annotated[
+        Literal['browser', 'spotify', 'vlc'], Field(title='PcTextV2BodyTarget')
+    ]
+
+
 class PcTextV2Body(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -26,6 +32,9 @@ class PcTextV2Body(BaseModel):
     key: Annotated[PcTextV2BodyKey | None, Field(title='PcTextV2BodyKey')] = None
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
     epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
+    target: Annotated[PcTextV2BodyTarget | None, Field(title='PcTextV2BodyTarget')] = (
+        None
+    )
 
 
 class PcTextV2Message(BaseModel):

@@ -137,3 +137,13 @@ class PcLauncher(Protocol):
     """Abre um programa ou endereço."""
 
     def launch(self, target: str) -> None: ...
+
+
+class PcForeground(Protocol):
+    """O programa da janela em primeiro plano (a que recebe as teclas)."""
+
+    def program(self) -> str | None:
+        """O nome do executável, em minúsculas e sem pasta (`chrome.exe`); `None` se não dá para
+        saber (nenhuma janela, ou uma de administrador que este processo não pode abrir). Nunca o
+        título da janela."""
+        ...

@@ -1169,6 +1169,78 @@ public sealed class PcControlTests(PostgresFixture postgres)
         body.GetRawText().Should().NotContain("texto livre do agente");
     }
 
+    // ---- programa na frente (`target`) ----
+
+    private const string TargetCapability = "pc.target.v1";
+
+    [Fact]
+    public async Task KeyAndText_CarryTheProgramThatMustBeInFront_ToAnAgentThatDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TargetCapability);
+
+        var key = PostAsync(app, "key", new { key = "W", modifiers = Ctrl, target = "browser" });
+        var keyCommand = await AnswerAsync(agent);
+        using var keyResponse = await Within(key);
+
+        var text = PostAsync(app, "text", new { text = "+", target = "vlc" });
+        var textCommand = await AnswerAsync(agent);
+        using var textResponse = await Within(text);
+
+        keyResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        textResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        keyCommand.GetProperty("type").GetString().Should().Be("pc.key.v1");
+        SameJson(keyCommand.GetProperty("body"), "{\"key\":\"W\",\"modifiers\":[\"CTRL\"],\"target\":\"browser\"}");
+        SameJson(textCommand.GetProperty("body"), "{\"text\":\"+\",\"target\":\"vlc\"}");
+    }
+
+    [Fact]
+    public async Task AKeyWithAProgram_ToAnAgentThatDoesNotCheckTheWindow_Returns409_AndNothingIsSent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, "key", new { key = "W", modifiers = Ctrl, target = "browser" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+        // O que chega depois é a próxima tecla, sem programa: a recusada nunca saiu sem a proteção.
+        var next = PostAsync(app, "key", new { key = "ENTER" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        SameJson(command.GetProperty("body"), "{\"key\":\"ENTER\"}");
+    }
+
+    [Theory]
+    [InlineData("key", "{\"key\":\"W\",\"modifiers\":[\"CTRL\"],\"target\":\"youtube\"}")]
+    [InlineData("text", "{\"text\":\"+\",\"target\":\"\"}")]
+    public async Task AProgramOutsideTheList_Returns400_AndAsksTheAgentNothing(string path, string json)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TargetCapability);
+
+        using var response = await PostAsync(app, path, JsonNode.Parse(json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await DevicesApp.JsonAsync(response)).GetProperty("errors").TryGetProperty("target", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TheAgentRefusingBecauseAnotherProgramIsInFront_Returns502_WithItsCode()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TargetCapability);
+
+        var http = PostAsync(app, "key", new { key = "K", target = "browser" });
+        await AnswerAsync(agent, Failed("app_not_in_front"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        (await DevicesApp.JsonAsync(response)).GetProperty("agentError").GetString().Should().Be("app_not_in_front");
+    }
+
     // ---- operação e aparelho (envelope) ----
 
     private const string OperationCapability = "pc.op.v1";

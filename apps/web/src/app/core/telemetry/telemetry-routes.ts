@@ -30,6 +30,8 @@ export const PAGE_ROUTES: readonly string[] = [
   '/pc/midia',
   '/pc/mais',
   '/pc/energia',
+  '/pc/controles',
+  '/pc/controles/:id',
   '/treino',
   '/treino/sessao',
   '/treino/sessao/exercicio',

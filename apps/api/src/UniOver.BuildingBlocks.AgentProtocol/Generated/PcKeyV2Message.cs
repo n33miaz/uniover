@@ -30,7 +30,11 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// hexadecimais aleatórios, sorteados quando a página abre. Sem ela o `seq` não diz de qual
     /// página vem (uma página reaberta recomeça a contagem), então o agente só trata o pedido
     /// como anterior à troca de caminho quando a época é a mesma que o app declarou no canal
-    /// direto. A API só a repassa a um agente que declara `pc.rtc.v1`.
+    /// direto. A API só a repassa a um agente que declara `pc.rtc.v1`. `target` (opcional) é o
+    /// programa que precisa estar em primeiro plano no PC (`browser`: Chrome, Edge, Firefox,
+    /// Brave ou Opera; `spotify`; `vlc`): se a janela da frente é de outro programa, o agente
+    /// não aperta nada e recusa com `app_not_in_front`. A API só o repassa a um agente que
+    /// declara `pc.target.v1`; sem ele o comando vai para a janela da frente, como sempre.
     /// </summary>
     public partial class PcKeyV2Message
     {
@@ -114,6 +118,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("seq")]
         public long? Seq { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("target")]
+        public PcKeyV2BodyTarget? Target { get; set; }
     }
 
     public enum PcKeyV2BodyAction { Down, Press, Up };
@@ -121,6 +129,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     public enum PcKeyV2BodyKey { A, Alt, Apps, B, Backspace, C, CapsLock, Comma, Ctrl, D, D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, Delete, Down, E, End, Enter, Equals, Escape, F, F1, F10, F11, F12, F2, F3, F4, F5, F6, F7, F8, F9, G, H, Home, I, Insert, J, K, L, Left, M, Minus, N, O, P, PageDown, PageUp, Period, PrintScreen, Q, R, Right, S, Shift, Space, T, Tab, U, Up, V, W, Win, X, Y, Z };
 
     public enum PcKeyV2BodyModifiersItem { Alt, Ctrl, Shift, Win };
+
+    public enum PcKeyV2BodyTarget { Browser, Spotify, Vlc };
 
     public partial class PcKeyV2Message
     {
@@ -141,6 +151,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                 PcKeyV2MessagePcKeyV2BodyActionConverter.Singleton,
                 PcKeyV2MessagePcKeyV2BodyKeyConverter.Singleton,
                 PcKeyV2MessagePcKeyV2BodyModifiersItemConverter.Singleton,
+                PcKeyV2MessagePcKeyV2BodyTargetConverter.Singleton,
                 PcKeyV2MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
@@ -621,6 +632,45 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         }
 
         public static readonly PcKeyV2MessagePcKeyV2BodyModifiersItemConverter Singleton = new PcKeyV2MessagePcKeyV2BodyModifiersItemConverter();
+    }
+
+    internal class PcKeyV2MessagePcKeyV2BodyTargetConverter : JsonConverter<PcKeyV2BodyTarget>
+    {
+        public override bool CanConvert(Type t) => t == typeof(PcKeyV2BodyTarget);
+
+        public override PcKeyV2BodyTarget Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "browser":
+                    return PcKeyV2BodyTarget.Browser;
+                case "spotify":
+                    return PcKeyV2BodyTarget.Spotify;
+                case "vlc":
+                    return PcKeyV2BodyTarget.Vlc;
+            }
+            throw new Exception("Cannot unmarshal type PcKeyV2BodyTarget");
+        }
+
+        public override void Write(Utf8JsonWriter writer, PcKeyV2BodyTarget value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case PcKeyV2BodyTarget.Browser:
+                    JsonSerializer.Serialize(writer, "browser", options);
+                    return;
+                case PcKeyV2BodyTarget.Spotify:
+                    JsonSerializer.Serialize(writer, "spotify", options);
+                    return;
+                case PcKeyV2BodyTarget.Vlc:
+                    JsonSerializer.Serialize(writer, "vlc", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type PcKeyV2BodyTarget");
+        }
+
+        public static readonly PcKeyV2MessagePcKeyV2BodyTargetConverter Singleton = new PcKeyV2MessagePcKeyV2BodyTargetConverter();
     }
 
     internal class PcKeyV2MessageMinMaxLengthCheckConverter : JsonConverter<string>

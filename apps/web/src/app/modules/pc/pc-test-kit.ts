@@ -4,6 +4,7 @@ import type { PcFavorite, PcStatus, PcVolumeLevel } from '../../core/modules/pc-
 import {
   PC_CLICK_V2_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
+  PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
   PC_VOLUME_CAPABILITY,
   PC_ZOOM_CAPABILITY,
@@ -14,6 +15,7 @@ import type { PcPhase } from './data/pc-store';
 import type {
   PcClickButton,
   PcClickOptions,
+  PcFocusTarget,
   PcHoldableKey,
   PcKey,
   PcKeyOptions,
@@ -51,6 +53,7 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     ),
     supportsKeyV2: computed(() => capabilities().includes(PC_KEY_V2_CAPABILITY)),
     supportsTextV2: computed(() => capabilities().includes(PC_TEXT_V2_CAPABILITY)),
+    supportsTarget: computed(() => capabilities().includes(PC_TARGET_CAPABILITY)),
     supportsClickV2: computed(() => capabilities().includes(PC_CLICK_V2_CAPABILITY)),
     supportsZoom: computed(() => capabilities().includes(PC_ZOOM_CAPABILITY)),
     supportsVolume: computed(() => capabilities().includes(PC_VOLUME_CAPABILITY)),
@@ -79,7 +82,7 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     sendKey: vi.fn<
       (key: PcKey, modifiers?: readonly PcModifier[], options?: PcKeyOptions) => Outcome
     >(() => Promise.resolve(null)),
-    sendText: vi.fn<(text: string) => Outcome>(() => Promise.resolve(null)),
+    sendText: vi.fn<(text: string, target?: PcFocusTarget) => Outcome>(() => Promise.resolve(null)),
     sendTextEdit: vi.fn<(edit: PcTextEdit) => Outcome>(() => Promise.resolve(null)),
     sendMedia: vi.fn<(action: PcMediaAction, steps?: number) => Outcome>(() =>
       Promise.resolve(null),

@@ -17,6 +17,7 @@ from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.pc.apps import PcApp
 from uniover_agent.core.pc.click_pacer import ClickPacer
 from uniover_agent.core.pc.clock_offset import ClockOffset
+from uniover_agent.core.pc.focus import focus_guarded
 from uniover_agent.core.pc.freshness import (
     EXPIRED,
     MAX_COMMAND_AGE_SECONDS,
@@ -29,6 +30,7 @@ from uniover_agent.core.pc.volume import VOLUME_MEDIA_ACTIONS, pc_volume_handler
 from uniover_agent.ports import Transport, TransportError
 from uniover_agent.ports.pc import (
     PcAudio,
+    PcForeground,
     PcInput,
     PcInputRefused,
     PcLauncher,
@@ -464,6 +466,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     pacer: ClickPacer | None = None,
     audio: PcAudio | None = None,
     volume_changed: Callable[[], None] | None = None,
+    foreground: PcForeground | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
@@ -475,7 +478,8 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     `pacer` guarda o último clique para o `gapMs` do seguinte (um só para o `v1` e o `v2`, e para
     a nuvem e o canal direto, que entregam ao mesmo conjunto de manipuladores). `audio` é o áudio do
     PC (sem ele não há `pc.volume.v1`); `volume_changed` é avisado depois de um comando mudar o
-    volume (o aviso do nível sai atrás dele).
+    volume (o aviso do nível sai atrás dele). `foreground` lê o programa da frente: com ele, a tecla
+    e o texto que trazem `target` só saem com aquele programa na frente (ver `focus`).
     """
     offset = clock or ClockOffset()
     clicks = pacer or ClickPacer()
@@ -489,6 +493,11 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
 
     def noted(handle: Handler) -> Handler:
         return use.noting(handle) if use is not None else handle
+
+    def focused(handle: Handler) -> Handler:
+        # Com `foreground`, o `target` de uma tecla ou texto é conferido (ver `focus`); sem ele o
+        # agente não declara `pc.target.v1` e a API nunca manda o campo.
+        return focus_guarded(handle, foreground) if foreground is not None else handle
 
     def fresh(
         handle: Handler,
@@ -512,16 +521,16 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         "pc.click.v2": fresh(
             noted(pc_click_v2_handler(pc, clicks, expired=aged_out)), MAX_COMMAND_AGE_SECONDS
         ),
-        "pc.key.v1": fresh(noted(pc_key_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        "pc.key.v1": fresh(noted(focused(pc_key_handler(pc))), MAX_COMMAND_AGE_SECONDS),
         # Soltar nunca é recusado por idade (como o UP de um clique): uma soltura atrasada ainda é
         # a que impede o modificador de ficar preso.
         "pc.key.v2": fresh(
-            noted(pc_key_v2_handler(pc)),
+            noted(focused(pc_key_v2_handler(pc))),
             MAX_COMMAND_AGE_SECONDS,
             exempt=lambda command: command.body.get("action") == "UP",
         ),
-        "pc.text.v1": fresh(noted(pc_text_handler(pc)), MAX_COMMAND_AGE_SECONDS),
-        "pc.text.v2": fresh(noted(pc_text_v2_handler(pc)), MAX_COMMAND_AGE_SECONDS),
+        "pc.text.v1": fresh(noted(focused(pc_text_handler(pc))), MAX_COMMAND_AGE_SECONDS),
+        "pc.text.v2": fresh(noted(focused(pc_text_v2_handler(pc))), MAX_COMMAND_AGE_SECONDS),
         # O zoom é um lote só (Ctrl, roda, Ctrl): um zoom velho cairia em outra janela, então
         # vale só dentro da validade dos comandos.
         "pc.pointer.zoom.v1": fresh(noted(pc_zoom_handler(pc)), MAX_COMMAND_AGE_SECONDS),

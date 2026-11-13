@@ -15367,6 +15367,7 @@ export interface components {
       repeat?: null | number | string;
       /** Format: int32 */
       seq?: null | number | string;
+      target?: null | string;
     };
     PcMediaRequest: {
       action: null | string;
@@ -15431,6 +15432,7 @@ export interface components {
       key?: null | string;
       /** Format: int32 */
       seq?: null | number | string;
+      target?: null | string;
       text: null | string;
     };
     PcVolumeRequest: {

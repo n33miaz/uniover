@@ -15,6 +15,7 @@ import {
   textEditNeedsV2,
   type PcClickButton,
   type PcClickOptions,
+  type PcFocusTarget,
   type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
@@ -112,6 +113,7 @@ export class PcApi {
     const repeat = clampKeyRepeat(options.repeat);
     if (repeat > 1) body['repeat'] = repeat;
     if (options.action !== undefined && options.action !== 'PRESS') body['action'] = options.action;
+    if (options.target !== undefined) body['target'] = options.target;
     // No canal o agente entende a v2 sempre; a v1 só quando o pedido cabe nela (como a API faz).
     if (
       this.direct.canUse() &&
@@ -144,9 +146,11 @@ export class PcApi {
     );
   }
 
-  async text(text: string): Promise<void> {
-    if (this.direct.canUse() && (await this.viaDirect('pc.text.v1', { text }))) return;
-    await this.cloud(this.commandPost(`${BASE}/text`, { text, ...this.numbered() }));
+  /** `target`: só digita com este programa na frente (quem chama só o manda a um PC que declarou `pc.target.v1`). */
+  async text(text: string, target?: PcFocusTarget): Promise<void> {
+    const body: Record<string, unknown> = target === undefined ? { text } : { text, target };
+    if (this.direct.canUse() && (await this.viaDirect('pc.text.v1', body))) return;
+    await this.cloud(this.commandPost(`${BASE}/text`, { ...body, ...this.numbered() }));
   }
 
   /**

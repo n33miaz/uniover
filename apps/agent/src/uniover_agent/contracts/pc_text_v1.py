@@ -7,7 +7,13 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
+
+
+class PcTextV1BodyTarget(RootModel[Literal['browser', 'spotify', 'vlc']]):
+    root: Annotated[
+        Literal['browser', 'spotify', 'vlc'], Field(title='PcTextV1BodyTarget')
+    ]
 
 
 class PcTextV1Body(BaseModel):
@@ -19,6 +25,9 @@ class PcTextV1Body(BaseModel):
     ]
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
     epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
+    target: Annotated[PcTextV1BodyTarget | None, Field(title='PcTextV1BodyTarget')] = (
+        None
+    )
 
 
 class PcTextV1Message(BaseModel):

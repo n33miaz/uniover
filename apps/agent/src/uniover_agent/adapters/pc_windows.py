@@ -6,6 +6,7 @@ testes montarem o agente) e recusam com `PcUnsupported`. Os eventos já chegam p
 """
 
 import logging
+import ntpath
 import os
 import sys
 import threading
@@ -260,6 +261,35 @@ if sys.platform == "win32":
         finally:
             _kernel32.CloseHandle(process)
 
+    _kernel32.QueryFullProcessImageNameW.argtypes = (
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+
+    def _foreground_image() -> str | None:
+        """Caminho do executável da janela em primeiro plano (nunca o título dela); `None` se não
+        há janela ou o processo não abre (uma janela de administrador)."""
+        window = _user32.GetForegroundWindow()
+        if not window:
+            return None
+        pid = wintypes.DWORD(0)
+        _user32.GetWindowThreadProcessId(window, ctypes.byref(pid))
+        if not pid.value:
+            return None
+        process = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if not process:
+            return None
+        try:
+            buffer = ctypes.create_unicode_buffer(1024)
+            length = wintypes.DWORD(len(buffer))
+            if not _kernel32.QueryFullProcessImageNameW(process, 0, buffer, ctypes.byref(length)):
+                return None
+            return buffer.value or None
+        finally:
+            _kernel32.CloseHandle(process)
+
     def diagnose_refusal(last_error: int) -> tuple[str, str]:
         """Depois de um `SendInput` recusado: a causa (código estável) e os fatos medidos.
 
@@ -310,6 +340,9 @@ if sys.platform == "win32":
         return bool(ctypes.windll.powrprof.SetSuspendState(False, False, False))
 
 else:
+
+    def _foreground_image() -> str | None:
+        return None
 
     def _send_input(inputs: Sequence[RawInput]) -> None:
         raise PcUnsupported(_UNSUPPORTED)
@@ -612,3 +645,20 @@ class WindowsPcLauncher:
 
     def launch(self, target: str) -> None:
         self._start(target)
+
+
+class WindowsPcForeground:
+    """O executável da janela em primeiro plano, só o nome do arquivo em minúsculas. Nunca o título
+    da janela, e nunca vai para o registro (quem chama só compara)."""
+
+    def __init__(self, image: Callable[[], str | None] | None = None) -> None:
+        self._image = image or _foreground_image
+
+    def program(self) -> str | None:
+        try:
+            path = self._image()
+        except OSError:
+            return None
+        if not path:
+            return None
+        return ntpath.basename(path).lower() or None
