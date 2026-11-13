@@ -805,6 +805,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/devices/agents/parity': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentParityResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/devices/client-events': {
     parameters: {
       query?: never;
@@ -5749,6 +5802,90 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/pc/rtc/{sessionId}/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          sessionId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['PcRtcUsageRequest'];
+        };
+      };
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -14207,6 +14344,32 @@ export interface components {
       accepted: boolean;
       action: string;
     };
+    AgentParityResponse: {
+      agents: components['schemas']['AgentParitySnapshot'][];
+      /** Format: int32 */
+      windowMinutes: number | string;
+    };
+    AgentParitySnapshot: {
+      agentId: string;
+      /** Format: int32 */
+      cloudSeconds: number | string;
+      /** Format: int32 */
+      directPercent: null | number | string;
+      /** Format: int32 */
+      directSeconds: number | string;
+      /** Format: int32 */
+      loopLagP99Ms: null | number | string;
+      /** Format: int32 */
+      loopLagSamples: number | string;
+      /** Format: int32 */
+      replyP50Ms: null | number | string;
+      /** Format: int32 */
+      replyP95Ms: null | number | string;
+      /** Format: int32 */
+      replySamples: number | string;
+      /** Format: int32 */
+      unanswered: number | string;
+    };
     AgentSummary: {
       agentBuild?: null | string;
       agentVersion?: null | string;
@@ -15249,6 +15412,10 @@ export interface components {
       /** Format: uuid */
       sessionId: string;
       token: string;
+    };
+    PcRtcUsageRequest: {
+      /** Format: int32 */
+      totalSeconds: null | number | string;
     };
     PcStatusResponse: {
       apps: components['schemas']['PcApp'][];

@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using UniOver.IntegrationTests.Devices.Pairing;
+using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Features.Agents;
@@ -291,5 +292,97 @@ public sealed class IdleDatabaseTests(PostgresFixture postgres)
         await Task.Delay(300, Ct);
         counter.Enabled = false;
         counter.Count.Should().Be(0, $"a saúde é só memória: medir, falhar na hora e voltar não consultam o banco ({counter.Summary}); falha rápida em {fast.TotalMilliseconds} ms");
+    }
+
+    private const string FakeSdp =
+        "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=fingerprint:sha-256 AA:BB\r\n";
+
+    /// <summary>Abre um canal direto como o app (a oferta pela API) e o agente simulado (a resposta e o resultado).</summary>
+    private static async Task<Guid> OpenDirectAsync(TransportApp app, FakeAgent agent, string bearer)
+    {
+        var posting = app.App.SendAsync(HttpMethod.Post, "/api/v1/pc/rtc/offer", new { sdp = FakeSdp }, bearer);
+        var command = (await agent.ReceiveAsync())!.Value;
+        command.GetProperty("type").GetString().Should().Be("pc.rtc.offer.v1");
+        var id = command.GetProperty("id").GetGuid();
+        var sessionId = command.GetProperty("body").GetProperty("sessionId").GetGuid();
+        await agent.SendTextAsync(agent.Envelope("pc.rtc.answer.v1", new JsonObject { ["sessionId"] = sessionId, ["sdp"] = "ANSWER-SDP" }, id));
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject { ["ok"] = true }, id));
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        return sessionId;
+    }
+
+    [Fact]
+    public async Task TheParityNumbers_AreMeasuredAndRead_WithoutASingleQuery()
+    {
+        var counter = new CommandCounter();
+        await using var app = await TransportApp.StartAsync(postgres, Options(counter));
+        await using var agent = await app.ConnectAsync();
+        await agent.SendHelloAsync("1.2.3", "tv.remote", "transport.keepalive.v1", "pc.control.v1", "pc.rtc.v1");
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "1.2.3", "hello aceito");
+        await RunAsync(app, agent, TimeSpan.FromMinutes(12), TimeSpan.FromSeconds(30));
+
+        // Entrar e abrir o canal direto gravam (a sessão e a trilha): é antes de o contador ligar, como o uso de verdade.
+        var owner = (await app.App.LoginAsync()).AccessToken;
+        var sessionId = await OpenDirectAsync(app, agent, owner);
+        // Um convidado com o controle do PC: conferir a permissão dele leria o banco (cache frio). A rota do uso não confere.
+        var guest = await GuestSeed.CreateGuestAsync(
+            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", ["module:pc"]);
+        await Task.Delay(300, Ct);
+
+        counter.Enabled = true;
+
+        // A nuvem: cinco teclas respondidas, uma por segundo, e uma que fica sem resposta (o batimento em dia: só lenta).
+        for (var i = 0; i < 5; i++)
+        {
+            app.App.Time.Advance(TimeSpan.FromSeconds(1));
+            await AnswersAsync(app, agent);
+        }
+
+        app.App.Time.Advance(TimeSpan.FromSeconds(1));
+        var missed = app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(8), Ct);
+        (await agent.ReceiveAsync())!.Value.GetProperty("type").GetString().Should().Be("tv.key.v1");
+        await KeepAliveAsync(agent);
+        app.App.Time.Advance(TimeSpan.FromSeconds(8));
+        (await missed.WaitAsync(FakeAgent.Patience, Ct)).Error.Code.Should().Be(AgentErrors.TimeoutCode);
+
+        // O canal direto, um minuto depois: o app manda o total de 54 s de uso (sem banco: a sessão do canal é da memória e é ela que
+        // autoriza). O convidado, que não é dono da sessão, é recusado também sem banco.
+        await KeepAliveAsync(agent);
+        app.App.Time.Advance(TimeSpan.FromSeconds(50));
+        await KeepAliveAsync(agent);
+        using (var usage = await app.App.SendAsync(HttpMethod.Post, $"/api/v1/pc/rtc/{sessionId}/usage", new { totalSeconds = 54 }, owner))
+        {
+            usage.StatusCode.Should().Be(System.Net.HttpStatusCode.NoContent);
+        }
+
+        using (var guestUsage = await app.App.SendAsync(
+            HttpMethod.Post, $"/api/v1/pc/rtc/{sessionId}/usage", new { totalSeconds = 54 }, guest.Login.AccessToken))
+        {
+            guestUsage.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden);
+        }
+
+        // O batimento deste agente ainda não traz o atraso do laço (fase 2): a leitura fica vazia, sem erro.
+        await KeepAliveAsync(agent);
+
+        using var read = await app.App.SendAsync(HttpMethod.Get, "/api/v1/devices/agents/parity", bearer: owner);
+        read.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await DevicesApp.JsonAsync(read);
+
+        await Task.Delay(300, Ct);
+        counter.Enabled = false;
+        counter.Count.Should().Be(0, $"os números da paridade são só memória: medir, mandar o uso e ler não consultam o banco ({counter.Summary})");
+
+        body.GetProperty("windowMinutes").GetInt32().Should().Be(30);
+        var pc = body.GetProperty("agents").EnumerateArray().Single(a => a.GetProperty("agentId").GetString() == app.Agent.Slug);
+        pc.GetProperty("cloudSeconds").GetInt32().Should().Be(6, "seis segundos com tecla pela nuvem");
+        pc.GetProperty("directSeconds").GetInt32().Should().Be(54);
+        pc.GetProperty("directPercent").GetInt32().Should().Be(90);
+        pc.GetProperty("replySamples").GetInt32().Should().Be(5);
+        pc.GetProperty("replyP50Ms").ValueKind.Should().Be(JsonValueKind.Number);
+        pc.GetProperty("replyP95Ms").ValueKind.Should().Be(JsonValueKind.Number);
+        pc.GetProperty("loopLagSamples").GetInt32().Should().Be(0);
+        (pc.TryGetProperty("loopLagP99Ms", out var lag) ? lag.ValueKind : JsonValueKind.Null).Should().Be(JsonValueKind.Null, "sem o atraso, a tela mostra \"—\"");
+        pc.GetProperty("unanswered").GetInt32().Should().Be(1);
     }
 }

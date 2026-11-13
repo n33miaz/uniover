@@ -53,6 +53,8 @@ public static class DevicesTransportModule
         services.AddSingleton<AgentConnections>();
         // A saúde de cada agente (pronto, lento, sem resposta), só em memória: a API roda numa instância só.
         services.AddSingleton<AgentHealth>();
+        // Os números da paridade com o Unified Remote (Ajustes > Sistema), só em memória: o banco segue dormindo.
+        services.AddSingleton<AgentParity>();
         services.AddSingleton<AgentPresenceSeeder>();
         services.AddHostedService(sp => sp.GetRequiredService<AgentPresenceSeeder>());
         services.AddSingleton<IAgentSessionCloser>(sp => sp.GetRequiredService<AgentConnections>());
@@ -61,7 +63,8 @@ public static class DevicesTransportModule
         // A chave também vale no hub, não só na descoberta. É lida quando os singletons são
         // criados; mudar Agent:Handover:Enabled exige reiniciar a API para alcançar conexões novas.
         var handoverEnabled = configuration.GetValue("Agent:Handover:Enabled", true);
-        services.AddSingleton(sp => ActivatorUtilities.CreateInstance<AgentHub>(sp, handoverEnabled, sp.GetRequiredService<AgentHealth>()));
+        services.AddSingleton(sp => ActivatorUtilities.CreateInstance<AgentHub>(
+            sp, handoverEnabled, sp.GetRequiredService<AgentHealth>(), sp.GetRequiredService<AgentParity>()));
         services.AddSingleton<AgentGateway>();
         services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<AgentGateway>());
         services.AddHostedService<AgentTransportListener>();

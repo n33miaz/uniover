@@ -92,7 +92,15 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/pc/rtc/offer",
         "/api/v1/pc/rtc/{sessionId:guid}/candidates",
         "/api/v1/pc/rtc/{sessionId:guid}/close",
+        PcRtcUsageRoute,
     ];
+
+    /// <summary>
+    /// O uso do canal direto (só a contagem de segundos): por papel o convidado entra, mas quem autoriza é a sessão do canal em
+    /// memória, que a oferta (com <c>module:pc</c> e conta ativa) abriu para a mesma conta. Sem permissão nomeada nem conferência
+    /// de conta ativa por desenho: as duas leriam o banco com o cache frio, e o app manda o uso a cada minuto.
+    /// </summary>
+    private const string PcRtcUsageRoute = "/api/v1/pc/rtc/{sessionId:guid}/usage";
 
     /// <summary>Rotas que se autenticam por credencial própria (o agente do PC), não por papel de pessoa.</summary>
     private static readonly string[] RoleExempt =
@@ -226,13 +234,15 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             // O convidado que entra por papel numa rota da TV só passa se a rota também exige uma permissão nomeada (a telemetria
             // de erros e as rotas da própria sessão são a exceção, sem permissão: só gravam ou leem o que é da própria conta).
             var telemetry = MethodsOf(endpoint).All(method => IsRoute("POST", ClientEventsRoute, method, pattern));
-            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !telemetry && !policy.Requirements.OfType<PermissionRequirement>().Any())
+            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !telemetry && pattern != PcRtcUsageRoute
+                && !policy.Requirements.OfType<PermissionRequirement>().Any())
             {
                 failures.Add($"{label}: o convidado alcança por papel sem exigir uma permissão nomeada");
             }
 
             // Toda rota que o convidado alcança (fora as da própria sessão) confere também que a conta não foi revogada.
-            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !policy.Requirements.OfType<ActiveAccountRequirement>().Any())
+            if (asGuest && !GuestSessionRoutes.Contains(pattern) && pattern != PcRtcUsageRoute
+                && !policy.Requirements.OfType<ActiveAccountRequirement>().Any())
             {
                 failures.Add($"{label}: o convidado alcança sem a conferência de conta ativa");
             }
@@ -296,7 +306,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         allowed.Where(p => p.StartsWith("/api/v1/pc/", StringComparison.Ordinal)).Distinct()
             .Should().BeEquivalentTo(GuestPcRoutes);
         foreach (var endpoint in app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
-            .Where(e => RouteInspector.Pattern(e).StartsWith("/api/v1/pc/", StringComparison.Ordinal)))
+            .Where(e => RouteInspector.Pattern(e).StartsWith("/api/v1/pc/", StringComparison.Ordinal) && RouteInspector.Pattern(e) != PcRtcUsageRoute))
         {
             var pcPolicy = (await AuthorizationPolicy.CombineAsync(policies, endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()))!;
             pcPolicy.Requirements.OfType<PermissionRequirement>().Select(r => r.Permission)
