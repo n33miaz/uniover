@@ -9,6 +9,7 @@ import {
   smallTargets,
 } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
+import { trackPosts } from './in-flight';
 import { PcMock, READY, mockPcApi } from './pc-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -238,6 +239,7 @@ test.describe('Mouse', () => {
     await expect(page.locator('.pad.holding')).toHaveCount(0);
     // O soltar passou (só o aperto falhou): a página ao esconder não tem mais nada a soltar, então nenhum pedido novo sai.
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    // Prova de ausência: um soltar sairia na hora do pagehide (sem timer); a janela só cobre a ida até o simulador.
     await page.waitForTimeout(300);
     expect(pc.sent('/click').map((body) => body['action'])).toEqual(['DOWN', 'UP']);
     await expect(page.getByRole('alert')).toContainText('O PC não respondeu a tempo.');
@@ -433,6 +435,7 @@ test.describe('Tela do mouse', () => {
   });
 
   test('segurar apagar repete, e soltar para (nunca fica apagando)', async ({ page }) => {
+    const landed = trackPosts(page, pc);
     await openPc(page);
     const erase = page.getByRole('button', { name: 'Apagar', exact: true });
     const box = (await erase.boundingBox())!;
@@ -441,9 +444,10 @@ test.describe('Tela do mouse', () => {
     await expect.poll(() => pc.sent('/key').length).toBeGreaterThanOrEqual(3);
     await page.mouse.up();
     // Passado o que já estava a caminho, nada mais sai.
-    await page.waitForTimeout(400);
+    await landed('/key');
     const settled = pc.sent('/key').length;
-    await page.waitForTimeout(500);
+    // Prova de ausência: a repetição roda a cada BATCH_EVERY_MS (120 ms); três rodadas sem pedido novo bastam.
+    await page.waitForTimeout(360);
     expect(pc.sent('/key')).toHaveLength(settled);
     expect(pc.sent('/key').every((body) => body['key'] === 'BACKSPACE')).toBe(true);
   });
@@ -634,6 +638,7 @@ test.describe('Gestos', () => {
       { type: 'up', id: 2, x, y },
       { type: 'up', id: 3, x: x + 50, y },
     ]);
+    // Prova de ausência: o clique sairia no soltar do último dedo (sem timer); a janela cobre a ida até o simulador.
     await page.waitForTimeout(200);
     expect(clicks()).toEqual([]);
   });
@@ -645,6 +650,8 @@ test.describe('Gestos', () => {
     const { x, y } = await padCenter(page);
     await page.mouse.move(x, y);
     await page.mouse.down();
+    // O que se testa é o tempo: antes de LONG_PRESS_MS (450) nada sai. O gesto usa o `timeStamp` real dos eventos, que o
+    // relógio falso do Playwright não controla, então a espera é de verdade.
     await page.waitForTimeout(300);
     expect(clicks()).toEqual([]);
     await expect(page.locator('.pad.holding')).toBeVisible();
@@ -729,6 +736,7 @@ test.describe('Gestos', () => {
   test('um gesto rápido segue rolando depois dos dedos saírem, e um toque novo para', async ({
     page,
   }) => {
+    const landed = trackPosts(page, pc);
     await openPc(page);
     const { x, y } = await padCenter(page);
     const steps: FingerStep[] = [
@@ -744,21 +752,23 @@ test.describe('Gestos', () => {
     await fingers(page, steps);
     const scrolled = () =>
       pc.sent('/pointer').reduce((sum, body) => sum + Math.abs(Number(body['scrollY'] ?? 0)), 0);
-    await page.waitForTimeout(60);
+    await landed('/pointer');
     const atRelease = scrolled();
     // Os dedos já saíram, e a rolagem continua.
     await expect.poll(scrolled).toBeGreaterThan(atRelease);
-    await page.waitForTimeout(150);
     // Um toque novo para na hora: depois dele nada mais rola.
     await fingers(page, [{ type: 'down', id: 1, x, y }]);
-    await page.waitForTimeout(80);
+    await landed('/pointer');
     const afterTouch = scrolled();
-    await page.waitForTimeout(300);
+    // Prova de ausência: a rolagem sozinha manda a cada quadro (lote de 32 ms); seis lotes sem pedido novo bastam.
+    await page.waitForTimeout(200);
     expect(scrolled()).toBe(afterTouch);
-    // O dedo que só parou a rolagem não começa uma pressão longa (450 ms) nem clica quando sai.
-    await page.waitForTimeout(600);
+    // O dedo que só parou a rolagem não começa uma pressão longa nem clica quando sai. Prova de ausência medida pelo
+    // `timeStamp` real dos eventos (o relógio falso não o controla): passa de LONG_PRESS_MS (450) com folga.
+    await page.waitForTimeout(500);
     expect(clicks()).toEqual([]);
     await fingers(page, [{ type: 'up', id: 1, x, y }]);
+    // Prova de ausência: o clique sairia no soltar (sem timer); a janela cobre a ida até o simulador.
     await page.waitForTimeout(150);
     expect(clicks()).toEqual([]);
     await expect(page.locator('.pad.holding')).toHaveCount(0);
@@ -780,11 +790,13 @@ test.describe('Gestos', () => {
     steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
     steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
     await fingers(page, steps);
-    await page.waitForTimeout(60);
+    // O toque rápido cai com a rolagem já seguindo sozinha: ela anda a cada quadro, e dois quadros a põem em marcha.
+    await afterFrames(page);
     await fingers(page, [
       { type: 'down', id: 1, x, y },
       { type: 'up', id: 1, x, y, wait: 50 },
     ]);
+    // Prova de ausência: o clique sairia no soltar (sem timer); a janela cobre a ida até o simulador.
     await page.waitForTimeout(200);
     expect(clicks()).toEqual([]);
     await tap(page, x, y);
@@ -794,6 +806,7 @@ test.describe('Gestos', () => {
   test('a rolagem que segue sozinha para quando a página vai para o segundo plano', async ({
     page,
   }) => {
+    const landed = trackPosts(page, pc);
     await openPc(page);
     const { x, y } = await padCenter(page);
     const steps: FingerStep[] = [
@@ -808,14 +821,16 @@ test.describe('Gestos', () => {
     steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
     await fingers(page, steps);
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
-    await page.waitForTimeout(100);
+    await landed('/pointer');
     const scrolled = () => pc.sent('/pointer').length;
     const after = scrolled();
-    await page.waitForTimeout(400);
+    // Prova de ausência: a rolagem sozinha manda a cada quadro (lote de 32 ms); seis lotes sem pedido novo bastam.
+    await page.waitForTimeout(200);
     expect(scrolled()).toBe(after);
   });
 
   test('com "reduzir movimento" a rolagem não segue sozinha', async ({ page }) => {
+    const landed = trackPosts(page, pc);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await openPc(page);
     const { x, y } = await padCenter(page);
@@ -830,9 +845,10 @@ test.describe('Gestos', () => {
     steps.push({ type: 'up', id: 1, x: x - 30, y: y + 106, wait: 4 });
     steps.push({ type: 'up', id: 2, x: x + 30, y: y + 106 });
     await fingers(page, steps);
-    await page.waitForTimeout(150);
+    await landed('/pointer');
     const settled = pc.sent('/pointer').length;
-    await page.waitForTimeout(400);
+    // Prova de ausência: a rolagem sozinha mandaria a cada quadro (lote de 32 ms); seis lotes sem pedido novo bastam.
+    await page.waitForTimeout(200);
     expect(pc.sent('/pointer').length).toBe(settled);
   });
 
@@ -1768,13 +1784,15 @@ test.describe('Teclas do pc.key.v2', () => {
     test('manda lotes com repeat: o primeiro toque é uma tecla só, e soltar para tudo', async ({
       page,
     }) => {
+      const landed = trackPosts(page, pc);
       await openPc(page);
       await holdDown(page, page.getByRole('button', { name: 'Apagar', exact: true }));
       await expect.poll(() => keyBodies().length).toBeGreaterThanOrEqual(3);
       await page.mouse.up();
-      await page.waitForTimeout(400);
+      await landed('/key');
       const settled = keyBodies().length;
-      await page.waitForTimeout(500);
+      // Prova de ausência: a repetição roda a cada BATCH_EVERY_MS (120 ms); três rodadas sem pedido novo bastam.
+      await page.waitForTimeout(360);
       expect(keyBodies()).toHaveLength(settled);
       const [first, ...batches] = keyBodies();
       expect(first).toEqual({ key: 'BACKSPACE' });
@@ -2255,8 +2273,9 @@ test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
       await tap(page, x, y);
       await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT', modifiers: ['CTRL'] }]);
       await expect(page.locator('.armed')).toHaveCount(0);
-      // O toque seguinte (depois do tempo do toque duplo) já é comum.
-      await page.waitForTimeout(450);
+      // O toque seguinte (depois do tempo do toque duplo) já é comum. O tempo é o que se testa: passa de doubleTapMs
+      // (300), medido pelo `timeStamp` real dos eventos, que o relógio falso não controla.
+      await page.waitForTimeout(350);
       await tap(page, x, y);
       await expect
         .poll(() => pc.sent('/click'))
@@ -2281,8 +2300,9 @@ test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
       expect(second).toMatchObject({ button: 'LEFT', modifiers: ['CTRL'] });
       expect(Number(second['gapMs'])).toBeGreaterThanOrEqual(100);
       await expect(page.locator('.armed')).toHaveCount(0);
-      // Um toque comum depois, fora do tempo do toque duplo, já não leva o Ctrl.
-      await page.waitForTimeout(450);
+      // Um toque comum depois, fora do tempo do toque duplo, já não leva o Ctrl. Passa de doubleTapMs (300), pelo
+      // `timeStamp` real dos eventos.
+      await page.waitForTimeout(350);
       await tap(page, x, y);
       await expect.poll(() => pc.sent('/click').length).toBe(3);
       expect(pc.sent('/click')[2]).toEqual({ button: 'LEFT' });
@@ -2403,6 +2423,7 @@ test.describe('Pinça e volume absoluto', () => {
     declared(['pc.key.v2']);
     await openPc(page);
     await pinch(page, 80, 280);
+    // Prova de ausência: o zoom sairia no próprio movimento da pinça (sem timer); a janela cobre a ida até o simulador.
     await page.waitForTimeout(150);
     expect(pc.sent('/zoom')).toEqual([]);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
@@ -2423,6 +2444,7 @@ test.describe('Pinça e volume absoluto', () => {
     await toggle.uncheck();
     await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await pinch(page, 80, 280);
+    // Prova de ausência: o zoom sairia no próprio movimento da pinça (sem timer); a janela cobre a ida até o simulador.
     await page.waitForTimeout(150);
     expect(pc.sent('/zoom')).toEqual([]);
   });
