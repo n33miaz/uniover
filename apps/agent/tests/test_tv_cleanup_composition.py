@@ -173,6 +173,8 @@ async def test_the_cleanup_day_is_kept_on_disk_so_an_agent_restart_does_not_repe
 ) -> None:
     adb = running_tv()
     adb.memory_mb = [100, 100, 120]  # pouca memória livre: a limpeza leve do dia roda
+    # A limpeza automática só usa um canal que a pessoa já abriu (nunca reconecta sozinha).
+    await adb.connect()
     remote = FakeTvRemote()
     pair_fake_tv(monkeypatch, remote)
     enable_adb(monkeypatch, tmp_path, adb)

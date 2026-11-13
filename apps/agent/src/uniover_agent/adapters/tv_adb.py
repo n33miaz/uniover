@@ -161,6 +161,7 @@ _SERIAL_UNAVAILABLE: Final = "-"
 _UNAUTHORIZED_MESSAGE: Final = "a TV ainda não autorizou este PC no ADB"
 _GATED_MESSAGE: Final = "a TV ainda não deu ao UniOver a permissão do ADB; peça pelo app"
 _IDLE_MESSAGE: Final = "o ADB só abre conexão nova enquanto alguém usa a TV pelo app"
+_NOT_CONNECTED_MESSAGE: Final = "o ADB não está conectado, e a leitura automática não abre conexão"
 _IDENTITY_MESSAGE: Final = "não deu para confirmar qual aparelho responde aqui; peça pelo app"
 _DEVICE_MESSAGE: Final = "outro aparelho responde no endereço da TV; o ADB não se conecta a ele"
 
@@ -1167,9 +1168,16 @@ class AdbTv:
     async def wake_settings(self) -> WakeSettings:
         """Os ajustes de ligar pela rede, num comando fixo de leitura (`getprop`, `settings get`).
 
-        Nunca grava: religar o Screenless service é do dono, pelo menu da TV.
+        Nunca grava: religar o Screenless service é do dono, pelo menu da TV. Também nunca conecta:
+        só lê por um transporte que já chegou a `device` nesta execução. A leitura é automática (a
+        avaliação diária), e uma conexão nova a uma TV que revogou a permissão faria aparecer o
+        aviso "Permitir depuração USB" sem ninguém ter pedido; o estado local (`granted`) não
+        prova que a TV ainda a guarda.
         """
-        output = await self._locked_shell(WAKE_SETTINGS_COMMAND)
+        async with self._lock:
+            if not self._connected:
+                raise AdbIdle(_NOT_CONNECTED_MESSAGE)
+            output = await self._shell(WAKE_SETTINGS_COMMAND)
         self._require_success(output, "a TV não informou os ajustes de ligar pela rede")
         settings = parse_wake_settings(output.text)
         if settings is None:
