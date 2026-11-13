@@ -131,6 +131,44 @@ describe('ShoppingStore', () => {
     expect(reopened.state()).toBe('offline');
   });
 
+  it('a failure held by the return to the app keeps the screen as it was, and the next attempt sends', async () => {
+    const held: unknown[] = [];
+    const db = new ShoppingDb('uniover-shopping-test', { indexedDB, IDBKeyRange: FakeIDBKeyRange });
+    const store = new ShoppingStore(db, server, {
+      online: () => online,
+      canSend: () => canSend,
+      now: () => 1_700_000_000_000,
+      newId: () => `op-${++ids}`,
+      holdFailure: (error) => {
+        held.push(error);
+        return true;
+      },
+    });
+    stores.push(store);
+    await store.load();
+    server.fail = true;
+    await addToList(store, 'milk', 'Leite');
+    await store.settled();
+
+    expect(held.length).toBeGreaterThan(0);
+    // Nada de "Tentar Enviar de Novo": segue como "Salvando" até a tentativa seguinte.
+    expect(store.state()).toBe('pending');
+    expect(names(store)).toEqual(['Leite']);
+
+    server.fail = false;
+    await store.sync();
+    expect(store.state()).toBe('synced');
+    expect(store.pendingCount()).toBe(0);
+  });
+
+  it('a failure nobody holds asks for attention', async () => {
+    const store = await open();
+    server.fail = true;
+    await addToList(store, 'milk', 'Leite');
+    await store.settled();
+    expect(store.state()).toBe('attention');
+  });
+
   it('sends the queue in the order it was written when the signal comes back, then follows the feed', async () => {
     online = false;
     const store = await open();

@@ -82,6 +82,12 @@ export interface StorePorts {
   canSend(): boolean;
   now(): number;
   newId(): string;
+  /**
+   * A falha de agora deve esperar em silêncio? Logo ao voltar ao app o primeiro envio sai numa conexão já derrubada: quem
+   * responde `true` refaz a tentativa quando a carência da volta acabar, e a tela segue como estava (sem "Tentar Enviar
+   * de Novo" por uma falha da volta). Sem esta porta, toda falha conta.
+   */
+  holdFailure?(error: unknown): boolean;
 }
 
 /**
@@ -318,8 +324,9 @@ export class ShoppingStore {
       if (this.closed) return;
       this.state.set(sent && this.pending.length === 0 ? 'synced' : 'attention');
       void this.loadLastPrices();
-    } catch {
-      if (!this.closed) this.state.set(this.ports.online() ? 'attention' : 'offline');
+    } catch (error) {
+      if (this.closed || this.ports.holdFailure?.(error)) return;
+      this.state.set(this.ports.online() ? 'attention' : 'offline');
     }
   }
 
