@@ -243,7 +243,9 @@ test.describe('Mouse', () => {
     await expect(page.getByRole('alert')).toContainText('O PC não respondeu a tempo.');
   });
 
-  test('os ajustes mudam a sensibilidade e ficam guardados neste aparelho', async ({ page }) => {
+  test('os ajustes mudam a sensibilidade e ficam guardados neste aparelho', async ({
+    page,
+  }, info) => {
     await openPc(page);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
@@ -252,6 +254,8 @@ test.describe('Mouse', () => {
     const pointerLevel = sheet.getByRole('slider', { name: 'Sensibilidade' });
     await expect(pointerLevel).toHaveValue('4');
     await pointerLevel.fill('6');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await screenshot(page, join(SHOTS, `pc-sensibilidade-${info.project.name}.png`));
     await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
     await sheet.getByRole('switch', { name: 'Inverter rolagem' }).check();
     await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
@@ -853,6 +857,40 @@ test.describe('Digitação ao vivo', () => {
     await page.keyboard.type('olá, mundo');
     await expect.poll(typed).toBe('olá, mundo');
     await expect(page.getByRole('button', { name: 'Digitar', exact: true })).toHaveCount(0);
+  });
+
+  test('o que se digita aparece numa linha acima da barra, esconde num toque e some ao fechar', async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await field.pressSequentially('ola mundo');
+    await field.press('Backspace');
+    await field.press('Enter');
+    await expect.poll(() => pc.sent('/key').some((body) => body['key'] === 'ENTER')).toBe(true);
+    const echo = page.locator('.echo-line');
+    await expect(echo).toHaveText('ola mund⏎');
+    await screenshot(page, join(SHOTS, `pc-eco-digitado-${info.project.name}.png`));
+    // A linha não é região viva, e o botão de esconder é um alvo inteiro.
+    await expectNoA11yViolations(page);
+    expect(await smallTargets(page)).toEqual([]);
+    // Esconder não fecha o teclado do celular, e o texto sai da tela.
+    await page.getByRole('button', { name: 'Esconder o que digito' }).click();
+    await expect(echo).toHaveCount(0);
+    await expect(field).toBeFocused();
+    await page.getByRole('button', { name: 'Mostrar o que digito' }).click();
+    await expect(echo).toHaveText('ola mund⏎');
+    // Fechar o teclado apaga o eco: abrir de novo começa vazio.
+    await page.getByRole('button', { name: 'Teclado', exact: true }).click();
+    await expect(page.locator('.echo')).toHaveCount(0);
+    await openKeyboard(page);
+    await expect(page.locator('.echo')).toHaveCount(0);
+    // Nada do texto foi guardado no aparelho.
+    const stored = await page.evaluate(() =>
+      JSON.stringify({ ...localStorage, ...sessionStorage }),
+    );
+    expect(stored).not.toContain('mund');
   });
 
   test('com a rede lenta o que se digita se junta: poucos pedidos, o texto inteiro e na ordem', async ({
