@@ -5,6 +5,7 @@ import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availabi
 import { SessionState } from '../../../core/session/session-state';
 import { DirectUsage } from '../../../core/direct/direct-usage';
 import { status } from '../pc-test-kit';
+import { BYE_FLUSH_MS } from '../../../core/direct/direct-channel';
 import {
   ACK_TIMEOUT_MS,
   CLOCK_TIMEOUT_MS,
@@ -270,7 +271,7 @@ describe('PcDirect opening', () => {
     const { connection } = await openChannel(direct, connections);
     direct.stop();
 
-    expect(connection.closed).toBe(true);
+    await vi.waitFor(() => expect(connection.closed).toBe(true)); // espera o instante do `bye`
     expect(direct.mode()).toBe('cloud');
     expect(signaling.close).toHaveBeenCalledWith('s1', false);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -301,8 +302,168 @@ describe('PcDirect opening', () => {
     });
     TestBed.tick();
 
-    expect(connection.closed).toBe(true);
+    await vi.waitFor(() => expect(connection.closed).toBe(true));
     expect(direct.mode()).toBe('cloud');
+  });
+});
+
+describe('PcDirect bye (the reason the app closes, said to the agent)', () => {
+  const byes = (input: FakeChannel) => input.sent.filter((message) => message['k'] === 'bye');
+
+  it('leaving the screen says `stopped`, and the connection waits a moment so the message can leave', async () => {
+    const { direct, connections } = setup();
+    const { connection, input, pointer } = await openChannel(direct, connections);
+    direct.stop();
+
+    expect(byes(input)).toEqual([{ k: 'bye', r: 'stopped' }]);
+    expect(input.readyState).toBe('closed');
+    // O ponteiro e a conexão esperam: o agente não pode ler o fim do ponteiro antes do `bye`.
+    expect(pointer.readyState).toBe('open');
+    expect(connection.closed).toBe(false);
+    await vi.waitFor(() => expect(connection.closed).toBe(true), { timeout: BYE_FLUSH_MS * 10 });
+    expect(pointer.readyState).toBe('closed');
+  });
+
+  it('hiding the page says `hidden`', async () => {
+    const { direct, connections } = setup();
+    const { input } = await openChannel(direct, connections);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(byes(input)).toEqual([{ k: 'bye', r: 'hidden' }]);
+    vi.restoreAllMocks();
+    direct.stop();
+  });
+
+  it('the pagehide says `hidden` too', async () => {
+    const { direct, connections } = setup();
+    const { input } = await openChannel(direct, connections);
+    window.dispatchEvent(new Event('pagehide'));
+
+    expect(byes(input)).toEqual([{ k: 'bye', r: 'hidden' }]);
+    direct.stop();
+  });
+
+  it('a channel that stops answering says `stalled`', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+    });
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    const connection = connections[0]!;
+    connection.channel('pointer').open();
+    connection.channel('input').open();
+    await vi.advanceTimersByTimeAsync(10);
+    connection.channel('input').receive({ k: 'ready' });
+    await vi.advanceTimersByTimeAsync(10);
+    connection.channel('pointer').respond = false;
+    await vi.advanceTimersByTimeAsync(STALL_MS + PING_MS * 2);
+
+    expect(byes(connection.channel('input'))).toEqual([{ k: 'bye', r: 'stalled' }]);
+  });
+
+  it('a connection that fails says `closed`', async () => {
+    const { direct, connections } = setup();
+    const { connection, input } = await openChannel(direct, connections);
+    connection.connectionState = 'failed';
+    connection.dispatchEvent(new Event('connectionstatechange'));
+
+    expect(byes(input)).toEqual([{ k: 'bye', r: 'closed' }]);
+    expect(direct.mode()).toBe('cloud');
+    direct.stop();
+  });
+
+  it('a channel that already closed has nothing to say', async () => {
+    const { direct, connections } = setup();
+    const { input } = await openChannel(direct, connections);
+    input.close(); // o `close` do canal de entrada derruba o estado, sem mensagem
+
+    expect(direct.mode()).toBe('cloud');
+    expect(byes(input)).toEqual([]);
+    direct.stop();
+  });
+
+  it('a send that throws never stops the close', async () => {
+    const { direct, connections } = setup();
+    const { connection, input } = await openChannel(direct, connections);
+    input.send = () => {
+      throw new Error('InvalidStateError');
+    };
+    direct.stop();
+
+    expect(direct.mode()).toBe('cloud');
+    expect(connection.closed).toBe(true); // sem `bye` enviado, a conexão fecha na hora
+  });
+
+  it('a channel still waiting for the ready says `stopped` too (the auth already went out)', async () => {
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.waitFor(() => expect(connections[0]?.remoteDescription).not.toBeNull());
+    const connection = connections[0]!;
+    connection.channel('pointer').open();
+    connection.channel('input').open();
+    await vi.waitFor(() => expect(connection.channel('input').last('auth')).toBeDefined());
+    direct.stop(); // o agente ainda não respondeu o `ready`
+
+    expect(byes(connection.channel('input'))).toEqual([{ k: 'bye', r: 'stopped' }]);
+  });
+
+  it('a channel that did not even send the auth says nothing, and closes at once', async () => {
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.waitFor(() => expect(connections[0]?.remoteDescription).not.toBeNull());
+    const connection = connections[0]!;
+    direct.stop(); // os canais ainda nem abriram
+
+    expect(connection.channel('input').sent).toEqual([]);
+    expect(connection.closed).toBe(true);
+  });
+
+  it('a channel whose clock scale never comes says `failed`', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+    });
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    const first = connections[0]!;
+    first.channel('pointer').respond = false;
+    first.channel('pointer').open();
+    first.channel('input').open();
+    await vi.advanceTimersByTimeAsync(10);
+    first.channel('input').receive({ k: 'ready', life: 600 });
+    await vi.advanceTimersByTimeAsync(CLOCK_TIMEOUT_MS + 100);
+
+    expect(byes(first.channel('input'))).toEqual([{ k: 'bye', r: 'failed' }]);
+  });
+
+  it('the agent that closes first (its own bye) gets nothing back', async () => {
+    const { direct, connections } = setup();
+    const { connection, input } = await openChannel(direct, connections);
+    input.receive({ k: 'bye', r: 'lifetime' });
+
+    expect(byes(input)).toEqual([]);
+    expect(connection.closed).toBe(true);
+    direct.stop();
+  });
+
+  it('renewing the channel (the lifetime) says `renew` and reopens', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'Date'],
+    });
+    const { direct, connections } = setup();
+    direct.start();
+    await vi.advanceTimersByTimeAsync(10);
+    const first = connections[0]!;
+    first.channel('pointer').open();
+    first.channel('input').open();
+    await vi.advanceTimersByTimeAsync(10);
+    first.channel('input').receive({ k: 'ready', life: 50 });
+    await vi.advanceTimersByTimeAsync(10 + 22_000);
+
+    expect(byes(first.channel('input'))).toEqual([{ k: 'bye', r: 'renew' }]);
+    expect(connections).toHaveLength(2);
   });
 });
 
@@ -686,7 +847,7 @@ describe('PcDirect liveness', () => {
     result.direct.onLost(lost);
     const { connection } = await openWithTimers(result);
     connection.channel('pointer').respond = false; // o agente parou de responder
-    await vi.advanceTimersByTimeAsync(STALL_MS + PING_MS * 2);
+    await vi.advanceTimersByTimeAsync(STALL_MS + PING_MS * 2 + BYE_FLUSH_MS);
 
     expect(result.direct.mode()).toBe('cloud');
     expect(connection.closed).toBe(true);
@@ -822,7 +983,7 @@ describe('PcDirect clock and lifetime', () => {
     first.channel('input').open();
     await vi.advanceTimersByTimeAsync(10);
     first.channel('input').receive({ k: 'ready', life: 600 });
-    await vi.advanceTimersByTimeAsync(CLOCK_TIMEOUT_MS + 100);
+    await vi.advanceTimersByTimeAsync(CLOCK_TIMEOUT_MS + 100 + BYE_FLUSH_MS);
 
     expect(direct.mode()).toBe('cloud');
     expect(first.closed).toBe(true);
@@ -840,7 +1001,7 @@ describe('PcDirect clock and lifetime', () => {
 
     await vi.advanceTimersByTimeAsync(19_000);
     expect(connections).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.advanceTimersByTimeAsync(3_000 + BYE_FLUSH_MS);
 
     expect(first.closed).toBe(true);
     expect(signaling.close).toHaveBeenCalledWith('s1', false);

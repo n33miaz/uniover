@@ -185,7 +185,10 @@ describe('DirectChannel scopes', () => {
     await vi.waitFor(() => expect(connections[0]?.channels).toHaveLength(2));
     await finishOpening(channel, connections, 0, { k: 'ready', life: 600, caps: [], sc: ['pc'] });
 
-    expect(signaling.offer).toHaveBeenCalledWith(expect.any(String), { scopes: ['pc'], tvId: null });
+    expect(signaling.offer).toHaveBeenCalledWith(expect.any(String), {
+      scopes: ['pc'],
+      tvId: null,
+    });
   });
 
   it('asks for both scopes when both screens want the channel at the moment it opens', async () => {
@@ -225,7 +228,7 @@ describe('DirectChannel scopes', () => {
     channel.start('pc');
     await vi.waitFor(() => expect(connections).toHaveLength(2));
 
-    expect(connections[0]!.closed).toBe(true);
+    await vi.waitFor(() => expect(connections[0]!.closed).toBe(true));
     expect(signaling.offer.mock.calls[1]![1]).toEqual({ scopes: ['pc', 'tv'], tvId: 'tv-1' });
   });
 
@@ -281,7 +284,7 @@ describe('DirectChannel scopes', () => {
     channel.stop('pc');
     await flush();
     expect(channel.mode()).toBe('cloud');
-    expect(connections[0]!.closed).toBe(true);
+    await vi.waitFor(() => expect(connections[0]!.closed).toBe(true));
   });
 });
 
@@ -307,7 +310,10 @@ describe('DirectChannel TV commands', () => {
     const sending = channel.command('tv.key.v3', { key: 'OK' });
     input.receive({ k: 'ack', i: input.last('cmd')!['i'], ok: false, c: 'TV_UNREACHABLE' });
 
-    await expect(sending).rejects.toMatchObject({ status: 502, error: { agentError: 'TV_UNREACHABLE' } });
+    await expect(sending).rejects.toMatchObject({
+      status: 502,
+      error: { agentError: 'TV_UNREACHABLE' },
+    });
   });
 
   it.each(['busy', 'rate_limited'])(

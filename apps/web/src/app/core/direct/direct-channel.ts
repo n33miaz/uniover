@@ -57,6 +57,11 @@ export const POINTER_TAIL_MS = 60;
 export const RENEW_MARGIN_MS = 30_000;
 /** O canal que durou isto (ou mais) antes de cair já provou que funciona: o recuo recomeça do início. */
 export const STABLE_MS = 60_000;
+/**
+ * Quanto o par fica aberto depois do `bye` (o aviso do motivo ao agente): fechar a conexão na mesma hora costuma levar a
+ * mensagem junto, e o agente ficaria sem saber por que o canal caiu.
+ */
+export const BYE_FLUSH_MS = 100;
 /** Prazo para o agente firmar a escala de relógio (dois sinais de vida): sem ela, nenhum comando é aceito. */
 export const CLOCK_TIMEOUT_MS = 4_000;
 /** Teto da espera de silêncio da nuvem antes de o canal assumir (um pedido lento da nuvem não pode adiar o canal sem fim). */
@@ -228,6 +233,8 @@ interface Link {
   readonly requested: ReadonlySet<DirectScope>;
   /** A TV que este canal pediu (`null`: a única que a conta vê). Trocar de TV refaz o canal: o agente é o da TV. */
   readonly tvId: string | null;
+  /** O `auth` já saiu no canal de entrada: o agente tem um canal a que o `bye` se refere (e nunca o recebe como primeira mensagem). */
+  authSent: boolean;
 }
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -684,6 +691,7 @@ export class DirectChannel {
         sessionId: null,
         requested: desired,
         tvId: desired.has('tv') ? (this.tvTarget()?.tvId ?? null) : null,
+        authSent: false,
       };
       this.link = link;
       this.listen(link);
@@ -709,6 +717,7 @@ export class DirectChannel {
       });
       this.lifeSeconds = 0;
       this.channelTypes = new Set();
+      link.authSent = true;
       link.input.send(
         JSON.stringify({ k: 'auth', tok: answer.token, cs: this.cloudSeq, ce: this.cloudEpoch }),
       );
@@ -873,17 +882,18 @@ export class DirectChannel {
    * outro já. Os demais seguem o recuo de sempre.
    */
   private onBye(reason: string): void {
+    // `peer`: o agente é quem fechou e já sabe o motivo; devolver o `bye` não diria nada.
     if (reason === 'replaced') {
       this.suspended = true;
-      this.teardown(reason, { unexpected: true });
+      this.teardown(reason, { unexpected: true, peer: true });
     } else if (reason === 'revoked') {
       this.markRevoked();
-      this.teardown(reason, { unexpected: true });
+      this.teardown(reason, { unexpected: true, peer: true });
     } else if (reason === 'lifetime' || reason === 'rescoped') {
       // A vida acabou, ou a pessoa perdeu um dos escopos e não o acesso todo: abre outro já, só com o que ainda vale.
-      this.teardown(reason, { unexpected: true, renew: true });
+      this.teardown(reason, { unexpected: true, renew: true, peer: true });
     } else {
-      this.teardown(reason, { unexpected: true });
+      this.teardown(reason, { unexpected: true, peer: true });
     }
   }
 
@@ -953,6 +963,8 @@ export class DirectChannel {
       readonly quiet?: boolean;
       /** A vida do canal acabou: abre outro na hora, sem recuo. */
       readonly renew?: boolean;
+      /** Quem fechou foi o agente (o `bye` dele): não há motivo a devolver. */
+      readonly peer?: boolean;
     },
   ): void {
     const link = this.link;
@@ -979,7 +991,9 @@ export class DirectChannel {
     this.pending.clear();
     // O uso do canal que ainda não foi contado à API sai agora, com a sessão que fecha.
     this.usage.flush({ ended: link.sessionId, keepalive: options.keepalive === true });
-    this.discard(link, options.keepalive === true);
+    // O agente rotula como "falha" o canal que o par fecha: o motivo daqui (`hidden`, `stopped`, `stalled`...) vai antes.
+    const said = link.authSent && options.peer !== true && this.sendBye(link, reason);
+    this.discard(link, options.keepalive === true, said);
     if (options.unexpected === true && wasOpen) {
       for (const listener of [...this.lostListeners]) listener();
     }
@@ -997,14 +1011,39 @@ export class DirectChannel {
     }
   }
 
-  private discard(link: Link, keepalive = false): void {
+  /**
+   * Diz ao agente por que este lado fecha o canal (`{"k":"bye","r":motivo}`), só com o canal de entrada aberto. Melhor esforço:
+   * ao sair da página pode não chegar. Um agente anterior conta a mensagem como uma recusa qualquer e segue (o canal fecha
+   * logo depois), então não depende de capacidade. Leva só o motivo, nunca dado da pessoa nem tecla.
+   */
+  private sendBye(link: Link, reason: string): boolean {
+    if (link.input.readyState !== 'open') return false;
+    try {
+      link.input.send(JSON.stringify({ k: 'bye', r: reason }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private discard(link: Link, keepalive = false, said = false): void {
+    // Com o `bye` enviado, o canal do ponteiro e a conexão esperam um instante (o `bye` vai no canal de entrada, que fecha já: o
+    // agente leria o fim do ponteiro antes dele e daria o canal por caído); sem ele, tudo fecha na hora.
+    const closeRest = () => {
+      try {
+        link.pointer.close();
+        link.connection.close();
+      } catch {
+        // já estava fechado
+      }
+    };
     try {
       link.input.close();
-      link.pointer.close();
-      link.connection.close();
     } catch {
       // já estava fechado
     }
+    if (said) setTimeout(closeRest, BYE_FLUSH_MS);
+    else closeRest();
     if (link.sessionId !== null) {
       void this.signaling.close(link.sessionId, keepalive).catch(() => undefined);
       link.sessionId = null;
