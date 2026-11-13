@@ -3,17 +3,25 @@ import { Injectable, computed, effect, inject, linkedSignal } from '@angular/cor
 import { SessionState } from '../../../core/session/session-state';
 import { setHapticsEnabled } from '../input/haptics';
 import {
-  POINTER_SENSITIVITIES,
-  SCROLL_SENSITIVITIES,
-  type PointerSensitivity,
-  type ScrollSensitivity,
+  DEFAULT_LEVEL,
+  LEGACY_POINTER_LEVEL,
+  LEGACY_SCROLL_LEVEL,
+  isSensitivityLevel,
+  type LegacyPointerSensitivity,
+  type LegacyScrollSensitivity,
+  type SensitivityLevel,
 } from '../input/pc-acceleration';
 
 export interface PcPrefsValue {
-  /** Quanto o ponteiro anda por pixel do dedo; o padrão é 1 para 1, sem curva própria (o Windows já acelera). */
-  readonly sensitivity: PointerSensitivity;
-  /** O quanto a rolagem de dois dedos rende por pixel (separado da sensibilidade do ponteiro). */
-  readonly scrollSensitivity: ScrollSensitivity;
+  /**
+   * Quanto o ponteiro anda por pixel do dedo, de 1 a 7; o padrão (4) é 1 para 1, sem curva própria (o Windows já acelera).
+   * Guardado como número; a versão de antes guardava texto ("low", "high"...) e é lida como o nível equivalente.
+   */
+  readonly sensitivity: SensitivityLevel;
+  /** A curva do app por cima do nível: o deslize rápido vai mais longe (a "Acelerada" de antes). */
+  readonly acceleration: boolean;
+  /** O quanto a rolagem de dois dedos rende por pixel, de 1 a 7 (separado da sensibilidade do ponteiro). */
+  readonly scrollSensitivity: SensitivityLevel;
   /** Rolagem "natural" (como no celular): o conteúdo acompanha o dedo. */
   readonly invertScroll: boolean;
   /** Arrastar com toque duplo: tocar de novo logo depois de um toque e andar segura o botão esquerdo. */
@@ -28,6 +36,11 @@ export interface PcPrefsValue {
   readonly clickButtons: boolean;
   /** Mantém a tela do aparelho acesa enquanto o touchpad está aberto. */
   readonly keepAwake: boolean;
+  /**
+   * Mostra, acima da barra, o que se digita no PC pelo teclado do celular. Só a escolha de mostrar fica guardada: o texto
+   * nunca.
+   */
+  readonly showTyped: boolean;
   /** A dica de primeiro uso (os três gestos) já foi vista: some ao primeiro toque e não volta. */
   readonly hintSeen: boolean;
   /** O aviso do Vídeo ("o player precisa estar em foco") já foi visto: some ao primeiro toque de vídeo e não volta. */
@@ -35,8 +48,9 @@ export interface PcPrefsValue {
 }
 
 export const PC_PREFS_DEFAULTS: PcPrefsValue = {
-  sensitivity: 'normal',
-  scrollSensitivity: 'normal',
+  sensitivity: DEFAULT_LEVEL,
+  acceleration: false,
+  scrollSensitivity: DEFAULT_LEVEL,
   invertScroll: false,
   doubleTapDrag: false,
   middleClick: true,
@@ -44,6 +58,7 @@ export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   haptics: true,
   clickButtons: false,
   keepAwake: true,
+  showTyped: true,
   hintSeen: false,
   videoHintSeen: false,
 };
@@ -69,13 +84,11 @@ function parsePrefs(raw: unknown): PcPrefsValue {
     const found = stored[name];
     return typeof found === 'boolean' ? found : PC_PREFS_DEFAULTS[name];
   };
-  const sensitivity = POINTER_SENSITIVITIES.find((item) => item === stored['sensitivity']);
-  const scrollSensitivity = SCROLL_SENSITIVITIES.find(
-    (item) => item === stored['scrollSensitivity'],
-  );
+  const pointer = parsePointer(stored['sensitivity'], stored['acceleration']);
   return {
-    sensitivity: sensitivity ?? PC_PREFS_DEFAULTS.sensitivity,
-    scrollSensitivity: scrollSensitivity ?? PC_PREFS_DEFAULTS.scrollSensitivity,
+    sensitivity: pointer.level,
+    acceleration: pointer.acceleration,
+    scrollSensitivity: parseScroll(stored['scrollSensitivity']),
     invertScroll: flag('invertScroll'),
     doubleTapDrag: flag('doubleTapDrag'),
     middleClick: flag('middleClick'),
@@ -83,14 +96,45 @@ function parsePrefs(raw: unknown): PcPrefsValue {
     haptics: flag('haptics'),
     clickButtons: flag('clickButtons'),
     keepAwake: flag('keepAwake'),
+    showTyped: flag('showTyped'),
     hintSeen: flag('hintSeen'),
     videoHintSeen: flag('videoHintSeen'),
   };
 }
 
+/**
+ * O nível do ponteiro: o número guardado, ou o texto da versão de antes no nível equivalente ("boosted" liga a aceleração). A
+ * aceleração guardada só vale junto de um número (com o texto antigo, quem decide é o texto).
+ */
+function parsePointer(
+  level: unknown,
+  acceleration: unknown,
+): { level: SensitivityLevel; acceleration: boolean } {
+  if (isSensitivityLevel(level)) {
+    return {
+      level,
+      acceleration:
+        typeof acceleration === 'boolean' ? acceleration : PC_PREFS_DEFAULTS.acceleration,
+    };
+  }
+  if (typeof level === 'string' && Object.hasOwn(LEGACY_POINTER_LEVEL, level)) {
+    return { ...LEGACY_POINTER_LEVEL[level as LegacyPointerSensitivity] };
+  }
+  return { level: PC_PREFS_DEFAULTS.sensitivity, acceleration: PC_PREFS_DEFAULTS.acceleration };
+}
+
+function parseScroll(level: unknown): SensitivityLevel {
+  if (isSensitivityLevel(level)) return level;
+  if (typeof level === 'string' && Object.hasOwn(LEGACY_SCROLL_LEVEL, level)) {
+    return LEGACY_SCROLL_LEVEL[level as LegacyScrollSensitivity];
+  }
+  return PC_PREFS_DEFAULTS.scrollSensitivity;
+}
+
 /** As escolhas que a pessoa faz de propósito (a dica já vista não conta como escolha). */
 const CHOICES = [
   'sensitivity',
+  'acceleration',
   'scrollSensitivity',
   'invertScroll',
   'doubleTapDrag',
@@ -99,6 +143,7 @@ const CHOICES = [
   'haptics',
   'clickButtons',
   'keepAwake',
+  'showTyped',
 ] as const satisfies readonly (keyof PcPrefsValue)[];
 
 /**
@@ -116,6 +161,7 @@ export class PcPrefs {
   });
 
   readonly sensitivity = computed(() => this.value().sensitivity);
+  readonly acceleration = computed(() => this.value().acceleration);
   readonly scrollSensitivity = computed(() => this.value().scrollSensitivity);
   readonly invertScroll = computed(() => this.value().invertScroll);
   readonly doubleTapDrag = computed(() => this.value().doubleTapDrag);
@@ -124,6 +170,7 @@ export class PcPrefs {
   readonly haptics = computed(() => this.value().haptics);
   readonly clickButtons = computed(() => this.value().clickButtons);
   readonly keepAwake = computed(() => this.value().keepAwake);
+  readonly showTyped = computed(() => this.value().showTyped);
   readonly hintSeen = computed(() => this.value().hintSeen);
   readonly videoHintSeen = computed(() => this.value().videoHintSeen);
   /** Alguma escolha difere do padrão. */
