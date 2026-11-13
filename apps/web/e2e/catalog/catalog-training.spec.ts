@@ -69,6 +69,13 @@ test('Exercícios e Rotinas: biblioteca, ficha, formulários e rotinas', async (
     await page.getByRole('button', { name: 'Peito', exact: true }).click();
     await page.getByRole('button', { name: 'Equipamento' }).click();
     await page.getByRole('button', { name: 'Barra', exact: true }).click();
+    // A lista filtra um instante depois do toque: só sobra exercício de barra.
+    await expect
+      .poll(async () => {
+        const rows = await page.locator('.list .ui-row').allTextContents();
+        return rows.length > 0 && rows.every((row) => row.includes('Barra'));
+      })
+      .toBe(true);
     await still(page);
   });
   await snap(page, { ...lib, state: 'busca com resultado', kind: 'com dados' }, async () => {
