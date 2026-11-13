@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from uniover_agent.adapters.adb_authorization import VERIFIED
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport, FakeTvRemote
 from uniover_agent.core import (
     EnvelopeFactory,
@@ -28,18 +29,16 @@ from uniover_agent.core.tv.relocator import DEFAULT_FAST_STEPS, AgentStart
 from uniover_agent.ports import AdbIdle, AdbUnreachable
 
 from .support import AGENT_ID
-from .support_adb import CONNECT, DISCONNECT, GET_STATE
+from .support_adb import CONNECT, DISCONNECT, GET_STATE, shell
 from .test_tv_adb import Clock
 from .test_tv_adb_permission import (
     DEVICE,
     OFFLINE,
     UNKNOWN,
-    VERIFIED,
     Home,
     home,  # noqa: F401 - fixture
     runner_with,
     script_apps,
-    shell,
 )
 
 NEW_HOST = "192.168.0.50"
@@ -340,11 +339,11 @@ async def test_a_tv_that_reboots_in_the_middle_of_use_comes_back_alone_without_k
     for _ in range(3):
         house.clock.advance(60)
         await relocator.step()
-    assert house.manager.state is not SessionState.HOT
+    assert not house.is_hot()
     house.tv_on_at = house.clock.monotonic()  # voltou
     house.clock.advance(60)
     await relocator.step()
-    assert house.manager.state is SessionState.HOT
+    assert house.is_hot()
     assert not house.manager.offline
     assert house.remote.keys == []
 
@@ -362,7 +361,7 @@ async def test_a_reopen_nobody_used_then_a_reboot_comes_back_on_the_first_comman
     house.clock.advance(60)
     await relocator.step()
     # A guarda contra laço de aberturas segura a sessão fechada até alguém usar...
-    assert house.manager.state is not SessionState.HOT
+    assert not house.is_hot()
     started = house.clock.monotonic()
     await house.manager.send_key("HOME")  # ...e o primeiro comando a abre na hora
     assert house.remote.keys == ["HOME"]
