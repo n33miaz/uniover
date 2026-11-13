@@ -160,6 +160,9 @@ export class ShoppingSession {
   /** As Compras da conta em uso, ou `null` enquanto a conta não é conhecida ou o banco dela não foi lido. */
   readonly store = signal<ShoppingStore | null>(null);
 
+  /** Cada abertura leva um número: só a mais recente publica as Compras; a que perdeu a corrida se fecha. */
+  private generation = 0;
+
   constructor() {
     effect(() => {
       const id = this.account.id();
@@ -215,6 +218,7 @@ export class ShoppingSession {
       document.removeEventListener('keydown', touched);
       this.live.stop();
       this.accountId = null;
+      this.generation++;
       this.store()?.close();
     });
   }
@@ -241,25 +245,31 @@ export class ShoppingSession {
   private async use(accountId: string | null): Promise<void> {
     if (accountId === this.accountId) return;
     this.accountId = accountId;
+    await this.open(accountId);
+  }
+
+  private async open(accountId: string | null): Promise<void> {
+    const generation = ++this.generation;
     this.store()?.close();
     this.store.set(null);
     if (accountId === null) return;
 
-    const store = new ShoppingStore(this.openDb(accountId), httpShoppingTransport(this.http), {
-      online: () => this.connectivity.online(),
-      canSend: () => this.account.isSessionOf(accountId),
-      now: () => Date.now(),
-      newId: uuidV7,
-      holdFailure: (error) => this.holdFailure(error),
-    });
+    let store: ShoppingStore | null = null;
     try {
+      store = new ShoppingStore(this.openDb(accountId), httpShoppingTransport(this.http), {
+        online: () => this.connectivity.online(),
+        canSend: () => this.account.isSessionOf(accountId),
+        now: () => Date.now(),
+        newId: uuidV7,
+        holdFailure: (error) => this.holdFailure(error),
+      });
       await store.load();
     } catch {
       // Sem armazenamento no aparelho (modo privado): a tela fica na espera em vez de mostrar uma lista que não guarda.
-      store.close();
+      store?.close();
       return;
     }
-    if (this.accountId !== accountId) {
+    if (generation !== this.generation) {
       store.close();
       return;
     }
