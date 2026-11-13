@@ -12,7 +12,7 @@ dependencies = [
     # `uv sync --frozen` do instalador e do supervisor confere. Atualizar exige rodar `tests/test_pc_direct_aiortc.py`.
     "aioice==0.13.0",
     "aiortc==1.16.0",
-    "androidtvremote2==0.3.2",
+    "androidtvremote2==0.3.3",
     "cryptography>=50.0.2,<51",
     "dnspython==2.9.2",
     "httpx>=0.28",
