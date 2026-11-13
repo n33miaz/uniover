@@ -12,7 +12,7 @@ namespace UniOver.Modules.Devices.Tests.Transport;
 
 /// <summary>
 /// A saúde do agente medida só pelo que chega da conexão, com relógio falso: um PC paginado (socket aberto, mudo) é
-/// reconhecido em 1,4 batimento (35 s), com ou sem uso, e a partir daí o comando falha na hora, sem sair. A TV que demora
+/// reconhecido em 1,4 batimento medido (35 s no de 25 s; o piso de 15 s no de 5 s), com ou sem uso, e a partir daí o comando falha na hora, sem sair. A TV que demora
 /// (prazo estourado com o batimento em dia) é só lenta, e a soltura de botão ou tecla sempre sai.
 /// </summary>
 public sealed class AgentHealthTests
@@ -57,6 +57,20 @@ public sealed class AgentHealthTests
             return session;
         }
 
+        /// <summary>
+        /// Batimentos do agente a cada <paramref name="every"/>, na ordem do hub: o quadro conta para a saúde e depois o
+        /// <c>agent.keepalive.v1</c> é guardado (com o intervalo desde o anterior).
+        /// </summary>
+        public void Beats(RecordingSession session, TimeSpan every, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                Time.Advance(every);
+                Health.OnFrame(Agent);
+                Connections.RecordKeepalive(session, loopLagMs: null, Time.GetUtcNow());
+            }
+        }
+
         /// <summary>Um comando enviado agora que estoura o prazo sem resposta.</summary>
         public void MissOne()
         {
@@ -90,15 +104,84 @@ public sealed class AgentHealthTests
     }
 
     [Fact]
-    public void TheLimits_FollowTheAgentKeepAlive()
+    public void AFiveSecondBeat_IsUnresponsiveAfterThreeMissedBeats_AtFifteenSeconds()
     {
-        var rig = new Rig(new DevicesTransportOptions { AgentKeepAliveSeconds = 5 });
-        rig.Connect();
+        // O agente de agora bate a cada 5 s; a configuração segue com os 25 s do anterior. Vale o batimento medido na sessão.
+        var rig = new Rig();
+        var session = rig.Connect();
+        rig.Beats(session, TimeSpan.FromSeconds(5), count: 3);
 
-        rig.Time.Advance(TimeSpan.FromSeconds(6));
+        rig.Time.Advance(TimeSpan.FromSeconds(14));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Ready, "menos de 3 batimentos perdidos: ainda pode ser a rede");
+
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Unresponsive, "3 batimentos de 5 s perdidos (o piso de 15 s)");
+
+        rig.Beats(session, TimeSpan.Zero, count: 1);
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Ready);
+    }
+
+    [Fact]
+    public void ATwentyFiveSecondBeat_KeepsTheLimitsOfBefore()
+    {
+        var rig = new Rig();
+        var session = rig.Connect();
+        rig.Beats(session, TimeSpan.FromSeconds(25), count: 3);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(34));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Ready, "o agente anterior segue com os 35 s (1,4 batimento)");
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Unresponsive);
+    }
+
+    [Fact]
+    public void ATwentyFiveSecondAgent_WithOneJitteryBeat_KeepsItsThirtyFiveSeconds()
+    {
+        // Um batimento atrasado 22 s pela rede chega 3 s antes do seguinte: um intervalo curto só não aperta os limites.
+        var rig = new Rig();
+        var session = rig.Connect();
+        rig.Beats(session, TimeSpan.FromSeconds(25), count: 3);
+        rig.Beats(session, TimeSpan.FromSeconds(47), count: 1);
+        rig.Beats(session, TimeSpan.FromSeconds(3), count: 1);
+        rig.Beats(session, TimeSpan.FromSeconds(25), count: 1);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(34));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Ready, "o próximo batimento de 25 s ainda está no prazo");
+        rig.Time.Advance(TimeSpan.FromSeconds(1));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Unresponsive);
+    }
+
+    [Fact]
+    public void AFiveSecondAgent_BackFromAPause_NeverWaitsLongerThanBefore_AndTightensAgain()
+    {
+        // O PC paginado volta: o batimento da volta mede a pausa (40 s), que não afrouxa os limites além dos de sempre.
+        var rig = new Rig();
+        var session = rig.Connect();
+        rig.Beats(session, TimeSpan.FromSeconds(5), count: 3);
+        rig.Beats(session, TimeSpan.FromSeconds(40), count: 1);
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Ready);
+        rig.Beats(session, TimeSpan.FromSeconds(5), count: 1);
+
+        rig.Time.Advance(TimeSpan.FromSeconds(35));
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Unresponsive, "a pausa medida nunca passa dos 35 s do batimento de 25 s");
+
+        // Com os batimentos em dia de novo, os 15 s voltam.
+        rig.Beats(session, TimeSpan.Zero, count: 1);
+        rig.Beats(session, TimeSpan.FromSeconds(5), count: 3);
+        rig.Time.Advance(TimeSpan.FromSeconds(14));
         rig.Health.Of(Agent).Should().Be(AgentHealthState.Ready);
         rig.Time.Advance(TimeSpan.FromSeconds(1));
-        rig.Health.Of(Agent).Should().Be(AgentHealthState.Unresponsive, "com o batimento de 5 s, o silêncio vale a partir de 7 s");
+        rig.Health.Of(Agent).Should().Be(AgentHealthState.Unresponsive);
+    }
+
+    [Theory]
+    [InlineData(5, 15, 10)]
+    [InlineData(25, 35, 30)]
+    [InlineData(1, 15, 10)]
+    public void TheLimits_ComeFromTheBeat_WithFloors(int beat, int silence, int muteAfter)
+    {
+        AgentHealth.SilenceFor(TimeSpan.FromSeconds(beat)).Should().Be(TimeSpan.FromSeconds(silence));
+        AgentHealth.MuteAfterFor(TimeSpan.FromSeconds(beat)).Should().Be(TimeSpan.FromSeconds(muteAfter));
     }
 
     [Fact]

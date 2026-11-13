@@ -74,15 +74,14 @@ public sealed class DevicesTransportOptions
     public int HandoverHelloWaitSeconds { get; set; } = 5;
 
     /// <summary>
-    /// De quanto em quanto o AGENTE manda o <c>agent.keepalive.v1</c> (25 s hoje, mesmo ocioso; não é o batimento da API,
-    /// <see cref="ApplicationKeepAliveSeconds"/>). Os limites da saúde (<see cref="AgentHealth"/>) derivam dele: o silêncio que
-    /// marca "sem resposta" (<see cref="HealthSilence"/>, 1,4 intervalo) e o calado que faz um prazo estourado contar como
-    /// "mudo" (<see cref="HealthMuteAfter"/>, 1,2 intervalo). Com um batimento mais curto, basta mudar este número.
+    /// O intervalo do <c>agent.keepalive.v1</c> que a saúde (<see cref="AgentHealth"/>) supõe enquanto não mediu o da sessão
+    /// (até o segundo batimento). Não é o batimento da API (<see cref="ApplicationKeepAliveSeconds"/>). 25 s, o do agente
+    /// anterior: o mais folgado. Depois disso valem os limites do intervalo medido de cada agente (5 s no agente de agora).
     /// </summary>
     public int AgentKeepAliveSeconds { get; set; } = 25;
 
     /// <summary>
-    /// Quantos prazos estourados "mudos" (o agente calado há <see cref="HealthMuteAfter"/>, cada um enviado depois do anterior)
+    /// Quantos prazos estourados "mudos" (o agente calado há o limite de "mudo" da saúde, cada um enviado depois do anterior)
     /// marcam "sem resposta" antes do silêncio completo. Dois: um só pode ser um comando legitimamente demorado.
     /// </summary>
     public int HealthStalledMisses { get; set; } = 2;
@@ -120,12 +119,6 @@ public sealed class DevicesTransportOptions
     public TimeSpan CloseGrace => TimeSpan.FromSeconds(CloseGraceSeconds);
 
     public TimeSpan HandoverHelloWait => TimeSpan.FromSeconds(HandoverHelloWaitSeconds);
-
-    /// <summary>Sem nenhum quadro por isto, o agente está "sem resposta": 1,4 batimento (35 s com o de 25 s).</summary>
-    public TimeSpan HealthSilence => TimeSpan.FromSeconds(AgentKeepAliveSeconds * 1.4);
-
-    /// <summary>Um prazo estourado só conta como "mudo" com o agente calado há isto: 1,2 batimento (30 s com o de 25 s).</summary>
-    public TimeSpan HealthMuteAfter => TimeSpan.FromSeconds(AgentKeepAliveSeconds * 1.2);
 
     public TimeSpan StaleInput => TimeSpan.FromMilliseconds(StaleInputMilliseconds);
 
