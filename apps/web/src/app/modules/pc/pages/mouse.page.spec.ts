@@ -636,6 +636,85 @@ describe('MousePage', () => {
       await settle();
       expect(sheet()).toBeNull();
     });
+
+    it('one touch on the corner button reaches the sensitivity, with the rest behind More settings', async () => {
+      gear().click();
+      await settle();
+      expect(root.querySelector('dialog #pad-sensitivity')).not.toBeNull();
+      expect(root.querySelector('dialog #scroll-sensitivity')).not.toBeNull();
+      const more = [...root.querySelectorAll<HTMLButtonElement>('dialog button')].find(
+        (item) => item.textContent?.trim() === 'Mais ajustes',
+      );
+      expect(more).toBeTruthy();
+    });
+  });
+
+  describe('the echo of what is typed', () => {
+    const bar = (name: string) =>
+      root.querySelector<HTMLButtonElement>(`app-pc-action-bar button[aria-label="${name}"]`)!;
+    const field = () => root.querySelector<HTMLTextAreaElement>('app-pc-live-keyboard textarea')!;
+    const echo = () => root.querySelector<HTMLElement>('.echo');
+    const line = () => root.querySelector<HTMLElement>('.echo-line');
+    const toggle = () => root.querySelector<HTMLButtonElement>('.echo-toggle')!;
+    const flush = async () => {
+      for (let round = 0; round < 8; round++) await Promise.resolve();
+    };
+    const type = (text: string) => {
+      field().value = field().value + text;
+      field().dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    it('appears above the bar only while typing, and shows the text and the keys', async () => {
+      expect(echo()).toBeNull();
+      bar('Teclado').click();
+      fixture.detectChanges();
+      // Nada digitado ainda: nada a mostrar.
+      expect(echo()).toBeNull();
+      type('oi');
+      await flush();
+      bar('Enter').click();
+      fixture.detectChanges();
+      expect(line()?.querySelector('.echo-text')?.textContent).toBe('oi');
+      expect(line()?.querySelector('.echo-key')?.textContent).toBe('⏎');
+      // Não é região viva: o leitor de tela não lê cada letra (pode ser uma senha).
+      expect(echo()?.closest('[aria-live], [role="status"], [role="log"]')).toBeNull();
+      expect(line()?.hasAttribute('aria-live')).toBe(false);
+    });
+
+    it('goes away and is emptied when the keyboard closes', async () => {
+      bar('Teclado').click();
+      type('abc');
+      await flush();
+      fixture.detectChanges();
+      expect(line()?.textContent).toContain('abc');
+      bar('Teclado').click();
+      fixture.detectChanges();
+      expect(echo()).toBeNull();
+      bar('Teclado').click();
+      fixture.detectChanges();
+      expect(echo()).toBeNull();
+    });
+
+    it('one touch hides it without closing the phone keyboard, and the choice is kept', async () => {
+      bar('Teclado').click();
+      type('abc');
+      await flush();
+      fixture.detectChanges();
+      expect(toggle().getAttribute('aria-label')).toBe('Esconder o que digito');
+      toggle().dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      field().blur();
+      toggle().click();
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(field());
+      expect(line()).toBeNull();
+      expect(prefs.showTyped()).toBe(false);
+      // Escondido, só o botão de mostrar fica, e o texto não aparece em lugar nenhum.
+      expect(toggle().getAttribute('aria-label')).toBe('Mostrar o que digito');
+      expect(root.textContent).not.toContain('abc');
+      toggle().click();
+      fixture.detectChanges();
+      expect(line()?.textContent).toContain('abc');
+    });
   });
 
   describe('action bar and key panel', () => {

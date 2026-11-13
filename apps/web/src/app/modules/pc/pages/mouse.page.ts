@@ -190,6 +190,40 @@ interface Ring {
       </div>
     }
 
+    @if (typing() && (!prefs.showTyped() || echo().length > 0)) {
+      <!-- O que se digitou no PC nesta sessão, só na memória (pode ser uma senha). Não é região viva: o leitor de tela não
+           lê cada letra em voz alta. Tocar no botão de esconder não fecha o teclado do celular. -->
+      <div class="echo">
+        @if (prefs.showTyped()) {
+          <p class="echo-line">
+            @for (segment of echo(); track $index) {
+              @if (segment.kind === 'key') {
+                <span class="echo-key">{{ segment.value }}</span>
+              } @else {
+                <span class="echo-text">{{ segment.value }}</span>
+              }
+            }
+          </p>
+        }
+        <button
+          type="button"
+          class="echo-toggle"
+          [attr.aria-label]="prefs.showTyped() ? hideTypedLabel : showTypedLabel"
+          [attr.aria-pressed]="prefs.showTyped()"
+          (pointerdown)="holdKeyboard()"
+          (click)="toggleTyped()"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path [attr.d]="'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z'" />
+            <circle cx="12" cy="12" r="3" />
+            @if (prefs.showTyped()) {
+              <path [attr.d]="'M4 4l16 16'" />
+            }
+          </svg>
+        </button>
+      </div>
+    }
+
     <app-pc-live-keyboard
       [disabled]="!store.canSend()"
       (typing)="typing.set($event)"
@@ -217,7 +251,7 @@ interface Ring {
       <app-pc-shortcut-sheet (closed)="shortcutsOpen.set(false)" />
     }
     @if (settingsOpen()) {
-      <app-pc-pad-settings-sheet (closed)="settingsOpen.set(false)" />
+      <app-pc-pad-settings-sheet [quick]="true" (closed)="settingsOpen.set(false)" />
     }
   `,
   styleUrl: './mouse.page.css',
@@ -249,6 +283,10 @@ export class MousePage {
   /** O teclado do celular está aberto (o campo escondido tem o foco). */
   protected readonly typing = signal(false);
   private readonly keyboard = viewChild.required(PcLiveKeyboard);
+  /** O eco do que se digitou no PC nesta sessão de digitação (vem do campo; nada guardado). */
+  protected readonly echo = computed(() => this.keyboard().echo());
+  protected readonly hideTypedLabel = $localize`:@@pc.echo.hide:Esconder o que digito`;
+  protected readonly showTypedLabel = $localize`:@@pc.echo.show:Mostrar o que digito`;
   protected readonly error = signal<string | null>(null);
   /**
    * Um aviso por vez: o aviso de falha da casca (`store.notice`) flutua no mesmo lugar, logo acima da barra. Enquanto o
@@ -513,6 +551,12 @@ export class MousePage {
     this.keyboard().close();
     if (sheet === 'settings') this.settingsOpen.set(true);
     else this.shortcutsOpen.set(true);
+  }
+
+  /** Esconde ou mostra o eco do que se digita. Só a escolha fica guardada; o texto nunca. */
+  protected toggleTyped(): void {
+    this.prefs.set({ showTyped: !this.prefs.showTyped() });
+    this.keepKeyboard();
   }
 
   /** Tocar numa tecla da tela tira o foco do campo: no modo teclado ele volta (o teclado do celular não fecha). */
