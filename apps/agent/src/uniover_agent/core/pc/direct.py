@@ -180,6 +180,12 @@ REASON_REVOKED: Final = "revoked"
 REASON_CLOUD: Final = "cloud"
 # A pessoa perdeu um dos escopos (o do PC ou o da TV) mas não o acesso todo: o app abre outro já.
 REASON_RESCOPED: Final = "rescoped"
+# Os motivos que o app diz no `bye` ao fechar o canal por conta própria (a página saiu de vista, a
+# tela fechou, o canal parou de responder...). Só estes viram `peer_<motivo>`; qualquer outro texto
+# vira `peer_other`, para o registro nunca levar o que o par quiser escrever.
+PEER_BYE_REASONS: Final = frozenset(
+    {"hidden", "stopped", "stalled", "closed", "account", "rescope", "renew", "failed"}
+)
 # Os motivos que o contrato aceita em `pc.rtc.close.v1` (a API manda) e em `pc.rtc.closed.v1`.
 KNOWN_REASONS: Final = frozenset(
     {
@@ -624,7 +630,9 @@ class PcDirectService:
                 PeerCallbacks(
                     on_message=lambda channel, text: self._on_message(session, channel, text),
                     on_open=lambda: self._on_peer_open(session),
-                    on_closed=lambda: self._spawn(self._finish(session, REASON_FAILED)),
+                    on_closed=lambda: self._spawn(
+                        self._finish(session, REASON_FAILED, detail=self._drop_detail(session))
+                    ),
                 )
             )
             try:
@@ -862,6 +870,9 @@ class PcDirectService:
 
     def _on_input(self, session: _Session, data: dict[str, Any], now: float) -> None:
         kind = data["k"]
+        if kind == "bye":
+            self._on_bye(session, data)
+            return
         if not session.authenticated:
             # A primeira mensagem do canal de entrada TEM de ser o `auth` com o token da API.
             if kind == "auth" and self._token_ok(session, data.get("tok"), now):
@@ -900,6 +911,32 @@ class PcDirectService:
             self._violation(session)
             return
         self._on_command(session, data, now)
+
+    def _on_bye(self, session: _Session, data: dict[str, Any]) -> None:
+        """O app avisa por que vai fechar o canal (`bye`): fecha como a queda do par, com o motivo.
+
+        Solta o que o PC segurava (`_halt`) e a API é avisada como antes (`failed`: o contrato do
+        aviso não tem os motivos do app); só o registro leva `peer_<motivo>`. Quem manda o `bye` já
+        está de saída, então nada é devolvido a ele. Vale também antes do `auth`: o app que desiste
+        da negociação não tem token a provar, e quem alcança o canal sempre pôde fechá-lo com lixo.
+        """
+        reason = data.get("r")
+        label = (
+            f"peer_{reason}"
+            if isinstance(reason, str) and reason in PEER_BYE_REASONS
+            else "peer_other"
+        )
+        if self._halt(session):
+            self._spawn(self._dispose(session, REASON_FAILED, notify=True, label=label))
+
+    def _drop_detail(self, session: _Session) -> str:
+        """Por que o par caiu sem `bye`: há quanto tempo calou, o evento e os estados."""
+        silent = max(0.0, self._monotonic() - session.last_rx)
+        info = ""
+        if session.peer is not None:
+            with contextlib.suppress(Exception):
+                info = session.peer.close_info()
+        return f"sem `bye`; último recebido há {silent:.1f} s" + (f"; {info}" if info else "")
 
     @staticmethod
     def _note_cloud_marker(session: _Session, data: dict[str, Any]) -> None:
@@ -1281,11 +1318,15 @@ class PcDirectService:
                 _log.exception("falha ao soltar o que o PC segurava")
         return True
 
-    async def _finish(self, session: _Session, reason: str, *, notify: bool = True) -> None:
+    async def _finish(
+        self, session: _Session, reason: str, *, notify: bool = True, detail: str = ""
+    ) -> None:
         if self._halt(session):
-            await self._dispose(session, reason, notify=notify)
+            await self._dispose(session, reason, notify=notify, detail=detail)
 
-    async def _dispose(self, session: _Session, reason: str, *, notify: bool) -> None:
+    async def _dispose(
+        self, session: _Session, reason: str, *, notify: bool, label: str = "", detail: str = ""
+    ) -> None:
         """O resto de fechar: avisa o app do motivo, fecha o par, registra e avisa a API."""
         peer = session.peer
         if peer is not None:
@@ -1298,7 +1339,7 @@ class PcDirectService:
             # Com prazo: fechamento que não termina não prende a próxima oferta nem o aviso à API.
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(peer.close(), PEER_CLOSE_TIMEOUT_SECONDS)
-        self._summarize(session, reason)
+        self._summarize(session, label or reason, detail)
         if notify:
             try:
                 await self._notify_closed(session.id, reason, self._tv_counts(session))
@@ -1318,17 +1359,18 @@ class PcDirectService:
             return None
         return TvCounts(session.tv_keys, session.tv_texts)
 
-    def _summarize(self, session: _Session, reason: str) -> None:
+    def _summarize(self, session: _Session, reason: str, detail: str = "") -> None:
         """O ciclo do canal: uma linha no registro (INFO) e, se autenticou, uma no diagnóstico.
 
-        Nenhuma das duas leva endereço, SDP, candidato nem token: só motivo, duração, RTT e perdas.
+        Nenhuma das duas leva endereço, SDP, candidato nem token: só motivo, duração, RTT e perdas
+        (e, se o par caiu sem `bye`, o `detail`: silêncio, evento e estados da conexão).
         """
         now = self._monotonic()
         median = statistics.median(session.rtts) if session.rtts else None
         if session.authenticated:
             _log.info(
                 "canal direto fechado (sessão %s): motivo %s; escopos %s; aberto por %.0f s; "
-                "RTT %s; movimentos perdidos %d; mensagens %d%s",
+                "RTT %s; movimentos perdidos %d; mensagens %d%s%s",
                 session.id[:8],
                 reason,
                 "+".join(sorted(session.scopes)),
@@ -1342,15 +1384,17 @@ class PcDirectService:
                     if SCOPE_TV in session.scopes
                     else ""
                 ),
+                f"; {detail}" if detail else "",
             )
         else:
             _log.info(
                 "canal direto fechado antes de autenticar (sessão %s): motivo %s; %.1f s depois "
-                "da oferta; os canais de dados %s",
+                "da oferta; os canais de dados %s%s",
                 session.id[:8],
                 reason,
                 now - session.created,
                 "abriram" if session.opened else "não abriram",
+                f"; {detail}" if detail else "",
             )
         if self._record is None or not session.authenticated:
             return

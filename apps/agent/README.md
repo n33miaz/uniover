@@ -327,7 +327,12 @@ qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o 
   outra oferta, a conexão com a API perdida, o agente encerrando), solta o que o PC segurava e tira da faixa o que dele
   esperava (comandos e movimento), como a queda da conexão com a API. No máximo um canal por vez, e o app que o perdeu é
   avisado do motivo (`bye`): quando outro aparelho tomou o lugar (`replaced`) ou a sessão deixou de valer (`revoked`) ele não
-  tenta de novo sozinho. **A nuvem vence:** chegando comando de entrada pela API enquanto o canal está em uso, o canal fecha
+  tenta de novo sozinho. O app também avisa o agente quando fecha por conta própria (`bye` com `r`: `hidden`, `stopped`,
+  `stalled`, `closed`, `account`, `rescope`, `renew` ou `failed`, melhor esforço): o registro leva `motivo peer_<r>` (outro
+  texto vira `peer_other`) e a API é avisada como `failed`. Sem `bye`, o registro do fechamento leva há quantos segundos
+  nada chegou e o evento (canal ou estado) com `connectionState`, `iceConnectionState` e o estado do SCTP; nunca endereço,
+  SDP nem conteúdo. Um agente anterior conta o `bye` como uma recusa qualquer (o canal já está fechando).
+  **A nuvem vence:** chegando comando de entrada pela API enquanto o canal está em uso, o canal fecha
   ANTES (e solta o que segurava), então um aperto atrasado do canal nunca cai depois de um soltar da nuvem.
   Só os comandos de clique, tecla, texto e mídia fecham o canal; o movimento do mouse da nuvem nunca (ele chega sem espera, então
   um movimento atrasado logo depois da troca de caminho é normal e é só somado). O app declara no `auth` e em cada comando o

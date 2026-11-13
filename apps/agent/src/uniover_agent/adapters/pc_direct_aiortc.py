@@ -31,7 +31,17 @@ from uniover_agent.ports.pc_direct import (
 _log = logging.getLogger(__name__)
 
 _CHANNELS: Final = (POINTER_CHANNEL, INPUT_CHANNEL)
+# Um estado da biblioteca (`connected`, `checking`...) nunca passa disto; o que passar não é rótulo.
+_MAX_STATE_CHARS: Final = 24
 _loaded: dict[str, Any] = {}
+
+
+def _state_of(owner: Any, attribute: str) -> str:
+    """Um estado da biblioteca como texto curto; `n/d` se não existe (ainda ou mais)."""
+    value = getattr(owner, attribute, None) if owner is not None else None
+    if isinstance(value, str) and value.isascii() and len(value) <= _MAX_STATE_CHARS:
+        return value
+    return "n/d"
 
 
 def aiortc_installed() -> bool:
@@ -83,6 +93,7 @@ class AiortcPeer:
         self._channels: dict[str, Any] = {}
         self._opened: set[str] = set()
         self._closed = False
+        self._close_info = ""
 
     async def accept_offer(self, sdp: str) -> str:
         aiortc = await _load()
@@ -92,10 +103,10 @@ class AiortcPeer:
 
         async def on_state() -> None:
             if pc.connectionState in ("failed", "closed"):
-                self._signal_closed()
+                self._signal_closed(f"estado {pc.connectionState}")
             elif pc.connectionState == "connected" and not self._remote_is_lan():
                 _log.warning("canal direto derrubado: o par não está na rede local")
-                self._signal_closed()
+                self._signal_closed("par fora da rede local")
 
         pc.on("datachannel", self._adopt)
         pc.on("connectionstatechange", on_state)
@@ -136,7 +147,7 @@ class AiortcPeer:
                 self._callbacks.on_message(label, message)
 
         channel.on("message", on_message)
-        channel.on("close", self._signal_closed)
+        channel.on("close", lambda: self._signal_closed(f"canal {label} fechado"))
 
         if channel.readyState == "open":
             self._mark_open(label)
@@ -148,10 +159,31 @@ class AiortcPeer:
         if self._opened.issuperset(_CHANNELS):
             self._callbacks.on_open()
 
-    def _signal_closed(self) -> None:
+    def _signal_closed(self, cause: str) -> None:
         if not self._closed:
             self._closed = True
+            self._close_info = self._snapshot(cause)
             self._callbacks.on_closed()
+
+    def close_info(self) -> str:
+        return self._close_info
+
+    def _snapshot(self, cause: str) -> str:
+        """O que disparou o fechamento e os estados da conexão naquele instante.
+
+        Só rótulos que a biblioteca define (`connected`, `failed`...): nunca endereço nem conteúdo.
+        """
+        parts = [f"evento: {cause}"]
+        pc = self._pc
+        sctp = getattr(pc, "sctp", None)
+        states = (
+            ("connectionState", pc, "connectionState"),
+            ("iceConnectionState", pc, "iceConnectionState"),
+            ("sctp", sctp, "state"),
+        )
+        for label, owner, attribute in states:
+            parts.append(f"{label} {_state_of(owner, attribute)}")
+        return "; ".join(parts)
 
     async def add_candidate(self, candidate: str, mid: str | None, index: int | None) -> None:
         if self._pc is None or self._closed:

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
@@ -113,6 +114,10 @@ class FakePeer:
         self.offers: list[str] = []
         self.candidates: list[tuple[str, str | None, int | None]] = []
         self.refuse: Exception | None = None
+        self.info = ""
+
+    def close_info(self) -> str:
+        return self.info
 
     async def accept_offer(self, sdp: str) -> str:
         if self.refuse is not None:
@@ -692,6 +697,128 @@ async def test_closing_the_channel_releases_what_the_pc_held(lab: Lab) -> None:
     assert lab.service.session_id is None
     assert lab.closed == [(SESSION, "failed")]
     assert peer.closed
+
+
+def _closing_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "canal direto fechado" in r.getMessage()]
+
+
+@pytest.mark.parametrize("reason", ["hidden", "stopped", "stalled", "closed"])
+async def test_a_bye_from_the_app_closes_with_its_reason_and_releases_what_the_pc_held(
+    lab: Lab, caplog: pytest.LogCaptureFixture, reason: str
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.click.v1", {"button": "LEFT", "action": "DOWN"}, "d"))
+    await settle()
+    lab.pc.calls.clear()
+    peer.sent.clear()
+
+    peer.phone(INPUT_CHANNEL, {"k": "bye", "r": reason})
+    await settle()
+
+    assert lab.pc.calls == [("release_all",)]
+    assert lab.service.session_id is None
+    assert lab.closed == [(SESSION, "failed")]  # o aviso à API segue no contrato de sempre
+    assert peer.closed
+    assert peer.sent == []  # quem se despede não recebe um `bye` de volta
+    lines = _closing_lines(caplog)
+    assert len(lines) == 1 and f"motivo peer_{reason};" in lines[0]
+    assert "sem `bye`" not in lines[0]
+
+
+@pytest.mark.parametrize("reason", ["x" * 500, "../etc/passwd", 7, None, ["hidden"]])
+async def test_a_bye_with_any_other_reason_is_logged_as_peer_other(
+    lab: Lab, caplog: pytest.LogCaptureFixture, reason: object
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+
+    peer.phone(INPUT_CHANNEL, {"k": "bye", "r": reason})
+    await settle()
+
+    lines = _closing_lines(caplog)
+    assert len(lines) == 1 and "motivo peer_other;" in lines[0]
+    assert "etc" not in caplog.text and "xxxx" not in caplog.text
+
+
+async def test_a_bye_is_not_a_violation_and_a_second_one_changes_nothing(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+
+    peer.phone(INPUT_CHANNEL, {"k": "bye", "r": "hidden"})
+    peer.phone(INPUT_CHANNEL, {"k": "bye", "r": "stopped"})
+    await settle()
+
+    assert lab.closed == [(SESSION, "failed")]
+    assert len(_closing_lines(caplog)) == 1
+
+
+async def test_a_bye_before_the_auth_closes_without_blaming_the_token(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    await lab.open()
+
+    lab.peer.phone(INPUT_CHANNEL, {"k": "bye", "r": "stopped"})
+    await settle()
+
+    assert lab.service.session_id is None
+    assert "token válido" not in caplog.text
+    assert any(
+        "antes de autenticar" in line and "peer_stopped" in line for line in _closing_lines(caplog)
+    )
+
+
+async def test_a_bye_on_the_pointer_channel_is_not_a_close(lab: Lab) -> None:
+    peer = await lab.open_authenticated()
+
+    peer.phone(POINTER_CHANNEL, {"k": "bye", "r": "hidden"})
+    await settle()
+
+    assert lab.service.session_id == SESSION  # o aviso só vale no canal de entrada
+
+
+async def test_a_drop_without_bye_logs_the_silence_and_the_state_of_the_connection(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+    peer.info = (
+        "evento: canal input fechado; connectionState connected; "
+        "iceConnectionState completed; sctp connected"
+    )
+
+    peer.callbacks.on_closed()
+    await settle()
+
+    assert lab.closed == [(SESSION, "failed")]
+    lines = _closing_lines(caplog)
+    assert len(lines) == 1
+    assert "motivo failed;" in lines[0]
+    assert re.search(
+        r"sem `bye`; último recebido há \d+\.\d s; evento: canal input fechado", lines[0]
+    )
+    assert "connectionState connected; iceConnectionState completed; sctp connected" in lines[0]
+
+
+async def test_a_drop_without_bye_still_closes_when_the_peer_cannot_describe_itself(
+    lab: Lab, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    peer = await lab.open_authenticated()
+
+    def broken() -> str:
+        raise RuntimeError("sem estado")
+
+    peer.close_info = broken  # type: ignore[method-assign]
+    peer.callbacks.on_closed()
+    await settle()
+
+    assert lab.closed == [(SESSION, "failed")]
+    assert "sem `bye`; último recebido há" in _closing_lines(caplog)[0]
 
 
 async def test_a_message_after_the_close_does_nothing(lab: Lab) -> None:
