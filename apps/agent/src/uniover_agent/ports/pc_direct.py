@@ -42,6 +42,13 @@ class DirectPeer(Protocol):
         """Envia um texto no canal; `False` se ele não está aberto."""
         ...
 
+    def close_info(self) -> str:
+        """Uma linha sobre por que o par fechou (evento e estados), só de rótulos fixos.
+
+        Nunca endereço, SDP, candidato nem conteúdo de mensagem. Vazia se o par não caiu sozinho.
+        """
+        ...
+
     async def close(self) -> None: ...
 
 

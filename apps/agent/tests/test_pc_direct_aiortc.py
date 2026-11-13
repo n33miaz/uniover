@@ -310,3 +310,46 @@ async def test_the_peer_refuses_a_late_candidate_outside_the_local_network_befor
     await peer.add_candidate("candidate:3 1 udp 1 192.168.1.9 3478 typ relay", "0", 0)
 
     assert reached == []
+
+
+async def test_a_peer_that_drops_describes_the_event_and_the_connection_states() -> None:
+    closed: list[bool] = []
+
+    class FakeSctp:
+        state = "closed"
+
+    class FakeConnection:
+        connectionState = "connected"  # noqa: N815 - API da biblioteca
+        iceConnectionState = "completed"  # noqa: N815 - API da biblioteca
+        sctp = FakeSctp()
+
+    peer = pc_direct_aiortc.AiortcPeer(
+        PeerCallbacks(
+            on_message=lambda channel, text: None,
+            on_open=lambda: None,
+            on_closed=lambda: closed.append(True),
+        )
+    )
+    assert peer.close_info() == ""
+    peer._pc = FakeConnection()
+
+    peer._signal_closed("canal input fechado")
+    peer._signal_closed("estado failed")  # o segundo evento não troca o que disparou primeiro
+
+    assert closed == [True]
+    assert peer.close_info() == (
+        "evento: canal input fechado; connectionState connected; "
+        "iceConnectionState completed; sctp closed"
+    )
+
+
+async def test_the_description_of_a_peer_without_states_never_fails() -> None:
+    peer = pc_direct_aiortc.AiortcPeer(
+        PeerCallbacks(on_message=lambda c, t: None, on_open=lambda: None, on_closed=lambda: None)
+    )
+
+    peer._signal_closed("estado closed")
+
+    assert peer.close_info() == (
+        "evento: estado closed; connectionState n/d; iceConnectionState n/d; sctp n/d"
+    )
