@@ -48,7 +48,7 @@ from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.adapters.tv_volume_check import check_volume
 from uniover_agent.adapters.wol import send_wake_on_lan
-from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK
+from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK, agent_version
 from uniover_agent.config import (
     Settings,
     adb_key_backup_dir,
@@ -107,6 +107,7 @@ from uniover_agent.core import (
     user_initiated,
 )
 from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
+from uniover_agent.core.tv.key_timing import KeyTimings
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import (
     LivreStateFile,
@@ -266,7 +267,9 @@ def build_driver_setup(
     # `POWER` passa como as outras teclas (agente antigo ou app antigo): o app só o manda depois da
     # folha de confirmação e a API só o aceita pela rota própria de desligar. O desligamento com
     # leitura (`tv.power.off.v1`) só aperta a tecla com a TV lida como ligada e nunca a repete.
-    keys = tv_key_handler(manager)
+    # Os tempos de cada tecla (fila, sessão, envio), resumidos por minuto com uso no registro.
+    timings = KeyTimings(version=agent_version(), driver="android-remote")
+    keys = tv_key_handler(manager, timings=timings)
     text = TextReconciler(
         manager,
         monotonic=clock.monotonic,
@@ -307,6 +310,9 @@ def build_driver_setup(
         ],
         text=text,
         known=known,
+        background=[timings.run],
+        # A janela corrente dos tempos sai no registro ao encerrar (depois do dreno das teclas).
+        closers=[timings.aclose],
     )
     attach_pairing(setup, settings, host, cert_dir, remote)
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
@@ -470,7 +476,8 @@ def build_samsung_tv(
         warm_timeout_seconds=settings.tv_session_warm_timeout_seconds,
         disconnect_timeout_seconds=settings.tv_session_disconnect_timeout_seconds,
     )
-    keys = tv_key_handler(manager)
+    timings = KeyTimings(version=agent_version(), driver="samsung")
+    keys = tv_key_handler(manager, timings=timings)
     apps = SamsungTvApps(manager, remote, transport, envelopes)
     announcer = AppsAnnouncer(
         apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
@@ -537,12 +544,13 @@ def build_samsung_tv(
             SAMSUNG_MAINTENANCE_CAPABILITY,
             *key_capabilities(SAMSUNG_OPTIONAL_KEYS),
         ],
-        background=[announcer.run, maintenance_scheduler.run],
+        background=[announcer.run, maintenance_scheduler.run, timings.run],
         after_hello=[permission.announce, announcer.after_hello],
         # O pedido responde em segundos, mas não pode segurar a recepção enquanto a TV é consultada.
         background_commands={"tv.permission.request.v1"},
         known=known,
         cleanup_scheduler=maintenance_scheduler,
+        closers=[timings.aclose],
     )
 
 
