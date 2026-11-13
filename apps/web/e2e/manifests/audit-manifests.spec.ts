@@ -55,7 +55,7 @@ function manifestFor(id: string, prefix = ''): Record<string, unknown> {
     lang: 'pt-BR',
     dir: 'ltr',
     background_color: '#F2F5F1',
-    theme_color: '#3B6B4B',
+    theme_color: '#F2F5F1',
     icons: [
       icon('icon-192.png', 192, 'any'),
       icon('icon-512.png', 512, 'any'),

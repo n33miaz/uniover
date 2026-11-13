@@ -55,7 +55,7 @@ Todos são custom properties em `:root` de `apps/web/src/styles.css`. Tema claro
 | Quem grava o atributo | `ThemeService` (segue o sistema) e `AppearanceService` (preferência `auto`, `light`, `dark`, guardada no aparelho) | `apps/web/src/app/core/theme/theme.service.ts:26-28`, `apps/web/src/app/core/session/appearance.service.ts:6-9,58-62` |
 | Escolha na tela | Três opções: Claro, Escuro, Automático | `apps/web/src/app/modules/settings/appearance.page.ts:28-32` |
 | `<meta name="color-scheme">` | `light dark` | `apps/web/src/index.html:11` |
-| Cor da barra do sistema | `<meta name="theme-color">` por tema com o fundo (`#f2f5f1` claro, `#101512` escuro); com o tema fixado no app, o `AppearanceService` põe a cor dele nas duas. O manifesto guarda uma cor só (`theme_color #3B6B4B`, `background_color #F2F5F1`) | `apps/web/src/index.html`, `appearance.service.ts` |
+| Cor da barra do sistema | `<meta name="theme-color">` por tema com o fundo (`#f2f5f1` claro, `#101512` escuro); com o tema fixado no app, o `AppearanceService` põe a cor dele nas duas. O manifesto guarda uma cor só e é o fundo claro (`theme_color` e `background_color` `#F2F5F1`), o que o Chrome do Android lê para a barra do app instalado; o escuro só chega pelas metas | `apps/web/src/index.html`, `appearance.service.ts` |
 
 Regra para tokens novos: definir os dois temas; nunca trocar o valor de um token existente (telas dependem deles: `apps/web/src/styles.css:21-24`).
 
@@ -430,6 +430,6 @@ Inconsistências encontradas no código (reportar ao corrigir; o código atual m
 7. Dois serviços gravam `data-theme` (`ThemeService` e `AppearanceService`).
 8. `.ui-btn.secondary` só tem hover; no repouso é igual a `.ui-btn`.
 9. O fundo dos ícones de módulo da Início vem dos tokens `--a-module-app` e `--a-module-app-planned` do próprio ícone (`module-app-icon.ts`), com a mesma guarda da paleta do `styles.css`: o tema fixado no app vale mais que o do sistema.
-10. O manifesto aceita uma cor de barra só (`theme_color`); a cor por tema vem das `<meta name="theme-color">` do `index.html`.
+10. O manifesto aceita uma cor de barra só (`theme_color`, igual ao fundo claro); a cor por tema vem das `<meta name="theme-color">` do `index.html`. O Android instalado pode seguir só o manifesto na barra de navegação (sem fonte primária), então no tema escuro dessa barra o app não garante a cor. O indicador de início do iPhone não tem cor: mostra o que a página pinta atrás dele. Com o teclado aberto (`--kb-inset` ≥ 80 px) `--safe-bottom` vale 0, pela conta em `styles.css`.
 11. "Início" nomeia a tela inicial do app e também uma aba do Treino (`training.routes.ts:15`).
 12. Não há toast global nem tokens de z-index e de breakpoint.
