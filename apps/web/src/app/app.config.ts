@@ -18,7 +18,7 @@ import { connectivityInterceptor } from './core/connectivity/connectivity.interc
 import { resumeRetryInterceptor } from './core/connectivity/resume-retry.interceptor';
 import { watchKeyboardInset } from './core/layout/keyboard-inset';
 import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
-import { InstallHintService } from './core/pwa/install-hint.service';
+import { InstallPromptCapture } from './core/pwa/install-prompt-capture';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
 import { ScopePathLocationStrategy } from './core/pwa/scope-location.strategy';
@@ -52,8 +52,15 @@ export const appConfig: ApplicationConfig = {
     ),
     // Registra o service worker sem segurar a primeira tela (só em produção).
     provideAppInitializer(() => inject(PwaUpdateService).start()),
-    // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).
-    provideAppInitializer(() => inject(InstallHintService).start()),
+    // Guarda cedo o pedido único do Chromium; a memória e a folha da dica carregam depois da primeira pintura.
+    provideAppInitializer(() => {
+      inject(InstallPromptCapture).start();
+      const injector = inject(Injector);
+      void import('./core/pwa/install-hint.service')
+        .then(({ InstallHintService }) => injector.get(InstallHintService).start())
+        // A dica é opcional: se o pedaço não carregar, o app segue sem ela.
+        .catch(() => undefined);
+    }),
     // Mantém --kb-inset (teclado virtual) para os rodapés fixos subirem junto.
     provideAppInitializer(() => {
       const doc = inject(DOCUMENT);

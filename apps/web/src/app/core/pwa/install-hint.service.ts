@@ -14,6 +14,13 @@ import {
   readInstallEnv,
 } from './install-env';
 import { moduleScopeOf } from './module-head.service';
+import {
+  INSTALL_INTENT_KEY,
+  INSTALL_MARKER_PARAM,
+  InstallPromptCapture,
+} from './install-prompt-capture';
+
+export { INSTALL_INTENT_KEY, INSTALL_MARKER_PARAM } from './install-prompt-capture';
 
 /**
  * Como a pessoa instala neste aparelho agora: `none` não há o que oferecer (já instalado, computador sem instalação
@@ -35,18 +42,9 @@ export type InstallOutcome = 'accepted' | 'dismissed' | 'unavailable' | 'reloadi
 /** Escopo de um app instalável: a raiz (`root`) ou um módulo com manifest próprio. */
 export type InstallScope = 'root' | ScopedModuleSlug;
 
-/**
- * Marcador de endereço: "esta carga foi pedida para instalar"; some do endereço assim que a página o lê. Traz um
- * código de uso único, que o botão grava na sessão (`INSTALL_INTENT_KEY`) antes de recarregar: um link externo com
- * `?instalar=...` não bate com nada e não abre a folha.
- */
-export const INSTALL_MARKER_PARAM = 'instalar';
 /** Identifica o atalho que iniciou a janela; o escopo da URL pode mudar dentro do PWA da raiz. */
 export const APP_LAUNCH_PARAM = 'uniover_app';
 const APP_WINDOW_KEY = 'uniover.app-window';
-
-/** Chave da sessão (some ao fechar a aba) com o código da recarga pedida pelo botão. */
-export const INSTALL_INTENT_KEY = 'uniover.install-intent';
 
 function newIntentToken(): string {
   try {
@@ -70,12 +68,6 @@ export const INSTALL_NAVIGATE = new InjectionToken<(url: string) => void>('INSTA
 
 function scopeOfPath(path: string): InstallScope {
   return moduleScopeOf(path) ?? 'root';
-}
-
-/** O evento `beforeinstallprompt` (ainda não está nos tipos do TypeScript: é do Chromium). */
-export interface InstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  readonly userChoice: Promise<{ readonly outcome: 'accepted' | 'dismissed' }>;
 }
 
 /** O ambiente do aparelho; os testes trocam este valor por um agente de usuário conhecido. */
@@ -248,6 +240,7 @@ function writeMemory(scope: InstallScope, memory: HintMemory, accountId: string 
 @Injectable({ providedIn: 'root' })
 export class InstallHintService {
   private readonly win = inject(DOCUMENT).defaultView;
+  private readonly capture = inject(InstallPromptCapture);
   private readonly env = inject(INSTALL_ENV);
   private started = false;
   private teardown: (() => void) | null = null;
@@ -274,10 +267,9 @@ export class InstallHintService {
   /** Escopos em que a pessoa confirmou, nesta página, que o app já está instalado. */
   private readonly ackedScopes = signal<ReadonlySet<InstallScope>>(new Set());
   /** Uma carga pedida para instalar (marcador no endereço): a folha deve abrir assim que o pedido chegar. */
-  private offerOnLoad = false;
+  private readonly offerOnLoad = signal(false);
   private offerTimer: ReturnType<typeof setTimeout> | undefined;
 
-  private readonly promptEvent = signal<InstallPromptEvent | null>(null);
   private readonly standalone = signal(isStandalone(this.env));
   /** Resultado verificável do Chrome Android para o manifest deste documento. */
   private readonly installedRelated = signal<boolean | null>(null);
@@ -362,8 +354,8 @@ export class InstallHintService {
       // Fora do iOS (que instala pelo Compartilhar e lê o manifest na hora), o botão "Instalar" faz a carga completa
       // no escopo certo. Sem pedido guardado e fora do Android (computador com o app geral já instalado, por
       // exemplo) não há como oferecer nada com segurança.
-      if (!isIos(this.env) && (this.promptEvent() || isAndroid(this.env))) return 'native';
-    } else if (this.promptEvent()) return 'native';
+      if (!isIos(this.env) && (this.capture.promptEvent() || isAndroid(this.env))) return 'native';
+    } else if (this.capture.promptEvent()) return 'native';
     if (isAndroid(this.env)) return 'android-manual';
     if (!isIos(this.env)) return 'none';
     switch (iosBrowser(this.env)) {
@@ -427,22 +419,15 @@ export class InstallHintService {
   /** Liga os ouvintes do navegador; pode ser chamado mais de uma vez. */
   start(): void {
     const win = this.win;
+    this.capture.start();
     if (this.started || !win) return;
     this.started = true;
     void this.checkInstalledRelated();
 
-    // Tem de vir antes de o roteador ler o endereço (este método roda no inicializador do app).
-    this.offerOnLoad = this.consumeMarker(win);
-
-    const onPrompt = (event: Event) => {
-      // Guarda o pedido para a pessoa decidir na hora certa; sem isto o Chromium mostraria o dele na hora.
-      event.preventDefault();
-      this.promptEvent.set(event as InstallPromptEvent);
-      if (this.offerOnLoad) this.offerNow();
-    };
-    const onInstalled = () => this.acknowledgeInstalled(this.loadScope);
-    win.addEventListener('beforeinstallprompt', onPrompt);
-    win.addEventListener('appinstalled', onInstalled);
+    // O marcador do endereço já foi lido e tirado cedo por `InstallPromptCapture`, antes do roteador.
+    this.offerOnLoad.set(this.capture.requestedOnLoad());
+    // O serviço carrega sob demanda: a navegação inicial pode já ter terminado antes deste ponto.
+    if (this.router?.navigated) this.scope.set(scopeOfPath(this.router.url));
 
     // O app pode passar a rodar como instalado sem recarregar (a media query muda).
     const query = this.listenStandalone();
@@ -450,39 +435,28 @@ export class InstallHintService {
     const navigation = this.router?.events
       .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
       .subscribe((event) => this.scope.set(scopeOfPath(event.urlAfterRedirects)));
+    const stopPrompt = this.capture.onPrompt(() => {
+      if (this.offerOnLoad()) this.offerNow();
+    });
+    const stopInstalled = this.capture.onInstalled(() => this.acknowledgeInstalled(this.loadScope));
     // Carga pedida para instalar mas o navegador não entregou o pedido (já instalado, sem suporte): abre a folha
     // mesmo assim, que mostra o caminho manual ou nada, conforme o modo.
-    if (this.offerOnLoad)
-      this.offerTimer = setTimeout(() => this.offerNow(), INSTALL_OFFER_WAIT_MS);
+    if (this.offerOnLoad()) {
+      if (this.capture.promptEvent()) this.offerNow();
+      else this.offerTimer = setTimeout(() => this.offerNow(), INSTALL_OFFER_WAIT_MS);
+    }
     this.teardown = () => {
-      win.removeEventListener('beforeinstallprompt', onPrompt);
-      win.removeEventListener('appinstalled', onInstalled);
       query?.();
       navigation?.unsubscribe();
+      stopPrompt();
+      stopInstalled();
       clearTimeout(this.offerTimer);
     };
   }
 
-  /** Lê e tira o marcador de "instalar" do endereço (sem recarregar nem mexer no histórico). */
-  private consumeMarker(win: Window): boolean {
-    try {
-      const url = new URL(win.location.href);
-      const token = url.searchParams.get(INSTALL_MARKER_PARAM);
-      if (token === null) return false;
-      url.searchParams.delete(INSTALL_MARKER_PARAM);
-      win.history.replaceState(win.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-      // O código é de uso único: vale o que o botão gravou antes de recarregar, e só uma vez.
-      const expected = win.sessionStorage?.getItem(INSTALL_INTENT_KEY);
-      win.sessionStorage?.removeItem(INSTALL_INTENT_KEY);
-      return token !== '' && token === expected;
-    } catch {
-      return false;
-    }
-  }
-
   private offerNow(): void {
-    if (!this.offerOnLoad) return;
-    this.offerOnLoad = false;
+    if (!this.offerOnLoad()) return;
+    this.offerOnLoad.set(false);
     clearTimeout(this.offerTimer);
     this.open();
   }
@@ -592,7 +566,7 @@ export class InstallHintService {
     if (scope === this.loadScope) {
       // O pedido guardado e o modo `standalone` são do app do documento.
       this.standalone.set(true);
-      this.promptEvent.set(null);
+      this.capture.promptEvent.set(null);
     }
     this.ackedScopes.update((acked) => new Set(acked).add(scope));
     this.remember(scope, mergeMemory(this.recall(scope), { installed: true }));
@@ -605,10 +579,10 @@ export class InstallHintService {
    */
   async prompt(): Promise<InstallOutcome> {
     if (this.crossScope()) return this.reloadIntoScope();
-    const event = this.promptEvent();
+    const event = this.capture.promptEvent();
     if (!event) return 'unavailable';
     // O pedido só pode ser usado uma vez: o navegador entrega outro quando achar que cabe.
-    this.promptEvent.set(null);
+    this.capture.promptEvent.set(null);
     try {
       await event.prompt();
       const { outcome } = await event.userChoice;
