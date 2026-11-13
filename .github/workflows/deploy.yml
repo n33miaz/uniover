@@ -11,7 +11,10 @@ name: Deploy
 #   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL o workflow FALHA, e falha antes de migrar (primeiro passo do job
 #   migrate): o banco nunca avança sem que o código novo possa ser publicado.
 # - Quando version, migrate, deploy, dast, release, launcher ou web-assets falham na branch de produção, o job notify abre (ou comenta) a
-#   issue "Publicação falhou"; a primeira publicação completa que der certo a comenta e a fecha. Só esse job escreve em issues.
+#   issue "Publicação falhou" mencionando o dono (a menção gera notificação e e-mail do GitHub mesmo sem acompanhar o
+#   repositório); a primeira publicação completa que der certo a comenta e a fecha. Só esse job escreve em issues.
+# - Ensaio do alerta: `gh workflow run deploy.yml -f alert_drill=true` não publica nada (version e tudo depois dele ficam
+#   pulados), falha o job alert-drill e o notify abre e fecha uma issue "Ensaio do alerta de publicação" com a menção.
 #
 # Smoke autenticado (ainda não existe: precisa de uma conta de teste). Depois do deploy e antes do dast, um job com o ambiente
 # production entraria com uma conta criada só para isso (sem permissão de TV nem de PC, senha em segredo do ambiente) e faria
@@ -25,12 +28,18 @@ on:
   push:
     branches: [develop, main, homolog]
   workflow_dispatch:
+    inputs:
+      alert_drill:
+        description: "Ensaio do alerta: não publica, só simula uma falha e abre a issue de ensaio"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-production
+  # O ensaio tem grupo próprio: nunca toma o lugar de uma publicação na fila.
+  group: ${{ inputs.alert_drill && 'deploy-alert-drill' || 'deploy-production' }}
   cancel-in-progress: false
 
 env:
@@ -62,7 +71,7 @@ jobs:
   version:
     name: version
     needs: channel
-    if: needs.channel.outputs.ref == github.ref_name
+    if: needs.channel.outputs.ref == github.ref_name && !inputs.alert_drill
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -578,16 +587,31 @@ jobs:
           gh release upload "$tag" launcher-assets/uniover-launcher.apk launcher-assets/uniover-launcher.apk.sha256 --clobber
           echo "Launcher anexado ao Release $tag."
 
+  # Só no ensaio do alerta (workflow_dispatch com alert_drill): falha de propósito para o notify avisar.
+  alert-drill:
+    name: alert-drill
+    if: ${{ inputs.alert_drill }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Simular uma falha da publicação
+        run: |
+          echo "::error::ensaio do alerta: falha simulada, nada foi publicado."
+          exit 1
+
   # Aviso de falha da publicação, sem serviço externo: uma issue "Publicação falhou" aberta enquanto a produção estiver quebrada.
   # Falha de version, migrate, deploy, dast, release, sign-agent-manifest, launcher ou web-assets abre a issue (ou comenta na que já está aberta, sem duplicar); a
   # primeira publicação em que todos eles terminam com sucesso comenta e a fecha. Execuções canceladas ou puladas por outro motivo
   # não mexem na issue. Roda só na branch de produção (a do channel). É o único job com permissão de escrever em issues: sem
   # checkout, sem segredos, sem ação de terceiros; o texto da issue só leva nomes de job, o commit e o link da execução.
+  # Cada abertura e cada comentário de falha mencionam o dono (variável ALERT_MENTION do repositório ou, sem ela, o dono do
+  # repositório): é a menção que faz o GitHub mandar notificação e e-mail. Falha do próprio channel também avisa.
+  # No ensaio a issue tem outro título ("Ensaio do alerta de publicação"), é aberta e fechada na hora e nunca toca a real.
   # Se as issues estiverem desligadas no repositório o passo falha em silêncio (continue-on-error) e a execução mantém o resultado real.
   notify:
     name: notify
-    needs: [channel, version, migrate, deploy, dast, release, sign_agent_manifest, launcher, web-assets]
-    if: ${{ always() && needs.channel.outputs.ref == github.ref_name }}
+    needs: [channel, version, migrate, deploy, dast, release, sign_agent_manifest, launcher, web-assets, alert-drill]
+    if: ${{ always() && (needs.channel.outputs.ref == github.ref_name || needs.channel.result == 'failure' || inputs.alert_drill) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -606,12 +630,19 @@ jobs:
           SIGN_AGENT_MANIFEST_RESULT: ${{ needs.sign_agent_manifest.result }}
           LAUNCHER_RESULT: ${{ needs.launcher.result }}
           WEB_ASSETS_RESULT: ${{ needs.web-assets.result }}
+          CHANNEL_RESULT: ${{ needs.channel.result }}
+          DRILL_RESULT: ${{ needs.alert-drill.result }}
+          DRILL: ${{ inputs.alert_drill && 'true' || 'false' }}
+          MENTION: ${{ vars.ALERT_MENTION || github.repository_owner }}
         run: |
           set -euo pipefail
           title="Publicação falhou"
+          [ "$DRILL" = "true" ] && title="Ensaio do alerta de publicação"
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           failed=""
           succeeded=0
+          [ "$CHANNEL_RESULT" = "failure" ] && failed="$failed channel"
+          [ "$DRILL_RESULT" = "failure" ] && failed="$failed alert-drill"
           for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "sign-agent-manifest:$SIGN_AGENT_MANIFEST_RESULT" "launcher:$LAUNCHER_RESULT" "web-assets:$WEB_ASSETS_RESULT"; do
             job="${pair%%:*}"
             result="${pair#*:}"
@@ -621,8 +652,12 @@ jobs:
           number=$(gh issue list --state open --limit 100 --json number,title \
             | jq -r --arg title "$title" 'map(select(.title == $title)) | first | .number // empty')
           if [ -n "$failed" ]; then
-            body="A publicação do commit ${GITHUB_SHA:0:12} na branch $GITHUB_REF_NAME falhou no(s) job(s):$failed. Execução: $run_url"
-            if [ -n "$number" ]; then
+            body="@$MENTION a publicação do commit ${GITHUB_SHA:0:12} na branch $GITHUB_REF_NAME falhou no(s) job(s):$failed. Execução: $run_url"
+            if [ "$DRILL" = "true" ]; then
+              url=$(gh issue create --title "$title" --body "$body (ensaio: nada foi publicado)")
+              gh issue close "$url" --reason "not planned"
+              echo "Issue de ensaio aberta e fechada: $url"
+            elif [ -n "$number" ]; then
               gh issue comment "$number" --body "$body"
               echo "Comentário acrescentado à issue #$number."
             else
