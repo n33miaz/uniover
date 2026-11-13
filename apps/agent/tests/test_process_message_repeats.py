@@ -14,7 +14,11 @@ from uniover_agent.core import (
     ProcessMessage,
     ResultStatus,
 )
-from uniover_agent.core.process_message import RECENT_COMMAND_CAPACITY, RECENT_COMMAND_SECONDS
+from uniover_agent.core.process_message import (
+    RECENT_COMMAND_CAPACITY,
+    RECENT_COMMAND_SECONDS,
+    RECENT_POWER_SECONDS,
+)
 
 from .support import AGENT_ID, dump, envelope, tv_key
 
@@ -189,3 +193,72 @@ async def test_silent_commands_are_not_kept_so_they_never_push_ids_out() -> None
 
     assert runs == [command["id"], command["id"]]
     assert transport.sent == []
+
+
+# --- POWER: interruptor, a lembrança dele não é expulsa por outros comandos ---------------------
+
+
+async def test_a_power_id_survives_more_than_512_other_commands() -> None:
+    handler = Counting()
+    process, _, _ = build({"tv.key.v1": handler})
+    power = tv_key("POWER")
+    await feed(process, dump(power))
+    for _ in range(RECENT_COMMAND_CAPACITY + 10):
+        await process(dump(tv_key("HOME")))
+    await process.drain(1.0)
+
+    await feed(process, dump(power))  # a API reenviou o mesmo id (reconexão, fila de saída)
+
+    assert handler.calls.count(power["id"]) == 1
+
+
+async def test_a_power_id_survives_past_the_two_minute_window() -> None:
+    handler = Counting()
+    process, transport, clock = build({"tv.key.v1": handler})
+    power = tv_key("POWER")
+    await feed(process, dump(power))
+
+    clock.advance(RECENT_COMMAND_SECONDS * 10)
+    await feed(process, dump(power))
+
+    assert handler.calls.count(power["id"]) == 1
+    # O repetido recebe a resposta do primeiro (o app não fica esperando).
+    assert bodies(transport) == [{"ok": True}, {"ok": True}]
+
+
+async def test_a_power_id_is_forgotten_after_a_full_day() -> None:
+    handler = Counting()
+    process, _, clock = build({"tv.key.v1": handler})
+    power = tv_key("POWER")
+    await feed(process, dump(power))
+
+    clock.advance(RECENT_POWER_SECONDS + 1)
+    await feed(process, dump(power))
+
+    assert handler.calls.count(power["id"]) == 2
+
+
+async def test_other_keys_keep_the_two_minute_rule() -> None:
+    handler = Counting()
+    process, _, clock = build({"tv.key.v1": handler})
+    home = tv_key("HOME")
+    await feed(process, dump(home))
+
+    clock.advance(RECENT_COMMAND_SECONDS + 1)
+    await feed(process, dump(home))
+
+    assert handler.calls.count(home["id"]) == 2
+
+
+async def test_power_ids_do_not_push_the_other_ids_out() -> None:
+    handler = Counting()
+    process, _, _ = build({"tv.key.v1": handler})
+    home = tv_key("HOME")
+    await feed(process, dump(home))
+    for _ in range(RECENT_COMMAND_CAPACITY + 10):
+        await process(dump(tv_key("POWER")))
+    await process.drain(1.0)
+
+    await feed(process, dump(home))
+
+    assert handler.calls.count(home["id"]) == 1

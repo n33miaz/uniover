@@ -73,6 +73,10 @@ _TEXT_TYPE = "tv.text.v1"
 # Os ids que já chegaram, só em memória (~60 KB no máximo): o mesmo id não executa duas vezes.
 RECENT_COMMAND_SECONDS: Final = 120.0
 RECENT_COMMAND_CAPACITY: Final = 512
+# `POWER` alterna a TV (o mesmo id repetido a ligaria de novo): a lembrança dele é à parte, mais
+# longa e que nenhuma outra tecla expulsa. Só os ids de POWER entram aqui (no ritmo de uma pessoa).
+RECENT_POWER_SECONDS: Final = 24 * 60 * 60.0
+RECENT_POWER_CAPACITY: Final = 256
 
 # Como o resultado de um comando volta a quem o pediu: pela nuvem (o transporte) ou, no canal
 # direto, pela resposta do próprio canal.
@@ -85,6 +89,11 @@ class _RecentCommand:
 
     accepted_at: float
     result: CommandResult | None = None
+
+
+def _is_power(command: Command) -> bool:
+    """`POWER` pelo caminho das teclas da TV: interruptor, nunca pode executar duas vezes."""
+    return command.type.startswith(_TV_KEY_PREFIX) and command.body.get("key") == "POWER"
 
 
 class ProcessMessage:
@@ -183,6 +192,7 @@ class ProcessMessage:
         self._tv_path: str | None = None
         self._tv_path_count = 0
         self._recent: OrderedDict[str, _RecentCommand] = OrderedDict()
+        self._recent_power: OrderedDict[str, _RecentCommand] = OrderedDict()
 
     async def __call__(self, raw: str | bytes) -> None:
         outcome = self._gate.check_inbound(raw)
@@ -224,6 +234,9 @@ class ProcessMessage:
     async def _is_repeat(self, command: Command) -> bool:
         """O mesmo id já chegou nos últimos 2 minutos: não executa de novo.
 
+        `POWER` (interruptor) tem lembrança à parte, de 24 h e sem disputar vaga com as outras
+        teclas: um reenvio tardio do mesmo id nunca alterna a TV de novo.
+
         Se o primeiro já terminou, o repetido recebe a mesma resposta; em curso, a resposta do
         primeiro (que leva o mesmo id) serve aos dois. Ficam de fora o fluxo sem resposta (o
         movimento do mouse, dezenas por segundo, empurraria os outros ids para fora) e os `pc.*`,
@@ -232,13 +245,24 @@ class ProcessMessage:
         if command.type in self._silent_types or command.type.startswith(_PC_PREFIX):
             return False
         now = self._monotonic()
-        recent = self._recent
+        if _is_power(command):
+            recent, seconds, capacity = (
+                self._recent_power,
+                RECENT_POWER_SECONDS,
+                RECENT_POWER_CAPACITY,
+            )
+        else:
+            recent, seconds, capacity = (
+                self._recent,
+                RECENT_COMMAND_SECONDS,
+                RECENT_COMMAND_CAPACITY,
+            )
         # A ordem é a de chegada: os mais antigos ficam na frente.
-        while recent and now - next(iter(recent.values())).accepted_at > RECENT_COMMAND_SECONDS:
+        while recent and now - next(iter(recent.values())).accepted_at > seconds:
             recent.popitem(last=False)
         previous = recent.get(command.id)
         if previous is None:
-            if len(recent) >= RECENT_COMMAND_CAPACITY:
+            if len(recent) >= capacity:
                 recent.popitem(last=False)
             recent[command.id] = _RecentCommand(now)
             return False
@@ -248,7 +272,7 @@ class ProcessMessage:
         return True
 
     def _remember_result(self, command: Command, result: CommandResult) -> None:
-        entry = self._recent.get(command.id)
+        entry = (self._recent_power if _is_power(command) else self._recent).get(command.id)
         if entry is not None:
             entry.result = result
 
