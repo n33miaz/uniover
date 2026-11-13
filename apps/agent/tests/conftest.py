@@ -47,6 +47,17 @@ def no_real_keyboard_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def fresh_agent_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cada teste é uma partida nova do agente: a TV que faltou num teste não vaza para o próximo
+    (a partida é do processo e sobrevive ao recomeço de `run`, ver `core/tv/relocator.py`)."""
+    import time  # noqa: PLC0415
+
+    from uniover_agent.core.tv import relocator  # noqa: PLC0415
+
+    monkeypatch.setattr(relocator, "_AGENT_START", relocator.AgentStart(time.monotonic()))
+
+
+@pytest.fixture(autouse=True)
 def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nenhum teste fala com a rede local: o teste de vida da TV, a leitura do REST Samsung, o
     ARP, o SSDP e o mDNS são trocados por respostas fixas (os testes que precisam de outra
