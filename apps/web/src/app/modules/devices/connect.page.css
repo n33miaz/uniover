@@ -1,10 +1,11 @@
 /* Título centrado, como nas outras telas fora da casca; o resto usa a largura toda do cartão. */
 h1 {
   margin-bottom: var(--space-5);
-  font-size: 1.75rem;
+  font-size: var(--auth-title);
   font-weight: 750;
   letter-spacing: -0.02em;
   text-align: center;
+  text-wrap: balance;
 }
 
 .download {

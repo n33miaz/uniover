@@ -44,7 +44,14 @@ const RESET_SECRET = /^[A-Za-z0-9_-]{20,64}$/;
     </app-auth-layout>
   `,
   styles: `
-    h1 { text-align: center; margin-bottom: var(--space-5); }
+    h1 {
+      margin-bottom: var(--space-5);
+      font-size: var(--auth-title);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      text-align: center;
+      text-wrap: balance;
+    }
     form { display: flex; flex-direction: column; gap: var(--space-4); }
     p { line-height: 1.5; }
     .back { text-align: center; margin-top: var(--space-4); }

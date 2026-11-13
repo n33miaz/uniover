@@ -116,7 +116,9 @@ describe('AcceptInvitePage', () => {
     expect(field(el, 'invite-confirmation').autocomplete).toBe('new-password');
     expect(field(el, 'invite-password').type).toBe('password');
     expect(field(el, 'invite-confirmation').getAttribute('enterkeyhint')).toBe('go');
-    expect(text(el, '#invite-password-hint')).toContain('recuperar a senha pelo e-mail');
+    // Sem promessa de recuperar a senha por e-mail: não existe recuperação por enquanto.
+    expect(el.textContent).not.toContain('recuperar a senha');
+    expect(el.querySelector('#invite-password-hint')).toBeNull();
     // Nenhum campo ganha foco sozinho: a pessoa lê o que está acontecendo antes de digitar.
     expect(document.activeElement?.tagName).not.toBe('INPUT');
   });
@@ -171,10 +173,10 @@ describe('AcceptInvitePage', () => {
       expect(rule.querySelector('.ui-visually-hidden')).not.toBeNull();
     });
 
-    it('links the field to the requirements and to the recovery hint', async () => {
+    it('links the field to the requirements', async () => {
       const el = await render();
       expect(field(el, 'invite-password').getAttribute('aria-describedby')).toBe(
-        'invite-password-rules invite-password-hint',
+        'invite-password-rules',
       );
       expect(el.querySelector('#invite-password-rules')).not.toBeNull();
     });

@@ -5,7 +5,7 @@
  */
 h1 {
   margin-bottom: var(--space-6);
-  font-size: clamp(1.25rem, 5.9vw, 1.75rem);
+  font-size: var(--auth-title);
   font-weight: 750;
   letter-spacing: -0.02em;
   text-align: center;

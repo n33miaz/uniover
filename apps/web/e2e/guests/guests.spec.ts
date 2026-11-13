@@ -189,9 +189,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     // O segredo sai do endereço assim que a tela o lê, e nunca aparece na tela.
     await expect(page).toHaveURL(/\/convite$/);
     expect(await page.evaluate(() => document.body.innerText)).not.toContain(invite.token);
-    await expect(
-      page.getByText('Você pode recuperar a senha pelo e-mail depois de criar a conta.'),
-    ).toBeVisible();
+    await expect(page.getByText('recuperar a senha')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/guests-accept-${info.project.name}.png`);
     for (const scheme of ['light', 'dark'] as const) {

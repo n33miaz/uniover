@@ -49,6 +49,17 @@ type JoinState = 'joining' | 'invalid' | 'elsewhere' | 'forbidden' | 'offline' |
   imports: [AuthLayout, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './shopping-screen.css',
+  // O título segue o das outras telas de entrada (tamanho dado pelo cartão, numa linha).
+  styles: `
+    h1 {
+      margin-bottom: var(--space-5);
+      font-size: var(--auth-title);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      text-align: center;
+      text-wrap: balance;
+    }
+  `,
   template: `
     <app-auth-layout [attr.data-screen-ready]="'shopping'">
       <h1 i18n="@@shopping.join.title">Convite para as Compras</h1>

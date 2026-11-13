@@ -60,7 +60,14 @@
   line-height: 1.1;
 }
 
+/*
+ * O cartão é a referência de largura do título de cada tela (`--auth-title`, usado no `h1` de cada página): a letra
+ * acompanha a largura do cartão, não a da janela, para o título caber numa linha no celular estreito e não passar de
+ * 1.75rem no tablet e no computador. Quebra só como último recurso (fonte grande do sistema, 280 px), equilibrada.
+ */
 .card {
+  --auth-title: clamp(1.25rem, 7.4cqi, 1.75rem);
+  container-type: inline-size;
   box-sizing: border-box;
   width: min(100%, 26rem);
   padding: var(--space-6);
