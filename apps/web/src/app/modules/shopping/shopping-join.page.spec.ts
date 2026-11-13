@@ -142,6 +142,7 @@ describe('ShoppingJoinPage', () => {
   it.each([
     [new ApiProblem(410, 'shopping-invite-invalid', 'x'), 'não vale mais'],
     [new ApiProblem(409, 'shopping-member-in-another-group', 'x'), 'Esvazie a sua'],
+    [new ApiProblem(409, 'shopping-group-changed', 'x'), 'A situação mudou. Tente de novo.'],
     [new ApiProblem(403, 'forbidden', 'x'), 'ainda não usa as Compras'],
     [networkProblem(), 'Sem sinal'],
   ])('explains a refusal plainly (%s)', async (problem, message) => {
@@ -156,6 +157,16 @@ describe('ShoppingJoinPage', () => {
   it('retries with the same secret after a network failure', async () => {
     outcome = networkProblem();
     const el = await open(`/compras/convite#${SECRET}`);
+    outcome = null;
+    (el.querySelector('button') as HTMLButtonElement).click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(tokens).toEqual([SECRET, SECRET]);
+  });
+
+  it('a group that changed under the request does not ask to empty a list, and offers to try again', async () => {
+    outcome = new ApiProblem(409, 'shopping-group-changed', 'x');
+    const el = await open(`/compras/convite#${SECRET}`);
+    expect(el.textContent).not.toContain('Esvazie');
     outcome = null;
     (el.querySelector('button') as HTMLButtonElement).click();
     await new Promise((resolve) => setTimeout(resolve));

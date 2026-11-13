@@ -133,6 +133,17 @@ describe('ShoppingPeople', () => {
     expect(changed).toBe(0);
   });
 
+  it('a person who changed group under the request is not told to empty a list', async () => {
+    await render();
+    api.failWith = new ApiProblem(409, 'shopping-group-changed', 'x');
+
+    await click('Adicionar: Carla');
+
+    expect(alert()).toBe('A situação mudou. Tente de novo.');
+    expect(names('members')).toEqual(['Neemias', 'Raphael']);
+    expect(changed).toBe(0);
+  });
+
   it('tries again with the same key after no answer, so the change is never applied twice', async () => {
     await render();
     api.failWith = networkProblem();

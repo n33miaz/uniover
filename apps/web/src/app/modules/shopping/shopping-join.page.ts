@@ -34,7 +34,7 @@ function unstash(): string | null {
   }
 }
 
-type JoinState = 'joining' | 'invalid' | 'elsewhere' | 'forbidden' | 'offline' | 'failed';
+type JoinState = 'joining' | 'invalid' | 'elsewhere' | 'changed' | 'forbidden' | 'offline' | 'failed';
 
 /**
  * A entrada pelo convite do grupo de Compras (`/compras/convite#segredo`, do link ou do QR). O segredo vem no
@@ -76,6 +76,14 @@ type JoinState = 'joining' | 'invalid' | 'elsewhere' | 'forbidden' | 'offline' |
           <p class="ui-notice warn" role="alert" i18n="@@shopping.join.elsewhere">
             Você já tem uma lista com itens. Esvazie a sua ou saia do seu grupo antes.
           </p>
+        }
+        @case ('changed') {
+          <p class="ui-notice warn" role="alert" i18n="@@shopping.group-changed">
+            A situação mudou. Tente de novo.
+          </p>
+          <button type="button" class="ui-btn block" (click)="join()" i18n="@@shopping.join.retry">
+            Tentar de Novo
+          </button>
         }
         @case ('forbidden') {
           <p class="ui-notice warn" role="alert" i18n="@@shopping.join.forbidden">
@@ -166,6 +174,7 @@ export class ShoppingJoinPage {
       else if (problem?.status === 410) this.state.set('invalid');
       else if (problem?.status === 403) this.state.set('forbidden');
       else if (problem?.kind === 'shopping-member-in-another-group') this.state.set('elsewhere');
+      else if (problem?.kind === 'shopping-group-changed') this.state.set('changed');
       else this.state.set('failed');
     }
   }
