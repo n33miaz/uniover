@@ -31,6 +31,8 @@ export class HomeEditSheet implements OnInit {
   private readonly injector = inject(Injector);
 
   readonly widgets = input.required<readonly WidgetPref[]>();
+  /** Os módulos que ainda não funcionam para esta conta (a Início sabe, pelo estado de cada cartão); sem ela vale o catálogo. */
+  readonly plannedIds = input<ReadonlySet<string> | null>(null);
   readonly applied = output<readonly WidgetPref[]>();
   readonly cancelled = output<void>();
 
@@ -66,6 +68,8 @@ export class HomeEditSheet implements OnInit {
 
   /** Módulo sem tela ainda: o ícone fica no cinza discreto, como no cartão "Em Breve". */
   protected isPlanned(id: string): boolean {
+    const known = this.plannedIds();
+    if (known) return known.has(id);
     const module = this.registry.find(id);
     return module ? this.registry.statusOf(module) === 'soon' : false;
   }

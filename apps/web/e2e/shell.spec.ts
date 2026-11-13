@@ -31,6 +31,17 @@ async function expectNoSeriousA11yViolations(page: Page) {
   ).toEqual([]);
 }
 
+// A Início mostra os "em breve" que o administrador liberou (o padrão é nenhum): aqui todos, lembrados pelo aparelho como uma
+// visita anterior os deixou. Estas telas não têm API simulada, então a lembrança é o que vale.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'uniover.home.soon.v1',
+      JSON.stringify(['health', 'monitor', 'network', 'backup', 'notifications', 'pc']),
+    ),
+  );
+});
+
 test.describe('início e navegação', () => {
   test('mostra a bolinha e os blocos, entra em /tv e volta pelo Início', async ({ page }, info) => {
     await page.goto('/');

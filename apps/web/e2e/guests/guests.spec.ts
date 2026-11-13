@@ -27,6 +27,8 @@ let tv: TvMock;
 
 test.beforeEach(async ({ context, page }) => {
   identity = await mockIdentityApi(context);
+  // O administrador liberou só estes "em breve" para a Início (o padrão da API é nenhum).
+  identity.soonModules = ['pc', 'network', 'backup'];
   tv = await mockTvApi(context, identity);
   await installFakeEventSource(page);
 });
@@ -219,9 +221,9 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('article.card h3')).toHaveText([
       'TV',
-      'Controle do PC',
       'Rede da Casa',
       'Backup de Fotos',
+      'Controle do PC',
     ]);
     await expect(page.locator('.shortcuts')).toHaveCount(0);
     await expect(page.locator('.hero-settings')).toHaveAttribute('aria-label', 'Configurações');
@@ -314,9 +316,9 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       await expect(page).toHaveURL(/\/$/);
       await expect(page.locator('article.card h3')).toHaveText([
         'TV',
-        'Controle do PC',
         'Rede da Casa',
         'Backup de Fotos',
+        'Controle do PC',
       ]);
       await expect(page.locator('.shortcuts')).toHaveCount(0);
     }
@@ -560,9 +562,9 @@ test.describe('convidado sem módulo liberado', () => {
     await expect(page).toHaveURL(/\/$/);
     const cards = page.locator('article.card');
     await expect(cards.locator('h3')).toHaveText([
-      'Controle do PC',
       'Rede da Casa',
       'Backup de Fotos',
+      'Controle do PC',
     ]);
     await expect(page.locator('.agent-status')).toHaveCount(0);
     await expect(page.locator('.shortcuts')).toHaveCount(0);

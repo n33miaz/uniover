@@ -3,21 +3,23 @@ import {
   DestroyRef,
   ElementRef,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
-import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
-import { PcAvailability } from '../../core/modules/pc-availability';
+import { ModuleDefinition, ModuleRegistry, ModuleStatus } from '../../core/modules/module-registry';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
 import { HomeEditSheet } from './home-edit-sheet';
 import { HomeGlyph } from './home-glyph';
 import { HomeHero } from './home-hero';
+import { HomePcCard } from './home-pc-card';
 import { ModuleAppIcon } from './module-app-icon';
 import { HomeSoonBadge } from './home-soon-badge';
 
@@ -30,8 +32,8 @@ interface InfoChip {
   readonly tone: ChipTone;
 }
 
-/** Planejados que a Início do convidado apresenta no fim da grade, na ordem escolhida. */
-const GUEST_PLANNED_MODULES: readonly string[] = ['pc', 'network', 'backup'];
+/** O que a Início sabe de um módulo agora; `pending` é o cartão do PC antes de a API (ou a lembrança da conta) dizer. */
+type CardState = ModuleStatus | 'pending';
 
 /** Parte do dia: manhã até 11h59, tarde até 17h59, noite no resto (a mesma régua da saudação). */
 export function dayPartFor(hour: number): DayPart {
@@ -75,7 +77,7 @@ export class HomePage {
   protected readonly loading = this.statusPort.loading;
   private readonly prefs = inject(ModulePrefs);
   private readonly session = inject(SessionState);
-  private readonly pcAvailability = inject(PcAvailability);
+  private readonly pcCard = inject(HomePcCard);
   protected readonly registry = inject(ModuleRegistry);
 
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
@@ -84,28 +86,46 @@ export class HomePage {
     // O estado da casa só é consultado enquanto a Início está na tela: o acompanhamento acaba com o componente.
     inject(DestroyRef).onDestroy(this.statusPort.watch());
     // O cartão do Controle do PC só deixa de ser "Em Breve" quando a casa tem um computador com o controle ligado. Só quem
-    // pode usar o módulo pergunta: para as outras contas a API recusaria, e o cartão segue como planejado.
-    if (this.canUsePc()) void this.pcAvailability.refresh();
+    // pode usar o módulo pergunta: para as outras contas a API recusaria, e o cartão segue como planejado. Quem ganha a
+    // permissão depois (a lista chega com a sessão) também pergunta, na hora.
+    effect(() => {
+      if (this.canUsePc()) untracked(() => void this.pcCard.refresh());
+      else untracked(() => this.pcCard.forget());
+    });
   }
 
   protected readonly editing = signal(false);
   protected readonly isGuest = this.session.isGuest;
-  /** Convidado vê os módulos liberados e os três planejados reservados para esta grade. */
+  private readonly canUsePc = computed(() =>
+    canUseModule(this.session.role(), this.session.knownPermissions(), 'pc'),
+  );
+  /**
+   * Os módulos da grade: os que já funcionam primeiro (cada grupo na ordem que a pessoa escolheu) e, depois, só os "em breve"
+   * que o administrador liberou para a Início. Quem ainda não se sabe como está (o PC, antes da primeira resposta) fica de
+   * fora: assim o cartão nunca nasce com uma cara e muda para outra.
+   */
   protected readonly widgets = computed(() => {
     const visible = this.prefs
       .visible()
       .filter((widget) => this.canSeeModule(widget.definition.id));
-    return this.isGuest()
-      ? visible.sort((first, second) => this.guestOrder(first.definition.id, second.definition.id))
-      : visible;
+    const active = visible.filter((widget) => this.stateOf(widget.definition) === 'available');
+    return [...active, ...visible.filter((widget) => !active.includes(widget))];
   });
   /** A folha de edição também não revela nem altera módulos fora do acesso da conta. */
   protected readonly allWidgets = computed(() => {
     const widgets = this.prefs.widgets().filter((widget) => this.canSeeModule(widget.id));
-    return this.isGuest()
-      ? widgets.sort((first, second) => this.guestOrder(first.id, second.id))
-      : widgets;
+    const active = widgets.filter((widget) => this.isActive(widget.id));
+    return [...active, ...widgets.filter((widget) => !active.includes(widget))];
   });
+  /** Os módulos da folha que ainda são "em breve" (o ícone fica cinza, como no cartão). */
+  protected readonly plannedIds = computed(
+    () =>
+      new Set(
+        this.registry.modules
+          .filter((module) => this.stateOf(module) !== 'available')
+          .map((module) => module.id),
+      ),
+  );
 
   protected readonly dayPart = computed(() => dayPartFor(this.clock.now().getHours()));
 
@@ -186,31 +206,37 @@ export class HomePage {
     queueMicrotask(() => this.editButton()?.nativeElement.focus());
   }
 
-  private canSeeModule(id: string): boolean {
-    if (!this.session.isGuest()) return true;
+  /** O estado do cartão: o do catálogo, exceto o do PC, que depende da conta (ver `HomePcCard`). */
+  protected stateOf(module: ModuleDefinition): CardState {
+    if (module.liveWith !== 'pc-agent') return this.registry.statusOf(module);
+    if (!this.canUsePc()) return 'soon';
+    const available = this.pcCard.available();
+    return available === null ? 'pending' : available ? 'available' : 'soon';
+  }
+
+  /** Caminho do cartão, ou `null` quando ele não abre nada (planejado) ou ainda não se sabe. */
+  protected pathOf(module: ModuleDefinition): string | null {
+    if (this.stateOf(module) !== 'available') return null;
+    return module.route ?? (module.slug ? `/${module.slug}` : null);
+  }
+
+  private isActive(id: string): boolean {
     const module = this.registry.find(id);
-    if (module && this.registry.statusOf(module) === 'soon') {
-      return GUEST_PLANNED_MODULES.includes(id);
-    }
+    return module !== undefined && this.stateOf(module) === 'available';
+  }
+
+  /**
+   * O que a conta vê: o módulo ainda sem estado conhecido nunca; o "em breve" só quando o administrador o liberou; o que
+   * já funciona, para o dono sempre e para o convidado quando as permissões dele trazem o módulo.
+   */
+  private canSeeModule(id: string): boolean {
+    const module = this.registry.find(id);
+    if (!module) return false;
+    const state = this.stateOf(module);
+    if (state === 'pending') return false;
+    if (state === 'soon') return this.prefs.soonVisible().includes(id);
+    if (!this.session.isGuest()) return true;
     const permissions = this.session.knownPermissions();
     return permissions !== null && canUseModule('guest', permissions, id);
-  }
-
-  private canUsePc(): boolean {
-    return canUseModule(this.session.role(), this.session.knownPermissions(), 'pc');
-  }
-
-  /** Módulos liberados vêm primeiro; os três planejados ficam no fim, sempre na mesma ordem. */
-  private guestOrder(first: string, second: string): number {
-    const rank = (id: string) => {
-      const planned = GUEST_PLANNED_MODULES.indexOf(id);
-      return planned < 0 ? -1 : planned;
-    };
-    const firstRank = rank(first);
-    const secondRank = rank(second);
-    if (firstRank < 0 && secondRank < 0) return 0;
-    if (firstRank < 0) return -1;
-    if (secondRank < 0) return 1;
-    return firstRank - secondRank;
   }
 }

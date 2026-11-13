@@ -3,6 +3,9 @@ import { BrowserContext, Route } from '@playwright/test';
 import { missingIdempotencyKey } from '../idempotency-guard';
 
 /** O id da conta do dono no simulador (o `sub` dos tokens dele e o `id` do `/me`): nomeia o banco local dele no aparelho. */
+/** Os módulos que ainda não têm tela (o catálogo do app); o administrador escolhe quais a Início mostra. */
+export const SOON_MODULES = ['health', 'monitor', 'network', 'backup', 'notifications', 'pc'];
+
 export const OWNER_ID = 'u1';
 
 /** Dados da conta de teste (só existem neste arquivo e nos testes; a API real não é usada). */
@@ -158,6 +161,12 @@ export interface IdentityMock {
   readonly guestSessions: Record<string, MockSession[]>;
   /** As preferências da Início guardadas na conta, por id de conta (ausente: nunca gravou, versão zero). */
   readonly preferences: Record<string, MockHomePreferences>;
+  /**
+   * Os módulos "em breve" que o dono liberou para a Início de todas as contas (vai em `GET /me/preferences`). A API real começa
+   * sem nenhum; o mock começa com todos liberados para as telas que contam cartões não terem de saber disso, e quem prova o
+   * padrão (ou escolhe alguns) troca a lista.
+   */
+  soonModules: string[];
   /** Escolhe o que Pessoas mostra da Início de uma conta; sem isso vale o que `preferences` guarda. */
   readonly peopleHome: Record<string, MockPersonHome>;
   /** Quantos `PUT /me/preferences` chegaram (aceitos ou recusados por versão). */
@@ -332,6 +341,7 @@ export async function mockIdentityApi(
     ],
     guestSessions: {},
     preferences: {},
+    soonModules: [...SOON_MODULES],
     peopleHome: {},
     preferenceWrites: 0,
     installHints: {},
@@ -633,6 +643,7 @@ export async function mockIdentityApi(
         version: (mock.preferences[account] ?? current).version,
         updatedAt: null,
         home: (mock.preferences[account] ?? current).home,
+        soonModules: mock.soonModules,
       });
       if (method === 'GET') return json(route, 200, view());
       if (method === 'PUT') {

@@ -1,9 +1,9 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { modulePrefsStorageKey } from '../../core/modules/module-prefs';
+import { ModulePrefs, modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { ModuleRegistry } from '../../core/modules/module-registry';
-import { PcAvailability } from '../../core/modules/pc-availability';
+import { PcAvailability, PcStatus } from '../../core/modules/pc-availability';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -51,8 +51,17 @@ describe('HomePage', () => {
     agentLinked: null,
   });
   const loading = signal(false);
-  /** O estado do PC é o da API: aqui um dublê, para o cartão do Controle do PC ser provado nos dois estados. */
-  const pcAvailable = signal(false);
+  /**
+   * O estado do PC é o da API: aqui um dublê, para o cartão do Controle do PC ser provado em todos os estados. `null` é "a API
+   * ainda não respondeu".
+   */
+  const pcStatus = signal<PcStatus | null>(null);
+  const setPc = (available: boolean | null) =>
+    pcStatus.set(
+      available === null
+        ? null
+        : { available, online: available, apps: [], capabilities: [], volume: null },
+    );
   const pcRefresh = vi.fn(() => Promise.resolve(true));
   const release = vi.fn();
   const watch = vi.fn(() => release);
@@ -75,7 +84,8 @@ describe('HomePage', () => {
       agentLinked: null,
     });
     loading.set(false);
-    pcAvailable.set(false);
+    // Por padrão a casa já respondeu que não tem computador com o controle ligado.
+    setPc(false);
     pcRefresh.mockClear();
     release.mockClear();
     watch.mockClear();
@@ -83,7 +93,7 @@ describe('HomePage', () => {
       providers: [
         provideRouter([]),
         { provide: HomeStatusPort, useValue: { status, loading, watch } },
-        { provide: PcAvailability, useValue: { available: pcAvailable, refresh: pcRefresh } },
+        { provide: PcAvailability, useValue: { status: pcStatus, refresh: pcRefresh } },
       ],
     });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T09:30:00'));
@@ -110,6 +120,11 @@ describe('HomePage', () => {
     'Avisos',
     'Controle do PC',
   ];
+  const WORKING = ['TV', 'Treino', 'Compras'];
+  /** O administrador libera estes "em breve" para a Início (por padrão nenhum aparece). */
+  const showSoon = (
+    ids: readonly string[] = ['health', 'monitor', 'network', 'backup', 'notifications', 'pc'],
+  ) => TestBed.inject(ModulePrefs).soonVisible.set(ids);
   /** Preferência guardada com todos os módulos do catálogo, ligados ou desligados, na ordem do catálogo. */
   const storeAll = (enabled: (id: string) => boolean) =>
     localStorage.setItem(
@@ -161,10 +176,48 @@ describe('HomePage', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps all modules for the owner, TV and Treino first and then the planned ones, in order', async () => {
+  it('shows only the working modules by default: the "em breve" ones stay hidden until the admin releases them', async () => {
     const { el } = await render();
-    expect(titles(el)).toEqual(['TV', 'Treino', 'Compras', ...PLANNED]);
+    expect(titles(el)).toEqual(WORKING);
     expect(el.querySelectorAll('li.widget.wide')).toHaveLength(0);
+    expect(el.querySelectorAll('app-home-soon-badge')).toHaveLength(0);
+  });
+
+  it('shows the released "em breve" modules after the working ones, in order', async () => {
+    showSoon();
+    const { el } = await render();
+    expect(titles(el)).toEqual([...WORKING, ...PLANNED]);
+  });
+
+  it('shows only the "em breve" modules the admin released', async () => {
+    showSoon(['backup', 'health']);
+    const { el } = await render();
+    expect(titles(el)).toEqual([...WORKING, 'Saúde e Eventos', 'Backup de Fotos']);
+  });
+
+  it('puts the working modules first even when a saved order put a planned one on top', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify([
+        { id: 'health', size: 'small', enabled: true },
+        { id: 'training', size: 'small', enabled: true },
+        { id: 'tv', size: 'small', enabled: true },
+      ]),
+    );
+    showSoon(['health']);
+    const { el } = await render();
+    expect(titles(el)).toEqual(['Treino', 'TV', 'Compras', 'Saúde e Eventos']);
+  });
+
+  it('never lets the edit sheet show or switch on a "em breve" module the admin did not release', async () => {
+    const { fixture, el } = await render();
+    el.querySelector<HTMLButtonElement>('button.edit')!.click();
+    await fixture.whenStable();
+    expect(
+      Array.from(el.querySelectorAll('app-home-edit-sheet [data-id]')).map((row) =>
+        row.getAttribute('data-id'),
+      ),
+    ).toEqual(['tv', 'training', 'shopping']);
   });
 
   it('does not show TV Livre in the grid or editor, even with an old saved preference', async () => {
@@ -174,7 +227,7 @@ describe('HomePage', () => {
     el.querySelector<HTMLButtonElement>('button.edit')!.click();
     await fixture.whenStable();
     expect(el.querySelector('app-home-edit-sheet [data-id="tv-livre"]')).toBeNull();
-    expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(9);
+    expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(3);
   });
 
   it('links only the modules that have a screen', async () => {
@@ -192,6 +245,7 @@ describe('HomePage', () => {
   });
 
   it('shows a planned module as a dashed card: the label under the name says Em Breve, nothing to tap or focus', async () => {
+    showSoon();
     const { el } = await render();
     const planned = Array.from(el.querySelectorAll<HTMLElement>('article.card.planned'));
     expect(planned.map((card) => card.querySelector('h3')?.textContent?.trim())).toEqual(PLANNED);
@@ -216,6 +270,7 @@ describe('HomePage', () => {
   });
 
   it('removes descriptions and keeps the Em Breve label inside its card without adding a second control', async () => {
+    showSoon();
     const { el } = await render();
     expect(el.querySelectorAll('article app-home-soon-badge')).toHaveLength(PLANNED.length);
     expect(el.querySelectorAll('article .desc')).toHaveLength(0);
@@ -228,11 +283,13 @@ describe('HomePage', () => {
 
   it('hides a module that was turned off', async () => {
     storeAll((id) => id !== 'tv');
+    showSoon();
     expect(titles((await render()).el)).toEqual(['Treino', 'Compras', ...PLANNED]);
   });
 
   it('hides a planned module that was turned off', async () => {
     storeAll((id) => id !== 'network');
+    showSoon();
     expect(titles((await render()).el)).not.toContain('Rede da Casa');
   });
 
@@ -245,6 +302,7 @@ describe('HomePage', () => {
         { id: 'tv', size: 'small', enabled: true },
       ]),
     );
+    showSoon();
     const { el } = await render();
     expect(titles(el)).toEqual(['Treino', 'TV', 'Compras', ...PLANNED]);
     expect(
@@ -399,7 +457,7 @@ describe('HomePage', () => {
     expect(el.querySelector('.agent-alert')).toBeNull();
   });
 
-  it('shows a guest the released modules and the three planned cards at the end, without the owner shortcuts', async () => {
+  it('shows a guest only the released modules by default, and the "em breve" ones the admin chose after them', async () => {
     TestBed.inject(SessionState).setUser({
       id: ACCOUNT,
       email: 'convidado@exemplo.com',
@@ -408,10 +466,13 @@ describe('HomePage', () => {
       permissions: ['module:training'],
     });
     const { fixture, el } = await render();
-    expect(titles(el)).toEqual(['Treino', 'Controle do PC', 'Rede da Casa', 'Backup de Fotos']);
+    expect(titles(el)).toEqual(['Treino']);
     expect(el.querySelector('.shortcuts')).toBeNull();
     expect(el.querySelector('.agent-status')).toBeNull();
     expect(el.querySelector('.grid')?.classList.contains('guest-grid')).toBe(true);
+    showSoon(['pc', 'network', 'backup']);
+    await fixture.whenStable();
+    expect(titles(el)).toEqual(['Treino', 'Rede da Casa', 'Backup de Fotos', 'Controle do PC']);
     el.querySelector<HTMLButtonElement>('button.edit')!.click();
     await fixture.whenStable();
     expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(4);
@@ -447,8 +508,9 @@ describe('HomePage', () => {
       role: 'guest',
       permissions: [],
     });
+    showSoon(['pc', 'network', 'backup']);
     const guest = await render();
-    const guestLast = guest.el.querySelector<HTMLElement>('article[data-module="backup"]')!;
+    const guestLast = guest.el.querySelector<HTMLElement>('article[data-module="pc"]')!;
     expect(guestLast.parentElement?.classList.contains('centered-last')).toBe(true);
     expect(guestLast.classList.contains('planned')).toBe(true);
   });
@@ -457,7 +519,7 @@ describe('HomePage', () => {
     loading.set(true);
     const { el } = await render();
     expect(el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(3);
-    expect(el.querySelectorAll('article.card')).toHaveLength(9);
+    expect(el.querySelectorAll('article.card')).toHaveLength(3);
     loading.set(false);
     expect((await render()).el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(0);
   });
@@ -471,6 +533,7 @@ describe('HomePage', () => {
   });
 
   it('draws an app icon of its own for every module, planned ones included', async () => {
+    showSoon();
     const { el } = await render();
     const icons = Array.from(el.querySelectorAll('article app-module-app-icon.ico'));
     expect(icons).toHaveLength(9);
@@ -510,33 +573,112 @@ describe('HomePage', () => {
     sheet.dispatchEvent(new Event('cancel', { cancelable: true }));
     await fixture.whenStable();
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
-    expect(titles(el)).toEqual(['TV', 'Treino', 'Compras', ...PLANNED]);
+    expect(titles(el)).toEqual(WORKING);
 
     await press('button.edit');
     await press('.moves .down');
     await press('.done'); // Concluir
-    expect(titles(el)).toEqual(['Treino', 'TV', 'Compras', ...PLANNED]);
+    expect(titles(el)).toEqual(['Treino', 'TV', 'Compras']);
     expect(JSON.parse(localStorage.getItem(KEY)!)[0].id).toBe('training');
   });
 
   describe('the PC control card', () => {
     const card = (el: HTMLElement) => el.querySelector<HTMLElement>('article[data-module="pc"]')!;
     const refresh = pcRefresh;
+    const memory = (account: string) => `uniover.home.pc.v1.${account}`;
 
     it('asks the API whether the house has a PC with the control on when the owner opens the Início', async () => {
       await render();
       expect(refresh).toHaveBeenCalledTimes(1);
     });
 
-    it('stays as a planned card until a PC with the control is known', async () => {
+    it('stays out of the grid when the house has no PC, and is a planned card only if the admin released it', async () => {
+      const { el } = await render();
+      expect(card(el)).toBeNull();
+      showSoon(['pc']);
+      const released = await render();
+      expect(card(released.el).classList.contains('planned')).toBe(true);
+      expect(card(released.el).querySelector('app-home-soon-badge')?.textContent?.trim()).toBe(
+        'Em Breve',
+      );
+      expect(card(released.el).querySelector('a')).toBeNull();
+    });
+
+    it('does not draw the card at all (neither active nor planned) while nothing is known, even if released', async () => {
+      setPc(null);
+      showSoon(['pc']);
+      // A leitura segue em andamento (servidor acordando): nem resposta, nem falha.
+      pcRefresh.mockImplementationOnce(() => new Promise<boolean>(() => undefined));
+      const { el } = await render();
+      expect(card(el)).toBeNull();
+      expect(titles(el)).toEqual(WORKING);
+    });
+
+    it('draws the card as it is from the first render when this account remembers the last answer', async () => {
+      setPc(null);
+      pcRefresh.mockImplementationOnce(() => new Promise<boolean>(() => undefined));
+      localStorage.setItem(memory(ACCOUNT), 'yes');
+      const { el } = await render();
+      expect(card(el).classList.contains('planned')).toBe(false);
+      expect(card(el).querySelector('app-home-soon-badge')).toBeNull();
+      expect(card(el).querySelector('a.card-link')?.getAttribute('href')).toBe('/pc');
+      // O cartão ativo entra junto dos que funcionam, antes de qualquer "em breve".
+      expect(titles(el)).toEqual([...WORKING, 'Controle do PC']);
+    });
+
+    it('never shows the card as planned between the remembered "yes" and the API answer', async () => {
+      setPc(null);
+      showSoon(['pc']);
+      localStorage.setItem(memory(ACCOUNT), 'yes');
+      pcRefresh.mockImplementationOnce(() => new Promise<boolean>(() => undefined));
+      const { fixture, el } = await render();
+      const looks = [card(el).className];
+      setPc(true);
+      await fixture.whenStable();
+      looks.push(card(el).className);
+      for (const look of looks) expect(look).not.toContain('planned');
+    });
+
+    it('lets the API answer win over what was remembered', async () => {
+      localStorage.setItem(memory(ACCOUNT), 'yes');
+      setPc(false);
+      showSoon(['pc']);
       const { el } = await render();
       expect(card(el).classList.contains('planned')).toBe(true);
-      expect(card(el).querySelector('app-home-soon-badge')?.textContent?.trim()).toBe('Em Breve');
+    });
+
+    it('remembers the answer once the API gives it, per account', async () => {
+      setPc(null);
+      pcRefresh.mockImplementationOnce(() => {
+        setPc(true);
+        return Promise.resolve(true);
+      });
+      await render();
+      expect(localStorage.getItem(memory(ACCOUNT))).toBe('yes');
+      expect(localStorage.getItem(memory('outra-conta'))).toBeNull();
+    });
+
+    it('falls back to "em breve" when the first read ends without an answer and nothing was remembered (no computer is invented)', async () => {
+      setPc(null);
+      showSoon(['pc']);
+      pcRefresh.mockImplementationOnce(() => Promise.resolve(false));
+      const { el } = await render();
+      expect(card(el).classList.contains('planned')).toBe(true);
       expect(card(el).querySelector('a')).toBeNull();
+      expect(localStorage.getItem(memory(ACCOUNT))).toBeNull();
+    });
+
+    it('keeps the remembered "yes" when the read ends without an answer', async () => {
+      setPc(null);
+      localStorage.setItem(memory(ACCOUNT), 'yes');
+      pcRefresh.mockImplementationOnce(() => Promise.resolve(false));
+      const { el } = await render();
+      expect(card(el).querySelector('a.card-link')?.getAttribute('href')).toBe('/pc');
+      expect(localStorage.getItem(memory(ACCOUNT))).toBe('yes');
     });
 
     it('stops being "Em Breve" and opens the module once a PC with the control is known', async () => {
-      pcAvailable.set(true);
+      setPc(true);
       const { el } = await render();
       expect(card(el).classList.contains('planned')).toBe(false);
       expect(card(el).querySelector('app-home-soon-badge')).toBeNull();
@@ -547,13 +689,15 @@ describe('HomePage', () => {
 
     it('follows the PC as it appears while the screen is open', async () => {
       const { fixture, el } = await render();
-      expect(card(el).querySelector('a.card-link')).toBeNull();
-      pcAvailable.set(true);
+      expect(card(el)).toBeNull();
+      setPc(true);
       await fixture.whenStable();
       expect(card(el).querySelector('a.card-link')?.getAttribute('href')).toBe('/pc');
     });
 
-    it('does not ask a guest who cannot use the module, and keeps the planned card for them', async () => {
+    it('does not ask a guest who cannot use the module, forgets what it remembered, and keeps the planned card for them', async () => {
+      localStorage.setItem(memory('guest'), 'yes');
+      showSoon(['pc']);
       TestBed.inject(SessionState).setUser({
         id: 'guest',
         email: 'g@exemplo.com',
@@ -564,10 +708,11 @@ describe('HomePage', () => {
       const { el } = await render();
       expect(refresh).not.toHaveBeenCalled();
       expect(card(el).classList.contains('planned')).toBe(true);
+      expect(localStorage.getItem(memory('guest'))).toBeNull();
     });
 
     it('lets a guest who was granted the module use it, and hides the open module from one who was not', async () => {
-      pcAvailable.set(true);
+      setPc(true);
       TestBed.inject(SessionState).setUser({
         id: 'guest',
         email: 'g@exemplo.com',

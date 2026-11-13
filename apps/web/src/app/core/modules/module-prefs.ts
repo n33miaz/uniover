@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   linkedSignal,
+  signal,
   untracked,
 } from '@angular/core';
 import { SessionState } from '../session/session-state';
@@ -38,6 +39,9 @@ export const MODULE_PREFS_SYNC_KEY = 'uniover.home.sync.v1';
 export function modulePrefsSyncKey(accountId: string): string {
   return `${MODULE_PREFS_SYNC_KEY}.${encodeURIComponent(accountId)}`;
 }
+
+/** Onde o aparelho lembra os módulos "em breve" que o dono liberou para a Início (é da casa, igual para toda conta). */
+export const SOON_VISIBLE_KEY = 'uniover.home.soon.v1';
 
 /** O que o aparelho lembra da conta: a versão lida e se a escolha local espera para subir. */
 interface SyncMeta {
@@ -98,6 +102,9 @@ export class ModulePrefs {
     computation: (accountId) => this.read(accountId),
   });
 
+  /** Os "em breve" que o dono liberou para a Início; a lembrança do aparelho vale até a API responder (nunca pisca a grade). */
+  readonly soonVisible = signal<readonly string[]>(this.readSoon());
+
   /** Todos os módulos, na ordem escolhida; módulos novos do catálogo entram no fim com o padrão. */
   readonly widgets = computed<readonly WidgetPref[]>(() => {
     const known = new Map(this.registry.modules.map((m) => [m.id, m]));
@@ -149,6 +156,29 @@ export class ModulePrefs {
 
   setEnabled(id: string, enabled: boolean): void {
     this.apply(this.widgets().map((pref) => (pref.id === id ? { ...pref, enabled } : pref)));
+  }
+
+  private readSoon(): readonly string[] {
+    try {
+      const parsed: unknown = JSON.parse(this.storage?.getItem(SOON_VISIBLE_KEY) ?? '[]');
+      return Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** O que a API diz dos "em breve" liberados passa a valer (e a ser lembrado); só muda o sinal se a lista mudou. */
+  private adoptSoon(remote: AccountPreferences): void {
+    const ids = (remote.soonModules ?? []).filter((id) => typeof id === 'string');
+    if (JSON.stringify(ids) === JSON.stringify(this.soonVisible())) return;
+    this.soonVisible.set(ids);
+    try {
+      this.storage?.setItem(SOON_VISIBLE_KEY, JSON.stringify(ids));
+    } catch {
+      // sem espaço ou bloqueado: vale até recarregar
+    }
   }
 
   private defaults(module: ModuleDefinition): WidgetPref {
@@ -218,6 +248,7 @@ export class ModulePrefs {
       return; // sem rede ou servidor dormindo: a cópia local segue valendo e a próxima entrada tenta de novo
     }
     if (!this.isCurrent(accountId)) return;
+    this.adoptSoon(remote);
 
     const meta = this.readMeta(accountId);
     const hasLocal = this.read(accountId).length > 0;

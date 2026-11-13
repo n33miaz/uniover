@@ -1,7 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../session/session-state';
 import { ModuleRegistry } from './module-registry';
-import { ModulePrefs, WidgetPref, modulePrefsStorageKey, modulePrefsSyncKey } from './module-prefs';
+import {
+  ModulePrefs,
+  SOON_VISIBLE_KEY,
+  WidgetPref,
+  modulePrefsStorageKey,
+  modulePrefsSyncKey,
+} from './module-prefs';
 import { AccountPreferences, HomeEntry, PreferencesApi, SaveOutcome } from './preferences-api';
 
 /** Um JWT só com o `sub` (o app só lê o payload para saber de quem é o token; quem valida é a API). */
@@ -356,5 +362,41 @@ describe('ModulePrefs sync with the account', () => {
     await flush();
 
     expect(prefs.visible().map((w) => w.definition.id)).not.toContain('tv');
+  });
+
+  describe('the "em breve" modules the admin released', () => {
+    it('start hidden, are adopted from the account answer and remembered for the next opening', async () => {
+      const prefs = TestBed.inject(ModulePrefs);
+      expect(prefs.soonVisible()).toEqual([]);
+      api.remote = { version: 0, updatedAt: null, home: null, soonModules: ['health', 'backup'] };
+      signIn(A);
+      await settled();
+
+      expect(prefs.soonVisible()).toEqual(['health', 'backup']);
+      expect(JSON.parse(localStorage.getItem(SOON_VISIBLE_KEY)!)).toEqual(['health', 'backup']);
+
+      // Outra abertura: a lembrança vale antes de a API responder (a grade nunca pisca).
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [{ provide: PreferencesApi, useValue: api }] });
+      expect(TestBed.inject(ModulePrefs).soonVisible()).toEqual(['health', 'backup']);
+    });
+
+    it('follow the API when the admin takes one back', async () => {
+      localStorage.setItem(SOON_VISIBLE_KEY, JSON.stringify(['health', 'backup']));
+      const prefs = TestBed.inject(ModulePrefs);
+      api.remote = { version: 0, updatedAt: null, home: null, soonModules: ['backup'] };
+      signIn(A);
+      await settled();
+      expect(prefs.soonVisible()).toEqual(['backup']);
+    });
+
+    it('read as none from an API that does not send them, and ignore a corrupted memory', async () => {
+      localStorage.setItem(SOON_VISIBLE_KEY, '{nao-e-lista');
+      const prefs = TestBed.inject(ModulePrefs);
+      expect(prefs.soonVisible()).toEqual([]);
+      signIn(A);
+      await settled();
+      expect(prefs.soonVisible()).toEqual([]);
+    });
   });
 });
