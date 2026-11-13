@@ -5,7 +5,9 @@ import {
   afterNextRender,
   computed,
   inject,
+  input,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
 import {
@@ -18,21 +20,25 @@ import { PcPrefs, type PcPrefsValue } from '../data/pc-prefs';
 import { PC_ZOOM_CAPABILITY } from '../data/pc-types';
 import { canVibrate } from '../input/haptics';
 import {
-  POINTER_SENSITIVITIES,
-  SCROLL_SENSITIVITIES,
-  type PointerSensitivity,
-  type ScrollSensitivity,
+  DEFAULT_LEVEL,
+  SENSITIVITY_LEVELS,
+  isSensitivityLevel,
+  type SensitivityLevel,
 } from '../input/pc-acceleration';
 
-const LABELS: Readonly<Record<PointerSensitivity | ScrollSensitivity, () => string>> = {
-  low: () => $localize`:@@pc.settings.low:Baixa`,
-  normal: () => $localize`:@@pc.settings.normal:Normal`,
-  high: () => $localize`:@@pc.settings.high:Alta`,
-  boosted: () => $localize`:@@pc.settings.boosted:Acelerada`,
-};
+const MIN_LEVEL = SENSITIVITY_LEVELS[0];
+const MAX_LEVEL = SENSITIVITY_LEVELS[SENSITIVITY_LEVELS.length - 1];
+
+/** O que o leitor de tela diz do controle deslizante: o nível, e "padrão" no do meio. */
+export function levelText(level: SensitivityLevel): string {
+  return level === DEFAULT_LEVEL
+    ? $localize`:@@pc.settings.level-default:${level}:level: de ${MAX_LEVEL}:max:, padrão`
+    : $localize`:@@pc.settings.level:${level}:level: de ${MAX_LEVEL}:max:`;
+}
 
 /** Os interruptores da folha, na ordem em que aparecem. */
 type SwitchName =
+  | 'showTyped'
   | 'invertScroll'
   | 'doubleTapDrag'
   | 'middleClick'
@@ -42,9 +48,10 @@ type SwitchName =
   | 'keepAwake';
 
 /**
- * Ajustes do mouse numa folha que sobe de baixo: a sensibilidade do ponteiro, a rolagem invertida, os botões de clique e
- * a tela acesa. Cada escolha vale na hora e fica guardada neste aparelho (`PcPrefs`); a folha só fecha por "Fechar", pelo
- * Esc ou tocando fora.
+ * Ajustes do mouse numa folha que sobe de baixo: a sensibilidade do ponteiro e da rolagem (controles deslizantes de 1 a 7, o
+ * meio é o padrão), a aceleração e os interruptores. Cada escolha vale na hora e fica guardada neste aparelho (`PcPrefs`); a
+ * folha só fecha por "Fechar", pelo Esc ou tocando fora. Aberta pelo botão do touchpad (`quick`), mostra só a sensibilidade,
+ * com "Mais ajustes" para o resto, na mesma folha.
  */
 @Component({
   selector: 'app-pc-pad-settings-sheet',
@@ -53,49 +60,79 @@ type SwitchName =
     <dialog #dialog class="sheet" aria-labelledby="pad-settings-title" (cancel)="dismiss($event)">
       <h2 id="pad-settings-title" i18n="@@pc.settings.title">Ajustes</h2>
 
-      <fieldset class="segment">
-        <legend class="legend" i18n="@@pc.settings.sensitivity">Sensibilidade</legend>
-        @for (choice of choices; track choice.value) {
-          <label class="option">
-            <input
-              type="radio"
-              name="pad-sensitivity"
-              [value]="choice.value"
-              [checked]="prefs.sensitivity() === choice.value"
-              (change)="prefs.set({ sensitivity: choice.value })"
-            />
-            <span class="option-label">{{ choice.label }}</span>
-          </label>
-        }
-      </fieldset>
-
-      <fieldset class="segment three">
-        <legend class="legend" i18n="@@pc.settings.scroll">Rolagem</legend>
-        @for (choice of scrollChoices; track choice.value) {
-          <label class="option">
-            <input
-              type="radio"
-              name="scroll-sensitivity"
-              [value]="choice.value"
-              [checked]="prefs.scrollSensitivity() === choice.value"
-              (change)="prefs.set({ scrollSensitivity: choice.value })"
-            />
-            <span class="option-label">{{ choice.label }}</span>
-          </label>
-        }
-      </fieldset>
-
-      @for (item of visibleSwitches(); track item.name) {
-        <label class="row">
-          <span>{{ item.label }}</span>
-          <input
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            [checked]="prefs[item.name]()"
-            (change)="onSwitch(item.name, $event)"
-          />
+      <div class="level">
+        <label class="level-head" for="pad-sensitivity">
+          <span id="pad-sensitivity-label" i18n="@@pc.settings.sensitivity">Sensibilidade</span>
+          <output class="level-value" for="pad-sensitivity">{{ prefs.sensitivity() }}</output>
         </label>
+        <input
+          id="pad-sensitivity"
+          type="range"
+          aria-labelledby="pad-sensitivity-label"
+          class="slider"
+          [min]="min"
+          [max]="max"
+          step="1"
+          [value]="prefs.sensitivity()"
+          [attr.aria-valuetext]="text(prefs.sensitivity())"
+          (input)="onLevel('sensitivity', $event)"
+        />
+      </div>
+
+      <label class="row">
+        <span i18n="@@pc.settings.acceleration">Aceleração</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="prefs.acceleration()"
+          (change)="onSwitch('acceleration', $event)"
+        />
+      </label>
+
+      <div class="level">
+        <label class="level-head" for="scroll-sensitivity">
+          <span id="scroll-sensitivity-label" i18n="@@pc.settings.scroll">Rolagem</span>
+          <output class="level-value" for="scroll-sensitivity">{{
+            prefs.scrollSensitivity()
+          }}</output>
+        </label>
+        <input
+          id="scroll-sensitivity"
+          type="range"
+          aria-labelledby="scroll-sensitivity-label"
+          class="slider"
+          [min]="min"
+          [max]="max"
+          step="1"
+          [value]="prefs.scrollSensitivity()"
+          [attr.aria-valuetext]="text(prefs.scrollSensitivity())"
+          (input)="onLevel('scrollSensitivity', $event)"
+        />
+      </div>
+
+      @if (showAll()) {
+        @for (item of visibleSwitches(); track item.name) {
+          <label class="row">
+            <span>{{ item.label }}</span>
+            <input
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="prefs[item.name]()"
+              (change)="onSwitch(item.name, $event)"
+            />
+          </label>
+        }
+      } @else {
+        <button
+          type="button"
+          class="ui-btn more"
+          (click)="expanded.set(true)"
+          i18n="@@pc.settings.more"
+        >
+          Mais ajustes
+        </button>
       }
 
       <div class="footer">
@@ -107,64 +144,36 @@ type SwitchName =
   `,
   styleUrl: './confirm-sheet.css',
   styles: `
-    .segment {
+    .level {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 4px;
-      min-width: 0;
-      margin: 0;
-      padding: 4px;
-      border: 1px solid var(--a-line);
-      border-radius: var(--radius);
-      background: var(--a-surface);
+      gap: var(--space-1);
     }
-    .segment.three {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .legend {
-      grid-column: 1 / -1;
-      float: none;
-      padding: 0 var(--space-1);
-      color: var(--a-ink2);
-      font-size: var(--fs-small);
+    .level-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
       font-weight: 650;
     }
-    .option {
-      position: relative;
-      display: grid;
-      place-items: center;
-      min-height: var(--tap);
-      padding: 0 var(--space-1);
-      border-radius: var(--radius-sm);
-      color: var(--a-ink2);
-      font-size: var(--fs-small);
-      font-weight: 650;
-      cursor: pointer;
-    }
-    .option-label {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    /* O botão de opção de verdade cobre a opção inteira, invisível: o toque cai nele. */
-    .option input {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      opacity: 0;
-      cursor: pointer;
-    }
-    .option:has(input:checked) {
-      background: var(--a-accent-soft);
+    .level-value {
+      min-width: 2ch;
       color: var(--a-accent-ink);
-      box-shadow: inset 0 0 0 1.5px var(--a-accent);
+      font-variant-numeric: tabular-nums;
+      text-align: end;
     }
-    .option:has(input:focus-visible) {
+    /* O controle nativo, na cor do app, com a altura de um alvo de toque inteiro. */
+    .slider {
+      width: 100%;
+      min-height: var(--tap);
+      margin: 0;
+      accent-color: var(--a-accent);
+      cursor: pointer;
+    }
+    .slider:focus-visible {
       outline: 3px solid var(--a-accent);
       outline-offset: 2px;
+    }
+    .more {
+      justify-self: start;
     }
     .row {
       display: flex;
@@ -181,13 +190,22 @@ export class PcPadSettingsSheet {
   private readonly availability = inject(PcAvailability);
   readonly closed = output<void>();
 
-  protected readonly choices: readonly { value: PointerSensitivity; label: string }[] =
-    POINTER_SENSITIVITIES.map((value) => ({ value, label: LABELS[value]() }));
-  protected readonly scrollChoices: readonly { value: ScrollSensitivity; label: string }[] =
-    SCROLL_SENSITIVITIES.map((value) => ({ value, label: LABELS[value]() }));
+  /** Aberta pelo botão do touchpad: só a sensibilidade à vista, o resto atrás de "Mais ajustes". */
+  readonly quick = input(false);
+  /** No modo rápido, "Mais ajustes" foi tocado. */
+  protected readonly expanded = signal(false);
+  protected readonly showAll = computed(() => !this.quick() || this.expanded());
+
+  protected readonly min = MIN_LEVEL;
+  protected readonly max = MAX_LEVEL;
+  protected readonly text = levelText;
 
   protected readonly switches: readonly { name: SwitchName; label: string }[] = (
     [
+      {
+        name: 'showTyped',
+        label: $localize`:@@pc.settings.show-typed:Mostrar o que digito`,
+      },
       { name: 'invertScroll', label: $localize`:@@pc.settings.invert:Inverter rolagem` },
       {
         name: 'doubleTapDrag',
@@ -224,11 +242,18 @@ export class PcPadSettingsSheet {
       this.opener = document.activeElement;
       dialog.showModal();
       onDialogBackdropClick(dialog, () => this.dismiss());
-      dialog.querySelector<HTMLElement>('input:checked')?.focus();
+      // O foco nasce na sensibilidade, não num interruptor ligado.
+      dialog.querySelector<HTMLElement>('#pad-sensitivity')?.focus();
     });
   }
 
-  protected onSwitch(name: SwitchName, event: Event): void {
+  /** O controle deslizante mudou: vale na hora (o próximo toque já usa o nível novo). */
+  protected onLevel(name: 'sensitivity' | 'scrollSensitivity', event: Event): void {
+    const level = Number((event.target as HTMLInputElement).value);
+    if (isSensitivityLevel(level)) this.prefs.set({ [name]: level });
+  }
+
+  protected onSwitch(name: SwitchName | 'acceleration', event: Event): void {
     const patch: Partial<PcPrefsValue> = { [name]: (event.target as HTMLInputElement).checked };
     this.prefs.set(patch);
   }

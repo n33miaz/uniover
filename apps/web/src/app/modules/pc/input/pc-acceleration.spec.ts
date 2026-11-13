@@ -1,26 +1,40 @@
 import {
   DEFAULT_ACCELERATION,
+  DEFAULT_LEVEL,
+  LEGACY_POINTER_LEVEL,
+  LEGACY_SCROLL_LEVEL,
+  POINTER_GAINS,
   PointerAccelerator,
-  SCROLL_SENSITIVITIES,
+  SCROLL_GAINS,
+  SENSITIVITY_LEVELS,
   ScrollAccelerator,
   WHEEL_UNIT,
   accelerationFor,
   gainFor,
+  isSensitivityLevel,
   scrollGainFor,
 } from './pc-acceleration';
 
 describe('scroll sensitivity', () => {
-  it('offers three levels, normal being the neutral one', () => {
-    expect(SCROLL_SENSITIVITIES).toEqual(['low', 'normal', 'high']);
-    expect(scrollGainFor('normal')).toBe(1);
-    expect(scrollGainFor('low')).toBeLessThan(1);
-    expect(scrollGainFor('high')).toBeGreaterThan(1);
+  it('offers seven growing levels, the middle one being neutral', () => {
+    expect(SENSITIVITY_LEVELS).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(SCROLL_GAINS).toHaveLength(7);
+    expect(scrollGainFor(DEFAULT_LEVEL)).toBe(1);
+    for (let level = 2; level <= 7; level++) {
+      expect(SCROLL_GAINS[level - 1]).toBeGreaterThan(SCROLL_GAINS[level - 2]);
+    }
+  });
+
+  it('keeps the old Low, Normal and High gains as middle points of the slider', () => {
+    expect(scrollGainFor(LEGACY_SCROLL_LEVEL.low)).toBe(0.6);
+    expect(scrollGainFor(LEGACY_SCROLL_LEVEL.normal)).toBe(1);
+    expect(scrollGainFor(LEGACY_SCROLL_LEVEL.high)).toBe(1.6);
   });
 
   it('scales the wheel steps of the same swipe', () => {
     const wheel = (gain: number) => new ScrollAccelerator().apply(0, 80, 100, false, gain).scrollY;
-    expect(Math.abs(wheel(scrollGainFor('low')))).toBeLessThan(Math.abs(wheel(1)));
-    expect(Math.abs(wheel(scrollGainFor('high')))).toBeGreaterThan(Math.abs(wheel(1)));
+    expect(Math.abs(wheel(scrollGainFor(2)))).toBeLessThan(Math.abs(wheel(1)));
+    expect(Math.abs(wheel(scrollGainFor(6)))).toBeGreaterThan(Math.abs(wheel(1)));
   });
 
   it('keeps the direction (and the inversion) at any level', () => {
@@ -85,19 +99,42 @@ describe('PointerAccelerator', () => {
 });
 
 describe('accelerationFor', () => {
-  it('normal adds no curve of its own: one pixel of finger is one pixel of pointer at any speed', () => {
-    const normal = accelerationFor('normal');
+  it('the middle level adds no curve of its own: one pixel of finger is one pixel of pointer at any speed', () => {
+    const normal = accelerationFor(DEFAULT_LEVEL);
     expect(gainFor(0, normal)).toBe(1);
     expect(gainFor(50, normal)).toBe(1);
     expect(new PointerAccelerator().apply(40, 0, 5, normal).dx).toBe(40);
   });
 
-  it('low and high scale the pointer evenly, boosted brings the speed curve back', () => {
-    expect(new PointerAccelerator().apply(10, 0, 5, accelerationFor('low')).dx).toBe(7);
-    expect(new PointerAccelerator().apply(10, 0, 5, accelerationFor('high')).dx).toBe(16);
-    expect(accelerationFor('boosted')).toBe(DEFAULT_ACCELERATION);
-    const fast = new PointerAccelerator().apply(40, 0, 10, accelerationFor('boosted')).dx;
+  it('the old Low and High keep their exact gains, and Boosted is level 5 with acceleration', () => {
+    const low = LEGACY_POINTER_LEVEL.low;
+    const high = LEGACY_POINTER_LEVEL.high;
+    expect(new PointerAccelerator().apply(10, 0, 5, accelerationFor(low.level)).dx).toBe(7);
+    expect(new PointerAccelerator().apply(10, 0, 5, accelerationFor(high.level)).dx).toBe(16);
+    const boosted = LEGACY_POINTER_LEVEL.boosted;
+    expect(accelerationFor(boosted.level, boosted.acceleration)).toBe(DEFAULT_ACCELERATION);
+    const fast = new PointerAccelerator().apply(40, 0, 10, accelerationFor(5, true)).dx;
     expect(fast).toBeGreaterThan(40);
+  });
+
+  it('grows level by level, and acceleration scales the curve from the level gain', () => {
+    expect(POINTER_GAINS).toHaveLength(7);
+    for (let level = 2; level <= 7; level++) {
+      expect(POINTER_GAINS[level - 1]).toBeGreaterThan(POINTER_GAINS[level - 2]);
+    }
+    const slowCurve = accelerationFor(2, true);
+    expect(slowCurve.baseGain).toBe(0.7);
+    expect(gainFor(50, slowCurve)).toBeGreaterThan(0.7);
+    expect(gainFor(50, accelerationFor(7, true))).toBeGreaterThan(
+      gainFor(50, DEFAULT_ACCELERATION),
+    );
+  });
+
+  it('only whole numbers from 1 to 7 are levels', () => {
+    expect(isSensitivityLevel(1)).toBe(true);
+    expect(isSensitivityLevel(7)).toBe(true);
+    for (const bad of [0, 8, 3.5, '4', null, Number.NaN])
+      expect(isSensitivityLevel(bad)).toBe(false);
   });
 });
 

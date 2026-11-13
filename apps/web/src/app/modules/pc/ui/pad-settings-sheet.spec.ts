@@ -8,11 +8,14 @@ describe('PcPadSettingsSheet', () => {
   let root: HTMLElement;
   let prefs: PcPrefs;
 
-  const option = (label: string) =>
-    [...root.querySelectorAll<HTMLLabelElement>('.option')]
-      .find((item) => item.textContent?.trim() === label)!
-      .querySelector('input')!;
-  const invert = () => root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+  const pointer = () => root.querySelector<HTMLInputElement>('#pad-sensitivity')!;
+  const scroll = () => root.querySelector<HTMLInputElement>('#scroll-sensitivity')!;
+  /** Arrasta o controle deslizante até o nível (o navegador avisa com `input`). */
+  const slide = (slider: HTMLInputElement, level: number) => {
+    slider.value = String(level);
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const invert = () => switchOf('Inverter rolagem');
   const switchOf = (label: string) =>
     [...root.querySelectorAll<HTMLLabelElement>('label.row')]
       .find((row) => row.textContent?.trim() === label)!
@@ -37,22 +40,69 @@ describe('PcPadSettingsSheet', () => {
     localStorage.clear();
   });
 
-  it('opens as a modal and offers the four sensitivities, Normal being the one on', () => {
+  it('opens as a modal with a seven-level slider for the pointer, at the middle by default', () => {
     expect(root.querySelector('dialog')?.hasAttribute('open')).toBe(true);
-    const labels = [...root.querySelectorAll('.segment:not(.three) .option')].map((item) =>
-      item.textContent?.trim(),
-    );
-    expect(labels).toEqual(['Baixa', 'Normal', 'Alta', 'Acelerada']);
-    expect(option('Normal').checked).toBe(true);
+    expect(pointer().type).toBe('range');
+    expect([pointer().min, pointer().max, pointer().step]).toEqual(['1', '7', '1']);
+    expect(pointer().value).toBe('4');
+    expect(pointer().getAttribute('aria-valuetext')).toBe('4 de 7, padrão');
+    expect(document.activeElement).toBe(pointer());
     expect(invert().checked).toBe(false);
   });
 
-  it('choosing a sensitivity applies at once and is kept', () => {
-    option('Alta').click();
-    expect(prefs.sensitivity()).toBe('high');
-    expect(JSON.parse(localStorage.getItem('uniover.pc.prefs.v1.sheet-user')!).sensitivity).toBe(
-      'high',
+  it('the slider is named by its title and shows the level', () => {
+    const name = root.querySelector(`#${pointer().getAttribute('aria-labelledby')}`);
+    expect(name?.textContent?.trim()).toBe('Sensibilidade');
+    slide(pointer(), 6);
+    fixture.detectChanges();
+    expect(root.querySelector('output[for="pad-sensitivity"]')?.textContent?.trim()).toBe('6');
+    expect(pointer().getAttribute('aria-valuetext')).toBe('6 de 7');
+  });
+
+  it('moving the slider applies at once and is kept as a number', () => {
+    slide(pointer(), 6);
+    expect(prefs.sensitivity()).toBe(6);
+    expect(JSON.parse(localStorage.getItem('uniover.pc.prefs.v1.sheet-user')!).sensitivity).toBe(6);
+  });
+
+  it('a value outside the scale is ignored', () => {
+    slide(pointer(), 6);
+    const input = pointer();
+    Object.defineProperty(input, 'value', { value: '9', configurable: true });
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(prefs.sensitivity()).toBe(6);
+  });
+
+  it('the acceleration switch brings the speed curve back', () => {
+    expect(switchOf('Aceleração').checked).toBe(false);
+    switchOf('Aceleração').click();
+    expect(prefs.acceleration()).toBe(true);
+  });
+
+  it('a choice saved before the slider opens at its level', () => {
+    fixture.destroy();
+    localStorage.setItem(
+      'uniover.pc.prefs.v1.sheet-user',
+      JSON.stringify({ sensitivity: 'boosted', scrollSensitivity: 'low' }),
     );
+    TestBed.resetTestingModule();
+    TestBed.inject(SessionState).setUser({
+      id: 'sheet-user',
+      email: 's@example.com',
+      displayName: 'S',
+    });
+    fixture = TestBed.createComponent(PcPadSettingsSheet);
+    fixture.detectChanges();
+    root = fixture.nativeElement;
+    expect(pointer().value).toBe('5');
+    expect(switchOf('Aceleração').checked).toBe(true);
+    expect(scroll().value).toBe('2');
+  });
+
+  it('the switch to show what is typed is on by default', () => {
+    expect(switchOf('Mostrar o que digito').checked).toBe(true);
+    switchOf('Mostrar o que digito').click();
+    expect(prefs.showTyped()).toBe(false);
   });
 
   it('the switch inverts the scroll and turns it back', () => {
@@ -71,13 +121,11 @@ describe('PcPadSettingsSheet', () => {
     expect(prefs.keepAwake()).toBe(false);
   });
 
-  it('the scroll has its own three levels, separate from the pointer', () => {
-    const scroll = [...root.querySelectorAll<HTMLInputElement>('input[name="scroll-sensitivity"]')];
-    expect(scroll).toHaveLength(3);
-    expect(scroll[1].checked).toBe(true);
-    scroll[2].click();
-    expect(prefs.scrollSensitivity()).toBe('high');
-    expect(prefs.sensitivity()).toBe('normal');
+  it('the scroll has its own slider, separate from the pointer', () => {
+    expect([scroll().min, scroll().max, scroll().value]).toEqual(['1', '7', '4']);
+    slide(scroll(), 7);
+    expect(prefs.scrollSensitivity()).toBe(7);
+    expect(prefs.sensitivity()).toBe(4);
   });
 
   it('the gesture switches apply at once: double-tap drag is off, the middle click is on', () => {
@@ -96,6 +144,24 @@ describe('PcPadSettingsSheet', () => {
 
   it('is titled Settings', () => {
     expect(root.querySelector('h2')?.textContent).toBe('Ajustes');
+  });
+
+  it('opened from the touchpad, shows only the sensitivity, the rest one tap away', () => {
+    fixture.destroy();
+    fixture = TestBed.createComponent(PcPadSettingsSheet);
+    fixture.componentRef.setInput('quick', true);
+    fixture.detectChanges();
+    root = fixture.nativeElement;
+    expect(pointer()).not.toBeNull();
+    expect(scroll()).not.toBeNull();
+    expect(root.querySelectorAll('label.row')).toHaveLength(1);
+    const more = [...root.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Mais ajustes',
+    )!;
+    more.click();
+    fixture.detectChanges();
+    expect(switchOf('Inverter rolagem')).toBeTruthy();
+    expect(root.querySelectorAll('label.row').length).toBeGreaterThan(5);
   });
 
   it('Close asks the page to take the sheet away', () => {

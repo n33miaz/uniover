@@ -22,7 +22,7 @@ describe('PcPrefs', () => {
 
   it('starts with no extra acceleration and the Windows scroll direction, writing nothing', () => {
     const prefs = fresh();
-    expect(prefs.sensitivity()).toBe('normal');
+    expect(prefs.sensitivity()).toBe(4);
     expect(prefs.invertScroll()).toBe(false);
     expect(prefs.customized()).toBe(false);
     expect(localStorage.getItem(pcPrefsStorageKey('pc-user'))).toBeNull();
@@ -30,13 +30,13 @@ describe('PcPrefs', () => {
 
   it('keeps the gain and the scroll inversion for the next visit', () => {
     const prefs = fresh();
-    prefs.set({ sensitivity: 'high' });
+    prefs.set({ sensitivity: 6 });
     prefs.set({ invertScroll: true });
-    expect(saved()).toMatchObject({ sensitivity: 'high', invertScroll: true });
+    expect(saved()).toMatchObject({ sensitivity: 6, invertScroll: true });
     expect(prefs.customized()).toBe(true);
 
     const next = fresh();
-    expect(next.sensitivity()).toBe('high');
+    expect(next.sensitivity()).toBe(6);
     expect(next.invertScroll()).toBe(true);
   });
 
@@ -57,7 +57,7 @@ describe('PcPrefs', () => {
       JSON.stringify({ sensitivity: 'high', invertScroll: true }),
     );
     const prefs = fresh();
-    expect(prefs.sensitivity()).toBe('high');
+    expect(prefs.sensitivity()).toBe(6);
     expect(prefs.invertScroll()).toBe(true);
     expect(prefs.clickButtons()).toBe(false);
     expect(prefs.keepAwake()).toBe(true);
@@ -68,7 +68,7 @@ describe('PcPrefs', () => {
     const prefs = fresh();
     prefs.set({ hintSeen: true });
     expect(prefs.customized()).toBe(false);
-    prefs.set({ sensitivity: 'low' });
+    prefs.set({ sensitivity: 2 });
     prefs.reset();
     expect(prefs.hintSeen()).toBe(true);
     expect(fresh().hintSeen()).toBe(true);
@@ -87,18 +87,18 @@ describe('PcPrefs', () => {
 
   it('the gesture choices start the way the owner asked and are kept', () => {
     const prefs = fresh();
-    expect(prefs.scrollSensitivity()).toBe('normal');
+    expect(prefs.scrollSensitivity()).toBe(4);
     expect(prefs.doubleTapDrag()).toBe(false);
     expect(prefs.middleClick()).toBe(true);
     expect(prefs.haptics()).toBe(true);
     prefs.set({
-      scrollSensitivity: 'high',
+      scrollSensitivity: 6,
       doubleTapDrag: true,
       middleClick: false,
       haptics: false,
     });
     const next = fresh();
-    expect(next.scrollSensitivity()).toBe('high');
+    expect(next.scrollSensitivity()).toBe(6);
     expect(next.doubleTapDrag()).toBe(true);
     expect(next.middleClick()).toBe(false);
     expect(next.haptics()).toBe(false);
@@ -111,7 +111,7 @@ describe('PcPrefs', () => {
       JSON.stringify({ scrollSensitivity: 'ludicrous', middleClick: 'yes' }),
     );
     const prefs = fresh();
-    expect(prefs.scrollSensitivity()).toBe('normal');
+    expect(prefs.scrollSensitivity()).toBe(4);
     expect(prefs.middleClick()).toBe(true);
   });
 
@@ -141,10 +141,10 @@ describe('PcPrefs', () => {
   });
 
   it('keeps one choice per person on this device', () => {
-    fresh('ana').set({ sensitivity: 'low' });
+    fresh('ana').set({ sensitivity: 2 });
     const other = fresh('bia');
-    expect(other.sensitivity()).toBe('normal');
-    expect(fresh('ana').sensitivity()).toBe('low');
+    expect(other.sensitivity()).toBe(4);
+    expect(fresh('ana').sensitivity()).toBe(2);
   });
 
   it('follows the account when it changes without a reload', () => {
@@ -162,21 +162,83 @@ describe('PcPrefs', () => {
       JSON.stringify({ sensitivity: 'ludicrous', invertScroll: true }),
     );
     const prefs = fresh();
-    expect(prefs.sensitivity()).toBe('normal');
+    expect(prefs.sensitivity()).toBe(4);
     expect(prefs.invertScroll()).toBe(true);
   });
 
   it('survives corrupted storage and ignores an unknown choice', () => {
     localStorage.setItem(pcPrefsStorageKey('pc-user'), '{nao e json');
     const prefs = fresh();
-    expect(prefs.sensitivity()).toBe('normal');
+    expect(prefs.sensitivity()).toBe(4);
     prefs.set({ sensitivity: 'nope' as never });
-    expect(prefs.sensitivity()).toBe('normal');
+    expect(prefs.sensitivity()).toBe(4);
+  });
+
+  describe('migrating the choice saved before the slider', () => {
+    const stored = (value: object) =>
+      localStorage.setItem(pcPrefsStorageKey('pc-user'), JSON.stringify(value));
+
+    it.each([
+      ['low', 2, false],
+      ['normal', 4, false],
+      ['high', 6, false],
+      ['boosted', 5, true],
+    ] as const)('pointer %s becomes level %i (acceleration %s)', (old, level, acceleration) => {
+      stored({ sensitivity: old, invertScroll: true });
+      const prefs = fresh();
+      expect(prefs.sensitivity()).toBe(level);
+      expect(prefs.acceleration()).toBe(acceleration);
+      expect(prefs.invertScroll()).toBe(true);
+    });
+
+    it.each([
+      ['low', 2],
+      ['normal', 4],
+      ['high', 6],
+    ] as const)('scroll %s becomes level %i', (old, level) => {
+      stored({ scrollSensitivity: old });
+      expect(fresh().scrollSensitivity()).toBe(level);
+    });
+
+    it('the old Normal is not a customization, Boosted is', () => {
+      stored({ sensitivity: 'normal', scrollSensitivity: 'normal' });
+      expect(fresh().customized()).toBe(false);
+      stored({ sensitivity: 'boosted' });
+      expect(fresh().customized()).toBe(true);
+    });
+
+    it('the next write saves the level as a number, keeping the other choices', () => {
+      stored({ sensitivity: 'boosted', scrollSensitivity: 'high', middleClick: false });
+      fresh().set({ invertScroll: true });
+      expect(saved()).toMatchObject({
+        sensitivity: 5,
+        acceleration: true,
+        scrollSensitivity: 6,
+        middleClick: false,
+        invertScroll: true,
+      });
+    });
+
+    it.each([0, 8, 2.5, -1, '4', null])('a level of %s goes back to the middle', (bad) => {
+      stored({ sensitivity: bad, scrollSensitivity: bad, acceleration: 'yes' });
+      const prefs = fresh();
+      expect(prefs.sensitivity()).toBe(4);
+      expect(prefs.scrollSensitivity()).toBe(4);
+      expect(prefs.acceleration()).toBe(false);
+    });
+  });
+
+  it('showing the typed text is on by default and only the choice is kept', () => {
+    const prefs = fresh();
+    expect(prefs.showTyped()).toBe(true);
+    prefs.set({ showTyped: false });
+    expect(saved()).toMatchObject({ showTyped: false });
+    expect(fresh().showTyped()).toBe(false);
   });
 
   it('reset returns to the defaults', () => {
     const prefs = fresh();
-    prefs.set({ sensitivity: 'boosted', invertScroll: true });
+    prefs.set({ sensitivity: 7, acceleration: true, invertScroll: true });
     prefs.reset();
     expect(saved()).toEqual(PC_PREFS_DEFAULTS);
     expect(prefs.customized()).toBe(false);
@@ -187,7 +249,7 @@ describe('PcPrefs', () => {
       throw new Error('cheio');
     });
     const prefs = fresh();
-    prefs.set({ sensitivity: 'low' });
-    expect(prefs.sensitivity()).toBe('low');
+    prefs.set({ sensitivity: 2 });
+    expect(prefs.sensitivity()).toBe(2);
   });
 });

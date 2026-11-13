@@ -934,7 +934,7 @@ describe('PcStore pointer preferences', () => {
 
   it('uses the gain the person chose', async () => {
     const { store, api } = setup();
-    TestBed.inject(PcPrefs).set({ sensitivity: 'high' });
+    TestBed.inject(PcPrefs).set({ sensitivity: 6 });
     store.beginGesture();
     store.movePointer(10, 0, 16);
     await flush();
@@ -968,11 +968,11 @@ describe('PcStore pointer preferences', () => {
       await new Promise((resolve) => setTimeout(resolve, 40));
       return Math.abs((api.pointer.mock.calls[index] as unknown as number[])[3]);
     };
-    prefs.set({ scrollSensitivity: 'low' });
+    prefs.set({ scrollSensitivity: 2 });
     const low = await scrolled(0);
-    prefs.set({ scrollSensitivity: 'normal' });
+    prefs.set({ scrollSensitivity: 4 });
     const normal = await scrolled(1);
-    prefs.set({ scrollSensitivity: 'high' });
+    prefs.set({ scrollSensitivity: 6 });
     const high = await scrolled(2);
     expect(low).toBeLessThan(normal);
     expect(normal).toBeLessThan(high);

@@ -377,7 +377,7 @@ export class PcStore {
       dx,
       dy,
       elapsedMs,
-      accelerationFor(this.prefs.sensitivity()),
+      accelerationFor(this.prefs.sensitivity(), this.prefs.acceleration()),
     );
     if (step.dx !== 0 || step.dy !== 0) this.batcher.addMove(step.dx, step.dy);
   }

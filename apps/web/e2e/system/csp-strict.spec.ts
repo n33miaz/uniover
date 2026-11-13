@@ -96,10 +96,7 @@ test.describe('CSP estrita: nenhuma violação de estilo nas telas lazy', () => 
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await expect(sheet).toBeVisible();
-    await sheet
-      .getByRole('group', { name: 'Sensibilidade' })
-      .getByRole('radio', { name: 'Alta' })
-      .check();
+    await sheet.getByRole('slider', { name: 'Sensibilidade' }).fill('6');
     // O raio do canto vem do confirm-sheet.css: só existe se o <style> do componente foi aceito pela CSP.
     expect(await sheet.evaluate((dialog) => getComputedStyle(dialog).borderTopLeftRadius)).not.toBe(
       '0px',

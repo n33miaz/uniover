@@ -57,6 +57,7 @@ async function longPress(page: Page, x: number, y: number) {
 async function turnOnClickButtons(page: Page) {
   await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
   const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+  await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
   await sheet.getByRole('switch', { name: 'Botões de clique' }).check();
   await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
   await expect(sheet).toHaveCount(0);
@@ -247,9 +248,11 @@ test.describe('Mouse', () => {
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
     await expect(sheet).toBeVisible();
-    const pointerLevels = sheet.getByRole('group', { name: 'Sensibilidade' });
-    await expect(pointerLevels.getByRole('radio', { name: 'Normal' })).toBeChecked();
-    await pointerLevels.getByRole('radio', { name: 'Alta' }).check();
+    // Um toque no botão do touchpad chega à sensibilidade: um controle deslizante de 1 a 7, no meio por padrão.
+    const pointerLevel = sheet.getByRole('slider', { name: 'Sensibilidade' });
+    await expect(pointerLevel).toHaveValue('4');
+    await pointerLevel.fill('6');
+    await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
     await sheet.getByRole('switch', { name: 'Inverter rolagem' }).check();
     await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await expect(sheet).toHaveCount(0);
@@ -268,9 +271,8 @@ test.describe('Mouse', () => {
     await expect(status(page)).toHaveText('Conectado');
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const again = page.getByRole('dialog', { name: 'Ajustes' });
-    await expect(
-      again.getByRole('group', { name: 'Sensibilidade' }).getByRole('radio', { name: 'Alta' }),
-    ).toBeChecked();
+    await expect(again.getByRole('slider', { name: 'Sensibilidade' })).toHaveValue('6');
+    await again.getByRole('button', { name: 'Mais ajustes' }).click();
     await expect(again.getByRole('switch', { name: 'Inverter rolagem' })).toBeChecked();
   });
 
@@ -590,6 +592,7 @@ test.describe('Gestos', () => {
     await openPc(page);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
     await sheet.getByRole('switch', { name: 'Clique do meio com três dedos' }).uncheck();
     await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     const { x, y } = await padCenter(page);
@@ -626,6 +629,7 @@ test.describe('Gestos', () => {
     await openPc(page);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
     await sheet.getByRole('switch', { name: 'Toque duplo arrasta' }).check();
     await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await expect(sheet).toHaveCount(0);
@@ -806,19 +810,16 @@ test.describe('Gestos', () => {
     await openPc(page);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
-    await sheet
-      .getByRole('group', { name: 'Rolagem' })
-      .getByRole('radio', { name: 'Alta' })
-      .check();
+    await sheet.getByRole('slider', { name: 'Rolagem' }).fill('6');
+    await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
     await sheet.getByRole('switch', { name: 'Toque duplo arrasta' }).check();
     await sheet.getByRole('button', { name: 'Fechar', exact: true }).click();
     await page.reload();
     await expect(status(page)).toHaveText('Conectado');
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const again = page.getByRole('dialog', { name: 'Ajustes' });
-    await expect(
-      again.getByRole('group', { name: 'Rolagem' }).getByRole('radio', { name: 'Alta' }),
-    ).toBeChecked();
+    await expect(again.getByRole('slider', { name: 'Rolagem' })).toHaveValue('6');
+    await again.getByRole('button', { name: 'Mais ajustes' }).click();
     await expect(again.getByRole('switch', { name: 'Toque duplo arrasta' })).toBeChecked();
     await expect(
       again.getByRole('switch', { name: 'Clique do meio com três dedos' }),
@@ -2342,6 +2343,8 @@ test.describe('Pinça e volume absoluto', () => {
     expect(pc.sent('/zoom')).toEqual([]);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
+    await expect(sheet.getByRole('switch', { name: 'Inverter rolagem' })).toBeVisible();
     await expect(sheet.getByRole('switch', { name: 'Pinça para zoom' })).toHaveCount(0);
   });
 
@@ -2350,6 +2353,7 @@ test.describe('Pinça e volume absoluto', () => {
     await openPc(page);
     await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
     const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('button', { name: 'Mais ajustes' }).click();
     const toggle = sheet.getByRole('switch', { name: 'Pinça para zoom' });
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
