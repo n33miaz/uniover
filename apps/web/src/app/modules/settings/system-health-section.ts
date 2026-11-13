@@ -249,6 +249,8 @@ function moduleLabel(key: string): string {
       return $localize`:@@settings.system.health.module-tv:TV`;
     case 'training':
       return $localize`:@@settings.system.health.module-training:Treino`;
+    case 'shopping':
+      return $localize`:@@settings.system.health.module-shopping:Compras`;
     case 'web':
       return $localize`:@@settings.system.health.module-web:Site`;
     case 'agent':
