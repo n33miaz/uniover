@@ -2691,6 +2691,20 @@ describe('TvStore', () => {
       expect(api.state).not.toHaveBeenCalled();
     });
 
+    it('a return announced by both "visible" and a restored page reads the state and wakes once', async () => {
+      await started();
+      setVisibility('hidden');
+      api.state.mockClear();
+      api.wake.mockClear();
+      setVisibility('visible');
+      const restored = new Event('pageshow');
+      Object.defineProperty(restored, 'persisted', { value: true });
+      window.dispatchEvent(restored);
+      await flush();
+      expect(api.state).toHaveBeenCalledTimes(1);
+      expect(api.wake).toHaveBeenCalledTimes(1);
+    });
+
     it('reads the power schedule with the rest, so the button of the header can show it', async () => {
       await started();
       expect(api.powerSchedule).toHaveBeenCalled();
