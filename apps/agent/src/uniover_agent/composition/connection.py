@@ -145,7 +145,12 @@ from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILIT
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
-from uniover_agent.core.tv.relocator import DEFAULT_FAILURES
+from uniover_agent.core.tv.relocator import (
+    DEFAULT_FAILURES,
+    DEFAULT_FAST_WINDOW_SECONDS,
+    AgentStart,
+    agent_start,
+)
 from uniover_agent.ports import Clock, SecretStore, Transport, TvNotPaired, TvUnreachable
 
 _log = logging.getLogger("uniover_agent")
@@ -290,6 +295,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     *,
     recorder: DiagnosticsRecorder | None = None,
     failures: int = DEFAULT_FAILURES,
+    start: AgentStart | None = None,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -305,6 +311,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     A troca de rede do PC dispara a procura na hora. Um candidato só vale confirmado pelo MAC, pelo
     `duid` ou pela sessão com o certificado já pareado: nenhum pareamento novo é pedido à TV.
     `recorder` recebe, sem endereços, a TV achada em outra rede e a TV não achada.
+    `start` (a partida do agente) liga a linha "TV de volta em X s depois da partida".
     """
     host = settings.tv_host
     if not host:
@@ -410,6 +417,8 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         searched=lambda: locator.searched,
         on_not_found=not_found,
         failures=failures,
+        fast_window_seconds=DEFAULT_FAST_WINDOW_SECONDS,
+        start=start,
     )
 
 
@@ -1222,6 +1231,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
             tv.manager.reopen_unattended,
             recorder=kit.recorder,
+            start=agent_start(),
         )
         if tv is not None
         else None
