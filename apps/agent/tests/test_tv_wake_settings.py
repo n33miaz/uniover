@@ -17,7 +17,13 @@ from uniover_agent.core import EnvelopeFactory, EnvelopeGate, TvState, TvStatePu
 from uniover_agent.core.tv.cleanup import TvCleanup
 from uniover_agent.core.tv.cleanup_schedule import TvCleanupScheduler
 from uniover_agent.core.tv.wake_settings import REPLUG, SCREENLESS_OFF, WakeSettingsCheck
-from uniover_agent.ports import AdbCommandFailed, AdbIdle, AdbUnreachable, WakeSettings
+from uniover_agent.ports import (
+    AdbCommandFailed,
+    AdbIdle,
+    AdbUnauthorized,
+    AdbUnreachable,
+    WakeSettings,
+)
 
 from .support import AGENT_ID
 from .support_adb import ADB, HOST, NOISE, SERIAL, FakeAdbRunner, ok, open_gate, shell
@@ -29,6 +35,13 @@ OTHER_BRAND = "uniover_maker=Xiaomi\r\nuniover_powerloss=\r\nuniover_screenless=
 
 def make_tv(runner: FakeAdbRunner) -> AdbTv:
     return AdbTv(ADB, HOST, 5555, **open_gate(), timeout=1.0, runner=runner, monotonic=lambda: 0.0)
+
+
+async def open_tv(runner: FakeAdbRunner) -> AdbTv:
+    """Um canal já aberto (a pessoa o abriu por um pedido): a leitura automática só usa esse."""
+    tv = make_tv(runner)
+    await tv.connect()
+    return tv
 
 
 def authorized() -> FakeAdbRunner:
@@ -43,11 +56,35 @@ def authorized() -> FakeAdbRunner:
 async def test_one_fixed_read_only_command_reads_the_three_values() -> None:
     runner = authorized()
     runner.script[shell(WAKE_SETTINGS_COMMAND)] = ok(NOISE + TCL_OFF)
-    assert await make_tv(runner).wake_settings() == WakeSettings(
+    assert await (await open_tv(runner)).wake_settings() == WakeSettings(
         tcl=True, screenless=False, power_restore=True
     )
     assert runner.calls[-1] == ("-s", SERIAL, "shell", WAKE_SETTINGS_COMMAND)
     assert runner.shell_commands() == [WAKE_SETTINGS_COMMAND]
+
+
+async def test_the_automatic_read_never_opens_a_connection() -> None:
+    # Sem canal aberto (a permissão pode ter sido revogada na TV; o estado local não prova o
+    # contrário), `adb connect` faria a TV mostrar o aviso sem ninguém ter pedido.
+    runner = authorized()
+    runner.script[shell(WAKE_SETTINGS_COMMAND)] = ok(NOISE + TCL_OFF)
+    with pytest.raises(AdbIdle):
+        await make_tv(runner).wake_settings()
+    assert runner.calls == []
+
+
+async def test_a_channel_the_tv_dropped_is_not_reopened_by_the_next_automatic_read() -> None:
+    runner = authorized()
+    tv = await open_tv(runner)
+    runner.script[shell(WAKE_SETTINGS_COMMAND)] = ok("error: device unauthorized.\r\n", 1)
+    with pytest.raises(AdbUnauthorized):
+        await tv.wake_settings()  # a TV revogou: o transporte caiu
+    connects = [call for call in runner.calls if call[0] == "connect"]
+    assert len(connects) == 1  # só a abertura da pessoa
+
+    with pytest.raises(AdbIdle):
+        await tv.wake_settings()
+    assert [call for call in runner.calls if call[0] == "connect"] == connects
 
 
 def test_the_command_only_reads() -> None:
@@ -88,13 +125,13 @@ async def test_an_answer_without_the_maker_is_a_failed_read(text: str) -> None:
     runner = authorized()
     runner.script[shell(WAKE_SETTINGS_COMMAND)] = ok(text)
     with pytest.raises(AdbCommandFailed):
-        await make_tv(runner).wake_settings()
+        await (await open_tv(runner)).wake_settings()
 
 
 async def test_with_fake_adb_a_setting_turned_off_is_a_warning_on_the_next_read() -> None:
     runner = authorized()
     runner.script[shell(WAKE_SETTINGS_COMMAND)] = ok(NOISE + TCL_ON)
-    check = WakeSettingsCheck(make_tv(runner))
+    check = WakeSettingsCheck(await open_tv(runner))
     assert await check.check()
     assert not check.hints
 

@@ -758,6 +758,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         lambda: light_settings.focus_active,
         CleanupDayFile(installation_base() / "runtime"),
         wake_check=read_wake_settings,
+        adb_connected=lambda: adb.connected,
     )
 
     async def configure_cleanup(command: Command) -> CommandResult:

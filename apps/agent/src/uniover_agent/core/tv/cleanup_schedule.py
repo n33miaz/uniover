@@ -81,6 +81,7 @@ class TvCleanupScheduler:
         is_focused: Callable[[], bool] = lambda: False,
         day_store: CleanupDayStore | None = None,
         wake_check: Callable[[], Awaitable[bool]] | None = None,
+        adb_connected: Callable[[], bool] | None = None,
     ) -> None:
         self._cleanup = cleanup
         self._adb = adb
@@ -109,6 +110,11 @@ class TvCleanupScheduler:
         # leitura curta na primeira sessão do dia (e na primeira depois de o agente subir). O dia
         # só conta como feito quando a TV respondeu: senão a sessão seguinte tenta de novo.
         self._wake_check = wake_check
+        # A limpeza automática só usa um canal ADB que já chegou a `device` nesta execução: abrir
+        # uma conexão nova a uma TV que revogou a permissão faria aparecer o aviso do ADB sem
+        # ninguém ter pedido (o estado local `granted` não prova que a TV ainda a guarda). Sem o
+        # canal aberto, o gatilho fica pendente até a pessoa abrir as funções avançadas.
+        self._adb_connected = adb_connected
         self._wake_check_day: date | None = None
         self._pending_wake_check = False
 
@@ -188,6 +194,8 @@ class TvCleanupScheduler:
             today = self._today()
             if await self._wake_check():
                 self._wake_check_day = today
+        if self._adb_connected is not None and not self._adb_connected():
+            return
         if (
             self._pending_light
             and self._configuration.light_enabled

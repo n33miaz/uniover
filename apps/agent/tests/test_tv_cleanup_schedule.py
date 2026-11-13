@@ -37,6 +37,7 @@ def make(
     pressure: bool = True,
     day_store: CleanupDayStore | None = None,
     foreground_of: Callable[[], str | None] | None = None,
+    adb_connected: Callable[[], bool] | None = None,
 ) -> tuple[TvCleanupScheduler, FakeTvAdb, FakeTransport, FakeClock]:
     """`pressure`: memória livre abaixo do limite de 160 MB (só assim a limpeza leve roda)."""
     clock = FakeClock()
@@ -53,6 +54,7 @@ def make(
         EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
         foreground_of or (lambda: foreground),
         day_store=day_store,
+        adb_connected=adb_connected,
     )
     return scheduler, adb, transport, clock
 
@@ -527,3 +529,26 @@ async def test_media_started_during_the_foreground_wait_holds_the_light_cleanup_
     scheduler.resume()
     await scheduler.run_pending()
     assert [m["body"]["result"] for m in transport.sent] == ["completed"]
+
+
+async def test_without_an_open_adb_channel_the_automatic_cleanup_touches_nothing() -> None:
+    # Sem canal que já chegou a `device`, qualquer leitura reconectaria o ADB, e uma TV que revogou
+    # a permissão mostraria o aviso sem ninguém ter pedido.
+    connected = False
+    store = MemoryDayStore()
+    scheduler, adb, transport, _ = make(day_store=store, adb_connected=lambda: connected)
+    scheduler.configure(True, True, 160, True)
+    scheduler.note_session_opened(11)  # sessão lenta: leve e profunda pendentes
+
+    await scheduler.run_pending()
+
+    assert adb.cleanup_log == []
+    assert transport.sent == []
+    assert store.saved == []  # o dia não foi dado como avaliado
+
+    connected = True  # a pessoa abriu o canal (Atualizar lista)
+    scheduler.note_session_opened(1)
+    await scheduler.run_pending()
+
+    assert adb.cleanup_log != []
+    assert store.saved != []
