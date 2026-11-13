@@ -84,6 +84,28 @@
           </button>
         </form>
       </section>
+      <section class="config-group ui-group" aria-labelledby="system-home-title">
+        <h3 id="system-home-title" i18n="@@settings.system.config.home-group">Início</h3>
+        <p class="config-hint" i18n="@@settings.system.config.home-soon-hint">
+          Escolha quais módulos em breve aparecem na Início de todos.
+        </p>
+        @for (module of soonModules; track module.id) {
+          <div class="config-row">
+            <label class="switch-line" [for]="'soon-' + module.id">
+              <span>{{ module.title }}</span>
+              <input
+                [id]="'soon-' + module.id"
+                type="checkbox"
+                role="switch"
+                class="ui-switch"
+                [checked]="soonShown().includes(module.id)"
+                [disabled]="busy() !== null"
+                (change)="toggleSoon(module.id, $any($event.target))"
+              />
+            </label>
+          </div>
+        }
+      </section>
       <section class="config-group ui-group" aria-labelledby="system-cleanup-title">
         <h3 id="system-cleanup-title" i18n="@@settings.system.config.cleanup-group">Limpeza</h3>
         <div class="config-row">

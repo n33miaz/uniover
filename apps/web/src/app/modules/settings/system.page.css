@@ -51,6 +51,12 @@
   font-size: var(--fs-small);
 }
 
+.config-hint {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
 .error {
   color: var(--a-bad);
 }

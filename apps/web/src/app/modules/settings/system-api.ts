@@ -174,11 +174,15 @@ export type SystemSettingKey =
   | 'devices.agent-offline-minutes'
   | 'tv.light-cleanup-enabled'
   | 'tv.deep-cleanup-enabled'
-  | 'tv.deep-cleanup-memory-threshold-mb';
+  | 'tv.deep-cleanup-memory-threshold-mb'
+  | 'home.soon-modules';
+
+/** O que uma configuração guarda: texto, número, liga/desliga ou uma lista de ids (os módulos "em breve" liberados). */
+export type SystemSettingData = string | number | boolean | readonly string[];
 
 export interface SystemSettingValue {
   readonly key: SystemSettingKey;
-  readonly value: string | number | boolean;
+  readonly value: SystemSettingData;
   readonly source: 'app' | 'server';
 }
 
@@ -389,10 +393,7 @@ export class SystemApi {
     return firstValueFrom(this.http.get<DeploymentVersion>('/health/version'));
   }
 
-  saveSystemSetting(
-    key: SystemSettingKey,
-    value: string | number | boolean,
-  ): Promise<SystemSettingValue> {
+  saveSystemSetting(key: SystemSettingKey, value: SystemSettingData): Promise<SystemSettingValue> {
     return firstValueFrom(
       this.http.put<SystemSettingValue>(`${SETTINGS_BASE}/${encodeURIComponent(key)}`, { value }),
     );
