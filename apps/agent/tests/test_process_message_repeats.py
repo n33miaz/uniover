@@ -17,7 +17,6 @@ from uniover_agent.core import (
 from uniover_agent.core.process_message import (
     RECENT_COMMAND_CAPACITY,
     RECENT_COMMAND_SECONDS,
-    RECENT_POWER_SECONDS,
 )
 
 from .support import AGENT_ID, dump, envelope, tv_key
@@ -224,18 +223,6 @@ async def test_a_power_id_survives_past_the_two_minute_window() -> None:
     assert handler.calls.count(power["id"]) == 1
     # O repetido recebe a resposta do primeiro (o app não fica esperando).
     assert bodies(transport) == [{"ok": True}, {"ok": True}]
-
-
-async def test_a_power_id_is_forgotten_after_a_full_day() -> None:
-    handler = Counting()
-    process, _, clock = build({"tv.key.v1": handler})
-    power = tv_key("POWER")
-    await feed(process, dump(power))
-
-    clock.advance(RECENT_POWER_SECONDS + 1)
-    await feed(process, dump(power))
-
-    assert handler.calls.count(power["id"]) == 2
 
 
 async def test_other_keys_keep_the_two_minute_rule() -> None:

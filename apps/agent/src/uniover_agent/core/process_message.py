@@ -19,9 +19,10 @@ from uniover_agent.core.pc.lane import (
     MAX_PENDING_RESULTS,
     PcLane,
 )
-from uniover_agent.core.tv.handlers import TimedKeyCommand, ValidatedCommand
+from uniover_agent.core.power_ids import PowerIds
+from uniover_agent.core.tv.handlers import POWER_IGNORED, TimedKeyCommand, ValidatedCommand
 from uniover_agent.core.tv.session import TV_UNREACHABLE
-from uniover_agent.ports import LaneHost, Transport, TransportError
+from uniover_agent.ports import LaneHost, PowerIdStore, Transport, TransportError
 
 _log = logging.getLogger(__name__)
 
@@ -73,10 +74,6 @@ _TEXT_TYPE = "tv.text.v1"
 # Os ids que já chegaram, só em memória (~60 KB no máximo): o mesmo id não executa duas vezes.
 RECENT_COMMAND_SECONDS: Final = 120.0
 RECENT_COMMAND_CAPACITY: Final = 512
-# `POWER` alterna a TV (o mesmo id repetido a ligaria de novo): a lembrança dele é à parte, mais
-# longa e que nenhuma outra tecla expulsa. Só os ids de POWER entram aqui (no ritmo de uma pessoa).
-RECENT_POWER_SECONDS: Final = 24 * 60 * 60.0
-RECENT_POWER_CAPACITY: Final = 256
 # Respostas de comandos repetidos aguardando o envio (fora do leitor): passado o teto, a resposta
 # repetida é descartada (o primeiro envio já foi feito; a API reenvia o pedido se ainda precisar).
 MAX_PENDING_REPEAT_REPLIES: Final = 64
@@ -143,6 +140,8 @@ class ProcessMessage:
         direct_active: Callable[[], bool] | None = None,
         ordered_types: Collection[str] = ORDERED_TYPES,
         maintenance_types: Collection[str] = MAINTENANCE_TYPES,
+        power_store: PowerIdStore | None = None,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -195,7 +194,9 @@ class ProcessMessage:
         self._tv_path: str | None = None
         self._tv_path_count = 0
         self._recent: OrderedDict[str, _RecentCommand] = OrderedDict()
-        self._recent_power: OrderedDict[str, _RecentCommand] = OrderedDict()
+        # `POWER` alterna a TV: os ids dele vão a disco, valem pela hora de parede e sobrevivem a
+        # reinício e hibernação (ver `PowerIds`).
+        self._power = PowerIds(power_store, wall_clock)
         # As respostas repetidas saem numa cadeia própria, fora do leitor, na ordem de chegada.
         self._last_repeat_reply: asyncio.Task[None] | None = None
         self._pending_repeat_replies = 0
@@ -240,8 +241,9 @@ class ProcessMessage:
     async def _is_repeat(self, command: Command) -> bool:
         """O mesmo id já chegou nos últimos 2 minutos: não executa de novo.
 
-        `POWER` (interruptor) tem lembrança à parte, de 24 h e sem disputar vaga com as outras
-        teclas: um reenvio tardio do mesmo id nunca alterna a TV de novo.
+        `POWER` (interruptor) tem lembrança à parte, em disco e pela hora de parede (30 dias, 1000
+        ids), sem disputar vaga com as outras teclas: um reenvio tardio, ou depois de um reinício,
+        nunca alterna a TV de novo.
 
         Se o primeiro já terminou, o repetido recebe a mesma resposta; em curso, a resposta do
         primeiro (que leva o mesmo id) serve aos dois. Ficam de fora o fluxo sem resposta (o
@@ -250,19 +252,12 @@ class ProcessMessage:
         """
         if command.type in self._silent_types or command.type.startswith(_PC_PREFIX):
             return False
-        now = self._monotonic()
         if _is_power(command):
-            recent, seconds, capacity = (
-                self._recent_power,
-                RECENT_POWER_SECONDS,
-                RECENT_POWER_CAPACITY,
-            )
-        else:
-            recent, seconds, capacity = (
-                self._recent,
-                RECENT_COMMAND_SECONDS,
-                RECENT_COMMAND_CAPACITY,
-            )
+            return self._is_power_repeat(command)
+        now = self._monotonic()
+        recent = self._recent
+        seconds = RECENT_COMMAND_SECONDS
+        capacity = RECENT_COMMAND_CAPACITY
         # A ordem é a de chegada: os mais antigos ficam na frente.
         while recent and now - next(iter(recent.values())).accepted_at > seconds:
             recent.popitem(last=False)
@@ -275,6 +270,24 @@ class ProcessMessage:
         _log.info("comando %s repetido ignorado (id=%s)", command.type, command.id)
         if previous.result is not None:
             self._reply_repeat(command, previous.result)
+        return True
+
+    def _is_power_repeat(self, command: Command) -> bool:
+        """`POWER` já aceito (neste processo ou em outro, até 30 dias atrás): nunca executa de novo.
+
+        O id novo entra na memória na hora; a gravação em disco é feita fora do leitor, logo antes
+        de a tecla executar (`_execute`).
+        """
+        if self._power.admit(command.id):
+            return False
+        _log.info("comando %s repetido ignorado (id=%s)", command.type, command.id)
+        result = self._power.result_of(command.id)
+        if result is None and self._power.was_restored(command.id):
+            # Outro processo o aceitou e não sabemos como terminou: o repetido não executa, e a
+            # API não fica esperando (no fio é `ok`, como um POWER ignorado).
+            result = CommandResult(command.id, ResultStatus.OK, "", POWER_IGNORED)
+        if result is not None:
+            self._reply_repeat(command, result)
         return True
 
     def _reply_repeat(self, command: Command, result: CommandResult) -> None:
@@ -312,7 +325,10 @@ class ProcessMessage:
             self._pending_repeat_replies -= 1
 
     def _remember_result(self, command: Command, result: CommandResult) -> None:
-        entry = (self._recent_power if _is_power(command) else self._recent).get(command.id)
+        if _is_power(command):
+            self._power.remember_result(command.id, result)
+            return
+        entry = self._recent.get(command.id)
         if entry is not None:
             entry.result = result
 
@@ -649,7 +665,16 @@ class ProcessMessage:
         tarde, depois de a pessoa já ter perdido o controle) e os botões apertados são soltos."""
         self._to_lane(self._lane.connection_lost)
 
+    async def refresh_power_ids(self) -> None:
+        """Junta os ids de POWER do disco com os da memória (a passagem sem queda chama ao assumir:
+        a execução antiga ainda gravou ids depois de esta nascer). Nunca bloqueia o laço."""
+        self._power.merge(await asyncio.to_thread(self._power.read_store))
+
     async def _execute(self, command: Command, reply: Reply | None = None) -> None:
+        if _is_power(command):
+            # O id já está na memória (o leitor reconhece o repetido); vai a disco aqui, fora do
+            # leitor, antes de a tecla ir à TV.
+            await self._power.persist()
         result = await self._handle_command(command)
         self._remember_result(command, result)
         await self._reply_result(command, result, reply)
