@@ -41,6 +41,8 @@ test.beforeEach(async ({ context }) => {
     if (new URL(request.url()).pathname.startsWith('/api/v1/tv')) tvRequests.push(request.url());
   });
   identity = await mockIdentityApi(context);
+  // O administrador liberou só estes "em breve" para a Início (o padrão da API é nenhum).
+  identity.soonModules = ['pc', 'network', 'backup'];
   server = await mockTrainingApi(context);
   seedTraining(server);
 });
@@ -126,9 +128,9 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('article.card h3')).toHaveText([
       'Treino',
-      'Controle do PC',
       'Rede da Casa',
       'Backup de Fotos',
+      'Controle do PC',
     ]);
     await page.locator('article[data-module="training"] a.card-link').click();
     await expect(page).toHaveURL(/\/treino\/$/);
@@ -308,9 +310,9 @@ test.describe('convidado sem nenhum módulo liberado', () => {
       await page.goto(path);
       await expect(page).toHaveURL(/\/$/);
       await expect(page.locator('article.card h3')).toHaveText([
-        'Controle do PC',
         'Rede da Casa',
         'Backup de Fotos',
+        'Controle do PC',
       ]);
     }
     await expect(page.locator('article.card a')).toHaveCount(0);

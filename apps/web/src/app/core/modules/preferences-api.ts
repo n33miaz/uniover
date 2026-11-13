@@ -26,6 +26,8 @@ export interface AccountPreferences {
   readonly version: number;
   readonly updatedAt: string | null;
   readonly home: readonly HomeEntry[] | null;
+  /** Os módulos "em breve" que o dono liberou para a Início de todas as contas (da casa, não da conta); ausente numa API antiga. */
+  readonly soonModules?: readonly string[];
 }
 
 /** Gravou (`saved`) ou outro aparelho gravou antes e a conta como está agora veio no lugar. */

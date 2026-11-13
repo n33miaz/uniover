@@ -49,7 +49,7 @@
     @for (widget of widgets(); track widget.definition.id; let last = $last) {
       <li class="widget ui-rise" [class.centered-last]="last && widgets().length % 2 === 1">
         <!-- Módulo sem tela ainda (sem caminho): cartão calmo, sem link nem resposta ao toque. -->
-        @let path = registry.path(widget.definition);
+        @let path = pathOf(widget.definition);
         <article
           class="card ui-card"
           [class.ui-press]="path"
@@ -59,7 +59,7 @@
         >
           <app-module-app-icon class="ico" [icon]="widget.definition.icon" [planned]="!path" />
           <h3>{{ widget.definition.title }}</h3>
-          @if (registry.statusOf(widget.definition) === 'soon') {
+          @if (stateOf(widget.definition) === 'soon') {
             <app-home-soon-badge />
           }
           @if (path) {
@@ -91,6 +91,7 @@
   @if (editing()) {
     <app-home-edit-sheet
       [widgets]="allWidgets()"
+      [plannedIds]="plannedIds()"
       (applied)="applyEdit($event)"
       (cancelled)="closeEditor()"
     />

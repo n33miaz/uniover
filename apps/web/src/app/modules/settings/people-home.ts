@@ -5,7 +5,7 @@ import type { PersonHome } from './people-api';
 
 /**
  * Os módulos que a pessoa vê na Início, na ordem em que aparecem, para o dono ler em Pessoas. Só entram os que já têm
- * tela (os "em breve" estão sempre lá e não dizem nada sobre a escolha dela).
+ * tela (os "em breve" dependem do que o administrador liberou para todos, não da escolha dela).
  *
  * Parte do que a conta guardou: os módulos ligados, na ordem escolhida, e, no fim, os que o catálogo ganhou depois da
  * escolha (o app os liga por padrão, e a lista guardada nunca os cita). Depois tira o que a conta não alcança: o convidado
