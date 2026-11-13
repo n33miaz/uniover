@@ -93,6 +93,39 @@ describe('AppearanceService', () => {
       }
     });
 
+    it('every installed app manifest carries the light background as bar and splash color', () => {
+      for (const folder of ['', 'tv/', 'pc/', 'treino/']) {
+        const manifest = JSON.parse(
+          readFileSync(resolve(process.cwd(), `public/${folder}manifest.webmanifest`), 'utf8'),
+        ) as { theme_color: string; background_color: string };
+        expect(manifest.theme_color.toLowerCase(), folder).toBe(THEME_BAR_COLORS.light);
+        expect(manifest.background_color.toLowerCase(), folder).toBe(THEME_BAR_COLORS.light);
+      }
+    });
+
+    it('swaps the bar color in the same call that swaps the theme', () => {
+      service().set('dark');
+      expect(attr()).toBe('dark');
+      expect(colors().map(([, c]) => c)).toEqual(['#101512', '#101512']);
+      service().set('light');
+      expect(attr()).toBe('light');
+      expect(colors().map(([, c]) => c)).toEqual(['#f2f5f1', '#f2f5f1']);
+    });
+
+    it('follows the system when it changes while automatic, and ignores it when fixed', () => {
+      service().restore();
+      systemDark = true;
+      onChange?.();
+      expect(attr()).toBe('dark');
+      expect(colors()).toEqual([
+        ['(prefers-color-scheme: light)', '#f2f5f1'],
+        ['(prefers-color-scheme: dark)', '#101512'],
+      ]);
+      service().set('light');
+      onChange?.();
+      expect(colors().map(([, c]) => c)).toEqual(['#f2f5f1', '#f2f5f1']);
+    });
+
     it('keeps each scheme with its own background while automatic', () => {
       service().restore();
       expect(colors()).toEqual([
