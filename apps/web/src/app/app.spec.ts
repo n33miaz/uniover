@@ -7,15 +7,15 @@ describe('App', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => localStorage.clear());
 
-  it('creates the root with banners and a router outlet', async () => {
+  it('creates the root shell and a router outlet', async () => {
     TestBed.configureTestingModule({ providers: [provideRouter([])] });
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('router-outlet')).not.toBeNull();
-    expect(el.querySelector('app-update-banner')).not.toBeNull();
     expect(el.querySelector('app-connectivity-banner')).not.toBeNull();
     expect(el.querySelector('app-session-notice')).not.toBeNull();
+    expect(el.querySelector('app-update-skeleton')).not.toBeNull();
   });
 
   it('applies the saved theme preference from the first frame', async () => {
