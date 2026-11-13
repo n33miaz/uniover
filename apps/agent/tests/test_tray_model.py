@@ -196,6 +196,14 @@ class TestNetProblem:
         assert view_of(connected).problem is None
         assert view_of(updating).problem is None
 
+    def test_a_silent_agent_drops_the_reason_it_wrote(self) -> None:
+        view = view_of(
+            self.drop("no_internet", heartbeat_age=HEARTBEAT_STALE + timedelta(seconds=1))
+        )
+
+        assert (view.state, view.problem, view.hint) == ("error", None, "")
+        assert view.title == "UniOver: sem conexão"
+
     def test_without_a_reason_the_texts_stay_as_they_were(self) -> None:
         view = view_of(self.drop(None))
 
