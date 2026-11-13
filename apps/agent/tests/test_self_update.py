@@ -16,18 +16,17 @@ from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
     SignedManifest,
-    UpdateResult,
     candidate_env,
     download_archive,
     extract_agent,
     latest_commit,
-    read_version,
     run_uv_check,
     run_uv_sync,
     self_update,
     summarize_failure,
     swap_directories,
 )
+from uniover_agent.adapters.update_basics import DEFAULT_CHANNEL, UpdateResult, read_version
 from uniover_agent.composition import maintenance as maintenance_module
 from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.main import main
@@ -345,7 +344,7 @@ def test_latest_commit_asks_for_the_branch_of_the_channel(monkeypatch: pytest.Mo
     assert latest_commit("main") == NEW
     assert str(requests[0].url) == module.PRODUCTION_REF_URL
     assert str(requests[1].url).endswith("/commits/develop")
-    assert module.DEFAULT_CHANNEL == "develop"
+    assert DEFAULT_CHANNEL == "develop"
 
 
 def test_homolog_stays_an_explicit_test_channel(monkeypatch: pytest.MonkeyPatch) -> None:

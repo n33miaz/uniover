@@ -27,8 +27,8 @@ from typing import Any, Final
 
 import pystray  # type: ignore[import-untyped]
 
+from uniover_agent.adapters.diagnostics_file import open_diagnostics
 from uniover_agent.adapters.installation import installation_base
-from uniover_agent.adapters.self_update import DRILL_ENV
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tray_assets import assets_dir, frame
 from uniover_agent.adapters.tray_controller import (
@@ -47,6 +47,7 @@ from uniover_agent.adapters.tray_win32 import (
     own_image_path,
     small_icon_size,
 )
+from uniover_agent.adapters.update_basics import DRILL_ENV
 from uniover_agent.config import Settings
 from uniover_agent.core.diagnostics import describe_exception
 from uniover_agent.core.tray_model import MENU, MenuEntry, TrayView
@@ -103,15 +104,14 @@ class _Recorder:
     """Grava ocorrências de diagnóstico do ícone (componente `tray`); nunca levanta."""
 
     def __init__(self) -> None:
-        from uniover_agent.care_setup import build_diagnostics  # noqa: PLC0415 - evita ciclo na importação
-
-        self._kit = build_diagnostics(SystemClock())
+        # A mesma fila e os mesmos nomes apagados do agente, sem a montagem dele (`care_setup`).
+        _, self._recorder = open_diagnostics(SystemClock())
 
     def __call__(self, kind: str, severity: Severity, detail: str) -> None:
-        self._kit.recorder.record(kind, severity, detail, component="tray")
+        self._recorder.record(kind, severity, detail, component="tray")
 
     def failure(self, kind: str, detail: str, error: BaseException) -> None:
-        self._kit.recorder.record(kind, "error", detail, component="tray", error=error)
+        self._recorder.record(kind, "error", detail, component="tray", error=error)
 
 
 def run_tray() -> int:

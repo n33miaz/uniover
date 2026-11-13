@@ -18,7 +18,7 @@ from typing import Any, Final
 from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.maintenance_signals import can_roll_back_to
-from uniover_agent.adapters.self_update import VERSION_FILE, UpdateResult, read_version
+from uniover_agent.adapters.update_basics import VERSION_FILE, UpdateResult, read_version
 from uniover_agent.core.update_report import build_status, clean_reason, format_time
 from uniover_agent.ports.remote_care import UpdateStatus
 

@@ -19,11 +19,11 @@ from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
     SignedManifest,
-    UpdateResult,
     agent_blob_hashes,
     archive_url,
     self_update,
 )
+from uniover_agent.adapters.update_basics import UpdateResult
 from uniover_agent.adapters.update_status import (
     STATUS_FILE,
     FileUpdateStatus,

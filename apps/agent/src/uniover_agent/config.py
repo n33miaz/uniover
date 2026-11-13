@@ -22,8 +22,8 @@ from pydantic_settings import (
 
 from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.installation import installation_base
-from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
 from uniover_agent.adapters.tv_adb_parsing import is_valid_package
+from uniover_agent.adapters.update_basics import CHANNELS, DEFAULT_CHANNEL
 
 CONFIG_FILE_ENV = "UNIOVER_CONFIG_FILE"
 # A pasta do código que o supervisor pôs para rodar: vale mais que o ponteiro, que só muda depois

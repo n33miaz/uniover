@@ -18,7 +18,19 @@ EXIT_PROBLEM = 1
 
 
 def _load_code() -> None:
-    importlib.import_module("uniover_agent.main")
+    main = importlib.import_module("uniover_agent.main")
+    # O `main` importa cada parte só no comando que a usa: aqui todas, como antes.
+    for name in main.LAZY_MODULES:
+        importlib.import_module(name)
+
+
+def _load_tray() -> None:
+    """A bandeja é um processo à parte e o supervisor a trata como opcional, então uma quebra só
+    nela não volta atrás sozinha: carrega aqui o módulo (pystray, Pillow, menu, host), sem abrir o
+    host nem criar o ícone."""
+    if sys.platform != "win32":
+        return  # o host visual da bandeja é do Windows
+    importlib.import_module("uniover_agent.adapters.tray")
 
 
 def _load_contracts() -> None:
@@ -45,6 +57,7 @@ def _load_configuration() -> None:
 
 STEPS: tuple[tuple[str, Callable[[], None]], ...] = (
     ("o código novo carrega", _load_code),
+    ("a bandeja carrega", _load_tray),
     ("os contratos das mensagens compilam", _load_contracts),
     ("a configuração deste PC é aceita", _load_configuration),
 )

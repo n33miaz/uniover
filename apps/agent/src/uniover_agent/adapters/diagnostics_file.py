@@ -11,10 +11,13 @@ envio interrompido (a renomeação feita, o processo caiu) é lido primeiro na v
 """
 
 import asyncio
+import getpass
 import json
 import logging
 import os
+import platform
 import re
+import socket
 import threading
 import time
 import uuid
@@ -23,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from uniover_agent.adapters.installation import installation_base
 from uniover_agent.core.diagnostics import (
     COMPONENT_PATTERN,
     DETAIL_LIMIT,
@@ -31,6 +35,7 @@ from uniover_agent.core.diagnostics import (
     DiagnosticsRecorder,
 )
 from uniover_agent.core.redaction import scrub_personal
+from uniover_agent.ports import Clock
 from uniover_agent.ports.diagnostics import DiagnosticEvent, Severity
 
 _log = logging.getLogger(__name__)
@@ -381,3 +386,25 @@ class DiagnosticsLogHandler(logging.Handler):
             component=component_of(record.name),
             error=error,
         )
+
+
+def personal_names() -> tuple[str, ...]:
+    """O nome do usuário do Windows e o do computador: somem de qualquer texto que sai do PC."""
+    names: list[str] = []
+    for getter in (getpass.getuser, socket.gethostname, platform.node):
+        try:
+            value = getter()
+        except OSError, KeyError:
+            continue
+        if value:
+            names.append(value)
+    return tuple(dict.fromkeys(names))
+
+
+def open_diagnostics(clock: Clock) -> tuple[FileDiagnosticStore, DiagnosticsRecorder]:
+    """A fila desta instalação e quem grava nela, com os nomes pessoais apagados.
+
+    Fica aqui, longe da montagem do agente (`care_setup`), para a bandeja gravar as ocorrências
+    dela sem carregar o resto do agente."""
+    store = FileDiagnosticStore(installation_base() / "runtime")
+    return store, DiagnosticsRecorder(store, clock, names=personal_names())

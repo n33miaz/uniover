@@ -8,15 +8,14 @@ from typing import Any
 
 from uniover_agent.adapters.installation import installation_base, migrate_layout
 from uniover_agent.adapters.self_update import (
-    DEFAULT_CHANNEL,
     DISK_RESUME_BYTES,
     TV_IDLE_SECONDS,
     TV_MAX_DEFER_SECONDS,
-    UpdateResult,
     apply_prepared,
     self_update,
 )
 from uniover_agent.adapters.system_clock import SystemClock
+from uniover_agent.adapters.update_basics import DEFAULT_CHANNEL, UpdateResult
 from uniover_agent.adapters.update_lock import update_lock
 from uniover_agent.adapters.update_status import (
     default_status_path,

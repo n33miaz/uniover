@@ -16,10 +16,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from uniover_agent.adapters.process import popen_hidden
-from uniover_agent.adapters.self_update import DRILL_ENV
 from uniover_agent.adapters.tray_controller import TrayController, promote_in_background
 from uniover_agent.adapters.tray_registry import FilePromotionMarker, WindowsNotifyIconSettings
 from uniover_agent.adapters.tray_win32 import own_image_path
+from uniover_agent.adapters.update_basics import DRILL_ENV
 from uniover_agent.core.tray_model import MENU, MenuEntry, TrayView
 from uniover_agent.core.tray_promotion import find_entry
 from uniover_agent.ports.diagnostics import Severity

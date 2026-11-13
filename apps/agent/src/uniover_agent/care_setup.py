@@ -7,17 +7,18 @@ esta montagem; *como* verificar está em `adapters.self_care_checks` e *quando* 
 """
 
 import asyncio
-import getpass
 import logging
 import os
-import platform
-import socket
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from uniover_agent.adapters import current_pointer
-from uniover_agent.adapters.diagnostics_file import DiagnosticsLogHandler, FileDiagnosticStore
+from uniover_agent.adapters.diagnostics_file import (
+    DiagnosticsLogHandler,
+    FileDiagnosticStore,
+    open_diagnostics,
+)
 from uniover_agent.adapters.installation import _is_real_installation, anchor_dir, installation_base
 from uniover_agent.adapters.log_offload import OffloadHandler
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
@@ -57,22 +58,8 @@ class DiagnosticsKit:
     recorder: DiagnosticsRecorder
 
 
-def personal_names() -> tuple[str, ...]:
-    """O nome do usuário do Windows e o do computador: somem de qualquer texto que sai do PC."""
-    names: list[str] = []
-    for getter in (getpass.getuser, socket.gethostname, platform.node):
-        try:
-            value = getter()
-        except OSError, KeyError:
-            continue
-        if value:
-            names.append(value)
-    return tuple(dict.fromkeys(names))
-
-
 def build_diagnostics(clock: Clock) -> DiagnosticsKit:
-    store = FileDiagnosticStore(installation_base() / "runtime")
-    return DiagnosticsKit(store, DiagnosticsRecorder(store, clock, names=personal_names()))
+    return DiagnosticsKit(*open_diagnostics(clock))
 
 
 def attach_log_handler(kit: DiagnosticsKit) -> logging.Handler:

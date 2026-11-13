@@ -27,7 +27,7 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -39,14 +39,20 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from uniover_agent.adapters import current_pointer
 from uniover_agent.adapters.current_pointer import base_of
 from uniover_agent.adapters.process import run_hidden
+from uniover_agent.adapters.update_basics import (
+    CHANNELS,
+    DEFAULT_CHANNEL,
+    DRILL_ENV,
+    VERSION_FILE,
+    UpdateResult,
+    read_version,
+)
 
 _log = logging.getLogger(__name__)
 
 REPOSITORY = "n33miaz/uniover"
-# `main` e `develop` em agent.toml são valores legados do canal de produção. A branch ativa
-# fica em um arquivo, sem precisar alterar cada PC ao migrar para main ou homolog.
-CHANNELS = ("main", "develop", "homolog")
-DEFAULT_CHANNEL = "develop"
+# `CHANNELS`, `DEFAULT_CHANNEL`, `DRILL_ENV`, `VERSION_FILE`, `read_version` e `UpdateResult` moram
+# em `update_basics` (sem httpx nem cryptography): quem não atualiza nada importa de lá.
 PRODUCTION_ALIASES = ("main", "develop")
 
 
@@ -76,13 +82,9 @@ MANIFEST_URL = f"https://github.com/{REPOSITORY}/releases/latest/download/{MANIF
 # manifesto, com a árvore do commit conferida; a partir da versão que embutir uma chave real, o
 # manifesto válido é obrigatório e a falta dele recusa a instalação. Ver `adr/0018`.
 MANIFEST_PUBLIC_KEYS: tuple[str, ...] = ()
-# Ensaio de atualização (`tools/upgrade-drill.ps1`): com `UNIOVER_UPDATE_DRILL=1`, as duas
-# consultas deste módulo vão para um servidor local em vez do GitHub. Sem a variável de modo
-# nada disso é lido, e em produção ela nunca existe.
-DRILL_ENV = "UNIOVER_UPDATE_DRILL"
+# Ensaio de atualização: ver `DRILL_ENV` em `update_basics`.
 DRILL_SOURCE_ENV = "UNIOVER_UPDATE_SOURCE_URL"
 _DRILL_HOSTS = frozenset({"127.0.0.1", "localhost"})
-VERSION_FILE = ".version"
 BLOCKED_VERSIONS_FILE = ".blocked-versions"
 AGENT_PREFIX = ("apps", "agent")
 # Tipo de arquivo nos bits altos do `external_attr` do zip (modo Unix).
@@ -444,14 +446,6 @@ def download_archive(
                 handle.write(chunk)
     except httpx.HTTPError as exc:
         raise SelfUpdateError(f"não consegui baixar o pacote ({type(exc).__name__})") from None
-
-
-def read_version(source: Path) -> str | None:
-    try:
-        text = (source / VERSION_FILE).read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    return text or None
 
 
 def update_in_trial(source: Path) -> bool:
@@ -1089,19 +1083,6 @@ def run_uv_check(source: Path) -> None:
         pause=0.0,
         app_dir=source,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class UpdateResult:
-    updated: bool
-    message: str
-    # Para o estado que a tela do dono mostra (`update-status.json`); `None` = nada a registrar.
-    # Fora da comparação: quem compara resultados olha só `updated` e `message`.
-    outcome: str | None = field(default=None, compare=False)
-    latest: str | None = field(default=None, compare=False)
-    blocked: str | None = field(default=None, compare=False)
-    # A conferência de integridade recusou o pacote (e não uma falha comum de rede ou de disco).
-    rejected: bool = field(default=False, compare=False)
 
 
 def promote(source: Path, new: Path, sha: str, record_trial: Callable[[Path, str], None]) -> None:

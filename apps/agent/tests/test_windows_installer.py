@@ -12,7 +12,8 @@ import pytest
 
 from uniover_agent.adapters import installation
 from uniover_agent.adapters.process import NO_WINDOW
-from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL, PRODUCTION_REF
+from uniover_agent.adapters.self_update import PRODUCTION_REF
+from uniover_agent.adapters.update_basics import CHANNELS, DEFAULT_CHANNEL
 
 from .launcher_isolation import isolated_launcher
 

@@ -9,7 +9,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from uniover_agent.adapters.log_offload import OffloadHandler
-from uniover_agent.adapters.self_update import read_version
+from uniover_agent.adapters.update_basics import read_version
 from uniover_agent.config import agent_source_dir
 
 EXIT_OK = 0
