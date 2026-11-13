@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { ResumeGrace } from '../../../core/connectivity/resume-grace';
 import { SlowCommandWatch } from '../../../core/connectivity/slow-command';
 import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
@@ -171,6 +172,9 @@ export class TvStore {
   private readonly connectivity = inject(ConnectivityService);
   /** O comando que fica sem resposta ganha o aviso "A TV não está respondendo" (ver `SlowCommandWatch`). */
   private readonly slow = inject(SlowCommandWatch);
+  private readonly resumeGrace = inject(ResumeGrace);
+  /** Cancela a escuta da volta ao app (só existe com a tela aberta). */
+  private offResume: (() => void) | null = null;
   private readonly telemetry = inject(ClientTelemetry);
   private readonly config = inject(TV_CONFIG);
   private readonly doc = inject(DOCUMENT);
@@ -440,15 +444,21 @@ export class TvStore {
   private expiredWarned = false;
   private watchdogTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** Esconder a aba para o despertar; voltar é com a carência (abaixo), que junta os avisos da volta numa leitura só. */
   private readonly onVisibility = () => {
-    if (this.visible()) {
-      this.connect();
-      void this.wake();
-      void this.refresh();
-      this.armWake();
-    } else {
-      this.disarmWake();
-    }
+    if (!this.visible()) this.disarmWake();
+  };
+  /**
+   * A volta ao app (aba de novo à vista ou página restaurada do cache, o caso do Safari do iPhone, que nem sempre dispara
+   * `visibilitychange`): o fluxo e o estado podem estar velhos. Reconecta e relê na hora, uma vez por volta, mesmo quando o
+   * navegador avisa a volta duas vezes.
+   */
+  private readonly onResume = () => {
+    if (!this.visible()) return;
+    this.connect();
+    void this.wake();
+    void this.refresh();
+    this.armWake();
   };
   /** Um toque ou uma tecla na página: é a única coisa que prova alguém diante da tela (uma aba esquecida aberta não prova). */
   private readonly onTouch = () => {
@@ -458,13 +468,6 @@ export class TvStore {
     this.connect();
     void this.refresh();
     void this.wake();
-  };
-  /**
-   * Voltar de um congelamento (o Safari do iPhone guarda a página inteira ao sair): nem sempre dispara
-   * `visibilitychange`, e o fluxo e o estado podem estar velhos. Reconecta e relê na hora, como ao voltar do segundo plano.
-   */
-  private readonly onPageShow = (event: Event) => {
-    if ((event as PageTransitionEvent).persisted && this.visible()) this.onVisibility();
   };
 
   constructor() {
@@ -505,7 +508,9 @@ export class TvStore {
     this.direct.start();
     this.doc.addEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.addEventListener('online', this.onOnline);
-    this.doc.defaultView?.addEventListener('pageshow', this.onPageShow);
+    this.offResume = this.resumeGrace.subscribe((event) => {
+      if (event === 'begin') this.onResume();
+    });
     this.doc.addEventListener('pointerdown', this.onTouch, { capture: true, passive: true });
     this.doc.addEventListener('keydown', this.onTouch, { capture: true, passive: true });
     this.connect();
@@ -518,7 +523,8 @@ export class TvStore {
     this.disconnect();
     this.doc.removeEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.removeEventListener('online', this.onOnline);
-    this.doc.defaultView?.removeEventListener('pageshow', this.onPageShow);
+    this.offResume?.();
+    this.offResume = null;
     this.doc.removeEventListener('pointerdown', this.onTouch, { capture: true });
     this.doc.removeEventListener('keydown', this.onTouch, { capture: true });
     clearTimeout(this.noticeTimer);
