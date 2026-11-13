@@ -11,7 +11,8 @@ import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { registerUnsavedWork } from '../../core/pwa/unsaved-work';
 import { SessionState } from '../../core/session/session-state';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
-import { SystemApi, SystemSettingKey, SystemSettingValue } from './system-api';
+import { ModuleRegistry } from '../../core/modules/module-registry';
+import { SystemApi, SystemSettingData, SystemSettingKey, SystemSettingValue } from './system-api';
 import { SystemTvSection } from './system-tv-section';
 import { SystemAgentErrorsSection } from './system-agent-errors-section';
 import { SystemCapacitySection } from './system-capacity-section';
@@ -44,6 +45,7 @@ import { SystemHealthSection } from './system-health-section';
 export class SystemPage {
   private readonly api = inject(SystemApi);
   private readonly session = inject(SessionState);
+  private readonly registry = inject(ModuleRegistry);
   protected readonly settings = signal<readonly SystemSettingValue[] | null>(null);
   protected readonly contact = signal('');
   protected readonly limit = signal(2);
@@ -51,6 +53,11 @@ export class SystemPage {
   protected readonly lightCleanup = signal(true);
   protected readonly deepCleanup = signal(true);
   protected readonly deepCleanupThreshold = signal(160);
+  /** Os módulos ainda sem tela: o administrador escolhe quais aparecem como "Em Breve" na Início de todas as contas. */
+  protected readonly soonModules = this.registry.modules.filter(
+    (module) => module.status === 'soon',
+  );
+  protected readonly soonShown = signal<readonly string[]>([]);
   protected readonly busy = signal<SystemSettingKey | null>(null);
   protected readonly configLoading = signal(false);
   protected readonly configFailed = signal(false);
@@ -92,6 +99,8 @@ export class SystemPage {
       this.offlineMinutes.set(
         Number(values.find((item) => item.key === 'devices.agent-offline-minutes')?.value ?? 10),
       );
+      const soon = values.find((item) => item.key === 'home.soon-modules')?.value;
+      this.soonShown.set(Array.isArray(soon) ? soon : []);
       this.lightCleanup.set(
         values.find((item) => item.key === 'tv.light-cleanup-enabled')?.value !== false,
       );
@@ -124,7 +133,7 @@ export class SystemPage {
       : $localize`:@@settings.system.config.source-server:do serviço`;
   }
 
-  protected async save(key: SystemSettingKey, value: string | number | boolean): Promise<void> {
+  protected async save(key: SystemSettingKey, value: SystemSettingData): Promise<void> {
     await this.saveGroup([[key, value]]);
   }
 
@@ -158,9 +167,20 @@ export class SystemPage {
     }
   }
 
+  /** Interruptor de um módulo "em breve": liga ou desliga na Início de todas as contas, salvando ao alternar. */
+  protected async toggleSoon(id: string, input: HTMLInputElement): Promise<void> {
+    const previous = this.soonShown();
+    const next = input.checked ? [...previous, id] : previous.filter((shown) => shown !== id);
+    this.soonShown.set(next);
+    if (!(await this.saveGroup([['home.soon-modules', next]]))) {
+      this.soonShown.set(previous);
+      input.checked = !input.checked;
+    }
+  }
+
   /** Devolve se o servidor aceitou todos os valores do grupo. */
   private async saveGroup(
-    values: readonly (readonly [SystemSettingKey, string | number | boolean])[],
+    values: readonly (readonly [SystemSettingKey, SystemSettingData])[],
   ): Promise<boolean> {
     if (this.busy()) return false;
     if (values.length === 0) return true;

@@ -111,7 +111,11 @@ export interface SystemMock {
   capacity: CapacityMockReport | null;
   /** Quantas vezes o dono dispensou os avisos de capacidade. */
   capacityDismissals: number;
-  settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];
+  settings: {
+    key: string;
+    value: string | number | boolean | string[];
+    source: 'app' | 'server';
+  }[];
   /** Os erros dos agentes (lista vazia por padrão) e quantas leituras seguintes dessa lista respondem 500. */
   diagnostics: MockDiagnostic[];
   failDiagnostics: number;
@@ -183,6 +187,7 @@ export async function mockSystemApi(
       { key: 'tv.light-cleanup-enabled', value: true, source: 'server' },
       { key: 'tv.deep-cleanup-enabled', value: true, source: 'server' },
       { key: 'tv.deep-cleanup-memory-threshold-mb', value: 160, source: 'server' },
+      { key: 'home.soon-modules', value: [], source: 'server' },
     ],
   };
 
@@ -216,7 +221,7 @@ export async function mockSystemApi(
     ) {
       return problem(route, 400, 'validation-failed', 'Valor inválido.');
     }
-    setting.value = value as string | number | boolean;
+    setting.value = value as string | number | boolean | string[];
     setting.source = 'app';
     identity.stepUpValid = false;
     return route.fulfill({

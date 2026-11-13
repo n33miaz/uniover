@@ -93,4 +93,85 @@ describe('system route', () => {
       expect(TestBed.inject(UnsavedWork).needsConfirmation()).toBe(false);
     });
   });
+
+  describe('the "em breve" modules on the Início', () => {
+    const SOON: SystemSettingValue = { key: 'home.soon-modules', value: [], source: 'server' };
+
+    async function openSoon(save: (key: string, value: unknown) => Promise<SystemSettingValue>) {
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter(routes),
+          {
+            provide: SystemApi,
+            useValue: {
+              tvConfig: () => new Promise(() => undefined),
+              systemSettings: () => Promise.resolve([SOON]),
+              saveSystemSetting: save,
+              agents: () => Promise.resolve([]),
+              tvs: () => Promise.resolve([]),
+              deploymentVersion: () => Promise.resolve({ commit: null }),
+            },
+          },
+        ],
+      });
+      const harness = await RouterTestingHarness.create();
+      await harness.navigateByUrl('/ajustes/sistema');
+      const page = harness.fixture.debugElement.query(By.directive(SystemPage))
+        .componentInstance as unknown as { load(): Promise<void> };
+      await page.load();
+      harness.detectChanges();
+      const el = harness.routeNativeElement as HTMLElement;
+      await vi.waitFor(() => expect(el.querySelector('#soon-health')).not.toBeNull());
+      return { harness, el };
+    }
+    const toggle = (el: HTMLElement, id: string) =>
+      el.querySelector<HTMLInputElement>(`#soon-${id}`)!;
+
+    it('lists every module that still has no screen, all off by default', async () => {
+      const { el } = await openSoon((_, value) =>
+        Promise.resolve({ ...SOON, value: value as string[] }),
+      );
+      const ids = Array.from(el.querySelectorAll<HTMLInputElement>('input[id^="soon-"]')).map(
+        (input) => input.id,
+      );
+      expect(ids).toEqual([
+        'soon-health',
+        'soon-monitor',
+        'soon-network',
+        'soon-backup',
+        'soon-notifications',
+        'soon-pc',
+      ]);
+      expect(toggle(el, 'health').checked).toBe(false);
+      // Os que já funcionam não são oferecidos: só os "em breve" têm o que liberar.
+      expect(el.querySelector('#soon-tv')).toBeNull();
+    });
+
+    it('saves the whole list when one is switched on, and again when it is switched off', async () => {
+      const saved: unknown[] = [];
+      const { harness, el } = await openSoon((key, value) => {
+        saved.push([key, value]);
+        return Promise.resolve({ ...SOON, value: value as string[], source: 'app' });
+      });
+      toggle(el, 'health').click();
+      await vi.waitFor(() => expect(saved).toHaveLength(1));
+      toggle(el, 'backup').click();
+      await vi.waitFor(() => expect(saved).toHaveLength(2));
+      toggle(el, 'health').click();
+      await vi.waitFor(() => expect(saved).toHaveLength(3));
+      harness.detectChanges();
+      expect(saved).toEqual([
+        ['home.soon-modules', ['health']],
+        ['home.soon-modules', ['health', 'backup']],
+        ['home.soon-modules', ['backup']],
+      ]);
+    });
+
+    it('puts the switch back when the server refuses', async () => {
+      const { el } = await openSoon(() => Promise.reject(new Error('recusado')));
+      toggle(el, 'network').click();
+      await vi.waitFor(() => expect(el.querySelector('[role="alert"]')).not.toBeNull());
+      expect(toggle(el, 'network').checked).toBe(false);
+    });
+  });
 });

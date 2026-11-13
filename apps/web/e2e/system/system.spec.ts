@@ -244,6 +244,29 @@ test.describe('Configurações > Sistema > TVs', () => {
     });
   });
 
+  test('o administrador libera um módulo em breve para a Início, salvando ao alternar', async ({
+    page,
+    browserName,
+  }) => {
+    seedPaired();
+    await preparePasskey(page, browserName);
+    await open(page);
+    await expect(page.getByRole('heading', { name: 'Início', exact: true })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Saúde e Eventos' })).not.toBeChecked();
+    await page.locator('label[for="soon-health"]').click();
+    if (browserName === 'chromium') {
+      const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Confirmar' }).click();
+    }
+    await expect(page.getByText('Configuração salva.')).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Saúde e Eventos' })).toBeChecked();
+    expect(system.settings.find((item) => item.key === 'home.soon-modules')).toMatchObject({
+      value: ['health'],
+      source: 'app',
+    });
+  });
+
   test('não oferece mais fotos na nuvem', async ({ page }) => {
     seedPaired();
     await open(page);
