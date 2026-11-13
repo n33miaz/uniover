@@ -150,6 +150,162 @@ public sealed class ShoppingInvitesTests(PostgresFixture postgres)
         denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    private static async Task<NpgsqlConnection> HoldGroupLockAsync(string connection, Guid groupId)
+    {
+        var conn = new NpgsqlConnection(connection);
+        await conn.OpenAsync(Ct);
+        await using (var begin = new NpgsqlCommand("BEGIN", conn))
+        {
+            await begin.ExecuteNonQueryAsync(Ct);
+        }
+
+        await using var command = new NpgsqlCommand("SELECT 1 FROM shopping.groups WHERE id = @id FOR UPDATE", conn);
+        command.Parameters.AddWithValue("id", groupId);
+        await command.ExecuteScalarAsync(Ct);
+        return conn;
+    }
+
+    private static async Task ReleaseAsync(NpgsqlConnection held)
+    {
+        await using (held)
+        await using (var end = new NpgsqlCommand("ROLLBACK", held))
+        {
+            await end.ExecuteNonQueryAsync(Ct);
+        }
+    }
+
+    /// <summary>Espera até haver este tanto de pedidos parados numa trava de linha do banco.</summary>
+    private static async Task WaitForLockWaitersAsync(string connection, int expected)
+    {
+        await using var conn = new NpgsqlConnection(connection);
+        await conn.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand(
+            "SELECT count(DISTINCT pid) FROM pg_locks WHERE NOT granted", conn);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while ((long)(await command.ExecuteScalarAsync(Ct))! < expected)
+        {
+            DateTime.UtcNow.Should().BeBefore(deadline, $"{expected} pedidos deveriam estar esperando a trava");
+            await Task.Delay(25, Ct);
+        }
+    }
+
+    [Fact]
+    public async Task AnInviteThatExpiresWhileTheRequestWaitsForTheGroupLock_IsRefused()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { FakeClock = true });
+        var owner = new ShoppingClient(app, (await app.LoginAsync()).AccessToken);
+        var alice = await app.NewGuestAsync("Alice", ["module:shopping"], 81);
+        var aliceClient = new ShoppingClient(app, alice.Login.AccessToken);
+        await aliceClient.GroupIdAsync();
+        var groupId = await owner.GroupIdAsync();
+        var token = await NewInviteAsync(owner);
+
+        // O grupo do convite está travado por outro pedido; o aceite espera. Enquanto espera, o convite vence.
+        var held = await HoldGroupLockAsync(app.Database.OwnerConnection, groupId);
+        var accepting = aliceClient.WriteAsync(HttpMethod.Post, "/group/invites/accept", new() { ["token"] = token });
+        await WaitForLockWaitersAsync(app.Database.OwnerConnection, 1);
+        app.Time!.Advance(TimeSpan.FromDays(7) + TimeSpan.FromSeconds(1));
+        await ReleaseAsync(held);
+
+        using var response = await accepting;
+        response.StatusCode.Should().Be(HttpStatusCode.Gone);
+        await using var db = TrainingApp.CreateShoppingContext(app.Database.OwnerConnection);
+        (await db.GroupInvites.AsNoTracking().SingleAsync(Ct)).UsedAt.Should().BeNull("o convite vencido não é gasto");
+        (await db.Members.AsNoTracking().AnyAsync(x => x.GroupId == groupId && x.UserId == alice.UserId, Ct)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AcceptingAnInvite_AndAddingTheSamePersonDirectly_AtTheSameTime_NeverDeadlock()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var owner = new ShoppingClient(app, (await app.LoginAsync()).AccessToken);
+        var alice = await app.NewGuestAsync("Alice", ["module:shopping"], 82);
+        var aliceClient = new ShoppingClient(app, alice.Login.AccessToken);
+        // O grupo da Alice nasce antes do grupo do dono: no UUID, o dela vem primeiro (a ordem em que o aceite trava).
+        var aliceGroup = await aliceClient.GroupIdAsync();
+        var ownerGroup = await owner.GroupIdAsync();
+        aliceGroup.CompareTo(ownerGroup).Should().BeNegative("é a ordem que, antes da correção, cruzava as travas");
+        var token = await NewInviteAsync(owner);
+
+        // O grupo da Alice está travado. O aceite chega primeiro e fica na fila; a inclusão chega depois. Solta a trava:
+        // o aceite fica com o grupo da Alice e pede o do dono. Se a inclusão já tivesse o do dono, os dois se esperariam.
+        var held = await HoldGroupLockAsync(app.Database.OwnerConnection, aliceGroup);
+        var accepting = aliceClient.WriteAsync(HttpMethod.Post, "/group/invites/accept", new() { ["token"] = token });
+        await WaitForLockWaitersAsync(app.Database.OwnerConnection, 1);
+        var adding = owner.WriteAsync(HttpMethod.Put, $"/group/members/{alice.UserId}", []);
+        await WaitForLockWaitersAsync(app.Database.OwnerConnection, 2);
+        await ReleaseAsync(held);
+
+        using var accepted = await accepting;
+        using var added = await adding;
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK, await accepted.Content.ReadAsStringAsync(Ct));
+        added.StatusCode.Should().Be(HttpStatusCode.OK, await added.Content.ReadAsStringAsync(Ct));
+        (await aliceClient.GroupIdAsync()).Should().Be(ownerGroup);
+    }
+
+    /// <summary>Muda a pessoa para outro grupo vazio, direto no banco: é o que acontece quando outro pedido a move no meio.</summary>
+    private static async Task MoveToNewGroupAsync(string connection, Guid userId)
+    {
+        await using var conn = new NpgsqlConnection(connection);
+        await conn.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO shopping.groups (id, owner_user_id, created_at) VALUES (@group, @user, now());
+            UPDATE shopping.members SET group_id = @group WHERE user_id = @user AND deleted_at IS NULL
+            """,
+            conn);
+        command.Parameters.AddWithValue("group", Guid.CreateVersion7());
+        command.Parameters.AddWithValue("user", userId);
+        await command.ExecuteNonQueryAsync(Ct);
+    }
+
+    [Fact]
+    public async Task AcceptingAnInvite_WhenThePersonChangesGroupWhileWaiting_AsksToTryAgain_NotToEmptyTheList()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var owner = new ShoppingClient(app, (await app.LoginAsync()).AccessToken);
+        var alice = await app.NewGuestAsync("Alice", ["module:shopping"], 83);
+        var aliceClient = new ShoppingClient(app, alice.Login.AccessToken);
+        await aliceClient.GroupIdAsync();
+        var ownerGroup = await owner.GroupIdAsync();
+        var token = await NewInviteAsync(owner);
+
+        var held = await HoldGroupLockAsync(app.Database.OwnerConnection, ownerGroup);
+        var accepting = aliceClient.WriteAsync(HttpMethod.Post, "/group/invites/accept", new() { ["token"] = token });
+        await WaitForLockWaitersAsync(app.Database.OwnerConnection, 1);
+        await MoveToNewGroupAsync(app.Database.OwnerConnection, alice.UserId);
+        await ReleaseAsync(held);
+
+        using var response = await accepting;
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        body.Should().Contain("shopping-group-changed").And.NotContain("shopping-member-in-another-group");
+        await using var db = TrainingApp.CreateShoppingContext(app.Database.OwnerConnection);
+        (await db.GroupInvites.AsNoTracking().SingleAsync(Ct)).UsedAt.Should().BeNull("a tentativa desfeita não gasta o convite");
+    }
+
+    [Fact]
+    public async Task AddingAPerson_WhoChangesGroupWhileWaiting_AsksToTryAgain_NotToEmptyTheList()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var owner = new ShoppingClient(app, (await app.LoginAsync()).AccessToken);
+        var alice = await app.NewGuestAsync("Alice", ["module:shopping"], 84);
+        var aliceClient = new ShoppingClient(app, alice.Login.AccessToken);
+        await aliceClient.GroupIdAsync();
+        var ownerGroup = await owner.GroupIdAsync();
+
+        var held = await HoldGroupLockAsync(app.Database.OwnerConnection, ownerGroup);
+        var adding = owner.WriteAsync(HttpMethod.Put, $"/group/members/{alice.UserId}", []);
+        await WaitForLockWaitersAsync(app.Database.OwnerConnection, 1);
+        await MoveToNewGroupAsync(app.Database.OwnerConnection, alice.UserId);
+        await ReleaseAsync(held);
+
+        using var response = await adding;
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        body.Should().Contain("shopping-group-changed").And.NotContain("shopping-member-in-another-group");
+    }
+
     [Fact]
     public async Task APurchaseFromScratch_LeavesTheListOut()
     {
