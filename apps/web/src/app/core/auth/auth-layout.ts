@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { Component, DestroyRef, ElementRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, computed, inject, input, signal } from '@angular/core';
 
 /** Abaixo disto a diferença entre a janela e a área visível é barra de endereço, não teclado. */
 const KEYBOARD_MIN_PX = 80;
@@ -8,6 +8,11 @@ const REVEAL_MARGIN_PX = 24;
 /** Tempo para o teclado do celular terminar de subir antes de conferir se ele cobriu o campo. */
 const KEYBOARD_SETTLE_MS = 300;
 const VIEWPORT_SETTLE_MS = 100;
+/**
+ * Depois de a moldura rolar a página, por quanto tempo uma mudança da área visível é tida como efeito da própria
+ * rolagem (no iPhone a barra do navegador encolhe ao rolar) e não pede outra: senão as duas brigam e a tela salta.
+ */
+const OWN_SCROLL_MS = 700;
 
 /**
  * Moldura comum das telas de entrada e de convite (que ficam fora da casca do app): a marca no alto, o cartão
@@ -25,6 +30,7 @@ const VIEWPORT_SETTLE_MS = 100;
   host: {
     '(focusin)': 'onFocusIn($event)',
     '[style.--kb-inset]': 'insetCss()',
+    '[class.with-aside]': 'aside()',
   },
 })
 export class AuthLayout {
@@ -32,6 +38,14 @@ export class AuthLayout {
   private readonly doc = inject(DOCUMENT);
   private readonly win = this.doc.defaultView;
   private revealTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Até quando a página ainda está na rolagem que a própria moldura pediu (ver `OWN_SCROLL_MS`). */
+  private ownScrollUntil = 0;
+
+  /**
+   * A página tem um segundo bloco (o QR de entrar pelo celular): na janela larga o cartão abre duas colunas, a primeira
+   * com o conteúdo principal e a segunda com o bloco, para usar a largura sem esticar o formulário nem passar da altura.
+   */
+  readonly aside = input(false);
 
   /** As duas ondas do símbolo (mesma geometria do favicon). */
   protected readonly rightWave = 'M362.1 149.9A150 150 0 0 1 362.1 362.1';
@@ -44,15 +58,20 @@ export class AuthLayout {
   constructor() {
     const viewport = this.win?.visualViewport;
     if (viewport) {
-      const onViewport = () => {
-        this.keyboardInset.set(this.measureInset(viewport));
-        if (this.focusedField()) this.scheduleReveal(VIEWPORT_SETTLE_MS);
+      // A rolagem da área visível (a da pessoa ou a nossa) só atualiza o espaço do teclado: quem pede outra revelação
+      // é o teclado subindo ou descendo (`resize`), e nem ele enquanto a rolagem que a moldura fez não acabou.
+      const onScroll = () => this.keyboardInset.set(this.measureInset(viewport));
+      const onResize = () => {
+        onScroll();
+        if (this.focusedField() && Date.now() >= this.ownScrollUntil) {
+          this.scheduleReveal(VIEWPORT_SETTLE_MS);
+        }
       };
-      viewport.addEventListener('resize', onViewport);
-      viewport.addEventListener('scroll', onViewport);
+      viewport.addEventListener('resize', onResize);
+      viewport.addEventListener('scroll', onScroll);
       inject(DestroyRef).onDestroy(() => {
-        viewport.removeEventListener('resize', onViewport);
-        viewport.removeEventListener('scroll', onViewport);
+        viewport.removeEventListener('resize', onResize);
+        viewport.removeEventListener('scroll', onScroll);
       });
     }
     inject(DestroyRef).onDestroy(() => clearTimeout(this.revealTimer));
@@ -79,7 +98,11 @@ export class AuthLayout {
     this.revealTimer = setTimeout(() => this.reveal(), delay);
   }
 
-  /** Rola só se o campo estiver cortado (em cima, ou atrás do teclado): no computador a página não se mexe. */
+  /**
+   * Rola só se o campo (e, quando cabe junto, o botão de enviar) estiver cortado, em cima ou atrás
+   * do teclado: no computador a página não se mexe. Com o botão à vista, quem termina de digitar envia sem fechar o
+   * teclado; se os dois não cabem juntos, vale o campo, no meio da parte visível.
+   */
   private reveal(): void {
     const field = this.focusedField();
     if (!field || !this.win) return;
@@ -88,10 +111,28 @@ export class AuthLayout {
     const offset = viewport?.offsetTop ?? 0;
     const visibleHeight = viewport?.height ?? this.win.innerHeight;
     const box = field.getBoundingClientRect();
+    // O botão que envia: o do formulário do campo ou, numa tela sem formulário, o marcado com `data-auth-submit`.
+    const submit =
+      field.form?.querySelector<HTMLElement>('[type="submit"]') ??
+      this.host.nativeElement.querySelector<HTMLElement>('[data-auth-submit]');
+    const end = submit?.getBoundingClientRect();
     const top = box.top - offset;
-    const bottom = box.bottom - offset;
+    const fieldBottom = box.bottom - offset;
+    const both = end && end.bottom > box.bottom ? end.bottom - offset : fieldBottom;
+    const room = visibleHeight - 2 * REVEAL_MARGIN_PX;
+    const bottom = both - top <= room ? both : fieldBottom;
     if (top >= REVEAL_MARGIN_PX && bottom <= visibleHeight - REVEAL_MARGIN_PX) return;
     const calm = this.win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    field.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
+    const behavior: ScrollBehavior = calm ? 'auto' : 'smooth';
+    this.ownScrollUntil = Date.now() + OWN_SCROLL_MS;
+    if (bottom === fieldBottom) {
+      field.scrollIntoView({ block: 'center', behavior });
+      return;
+    }
+    // Campo e botão juntos (cabem, conferido acima): o campo desce até a margem de cima, ou o fim do botão sobe até a
+    // margem de baixo da parte visível.
+    const delta =
+      top < REVEAL_MARGIN_PX ? top - REVEAL_MARGIN_PX : bottom - (visibleHeight - REVEAL_MARGIN_PX);
+    this.win.scrollBy({ top: delta, behavior });
   }
 }

@@ -62,7 +62,13 @@
       }
 
       <div class="actions">
-        <button type="button" class="ui-btn primary block" [disabled]="busy()" (click)="confirm()">
+        <button
+          type="button"
+          class="ui-btn primary block"
+          data-auth-submit
+          [disabled]="busy()"
+          (click)="confirm()"
+        >
           @if (busy()) {
             <span class="ui-spinner" aria-hidden="true"></span>
           }
