@@ -190,12 +190,21 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
             entry.label, lambda *_: controller.handle(entry.action), default=entry.default
         )
 
+    # O aviso de rede (sem internet, servidor fora, PC sem rede) fica no topo, sem ação, e só
+    # aparece quando há motivo.
+    hint = {"text": first.hint}
+    hint_item = pystray.MenuItem(
+        lambda _item: hint["text"],
+        None,
+        enabled=False,
+        visible=lambda _item: bool(hint["text"]),
+    )
     size = small_icon_size()
     icon = SharpIcon(
         "UniOver",
         frame(assets / first.icon_file, size),
         first.title,
-        pystray.Menu(*[item(entry) for entry in MENU]),
+        pystray.Menu(hint_item, *[item(entry) for entry in MENU]),
     )
     icon.ico_file = assets / first.icon_file
     icon.icon_size = size
@@ -209,6 +218,9 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
             icon.ico_file, icon.icon_size = path, current
             icon.icon = frame(path, current)
         icon.title = view.title
+        if view.hint != hint["text"]:
+            hint["text"] = view.hint
+            icon.update_menu()
 
     def refresh_loop() -> None:
         while True:

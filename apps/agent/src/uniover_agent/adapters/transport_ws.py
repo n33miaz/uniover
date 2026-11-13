@@ -1,7 +1,9 @@
 """Transporte WebSocket (biblioteca `websockets`): o agente disca para a API, nunca abre porta."""
 
+import asyncio
 import json
 import logging
+import socket
 from collections.abc import AsyncIterator, Callable
 from typing import Any, Final
 from urllib.parse import urlsplit, urlunsplit
@@ -15,7 +17,15 @@ from websockets.exceptions import (
 )
 from websockets.frames import Close
 
+from uniover_agent.adapters.api_reach import ApiReach, shared_api_reach
+from uniover_agent.adapters.network_presence import read_network_presence
 from uniover_agent.adapters.ssl_contexts import ssl_contexts
+from uniover_agent.core.net_status import (
+    UNKNOWN_PRESENCE,
+    NetworkPresence,
+    OpenFailure,
+    failure_of_errno,
+)
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
@@ -54,6 +64,7 @@ _HANDOVER_CLOSE_CODE: Final = 4410
 _CREDENTIAL_CLOSE_CODES: Final = frozenset({4401, 4403})
 _CREDENTIAL_STATUS: Final = frozenset({401, 403})
 _NOT_FOUND_STATUS: Final = 404
+_SERVER_ERROR_STATUS: Final = 500
 # 4411 "server-restart": a API que vai parar manda reconectar já (a API só o envia a quem declarou
 # `transport.restart.v1`). Tem a volta mais curta de todas.
 _SERVER_RESTART_REASON: Final = "server-restart"
@@ -77,6 +88,22 @@ def candidate_url(url: str) -> str:
     parts = urlsplit(url)
     path = f"{parts.path.rstrip('/')}{HANDOVER_PATH}"
     return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+
+
+def open_failure_of(exc: BaseException) -> OpenFailure:
+    """O tipo de falha da abertura do canal, para dizer se a culpa é da internet ou da API."""
+    if isinstance(exc, socket.gaierror):
+        return "dns"
+    if isinstance(exc, InvalidStatus):
+        return "server" if exc.response.status_code >= _SERVER_ERROR_STATUS else "other"
+    if isinstance(exc, InvalidHandshake):
+        # Alguém respondeu, mas não com um WebSocket (página de erro do provedor, por exemplo).
+        return "server"
+    if isinstance(exc, TimeoutError | ConnectionError):
+        return "other"  # API acordando, conexão derrubada: não dá para afirmar nada
+    if isinstance(exc, OSError):
+        return failure_of_errno(getattr(exc, "winerror", None) or exc.errno)
+    return "other"
 
 
 def _close_outcome(close: Close | None) -> Exception | None:  # noqa: PLR0911 - um retorno por código
@@ -117,6 +144,7 @@ class WebSocketTransport:
         ping_interval: float = PING_INTERVAL_SECONDS,
         ping_timeout: float = PING_TIMEOUT_SECONDS,
         handover_candidate: Callable[[], bool] | None = None,
+        reach: ApiReach | None = None,
     ) -> None:
         if url.startswith("ws://"):
             _log.warning("canal sem criptografia (ws://); só para desenvolvimento")
@@ -133,6 +161,8 @@ class WebSocketTransport:
         # Verdadeiro até a API confirmar a promoção: toda conexão da versão nova até lá é candidata
         # (rota própria), e nenhuma delas substitui a antiga por engano.
         self._handover_candidate = handover_candidate
+        # Onde fica o motivo da última abertura que falhou (a bandeja o lê na queda).
+        self._reach = reach or shared_api_reach()
         self._ws: ClientConnection | None = None
         # O código com que o servidor fechou a última conexão (`None`: ainda aberta, ou caiu sem
         # quadro de fechamento). Quem monta o agente o lê ao saber da queda.
@@ -143,15 +173,20 @@ class WebSocketTransport:
         return self._ws is not None
 
     async def connect(self) -> None:
-        token = self._token_provider()
-        if not token:
-            raise CredentialRejected("não há token de dispositivo no cofre")
-        headers = {"Authorization": f"Bearer {token}"}
-        candidate = self._handover_candidate is not None and self._handover_candidate()
-        url = candidate_url(self._url) if candidate else self._url
-        self.last_close_code = None
-        # O contexto TLS sai pronto de uma thread: criá-lo no laço a cada reconexão o travava.
-        tls = await ssl_contexts.verified() if self._url.startswith("wss:") else None
+        try:
+            token = self._token_provider()
+            if not token:
+                raise CredentialRejected("não há token de dispositivo no cofre")
+            headers = {"Authorization": f"Bearer {token}"}
+            candidate = self._handover_candidate is not None and self._handover_candidate()
+            url = candidate_url(self._url) if candidate else self._url
+            self.last_close_code = None
+            # O contexto TLS sai pronto de uma thread: criá-lo no laço a cada reconexão o travava.
+            tls = await ssl_contexts.verified() if self._url.startswith("wss:") else None
+        except BaseException:
+            # A tentativa nem chegou à rede: o motivo da anterior já não vale.
+            self._reach.forget()
+            raise
         try:
             self._ws = await connect(
                 url,
@@ -165,6 +200,10 @@ class WebSocketTransport:
             )
         except InvalidStatus as exc:
             status = exc.response.status_code
+            if status >= _SERVER_ERROR_STATUS:
+                self._reach.failed("server", UNKNOWN_PRESENCE)
+            else:
+                self._reach.opened()  # a API respondeu: rede e internet estão de pé
             if status in _CREDENTIAL_STATUS:
                 raise CredentialRejected(
                     f"o servidor recusou a credencial (HTTP {status})"
@@ -173,8 +212,23 @@ class WebSocketTransport:
                 raise HandoverUnsupported("a API não tem a rota da passagem") from None
             raise TransportError(f"o servidor recusou a abertura (HTTP {status})") from None
         except (OSError, TimeoutError, InvalidHandshake, WebSocketException) as exc:
+            await self._note_open_failure(exc)
             # Só o nome da classe: a mensagem da biblioteca não deve carregar cabeçalhos.
             raise TransportError(f"falha ao abrir o canal ({type(exc).__name__})") from None
+        self._reach.opened()
+
+    async def _note_open_failure(self, exc: BaseException) -> None:
+        """Anota por que a abertura falhou, para a bandeja dizer o que fazer. Nada sai pela rede:
+        só se lê a lista de placas, e só quando a falha pode ser de rede."""
+        failure = open_failure_of(exc)
+        presence = UNKNOWN_PRESENCE
+        if failure != "server":
+            presence = await asyncio.to_thread(self._presence)
+        self._reach.failed(failure, presence)
+
+    @staticmethod
+    def _presence() -> NetworkPresence:
+        return read_network_presence()
 
     async def send(self, message: dict[str, Any]) -> None:
         ws = self._require()

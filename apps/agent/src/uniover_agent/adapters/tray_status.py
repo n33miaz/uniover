@@ -7,14 +7,16 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
+from uniover_agent.adapters.api_reach import ApiReach, shared_api_reach
 from uniover_agent.adapters.installation import installation_base
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.update_status import FileUpdateStatus, default_status_path
 from uniover_agent.config import agent_source_dir
 from uniover_agent.core.domain import TvState
+from uniover_agent.core.net_status import NET_PROBLEMS, NetProblem
 from uniover_agent.core.tray_model import TrayInputs
 from uniover_agent.core.update_report import parse_time
 from uniover_agent.ports import Clock
@@ -51,8 +53,11 @@ class TrayStatus:
         tv_name: str,
         clock: Clock | None = None,
         retry_delays: tuple[float, ...] = RETRY_DELAYS,
+        reach: ApiReach | None = None,
     ) -> None:
         self._path = status_path()
+        # O transporte anota ali o motivo da última abertura que falhou (ver `api_reach`).
+        self._reach = reach or shared_api_reach()
         self._tv_name = tv_name
         self._clock = clock or SystemClock()
         self._retry_delays = retry_delays
@@ -162,6 +167,9 @@ class TrayStatus:
                 "power": self._power,
                 "tv_name": self._tv_name,
                 "since": self._since.isoformat(timespec="seconds"),
+                # Por que a API não responde (sem internet, API fora, PC sem rede); nulo se não
+                # se sabe ou se está conectado.
+                "net": None if self._connected else self._reach.problem(),
             },
             ensure_ascii=False,
         )
@@ -250,6 +258,7 @@ def read_tray_inputs(now: datetime) -> TrayInputs:
     except OSError, ValueError:
         pass
     update = FileUpdateStatus(default_status_path(), agent_source_dir()).read()
+    net = raw.get("net")
     return TrayInputs(
         now=now,
         connected=raw.get("connected") is True,
@@ -259,4 +268,6 @@ def read_tray_inputs(now: datetime) -> TrayInputs:
         update_outcome=update.outcome,
         update_checked_at=parse_time(update.checked_at),
         heartbeat_age=heartbeat_age(now),
+        # Agente antigo não grava o campo; valor desconhecido também vale como "não se sabe".
+        net_problem=cast(NetProblem, net) if net in NET_PROBLEMS else None,
     )

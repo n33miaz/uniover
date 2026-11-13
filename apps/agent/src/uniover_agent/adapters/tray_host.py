@@ -10,6 +10,7 @@ import logging
 import os
 import queue
 import subprocess
+import textwrap
 import threading
 import time
 from collections.abc import Callable
@@ -25,12 +26,8 @@ from uniover_agent.core.tray_promotion import find_entry
 from uniover_agent.ports.diagnostics import Severity
 
 _log = logging.getLogger(__name__)
-_STATE_TEXT = {
-    "connected": "Conectado",
-    "reconnecting": "Reconectando",
-    "error": "Sem conexão",
-    "updating": "Atualizando",
-}
+# Caracteres por linha do aviso de rede no menu (o menu tem 280 px; Segoe UI 8).
+_HINT_WIDTH = 46
 _READY_TIMEOUT = 8.0
 _REFRESH_SECONDS = 2.0
 # Esperas entre as tentativas de trocar o arquivo de estado (o total fica abaixo de 1 s).
@@ -91,9 +88,11 @@ def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
     data = {
         "icon": str(assets / view.icon_file),
         "title": view.title,
-        "status": _STATE_TEXT[view.state] + (" · Atenção" if view.attention else ""),
+        "status": view.status_text + (" · Atenção" if view.attention else ""),
         # Codigo ASCII do estado: o host o compara no lugar do texto acentuado (`tray-host.ps1`).
         "code": view.state,
+        # O que fazer com a queda, em linhas curtas (vazio esconde o item no menu).
+        "hint": textwrap.wrap(view.hint, _HINT_WIDTH),
         "menu": [
             None if entry is None else {"action": entry.action, "label": entry.label}
             for entry in MENU
