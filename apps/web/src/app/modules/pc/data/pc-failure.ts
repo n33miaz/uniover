@@ -13,6 +13,7 @@ export type PcFailureKind =
   | 'failed'
   | 'locked'
   | 'elevated'
+  | 'not-in-front'
   | 'device-pending'
   | 'device-denied'
   | 'device-unknown'
@@ -59,6 +60,12 @@ export const DEVICE_UNKNOWN_PROBLEM = 'pc-device-unknown';
  */
 export const SESSION_LOCKED_CODE = 'session_locked';
 export const ELEVATED_WINDOW_CODE = 'elevated_window';
+
+/**
+ * Código do agente para a tecla de um controle por programa que não saiu porque outro programa estava na frente (`target`). Quem
+ * mostra troca o "programa" pelo nome do controle ("Abra o YouTube no PC e deixe-o na frente.").
+ */
+export const APP_NOT_IN_FRONT_CODE = 'app_not_in_front';
 
 /** O PC está conectado, mas não responde: a API recusa na hora com o mesmo tipo do "reconectando" e a marca `stalled`. */
 function isStalled(error: unknown): boolean {
@@ -179,6 +186,12 @@ export function pcFailureOf(error: unknown): PcFailure {
     return {
       kind: 'locked',
       message: $localize`:@@pc.error.locked:O PC está bloqueado.`,
+    };
+  }
+  if (code === APP_NOT_IN_FRONT_CODE) {
+    return {
+      kind: 'not-in-front',
+      message: $localize`:@@pc.error.not-in-front:Abra o programa no PC e deixe-o na frente.`,
     };
   }
   if (code === ELEVATED_WINDOW_CODE) {

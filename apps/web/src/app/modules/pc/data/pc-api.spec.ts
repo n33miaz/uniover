@@ -187,6 +187,31 @@ describe('PcApi key', () => {
     expect(await body(api.key('D0', ['CTRL']))).toEqual({ key: 'D0', modifiers: ['CTRL'] });
   });
 
+  it('carries the program that must be in front only when there is one', async () => {
+    expect(await body(api.key('W', ['CTRL'], { target: 'browser' }))).toEqual({
+      key: 'W',
+      modifiers: ['CTRL'],
+      target: 'browser',
+    });
+    expect(await body(api.key('B', ['ALT', 'SHIFT'], { target: 'spotify' }))).toEqual({
+      key: 'B',
+      modifiers: ['ALT', 'SHIFT'],
+      target: 'spotify',
+    });
+    expect(await body(api.key('K'))).toEqual({ key: 'K' });
+  });
+
+  it('a text with a program carries it; a plain text goes as always', async () => {
+    const sending = api.text('+', 'vlc');
+    const request = http.expectOne((req) => req.url.endsWith('/v1/pc/text'));
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sending;
+    const { seq, epoch, ...rest } = request.request.body as Record<string, unknown>;
+    expect(typeof seq).toBe('number');
+    expect(epoch).toMatch(/^[0-9a-f]{16}$/);
+    expect(rest).toEqual({ text: '+', target: 'vlc' });
+  });
+
   it('keeps the repeat inside what the contract allows', async () => {
     expect(await body(api.key('DOWN', [], { repeat: 500 }))).toEqual({ key: 'DOWN', repeat: 50 });
     expect(await body(api.key('DOWN', [], { repeat: 7.9 }))).toEqual({ key: 'DOWN', repeat: 7 });

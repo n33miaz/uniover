@@ -6,7 +6,7 @@ import { PcArmed } from './pc-armed';
 import { CANCELLED, type PcFailure } from './pc-failure';
 import { slideKeys } from './pc-slides';
 import { PcStore } from './pc-store';
-import type { PcHoldableKey, PcKey, PcModifier } from './pc-types';
+import type { PcHoldableKey, PcKey, PcKeyOptions, PcModifier } from './pc-types';
 
 /** O que falhou: `edit` foi o texto do teclado do celular (apagar e digitar), `key` uma tecla da tela. */
 export type InputKind = 'edit' | 'key';
@@ -117,10 +117,11 @@ export class PcInput {
    * Uma tecla do catálogo com só os modificadores dela: as teclas armadas na tela do mouse NÃO valem (quem aperta "Voltar 10 s"
    * não quer um Ctrl+J porque deixou o Ctrl armado). Há uma vibração curta. Devolve `false` quando nada foi enviado.
    */
-  plain(key: PcKey, modifiers: readonly PcModifier[] = []): boolean {
+  plain(key: PcKey, modifiers: readonly PcModifier[] = [], options?: PcKeyOptions): boolean {
     if (!this.store.canSend() || this.held()) return false;
     tick();
-    this.typer.key(key, modifiers);
+    if (options === undefined) this.typer.key(key, modifiers);
+    else this.typer.key(key, modifiers, options);
     this.diverge();
     return true;
   }

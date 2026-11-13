@@ -13,6 +13,17 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
   template: `
     <ul class="list">
       <li>
+        <a class="row" routerLink="/pc/controles">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path [attr.d]="'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'" />
+          </svg>
+          <span i18n="@@pc.more.remotes">Controles</span>
+          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path [attr.d]="'M9 6l6 6-6 6'" />
+          </svg>
+        </a>
+      </li>
+      <li>
         <a class="row" routerLink="/pc/energia">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path [attr.d]="'M12 3v8M7 6.5a8 8 0 1 0 10 0'" />

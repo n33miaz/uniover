@@ -101,6 +101,12 @@ describe('pcFailureOf', () => {
     expect(elevated.message).toBe('Há uma janela de administrador na frente.');
   });
 
+  it('another program in front (a remote with a target) has its own kind', () => {
+    const failure = pcFailureOf(http(502, { agentError: 'app_not_in_front' }));
+    expect(failure.kind).toBe('not-in-front');
+    expect(failure.message).toBe('Abra o programa no PC e deixe-o na frente.');
+  });
+
   it('keeps the live keyboard from treating a locked PC as a silent failure', () => {
     expect(pcFailureOf(http(502, { agentError: 'session_locked' })).message).not.toContain(
       'session_locked',

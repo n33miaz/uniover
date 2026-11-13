@@ -126,6 +126,30 @@ public class AgentEnvelopeValidatorTests
         Validator.Validate(json).Error.Code.Should().Be(AgentEnvelopeValidator.SchemaViolation);
     }
 
+    [Theory]
+    [InlineData("pc.key.v1", "browser")]
+    [InlineData("pc.key.v2", "spotify")]
+    [InlineData("pc.text.v1", "vlc")]
+    [InlineData("pc.text.v2", "browser")]
+    public void Accepts_TheProgramThatMustBeInFront_OnKeyAndText(string type, string target)
+    {
+        var json = Mutate(type, n => n["body"]!["target"] = target);
+
+        Validator.Validate(json).IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("pc.key.v1", "youtube")]
+    [InlineData("pc.text.v2", "")]
+    [InlineData("pc.media.v1", "spotify")]
+    [InlineData("pc.click.v1", "browser")]
+    public void Rejects_AProgramOutsideTheList_OrOnAMessageThatHasNoProgram(string type, string target)
+    {
+        var json = Mutate(type, n => n["body"]!["target"] = target);
+
+        Validator.Validate(json).Error.Code.Should().Be(AgentEnvelopeValidator.SchemaViolation);
+    }
+
     [Fact]
     public void Rejects_ExtraBodyField()
     {

@@ -101,11 +101,22 @@ export function isHoldableKey(key: string): key is PcHoldableKey {
   return HOLDABLE_KEYS.has(key);
 }
 
+/**
+ * O programa que precisa estar na frente no PC (`target` de `pc.key.*` e `pc.text.*`): `browser` (Chrome, Edge, Firefox, Brave ou
+ * Opera), `spotify` ou `vlc`. Com ele o agente não aperta nada se a janela da frente for de outro programa.
+ */
+export type PcFocusTarget = 'browser' | 'spotify' | 'vlc';
+
+/** A capacidade que o PC declara quando o agente confere o programa da frente (`target`). */
+export const PC_TARGET_CAPABILITY = 'pc.target.v1';
+
 /** O que um toque de tecla pode pedir além da tecla e dos modificadores. */
 export interface PcKeyOptions {
   /** Quantas vezes apertar, de 1 a `PC_KEY_MAX_REPEAT`, num pedido só (Backspace e setas seguradas). */
   readonly repeat?: number;
   readonly action?: PcKeyAction;
+  /** Só aperta com este programa na frente (só para um PC que declarou `pc.target.v1`). */
+  readonly target?: PcFocusTarget;
 }
 
 /** O limite de repetições de um pedido (o da API e do agente). */

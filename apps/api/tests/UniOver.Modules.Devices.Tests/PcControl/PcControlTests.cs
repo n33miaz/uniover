@@ -209,6 +209,49 @@ public sealed class PcMessagesTests
     }
 
     [Fact]
+    public void TargetCapability_IsTheOneTheHelloDeclares_AndTheApiListsItAsAFeature()
+    {
+        PcMessages.TargetCapability.Should().Be("pc.target.v1");
+        GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.target.v1");
+        PcMessages.Targets.Should().BeEquivalentTo(["browser", "spotify", "vlc"]);
+    }
+
+    [Fact]
+    public void WithTarget_AddsTheProgramToTheBody_AndTheKeyAndTextMessagesStillMeetTheContract()
+    {
+        var messages = new[]
+        {
+            PcMessages.KeyFor(new PcKeyRequest("W", ["CTRL"])),
+            PcMessages.KeyFor(new PcKeyRequest("COMMA", ["SHIFT"])),
+            PcMessages.TextFor(new PcTextRequest("+")),
+            PcMessages.TextFor(new PcTextRequest("abc", Key: "ENTER")),
+        };
+        foreach (var message in messages)
+        {
+            var focused = PcMessages.WithTarget(message, "browser");
+            focused.Body.GetProperty("target").GetString().Should().Be("browser");
+            IsValidForTheContract(focused).Should().BeTrue($"{message.Type} com target cumpre o esquema: {focused.Body.GetRawText()}");
+        }
+
+        var outside = PcMessages.WithTarget(PcMessages.KeyFor(new PcKeyRequest("K", null)), "youtube");
+        IsValidForTheContract(outside).Should().BeFalse("o contrato só conhece browser, spotify e vlc");
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("browser", true)]
+    [InlineData("spotify", true)]
+    [InlineData("vlc", true)]
+    [InlineData("youtube", false)]
+    [InlineData("Browser", false)]
+    [InlineData("", false)]
+    public void KeyAndText_AcceptOnlyAKnownProgram(string? target, bool valid)
+    {
+        PcValidator.Key(new PcKeyRequest("K", null, Target: target)).ContainsKey("target").Should().Be(!valid);
+        PcValidator.Text(new PcTextRequest("+", Target: target)).ContainsKey("target").Should().Be(!valid);
+    }
+
+    [Fact]
     public void Zoom_IsAMessageOfItsOwn_WithTheStepsAsTheContractSaysAndNothingElse()
     {
         var zoomIn = PcMessages.Zoom(3);

@@ -20,7 +20,12 @@ from uniover_agent.adapters.pc_input_thread import (
     MainLoopSender,
     PcInputThread,
 )
-from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher, WindowsPcPower
+from uniover_agent.adapters.pc_windows import (
+    WindowsPcForeground,
+    WindowsPcInput,
+    WindowsPcLauncher,
+    WindowsPcPower,
+)
 from uniover_agent.adapters.stall_dump import StallDumper
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.composition.system import EXIT_OK
@@ -59,6 +64,7 @@ from uniover_agent.core.pc.direct import (
     ReconcileClaim,
     TvCounts,
 )
+from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.freshness import MAX_POINTER_AGE_SECONDS
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY, PC_SILENT_TYPES
 from uniover_agent.core.pc.lane import PcLane, PointerSpread
@@ -67,6 +73,7 @@ from uniover_agent.ports import (
     Clock,
     DirectPeerFactory,
     PcAudio,
+    PcForeground,
     PcInput,
     PcLauncher,
     PcPower,
@@ -244,6 +251,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     power: PcPower | None = None,
     launcher: PcLauncher | None = None,
     audio: PcAudio | None = None,
+    foreground: PcForeground | None = None,
     clock_source: Clock | None = None,
     on_clock_skew: Callable[[float], None] | None = None,
     on_expired: Callable[[float], None] | None = None,
@@ -336,6 +344,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         pacer=pacer,
         audio=audio,
         volume_changed=volume_changed,
+        foreground=foreground or WindowsPcForeground(),
     )
     # As capacidades `v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só as declara
     # depois de a API listá-las (`declarable_capabilities`).
@@ -347,6 +356,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         PC_ZOOM_CAPABILITY,
         PC_VOLUME_CAPABILITY,
         PC_OP_CAPABILITY,
+        PC_TARGET_CAPABILITY,
     ]
     approvals = devices
     if approvals is not None:

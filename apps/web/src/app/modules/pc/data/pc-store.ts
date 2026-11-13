@@ -19,6 +19,7 @@ import { PcPrefs } from './pc-prefs';
 import {
   PC_CLICK_V2_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
+  PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
   PC_VOLUME_CAPABILITY,
   PC_ZOOM_CAPABILITY,
@@ -28,6 +29,7 @@ import {
   keyNeedsV2,
   type PcClickButton,
   type PcClickOptions,
+  type PcFocusTarget,
   type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
@@ -224,6 +226,8 @@ export class PcStore {
   readonly supportsKeyV2 = computed(() => this.capabilities().includes(PC_KEY_V2_CAPABILITY));
   /** O agente entende `pc.text.v2` (apagar, digitar e apertar uma tecla num pedido só). */
   readonly supportsTextV2 = computed(() => this.capabilities().includes(PC_TEXT_V2_CAPABILITY));
+  /** O agente confere o programa da frente (`target`): só então os controles por programa mandam tecla. */
+  readonly supportsTarget = computed(() => this.capabilities().includes(PC_TARGET_CAPABILITY));
   /** O agente entende `pc.click.v2` (clique com modificadores e com o intervalo do toque anterior). */
   readonly supportsClickV2 = computed(() => this.capabilities().includes(PC_CLICK_V2_CAPABILITY));
   /** O agente entende `pc.pointer.zoom.v1` (a pinça vira Ctrl e a roda do mouse). */
@@ -734,8 +738,11 @@ export class PcStore {
     this.syncHeartbeat();
   }
 
-  sendText(text: string): Promise<PcFailure | null> {
-    return this.queueInput(() => this.api.text(text));
+  /** `target`: só digita com este programa na frente (só para um PC que declarou `pc.target.v1`). */
+  sendText(text: string, target?: PcFocusTarget): Promise<PcFailure | null> {
+    return this.queueInput(() =>
+      target === undefined ? this.api.text(text) : this.api.text(text, target),
+    );
   }
 
   /**

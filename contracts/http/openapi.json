@@ -4684,6 +4684,12 @@
               "integer",
               "string"
             ]
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         },
         "required": [
@@ -4990,6 +4996,12 @@
             "type": [
               "null",
               "integer",
+              "string"
+            ]
+          },
+          "target": {
+            "type": [
+              "null",
               "string"
             ]
           },

@@ -74,6 +74,25 @@ internal static class PcMessages
     public const string DeviceCapability = "pc.device.v1";
 
     /// <summary>
+    /// Capacidade de quem aceita o <c>target</c> no corpo de <c>pc.key.*</c> e <c>pc.text.*</c>: o programa que precisa estar em primeiro
+    /// plano (o controle do YouTube só aperta tecla com o navegador na frente). Sem ela o campo nunca sai: um pedido com <c>target</c> para um
+    /// agente que não confere a janela volta como "atualize o agente", e não como uma tecla sem proteção.
+    /// </summary>
+    public const string TargetCapability = "pc.target.v1";
+
+    /// <summary>Os programas que o agente sabe reconhecer na frente (o <c>target</c> do contrato).</summary>
+    public static FrozenSet<string> Targets { get; } = new[] { "browser", "spotify", "vlc" }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>A mesma mensagem com o <c>target</c> no corpo. Só para um agente que declarou <see cref="TargetCapability"/>.</summary>
+    public static OutboundMessage WithTarget(OutboundMessage message, string target)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        var body = JsonNode.Parse(message.Body.GetRawText())!.AsObject();
+        body["target"] = target;
+        return message with { Body = JsonSerializer.SerializeToElement(body) };
+    }
+
+    /// <summary>
     /// A mensagem com o código da operação e o aparelho de origem, só para o que o agente declarou: o envelope dele é fechado, e um campo a
     /// mais mataria o comando. O movimento do mouse (<paramref name="withOperation"/> falso) nunca leva operação: é alta taxa.
     /// </summary>

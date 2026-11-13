@@ -51,14 +51,18 @@ internal sealed record PcClickRequest(
 /// <c>Repeat</c> (1 a 50) aperta a tecla várias vezes num pedido só; <c>Action</c> (<c>PRESS</c>, padrão, <c>DOWN</c>, <c>UP</c>)
 /// segura e solta um modificador entre toques. Os dois só existem na <c>pc.key.v2</c>.
 /// </summary>
-/// <remarks><c>Repeat</c> só é número JSON (nada de texto como "5"): a rota não herda a leitura frouxa de números do resto.</remarks>
+/// <remarks>
+/// <c>Repeat</c> só é número JSON (nada de texto como "5"): a rota não herda a leitura frouxa de números do resto. <c>Target</c> (na tecla
+/// e no texto) é o programa que precisa estar na frente (<c>browser</c>, <c>spotify</c>, <c>vlc</c>): o agente não aperta nada se não estiver.
+/// </remarks>
 internal sealed record PcKeyRequest(
     string? Key,
     string[]? Modifiers,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Repeat = null,
     string? Action = null,
     int? Seq = null,
-    string? Epoch = null);
+    string? Epoch = null,
+    string? Target = null);
 
 /// <summary>Soltar um modificador que o app segurou (<c>CTRL</c>, <c>ALT</c>, <c>SHIFT</c> ou <c>WIN</c>).</summary>
 internal sealed record PcKeyReleaseRequest(string? Key, int? Seq = null, string? Epoch = null);
@@ -72,7 +76,8 @@ internal sealed record PcTextRequest(
     int? Seq = null,
     string? Epoch = null,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Erase = null,
-    string? Key = null);
+    string? Key = null,
+    string? Target = null);
 
 internal sealed record PcMediaRequest(string? Action, int? Steps, int? Seq = null, string? Epoch = null);
 
@@ -169,6 +174,7 @@ internal static class PcValidator
     {
         var errors = new Dictionary<string, string[]>();
         CheckNumbering(errors, request?.Seq, request?.Epoch);
+        CheckTarget(errors, request?.Target);
         if (request?.Key is null || !PcMessages.KeysV2.ContainsKey(request.Key))
         {
             errors["key"] = ["Escolha uma tecla da lista."];
@@ -232,6 +238,7 @@ internal static class PcValidator
     {
         var errors = new Dictionary<string, string[]>();
         CheckNumbering(errors, request?.Seq, request?.Epoch);
+        CheckTarget(errors, request?.Target);
         var text = request?.Text;
         if (request?.Erase is { } erase && (erase < 0 || erase > MaxErase))
         {
@@ -334,6 +341,15 @@ internal static class PcValidator
         if (epoch is not null && !IsEpoch(epoch))
         {
             errors["epoch"] = ["Use 16 caracteres hexadecimais minúsculos."];
+        }
+    }
+
+    /// <summary>O programa que precisa estar na frente, quando vem: um dos que o agente reconhece.</summary>
+    private static void CheckTarget(Dictionary<string, string[]> errors, string? target)
+    {
+        if (target is not null && !PcMessages.Targets.Contains(target))
+        {
+            errors["target"] = ["Escolha browser, spotify ou vlc."];
         }
     }
 
@@ -480,7 +496,8 @@ internal sealed partial class PcControlHandler(
         CancellationToken cancellationToken,
         string? requiredCapability = null,
         int? seq = null,
-        string? epoch = null)
+        string? epoch = null,
+        string? focus = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
@@ -493,8 +510,16 @@ internal sealed partial class PcControlHandler(
             return problem;
         }
 
+        // O programa que precisa estar na frente: só um agente que o confere recebe o campo. Para um anterior o pedido é recusado (e não
+        // mandado sem o campo), pois a tecla iria para a janela que estivesse na frente.
+        if (focus is not null && CapabilityProblem(target, PcMessages.TargetCapability) is { } focusProblem)
+        {
+            return focusProblem;
+        }
+
+        var focused = focus is null ? message : PcMessages.WithTarget(message, focus);
         var origin = origins.Read();
-        var outbound = PcMessages.WithOrigin(NumberedFor(target, message, seq, epoch), target.Capabilities, origin, withOperation: true);
+        var outbound = PcMessages.WithOrigin(NumberedFor(target, focused, seq, epoch), target.Capabilities, origin, withOperation: true);
         var started = time.GetTimestamp();
         var reply = await gateway.RequestAsync(target.Slug, outbound, timeout, cancellationToken);
         var elapsedMs = (long)time.GetElapsedTime(started).TotalMilliseconds;
@@ -781,7 +806,8 @@ internal static class PcControlEndpoints
             cancellationToken,
             PcMessages.KeyFitsV1(request!) ? null : PcMessages.KeyV2Capability,
             request!.Seq,
-            request.Epoch);
+            request.Epoch,
+            request.Target);
 
         // O teto conta o que saiu: sem PC (409) ou sem sessão para entregar (503), nada foi enviado e o gasto volta.
         if (cost > 0 && result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict or StatusCodes.Status503ServiceUnavailable })
@@ -851,7 +877,8 @@ internal static class PcControlEndpoints
             cancellationToken,
             PcMessages.TextFitsV1(request!) ? null : PcMessages.TextV2Capability,
             request!.Seq,
-            request.Epoch);
+            request.Epoch,
+            request.Target);
 
         // O teto conta o que saiu: sem PC (409) ou sem sessão para entregar (503), nada foi enviado e o gasto volta.
         if (cost > 0 && result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status409Conflict or StatusCodes.Status503ServiceUnavailable })

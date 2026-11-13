@@ -31,7 +31,11 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// página abre. Sem ela o `seq` não diz de qual página vem (uma página reaberta recomeça a
     /// contagem), então o agente só trata o pedido como anterior à troca de caminho quando a
     /// época é a mesma que o app declarou no canal direto. A API só a repassa a um agente que
-    /// declara `pc.rtc.v1`.
+    /// declara `pc.rtc.v1`. `target` (opcional) é o programa que precisa estar em primeiro plano
+    /// no PC (`browser`: Chrome, Edge, Firefox, Brave ou Opera; `spotify`; `vlc`): se a janela
+    /// da frente é de outro programa, o agente não aperta nada e recusa com `app_not_in_front`.
+    /// A API só o repassa a um agente que declara `pc.target.v1`; sem ele o comando vai para a
+    /// janela da frente, como sempre.
     /// </summary>
     public partial class PcTextV2Message
     {
@@ -110,12 +114,18 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long? Seq { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("target")]
+        public PcTextV2BodyTarget? Target { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("text")]
         [JsonConverter(typeof(PcTextV2MessagePurpleMinMaxLengthCheckConverter))]
         public string? Text { get; set; }
     }
 
     public enum PcTextV2BodyKey { Enter, Tab };
+
+    public enum PcTextV2BodyTarget { Browser, Spotify, Vlc };
 
     public partial class PcTextV2Message
     {
@@ -134,6 +144,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             Converters =
             {
                 PcTextV2MessagePcTextV2BodyKeyConverter.Singleton,
+                PcTextV2MessagePcTextV2BodyTargetConverter.Singleton,
                 PcTextV2MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
@@ -171,6 +182,45 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         }
 
         public static readonly PcTextV2MessagePcTextV2BodyKeyConverter Singleton = new PcTextV2MessagePcTextV2BodyKeyConverter();
+    }
+
+    internal class PcTextV2MessagePcTextV2BodyTargetConverter : JsonConverter<PcTextV2BodyTarget>
+    {
+        public override bool CanConvert(Type t) => t == typeof(PcTextV2BodyTarget);
+
+        public override PcTextV2BodyTarget Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "browser":
+                    return PcTextV2BodyTarget.Browser;
+                case "spotify":
+                    return PcTextV2BodyTarget.Spotify;
+                case "vlc":
+                    return PcTextV2BodyTarget.Vlc;
+            }
+            throw new Exception("Cannot unmarshal type PcTextV2BodyTarget");
+        }
+
+        public override void Write(Utf8JsonWriter writer, PcTextV2BodyTarget value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case PcTextV2BodyTarget.Browser:
+                    JsonSerializer.Serialize(writer, "browser", options);
+                    return;
+                case PcTextV2BodyTarget.Spotify:
+                    JsonSerializer.Serialize(writer, "spotify", options);
+                    return;
+                case PcTextV2BodyTarget.Vlc:
+                    JsonSerializer.Serialize(writer, "vlc", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type PcTextV2BodyTarget");
+        }
+
+        public static readonly PcTextV2MessagePcTextV2BodyTargetConverter Singleton = new PcTextV2MessagePcTextV2BodyTargetConverter();
     }
 
     internal class PcTextV2MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>

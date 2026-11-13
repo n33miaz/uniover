@@ -29,6 +29,12 @@ class PcKeyV2BodyAction(RootModel[Literal['PRESS', 'DOWN', 'UP']]):
     root: Annotated[Literal['PRESS', 'DOWN', 'UP'], Field(title='PcKeyV2BodyAction')]
 
 
+class PcKeyV2BodyTarget(RootModel[Literal['browser', 'spotify', 'vlc']]):
+    root: Annotated[
+        Literal['browser', 'spotify', 'vlc'], Field(title='PcKeyV2BodyTarget')
+    ]
+
+
 class PcKeyV2Body(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -41,6 +47,7 @@ class PcKeyV2Body(BaseModel):
     action: Annotated[PcKeyV2BodyAction | None, Field(title='PcKeyV2BodyAction')] = None
     seq: Annotated[int | None, Field(ge=0, le=2147483647)] = None
     epoch: Annotated[str | None, Field(pattern='^[0-9a-f]{16}$')] = None
+    target: Annotated[PcKeyV2BodyTarget | None, Field(title='PcKeyV2BodyTarget')] = None
 
 
 class PcKeyV2Message(BaseModel):

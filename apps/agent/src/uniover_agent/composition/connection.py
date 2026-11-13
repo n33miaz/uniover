@@ -141,6 +141,7 @@ from uniover_agent.core.diagnostics import (
 from uniover_agent.core.disk_alarm import DiskAlarm
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.devices import DeviceApprovals
+from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
@@ -215,6 +216,7 @@ API_LISTED_CAPABILITIES = frozenset(
         RECONCILE_CAPABILITY,
         PC_OP_CAPABILITY,
         PC_DEVICE_CAPABILITY,
+        PC_TARGET_CAPABILITY,
     }
 )
 
