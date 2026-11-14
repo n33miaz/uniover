@@ -58,6 +58,22 @@ public sealed class TvStreamPermissionTests(PostgresFixture postgres)
         return (await next, elapsed);
     }
 
+    /// <summary>
+    /// Anda o relógio exatamente <paramref name="seconds"/> (em passos de 5 s) e o deixa parado; então espera o próximo quadro
+    /// em tempo real. A conferência disparada pelo relógio lê o banco em tempo real: com o relógio parado, a demora do executor
+    /// não vira segundos falsos a mais, e um fluxo que fecha aqui fechou sem o relógio passar de <paramref name="seconds"/>.
+    /// </summary>
+    private static async Task<SseFrame?> AdvanceThenReadAsync(TvApp app, SseReader reader, int seconds)
+    {
+        for (var elapsed = 0; elapsed < seconds; elapsed += StepSeconds)
+        {
+            app.Time.Advance(TimeSpan.FromSeconds(StepSeconds));
+            await Task.Delay(25, Ct);
+        }
+
+        return await reader.NextAsync();
+    }
+
     [Fact]
     public async Task Stream_ClosesAtTheNextKeepAlive_WhenTheOwnerTakesAwayTheTvThroughTheApi()
     {
@@ -69,10 +85,10 @@ public sealed class TvStreamPermissionTests(PostgresFixture postgres)
         using var reader = await ReadSnapshotAsync(response);
 
         (await app.ChangeGuestPermissionsAsync(authenticator, guest.UserId, TrainingOnly)).Should().Be(HttpStatusCode.OK);
-        var (frame, elapsed) = await AdvanceUntilFrameAsync(app, reader, 0);
+        // A mudança pela API esquece o cache: vale no próximo keep-alive (15 s), e o relógio para aí.
+        var frame = await AdvanceThenReadAsync(app, reader, 15);
 
-        frame.Should().BeNull("sem module:tv o fluxo é encerrado");
-        elapsed.Should().BeLessThanOrEqualTo(15, "a mudança pela API esquece o cache: vale no próximo keep-alive");
+        frame.Should().BeNull("sem module:tv o fluxo é encerrado no próximo keep-alive");
     }
 
     [Fact]
@@ -159,10 +175,10 @@ public sealed class TvStreamPermissionTests(PostgresFixture postgres)
             members.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
-        var (frame, elapsed) = await AdvanceUntilFrameAsync(app, reader, 0);
+        // A filiação é consultada diretamente no banco na próxima conferência (15 s): o relógio para aí e o fluxo fecha.
+        var frame = await AdvanceThenReadAsync(app, reader, 15);
 
-        frame.Should().BeNull("a TV originalmente escolhida deixou de ser visível");
-        elapsed.Should().BeLessThanOrEqualTo(15, "a filiação é consultada diretamente no banco no próximo vigia do fluxo");
+        frame.Should().BeNull("a TV originalmente escolhida deixou de ser visível já na próxima conferência do fluxo");
     }
 
     [Fact]
