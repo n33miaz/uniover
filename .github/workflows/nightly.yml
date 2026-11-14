@@ -196,8 +196,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/agent/uv.lock
       - run: uv sync --locked
-      - name: Testes (suíte inteira, com cobertura)
-        run: uv run pytest
+      # Três módulos só existem para o Windows (leem SystemRoot ao importar e quebram a coleta no Linux): o agent-windows.yml
+      # os roda. O piso de cobertura vale para o que o Linux executa.
+      - name: Testes (suíte do Linux, com cobertura)
+        run: >-
+          uv run pytest
+          --ignore=tests/test_update_path.py --ignore=tests/test_upgrade_drill.py --ignore=tests/test_windows_installer.py
 
   tv-launcher:
     name: tv-launcher
