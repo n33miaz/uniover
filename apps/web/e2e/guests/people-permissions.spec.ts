@@ -72,7 +72,7 @@ const permissionPuts = () => mock.requests.filter((r) => r.method === 'PUT');
 
 async function startInvite(page: Page, name: string): Promise<void> {
   await page.getByRole('tab', { name: 'Convites' }).click();
-  await page.getByRole('button', { name: 'Convidar alguém' }).click();
+  await page.getByRole('button', { name: 'Convidar Alguém' }).click();
   await page.getByLabel('Nome do convidado').fill(name);
 }
 
@@ -104,9 +104,9 @@ test.describe('Pessoas: a lista', () => {
     await expect(page.locator('.revoked')).toHaveText('Acesso removido');
     await expect(page.getByRole('button', { name: /^Permissões de Carla/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Convites' }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Convites pendentes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Convites Pendentes' })).toBeVisible();
 
-    await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Convidar Alguém' })).toBeVisible();
     await expect(page.locator('form.invite')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
   });
@@ -193,7 +193,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
         await page.getByRole('switch', { name: 'Usar as Compras' }).check();
         await page.getByRole('switch', { name: 'Controlar o PC' }).check();
       }
-      await page.getByRole('button', { name: 'Gerar convite' }).click();
+      await page.getByRole('button', { name: 'Gerar Convite' }).click();
 
       const link = page.getByLabel('Link do convite');
       await expect(link).toBeVisible();
@@ -212,7 +212,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
         page.locator('.person', { hasText: 'Raphael' }).locator('.abilities'),
       ).toHaveText(scenario.summary);
       await page.getByRole('tab', { name: 'Convites' }).click();
-      await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Convidar Alguém' })).toBeVisible();
     });
   }
 
@@ -247,7 +247,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
     await permissionsToggle(page).click();
     await page.getByRole('switch', { name: 'Ver a TV' }).uncheck();
 
-    await expect(page.getByRole('button', { name: 'Gerar convite' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Gerar Convite' })).toBeDisabled();
     await expect(
       page.getByRole('status').filter({ hasText: 'Ligue ao menos um módulo' }),
     ).toBeVisible();
@@ -255,7 +255,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
 
     // Ligando um módulo de volta, o botão volta.
     await page.getByRole('switch', { name: 'Usar o Treino' }).check();
-    await expect(page.getByRole('button', { name: 'Gerar convite' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Gerar Convite' })).toBeEnabled();
   });
 
   test('cancelar fecha o cartão, esquece a escolha e não chama a API', async ({ page }) => {
@@ -265,7 +265,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
     await model(page, 'Só o Treino').click();
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await expect(page.locator('form.invite')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Convidar Alguém' })).toBeFocused();
 
     await startInvite(page, '');
     await expect(permissionsToggle(page)).toContainText(TV_SUMMARY);
@@ -278,7 +278,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
     await open(page);
     await failWith(page, '/guest-invites', 400, 'validation-failed');
     await startInvite(page, 'Raphael');
-    await page.getByRole('button', { name: 'Gerar convite' }).click();
+    await page.getByRole('button', { name: 'Gerar Convite' }).click();
     await expect(page.getByRole('alert')).toContainText('O convite não foi criado');
     await expect(page.getByLabel('Nome do convidado')).toHaveValue('Raphael');
   });
@@ -496,7 +496,7 @@ test.describe('Pessoas: quem não é administrador nunca vê a tela', () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('.shortcuts a[href="/ajustes/aparelhos"]')).toHaveCount(0);
     await expect(page.getByText('Permissões de', { exact: false })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Convidar alguém' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Convidar Alguém' })).toHaveCount(0);
     // A tela dela nunca chamou a rota de administrador.
     expect(permissionPuts()).toHaveLength(0);
 

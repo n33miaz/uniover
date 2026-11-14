@@ -126,20 +126,20 @@ test.describe('Configurações > Segurança > Atalhos da Siri', () => {
     page,
   }, info) => {
     await open(page);
-    await page.getByRole('button', { name: 'Criar chave' }).click();
-    await expect(page.getByRole('heading', { name: 'Nova chave' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Criar chave' })).toBeDisabled();
+    await page.getByRole('button', { name: 'Criar Chave' }).click();
+    await expect(page.getByRole('heading', { name: 'Nova Chave' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Criar Chave' })).toBeDisabled();
 
     await page.getByRole('switch', { name: 'Desligar a TV' }).check();
     await page.getByRole('switch', { name: 'Aumentar o volume' }).check();
     await page.getByRole('switch', { name: 'Vídeo' }).check();
     await page.getByText('90 dias').click();
-    await expect(page.getByRole('button', { name: 'Criar chave' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Criar chave' }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'Criar Chave' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Criar Chave' }).scrollIntoViewIfNeeded();
     await check(page, info, 'siri-nova');
 
-    await page.getByRole('button', { name: 'Criar chave' }).click();
-    await expect(page.getByRole('heading', { name: 'Chave criada' })).toBeVisible();
+    await page.getByRole('button', { name: 'Criar Chave' }).click();
+    await expect(page.getByRole('heading', { name: 'Chave Criada' })).toBeVisible();
     await expect(page.getByLabel('Chave dos atalhos')).toHaveValue('atalho_segredo-de-teste');
 
     const create = siri.requests.find((r) => r.method === 'POST')!;
@@ -169,7 +169,7 @@ test.describe('Configurações > Segurança > Atalhos da Siri', () => {
     await check(page, info, 'siri-chave-criada');
 
     // Copiar vai para a área de transferência (quando o navegador deixa) e avisa na tela.
-    await card.getByRole('button', { name: 'Copiar tudo' }).click();
+    await card.getByRole('button', { name: 'Copiar Tudo' }).click();
     await expect(page.getByText(/Passo a passo copiado|Não deu para copiar sozinho/)).toBeVisible();
 
     // Concluir apaga o segredo da tela; a lista passa a ter a chave, sem ele.

@@ -135,8 +135,8 @@ describe('UpdateBanner', () => {
 
       expect(dialog.textContent).toContain('Atualizar agora?');
       expect(dialog.textContent).toContain('nesta tela');
-      expect(keep.textContent).toContain('Continuar editando');
-      expect(go.textContent).toContain('Atualizar mesmo assim');
+      expect(keep.textContent).toContain('Continuar Editando');
+      expect(go.textContent).toContain('Atualizar Mesmo Assim');
 
       keep.click();
       expect(service.confirmingUpdate()).toBeNull();

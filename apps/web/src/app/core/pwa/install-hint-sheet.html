@@ -9,7 +9,7 @@
 
   <div class="content">
     <div class="head">
-      <h2 id="install-title" i18n="@@install.title">Atalho na tela de início</h2>
+      <h2 id="install-title" i18n="@@install.title">Atalho na Tela de Início</h2>
       <p id="install-intro" class="intro" i18n="@@install.intro">
         Abre como app, sem a barra do navegador. Não ocupa espaço no aparelho: é só um atalho.
       </p>
@@ -34,7 +34,7 @@
       @if (foreignAppWindow()) {
         <p class="ui-notice">{{ otherWindowNotice() }}</p>
         <button #copyButton type="button" class="copy secondary ui-btn" (click)="copyAddress()">
-          <span i18n="@@install.copy.action">Copiar endereço</span>
+          <span i18n="@@install.copy.action">Copiar Endereço</span>
         </button>
         <p class="copy-status" role="status">{{ copyMessage() }}</p>
         <input
@@ -128,7 +128,7 @@
                     <path [attr.d]="d" />
                   }
                 </svg>
-                <span i18n="@@install.copy.action">Copiar endereço</span>
+                <span i18n="@@install.copy.action">Copiar Endereço</span>
               </button>
               <p class="copy-status" role="status">{{ copyMessage() }}</p>
               <input
@@ -274,7 +274,7 @@
         (click)="later()"
         i18n="@@install.later"
       >
-        Agora não
+        Agora Não
       </button>
       @if (iosNotInstalled()) {
         <button
@@ -284,7 +284,7 @@
           (click)="alreadyInstalled()"
           i18n="@@install.already-installed"
         >
-          Já instalei
+          Já Instalei
         </button>
       }
       <button
@@ -294,7 +294,7 @@
         (click)="never()"
         i18n="@@install.never"
       >
-        Não mostrar de novo
+        Não Mostrar de Novo
       </button>
     }
   </div>

@@ -30,7 +30,7 @@ for (const width of [280, 320]) {
     await screenshot(page, info.outputPath(`login-${width}.png`), { fullPage: true });
 
     await page.goto(`/convite#${'a'.repeat(43)}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Criar conta' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Criar Conta' })).toBeVisible();
     await expectUsableCard(page, 'Continuar');
     await screenshot(page, info.outputPath(`invite-${width}.png`), { fullPage: true });
   });

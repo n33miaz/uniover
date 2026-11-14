@@ -64,7 +64,7 @@ describe('SyncIssuesSheet', () => {
     const labels = Array.from(el.querySelectorAll('.issue button')).map((node) =>
       node.getAttribute('aria-label'),
     );
-    expect(labels).toContain('Tentar de novo: Rotina “Treino A”');
+    expect(labels).toContain('Tentar de Novo: Rotina “Treino A”');
     expect(labels).toContain('Descartar: Exercício “Remada”');
   });
 

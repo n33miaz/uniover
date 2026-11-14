@@ -14,10 +14,10 @@ const RESET_SECRET = /^[A-Za-z0-9_-]{20,64}$/;
   imports: [AuthLayout, AuthField, RouterLink],
   template: `
     <app-auth-layout [attr.data-screen-ready]="'auth-reset'">
-      <h1 i18n="@@auth.reset.title">Escolher nova senha</h1>
+      <h1 i18n="@@auth.reset.title">Escolher Nova Senha</h1>
       @if (!validLink()) {
         <p role="alert" i18n="@@auth.reset.invalid-link">Este link está incompleto ou venceu. Peça outro.</p>
-        <p class="back"><a routerLink="/recuperar-senha" i18n="@@auth.reset.new-link">Pedir outro link</a></p>
+        <p class="back"><a routerLink="/recuperar-senha" i18n="@@auth.reset.new-link">Pedir Outro Link</a></p>
       } @else if (done()) {
         <p role="status" i18n="@@auth.reset.done">Senha alterada. Entre com a nova senha.</p>
         <p class="back"><a routerLink="/entrar" i18n="@@auth.reset.login">Ir para Entrar</a></p>
@@ -37,7 +37,7 @@ const RESET_SECRET = /^[A-Za-z0-9_-]{20,64}$/;
           }
           @if (error()) { <p role="alert">{{ error() }}</p> }
           <button class="ui-btn primary block" type="submit" [disabled]="busy()"
-            i18n="@@auth.reset.submit">Salvar nova senha</button>
+            i18n="@@auth.reset.submit">Salvar Nova Senha</button>
         </form>
         <p class="back"><a routerLink="/entrar" i18n="@@auth.reset.back">Voltar para Entrar</a></p>
       }

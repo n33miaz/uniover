@@ -131,7 +131,7 @@ type SwitchName =
           (click)="expanded.set(true)"
           i18n="@@pc.settings.more"
         >
-          Mais ajustes
+          Mais Ajustes
         </button>
       }
 

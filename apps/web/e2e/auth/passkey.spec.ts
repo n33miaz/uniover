@@ -32,7 +32,7 @@ async function addVirtualAuthenticator(page: Page) {
 }
 
 async function registerPasskey(page: Page, name: string) {
-  await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
+  await page.getByRole('button', { name: 'Cadastrar Passkey' }).click();
   await passkeyPassword(page).fill(OWNER.password);
   await page.getByLabel('Nome da passkey (opcional)').fill(name);
   await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
@@ -56,7 +56,7 @@ test.describe('passkeys e confirmação', () => {
     await expect(page.getByText('Nenhuma passkey cadastrada.')).toBeVisible();
 
     // Senha errada: mensagem clara e nenhuma passkey criada.
-    await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
+    await page.getByRole('button', { name: 'Cadastrar Passkey' }).click();
     await passkeyPassword(page).fill('errada');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
     await expect(page.getByText('Senha incorreta.')).toBeVisible();

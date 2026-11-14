@@ -105,7 +105,7 @@ export interface SystemMock {
   /** O computador que controla a TV agora (`null` = nenhum) e de onde vem a escolha. */
   current: string | null;
   source: 'saved' | 'none';
-  /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
+  /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de Novo"). */
   failReads: number;
   /** A leitura de capacidade; `null` faz a rota responder 500. */
   capacity: CapacityMockReport | null;

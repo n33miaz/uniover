@@ -29,7 +29,7 @@ async function openInvite(page: Page, link = `/convite#${mock.seedInvite().token
 async function openForm(page: Page, link?: string) {
   await openInvite(page, link);
   await expect(
-    page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
   ).toBeVisible();
 }
 
@@ -273,7 +273,7 @@ test.describe('convite: aceite', () => {
     await expect(email(page)).toBeFocused();
     await expect(email(page)).toHaveAttribute('aria-invalid', 'true');
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
     ).toBeVisible();
 
     await email(page).fill(GUEST.email);
@@ -327,7 +327,7 @@ test.describe('convite: estados dedicados', () => {
     ).toBeVisible();
     await page.goto(`/convite#${mock.seedInvite().token}`);
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
     ).toBeVisible();
     await expect(page).toHaveURL(/\/convite$/);
   });

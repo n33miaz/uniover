@@ -82,7 +82,7 @@ async function preparePasskey(page: Page, browserName: string) {
   }
   await addVirtualAuthenticator(page);
   await page.goto('/ajustes/seguranca');
-  await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
+  await page.getByRole('button', { name: 'Cadastrar Passkey' }).click();
   await passkeyPassword(page).fill(OWNER.password);
   await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
   await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
@@ -196,7 +196,7 @@ test.describe('Configurações > Sistema > Erros dos Agentes', () => {
     await expect(errors(page).getByRole('alert')).toHaveText(
       'Não foi possível carregar os erros agora.',
     );
-    await errors(page).getByRole('button', { name: 'Tentar de novo' }).click();
+    await errors(page).getByRole('button', { name: 'Tentar de Novo' }).click();
     await expect(errors(page).locator('li.event')).toHaveCount(3);
   });
 });
@@ -354,7 +354,7 @@ test.describe('Configurações > Sistema > TVs', () => {
       await expect(page.getByText('Não foi possível carregar as TVs agora.')).toBeVisible();
       await check(page, info, 'system-error', scheme);
 
-      await page.getByRole('button', { name: 'Tentar de novo' }).click();
+      await page.getByRole('button', { name: 'Tentar de Novo' }).click();
       await expect(row(page, 'Casa')).toContainText('PC de casa');
       await expect
         .poll(() => system.requests.filter((r) => r.method === 'GET').length)

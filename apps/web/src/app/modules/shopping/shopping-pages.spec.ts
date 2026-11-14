@@ -170,7 +170,7 @@ describe('Compras: the screens', () => {
       const rice = marketRows(store.snapshot(), purchase).find((r) => r.product.name === 'Arroz')!;
       expect(rice).toMatchObject({ quantity: 2, unitPrice: 12.9, picked: true });
       expect(el.querySelector('.total strong')?.textContent).toContain('25,80');
-      expect(text()).toContain('No carrinho');
+      expect(text()).toContain('No Carrinho');
     });
 
     it('shows the line total before adding, and a package weight stays in the name', async () => {

@@ -116,7 +116,7 @@ describe('PairSheet', () => {
     expect(code.getAttribute('autocapitalize')).toBe('characters');
     expect(name.value).toBe('PC de casa');
     expect(buttons().map((b) => b.textContent?.trim())).toEqual([
-      'Recusar código',
+      'Recusar Código',
       'Cancelar',
       'Aprovar',
     ]);
@@ -131,7 +131,7 @@ describe('PairSheet', () => {
     await type('bcdf2345');
     expect(code.value).toBe('BCDF-2345');
     expect(button('Aprovar').disabled).toBe(false);
-    expect(button('Recusar código').disabled).toBe(false);
+    expect(button('Recusar Código').disabled).toBe(false);
     await type('ABCD2345'); // vogal
     expect(button('Aprovar').disabled).toBe(true);
   });
@@ -321,7 +321,7 @@ describe('PairSheet', () => {
       expect(api.approve).not.toHaveBeenCalled();
 
       authApi.guests.mockResolvedValue([guest('g1', 'Raphael')]);
-      button('Tentar de novo').click();
+      button('Tentar de Novo').click();
       await vi.waitFor(() => {
         fixture.detectChanges();
         expect(el.textContent).toContain('Raphael');
@@ -342,7 +342,7 @@ describe('PairSheet', () => {
   it('denies the code without asking for anything else', async () => {
     const { button, type, outcomes } = await render();
     await type('bcdf-2345');
-    button('Recusar código').click();
+    button('Recusar Código').click();
     await vi.waitFor(() => expect(outcomes).toEqual([{ kind: 'denied' }]));
     expect(api.deny).toHaveBeenCalledExactlyOnceWith('BCDF2345');
     expect(api.approve).not.toHaveBeenCalled();
@@ -398,7 +398,7 @@ describe('PairSheet', () => {
       );
       expect(outcomes).toEqual([]);
       expect(button('Aprovar').disabled).toBe(true);
-      expect(button('Recusar código').disabled).toBe(true);
+      expect(button('Recusar Código').disabled).toBe(true);
       expect(button('Cancelar').disabled).toBe(true);
 
       end();
@@ -423,7 +423,7 @@ describe('PairSheet', () => {
     TestBed.inject(ConnectivityService).online.set(false);
     fixture.detectChanges();
     expect(button('Aprovar').disabled).toBe(true);
-    expect(button('Recusar código').disabled).toBe(true);
+    expect(button('Recusar Código').disabled).toBe(true);
     expect(el.textContent).toContain('Sem conexão: isto precisa de rede.');
   });
 });

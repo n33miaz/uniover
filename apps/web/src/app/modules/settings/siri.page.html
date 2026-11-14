@@ -23,7 +23,7 @@
   @if (created(); as key) {
     <section class="created ui-card" aria-labelledby="siri-created-title">
       <h2 id="siri-created-title" class="title" i18n="@@settings.siri.created-title">
-        Chave criada
+        Chave Criada
       </h2>
       <p class="ui-notice warn">
         <app-settings-glyph name="alert" />
@@ -49,7 +49,7 @@
       </div>
       <button type="button" class="primary ui-btn block" (click)="copyToken()">
         <app-settings-glyph name="copy" />
-        <span i18n="@@settings.siri.copy-token-button">Copiar chave</span>
+        <span i18n="@@settings.siri.copy-token-button">Copiar Chave</span>
       </button>
       <h3 class="subtitle" i18n="@@settings.siri.steps-title">Monte um atalho para cada ação</h3>
       <app-siri-steps
@@ -64,7 +64,7 @@
     </section>
   } @else if (creating()) {
     <form class="form ui-card" aria-labelledby="siri-form-title" (submit)="create($event)">
-      <h2 id="siri-form-title" class="title" i18n="@@settings.siri.form-title">Nova chave</h2>
+      <h2 id="siri-form-title" class="title" i18n="@@settings.siri.form-title">Nova Chave</h2>
 
       <div class="ui-field">
         <label for="siri-name" i18n="@@settings.siri.name">Nome</label>
@@ -150,7 +150,7 @@
           Cancelar
         </button>
         <button type="submit" class="primary ui-btn" [disabled]="!canCreate()">
-          <span i18n="@@settings.siri.create">Criar chave</span>
+          <span i18n="@@settings.siri.create">Criar Chave</span>
         </button>
       </div>
     </form>
@@ -169,7 +169,7 @@
     } @else {
       <button type="button" class="primary ui-btn block" (click)="openCreate()">
         <app-settings-glyph name="plus" />
-        <span i18n="@@settings.siri.new">Criar chave</span>
+        <span i18n="@@settings.siri.new">Criar Chave</span>
       </button>
     }
   }
@@ -178,7 +178,7 @@
     @if (list.length > 0) {
       <section class="keys" aria-labelledby="siri-keys-title">
         <h2 id="siri-keys-title" class="ui-section-label" i18n="@@settings.siri.keys-title">
-          Suas chaves
+          Suas Chaves
         </h2>
         <ul class="list">
           @for (key of list; track key.id) {
@@ -233,7 +233,7 @@
                     [attr.aria-label]="howLabel(key)"
                     (click)="toggleOpen(key)"
                   >
-                    <span i18n="@@settings.siri.how-button">Como montar</span>
+                    <span i18n="@@settings.siri.how-button">Como Montar</span>
                   </button>
                   <button
                     type="button"

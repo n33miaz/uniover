@@ -149,7 +149,7 @@ describe('InstallHint com a conta', () => {
     }
   });
 
-  it('a conta lembra o "Agora não" mesmo com a memória do Safari apagada', async () => {
+  it('a conta lembra o "Agora Não" mesmo com a memória do Safari apagada', async () => {
     api.getInstallHint.mockResolvedValue({ root: { dismissedAt: Date.now() - 86_400_000 } });
     const { sheet, tick } = setup();
     await tick(10 * INSTALL_HINT_DELAY_MS);

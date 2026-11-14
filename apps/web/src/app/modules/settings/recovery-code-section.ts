@@ -55,7 +55,7 @@ import { AuthService } from '../../core/auth/auth.service';
           [disabled]="busy()"
           i18n="@@settings.recovery-code.submit"
         >
-          Redefinir senha
+          Redefinir Senha
         </button>
       </form>
     </details>

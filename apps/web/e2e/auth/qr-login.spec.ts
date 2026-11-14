@@ -46,7 +46,7 @@ async function openPhone(
     hasTouch: true,
     serviceWorkers: 'block',
   });
-  // A dica "Atalho na tela de início" abriria sozinha neste agente de iPhone e deixaria a página inerte (ver `fixtures`).
+  // A dica "Atalho na Tela de Início" abriria sozinha neste agente de iPhone e deixaria a página inerte (ver `fixtures`).
   await context.addInitScript(() => {
     try {
       for (const key of ['', '.tv', '.treino']) {
@@ -74,13 +74,13 @@ async function openPhone(
   return { context, page, identity };
 }
 
-/** O QR só existe depois do toque em "Entrar com o celular" (nada é pedido ao servidor antes). */
+/** O QR só existe depois do toque em "Entrar com o Celular" (nada é pedido ao servidor antes). */
 async function openQr(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Entrar com o celular', exact: true }).click();
+  await page.getByRole('button', { name: 'Entrar com o Celular', exact: true }).click();
   await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
 }
 
-test.describe('computador: o bloco "Entrar com o celular"', () => {
+test.describe('computador: o bloco "Entrar com o Celular"', () => {
   test.use(desktop);
 
   let qr: QrServerMock;
@@ -149,7 +149,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
 
     await phone.page.getByRole('button', { name: 'Confirmar', exact: true }).click();
     await expect(
-      phone.page.getByRole('heading', { level: 1, name: 'Computador liberado' }),
+      phone.page.getByRole('heading', { level: 1, name: 'Computador Liberado' }),
     ).toBeVisible();
     await screenshot(phone.page, info.outputPath('celular-liberado.png'));
 
@@ -188,7 +188,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
 
     await phone.page.getByRole('button', { name: 'Cancelar', exact: true }).click();
     await expect(
-      phone.page.getByRole('heading', { level: 1, name: 'Entrada cancelada' }),
+      phone.page.getByRole('heading', { level: 1, name: 'Entrada Cancelada' }),
     ).toBeVisible();
 
     await expect(page.getByText('Recusado no celular.')).toBeVisible({ timeout: 15_000 });
@@ -196,7 +196,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
     expect(pc.loggedIn).toBe(false);
     await screenshot(page, info.outputPath('pc-recusado.png'));
 
-    await page.getByRole('button', { name: 'Gerar outro QR' }).click();
+    await page.getByRole('button', { name: 'Gerar Outro QR' }).click();
     await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
     expect(qr.requests).toHaveLength(2);
     await phone.context.close();
@@ -220,10 +220,10 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
     const code = qr.requests[0].code;
     await phone.page.goto(`/entrar/qr?codigo=${code}`);
     await phone.page.getByRole('button', { name: 'Confirmar', exact: true }).click();
-    await expect(phone.page.getByRole('heading', { name: 'Computador liberado' })).toBeVisible();
+    await expect(phone.page.getByRole('heading', { name: 'Computador Liberado' })).toBeVisible();
 
     await phone.page.goto(`/entrar/qr?codigo=${code}`);
-    await expect(phone.page.getByRole('heading', { level: 1, name: 'QR vencido' })).toBeVisible();
+    await expect(phone.page.getByRole('heading', { level: 1, name: 'QR Vencido' })).toBeVisible();
     await phone.context.close();
   });
 
@@ -250,7 +250,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
     page,
   }, info) => {
     await page.goto('/entrar');
-    const open = page.getByRole('button', { name: 'Entrar com o celular', exact: true });
+    const open = page.getByRole('button', { name: 'Entrar com o Celular', exact: true });
     await expect(open).toBeVisible();
     // Sem toque, nenhum QR (nem consulta) por um bom tempo.
     await page.waitForTimeout(3_000);
@@ -332,7 +332,7 @@ test.describe('celular: a tela de confirmar', () => {
     ).toBeVisible();
     // No celular o bloco do QR não aparece: não há como escanear a própria tela.
     await expect(
-      phone.page.getByRole('button', { name: 'Entrar com o celular', exact: true }),
+      phone.page.getByRole('button', { name: 'Entrar com o Celular', exact: true }),
     ).toHaveCount(0);
     expect(phone.identity.requests.some((r) => r.path === '/auth/qr/start')).toBe(false);
 
@@ -375,7 +375,7 @@ test.describe('celular: a tela de confirmar', () => {
 
     await password.fill(GUEST.password);
     await phone.page.getByRole('button', { name: 'Confirmar', exact: true }).click();
-    await expect(phone.page.getByRole('heading', { name: 'Computador liberado' })).toBeVisible();
+    await expect(phone.page.getByRole('heading', { name: 'Computador Liberado' })).toBeVisible();
     expect(qr.requests[0].status).toBe('approved');
     await phone.context.close();
   });
@@ -414,13 +414,13 @@ test.describe('celular: a tela de confirmar', () => {
     const phone = await openPhone(browser, qr, true);
 
     await phone.page.goto('/entrar/qr?codigo=Qr9aaaaaaaaaaaaa');
-    await expect(phone.page.getByRole('heading', { level: 1, name: 'QR vencido' })).toBeVisible();
+    await expect(phone.page.getByRole('heading', { level: 1, name: 'QR Vencido' })).toBeVisible();
     await expect(phone.page.getByText('Peça outro na tela do computador.')).toBeVisible();
     await expect(phone.page.getByRole('button', { name: 'Confirmar' })).toHaveCount(0);
     await screenshot(phone.page, info.outputPath('celular-vencido.png'));
 
     await phone.page.goto('/entrar/qr');
-    await expect(phone.page.getByRole('heading', { level: 1, name: 'QR vencido' })).toBeVisible();
+    await expect(phone.page.getByRole('heading', { level: 1, name: 'QR Vencido' })).toBeVisible();
     await phone.context.close();
   });
 

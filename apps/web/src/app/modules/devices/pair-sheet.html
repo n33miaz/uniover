@@ -1,7 +1,7 @@
 <dialog #dialog class="sheet ui-dialog" aria-labelledby="pair-title" (cancel)="cancel($event)">
   <span class="grabber" aria-hidden="true"></span>
   <form (submit)="approve($event)" novalidate>
-    <h2 id="pair-title" i18n="@@devices.pair.title">Conectar computador</h2>
+    <h2 id="pair-title" i18n="@@devices.pair.title">Conectar Computador</h2>
     <p class="hint" i18n="@@devices.pair.hint">
       Abra o programa no PC e digite o código que ele mostrar. Ao aprovar, o computador passa a
       receber comandos da casa.
@@ -65,7 +65,7 @@
     }
 
     <fieldset class="people">
-      <legend class="ui-section-label" i18n="@@devices.pair.tv-members">Para quem é a TV</legend>
+      <legend class="ui-section-label" i18n="@@devices.pair.tv-members">Para Quem é a TV</legend>
       @if (people(); as list) {
         @if (list.length === 0) {
           <p class="hint" i18n="@@devices.pair.no-tv-members">Só você tem conta por enquanto.</p>
@@ -102,7 +102,7 @@
           (click)="loadPeople()"
           i18n="@@devices.pair.people-retry"
         >
-          Tentar de novo
+          Tentar de Novo
         </button>
       } @else {
         <app-loading-skeleton
@@ -140,7 +140,7 @@
       (click)="deny()"
       i18n="@@devices.pair.deny"
     >
-      Recusar código
+      Recusar Código
     </button>
 
     <div class="footer">

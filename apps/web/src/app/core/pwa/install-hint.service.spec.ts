@@ -125,7 +125,7 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.android }).autoOpenAllowed()).toBe(false);
     });
 
-    it('recusar o pedido conta como "Agora não": a folha não volta sozinha por 30 dias', async () => {
+    it('recusar o pedido conta como "Agora Não": a folha não volta sozinha por 30 dias', async () => {
       const service = create({ userAgent: UA.android });
       window.dispatchEvent(installPromptEvent('dismissed'));
       expect(await service.prompt()).toBe('dismissed');
@@ -150,7 +150,7 @@ describe('InstallHintService', () => {
       expect(service.mode()).toBe('native');
       window.dispatchEvent(new Event('appinstalled'));
       expect(service.mode()).toBe('none');
-      // Soma ao que já havia (o "Agora não"), não apaga.
+      // Soma ao que já havia (o "Agora Não"), não apaga.
       expect(stored()).toEqual({ dismissedAt: 1, installed: true });
     });
   });
@@ -178,7 +178,7 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.desktop }).autoOpenAllowed()).toBe(false);
     });
 
-    it('"Agora não" adia por 30 dias, e só então volta', () => {
+    it('"Agora Não" adia por 30 dias, e só então volta', () => {
       const service = create({ userAgent: UA.safari });
       const t0 = Date.UTC(2026, 9, 20);
       service.dismiss(t0);
@@ -194,7 +194,7 @@ describe('InstallHintService', () => {
       expect(service.autoOpenAllowed(Date.UTC(2026, 8, 1))).toBe(false);
     });
 
-    it('"Não mostrar de novo" vale para sempre, e é lembrado ao recarregar', () => {
+    it('"Não Mostrar de Novo" vale para sempre, e é lembrado ao recarregar', () => {
       const service = create({ userAgent: UA.safari });
       service.never();
       expect(stored()).toEqual({ never: true });
@@ -204,7 +204,7 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.safari }).autoOpenAllowed()).toBe(false);
     });
 
-    it('lembra o "Agora não" ao recarregar', () => {
+    it('lembra o "Agora Não" ao recarregar', () => {
       const first = create({ userAgent: UA.safari });
       first.dismiss();
       TestBed.resetTestingModule();
@@ -331,7 +331,7 @@ describe('InstallHintService', () => {
   });
 
   describe('abertura manual (as linhas de Ajustes e de Personalizar)', () => {
-    it('abre mesmo depois de "Agora não" e de "Não mostrar de novo"', () => {
+    it('abre mesmo depois de "Agora Não" e de "Não Mostrar de Novo"', () => {
       const service = create({ userAgent: UA.safari });
       service.never();
       service.dismiss();

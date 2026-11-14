@@ -115,7 +115,7 @@ describe('GuestPairSheet', () => {
   it('shows no choice of people: the TV is only his', async () => {
     const { el } = await render();
     expect(el.querySelector('input[role="switch"]')).toBeNull();
-    expect(el.textContent).not.toContain('Para quem é a TV');
+    expect(el.textContent).not.toContain('Para Quem é a TV');
   });
 
   it('confirms the password first and then approves his own PC with the nickname', async () => {

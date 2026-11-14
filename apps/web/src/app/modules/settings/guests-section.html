@@ -226,7 +226,7 @@
 
     <div [hidden]="activeTab() !== 'invites'" role="tabpanel" aria-labelledby="invites-tab">
       @if (pending().length > 0) {
-        <h2 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h2>
+        <h2 class="subhead" i18n="@@settings.guests.pending-title">Convites Pendentes</h2>
         <ul class="people ui-group ui-stagger">
           @for (invite of pending(); track invite.id) {
             <li class="person ui-rise">
@@ -306,7 +306,7 @@
         <div class="actions">
           <button type="button" class="primary ui-btn" (click)="copy()">
             <app-settings-glyph name="copy" />
-            <span i18n="@@settings.guests.copy">Copiar link</span>
+            <span i18n="@@settings.guests.copy">Copiar Link</span>
           </button>
           @if (canShare()) {
             <button type="button" class="secondary ui-btn" (click)="share()">
@@ -327,7 +327,7 @@
     } @else if (inviteOpen()) {
       <form class="invite ui-card" aria-labelledby="invite-title" (submit)="create($event)">
         <h2 id="invite-title" class="form-title" i18n="@@settings.guests.invite-title">
-          Convidar alguém
+          Convidar Alguém
         </h2>
         <div class="ui-field">
           <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
@@ -392,14 +392,14 @@
           </button>
           <button type="submit" class="primary ui-btn" [disabled]="!canCreate()">
             <app-settings-glyph name="mail" />
-            <span i18n="@@settings.guests.create">Gerar convite</span>
+            <span i18n="@@settings.guests.create">Gerar Convite</span>
           </button>
         </div>
       </form>
     } @else {
       <button #inviteButton type="button" class="primary ui-btn block" (click)="openInvite()">
         <app-settings-glyph name="mail" />
-        <span i18n="@@settings.guests.invite">Convidar alguém</span>
+        <span i18n="@@settings.guests.invite">Convidar Alguém</span>
       </button>
     }
   </div>

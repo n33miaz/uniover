@@ -75,7 +75,7 @@ describe('LoginPage', () => {
     expect(layout.classList.contains('with-aside')).toBe(false);
     expect(el.querySelector('app-qr-login')?.textContent?.trim()).toBe('');
     const links = [...el.querySelectorAll('.pane .alt a')].map((a) => a.textContent?.trim());
-    expect(links).toEqual(['Esqueci minha senha', 'Conectar um PC']);
+    expect(links).toEqual(['Esqueci Minha Senha', 'Conectar um PC']);
   });
 
   it('puts the button to sign in with the phone beside the form on a computer, without asking for a QR', async () => {
@@ -86,7 +86,7 @@ describe('LoginPage', () => {
       const el = await render();
       const phoneButton = () =>
         [...el.querySelectorAll('app-qr-login button')].find(
-          (b) => b.textContent?.trim() === 'Entrar com o celular',
+          (b) => b.textContent?.trim() === 'Entrar com o Celular',
         );
       // A sessão é conferida (sem conta) antes de o botão aparecer: algumas voltas do laço de eventos.
       for (let i = 0; i < 20 && !phoneButton(); i++) {
@@ -125,7 +125,7 @@ describe('LoginPage', () => {
     expect(password.type).toBe('password');
     expect(password.getAttribute('enterkeyhint')).toBe('go');
     expect(el.querySelector('a[href="/recuperar-senha"]')?.textContent).toContain(
-      'Esqueci minha senha',
+      'Esqueci Minha Senha',
     );
     expect(el.textContent).not.toMatch(/lembrar de mim/i);
   });

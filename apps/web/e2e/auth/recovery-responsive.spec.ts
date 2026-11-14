@@ -8,8 +8,8 @@ for (const width of [280, 320]) {
     await mockIdentityApi(context);
     await page.setViewportSize({ width, height: 568 });
     await page.goto('/recuperar-senha');
-    await expect(page.getByRole('heading', { name: 'Recuperar senha' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Enviar link' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recuperar Senha' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enviar Link' })).toBeVisible();
     await expectNoHorizontalScroll(page);
   });
 
@@ -17,8 +17,8 @@ for (const width of [280, 320]) {
     await mockIdentityApi(context);
     await page.setViewportSize({ width, height: 568 });
     await page.goto(`/redefinir-senha#token=${'a'.repeat(43)}`);
-    await expect(page.getByRole('heading', { name: 'Escolher nova senha' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Salvar nova senha' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Escolher Nova Senha' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Salvar Nova Senha' })).toBeVisible();
     expect(new URL(page.url()).hash).toBe('');
     await expectNoHorizontalScroll(page);
   });

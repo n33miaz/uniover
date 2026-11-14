@@ -406,7 +406,7 @@ describe('CustomizeSheet', () => {
       TestBed.inject(InstallHintService).never();
       await open();
       expect(row().hidden).toBe(false);
-      expect(row().querySelector('.ui-row-title')?.textContent).toBe('Adicionar à tela de início');
+      expect(row().querySelector('.ui-row-title')?.textContent).toBe('Adicionar à Tela de Início');
       row().querySelector('button')!.click();
       expect(TestBed.inject(InstallHintService).sheet()).toBe('manual');
     });

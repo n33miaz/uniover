@@ -48,7 +48,7 @@ test.describe('página pública /conectar', () => {
     }, info) => {
       await page.goto('/conectar');
       await expect(page).toHaveURL(/\/conectar$/);
-      await expect(page.getByRole('heading', { level: 1, name: 'Conectar este PC' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: 'Conectar Este PC' })).toBeVisible();
 
       const link = page.getByRole('link', { name: 'Baixar o Programa' });
       await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
@@ -120,7 +120,7 @@ test.describe('página pública /conectar', () => {
     page,
   }, info) => {
     await page.goto('/conectar');
-    await expect(page.getByRole('heading', { level: 1, name: 'Conectar este PC' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Conectar Este PC' })).toBeVisible();
     await expect(
       page.getByText('Este programa é para PC com Windows. Abra esta página nele.'),
     ).toBeVisible();
@@ -148,11 +148,11 @@ test.describe('convidado com a TV', () => {
     await page.getByRole('link', { name: /^Dispositivos/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
 
-    await expect(page.getByRole('button', { name: 'Aprovar este computador' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Aprovar Este Computador' })).toBeVisible();
     await expect(page.getByText('Peça ao administrador para aprovar.')).toHaveCount(0);
     const link = page.getByRole('link', { name: 'Baixar Programa' });
     await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
-    await expect(page.getByRole('button', { name: 'Conectar computador' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Conectar Computador' })).toHaveCount(0);
     expect(devices.requests).toHaveLength(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
@@ -176,7 +176,7 @@ test.describe('convidado com a TV', () => {
 
     // É o endereço do botão "Aprovar neste computador" da página local do PC.
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    const sheet = page.getByRole('dialog', { name: 'Aprovar Este Computador' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
     // O apelido nasce vazio (a TV se chama "TV"): nenhuma sugestão feita do nome da conta.
@@ -222,7 +222,7 @@ test.describe('convidado com a TV', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    const sheet = page.getByRole('dialog', { name: 'Aprovar Este Computador' });
     await expect(sheet).toBeVisible();
     await page.mouse.click(5, 5);
     await expect(sheet).toHaveCount(0);
@@ -234,7 +234,7 @@ test.describe('convidado com a TV', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    const sheet = page.getByRole('dialog', { name: 'Aprovar Este Computador' });
     await sheet.getByLabel('Sua senha').fill('senha-errada');
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
 
@@ -250,7 +250,7 @@ test.describe('convidado com a TV', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    const sheet = page.getByRole('dialog', { name: 'Aprovar Este Computador' });
     await sheet.getByLabel('Sua senha').fill(GUEST.password);
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
 
@@ -263,8 +263,8 @@ test.describe('convidado com a TV', () => {
   test('sem o código no endereço o botão abre a folha em branco', async ({ page }) => {
     seedGuest(['module:tv']);
     await page.goto('/ajustes/dispositivos');
-    await page.getByRole('button', { name: 'Aprovar este computador' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    await page.getByRole('button', { name: 'Aprovar Este Computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Aprovar Este Computador' });
     await expect(sheet.getByLabel('Código do computador')).toHaveValue('');
     await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeDisabled();
     await sheet.getByRole('button', { name: 'Cancelar' }).click();
@@ -273,7 +273,7 @@ test.describe('convidado com a TV', () => {
   });
 });
 
-test.describe('aprovar com "Para quem é a TV"', () => {
+test.describe('aprovar com "Para Quem é a TV"', () => {
   test('marca uma pessoa: a TV nasce ligada ao agente, com ela de membro e o nome dela', async ({
     page,
   }, info) => {
@@ -290,7 +290,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await expect(sheet).toBeVisible();
     const person = sheet.getByRole('switch', { name: 'Raphael' });
     await expect(person).not.toBeChecked();
@@ -314,7 +314,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
     await expect(page.getByText('Computador PC de casa conectado.')).toBeVisible();
 

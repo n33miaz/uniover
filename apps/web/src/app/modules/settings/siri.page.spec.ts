@@ -109,7 +109,7 @@ describe('SiriPage', () => {
   it('never prints a secret on the list, and the steps of an old key mark where the key goes', async () => {
     const { el, click } = await render();
 
-    await click(/Como montar/);
+    await click(/Como Montar/);
 
     const text = el.textContent ?? '';
     expect(text).toContain('<sua chave>');
@@ -125,7 +125,7 @@ describe('SiriPage', () => {
     const { el, button } = await render();
 
     expect(el.textContent).toContain('Nenhuma TV configurada ainda');
-    expect(button('Criar chave')).toBeUndefined();
+    expect(button('Criar Chave')).toBeUndefined();
   });
 
   it('hides the create button at the limit of ten keys', async () => {
@@ -133,12 +133,12 @@ describe('SiriPage', () => {
     const { el, button } = await render();
 
     expect(el.textContent).toContain('limite de 10 chaves');
-    expect(button('Criar chave')).toBeUndefined();
+    expect(button('Criar Chave')).toBeUndefined();
   });
 
   it('keeps Create off until there is a name and at least one action', async () => {
     const { el, click, toggle, fixture } = await render();
-    await click('Criar chave');
+    await click('Criar Chave');
 
     const submit = () => el.querySelector<HTMLButtonElement>('button[type="submit"]')!;
     expect(submit().disabled).toBe(true);
@@ -159,7 +159,7 @@ describe('SiriPage', () => {
     expect(unsaved.needsConfirmation()).toBe(false);
 
     // Abrir o formulário com o nome sugerido não é uma mudança.
-    await click('Criar chave');
+    await click('Criar Chave');
     expect(unsaved.needsConfirmation()).toBe(false);
 
     toggle('Mudo');
@@ -180,7 +180,7 @@ describe('SiriPage', () => {
   it('offers the apps of the TV, and only for the TV that is chosen', async () => {
     tvApi.tvs.mockResolvedValue([TV_SALA, TV_QUARTO]);
     const { el, click, toggle, fixture } = await render();
-    await click('Criar chave');
+    await click('Criar Chave');
 
     expect(api.apps).toHaveBeenCalledWith('tv-sala');
     expect(el.textContent).toContain('Vídeo');
@@ -223,23 +223,23 @@ describe('SiriPage', () => {
       token: 'atalho_segredo',
     });
     const { el, click, toggle, fixture } = await render();
-    await click('Criar chave');
+    await click('Criar Chave');
     toggle('Mudo');
     toggle('Vídeo');
     // O botão do formulário é o de enviar.
-    await click('Criar chave');
+    await click('Criar Chave');
     await fixture.whenStable();
     fixture.detectChanges();
 
     expect(api.create).toHaveBeenCalledTimes(1);
     expect(api.create).toHaveBeenCalledWith('Meu iPhone', 'tv-sala', ['mute', 'app:app-1'], null);
-    expect(el.textContent).toContain('Chave criada');
+    expect(el.textContent).toContain('Chave Criada');
     expect(el.textContent).toContain('ela não aparece de novo');
     expect(el.querySelector<HTMLInputElement>('input.token')!.value).toBe('atalho_segredo');
     expect(el.textContent).toContain('Mudo na TV');
     expect(el.textContent).toContain('Abrir Vídeo na TV');
 
-    await click('Copiar chave');
+    await click('Copiar Chave');
     expect(writeText).toHaveBeenCalledWith('atalho_segredo');
     expect(el.textContent).toContain('Chave copiada');
 
@@ -260,13 +260,13 @@ describe('SiriPage', () => {
     });
     writeText.mockRejectedValue(new Error('bloqueado'));
     const { el, click, toggle, fixture } = await render();
-    await click('Criar chave');
+    await click('Criar Chave');
     toggle('Mudo');
     el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit'));
     await fixture.whenStable();
     fixture.detectChanges();
 
-    await click('Copiar chave');
+    await click('Copiar Chave');
 
     expect(el.textContent).toContain('Não deu para copiar sozinho');
     expect(el.querySelector<HTMLInputElement>('input.token')!.value).toBe('atalho_segredo');
@@ -279,7 +279,7 @@ describe('SiriPage', () => {
   ])('explains a %i from the API in plain words', async (status, expected) => {
     api.create.mockRejectedValue(new HttpErrorResponse({ status }));
     const { el, click, toggle, fixture } = await render();
-    await click('Criar chave');
+    await click('Criar Chave');
     toggle('Mudo');
     el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit'));
     await fixture.whenStable();

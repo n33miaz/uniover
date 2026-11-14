@@ -140,7 +140,7 @@ describe('InstallHint', () => {
     expect(sheet()).toBeNull();
   });
 
-  it('respeita o "Agora não" e o "Não mostrar de novo"', async () => {
+  it('respeita o "Agora Não" e o "Não Mostrar de Novo"', async () => {
     localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ dismissedAt: Date.now() }));
     const snoozed = setup();
     await snoozed.tick(5 * INSTALL_HINT_DELAY_MS);
@@ -153,7 +153,7 @@ describe('InstallHint', () => {
     expect(never.sheet()).toBeNull();
   });
 
-  it('com "Agora não" de mais de 30 dias, volta a abrir', async () => {
+  it('com "Agora Não" de mais de 30 dias, volta a abrir', async () => {
     localStorage.setItem(
       INSTALL_HINT_KEY,
       JSON.stringify({ dismissedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 }),

@@ -1,7 +1,7 @@
 <app-auth-layout [attr.data-screen-ready]="'auth-invite'">
   @switch (view()) {
     @case ('form') {
-      <h1 i18n="@@auth.invite.title">Criar conta</h1>
+      <h1 i18n="@@auth.invite.title">Criar Conta</h1>
 
       <form (submit)="submit($event)" novalidate>
         <app-auth-field

@@ -169,7 +169,7 @@ for (const scheme of SCHEMES) {
       test('convite: formulário vazio, senha fraca, boa e divergente', async ({ page }, info) => {
         await openInvite(page);
         await expect(
-          page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+          page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
         ).toBeVisible();
         await shoot(page, info, 'convite-vazio', scheme, orient);
 
@@ -263,7 +263,7 @@ for (const scheme of SCHEMES) {
         const gate = await gateScripts(page);
         await openInvite(page, `/convite#${invite.token}`);
         await expect(
-          page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+          page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
         ).toBeVisible();
         gate.hold();
         await fillInvite(page);

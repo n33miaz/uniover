@@ -45,7 +45,7 @@ test.describe('alterações que o servidor recusou', () => {
     await expect(sheet).toContainText('“Remada na máquina articulada”');
     await expect(sheet).toContainText('relógio');
 
-    await sheet.getByRole('button', { name: /Tentar de novo/ }).click();
+    await sheet.getByRole('button', { name: /Tentar de Novo/ }).click();
     await expect.poll(() => server.writes('exercises')).toBe(1);
     await expect(sheet).toHaveCount(0);
     await expect(page.locator('.ring[data-state="failed"]')).toHaveCount(0);
@@ -73,7 +73,7 @@ test.describe('alterações que o servidor recusou', () => {
     await expect(sheet.getByText('Descartar esta alteração?')).toBeVisible();
     await sheet.getByRole('button', { name: 'Manter' }).click();
     await expect(sheet.getByText('Descartar esta alteração?')).toHaveCount(0);
-    await expect(sheet.getByRole('button', { name: /Tentar de novo/ })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: /Tentar de Novo/ })).toBeVisible();
 
     await sheet.getByRole('button', { name: /^Descartar/ }).click();
     await sheet

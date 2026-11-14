@@ -71,7 +71,7 @@ describe('SiriSteps', () => {
     const { el } = await render('atalho_abc', ['mute']);
 
     Array.from(el.querySelectorAll('button'))
-      .find((b) => b.textContent?.trim() === 'Copiar tudo')!
+      .find((b) => b.textContent?.trim() === 'Copiar Tudo')!
       .click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
