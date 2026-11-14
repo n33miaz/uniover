@@ -792,7 +792,7 @@ test.describe('botões de baixo e o tamanho escolhido', () => {
     await screenshot(page, `test-results/tv-header-channel-off-${info.project.name}.png`);
   });
 
-  test('o tamanho grande põe os botões redondos em três colunas, e a Fonte fecha a última fileira', async ({
+  test('o tamanho grande põe os botões redondos em três colunas, e as Entradas fecham a última fileira', async ({
     page,
   }) => {
     await openTv(page, { buttonSize: 'large' });
@@ -802,12 +802,57 @@ test.describe('botões de baixo e o tamanho escolhido', () => {
         return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
       }),
     );
-    // Oito botões fixos em três colunas deixariam um buraco: a Fonte, que a TV tem, é o nono.
+    // Oito botões fixos em três colunas deixariam um buraco: as Entradas, que a TV tem, são o nono.
     expect(rounds).toHaveLength(9);
     const rows = [...new Set(rounds.map((r) => r.y))];
     expect(rows).toHaveLength(3);
     for (const y of rows) expect(rounds.filter((r) => r.y === y)).toHaveLength(3);
     await expectNoHorizontalScroll(page);
+  });
+
+  test('as duas fileiras de botões redondos vão do topo à base das pílulas, sem ficar soltas no meio', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    const measure = async () => {
+      const volume = await box(page.getByRole('group', { name: 'Volume' }));
+      const channel = await box(page.getByRole('group', { name: 'Canal' }));
+      const rounds = await page.locator('.round-grid .round').evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom };
+        }),
+      );
+      return {
+        pillTop: volume.y,
+        pillBottom: volume.y + volume.height,
+        channelSameHeight: Math.abs(channel.height - volume.height),
+        topGap: Math.min(...rounds.map((r) => r.top)) - volume.y,
+        bottomGap: volume.y + volume.height - Math.max(...rounds.map((r) => r.bottom)),
+      };
+    };
+    const after = await measure();
+
+    // Antes: a mesma tela com a regra antiga (o conjunto no meio da altura), posta pelo CSSOM, que a política de CSP permite.
+    await page.evaluate(() => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('.round-grid { align-content: center !important; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    });
+    const before = await measure();
+    writeFileSync(
+      `test-results/tv-bottom-alignment-${info.project.name}.json`,
+      JSON.stringify({ antes: before, depois: after }, null, 1),
+    );
+
+    expect(after.channelSameHeight, 'as duas pílulas têm a mesma altura').toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(after.topGap),
+      'a fileira de cima encosta no topo das pílulas',
+    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.bottomGap), 'a de baixo encosta na base delas').toBeLessThanOrEqual(1);
+    // O desalinho que existia: sem o ajuste, ao menos um dos lados ficava para dentro.
+    expect(Math.max(before.topGap, before.bottomGap)).toBeGreaterThan(2);
   });
 
   test('sem as teclas de mídia sobram quatro botões, em duas colunas', async ({ page }) => {
@@ -1677,6 +1722,50 @@ test.describe('cabeçalho da convidada: o mesmo topo do dono, sem engrenagem', (
     await page.setViewportSize({ width: 844, height: 390 });
     await openTvAsGuest(page);
     await expectTitleCentered(page);
+    await expectNoHorizontalScroll(page);
+  });
+});
+
+test.describe('direcional em tela larga', () => {
+  /** O diâmetro do anel, com a regra de hoje e com a regra de antes (o teto de 480 px para qualquer largura). */
+  async function ringWidths(page: Page) {
+    const current = (await box(page.locator('div.ring'))).width;
+    await page.evaluate(() => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync('.panel { --tv-ring: min(100cqi - 4px, 100cqb, 480px) !important; }');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    });
+    await settle(page);
+    const old = (await box(page.locator('div.ring'))).width;
+    return { current, old };
+  }
+
+  for (const phone of [
+    { width: 390, height: 664 },
+    { width: 411, height: 800 },
+    { width: 430, height: 932 },
+  ]) {
+    test(`no celular de ${phone.width}x${phone.height} o direcional não muda de tamanho`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(phone);
+      await openTv(page);
+      const { current, old } = await ringWidths(page);
+      expect(current, 'o direcional do celular').toBeCloseTo(old, 0);
+    });
+  }
+
+  test('no tablet o direcional para em 360 px, e antes passava disso', async ({ page }, info) => {
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await openTv(page);
+    const { current, old } = await ringWidths(page);
+    writeFileSync(
+      `test-results/tv-ring-tablet-${info.project.name}.json`,
+      JSON.stringify({ antes: old, depois: current }, null, 1),
+    );
+    expect(current).toBeLessThanOrEqual(360.5);
+    expect(current).toBeGreaterThanOrEqual(300);
+    expect(old, 'a regra antiga deixava o anel maior').toBeGreaterThan(360.5);
     await expectNoHorizontalScroll(page);
   });
 });

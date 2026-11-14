@@ -357,6 +357,35 @@ async function hiddenControls(page: Page, skip = ''): Promise<string[]> {
   }, skip);
 }
 
+test.describe('largura em tablet', () => {
+  test('as abas de teclas param em 40 rem e ficam no meio; o celular e a tela do mouse seguem com a largura toda', async ({
+    page,
+  }) => {
+    const widths = async () => {
+      const box = (await page.locator('.pc').boundingBox())!;
+      return { width: box.width, centre: box.x + box.width / 2 };
+    };
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await openPc(page, '/pc/midia');
+    const media = await widths();
+    expect(media.width).toBeLessThanOrEqual(640.5);
+    expect(media.width).toBeGreaterThan(300);
+    expect(Math.abs(media.centre - 410), 'a coluna fica no meio da tela').toBeLessThanOrEqual(1);
+    await expectNoHorizontalScroll(page);
+
+    // A tela do mouse é a superfície: vale cada pixel, também em tablet.
+    await openPc(page, '/pc');
+    expect((await widths()).width).toBeGreaterThan(700);
+
+    // No celular nenhuma coluna de 40 rem cabe: o conteúdo toma a largura útil, como antes.
+    await page.setViewportSize({ width: 390, height: 664 });
+    await openPc(page, '/pc/midia');
+    const phone = await widths();
+    expect(phone.width).toBeGreaterThan(330);
+    expect(phone.width).toBeLessThanOrEqual(390);
+  });
+});
+
 test.describe('Tela do mouse', () => {
   test('a superfície ocupa o que sobra e nenhum controle fica atrás da barra de abas', async ({
     page,

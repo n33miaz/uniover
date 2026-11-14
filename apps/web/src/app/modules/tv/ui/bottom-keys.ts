@@ -29,6 +29,13 @@ export class BottomKeys {
   /** As colunas dos botões redondos e os extras que completam a grade. */
   protected readonly roundKeys = inject(TvRoundKeys);
 
+  /** Quantas fileiras de botões redondos há: o alinhamento com as pílulas só vale com duas ou mais. */
+  protected readonly roundRows = computed(() =>
+    Math.ceil(
+      (this.roundKeys.base() + this.roundKeys.shown().length) / this.roundKeys.gridColumns(),
+    ),
+  );
+
   /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
   readonly openKeyboard = output<HTMLElement>();
 

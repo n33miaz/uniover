@@ -16,6 +16,15 @@
   gap: var(--space-2);
   min-height: var(--pc-h, calc(100dvh - 170px - var(--safe-bottom)));
 }
+/*
+ * Em tablet as abas de teclas (atalhos, mídia, mais) não esticam de ponta a ponta: ficam numa coluna de 40 rem, centrada,
+ * a mesma largura das outras telas do app. A tela do mouse, abaixo, segue com a largura toda: a superfície vale cada pixel.
+ */
+.pc:not(.fill) {
+  width: 100%;
+  max-width: 40rem;
+  margin-inline: auto;
+}
 /* A tela do mouse toma a largura toda e puxa um pouco do respiro do `main` (a superfície vale cada pixel). */
 .pc.fill {
   height: var(--pc-h, calc(100dvh - 170px - var(--safe-bottom)));

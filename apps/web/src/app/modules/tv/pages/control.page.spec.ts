@@ -547,6 +547,23 @@ describe('ControlPage', () => {
       expect(cols()).toBe('2');
     });
 
+    it('counts the rows of round keys, which the alignment with the pills depends on', () => {
+      const rows = () => root.querySelector('.round-grid')!.getAttribute('data-rows');
+      // Oito botões em quatro colunas: duas fileiras, e é a elas que o CSS dá a altura das pílulas.
+      expect(rows()).toBe('2');
+      prefs().set({ buttonSize: 'large' });
+      render();
+      expect(rows()).toBe('3');
+      // Sem a mídia sobram quatro botões em duas colunas (o Teclado conta): ainda duas fileiras.
+      prefs().set({ buttonSize: 'comfortable', showMedia: false });
+      render();
+      expect(rows()).toBe('2');
+      // Uma fileira só (pílulas em fileira, sem mídia): nada a alinhar com a altura das pílulas.
+      prefs().set({ pillLayout: 'row' });
+      render();
+      expect(rows()).toBeNull();
+    });
+
     it('hides the four media keys, keeping the first four, and brings them back', () => {
       prefs().set({ showMedia: false });
       render();

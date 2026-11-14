@@ -104,6 +104,15 @@
   .panel {
     --tv-ring: min(100cqi - 4px, 100cqb, 480px);
   }
+  /*
+   * Em tela larga (tablet) o direcional para em 360 px, para não ficar desproporcional aos botões de baixo, que não crescem
+   * com a tela. No celular nada muda: o tamanho de hoje é o que ajuda a acertar a seta sem olhar.
+   */
+  @media (min-width: 640px) {
+    .panel {
+      --tv-ring: min(100cqi - 4px, 100cqb, 360px);
+    }
+  }
 }
 
 /*
