@@ -135,11 +135,12 @@ jobs:
         run: bash ../../.github/scripts/check-e2e-projects.sh
       - name: Lint
         run: npm run lint
-      # O Vitest não tem repetição própria e, no executor de 2 núcleos, alguns testes de medida de tela e de quadro falham ao
-      # acaso (cada rodada falhou em testes diferentes, e isolados eles passam). Uma segunda tentativa da suíte inteira (~1 min)
-      # absorve isso, como o `retries` do Playwright; o aviso fica na execução para o defeito não sumir.
+      # No executor de 2 núcleos alguns testes de medida de tela, de quadro e de tempo falham ao acaso (cada rodada falhou em
+      # testes diferentes, e isolados eles passam). O test:ci roda um arquivo por vez (vitest.ci.config.ts) e, como o Vitest não
+      # tem repetição própria, uma segunda tentativa da suíte inteira absorve o que sobrar, como o `retries` do Playwright;
+      # o aviso fica na execução para o defeito não sumir.
       - name: Testes unitários
-        run: npm test || { echo "::warning::testes unitários falharam e foram repetidos uma vez (flaky conhecido)"; npm test; }
+        run: npm run test:ci || { echo "::warning::testes unitários falharam e foram repetidos uma vez (flaky conhecido)"; npm run test:ci; }
       - name: Testes do script de retenção dos arquivos com hash
         run: node --test scripts/retained-assets.test.mjs
       # O build aplica o orçamento do pacote inicial (angular.json: aviso a 500 kB, erro a 1 MB) e o dos estilos por componente.
