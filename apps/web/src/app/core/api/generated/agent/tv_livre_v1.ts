@@ -51,4 +51,8 @@ export interface TvLivreV1Body {
    * @maxItems 64
    */
   enable?: string[];
+  /**
+   * sleep: minutos até a TV acordar sozinha do Modo Dormir (0 só acorda com tecla). Sem o campo vale o da configuração aplicada. Só vai a agente que declara tv.livre.v2.
+   */
+  minutes?: number;
 }

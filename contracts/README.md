@@ -101,11 +101,18 @@ Módulo opcional da Android TV e do Google TV (o launcher de `apps/tv-launcher`)
 `tv.livre.v1`; sem ela (TV Samsung, ou agente antigo) a API não oferece o módulo e não manda nada destas mensagens.
 Cada passo é um comando isolado, reversível e pedido pelo dono; nada roda sozinho.
 
+`tv.livre.v2` é a capacidade dos acréscimos do módulo: o tempo no pedido de dormir, o nível do launcher e o `apply` que
+não interrompe o que está na tela. O agente só a declara depois de a API a listar em `features` (o esquema de cada
+mensagem é fechado, e uma API anterior recusaria o campo), e a API só manda e lê os campos novos de quem a declara; para
+os demais ela tira `builtin.network`, `builtin.inputs` e `builtin.brand` da configuração. O launcher é tolerante: um app
+antigo ignora o que não conhece, e o agente descobre o nível dele com `am broadcast ... .action.QUERY` (resposta
+`level=N`; sem resposta, nível 1).
+
 | `type` | Direção | Corpo |
 |---|---|---|
-| `tv.livre.v1` | API para agente | `requestId` (UUID gerado pela API) e `action`: `status` (só lê), `install` (captura e ensaia o launcher de fábrica, baixa o APK, confere o hash e a assinatura contra o certificado fixado no agente e instala, conferindo que o app abriu; não o define como padrão), `set-home` (define como padrão e verifica; `disableFactory` opcional desativa o de fábrica depois da verificação), `restore` (Voltar ao Original: reabilita, define o original, verifica e só então desinstala; `uninstall` padrão sim), `apply` (grava a configuração: `configJson`, `revision` e `photoId` opcional), `set-apps` (`disable` e `enable`, `pm disable-user`, reversível, com lista de proteção) e `sleep` (Modo Dormir). |
+| `tv.livre.v1` | API para agente | `requestId` (UUID gerado pela API) e `action`: `status` (só lê), `install` (captura e ensaia o launcher de fábrica, baixa o APK, confere o hash e a assinatura contra o certificado fixado no agente e instala, conferindo que o app abriu; não o define como padrão), `set-home` (define como padrão e verifica; `disableFactory` opcional desativa o de fábrica depois da verificação), `restore` (Voltar ao Original: reabilita, define o original, verifica e só então desinstala; `uninstall` padrão sim), `apply` (grava a configuração: `configJson`, `revision` e `photoId` opcional), `set-apps` (`disable` e `enable`, `pm disable-user`, reversível, com lista de proteção) e `sleep` (Modo Dormir; `minutes`, de 0 a 720, é o tempo até a TV acordar sozinha, e só vai a agente que declara `tv.livre.v2`). |
 | `tv.livre.photo.v1` | API para agente | Um pedaço da foto do fundo: `photoId`, `index` e `total` (até 16), `sha256` da foto inteira e `data` (base64, até 30 KB de bytes). O transporte recusa mensagem acima de 64 KB, por isso a foto vai em pedaços; o agente junta, confere tamanho, JPEG e hash e guarda até o `apply` que cita o `photoId`. |
-| `tv.livre.state.v1` | agente para API | O estado depois de cada ação, **antes** do `command.result.v1` do mesmo comando (como o relatório da limpeza): `requestId` (o do pedido), `supported` (Android 9 ou mais com leanback), `installed`, `version`, `isHome`, `factoryLauncher`, `disabledPackages` e `apps` (`package`, `factory`, `disabled`). |
+| `tv.livre.state.v1` | agente para API | O estado depois de cada ação, **antes** do `command.result.v1` do mesmo comando (como o relatório da limpeza): `requestId` (o do pedido), `supported` (Android 9 ou mais com leanback), `installed`, `version`, `isHome`, `factoryLauncher`, `disabledPackages` e `apps` (`package`, `factory`, `disabled`). Com `tv.livre.v2`: `launcherLevel` (o nível do launcher lido na TV, que só cresce quando o app ganha algo que o site usa; um launcher sem a pergunta é o nível 1) e `applyDeferred` (o `apply` só gravou o arquivo porque outro app estava na frente da TV). |
 
 O agente guarda em disco, antes de cada passo que muda a TV, o launcher de fábrica e o que ele desativou, para o
 Voltar ao Original sobreviver a uma queda. Falhas voltam em `command.result.v1` com `error.code` estável

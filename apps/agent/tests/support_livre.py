@@ -36,6 +36,10 @@ class FakeAndroid:
         noise: bool = False,
     ) -> None:
         self.noise = noise
+        # O nível que o launcher responde; `None` é um launcher que não conhece a pergunta.
+        self.level: int | None = 2
+        # O pacote do app que está na frente (`None`: o ADB não diz nada).
+        self.foreground: str | None = None
         self.die_after_disable = False  # a home nova cai depois de desativar o original
         self.dead: set[str] = set()  # apps que abrem mas não ficam de pé
         self.fail_open_when_current_home: set[str] = set()
@@ -195,10 +199,21 @@ class FakeAndroid:
             _, _, source, target = command.split()
             self.files[target] = self.files.pop(source)
             return ShellResult(True, "")
+        if command.startswith("am broadcast") and "action.QUERY" in command:
+            if self.level is None:
+                return ShellResult(True, "Broadcast completed: result=0\n")
+            return ShellResult(True, f'Broadcast completed: result=1, data="level={self.level}"\n')
+        if command.startswith("dumpsys activity activities"):
+            if self.foreground is None:
+                return ShellResult(True, "")
+            return ShellResult(
+                True, f"  mResumedActivity: ActivityRecord{{abc u0 {self.foreground}/.Main t7}}\n"
+            )
         if command.startswith("am broadcast"):
             return ShellResult(True, 'Broadcast completed: result=1, data="revision=1 avisos=0"\n')
         if command.startswith("am start -n "):
-            component = command.rsplit(maxsplit=1)[-1]
+            words = command.split()
+            component = words[words.index("-n") + 1]
             if component.startswith(PACKAGE) and not self.installed:
                 return ShellResult(False, "Error type 3\n")
             if component in self.fail_open_when_current_home and self.home == component:

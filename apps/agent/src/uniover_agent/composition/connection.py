@@ -146,6 +146,7 @@ from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
+from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
 from uniover_agent.core.tv.relocator import (
     DEFAULT_FAILURES,
@@ -207,6 +208,7 @@ API_LISTED_CAPABILITIES = frozenset(
         PRESENCE_CAPABILITY,
         SETTINGS_OPEN_CAPABILITY,
         ADB_REBIND_CAPABILITY,
+        LIVRE_EXTENDED_CAPABILITY,
         PC_KEY_V2_CAPABILITY,
         PC_TEXT_V2_CAPABILITY,
         PC_CLICK_V2_CAPABILITY,
@@ -867,6 +869,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         clock,
         known=known_features,
     )
+    if tv is not None:
+        tv.api_supports = features.supports
     refreshing: set[asyncio.Future[None]] = set()
 
     # Se o atraso do laço pode ir no batimento desta conexão (ver `announce_connected`).

@@ -48,6 +48,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     public partial class TvLivreStateV1Body
     {
+        /// <summary>
+        /// Verdadeiro quando este apply só gravou a configuração porque outro app estava na frente:
+        /// a tela inicial a lê sozinha na próxima vez. Só vai com a capacidade tv.livre.v2.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("applyDeferred")]
+        public bool? ApplyDeferred { get; set; }
+
         [JsonPropertyName("apps")]
         public TvLivreStateV1BodyAppsItem[] Apps { get; set; }
 
@@ -78,6 +86,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         /// </summary>
         [JsonPropertyName("isHome")]
         public bool IsHome { get; set; }
+
+        /// <summary>
+        /// Nível do launcher instalado (o que ele sabe fazer, não a versão). Sem o campo, o agente
+        /// não soube ler (TV sem o app ou sem resposta). Só vai com a capacidade tv.livre.v2.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("launcherLevel")]
+        public long? LauncherLevel { get; set; }
 
         [JsonPropertyName("requestId")]
         public Guid RequestId { get; set; }

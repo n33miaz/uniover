@@ -33,7 +33,11 @@ PHOTO_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1"
 
 
 def build(
-    tmp_path: Path, android: FakeAndroid | None = None, error: LauncherApkError | None = None
+    tmp_path: Path,
+    android: FakeAndroid | None = None,
+    error: LauncherApkError | None = None,
+    *,
+    extended: bool = False,
 ) -> tuple[Handler, FakeTransport, FakeAndroid, TvLivre]:
     clock = FakeClock()
     android = android or FakeAndroid()
@@ -43,6 +47,7 @@ def build(
         LivreStateFile(tmp_path / "tv-livre.json"),
         PhotoStaging(clock),
         clock,
+        extended=lambda: extended,
     )
     transport = FakeTransport()
     handler = tv_livre_handler(
@@ -84,6 +89,50 @@ async def test_install_reports_the_new_state(tmp_path: Path) -> None:
     assert body["version"] == "0.30.0"
     assert body["isHome"] is False
     assert body["factoryLauncher"] == FACTORY
+
+
+async def test_the_new_state_fields_go_only_to_an_api_that_lists_them(tmp_path: Path) -> None:
+    handler, transport, _, _ = build(tmp_path, extended=False)
+    await handler(command({"action": "install"}))
+    old = transport.sent[-1]["body"]
+    assert "launcherLevel" not in old
+    assert "applyDeferred" not in old
+
+    handler, transport, _, _ = build(tmp_path / "new", extended=True)
+    await handler(command({"action": "install"}))
+    new = transport.sent[-1]["body"]
+    assert new["launcherLevel"] == 2
+    assert "applyDeferred" not in new
+
+
+async def test_a_deferred_apply_is_told_once_and_only_to_a_new_api(tmp_path: Path) -> None:
+    handler, transport, android, _ = build(tmp_path, extended=True)
+    await handler(command({"action": "install"}))
+    android.foreground = NETFLIX
+    config = '{"clock":{"size":"small"}}'
+
+    result = await handler(command({"action": "apply", "revision": 3, "configJson": config}))
+    assert result.status is ResultStatus.OK
+    assert transport.sent[-1]["body"]["applyDeferred"] is True
+
+    android.foreground = None
+    await handler(command({"action": "apply", "revision": 4, "configJson": config}))
+    assert "applyDeferred" not in transport.sent[-1]["body"]
+
+
+async def test_the_sleep_time_reaches_the_tv_and_a_bad_one_is_refused(tmp_path: Path) -> None:
+    handler, _, android, _ = build(tmp_path, extended=True)
+    await handler(command({"action": "install"}))
+
+    assert (await handler(command({"action": "sleep", "minutes": 30}))).status is ResultStatus.OK
+    assert (
+        android.log[-1] == "am start -n br.uniover.launcher/.SleepActivity "
+        "--ei br.uniover.launcher.extra.MAX_MINUTES 30"
+    )
+
+    refused = await handler(command({"action": "sleep", "minutes": 9999}))
+    assert refused.status is ResultStatus.REJECTED
+    assert refused.code == "invalid_minutes"
 
 
 async def test_a_refusal_by_rule_is_rejected_with_the_stable_code_and_still_reports_state(

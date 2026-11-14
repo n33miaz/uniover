@@ -92,6 +92,14 @@ class TvLivreV1Body(BaseModel):
         list[EnableItem] | None,
         Field(description='set-apps: pacotes a reativar.', max_length=64),
     ] = None
+    minutes: Annotated[
+        int | None,
+        Field(
+            description='sleep: minutos até a TV acordar sozinha do Modo Dormir (0 só acorda com tecla). Sem o campo vale o da configuração aplicada. Só vai a agente que declara tv.livre.v2.',
+            ge=0,
+            le=720,
+        ),
+    ] = None
 
 
 class TvLivreV1Message(BaseModel):

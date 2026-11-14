@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
@@ -44,6 +45,9 @@ from uniover_agent.ports.tv_livre import LauncherApkError, LauncherApkSource, Tv
 _log = logging.getLogger(__name__)
 
 CAPABILITY: Final = "tv.livre.v1"
+# O agente entende os acréscimos do segundo passo do módulo (tempo no pedido de dormir, nível do
+# launcher e apply sem interromper no estado). Só vai ao `hello` depois de a API listá-la.
+EXTENDED_CAPABILITY: Final = "tv.livre.v2"
 PACKAGE: Final = "br.uniover.launcher"
 HOME_COMPONENT: Final = f"{PACKAGE}/.HomeActivity"
 SLEEP_COMPONENT: Final = f"{PACKAGE}/.SleepActivity"
@@ -53,6 +57,9 @@ MAX_PHOTO_BYTES: Final = 400 * 1024
 PHOTO_TTL_SECONDS: Final = 600.0
 MAX_STATE_APPS: Final = 300
 MAX_PHOTO_SIDE: Final = 4096
+MAX_SLEEP_MINUTES: Final = 720
+# O launcher sem a pergunta de nível (anterior ao nível 2) conta como nível 1.
+OLD_LAUNCHER_LEVEL: Final = 1
 AUDIT_LIMIT: Final = 50
 SEND_FAILED: Final = "send_failed"
 STARTUP_WAIT_SECONDS: Final = 1.5
@@ -67,6 +74,13 @@ _OWNER_OF_COMPONENT: Final = re.compile(r"([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-
 _HOME_ROLE_HOLDER: Final = re.compile(
     r"name=android\.app\.role\.HOME\s+holders=([A-Za-z][A-Za-z0-9_.]+)"
 )
+_LAUNCHER_LEVEL: Final = re.compile(r'result=\d+, data="level=(\d{1,2})"')
+# O app da frente: o pacote da atividade retomada (`ActivityRecord{hash u0 pacote/.Atividade t12}`).
+_RESUMED_PACKAGE: Final = re.compile(
+    r"ResumedActivity[:=]\s*ActivityRecord\{\S+ u\d+ "
+    r"([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)/"
+)
+_FOREGROUND: Final = 'dumpsys activity activities | grep -E "ResumedActivity"'
 _MAIN: Final = "-a android.intent.action.MAIN"
 _HOME_CATEGORY: Final = "-c android.intent.category.HOME"
 _RESOLVE_HOME: Final = f"cmd package resolve-activity --brief {_MAIN} {_HOME_CATEGORY}"
@@ -75,6 +89,8 @@ _OPEN_LAUNCHER: Final = f"am start -n {HOME_COMPONENT}"
 _BROADCAST: Final = (
     f"am broadcast -n {PACKAGE}/.ConfigReceiver -a {PACKAGE}.action.APPLY_CONFIG --es config_b64 "
 )
+_QUERY_LEVEL: Final = f"am broadcast -n {PACKAGE}/.ConfigReceiver -a {PACKAGE}.action.QUERY"
+SLEEP_MINUTES_EXTRA: Final = f"{PACKAGE}.extra.MAX_MINUTES"
 
 # Além dos pacotes que o fechamento de apps já protege: peças sem as quais instalar, conceder
 # permissão ou parear um controle Bluetooth deixa de funcionar.
@@ -124,6 +140,8 @@ class LivreState:
     factory_launcher: str | None
     disabled_packages: tuple[str, ...]
     apps: tuple[LivreApp, ...]
+    # O nível do launcher instalado (o que ele sabe fazer); `None` sem o app ou sem resposta.
+    launcher_level: int | None = None
 
 
 def _package_of(component: str) -> str:
@@ -274,14 +292,27 @@ class TvLivre:
         photos: PhotoStaging,
         clock: Clock,
         remote_guard: RemoteDropGuard | None = None,
+        extended: Callable[[], bool] = lambda: False,
     ) -> None:
         self._remote_guard = remote_guard
+        # A API entende os acréscimos (`EXTENDED_CAPABILITY`): sem isso o agente age como antes.
+        self._extended = extended
+        self._apply_deferred = False
         self._adb = adb
         self._apk = apk
         self._state = state
         self._photos = photos
         self._clock = clock
         self._lock = asyncio.Lock()
+
+    @property
+    def extended(self) -> bool:
+        return self._extended()
+
+    def take_apply_deferred(self) -> bool:
+        """Se o último `apply` só gravou a configuração (outro app estava na frente); lê uma vez."""
+        deferred, self._apply_deferred = self._apply_deferred, False
+        return deferred
 
     # --- leitura ------------------------------------------------------------------------------
 
@@ -298,9 +329,11 @@ class TvLivre:
         stored = self._state.load()
         installed = "package:" in (await self._adb.shell(f"pm path {PACKAGE}")).text
         version = None
+        level = None
         if installed:
             match = _VERSION_NAME.search((await self._adb.shell(f"dumpsys package {PACKAGE}")).text)
             version = match.group(1) if match else None
+            level = await self._launcher_level()
         resolved = _components((await self._adb.shell(_RESOLVE_HOME)).text)
         is_home = bool(resolved) and _package_of(resolved[-1]) == PACKAGE
         factory = stored.get("factory")
@@ -334,7 +367,19 @@ class TvLivre:
             stored.get("factory") if isinstance(stored.get("factory"), str) else None,
             tuple(ours),
             await self._apps(frozenset(ours)),
+            level,
         )
+
+    async def _launcher_level(self) -> int | None:
+        """O nível do launcher, perguntado a ele; o que não sabe responder é o nível 1.
+
+        Um launcher anterior ignora a ação e devolve só o código padrão. Falha do ADB não diz nada
+        sobre o app: `None`, e quem lê não conclui que há versão velha."""
+        result = await self._adb.shell(_QUERY_LEVEL)
+        if not result.ok:
+            return None
+        match = _LAUNCHER_LEVEL.search(result.text)
+        return int(match.group(1)) if match else OLD_LAUNCHER_LEVEL
 
     async def _sdk(self) -> int | None:
         # Algumas TVs imprimem linhas de ruído antes da resposta: vale a última linha só de dígitos.
@@ -401,7 +446,7 @@ class TvLivre:
             elif action == "set-apps":
                 await self._set_apps(body.get("disable") or [], body.get("enable") or [])
             elif action == "sleep":
-                await self._sleep()
+                await self._sleep(body.get("minutes"))
             else:
                 raise LivreError("unknown_action", "Ação desconhecida.", rejected=True)
 
@@ -509,6 +554,7 @@ class TvLivre:
 
     async def _install(self) -> None:
         await self._capture_original()
+        was_home = await self._resolved_home_package() == PACKAGE
         apk = await self._apk.fetch()
         result = await self._adb.install(apk.path)
         if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in result.text:
@@ -520,6 +566,11 @@ class TvLivre:
             raise LivreError("install_failed", "A TV não aceitou a instalação.")
         # Abre uma vez: cria a pasta da configuração. O launcher de fábrica segue como padrão.
         await self._require_launcher_runs()
+        if was_home and await self._resolved_home_package() != PACKAGE:
+            # Atualizar por cima não deve tirar o TV Livre do lugar de tela inicial: se o sistema
+            # soltou o papel na troca do app, refaz a escolha, e nunca deixa a TV de fábrica.
+            if not await self._set_home_activity(HOME_COMPONENT):
+                _log.warning("TV Livre: a atualização perdeu a tela inicial e não a recuperei")
 
     async def _apply(self, body: dict[str, Any]) -> None:
         await self._require_installed()
@@ -554,7 +605,35 @@ class TvLivre:
                 if photo is not None:
                     await self._push_atomic(Path(scratch), "wallpaper.jpg", photo)
                 await self._push_atomic(Path(scratch), "config.json", text.encode("utf-8"))
+        if self._extended() and await self._other_app_in_front():
+            # Alguém está vendo outra coisa: o arquivo chegou, e a tela inicial o lê sozinha quando
+            # voltar à frente. Abrir a home agora tiraria o filme da tela.
+            self._apply_deferred = True
+            return
         await self._require_launcher_runs()
+
+    async def _foreground_package(self) -> str | None:
+        """O app que está na frente, lido uma vez do ADB já aberto; `None` se não deu para saber."""
+        result = await self._adb.shell(_FOREGROUND)
+        if not result.ok:
+            return None
+        match = _RESUMED_PACKAGE.search(result.text)
+        return match.group(1) if match else None
+
+    async def _other_app_in_front(self) -> bool:
+        """Há um app que não é tela inicial na frente. Sem certeza, não: a home abre como antes."""
+        package = await self._foreground_package()
+        if package is None:
+            return False
+        stored = self._state.load()
+        homes = {PACKAGE}
+        homes.update(_package_of(c) for c in stored.get("candidates", []) if isinstance(c, str))
+        if isinstance(stored.get("factory"), str):
+            homes.add(_package_of(stored["factory"]))
+        resolved = await self._resolved_home_package()
+        if resolved is not None:
+            homes.add(resolved)
+        return package not in homes
 
     async def _files_dir_ready(self) -> bool:
         if (await self._adb.shell(f"ls {FILES_DIR}")).ok:
@@ -780,9 +859,18 @@ class TvLivre:
                 stored["disabled"] = disabled
                 self._state.save(stored)
 
-    async def _sleep(self) -> None:
+    async def _sleep(self, minutes: object = None) -> None:
+        if minutes is not None and (
+            not isinstance(minutes, int)
+            or isinstance(minutes, bool)
+            or not 0 <= minutes <= MAX_SLEEP_MINUTES
+        ):
+            raise LivreError("invalid_minutes", "O tempo do Modo Dormir é inválido.", rejected=True)
         await self._require_installed()
-        result = await self._adb.shell(f"am start -n {SLEEP_COMPONENT}")
+        # O tempo vai no pedido: o Modo Dormir o usa sem depender da configuração aplicada. Um
+        # launcher que não o conhece ignora o extra e usa a configuração, como sempre.
+        extra = f" --ei {SLEEP_MINUTES_EXTRA} {minutes}" if minutes is not None else ""
+        result = await self._adb.shell(f"am start -n {SLEEP_COMPONENT}{extra}")
         if not result.ok or "Error" in result.text:
             raise LivreError("sleep_failed", "A TV não abriu o Modo Dormir.")
 
@@ -816,6 +904,7 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
         if not isinstance(request_id, str) or not request_id:
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'requestId' ausente")
         outcome = await _run(livre, command.body)
+        deferred = livre.take_apply_deferred()
         livre.audit(action, outcome.code or "ok", _detail(command.body))
         try:
             state = await livre.read_state()
@@ -831,6 +920,9 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
                     factory_launcher=state.factory_launcher,
                     disabled_packages=state.disabled_packages,
                     apps=[(a.package, a.factory, a.disabled) for a in state.apps],
+                    # Campos novos só vão à API que os entende (o esquema do estado é fechado).
+                    launcher_level=state.launcher_level if livre.extended else None,
+                    apply_deferred=True if deferred and livre.extended else None,
                 )
             )
         except AdbError:

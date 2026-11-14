@@ -127,6 +127,16 @@
         },
         "at": {
           "$ref": "../envelope.schema.json#/$defs/timestamp"
+        },
+        "launcherLevel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99,
+          "description": "Nível do launcher instalado (o que ele sabe fazer, não a versão). Sem o campo, o agente não soube ler (TV sem o app ou sem resposta). Só vai com a capacidade tv.livre.v2."
+        },
+        "applyDeferred": {
+          "type": "boolean",
+          "description": "Verdadeiro quando este apply só gravou a configuração porque outro app estava na frente: a tela inicial a lê sozinha na próxima vez. Só vai com a capacidade tv.livre.v2."
         }
       }
     }

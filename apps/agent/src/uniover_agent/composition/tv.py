@@ -109,6 +109,7 @@ from uniover_agent.core import (
 from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
 from uniover_agent.core.tv.key_timing import KeyTimings
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
+from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
 from uniover_agent.core.tv.livre import (
     LivreStateFile,
     PhotoStaging,
@@ -180,6 +181,8 @@ class TvSetup:
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
     # Rodam ao encerrar o agente (cancelam o que ficou agendado).
     closers: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+    # O que a API diz aceitar (preenchido na conexão): campo novo só vai a quem entende.
+    api_supports: Callable[[str], bool] = lambda _feature: False
 
 
 def build_tv(
@@ -868,6 +871,7 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
         photos,
         clock,
         remote_guard=setup.manager,
+        extended=lambda: setup.api_supports(LIVRE_EXTENDED_CAPABILITY),
     )
     # Ler o estado ao abrir a tela não é pedido de permissão; as ações do TV Livre (instalar,
     # aplicar) são ações da pessoa e podem abrir o aviso do ADB.
@@ -882,6 +886,8 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
         # Sem ADB utilizável não há módulo; o gancho cobre o ADB autorizado só depois da partida.
         if LIVRE_CAPABILITY not in setup.capabilities:
             setup.capabilities.append(LIVRE_CAPABILITY)
+            # Só chega ao `hello` depois de a API listá-la (ver `API_LISTED_CAPABILITIES`).
+            setup.capabilities.append(LIVRE_EXTENDED_CAPABILITY)
 
     async def declare_when_usable() -> None:
         # Depois da declaração do ADB (passo anterior).

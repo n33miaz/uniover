@@ -91,6 +91,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonConverter(typeof(TvLivreV1MessageDecodeArrayConverter))]
         public string[]? Enable { get; set; }
 
+        /// <summary>
+        /// sleep: minutos até a TV acordar sozinha do Modo Dormir (0 só acorda com tecla). Sem o
+        /// campo vale o da configuração aplicada. Só vai a agente que declara tv.livre.v2.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("minutes")]
+        public long? Minutes { get; set; }
+
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("photoId")]
         public Guid? PhotoId { get; set; }
