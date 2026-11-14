@@ -24,6 +24,14 @@ import {
   STALLED_FIRST_RETRY_MS,
 } from './pc-direct';
 
+/**
+ * Os construtores de evento do jsdom deste arquivo, guardados ao carregar. Um aviso que ainda estava agendado quando o ambiente
+ * é desmontado (o fechamento depois do `bye`, por exemplo) acharia no global um `Event` de outro ambiente, que o `EventTarget`
+ * do jsdom recusa.
+ */
+const JsdomEvent = Event;
+const JsdomMessageEvent = MessageEvent;
+
 /** Um canal de dados de mentira: guarda o que se manda e deixa o teste abrir, fechar e responder. */
 class FakeChannel extends EventTarget {
   readyState: 'connecting' | 'open' | 'closed' = 'connecting';
@@ -47,14 +55,14 @@ class FakeChannel extends EventTarget {
   close(): void {
     if (this.readyState === 'closed') return;
     this.readyState = 'closed';
-    this.dispatchEvent(new Event('close'));
+    this.dispatchEvent(new JsdomEvent('close'));
   }
   open(): void {
     this.readyState = 'open';
-    this.dispatchEvent(new Event('open'));
+    this.dispatchEvent(new JsdomEvent('open'));
   }
   receive(message: unknown): void {
-    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+    this.dispatchEvent(new JsdomMessageEvent('message', { data: JSON.stringify(message) }));
   }
   last(kind: string): Record<string, unknown> | undefined {
     return [...this.sent].reverse().find((message) => message['k'] === kind);
@@ -98,6 +106,9 @@ class FakeConnection extends EventTarget {
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** Os canais criados no teste. O serviço é da raiz e só a tela o para: sem parar aqui, o sinal de vida segue depois do teste. */
+const created: PcDirect[] = [];
+
 function setup(initial: PcStatus | null = status({ capabilities: [PC_RTC_CAPABILITY] })) {
   const current = signal<PcStatus | null>(initial);
   const connections: FakeConnection[] = [];
@@ -119,7 +130,9 @@ function setup(initial: PcStatus | null = status({ capabilities: [PC_RTC_CAPABIL
       },
     ],
   });
-  return { direct: TestBed.inject(PcDirect), signaling, connections, current };
+  const direct = TestBed.inject(PcDirect);
+  created.push(direct);
+  return { direct, signaling, connections, current };
 }
 
 /** Abre o canal até o fim: oferta, resposta, os dois canais abertos e o `ready` do agente. */
@@ -137,6 +150,11 @@ async function openChannel(direct: PcDirect, connections: FakeConnection[], inde
 }
 
 afterEach(() => {
+  // Antes de voltar ao relógio real: o que parar agendar com o relógio falso some junto com ele.
+  for (const direct of created.splice(0)) {
+    direct.stop('pc');
+    direct.stop('tv');
+  }
   vi.useRealTimers();
 });
 
