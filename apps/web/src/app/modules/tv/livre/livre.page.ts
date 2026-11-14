@@ -60,11 +60,21 @@ export class LivrePage {
     this.needsInstall() ? 'install' : this.active(),
   );
 
-  /** A barra "Aplicar na TV" existe nas telas que editam a configuração, e só com a TV ao alcance. */
+  /**
+   * A barra "Aplicar na TV" existe nas telas que editam a configuração, com a TV ao alcance e só quando há o que levar a ela:
+   * uma mudança ainda não enviada, uma configuração guardada que a TV não aplicou (a barra fica para tentar de novo) ou o
+   * pedido de aplicar em andamento (guardar já deixa o rascunho igual ao guardado, e a barra não pode sumir no meio).
+   * O resultado do pedido fica na barra até a próxima mudança, para a pessoa vê-lo onde tocou.
+   */
   protected readonly showApply = computed(
-    () => this.store.canUse() && this.currentTab() !== 'install',
+    () =>
+      this.store.canUse() &&
+      this.currentTab() !== 'install' &&
+      (this.store.pending() || this.applying() || this.store.notice() !== null),
   );
   protected readonly applying = computed(() => this.store.busy() === 'apply');
+  /** "Descartar" só existe para o que foi mexido: a configuração guardada que falhou ao aplicar não tem o que desfazer. */
+  protected readonly canDiscard = computed(() => this.store.dirty() && !this.applying());
 
   constructor() {
     this.store.start();

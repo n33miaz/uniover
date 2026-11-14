@@ -3,6 +3,7 @@ import {
   GRADIENT_PRESETS,
   appRows,
   buildConfig,
+  controlPackages,
   gradientCss,
   groupApps,
   moveApp,
@@ -11,6 +12,7 @@ import {
   presetFor,
   previewApps,
   previewClock,
+  replaceApps,
   sameConfig,
   setAppChosen,
 } from './livre-config';
@@ -111,6 +113,36 @@ describe('the choice of apps', () => {
     expect(moveApp(config, 'a.a', -1)).toBe(config);
     expect(moveApp(config, 'c.c', 1)).toBe(config);
     expect(moveApp(config, 'x.x', 1)).toBe(config);
+  });
+});
+
+describe('the apps of the control', () => {
+  const pinned = (position: number, name: string, overrides = {}) =>
+    makeShortcut(position, { package: `com.exemplo.${name}`, ...overrides });
+
+  it('takes the pinned and installed apps in the order of the row, only the ones the TV has and did not disable', () => {
+    const shortcuts = [
+      pinned(1, 'zeta'),
+      pinned(2, 'alfa', { enabled: false }),
+      pinned(3, 'fabrica'),
+      pinned(4, 'fora'),
+      pinned(5, 'sumiu', { installed: false }),
+      pinned(6, 'nao-listado'),
+    ];
+    expect(controlPackages(shortcuts, APPS)).toEqual(['com.exemplo.zeta', 'com.exemplo.fabrica']);
+  });
+
+  it('never repeats a package', () => {
+    const shortcuts = [pinned(1, 'zeta'), pinned(2, 'zeta')];
+    expect(controlPackages(shortcuts, APPS)).toEqual(['com.exemplo.zeta']);
+  });
+
+  it('replaces the apps of the Home instead of adding to them, and keeps the order given', () => {
+    const config = withItems(['a.a', 'b.b']);
+    const replaced = replaceApps(config, ['c.c', 'b.b']);
+    expect(replaced.apps.items).toEqual(['c.c', 'b.b']);
+    expect(replaced.apps.mode).toBe('listed');
+    expect(replaceApps(config, []).apps.mode).toBe('all');
   });
 });
 

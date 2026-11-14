@@ -215,11 +215,48 @@ test.describe('Home da TV', () => {
     // Guarda primeiro, aplica depois.
     const order = livre.requests.map((r) => `${r.method} ${r.path}`);
     expect(order.indexOf('PUT /config')).toBeLessThan(order.indexOf('POST /apply'));
-    await expect(button(applyBar(page), 'Aplicar na TV')).toBeEnabled();
+    // Aplicado: não sobra o que levar à TV, e a barra fica só com o resultado.
+    await expect(button(applyBar(page), 'Aplicar na TV')).toHaveCount(0);
+  });
+
+  test('a barra Aplicar na TV só aparece com mudança, e Descartar a tira', async ({ page }) => {
+    await openLivre(page);
+    await expect(applyBar(page)).toHaveCount(0);
+    await page.getByRole('switch', { name: 'Mostrar Música na Home' }).check();
+    await expect(button(applyBar(page), 'Aplicar na TV')).toBeVisible();
+    await expect(previewNames(page)).toHaveText(['Música']);
+    await button(applyBar(page), 'Descartar').click();
+    await expect(applyBar(page)).toHaveCount(0);
+    await expect(page.getByRole('switch', { name: 'Mostrar Música na Home' })).not.toBeChecked();
+    expect(livre.to('PUT', '/config')).toHaveLength(0);
+    // Mudar de volta à mão também apaga a mudança.
+    await page.getByRole('switch', { name: 'Mostrar Música na Home' }).check();
+    await page.getByRole('switch', { name: 'Mostrar Música na Home' }).uncheck();
+    await expect(applyBar(page)).toHaveCount(0);
+  });
+
+  test('"Usar os apps do controle" copia a ordem do controle para a Home, para conferir e aplicar', async ({
+    page,
+  }) => {
+    // O controle tem Filmes, Música e Jogos; a pessoa tira Música dele.
+    tv.shortcuts[1].enabled = false;
+    await openLivre(page);
+    await button(page, 'Usar os apps do controle').click();
+    await expect(previewNames(page)).toHaveText(['Filmes', 'Jogos']);
+    await expect(button(page, 'Usar os apps do controle')).toBeDisabled();
+    expect(livre.to('PUT', '/config')).toHaveLength(0);
+    await button(applyBar(page), 'Aplicar na TV').click();
+    await expect(applyBar(page).getByRole('status')).toHaveText('Aplicado na TV.');
+    expect(livre.to('PUT', '/config')[0].body).toMatchObject({
+      apps: { mode: 'listed', items: ['exemplo.pacote.app1', 'exemplo.pacote.app3'] },
+    });
+    // Aplicado: a barra deixa só o resultado, sem botão para aplicar o que já foi aplicado.
+    await expect(button(applyBar(page), 'Aplicar na TV')).toHaveCount(0);
   });
 
   test('sem nenhum app escolhido manda "all" com a fábrica oculta', async ({ page }) => {
-    await openLivre(page);
+    await openLivre(page, 'Fundo');
+    await page.getByRole('button', { name: 'Cores Oceano' }).click();
     await button(applyBar(page), 'Aplicar na TV').click();
     await expect(applyBar(page).getByRole('status')).toHaveText('Aplicado na TV.');
     expect(livre.to('PUT', '/config')[0].body).toMatchObject({
@@ -427,38 +464,38 @@ test.describe('Instalação', () => {
     }
   });
 
-  test('segue a ordem segura: instalar, depois definir como padrão (com a fábrica ligada por padrão)', async ({
+  test('segue a ordem segura: instalar, depois usar como tela inicial (com a fábrica ligada por padrão)', async ({
     page,
   }) => {
     livre.view = livreView({ installed: false });
     await openLivre(page, 'Instalação');
     await expect(page.locator('.status')).toContainText('Não');
-    await expect(button(page, 'Definir Como Padrão')).toBeDisabled();
+    await expect(button(page, 'Usar Como Tela Inicial')).toBeDisabled();
 
     await button(page, 'Instalar').click();
     await expect(page.getByRole('status').filter({ hasText: 'TV Livre instalado.' })).toBeVisible();
     await tab(page, 'Instalação').click();
     await expect(page.locator('.status')).toContainText('Versão 0.1.0');
-    await expect(button(page, 'Definir Como Padrão')).toBeEnabled();
+    await expect(button(page, 'Usar Como Tela Inicial')).toBeEnabled();
 
-    // A opção de desativar o launcher de fábrica começa desligada.
-    const factory = page.getByRole('switch', { name: 'Desativar o Launcher de Fábrica' });
+    // A opção de desativar a tela inicial de fábrica começa desligada.
+    const factory = page.getByRole('switch', { name: 'Desativar a Tela Inicial de Fábrica' });
     await expect(factory).not.toBeChecked();
-    await button(page, 'Definir Como Padrão').click();
+    await button(page, 'Usar Como Tela Inicial').click();
     await expect(
       page.getByRole('status').filter({ hasText: 'TV Livre é a tela inicial.' }),
     ).toBeVisible();
     expect(livre.to('POST', '/set-home')[0].body).toEqual({ disableFactory: false });
-    await expect(button(page, 'Definir Como Padrão')).toBeDisabled();
+    await expect(button(page, 'Usar Como Tela Inicial')).toBeDisabled();
   });
 
-  test('desativar o launcher de fábrica só acontece quando a pessoa liga a opção', async ({
+  test('desativar a tela inicial de fábrica só acontece quando a pessoa liga a opção', async ({
     page,
   }) => {
     livre.view = livreView({ installed: true, version: '0.1.0' });
     await openLivre(page, 'Instalação');
-    await page.getByRole('switch', { name: 'Desativar o Launcher de Fábrica' }).check();
-    await button(page, 'Definir Como Padrão').click();
+    await page.getByRole('switch', { name: 'Desativar a Tela Inicial de Fábrica' }).check();
+    await button(page, 'Usar Como Tela Inicial').click();
     await expect(
       page.getByRole('status').filter({ hasText: 'TV Livre é a tela inicial.' }),
     ).toBeVisible();
@@ -491,10 +528,18 @@ test.describe('Instalação', () => {
     await expect(button(page, 'Voltar ao Original')).toBeVisible();
   });
 
-  test('Atualizar pede o estado de agora ao agente', async ({ page }) => {
+  test('Atualizar, e não Instalar, com uma versão já na TV', async ({ page }) => {
+    await openLivre(page, 'Instalação');
+    await expect(button(page, 'Instalar')).toHaveCount(0);
+    await expect(button(page, 'Atualizar')).toBeVisible();
+    await button(page, 'Atualizar').click();
+    expect(livre.to('POST', '/install')).toHaveLength(1);
+  });
+
+  test('Verificar pede o estado de agora ao agente', async ({ page }) => {
     await openLivre(page, 'Instalação');
     livre.view = livreView({ installed: true, isHome: true, version: '0.2.0' });
-    await button(page, 'Atualizar').click();
+    await button(page, 'Verificar').click();
     await expect(page.locator('.status')).toContainText('Versão 0.2.0');
     expect(livre.to('POST', '/refresh')).toHaveLength(1);
   });
@@ -508,7 +553,7 @@ test.describe('erros', () => {
       agentError: 'signature_mismatch',
     };
     await openLivre(page, 'Instalação');
-    await button(page, 'Instalar').click();
+    await button(page, 'Atualizar').click();
     const alert = page.getByRole('alert');
     await expect(alert).toContainText(
       'A versão instalada tem outra assinatura. Volte ao original e instale de novo.',
@@ -520,18 +565,21 @@ test.describe('erros', () => {
   test('guardou mas a TV não aplicou: diz que ficou salvo', async ({ page }) => {
     livre.failures['/apply'] = { status: 502, kind: 'command-failed', agentError: 'push_failed' };
     await openLivre(page);
+    await page.getByRole('switch', { name: 'Mostrar Música na Home' }).check();
     await button(applyBar(page), 'Aplicar na TV').click();
     await expect(applyBar(page).getByRole('alert')).toHaveText(
       'Salvo, mas a TV não aplicou. Não deu para enviar os arquivos à TV.',
     );
     expect(livre.to('PUT', '/config')).toHaveLength(1);
     await expect(button(applyBar(page), 'Aplicar na TV')).toBeEnabled();
+    // Guardado e sem aplicar: sobra tentar de novo, não descartar.
+    await expect(button(applyBar(page), 'Descartar')).toHaveCount(0);
   });
 
   test('a TV sem a capacidade recusada pelo servidor vira "não é compatível"', async ({ page }) => {
     livre.failures['/install'] = { status: 409, kind: 'tv-livre-unsupported' };
     await openLivre(page, 'Instalação');
-    await button(page, 'Instalar').click();
+    await button(page, 'Atualizar').click();
     await expect(page.getByRole('alert')).toHaveText('Esta TV não é compatível com o TV Livre.');
   });
 

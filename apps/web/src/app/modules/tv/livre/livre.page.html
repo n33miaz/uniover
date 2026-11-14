@@ -80,21 +80,33 @@
             <button type="button" class="ui-btn primary block" (click)="select('install')">
               <span i18n="@@tv-livre.go-to-install">Instalar TV Livre primeiro</span>
             </button>
-          } @else {
-            <button
-              type="button"
-              class="ui-btn primary block"
-              [disabled]="store.busy() !== null"
-              [attr.aria-busy]="applying()"
-              (click)="store.apply()"
-            >
-              @if (applying()) {
-                <span class="ui-spinner" aria-hidden="true"></span>
-                <span i18n="@@tv-livre.apply.busy">Aplicando…</span>
-              } @else {
-                <span i18n="@@tv-livre.apply">Aplicar na TV</span>
+          } @else if (store.pending() || applying()) {
+            <div class="apply-row">
+              @if (canDiscard()) {
+                <button
+                  type="button"
+                  class="ui-btn secondary"
+                  [disabled]="store.busy() !== null"
+                  (click)="store.discard()"
+                >
+                  <span i18n="@@tv-livre.discard">Descartar</span>
+                </button>
               }
-            </button>
+              <button
+                type="button"
+                class="ui-btn primary block"
+                [disabled]="store.busy() !== null"
+                [attr.aria-busy]="applying()"
+                (click)="store.apply()"
+              >
+                @if (applying()) {
+                  <span class="ui-spinner" aria-hidden="true"></span>
+                  <span i18n="@@tv-livre.apply.busy">Aplicando…</span>
+                } @else {
+                  <span i18n="@@tv-livre.apply">Aplicar na TV</span>
+                }
+              </button>
+            </div>
           }
         </div>
       </div>

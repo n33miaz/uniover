@@ -14,7 +14,7 @@ import { TvLivreStore } from '../data/livre-store';
 
 /**
  * Tela "Instalação": o estado do TV Livre na TV e os passos na ordem segura: Instalar, olhar a Home na TV (Aplicar na TV, em
- * outra tela) e só então Definir Como Padrão, com a opção, desligada, de desativar o launcher de fábrica. "Voltar ao
+ * outra tela) e só então Usar Como Tela Inicial, com a opção, desligada, de desativar a tela inicial de fábrica. "Voltar ao
  * Original" é a saída e fica sempre à vista quando a TV é compatível, com uma confirmação curta antes de agir.
  */
 @Component({
@@ -26,7 +26,7 @@ import { TvLivreStore } from '../data/livre-store';
 export class LivreInstallTab {
   protected readonly store = inject(TvLivreStore);
 
-  /** Desativar o launcher de fábrica junto com "Definir Como Padrão": começa desligado, porque é o passo mais difícil de desfazer. */
+  /** Desativar a tela inicial de fábrica junto com "Usar Como Tela Inicial": começa desligado, porque é o passo mais difícil de desfazer. */
   protected readonly disableFactory = signal(false);
   protected readonly confirmingRestore = signal(false);
   private readonly injector = inject(Injector);

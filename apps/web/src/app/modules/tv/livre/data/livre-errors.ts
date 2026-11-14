@@ -50,7 +50,7 @@ export function livreCodeMessage(code: string): string | null {
     case 'push_failed':
       return $localize`:@@tv-livre.error.push-failed:Não deu para enviar os arquivos à TV.`;
     case 'no_factory_launcher':
-      return $localize`:@@tv-livre.error.no-factory-launcher:Não achei o launcher de fábrica da TV.`;
+      return $localize`:@@tv-livre.error.no-factory-launcher:Não achei a tela inicial de fábrica da TV.`;
     case 'signature_mismatch':
       return $localize`:@@tv-livre.error.signature-mismatch:A versão instalada tem outra assinatura. Volte ao original e instale de novo.`;
     case 'install_failed':
@@ -62,13 +62,13 @@ export function livreCodeMessage(code: string): string | null {
     case 'apk_invalid':
       return $localize`:@@tv-livre.error.apk-invalid:O arquivo de instalação é inválido.`;
     case 'set_home_failed':
-      return $localize`:@@tv-livre.error.set-home-failed:Não deu para definir como padrão.`;
+      return $localize`:@@tv-livre.error.set-home-failed:Não deu para usar como tela inicial.`;
     case 'verify_failed':
       return $localize`:@@tv-livre.error.verify-failed:Não deu para confirmar a mudança na TV.`;
     case 'disable_failed':
-      return $localize`:@@tv-livre.error.disable-failed:Não deu para desativar o launcher de fábrica.`;
+      return $localize`:@@tv-livre.error.disable-failed:Não deu para desativar a tela inicial de fábrica.`;
     case 'enable_failed':
-      return $localize`:@@tv-livre.error.enable-failed:Não deu para reativar o launcher de fábrica.`;
+      return $localize`:@@tv-livre.error.enable-failed:Não deu para reativar a tela inicial de fábrica.`;
     case 'uninstall_failed':
       return $localize`:@@tv-livre.error.uninstall-failed:Não deu para desinstalar o TV Livre.`;
     case 'protected_package':
@@ -160,7 +160,7 @@ export function describeLivreFailure(error: unknown): LivreFailure {
     case 504:
       // Instalar e voltar ao original levam dezenas de segundos: o tempo esgotar não quer dizer que nada aconteceu.
       return {
-        message: $localize`:@@tv-livre.error.slow:A TV demorou a responder e pode ter terminado. Toque em Atualizar para conferir.`,
+        message: $localize`:@@tv-livre.error.slow:A TV demorou a responder e pode ter terminado. Toque em Verificar para conferir.`,
         code,
       };
     default:
