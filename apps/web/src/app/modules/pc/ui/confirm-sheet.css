@@ -8,7 +8,7 @@
   padding: 20px var(--gutter);
   padding-bottom: calc(20px + var(--safe-bottom));
   border: 0;
-  border-radius: 20px 20px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--a-surface);
   color: var(--a-ink);
   overflow-y: auto;
@@ -27,7 +27,7 @@
   transition-property: transform, opacity;
 }
 .sheet::backdrop {
-  background: rgb(0 0 0 / 0.45);
+  background: rgb(8 16 10 / 0.52);
   transition-property: background-color;
 }
 @starting-style {

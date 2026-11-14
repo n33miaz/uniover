@@ -25,7 +25,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
 /**
  * Casca do módulo: o estado do PC e, embaixo, a aba aberta. Conectado, o estado é um ponto de 10 px no canto de cima
  * (cheio e verde); nos outros casos é a pílula com a palavra. Sem PC conectado nenhuma aba mostraria um controle que não
- * leva a lugar nenhum, então no lugar dela fica uma frase curta e a ação possível. Enquanto a primeira leitura não chega,
+ * leva a lugar nenhum, então no lugar dela ficam uma frase curta e o botão. Enquanto a primeira leitura não chega,
  * o esqueleto tem a forma da tela do mouse (a tela não pula quando o estado chega).
  *
  * A altura é medida (ver `watchAvailableHeight`): a tela do mouse ocupa exatamente o que sobra entre o cabeçalho e a barra
@@ -70,10 +70,7 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
               <path [attr.d]="'M8 20h8M12 16v4'" />
             </svg>
             <h2 i18n="@@pc.unavailable.title">Nenhum PC Seu Conectado</h2>
-            <p i18n="@@pc.unavailable.text">
-              Instale o conector no seu PC e, nele, ligue o controle e reinicie o conector:
-            </p>
-            <code>{{ enableCommand }}</code>
+            <p i18n="@@pc.unavailable.text">Instale o conector e ligue o controle do PC.</p>
             <a routerLink="/conectar" class="ui-btn" i18n="@@pc.unavailable.install">
               Instalar o Conector
             </a>
@@ -137,8 +134,6 @@ export class PcPage {
   protected readonly height = signal<number | null>(null);
   /** A altura medida da barra de abas (a folga da barra do "Trocar janela" acima dela); `null` até a primeira medida. */
   protected readonly tabsHeight = signal<number | null>(null);
-  /** O comando é do agente, não se traduz. */
-  protected readonly enableCommand = 'uniover-agent pc-control on';
 
   protected readonly statusLabel = computed(() => {
     switch (this.store.phase()) {
