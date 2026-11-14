@@ -475,6 +475,31 @@ def test_the_open_script_clears_the_closed_signal(tmp_path: Path) -> None:
     assert other.exists()
 
 
+def test_the_open_script_finds_the_installation_from_a_staged_version(tmp_path: Path) -> None:
+    """Na troca sem queda o atalho aponta para `app.staging\\<sha>\\tools` e acha o runtime."""
+    base = tmp_path / "UniOver"
+    tools = base / "app.staging" / ("a" * 40) / "tools"
+    tools.mkdir(parents=True)
+    (base / "runtime").mkdir()
+    script = tools / "tray-open.vbs"
+    script.write_bytes((RUNNER.parent / "tray-open.vbs").read_bytes())
+    flag = base / "runtime" / "tray-closed"
+    flag.write_text("", encoding="ascii")
+
+    done = subprocess.run(  # noqa: S603 - wscript do sistema; script do repositorio
+        [str(SYSTEM32 / "wscript.exe"), "//B", "//Nologo", str(script)],
+        env=os.environ | {"LOCALAPPDATA": str(tmp_path / "local")},
+        check=False,
+        timeout=60,
+        creationflags=0x08000000,
+    )
+
+    assert done.returncode == 0
+    assert wait_for((base / "runtime" / "tray-start-request").exists, 10)
+    assert not flag.exists()
+    assert not (base / "app.staging" / "runtime").exists()
+
+
 def test_a_second_supervisor_of_the_same_installation_exits_and_leaves_the_first_alone(
     pc: Pc,
 ) -> None:
