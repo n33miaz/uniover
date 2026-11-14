@@ -48,6 +48,10 @@ public sealed class PcMessagesTests
             (PcMessages.Text("olá, mundo"), "pc.text.v1"),
             (PcMessages.Media(PcMediaV1BodyAction.VolumeUp, 3), "pc.media.v1"),
             (PcMessages.Power(PcPowerV1BodyAction.CancelShutdown), "pc.power.v1"),
+            (PcMessages.PowerV2(PcPowerV2BodyAction.Restart), "pc.power.v2"),
+            (PcMessages.PowerV2(PcPowerV2BodyAction.Logoff), "pc.power.v2"),
+            (PcMessages.PowerV2(PcPowerV2BodyAction.Hibernate), "pc.power.v2"),
+            (PcMessages.PowerV2(PcPowerV2BodyAction.MonitorOff), "pc.power.v2"),
             (PcMessages.AppLaunch("navegador"), "pc.app.launch.v1"),
         };
 
@@ -69,6 +73,7 @@ public sealed class PcMessagesTests
             PcMessages.Text("olá"),
             PcMessages.Media(PcMediaV1BodyAction.VolumeUp, 1),
             PcMessages.Power(PcPowerV1BodyAction.Shutdown),
+            PcMessages.PowerV2(PcPowerV2BodyAction.Restart),
             PcMessages.AppLaunch("navegador"),
         ];
 
@@ -133,6 +138,10 @@ public sealed class PcMessagesTests
         PcMessages.MediaActions.Keys.Should().BeEquivalentTo(
             "PLAY_PAUSE", "NEXT", "PREVIOUS", "STOP", "VOLUME_UP", "VOLUME_DOWN", "MUTE");
         PcMessages.PowerActions.Keys.Should().BeEquivalentTo("LOCK", "SLEEP", "SHUTDOWN", "CANCEL_SHUTDOWN");
+        PcMessages.PowerV2Actions.Keys.Should().BeEquivalentTo(
+            "LOCK", "SLEEP", "SHUTDOWN", "CANCEL_SHUTDOWN", "RESTART", "LOGOFF", "HIBERNATE", "MONITOR_OFF");
+        // Só ficam sem confirmação o que não perde trabalho nem derruba a conexão: bloquear, cancelar e apagar o monitor.
+        PcMessages.ConfirmedPowerActions.Should().BeEquivalentTo("SLEEP", "SHUTDOWN", "RESTART", "LOGOFF", "HIBERNATE");
         PcMessages.Keys.Keys.Should().Contain(["ENTER", "BACKSPACE", "PAGE_UP", "PAGE_DOWN", "F1", "F12", "A", "Z"]);
         PcMessages.Keys.Should().HaveCount(14 + 12 + 26);
     }
@@ -576,7 +585,16 @@ public sealed class PcValidatorTests
     [InlineData("SHUTDOWN", null, false)]
     [InlineData("SHUTDOWN", false, false)]
     [InlineData("SHUTDOWN", true, true)]
-    [InlineData("HIBERNATE", true, false)]
+    [InlineData("HIBERNATE", null, false)]
+    [InlineData("HIBERNATE", true, true)]
+    [InlineData("RESTART", null, false)]
+    [InlineData("RESTART", false, false)]
+    [InlineData("RESTART", true, true)]
+    [InlineData("LOGOFF", null, false)]
+    [InlineData("LOGOFF", true, true)]
+    [InlineData("MONITOR_OFF", null, true)]
+    [InlineData("REBOOT", true, false)]
+    [InlineData("restart", true, false)]
     [InlineData(null, true, false)]
     public void Power_AskingToSleepOrShutDownNeedsTheExplicitConfirmation(string? action, bool? confirm, bool valid) =>
         PcValidator.Power(new PcPowerRequest(action, confirm)).Count.Should().Be(valid ? 0 : 1);

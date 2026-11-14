@@ -61,6 +61,9 @@ export const DEVICE_UNKNOWN_PROBLEM = 'pc-device-unknown';
 export const SESSION_LOCKED_CODE = 'session_locked';
 export const ELEVATED_WINDOW_CODE = 'elevated_window';
 
+/** Código do agente para a hibernação desligada neste PC (o Windows não tem o arquivo de hibernação). */
+export const HIBERNATION_UNAVAILABLE_CODE = 'hibernation_unavailable';
+
 /**
  * Código do agente para a tecla de um controle por programa que não saiu porque outro programa estava na frente (`target`). Quem
  * mostra troca o "programa" pelo nome do controle ("Abra o YouTube no PC e deixe-o na frente.").
@@ -198,6 +201,12 @@ export function pcFailureOf(error: unknown): PcFailure {
     return {
       kind: 'elevated',
       message: $localize`:@@pc.error.elevated:Há uma janela de administrador na frente.`,
+    };
+  }
+  if (code === HIBERNATION_UNAVAILABLE_CODE) {
+    return {
+      kind: 'failed',
+      message: $localize`:@@pc.error.hibernation-unavailable:A hibernação está desligada neste PC. Use Suspender.`,
     };
   }
   return {

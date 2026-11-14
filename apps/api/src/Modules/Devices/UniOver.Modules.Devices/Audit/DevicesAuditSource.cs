@@ -32,6 +32,10 @@ internal static class DevicesAuditActions
         (PairingEvents.PcSleep, "pc_sleep"),
         (PairingEvents.PcShutdown, "pc_shutdown"),
         (PairingEvents.PcShutdownCancelled, "pc_shutdown_cancelled"),
+        (PairingEvents.PcRestart, "pc_restart"),
+        (PairingEvents.PcLogoff, "pc_logoff"),
+        (PairingEvents.PcHibernate, "pc_hibernate"),
+        (PairingEvents.PcMonitorOff, "pc_monitor_off"),
         (PairingEvents.PcAppLaunch, "pc_app_launch"),
         (PairingEvents.PcDirectOpened, "pc_direct_opened"),
         (PairingEvents.PcDirectClosed, "pc_direct_closed"),
@@ -39,6 +43,10 @@ internal static class DevicesAuditActions
         (PairingEvents.PcSleepFailed, "pc_sleep_failed"),
         (PairingEvents.PcShutdownFailed, "pc_shutdown_failed"),
         (PairingEvents.PcShutdownCancelFailed, "pc_shutdown_cancel_failed"),
+        (PairingEvents.PcRestartFailed, "pc_restart_failed"),
+        (PairingEvents.PcLogoffFailed, "pc_logoff_failed"),
+        (PairingEvents.PcHibernateFailed, "pc_hibernate_failed"),
+        (PairingEvents.PcMonitorOffFailed, "pc_monitor_off_failed"),
         (PairingEvents.PcAppLaunchFailed, "pc_app_launch_failed"),
     ];
 

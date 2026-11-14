@@ -55,6 +55,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'pc.click.v2'
   | 'pc.pointer.zoom.v1'
   | 'pc.volume.v1'
+  | 'pc.power.v2'
   | 'pc.op.v1'
   | 'pc.device.v1'
   | 'pc.target.v1';

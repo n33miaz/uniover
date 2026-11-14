@@ -47,6 +47,24 @@ def no_real_keyboard_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_power_actions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nenhum teste desliga, reinicia, hiberna, suspende, bloqueia nem encerra a sessão do PC de
+    quem roda os testes (é o mesmo PC que serve a TV): as primitivas do Windows viram funções que
+    reprovam o teste se alguém as chamar. Quem precisa de uma resposta injeta a sua (`run`, `lock`,
+    `suspend`, `hibernation`, `monitor_off`) ou troca `run_hidden`, como o teste do executor do
+    `shutdown.exe` faz."""
+    from uniover_agent.adapters import pc_windows  # noqa: PLC0415
+
+    def refuse(*args: object, **kwargs: object) -> object:
+        raise AssertionError("um teste tentou executar uma ação de energia de verdade")
+
+    for name in ("run_hidden", "_lock_workstation", "_suspend", "_monitor_off"):
+        monkeypatch.setattr(pc_windows, name, refuse)
+    # Só leitura, mas também fora dos testes: a resposta vem sempre de quem monta o cenário.
+    monkeypatch.setattr(pc_windows, "_hibernation_enabled", refuse)
+
+
+@pytest.fixture(autouse=True)
 def fresh_agent_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cada teste é uma partida nova do agente: a TV que faltou num teste não vaza para o próximo
     (a partida é do processo e sobrevive ao recomeço de `run`, ver `core/tv/relocator.py`)."""

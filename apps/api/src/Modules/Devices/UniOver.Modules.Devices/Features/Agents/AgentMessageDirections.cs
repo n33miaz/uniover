@@ -55,6 +55,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.PcPointerV1,
         AgentMessageTypes.PcPointerZoomV1,
         AgentMessageTypes.PcPowerV1,
+        AgentMessageTypes.PcPowerV2,
         AgentMessageTypes.PcRtcCandidateV1,
         AgentMessageTypes.PcRtcCloseV1,
         AgentMessageTypes.PcRtcOfferV1,

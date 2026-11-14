@@ -19,6 +19,7 @@ import { PcPrefs } from './pc-prefs';
 import {
   PC_CLICK_V2_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
+  PC_POWER_V2_CAPABILITY,
   PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
   PC_VOLUME_CAPABILITY,
@@ -232,6 +233,8 @@ export class PcStore {
   readonly supportsClickV2 = computed(() => this.capabilities().includes(PC_CLICK_V2_CAPABILITY));
   /** O agente entende `pc.pointer.zoom.v1` (a pinça vira Ctrl e a roda do mouse). */
   readonly supportsZoom = computed(() => this.capabilities().includes(PC_ZOOM_CAPABILITY));
+  /** O agente entende `pc.power.v2`: reiniciar, encerrar a sessão, hibernar e apagar o monitor. */
+  readonly supportsPowerV2 = computed(() => this.capabilities().includes(PC_POWER_V2_CAPABILITY));
   /** O agente entende `pc.volume.v1` (volume absoluto) e avisa o nível de agora. */
   readonly supportsVolume = computed(() => this.capabilities().includes(PC_VOLUME_CAPABILITY));
   /** O nível que a tela pediu e o PC ainda não confirmou na leitura do estado (o que o dedo deixou na faixa). */

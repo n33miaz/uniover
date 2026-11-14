@@ -88,6 +88,21 @@ class FakePower:
     def cancel_shutdown(self) -> None:
         self.calls.append(("cancel",))
 
+    def restart(self, delay_seconds: int) -> None:
+        self.calls.append(("restart", delay_seconds))
+
+    def hibernation_available(self) -> bool:
+        return True
+
+    def hibernate(self) -> None:
+        self.calls.append(("hibernate",))
+
+    def log_off(self) -> None:
+        self.calls.append(("log_off",))
+
+    def monitor_off(self) -> None:
+        self.calls.append(("monitor_off",))
+
 
 class FakeLauncher:
     def __init__(self) -> None:
@@ -157,6 +172,7 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.text.v2",
         "pc.click.v2",
         "pc.pointer.zoom.v1",
+        "pc.power.v2",
         "pc.volume.v1",
         "pc.op.v1",
         "pc.target.v1",
@@ -171,6 +187,7 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.pointer.v1",
         "pc.pointer.zoom.v1",
         "pc.power.v1",
+        "pc.power.v2",
         "pc.text.v1",
         "pc.text.v2",
         "pc.volume.v1",

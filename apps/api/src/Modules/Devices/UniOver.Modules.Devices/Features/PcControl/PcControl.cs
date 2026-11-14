@@ -321,14 +321,15 @@ internal static class PcValidator
     public static Dictionary<string, string[]> Power(PcPowerRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
-        if (request?.Action is null || !PcMessages.PowerActions.TryGetValue(request.Action, out var action))
+        if (request?.Action is null || !PcMessages.PowerV2Actions.ContainsKey(request.Action))
         {
-            errors["action"] = ["Escolha LOCK, SLEEP, SHUTDOWN ou CANCEL_SHUTDOWN."];
+            errors["action"] = ["Escolha LOCK, SLEEP, HIBERNATE, SHUTDOWN, RESTART, LOGOFF, MONITOR_OFF ou CANCEL_SHUTDOWN."];
         }
-        else if (action is PcPowerV1BodyAction.Sleep or PcPowerV1BodyAction.Shutdown && request.Confirm != true)
+        else if (PcMessages.ConfirmedPowerActions.Contains(request.Action) && request.Confirm != true)
         {
-            // Suspender e desligar derrubam a conexão com o PC: sem a confirmação explícita nada é enviado.
-            errors["confirm"] = ["Confirme para suspender ou desligar o PC."];
+            // Suspender, hibernar, desligar, reiniciar e encerrar a sessão derrubam a conexão com o PC (e as duas últimas perdem o trabalho
+            // aberto): sem a confirmação explícita nada é enviado.
+            errors["confirm"] = ["Confirme para suspender, hibernar, desligar, reiniciar ou encerrar a sessão do PC."];
         }
 
         return errors;
@@ -972,17 +973,34 @@ internal static class PcControlEndpoints
             return ProblemDetailsExtensions.ValidationProblem(errors);
         }
 
-        var action = PcMessages.PowerActions[request!.Action!];
-        var auditEvent = action switch
-        {
-            PcPowerV1BodyAction.Lock => PairingEvents.PcLock,
-            PcPowerV1BodyAction.Sleep => PairingEvents.PcSleep,
-            PcPowerV1BodyAction.Shutdown => PairingEvents.PcShutdown,
-            _ => PairingEvents.PcShutdownCancelled,
-        };
-        return await handler.RunAsync(
-            userId, PcMessages.Power(action), PcControlHandler.PowerTimeout, auditEvent, ClientInfo.From(http), cancellationToken);
+        var name = request!.Action!;
+        var auditEvent = PowerAuditEvent(PcMessages.PowerV2Actions[name]);
+        // A v1 sempre que a ação cabe nela (um agente anterior à v2 segue funcionando); só as quatro novas pedem a capacidade, e sem ela o
+        // pedido volta como 409 pc-key-unsupported sem enviar nada.
+        return PcMessages.PowerActions.TryGetValue(name, out var legacy)
+            ? await handler.RunAsync(
+                userId, PcMessages.Power(legacy), PcControlHandler.PowerTimeout, auditEvent, ClientInfo.From(http), cancellationToken)
+            : await handler.RunAsync(
+                userId,
+                PcMessages.PowerV2(PcMessages.PowerV2Actions[name]),
+                PcControlHandler.PowerTimeout,
+                auditEvent,
+                ClientInfo.From(http),
+                cancellationToken,
+                PcMessages.PowerV2Capability);
     }
+
+    private static string PowerAuditEvent(PcPowerV2BodyAction action) => action switch
+    {
+        PcPowerV2BodyAction.Lock => PairingEvents.PcLock,
+        PcPowerV2BodyAction.Sleep => PairingEvents.PcSleep,
+        PcPowerV2BodyAction.Shutdown => PairingEvents.PcShutdown,
+        PcPowerV2BodyAction.Restart => PairingEvents.PcRestart,
+        PcPowerV2BodyAction.Logoff => PairingEvents.PcLogoff,
+        PcPowerV2BodyAction.Hibernate => PairingEvents.PcHibernate,
+        PcPowerV2BodyAction.MonitorOff => PairingEvents.PcMonitorOff,
+        _ => PairingEvents.PcShutdownCancelled,
+    };
 
     private static async Task<IResult> LaunchAsync(
         string appId, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)

@@ -70,6 +70,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.power.v1</c>.</summary>
     public const string PcPowerV1 = "pc.power.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.power.v2</c>.</summary>
+    public const string PcPowerV2 = "pc.power.v2";
+
     /// <summary>Tipo de mensagem <c>pc.rtc.answer.v1</c>.</summary>
     public const string PcRtcAnswerV1 = "pc.rtc.answer.v1";
 
@@ -205,6 +208,7 @@ public static class AgentMessageTypes
         PcPointerV1,
         PcPointerZoomV1,
         PcPowerV1,
+        PcPowerV2,
         PcRtcAnswerV1,
         PcRtcCandidateV1,
         PcRtcCloseV1,

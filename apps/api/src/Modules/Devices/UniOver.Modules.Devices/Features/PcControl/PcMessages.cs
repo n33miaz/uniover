@@ -44,6 +44,12 @@ internal static class PcMessages
     /// </summary>
     public const string VolumeCapability = "pc.volume.v1";
 
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.power.v2</c> (reiniciar, encerrar a sessão, hibernar e apagar o monitor, além das
+    /// quatro ações da v1). A API manda a v1 sempre que a ação cabe nela; só as quatro novas dependem desta capacidade.
+    /// </summary>
+    public const string PowerV2Capability = "pc.power.v2";
+
     /// <summary>Capacidade do canal direto (WebRTC): o agente só a declara depois de a API a listar em <c>features</c>.</summary>
     public const string RtcCapability = "pc.rtc.v1";
 
@@ -152,6 +158,17 @@ internal static class PcMessages
 
     public static FrozenDictionary<string, PcPowerV1BodyAction> PowerActions { get; } = Enum.GetValues<PcPowerV1BodyAction>()
         .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
+
+    /// <summary>Todas as ações de energia do pedido HTTP (as quatro da v1 e as quatro da v2), pelo nome que vai no fio.</summary>
+    public static FrozenDictionary<string, PcPowerV2BodyAction> PowerV2Actions { get; } = Enum.GetValues<PcPowerV2BodyAction>()
+        .ToFrozenDictionary(WireName, action => action, StringComparer.Ordinal);
+
+    /// <summary>
+    /// As ações que perdem trabalho aberto ou derrubam a conexão com o PC: só saem com a confirmação explícita do pedido. Bloquear, cancelar o
+    /// desligamento e apagar o monitor (qualquer toque no mouse o acende) valem na hora.
+    /// </summary>
+    public static FrozenSet<string> ConfirmedPowerActions { get; } =
+        new[] { "SLEEP", "SHUTDOWN", "RESTART", "LOGOFF", "HIBERNATE" }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
     /// A mesma mensagem com o <c>seq</c> do pedido (o contador comum dos de entrada pela nuvem) e a <c>epoch</c> da página no corpo. Só para um agente
@@ -336,6 +353,10 @@ internal static class PcMessages
     public static OutboundMessage Power(PcPowerV1BodyAction action) =>
         Live(AgentMessageTypes.PcPowerV1, BodyOf(new PcPowerV1Message { Body = new PcPowerV1Body { Action = action } }.ToJson()));
 
+    /// <summary>As ações de energia da v2: só vão a um agente que declarou <see cref="PowerV2Capability"/>.</summary>
+    public static OutboundMessage PowerV2(PcPowerV2BodyAction action) =>
+        Live(AgentMessageTypes.PcPowerV2, BodyOf(new PcPowerV2Message { Body = new PcPowerV2Body { Action = action } }.ToJson()));
+
     public static OutboundMessage AppLaunch(string appId) =>
         Live(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
 
@@ -421,6 +442,9 @@ internal static class PcMessages
 
     private static string WireName(PcMediaV1BodyAction action) =>
         BodyOf(new PcMediaV1Message { Body = new PcMediaV1Body { Action = action } }.ToJson()).GetProperty("action").GetString()!;
+
+    private static string WireName(PcPowerV2BodyAction action) =>
+        BodyOf(new PcPowerV2Message { Body = new PcPowerV2Body { Action = action } }.ToJson()).GetProperty("action").GetString()!;
 
     private static string WireName(PcPowerV1BodyAction action) =>
         BodyOf(new PcPowerV1Message { Body = new PcPowerV1Body { Action = action } }.ToJson()).GetProperty("action").GetString()!;

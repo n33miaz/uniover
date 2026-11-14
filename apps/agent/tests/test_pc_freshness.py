@@ -77,6 +77,21 @@ class FakePower:
     def cancel_shutdown(self) -> None:
         self.calls.append("cancel")
 
+    def restart(self, delay_seconds: int) -> None:
+        self.calls.append("restart")
+
+    def hibernation_available(self) -> bool:
+        return True
+
+    def hibernate(self) -> None:
+        self.calls.append("hibernate")
+
+    def log_off(self) -> None:
+        self.calls.append("log_off")
+
+    def monitor_off(self) -> None:
+        self.calls.append("monitor_off")
+
 
 class FakeLauncher:
     def __init__(self) -> None:
@@ -344,6 +359,10 @@ async def test_power_has_its_own_longer_validity() -> None:
     assert await lab.run("pc.power.v1", {"action": "LOCK"}, 10.2) == ("ok", "")
     assert await lab.run("pc.power.v1", {"action": "SHUTDOWN"}, 16.2) == ("rejected", EXPIRED)
     assert lab.power.calls == ["lock"]
+    # A v2 tem a mesma validade: um reinício pedido muito antes não é executado.
+    assert await lab.run("pc.power.v2", {"action": "RESTART"}, 16.2) == ("rejected", EXPIRED)
+    assert await lab.run("pc.power.v2", {"action": "MONITOR_OFF"}, 10.2) == ("ok", "")
+    assert lab.power.calls == ["lock", "monitor_off"]
     # Dez segundos de idade já vencem uma tecla, mas não a energia.
     assert (await lab.run("pc.key.v1", {"key": "A"}, 10.2))[1] == EXPIRED
 

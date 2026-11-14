@@ -110,6 +110,7 @@ IS_WINDOWS = sys.platform == "win32"
 KeyProbe = Callable[[int], bool]
 _UNSUPPORTED = "o controle do PC só existe no Windows"
 _SHUTDOWN_NOTICE = "O UniOver vai desligar este computador. Para cancelar: shutdown /a"
+_RESTART_NOTICE = "O UniOver vai reiniciar este computador. Para cancelar: shutdown /a"
 
 if sys.platform == "win32":
     import ctypes
@@ -339,6 +340,19 @@ if sys.platform == "win32":
         # Suspender (não hibernar), sem forçar: um app que recusa o aviso segura a suspensão.
         return bool(ctypes.windll.powrprof.SetSuspendState(False, False, False))
 
+    def _hibernation_enabled() -> bool:
+        # Só leitura (`GetPwrCapabilities`): o byte 8 de `SYSTEM_POWER_CAPABILITIES` é
+        # `HiberFilePresent`, o arquivo de hibernação existe (a hibernação está ligada).
+        buffer = ctypes.create_string_buffer(256)
+        if not ctypes.windll.powrprof.GetPwrCapabilities(buffer):
+            return False
+        return bool(buffer.raw[8])
+
+    def _monitor_off() -> bool:
+        # `PostMessage` e não `SendMessage` para todas as janelas: um programa travado não segura o
+        # agente. 2 é "desligar".
+        return bool(ctypes.windll.user32.PostMessageW(0xFFFF, 0x0112, 0xF170, 2))
+
 else:
 
     def _foreground_image() -> str | None:
@@ -354,6 +368,12 @@ else:
         raise PcUnsupported(_UNSUPPORTED)
 
     def _suspend() -> bool:
+        raise PcUnsupported(_UNSUPPORTED)
+
+    def _hibernation_enabled() -> bool:
+        raise PcUnsupported(_UNSUPPORTED)
+
+    def _monitor_off() -> bool:
         raise PcUnsupported(_UNSUPPORTED)
 
 
@@ -598,17 +618,23 @@ def _run_shutdown(arguments: list[str]) -> int:
 
 
 class WindowsPcPower:
-    """Energia do PC: bloquear, suspender, desligar com contagem e cancelar."""
+    """Energia do PC: bloquear, suspender, hibernar, desligar ou reiniciar com contagem, cancelar,
+    encerrar a sessão e apagar o monitor. Cada primitiva do sistema é trocável: os testes nunca
+    executam nenhuma delas de verdade."""
 
     def __init__(
         self,
         run: Callable[[list[str]], int] | None = None,
         lock: Callable[[], bool] | None = None,
         suspend: Callable[[], bool] | None = None,
+        hibernation: Callable[[], bool] | None = None,
+        monitor_off: Callable[[], bool] | None = None,
     ) -> None:
         self._run = run or _run_shutdown
         self._lock = lock or _lock_workstation
         self._suspend = suspend or _suspend
+        self._hibernation = hibernation or _hibernation_enabled
+        self._monitor_off = monitor_off or _monitor_off
 
     def lock(self) -> None:
         if not self._lock():
@@ -623,6 +649,29 @@ class WindowsPcPower:
         if code != 0:
             # Política, UAC ou erro do Windows: não pode virar "feito" nem auditoria de sucesso.
             raise OSError(f"o Windows recusou agendar o desligamento (código {code})")
+
+    def restart(self, delay_seconds: int) -> None:
+        code = self._run(["/r", "/t", str(max(10, delay_seconds)), "/c", _RESTART_NOTICE])
+        if code != 0:
+            raise OSError(f"o Windows recusou agendar o reinício (código {code})")
+
+    def hibernation_available(self) -> bool:
+        return self._hibernation()
+
+    def hibernate(self) -> None:
+        code = self._run(["/h"])
+        if code != 0:
+            raise OSError(f"o Windows recusou hibernar (código {code})")
+
+    def log_off(self) -> None:
+        # Sem `/f`: os programas são chamados a fechar e podem perguntar se salvam.
+        code = self._run(["/l"])
+        if code != 0:
+            raise OSError(f"o Windows recusou encerrar a sessão (código {code})")
+
+    def monitor_off(self) -> None:
+        if not self._monitor_off():
+            raise OSError("o Windows não conseguiu apagar o monitor")
 
     def cancel_shutdown(self) -> None:
         code = self._run(["/a"])
