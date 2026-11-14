@@ -169,12 +169,12 @@ describe('CustomizeSheet', () => {
 
     it('lists only the keys the TV declares, and shows as on the ones the grid already carries', () => {
       expect(chips().map((chip) => chip.textContent?.trim())).toEqual([
-        'Fonte',
+        'Entradas',
         'Guia',
         'Informações',
         'Vermelho',
       ]);
-      expect(on()).toEqual(['Fonte']);
+      expect(on()).toEqual(['Entradas']);
       expect(chips()[0]!.classList.contains('auto')).toBe(true);
       expect(root.querySelector('#tv-custom-extras-label')?.textContent?.trim()).toBe(
         'Botões extras',
@@ -201,13 +201,13 @@ describe('CustomizeSheet', () => {
       button('Restaurar padrão').click();
       fixture.detectChanges();
       expect(prefs().extraKeys()).toBeNull();
-      expect(on()).toEqual(['Fonte']);
+      expect(on()).toEqual(['Entradas']);
     });
 
     it('turns off a key the grid could not complete, instead of choosing it in vain', () => {
       chips()[3]!.click();
       fixture.detectChanges();
-      // Vermelho escolhido: com a Fonte e o Guia o total não fecha a fileira, então as outras ficam desligadas.
+      // Vermelho escolhido: com as Entradas e o Guia o total não fecha a fileira, então as outras ficam desligadas.
       expect(chips()[1]!.disabled).toBe(true);
     });
   });
@@ -293,6 +293,25 @@ describe('CustomizeSheet', () => {
         input.dispatchEvent(new Event('change', { bubbles: true }));
         expect(read(), `${id} on`).toBe(true);
       }
+    });
+  });
+
+  describe('the removed shortcut suggestions', () => {
+    beforeEach(open);
+
+    it('has no row to bring them back while none was removed', () => {
+      expect(button('Mostrar sugestões de atalhos')).toBeUndefined();
+    });
+
+    it('brings them back from here, and the row goes away with the focus kept on Concluir', async () => {
+      prefs().set({ dismissedSuggestions: ['netflix', 'max'] });
+      fixture.detectChanges();
+      expect(button('Mostrar sugestões de atalhos')).toBeDefined();
+      button('Mostrar sugestões de atalhos').click();
+      fixture.detectChanges();
+      expect(prefs().dismissedSuggestions()).toEqual([]);
+      expect(button('Mostrar sugestões de atalhos')).toBeUndefined();
+      expect(document.activeElement).toBe(button('Concluir'));
     });
   });
 

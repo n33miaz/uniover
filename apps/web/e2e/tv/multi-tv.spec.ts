@@ -393,9 +393,13 @@ test.describe('capacidades da TV', () => {
     await openTv(page, 'Casa');
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toBeVisible();
     await menuDialogOpen(page);
+    await expect(
+      menuDialog(page).getByRole('button', { name: 'Limpar', exact: true }),
+    ).toBeVisible();
     await menuDialog(page).getByRole('button', { name: 'Apps da TV', exact: true }).click();
     const apps = page.getByRole('dialog', { name: 'Apps da TV' });
-    await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toBeVisible();
+    await expect(apps).toBeVisible();
+    await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(apps).toBeHidden();
 
@@ -424,9 +428,9 @@ test.describe('capacidades da TV', () => {
       );
     });
 
-    // Sete botões fixos mais a Fonte: duas fileiras de quatro, sem célula vazia.
+    // Sete botões fixos mais as Entradas: duas fileiras de quatro, sem célula vazia.
     await expect(page.locator('.round-grid .round')).toHaveCount(8);
-    await expect(page.getByRole('button', { name: 'Fonte', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Entradas', exact: true })).toBeVisible();
     await expect(page.getByRole('img', { name: 'Volume 7' })).toBeVisible();
     const rows = await page.locator('.round-grid .round').evaluateAll((buttons) => {
       const byTop = new Map<number, number[]>();
@@ -444,6 +448,9 @@ test.describe('capacidades da TV', () => {
 
     // Os apps seguem (a Samsung os abre pelo canal dela); o que some é a limpeza.
     await menuDialogOpen(page);
+    await expect(menuDialog(page).getByRole('button', { name: 'Limpar', exact: true })).toHaveCount(
+      0,
+    );
     await menuDialog(page).getByRole('button', { name: 'Apps da TV', exact: true }).click();
     await expect(apps).toBeVisible();
     await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toHaveCount(0);
@@ -463,7 +470,7 @@ test.describe('capacidades da TV', () => {
     const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
     const chips = sheet.getByRole('group', { name: 'Botões extras' });
-    await expect(chips.getByRole('button', { name: 'Fonte', exact: true })).toHaveAttribute(
+    await expect(chips.getByRole('button', { name: 'Entradas', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -474,13 +481,13 @@ test.describe('capacidades da TV', () => {
     await chips.scrollIntoViewIfNeeded();
     await screenshot(page, join(SHOTS, 'tv-samsung-personalizar', `${info.project.name}.png`));
 
-    // Escolher o Guia o põe na tela principal, no lugar que a Fonte preenchia sozinha.
+    // Escolher o Guia o põe na tela principal, no lugar que as Entradas preenchiam sozinhas.
     await chips.getByRole('button', { name: 'Guia', exact: true }).click();
     await expect(chips.getByRole('button', { name: 'Guia', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
-    await expect(chips.getByRole('button', { name: 'Fonte', exact: true })).toHaveAttribute(
+    await expect(chips.getByRole('button', { name: 'Entradas', exact: true })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
@@ -491,7 +498,7 @@ test.describe('capacidades da TV', () => {
       page.locator('.round-grid').getByRole('button', { name: 'Guia', exact: true }),
     ).toBeVisible();
     await expect(
-      page.locator('.round-grid').getByRole('button', { name: 'Fonte', exact: true }),
+      page.locator('.round-grid').getByRole('button', { name: 'Entradas', exact: true }),
     ).toHaveCount(0);
 
     // Tocar no botão manda a tecla.
@@ -503,7 +510,7 @@ test.describe('capacidades da TV', () => {
     await menuDialog(page).getByRole('button', { name: 'Mais botões', exact: true }).click();
     const more = page.getByRole('dialog', { name: 'Mais botões' });
     await expect(more).toBeVisible();
-    await expect(more.getByRole('button', { name: 'Fonte', exact: true })).toBeVisible();
+    await expect(more.getByRole('button', { name: 'Entradas', exact: true })).toBeVisible();
     await expect(more.getByRole('button', { name: 'Vermelho', exact: true })).toBeVisible();
     await expect(more.getByRole('button', { name: 'Guia', exact: true })).toHaveCount(0);
     await settle(page);
@@ -578,7 +585,7 @@ test.describe('capacidades da TV', () => {
     );
     await openTv(page, 'Raphael');
     for (const name of [
-      'Fonte',
+      'Entradas',
       'Menu',
       'Próximo canal',
       'Canal anterior',

@@ -62,39 +62,6 @@ describe('AppsPanel', () => {
     expect(launcher(1).querySelector('app-tv-app-icon')).not.toBeNull();
   });
 
-  it('shows the most recent cleanup in a short sentence', async () => {
-    store.lastCleanup.set({
-      at: new Date('2026-10-27T16:05:00'),
-      freedMb: 120,
-      result: 'completed',
-      reason: null,
-    });
-    await render();
-    expect(root.textContent).toContain('Limpeza feita às 16:05, liberou 120 MB.');
-  });
-
-  it('says a skipped cleanup was skipped because the TV was in use, or why otherwise', async () => {
-    store.lastCleanup.set({
-      at: new Date('2026-10-27T16:05:00'),
-      freedMb: null,
-      result: 'skipped',
-      reason: 'media-in-use',
-    });
-    await render();
-    expect(root.textContent).toContain('Limpeza pulada: TV em uso.');
-  });
-
-  it('names the model reason when the cleanup was skipped on a Samsung', async () => {
-    store.lastCleanup.set({
-      at: new Date('2026-10-27T16:05:00'),
-      freedMb: null,
-      result: 'skipped',
-      reason: 'model-unconfirmed',
-    });
-    await render();
-    expect(root.textContent).toContain('Limpeza pulada: modelo não confirmado.');
-  });
-
   it('names an app by the owner name, then by the name the agent publishes, then "Atalho n"', async () => {
     store.shortcuts.set([
       makeShortcut(1, { customLabel: 'Sala', tvLabel: 'YouTube' }),
@@ -756,107 +723,29 @@ describe('AppsPanel', () => {
     });
   });
 
-  describe('cleanup', () => {
-    const clean = () => root.querySelector<HTMLButtonElement>('.clean')!;
-    const sheet = () => root.querySelector('app-tv-cleanup-sheet dialog');
-    const sheetButton = (name: string) =>
-      [...root.querySelectorAll<HTMLButtonElement>('app-tv-cleanup-sheet button')].find(
-        (b) => b.textContent?.trim() === name,
-      )!;
-
-    it('is a button with an icon only and a name, in the top bar next to the refresh', () => {
-      expect(clean().getAttribute('aria-label')).toBe('Limpar a TV');
-      expect(clean().textContent?.trim()).toBe('');
-      expect(clean().closest('.bar')).toBe(root.querySelector('.refresh')!.closest('.bar'));
-      expect(clean().previousElementSibling).toBe(root.querySelector('.refresh'));
-      expect(clean().getAttribute('aria-haspopup')).toBe('dialog');
-    });
-
-    it('has no cleanup on a TV without the ADB channel (a Samsung), and the app grid stays', async () => {
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', {
-          isDefault: true,
-          kind: 'samsung',
-          capabilities: ['tv.remote', 'tv.kind.samsung'],
-        }),
-      ]);
-      await render();
-      expect(clean()).toBeNull();
-      expect(root.querySelectorAll('.launch')).toHaveLength(3);
-      expect(root.querySelector('app-tv-cleanup-sheet')).toBeNull();
-    });
-
-    it('keeps the cleanup on an Android with ADB', async () => {
+  describe('cleaning the TV', () => {
+    it('is not in the panel: it is an item of the menu, so the top bar has only refresh and edit', async () => {
       TestBed.inject(TvSelection).setTvs([makeTv('tv', { isDefault: true })]);
       await render();
-      expect(clean()).not.toBeNull();
+      expect(root.querySelector('.clean')).toBeNull();
+      expect(root.querySelector('app-tv-cleanup-sheet')).toBeNull();
+      expect(root.querySelector('[aria-label="Limpar a TV"]')).toBeNull();
+      expect(
+        [...root.querySelectorAll('.bar > *')].map((node) => node.className.split(' ')[0]),
+      ).toEqual(['search', 'icon-btn', 'edit-toggle']);
     });
 
-    it('opens the confirmation sheet on a tap, without asking for anything yet', async () => {
-      expect(sheet()).toBeNull();
-      clean().click();
-      await render();
-      expect(sheet()?.hasAttribute('open')).toBe(true);
-      expect(root.querySelector('app-tv-cleanup-sheet h2')?.textContent).toBe('Limpar a TV?');
-      expect(store.cleanup).not.toHaveBeenCalled();
-    });
-
-    it('Cancelar closes the sheet, asks for nothing and gives the focus back to the button', async () => {
-      clean().click();
-      await render();
-      sheetButton('Cancelar').click();
-      await render();
-      expect(sheet()).toBeNull();
-      expect(store.cleanup).not.toHaveBeenCalled();
-      expect(document.activeElement).toBe(clean());
-    });
-
-    it('Limpar asks for the cleanup once and the sheet is gone: the rest of the panel stays free', async () => {
-      clean().click();
-      await render();
-      sheetButton('Limpar').click();
-      await render();
-      expect(store.cleanup).toHaveBeenCalledTimes(1);
-      expect(sheet()).toBeNull();
-    });
-
-    it('says "Limpando…" by name and to readers while it works, and ignores a second tap', async () => {
+    it('says nothing about a cleaning that is running or was done: the menu and the toast tell it', async () => {
       store.cleaning.set(true);
+      store.lastCleanup.set({
+        at: new Date('2026-10-27T16:05:00'),
+        freedMb: 120,
+        result: 'completed',
+        reason: null,
+      });
       await render();
-      expect(clean().getAttribute('aria-label')).toBe('Limpando a TV…');
-      expect(clean().getAttribute('aria-disabled')).toBe('true');
-      expect(root.querySelector('.note.cleaning')?.getAttribute('role')).toBe('status');
-      expect(root.querySelector('.note.cleaning')?.textContent).toContain('Limpando a TV…');
-      clean().click();
-      await render();
-      expect(sheet()).toBeNull();
-
-      store.cleaning.set(false);
-      await render();
-      expect(clean().getAttribute('aria-label')).toBe('Limpar a TV');
-      expect(clean().hasAttribute('aria-disabled')).toBe(false);
-      expect(root.querySelector('.note.cleaning')).toBeNull();
-    });
-
-    it('stays dimmed and focusable without an agent, and a tap does nothing', async () => {
-      store.canSend.set(false);
-      await render();
-      expect(clean().disabled).toBe(false);
-      expect(clean().getAttribute('aria-disabled')).toBe('true');
-      expect(clean().classList.contains('off')).toBe(true);
-      clean().focus();
-      expect(document.activeElement).toBe(clean());
-      clean().click();
-      await render();
-      expect(sheet()).toBeNull();
-      expect(store.cleanup).not.toHaveBeenCalled();
-    });
-
-    it('does not touch the list of apps nor the refresh while it opens', async () => {
-      clean().click();
-      await render();
-      expect(store.refreshShortcuts).not.toHaveBeenCalled();
-      expect(names()).toEqual(['Atalho 1', 'Atalho 2', 'Atalho 3']);
+      expect(root.textContent).not.toContain('Limpando');
+      expect(root.textContent).not.toContain('Limpeza');
     });
   });
 
@@ -1060,14 +949,6 @@ describe('AppsPanel for a guest', () => {
     expect(root.querySelector('button.refresh')).not.toBeNull();
   });
 
-  it('sees "Limpar a TV" like any other TV command', async () => {
-    const root = await open();
-
-    const clean = root.querySelector<HTMLButtonElement>('button.clean')!;
-    expect(clean.getAttribute('aria-label')).toBe('Limpar a TV');
-    expect(clean.hasAttribute('aria-disabled')).toBe(false);
-  });
-
   it('opens the apps out of the control too, and is told only that a tap opens them (no mention of Editar)', async () => {
     const root = await open([
       makeShortcut(1, { tvLabel: 'Spotify' }),
@@ -1102,7 +983,6 @@ describe('AppsPanel for a guest', () => {
   describe('by permission', () => {
     const toolbar = (root: HTMLElement) => ({
       refresh: root.querySelector('button.refresh') !== null,
-      clean: root.querySelector('button.clean') !== null,
       edit: root.querySelector('.edit-toggle') !== null,
     });
     const shortcuts = [
@@ -1110,74 +990,13 @@ describe('AppsPanel for a guest', () => {
       makeShortcut(2, { tvLabel: 'YouTube', enabled: false }),
     ];
 
-    it('with launch and edit (and no control) it opens and edits, but cannot clean the TV', async () => {
+    it('with launch and edit (and no control) it opens and edits', async () => {
       const root = await open(shortcuts, ['module:tv', 'tv:launch', 'tv:edit-shortcuts']);
-      expect(toolbar(root)).toEqual({ refresh: true, clean: false, edit: true });
+      expect(toolbar(root)).toEqual({ refresh: true, edit: true });
       expect(root.querySelectorAll('button.launch')).toHaveLength(2);
       expect(root.querySelector('#apps-group-rest')!.parentElement!.textContent).toContain(
         'Toque para abrir. Para ter no controle, fixe em Editar.',
       );
-    });
-
-    it('with control only the panel is short: the cleaning and nothing else (no grid, no search, no refresh, no edit)', async () => {
-      const root = await open(shortcuts, ['module:tv', 'tv:control']);
-      expect(toolbar(root)).toEqual({ refresh: false, clean: true, edit: false });
-      for (const selector of [
-        '.grid',
-        '.launch',
-        '.item',
-        'input[type="search"]',
-        '.bar',
-        'h3',
-        '.empty',
-      ]) {
-        expect(root.querySelector(selector), selector).toBeNull();
-      }
-      const clean = root.querySelector<HTMLButtonElement>('button.clean')!;
-      expect(clean.textContent?.trim()).toBe('Limpar a TV');
-      expect(clean.hasAttribute('aria-disabled')).toBe(false);
-      expect(root.textContent).toContain(
-        'Fecha os apps abertos na TV e libera memória, sem derrubar o controle.',
-      );
-      expect(root.querySelectorAll('button')).toHaveLength(1);
-    });
-
-    it('with control only and no list yet, the panel is the same: it does not wait for the apps nor offer to ask for them', async () => {
-      const root = await open([], ['module:tv', 'tv:control']);
-      expect(root.textContent).not.toContain('Carregando');
-      expect(root.textContent).not.toContain('Buscar apps da TV');
-      expect(root.querySelector('button.clean')).not.toBeNull();
-    });
-
-    it('with control only the cleaning dims when the remote cannot send, and the reason is told', async () => {
-      const store = createFakeTvStore();
-      store.canSend.set(false);
-      store.disabledReason.set('Sem rede: o controle precisa de internet.');
-      TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
-      TestBed.inject(SessionState).setUser({
-        id: '1',
-        email: 'a@b.c',
-        displayName: 'Alice',
-        role: 'guest',
-        permissions: ['module:tv', 'tv:control'],
-      });
-      const fixture = TestBed.createComponent(AppsPanel);
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-      const root = fixture.nativeElement as HTMLElement;
-      const clean = root.querySelector<HTMLButtonElement>('button.clean')!;
-      expect(clean.getAttribute('aria-disabled')).toBe('true');
-      expect(clean.disabled).toBe(false);
-      expect(root.textContent).toContain('Sem rede: o controle precisa de internet.');
-
-      // Rodando: o botão diz o que acontece, e o aviso é o mesmo do painel completo.
-      store.canSend.set(true);
-      store.disabledReason.set(null);
-      store.cleaning.set(true);
-      fixture.detectChanges();
-      expect(root.querySelector('button.clean')!.textContent?.trim()).toBe('Limpando a TV…');
-      expect(root.querySelector('.cleaning')?.textContent).toContain('Limpando a TV');
     });
 
     it('without launch the tiles are figures: no button, same name under the icon, nothing to tap', async () => {
@@ -1191,7 +1010,7 @@ describe('AppsPanel for a guest', () => {
         expect(tile.hasAttribute('tabindex')).toBe(false);
         expect(tile.getAttribute('role')).toBeNull();
       }
-      expect(toolbar(root)).toEqual({ refresh: false, clean: false, edit: true });
+      expect(toolbar(root)).toEqual({ refresh: false, edit: true });
       // A dica só fala do que a pessoa tem: fixar em Editar, e nada de "toque para abrir".
       const rest = root.querySelector('#apps-group-rest')!.parentElement!.textContent;
       expect(rest).toContain('Para ter no controle, fixe em Editar.');

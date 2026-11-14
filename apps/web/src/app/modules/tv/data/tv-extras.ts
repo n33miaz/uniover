@@ -18,11 +18,11 @@ export interface TvExtraKey {
 /**
  * Os botões extras que o app sabe mostrar, **na ordem de importância**: é a ordem em que preenchem os espaços vazios da
  * tela principal quando a pessoa não escolheu nenhum. Só aparecem os que a TV declara ter (`tv.key.<TECLA>` no `hello` do
- * agente), com uma exceção: a Fonte (`INPUT`) já existia no contrato antes da declaração e toda TV conhecida a tem, então
+ * agente), com uma exceção: as Entradas (`INPUT`, a tecla de fonte) já existiam no contrato antes da declaração e toda TV conhecida a tem, então
  * conta como suportada mesmo para um agente mais velho.
  */
 export const EXTRA_KEYS: readonly TvExtraKey[] = [
-  { key: 'INPUT', label: $localize`:@@tv.extra.input:Fonte`, short: '', icon: 'input' },
+  { key: 'INPUT', label: $localize`:@@tv.extra.input:Entradas`, short: '', icon: 'input' },
   {
     key: 'GUIDE',
     label: $localize`:@@tv.extra.guide:Guia`,

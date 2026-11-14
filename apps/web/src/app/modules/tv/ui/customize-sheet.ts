@@ -1,5 +1,14 @@
-import { Component, ElementRef, afterNextRender, inject, output, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  afterNextRender,
+  computed,
+  inject,
+  output,
+  viewChild,
+} from '@angular/core';
 import { InstallHintRow } from '../../../core/pwa/install-hint-row';
+import { TvAccess } from '../data/tv-access';
 import { TvExtraKey } from '../data/tv-extras';
 import {
   closeDialog,
@@ -26,7 +35,7 @@ interface Choice<T extends string> {
 
 /**
  * Folha "Personalizar": o apelido da TV, o tamanho dos botões, a disposição das pílulas de volume e canal, que grupos
- * de teclas aparecem, os botões extras da tela principal, a vibração, a página com que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de
+ * de teclas aparecem, os botões extras da tela principal, a volta das sugestões de atalhos dispensadas, a vibração, a página com que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de
  * desligar. Cada mudança vale na hora. O dono grava a base comum; a convidada guarda ajustes pessoais nesta TV.
  * Por isso não há "Aplicar", só "Concluir".
  */
@@ -40,12 +49,18 @@ export class CustomizeSheet {
   protected readonly prefs = inject(TvPrefs);
   protected readonly roundKeys = inject(TvRoundKeys);
   protected readonly isGuest = inject(SessionState).isGuest;
+  private readonly access = inject(TvAccess);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly nameField = viewChild.required<ElementRef<HTMLInputElement>>('nameField');
   private readonly doneButton = viewChild.required<ElementRef<HTMLButtonElement>>('done');
   private opener: Element | null = null;
 
   readonly closed = output<void>();
+
+  /** Sugestões de atalhos dispensadas que podem voltar: só para quem edita os atalhos, que é quem as vê. */
+  protected readonly canRestoreSuggestions = computed(
+    () => this.access.editShortcuts() && this.prefs.dismissedSuggestions().length > 0,
+  );
 
   protected readonly nameMax = TV_NAME_MAX;
   /**
@@ -103,6 +118,12 @@ export class CustomizeSheet {
 
   protected change(patch: Partial<TvPrefsValue>): void {
     this.prefs.set(patch);
+  }
+
+  protected restoreSuggestions(): void {
+    this.prefs.set({ dismissedSuggestions: [] });
+    // A linha some junto com o toque: o foco não pode se perder com ela.
+    this.doneButton().nativeElement.focus();
   }
 
   protected restore(): void {

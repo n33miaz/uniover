@@ -260,14 +260,8 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     // Mudar a ordem da fileira de atalhos também é só do dono: o convidado não tem as setas.
     await expect(apps.getByRole('button', { name: /^Mover / })).toHaveCount(0);
 
-    // "Limpar a TV" é comando da TV como os outros: o convidado também o vê e o usa.
-    await apps.getByRole('button', { name: 'Limpar a TV' }).click();
-    const cleanSheet = page.getByRole('dialog', { name: 'Limpar a TV?' });
-    await expect(cleanSheet).toBeVisible();
-    await cleanSheet.getByRole('button', { name: 'Limpar', exact: true }).click();
-    await expect(cleanSheet).toHaveCount(0);
-    await expect.poll(() => tv.count('/cleanup')).toBe(1);
-    await expect(apps.getByText('Fechou 6 apps e liberou cerca de 380 MB.')).toBeVisible();
+    // Limpar a TV não mora no painel de apps: é um botão do menu.
+    await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toHaveCount(0);
     // Abre todo app instalado, também o que está fora do controle; o que saiu da TV não aparece.
     await expect(apps.locator('.launch')).toHaveCount(SHORTCUTS.length + 1);
     await expect(apps.getByRole('button', { name: 'Atalho 5', exact: true })).toHaveCount(0);
@@ -275,6 +269,19 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect.poll(() => tv.count(`/shortcuts/${outOfControl.id}/launch`)).toBe(1);
     await expect(apps).toHaveCount(0);
     expect(tv.count(`/shortcuts/${gone.id}/launch`)).toBe(0);
+
+    // "Limpar" é comando da TV como os outros: o convidado também o vê no menu e o usa.
+    await page.getByRole('button', { name: 'Mais opções', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Mais opções' })
+      .getByRole('button', { name: 'Limpar', exact: true })
+      .click();
+    const cleanSheet = page.getByRole('dialog', { name: 'Limpar a TV?' });
+    await expect(cleanSheet).toBeVisible();
+    await cleanSheet.getByRole('button', { name: 'Limpar', exact: true }).click();
+    await expect(cleanSheet).toHaveCount(0);
+    await expect.poll(() => tv.count('/cleanup')).toBe(1);
+    await expect(page.getByText('Fechou 6 apps e liberou cerca de 380 MB.')).toBeVisible();
 
     // E usa a TV inteira: tecla, e desligar sem passkey.
     const before = tv.keysSent().length;

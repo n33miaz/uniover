@@ -61,50 +61,7 @@
   </li>
 </ng-template>
 
-<!--
-  O aviso de que a limpeza está rodando é o mesmo na grade e no painel curto de quem só controla.
--->
-<ng-template #cleaningNote>
-  <p class="note cleaning" role="status" i18n="@@tv.cleanup.running-note">
-    Limpando a TV… pode levar até meio minuto. O controle continua funcionando.
-  </p>
-</ng-template>
-
-<ng-template #lastCleanupNote>
-  @if (lastCleanupText(); as text) {
-    <p class="note" role="status">{{ text }}</p>
-  }
-</ng-template>
-
-@if (!access.appList()) {
-  <!--
-    Quem só controla (não abre apps nem edita atalhos) tem neste painel uma coisa só: limpar a TV. Nada de grade, busca,
-    atualizar lista nem Editar, que ele não pode usar.
-  -->
-  <div class="options">
-    <p class="note" i18n="@@tv.options.clean-help">
-      Fecha os apps abertos na TV e libera memória, sem derrubar o controle.
-    </p>
-    <button
-      type="button"
-      class="secondary clean"
-      [class.off]="!store.canSend()"
-      [attr.aria-haspopup]="'dialog'"
-      [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
-      (click)="openCleanup()"
-    >
-      <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
-      <span>{{ cleanLabel() }}</span>
-    </button>
-    @if (store.cleaning()) {
-      <ng-container [ngTemplateOutlet]="cleaningNote" />
-    }
-    <ng-container [ngTemplateOutlet]="lastCleanupNote" />
-    @if (!store.canSend()) {
-      <p class="note">{{ store.disabledReason() }}</p>
-    }
-  </div>
-} @else if (!loaded() && store.shortcutsFailed()) {
+@if (!loaded() && store.shortcutsFailed()) {
   <!-- O teto da primeira leitura venceu: nada de brilho em laço, uma frase e a nova tentativa. -->
   <div class="empty">
     <app-tv-icon name="apps" />
@@ -181,7 +138,7 @@
         (input)="onQuery($event)"
       />
     </div>
-    <!-- Cada botão da barra só existe para quem pode usá-lo: atualizar a lista, limpar a TV e editar os atalhos. -->
+    <!-- Cada botão da barra só existe para quem pode usá-lo: atualizar a lista e editar os atalhos. -->
     @if (access.launch()) {
       <button
         type="button"
@@ -192,20 +149,6 @@
         (click)="refresh()"
       >
         <app-tv-icon name="refresh" [class.spin]="refreshing()" />
-      </button>
-    }
-    @if (access.cleanup()) {
-      <button
-        type="button"
-        class="icon-btn clean"
-        [class.off]="!store.canSend()"
-        [attr.aria-label]="cleanLabel()"
-        [attr.title]="cleanLabel()"
-        [attr.aria-haspopup]="'dialog'"
-        [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
-        (click)="openCleanup()"
-      >
-        <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
       </button>
     }
     @if (access.editShortcuts()) {
@@ -224,10 +167,6 @@
   <span class="ui-visually-hidden" role="status" [attr.aria-live]="'polite'" data-reorder-status>{{
     announcement()
   }}</span>
-  @if (store.cleaning()) {
-    <ng-container [ngTemplateOutlet]="cleaningNote" />
-  }
-  <ng-container [ngTemplateOutlet]="lastCleanupNote" />
 
   @if (visible().length === 0) {
     <p class="note" role="status" i18n="@@tv.apps.no-match">
@@ -304,8 +243,4 @@
       </section>
     }
   }
-}
-
-@if (cleanupOpen() && access.cleanup()) {
-  <app-tv-cleanup-sheet (closed)="closeCleanup()" />
 }

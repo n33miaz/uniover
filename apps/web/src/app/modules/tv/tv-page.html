@@ -203,7 +203,18 @@
 
 @if (menuOpen() && hasMenu()) {
   <app-tv-panel #menuPanel [heading]="menuTitle" [opener]="menuOpener()" (closed)="menuClosed()">
-    <app-tv-menu [appsLabel]="appsTitle()" (choose)="chooseFromMenu($event, menuPanel)" />
+    <app-tv-menu (choose)="chooseFromMenu($event, menuPanel)" />
+  </app-tv-panel>
+}
+
+@if (helpOpen() && hasMenu()) {
+  <app-tv-panel
+    #helpPanel
+    [heading]="helpTitle"
+    [opener]="menuOpener()"
+    (closed)="helpOpen.set(false)"
+  >
+    <app-tv-help />
   </app-tv-panel>
 }
 
@@ -236,7 +247,7 @@
 }
 
 @if (panel() === 'apps' && access.apps()) {
-  <app-tv-panel #appsPanel [heading]="appsTitle()" [opener]="panelOpener()" (closed)="closePanel()">
+  <app-tv-panel #appsPanel [heading]="appsTitle" [opener]="panelOpener()" (closed)="closePanel()">
     <app-tv-apps (done)="appsPanel.close()" />
   </app-tv-panel>
 }
@@ -270,4 +281,8 @@
 
 @if (customizeOpen() && access.control()) {
   <app-tv-customize-sheet (closed)="closeCustomize()" />
+}
+
+@if (cleanupOpen() && access.cleanup()) {
+  <app-tv-cleanup-sheet (closed)="closeCleanup()" />
 }
