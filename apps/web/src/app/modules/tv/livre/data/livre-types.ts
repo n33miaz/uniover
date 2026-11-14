@@ -36,7 +36,14 @@ export interface LivreConfig {
     readonly showFactory: boolean;
   };
   readonly icons: { readonly size: LivreIconSize; readonly labels: LivreLabels };
-  readonly builtin: { readonly settings: boolean; readonly sleep: boolean };
+  readonly builtin: {
+    readonly settings: boolean;
+    readonly sleep: boolean;
+    /** Rede, Entradas e o nome do sistema na tela inicial da TV (launcher de nível 2: um anterior os ignora). */
+    readonly network: boolean;
+    readonly inputs: boolean;
+    readonly brand: boolean;
+  };
   readonly sleep: { readonly maxMinutes: number };
 }
 
@@ -65,7 +72,20 @@ export interface TvLivreView {
   readonly hasPhoto: boolean;
   /** A última revisão aplicada (0 = nunca aplicada). */
   readonly revision: number;
+  /** O agente declara os acréscimos do segundo passo do módulo (`tv.livre.v2`); falso: age como antes. */
+  readonly extended: boolean;
+  /** O nível do launcher que o agente leu na TV; `null` quando não leu (sem o app, ou agente anterior). */
+  readonly launcherLevel: number | null;
+  /** O último apply só gravou a configuração porque outro app estava na frente. */
+  readonly applyDeferred: boolean;
 }
+
+/**
+ * O nível do launcher que esta versão do app espera: o que a publicação atual instala. Não é a versão (essa muda a cada
+ * publicação e faria o aviso de atualização disparar sempre): só cresce quando o launcher ganha algo que a tela usa.
+ * 2: Modo Dormir com volume e mídia e com o tempo no pedido; Rede, Entradas e o nome na tela inicial; ícones aparados.
+ */
+export const LAUNCHER_LEVEL_LATEST = 2;
 
 /** O padrão da Home aprovada: relógio grande, degradê azul-arroxeado e os apps de fábrica ocultos (todo o resto à vista). */
 export const DEFAULT_LIVRE_CONFIG: LivreConfig = {
@@ -73,7 +93,7 @@ export const DEFAULT_LIVRE_CONFIG: LivreConfig = {
   wallpaper: { type: 'gradient', colors: ['#1b2440', '#3a2d5c'], angle: 315, dim: 0.25 },
   apps: { mode: 'all', items: [], hidden: [], showFactory: false },
   icons: { size: 'medium', labels: 'always' },
-  builtin: { settings: true, sleep: false },
+  builtin: { settings: true, sleep: false, network: true, inputs: true, brand: true },
   sleep: { maxMinutes: 0 },
 };
 
@@ -153,6 +173,9 @@ export function parseLivreConfig(value: unknown): LivreConfig {
     builtin: {
       settings: flag(builtin['settings'], d.builtin.settings),
       sleep: flag(builtin['sleep'], d.builtin.sleep),
+      network: flag(builtin['network'], d.builtin.network),
+      inputs: flag(builtin['inputs'], d.builtin.inputs),
+      brand: flag(builtin['brand'], d.builtin.brand),
     },
     sleep: {
       maxMinutes: Number.isFinite(maxMinutes)
@@ -201,6 +224,12 @@ export function parseLivreView(value: unknown): TvLivreView | null {
       typeof dto['revision'] === 'number' && Number.isFinite(dto['revision'])
         ? Math.max(0, Math.trunc(dto['revision']))
         : 0,
+    extended: dto['extended'] === true,
+    launcherLevel:
+      typeof dto['launcherLevel'] === 'number' && Number.isInteger(dto['launcherLevel'])
+        ? dto['launcherLevel']
+        : null,
+    applyDeferred: dto['applyDeferred'] === true,
   };
 }
 

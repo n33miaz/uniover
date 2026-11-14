@@ -30,6 +30,9 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
     config: DEFAULT_LIVRE_CONFIG,
     hasPhoto: false,
     revision: 0,
+    extended: false,
+    launcherLevel: null,
+    applyDeferred: false,
     ...overrides,
   };
 }

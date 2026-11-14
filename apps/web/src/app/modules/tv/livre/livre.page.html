@@ -50,6 +50,24 @@
       </div>
     }
 
+    @if (store.updateAvailable()) {
+      <div class="ui-notice block update" role="status">
+        <p i18n="@@tv-livre.update.available">Há versão nova do TV Livre.</p>
+        <button
+          type="button"
+          class="ui-btn secondary"
+          [disabled]="store.busy() !== null || !store.canUse()"
+          [attr.aria-busy]="store.busy() === 'update'"
+          (click)="store.update()"
+        >
+          @if (store.busy() === 'update') {
+            <span class="ui-spinner" aria-hidden="true"></span>
+          }
+          <span i18n="@@tv-livre.update.button">Atualizar</span>
+        </button>
+      </div>
+    }
+
     <div
       id="livre-panel"
       role="tabpanel"
@@ -138,6 +156,16 @@
 
 <!-- O resultado do último pedido: erro pede atenção (alert), o resto é só informação (status). -->
 <ng-template #noticeTemplate>
+  @if (store.showPrompt()) {
+    <div class="ui-notice block show-now" role="status">
+      <button type="button" class="ui-btn secondary" (click)="store.showNow()">
+        <span i18n="@@tv-livre.show-now">Mostrar Agora na TV</span>
+      </button>
+      <button type="button" class="ui-btn secondary" (click)="store.dismissShowPrompt()">
+        <span i18n="@@tv-livre.show-later">Depois</span>
+      </button>
+    </div>
+  }
   @if (store.notice(); as notice) {
     <p
       class="ui-notice"

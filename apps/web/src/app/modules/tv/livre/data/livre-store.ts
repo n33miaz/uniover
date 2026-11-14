@@ -24,6 +24,7 @@ import { TvLivreApi } from './livre-api';
 import { LIVRE_PHOTO_REDUCER } from './photo-fit';
 import {
   DEFAULT_LIVRE_CONFIG,
+  LAUNCHER_LEVEL_LATEST,
   LivreConfig,
   SLEEP_MAX_MINUTES,
   TvLivreView,
@@ -32,7 +33,16 @@ import {
 
 /** O que está em andamento: um pedido por vez, porque cada um mexe numa TV real e os longos levam dezenas de segundos. */
 export type LivreAction =
-  'refresh' | 'apply' | 'install' | 'set-home' | 'restore' | 'sleep' | 'photo';
+  | 'refresh'
+  | 'apply'
+  | 'install'
+  | 'update'
+  | 'set-home'
+  | 'restore'
+  | 'sleep'
+  | 'sleep-time'
+  | 'show'
+  | 'photo';
 
 export interface LivreNotice {
   readonly kind: 'ok' | 'error';
@@ -93,6 +103,7 @@ export class TvLivreStore {
   private readonly _notice = signal<LivreNotice | null>(null);
   /** A configuração foi guardada, mas a TV não a aplicou (falha na hora de aplicar): ainda falta tentar de novo. */
   private readonly _unapplied = signal(false);
+  private readonly _showPrompt = signal(false);
   private supportRetry: ReturnType<typeof setTimeout> | null = null;
   private supportAttempts = 0;
 
@@ -106,6 +117,31 @@ export class TvLivreStore {
   readonly loadFailure = this._loadFailure.asReadonly();
   readonly busy = this._busy.asReadonly();
   readonly notice = this._notice.asReadonly();
+  /** O último "Aplicar" só gravou (havia outro app na frente da TV): a tela oferece "Mostrar agora na TV". */
+  readonly showPrompt = this._showPrompt.asReadonly();
+
+  /**
+   * O tempo do Modo Dormir vale na hora, sem "Aplicar": o agente aceita o tempo no pedido de dormir e o launcher da TV sabe
+   * usá-lo (nível 2). Sem isso o tempo continua indo no rascunho e só vale depois de "Aplicar na TV", como antes.
+   */
+  readonly quickSleep = computed(() => {
+    const view = this._view();
+    return view !== null && view.extended && (view.launcherLevel ?? 0) >= 2;
+  });
+
+  /** Os ajustes que só o launcher de nível 2 conhece (Rede, Entradas, nome na tela da TV) fazem efeito. */
+  readonly launcherExtras = computed(() => (this._view()?.launcherLevel ?? 0) >= 2);
+
+  /** Há launcher mais novo para instalar: o agente leu o nível na TV e ele está abaixo do que esta versão espera. */
+  readonly updateAvailable = computed(() => {
+    const view = this._view();
+    return (
+      view !== null &&
+      view.installed &&
+      view.launcherLevel !== null &&
+      view.launcherLevel < LAUNCHER_LEVEL_LATEST
+    );
+  });
 
   /** O TV Livre pode mexer na TV agora: o agente está ao alcance e a TV é compatível. */
   readonly canUse = computed(() => {
@@ -271,9 +307,9 @@ export class TvLivreStore {
         this.api.saveConfig(buildConfig(draft, { hasPhoto: view.hasPhoto, apps: view.apps })),
       );
       this.adopt(saved, epoch, true);
+      let applied: TvLivreView;
       try {
-        this.adopt(await this.live(epoch, this.api.apply()), epoch);
-        this._unapplied.set(false);
+        applied = await this.live(epoch, this.api.apply());
       } catch (error) {
         if (error instanceof StaleRequest) throw error;
         const reason = this.describe(error, true);
@@ -281,6 +317,14 @@ export class TvLivreStore {
         throw new LocalFailure(
           $localize`:@@tv-livre.notice.saved-not-applied:Salvo, mas a TV não aplicou. ${reason}:reason:`,
         );
+      }
+      this.adopt(applied, epoch);
+      this._unapplied.set(false);
+      if (applied.applyDeferred) {
+        // Havia outro app na frente: a configuração chegou à TV sem tirá-lo dali. Mostrar agora é escolha da pessoa, e só
+        // vale se o TV Livre é a tela inicial (a tecla Início leva a ele).
+        this._showPrompt.set(applied.isHome);
+        return $localize`:@@tv-livre.notice.applied-later:Aplicado. A TV mostra na próxima vez que voltar ao Início.`;
       }
       return $localize`:@@tv-livre.notice.applied:Aplicado na TV.`;
     });
@@ -293,7 +337,28 @@ export class TvLivreStore {
     });
   }
 
-  /** Define o TV Livre como a tela inicial; com `disableFactory` desativa também a tela inicial de fábrica. */
+  /** Instala por cima o launcher mais novo; a tela inicial continua sendo a que era. */
+  update(): Promise<boolean> {
+    return this.run('update', async (epoch) => {
+      this.adopt(await this.live(epoch, this.api.install()), epoch);
+      return $localize`:@@tv-livre.notice.updated:TV Livre atualizado.`;
+    });
+  }
+
+  /** "Mostrar agora na TV": a tecla Início leva ao TV Livre, que relê a configuração gravada. */
+  async showNow(): Promise<boolean> {
+    this._showPrompt.set(false);
+    return this.run('show', async () => {
+      await this.tvApi.sendKey('HOME');
+      return $localize`:@@tv-livre.notice.shown:Mostrando na TV.`;
+    });
+  }
+
+  dismissShowPrompt(): void {
+    this._showPrompt.set(false);
+  }
+
+  /** Define o TV Livre como a tela inicial; com `disableFactory` desativa também o launcher de fábrica. */
   setHome(disableFactory: boolean): Promise<boolean> {
     return this.run('set-home', async (epoch) => {
       this.adopt(await this.live(epoch, this.api.setHome(disableFactory)), epoch);
@@ -310,8 +375,10 @@ export class TvLivreStore {
   }
 
   sleep(): Promise<boolean> {
+    // O tempo guardado vai junto: o Modo Dormir o usa sem depender da configuração que a TV já tem.
+    const minutes = this._view()?.config.sleep.maxMinutes;
     return this.run('sleep', async (epoch) => {
-      await this.live(epoch, this.api.sleep());
+      await this.live(epoch, this.api.sleep(minutes));
       return $localize`:@@tv-livre.notice.sleeping:Modo Dormir enviado à TV.`;
     });
   }
@@ -411,6 +478,40 @@ export class TvLivreStore {
     if (!view || this._busy() !== null) return;
     this._draft.set(normalizeApps(view.config));
     this._notice.set(null);
+  /**
+   * Troca o tempo do Modo Dormir já valendo: guarda só esse tempo (o resto da configuração fica como foi guardado e o
+   * rascunho do que a pessoa está editando não é tocado) e o próximo Modo Dormir o usa. Sem o launcher novo, vira uma
+   * edição do rascunho, que só vale depois de "Aplicar na TV".
+   */
+  setSleepTime(minutes: number): Promise<boolean> {
+    const value = Math.min(SLEEP_MAX_MINUTES, Math.max(0, Math.round(minutes) || 0));
+    const view = this._view();
+    if (!view || !this.quickSleep()) {
+      this.setSleepMax(value);
+      return Promise.resolve(true);
+    }
+    return this.run('sleep-time', async (epoch) => {
+      const saved = await this.live(
+        epoch,
+        this.api.saveConfig({ ...view.config, sleep: { maxMinutes: value } }),
+      );
+      this.adopt(saved, epoch);
+      this.edit((draft) => ({ ...draft, sleep: { maxMinutes: value } }));
+      // O próprio desenho mostra que valeu; o aviso de rodapé seria barulho.
+      return '';
+    });
+  }
+
+  setClock(change: Partial<LivreConfig['clock']>): void {
+    this.edit((draft) => ({ ...draft, clock: { ...draft.clock, ...change } }));
+  }
+
+  setIcons(change: Partial<LivreConfig['icons']>): void {
+    this.edit((draft) => ({ ...draft, icons: { ...draft.icons, ...change } }));
+  }
+
+  setBuiltin(change: Partial<LivreConfig['builtin']>): void {
+    this.edit((draft) => ({ ...draft, builtin: { ...draft.builtin, ...change } }));
   }
 
   /** O aviso do último pedido some quando a pessoa o dispensa ou muda de tela. */
@@ -423,6 +524,7 @@ export class TvLivreStore {
     if (!draft) return;
     this._draft.set(change(draft));
     this._notice.set(null);
+    this._showPrompt.set(false);
   }
 
   /**
@@ -477,7 +579,8 @@ export class TvLivreStore {
     try {
       const text = await task(epoch);
       if (epoch !== this.epoch) return false;
-      this._notice.set({ kind: 'ok', text });
+      // Texto vazio: o pedido tem o próprio sinal na tela e não quer o aviso de rodapé.
+      this._notice.set(text === '' ? null : { kind: 'ok', text });
       return true;
     } catch (error) {
       if (epoch === this.epoch && !(error instanceof StaleRequest)) {
@@ -521,6 +624,7 @@ export class TvLivreStore {
     this._busy.set(null);
     this._notice.set(null);
     this._unapplied.set(false);
+    this._showPrompt.set(false);
   }
 
   private scheduleSupportRetry(): void {

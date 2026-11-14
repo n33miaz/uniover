@@ -1,0 +1,274 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ----- o que é comum a qualquer animação: a forma dos botões, o lápis, o campo e a frase de estado ----- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.9rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s;
+}
+
+.chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.chip svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chip .check {
+  width: 0;
+  height: 16px;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width 0.2s var(--ease-out),
+    opacity 0.15s;
+}
+
+.chip .check svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 3;
+}
+
+.chip.sel .check {
+  width: 16px;
+  opacity: 1;
+}
+
+.chip.pencil {
+  padding: 0 13px;
+}
+
+.chip.pencil svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+/* Os adornos de cada animação nascem escondidos; só o bloco da animação em uso os mostra. */
+.chip .bar,
+.chip .seal {
+  display: none;
+}
+
+.editor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--a-accent);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--a-ring);
+}
+
+.editor .ui-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+
+.editor .unit {
+  color: var(--a-ink2);
+  font-weight: 650;
+}
+
+.editor .confirm {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  cursor: pointer;
+}
+
+.editor .confirm svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hint {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 22px;
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.status .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--a-ok);
+}
+
+.status.sending .dot {
+  background: var(--a-accent);
+  animation: livre-sleep-blink 0.9s ease-in-out infinite;
+}
+
+/* ----- animação "ring-seal": o botão pulsa ao toque, uma barra enche enquanto envia, um selo confirma ----- */
+
+:host([data-animation='ring-seal']) .chip.sel {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+}
+
+:host([data-animation='ring-seal']) .chip::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--a-accent);
+  border-radius: var(--radius-pill);
+  opacity: 0;
+  pointer-events: none;
+}
+
+:host([data-animation='ring-seal']) .chip.go::after {
+  animation: livre-sleep-ripple 0.55s ease-out;
+}
+
+:host([data-animation='ring-seal']) .chip .bar {
+  display: block;
+  position: absolute;
+  inset-inline: 14px;
+  bottom: 5px;
+  height: 3px;
+  border-radius: 9px;
+  background: var(--a-accent);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+:host([data-animation='ring-seal']) .chip.sending .bar {
+  opacity: 1;
+  /* A barra vai até perto do fim e espera a resposta: o tempo real do envio não é conhecido. */
+  animation: livre-sleep-fill 1.2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+:host([data-animation='ring-seal']) .chip .seal {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  top: -6px;
+  inset-inline-end: -5px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--a-bg);
+  border-radius: 50%;
+  background: var(--a-ok);
+  transform: scale(0);
+  transition: transform 0.22s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+:host([data-animation='ring-seal']) .chip .seal svg {
+  width: 11px;
+  height: 11px;
+  stroke: #fff;
+  stroke-width: 3.2;
+}
+
+:host([data-animation='ring-seal']) .chip.applied .seal {
+  transform: scale(1);
+}
+
+@keyframes livre-sleep-ripple {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35, 1.7);
+  }
+}
+
+@keyframes livre-sleep-fill {
+  to {
+    transform: scaleX(0.92);
+  }
+}
+
+@keyframes livre-sleep-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Reduzir movimento: nada se move; o estado continua claro pelas cores, pelo visto e pelo selo. */
+@media (prefers-reduced-motion: reduce) {
+  .chip,
+  .chip .check,
+  :host([data-animation='ring-seal']) .chip .seal {
+    transition: none;
+  }
+
+  :host([data-animation='ring-seal']) .chip.go::after,
+  :host([data-animation='ring-seal']) .chip.sending .bar,
+  .status.sending .dot {
+    animation: none;
+  }
+
+  :host([data-animation='ring-seal']) .chip.sending .bar {
+    transform: scaleX(1);
+  }
+}

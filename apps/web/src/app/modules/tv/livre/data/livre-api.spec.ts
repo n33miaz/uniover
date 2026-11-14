@@ -101,6 +101,31 @@ describe('TvLivreApi', () => {
     await expect(sleep).resolves.toBeUndefined();
   });
 
+  it('carries the time to wake up by itself in the sleep request, and reads whether sleeping is within reach', async () => {
+    const sleep = api.sleep(45);
+    const request = http.expectOne('/api/v1/tv/livre/sleep');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ minutes: 45 });
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await sleep;
+
+    const zero = api.sleep(0);
+    const zeroRequest = http.expectOne('/api/v1/tv/livre/sleep');
+    expect(zeroRequest.request.body).toEqual({ minutes: 0 });
+    zeroRequest.flush(null);
+    await zero;
+
+    const available = api.sleepAvailable();
+    const read = http.expectOne('/api/v1/tv/livre/sleep');
+    expect(read.request.method).toBe('GET');
+    read.flush({ available: true });
+    await expect(available).resolves.toBe(true);
+
+    const missing = api.sleepAvailable();
+    http.expectOne('/api/v1/tv/livre/sleep').flush({});
+    await expect(missing).resolves.toBe(false);
+  });
+
   it('sends the photo as image/jpeg bytes', async () => {
     const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' });
     const put = api.putPhoto(jpeg);

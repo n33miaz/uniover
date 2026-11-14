@@ -1,0 +1,82 @@
+<div
+  class="chips"
+  role="group"
+  aria-label="Tempo no Modo Dormir"
+  i18n-aria-label="@@tv-livre.sleep.time-label"
+>
+  @for (chip of chips(); track chip.minutes) {
+    <button
+      type="button"
+      class="chip"
+      [class.sel]="isChosen(chip.minutes)"
+      [class.go]="pulsing() === chip.minutes"
+      [class.sending]="isSending(chip.minutes)"
+      [class.applied]="isChosen(chip.minutes) && confirmed() === chip.minutes && !sending()"
+      [attr.aria-pressed]="isChosen(chip.minutes)"
+      [disabled]="!idle()"
+      (click)="choose(chip.minutes)"
+    >
+      <span class="check" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path [attr.d]="'M5 12.5l4.5 4.5L19 7.5'" />
+        </svg>
+      </span>
+      <span class="label">{{ chip.label }}</span>
+      <span class="bar" aria-hidden="true"></span>
+      <span class="seal" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path [attr.d]="'M5 12.5l4.5 4.5L19 7.5'" />
+        </svg>
+      </span>
+    </button>
+  }
+  <button
+    type="button"
+    class="chip pencil"
+    [class.sel]="editing()"
+    aria-label="Digitar outro tempo"
+    i18n-aria-label="@@tv-livre.sleep.type-label"
+    [attr.aria-expanded]="editing()"
+    [disabled]="!idle()"
+    (click)="openEditor()"
+  >
+    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      <path [attr.d]="'M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z'" />
+      <path [attr.d]="'M13.5 6.5l4 4'" />
+    </svg>
+  </button>
+</div>
+
+@if (editing()) {
+  <form class="editor" (submit)="applyTyped($event)" (keydown.escape)="closeEditor()">
+    <input
+      #field
+      class="ui-input"
+      type="number"
+      [attr.inputmode]="'numeric'"
+      min="0"
+      [max]="max"
+      step="5"
+      [value]="selected()"
+      aria-label="Minutos"
+      i18n-aria-label="@@tv-livre.sleep.minutes-label"
+    />
+    <span class="unit" i18n="@@tv-livre.sleep.unit">min</span>
+    <button
+      type="submit"
+      class="confirm"
+      aria-label="Aplicar"
+      i18n-aria-label="@@tv-livre.sleep.confirm-label"
+    >
+      <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+        <path [attr.d]="'M5 12.5l4.5 4.5L19 7.5'" />
+      </svg>
+    </button>
+  </form>
+  <p class="hint" i18n="@@tv-livre.sleep.editor-hint">De 5 a 720 minutos. Zero deixa sem limite.</p>
+}
+
+<p class="status" role="status" [class.sending]="sending()">
+  <span class="dot" aria-hidden="true"></span>
+  <span class="text">{{ status() }}</span>
+</p>
