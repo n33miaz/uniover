@@ -32,3 +32,15 @@
 .ui-field .hint {
   text-align: start;
 }
+
+.time {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 650;
+}

@@ -19,6 +19,28 @@ describe('normalizeColor', () => {
   });
 });
 
+describe('parseLivreView, the extension fields', () => {
+  const base = { available: true };
+
+  it('reads the extension, the launcher level and the deferred apply, and defaults them for an old server', () => {
+    expect(parseLivreView(base)).toMatchObject({
+      extended: false,
+      launcherLevel: null,
+      applyDeferred: false,
+    });
+    expect(
+      parseLivreView({ ...base, extended: true, launcherLevel: 2, applyDeferred: true }),
+    ).toMatchObject({ extended: true, launcherLevel: 2, applyDeferred: true });
+  });
+
+  it('refuses a level that is not a whole number and a flag that is not a boolean', () => {
+    expect(
+      parseLivreView({ ...base, extended: 'sim', launcherLevel: '2', applyDeferred: 1 }),
+    ).toMatchObject({ extended: false, launcherLevel: null, applyDeferred: false });
+    expect(parseLivreView({ ...base, launcherLevel: 1.5 })?.launcherLevel).toBeNull();
+  });
+});
+
 describe('parseLivreConfig', () => {
   it('gives the approved default home for anything that is not a config', () => {
     expect(parseLivreConfig(null)).toEqual(DEFAULT_LIVRE_CONFIG);
@@ -54,7 +76,13 @@ describe('parseLivreConfig', () => {
       showFactory: true,
     });
     expect(config.icons).toEqual({ size: 'large', labels: 'never' });
-    expect(config.builtin).toEqual({ settings: false, sleep: false });
+    expect(config.builtin).toEqual({
+      settings: false,
+      sleep: false,
+      network: true,
+      inputs: true,
+      brand: true,
+    });
     expect(config.sleep.maxMinutes).toBe(720);
   });
 });

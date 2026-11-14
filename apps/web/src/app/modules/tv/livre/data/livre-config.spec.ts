@@ -238,7 +238,7 @@ describe('buildConfig', () => {
       ...DEFAULT_LIVRE_CONFIG,
       clock: { ...DEFAULT_LIVRE_CONFIG.clock, size: 'small', seconds: true },
       icons: { size: 'large', labels: 'focus' },
-      builtin: { settings: true, sleep: true },
+      builtin: { settings: true, sleep: true, network: false, inputs: true, brand: false },
     };
     const built = buildConfig(custom, context);
     expect(built.clock).toEqual(custom.clock);

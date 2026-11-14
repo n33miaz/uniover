@@ -15,21 +15,15 @@
   <span i18n="@@tv-livre.sleep.button">Modo Dormir</span>
 </button>
 
-<p class="hint" i18n="@@tv-livre.sleep.hint">Qualquer tecla do controle acorda a TV.</p>
+@if (store.launcherExtras()) {
+  <p class="hint" i18n="@@tv-livre.sleep.hint-keys">
+    Qualquer tecla do controle acorda a TV, menos volume e mídia.
+  </p>
+} @else {
+  <p class="hint" i18n="@@tv-livre.sleep.hint">Qualquer tecla do controle acorda a TV.</p>
+}
 
-<div class="ui-field">
-  <label for="livre-sleep-max" i18n="@@tv-livre.sleep.max-label">Acordar Sozinho (Minutos)</label>
-  <input
-    id="livre-sleep-max"
-    class="ui-input"
-    type="number"
-    [attr.inputmode]="'numeric'"
-    min="0"
-    [max]="maxMinutes"
-    step="5"
-    [value]="minutes()"
-    [disabled]="!idle()"
-    (change)="setMinutes($event)"
-  />
-  <p class="hint" i18n="@@tv-livre.sleep.max-hint">Zero deixa a TV dormindo até uma tecla.</p>
-</div>
+<section class="time">
+  <h2 class="label" i18n="@@tv-livre.sleep.max-label">Acordar Sozinho</h2>
+  <app-livre-sleep-time />
+</section>

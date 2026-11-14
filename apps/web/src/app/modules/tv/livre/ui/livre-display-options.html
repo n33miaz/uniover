@@ -1,0 +1,171 @@
+@if (clock(); as clock) {
+  <section class="group" aria-labelledby="livre-clock-title">
+    <h2 id="livre-clock-title" class="title" i18n="@@tv-livre.display.clock">Relógio</h2>
+
+    <label class="row">
+      <span class="text" i18n="@@tv-livre.display.clock-show">Mostrar o Relógio</span>
+      <input
+        type="checkbox"
+        role="switch"
+        class="ui-switch"
+        [checked]="clock.enabled"
+        [disabled]="!enabled()"
+        (change)="store.setClock({ enabled: checked($event) })"
+      />
+    </label>
+
+    @if (clock.enabled) {
+      <div class="field">
+        <span class="text" id="livre-clock-size" i18n="@@tv-livre.display.clock-size">Tamanho</span>
+        <div class="seg" role="radiogroup" aria-labelledby="livre-clock-size">
+          @for (choice of sizes; track choice.value) {
+            <label class="opt" [class.on]="clock.size === choice.value">
+              <input
+                type="radio"
+                name="livre-clock-size"
+                class="ui-visually-hidden"
+                [checked]="clock.size === choice.value"
+                [disabled]="!enabled()"
+                (change)="store.setClock({ size: choice.value })"
+              />
+              <span>{{ choice.label }}</span>
+            </label>
+          }
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="text" id="livre-clock-format" i18n="@@tv-livre.display.clock-format"
+          >Horas</span
+        >
+        <div class="seg" role="radiogroup" aria-labelledby="livre-clock-format">
+          @for (choice of formats; track choice.value) {
+            <label class="opt" [class.on]="clock.format === choice.value">
+              <input
+                type="radio"
+                name="livre-clock-format"
+                class="ui-visually-hidden"
+                [checked]="clock.format === choice.value"
+                [disabled]="!enabled()"
+                (change)="store.setClock({ format: choice.value })"
+              />
+              <span>{{ choice.label }}</span>
+            </label>
+          }
+        </div>
+      </div>
+
+      <label class="row">
+        <span class="text" i18n="@@tv-livre.display.clock-seconds">Mostrar os Segundos</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="clock.seconds"
+          [disabled]="!enabled()"
+          (change)="store.setClock({ seconds: checked($event) })"
+        />
+      </label>
+    }
+
+    <label class="row">
+      <span class="text" i18n="@@tv-livre.display.date">Mostrar a Data</span>
+      <input
+        type="checkbox"
+        role="switch"
+        class="ui-switch"
+        [checked]="clock.date"
+        [disabled]="!enabled()"
+        (change)="store.setClock({ date: checked($event) })"
+      />
+    </label>
+  </section>
+}
+
+@if (icons(); as icons) {
+  <section class="group" aria-labelledby="livre-icons-title">
+    <h2 id="livre-icons-title" class="title" i18n="@@tv-livre.display.icons">Ícones</h2>
+
+    <div class="field">
+      <span class="text" id="livre-icons-size" i18n="@@tv-livre.display.icons-size">Tamanho</span>
+      <div class="seg" role="radiogroup" aria-labelledby="livre-icons-size">
+        @for (choice of iconSizes; track choice.value) {
+          <label class="opt" [class.on]="icons.size === choice.value">
+            <input
+              type="radio"
+              name="livre-icons-size"
+              class="ui-visually-hidden"
+              [checked]="icons.size === choice.value"
+              [disabled]="!enabled()"
+              (change)="store.setIcons({ size: choice.value })"
+            />
+            <span>{{ choice.label }}</span>
+          </label>
+        }
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="text" id="livre-icons-names" i18n="@@tv-livre.display.icons-names"
+        >Nomes dos Apps</span
+      >
+      <div class="seg" role="radiogroup" aria-labelledby="livre-icons-names">
+        @for (choice of labelModes; track choice.value) {
+          <label class="opt" [class.on]="icons.labels === choice.value">
+            <input
+              type="radio"
+              name="livre-icons-names"
+              class="ui-visually-hidden"
+              [checked]="icons.labels === choice.value"
+              [disabled]="!enabled()"
+              (change)="store.setIcons({ labels: choice.value })"
+            />
+            <span>{{ choice.label }}</span>
+          </label>
+        }
+      </div>
+    </div>
+  </section>
+}
+
+@if (store.launcherExtras()) {
+  @if (builtin(); as builtin) {
+    <section class="group" aria-labelledby="livre-screen-title">
+      <h2 id="livre-screen-title" class="title" i18n="@@tv-livre.display.screen">Na Tela da TV</h2>
+
+      <label class="row">
+        <span class="text" i18n="@@tv-livre.display.network">Círculo Rede</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="builtin.network"
+          [disabled]="!enabled()"
+          (change)="store.setBuiltin({ network: checked($event) })"
+        />
+      </label>
+      <label class="row">
+        <span class="text" i18n="@@tv-livre.display.inputs">Círculo Entradas</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="builtin.inputs"
+          [disabled]="!enabled()"
+          (change)="store.setBuiltin({ inputs: checked($event) })"
+        />
+      </label>
+      <label class="row">
+        <span class="text" i18n="@@tv-livre.display.brand">Nome do Sistema no Canto</span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [checked]="builtin.brand"
+          [disabled]="!enabled()"
+          (change)="store.setBuiltin({ brand: checked($event) })"
+        />
+      </label>
+    </section>
+  }
+}

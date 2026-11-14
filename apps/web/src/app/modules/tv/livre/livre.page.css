@@ -116,3 +116,7 @@
   flex: 1 1 auto;
   width: auto;
 }
+/* "Mostrar Agora na TV": os dois botões lado a lado, no mesmo aviso. */
+.show-now {
+  gap: var(--space-2);
+}

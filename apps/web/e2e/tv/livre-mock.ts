@@ -35,7 +35,7 @@ export const LIVRE_CONFIG = {
   wallpaper: { type: 'gradient', colors: ['#1B2440', '#3A2D5C'], angle: 315, dim: 0.25 },
   apps: { mode: 'all', items: [], hidden: [], showFactory: false },
   icons: { size: 'medium', labels: 'always' },
-  builtin: { settings: true, sleep: false },
+  builtin: { settings: true, sleep: false, network: true, inputs: true, brand: true },
   sleep: { maxMinutes: 0 },
 };
 
@@ -61,6 +61,9 @@ export function livreView(overrides: Record<string, unknown> = {}): Record<strin
     config: structuredClone(LIVRE_CONFIG),
     hasPhoto: false,
     revision: 0,
+    extended: false,
+    launcherLevel: null,
+    applyDeferred: false,
     ...overrides,
   };
 }
@@ -154,6 +157,8 @@ export async function mockLivreApi(
       view['isHome'] = false;
       return json(route, view);
     }
+    if (method === 'GET' && path === '/sleep')
+      return json(route, { available: view['installed'] === true });
     if (method === 'POST' && path === '/sleep') return route.fulfill({ status: 204 });
     if (path === '/photo') {
       if (method === 'PUT') {

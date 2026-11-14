@@ -81,8 +81,20 @@ export class TvLivreApi {
     );
   }
 
-  async sleep(): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/sleep`, null, this.target()));
+  /**
+   * Abre o Modo Dormir. `minutes` é o tempo até a TV acordar sozinha (0 só acorda com tecla) e vai no pedido, para valer
+   * mesmo sem a configuração aplicada; sem ele vale o da configuração que a TV já tem.
+   */
+  async sleep(minutes?: number): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${BASE}/sleep`, minutes === undefined ? null : { minutes }, this.target()),
+    );
+  }
+
+  /** Se o Modo Dormir está ao alcance (TV Livre instalado e agente online); quem controla a TV pode perguntar. */
+  async sleepAvailable(): Promise<boolean> {
+    const dto = await firstValueFrom(this.http.get<unknown>(`${BASE}/sleep`, this.target()));
+    return (dto as { available?: unknown } | null)?.available === true;
   }
 
   /** Envia o JPEG já reduzido (a API recusa mais de 400 KiB e o que não começa como JPEG). */

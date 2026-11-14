@@ -31,6 +31,9 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
     config: DEFAULT_LIVRE_CONFIG,
     hasPhoto: false,
     revision: 0,
+    extended: false,
+    launcherLevel: null,
+    applyDeferred: false,
     ...overrides,
   };
 }
@@ -49,13 +52,14 @@ describe('LivrePage', () => {
     photo: vi.fn(),
     deletePhoto: vi.fn(),
   };
-  const tvApi = { shortcuts: vi.fn() };
+  const tvApi = { shortcuts: vi.fn(), sendKey: vi.fn() };
   const reducer = vi.fn();
   let fixture: ComponentFixture<LivrePage>;
   let el: HTMLElement;
 
   beforeEach(() => {
-    for (const fn of [...Object.values(api), tvApi.shortcuts, reducer]) fn.mockReset();
+    for (const fn of [...Object.values(api), tvApi.shortcuts, tvApi.sendKey, reducer])
+      fn.mockReset();
     api.get.mockResolvedValue(view());
     api.photo.mockResolvedValue(null);
     tvApi.shortcuts.mockResolvedValue([
@@ -561,21 +565,278 @@ describe('LivrePage', () => {
       expect(q('.ui-action-bar .ui-notice').textContent).toContain('Modo Dormir enviado');
     });
 
-    it('keeps the time to wake up by itself in the configuration, between 0 and 720', async () => {
-      const field = q<HTMLInputElement>('#livre-sleep-max');
-      expect(field.value).toBe('0');
-      field.value = '90';
-      field.dispatchEvent(new Event('change', { bubbles: true }));
+    const chip = (label: string) =>
+      qa<HTMLButtonElement>('app-livre-sleep-time .chip').find((c) =>
+        c.textContent?.trim().startsWith(label),
+      )!;
+
+    it('marks the chosen time, goes back to Só Botão on a second touch and waits for Aplicar na TV with an old launcher', async () => {
+      expect(chip('Só Botão').getAttribute('aria-pressed')).toBe('true');
+      chip('30 min').click();
       await change();
+      expect(chip('30 min').getAttribute('aria-pressed')).toBe('true');
+      expect(chip('Só Botão').getAttribute('aria-pressed')).toBe('false');
+      expect(api.saveConfig).not.toHaveBeenCalled();
+      expect(q('app-livre-sleep-time .status').textContent).toContain('Toque em Aplicar na TV');
+
+      chip('30 min').click();
+      await change();
+      expect(chip('Só Botão').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('lets the person type another time with the pencil, between 0 and 720', async () => {
+      q<HTMLButtonElement>('app-livre-sleep-time .pencil').click();
+      await change();
+      const field = q<HTMLInputElement>('app-livre-sleep-time input');
       field.value = '9999';
-      field.dispatchEvent(new Event('change', { bubbles: true }));
+      q<HTMLFormElement>('app-livre-sleep-time form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
       await change();
-      expect(field.value).toBe('720');
+      expect(chip('12 h').getAttribute('aria-pressed')).toBe('true');
       api.saveConfig.mockResolvedValue(view());
       api.apply.mockResolvedValue(view());
       button('Aplicar na TV')!.click();
       await change();
       expect(api.saveConfig.mock.calls[0][0].sleep).toEqual({ maxMinutes: 720 });
+    });
+
+    it('hides the pencil field again with Escape and keeps the time it had', async () => {
+      q<HTMLButtonElement>('app-livre-sleep-time .pencil').click();
+      await change();
+      q<HTMLFormElement>('app-livre-sleep-time form').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      await change();
+      expect(q('app-livre-sleep-time form')).toBeNull();
+      expect(chip('Só Botão').getAttribute('aria-pressed')).toBe('true');
+    });
+  });
+
+  describe('Dormir com o launcher novo', () => {
+    const modern = (overrides: Partial<TvLivreView> = {}) =>
+      view({ installed: true, extended: true, launcherLevel: 2, ...overrides });
+    const chip = (label: string) =>
+      qa<HTMLButtonElement>('app-livre-sleep-time .chip').find((c) =>
+        c.textContent?.trim().startsWith(label),
+      )!;
+
+    beforeEach(async () => {
+      api.get.mockResolvedValue(modern());
+      await render();
+      await open('Dormir');
+    });
+
+    it('saves only the time, right away, with no Aplicar and no footer notice, and the seal says the TV has it', async () => {
+      api.saveConfig.mockResolvedValue(
+        modern({ config: { ...DEFAULT_LIVRE_CONFIG, sleep: { maxMinutes: 60 } } }),
+      );
+      chip('1 h').click();
+      await change();
+      await change();
+      expect(api.saveConfig).toHaveBeenCalledTimes(1);
+      expect(api.saveConfig.mock.calls[0][0].sleep).toEqual({ maxMinutes: 60 });
+      expect(api.apply).not.toHaveBeenCalled();
+      expect(chip('1 h').getAttribute('aria-pressed')).toBe('true');
+      expect(chip('1 h').classList).toContain('applied');
+      expect(q('app-livre-sleep-time .status').textContent).toContain(
+        'Vale: acorda sozinha em 1 h.',
+      );
+      expect(el.querySelector('.ui-action-bar .ui-notice')).toBeNull();
+    });
+
+    it('shows the time that is going out while it goes, and goes back if the server refuses', async () => {
+      let release!: (value: TvLivreView) => void;
+      api.saveConfig.mockReturnValue(new Promise<TvLivreView>((resolve) => (release = resolve)));
+      chip('2 h').click();
+      await change();
+      expect(chip('2 h').classList).toContain('sending');
+      expect(q('app-livre-sleep-time .status').textContent).toContain('Enviando para a TV');
+      release(modern({ config: { ...DEFAULT_LIVRE_CONFIG, sleep: { maxMinutes: 120 } } }));
+      await change();
+      await change();
+      expect(chip('2 h').classList).not.toContain('sending');
+
+      api.saveConfig.mockRejectedValue(new HttpErrorResponse({ status: 500 }));
+      chip('8 h').click();
+      await change();
+      await change();
+      expect(chip('2 h').getAttribute('aria-pressed')).toBe('true');
+      expect(chip('8 h').classList).not.toContain('applied');
+      expect(q('.ui-action-bar .ui-notice').getAttribute('role')).toBe('alert');
+    });
+  });
+
+  describe('Modo Dormir com o tempo guardado', () => {
+    it('sends the saved time along with the Modo Dormir button', async () => {
+      api.get.mockResolvedValue(
+        view({
+          installed: true,
+          extended: true,
+          launcherLevel: 2,
+          config: { ...DEFAULT_LIVRE_CONFIG, sleep: { maxMinutes: 45 } },
+        }),
+      );
+      await render();
+      await open('Dormir');
+      api.sleep.mockResolvedValue(undefined);
+      button('Modo Dormir')!.click();
+      await change();
+      expect(api.sleep).toHaveBeenCalledWith(45);
+      expect(el.textContent).toContain('menos volume e mídia');
+    });
+  });
+
+  describe('Relógio e ícones com um launcher antigo', () => {
+    it('does not offer the circles and the name to a launcher that does not know them', async () => {
+      api.get.mockResolvedValue(view({ installed: true, extended: true, launcherLevel: 1 }));
+      await render();
+      await open('Fundo');
+      const options = q('app-livre-display-options').textContent!;
+      expect(options).not.toContain('Círculo Rede');
+      expect(options).toContain('Relógio');
+    });
+  });
+
+  describe('Atualizar o launcher', () => {
+    it('offers the update only when the agent read an older level', async () => {
+      api.get.mockResolvedValue(view({ installed: true, extended: true, launcherLevel: 1 }));
+      await render();
+      expect(el.textContent).toContain('Há versão nova do TV Livre.');
+      api.install.mockResolvedValue(view({ installed: true, extended: true, launcherLevel: 2 }));
+      button('Atualizar')!.click();
+      await change();
+      await change();
+      expect(api.install).toHaveBeenCalledTimes(1);
+      expect(el.textContent).not.toContain('Há versão nova do TV Livre.');
+      expect(q('.ui-action-bar .ui-notice').textContent).toContain('TV Livre atualizado.');
+    });
+
+    it.each([
+      ['an up to date launcher', { launcherLevel: 2 }],
+      ['an agent that cannot read the level', { launcherLevel: null }],
+      ['a TV without the launcher', { installed: false, launcherLevel: 1 }],
+    ])('says nothing for %s', async (_name, overrides) => {
+      api.get.mockResolvedValue(view({ installed: true, extended: true, ...overrides }));
+      await render();
+      expect(el.textContent).not.toContain('Há versão nova do TV Livre.');
+    });
+  });
+
+  describe('Aplicar sem interromper', () => {
+    beforeEach(() => {
+      tvApi.sendKey.mockResolvedValue(undefined);
+    });
+
+    it('offers Mostrar Agora na TV when the apply only saved, and the Início key shows it', async () => {
+      api.get.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
+      await render();
+      api.saveConfig.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
+      api.apply.mockResolvedValue(
+        view({ installed: true, isHome: true, extended: true, applyDeferred: true }),
+      );
+      button('Aplicar na TV')!.click();
+      await change();
+      await change();
+      expect(q('.ui-action-bar').textContent).toContain('A TV mostra na próxima vez');
+      button('Mostrar Agora na TV')!.click();
+      await change();
+      await change();
+      expect(tvApi.sendKey).toHaveBeenCalledWith('HOME');
+      expect(button('Mostrar Agora na TV')).toBeUndefined();
+    });
+
+    it('does not offer it when the TV Livre is not the home screen, or when the apply showed the home', async () => {
+      api.get.mockResolvedValue(view({ installed: true, isHome: false, extended: true }));
+      await render();
+      api.saveConfig.mockResolvedValue(view({ installed: true }));
+      api.apply.mockResolvedValue(view({ installed: true, extended: true, applyDeferred: true }));
+      button('Aplicar na TV')!.click();
+      await change();
+      await change();
+      expect(button('Mostrar Agora na TV')).toBeUndefined();
+
+      api.apply.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
+      button('Aplicar na TV')!.click();
+      await change();
+      await change();
+      expect(q('.ui-action-bar').textContent).toContain('Aplicado na TV.');
+    });
+
+    it('lets the person say Depois and does not ask again', async () => {
+      api.get.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
+      await render();
+      api.saveConfig.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
+      api.apply.mockResolvedValue(
+        view({ installed: true, isHome: true, extended: true, applyDeferred: true }),
+      );
+      button('Aplicar na TV')!.click();
+      await change();
+      await change();
+      button('Depois')!.click();
+      await change();
+      expect(button('Mostrar Agora na TV')).toBeUndefined();
+      expect(tvApi.sendKey).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Relógio e ícones', () => {
+    const radio = (name: string, label: string) =>
+      qa<HTMLInputElement>(`input[name="${name}"]`).find((input) =>
+        input.closest('label')?.textContent?.trim().includes(label),
+      )!;
+
+    beforeEach(async () => {
+      api.get.mockResolvedValue(view({ installed: true, extended: true, launcherLevel: 2 }));
+      await render();
+      await open('Fundo');
+    });
+
+    it('edits the clock, the icons and the circles in the draft, all going out with Aplicar na TV', async () => {
+      radio('livre-clock-size', 'Pequeno').click();
+      radio('livre-clock-format', '12 h').click();
+      radio('livre-icons-size', 'Grandes').click();
+      radio('livre-icons-names', 'No Foco').click();
+      await change();
+      const switches = qa<HTMLInputElement>('app-livre-display-options input[role="switch"]');
+      const named = (text: string) =>
+        switches.find((input) => input.closest('label')?.textContent?.includes(text))!;
+      named('Mostrar os Segundos').click();
+      named('Mostrar a Data').click();
+      named('Círculo Rede').click();
+      named('Nome do Sistema no Canto').click();
+      await change();
+
+      api.saveConfig.mockResolvedValue(view({ installed: true }));
+      api.apply.mockResolvedValue(view({ installed: true }));
+      button('Aplicar na TV')!.click();
+      await change();
+      const sent = api.saveConfig.mock.calls[0][0];
+      expect(sent.clock).toEqual({
+        enabled: true,
+        size: 'small',
+        format: '12h',
+        seconds: true,
+        date: false,
+      });
+      expect(sent.icons).toEqual({ size: 'large', labels: 'focus' });
+      expect(sent.builtin).toEqual({
+        settings: true,
+        sleep: false,
+        network: false,
+        inputs: true,
+        brand: false,
+      });
+    });
+
+    it('hides the size and the hours when the clock is off', async () => {
+      const toggle = qa<HTMLInputElement>('app-livre-display-options input[role="switch"]').find(
+        (input) => input.closest('label')?.textContent?.includes('Mostrar o Relógio'),
+      )!;
+      toggle.click();
+      await change();
+      expect(el.querySelector('input[name="livre-clock-size"]')).toBeNull();
+      expect(el.querySelector('input[name="livre-clock-format"]')).toBeNull();
     });
   });
 

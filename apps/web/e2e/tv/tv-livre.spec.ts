@@ -428,13 +428,59 @@ test.describe('Dormir', () => {
     expect(livre.to('POST', '/sleep')).toHaveLength(1);
   });
 
-  test('o tempo para acordar sozinho vai na configuração', async ({ page }) => {
+  test('com um launcher antigo o tempo escolhido nos botões vai na configuração, com Aplicar', async ({
+    page,
+  }) => {
     await openLivre(page, 'Dormir');
-    await page.getByLabel('Acordar Sozinho (Minutos)').fill('90');
-    await page.getByLabel('Acordar Sozinho (Minutos)').blur();
+    const time = page.locator('app-livre-sleep-time');
+    await time.getByRole('button', { name: '1 h', exact: true }).click();
+    await expect(time.getByRole('button', { name: '1 h', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(time.getByRole('status')).toContainText('Aplicar na TV');
     await button(applyBar(page), 'Aplicar na TV').click();
     await expect(applyBar(page).getByRole('status')).toHaveText('Aplicado na TV.');
-    expect(livre.to('PUT', '/config')[0].body).toMatchObject({ sleep: { maxMinutes: 90 } });
+    expect(livre.to('PUT', '/config')[0].body).toMatchObject({ sleep: { maxMinutes: 60 } });
+  });
+
+  test('o lápis abre o campo para digitar o tempo, e tocar de novo no escolhido volta a Só Botão', async ({
+    page,
+  }) => {
+    await openLivre(page, 'Dormir');
+    const time = page.locator('app-livre-sleep-time');
+    await time.getByRole('button', { name: 'Digitar outro tempo' }).click();
+    await time.getByLabel('Minutos').fill('90');
+    await time.getByRole('button', { name: 'Aplicar', exact: true }).click();
+    await expect(time.getByRole('button', { name: '1 h 30 min' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await time.getByRole('button', { name: '1 h 30 min' }).click();
+    await expect(time.getByRole('button', { name: 'Só Botão' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  test('com o launcher novo o tempo vale na hora: guarda só o tempo, sem Aplicar, e o selo confirma', async ({
+    page,
+  }) => {
+    livre.view = livreView({
+      installed: true,
+      version: '0.69.0',
+      extended: true,
+      launcherLevel: 2,
+    });
+    await openLivre(page, 'Dormir');
+    const time = page.locator('app-livre-sleep-time');
+    await time.getByRole('button', { name: '2 h', exact: true }).click();
+    await expect(time.getByRole('button', { name: '2 h', exact: true })).toHaveClass(/applied/);
+    await expect(time.getByRole('status')).toContainText('Vale: acorda sozinha em 2 h.');
+    expect(livre.to('PUT', '/config')[0].body).toMatchObject({ sleep: { maxMinutes: 120 } });
+    expect(livre.to('POST', '/apply')).toHaveLength(0);
+    await button(page, 'Modo Dormir').click();
+    expect(livre.to('POST', '/sleep')[0].body).toEqual({ minutes: 120 });
   });
 });
 

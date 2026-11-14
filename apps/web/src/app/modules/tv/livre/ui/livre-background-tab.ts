@@ -2,16 +2,18 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { GRADIENT_PRESETS, GradientPreset, gradientCss, presetFor } from '../data/livre-config';
 import { TvLivreStore } from '../data/livre-store';
 import { DIM_MAX } from '../data/livre-types';
+import { LivreDisplayOptions } from './livre-display-options';
 import { LivrePreview } from './livre-preview';
 
 /**
  * Tela "Fundo": degradê de duas cores (seletor de cor do próprio aparelho e algumas combinações prontas) ou foto (reduzida
  * no navegador antes de enviar). A pré-visualização é a mesma da Home da TV. Escurecer a foto é o único ajuste dela: o
- * relógio e os nomes são brancos e precisam continuar legíveis. As mudanças ficam no rascunho até "Aplicar na TV".
+ * relógio e os nomes são brancos e precisam continuar legíveis. Abaixo do fundo ficam os ajustes do relógio e dos
+ * ícones (`LivreDisplayOptions`). As mudanças ficam no rascunho até "Aplicar na TV".
  */
 @Component({
   selector: 'app-livre-background-tab',
-  imports: [LivrePreview],
+  imports: [LivreDisplayOptions, LivrePreview],
   templateUrl: './livre-background-tab.html',
   styleUrl: './livre-background-tab.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
