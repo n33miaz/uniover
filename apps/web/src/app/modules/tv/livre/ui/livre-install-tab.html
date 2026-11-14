@@ -43,7 +43,7 @@
       @if (store.busy() === 'refresh') {
         <span class="ui-spinner" aria-hidden="true"></span>
       }
-      <span i18n="@@tv-livre.install.refresh">Atualizar</span>
+      <span i18n="@@tv-livre.install.refresh">Verificar</span>
     </button>
   </div>
 
@@ -63,7 +63,11 @@
           @if (store.busy() === 'install') {
             <span class="ui-spinner" aria-hidden="true"></span>
           }
-          <span i18n="@@tv-livre.install.install">Instalar</span>
+          @if (installed()) {
+            <span i18n="@@tv-livre.install.update">Atualizar</span>
+          } @else {
+            <span i18n="@@tv-livre.install.install">Instalar</span>
+          }
         </button>
       </div>
     </li>
@@ -83,7 +87,7 @@
           @if (store.busy() === 'set-home') {
             <span class="ui-spinner" aria-hidden="true"></span>
           }
-          <span i18n="@@tv-livre.install.set-home">Definir Como Padrão</span>
+          <span i18n="@@tv-livre.install.set-home">Usar Como Tela Inicial</span>
         </button>
         <label class="option">
           <input
@@ -96,21 +100,21 @@
           />
           <span class="option-text">
             <span class="option-title" i18n="@@tv-livre.install.disable-factory"
-              >Desativar o Launcher de Fábrica</span
+              >Desativar a Tela Inicial de Fábrica</span
             >
             @if (isHome() && factoryDisabled()) {
               <span class="hint" i18n="@@tv-livre.install.factory-disabled-hint"
-                >Já desativado. Voltar ao Original reativa o launcher de fábrica.</span
+                >Já desativada. Voltar ao Original reativa a tela inicial de fábrica.</span
               >
             } @else if (isHome()) {
               <span class="hint" i18n="@@tv-livre.install.factory-kept-hint"
-                >O launcher de fábrica continua ativo. Voltar ao Original restaura a tela
+                >A tela inicial de fábrica continua ativa. Voltar ao Original restaura a tela
                 anterior.</span
               >
             } @else {
               <span class="hint" i18n="@@tv-livre.install.disable-factory-hint"
-                >A opção só é aplicada ao tocar em Definir Como Padrão. Voltar ao Original reativa o
-                launcher de fábrica.</span
+                >A opção só é aplicada ao tocar em Usar Como Tela Inicial. Voltar ao Original
+                reativa a tela inicial de fábrica.</span
               >
             }
           </span>

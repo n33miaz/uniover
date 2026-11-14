@@ -141,6 +141,26 @@ export function setAppChosen(config: LivreConfig, name: string, chosen: boolean)
   return normalizeApps({ ...config, apps: { ...config.apps, items } });
 }
 
+/**
+ * Os apps da fileira do controle (fixados e instalados), na ordem dela, que a TV tem e não desativou: é o que "Usar os apps do
+ * controle" leva para a Home. Um pacote que a TV não lista ficaria escondido na lista e deixaria a tela sempre com mudança.
+ */
+export function controlPackages(
+  shortcuts: readonly TvShortcut[],
+  apps: readonly LivreApp[],
+): string[] {
+  const usable = new Set(apps.filter((app) => !app.disabled).map((app) => app.package));
+  const packages = shortcuts
+    .filter((shortcut) => shortcut.enabled && shortcut.installed && usable.has(shortcut.package))
+    .map((shortcut) => shortcut.package);
+  return [...new Set(packages)];
+}
+
+/** Troca os apps da Home por estes, na ordem dada (e não os soma aos que já estavam). */
+export function replaceApps(config: LivreConfig, items: readonly string[]): LivreConfig {
+  return normalizeApps({ ...config, apps: { ...config.apps, items: [...items] } });
+}
+
 /** Sobe (`-1`) ou desce (`1`) um app escolhido na ordem da Home; sem para onde ir, devolve a mesma configuração. */
 export function moveApp(config: LivreConfig, name: string, delta: -1 | 1): LivreConfig {
   const from = config.apps.items.indexOf(name);

@@ -204,10 +204,26 @@ describe('LivrePage', () => {
       expect(api.apply).not.toHaveBeenCalled();
     });
 
-    it('is on the screens that edit the configuration, not on Instalação', async () => {
-      api.get.mockResolvedValue(view({ installed: true }));
+    const chooseBeta = async () => {
+      q<HTMLInputElement>('input[aria-label="Mostrar Beta na Home"]').click();
+      await change();
+    };
+
+    it('stays out of the way while nothing changed, so the list uses the whole screen', async () => {
       await render();
       for (const label of ['Home da TV', 'Fundo', 'Dormir']) {
+        await open(label);
+        expect(el.querySelector('.ui-action-bar'), label).toBeNull();
+        expect(button('Aplicar na TV'), label).toBeUndefined();
+      }
+    });
+
+    it('appears with a change, on any of the screens that edit the configuration, and not on Instalação', async () => {
+      await render();
+      await chooseBeta();
+      expect(button('Aplicar na TV')).toBeDefined();
+      expect(button('Descartar')).toBeDefined();
+      for (const label of ['Fundo', 'Dormir']) {
         await open(label);
         expect(button('Aplicar na TV'), label).toBeDefined();
       }
@@ -215,9 +231,20 @@ describe('LivrePage', () => {
       expect(button('Aplicar na TV')).toBeUndefined();
     });
 
-    it('saves and applies, showing the busy state and then the result', async () => {
-      api.get.mockResolvedValue(view({ installed: true }));
+    it('goes away on Descartar, which puts the draft back to what is saved', async () => {
       await render();
+      await chooseBeta();
+      expect(qa('.app .name').map((name) => name.textContent)).toEqual(['Beta', 'Alfa', 'Gama']);
+      button('Descartar')!.click();
+      await change();
+      expect(el.querySelector('.ui-action-bar')).toBeNull();
+      expect(qa('.app .name').map((name) => name.textContent)).toEqual(['Alfa', 'Beta', 'Gama']);
+      expect(api.saveConfig).not.toHaveBeenCalled();
+    });
+
+    it('saves and applies, showing the busy state and then the result', async () => {
+      await render();
+      await chooseBeta();
       let release!: (value: TvLivreView) => void;
       api.saveConfig.mockReturnValue(new Promise<TvLivreView>((resolve) => (release = resolve)));
       api.apply.mockResolvedValue(view({ installed: true, revision: 1 }));
@@ -234,9 +261,36 @@ describe('LivrePage', () => {
       expect(q('.ui-action-bar .ui-notice').getAttribute('role')).toBe('status');
     });
 
-    it('shows a failure as an alert, translated, and keeps the button for another try', async () => {
-      api.get.mockResolvedValue(view({ installed: true }));
+    it('keeps the bar up while the request runs, and leaves only the result when it is done', async () => {
       await render();
+      await chooseBeta();
+      const saved = {
+        ...DEFAULT_LIVRE_CONFIG,
+        apps: {
+          ...DEFAULT_LIVRE_CONFIG.apps,
+          mode: 'listed' as const,
+          items: ['com.exemplo.beta'],
+        },
+      };
+      api.saveConfig.mockResolvedValue(view({ config: saved }));
+      let release!: (value: TvLivreView) => void;
+      api.apply.mockReturnValue(new Promise<TvLivreView>((resolve) => (release = resolve)));
+      button('Aplicar na TV')!.click();
+      await change();
+      await change();
+      // Guardar já deixou o rascunho igual ao guardado: sem a conta do pedido em andamento a barra sumiria aqui.
+      expect(TestBed.inject(TvLivreStore).dirty()).toBe(false);
+      expect(button('Aplicando…')).toBeDefined();
+      release(view({ config: saved }));
+      await change();
+      await change();
+      expect(button('Aplicar na TV')).toBeUndefined();
+      expect(q('.ui-action-bar .ui-notice').textContent).toContain('Aplicado na TV.');
+    });
+
+    it('shows a failure as an alert, translated, and keeps the button for another try', async () => {
+      await render();
+      await chooseBeta();
       api.saveConfig.mockResolvedValue(view({ installed: true }));
       api.apply.mockRejectedValue(new Error('x'));
       button('Aplicar na TV')!.click();
@@ -246,6 +300,15 @@ describe('LivrePage', () => {
       expect(notice.getAttribute('role')).toBe('alert');
       expect(notice.textContent).toContain('Salvo, mas a TV não aplicou.');
       expect(button('Aplicar na TV')!.disabled).toBe(false);
+      // Guardado e sem aplicar: só falta tentar de novo; não há mudança a descartar.
+      expect(button('Descartar')).toBeUndefined();
+      api.apply.mockResolvedValue(view());
+      button('Aplicar na TV')!.click();
+      await change();
+      await change();
+      expect(api.saveConfig).toHaveBeenCalledTimes(2);
+      expect(button('Aplicar na TV')).toBeUndefined();
+      expect(q('.ui-action-bar .ui-notice').textContent).toContain('Aplicado na TV.');
     });
   });
 
@@ -268,7 +331,7 @@ describe('LivrePage', () => {
       expect(button('Aplicar na TV')).toBeUndefined();
       await open('Instalação');
       expect(button('Voltar ao Original')!.disabled).toBe(true);
-      expect(button('Instalar')!.disabled).toBe(true);
+      expect(button('Atualizar')!.disabled).toBe(true);
     });
 
     it('reads the state again from the notice of the agent that is out of reach', async () => {
@@ -345,6 +408,34 @@ describe('LivrePage', () => {
           .slice(0, 2)
           .map((n) => n.textContent),
       ).toEqual(['Gama', 'Alfa']);
+    });
+
+    it('offers "Usar os apps do controle" only when there are apps in the control, and copies them in order', async () => {
+      tvApi.shortcuts.mockResolvedValue([
+        makeShortcut(1, { package: 'com.exemplo.gama', tvLabel: 'Gama' }),
+        makeShortcut(2, { package: 'com.exemplo.alfa', tvLabel: 'Alfa' }),
+        makeShortcut(3, { package: 'com.exemplo.beta', tvLabel: 'Beta', enabled: false }),
+      ]);
+      await render();
+      expect(button('Usar os apps do controle')!.disabled).toBe(false);
+      button('Usar os apps do controle')!.click();
+      await change();
+      expect(
+        qa('.app .name')
+          .slice(0, 2)
+          .map((name) => name.textContent),
+      ).toEqual(['Gama', 'Alfa']);
+      // Já são os do controle: nada mais a copiar, e a barra pede para aplicar (ou descartar).
+      expect(button('Usar os apps do controle')!.disabled).toBe(true);
+      expect(button('Aplicar na TV')).toBeDefined();
+    });
+
+    it('does not offer it while no app is pinned in the control', async () => {
+      tvApi.shortcuts.mockResolvedValue([
+        makeShortcut(1, { package: 'com.exemplo.alfa', tvLabel: 'Alfa', enabled: false }),
+      ]);
+      await render();
+      expect(button('Usar os apps do controle')).toBeUndefined();
     });
 
     it('sends the chosen apps in order when applying', async () => {
@@ -506,7 +597,7 @@ describe('LivrePage', () => {
     it('follows the safe order: install first, set as default only after it is installed', async () => {
       await openInstall({ installed: false });
       expect(button('Instalar')!.classList.contains('primary')).toBe(true);
-      expect(button('Definir Como Padrão')!.disabled).toBe(true);
+      expect(button('Usar Como Tela Inicial')!.disabled).toBe(true);
       api.install.mockResolvedValue(view({ installed: true, version: '1.0.0' }));
       button('Instalar')!.click();
       await change();
@@ -514,8 +605,8 @@ describe('LivrePage', () => {
       expect(api.install).toHaveBeenCalledTimes(1);
       expect(el.querySelector('app-livre-home-tab')).not.toBeNull();
       await open('Instalação');
-      expect(button('Definir Como Padrão')!.disabled).toBe(false);
-      expect(button('Definir Como Padrão')!.classList.contains('primary')).toBe(true);
+      expect(button('Usar Como Tela Inicial')!.disabled).toBe(false);
+      expect(button('Usar Como Tela Inicial')!.classList.contains('primary')).toBe(true);
     });
 
     it('turns off the factory launcher only when asked, which starts off', async () => {
@@ -523,11 +614,11 @@ describe('LivrePage', () => {
       const option = q<HTMLInputElement>('.option input');
       expect(option.checked).toBe(false);
       api.setHome.mockResolvedValue(view({ installed: true, isHome: true }));
-      button('Definir Como Padrão')!.click();
+      button('Usar Como Tela Inicial')!.click();
       await change();
       expect(api.setHome).toHaveBeenLastCalledWith(false);
       await change();
-      expect(button('Definir Como Padrão')!.disabled).toBe(true);
+      expect(button('Usar Como Tela Inicial')!.disabled).toBe(true);
     });
 
     it('sends disableFactory when the option is on', async () => {
@@ -535,7 +626,7 @@ describe('LivrePage', () => {
       q<HTMLInputElement>('.option input').click();
       await change();
       api.setHome.mockResolvedValue(view({ installed: true, isHome: true }));
-      button('Definir Como Padrão')!.click();
+      button('Usar Como Tela Inicial')!.click();
       await change();
       expect(api.setHome).toHaveBeenLastCalledWith(true);
     });
@@ -550,7 +641,7 @@ describe('LivrePage', () => {
       const option = q<HTMLInputElement>('.option input');
       expect(option.checked).toBe(true);
       expect(option.disabled).toBe(true);
-      expect(q('.option .hint').textContent).toContain('Já desativado');
+      expect(q('.option .hint').textContent).toContain('Já desativada');
     });
 
     it('always shows "Voltar ao Original" for a compatible TV, even before installing', async () => {
@@ -603,10 +694,17 @@ describe('LivrePage', () => {
       expect(button('Voltar ao Original')!.disabled).toBe(false);
     });
 
-    it('asks the agent for the state of now with Atualizar', async () => {
+    it('says Atualizar, not Instalar, once a version is already on the TV', async () => {
+      await openInstall({ installed: true, version: '1.2.0' });
+      expect(button('Instalar')).toBeUndefined();
+      expect(button('Atualizar')!.classList.contains('secondary')).toBe(true);
+      expect(q('.option-title').textContent).toContain('Desativar a Tela Inicial de Fábrica');
+    });
+
+    it('asks the agent for the state of now with Verificar', async () => {
       await openInstall({ installed: true });
       api.refresh.mockResolvedValue(view({ installed: true, isHome: true }));
-      button('Atualizar')!.click();
+      button('Verificar')!.click();
       await change();
       await change();
       expect(api.refresh).toHaveBeenCalledTimes(1);

@@ -105,3 +105,14 @@
   margin-top: var(--space-3);
   border-radius: var(--radius);
 }
+
+/* Descartar ao lado de Aplicar na TV: Aplicar toma o resto da largura. */
+.apply-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.apply-row .ui-btn.block {
+  flex: 1 1 auto;
+  width: auto;
+}

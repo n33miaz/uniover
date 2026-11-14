@@ -1,10 +1,22 @@
 @if (store.draft(); as draft) {
   <app-livre-preview [config]="draft" [apps]="store.preview()" [photoUrl]="store.photoUrl()" />
 
+  <!-- A fileira do controle já foi arrumada pela pessoa: copiar a ordem poupa arrumar tudo de novo com as setas. -->
+  @if (store.controlApps().length > 0) {
+    <button
+      type="button"
+      class="ui-btn secondary block"
+      [disabled]="!enabled() || !store.canUseControlApps()"
+      (click)="store.useControlApps()"
+    >
+      <span i18n="@@tv-livre.home.use-control-apps">Usar os apps do controle</span>
+    </button>
+  }
+
   @let groups = store.groups();
   @if (groups.chosen.length + groups.others.length + groups.factory.length === 0) {
     <p class="empty" i18n="@@tv-livre.home.no-apps">
-      Nenhum app encontrado. Atualize o estado em Instalação.
+      Nenhum app encontrado. Verifique o estado em Instalação.
     </p>
   } @else {
     @if (groups.chosen.length > 0) {

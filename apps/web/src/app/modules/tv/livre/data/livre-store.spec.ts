@@ -41,6 +41,14 @@ function failure(status: number, extra: Record<string, unknown> = {}) {
   });
 }
 
+/** A configuração padrão com estes apps escolhidos, como o servidor a devolve depois de guardar. */
+function normalizedWith(items: string[]) {
+  return {
+    ...DEFAULT_LIVRE_CONFIG,
+    apps: { ...DEFAULT_LIVRE_CONFIG.apps, mode: 'listed' as const, items },
+  };
+}
+
 /** Deixa as promessas pendentes (e o efeito do store) andarem. */
 async function settle() {
   await new Promise((resolve) => setTimeout(resolve));
@@ -165,6 +173,20 @@ describe('TvLivreStore', () => {
       expect(store.groups().factory.map((row) => row.package)).toEqual(['com.exemplo.fabrica']);
     });
 
+    it('shows the screen as soon as the state arrives, with names from the package until the shortcuts come', async () => {
+      let release!: (list: ReturnType<typeof makeShortcut>[]) => void;
+      tvApi.shortcuts.mockReturnValue(new Promise((resolve) => (release = resolve)));
+      store.start();
+      await settle();
+      expect(store.loading()).toBe(false);
+      expect(store.view()).not.toBeNull();
+      expect(store.groups().others.map((row) => row.label)).toEqual(['Alfa', 'Beta']);
+      expect(store.groups().others[0].subject.iconDataUri).toBeNull();
+      release([makeShortcut(1, { package: 'com.exemplo.beta', tvLabel: 'Bê' })]);
+      await settle();
+      expect(store.groups().others.map((row) => row.label)).toEqual(['Alfa', 'Bê']);
+    });
+
     it('still lists the apps when the shortcuts cannot be read', async () => {
       tvApi.shortcuts.mockRejectedValue(new Error('sem atalhos'));
       await open();
@@ -246,6 +268,113 @@ describe('TvLivreStore', () => {
       expect(store.dirty()).toBe(true);
       store.setAppChosen('com.exemplo.alfa', false);
       expect(store.dirty()).toBe(false);
+    });
+  });
+
+  describe('what is left to take to the TV', () => {
+    it('is pending only with a change, and Descartar puts the draft back to what is saved', async () => {
+      await open();
+      expect(store.pending()).toBe(false);
+      store.setAppChosen('com.exemplo.beta', true);
+      expect(store.pending()).toBe(true);
+      store.discard();
+      expect(store.pending()).toBe(false);
+      expect(store.draft()?.apps.items).toEqual([]);
+      expect(store.notice()).toBeNull();
+    });
+
+    it('stays pending after a save that the TV did not apply, until applying works', async () => {
+      await open();
+      store.setAppChosen('com.exemplo.beta', true);
+      api.saveConfig.mockResolvedValue(view({ config: normalizedWith(['com.exemplo.beta']) }));
+      api.apply.mockRejectedValueOnce(failure(502, { agentError: 'push_failed' }));
+      expect(await store.apply()).toBe(false);
+      expect(store.dirty()).toBe(false);
+      expect(store.pending()).toBe(true);
+      api.apply.mockResolvedValue(view({ config: normalizedWith(['com.exemplo.beta']) }));
+      expect(await store.apply()).toBe(true);
+      expect(store.pending()).toBe(false);
+    });
+
+    it('forgets a failed apply when the account or the TV changes', async () => {
+      await open();
+      store.setAppChosen('com.exemplo.beta', true);
+      api.saveConfig.mockResolvedValue(view({ config: normalizedWith(['com.exemplo.beta']) }));
+      api.apply.mockRejectedValue(new Error('x'));
+      await store.apply();
+      expect(store.pending()).toBe(true);
+      TestBed.inject(SessionState).setUser({
+        id: 'outra',
+        email: 'o@exemplo.com',
+        displayName: 'Outra',
+        role: 'owner',
+      });
+      await settle();
+      expect(store.pending()).toBe(false);
+    });
+  });
+
+  describe('the apps of the control', () => {
+    const control = [
+      makeShortcut(1, { package: 'com.exemplo.beta', tvLabel: 'Beta' }),
+      makeShortcut(2, { package: 'com.exemplo.alfa', tvLabel: 'Alfa' }),
+      makeShortcut(3, { package: 'com.exemplo.fabrica', enabled: false }),
+    ];
+
+    it('is not offered until the shortcuts arrive', async () => {
+      tvApi.shortcuts.mockReturnValue(new Promise(() => undefined));
+      await open();
+      expect(store.controlApps()).toEqual([]);
+      expect(store.canUseControlApps()).toBe(false);
+    });
+
+    it('does not copy the order of an earlier visit: only the shortcuts of the current reading count', async () => {
+      tvApi.shortcuts.mockResolvedValue(control);
+      await open();
+      expect(store.controlApps()).toEqual(['com.exemplo.beta', 'com.exemplo.alfa']);
+      store.stop();
+
+      // A segunda abertura da mesma TV: a pessoa mudou o controle desde a visita anterior, e a resposta ainda não chegou.
+      let release!: (list: ReturnType<typeof makeShortcut>[]) => void;
+      tvApi.shortcuts.mockReturnValue(new Promise((resolve) => (release = resolve)));
+      await open();
+      expect(store.view()).not.toBeNull();
+      expect(store.controlApps()).toEqual([]);
+      expect(store.canUseControlApps()).toBe(false);
+      store.useControlApps();
+      expect(store.dirty()).toBe(false);
+      // Os nomes da visita anterior seguem como reserva.
+      expect(store.groups().others.map((row) => row.label)).toContain('Alfa');
+
+      release([
+        makeShortcut(1, { package: 'com.exemplo.alfa', tvLabel: 'Alfa' }),
+        makeShortcut(2, { package: 'com.exemplo.beta', tvLabel: 'Beta', enabled: false }),
+      ]);
+      await settle();
+      expect(store.controlApps()).toEqual(['com.exemplo.alfa']);
+      expect(store.canUseControlApps()).toBe(true);
+    });
+
+    it('does not offer the control apps either when the current reading of the shortcuts fails', async () => {
+      tvApi.shortcuts.mockResolvedValue(control);
+      await open();
+      store.stop();
+      tvApi.shortcuts.mockRejectedValue(new Error('sem atalhos'));
+      await open();
+      expect(store.canUseControlApps()).toBe(false);
+    });
+
+    it('copies the pinned apps, in the same order, to the draft for the person to check and apply', async () => {
+      tvApi.shortcuts.mockResolvedValue(control);
+      await open();
+      expect(store.controlApps()).toEqual(['com.exemplo.beta', 'com.exemplo.alfa']);
+      expect(store.canUseControlApps()).toBe(true);
+      store.setAppChosen('com.exemplo.fabrica', true);
+      store.useControlApps();
+      expect(store.draft()?.apps.items).toEqual(['com.exemplo.beta', 'com.exemplo.alfa']);
+      expect(store.dirty()).toBe(true);
+      expect(store.canUseControlApps()).toBe(false);
+      expect(api.saveConfig).not.toHaveBeenCalled();
     });
   });
 

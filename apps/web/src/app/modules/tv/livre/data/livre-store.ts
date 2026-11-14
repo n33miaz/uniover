@@ -10,10 +10,12 @@ import {
   LivreAppRow,
   appRows,
   buildConfig,
+  controlPackages,
   groupApps,
   moveApp,
   normalizeApps,
   previewApps,
+  replaceApps,
   sameConfig,
   setAppChosen,
 } from './livre-config';
@@ -81,12 +83,16 @@ export class TvLivreStore {
 
   private readonly _view = signal<TvLivreView | null>(null);
   private readonly _shortcuts = signal<readonly TvShortcut[]>([]);
+  /** Os atalhos acima são da leitura de agora (e não da visita anterior): só então valem para copiar a ordem do controle. */
+  private readonly _shortcutsCurrent = signal(false);
   private readonly _draft = signal<LivreConfig | null>(null);
   private readonly _photoUrl = signal<string | null>(null);
   private readonly _loading = signal(false);
   private readonly _loadFailure = signal<string | null>(null);
   private readonly _busy = signal<LivreAction | null>(null);
   private readonly _notice = signal<LivreNotice | null>(null);
+  /** A configuração foi guardada, mas a TV não a aplicou (falha na hora de aplicar): ainda falta tentar de novo. */
+  private readonly _unapplied = signal(false);
   private supportRetry: ReturnType<typeof setTimeout> | null = null;
   private supportAttempts = 0;
 
@@ -132,6 +138,20 @@ export class TvLivreStore {
     return groupApps(this.rows(), this._draft() ?? DEFAULT_LIVRE_CONFIG);
   });
 
+  /** Os apps da fileira do controle que a Home da TV pode ter (vazio até os atalhos chegarem). */
+  readonly controlApps = computed(() => {
+    const view = this._view();
+    return view && this._shortcutsCurrent() ? controlPackages(this._shortcuts(), view.apps) : [];
+  });
+
+  /** "Usar os apps do controle" muda alguma coisa: há apps do controle e a Home ainda não é igual a eles. */
+  readonly canUseControlApps = computed(() => {
+    const draft = this._draft();
+    const wanted = this.controlApps();
+    if (draft === null || wanted.length === 0) return false;
+    return JSON.stringify(draft.apps.items) !== JSON.stringify(wanted);
+  });
+
   /** O que a Home mostrará na TV, na ordem do launcher; é o que a pré-visualização desenha. */
   readonly preview = computed(() => {
     const draft = this._draft();
@@ -146,6 +166,13 @@ export class TvLivreStore {
     const context = { hasPhoto: view.hasPhoto, apps: view.apps };
     return !sameConfig(buildConfig(draft, context), buildConfig(view.config, context));
   });
+
+  /**
+   * Há o que levar à TV: uma mudança que ainda não foi enviada ou uma configuração guardada que a TV não aplicou. É a
+   * pergunta da barra "Aplicar na TV". A falha de aplicar só é lembrada enquanto a tela não é refeita: o estado que o
+   * servidor devolve não diz qual revisão está guardada, só a última aplicada.
+   */
+  readonly pending = computed(() => this.dirty() || this._unapplied());
 
   constructor() {
     // Outra conta ou outra TV: nada do que se sabia vale, e quem está com a tela aberta recebe o estado da nova. A primeira
@@ -186,20 +213,30 @@ export class TvLivreStore {
     void this.presence.signal();
   };
 
-  /** Lê o estado e os atalhos da TV (para nome e ícone dos apps). Sem estado ainda, mostra a espera; com ele, atualiza por baixo. */
+  /**
+   * Lê o estado e os atalhos da TV (para nome e ícone dos apps). Sem estado ainda, mostra a espera; com ele, atualiza por
+   * baixo. A tela abre assim que o estado chega: os atalhos (nome e ícone) vêm em seguida, e até lá os apps aparecem com o
+   * nome tirado do pacote.
+   */
   async load(): Promise<void> {
     const epoch = this.epoch;
     if (this._view() === null) this._loading.set(true);
     this._loadFailure.set(null);
+    // Os atalhos que já havia seguem como reserva de nome e ícone, mas deixam de valer para copiar o controle até a resposta
+    // desta leitura chegar (a ordem e as fixações podem ter mudado desde a visita anterior).
+    this._shortcutsCurrent.set(false);
+    // Sem os atalhos os apps aparecem do mesmo jeito, só com o nome tirado do pacote e a inicial no lugar do ícone.
+    const shortcuts = this.tvApi.shortcuts().catch(() => null);
     try {
-      const [view, shortcuts] = await Promise.all([
-        this.api.get(),
-        // Sem os atalhos os apps aparecem do mesmo jeito, só com o nome tirado do pacote e a inicial no lugar do ícone.
-        this.tvApi.shortcuts().catch(() => null),
-      ]);
+      const view = await this.api.get();
       if (epoch !== this.epoch) return;
-      if (shortcuts) this._shortcuts.set(shortcuts);
       this.adopt(view, epoch);
+      this._loading.set(false);
+      const list = await shortcuts;
+      if (epoch === this.epoch && list) {
+        this._shortcuts.set(list);
+        this._shortcutsCurrent.set(true);
+      }
     } catch (error) {
       if (epoch !== this.epoch) return;
       const text = this.describe(error, false);
@@ -236,9 +273,11 @@ export class TvLivreStore {
       this.adopt(saved, epoch, true);
       try {
         this.adopt(await this.live(epoch, this.api.apply()), epoch);
+        this._unapplied.set(false);
       } catch (error) {
         if (error instanceof StaleRequest) throw error;
         const reason = this.describe(error, true);
+        this._unapplied.set(true);
         throw new LocalFailure(
           $localize`:@@tv-livre.notice.saved-not-applied:Salvo, mas a TV não aplicou. ${reason}:reason:`,
         );
@@ -254,7 +293,7 @@ export class TvLivreStore {
     });
   }
 
-  /** Define o TV Livre como a tela inicial; com `disableFactory` desativa também o launcher de fábrica. */
+  /** Define o TV Livre como a tela inicial; com `disableFactory` desativa também a tela inicial de fábrica. */
   setHome(disableFactory: boolean): Promise<boolean> {
     return this.run('set-home', async (epoch) => {
       this.adopt(await this.live(epoch, this.api.setHome(disableFactory)), epoch);
@@ -346,6 +385,13 @@ export class TvLivreStore {
     this.edit((draft) => setAppChosen(draft, name, chosen));
   }
 
+  /** Copia para a Home os apps fixados no controle, na mesma ordem; a pessoa confere e aplica. */
+  useControlApps(): void {
+    const wanted = this.controlApps();
+    if (wanted.length === 0) return;
+    this.edit((draft) => replaceApps(draft, wanted));
+  }
+
   moveApp(name: string, delta: -1 | 1): void {
     this.edit((draft) => moveApp(draft, name, delta));
   }
@@ -357,6 +403,14 @@ export class TvLivreStore {
       ...draft,
       sleep: { maxMinutes: Math.min(SLEEP_MAX_MINUTES, Math.max(0, value)) },
     }));
+  }
+
+  /** Descarta o que foi mexido e ainda não foi enviado: o rascunho volta ao que está guardado. */
+  discard(): void {
+    const view = this._view();
+    if (!view || this._busy() !== null) return;
+    this._draft.set(normalizeApps(view.config));
+    this._notice.set(null);
   }
 
   /** O aviso do último pedido some quando a pessoa o dispensa ou muda de tela. */
@@ -459,12 +513,14 @@ export class TvLivreStore {
     this.epoch++;
     this._view.set(null);
     this._shortcuts.set([]);
+    this._shortcutsCurrent.set(false);
     this._draft.set(null);
     this._photoUrl.set(null);
     this._loading.set(false);
     this._loadFailure.set(null);
     this._busy.set(null);
     this._notice.set(null);
+    this._unapplied.set(false);
   }
 
   private scheduleSupportRetry(): void {

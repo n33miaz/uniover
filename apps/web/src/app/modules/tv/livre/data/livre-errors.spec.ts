@@ -92,10 +92,10 @@ describe('describeLivreFailure', () => {
     expect(describeLivreFailure(http(415, 'unsupported-media-type')).message).toContain('JPEG');
   });
 
-  it('says a timeout may have finished, and points to Atualizar', () => {
+  it('says a timeout may have finished, and points to Verificar', () => {
     const message = describeLivreFailure(http(504, 'agent-timeout')).message;
     expect(message).toContain('pode ter terminado');
-    expect(message).toContain('Atualizar');
+    expect(message).toContain('Verificar');
   });
 
   it('leaves the rest (network, session, permission, agent off) to the texts of the TV', () => {
