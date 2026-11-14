@@ -38,6 +38,10 @@ public static class PairingEvents
     public const string PcSleep = "pc_sleep";
     public const string PcShutdown = "pc_shutdown";
     public const string PcShutdownCancelled = "pc_shutdown_cancelled";
+    public const string PcRestart = "pc_restart";
+    public const string PcLogoff = "pc_logoff";
+    public const string PcHibernate = "pc_hibernate";
+    public const string PcMonitorOff = "pc_monitor_off";
     public const string PcAppLaunch = "pc_app_launch";
 
     // Canal direto (WebRTC) do controle do PC: negociado e entregue ao app, e fechado (por quem pediu ou pelo agente). Sem SDP e sem token.
@@ -50,11 +54,18 @@ public static class PairingEvents
     public const string PcSleepFailed = "pc_sleep_failed";
     public const string PcShutdownFailed = "pc_shutdown_failed";
     public const string PcShutdownCancelFailed = "pc_shutdown_cancel_failed";
+    public const string PcRestartFailed = "pc_restart_failed";
+    public const string PcLogoffFailed = "pc_logoff_failed";
+    public const string PcHibernateFailed = "pc_hibernate_failed";
+    public const string PcMonitorOffFailed = "pc_monitor_off_failed";
     public const string PcAppLaunchFailed = "pc_app_launch_failed";
 
     /// <summary>As linhas de tentativa que não deu certo (a falha do controle do PC).</summary>
     public static readonly string[] PcFailures =
-        [PcLockFailed, PcSleepFailed, PcShutdownFailed, PcShutdownCancelFailed, PcAppLaunchFailed];
+        [
+            PcLockFailed, PcSleepFailed, PcShutdownFailed, PcShutdownCancelFailed, PcRestartFailed, PcLogoffFailed, PcHibernateFailed,
+            PcMonitorOffFailed, PcAppLaunchFailed,
+        ];
 
     /// <summary>A linha de tentativa que corresponde a uma ação do PC auditada no sucesso; nulo para o que não é dessas.</summary>
     public static string? PcFailureOf(string succeededEvent) => succeededEvent switch
@@ -63,6 +74,10 @@ public static class PairingEvents
         PcSleep => PcSleepFailed,
         PcShutdown => PcShutdownFailed,
         PcShutdownCancelled => PcShutdownCancelFailed,
+        PcRestart => PcRestartFailed,
+        PcLogoff => PcLogoffFailed,
+        PcHibernate => PcHibernateFailed,
+        PcMonitorOff => PcMonitorOffFailed,
         PcAppLaunch => PcAppLaunchFailed,
         _ => null,
     };

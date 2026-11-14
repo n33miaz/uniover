@@ -73,9 +73,11 @@ class FakeInput:
 
 
 class FakePower:
-    def __init__(self) -> None:
+    def __init__(self, *, hibernation: bool = True) -> None:
         self.calls: list[tuple[object, ...]] = []
         self.slept = asyncio.Event()
+        self.done = asyncio.Event()
+        self.hibernation = hibernation
 
     def lock(self) -> None:
         self.calls.append(("lock",))
@@ -89,6 +91,23 @@ class FakePower:
 
     def cancel_shutdown(self) -> None:
         self.calls.append(("cancel",))
+
+    def restart(self, delay_seconds: int) -> None:
+        self.calls.append(("restart", delay_seconds))
+
+    def hibernation_available(self) -> bool:
+        return self.hibernation
+
+    def hibernate(self) -> None:
+        self.calls.append(("hibernate",))
+        self.done.set()
+
+    def log_off(self) -> None:
+        self.calls.append(("log_off",))
+        self.done.set()
+
+    def monitor_off(self) -> None:
+        self.calls.append(("monitor_off",))
 
 
 class FakeLauncher:
@@ -205,6 +224,67 @@ async def test_sleep_answers_first_and_suspends_afterwards() -> None:
     assert power.calls == []
     await asyncio.wait_for(power.slept.wait(), 2)
     assert power.calls == [("sleep",)]
+
+
+async def test_restart_uses_the_same_countdown_as_shutdown_and_can_be_cancelled() -> None:
+    handlers, _, power, _ = build()
+    assert "pc.power.v1" in handlers
+    assert "pc.power.v2" in handlers
+    status = await run(handlers["pc.power.v2"], {"action": "RESTART"})
+    await run(handlers["pc.power.v2"], {"action": "CANCEL_SHUTDOWN"})
+    assert status is ResultStatus.OK
+    assert power.calls == [("restart", 45), ("cancel",)]
+
+
+async def test_monitor_off_is_immediate_and_leaves_the_pc_on() -> None:
+    handlers, _, power, _ = build()
+    status = await run(handlers["pc.power.v2"], {"action": "MONITOR_OFF"})
+    assert status is ResultStatus.OK
+    assert power.calls == [("monitor_off",)]
+
+
+@pytest.mark.parametrize(("action", "call"), [("HIBERNATE", "hibernate"), ("LOGOFF", "log_off")])
+async def test_hibernate_and_log_off_answer_first_and_act_afterwards(
+    action: str, call: str
+) -> None:
+    power = FakePower()
+    handler = pc_power_handler(power, shutdown_delay_seconds=30, sleep_delay_seconds=0.01)
+    result = await handler(Command("1", "pc.power.v2", {"action": action}))
+    # O agente cai com a sessão e a conexão cai com o PC: a resposta precisa sair antes.
+    assert result.status is ResultStatus.OK
+    assert power.calls == []
+    await asyncio.wait_for(power.done.wait(), 2)
+    assert power.calls == [(call,)]
+
+
+async def test_hibernate_is_refused_with_its_own_code_when_hibernation_is_off() -> None:
+    power = FakePower(hibernation=False)
+    handler = pc_power_handler(power, shutdown_delay_seconds=30, sleep_delay_seconds=0)
+    result = await handler(Command("1", "pc.power.v2", {"action": "HIBERNATE"}))
+    await asyncio.sleep(0.05)
+    assert result.status is ResultStatus.REJECTED
+    assert result.code == "hibernation_unavailable"
+    assert power.calls == []
+
+
+async def test_a_failing_log_off_is_logged_and_does_not_crash(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Broken(FakePower):
+        def log_off(self) -> None:
+            raise OSError("recusou")
+
+    pending: list[asyncio.Future[None]] = []
+    handler = pc_power_handler(
+        Broken(),
+        shutdown_delay_seconds=30,
+        sleep_delay_seconds=0,
+        spawn=lambda coroutine: pending.append(asyncio.ensure_future(coroutine)),
+    )
+    await handler(Command("1", "pc.power.v2", {"action": "LOGOFF"}))
+    with caplog.at_level("WARNING"):
+        await asyncio.gather(*pending)
+    assert "não foi possível encerrar a sessão" in caplog.text
 
 
 async def test_a_failing_suspend_is_logged_and_does_not_crash(

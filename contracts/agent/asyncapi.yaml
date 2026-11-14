@@ -190,6 +190,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.power.v1.schema.json'
+      pcPowerV2:
+        name: pc.power.v2
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.power.v2.schema.json'
       pcAppLaunch:
         name: pc.app.launch.v1
         contentType: application/json
@@ -627,9 +632,10 @@ operations:
     action: send
     channel:
       $ref: '#/channels/agentCommands'
-    summary: A API pede bloquear, suspender ou desligar o PC (com a contagem do Windows) ou cancelar o desligamento.
+    summary: A API pede bloquear, suspender ou desligar o PC (com a contagem do Windows) ou cancelar o desligamento; com a capacidade pc.power.v2, também reiniciar, encerrar a sessão, hibernar e apagar o monitor.
     messages:
       - $ref: '#/channels/agentCommands/messages/pcPower'
+      - $ref: '#/channels/agentCommands/messages/pcPowerV2'
   sendPcAppLaunch:
     action: send
     channel:

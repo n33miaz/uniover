@@ -129,7 +129,30 @@ class PcPower(Protocol):
         ...
 
     def cancel_shutdown(self) -> None:
-        """Cancela a contagem; sem contagem em andamento não é erro."""
+        """Cancela a contagem (de desligar ou reiniciar); sem contagem em andamento não é erro."""
+        ...
+
+    def restart(self, delay_seconds: int) -> None:
+        """Agenda o reinício com a contagem do Windows (aviso na tela do PC); `cancel_shutdown` o
+        cancela."""
+        ...
+
+    def hibernation_available(self) -> bool:
+        """A hibernação está ligada neste PC? Só lê; nunca hiberna. Sem ela `hibernate` não faz o
+        que se pede (o Windows suspenderia no lugar)."""
+        ...
+
+    def hibernate(self) -> None:
+        """Hiberna. Só volta quando o PC acorda."""
+        ...
+
+    def log_off(self) -> None:
+        """Encerra a sessão do Windows em que o agente roda: os programas são chamados a fechar e o
+        próprio agente cai com ela."""
+        ...
+
+    def monitor_off(self) -> None:
+        """Apaga a tela; o PC segue ligado e qualquer toque no mouse ou tecla a acende."""
         ...
 
 

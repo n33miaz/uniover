@@ -1684,6 +1684,96 @@ test.describe('Energia', () => {
     await expect.poll(() => pc.sent('/power')).toEqual([{ action: 'SLEEP', confirm: true }]);
   });
 
+  test('sem a capacidade nova, a tela só mostra as três ações de antes', async ({ page }) => {
+    await openPc(page, '/pc/energia');
+    await expect(page.locator('.action')).toHaveText(['Bloquear', 'Suspender', 'Desligar']);
+  });
+
+  test.describe('com um PC que reinicia, hiberna e encerra a sessão', () => {
+    test.beforeEach(() => {
+      pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.power.v2'] };
+    });
+
+    test('mostra as quatro ações novas e apagar o monitor vale na hora', async ({ page }, info) => {
+      await openPc(page, '/pc/energia');
+      await expect(page.locator('.action')).toHaveText([
+        'Bloquear',
+        'Suspender',
+        'Desligar',
+        'Hibernar',
+        'Desligar o Monitor',
+        'Reiniciar',
+        'Encerrar Sessão',
+      ]);
+      await settle(page);
+      await screenshot(page, join(SHOTS, `pc-energia-${info.project.name}.png`));
+      await page.getByRole('button', { name: 'Desligar o Monitor' }).click();
+      await expect.poll(() => pc.sent('/power')).toEqual([{ action: 'MONITOR_OFF' }]);
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    for (const [label, code, title] of [
+      ['Hibernar', 'HIBERNATE', 'Hibernar o PC?'],
+      ['Encerrar Sessão', 'LOGOFF', 'Encerrar a sessão do Windows?'],
+    ] as const) {
+      test(`${label} pede confirmação e só envia depois dela`, async ({ page }) => {
+        await openPc(page, '/pc/energia');
+        await page.getByRole('button', { name: label, exact: true }).click();
+        const sheet = page.getByRole('dialog', { name: title });
+        await expect(sheet).toBeVisible();
+        expect(pc.sent('/power')).toEqual([]);
+        await sheet.getByRole('button', { name: 'Cancelar', exact: true }).click();
+        expect(pc.sent('/power')).toEqual([]);
+
+        await page.getByRole('button', { name: label, exact: true }).click();
+        await page
+          .getByRole('dialog', { name: title })
+          .getByRole('button', { name: label, exact: true })
+          .click();
+        await expect.poll(() => pc.sent('/power')).toEqual([{ action: code, confirm: true }]);
+        await expect(page.getByRole('button', { name: /^Cancelar (Desligamento|Reinício)$/ })).toHaveCount(0);
+      });
+    }
+
+    test('reiniciar pede confirmação e oferece cancelar a contagem', async ({ page }) => {
+      await openPc(page, '/pc/energia');
+      await page.getByRole('button', { name: 'Reiniciar', exact: true }).click();
+      const sheet = page.getByRole('dialog', { name: 'Reiniciar o PC?' });
+      await expect(sheet).toBeVisible();
+      expect(pc.sent('/power')).toEqual([]);
+      await sheet.getByRole('button', { name: 'Reiniciar', exact: true }).click();
+      await expect.poll(() => pc.sent('/power')).toEqual([{ action: 'RESTART', confirm: true }]);
+
+      await page.getByRole('button', { name: 'Cancelar Reinício' }).click();
+      await expect
+        .poll(() => pc.sent('/power').map((body) => body['action']))
+        .toEqual(['RESTART', 'CANCEL_SHUTDOWN']);
+      await expect(page.getByRole('button', { name: 'Cancelar Reinício' })).toHaveCount(0);
+    });
+
+    test('a hibernação desligada no PC aparece dentro da folha', async ({ page }) => {
+      await openPc(page, '/pc/energia');
+      pc.commandFailure = {
+        status: 502,
+        kind: 'command-failed',
+        extra: { agentError: 'hibernation_unavailable' },
+      };
+      await page.getByRole('button', { name: 'Hibernar', exact: true }).click();
+      const sheet = page.getByRole('dialog', { name: 'Hibernar o PC?' });
+      await sheet.getByRole('button', { name: 'Hibernar', exact: true }).click();
+      await expect(sheet.getByRole('alert')).toHaveText(
+        'A hibernação está desligada neste PC. Use Suspender.',
+      );
+    });
+
+    test('cabe na tela, tem alvos de 44 px e não tem falha de acessibilidade', async ({ page }) => {
+      await openPc(page, '/pc/energia');
+      await expectNoHorizontalScroll(page);
+      expect(await smallTargets(page)).toEqual([]);
+      await expectNoA11yViolations(page);
+    });
+  });
+
   test('a falha do PC aparece dentro da folha, que continua aberta', async ({ page }) => {
     await openPc(page, '/pc/energia');
     pc.commandFailure = { status: 502, kind: 'command-failed', extra: { agentError: 'failed' } };

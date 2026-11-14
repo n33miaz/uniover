@@ -158,7 +158,10 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
         muted: typeof body['muted'] === 'boolean' ? body['muted'] : now.muted,
       };
     }
-    if (path === '/power' && ['SLEEP', 'SHUTDOWN'].includes(String(body?.['action']))) {
+    if (
+      path === '/power' &&
+      ['SLEEP', 'SHUTDOWN', 'RESTART', 'LOGOFF', 'HIBERNATE'].includes(String(body?.['action']))
+    ) {
       if (body?.['confirm'] !== true) return problem(route, { status: 400, kind: 'validation' });
     }
     return route.fulfill({ status: 204 });

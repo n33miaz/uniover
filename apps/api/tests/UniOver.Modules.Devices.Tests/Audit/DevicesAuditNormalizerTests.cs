@@ -28,11 +28,19 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.PcSleep, "pc_sleep", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcShutdown, "pc_shutdown", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcShutdownCancelled, "pc_shutdown_cancelled", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcRestart, "pc_restart", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcLogoff, "pc_logoff", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcHibernate, "pc_hibernate", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcMonitorOff, "pc_monitor_off", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcAppLaunch, "pc_app_launch", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcLockFailed, "pc_lock_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcSleepFailed, "pc_sleep_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcShutdownFailed, "pc_shutdown_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcShutdownCancelFailed, "pc_shutdown_cancel_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcRestartFailed, "pc_restart_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcLogoffFailed, "pc_logoff_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcHibernateFailed, "pc_hibernate_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcMonitorOffFailed, "pc_monitor_off_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcAppLaunchFailed, "pc_app_launch_failed", AuditOutcome.Failure)]
     public void EachStoredEvent_BecomesAnUnambiguousActionWithAnOutcome(string stored, string action, AuditOutcome outcome)
     {
@@ -111,6 +119,6 @@ public class DevicesAuditNormalizerTests
     {
         PairingEvents.PcFailureOf(PairingEvents.Approved).Should().BeNull();
         PairingEvents.PcFailureOf("pc_text").Should().BeNull();
-        PairingEvents.PcFailures.Should().HaveCount(5).And.OnlyHaveUniqueItems();
+        PairingEvents.PcFailures.Should().HaveCount(9).And.OnlyHaveUniqueItems();
     }
 }

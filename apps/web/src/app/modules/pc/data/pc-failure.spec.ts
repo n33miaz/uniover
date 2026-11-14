@@ -92,6 +92,12 @@ describe('pcFailureOf', () => {
     expect(failure.message).not.toContain('failed');
   });
 
+  it('a PC with hibernation turned off says so and points to suspending', () => {
+    const failure = pcFailureOf(http(502, { agentError: 'hibernation_unavailable' }));
+    expect(failure.kind).toBe('failed');
+    expect(failure.message).toBe('A hibernação está desligada neste PC. Use Suspender.');
+  });
+
   it('tells a locked PC apart from a window that needs administrator rights', () => {
     const locked = pcFailureOf(http(502, { agentError: 'session_locked' }));
     expect(locked.kind).toBe('locked');

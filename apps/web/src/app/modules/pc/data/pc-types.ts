@@ -176,7 +176,18 @@ export const PC_MODIFIERS: readonly PcModifier[] = ['CTRL', 'SHIFT', 'ALT', 'WIN
 export type PcMediaAction =
   'PLAY_PAUSE' | 'NEXT' | 'PREVIOUS' | 'STOP' | 'VOLUME_UP' | 'VOLUME_DOWN' | 'MUTE';
 
-export type PcPowerAction = 'LOCK' | 'SLEEP' | 'SHUTDOWN' | 'CANCEL_SHUTDOWN';
+export type PcPowerAction =
+  | 'LOCK'
+  | 'SLEEP'
+  | 'SHUTDOWN'
+  | 'CANCEL_SHUTDOWN'
+  | 'RESTART'
+  | 'LOGOFF'
+  | 'HIBERNATE'
+  | 'MONITOR_OFF';
+
+/** A capacidade que o PC declara quando o agente entende `pc.power.v2` (reiniciar, encerrar a sessão, hibernar, apagar o monitor). */
+export const PC_POWER_V2_CAPABILITY = 'pc.power.v2';
 
 export type PcClickButton = 'LEFT' | 'RIGHT' | 'MIDDLE';
 

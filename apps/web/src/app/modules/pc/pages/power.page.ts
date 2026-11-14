@@ -2,72 +2,82 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  computed,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
 import { PcConfirmSheet } from '../ui/confirm-sheet';
 import { PcStore } from '../data/pc-store';
+import type { PcPowerAction } from '../data/pc-types';
 import { tick } from '../input/haptics';
 
-type Pending = 'SLEEP' | 'SHUTDOWN';
+/** As ações que pedem confirmação numa folha (e a API só aceita com ela): perdem trabalho ou derrubam a conexão. */
+type Confirmed = 'SLEEP' | 'HIBERNATE' | 'SHUTDOWN' | 'RESTART' | 'LOGOFF';
 
-/** Quanto tempo o botão de cancelar o desligamento fica à vista (a contagem do PC é menor que isto). */
+/** As duas que abrem a contagem do Windows, que dá para cancelar. */
+type Countdown = 'SHUTDOWN' | 'RESTART';
+
+/** Quanto tempo o botão de cancelar a contagem fica à vista (a contagem do PC é menor que isto). */
 const CANCEL_WINDOW_MS = 5 * 60_000;
 
+interface Action {
+  readonly id: Exclude<PcPowerAction, 'CANCEL_SHUTDOWN'>;
+  readonly label: string;
+  /** O caminho do desenho do ícone (24 x 24, só traço). */
+  readonly icon: string;
+  /** Vermelho: a ação apaga o que está aberto ou desliga o PC. */
+  readonly danger?: boolean;
+  /** Só existe com um agente que entende `pc.power.v2`; sem ele a tela nem mostra o botão. */
+  readonly needsV2?: boolean;
+}
+
+interface Sheet {
+  readonly title: string;
+  readonly text: string;
+  readonly confirm: string;
+}
+
 /**
- * Energia do PC: bloquear vale na hora; suspender e desligar pedem confirmação numa folha (e a API só aceita com a
- * confirmação). Desligar usa a contagem do próprio Windows, com aviso na tela do PC, e o botão de cancelar fica à vista
- * logo depois, porque suspender e desligar derrubam a conexão e não há como desfazer de outro jeito.
+ * Energia do PC: bloquear e desligar o monitor valem na hora; suspender, hibernar, desligar, reiniciar e encerrar a sessão
+ * pedem confirmação numa folha (e a API só aceita com a confirmação). Desligar e reiniciar usam a contagem do próprio
+ * Windows, com aviso na tela do PC, e o botão de cancelar fica à vista logo depois, porque essas ações derrubam a conexão e
+ * não há como desfazer de outro jeito. Reiniciar, encerrar a sessão, hibernar e desligar o monitor só aparecem para um PC
+ * que declarou a capacidade (um agente anterior recusaria o pedido).
  */
 @Component({
   selector: 'app-pc-power-page',
   imports: [PcConfirmSheet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="actions">
-      <button type="button" class="action" [disabled]="!store.canSend() || busy()" (click)="lock()">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="5" y="11" width="14" height="9" rx="2" />
-          <path [attr.d]="'M8 11V8a4 4 0 0 1 8 0v3'" />
-        </svg>
-        <span i18n="@@pc.power.lock">Bloquear</span>
-      </button>
-      <button
-        type="button"
-        class="action"
-        [disabled]="!store.canSend() || busy()"
-        (click)="ask('SLEEP')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'" />
-        </svg>
-        <span i18n="@@pc.power.sleep">Suspender</span>
-      </button>
-      <button
-        type="button"
-        class="action danger"
-        [disabled]="!store.canSend() || busy()"
-        (click)="ask('SHUTDOWN')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path [attr.d]="'M12 3v8M6.4 6.6a8 8 0 1 0 11.2 0'" />
-        </svg>
-        <span i18n="@@pc.power.shutdown">Desligar</span>
-      </button>
+    <div class="actions" [class.tiles]="actions().length > 3">
+      @for (item of actions(); track item.id) {
+        <button
+          type="button"
+          class="action"
+          [class.danger]="item.danger"
+          [attr.data-action]="item.id"
+          [disabled]="!store.canSend() || busy()"
+          (click)="choose(item.id)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path [attr.d]="item.icon" />
+          </svg>
+          <span>{{ item.label }}</span>
+        </button>
+      }
     </div>
 
-    @if (cancelVisible()) {
+    @if (countdown(); as kind) {
       <div class="cancel" role="status">
-        <p i18n="@@pc.power.counting">O PC vai desligar. O aviso aparece na tela dele.</p>
+        <p>{{ kind === 'RESTART' ? restartCounting : shutdownCounting }}</p>
         <button
           type="button"
           class="ui-btn"
           [disabled]="!store.canSend() || busy()"
-          (click)="cancelShutdown()"
-          i18n="@@pc.power.cancel"
+          (click)="cancelCountdown()"
         >
-          Cancelar Desligamento
+          {{ kind === 'RESTART' ? cancelRestartLabel : cancelShutdownLabel }}
         </button>
       </div>
     }
@@ -77,9 +87,9 @@ const CANCEL_WINDOW_MS = 5 * 60_000;
 
     @if (pending(); as action) {
       <app-pc-confirm-sheet
-        [heading]="action === 'SHUTDOWN' ? shutdownTitle : sleepTitle"
-        [text]="action === 'SHUTDOWN' ? shutdownText : sleepText"
-        [confirmLabel]="action === 'SHUTDOWN' ? shutdownLabel : sleepLabel"
+        [heading]="sheets[action].title"
+        [text]="sheets[action].text"
+        [confirmLabel]="sheets[action].confirm"
         [busy]="busy()"
         [error]="sheetError()"
         (confirmed)="confirm(action)"
@@ -91,19 +101,93 @@ const CANCEL_WINDOW_MS = 5 * 60_000;
 })
 export class PowerPage {
   protected readonly store = inject(PcStore);
-  protected readonly pending = signal<Pending | null>(null);
+  protected readonly pending = signal<Confirmed | null>(null);
   protected readonly busy = signal(false);
   protected readonly message = signal<string | null>(null);
   protected readonly sheetError = signal<string | null>(null);
-  /** O desligamento foi pedido há pouco: mostra o botão que cancela a contagem. */
-  protected readonly cancelVisible = signal(false);
+  /** O desligamento ou o reinício foi pedido há pouco: mostra o botão que cancela a contagem. */
+  protected readonly countdown = signal<Countdown | null>(null);
 
-  protected readonly sleepTitle = $localize`:@@pc.power.sleep-title:Suspender o PC?`;
-  protected readonly sleepText = $localize`:@@pc.power.sleep-text:A conexão cai e o PC só volta mexendo nele.`;
-  protected readonly sleepLabel = $localize`:@@pc.power.sleep-confirm:Suspender`;
-  protected readonly shutdownTitle = $localize`:@@pc.power.shutdown-title:Desligar o PC?`;
-  protected readonly shutdownText = $localize`:@@pc.power.shutdown-text:O Windows avisa na tela e conta alguns segundos. Dá para cancelar aqui antes do fim.`;
-  protected readonly shutdownLabel = $localize`:@@pc.power.shutdown-confirm:Desligar`;
+  private readonly all: readonly Action[] = [
+    {
+      id: 'LOCK',
+      label: $localize`:@@pc.power.lock:Bloquear`,
+      icon: 'M8 11V8a4 4 0 0 1 8 0v3M7 11h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z',
+    },
+    {
+      id: 'SLEEP',
+      label: $localize`:@@pc.power.sleep:Suspender`,
+      icon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
+    },
+    {
+      id: 'SHUTDOWN',
+      label: $localize`:@@pc.power.shutdown:Desligar`,
+      icon: 'M12 3v8M6.4 6.6a8 8 0 1 0 11.2 0',
+      danger: true,
+    },
+    {
+      id: 'HIBERNATE',
+      label: $localize`:@@pc.power.hibernate:Hibernar`,
+      icon: 'M12 3v10M8.5 9.5 12 13l3.5-3.5M5 17h14M7 21h10',
+      needsV2: true,
+    },
+    {
+      id: 'MONITOR_OFF',
+      label: $localize`:@@pc.power.monitor-off:Desligar o Monitor`,
+      icon: 'M3 5h18v11H3zM8 20h8M12 16v4M6 8l12 5',
+      needsV2: true,
+    },
+    {
+      id: 'RESTART',
+      label: $localize`:@@pc.power.restart:Reiniciar`,
+      icon: 'M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5',
+      danger: true,
+      needsV2: true,
+    },
+    {
+      id: 'LOGOFF',
+      label: $localize`:@@pc.power.logoff:Encerrar Sessão`,
+      icon: 'M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9',
+      danger: true,
+      needsV2: true,
+    },
+  ];
+  protected readonly actions = computed(() =>
+    this.all.filter((item) => !item.needsV2 || this.store.supportsPowerV2()),
+  );
+
+  protected readonly shutdownCounting = $localize`:@@pc.power.counting:O PC vai desligar. O aviso aparece na tela dele.`;
+  protected readonly restartCounting = $localize`:@@pc.power.restart-counting:O PC vai reiniciar. O aviso aparece na tela dele.`;
+  protected readonly cancelShutdownLabel = $localize`:@@pc.power.cancel:Cancelar Desligamento`;
+  protected readonly cancelRestartLabel = $localize`:@@pc.power.cancel-restart:Cancelar Reinício`;
+
+  protected readonly sheets: Readonly<Record<Confirmed, Sheet>> = {
+    SLEEP: {
+      title: $localize`:@@pc.power.sleep-title:Suspender o PC?`,
+      text: $localize`:@@pc.power.sleep-text:A conexão cai e o PC só volta mexendo nele.`,
+      confirm: $localize`:@@pc.power.sleep-confirm:Suspender`,
+    },
+    HIBERNATE: {
+      title: $localize`:@@pc.power.hibernate-title:Hibernar o PC?`,
+      text: $localize`:@@pc.power.hibernate-text:O Windows guarda o que está aberto e desliga. A conexão cai e o PC só volta ligando o botão dele.`,
+      confirm: $localize`:@@pc.power.hibernate-confirm:Hibernar`,
+    },
+    SHUTDOWN: {
+      title: $localize`:@@pc.power.shutdown-title:Desligar o PC?`,
+      text: $localize`:@@pc.power.shutdown-text:O Windows avisa na tela e conta alguns segundos. Dá para cancelar aqui antes do fim.`,
+      confirm: $localize`:@@pc.power.shutdown-confirm:Desligar`,
+    },
+    RESTART: {
+      title: $localize`:@@pc.power.restart-title:Reiniciar o PC?`,
+      text: $localize`:@@pc.power.restart-text:O Windows avisa na tela e conta alguns segundos. Dá para cancelar aqui antes do fim. O que não foi salvo pode ser perdido, e o controle volta quando o Windows abrir de novo.`,
+      confirm: $localize`:@@pc.power.restart-confirm:Reiniciar`,
+    },
+    LOGOFF: {
+      title: $localize`:@@pc.power.logoff-title:Encerrar a sessão do Windows?`,
+      text: $localize`:@@pc.power.logoff-text:Os programas abertos são fechados e o que não foi salvo pode ser perdido. O controle só volta depois que alguém entrar no Windows de novo.`,
+      confirm: $localize`:@@pc.power.logoff-confirm:Encerrar Sessão`,
+    },
+  };
 
   private readonly sheet = viewChild(PcConfirmSheet);
   private hideTimer: number | null = null;
@@ -114,35 +198,32 @@ export class PowerPage {
     });
   }
 
-  protected async lock(): Promise<void> {
+  /** Bloquear e apagar o monitor valem na hora; o resto abre a folha de confirmação. */
+  protected async choose(id: Action['id']): Promise<void> {
     tick();
-    await this.run('LOCK');
-  }
-
-  protected ask(action: Pending): void {
-    tick();
+    if (id === 'LOCK' || id === 'MONITOR_OFF') {
+      await this.run(id);
+      return;
+    }
     this.message.set(null);
     this.sheetError.set(null);
-    this.pending.set(action);
+    this.pending.set(id);
   }
 
-  protected async confirm(action: Pending): Promise<void> {
+  protected async confirm(action: Confirmed): Promise<void> {
     if (this.busy()) return;
     const ok = await this.run(action, true);
     if (!ok) return;
     this.sheet()?.close();
-    if (action === 'SHUTDOWN') this.showCancel();
+    if (action === 'SHUTDOWN' || action === 'RESTART') this.showCancel(action);
   }
 
-  protected async cancelShutdown(): Promise<void> {
+  protected async cancelCountdown(): Promise<void> {
     tick();
-    if (await this.run('CANCEL_SHUTDOWN')) this.cancelVisible.set(false);
+    if (await this.run('CANCEL_SHUTDOWN')) this.countdown.set(null);
   }
 
-  private async run(
-    action: 'LOCK' | Pending | 'CANCEL_SHUTDOWN',
-    confirmed = false,
-  ): Promise<boolean> {
+  private async run(action: PcPowerAction, confirmed = false): Promise<boolean> {
     this.busy.set(true);
     this.message.set(null);
     this.sheetError.set(null);
@@ -157,9 +238,9 @@ export class PowerPage {
     return true;
   }
 
-  private showCancel(): void {
-    this.cancelVisible.set(true);
+  private showCancel(kind: Countdown): void {
+    this.countdown.set(kind);
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
-    this.hideTimer = window.setTimeout(() => this.cancelVisible.set(false), CANCEL_WINDOW_MS);
+    this.hideTimer = window.setTimeout(() => this.countdown.set(null), CANCEL_WINDOW_MS);
   }
 }

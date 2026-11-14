@@ -29,6 +29,7 @@ from .pc_media_v1 import PcMediaV1Message
 from .pc_pointer_v1 import PcPointerV1Message
 from .pc_pointer_zoom_v1 import PcPointerZoomV1Message
 from .pc_power_v1 import PcPowerV1Message
+from .pc_power_v2 import PcPowerV2Message
 from .pc_rtc_answer_v1 import PcRtcAnswerV1Message
 from .pc_rtc_candidate_v1 import PcRtcCandidateV1Message
 from .pc_rtc_close_v1 import PcRtcCloseV1Message
@@ -91,6 +92,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.pointer.v1": PcPointerV1Message,
     "pc.pointer.zoom.v1": PcPointerZoomV1Message,
     "pc.power.v1": PcPowerV1Message,
+    "pc.power.v2": PcPowerV2Message,
     "pc.rtc.answer.v1": PcRtcAnswerV1Message,
     "pc.rtc.candidate.v1": PcRtcCandidateV1Message,
     "pc.rtc.close.v1": PcRtcCloseV1Message,

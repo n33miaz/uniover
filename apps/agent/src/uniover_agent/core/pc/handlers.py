@@ -53,6 +53,8 @@ PC_CLICK_V2_CAPABILITY: Final = "pc.click.v2"
 PC_ZOOM_CAPABILITY: Final = "pc.pointer.zoom.v1"
 # Idem: volume absoluto (nível de 0 a 100 e mudo) e o aviso do nível de agora.
 PC_VOLUME_CAPABILITY: Final = "pc.volume.v1"
+# Idem: reiniciar, encerrar a sessão, hibernar e apagar o monitor (`pc.power.v2`).
+PC_POWER_V2_CAPABILITY: Final = "pc.power.v2"
 # Idem: o `operationId` do pedido HTTP no envelope dos comandos (liga os registros).
 PC_OP_CAPABILITY: Final = "pc.op.v1"
 # Idem: o aparelho do app (`deviceId`, `deviceName`) no envelope, para o dono aprová-lo no PC.
@@ -70,6 +72,8 @@ MAX_SCROLL_DELTA: Final = 1200
 _PACED_ACTIONS: Final = frozenset({"CLICK", "DOUBLE"})
 UNSUPPORTED: Final = "unsupported"
 UNKNOWN_APP: Final = "unknown_app"
+# A hibernação está desligada neste PC (`powercfg /h off`): o app diz como ligá-la.
+HIBERNATION_UNAVAILABLE: Final = "hibernation_unavailable"
 # Tempo entre responder à API e suspender: o resultado precisa sair antes de o PC adormecer.
 SLEEP_DELAY_SECONDS: Final = 1.0
 
@@ -399,7 +403,8 @@ def pc_power_handler(
     sleep_delay_seconds: float = SLEEP_DELAY_SECONDS,
     spawn: Callable[[Awaitable[None]], Any] | None = None,
 ) -> Handler:
-    """`pc.power.v1`. Suspender só acontece depois da resposta: o PC adormece com a conexão."""
+    """`pc.power.v1` e `pc.power.v2`. Suspender, hibernar e encerrar a sessão só acontecem depois da
+    resposta: o PC adormece (ou o agente cai com a sessão) levando a conexão."""
 
     pending: set[asyncio.Task[None]] = set()
 
@@ -411,13 +416,17 @@ def pc_power_handler(
         pending.add(task)
         task.add_done_callback(pending.discard)
 
-    async def suspend_later() -> None:
-        await asyncio.sleep(sleep_delay_seconds)
-        try:
-            # Só volta quando o PC acorda; em outra thread para não parar o agente inteiro.
-            await asyncio.to_thread(power.sleep)
-        except PcUnsupported, OSError:
-            _log.warning("não foi possível suspender o PC", exc_info=True)
+    def later(label: str, action: Callable[[], None]) -> Awaitable[None]:
+        async def run() -> None:
+            await asyncio.sleep(sleep_delay_seconds)
+            try:
+                # Suspender e hibernar só voltam quando o PC acorda; em outra thread para não
+                # parar o agente inteiro.
+                await asyncio.to_thread(action)
+            except PcUnsupported, OSError:
+                _log.warning("não foi possível %s", label, exc_info=True)
+
+        return run()
 
     def handle(command: Command) -> CommandResult:
         action = str(command.body["action"])
@@ -426,11 +435,29 @@ def pc_power_handler(
         elif action == "SHUTDOWN":
             power.shutdown(shutdown_delay_seconds)
             _log.warning("desligamento agendado em %ds a pedido do app", shutdown_delay_seconds)
+        elif action == "RESTART":
+            power.restart(shutdown_delay_seconds)
+            _log.warning("reinício agendado em %ds a pedido do app", shutdown_delay_seconds)
         elif action == "CANCEL_SHUTDOWN":
             power.cancel_shutdown()
         elif action == "SLEEP":
             _log.warning("suspensão pedida pelo app")
-            start(suspend_later())
+            start(later("suspender o PC", power.sleep))
+        elif action == "HIBERNATE":
+            if not power.hibernation_available():
+                return CommandResult(
+                    command.id,
+                    ResultStatus.REJECTED,
+                    "a hibernação está desligada neste computador",
+                    HIBERNATION_UNAVAILABLE,
+                )
+            _log.warning("hibernação pedida pelo app")
+            start(later("hibernar o PC", power.hibernate))
+        elif action == "LOGOFF":
+            _log.warning("encerramento da sessão pedido pelo app")
+            start(later("encerrar a sessão", power.log_off))
+        elif action == "MONITOR_OFF":
+            power.monitor_off()
         return _ok(command)
 
     return _guarded(handle)
@@ -508,6 +535,11 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     ) -> Handler:
         return fresh_only(handle, max_age_seconds=max_age, clock=offset, exempt=exempt, quiet=quiet)
 
+    power_handler = noted(pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds))
+
+    def cancels_shutdown(command: Command) -> bool:
+        return command.body.get("action") == "CANCEL_SHUTDOWN"
+
     handlers: dict[str, Handler] = {
         "pc.pointer.v1": fresh(noted(pc_pointer_handler(pc)), MAX_POINTER_AGE_SECONDS, quiet=True),
         "pc.click.v1": fresh(
@@ -537,11 +569,10 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         "pc.media.v1": fresh(
             noted(pc_media_handler(pc, volume_changed=volume_changed)), MAX_COMMAND_AGE_SECONDS
         ),
-        "pc.power.v1": fresh(
-            noted(pc_power_handler(power, shutdown_delay_seconds=shutdown_delay_seconds)),
-            MAX_POWER_AGE_SECONDS,
-            exempt=lambda command: command.body.get("action") == "CANCEL_SHUTDOWN",
-        ),
+        # A mesma lógica atende a `v1` (as quatro ações de antes) e a `v2` (mais quatro): o
+        # contrato de cada uma é que limita a lista de ações.
+        "pc.power.v1": fresh(power_handler, MAX_POWER_AGE_SECONDS, exempt=cancels_shutdown),
+        "pc.power.v2": fresh(power_handler, MAX_POWER_AGE_SECONDS, exempt=cancels_shutdown),
         "pc.app.launch.v1": fresh(
             noted(pc_app_launch_handler(launcher, apps)), MAX_COMMAND_AGE_SECONDS
         ),

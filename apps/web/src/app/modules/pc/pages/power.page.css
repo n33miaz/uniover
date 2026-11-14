@@ -55,6 +55,24 @@
   stroke-linejoin: round;
 }
 
+/* Com as ações novas são sete: ladrilhos em duas colunas, para caberem na altura de um celular sem rolar. */
+.actions.tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: var(--space-3);
+}
+.tiles .action {
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 92px;
+  padding: var(--space-3);
+  font-size: var(--fs-body);
+  text-align: center;
+}
+.tiles .action:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .cancel {
   display: flex;
   flex-direction: column;

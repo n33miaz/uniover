@@ -188,6 +188,7 @@ public sealed class AgentParityTests
     [InlineData("tv.key.v3", true)]
     [InlineData("tv.text.v1", true)]
     [InlineData("pc.power.v1", false)]
+    [InlineData("pc.power.v2", false)]
     [InlineData("pc.app.launch.v1", false)]
     [InlineData("pc.rtc.offer.v1", false)]
     [InlineData("tv.power.off.v1", false)]

@@ -97,6 +97,14 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.pc-shutdown:Desligamento do PC pedido`;
     case 'pc_shutdown_cancelled':
       return $localize`:@@settings.audit.action.pc-shutdown-cancelled:Desligamento do PC cancelado`;
+    case 'pc_restart':
+      return $localize`:@@settings.audit.action.pc-restart:Reinício do PC pedido`;
+    case 'pc_logoff':
+      return $localize`:@@settings.audit.action.pc-logoff:Sessão do PC encerrada`;
+    case 'pc_hibernate':
+      return $localize`:@@settings.audit.action.pc-hibernate:PC hibernado`;
+    case 'pc_monitor_off':
+      return $localize`:@@settings.audit.action.pc-monitor-off:Monitor do PC desligado`;
     case 'pc_app_launch':
       return $localize`:@@settings.audit.action.pc-app-launch:App aberto no PC`;
     case 'pc_lock_failed':
@@ -107,6 +115,14 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.pc-shutdown-failed:Desligamento do PC falhou`;
     case 'pc_shutdown_cancel_failed':
       return $localize`:@@settings.audit.action.pc-shutdown-cancel-failed:Cancelamento do desligamento falhou`;
+    case 'pc_restart_failed':
+      return $localize`:@@settings.audit.action.pc-restart-failed:Reinício do PC falhou`;
+    case 'pc_logoff_failed':
+      return $localize`:@@settings.audit.action.pc-logoff-failed:Encerramento da sessão do PC falhou`;
+    case 'pc_hibernate_failed':
+      return $localize`:@@settings.audit.action.pc-hibernate-failed:Hibernação do PC falhou`;
+    case 'pc_monitor_off_failed':
+      return $localize`:@@settings.audit.action.pc-monitor-off-failed:Desligar o monitor do PC falhou`;
     case 'pc_app_launch_failed':
       return $localize`:@@settings.audit.action.pc-app-launch-failed:Abertura de app no PC falhou`;
     // TV
@@ -387,10 +403,18 @@ function describeBaseTarget(action: string, target: string): string | null {
     case 'pc_shutdown':
     case 'pc_shutdown_cancelled':
     case 'pc_app_launch':
+    case 'pc_restart':
+    case 'pc_logoff':
+    case 'pc_hibernate':
+    case 'pc_monitor_off':
     case 'pc_lock_failed':
     case 'pc_sleep_failed':
     case 'pc_shutdown_failed':
     case 'pc_shutdown_cancel_failed':
+    case 'pc_restart_failed':
+    case 'pc_logoff_failed':
+    case 'pc_hibernate_failed':
+    case 'pc_monitor_off_failed':
     case 'pc_app_launch_failed':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;

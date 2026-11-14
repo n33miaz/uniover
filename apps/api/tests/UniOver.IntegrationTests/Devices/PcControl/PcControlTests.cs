@@ -28,6 +28,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private const string ClickV2 = "pc.click.v2";
     private const string Zoom = "pc.pointer.zoom.v1";
     private const string Volume = "pc.volume.v1";
+    private const string PowerV2 = "pc.power.v2";
 
     private static readonly string[] Ctrl = ["CTRL"];
     private static readonly string[] CtrlShift = ["CTRL", "SHIFT"];
@@ -1131,7 +1132,8 @@ public sealed class PcControlTests(PostgresFixture postgres)
     [InlineData("text", "{\"text\":\"linha1\\nlinha2\"}")]
     [InlineData("media", "{\"action\":\"EJECT\"}")]
     [InlineData("media", "{\"action\":\"VOLUME_UP\",\"steps\":11}")]
-    [InlineData("power", "{\"action\":\"HIBERNATE\"}")]
+    [InlineData("power", "{\"action\":\"REBOOT\"}")]
+    [InlineData("power", "{\"action\":\"restart\",\"confirm\":true}")]
     public async Task ABodyOutsideTheClosedLists_Returns400_AndAsksTheAgentNothing(string path, string json)
     {
         await using var app = await TransportApp.StartAsync(postgres);
@@ -1379,7 +1381,10 @@ public sealed class PcControlTests(PostgresFixture postgres)
     [Theory]
     [InlineData("SLEEP")]
     [InlineData("SHUTDOWN")]
-    public async Task SleepAndShutdown_WithoutTheConfirmation_Return400_AndNothingIsSentOrAudited(string action)
+    [InlineData("RESTART")]
+    [InlineData("LOGOFF")]
+    [InlineData("HIBERNATE")]
+    public async Task EveryActionThatLosesWorkOrDropsTheConnection_WithoutTheConfirmation_Return400_AndNothingIsSentOrAudited(string action)
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
@@ -1416,6 +1421,88 @@ public sealed class PcControlTests(PostgresFixture postgres)
         audit.AgentId.Should().Be(app.Agent.Id);
         audit.UserId.Should().NotBeNull();
         audit.UserAgent.Should().Be("painel/1.0");
+    }
+
+    [Theory]
+    [InlineData("RESTART", true, "pc_restart")]
+    [InlineData("LOGOFF", true, "pc_logoff")]
+    [InlineData("HIBERNATE", true, "pc_hibernate")]
+    [InlineData("MONITOR_OFF", false, "pc_monitor_off")]
+    public async Task NewPowerActions_GoAsTheV2_ToAnAgentThatDeclaredIt_AndAreAuditedAfterTheAgentConfirmed(
+        string action, bool confirm, string expectedEvent)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+
+        var http = app.App.SendAsync(
+            HttpMethod.Post, "/api/v1/pc/power", confirm ? new { action, confirm } : new { action }, app.Login.AccessToken, userAgent: "painel/1.0");
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.power.v2");
+        command.GetProperty("body").GetProperty("action").GetString().Should().Be(action);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.SingleAsync(a => a.Event == expectedEvent, Ct)).AgentId.Should().Be(app.Agent.Id);
+    }
+
+    [Theory]
+    [InlineData("LOCK", "pc.power.v1")]
+    [InlineData("CANCEL_SHUTDOWN", "pc.power.v1")]
+    public async Task TheOldPowerActions_KeepGoingAsTheV1_EvenToAnAgentThatKnowsTheV2(string action, string type)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+
+        var http = PostAsync(app, "power", new { action });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be(type);
+    }
+
+    [Theory]
+    [InlineData("RESTART")]
+    [InlineData("LOGOFF")]
+    [InlineData("HIBERNATE")]
+    [InlineData("MONITOR_OFF")]
+    public async Task NewPowerActions_Return409Unsupported_ForAnOlderAgent_AndNothingIsSentOrAudited(string action)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        // O esquema fechado da v1 do agente antigo recusaria a ação: a API barra na borda e o site esconde o botão.
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, "power", new { action, confirm = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
+
+        var next = PostAsync(app, "key", new { key = "A" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+    }
+
+    [Fact]
+    public async Task ARestartRefusedByTheAgent_IsAuditedAsAFailedAttempt_NotAsDone()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+
+        var http = PostAsync(app, "power", new { action = "HIBERNATE", confirm = true });
+        await AnswerAsync(agent, Failed("hibernation_unavailable"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        (await DevicesApp.JsonAsync(response)).GetProperty("agentError").GetString().Should().Be("hibernation_unavailable");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_hibernate", Ct)).Should().Be(0, "não foi feito");
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_hibernate_failed", Ct)).Should().Be(1);
     }
 
     [Fact]

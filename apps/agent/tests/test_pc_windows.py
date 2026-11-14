@@ -67,6 +67,56 @@ def test_power_runs_shutdown_with_a_countdown_and_a_notice() -> None:
     assert calls[1] == ["/a"]
 
 
+def test_restart_runs_shutdown_with_a_countdown_and_a_notice() -> None:
+    calls: list[list[str]] = []
+    WindowsPcPower(run=exits_with(0, calls)).restart(30)
+    assert calls[0][:3] == ["/r", "/t", "30"]
+    assert "/c" in calls[0]
+    calls.clear()
+    WindowsPcPower(run=exits_with(0, calls)).restart(0)
+    assert calls[0][2] == "10"
+    with pytest.raises(OSError, match=r"agendar o reinício.*5"):
+        WindowsPcPower(run=exits_with(5)).restart(30)
+
+
+def test_hibernate_and_log_off_use_the_system_tool_and_report_a_refusal() -> None:
+    calls: list[list[str]] = []
+    power = WindowsPcPower(run=exits_with(0, calls))
+    power.hibernate()
+    power.log_off()
+    # Sem `/f`: os programas são chamados a fechar, nada é forçado.
+    assert calls == [["/h"], ["/l"]]
+    with pytest.raises(OSError, match=r"hibernar.*50"):
+        WindowsPcPower(run=exits_with(50)).hibernate()
+    with pytest.raises(OSError, match=r"encerrar a sessão.*5"):
+        WindowsPcPower(run=exits_with(5)).log_off()
+
+
+def test_hibernation_availability_and_monitor_off_come_from_the_system_calls() -> None:
+    assert WindowsPcPower(hibernation=lambda: True).hibernation_available() is True
+    assert WindowsPcPower(hibernation=lambda: False).hibernation_available() is False
+    called: list[str] = []
+
+    def off() -> bool:
+        called.append("off")
+        return True
+
+    WindowsPcPower(monitor_off=off).monitor_off()
+    assert called == ["off"]
+    with pytest.raises(OSError, match="apagar o monitor"):
+        WindowsPcPower(monitor_off=lambda: False).monitor_off()
+
+
+def test_the_test_suite_can_never_reach_a_real_power_action() -> None:
+    # A guarda do `conftest` troca as primitivas reais: chamá-las sem injetar reprova o teste.
+    with pytest.raises(AssertionError, match="energia"):
+        WindowsPcPower().lock()
+    with pytest.raises(AssertionError, match="energia"):
+        WindowsPcPower().hibernation_available()
+    with pytest.raises(AssertionError, match="energia"):
+        WindowsPcPower().monitor_off()
+
+
 def test_shutdown_countdown_never_goes_below_ten_seconds() -> None:
     calls: list[list[str]] = []
     WindowsPcPower(run=exits_with(0, calls)).shutdown(0)

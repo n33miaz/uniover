@@ -107,6 +107,85 @@ describe('PowerPage', () => {
     );
   });
 
+  describe('with a PC that understands the newer power actions', () => {
+    beforeEach(() => {
+      store.capabilities.set(['pc.power.v2']);
+      fixture.detectChanges();
+    });
+
+    it('hides the four newer actions from a PC that did not declare them', () => {
+      store.capabilities.set([]);
+      fixture.detectChanges();
+      expect([...root.querySelectorAll('.action')].map((b) => b.textContent?.trim())).toEqual([
+        'Bloquear',
+        'Suspender',
+        'Desligar',
+      ]);
+    });
+
+    it('lists all seven actions in order', () => {
+      expect([...root.querySelectorAll('.action')].map((b) => b.textContent?.trim())).toEqual([
+        'Bloquear',
+        'Suspender',
+        'Desligar',
+        'Hibernar',
+        'Desligar o Monitor',
+        'Reiniciar',
+        'Encerrar Sessão',
+      ]);
+    });
+
+    it('turns the monitor off right away, with no confirmation', async () => {
+      action('Desligar o Monitor').click();
+      await settle();
+      expect(store.power).toHaveBeenCalledExactlyOnceWith('MONITOR_OFF', false);
+      expect(sheet()).toBeNull();
+    });
+
+    it.each([
+      ['Hibernar', 'HIBERNATE', 'Hibernar o PC?'],
+      ['Reiniciar', 'RESTART', 'Reiniciar o PC?'],
+      ['Encerrar Sessão', 'LOGOFF', 'Encerrar a sessão do Windows?'],
+    ])('%s asks first and only sends after the confirmation', async (label, code, title) => {
+      action(label).click();
+      await settle();
+      expect(store.power).not.toHaveBeenCalled();
+      expect(root.querySelector('h2')?.textContent).toBe(title);
+
+      sheetButton(label).click();
+      await settle();
+      expect(store.power).toHaveBeenCalledExactlyOnceWith(code, true);
+      expect(sheet()).toBeNull();
+    });
+
+    it('warns that logging off loses what was not saved and that the control needs a new sign in', async () => {
+      action('Encerrar Sessão').click();
+      await settle();
+      const text = root.querySelector('dialog')?.textContent ?? '';
+      expect(text).toContain('não foi salvo pode ser perdido');
+      expect(text).toContain('alguém entrar no Windows de novo');
+    });
+
+    it('a restart offers its own cancel button, and only a restart or a shutdown do', async () => {
+      action('Hibernar').click();
+      await settle();
+      sheetButton('Hibernar').click();
+      await settle();
+      expect(root.querySelector('.cancel')).toBeNull();
+
+      action('Reiniciar').click();
+      await settle();
+      sheetButton('Reiniciar').click();
+      await settle();
+      const cancel = root.querySelector<HTMLButtonElement>('.cancel button')!;
+      expect(cancel.textContent?.trim()).toBe('Cancelar Reinício');
+      cancel.click();
+      await settle();
+      expect(store.power).toHaveBeenLastCalledWith('CANCEL_SHUTDOWN', false);
+      expect(root.querySelector('.cancel')).toBeNull();
+    });
+  });
+
   it('is all disabled while the PC is not connected', () => {
     store.phase.set('offline');
     fixture.detectChanges();
