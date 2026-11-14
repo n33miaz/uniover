@@ -68,12 +68,32 @@ internal sealed class TvLivreHandler(
     {
         var tvId = TvId;
         var entry = await db.TvLivre.AsNoTracking().SingleOrDefaultAsync(e => e.TvId == tvId, cancellationToken);
-        return TvLivreView.From(entry, IsAvailable());
+        return TvLivreView.From(entry, IsAvailable(), IsExtended());
     }
 
     /// <summary>Há agente online da TV atual com a capacidade: é o que faz o módulo aparecer na tela.</summary>
     public bool IsAvailable() =>
         AgentInfo() is { Connected: true } info && info.Capabilities.Contains(Capability, StringComparer.Ordinal);
+
+    /// <summary>O agente online da TV atual entende os acréscimos do TV Livre (<see cref="TvCapabilities.LivreV2"/>).</summary>
+    public bool IsExtended() =>
+        AgentInfo() is { Connected: true } info && info.Capabilities.Contains(TvCapabilities.LivreV2, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Se há como mandar a TV dormir agora: o TV Livre está instalado na TV e o agente está ao alcance. É o que a folha de
+    /// energia do controle consulta (o <c>GET /livre</c> inteiro é só do dono, e quem tem o controle não o lê).
+    /// </summary>
+    public async Task<bool> SleepAvailableAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAvailable())
+        {
+            return false;
+        }
+
+        var tvId = TvId;
+        var entry = await db.TvLivre.AsNoTracking().SingleOrDefaultAsync(e => e.TvId == tvId, cancellationToken);
+        return TvLivreView.From(entry, available: true, IsExtended()) is { Supported: not false, Installed: true };
+    }
 
     // ---- o que o dono guarda (não fala com a TV) ----
 
@@ -146,10 +166,14 @@ internal sealed class TvLivreHandler(
             string.Create(CultureInfo.InvariantCulture, $"disable={disable.Count},enable={enable.Count}"),
             TvLivreAction.SetApps, longTimeout: true, cancellationToken, disable: disable, enable: enable);
 
-    /// <summary>O Modo Dormir só abre a tela; o estado não muda, então não espera por ele.</summary>
-    public Task<LivreStep> SleepAsync(TvCommandOrigin origin, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// O Modo Dormir só abre a tela; o estado não muda, então não espera por ele. O tempo até acordar vai no pedido, mas só
+    /// a agente que entende (um anterior recusaria o campo): sem ele o launcher usa o da configuração aplicada.
+    /// </summary>
+    public Task<LivreStep> SleepAsync(TvCommandOrigin origin, int? minutes, CancellationToken cancellationToken) =>
         SingleAsync(
-            origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: false, cancellationToken, waitForState: false);
+            origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: false, cancellationToken,
+            waitForState: false, minutes: IsExtended() ? minutes : null);
 
     /// <summary>
     /// Aplica a configuração guardada: se o fundo é uma foto e há foto guardada, ela vai antes em pedaços (cada um é um
@@ -175,7 +199,7 @@ internal sealed class TvLivreHandler(
         var stored = await db.TvLivre.AsNoTracking().Where(e => e.TvId == tvId)
             .Select(e => new { e.ConfigJson, e.PhotoData }).SingleOrDefaultAsync(cancellationToken);
         var config = LivreConfigValidator.Parse(stored?.ConfigJson);
-        var configJson = LivreConfigValidator.ToLauncherJson(config);
+        var configJson = LivreConfigValidator.ToLauncherJson(config, IsExtended());
 
         Guid? photoId = null;
         if (config.Wallpaper.Type == "photo" && stored?.PhotoData is { Length: > 0 } photo)
@@ -250,7 +274,8 @@ internal sealed class TvLivreHandler(
         bool? disableFactory = null,
         bool? uninstall = null,
         IReadOnlyList<string>? disable = null,
-        IReadOnlyList<string>? enable = null)
+        IReadOnlyList<string>? enable = null,
+        int? minutes = null)
     {
         if (RefusesToRun())
         {
@@ -268,7 +293,8 @@ internal sealed class TvLivreHandler(
             command,
             detail,
             TvMessages.TvLivre(
-                ticket.RequestId, action, disableFactory: disableFactory, uninstall: uninstall, disable: disable, enable: enable),
+                ticket.RequestId, action, disableFactory: disableFactory, uninstall: uninstall, disable: disable, enable: enable,
+                minutes: minutes),
             waitForReply: true,
             cancellationToken,
             longTimeout ? options.Value.LivreTimeout : null);

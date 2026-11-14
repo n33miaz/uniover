@@ -9,9 +9,9 @@ using UniOver.Modules.Tv.Features.Commands;
 namespace UniOver.Modules.Tv.Features.TvLivre;
 
 /// <summary>
-/// As rotas do TV Livre da TV escolhida. São só do dono: política nomeada de administrador, sem permissão no catálogo do
-/// convidado (a concessão ao convidado exigiria mudar o Identity e fica para depois), e todas as que escrevem ou falam
-/// com a TV levam o limite de comandos.
+/// As rotas do TV Livre da TV escolhida. São só do dono (política nomeada de administrador), com uma exceção: o Modo
+/// Dormir (<c>/livre/sleep</c>), que é de quem tem a permissão de controlar a TV. Todas as que escrevem ou falam com a TV
+/// levam o limite de comandos.
 /// </summary>
 internal static class TvLivreEndpoint
 {
@@ -34,7 +34,14 @@ internal static class TvLivreEndpoint
         group.MapPost("/livre/install", InstallAsync).Owner().RateLimited().Produces<TvLivreView>().Steps();
         group.MapPost("/livre/set-home", SetHomeAsync).Owner().RateLimited().Produces<TvLivreView>().Steps();
         group.MapPost("/livre/restore", RestoreAsync).Owner().RateLimited().Produces<TvLivreView>().Steps();
-        group.MapPost("/livre/sleep", SleepAsync).Owner().RateLimited().Produces(StatusCodes.Status204NoContent).Steps();
+        // O Modo Dormir é de quem tem o controle da TV (o pior que acontece é uma tela preta que sai com qualquer tecla);
+        // o resto do TV Livre segue só do dono.
+        group.MapGet("/livre/sleep", SleepAvailableAsync).RequireAuthorization(TvAuth.Control).Produces<SleepAvailability>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized).ProducesProblem(StatusCodes.Status403Forbidden);
+        group.MapPost("/livre/sleep", SleepAsync).RequireAuthorization(TvAuth.Control).RateLimited()
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden).Steps();
         group.MapPost("/livre/apps/visibility", VisibilityAsync).Owner().RateLimited().Produces<TvLivreView>()
             .ProducesProblem(StatusCodes.Status400BadRequest).Steps();
     }
@@ -171,15 +178,26 @@ internal static class TvLivreEndpoint
             : await ViewOrProblemAsync(
                 handler, await handler.RestoreAsync(origin, request?.Uninstall ?? true, cancellationToken), cancellationToken);
 
+    private static async Task<IResult> SleepAvailableAsync(TvLivreHandler handler, CancellationToken cancellationToken) =>
+        TypedResults.Ok(new SleepAvailability(await handler.SleepAvailableAsync(cancellationToken)));
+
     private static async Task<IResult> SleepAsync(
-        ICurrentUser current, HttpContext http, TvLivreHandler handler, CancellationToken cancellationToken)
+        SleepRequest? request, ICurrentUser current, HttpContext http, TvLivreHandler handler, CancellationToken cancellationToken)
     {
+        if (request?.Minutes is < 0 or > LivreConfigValidator.MaxSleepMinutes)
+        {
+            return ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["minutes"] = [$"Use de 0 a {LivreConfigValidator.MaxSleepMinutes} minutos."],
+            });
+        }
+
         if (TvHttp.OriginOf(current, http) is not { } origin)
         {
             return TvProblems.Unauthenticated();
         }
 
-        return ToProblem(await handler.SleepAsync(origin, cancellationToken)) ?? TypedResults.NoContent();
+        return ToProblem(await handler.SleepAsync(origin, request?.Minutes, cancellationToken)) ?? TypedResults.NoContent();
     }
 
     private static async Task<IResult> VisibilityAsync(

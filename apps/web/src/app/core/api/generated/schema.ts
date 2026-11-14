@@ -12359,9 +12359,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
-    put?: never;
-    post: {
+    get: {
       parameters: {
         query?: never;
         header?: never;
@@ -12370,12 +12368,64 @@ export interface paths {
       };
       requestBody?: never;
       responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SleepAvailability'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SleepRequest'];
+        };
+      };
+      responses: {
         /** @description No Content */
         204: {
           headers: {
             [name: string]: unknown;
           };
           content?: never;
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
         };
         /** @description Unauthorized */
         401: {
@@ -15184,6 +15234,12 @@ export interface components {
     };
     LivreBuiltin: {
       /** @default true */
+      brand: boolean;
+      /** @default true */
+      inputs: boolean;
+      /** @default true */
+      network: boolean;
+      /** @default true */
       settings: boolean;
       /** @default false */
       sleep: boolean;
@@ -15968,6 +16024,13 @@ export interface components {
       tvId: string;
       tvName: string;
     };
+    SleepAvailability: {
+      available: boolean;
+    };
+    SleepRequest: {
+      /** Format: int32 */
+      minutes?: null | number | string;
+    };
     StartPairingRequest: {
       agentName: null | string;
       agentVersion: null | string;
@@ -16118,14 +16181,20 @@ export interface components {
       items: components['schemas']['TvSummary'][];
     };
     TvLivreView: {
+      /** @default false */
+      applyDeferred: boolean;
       apps: components['schemas']['LivreAppView'][];
       available: boolean;
       config: components['schemas']['LivreConfig'];
       disabledPackages: string[];
+      /** @default false */
+      extended: boolean;
       factoryLauncher: null | string;
       hasPhoto: boolean;
       installed: boolean;
       isHome: boolean;
+      /** Format: int32 */
+      launcherLevel?: null | number | string;
       /** Format: int32 */
       revision: number;
       /** Format: date-time */

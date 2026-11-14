@@ -22,7 +22,7 @@ internal sealed record LivreConfig(
         new LivreWallpaper("gradient", ["#1B2440", "#3A2D5C"], 315, 0.25),
         new LivreApps("all", [], [], false),
         new LivreIcons("medium", "always"),
-        new LivreBuiltin(true, false),
+        new LivreBuiltin(true, false, true, true, true),
         new LivreSleep(0));
 }
 
@@ -51,8 +51,12 @@ internal sealed record LivreApps(
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record LivreIcons(string Size = "medium", string Labels = "always");
 
+/// <param name="Network">Ícone Rede no fim da fileira (launcher de nível 2; só vai a agente que declara <c>tv.livre.v2</c>).</param>
+/// <param name="Inputs">Ícone Entradas (HDMI e antena); só aparece se a TV tem uma tela de entradas conhecida.</param>
+/// <param name="Brand">O nome do sistema, pequeno, num canto da tela.</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record LivreBuiltin(bool Settings = true, bool Sleep = false);
+internal sealed record LivreBuiltin(
+    bool Settings = true, bool Sleep = false, bool Network = true, bool Inputs = true, bool Brand = true);
 
 /// <param name="MaxMinutes">Sai do Modo Dormir sozinho depois deste tempo (0 a 720); 0 só acorda com tecla.</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

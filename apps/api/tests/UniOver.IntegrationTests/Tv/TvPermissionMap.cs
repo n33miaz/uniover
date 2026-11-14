@@ -84,6 +84,9 @@ internal static class TvPermissionMap
         new("PATCH", "/api/v1/tv/shortcuts/{id:guid}", "tv:edit-shortcuts", RenameBody),
         new("PUT", "/api/v1/tv/shortcuts/order", "tv:edit-shortcuts", OrderBody),
         new("GET", "/api/v1/tv/cleanup/latest", "tv:control"),
+        // O Modo Dormir do TV Livre é de quem controla a TV; o resto do TV Livre segue só do dono (lista abaixo).
+        new("GET", "/api/v1/tv/livre/sleep", "tv:control"),
+        new("POST", "/api/v1/tv/livre/sleep", "tv:control"),
     ];
 
     /// <summary>
@@ -124,7 +127,6 @@ internal static class TvPermissionMap
         new("POST", "/api/v1/tv/livre/install"),
         new("POST", "/api/v1/tv/livre/set-home", Body: new { disableFactory = false }),
         new("POST", "/api/v1/tv/livre/restore", Body: new { uninstall = true }),
-        new("POST", "/api/v1/tv/livre/sleep"),
         new("POST", "/api/v1/tv/livre/apps/visibility", Body: new { disable = new[] { "com.exemplo.app" } }),
     ];
 

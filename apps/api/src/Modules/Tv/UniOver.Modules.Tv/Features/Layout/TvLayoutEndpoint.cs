@@ -32,7 +32,7 @@ internal static class TvLayoutValidator
             !Choice(body, "buttonSize", ["compact", "comfortable", "large"], out var buttonSize) ||
             !Flag(body, "showMedia", out var showMedia) || !Flag(body, "showChannel", out var showChannel) ||
             !Choice(body, "startPage", ["directions", "numbers", "touchpad", "last"], out var startPage) ||
-            !Choice(body, "padSpeed", ["slow", "normal", "fast"], out var padSpeed) ||
+            !Choice(body, "padSpeed", ["slowest", "slower", "slow", "normal", "fast", "faster", "fastest"], out var padSpeed) ||
             !Choice(body, "pillLayout", ["sides", "row"], out var pillLayout) ||
             !List(body, "extraKeys", 8, 32, true, out var extraKeys) ||
             (extraKeys is not null && extraKeys.Any(key => !ExtraKeys.Contains(key))) ||

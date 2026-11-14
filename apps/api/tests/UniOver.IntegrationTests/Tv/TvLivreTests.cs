@@ -25,6 +25,7 @@ namespace UniOver.IntegrationTests.Tv;
 public sealed class TvLivreTests(PostgresFixture postgres)
 {
     private const string Capability = "tv.livre.v1";
+    private const string ExtendedCapability = "tv.livre.v2";
     private const string Base = "/api/v1/tv/livre";
 
     private static readonly string[] BadPackage = ["nome ruim"];
@@ -43,11 +44,13 @@ public sealed class TvLivreTests(PostgresFixture postgres)
     }
 
     /// <summary>Um agente conectado que anuncia (ou não) o TV Livre, já com a presença conhecida pela API.</summary>
-    private static async Task<FakeAgent> ConnectAsync(TvApp app, bool withCapability = true)
+    private static async Task<FakeAgent> ConnectAsync(TvApp app, bool withCapability = true, bool extended = false)
     {
         var agent = await app.ConnectAsync();
         await (withCapability
-            ? agent.SendHelloAsync("2.0.0", "tv.remote", Capability)
+            ? extended
+                ? agent.SendHelloAsync("2.0.0", "tv.remote", Capability, ExtendedCapability)
+                : agent.SendHelloAsync("2.0.0", "tv.remote", Capability)
             : agent.SendHelloAsync("2.0.0", "tv.remote"));
         // Quem reconecta depois de outro hello não pode confiar em "tv.remote": a presença antiga ainda o tem. Por isso
         // com a capacidade espera por ela, e sem ela só vale a primeira conexão do teste.
@@ -535,6 +538,126 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         await using var db = app.Db();
         (await db.CommandAudit.SingleAsync(Ct)).Command.Should().Be("tv.livre.sleep");
+    }
+
+    [Fact]
+    public async Task Sleep_CarriesTheMinutes_OnlyToAnAgentThatDeclaredTheExtension()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var extended = await ConnectAsync(app, extended: true);
+
+        var request = app.PostAsync($"{Base}/sleep", new { minutes = 45 });
+        var command = await NextAsync(extended, "tv.livre.v1");
+        await TvApp.ReplyAsync(extended, command);
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").GetProperty("minutes").GetInt32().Should().Be(45);
+    }
+
+    [Fact]
+    public async Task Sleep_NeverSendsTheMinutes_ToAnAgentWithoutTheExtension()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+
+        var request = app.PostAsync($"{Base}/sleep", new { minutes = 45 });
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await TvApp.ReplyAsync(agent, command);
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").TryGetProperty("minutes", out _).Should().BeFalse("o esquema do agente antigo é fechado");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(721)]
+    public async Task Sleep_RefusesATimeOutsideTheContract_Without_TouchingTheTv(int minutes)
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true);
+
+        using var response = await Within(app.PostAsync($"{Base}/sleep", new { minutes }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await using var db = app.Db();
+        (await db.CommandAudit.CountAsync(Ct)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Apply_SendsTheNewBuiltinFlags_OnlyToTheExtendedAgent(bool extended)
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: extended);
+
+        var request = app.PostAsync($"{Base}/apply");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await StateThenReplyAsync(agent, command);
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var launcher = JsonNode.Parse(command.GetProperty("body").GetProperty("configJson").GetString()!)!;
+        var builtin = launcher["builtin"]!.AsObject();
+        builtin.ContainsKey("network").Should().Be(extended, "o agente antigo recusa o campo que não conhece");
+        builtin.ContainsKey("inputs").Should().Be(extended);
+        builtin.ContainsKey("brand").Should().Be(extended);
+    }
+
+    [Fact]
+    public async Task SleepAvailability_FollowsTheLauncherBeingInstalledAndTheAgentBeingThere()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+        using (var before = await app.GetAsync($"{Base}/sleep"))
+        {
+            (await TvApp.JsonAsync(before)).GetProperty("available").GetBoolean().Should().BeFalse("ainda não há estado: não se sabe se está instalado");
+        }
+
+        var request = app.PostAsync($"{Base}/refresh");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await StateThenReplyAsync(agent, command, StateBody(command, installed: true));
+        (await Within(request)).Dispose();
+
+        using var after = await app.GetAsync($"{Base}/sleep");
+        (await TvApp.JsonAsync(after)).GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TheView_TellsTheLauncherLevelTheDeferredApplyAndTheExtension()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true);
+        var request = app.PostAsync($"{Base}/refresh");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        var state = StateBody(command, installed: true, version: "0.69.0");
+        state["launcherLevel"] = 2;
+        state["applyDeferred"] = true;
+        await StateThenReplyAsync(agent, command, state);
+        using var response = await Within(request);
+
+        var view = await TvApp.JsonAsync(response);
+        view.GetProperty("extended").GetBoolean().Should().BeTrue();
+        view.GetProperty("launcherLevel").GetInt32().Should().Be(2);
+        view.GetProperty("applyDeferred").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TheView_OfAnOldAgent_HasNoLevelAndIsNotExtended()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+        var request = app.PostAsync($"{Base}/refresh");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await StateThenReplyAsync(agent, command, StateBody(command, installed: true));
+        using var response = await Within(request);
+
+        var view = await TvApp.JsonAsync(response);
+        view.GetProperty("extended").GetBoolean().Should().BeFalse();
+        view.GetProperty("launcherLevel").ValueKind.Should().Be(JsonValueKind.Null);
+        view.GetProperty("applyDeferred").GetBoolean().Should().BeFalse();
     }
 
     [Fact]
@@ -1168,9 +1291,56 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         ("POST", $"{Base}/install", null),
         ("POST", $"{Base}/set-home", new { disableFactory = false }),
         ("POST", $"{Base}/restore", new { uninstall = true }),
-        ("POST", $"{Base}/sleep", null),
         ("POST", $"{Base}/apps/visibility", new { disable = new[] { "com.exemplo.app" } }),
     ];
+
+    /// <summary>As rotas do Modo Dormir: de quem tem o controle da TV, não só do dono.</summary>
+    private static readonly (string Method, string Path, object? Body)[] SleepRoutes =
+    [
+        ("GET", $"{Base}/sleep", null),
+        ("POST", $"{Base}/sleep", new { minutes = 30 }),
+    ];
+
+    [Fact]
+    public async Task Sleep_IsOpenToAGuestWhoCanControlTheTv_AndOnlyToThem()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true);
+        var controller = await app.NewGuestAsync("Sala", ["module:tv", "tv:control"], 62);
+        var viewer = await app.NewGuestAsync("Sala", ["module:tv", "tv:power", "tv:launch"], 63);
+
+        foreach (var (method, path, body) in SleepRoutes)
+        {
+            using var denied = await app.SendAsync(new HttpMethod(method), path, body, bearer: viewer.Login.AccessToken);
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{method} {path} sem a permissão de controlar");
+        }
+
+        using var read = await app.SendAsync(HttpMethod.Get, $"{Base}/sleep", null, bearer: controller.Login.AccessToken);
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var request = app.SendAsync(HttpMethod.Post, $"{Base}/sleep", new { minutes = 30 }, bearer: controller.Login.AccessToken);
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await TvApp.ReplyAsync(agent, command);
+        using var sent = await Within(request);
+
+        sent.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        ActionOf(command).Should().Be("sleep");
+        command.GetProperty("body").GetProperty("minutes").GetInt32().Should().Be(30);
+        await using var db = app.Db();
+        (await db.CommandAudit.SingleAsync(Ct)).Command.Should().Be("tv.livre.sleep");
+    }
+
+    [Fact]
+    public async Task Sleep_DeniedToAnAnonymousCaller_With401()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+
+        foreach (var (method, path, body) in SleepRoutes)
+        {
+            using var response = await app.SendAsync(new HttpMethod(method), path, body, bearer: null);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"{method} {path}");
+        }
+    }
 
     [Fact]
     public async Task EveryRoute_IsDeniedToAGuestWithEveryTvPermission_AndNothingReachesTheTv()

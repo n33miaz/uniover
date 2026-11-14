@@ -23,6 +23,12 @@ internal static class TvCapabilities
 
     /// <summary>O agente sabe procurar TVs compatíveis na rede local (<c>tv.discover.v1</c>).</summary>
     public const string DiscoveryV1 = "tv.discovery.v1";
+
+    /// <summary>
+    /// O agente entende os acréscimos do TV Livre: o tempo no pedido de dormir, os ícones Rede e Entradas e o nome na
+    /// configuração, e o nível do launcher e o "apply adiado" no estado. Sem ela a API manda e lê só o que já existia.
+    /// </summary>
+    public const string LivreV2 = "tv.livre.v2";
 }
 
 /// <summary>Códigos de erro estáveis que o agente devolve no <c>command.result.v1</c> do desligamento com leitura.</summary>

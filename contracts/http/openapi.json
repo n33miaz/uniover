@@ -4024,6 +4024,18 @@
       "LivreBuiltin": {
         "additionalProperties": false,
         "properties": {
+          "brand": {
+            "default": true,
+            "type": "boolean"
+          },
+          "inputs": {
+            "default": true,
+            "type": "boolean"
+          },
+          "network": {
+            "default": true,
+            "type": "boolean"
+          },
           "settings": {
             "default": true,
             "type": "boolean"
@@ -7264,6 +7276,31 @@
         ],
         "type": "object"
       },
+      "SleepAvailability": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "type": "object"
+      },
+      "SleepRequest": {
+        "properties": {
+          "minutes": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "StartPairingRequest": {
         "properties": {
           "agentName": {
@@ -7884,6 +7921,10 @@
       },
       "TvLivreView": {
         "properties": {
+          "applyDeferred": {
+            "default": false,
+            "type": "boolean"
+          },
           "apps": {
             "items": {
               "$ref": "#/components/schemas/LivreAppView"
@@ -7902,6 +7943,10 @@
             },
             "type": "array"
           },
+          "extended": {
+            "default": false,
+            "type": "boolean"
+          },
           "factoryLauncher": {
             "type": [
               "null",
@@ -7916,6 +7961,15 @@
           },
           "isHome": {
             "type": "boolean"
+          },
+          "launcherLevel": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
           },
           "revision": {
             "format": "int32",
@@ -21546,10 +21600,73 @@
       }
     },
     "/api/v1/tv/livre/sleep": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SleepAvailability"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "TvLivreEndpoint"
+        ]
+      },
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SleepRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {

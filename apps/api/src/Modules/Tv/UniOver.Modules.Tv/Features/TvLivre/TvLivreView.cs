@@ -14,7 +14,9 @@ internal sealed record LivreAppView(string Package, bool Factory, bool Disabled)
 /// <summary>
 /// O que a tela do TV Livre mostra. <c>Available</c> diz se há agente online da TV atual com a capacidade; o resto do
 /// estado é o último que o agente relatou (<c>Supported</c> e <c>StateAt</c> são nulos enquanto nenhum chegou).
-/// <c>Revision</c> é a última aplicação enviada (0 = nunca aplicada).
+/// <c>Revision</c> é a última aplicação enviada (0 = nunca aplicada). <c>Extended</c> diz que o agente online entende os
+/// acréscimos (<see cref="TvCapabilities.LivreV2"/>); <c>LauncherLevel</c> é o nível do launcher que ele leu (nulo: não
+/// leu) e <c>ApplyDeferred</c> diz que o último apply só gravou a configuração porque outro app estava na frente.
 /// </summary>
 internal sealed record TvLivreView(
     bool Available,
@@ -28,12 +30,15 @@ internal sealed record TvLivreView(
     DateTimeOffset? StateAt,
     LivreConfig Config,
     bool HasPhoto,
-    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int Revision)
+    [property: JsonNumberHandling(JsonNumberHandling.Strict)] int Revision,
+    bool Extended = false,
+    int? LauncherLevel = null,
+    bool ApplyDeferred = false)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     /// <summary>Monta a resposta a partir da linha guardada (nula se a TV ainda não tem nada) e da presença do agente.</summary>
-    public static TvLivreView From(TvLivreEntry? entry, bool available)
+    public static TvLivreView From(TvLivreEntry? entry, bool available, bool extended = false)
     {
         var state = ReadState(entry?.StateJson);
         return new TvLivreView(
@@ -48,7 +53,10 @@ internal sealed record TvLivreView(
             entry?.StateAt,
             LivreConfigValidator.Parse(entry?.ConfigJson),
             entry?.PhotoData is { Length: > 0 },
-            entry?.Revision ?? 0);
+            entry?.Revision ?? 0,
+            extended,
+            state?.LauncherLevel,
+            state?.ApplyDeferred ?? false);
     }
 
     /// <summary>O estado guardado vem do agente (já conferido pelo contrato); ilegível por defeito vira "sem estado".</summary>
@@ -78,10 +86,18 @@ internal sealed record LivreAgentState(
     bool IsHome,
     string? FactoryLauncher,
     IReadOnlyList<string>? DisabledPackages,
-    IReadOnlyList<LivreAppView>? Apps);
+    IReadOnlyList<LivreAppView>? Apps,
+    int? LauncherLevel = null,
+    bool? ApplyDeferred = null);
 
 /// <summary>Corpo de <c>POST /livre/set-home</c>: desativar o launcher de fábrica depois de verificar a home nova (reversível).</summary>
 internal sealed record SetHomeRequest(bool DisableFactory = false);
+
+/// <summary>Corpo de <c>POST /livre/sleep</c>: o tempo até a TV acordar sozinha (0 a 720; 0 só acorda com tecla); sem ele vale o da configuração.</summary>
+internal sealed record SleepRequest(int? Minutes = null);
+
+/// <summary>Resposta de <c>GET /livre/sleep</c>: se o Modo Dormir está ao alcance (TV Livre instalado e agente online).</summary>
+internal sealed record SleepAvailability(bool Available);
 
 /// <summary>Corpo de <c>POST /livre/restore</c>: desinstalar o launcher depois de voltar e verificar (o padrão é sim).</summary>
 internal sealed record RestoreRequest(bool Uninstall = true);
