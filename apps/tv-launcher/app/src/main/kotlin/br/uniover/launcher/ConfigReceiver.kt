@@ -16,6 +16,15 @@ import br.uniover.launcher.config.ConfigParser
  */
 class ConfigReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_QUERY) {
+            // Quem pergunta é o agente: diz o nível do app (o que ele sabe fazer), para o agente e o site não pedirem o
+            // que uma versão velha ignora. Uma versão sem esta ação responde só o código padrão (0).
+            if (isOrderedBroadcast) {
+                setResultCode(RESULT_ACCEPTED)
+                setResultData("level=$LEVEL")
+            }
+            return
+        }
         if (intent.action != ACTION) return
         val outcome = apply(context, intent.getStringExtra(EXTRA_CONFIG_B64))
         if (isOrderedBroadcast) {
@@ -54,7 +63,15 @@ class ConfigReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION = "br.uniover.launcher.action.APPLY_CONFIG"
+        const val ACTION_QUERY = "br.uniover.launcher.action.QUERY"
         const val EXTRA_CONFIG_B64 = "config_b64"
+
+        /**
+         * O nível do app, um inteiro que só cresce quando o app ganha algo que o agente ou o site precisam saber (e não
+         * a cada versão da plataforma). Sem esta ação, o app é o nível 1.
+         * 2: Modo Dormir com volume e mídia e com o tempo no pedido; Rede, Entradas e o nome nos cantos; ícones aparados.
+         */
+        const val LEVEL = 2
         const val RESULT_ACCEPTED = 1
         const val RESULT_REJECTED = 2
     }

@@ -81,8 +81,13 @@ class AppTile(
         if (icon != null) {
             val view = ImageView(context).apply {
                 setImageDrawable(icon)
-                // Ícone adaptativo já vem sangrado e é só recortado no círculo; o antigo (quadrado) ganha margem.
-                if (icon is AdaptiveIconDrawable) {
+                // Ícone adaptativo já vem sangrado e é só recortado no círculo. O antigo (quadrado) é aparado e a cor da
+                // placa vira o fundo do círculo, como no controle; sem o que aparar, ganha margem.
+                val fitted = if (icon is AdaptiveIconDrawable) null else IconFit.fitted(icon, diameter)
+                if (fitted != null) {
+                    setImageDrawable(fitted)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                } else if (icon is AdaptiveIconDrawable) {
                     scaleType = ImageView.ScaleType.CENTER_CROP
                 } else {
                     scaleType = ImageView.ScaleType.FIT_CENTER

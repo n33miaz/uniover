@@ -29,7 +29,9 @@ import br.uniover.launcher.config.LauncherConfig
 import br.uniover.launcher.config.WallpaperConfig
 import br.uniover.launcher.config.WallpaperType
 import br.uniover.launcher.ui.AppTile
+import br.uniover.launcher.ui.BrandMark
 import br.uniover.launcher.ui.Metrics
+import br.uniover.launcher.ui.SystemScreens
 import br.uniover.launcher.ui.Wallpaper
 import java.io.File
 import java.util.Locale
@@ -41,7 +43,7 @@ import java.util.Locale
  * configuração a cada vez que volta para a frente (o agente grava o arquivo e abre a home de novo).
  */
 class HomeActivity : Activity() {
-    private enum class Kind { APP, SETTINGS, SLEEP }
+    private enum class Kind { APP, SETTINGS, SLEEP, NETWORK, INPUTS }
 
     /** O que cada ícone da fileira é. Duas listas iguais não precisam redesenhar a fileira. */
     private data class TileSpec(val kind: Kind, val id: String, val label: String)
@@ -53,6 +55,7 @@ class HomeActivity : Activity() {
         val clock: ClockConfig,
         val icons: IconsConfig,
         val tiles: List<TileSpec>,
+        val brand: Boolean,
     )
 
     private lateinit var store: ConfigStore
@@ -65,6 +68,7 @@ class HomeActivity : Activity() {
     private lateinit var date: TextClock
     private lateinit var scroller: HorizontalScrollView
     private lateinit var row: LinearLayout
+    private lateinit var brandMark: View
 
     private var applied: Applied? = null
     private var photoToken = 0
@@ -162,6 +166,9 @@ class HomeActivity : Activity() {
         })
 
         root.addView(column, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        brandMark = BrandMark.create(this, getString(R.string.brand_name), minOf(metrics.screenWidth, metrics.screenHeight))
+        root.addView(brandMark)
         return root
     }
 
@@ -173,13 +180,16 @@ class HomeActivity : Activity() {
             val config = store.load()
             val photo = if (config.wallpaper.type == WallpaperType.PHOTO) store.photoFile(config.wallpaper.photo) else null
             val tiles = buildTileSpecs(config)
-            val next = Applied(config.wallpaper, photo?.lastModified() ?: 0L, config.clock, config.icons, tiles)
+            val next = Applied(config.wallpaper, photo?.lastModified() ?: 0L, config.clock, config.icons, tiles, config.builtin.brand)
             val previous = applied
             if (previous == next) return
             if (previous == null || previous.wallpaper != next.wallpaper || previous.photoStamp != next.photoStamp) {
                 applyWallpaper(config.wallpaper, photo)
             }
             if (previous == null || previous.clock != next.clock) applyClock(config.clock)
+            if (previous == null || previous.brand != next.brand) {
+                brandMark.visibility = if (config.builtin.brand) View.VISIBLE else View.GONE
+            }
             if (previous == null || previous.icons != next.icons || previous.tiles != next.tiles) {
                 rebuildRow(config.icons, tiles)
             }
@@ -194,6 +204,13 @@ class HomeActivity : Activity() {
         val selection = AppSelector.select(repo.installed(), config.apps, packageName)
         val specs = selection.apps.map { TileSpec(Kind.APP, it.packageName, it.label) }.toMutableList()
         if (config.builtin.sleep) specs += TileSpec(Kind.SLEEP, "builtin:sleep", getString(R.string.sleep_tile))
+        // Rede e Entradas só entram se a TV tem uma tela para cada: nunca um círculo que não abre.
+        if (config.builtin.network && SystemScreens.network(packageManager) != null) {
+            specs += TileSpec(Kind.NETWORK, "builtin:network", getString(R.string.network_tile))
+        }
+        if (config.builtin.inputs && SystemScreens.inputs(packageManager) != null) {
+            specs += TileSpec(Kind.INPUTS, "builtin:inputs", getString(R.string.inputs_tile))
+        }
         // A saída de emergência: mesmo sem nenhum app, o botão de Configurações da TV continua ali.
         if (config.builtin.settings || specs.isEmpty()) {
             specs += TileSpec(Kind.SETTINGS, "builtin:settings", getString(R.string.settings_tile))
@@ -274,6 +291,8 @@ class HomeActivity : Activity() {
         Kind.APP -> repo.icon(spec.id)
         Kind.SETTINGS -> getDrawable(R.drawable.ic_settings)
         Kind.SLEEP -> getDrawable(R.drawable.ic_sleep)
+        Kind.NETWORK -> getDrawable(R.drawable.ic_network)
+        Kind.INPUTS -> getDrawable(R.drawable.ic_inputs)
     }
 
     private fun firstTile(): AppTile? = row.getChildAt(0) as? AppTile
@@ -295,6 +314,8 @@ class HomeActivity : Activity() {
                 }
                 Kind.SETTINGS -> openSettings()
                 Kind.SLEEP -> startActivity(Intent(this, SleepActivity::class.java))
+                Kind.NETWORK -> startActivity(SystemScreens.network(packageManager)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: throw ActivityNotFoundException(spec.id))
+                Kind.INPUTS -> startActivity(SystemScreens.inputs(packageManager)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: throw ActivityNotFoundException(spec.id))
             }
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()

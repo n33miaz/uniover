@@ -49,7 +49,20 @@ class ConfigParserTest {
         assertEquals(listOf("com.google.android.youtube.tv", "com.netflix.ninja"), c.apps.items)
         assertEquals(setOf("com.tcl.store", "com.example.bloatware"), c.apps.hidden)
         assertTrue(c.builtin.sleep)
+        assertTrue(c.builtin.network)
+        assertFalse(c.builtin.inputs)
+        assertTrue(c.builtin.brand)
         assertEquals(480, c.sleep.maxMinutes)
+    }
+
+    @Test
+    fun `network, inputs and the system name are on by default and a bad value goes back to that`() {
+        val defaults = LauncherConfig.DEFAULT.builtin
+        assertTrue(defaults.network && defaults.inputs && defaults.brand)
+        val result = parse("""{ "schema": 1, "revision": 0, "builtin": { "network": "sim", "brand": false } }""")
+        assertTrue(result.config!!.builtin.network)
+        assertFalse(result.config!!.builtin.brand)
+        assertEquals(1, result.warnings.size)
     }
 
     @Test

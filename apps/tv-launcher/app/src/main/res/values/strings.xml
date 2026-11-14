@@ -4,5 +4,8 @@
     <string name="sleep_name">Dormir</string>
     <string name="sleep_tile">Dormir</string>
     <string name="settings_tile">Configurações</string>
+    <string name="network_tile">Rede</string>
+    <string name="inputs_tile">Entradas</string>
+    <string name="brand_name">UniOver</string>
     <string name="cannot_open">Não foi possível abrir este app</string>
 </resources>

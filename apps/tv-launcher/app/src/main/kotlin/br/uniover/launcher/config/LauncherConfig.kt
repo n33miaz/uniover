@@ -55,6 +55,12 @@ data class IconsConfig(
 data class BuiltinConfig(
     val settings: Boolean = true,
     val sleep: Boolean = false,
+    /** Círculo "Rede" (a tela de rede da TV) no fim da fileira. */
+    val network: Boolean = true,
+    /** Círculo "Entradas" (HDMI e antena); só aparece se a TV tem uma tela para abrir. */
+    val inputs: Boolean = true,
+    /** O nome do sistema, pequeno, num canto da tela. */
+    val brand: Boolean = true,
 )
 
 data class SleepConfig(val maxMinutes: Int = 0)
