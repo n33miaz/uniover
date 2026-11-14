@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
@@ -213,7 +214,10 @@ public sealed class AgentHubHandoverTests
     /// <summary>Avança o relógio de mentira em passos curtos (o que espera pelo correlator confere a cada 50 ms) até <paramref name="done"/>.</summary>
     private static async Task AdvanceUntil(Rig rig, Task done)
     {
-        for (var i = 0; i < 400 && !done.IsCompleted; i++)
+        // O limite é de tempo real, não de passos: num executor de 2 núcleos, com as outras classes de teste em paralelo, 400 passos
+        // de 5 ms (2 s) acabavam antes de o núcleo chegar a esperar pelo prazo, e a antiga não era fechada a tempo.
+        var limit = Stopwatch.StartNew();
+        while (!done.IsCompleted && limit.Elapsed < TimeSpan.FromSeconds(30))
         {
             rig.Time.Advance(TimeSpan.FromMilliseconds(50));
             await Task.Delay(5, TestContext.Current.CancellationToken);
