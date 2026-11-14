@@ -105,6 +105,15 @@ describe('PcPadSettingsSheet', () => {
     expect(prefs.showTyped()).toBe(false);
   });
 
+  it('the three-finger gestures start off, can be turned on here, and are kept', () => {
+    expect(prefs.threeFingerGestures()).toBe(false);
+    expect(switchOf('Gestos de três dedos').checked).toBe(false);
+    switchOf('Gestos de três dedos').click();
+    expect(prefs.threeFingerGestures()).toBe(true);
+    switchOf('Gestos de três dedos').click();
+    expect(prefs.threeFingerGestures()).toBe(false);
+  });
+
   it('the switch inverts the scroll and turns it back', () => {
     invert().click();
     expect(prefs.invertScroll()).toBe(true);

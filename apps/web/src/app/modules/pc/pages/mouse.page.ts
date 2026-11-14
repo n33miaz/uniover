@@ -21,7 +21,7 @@ import { PcStore } from '../data/pc-store';
 import { PcSwitcher } from '../data/pc-switcher';
 import { PC_MODIFIERS, type PcClickModifier, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
-import { PadButton, PadGesture, PadPoint } from '../input/pad-gesture';
+import { PadButton, PadGesture, PadPoint, SwipeDirection } from '../input/pad-gesture';
 import { ScrollInertia } from '../input/scroll-inertia';
 import { PcActionBar } from '../ui/action-bar';
 import { PcLiveKeyboard } from '../ui/live-keyboard';
@@ -352,6 +352,7 @@ export class MousePage {
     dragEnd: () => this.endHold(),
     scrollEnd: (vx, vy) => this.inertia.start(vx, vy),
     zoom: (steps) => this.store.zoomPointer(steps),
+    threeFingerSwipe: (direction) => this.swipe(direction),
   });
 
   constructor() {
@@ -379,6 +380,8 @@ export class MousePage {
         middleClick: this.prefs.middleClick(),
         // A pinça só vale com um PC que entende o zoom: sem ele os dois dedos se comportam como sempre (rolam, ou clicam).
         pinchZoom: this.prefs.pinchZoom() && this.store.supportsZoom(),
+        // Vale com qualquer PC: os três deslizes são teclas comuns (`pc.key.v1` com modificador), que todo agente entende.
+        threeFingerGestures: this.prefs.threeFingerGestures(),
       }),
     );
     // Com outra conta, ou sem PC, a rolagem que seguia sozinha para.
@@ -407,6 +410,28 @@ export class MousePage {
       // Largar a tela com o botão apertado deixaria o PC arrastando para sempre.
       void this.store.release({ persistent: true });
     });
+  }
+
+  /**
+   * O deslize de três dedos vira um atalho do Windows: para os lados troca de janela (Alt+Tab, e Alt+Shift+Tab para a esquerda),
+   * para cima mostra as janelas (Win+Tab) e para baixo a área de trabalho (Win+D). Teclas comuns, uma só vez por gesto.
+   */
+  private swipe(direction: SwipeDirection): void {
+    tick();
+    switch (direction) {
+      case 'right':
+        this.input.sendKey('TAB', ['ALT']);
+        break;
+      case 'left':
+        this.input.sendKey('TAB', ['ALT', 'SHIFT']);
+        break;
+      case 'up':
+        this.input.sendKey('TAB', ['WIN']);
+        break;
+      case 'down':
+        this.input.sendKey('D', ['WIN']);
+        break;
+    }
   }
 
   protected label(modifier: PcModifier): string {

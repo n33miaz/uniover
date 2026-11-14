@@ -41,6 +41,7 @@ export function setup() {
     dragEnd: vi.fn<PadHandlers['dragEnd']>(),
     scrollEnd: vi.fn<NonNullable<PadHandlers['scrollEnd']>>(),
     zoom: vi.fn<NonNullable<PadHandlers['zoom']>>(),
+    threeFingerSwipe: vi.fn<NonNullable<PadHandlers['threeFingerSwipe']>>(),
   };
   const clock = fakeTimers();
   const gesture = new PadGesture(handlers, DEFAULT_PAD_GESTURE, clock.timers);

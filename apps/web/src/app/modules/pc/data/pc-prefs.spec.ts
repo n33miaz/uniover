@@ -105,6 +105,25 @@ describe('PcPrefs', () => {
     expect(next.customized()).toBe(true);
   });
 
+  it('the three-finger gestures are off until the person turns them on, and the choice is kept', () => {
+    const prefs = fresh();
+    expect(prefs.threeFingerGestures()).toBe(false);
+    expect(prefs.customized()).toBe(false);
+    prefs.set({ threeFingerGestures: true });
+    expect(fresh().threeFingerGestures()).toBe(true);
+    expect(prefs.customized()).toBe(true);
+    prefs.reset();
+    expect(fresh().threeFingerGestures()).toBe(false);
+  });
+
+  it('a stored value for the three-finger gestures that is not a yes or a no goes back to off', () => {
+    localStorage.setItem(
+      pcPrefsStorageKey('pc-user'),
+      JSON.stringify({ threeFingerGestures: 'sim' }),
+    );
+    expect(fresh().threeFingerGestures()).toBe(false);
+  });
+
   it('a scroll sensitivity that makes no sense goes back to normal', () => {
     localStorage.setItem(
       pcPrefsStorageKey('pc-user'),

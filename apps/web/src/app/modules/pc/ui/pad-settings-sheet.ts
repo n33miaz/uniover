@@ -43,6 +43,7 @@ type SwitchName =
   | 'doubleTapDrag'
   | 'middleClick'
   | 'pinchZoom'
+  | 'threeFingerGestures'
   | 'clickButtons'
   | 'haptics'
   | 'keepAwake';
@@ -216,6 +217,10 @@ export class PcPadSettingsSheet {
         label: $localize`:@@pc.settings.middle-click:Clique do meio com três dedos`,
       },
       { name: 'pinchZoom', label: $localize`:@@pc.settings.pinch-zoom:Pinça para zoom` },
+      {
+        name: 'threeFingerGestures',
+        label: $localize`:@@pc.settings.three-finger:Gestos de três dedos`,
+      },
       { name: 'clickButtons', label: $localize`:@@pc.settings.click-buttons:Botões de clique` },
       // O iPhone não vibra: o ajuste só aparece onde existe.
       ...(canVibrate()

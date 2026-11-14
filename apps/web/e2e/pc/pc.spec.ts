@@ -1731,7 +1731,9 @@ test.describe('Energia', () => {
           .getByRole('button', { name: label, exact: true })
           .click();
         await expect.poll(() => pc.sent('/power')).toEqual([{ action: code, confirm: true }]);
-        await expect(page.getByRole('button', { name: /^Cancelar (Desligamento|Reinício)$/ })).toHaveCount(0);
+        await expect(
+          page.getByRole('button', { name: /^Cancelar (Desligamento|Reinício)$/ }),
+        ).toHaveCount(0);
       });
     }
 
@@ -2459,6 +2461,116 @@ test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
     ]);
     await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'LEFT' }, { button: 'LEFT' }]);
     await expect(page.locator('.armed')).toContainText('Ctrl');
+  });
+});
+
+test.describe('Gestos de três dedos', () => {
+  /** Três dedos lado a lado que andam juntos `dx`, `dy` pixels. */
+  async function swipe(page: Page, dx: number, dy: number) {
+    const { x, y } = await padCenter(page);
+    const ids = [1, 2, 3];
+    const offsets = [-40, 0, 40];
+    const steps: FingerStep[] = ids.map((id, i) => ({ type: 'down', id, x: x + offsets[i], y }));
+    const moves = 8;
+    for (let step = 1; step <= moves; step++) {
+      ids.forEach((id, i) =>
+        steps.push({
+          type: 'move',
+          id,
+          x: x + offsets[i] + (dx * step) / moves,
+          y: y + (dy * step) / moves,
+          ...(i === 0 ? { wait: 16 } : {}),
+        }),
+      );
+    }
+    ids.forEach((id, i) =>
+      steps.push({
+        type: 'up',
+        id,
+        x: x + offsets[i] + dx,
+        y: y + dy,
+        ...(i === 0 ? { wait: 16 } : {}),
+      }),
+    );
+    await fingers(page, steps);
+  }
+
+  async function turnOn(page: Page) {
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Ajustes' });
+    await sheet.getByRole('button', { name: 'Mais Ajustes' }).click();
+    await sheet.getByRole('switch', { name: 'Gestos de três dedos' }).click();
+    await sheet.getByRole('button', { name: 'Fechar' }).click();
+    await expect(sheet).toHaveCount(0);
+  }
+
+  test('vêm desligados: três dedos andando não trocam de janela, rolam como sempre', async ({
+    page,
+  }) => {
+    await openPc(page);
+    await swipe(page, 0, 120);
+    await expect.poll(() => pc.sent('/pointer').length).toBeGreaterThan(0);
+    expect(pc.sent('/pointer').some((body) => Number(body['scrollY']) !== 0)).toBe(true);
+    expect(pc.sent('/key')).toEqual([]);
+  });
+
+  test('vêm desligados: o toque de três dedos segue sendo o clique do meio', async ({ page }) => {
+    await openPc(page);
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x: x - 40, y },
+      { type: 'down', id: 2, x, y },
+      { type: 'down', id: 3, x: x + 40, y },
+      { type: 'up', id: 1, x: x - 40, y, wait: 40 },
+      { type: 'up', id: 2, x, y },
+      { type: 'up', id: 3, x: x + 40, y },
+    ]);
+    await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'MIDDLE' }]);
+    expect(pc.sent('/key')).toEqual([]);
+  });
+
+  test('ligados nos ajustes, cada deslize vira o atalho do Windows, uma vez só', async ({
+    page,
+  }, info) => {
+    await openPc(page);
+    await turnOn(page);
+    await swipe(page, 120, 0);
+    await swipe(page, -120, 0);
+    await swipe(page, 0, -120);
+    await swipe(page, 0, 120);
+    await expect
+      .poll(() => pc.sent('/key'))
+      .toEqual([
+        { key: 'TAB', modifiers: ['ALT'] },
+        { key: 'TAB', modifiers: ['ALT', 'SHIFT'] },
+        { key: 'TAB', modifiers: ['WIN'] },
+        { key: 'D', modifiers: ['WIN'] },
+      ]);
+    expect(pc.sent('/pointer')).toEqual([]);
+    expect(pc.sent('/click')).toEqual([]);
+    await page.getByRole('button', { name: 'Ajustes do touchpad' }).click();
+    await page
+      .getByRole('dialog', { name: 'Ajustes' })
+      .getByRole('button', { name: 'Mais Ajustes' })
+      .click();
+    await settle(page);
+    await screenshot(page, join(SHOTS, `pc-tres-dedos-${info.project.name}.png`));
+  });
+
+  test('ligados, o toque de três dedos continua sendo o clique do meio', async ({ page }) => {
+    await openPc(page);
+    await turnOn(page);
+    const { x, y } = await padCenter(page);
+    await fingers(page, [
+      { type: 'down', id: 1, x: x - 40, y },
+      { type: 'down', id: 2, x, y },
+      { type: 'down', id: 3, x: x + 40, y },
+      { type: 'up', id: 1, x: x - 40, y, wait: 40 },
+      { type: 'up', id: 2, x, y },
+      { type: 'up', id: 3, x: x + 40, y },
+    ]);
+    await expect.poll(() => pc.sent('/click')).toEqual([{ button: 'MIDDLE' }]);
+    expect(pc.sent('/key')).toEqual([]);
   });
 });
 

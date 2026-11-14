@@ -32,6 +32,8 @@ export interface PcPrefsValue {
   readonly haptics: boolean;
   /** A pinça de dois dedos vira zoom no PC (só com um PC que entende o zoom; a rolagem de dois dedos segue igual). */
   readonly pinchZoom: boolean;
+  /** Gestos de três dedos: andar juntos troca a janela (para os lados), mostra as janelas (para cima) ou a área de trabalho (para baixo). Desligados por padrão: três dedos seguem sendo só o clique do meio. */
+  readonly threeFingerGestures: boolean;
   /** Mostra os botões Esquerdo, Arrastar e Direito embaixo da superfície (para quem não usa os gestos). */
   readonly clickButtons: boolean;
   /** Mantém a tela do aparelho acesa enquanto o touchpad está aberto. */
@@ -55,6 +57,7 @@ export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   doubleTapDrag: false,
   middleClick: true,
   pinchZoom: true,
+  threeFingerGestures: false,
   haptics: true,
   clickButtons: false,
   keepAwake: true,
@@ -93,6 +96,7 @@ function parsePrefs(raw: unknown): PcPrefsValue {
     doubleTapDrag: flag('doubleTapDrag'),
     middleClick: flag('middleClick'),
     pinchZoom: flag('pinchZoom'),
+    threeFingerGestures: flag('threeFingerGestures'),
     haptics: flag('haptics'),
     clickButtons: flag('clickButtons'),
     keepAwake: flag('keepAwake'),
@@ -140,6 +144,7 @@ const CHOICES = [
   'doubleTapDrag',
   'middleClick',
   'pinchZoom',
+  'threeFingerGestures',
   'haptics',
   'clickButtons',
   'keepAwake',
@@ -167,6 +172,7 @@ export class PcPrefs {
   readonly doubleTapDrag = computed(() => this.value().doubleTapDrag);
   readonly middleClick = computed(() => this.value().middleClick);
   readonly pinchZoom = computed(() => this.value().pinchZoom);
+  readonly threeFingerGestures = computed(() => this.value().threeFingerGestures);
   readonly haptics = computed(() => this.value().haptics);
   readonly clickButtons = computed(() => this.value().clickButtons);
   readonly keepAwake = computed(() => this.value().keepAwake);
