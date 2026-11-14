@@ -116,7 +116,11 @@
 </ng-template>
 
 <ng-template #roundButtons>
-  <div class="round-grid" [attr.data-cols]="roundKeys.gridColumns()">
+  <div
+    class="round-grid"
+    [attr.data-cols]="roundKeys.gridColumns()"
+    [attr.data-rows]="roundRows() > 1 ? roundRows() : null"
+  >
     <button
       type="button"
       class="round"

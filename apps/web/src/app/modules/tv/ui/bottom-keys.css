@@ -85,6 +85,14 @@ button:disabled,
   align-content: center;
   justify-items: center;
 }
+/*
+ * Com duas fileiras de botões ou mais (`data-rows`), elas ocupam exatamente a altura das pílulas: a de cima encosta no topo
+ * delas e a de baixo na base, e o espaço que sobra fica entre as fileiras (antes o conjunto ficava solto no meio, com topo e
+ * base uns 8 px para dentro). Uma fileira só continua no meio. Em fileira (Personalizar) o bloco tem a altura dos botões.
+ */
+.round-grid[data-rows] {
+  align-content: space-between;
+}
 /* Sem as teclas de mídia sobram quatro botões: duas colunas, em vez de uma fileira solta entre as pílulas. */
 .round-grid[data-cols='2'] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -142,14 +150,13 @@ button:disabled,
   font-weight: 700;
   letter-spacing: 0.08em;
 }
-.level strong {
-  color: var(--a-ink);
+/* Sem nível a mostrar o ícone ocupa o lugar do número, no mesmo tamanho, para a pílula não mudar de altura. */
+.level strong,
+.level .unread {
   font-size: calc(1.15rem * var(--key-scale));
 }
-/* Sem nível a mostrar o ícone ocupa o lugar do número, no mesmo tamanho, para a pílula não mudar de altura. */
-.level .unread {
-  color: var(--a-ink2);
-  font-size: calc(1.15rem * var(--key-scale));
+.level strong {
+  color: var(--a-ink);
 }
 /* Esqueleto do nível: a altura do número, para a pílula não mudar de tamanho quando a leitura chegar. */
 .level-skeleton {
