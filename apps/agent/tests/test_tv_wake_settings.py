@@ -5,6 +5,7 @@ abaixo segue a forma do comando (uma linha rotulada por leitura); os valores sã
 C06 em 09/11 (`smart_audio_switch` era `null` antes de ligado, `persist.tcl.powerloss=true`).
 """
 
+import asyncio
 from datetime import date
 
 import pytest
@@ -287,6 +288,44 @@ async def test_the_next_day_reads_again(monkeypatch: pytest.MonkeyPatch) -> None
     assert check.hints == (SCREENLESS_OFF,)
 
 
+async def test_an_adb_opened_without_the_person_runs_the_days_evaluation_without_a_session() -> (
+    None
+):
+    adb = FakeTvAdb()
+    adb.wake = WakeSettings(tcl=True, screenless=False, power_restore=True)
+    check = WakeSettingsCheck(adb)
+    scheduler, _ = make_scheduler(adb, check)
+
+    # Nenhuma sessão abriu por um comando (`note_session_opened` não rodou), mas o canal abriu.
+    await scheduler.run_after_adb_opened()
+    assert adb.cleanup_log == ["wake-settings"]
+    assert check.hints == (SCREENLESS_OFF,)
+
+    await scheduler.run_after_adb_opened()  # o dia já foi conferido: nada se repete
+    assert adb.cleanup_log == ["wake-settings"]
+
+
+async def test_the_timer_and_an_unattended_opening_never_evaluate_at_the_same_time() -> None:
+    adb = FakeTvAdb()
+    check = WakeSettingsCheck(adb)
+    scheduler, _ = make_scheduler(adb, check)
+    inside = 0
+    peak = 0
+
+    async def slow_check() -> bool:
+        nonlocal inside, peak
+        inside += 1
+        peak = max(peak, inside)
+        await asyncio.sleep(0.01)
+        inside -= 1
+        return True
+
+    scheduler._wake_check = slow_check
+    scheduler.note_session_opened(1)
+    await asyncio.gather(scheduler.run_pending(), scheduler.run_after_adb_opened())
+    assert peak == 1
+
+
 # --- até o app ------------------------------------------------------------------------------
 
 
@@ -330,3 +369,26 @@ async def test_an_older_api_never_gets_the_field() -> None:
     publisher, transport = make_publisher(check, supported=False)
     await publisher.announce(TvState("on", 10, None, "hot"))
     assert "wakeHints" not in transport.sent[0]["body"]
+
+
+async def test_an_unattended_opening_never_runs_the_deep_cleanup() -> None:
+    adb = FakeTvAdb()
+    check = WakeSettingsCheck(adb)
+    scheduler, _ = make_scheduler(adb, check)
+    deep_runs = 0
+
+    async def deep() -> None:
+        nonlocal deep_runs
+        deep_runs += 1
+
+    scheduler._run_deep = deep  # type: ignore[method-assign]
+    scheduler.configure(True, True, 160, True)
+    scheduler.note_session_opened(60.0)  # uma sessão lenta arma a leve e a profunda
+    assert scheduler._pending_deep is True
+
+    await scheduler.run_after_adb_opened()
+    assert deep_runs == 0  # a que fecha apps espera a pessoa usar a TV
+    assert scheduler._pending_deep is True
+
+    await scheduler.run_pending()  # com a pessoa, a profunda roda como sempre
+    assert deep_runs == 1

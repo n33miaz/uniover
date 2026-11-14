@@ -32,6 +32,50 @@ ADB_FAILED: Final = "adb_failed"
 # esperando o aceite). Quem sabe é o adaptador do ADB; o resto só ouve (ver `AdbPermissionSink`).
 AdbPermissionState = Literal["granted", "missing", "pending"]
 
+# O que a sonda silenciosa diz da chave do PC (ver `adapters/adb_silent_probe.py`). Só `authorized`
+# libera uma conexão sozinha, sem ninguém pedindo pelo app. `skipped` é de quem pergunta: a sonda
+# nem rodou (limite de frequência, comando do dono em andamento) e nada se prova.
+PROBE_AUTHORIZED: Final = "authorized"
+PROBE_UNAUTHORIZED: Final = "unauthorized"
+PROBE_TLS_REQUIRED: Final = "tls_required"
+PROBE_UNREACHABLE: Final = "unreachable"
+PROBE_UNKNOWN: Final = "unknown"
+PROBE_SKIPPED: Final = "skipped"
+
+# Eventos de uma abertura sem a pessoa que pararam antes do `adb connect` e que o diagnóstico conta
+# (um texto fixo por código, sem endereço nem MAC).
+PROBE_EVENT_MISMATCH: Final = "mismatch"  # a TV aceita o adb mas recusou a chave da sonda
+PROBE_EVENT_KEY_CHANGED: Final = "key_changed"  # a chave do arquivo não é a que a sonda provou
+PROBE_EVENT_KEY_STALE: Final = "key_stale"  # o servidor adb pode ter outra chave em memória
+PROBE_EVENT_VENDOR_KEYS: Final = "vendor_keys"  # `ADB_VENDOR_KEYS` põe outras chaves no adb
+PROBE_EVENT_KEY_UNVERIFIABLE: Final = "key_unverifiable"  # não deu para conferir a chave do adb
+PROBE_EVENT_MAC_CHANGED: Final = "mac_changed"  # outro aparelho passou a responder no endereço
+PROBE_EVENT_HOST_NOT_NUMERIC: Final = "host_not_numeric"  # só IP numérico se religa sem a pessoa
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeVerdict:
+    """O que a sonda disse, e a chave que assinou (para provar que o `adb` usa a mesma).
+
+    `key_fingerprint` é o SHA-256 (hex) da chave pública derivada da chave privada que assinou o
+    token; `None` quando nenhuma assinatura foi feita (uma TV sem autenticação) ou a sonda não
+    liberou.
+    """
+
+    result: str
+    key_fingerprint: str | None = None
+
+
+# Pergunta, naquele momento, se a TV aceita a chave sem abrir aviso.
+AdbClearance = Callable[[], Awaitable[ProbeVerdict]]
+
+# Logo antes do `adb connect`: a chave que o `adb` vai usar ainda é a que a sonda provou? Devolve
+# o código (`PROBE_EVENT_*`) do motivo para não conectar, ou `None` se está tudo certo.
+AdbKeyCheck = Callable[[str | None], Awaitable[str | None]]
+
+# Avisa o diagnóstico de um `PROBE_EVENT_*` (a abertura parou antes do `adb connect`).
+AdbProbeEvent = Callable[[str], None]
+
 
 class AdbPermissionSink(Protocol):
     """Quem fica sabendo quando a permissão do ADB muda (o app avisa a pessoa pelo celular)."""

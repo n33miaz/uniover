@@ -628,7 +628,9 @@ from uniover_agent.adapters.self_update import self_update
 source, archive, sha = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 # Sem assinatura ativa a conferência da árvore do commit é obrigatória; o commit do teste não existe
 # no GitHub, então a árvore verdadeira (a dos arquivos do pacote) é servida aqui.
-tree = json.loads(sys.argv[5])
+# A árvore vai por arquivo: com a lista de todos os arquivos do agente a linha de comando passava
+# do limite do Windows (WinError 206).
+tree = json.loads(Path(sys.argv[5]).read_text(encoding="utf-8"))
 module.fetch_git_tree = lambda commit: tree
 
 def check(candidate):
@@ -656,6 +658,8 @@ def test_the_code_published_in_develop_updates_itself_into_this_version(tmp_path
     script = tmp_path / "old_update.py"
     script.write_text(OLD_SUPERVISED_UPDATE, encoding="utf-8")
     tree = {path: hashes[0] for path, hashes in agent_blob_hashes(archive).items()}
+    tree_file = tmp_path / "tree.json"
+    tree_file.write_text(json.dumps(tree), encoding="utf-8")
 
     done = subprocess.run(  # noqa: S603 - o próprio interpretador, script do teste
         [
@@ -665,7 +669,7 @@ def test_the_code_published_in_develop_updates_itself_into_this_version(tmp_path
             str(archive),
             NEW,
             CANDIDATE_CHECK,
-            json.dumps(tree),
+            str(tree_file),
         ],
         check=False,
         env={**os.environ, "PYTHONPATH": str(old_src)},

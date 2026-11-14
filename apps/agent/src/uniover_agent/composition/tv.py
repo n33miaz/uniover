@@ -1,6 +1,7 @@
 """Montagem da TV (Android TV e Samsung), pareamento e varredura da rede."""
 
 import asyncio
+import ipaddress
 import logging
 import re
 import sys
@@ -11,7 +12,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys, resolve_tv_mac
+from uniover_agent.adapters.adb_authorization import (
+    KEY_FILE,
+    AdbAuthorization,
+    AdbKeys,
+    default_android_dir,
+    resolve_tv_mac,
+)
+from uniover_agent.adapters.adb_probe_times_file import AdbProbeTimesFile
+from uniover_agent.adapters.adb_silent_probe import (
+    ProbeResult,
+    adbkey_unsafe_reason,
+    load_agent_adbkey,
+    public_key_fingerprint,
+)
+from uniover_agent.adapters.adb_silent_probe import probe as silent_adb_probe
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
     FileIconCache,
@@ -107,6 +122,7 @@ from uniover_agent.core import (
     user_initiated,
 )
 from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
+from uniover_agent.core.tv.adb_silent_link import AdbSilentLink
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import (
     LivreStateFile,
@@ -118,9 +134,16 @@ from uniover_agent.core.tv.livre import (
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY, TvPairing
 from uniover_agent.core.tv.wake_settings import WakeSettingsCheck
 from uniover_agent.ports import (
+    PROBE_EVENT_KEY_CHANGED,
+    PROBE_UNKNOWN,
+    AdbClearance,
+    AdbIdle,
+    AdbKeyCheck,
     AdbPermissionSink,
+    AdbProbeEvent,
     AdbUnauthorized,
     Clock,
+    ProbeVerdict,
     SecretStore,
     Transport,
     TransportError,
@@ -179,6 +202,14 @@ class TvSetup:
     adb_declared: list[Callable[[], None]] = field(default_factory=list)
     # Rodam ao encerrar o agente (cancelam o que ficou agendado).
     closers: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+    # Há um comando do dono em andamento? Quem monta o processamento de mensagens o preenche: a
+    # sonda silenciosa do ADB nunca roda durante um comando dele.
+    owner_busy: Callable[[], bool] = lambda: False
+    # Religa o ADB sem a pessoa se a sonda silenciosa provar a permissão (a TV foi reencontrada).
+    # Só pede e volta: o trabalho segue em segundo plano. `None` sem ADB ou com a opção desligada.
+    reconnect_adb: Callable[[str], None] | None = None
+    # A sonda silenciosa e o último resultado dela (o diagnóstico a anota).
+    adb_link: AdbSilentLink | None = None
 
 
 def build_tv(
@@ -633,11 +664,15 @@ def build_adb(  # noqa: PLR0913 - todos são configuração independente
     *,
     monotonic: Callable[[], float] = time.monotonic,
     permission: AdbPermissionSink | None = None,
+    silent_clearance: AdbClearance | None = None,
+    key_check: AdbKeyCheck | None = None,
+    on_probe_event: AdbProbeEvent | None = None,
 ) -> AdbTv:
     """O único lugar que monta um `AdbTv`: sempre com a trava (registro da permissão por TV).
 
     O registro lembra se a TV já deu e provou a permissão a esta chave; enquanto não, e fora do
     uso da TV pelo app, o agente nunca conecta sozinho (cada conexão faria o aviso aparecer).
+    `silent_clearance` (a sonda silenciosa) é a única forma de conectar sem a pessoa usando a TV.
     """
     return AdbTv(
         path,
@@ -656,6 +691,9 @@ def build_adb(  # noqa: PLR0913 - todos são configuração independente
         pull_timeout=settings.adb_pull_timeout_seconds,
         monotonic=monotonic,
         permission=permission,
+        silent_clearance=silent_clearance,
+        key_check=key_check,
+        on_probe_event=on_probe_event,
     )
 
 
@@ -692,6 +730,8 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     setup.silent_commands.add(PRESENCE_TYPE)
     # O estado da permissão do ADB (granted, missing, pending) vai ao app dentro do `tv.state.v1`.
     setup.adb_permission = AdbPermissionTracker()
+    silent = build_silent_link(setup, settings, host, clock)
+    link = silent[0] if silent is not None else None
     adb = build_adb(
         path,
         host,
@@ -699,6 +739,9 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         setup.activity.recent,
         monotonic=clock.monotonic,
         permission=setup.adb_permission,
+        silent_clearance=link.clearance if link is not None else None,
+        key_check=silent[1] if silent is not None else None,
+        on_probe_event=link.note_event if link is not None else None,
     )
     manager = setup.manager
     # O ADB abre nas funções avançadas. Sua espera não pode atrasar o controle remoto.
@@ -740,13 +783,30 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     manager.on_session_opened(wake_check.tv_answered)
     manager.on_wake_failed(wake_check.wake_failed)
 
-    async def read_wake_settings() -> bool:
-        # Só com a permissão do ADB já dada: a leitura nunca é o que faz a TV pedir permissão, nem
-        # muda o que o app mostra sobre ela.
-        permission = setup.adb_permission
-        if permission is None or permission.state != "granted":
+    async def silently(
+        reason: str, work: Callable[[], Awaitable[None]], *, retry: bool = True
+    ) -> bool:
+        """Abre o ADB sem a pessoa só para `work` e o fecha (a sonda silenciosa autoriza)."""
+        if link is None:
             return False
-        return await wake_check.check()
+        return await link.run(adb.unattended, work, reason, retry=retry)
+
+    async def read_wake_settings() -> bool:
+        # Com o canal já aberto pela pessoa basta ler. Sem ele, só depois de a sonda silenciosa
+        # provar, agora, que a TV aceita a chave (o `granted` guardado aqui não prova que ela ainda
+        # a guarda), e o canal fecha logo depois da leitura: a leitura nunca é o que faz a TV pedir
+        # permissão, nem muda o que o app mostra sobre ela. Sem prova o dia fica em aberto e a
+        # próxima sessão tenta de novo.
+        if adb.connected:
+            return await wake_check.check()
+        answered = False
+
+        async def read() -> None:
+            nonlocal answered
+            answered = await wake_check.check()
+
+        await silently("daily_check", read, retry=False)
+        return answered
 
     scheduler = TvCleanupScheduler(
         cleanup,
@@ -760,6 +820,35 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         wake_check=read_wake_settings,
         adb_connected=lambda: adb.connected,
     )
+
+    reconnects: set[asyncio.Task[None]] = set()
+
+    async def reconnect_in_background(reason: str) -> None:
+        try:
+            # O canal abre só para a avaliação do dia (ajustes de ligar pela rede, app da frente) e
+            # fecha quando ela termina: a abertura sem a pessoa não passa por `note_session_opened`.
+            await silently(reason, scheduler.run_after_adb_opened)
+        except Exception:
+            _log.exception("falha ao religar o ADB sozinho")
+
+    def request_reconnect(reason: str) -> None:
+        if link is None or adb.connected:
+            return
+        task = asyncio.get_running_loop().create_task(reconnect_in_background(reason))
+        reconnects.add(task)
+        task.add_done_callback(reconnects.discard)
+
+    async def close_silent_link() -> None:
+        # Antes de fechar o ADB: a abertura em andamento é cancelada e se desfaz (adb disconnect).
+        if link is not None:
+            await link.aclose()
+        pending = list(reconnects)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    setup.reconnect_adb = request_reconnect if link is not None else None
+    setup.closers.insert(0, close_silent_link)
 
     async def configure_cleanup(command: Command) -> CommandResult:
         body = command.body
@@ -828,6 +917,10 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
                 "Nenhum aviso é aberto sozinho; a lista de apps fica desligada até lá",
                 reason or "desconhecido",
             )
+        except AdbIdle:
+            # Só faltou a pessoa usando a TV: se a sonda silenciosa provar a permissão agora, o
+            # canal abre sozinho (em segundo plano, sem segurar a partida com a espera da TV).
+            request_reconnect("start")
         except Exception as exc:
             _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
         declare_adb_capabilities()
@@ -835,6 +928,83 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     setup.prepare.append(declare_when_usable)
     compose_livre(setup, settings, adb, host, clock)
     return adb
+
+
+async def tv_is_back(setup: TvSetup) -> None:
+    """A TV voltou a responder: reabre a sessão e, depois, tenta religar o ADB sem a pessoa.
+
+    O religamento do ADB não depende da sessão: `reopen_unattended` pode voltar cedo (já tentou sem
+    ninguém) ou falhar (serviço do controle fora), e o ADB ainda assim vale a tentativa. Ele só abre
+    se a sonda silenciosa provar a permissão agora (nunca abre o aviso na TV).
+    """
+    try:
+        await setup.manager.reopen_unattended()
+    finally:
+        if setup.reconnect_adb is not None:
+            setup.reconnect_adb("tv_back")
+
+
+def build_silent_link(
+    setup: TvSetup, settings: Settings, host: str, clock: Clock
+) -> tuple[AdbSilentLink, AdbKeyCheck] | None:
+    """A sonda silenciosa do ADB, o limite de frequência e a conferência da chave.
+
+    A sonda assina o token da TV com a mesma chave que o `adb` usa e nunca oferece a chave pública:
+    não abre o aviso de permissão. Devolve também a conferência que o adaptador faz logo antes do
+    `adb connect` (a chave do arquivo ainda é a que assinou, e o servidor do `adb` a carregou).
+    `None` com a opção desligada.
+    """
+    if not settings.adb_silent_link:
+        return None
+    port = settings.tv_adb_port
+    try:
+        canonical = ipaddress.ip_address(host).compressed
+    except ValueError:
+        canonical = host.lower()  # um nome: o adaptador nem abre sem a pessoa (ver `AdbTv`)
+
+    async def probe() -> ProbeVerdict:
+        # O portão do adaptador já restaurou a chave sumida (`AdbAuthorization.prepare`) antes.
+        unsafe = await adbkey_unsafe_reason(default_android_dir() / KEY_FILE)
+        if unsafe is not None:
+            link.note_event(unsafe)
+            return ProbeVerdict(PROBE_UNKNOWN)
+        signed: list[str | None] = []
+
+        def load() -> bytes:
+            data = load_agent_adbkey()
+            signed.append(public_key_fingerprint(data))
+            return data
+
+        result = await silent_adb_probe(host, port, load, settings.adb_probe_timeout_seconds)
+        fingerprint = signed[-1] if signed else None
+        authorized = result is ProbeResult.AUTHORIZED
+        return ProbeVerdict(str(result), fingerprint if authorized else None)
+
+    async def key_check(expected: str | None) -> str | None:
+        if expected is None:
+            return None  # a TV não pediu assinatura: nenhuma chave entrou na prova
+        path = default_android_dir() / KEY_FILE
+        try:
+            current = public_key_fingerprint(await asyncio.to_thread(path.read_bytes))
+        except OSError:
+            return PROBE_EVENT_KEY_CHANGED
+        if current != expected:
+            return PROBE_EVENT_KEY_CHANGED
+        return await adbkey_unsafe_reason(path)
+
+    link = AdbSilentLink(
+        f"{canonical}:{port}",
+        probe,
+        clock.monotonic,
+        # Liga tarde: `setup.owner_busy` só recebe o processamento de mensagens depois.
+        owner_busy=lambda: setup.owner_busy(),  # noqa: PLW0108
+        min_interval_seconds=settings.adb_probe_interval_seconds,
+        sleep=clock.sleep,
+        wall_clock=lambda: clock.now().timestamp(),
+        store=AdbProbeTimesFile(installation_base() / "runtime"),
+    )
+    setup.adb_link = link
+    return link, key_check
 
 
 def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clock: Clock) -> None:

@@ -237,6 +237,15 @@ class ProcessMessage:
             # desconhecido): no próprio leitor, sem esperar nada que esteja na TV.
             await self._execute(command)
 
+    def command_in_flight(self) -> bool:
+        """Há um comando do dono da TV executando agora (numa tarefa que ainda não terminou)?
+
+        Quem quer falar com a TV por conta própria (a sonda silenciosa do ADB) espera por isto: o
+        comando dele tem a vez, e a TV tem pouca memória. Comandos de presença e os do PC não
+        contam (a presença responde no próprio leitor; o PC tem a faixa dele).
+        """
+        return any(not task.done() for task in self._unanswered)
+
     async def _is_repeat(self, command: Command) -> bool:
         """O mesmo id já chegou nos últimos 2 minutos: não executa de novo.
 

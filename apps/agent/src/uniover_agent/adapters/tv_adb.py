@@ -14,16 +14,18 @@ Regras que moldam este adaptador:
 """
 
 import asyncio
+import ipaddress
 import logging
 import os
 import re
 import shutil
 import sys
 import time
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import replace
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
 from uniover_agent.adapters.adb_authorization import (
     GATE_DEVICE_CHANGED,
@@ -66,13 +68,23 @@ from uniover_agent.adapters.tv_adb_parsing import (
 )
 from uniover_agent.core.priority_lock import PriorityLock
 from uniover_agent.ports import (
+    PROBE_AUTHORIZED,
+    PROBE_EVENT_HOST_NOT_NUMERIC,
+    PROBE_EVENT_KEY_UNVERIFIABLE,
+    PROBE_EVENT_MAC_CHANGED,
+    PROBE_EVENT_MISMATCH,
+    PROBE_UNAUTHORIZED,
+    PROBE_UNKNOWN,
+    AdbClearance,
     AdbCommandFailed,
     AdbDeviceChanged,
     AdbError,
     AdbIdentityUnconfirmed,
     AdbIdle,
+    AdbKeyCheck,
     AdbPermissionSink,
     AdbPermissionState,
+    AdbProbeEvent,
     AdbTimeout,
     AdbUnauthorized,
     AdbUnavailable,
@@ -164,8 +176,18 @@ _IDLE_MESSAGE: Final = "o ADB só abre conexão nova enquanto alguém usa a TV p
 _NOT_CONNECTED_MESSAGE: Final = "o ADB não está conectado, e a leitura automática não abre conexão"
 _IDENTITY_MESSAGE: Final = "não deu para confirmar qual aparelho responde aqui; peça pelo app"
 _DEVICE_MESSAGE: Final = "outro aparelho responde no endereço da TV; o ADB não se conecta a ele"
+_PROBE_REFUSED_MESSAGE: Final = "a TV não reconhece a chave do PC (sonda silenciosa)"
+_PROBE_NOT_CLEARED_MESSAGE: Final = "a sonda silenciosa não provou a permissão agora"
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
+
+
+@dataclass(frozen=True, slots=True)
+class _ProbeProof:
+    """O que a sonda provou e que a conexão sem a pessoa precisa encontrar igual no fim."""
+
+    mac: str
+    key_fingerprint: str | None
 
 
 def locate_adb(configured: str | None) -> Path | None:
@@ -246,8 +268,12 @@ class AdbTv:
         close_wait_seconds: float = DEFAULT_CLOSE_WAIT_SECONDS,
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
         permission: AdbPermissionSink | None = None,
+        silent_clearance: AdbClearance | None = None,
+        key_check: AdbKeyCheck | None = None,
+        on_probe_event: AdbProbeEvent | None = None,
     ) -> None:
         self._adb = str(adb_path)
+        self._host = host
         self._serial = f"{host}:{port}"
         self._timeout = timeout
         self._retry_after = retry_after
@@ -284,6 +310,21 @@ class AdbTv:
         self._permission_state: str | None = None
         # Por que a última recusa do portão (`_may_connect`) aconteceu.
         self._gate_reason = GATE_OTHER
+        # A sonda silenciosa (ver `connect_unattended`): sem ela, nenhuma conexão dispensa a
+        # presença da pessoa. `_unattended` só vale dentro de `connect_unattended` (com a trava).
+        self._silent_clearance = silent_clearance
+        self._key_check = key_check
+        self._on_probe_event = on_probe_event
+        self._unattended = False
+        self._probe_verdict: str | None = None
+        # De onde veio o transporte aberto: só `True` para o aberto por `unattended()`, que é
+        # de curta duração e nunca é mantido (nem na hibernação, nem no encerramento).
+        self._unattended_transport = False
+        # Já se chegou a rodar `adb connect` nesta abertura sem a pessoa (um tempo esgotado pode
+        # ter deixado o transporte no servidor do `adb`, e ele precisa ser desfeito).
+        self._connect_attempted = False
+        self._proof: _ProbeProof | None = None
+        self._close_task: asyncio.Task[None] | None = None
         self._lost_from: str | None = None
         # O MAC lido uma vez por operação de conexão (a sondagem de rede custa até 1,5 s com a TV
         # desligada): `_UNREAD` fora de uma operação.
@@ -312,6 +353,103 @@ class AdbTv:
         async with self._lock:
             await self._connect_locked()
 
+    @asynccontextmanager
+    async def unattended(self) -> AsyncIterator[None]:
+        """Abre o canal sem ninguém usando a TV, **só** para uma leitura curta, e o fecha no fim.
+
+        É a única conexão que dispensa a presença da pessoa, e só vale depois de a sonda silenciosa
+        provar a permissão agora. O portão (`_may_connect`) mantém tudo o que já exigia (permissão
+        provada para esta chave, este endereço e este aparelho) e troca só a presença pela sonda,
+        que roda por último; antes do `adb connect` ainda se confere de novo o aparelho (MAC) e a
+        chave. `authorized` conecta; os outros resultados não conectam e não abrem aviso. Sem sonda
+        injetada nada conecta.
+
+        Quem entra no bloco usa o canal e sai: o `adb disconnect` roda **sempre** no fim (sucesso,
+        erro, tempo esgotado ou cancelamento) e nada daqui é mantido (nem a hibernação nem o
+        encerramento o preservam): uma conexão feita sem a pessoa e deixada aberta seria religada
+        pelo servidor do `adb` depois de a TV revogar a chave, e a religação mostraria o aviso. Se o
+        canal já está aberto pelo uso da pessoa, ele é usado e **não** é desconectado.
+        """
+        opened = await self._open_unattended()
+        try:
+            yield
+        finally:
+            if opened:
+                await self._close_unattended()
+
+    async def _open_unattended(self) -> bool:
+        """Abre o transporte sem a pessoa. `True` se foi esta chamada que o abriu (e fecha)."""
+        if self._silent_clearance is None or self._key_check is None:
+            raise AdbIdle(_IDLE_MESSAGE)
+        if self._watching_for_acceptance():
+            raise AdbIdle(_IDLE_MESSAGE)
+        if not self._host_is_numeric():
+            self._probe_event(PROBE_EVENT_HOST_NOT_NUMERIC)
+            raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
+        async with self._lock:
+            if self._connected:
+                return False  # aberto pela pessoa (ou por outra sessão sem ela, que o fecha)
+            self._unattended = True
+            self._connect_attempted = False
+            self._proof = None
+            try:
+                await self._connect_locked()
+                if not self._connected:
+                    raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
+            except BaseException:
+                # Um `adb connect` que deu tempo esgotado (ou foi cancelado) pode ter deixado o
+                # transporte no servidor do `adb`: nada disso fica.
+                self._connected = False
+                if self._connect_attempted:
+                    await self._shielded(self._disconnect_locked())
+                raise
+            finally:
+                self._unattended = False
+                self._proof = None
+            self._unattended_transport = True
+            return True
+
+    async def _close_unattended(self) -> None:
+        """Desfaz o transporte aberto sem a pessoa, mesmo que quem pediu tenha sido cancelado."""
+        task = asyncio.ensure_future(self._close_unattended_now())
+        self._close_task = task
+        await asyncio.shield(task)
+
+    async def _close_unattended_now(self) -> None:
+        async with self._lock:
+            if self._connected and not self._unattended_transport:
+                # A pessoa chegou durante a abertura (a hibernação soltou o transporte dela e um
+                # comando abriu outro, com a presença): esse é do dono e não se desconecta.
+                return
+            self._connected = False
+            self._unattended_transport = False
+            await self._disconnect_locked()
+
+    @staticmethod
+    async def _shielded(work: Awaitable[None]) -> None:
+        """Roda `work` até o fim mesmo se quem espera for cancelado agora."""
+        await asyncio.shield(asyncio.ensure_future(work))
+
+    def _host_is_numeric(self) -> bool:
+        """Só se religa sem a pessoa por IP numérico: a sonda e o `adb connect` falam com o MESMO.
+
+        Com um nome, cada um o resolveria por conta própria (e poderiam cair em aparelhos
+        diferentes); trocar o endereço do `adb` por um IP também mudaria o registro da permissão.
+        """
+        try:
+            ipaddress.ip_address(self._host)
+        except ValueError:
+            return False
+        return True
+
+    def _probe_event(self, code: str) -> None:
+        if self._on_probe_event is None:
+            return
+        try:
+            self._on_probe_event(code)
+        except Exception:
+            _log.exception("falha ao avisar o evento da sonda do ADB")
+
     async def _stays_attached(self) -> bool:
         """Com a permissão provada para esta chave, endereço e aparelho, o canal fica aberto.
 
@@ -320,7 +458,7 @@ class AdbTv:
         Sem a prova o canal se desfaz como sempre (o servidor do `adb` religa sozinho uma conexão
         TCP feita com `adb connect`, e cada religação seria um aviso novo).
         """
-        if not self._connected:
+        if not self._connected or self._unattended_transport:
             return False
         try:
             mac = await asyncio.wait_for(self._identity_mac(), _STAY_CHECK_SECONDS)
@@ -353,6 +491,10 @@ class AdbTv:
 
     async def aclose(self) -> None:
         """Encerramento do agente: cancela o `disconnect` adiado e a espera do aceite."""
+        # O fim de uma abertura sem a pessoa (o `adb disconnect`) não se cancela: espera-se por ele.
+        closing = self._close_task
+        if closing is not None and not closing.done():
+            await asyncio.gather(closing, return_exceptions=True)
         pending = [self._disconnect_task, self._pairing_task]
         self._disconnect_task = self._pairing_task = None
         for task in pending:
@@ -376,9 +518,12 @@ class AdbTv:
         except TimeoutError:
             pass
         try:
-            if self._authorization.keeps_channel(await self._identity_mac()):
+            if not self._unattended_transport and self._authorization.keeps_channel(
+                await self._identity_mac()
+            ):
                 return
             self._connected = False
+            self._unattended_transport = False
             await self._disconnect_locked()
         finally:
             if held:
@@ -391,9 +536,12 @@ class AdbTv:
         que ainda não guardou a permissão (aviso ignorado, recusa, só `granted`) cada tentativa
         mostraria o aviso de novo, sem ninguém ter pedido. Provada, a conexão fica.
         """
-        if self._authorization.keeps_channel(await self._identity_mac()):
+        if not self._unattended_transport and self._authorization.keeps_channel(
+            await self._identity_mac()
+        ):
             return
         self._connected = False
+        self._unattended_transport = False
         await self._disconnect_locked()
 
     async def _end_user_request(self) -> None:
@@ -442,11 +590,14 @@ class AdbTv:
         if is_user_initiated():
             return True
         self._refused_as_idle = False
+        self._probe_verdict = None
         if not authorization.key_and_endpoint_match():
             known = None if self._mac_memo is _UNREAD else cast("str | None", self._mac_memo)
             self._gate_reason = authorization.gate_reason(known)
             return False
-        if not self._user_active():
+        # Sem presença a conexão só segue se a sonda provar a permissão (abaixo, por último).
+        unattended = self._unattended and self._silent_clearance is not None
+        if not unattended and not self._user_active():
             self._refused_as_idle = True
             return False
         mac = await self._identity_mac()
@@ -457,9 +608,52 @@ class AdbTv:
             # fora do ar nem recusa dela, só identidade que não se confirma. Sem bloqueio de 30 s.
             raise AdbIdentityUnconfirmed(_IDENTITY_MESSAGE)
         if authorization.verified_for(mac):
+            if unattended:
+                return await self._probe_clears(mac)
             return True
         self._gate_reason = authorization.gate_reason(mac)
         return False
+
+    async def _probe_clears(self, mac: str) -> bool:
+        """A sonda silenciosa diz `authorized` agora? Qualquer outra resposta fecha o portão.
+
+        Com `authorized`, o aparelho é conferido de novo (o MAC pela ARP, lido outra vez e sem
+        memória): se mudou entre a primeira leitura e a sonda, a prova era de outro aparelho. O que
+        a sonda provou (MAC e chave) fica para a conferência final, logo antes do `adb connect`.
+        """
+        assert self._silent_clearance is not None  # noqa: S101 - quem chama já conferiu
+        verdict = await self._silent_clearance()
+        if verdict.result != PROBE_AUTHORIZED:
+            self._probe_verdict = verdict.result
+            return False
+        after = await self._mac_resolver()
+        if after != mac:
+            self._probe_event(PROBE_EVENT_MAC_CHANGED)
+            self._probe_verdict = PROBE_UNKNOWN
+            return False
+        self._proof = _ProbeProof(mac, verdict.key_fingerprint)
+        return True
+
+    async def _guard_before_connect(self) -> None:
+        """Logo antes do `adb connect` sem a pessoa: o aparelho e a chave ainda são os provados.
+
+        O MAC é lido outra vez (sem memória) e a chave do arquivo conferida contra a que assinou
+        na sonda (e contra o servidor do `adb` que a carregou). Qualquer diferença: nada conecta.
+        """
+        proof = self._proof
+        if proof is None or self._key_check is None:
+            raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
+        if await self._mac_resolver() != proof.mac:
+            self._probe_event(PROBE_EVENT_MAC_CHANGED)
+            raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
+        try:
+            reason = await self._key_check(proof.key_fingerprint)
+        except Exception:
+            _log.exception("falha ao conferir a chave do adb antes de conectar")
+            reason = PROBE_EVENT_KEY_UNVERIFIABLE
+        if reason is not None:
+            self._probe_event(reason)
+            raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
 
     async def _adopt_known_tv(self) -> None:
         """A TV mudou de IP (queda de luz, DHCP) mas é o mesmo aparelho: a permissão vai com ela.
@@ -486,8 +680,14 @@ class AdbTv:
             state = parse_device_state((await self._exec("-s", self._serial, "get-state")).text)
         except AdbTimeout:
             state = DeviceState.NOT_FOUND
+        # Sem a pessoa, um transporte que já está no servidor do `adb` nunca é adotado (a sonda não
+        # o liberou, ou nem rodou): ele não é do agente e é desfeito logo abaixo.
         if state is DeviceState.DEVICE and (
-            is_user_initiated() or self._authorization.keeps_channel(await self._identity_mac())
+            is_user_initiated()
+            or (
+                not self._unattended
+                and self._authorization.keeps_channel(await self._identity_mac())
+            )
         ):
             # Um transporte vivo de uma permissão provada serve ao canal; nada é registrado e o
             # agente não abre outra conexão por conta própria.
@@ -506,6 +706,14 @@ class AdbTv:
             # só. Nada disso fica no servidor do `adb`, que o religaria e mostraria o aviso.
             self._connected = False
             await self._undo_transport_locked()
+        if self._probe_verdict is not None:
+            if state is DeviceState.DEVICE and self._probe_verdict == PROBE_UNAUTHORIZED:
+                # O `adb` é aceito pela TV e a sonda, com a chave do arquivo, não: as chaves são
+                # diferentes. Nada diz que a permissão se perdeu (nada é gravado nem contado).
+                self._probe_verdict = None
+                self._probe_event(PROBE_EVENT_MISMATCH)
+                raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
+            self._raise_probe_refusal(self._probe_verdict)
         # Recusa da trava, não da TV: nada de `_authorization_pending` nem de `needs_user` aqui (só
         # uma recusa explícita da TV rebaixa o registro).
         if self._refused_as_idle:
@@ -519,6 +727,23 @@ class AdbTv:
             "missing", self._gate_reason, f"portão fechado: {self._gate_reason}"
         )
         raise AdbUnauthorized(_GATED_MESSAGE)
+
+    def _raise_probe_refusal(self, verdict: str) -> NoReturn:
+        """A sonda não provou a permissão: nada foi conectado, e a causa segue o que já existe.
+
+        `unauthorized` é a TV recusando a chave (sem aviso: a sonda nunca a oferece), então vale
+        como qualquer recusa dela: o registro cai para `needs_user` e o app fica sabendo
+        (`missing`).
+        Os outros resultados (`tls_required`, `unknown`, `unreachable`, ou sonda que nem rodou) não
+        dizem nada da permissão: nada se grava nem se conta ao app.
+        """
+        self._probe_verdict = None
+        if verdict == PROBE_UNAUTHORIZED:
+            refusal = AdbUnauthorized(_PROBE_REFUSED_MESSAGE)
+            self._remember_failure(refusal)
+            self._report_refusal()
+            raise refusal
+        raise AdbIdle(_PROBE_NOT_CLEARED_MESSAGE)
 
     def _report_permission(
         self, state: AdbPermissionState, reason: str, detail: str = "", *, final: bool = False
@@ -638,6 +863,9 @@ class AdbTv:
         return not self._authorization.proven_for(await self._identity_mac())
 
     async def _handshake_locked(self) -> tuple[AdbOutput, DeviceState]:
+        if self._unattended:
+            await self._guard_before_connect()
+            self._connect_attempted = True
         joined = await self._exec("connect", self._serial)
         if connect_was_refused_for_auth(joined.text):
             raise AdbUnauthorized(_UNAUTHORIZED_MESSAGE)
@@ -686,6 +914,9 @@ class AdbTv:
         if outer:
             self._in_operation = True
             self._mac_memo = _UNREAD
+            if not self._unattended:
+                # Uma conexão com a pessoa não herda a origem de uma sem ela.
+                self._unattended_transport = False
         try:
             await self._connect_steps_locked(proof_ready=proof_ready)
         finally:

@@ -165,6 +165,12 @@ class Settings(BaseSettings):
     adb_path: str | None = None
     tv_adb_port: int = Field(default=5555, ge=1, le=65535)
     adb_timeout_seconds: float = Field(default=5.0, gt=0)
+    # Religar o ADB sem a pessoa: só depois de a sonda silenciosa (que nunca abre o aviso de
+    # permissão) provar que a TV aceita a chave. No máximo uma sonda por endereço neste intervalo
+    # (o piso é 5 minutos: a regra não se afrouxa por configuração).
+    adb_silent_link: bool = True
+    adb_probe_interval_seconds: float = Field(default=300.0, ge=300, le=86400)
+    adb_probe_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
     # O servidor do `adb` é compartilhado pelo PC (emulador, outros projetos): derrubá-lo é opt-in.
     adb_kill_server: bool = False
     # Espaço mínimo entre dois `kill-server`; 0 desliga o descanso.

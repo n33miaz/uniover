@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import os
 import struct
+import sys
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from types import TracebackType
 from typing import cast
 
 import pytest
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa, utils
 
 from uniover_agent.adapters import adb_silent_probe as silent_probe
@@ -47,7 +51,7 @@ async def read_packet(reader: asyncio.StreamReader) -> Packet:
     return Packet(command, arg0, arg1, checksum, data)
 
 
-async def write_packet(
+async def write_packet(  # noqa: PLR0913, PLR0917 - os campos do pacote ADB
     writer: asyncio.StreamWriter,
     command: int,
     arg0: int = 0,
@@ -57,10 +61,7 @@ async def write_packet(
 ) -> None:
     data_check = checksum_for(data) if checksum is None else checksum
     writer.write(
-        _HEADER.pack(
-            command, arg0, arg1, len(data), data_check, command ^ _MAGIC_MASK
-        )
-        + data
+        _HEADER.pack(command, arg0, arg1, len(data), data_check, command ^ _MAGIC_MASK) + data
     )
     await writer.drain()
 
@@ -86,9 +87,7 @@ async def write_cnxn(
     )
 
 
-Handler = Callable[
-    [asyncio.StreamReader, asyncio.StreamWriter, "FakeAdbServer"], Awaitable[None]
-]
+Handler = Callable[[asyncio.StreamReader, asyncio.StreamWriter, "FakeAdbServer"], Awaitable[None]]
 
 
 class FakeAdbServer:
@@ -262,7 +261,7 @@ async def test_a_accepted_signature_is_authorized(private_key: rsa.RSAPrivateKey
             signature.data,
             _TOKEN,
             padding.PKCS1v15(),
-            utils.Prehashed(hashes.SHA1()),
+            utils.Prehashed(hashes.SHA1()),  # noqa: S303 - digest SHA-1 do token
         )
         await write_cnxn(writer, checksum=0)
         await expect_client_close(reader)
@@ -370,3 +369,160 @@ async def test_the_public_key_packet_is_rejected_before_any_write() -> None:
             cast(asyncio.StreamWriter, memory), _AUTH, _AUTH_RSAPUBLICKEY, 0, b"never"
         )
     assert memory.writes == []
+
+
+async def test_a_key_that_cannot_be_read_safely_is_unknown_not_unreachable() -> None:
+    def unreadable() -> bytes:
+        raise OSError("sem chave")
+
+    async def handler(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter, server: FakeAdbServer
+    ) -> None:
+        await expect_cnxn(reader, server)
+        await write_packet(writer, _AUTH, _AUTH_TOKEN, data=_TOKEN)
+        await expect_client_close(reader)
+
+    async with FakeAdbServer(handler) as server:
+        result = await probe("127.0.0.1", server.port, unreadable)
+        await server.assert_finished()
+
+    assert result is ProbeResult.UNKNOWN
+    assert_never_sent_public_key(server)
+
+
+# --- o loader da chave: a mesma pasta que o `adb.exe` lê, ou nada ---------------------------------
+
+
+def test_the_key_is_read_from_the_android_dir_when_the_adb_would_read_the_same_one(
+    tmp_path: Path,
+) -> None:
+    android = tmp_path / "perfil" / ".android"
+    android.mkdir(parents=True)
+    (android / "adbkey").write_bytes(b"CHAVE")
+    assert silent_probe.load_agent_adbkey(android, lambda: tmp_path / "perfil", {}) == b"CHAVE"
+    # Fora do Windows (ou sem pasta de perfil conhecida) só o ambiente conta.
+    assert silent_probe.load_agent_adbkey(android, lambda: None, {}) == b"CHAVE"
+
+
+def test_a_user_profile_that_is_not_the_real_profile_closes_the_door(tmp_path: Path) -> None:
+    android = tmp_path / "falso" / ".android"
+    android.mkdir(parents=True)
+    (android / "adbkey").write_bytes(b"CHAVE")
+    with pytest.raises(OSError, match="perfil do sistema"):
+        silent_probe.load_agent_adbkey(android, lambda: tmp_path / "real", {})
+
+
+def test_an_android_home_override_to_another_folder_closes_the_door(tmp_path: Path) -> None:
+    android = tmp_path / ".android"
+    android.mkdir()
+    (android / "adbkey").write_bytes(b"CHAVE")
+    other = tmp_path / "outro"
+    for name, value in (("ANDROID_USER_HOME", other), ("ANDROID_SDK_HOME", other)):
+        with pytest.raises(OSError, match=name):
+            silent_probe.load_agent_adbkey(android, lambda: None, {name: str(value)})
+    # Apontando para a mesma pasta não muda a chave que o `adb` lê.
+    same = {"ANDROID_USER_HOME": str(android), "ANDROID_SDK_HOME": str(tmp_path)}
+    assert silent_probe.load_agent_adbkey(android, lambda: None, same) == b"CHAVE"
+
+
+def test_the_real_profile_folder_is_asked_to_windows_and_never_to_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("USERPROFILE", r"C:\Falso")
+    profile = silent_probe._windows_profile_dir()
+    if sys.platform == "win32":
+        assert profile is not None
+        assert str(profile).lower() != r"c:\falso"
+        assert profile.name  # uma pasta de verdade, não vazia
+    else:
+        assert profile is None
+
+
+# --- a chave que assinou e a que o adb lê ------------------------------------------------------
+
+
+def _pem(key: rsa.RSAPrivateKey) -> bytes:
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+
+
+def test_the_fingerprint_is_the_sha256_of_the_public_key_derived_from_the_private_one(
+    private_key: rsa.RSAPrivateKey,
+) -> None:
+    der = private_key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    expected = hashlib.sha256(der).hexdigest()
+    assert silent_probe.public_key_fingerprint(_pem(private_key)) == expected
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    assert silent_probe.public_key_fingerprint(_pem(other)) != expected
+
+
+@pytest.mark.parametrize("data", [b"", b"nao e uma chave", b"-----BEGIN PRIVATE KEY-----\nabc"])
+def test_the_fingerprint_of_something_that_is_not_an_rsa_key_is_none(data: bytes) -> None:
+    assert silent_probe.public_key_fingerprint(data) is None
+
+
+class _Server:
+    def __init__(self, started: float | None = None, error: Exception | None = None) -> None:
+        self.started = started
+        self.error = error
+
+    async def __call__(self) -> float | None:
+        if self.error is not None:
+            raise self.error
+        return self.started
+
+
+def _key(tmp_path: Path, modified: float) -> Path:
+    key = tmp_path / "adbkey"
+    key.write_bytes(b"x")
+    os.utime(key, (modified, modified))
+    return key
+
+
+async def test_a_key_older_than_the_adb_server_is_safe(tmp_path: Path) -> None:
+    key = _key(tmp_path, 1000.0)
+    reason = await silent_probe.adbkey_unsafe_reason(
+        key, environ={}, server_started_at=_Server(2000.0)
+    )
+    assert reason is None
+
+
+async def test_a_key_newer_than_the_adb_server_is_stale(tmp_path: Path) -> None:
+    key = _key(tmp_path, 3000.0)
+    reason = await silent_probe.adbkey_unsafe_reason(
+        key, environ={}, server_started_at=_Server(2000.0)
+    )
+    assert reason == "key_stale"
+
+
+async def test_without_an_adb_server_running_nothing_can_diverge(tmp_path: Path) -> None:
+    key = _key(tmp_path, 3000.0)
+    reason = await silent_probe.adbkey_unsafe_reason(
+        key, environ={}, server_started_at=_Server(None)
+    )
+    assert reason is None
+
+
+async def test_vendor_keys_in_the_environment_close_the_door(tmp_path: Path) -> None:
+    key = _key(tmp_path, 1000.0)
+    reason = await silent_probe.adbkey_unsafe_reason(
+        key, environ={"ADB_VENDOR_KEYS": "C:\\outras"}, server_started_at=_Server(None)
+    )
+    assert reason == "vendor_keys"
+
+
+async def test_a_key_or_server_that_cannot_be_read_is_unverifiable(tmp_path: Path) -> None:
+    key = _key(tmp_path, 1000.0)
+    broken = _Server(error=OSError("netstat"))
+    reason = await silent_probe.adbkey_unsafe_reason(key, environ={}, server_started_at=broken)
+    assert reason == "key_unverifiable"
+    missing = tmp_path / "nao-existe"
+    reason = await silent_probe.adbkey_unsafe_reason(
+        missing, environ={}, server_started_at=_Server(1.0)
+    )
+    assert reason == "key_unverifiable"

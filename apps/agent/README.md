@@ -72,6 +72,9 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
 | `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 | `UNIOVER_ADB_PULL_TIMEOUT_SECONDS` | tempo máximo para copiar o APK de um app da TV (padrão `120`) |
+| `UNIOVER_ADB_SILENT_LINK` | `0` desliga o ADB aberto sem a pessoa (padrão: ligado). Com ele, a TV reencontrada, a partida e a conferência diária dos ajustes de ligar pela rede abrem o ADB **só para a leitura** e o desconectam no fim, depois de uma sonda silenciosa provar que a TV já aceita a chave (a sonda nunca oferece a chave pública, então não abre o aviso "Permitir depuração USB"). Antes do `adb connect` o aparelho (MAC) e a chave são conferidos de novo; só funciona com o endereço da TV em IP numérico. Qualquer outro resultado não conecta e fica no diagnóstico como `adb.probe.*` |
+| `UNIOVER_ADB_PROBE_INTERVAL_SECONDS` | intervalo mínimo entre duas sondas ao mesmo endereço (padrão e piso `300`; o horário da última fica em `runtime/adb-probe.json` e vale também depois de reiniciar o agente) |
+| `UNIOVER_ADB_PROBE_TIMEOUT_SECONDS` | prazo de cada sonda (padrão `3`) |
 | `UNIOVER_TV_TEXT_BY_KEYS` | `1` digita o acréscimo (só letras minúsculas, dígitos, espaço e `. , - /`) pelas **teclas do controle remoto**, sem o processo `adb` de cada trecho (padrão: desligado; ver "Texto" abaixo) |
 | `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |

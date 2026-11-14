@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +79,7 @@ from uniover_agent.composition.system import (
     build_version,
     describe_os,
 )
-from uniover_agent.composition.tv import TvSetup, build_tv
+from uniover_agent.composition.tv import TvSetup, build_tv, tv_is_back
 from uniover_agent.config import (
     Settings,
     agent_source_dir,
@@ -780,6 +781,13 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
                     kind, severity, detail, component="tv_adb"
                 )
             )
+        if tv.adb_link is not None:
+            # O resultado de cada sonda silenciosa do ADB (sem endereço) vai ao diagnóstico.
+            tv.adb_link.record_with(
+                lambda kind, severity, detail: kit.recorder.record(
+                    kind, severity, detail, component="tv_adb"
+                )
+            )
         if not handover:
             for step in tv.prepare:
                 await step()
@@ -812,6 +820,9 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             )
         ),
     )
+    if tv is not None:
+        # A sonda silenciosa do ADB nunca roda durante um comando do dono da TV.
+        tv.owner_busy = process.command_in_flight
     # As teclas e o texto da TV pelo canal direto: só onde há TV, canal direto do PC e a opção
     # ligada.
     # A ponte leva o comando ao MESMO caminho das teclas da nuvem (`ProcessMessage`), no laço
@@ -1223,6 +1234,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     if not handover:
         start_background()
     takeover = asyncio.create_task(take_over(), name="takeover") if handover else None
+
     relocator = (
         build_relocator(
             settings,
@@ -1231,7 +1243,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             tv.known,
             tv.watchdog.request if tv.watchdog is not None else None,
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
-            tv.manager.reopen_unattended,
+            partial(tv_is_back, tv),
             recorder=kit.recorder,
             start=agent_start(),
         )

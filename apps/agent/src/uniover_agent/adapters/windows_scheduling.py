@@ -157,6 +157,9 @@ _NT_PROCESS_IO_PRIORITY: Final = 33  # `ProcessIoPriority` (ntdll)
 _POWER_THROTTLING_EXECUTION_SPEED: Final = 0x1
 _PROCESS_SET_INFORMATION: Final = 0x0200
 _PROCESS_QUERY_INFORMATION: Final = 0x0400
+_PROCESS_QUERY_LIMITED_INFORMATION: Final = 0x1000
+# 1601-01-01 (a época do FILETIME) até 1970-01-01, em intervalos de 100 ns.
+_FILETIME_UNIX_EPOCH: Final = 116_444_736_000_000_000
 _TH32CS_SNAPPROCESS: Final = 0x2
 # Quem vigia o agente: o lançador e o supervisor são scripts do Windows PowerShell.
 SUPERVISOR_IMAGES: Final = frozenset({"powershell.exe", "pwsh.exe"})
@@ -300,6 +303,27 @@ def _creation_time(api: tuple[Any, Any, Any, Any], handle: Any) -> int | None:
     ):
         return None
     return int(created.value)
+
+
+def process_started_at(pid: int) -> float | None:
+    """Quando o processo `pid` nasceu (segundos desde 1970); `None` se não se pode ler.
+
+    Só leitura (`GetProcessTimes` num handle de consulta): nada no processo é mudado.
+    """
+    if sys.platform != "win32":
+        return None
+    api = _api()
+    _, _, kernel32, _ = api
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        created = _creation_time(api, handle)
+    finally:
+        kernel32.CloseHandle(handle)
+    if created is None or created <= 0:
+        return None
+    return (created - _FILETIME_UNIX_EPOCH) / 10_000_000
 
 
 def _turn_off_eco_qos(api: tuple[Any, Any, Any, Any], handle: Any) -> bool:

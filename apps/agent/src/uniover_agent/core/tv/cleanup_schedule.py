@@ -104,6 +104,7 @@ class TvCleanupScheduler:
         self._pending_deep = False
         self._wake = asyncio.Event()
         self._wake_task: asyncio.Task[None] | None = None
+        self._run_lock = asyncio.Lock()
         self._last_deep_skip: str | None = None
         self._closed = False
         # A conferência dos ajustes de ligar pela rede pega carona no mesmo gatilho diário: uma
@@ -148,10 +149,7 @@ class TvCleanupScheduler:
         """A sessão só chega aqui depois de a TV responder; é o ponto seguro do gatilho diário."""
         today = self._today()
         self._last_session_ms = round(elapsed * 1000)
-        if self._configuration.light_enabled and self._light_day != today:
-            self._pending_light = True
-        if self._wake_check is not None and self._wake_check_day != today:
-            self._pending_wake_check = True
+        self._arm_daily(today)
         if elapsed > SLOW_SESSION_SECONDS:
             self._slow_session = True
             if self._configuration.light_enabled:
@@ -159,6 +157,29 @@ class TvCleanupScheduler:
             if self._configuration.deep_enabled:
                 self._pending_deep = True
         self._wake.set()
+
+    async def run_after_adb_opened(self) -> None:
+        """O canal ADB abriu sem a pessoa (a sonda silenciosa provou a permissão): é a hora de a
+        avaliação do dia rodar agora, enquanto o canal está aberto.
+
+        Uma abertura sem ninguém (`reopen_unattended`) não avisa `note_session_opened`, então sem
+        isto a conferência dos ajustes de ligar pela rede e a leitura do app da frente (limpeza
+        leve) só esperariam o primeiro uso do dono. Só arma o que ainda não foi feito hoje; com o
+        canal aberto, segue para a limpeza leve (a avaliação diária que lê o app da frente), mas
+        **nunca** para a profunda, que fecha apps e fica para quando a pessoa usa a TV. O canal
+        fecha quando isto volta: nada é deixado para uma tarefa que rode depois.
+        """
+        self._arm_daily(self._today())
+        async with self._run_lock:
+            # Sem a limpeza profunda (que fecha apps): sem a pessoa só a avaliação do dia roda,
+            # que é o que usa o canal (os ajustes de ligar pela rede, a memória e o app da frente).
+            await self._run_pending_locked(allow_deep=False)
+
+    def _arm_daily(self, today: date) -> None:
+        if self._configuration.light_enabled and self._light_day != today:
+            self._pending_light = True
+        if self._wake_check is not None and self._wake_check_day != today:
+            self._pending_wake_check = True
 
     async def run(self) -> None:
         """Temporizador próprio, cancelável pelo chamador no encerramento do agente."""
@@ -186,6 +207,11 @@ class TvCleanupScheduler:
         self._wake.set()
 
     async def run_pending(self) -> None:
+        # Uma avaliação por vez: o temporizador e a abertura sem a pessoa não se sobrepõem.
+        async with self._run_lock:
+            await self._run_pending_locked()
+
+    async def _run_pending_locked(self, *, allow_deep: bool = True) -> None:
         if self._is_focused():
             # Enquanto há mídia confirmada, a limpeza (até a leve) espera; o gatilho fica pendente.
             return
@@ -204,7 +230,8 @@ class TvCleanupScheduler:
             self._pending_light = False
             await self._run_light()
         if (
-            self._pending_deep
+            allow_deep
+            and self._pending_deep
             and self._configuration.deep_enabled
             and self._may_repeat(self._last_deep)
         ):

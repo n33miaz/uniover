@@ -2,11 +2,15 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
 from uniover_agent.ports import (
+    PROBE_AUTHORIZED,
+    AdbClearance,
     AdbError,
+    AdbIdle,
     LaunchableApp,
     PairingInfo,
     PairingTicket,
@@ -192,6 +196,10 @@ class FakeTvAdb:
         self.typed: list[str] = []
         self.connects = 0
         self.disconnects = 0
+        # A sonda silenciosa que a composição injetou (o teste a liga) e quantas conexões sem a
+        # pessoa foram pedidas: como o adaptador real, só conecta com `authorized`.
+        self.silent_clearance: AdbClearance | None = None
+        self.unattended_connects = 0
         self.errors: list[AdbError] = []
         self.keepalives = 0
         self.closed = False
@@ -233,6 +241,24 @@ class FakeTvAdb:
         self._connected = False
         self._fail_if_scripted()
         self._connected = True
+
+    @asynccontextmanager
+    async def unattended(self) -> AsyncIterator[None]:
+        """Como o adaptador real: só abre com `authorized`, e fecha ao sair (se foi quem abriu)."""
+        self.unattended_connects += 1
+        if self.silent_clearance is None:
+            raise AdbIdle("a sonda silenciosa não provou a permissão agora; nada conectado")
+        verdict = await self.silent_clearance()
+        if verdict.result != PROBE_AUTHORIZED:
+            raise AdbIdle("a sonda silenciosa não provou a permissão agora; nada conectado")
+        opened = not self._connected
+        if opened:
+            await self.connect()
+        try:
+            yield
+        finally:
+            if opened:
+                await self.disconnect()
 
     async def aclose(self) -> None:
         self.closed = True

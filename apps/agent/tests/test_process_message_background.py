@@ -212,3 +212,15 @@ async def test_draining_gives_up_at_the_deadline_and_leaves_the_rest_to_close() 
 async def test_draining_with_nothing_running_returns_at_once() -> None:
     process, _ = build(Handlers())
     await asyncio.wait_for(process.drain(60.0), 1)
+
+
+async def test_a_command_in_flight_is_visible_to_the_silent_adb_probe() -> None:
+    handlers = Handlers()
+    process, _transport = build(handlers)
+    assert process.command_in_flight() is False
+    await process(dump(envelope(CLEANUP, REQUEST)))
+    await settle()
+    assert process.command_in_flight() is True  # o comando do dono está rodando
+    handlers.release.set()
+    await settle()
+    assert process.command_in_flight() is False

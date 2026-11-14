@@ -70,6 +70,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
         tv_samsung,
         wol,
     )
+    from uniover_agent.adapters.adb_silent_probe import ProbeResult  # noqa: PLC0415
     from uniover_agent.adapters.tv_discovery import PortState  # noqa: PLC0415
     from uniover_agent.composition import connection as connection_module  # noqa: PLC0415
     from uniover_agent.composition import tv as tv_module  # noqa: PLC0415
@@ -79,6 +80,17 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
     async def open_probe(host: str, port: int, wait: float = 1.0) -> PortState:
         return PortState.OPEN
+
+    async def no_unsafe_key(key_path: object) -> None:
+        return None
+
+    async def silent_probe_unreachable(
+        host: str,
+        port: int,
+        private_key_loader: object,
+        timeout: float = 3.0,  # noqa: ASYNC109 - a mesma assinatura da sonda
+    ) -> ProbeResult:
+        return ProbeResult.UNREACHABLE
 
     async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
         return frozenset(
@@ -117,6 +129,11 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tv_locate, "tcp_open", alive)
     monkeypatch.setattr(connection_module, "tcp_probe", open_probe)
     monkeypatch.setattr(tv_module, "tcp_probe", open_probe)
+    # A sonda silenciosa do ADB abriria uma conexão TCP com a porta do ADB: nenhum teste a faz (os
+    # que provam o religamento do ADB trocam isto por `authorized` ou outro resultado).
+    monkeypatch.setattr(tv_module, "silent_adb_probe", silent_probe_unreachable)
+    # Nem a conferência do servidor do `adb` (`netstat`) nem a data da chave real do usuário.
+    monkeypatch.setattr(tv_module, "adbkey_unsafe_reason", no_unsafe_key)
     monkeypatch.setattr(main_module, "identify_tv", no_identity)
     # A API dos testes "aceita o diagnóstico e a presença"; os testes do rollout trocam isto por
     # vazio ou `None`.

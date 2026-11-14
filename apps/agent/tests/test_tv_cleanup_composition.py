@@ -205,7 +205,9 @@ async def test_the_cleanup_day_is_kept_on_disk_so_an_agent_restart_does_not_repe
 
     # O agente reinicia: processo e memória novos, mesmo disco. O mesmo dia não se repete.
     second = await session_of_the_day()
-    assert second == []
+    # (A leitura diária dos ajustes de ligar pela rede é outra avaliação, não persistida: com o
+    # canal ADB já aberto ela lê de novo a cada partida.)
+    assert [step for step in second if step != "wake-settings"] == []
 
 
 # --- ponta a ponta ----------------------------------------------------------------------------
