@@ -62,6 +62,16 @@ describe('ConnectivityBanner', () => {
     expect(text(await render(0))).toContain('Sem conexão');
   });
 
+  it('draws the state dot before the line: filled while waking, hollow when offline', async () => {
+    const service = TestBed.inject(ConnectivityService);
+    service.serverState.set('waking');
+    const waking = (await render()).nativeElement as HTMLElement;
+    expect(waking.querySelector('.banner.waking > .dot[aria-hidden="true"]')).not.toBeNull();
+    service.serverState.set('offline');
+    const offline = (await render()).nativeElement as HTMLElement;
+    expect(offline.querySelector('.banner.offline > .dot[aria-hidden="true"]')).not.toBeNull();
+  });
+
   it('opens and closes each notice inside a collapsible track, so the page below does not jump', async () => {
     const service = TestBed.inject(ConnectivityService);
     service.serverState.set('waking');

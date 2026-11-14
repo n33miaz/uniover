@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
@@ -8,7 +8,15 @@ export interface TabItem {
   readonly link: string;
   readonly label: string;
   /** Símbolo decorativo; o rótulo visível continua sendo o nome acessível do link. */
-  readonly icon?: 'today' | 'exercises' | 'progress' | 'body';
+  readonly icon?:
+    | 'today'
+    | 'exercises'
+    | 'progress'
+    | 'body'
+    | 'mouse'
+    | 'shortcuts'
+    | 'media'
+    | 'more';
   /**
    * Por padrão a aba só fica marcada no próprio caminho (`link`). Com `nested`, fica marcada também nas telas filhas
    * dele (`link/...`), por exemplo a ficha de um exercício dentro de `/treino/exercicios`.
@@ -42,7 +50,8 @@ function isWithin(path: string, base: string): boolean {
   imports: [RouterLink],
   template: `
     <nav
-      [class.training]="variant() === 'training'"
+      [class.training]="variant() === 'training' || iconic()"
+      [class.compact]="variant() !== 'training'"
       aria-label="Abas do módulo"
       i18n-aria-label="@@shared.tabs"
     >
@@ -69,6 +78,22 @@ function isWithin(path: string, base: string): boolean {
                       @case ('progress') {
                         <path [attr.d]="'M4 19.5h16M5.5 16l4-4 3 2.5 6-7'" />
                         <path [attr.d]="'M15 7.5h3.5V11'" />
+                      }
+                      @case ('mouse') {
+                        <rect x="6.5" y="3.5" width="11" height="17" rx="5.5" />
+                        <path [attr.d]="'M12 3.5v6M6.5 9.5h11'" />
+                      }
+                      @case ('shortcuts') {
+                        <rect x="3.5" y="6.5" width="17" height="11" rx="2.5" />
+                        <path [attr.d]="'M7 10h.01M10 10h.01M13 10h.01M17 10h.01M8 14h8'" />
+                      }
+                      @case ('media') {
+                        <path [attr.d]="'M8 5.5v13l10.5-6.5z'" />
+                      }
+                      @case ('more') {
+                        <circle cx="5.5" cy="12" r="1.5" />
+                        <circle cx="12" cy="12" r="1.5" />
+                        <circle cx="18.5" cy="12" r="1.5" />
                       }
                       @case ('body') {
                         <circle cx="12" cy="5" r="2.25" />
@@ -176,6 +201,11 @@ function isWithin(path: string, base: string): boolean {
       stroke-linecap: round;
       stroke-linejoin: round;
     }
+    /* Fora do Treino a barra com ícone mantém a altura da barra só de texto (56 px): controles que ocupam a tela toda, como o
+       mouse do PC, não perdem altura. */
+    nav.training.compact a {
+      min-height: 56px;
+    }
     nav.training a:active {
       background: transparent;
     }
@@ -197,6 +227,8 @@ export class TabBar {
 
   readonly tabs = input.required<readonly TabItem[]>();
   readonly variant = input<'default' | 'training'>('default');
+  /** Com ícone nas abas, a barra usa o desenho com ícone e nome: o mesmo do Treino em qualquer módulo. */
+  protected readonly iconic = computed(() => this.tabs().some((tab) => tab.icon !== undefined));
 
   /** O endereço da tela aberta, lido do roteador (o navegador pode ter filtros na consulta que o roteador não vê). */
   private readonly url = toSignal(

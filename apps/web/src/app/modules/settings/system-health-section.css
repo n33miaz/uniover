@@ -25,7 +25,7 @@
   min-width: 0;
   padding: var(--space-3);
   border: 1px solid var(--a-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--a-surface-2);
 }
 
@@ -62,7 +62,7 @@
 
 .dead {
   border: 1px solid var(--a-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--a-surface-2);
   padding: var(--space-3);
 }
@@ -94,7 +94,7 @@
 /* As versões por módulo: uma lista pequena, no mesmo painel das demais leituras, com a versão alinhada à direita. */
 .modules {
   border: 1px solid var(--a-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--a-surface-2);
   padding: var(--space-3);
 }
@@ -142,7 +142,7 @@
   flex-direction: column;
   gap: var(--space-2);
   border: 1px solid var(--a-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--a-surface-2);
   padding: var(--space-3);
 }

@@ -168,13 +168,6 @@ describe('AppShell', () => {
       expect(settingsLink(root(harness))).toBeNull();
     });
 
-    it('marks the main area of Ajustes, so the cards take the corner of the TV cards', async () => {
-      const harness = await RouterTestingHarness.create('/ajustes');
-      expect(root(harness).querySelector('main')?.classList.contains('settings-main')).toBe(true);
-      await harness.navigateByUrl('/mod');
-      expect(root(harness).querySelector('main')?.classList.contains('settings-main')).toBe(false);
-    });
-
     it('moves the focus to the title when going between Ajustes screens, so keyboard and screen reader land on the new one', async () => {
       const harness = await RouterTestingHarness.create('/ajustes');
       await harness.navigateByUrl('/ajustes/perfil');

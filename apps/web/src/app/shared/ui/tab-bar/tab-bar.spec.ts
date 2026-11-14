@@ -33,6 +33,33 @@ describe('TabBar', () => {
     ).toBe('Abas do módulo');
   });
 
+  it('uses the icon-and-name bar in any module whose tabs carry icons', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideRouter([{ path: '**', component: Blank }])],
+    });
+    await RouterTestingHarness.create('/pc');
+    const draw = async (tabs: readonly TabItem[]) => {
+      const fixture = TestBed.createComponent(TabBar);
+      fixture.componentRef.setInput('tabs', tabs);
+      await fixture.whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+    const withIcons = await draw([
+      { link: '/pc', label: 'Mouse', icon: 'mouse' },
+      { link: '/pc/atalhos', label: 'Atalhos', icon: 'shortcuts' },
+      { link: '/pc/midia', label: 'Mídia', icon: 'media' },
+      { link: '/pc/mais', label: 'Mais', icon: 'more' },
+    ]);
+    expect(withIcons.querySelector('nav')?.classList.contains('training')).toBe(true);
+    expect(withIcons.querySelectorAll('svg.icon')).toHaveLength(4);
+    for (const svg of Array.from(withIcons.querySelectorAll('svg.icon'))) {
+      expect(svg.children.length, 'every icon draws something').toBeGreaterThan(0);
+    }
+    const textOnly = await draw([{ link: '/pc', label: 'Mouse' }]);
+    expect(textOnly.querySelector('nav')?.classList.contains('training')).toBe(false);
+    expect(textOnly.querySelector('svg.icon')).toBeNull();
+  });
+
   describe('marking by path', () => {
     // As abas do Treino, como o módulo as declara: Exercícios cobre as telas filhas e as rotinas.
     const TABS: readonly TabItem[] = [
