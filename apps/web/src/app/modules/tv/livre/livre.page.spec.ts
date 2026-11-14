@@ -712,6 +712,18 @@ describe('LivrePage', () => {
       expect(q('.ui-action-bar .ui-notice').textContent).toContain('TV Livre atualizado.');
     });
 
+    it('stops offering the update when the newest launcher that exists is still the old level', async () => {
+      api.get.mockResolvedValue(view({ installed: true, extended: true, launcherLevel: 1 }));
+      await render();
+      api.install.mockResolvedValue(view({ installed: true, extended: true, launcherLevel: 1 }));
+      button('Atualizar')!.click();
+      await change();
+      await change();
+      expect(el.textContent).not.toContain('Há versão nova do TV Livre.');
+      expect(q('.ui-action-bar .ui-notice').textContent).toContain('ainda não foi publicado');
+      expect(api.install).toHaveBeenCalledTimes(1);
+    });
+
     it.each([
       ['an up to date launcher', { launcherLevel: 2 }],
       ['an agent that cannot read the level', { launcherLevel: null }],

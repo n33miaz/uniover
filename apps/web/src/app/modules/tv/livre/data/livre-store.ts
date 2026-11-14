@@ -104,6 +104,8 @@ export class TvLivreStore {
   /** A configuração foi guardada, mas a TV não a aplicou (falha na hora de aplicar): ainda falta tentar de novo. */
   private readonly _unapplied = signal(false);
   private readonly _showPrompt = signal(false);
+  /** O launcher mais novo que existe já foi instalado e o nível não subiu: a versão nova ainda não foi publicada. */
+  private readonly _updateStale = signal(false);
   private supportRetry: ReturnType<typeof setTimeout> | null = null;
   private supportAttempts = 0;
 
@@ -137,6 +139,7 @@ export class TvLivreStore {
     const view = this._view();
     return (
       view !== null &&
+      !this._updateStale() &&
       view.installed &&
       view.launcherLevel !== null &&
       view.launcherLevel < LAUNCHER_LEVEL_LATEST
@@ -340,7 +343,14 @@ export class TvLivreStore {
   /** Instala por cima o launcher mais novo; a tela inicial continua sendo a que era. */
   update(): Promise<boolean> {
     return this.run('update', async (epoch) => {
-      this.adopt(await this.live(epoch, this.api.install()), epoch);
+      const view = await this.live(epoch, this.api.install());
+      this.adopt(view, epoch);
+      if (view.launcherLevel !== null && view.launcherLevel < LAUNCHER_LEVEL_LATEST) {
+        // Instalou o último que há e o nível não subiu: o launcher novo ainda não foi publicado. O aviso sai (sem isso
+        // "Atualizar" reinstalaria o mesmo para sempre) e volta quando a tela é reaberta com a TV ou a conta trocadas.
+        this._updateStale.set(true);
+        return $localize`:@@tv-livre.notice.update-pending:Instalado o mais novo que há. O launcher novo ainda não foi publicado.`;
+      }
       return $localize`:@@tv-livre.notice.updated:TV Livre atualizado.`;
     });
   }
@@ -625,6 +635,7 @@ export class TvLivreStore {
     this._notice.set(null);
     this._unapplied.set(false);
     this._showPrompt.set(false);
+    this._updateStale.set(false);
   }
 
   private scheduleSupportRetry(): void {

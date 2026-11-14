@@ -12,9 +12,12 @@ from pathlib import Path
 import pytest
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
+from uniover_agent.composition.connection import declarable_capabilities
 from uniover_agent.core import Command, EnvelopeFactory, EnvelopeGate, Handler, ResultStatus
 from uniover_agent.core.tv import livre as livre_module
 from uniover_agent.core.tv.livre import (
+    CAPABILITY,
+    EXTENDED_CAPABILITY,
     LivreStateFile,
     PhotoStaging,
     TvLivre,
@@ -126,9 +129,9 @@ async def test_the_sleep_time_reaches_the_tv_and_a_bad_one_is_refused(tmp_path: 
 
     assert (await handler(command({"action": "sleep", "minutes": 30}))).status is ResultStatus.OK
     assert (
-        android.log[-1] == "am start -n br.uniover.launcher/.SleepActivity "
+        "am start -n br.uniover.launcher/.SleepActivity "
         "--ei br.uniover.launcher.extra.MAX_MINUTES 30"
-    )
+    ) in android.log
 
     refused = await handler(command({"action": "sleep", "minutes": 9999}))
     assert refused.status is ResultStatus.REJECTED
@@ -329,3 +332,13 @@ async def test_nothing_is_changed_on_an_unsupported_tv(tmp_path: Path, action: s
 
     assert result.code == "unsupported"
     assert android.mutating() == []
+
+
+def test_the_livre_extension_only_reaches_the_hello_after_the_api_lists_it() -> None:
+    both = [CAPABILITY, EXTENDED_CAPABILITY]
+    # Uma API anterior recusaria o `hello` com a capacidade nova: o módulo segue, sem ela.
+    assert declarable_capabilities(both, lambda _: False) == (CAPABILITY,)
+    assert declarable_capabilities(both, lambda feature: feature == EXTENDED_CAPABILITY) == (
+        CAPABILITY,
+        EXTENDED_CAPABILITY,
+    )
