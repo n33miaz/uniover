@@ -369,7 +369,8 @@ describe('TvEditSheet', () => {
       const switches = () =>
         Array.from(el.querySelectorAll<HTMLInputElement>('label.toggle input')).slice(0, 4);
       expect(switches().map((item) => item.checked)).toEqual([false, false, false, false]);
-      expect(el.textContent).toContain('Atualização automática da Play Store');
+      // A limpeza nunca mexe na Play Store, e a tela não manda mais ninguém desligar a atualização à mão.
+      expect(el.textContent).not.toContain('Play Store');
       expect(el.textContent).toContain('Disponível em breve');
 
       switches()[0]!.click();

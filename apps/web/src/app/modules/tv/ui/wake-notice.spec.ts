@@ -53,7 +53,9 @@ describe('WakeNotice', () => {
 
   it('suggests unplugging only when waking over the network failed, and that comes first', () => {
     withHints(['screenless_off', 'replug']);
-    expect(text()).toBe('A TV não ligou pela rede. Tire da tomada e ligue de novo.');
+    expect(text()).toBe(
+      'A TV não ligou pela rede. Ligue pelo controle; se não acender, tire da tomada e ligue de novo.',
+    );
   });
 
   it('"Ok" hides the warning and the next one shows', () => {
