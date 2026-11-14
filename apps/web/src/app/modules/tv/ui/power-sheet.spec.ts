@@ -1,5 +1,7 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { TvStore } from '../data/tv-store';
+import { TvLivreApi } from '../livre/data/livre-api';
 import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
 import { PowerSheet } from './power-sheet';
 
@@ -469,6 +471,88 @@ describe('PowerSheet leaving smoothly', () => {
     named('Desligar').click();
     await vi.advanceTimersByTimeAsync(0);
     expect(dialog().hasAttribute('data-closing')).toBe(false);
+    expect(closed).not.toHaveBeenCalled();
+  });
+});
+
+describe('PowerSheet, Apagar a Tela', () => {
+  let store: FakeTvStore;
+  let livre: { sleepAvailable: ReturnType<typeof vi.fn>; sleep: ReturnType<typeof vi.fn> };
+  let fixture: ReturnType<typeof TestBed.createComponent<PowerSheet>>;
+  let root: HTMLElement;
+  let closed: ReturnType<typeof vi.fn<() => void>>;
+
+  const blackOut = () =>
+    [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === 'Apagar a Tela',
+    );
+
+  async function open(available: boolean) {
+    store = createFakeTvStore();
+    livre = {
+      sleepAvailable: vi.fn().mockResolvedValue(available),
+      sleep: vi.fn().mockResolvedValue(undefined),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: TvStore, useValue: store },
+        { provide: TvLivreApi, useValue: livre },
+      ],
+    });
+    fixture = TestBed.createComponent(PowerSheet);
+    closed = vi.fn<() => void>();
+    fixture.componentInstance.closed.subscribe(closed);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    root = fixture.nativeElement;
+  }
+
+  it('offers the button above Desligar only when the TV Livre is within reach', async () => {
+    await open(true);
+    const labels = [...root.querySelectorAll('button')].map((b) => b.textContent?.trim());
+    expect(labels.indexOf('Apagar a Tela')).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf('Apagar a Tela')).toBeLessThan(labels.indexOf('Desligar'));
+    expect(root.textContent).toContain('qualquer botão do controle acorda');
+  });
+
+  it('hides it without the TV Livre, and when asking fails', async () => {
+    await open(false);
+    expect(blackOut()).toBeUndefined();
+    TestBed.resetTestingModule();
+    store = createFakeTvStore();
+    livre = { sleepAvailable: vi.fn().mockRejectedValue(new Error('x')), sleep: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: TvStore, useValue: store },
+        { provide: TvLivreApi, useValue: livre },
+      ],
+    });
+    fixture = TestBed.createComponent(PowerSheet);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      [...fixture.nativeElement.querySelectorAll('button')].some(
+        (b: HTMLButtonElement) => b.textContent?.trim() === 'Apagar a Tela',
+      ),
+    ).toBe(false);
+  });
+
+  it('opens the sleep mode with no time (the TV keeps its own) and leaves the sheet', async () => {
+    await open(true);
+    blackOut()!.click();
+    await fixture.whenStable();
+    expect(livre.sleep).toHaveBeenCalledWith();
+  });
+
+  it('says why in the sheet when the TV does not take it, and stays open', async () => {
+    await open(true);
+    livre.sleep.mockRejectedValue(new HttpErrorResponse({ status: 503 }));
+    blackOut()!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(root.querySelector('.error')).not.toBeNull();
     expect(closed).not.toHaveBeenCalled();
   });
 });

@@ -18,9 +18,13 @@ export const DEFAULT_GESTURE: GestureConfig = { stepPx: 24, tapMaxMs: 200, tapMa
  * limite do toque (`tapMaxPx`), senão um toque parado viraria seta.
  */
 export const STEP_PX_BY_SPEED: Readonly<Record<TvPadSpeed, number>> = {
+  slowest: 52,
+  slower: 44,
   slow: 36,
   normal: DEFAULT_GESTURE.stepPx,
   fast: 16,
+  faster: 13,
+  fastest: 11,
 };
 
 /**

@@ -11,6 +11,8 @@ import {
 } from '@angular/core';
 import type { TvPowerSchedule } from '../data/tv-api';
 import { TvStore } from '../data/tv-store';
+import { TvLivreApi } from '../livre/data/livre-api';
+import { describeLivreFailure } from '../livre/data/livre-errors';
 import {
   closeDialog,
   onDialogBackdropClick,
@@ -35,6 +37,7 @@ import { leaveSheet } from './sheet-motion';
 })
 export class PowerSheet {
   protected readonly store = inject(TvStore);
+  private readonly livre = inject(TvLivreApi);
   private readonly destroy = inject(DestroyRef);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly closeButton = viewChild.required<ElementRef<HTMLButtonElement>>('closeButton');
@@ -43,6 +46,8 @@ export class PowerSheet {
   readonly closed = output<void>();
 
   protected readonly busy = signal(false);
+  /** O TV Livre está na TV e o agente ao alcance: então "Apagar a Tela" (o Modo Dormir) tem como agir. */
+  protected readonly sleepAvailable = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly chosen = signal<Date | null>(null);
   /** O tempo pronto escolhido (em minutos), ou "personalizar" (o horário do dia), ou nada. */
@@ -72,6 +77,10 @@ export class PowerSheet {
       // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
       onDialogBackdropClick(dialog, () => this.cancel());
       void this.store.refreshPowerSchedule();
+      void this.livre.sleepAvailable().then(
+        (available) => this.sleepAvailable.set(available),
+        () => this.sleepAvailable.set(false),
+      );
       // A folha pode ficar aberta no disparo; a leitura periódica traz o desfecho sem reenviar comando.
       const poll = window.setInterval(() => {
         this.now.set(Date.now());
@@ -99,6 +108,24 @@ export class PowerSheet {
       this.leave();
     } finally {
       // Na saída os botões seguem travados: a folha está sumindo e não pode pedir de novo.
+      if (!this.leaving) this.busy.set(false);
+    }
+  }
+
+  /**
+   * "Apagar a Tela": abre o Modo Dormir do TV Livre (tela preta; qualquer botão acorda). É a saída mais curta para quem
+   * quer a TV escura sem desligá-la. Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
+   */
+  protected async blackOut(): Promise<void> {
+    if (this.busy() || this.leaving) return;
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      await this.livre.sleep();
+      this.leave();
+    } catch (failure) {
+      this.error.set(describeLivreFailure(failure).message);
+    } finally {
       if (!this.leaving) this.busy.set(false);
     }
   }

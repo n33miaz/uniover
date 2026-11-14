@@ -10,8 +10,11 @@ import { TvApi } from './tv-api';
 export type TvButtonSize = 'compact' | 'comfortable' | 'large';
 /** Página com que o palco do meio abre; `last` repete a última vista nesta aba. */
 export type TvStartPage = 'directions' | 'numbers' | 'touchpad' | 'last';
-/** Quanto o dedo precisa andar no touchpad para valer como uma seta. */
-export type TvPadSpeed = 'slow' | 'normal' | 'fast';
+/**
+ * Quanto o dedo precisa andar no touchpad para valer como uma seta, em sete níveis do mais lento ao mais rápido. Os três
+ * do meio (`slow`, `normal`, `fast`) são os de sempre e valem o mesmo: quem já escolheu um deles não sente diferença.
+ */
+export type TvPadSpeed = 'slowest' | 'slower' | 'slow' | 'normal' | 'fast' | 'faster' | 'fastest';
 /**
  * Onde ficam as pílulas de volume e de canal: `sides` põe uma de cada lado dos botões redondos (em pé, o padrão de
  * sempre); `row` junta as duas numa fileira deitada acima dos botões redondos, que então crescem.
@@ -20,7 +23,15 @@ export type TvPillLayout = 'sides' | 'row';
 
 export const TV_BUTTON_SIZES: readonly TvButtonSize[] = ['compact', 'comfortable', 'large'];
 export const TV_START_PAGES: readonly TvStartPage[] = ['directions', 'numbers', 'touchpad', 'last'];
-export const TV_PAD_SPEEDS: readonly TvPadSpeed[] = ['slow', 'normal', 'fast'];
+export const TV_PAD_SPEEDS: readonly TvPadSpeed[] = [
+  'slowest',
+  'slower',
+  'slow',
+  'normal',
+  'fast',
+  'faster',
+  'fastest',
+];
 export const TV_PILL_LAYOUTS: readonly TvPillLayout[] = ['sides', 'row'];
 
 /** O "confortável" é 1: os outros dois são relativos a ele (a medida base mora no CSS do controle). */
