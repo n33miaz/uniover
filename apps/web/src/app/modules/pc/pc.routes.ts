@@ -7,12 +7,13 @@ import { PcPage } from './pc-page';
 // As abas do módulo ficam aqui; a barra de baixo as lê pelo `data.tabs` da rota (o título do cabeçalho vem da rota `pc`).
 // A Energia mora dentro de "Mais": a aba segue marcada nela.
 const TABS: readonly TabItem[] = [
-  { link: '/pc', label: $localize`:@@pc.tab.mouse:Mouse` },
-  { link: '/pc/atalhos', label: $localize`:@@pc.tab.shortcuts:Atalhos` },
-  { link: '/pc/midia', label: $localize`:@@pc.tab.media:Mídia` },
+  { link: '/pc', label: $localize`:@@pc.tab.mouse:Mouse`, icon: 'mouse' },
+  { link: '/pc/atalhos', label: $localize`:@@pc.tab.shortcuts:Atalhos`, icon: 'shortcuts' },
+  { link: '/pc/midia', label: $localize`:@@pc.tab.media:Mídia`, icon: 'media' },
   {
     link: '/pc/mais',
     label: $localize`:@@pc.tab.more:Mais`,
+    icon: 'more',
     also: ['/pc/energia', '/pc/controles'],
   },
 ];

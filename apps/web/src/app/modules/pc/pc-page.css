@@ -160,15 +160,6 @@
   margin: 0;
   color: var(--a-ink2);
 }
-.empty code {
-  max-width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-xs);
-  background: var(--a-elev);
-  color: var(--a-ink);
-  font-size: var(--fs-small);
-  overflow-wrap: anywhere;
-}
 .empty .ui-btn {
   margin-top: var(--space-3);
 }

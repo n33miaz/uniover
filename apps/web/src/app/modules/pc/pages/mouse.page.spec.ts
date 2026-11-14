@@ -643,7 +643,7 @@ describe('MousePage', () => {
       expect(root.querySelector('dialog #pad-sensitivity')).not.toBeNull();
       expect(root.querySelector('dialog #scroll-sensitivity')).not.toBeNull();
       const more = [...root.querySelectorAll<HTMLButtonElement>('dialog button')].find(
-        (item) => item.textContent?.trim() === 'Mais ajustes',
+        (item) => item.textContent?.trim() === 'Mais Ajustes',
       );
       expect(more).toBeTruthy();
     });
