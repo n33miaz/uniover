@@ -24,5 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <!-- Diagnóstico de travamento (opção hangdump): ao passar do prazo, lista os testes que ainda estavam em curso. -->
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
   </ItemGroup>
 </Project>

@@ -34,4 +34,8 @@ if [ "${#patterns[@]}" -eq 0 ]; then
   echo "::error::a parte \"$part\" não existe em api-partitions.json."
   exit 1
 fi
-exec dotnet test --project "$(jqr '.project' "$cfg")" "${common[@]}" --filter-namespace "${patterns[@]}"
+# O projeto de integração traz a extensão de hangdump: se um teste travar, em 15 min a execução termina listando os testes que
+# ainda estavam em curso (em vez de ficar calada até o teto de 20 min do job). HANGDUMP_TIMEOUT vazio desliga; o prazo é do tempo total da parte (a mais lenta leva ~13 min no GitHub).
+hang=()
+if [ -n "${HANGDUMP_TIMEOUT-15m}" ]; then hang=(--hangdump --hangdump-timeout "${HANGDUMP_TIMEOUT-15m}" --hangdump-type Mini); fi
+exec dotnet test --project "$(jqr .project "$cfg")" "${common[@]}" "${hang[@]}" --filter-namespace "${patterns[@]}"
