@@ -53,11 +53,8 @@ export class TvAccess {
   );
   /** Digitar na TV (aba Teclado): é do controle e só onde a TV recebe texto. */
   readonly text = computed(() => this.control() && tvSupports(this.selection.selected(), 'text'));
-  /**
-   * O painel dos três pontos tem o que fazer: a grade de apps (abrir ou editar) ou, para quem só controla, a limpeza da
-   * TV, que mora nele. Sem nenhum dos três o botão que o abre nem aparece.
-   */
-  readonly apps = computed(() => this.appList() || this.cleanup());
+  /** O painel Apps tem o que fazer: abrir os apps ou editar os atalhos (a limpeza da TV mora no menu, não nele). */
+  readonly apps = this.appList;
 
   private grant(permission: string) {
     return computed(() => userCan(this.session.user(), permission));

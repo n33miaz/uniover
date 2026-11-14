@@ -7,7 +7,9 @@ import {
   output,
   viewChild,
 } from '@angular/core';
+import { cleanupReasonText } from '../../../shared/tv-cleanup-text';
 import { TvStore } from '../data/tv-store';
+import { clockText } from '../data/tv-types';
 import {
   closeDialog,
   onDialogBackdropClick,
@@ -21,7 +23,7 @@ import { leaveSheet } from './sheet-motion';
  * interruptor desta TV estiver ligado, e o texto da folha diz qual dos dois vale. Nada disso
  * derruba a conexão do controle. A limpeza leva alguns segundos, então ao confirmar a folha sai na hora e o pedido
  * segue pelo `TvStore` (o botão do painel mostra "Limpando…" e o resultado volta como aviso): uma folha modal aberta
- * por até 25 s deixaria o resto do controle parado. O `closed` só sai depois da saída suave, para a página não
+ * por até 25 s deixaria o resto do controle parado. A sheet mostra também a última limpeza, que antes ficava no painel Apps. O `closed` só sai depois da saída suave, para a página não
  * desmontar a folha no meio dela.
  */
 @Component({
@@ -38,6 +40,20 @@ export class CleanupSheet {
   protected readonly closesBackground = computed(
     () => this.store.selectedTv()?.allowBackgroundAppClosing === true,
   );
+
+  /** A última limpeza em uma frase (feita ou pulada), para quem vai decidir se limpa de novo; vazia sem nenhuma. */
+  protected readonly lastText = computed(() => {
+    const result = this.store.lastCleanup();
+    if (!result) return '';
+    if (result.result === 'skipped') {
+      const reason = cleanupReasonText(result.reason);
+      return $localize`:@@tv.cleanup.last-skipped:Limpeza pulada: ${reason}:reason:.`;
+    }
+    const freed = result.freedMb ?? 0;
+    return freed >= 1
+      ? $localize`:@@tv.cleanup.last-result:Limpeza feita às ${clockText(result.at)}:time:, liberou ${freed}:mb: MB.`
+      : $localize`:@@tv.cleanup.last-done:Limpeza feita às ${clockText(result.at)}:time:.`;
+  });
 
   readonly closed = output<void>();
 

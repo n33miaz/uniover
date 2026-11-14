@@ -32,9 +32,11 @@ describe('TvPage', () => {
   const menuButton = () =>
     root.querySelector<HTMLButtonElement>('.head button[aria-label="Mais opções"]')!;
   const menuRow = (name: string) =>
-    [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')].find((row) =>
-      row.textContent?.includes(name),
-    )!;
+    [
+      ...root.querySelectorAll<HTMLButtonElement>(
+        'app-tv-menu button.ui-row, app-tv-menu button.tile',
+      ),
+    ].find((row) => row.textContent?.includes(name))!;
   /** O caminho de quem usa a tela: abre o menu e toca na linha. O menu sai antes de o painel abrir (um modal por vez). */
   const openApps = async () => {
     menuButton().click();
@@ -748,7 +750,7 @@ describe('TvPage', () => {
         it('only runs when the menu has finished leaving, never at the tap', async () => {
           menuButton().click();
           await tick();
-          menuRow('Rede').click();
+          menuRow('Wi-Fi da TV').click();
           await tick();
           // A saída está rolando: o menu ainda está na tela e nada foi pedido à TV.
           expect(dialogs()).toHaveLength(1);
@@ -762,10 +764,48 @@ describe('TvPage', () => {
           expect(store.openSettings).toHaveBeenCalledWith('WIFI');
         });
 
+        it('a permission lost while the menu leaves cancels the action: the admin without control runs nothing', async () => {
+          menuButton().click();
+          await tick();
+          menuRow('Wi-Fi da TV').click();
+          await tick();
+          expect(store.openSettings).not.toHaveBeenCalled();
+
+          // Segue com o menu (pode abrir apps), mas perdeu o controle durante a saída.
+          const user = TestBed.inject(SessionState).user()!;
+          TestBed.inject(SessionState).setUser({
+            ...user,
+            role: 'guest',
+            permissions: ['module:tv', 'tv:launch'],
+          });
+          await tick(300);
+          await tick();
+          expect(root.querySelector('app-tv-menu')).toBeNull();
+          expect(store.openSettings).not.toHaveBeenCalled();
+        });
+
+        it('a panel is not opened either when the permission goes away during the exit', async () => {
+          menuButton().click();
+          await tick();
+          menuRow('Personalizar').click();
+          await tick();
+          const user = TestBed.inject(SessionState).user()!;
+          TestBed.inject(SessionState).setUser({
+            ...user,
+            role: 'guest',
+            permissions: ['module:tv', 'tv:launch'],
+          });
+          await tick(300);
+          await tick();
+          await tick(300);
+          expect(customizeSheet()).toBeNull();
+          expect(root.querySelector('app-tv-customize-sheet')).toBeNull();
+        });
+
         it('a choice left behind by a menu that vanished never fires at a later close', async () => {
           menuButton().click();
           await tick();
-          menuRow('Rede').click();
+          menuRow('Wi-Fi da TV').click();
           await tick();
           expect(store.openSettings).not.toHaveBeenCalled();
 
@@ -878,7 +918,7 @@ describe('TvPage', () => {
         ]);
         await render();
         expect(store.openSettings).not.toHaveBeenCalled();
-        await chooseOnTv('Rede');
+        await chooseOnTv('Wi-Fi da TV');
         expect(store.openSettings).toHaveBeenCalledTimes(1);
         expect(store.openSettings).toHaveBeenCalledWith('WIFI');
         expect(root.querySelector('app-tv-menu')).toBeNull();
@@ -889,7 +929,7 @@ describe('TvPage', () => {
           makeTv('tcl', { isDefault: true, capabilities: withSettings }),
         ]);
         await render();
-        await chooseOnTv('Configurações');
+        await chooseOnTv('Configurações da TV');
         expect(store.openSettings).toHaveBeenLastCalledWith('SETTINGS');
         await chooseOnTv('Entradas');
         expect(store.sendKey).toHaveBeenCalledWith('INPUT');
@@ -905,14 +945,16 @@ describe('TvPage', () => {
           }),
         ]);
         await openMenu();
-        const titles = [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((title) =>
-          title.textContent?.trim(),
-        );
-        expect(titles).not.toContain('Rede');
-        expect(titles).not.toContain('Configurações');
+        const titles = [
+          ...root.querySelectorAll('app-tv-menu .ui-row-title, app-tv-menu .tile'),
+        ].map((title) => title.textContent?.trim());
+        expect(titles).not.toContain('Wi-Fi da TV');
+        expect(titles).not.toContain('Configurações da TV');
         // Sem a tecla `INPUT` declarada, nem Entradas.
         expect(titles).not.toContain('Entradas');
-        expect(root.querySelector('app-tv-menu a[href="/tv/internet"]')).not.toBeNull();
+        // Os dois guias moram atrás da linha Ajuda, que abre a folha; nada de rolar atrás deles no menu.
+        expect(titles).toContain('Ajuda');
+        expect(root.querySelector('app-tv-menu a[href="/tv/internet"]')).toBeNull();
       });
     });
 
@@ -923,15 +965,80 @@ describe('TvPage', () => {
       expect(dialogs()[0].getAttribute('data-placement')).toBe('bottom');
       expect(root.querySelector('app-tv-panel .grab')).not.toBeNull();
       expect(
-        [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-      ).toEqual([
-        'Apps da TV',
-        'Mais botões',
-        'Personalizar',
-        'Se a internet cair',
-        'Gerenciar TVs',
-        'Ajuda para Configurar',
-      ]);
+        [...root.querySelectorAll('app-tv-menu .ui-row-title, app-tv-menu .tile span')].map((el) =>
+          el.textContent?.trim(),
+        ),
+      ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Limpar', 'Gerenciar TVs', 'Ajuda']);
+    });
+
+    it('opens the help sheet from its row, with the guides of the account, one modal at a time', async () => {
+      const dots = menuButton();
+      dots.focus();
+      await openMenu();
+      menuRow('Ajuda').click();
+      await render();
+      await render();
+      expect(root.querySelector('app-tv-menu')).toBeNull();
+      expect(dialogs()).toHaveLength(1);
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Ajuda');
+      expect(
+        [...root.querySelectorAll('app-tv-help .ui-row-title')].map((el) => el.textContent?.trim()),
+      ).toEqual(['Se a internet cair', 'Ajuda para Configurar']);
+      expect(root.querySelector('app-tv-help a[href="/tv/internet"]')).not.toBeNull();
+      expect(root.querySelector('app-tv-help a[href="/tv/configurar"]')).not.toBeNull();
+      root.querySelector<HTMLButtonElement>('app-tv-panel .x')!.click();
+      await render();
+      expect(dialogs()).toHaveLength(0);
+      expect(document.activeElement).toBe(dots);
+    });
+
+    describe('cleaning the TV', () => {
+      const sheet = () => root.querySelector('app-tv-cleanup-sheet dialog');
+      const sheetButton = (name: string) =>
+        [...root.querySelectorAll<HTMLButtonElement>('app-tv-cleanup-sheet button')].find(
+          (b) => b.textContent?.trim() === name,
+        )!;
+
+      it('opens the confirmation only after the menu left, and asks for nothing before the confirmation', async () => {
+        await chooseOnTv('Limpar');
+        expect(root.querySelector('app-tv-menu')).toBeNull();
+        expect(sheet()?.hasAttribute('open')).toBe(true);
+        expect(root.querySelector('app-tv-cleanup-sheet h2')?.textContent).toBe('Limpar a TV?');
+        expect(store.cleanup).not.toHaveBeenCalled();
+        sheetButton('Limpar').click();
+        await render();
+        expect(store.cleanup).toHaveBeenCalledTimes(1);
+        expect(sheet()).toBeNull();
+      });
+
+      it('Cancelar asks for nothing and gives the focus back to the three dots', async () => {
+        const dots = menuButton();
+        dots.focus();
+        await chooseOnTv('Limpar');
+        sheetButton('Cancelar').click();
+        await render();
+        await render();
+        expect(sheet()).toBeNull();
+        expect(store.cleanup).not.toHaveBeenCalled();
+        expect(document.activeElement).toBe(dots);
+      });
+
+      it('does not open with the agent out of reach: the row is dimmed and the menu stays', async () => {
+        store.canSend.set(false);
+        await render();
+        menuButton().click();
+        await render();
+        menuRow('Limpar').click();
+        await render();
+        expect(root.querySelector('app-tv-menu')).not.toBeNull();
+        expect(sheet()).toBeNull();
+      });
+
+      it('is not in the Apps panel any more', async () => {
+        await openApps();
+        expect(root.querySelector('app-tv-apps .clean')).toBeNull();
+        expect(root.querySelector('app-tv-apps [aria-label="Limpar a TV"]')).toBeNull();
+      });
     });
 
     it('closes with Esc and with its own close button, and gives the focus back to the three dots', async () => {
@@ -1300,10 +1407,13 @@ describe('TvPage for a guest', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(
-      [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Se a internet cair']);
+      [...root.querySelectorAll('app-tv-menu .ui-row-title, app-tv-menu .tile span')].map((el) =>
+        el.textContent?.trim(),
+      ),
+    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Limpar', 'Ajuda']);
     expect(root.querySelector('app-tv-menu a[href="/ajustes/sistema"]')).toBeNull();
     expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
+    expect(root.querySelector('app-tv-menu #tv-menu-for-all')).toBeNull();
   });
 
   it('never draws the settings button, not even for the guest: the header is back, the name and the right group', async () => {
@@ -1397,35 +1507,23 @@ describe('TvPage by permission', () => {
     expect(root.querySelector('button[aria-label="Mudo"]')).not.toBeNull();
   });
 
-  it('control only: the menu leads to a short panel with the cleaning and nothing of the app list', async () => {
+  it('control only: the menu has no Apps row and no panel of options, and the cleaning opens its own confirmation', async () => {
     await open('guest', 'module:tv', 'tv:control');
     root.querySelector<HTMLButtonElement>('.head button[aria-label="Mais opções"]')!.click();
     await render();
     expect(
-      [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Opções da TV', 'Mais botões', 'Personalizar', 'Se a internet cair']);
-    [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')]
-      .find((row) => row.textContent?.includes('Opções da TV'))!
+      [...root.querySelectorAll('app-tv-menu .ui-row-title, app-tv-menu .tile span')].map((el) =>
+        el.textContent?.trim(),
+      ),
+    ).toEqual(['Mais botões', 'Personalizar', 'Limpar', 'Ajuda']);
+    [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.tile')]
+      .find((row) => row.textContent?.includes('Limpar'))!
       .click();
     await render();
     await render();
-    expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Opções da TV');
-    const panel = root.querySelector('app-tv-panel')!;
-    expect(panel.querySelector('button.clean')?.textContent?.trim()).toBe('Limpar a TV');
-    for (const selector of [
-      '.grid',
-      '.launch',
-      'input[type="search"]',
-      'button.refresh',
-      '.edit-toggle',
-      '.empty',
-    ]) {
-      expect(panel.querySelector(selector), selector).toBeNull();
-    }
-    // O botão limpa de verdade: abre a folha de confirmação.
-    panel.querySelector<HTMLButtonElement>('button.clean')!.click();
-    await render();
-    expect(root.querySelector('app-tv-cleanup-sheet')).not.toBeNull();
+    expect(root.querySelector('app-tv-menu')).toBeNull();
+    expect(root.querySelector('app-tv-panel')).toBeNull();
+    expect(root.querySelector('app-tv-cleanup-sheet h2')?.textContent).toBe('Limpar a TV?');
   });
 
   it('launch and edit, no control: the message and the shortcuts, the menu, no power, the name is only text', async () => {
@@ -1623,10 +1721,9 @@ describe('TV_ROUTES by permission', () => {
     expect(TestBed.inject(Router).url).toBe('/tv');
   });
 
-  it('the old Apps address opens the short panel of options for who only controls', async () => {
+  it('the old Apps address opens nothing for who only controls: the cleaning lives in the menu', async () => {
     const root = await open('/tv/apps', 'module:tv', 'tv:control');
-    expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Opções da TV');
-    expect(root.querySelector('app-tv-panel .grid')).toBeNull();
+    expect(root.querySelector('app-tv-panel')).toBeNull();
     expect(TestBed.inject(Router).url).toBe('/tv');
   });
 

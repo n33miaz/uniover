@@ -145,13 +145,16 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     await expect(page.getByRole('button', { name: 'Mudo', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toBeVisible();
     await expect(power(page)).toHaveCount(0);
-    // Sem abrir apps nem editar atalhos não há "Apps da TV", mas os três pontos ficam: a limpeza da TV mora neles.
+    // Sem abrir apps nem editar atalhos não há "Apps da TV" (nem painel de opções no lugar), mas os três pontos ficam: a
+    // limpeza da TV é um botão do menu.
     await menuButton(page).click();
     await expect(menuRow(page, 'Apps da TV')).toHaveCount(0);
-    await expect(menuRow(page, 'Opções da TV')).toBeVisible();
+    await expect(menuRow(page, 'Opções da TV')).toHaveCount(0);
+    await expect(menuRow(page, 'Limpar')).toBeVisible();
     await expect(menuRow(page, 'Personalizar')).toBeVisible();
-    // Trocar a computador da TV é do administrador: a conta convidada não vê nem o aviso "Afeta todos".
+    // Trocar o computador da TV é do administrador: a conta convidada não vê nem o grupo "Para todos".
     await expect(menuDialog(page).getByText('Afeta todos')).toHaveCount(0);
+    await expect(menuDialog(page).getByRole('heading', { name: 'Para todos' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menuDialog(page)).toHaveCount(0);
     await expect(page.getByText(VIEW_ONLY_TEXT, { exact: true })).toHaveCount(0);
@@ -183,21 +186,19 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     expect(tv.denied).toEqual([]);
   });
 
-  test('os três pontos abrem um painel curto só com "Limpar a TV", e a limpeza alcança a TV', async ({
+  test('o menu tem o botão Limpar, sem painel de opções, e a limpeza alcança a TV', async ({
     page,
   }, info) => {
     await openTvAs(page, CONTROL_ONLY);
-    await openMenuRow(page, 'Opções da TV');
-    const options = page.getByRole('dialog', { name: 'Opções da TV' });
-    await expect(options).toBeVisible();
-    await expect(options.getByRole('button', { name: 'Limpar a TV' })).toBeVisible();
+    await menuButton(page).click();
+    const menu = menuDialog(page);
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Limpar', exact: true })).toBeVisible();
     // Nada do que o painel de apps traz e que esta conta não pode usar.
-    await expect(options.getByRole('button', { name: 'Atualizar lista' })).toHaveCount(0);
-    await expect(options.getByRole('button', { name: 'Editar', exact: true })).toHaveCount(0);
-    await expect(options.getByRole('searchbox')).toHaveCount(0);
-    await expect(options.locator('.grid, .launch, .empty, h3')).toHaveCount(0);
+    await expect(menu.getByRole('button', { name: 'Apps da TV', exact: true })).toHaveCount(0);
+    await expect(menu.getByRole('button', { name: 'Atualizar lista' })).toHaveCount(0);
     await settle(page);
-    await shoot(page, 'a-opcoes', info.project.name);
+    await shoot(page, 'a-menu', info.project.name);
     for (const scheme of ['light', 'dark'] as const) {
       await useScheme(page, scheme);
       await expectNoA11yViolations(page);
@@ -205,13 +206,14 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     await expectNoHorizontalScroll(page);
     expect(await smallTargets(page)).toEqual([]);
 
-    await options.getByRole('button', { name: 'Limpar a TV' }).click();
+    await menu.getByRole('button', { name: 'Limpar', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Limpar a TV?' });
     await expect(sheet).toBeVisible();
     await sheet.getByRole('button', { name: 'Limpar', exact: true }).click();
     await expect(sheet).toHaveCount(0);
     await expect.poll(() => tv.count('/cleanup')).toBe(1);
-    await expect(options.getByText('Fechou 6 apps e liberou cerca de 380 MB.')).toBeVisible();
+    // O resultado chega como aviso da tela, já sem o menu.
+    await expect(page.getByText('Fechou 6 apps e liberou cerca de 380 MB.')).toBeVisible();
 
     // Só o que a permissão cobre saiu: ler, aquecer, avisar a presença (o toque no painel) e limpar. Nada recusado foi chamado.
     const paths = new Set(writes().map((request) => `${request.method} ${request.path}`));
@@ -235,16 +237,15 @@ test.describe('(a) ver e controlar, sem desligar e sem Apps', () => {
     expect(tv.denied).toEqual([]);
   });
 
-  test('os endereços antigos abrem o painel curto de opções e o teclado, e tiram o parâmetro do endereço', async ({
+  test('os endereços antigos não abrem painel de apps sem o direito, abrem o teclado, e tiram o parâmetro do endereço', async ({
     page,
   }) => {
     signInWith(CONTROL_ONLY);
     await page.goto('/tv/apps');
     await showTv(page);
     await expect(page).toHaveURL(/\/tv\/$/);
-    // Sem a grade de apps: o painel que abre é o das opções.
-    await expect(page.getByRole('dialog', { name: 'Opções da TV' })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Apps da TV' })).toHaveCount(0);
+    // Sem a grade de apps nada abre: a limpeza mora no menu, não em um painel.
+    await expect(page.getByRole('dialog')).toHaveCount(0);
 
     await page.goto('/tv/teclado');
     await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
@@ -418,7 +419,8 @@ test.describe('(d) tudo, como o dono', () => {
 
     await openMenuRow(page, 'Apps da TV');
     const apps = page.getByRole('dialog', { name: 'Apps da TV' });
-    await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toBeVisible();
+    // Limpar a TV é item do menu, não do painel de apps (nem do dono).
+    await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toHaveCount(0);
     await expect(apps.getByRole('button', { name: 'Atualizar lista' })).toBeVisible();
     await expect(apps.getByRole('button', { name: 'Editar', exact: true })).toBeVisible();
     expect(tv.denied).toEqual([]);

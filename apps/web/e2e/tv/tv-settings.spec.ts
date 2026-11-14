@@ -84,7 +84,7 @@ async function expectSound(page: Page) {
   }
 }
 
-test.describe('Rede, Configurações e Entradas no menu', () => {
+test.describe('Wi-Fi, Configurações e Entradas no menu', () => {
   test('numa Android TV, cada linha só age no toque, fecha o menu e avisa', async ({
     page,
   }, info) => {
@@ -93,24 +93,24 @@ test.describe('Rede, Configurações e Entradas no menu', () => {
 
     await openMenu(page);
     const menu = menuDialog(page);
-    for (const name of ['Rede', 'Configurações', 'Entradas']) {
+    for (const name of ['Wi-Fi da TV', 'Configurações da TV', 'Entradas']) {
       await expect(menu.getByRole('button', { name, exact: true })).toBeVisible();
     }
-    await expect(menu.getByRole('link', { name: 'Se a internet cair' })).toHaveAttribute(
-      'href',
-      '/tv/internet',
-    );
+    // Os guias moram atrás da linha Ajuda.
+    await expect(menu.getByRole('button', { name: 'Ajuda', exact: true })).toBeVisible();
     expect(tv.settingsScreens(), 'só ver o menu não manda nada').toEqual([]);
     await screenshot(page, join(SHOTS, `menu-com-acoes-${info.project.name}.png`));
     await expectSound(page);
 
-    await menu.getByRole('button', { name: 'Rede', exact: true }).click();
+    await menu.getByRole('button', { name: 'Wi-Fi da TV', exact: true }).click();
     await expect(menuDialog(page)).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: 'Rede aberta na TV.' })).toBeVisible();
     expect(tv.settingsScreens()).toEqual(['WIFI']);
 
     await openMenu(page);
-    await menuDialog(page).getByRole('button', { name: 'Configurações', exact: true }).click();
+    await menuDialog(page)
+      .getByRole('button', { name: 'Configurações da TV', exact: true })
+      .click();
     await expect(
       page.getByRole('status').filter({ hasText: 'Configurações abertas na TV.' }),
     ).toBeVisible();
@@ -124,12 +124,16 @@ test.describe('Rede, Configurações e Entradas no menu', () => {
     expect(tv.denied).toEqual([]);
   });
 
-  test('numa Samsung só há Entradas: Rede e Configurações nem aparecem', async ({ page }) => {
+  test('numa Samsung só há Entradas: Wi-Fi e Configurações da TV nem aparecem', async ({
+    page,
+  }) => {
     await openTv(page, SAMSUNG);
     await openMenu(page);
     const menu = menuDialog(page);
-    await expect(menu.getByRole('button', { name: 'Rede', exact: true })).toHaveCount(0);
-    await expect(menu.getByRole('button', { name: 'Configurações', exact: true })).toHaveCount(0);
+    await expect(menu.getByRole('button', { name: 'Wi-Fi da TV', exact: true })).toHaveCount(0);
+    await expect(
+      menu.getByRole('button', { name: 'Configurações da TV', exact: true }),
+    ).toHaveCount(0);
     await expect(menu.getByRole('button', { name: 'Entradas', exact: true })).toBeVisible();
     expect(tv.settingsScreens()).toEqual([]);
   });
@@ -138,7 +142,7 @@ test.describe('Rede, Configurações e Entradas no menu', () => {
     await openTv(page, ANDROID);
     tv.settingsAnswer = 'unsupported';
     await openMenu(page);
-    await menuDialog(page).getByRole('button', { name: 'Rede', exact: true }).click();
+    await menuDialog(page).getByRole('button', { name: 'Wi-Fi da TV', exact: true }).click();
     await expect(
       page.getByRole('alert').filter({ hasText: 'Esta TV não abre essa tela pelo app.' }),
     ).toBeVisible();
@@ -161,7 +165,7 @@ test.describe('Rede, Configurações e Entradas no menu', () => {
     await page.goto('/tv');
     await showTv(page);
     await openMenu(page);
-    await menuDialog(page).getByRole('button', { name: 'Rede', exact: true }).click();
+    await menuDialog(page).getByRole('button', { name: 'Wi-Fi da TV', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Rede aberta na TV.' })).toBeVisible();
     expect(tv.settingsScreens()).toEqual(['WIFI']);
     expect(tv.denied).toEqual([]);
@@ -169,12 +173,16 @@ test.describe('Rede, Configurações e Entradas no menu', () => {
 });
 
 test.describe('Se a internet cair', () => {
-  test('o menu leva ao passo a passo, que é só texto e volta ao controle', async ({
+  test('a Ajuda do menu leva ao passo a passo, que é só texto e volta ao controle', async ({
     page,
   }, info) => {
     await openTv(page, ANDROID);
     await openMenu(page);
-    await menuDialog(page).getByRole('link', { name: 'Se a internet cair' }).click();
+    await menuDialog(page).getByRole('button', { name: 'Ajuda', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Ajuda' })
+      .getByRole('link', { name: 'Se a internet cair' })
+      .click();
     await expect(page).toHaveURL(/\/tv\/internet$/);
     await expect(page.getByRole('heading', { level: 2, name: 'Só a internet caiu' })).toBeVisible();
     await expect(

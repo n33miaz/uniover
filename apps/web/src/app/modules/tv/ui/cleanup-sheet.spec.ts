@@ -59,6 +59,57 @@ describe('CleanupSheet', () => {
     expect(root.textContent).not.toContain('fecha todos');
   });
 
+  describe('the last cleanup', () => {
+    const show = async (last: Parameters<typeof store.lastCleanup.set>[0]) => {
+      store.lastCleanup.set(last);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+    const note = () => root.querySelector('.last')?.textContent?.trim();
+
+    it('says nothing when there was none', () => {
+      expect(root.querySelector('.last')).toBeNull();
+    });
+
+    it('says when the last one was done and how much memory it freed', async () => {
+      await show({
+        at: new Date('2026-10-27T16:05:00'),
+        freedMb: 120,
+        result: 'completed',
+        reason: null,
+      });
+      expect(note()).toBe('Limpeza feita às 16:05, liberou 120 MB.');
+      expect(root.querySelector('.last')?.getAttribute('role')).toBe('status');
+    });
+
+    it('leaves the megabytes out when almost nothing was freed', async () => {
+      await show({
+        at: new Date('2026-10-27T16:05:00'),
+        freedMb: 0,
+        result: 'completed',
+        reason: null,
+      });
+      expect(note()).toBe('Limpeza feita às 16:05.');
+    });
+
+    it('says a skipped cleanup was skipped because the TV was in use, or why otherwise', async () => {
+      await show({
+        at: new Date('2026-10-27T16:05:00'),
+        freedMb: null,
+        result: 'skipped',
+        reason: 'media-in-use',
+      });
+      expect(note()).toBe('Limpeza pulada: TV em uso.');
+      await show({
+        at: new Date('2026-10-27T16:05:00'),
+        freedMb: null,
+        result: 'skipped',
+        reason: 'model-unconfirmed',
+      });
+      expect(note()).toBe('Limpeza pulada: modelo não confirmado.');
+    });
+  });
+
   it('has only Cancelar and Limpar (no close button)', () => {
     expect(buttons().map((b) => b.textContent?.trim())).toEqual(['Cancelar', 'Limpar']);
   });

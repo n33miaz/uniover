@@ -263,12 +263,65 @@ test.describe('menu dos três pontos', () => {
     await expect(menu.getByRole('button', { name: 'Personalizar', exact: true })).toBeVisible();
     const bind = menu.getByRole('link', { name: /Gerenciar TVs/ });
     await expect(bind).toHaveAttribute('href', '/ajustes/sistema');
-    await expect(bind.getByText('Afeta todos')).toBeVisible();
+    // O aviso de que afeta todos é o título do grupo, uma vez só: nenhuma linha o repete.
+    await expect(menu.getByRole('heading', { level: 3, name: 'Para todos' })).toBeVisible();
+    await expect(menu.getByText('Afeta todos')).toHaveCount(0);
+    await expect(menu.getByRole('heading', { level: 3, name: 'Na TV' })).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Limpar', exact: true })).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Ajuda', exact: true })).toBeVisible();
     await settle(page);
     await expectNoVerticalScroll(page);
+    // A conta do dono cabe sem rolar: o corpo do cartão não tem o que rolar (a conta de 11 linhas passava da tela).
+    const body = menu.locator('.body');
+    const overflow = await body.evaluate((el) => el.scrollHeight - el.clientHeight);
+    expect(overflow, 'o menu do dono rola').toBeLessThanOrEqual(1);
+    // Cada botão da TV, alvo de pelo menos 44 px.
+    for (const tile of await menu.locator('.tile').all()) {
+      expect((await box(tile)).height).toBeGreaterThanOrEqual(44);
+    }
 
     await shoot(page, 'menu-aberto', info.project.name);
     await expectSound(page);
+  });
+
+  test('o menu mais cheio do dono (TV Livre, quatro ações na TV, dois guias) cabe sem rolar', async ({
+    page,
+  }, info) => {
+    tv.tvs = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Sala',
+        isDefault: true,
+        agentSlug: 'pc-sala',
+        kind: 'android',
+        online: true,
+        capabilities: [
+          'tv.remote',
+          'tv.kind.android',
+          'tv.adb',
+          'tv.livre.v1',
+          'tv.settings.open.v1',
+          'tv.key.INPUT',
+        ],
+      } as never,
+    ];
+    await openTv(page);
+    await menuButton(page).click();
+    const menu = menuDialog(page);
+    await expect(menu.getByRole('link', { name: 'TV Livre' })).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Configurações da TV' })).toBeVisible();
+    await settle(page);
+    const overflow = await menu
+      .locator('.body')
+      .evaluate((el) => el.scrollHeight - el.clientHeight);
+    expect(overflow, 'o menu mais cheio rola').toBeLessThanOrEqual(1);
+    await expect(menu.getByRole('button', { name: 'Ajuda', exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    for (const row of await menu.locator('.ui-row, .tile').all()) {
+      expect((await box(row)).height).toBeGreaterThanOrEqual(44);
+    }
+    await shoot(page, 'menu-mais-cheio', info.project.name);
   });
 
   test('fecha por Esc, pelo toque fora do cartão e pelo gesto, e devolve o foco aos três pontos', async ({
@@ -339,6 +392,52 @@ test.describe('menu dos três pontos', () => {
     expect(await page.locator('dialog[open]').count()).toBe(1);
     await page.keyboard.press('Escape');
     await expect(appsDialog(page)).toHaveCount(0);
+    await expect(menuButton(page)).toBeFocused();
+  });
+
+  test('a linha Ajuda abre a folha com os dois guias, e cada um leva à sua tela', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await menuButton(page).click();
+    await menuDialog(page).getByRole('button', { name: 'Ajuda', exact: true }).click();
+    const help = page.getByRole('dialog', { name: 'Ajuda' });
+    await expect(help).toBeVisible();
+    await expect(menuDialog(page)).toHaveCount(0);
+    expect(await page.locator('dialog[open]').count()).toBe(1);
+    await expect(help.getByRole('link', { name: 'Se a internet cair' })).toHaveAttribute(
+      'href',
+      '/tv/internet',
+    );
+    await expect(help.getByRole('link', { name: 'Ajuda para Configurar' })).toHaveAttribute(
+      'href',
+      '/tv/configurar',
+    );
+    await page.keyboard.press('Escape');
+    await expect(help).toHaveCount(0);
+    await expect(menuButton(page)).toBeFocused();
+    await menuButton(page).click();
+    await menuDialog(page).getByRole('button', { name: 'Ajuda', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Ajuda' })
+      .getByRole('link', { name: 'Se a internet cair' })
+      .click();
+    await expect(page).toHaveURL(/\/tv\/internet$/);
+  });
+
+  test('a linha Limpar fecha o menu e abre a confirmação, que só limpa depois do toque em Limpar', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await menuButton(page).click();
+    await menuDialog(page).getByRole('button', { name: 'Limpar', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Limpar a TV?' });
+    await expect(sheet).toBeVisible();
+    await expect(menuDialog(page)).toHaveCount(0);
+    expect(tv.count('/cleanup')).toBe(0);
+    await sheet.getByRole('button', { name: 'Limpar', exact: true }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect.poll(() => tv.count('/cleanup')).toBe(1);
     await expect(menuButton(page)).toBeFocused();
   });
 
@@ -440,10 +539,12 @@ test.describe('menu dos três pontos', () => {
     await menuButton(page).click();
     const menu = menuDialog(page);
     await expect(menu.getByRole('button', { name: 'Apps da TV', exact: true })).toBeVisible();
-    // O único link que a convidada tem é o do passo a passo de quando a internet cai: nada de gerenciar TVs.
+    // O único link que a convidada tem é o da Ajuda, que leva direto ao passo a passo de quando a internet cai: nada de
+    // gerenciar TVs e nem o título do grupo que afeta todos.
     await expect(menu.getByRole('link')).toHaveCount(1);
-    await expect(menu.getByRole('link', { name: 'Se a internet cair' })).toBeVisible();
+    await expect(menu.getByRole('link', { name: 'Ajuda' })).toHaveAttribute('href', '/tv/internet');
     await expect(menu.getByRole('link', { name: /Gerenciar TVs/ })).toHaveCount(0);
+    await expect(menu.getByRole('heading', { name: 'Para todos' })).toHaveCount(0);
     await expect(menu.getByText('Afeta todos')).toHaveCount(0);
     expect(tv.denied).toEqual([]);
   });
@@ -592,9 +693,18 @@ test.describe('sugestões de atalho numa TV sem atalho escolhido', () => {
     await expect(button(page, 'Sugestão: YouTube')).toBeVisible();
     await expect(button(page, 'Sugestão: Netflix')).toHaveCount(0);
 
+    // As sugestões voltam por Personalizar, onde ficam os ajustes do controle.
     await menuButton(page).click();
-    await menuDialog(page).getByRole('button', { name: 'Mostrar sugestões de atalhos' }).click();
-    await page.keyboard.press('Escape');
+    await expect(
+      menuDialog(page).getByRole('button', { name: 'Mostrar sugestões de atalhos' }),
+    ).toHaveCount(0);
+    await menuDialog(page).getByRole('button', { name: 'Personalizar', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
+    await sheet.getByRole('button', { name: 'Mostrar sugestões de atalhos' }).click();
+    await expect(sheet.getByRole('button', { name: 'Mostrar sugestões de atalhos' })).toHaveCount(
+      0,
+    );
+    await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(button(page, 'Sugestão: Netflix')).toBeVisible();
   });
 

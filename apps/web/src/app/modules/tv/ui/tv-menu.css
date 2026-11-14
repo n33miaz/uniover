@@ -9,7 +9,96 @@
   display: none;
 }
 
-/* O chip de aviso não encolhe nem quebra: o nome da linha é que cede a largura. */
-.ui-chip {
-  white-space: nowrap;
+/*
+ * As linhas do menu são um pouco mais baixas que as do resto do app (52 px, com o alvo de toque ainda acima de 44): com
+ * todas as ações da TV e o TV Livre, o menu do administrador tem de caber sem rolar na altura do iPhone 12 (664 px).
+ */
+.ui-row {
+  min-height: 52px;
+  padding-block: 6px;
+}
+
+/* Título de um bloco e o que vem embaixo dele ficam juntos. */
+.on-tv,
+.for-all {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+h3 {
+  margin: 0;
+}
+
+/*
+ * As ações na TV lado a lado: duas colunas, e o último botão sozinho na fileira ocupa a largura toda (uma Samsung só tem
+ * Entradas; com três ações a terceira fecha a fileira). Cada botão é um alvo de pelo menos 48 px, e o nome pode quebrar em
+ * duas linhas ("Configurações da TV").
+ */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.tile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 46px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.tile:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.tile app-tv-icon {
+  flex: none;
+  color: var(--a-accent-ink);
+}
+.tile span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tile:active {
+  background: var(--a-elev);
+}
+.tile:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .tile:hover {
+    background: var(--a-surface-2);
+  }
+}
+/* Sem agente (ou com uma limpeza em curso) o toque não faz nada: o botão fica apagado, mas achável por teclado e leitor de tela. */
+.tile.off,
+.tile[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* O ícone de limpar gira enquanto a TV responde; quem pediu menos movimento só vê o botão apagado. */
+app-tv-icon.spin {
+  opacity: 0.7;
+}
+@media (prefers-reduced-motion: no-preference) {
+  app-tv-icon.spin {
+    animation: spin 900ms linear infinite;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

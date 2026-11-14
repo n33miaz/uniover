@@ -184,6 +184,19 @@
     </div>
   </div>
 
+  <!-- As sugestões de atalhos que a pessoa dispensou voltam por aqui; sem nenhuma dispensada a linha nem existe. -->
+  @if (canRestoreSuggestions()) {
+    <div class="ui-group">
+      <button type="button" class="ui-row" (click)="restoreSuggestions()">
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@tv.custom.restore-suggestions"
+            >Mostrar sugestões de atalhos</span
+          >
+        </span>
+      </button>
+    </div>
+  }
+
   <app-install-hint-row />
 
   <div class="footer">

@@ -62,9 +62,9 @@ describe('TvAccess', () => {
       power: false,
       launch: false,
       edit: false,
-      // Só controla: sem grade de apps, mas o painel dos três pontos existe (a limpeza da TV mora nele).
+      // Só controla: sem grade de apps, e sem o painel Apps (a limpeza da TV é um item do menu, não dele).
       list: false,
-      apps: true,
+      apps: false,
     });
     guest(['module:tv', 'tv:launch', 'tv:edit-shortcuts']);
     expect(snapshot()).toEqual({
@@ -86,10 +86,11 @@ describe('TvAccess', () => {
     expect(access().appList()).toBe(true);
   });
 
-  it('control alone opens the panel of the three dots, but with no app list: it holds only the cleaning', () => {
+  it('control alone has no Apps panel: the cleaning lives in the menu, not in it', () => {
     guest(['module:tv', 'tv:control']);
-    expect(access().apps()).toBe(true);
+    expect(access().apps()).toBe(false);
     expect(access().appList()).toBe(false);
+    expect(access().cleanup()).toBe(true);
   });
 
   it('with only the view, nothing else is allowed', () => {

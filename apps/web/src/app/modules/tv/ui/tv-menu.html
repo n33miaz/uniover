@@ -1,15 +1,15 @@
 <!--
-  Primeiro grupo: o que é da pessoa (vale só para ela, neste aparelho). Segundo grupo: ações na própria TV e o guia de
-  quando a internet cai. Terceiro grupo, só do administrador: o que muda para todos que usam a TV. Sem permissão para
-  nenhuma linha o botão que abre este menu nem aparece.
+  Quatro blocos. O controle (o que é da pessoa e vale só para ela, neste aparelho); na TV (ações que acontecem na própria TV,
+  em botões lado a lado, para o menu caber sem rolar); para todos (o que muda para quem usa a TV, só do administrador); e a
+  ajuda. Sem permissão para nenhuma linha o botão que abre este menu nem aparece.
 -->
-@if (access.apps() || access.control() || canRestoreSuggestions()) {
+@if (access.apps() || access.control() || canRestoreHere()) {
   <div class="ui-group">
     @if (access.apps()) {
       <button type="button" class="ui-row" (click)="choose.emit('apps')">
         <span class="ui-tile"><app-tv-icon name="apps" /></span>
         <span class="ui-row-text">
-          <span class="ui-row-title">{{ appsLabel() }}</span>
+          <span class="ui-row-title" i18n="@@tv.menu.apps">Apps da TV</span>
         </span>
       </button>
     }
@@ -39,7 +39,8 @@
         </span>
       </button>
     }
-    @if (canRestoreSuggestions()) {
+    <!-- Quem edita atalhos mas não controla não tem Personalizar, onde as sugestões dispensadas voltam. -->
+    @if (canRestoreHere()) {
       <button type="button" class="ui-row" (click)="restoreSuggestions()">
         <span class="ui-tile"><app-tv-icon name="refresh" /></span>
         <span class="ui-row-text">
@@ -53,67 +54,92 @@
 }
 
 <!--
-  Ações na própria TV (só por este toque) e o guia de quando a internet cai. Rede e Configurações só existem onde o agente da
-  TV declara saber abri-las (a Android TV); Entradas usa a tecla de fonte e só aparece com `tv.key.INPUT` declarada.
+  Ações na própria TV, só por este toque. Wi-Fi e Configurações só existem onde o agente da TV declara saber abri-las (a
+  Android TV); Entradas usa a tecla de fonte e só aparece com `tv.key.INPUT` declarada; Limpar, onde há o canal para isso.
 -->
-@if (access.control() || canBind()) {
-  <div class="ui-group">
-    @if (access.settings()) {
-      <button type="button" class="ui-row" (click)="choose.emit('network')">
-        <span class="ui-tile"><app-tv-icon name="wifi" /></span>
-        <span class="ui-row-text">
-          <span class="ui-row-title" i18n="@@tv.menu.network">Rede</span>
-        </span>
-      </button>
-      <button type="button" class="ui-row" (click)="choose.emit('settings')">
-        <span class="ui-tile"><app-tv-icon name="settings" /></span>
-        <span class="ui-row-text">
-          <span class="ui-row-title" i18n="@@tv.menu.tv-settings">Configurações</span>
-        </span>
-      </button>
-    }
-    @if (access.inputs()) {
-      <button type="button" class="ui-row" (click)="choose.emit('inputs')">
-        <span class="ui-tile"><app-tv-icon name="input" /></span>
-        <span class="ui-row-text">
-          <span class="ui-row-title" i18n="@@tv.menu.inputs">Entradas</span>
-        </span>
-      </button>
-    }
-    <a class="ui-row" [routerLink]="offlineGuideRoute">
-      <span class="ui-tile"><app-tv-icon name="info" /></span>
-      <span class="ui-row-text">
-        <span class="ui-row-title" i18n="@@tv.menu.offline-guide">Se a internet cair</span>
-      </span>
-    </a>
-  </div>
+@if (access.cleanup() || access.inputs() || access.settings()) {
+  <section class="on-tv" aria-labelledby="tv-menu-on-tv">
+    <h3 id="tv-menu-on-tv" class="ui-section-label" i18n="@@tv.menu.on-tv">Na TV</h3>
+    <div class="tiles">
+      @if (access.cleanup()) {
+        <button
+          type="button"
+          class="tile"
+          [class.off]="!store.canSend()"
+          [attr.aria-haspopup]="'dialog'"
+          [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
+          (click)="clean()"
+        >
+          <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
+          <span>{{ cleanLabel() }}</span>
+        </button>
+      }
+      @if (access.inputs()) {
+        <button type="button" class="tile" (click)="choose.emit('inputs')">
+          <app-tv-icon name="input" />
+          <span i18n="@@tv.menu.inputs">Entradas</span>
+        </button>
+      }
+      @if (access.settings()) {
+        <button type="button" class="tile" (click)="choose.emit('network')">
+          <app-tv-icon name="wifi" />
+          <span i18n="@@tv.menu.network">Wi-Fi da TV</span>
+        </button>
+        <button type="button" class="tile" (click)="choose.emit('settings')">
+          <app-tv-icon name="settings" />
+          <span i18n="@@tv.menu.tv-settings">Configurações da TV</span>
+        </button>
+      }
+    </div>
+  </section>
 }
 
 @if (canBind()) {
+  <section class="for-all" aria-labelledby="tv-menu-for-all">
+    <h3 id="tv-menu-for-all" class="ui-section-label" i18n="@@tv.menu.for-all">Para todos</h3>
+    <div class="ui-group">
+      @if (canOpenLivre()) {
+        <a class="ui-row" routerLink="/tv/livre">
+          <span class="ui-tile"><app-tv-icon name="home" /></span>
+          <span class="ui-row-text">
+            <span class="ui-row-title" i18n="@@tv.menu.livre">TV Livre</span>
+          </span>
+        </a>
+      }
+      <a class="ui-row" [routerLink]="bindingRoute()">
+        <span class="ui-tile"><app-tv-icon name="tv" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title">{{ bindingLabel() }}</span>
+        </span>
+      </a>
+    </div>
+  </section>
+}
+
+<!--
+  Os guias moram atrás de uma linha só. Com dois ou mais, ela abre a folha que os lista; com um só, leva direto a ele.
+-->
+@if (guides.list().length > 0) {
   <div class="ui-group">
-    @if (canOpenLivre()) {
-      <a class="ui-row" routerLink="/tv/livre">
-        <span class="ui-tile"><app-tv-icon name="tv" /></span>
+    @if (guides.list().length === 1) {
+      <a class="ui-row" [routerLink]="guides.list()[0].route">
+        <span class="ui-tile"><app-tv-icon name="info" /></span>
         <span class="ui-row-text">
-          <span class="ui-row-title" i18n="@@tv.menu.livre">TV Livre</span>
-        </span>
-        <span class="ui-chip warn" i18n="@@tv.menu.affects-all">Afeta todos</span>
-      </a>
-    }
-    <a class="ui-row" [routerLink]="bindingRoute()">
-      <span class="ui-tile"><app-tv-icon name="tv" /></span>
-      <span class="ui-row-text">
-        <span class="ui-row-title">{{ bindingLabel() }}</span>
-      </span>
-      <span class="ui-chip warn" i18n="@@tv.menu.affects-all">Afeta todos</span>
-    </a>
-    @if (bindingRoute() !== '/tv/configurar') {
-      <a class="ui-row" routerLink="/tv/configurar">
-        <span class="ui-tile"><app-tv-icon name="tv" /></span>
-        <span class="ui-row-text">
-          <span class="ui-row-title" i18n="@@tv.menu.setup-help">Ajuda para Configurar</span>
+          <span class="ui-row-title" i18n="@@tv.menu.help">Ajuda</span>
         </span>
       </a>
+    } @else {
+      <button
+        type="button"
+        class="ui-row"
+        [attr.aria-haspopup]="'dialog'"
+        (click)="choose.emit('help')"
+      >
+        <span class="ui-tile"><app-tv-icon name="info" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@tv.menu.help">Ajuda</span>
+        </span>
+      </button>
     }
   </div>
 }

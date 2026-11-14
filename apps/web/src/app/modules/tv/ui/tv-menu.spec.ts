@@ -15,9 +15,23 @@ describe('TvMenu', () => {
   let chosen: TvMenuChoice[];
 
   const GUEST_TV = ['module:tv', 'tv:control', 'tv:launch'];
+  const ANDROID_WITH_SETTINGS = [
+    'tv.remote',
+    'tv.kind.android',
+    'tv.adb',
+    'tv.settings.open.v1',
+    'tv.key.INPUT',
+  ];
+  /** Todas as linhas e botões do menu, na ordem da tela. */
   const rows = () =>
-    [...root.querySelectorAll('.ui-row')].map((row) =>
-      row.querySelector('.ui-row-title')?.textContent?.trim(),
+    [...root.querySelectorAll('.ui-row .ui-row-title, .tile span')].map((node) =>
+      node.textContent?.trim(),
+    );
+  const tiles = () => [...root.querySelectorAll('.tile')].map((tile) => tile.textContent?.trim());
+  const headings = () => [...root.querySelectorAll('h3')].map((heading) => heading.textContent);
+  const control = (label: string) =>
+    [...root.querySelectorAll<HTMLButtonElement>('button.ui-row, button.tile')].find(
+      (button) => button.textContent?.trim() === label,
     );
 
   const mount = (guest: readonly string[] | null = null) => {
@@ -35,11 +49,17 @@ describe('TvMenu', () => {
       });
     }
     fixture = TestBed.createComponent(TvMenu);
-    fixture.componentRef.setInput('appsLabel', 'Apps da TV');
     chosen = [];
     fixture.componentInstance.choose.subscribe((choice) => chosen.push(choice));
     fixture.detectChanges();
     root = fixture.nativeElement;
+  };
+
+  const useTv = (capabilities: string[], overrides = {}) => {
+    TestBed.inject(TvSelection).setTvs([
+      makeTv('tv', { isDefault: true, capabilities, ...overrides }),
+    ]);
+    fixture.detectChanges();
   };
 
   afterEach(() => {
@@ -47,166 +67,157 @@ describe('TvMenu', () => {
     localStorage.clear();
   });
 
-  it('gathers apps and customization for the person, and, apart, the one thing that affects everybody', () => {
+  it('gathers the control, the actions on the TV, what is for everybody and the help, in four blocks', () => {
     mount();
     expect(rows()).toEqual([
       'Apps da TV',
       'Mais botões',
       'Personalizar',
-      'Se a internet cair',
+      'Limpar',
       'Gerenciar TVs',
-      'Ajuda para Configurar',
+      'Ajuda',
     ]);
-    expect(root.querySelectorAll('.ui-group')).toHaveLength(3);
+    expect(headings()).toEqual(['Na TV', 'Para todos']);
+    // O título do grupo diz que afeta todos, uma vez só: nenhuma linha repete o aviso.
+    expect(root.textContent).not.toContain('Afeta todos');
+    expect(root.querySelector('.ui-chip')).toBeNull();
     const bind = root.querySelector<HTMLAnchorElement>('a[href="/ajustes/sistema"]')!;
-    expect(bind.getAttribute('href')).toBe('/ajustes/sistema');
-    expect(bind.querySelector('.ui-chip')?.textContent?.trim()).toBe('Afeta todos');
-    expect(root.querySelector('a[href="/tv/configurar"]')).not.toBeNull();
+    expect(bind.querySelector('.ui-row-title')?.textContent?.trim()).toBe('Gerenciar TVs');
   });
 
-  it('asks the screen to open Apps, More buttons or Customize, and leaves the closing to the screen', () => {
+  it('asks the screen to open Apps, More buttons, Customize, the cleaning or the help, and leaves the closing to the screen', () => {
     mount();
-    const [apps, keys, customize] = [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')];
-    apps!.click();
-    keys!.click();
-    customize!.click();
-    expect(chosen).toEqual(['apps', 'keys', 'customize']);
-    expect(customize!.getAttribute('aria-haspopup')).toBe('dialog');
-    expect(keys!.getAttribute('aria-haspopup')).toBe('dialog');
+    useTv(['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.key.INPUT', 'tv.key.GUIDE']);
+    // Dois guias (a internet e configurar): a linha Ajuda abre a folha que os lista.
+    control('Apps da TV')!.click();
+    control('Mais botões')!.click();
+    control('Personalizar')!.click();
+    control('Limpar')!.click();
+    control('Ajuda')!.click();
+    expect(chosen).toEqual(['apps', 'keys', 'customize', 'cleanup', 'help']);
+    for (const label of ['Mais botões', 'Personalizar', 'Limpar', 'Ajuda']) {
+      expect(control(label)!.getAttribute('aria-haspopup'), label).toBe('dialog');
+    }
   });
 
   it('has no "Mais botões" row when every key the TV has is already on the main screen', () => {
     mount();
-    // Uma Android com a grade cheia e só a Fonte declarada: a Fonte ainda cabe em Mais botões.
+    // Uma Android com a grade cheia e só as Entradas declaradas: ainda cabem em Mais botões.
     expect(rows()).toContain('Mais botões');
-    // Uma Samsung de agente antigo só tem a Fonte, e ela já fecha a fileira da tela principal.
-    TestBed.inject(TvSelection).setTvs([
-      makeTv('tv', {
-        isDefault: true,
-        kind: 'samsung',
-        capabilities: ['tv.remote', 'tv.kind.samsung'],
-      }),
-    ]);
-    fixture.detectChanges();
+    // Uma Samsung de agente antigo só tem as Entradas, e elas já fecham a fileira da tela principal.
+    useTv(['tv.remote', 'tv.kind.samsung'], { kind: 'samsung' });
     expect(rows()).not.toContain('Mais botões');
   });
 
-  it('names the Apps row as the panel it opens, so it reads "Opções da TV" for who only controls', () => {
+  it('has a fixed name for the Apps row', () => {
     mount();
-    fixture.componentRef.setInput('appsLabel', 'Opções da TV');
-    fixture.detectChanges();
-    expect(rows()[0]).toBe('Opções da TV');
+    expect(rows()[0]).toBe('Apps da TV');
   });
 
-  it('says "Configurar TV" while no computer controls the TV', () => {
+  it('has no Apps row, and no panel of options in its place, for who only controls', () => {
+    mount(['module:tv', 'tv:control']);
+    expect(rows()).not.toContain('Apps da TV');
+    expect(rows()).not.toContain('Opções da TV');
+    expect(rows()).toContain('Limpar');
+  });
+
+  it('says "Configurar TV" while no computer controls the TV, and has no setup guide to point to', () => {
     mount();
     store.status.set('unconfigured');
     fixture.detectChanges();
-    expect(rows().at(-1)).toBe('Configurar TV');
+    expect(rows()).toContain('Configurar TV');
     expect(root.querySelectorAll('a[href="/tv/configurar"]')).toHaveLength(1);
+    // Só resta o guia da internet: a linha Ajuda leva direto a ele.
+    expect(root.querySelector('a[href="/tv/internet"] .ui-row-title')?.textContent?.trim()).toBe(
+      'Ajuda',
+    );
   });
 
   it('never shows the guest what changes the TV for everybody', () => {
     mount(GUEST_TV);
-    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Se a internet cair']);
+    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Limpar', 'Ajuda']);
+    expect(headings()).toEqual(['Na TV']);
     expect(root.querySelector('a[href="/ajustes/sistema"]')).toBeNull();
     expect(root.querySelector('a[href="/tv/configurar"]')).toBeNull();
-    expect(root.querySelector('.ui-chip')).toBeNull();
   });
 
   it('drops the rows the guest has no permission for, and the group that would be left empty', () => {
     mount(['module:tv']);
     expect(rows()).toEqual([]);
     expect(root.querySelector('.ui-group')).toBeNull();
+    expect(root.querySelector('.on-tv')).toBeNull();
   });
 
-  describe('actions on the TV itself', () => {
-    const ANDROID_WITH_SETTINGS = [
-      'tv.remote',
-      'tv.kind.android',
-      'tv.adb',
-      'tv.settings.open.v1',
-      'tv.key.INPUT',
-    ];
-    const button = (title: string) =>
-      [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')].find(
-        (row) => row.querySelector('.ui-row-title')?.textContent?.trim() === title,
-      );
-
-    it('offers Rede and Configurações only where the agent declares them, and Entradas only with the INPUT key', () => {
+  describe('the actions on the TV', () => {
+    it('are side by side in their own block, named for what they open on the TV', () => {
       mount();
-      expect(rows()).not.toContain('Rede');
-      expect(rows()).not.toContain('Configurações');
-      expect(rows()).not.toContain('Entradas');
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
-      ]);
-      fixture.detectChanges();
-      expect(rows().slice(0, 6)).toEqual([
-        'Apps da TV',
-        'Mais botões',
-        'Personalizar',
-        'Rede',
-        'Configurações',
-        'Entradas',
-      ]);
+      useTv(ANDROID_WITH_SETTINGS);
+      expect(tiles()).toEqual(['Limpar', 'Entradas', 'Wi-Fi da TV', 'Configurações da TV']);
+      expect(root.querySelectorAll('.on-tv button.tile')).toHaveLength(4);
+      expect(root.querySelector('.on-tv')?.getAttribute('aria-labelledby')).toBe('tv-menu-on-tv');
     });
 
-    it('leaves Entradas out when the TV does not declare the INPUT key', () => {
+    it('offers Wi-Fi and Configurações only where the agent declares them, and Entradas only with the INPUT key', () => {
       mount();
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', {
-          isDefault: true,
-          capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'],
-        }),
-      ]);
-      fixture.detectChanges();
-      expect(rows()).toContain('Rede');
-      expect(rows()).not.toContain('Entradas');
+      expect(tiles()).toEqual(['Limpar']);
+      useTv(['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1']);
+      expect(tiles()).toEqual(['Limpar', 'Wi-Fi da TV', 'Configurações da TV']);
     });
 
-    it('hides Rede and Configurações on a Samsung, which has no way to open them', () => {
+    it('hides the cleaning, Wi-Fi and Configurações on a Samsung, which keeps only Entradas', () => {
       mount();
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', {
-          isDefault: true,
-          kind: 'samsung',
-          capabilities: ['tv.remote', 'tv.kind.samsung', 'tv.key.INPUT'],
-        }),
-      ]);
-      fixture.detectChanges();
-      expect(rows()).not.toContain('Rede');
-      expect(rows()).not.toContain('Configurações');
-      expect(rows()).toContain('Entradas');
+      useTv(['tv.remote', 'tv.kind.samsung', 'tv.key.INPUT'], { kind: 'samsung' });
+      expect(tiles()).toEqual(['Entradas']);
+    });
+
+    it('has no block at all when nothing is left to do on the TV', () => {
+      mount();
+      useTv(['tv.remote', 'tv.kind.samsung'], { kind: 'samsung' });
+      expect(root.querySelector('.on-tv')).toBeNull();
+      expect(headings()).not.toContain('Na TV');
     });
 
     it('asks the screen to run each action, and the screen closes the menu first', () => {
       mount();
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
-      ]);
-      fixture.detectChanges();
-      button('Rede')!.click();
-      button('Configurações')!.click();
-      button('Entradas')!.click();
+      useTv(ANDROID_WITH_SETTINGS);
+      control('Wi-Fi da TV')!.click();
+      control('Configurações da TV')!.click();
+      control('Entradas')!.click();
       expect(chosen).toEqual(['network', 'settings', 'inputs']);
     });
 
     it('never sends anything just by being shown: nothing runs until the tap', () => {
       mount();
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
-      ]);
-      fixture.detectChanges();
+      useTv(ANDROID_WITH_SETTINGS);
       expect(chosen).toEqual([]);
       expect(store.openSettings).not.toHaveBeenCalled();
       expect(store.sendKey).not.toHaveBeenCalled();
+      expect(store.cleanup).not.toHaveBeenCalled();
     });
 
-    it('links to the guide for when the internet falls', () => {
+    it('keeps the cleaning dimmed but reachable without an agent, and a tap does nothing', () => {
       mount();
-      const link = root.querySelector<HTMLAnchorElement>('a[href="/tv/internet"]')!;
-      expect(link.querySelector('.ui-row-title')?.textContent?.trim()).toBe('Se a internet cair');
+      store.canSend.set(false);
+      fixture.detectChanges();
+      const clean = control('Limpar')!;
+      expect(clean.disabled).toBe(false);
+      expect(clean.getAttribute('aria-disabled')).toBe('true');
+      clean.click();
+      expect(chosen).toEqual([]);
+    });
+
+    it('says "Limpando…" while it works and ignores a second tap', () => {
+      mount();
+      store.cleaning.set(true);
+      fixture.detectChanges();
+      const clean = control('Limpando…')!;
+      expect(clean.getAttribute('aria-disabled')).toBe('true');
+      expect(root.querySelector('app-tv-icon.spin')).not.toBeNull();
+      clean.click();
+      expect(chosen).toEqual([]);
+      store.cleaning.set(false);
+      fixture.detectChanges();
+      expect(control('Limpar')!.getAttribute('aria-disabled')).toBeNull();
     });
 
     const iconPath = (name: TvIconName): string => {
@@ -215,36 +226,79 @@ describe('TvMenu', () => {
       icon.detectChanges();
       return icon.nativeElement.querySelector('path')?.getAttribute('d') ?? '';
     };
+    const drawing = (node: Element | undefined | null) =>
+      node?.querySelector('svg path, .ui-tile path')?.getAttribute('d') ?? '';
 
-    it('keeps the wifi drawing for Rede and gives the guide another one, so the two rows are told apart', () => {
+    it('keeps the wifi drawing for Wi-Fi da TV and gives the help another one, so they are told apart', () => {
       mount();
-      TestBed.inject(TvSelection).setTvs([
-        makeTv('tv', { isDefault: true, capabilities: ANDROID_WITH_SETTINGS }),
-      ]);
-      fixture.detectChanges();
-      const drawing = (row: Element | undefined) =>
-        row?.querySelector('.ui-tile path')?.getAttribute('d') ?? '';
-      const network = drawing(button('Rede'));
-      const guide = drawing(root.querySelector('a[href="/tv/internet"]')!);
-      expect(network).toBe(iconPath('wifi'));
-      expect(guide).toBe(iconPath('info'));
-      expect(guide).not.toBe('');
-      expect(guide).not.toBe(network);
+      useTv(ANDROID_WITH_SETTINGS);
+      const wifi = drawing(control('Wi-Fi da TV'));
+      const help = drawing(control('Ajuda'));
+      expect(wifi).toBe(iconPath('wifi'));
+      expect(help).toBe(iconPath('info'));
+      expect(help).not.toBe(wifi);
     });
   });
 
-  it('brings back the removed suggestions only for who edits shortcuts, and only when there is one to bring back', () => {
-    mount();
-    expect(rows()).not.toContain('Mostrar sugestões de atalhos');
-    TestBed.inject(TvPrefs).set({ dismissedSuggestions: ['netflix', 'max'] });
-    fixture.detectChanges();
-    const restore = [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')].find((row) =>
-      row.textContent?.includes('Mostrar sugestões de atalhos'),
-    )!;
-    expect(restore).toBeDefined();
-    restore.click();
-    fixture.detectChanges();
-    expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual([]);
-    expect(rows()).not.toContain('Mostrar sugestões de atalhos');
+  describe('for everybody', () => {
+    it('gives TV Livre the house and Gerenciar TVs the TV, so the rows are told apart without reading', () => {
+      mount();
+      useTv([...ANDROID_WITH_SETTINGS, 'tv.livre.v1']);
+      const livre = root.querySelector<HTMLAnchorElement>('a[href="/tv/livre"]')!;
+      const manage = root.querySelector<HTMLAnchorElement>('a[href="/ajustes/sistema"]')!;
+      const path = (row: Element) => row.querySelector('.ui-tile path')?.getAttribute('d');
+      const render = (name: TvIconName) => {
+        const icon = TestBed.createComponent(TvIcon);
+        icon.componentRef.setInput('name', name);
+        icon.detectChanges();
+        return icon.nativeElement.querySelector('path')?.getAttribute('d');
+      };
+      expect(path(livre)).toBe(render('home'));
+      expect(path(manage)).toBe(render('tv'));
+      expect(root.querySelectorAll('#tv-menu-for-all ~ .ui-group .ui-row')).toHaveLength(2);
+    });
+  });
+
+  describe('the help', () => {
+    it('opens a sheet from one row when there are two guides', () => {
+      mount();
+      expect(root.querySelector('a[href="/tv/internet"]')).toBeNull();
+      expect(root.querySelector('a[href="/tv/configurar"]')).toBeNull();
+      expect(control('Ajuda')).toBeDefined();
+    });
+
+    it('goes straight to the only guide there is', () => {
+      mount(GUEST_TV);
+      expect(control('Ajuda')).toBeUndefined();
+      const link = root.querySelector<HTMLAnchorElement>('a[href="/tv/internet"]')!;
+      expect(link.querySelector('.ui-row-title')?.textContent?.trim()).toBe('Ajuda');
+    });
+
+    it('is not there for an account that controls nothing and administers nothing', () => {
+      mount(['module:tv', 'tv:launch']);
+      expect(rows()).toEqual(['Apps da TV']);
+    });
+  });
+
+  describe('the removed suggestions', () => {
+    it('come back from Personalizar for who controls, so the menu does not carry the row', () => {
+      mount();
+      TestBed.inject(TvPrefs).set({ dismissedSuggestions: ['netflix', 'max'] });
+      fixture.detectChanges();
+      expect(rows()).not.toContain('Mostrar sugestões de atalhos');
+    });
+
+    it('come back from the menu only for who edits shortcuts and has no Personalizar, and only when there is one', () => {
+      mount(['module:tv', 'tv:edit-shortcuts']);
+      expect(rows()).not.toContain('Mostrar sugestões de atalhos');
+      TestBed.inject(TvPrefs).set({ dismissedSuggestions: ['netflix', 'max'] });
+      fixture.detectChanges();
+      const restore = control('Mostrar sugestões de atalhos')!;
+      expect(restore).toBeDefined();
+      restore.click();
+      fixture.detectChanges();
+      expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual([]);
+      expect(rows()).not.toContain('Mostrar sugestões de atalhos');
+    });
   });
 });

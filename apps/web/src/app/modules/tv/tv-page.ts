@@ -16,6 +16,7 @@ import { TV_PANEL_PARAM, TvPanelName, panelFromParam } from './data/tv-panels';
 import { SlowCommandNotice } from '../../core/connectivity/slow-command-notice';
 import { SessionState } from '../../core/session/session-state';
 import { TvAccess } from './data/tv-access';
+import { TvHelpGuides } from './data/tv-help-guides';
 import { TvPrefs } from './data/tv-prefs';
 import { TvRoundKeys } from './data/tv-round-keys';
 import { TvStore } from './data/tv-store';
@@ -24,8 +25,10 @@ import { AdbPermissionNotice } from './ui/adb-permission';
 import { WakeNotice } from './ui/wake-notice';
 import { KeyboardPanel } from './panels/keyboard-panel';
 import { MoreKeysPanel } from './panels/more-keys-panel';
+import { CleanupSheet } from './ui/cleanup-sheet';
 import { CustomizeSheet } from './ui/customize-sheet';
 import { SuggestionSheet } from './ui/suggestion-sheet';
+import { TvHelp } from './ui/tv-help';
 import { TvMenu, TvMenuChoice } from './ui/tv-menu';
 import { TvSwitcher } from './ui/tv-switcher';
 import { PowerSheet } from './ui/power-sheet';
@@ -49,9 +52,10 @@ const TITLE_MEDIUM_MAX = 12;
 /**
  * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e os três pontos do menu, no meio o nome e à direita o
  * ponto de estado e a energia), o controle e, por cima dele, o menu, os painéis flutuantes de Apps, Teclado e da
- * sugestão de atalho e as folhas de Personalizar, de desligar e de trocar de TV. O menu reúne os apps da TV, Personalizar e,
- * para o administrador, gerenciar as TVs; escolher uma linha fecha o menu e só então abre o painel dela, um modal por vez. Sem TV
- * configurada o controle dá lugar a um estado vazio com a ação certa para cada conta. O nome é o apelido
+ * sugestão de atalho e as folhas de Personalizar, de limpar a TV, de ajuda, de desligar e de trocar de TV. O menu reúne os apps
+ * da TV, Personalizar, as ações na própria TV (limpar, entradas, Wi-Fi e configurações) e, para o administrador, gerenciar
+ * as TVs; escolher uma linha fecha o menu e só então abre o painel dela, um modal por vez. Sem TV configurada o controle dá
+ * lugar a um estado vazio com a ação certa para cada conta. O nome é o apelido
  * que a pessoa deu à TV (tocar nele abre Personalizar) e, com mais de uma TV à vista, o nome fica ao lado de uma seta e
  * tocar nele abre a folha que troca de TV (Personalizar segue no menu). O estado da TV (`TvStore`) é um só; ele só fala com o
  * servidor enquanto esta tela existe (ao sair, o fluxo e o "aquecer" param). Fica na raiz, e não nos `providers`
@@ -77,8 +81,10 @@ const TITLE_MEDIUM_MAX = 12;
     PowerSheet,
     PairSheet,
     CustomizeSheet,
+    CleanupSheet,
     TvPanel,
     TvMenu,
+    TvHelp,
     TvSwitcher,
     SuggestionSheet,
     AppsPanel,
@@ -94,6 +100,7 @@ export class TvPage {
   /** O que a conta pode fazer na TV: o que ela não pode, a tela não mostra. */
   protected readonly access = inject(TvAccess);
   protected readonly roundKeys = inject(TvRoundKeys);
+  private readonly helpGuides = inject(TvHelpGuides);
   /** Quem administra pode escolher o computador da TV; o convidado só sabe que falta configurar. */
   protected readonly isGuest = inject(SessionState).isGuest;
 
@@ -101,6 +108,10 @@ export class TvPage {
   /** A folha de pareamento: só abre pelo toque do dono em "Parear de novo", nunca sozinha. */
   protected readonly pairOpen = signal(false);
   protected readonly customizeOpen = signal(false);
+  /** A folha "Limpar a TV?" (a limpeza é um item do menu, e a confirmação mora aqui, como a de desligar). */
+  protected readonly cleanupOpen = signal(false);
+  /** A folha de ajuda, com os guias que a conta pode abrir. */
+  protected readonly helpOpen = signal(false);
   protected readonly menuOpen = signal(false);
   /** A folha que troca de TV, e o título que a abriu (o foco volta a ele). */
   protected readonly switchOpen = signal(false);
@@ -121,20 +132,8 @@ export class TvPage {
   /** O botão que abriu o painel (vazio quando o painel abriu pelo endereço). */
   protected readonly panelOpener = signal<HTMLElement | null>(null);
 
-  /**
-   * O painel dos três pontos se chama Apps da TV quando traz a grade de apps; para quem só controla (sem abrir apps nem
-   * editar atalhos) ele traz só a limpeza da TV e se chama Opções da TV, no botão e no título.
-   */
-  protected readonly appsTitle = computed(() =>
-    this.access.appList()
-      ? $localize`:@@tv.apps.title:Apps da TV`
-      : $localize`:@@tv.options.title:Opções da TV`,
-  );
-  protected readonly appsLabel = computed(() =>
-    this.access.appList()
-      ? $localize`:@@tv.apps.open:Apps da TV`
-      : $localize`:@@tv.options.open:Opções da TV`,
-  );
+  protected readonly appsTitle = $localize`:@@tv.apps.title:Apps da TV`;
+  protected readonly helpTitle = $localize`:@@tv.help.title:Ajuda`;
   protected readonly keyboardTitle = $localize`:@@tv.keyboard.title:Teclado`;
   protected readonly keysTitle = $localize`:@@tv.keys.title:Mais botões`;
   protected readonly menuTitle = $localize`:@@tv.menu.title:Mais opções`;
@@ -206,6 +205,8 @@ export class TvPage {
       this.panel() === null &&
       !this.powerOpen() &&
       !this.customizeOpen() &&
+      !this.cleanupOpen() &&
+      !this.helpOpen() &&
       !this.menuOpen() &&
       !this.switchOpen() &&
       this.suggestion() === null,
@@ -241,6 +242,7 @@ export class TvPage {
     effect(() => {
       if (!this.access.power()) this.powerOpen.set(false);
       if (!this.access.control()) this.customizeOpen.set(false);
+      if (!this.access.cleanup()) this.cleanupOpen.set(false);
       if (!this.hasMenu()) {
         this.menuOpen.set(false);
         // Uma escolha que ficou pendente não pode sobreviver ao menu que a fez: ela dispararia no próximo fechamento.
@@ -306,6 +308,8 @@ export class TvPage {
     this.menuOpen.set(false);
     const choice = this.pendingChoice;
     this.pendingChoice = null;
+    // A conta pode ter perdido a permissão (ou a TV, a capacidade) durante a saída do menu: o que não vale mais não roda.
+    if (choice && !this.canChoose(choice)) return;
     if (choice === 'network' || choice === 'settings' || choice === 'inputs') {
       this.runOnTv(choice);
       return;
@@ -314,9 +318,37 @@ export class TvPage {
     if (!choice || !opener) return;
     // Com o menu ainda no DOM a tela está inerte: o painel seguinte só abre depois que ele sair.
     afterNextRender(
-      () => (choice === 'customize' ? this.openCustomize(opener) : this.open(choice, opener)),
+      () => {
+        // E de novo: a saída do menu e a abertura do próximo painel são dois momentos, e a permissão pode cair entre eles.
+        if (!this.canChoose(choice)) return;
+        if (choice === 'customize') this.openCustomize(opener);
+        else if (choice === 'cleanup') this.cleanupOpen.set(true);
+        else if (choice === 'help') this.helpOpen.set(true);
+        else this.open(choice, opener);
+      },
       { injector: this.injector },
     );
+  }
+
+  /** A linha do menu escolhida ainda vale para esta conta e esta TV (as mesmas condições que a mostram). */
+  private canChoose(choice: TvMenuChoice): boolean {
+    switch (choice) {
+      case 'apps':
+        return this.access.apps();
+      case 'keys':
+        return this.canOpen('keys');
+      case 'customize':
+        return this.access.control();
+      case 'cleanup':
+        return this.access.cleanup();
+      case 'help':
+        return this.hasMenu() && this.helpGuides.list().length > 0;
+      case 'network':
+      case 'settings':
+        return this.access.settings();
+      case 'inputs':
+        return this.access.inputs();
+    }
   }
 
   /**
@@ -360,6 +392,14 @@ export class TvPage {
     } finally {
       this.retrying.set(false);
     }
+  }
+
+  /** A folha de limpar saiu: o foco volta ao botão dos três pontos, de onde ela veio. */
+  protected closeCleanup(): void {
+    this.cleanupOpen.set(false);
+    afterNextRender(() => this.menuOpener()?.focus({ preventScroll: true }), {
+      injector: this.injector,
+    });
   }
 
   protected closeCustomize(): void {

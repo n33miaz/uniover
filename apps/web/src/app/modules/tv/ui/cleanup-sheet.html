@@ -17,6 +17,10 @@
     </p>
   }
 
+  @if (lastText(); as last) {
+    <p class="text last" role="status">{{ last }}</p>
+  }
+
   <div class="footer">
     <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.cleanup.cancel">
       Cancelar

@@ -738,7 +738,7 @@ describe('ControlPage', () => {
       TestBed.inject(TvSelection).setTvs([makeTv('tv', { isDefault: true, ...overrides })]);
       render();
     };
-    // Um agente de antes de declarar teclas: só tem a Fonte, que o contrato antigo já trazia.
+    // Um agente de antes de declarar teclas: só tem as Entradas, que o contrato antigo já trazia.
     const SAMSUNG = { kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] } as const;
 
     afterEach(() => localStorage.clear());
@@ -746,7 +746,7 @@ describe('ControlPage', () => {
     it('has no Keyboard button on a TV that does not take text, and no empty cell where it was', () => {
       useTv(SAMSUNG);
       expect(byLabel('Teclado')).toBeNull();
-      // Sete botões fixos em quatro colunas deixariam uma célula vazia: a Fonte, que toda TV tem, a fecha.
+      // Sete botões fixos em quatro colunas deixariam uma célula vazia: as Entradas, que toda TV tem, a fecha.
       expect(roundLabels()).toEqual([
         'Voltar',
         'Início da TV',
@@ -755,7 +755,7 @@ describe('ControlPage', () => {
         'Reproduzir ou pausar',
         'Próxima',
         'Mudo',
-        'Fonte',
+        'Entradas',
       ]);
       expect(cols()).toBe('4');
       expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(false);
@@ -796,7 +796,7 @@ describe('ControlPage', () => {
 
       it('completes the last row of a Samsung with the most important key it declares', () => {
         useTv(FULL_SAMSUNG);
-        expect(extras()).toEqual(['Fonte']);
+        expect(extras()).toEqual(['Entradas']);
         expect(root.querySelectorAll('.round-grid .round')).toHaveLength(8);
       });
 
@@ -807,7 +807,7 @@ describe('ControlPage', () => {
         expect(extras()).toEqual(['Guia']);
         prefs().set({ extraKeys: ['RED', 'BLUE'] });
         render();
-        expect(extras()).toEqual(['Vermelho', 'Azul', 'Fonte', 'Guia', 'Informações']);
+        expect(extras()).toEqual(['Vermelho', 'Azul', 'Entradas', 'Guia', 'Informações']);
         expect(roundLabels().length % 4).toBe(0);
       });
 
