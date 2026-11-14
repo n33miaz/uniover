@@ -210,10 +210,13 @@ object ConfigParser {
     private fun parseBuiltin(obj: JSONObject?, w: MutableList<String>): BuiltinConfig {
         val d = BuiltinConfig()
         if (obj == null) return d
-        warnUnknown(obj, "builtin.", setOf("settings", "sleep"), w)
+        warnUnknown(obj, "builtin.", setOf("settings", "sleep", "network", "inputs", "brand"), w)
         return BuiltinConfig(
             settings = bool(obj, "builtin.settings", "settings", d.settings, w),
             sleep = bool(obj, "builtin.sleep", "sleep", d.sleep, w),
+            network = bool(obj, "builtin.network", "network", d.network, w),
+            inputs = bool(obj, "builtin.inputs", "inputs", d.inputs, w),
+            brand = bool(obj, "builtin.brand", "brand", d.brand, w),
         )
     }
 

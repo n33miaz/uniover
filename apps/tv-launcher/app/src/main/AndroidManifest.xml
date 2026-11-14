@@ -19,6 +19,16 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- As telas do sistema que "Rede" e "Entradas" abrem: sem estas linhas o Android 11+ esconde se a TV as tem. -->
+        <intent>
+            <action android:name="android.settings.WIFI_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.WIRELESS_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.media.tv.action.SETUP_INPUTS" />
+        </intent>
     </queries>
 
     <application
@@ -77,6 +87,7 @@
             android:permission="android.permission.DUMP">
             <intent-filter>
                 <action android:name="br.uniover.launcher.action.APPLY_CONFIG" />
+                <action android:name="br.uniover.launcher.action.QUERY" />
             </intent-filter>
         </receiver>
     </application>

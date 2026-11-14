@@ -10,6 +10,6 @@
     "showFactory": false
   },
   "icons": { "shape": "circle", "size": "medium", "labels": "always" },
-  "builtin": { "settings": true, "sleep": true },
+  "builtin": { "settings": true, "sleep": true, "network": true, "inputs": false, "brand": true },
   "sleep": { "maxMinutes": 480 }
 }

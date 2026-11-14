@@ -308,6 +308,121 @@ class LauncherUiTest {
         assertFalse(activity.isFinishing)
     }
 
+    @Test
+    fun `volume and media keys go through the sleep screen without waking it`() {
+        val activity = Robolectric.buildActivity(SleepActivity::class.java).setup().get()
+        for (code in listOf(
+            KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+        )) {
+            activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            assertFalse("a tecla $code acordou a tela", activity.isFinishing)
+        }
+        assertTrue(SleepKeys.passesThrough(KeyEvent.KEYCODE_MEDIA_PAUSE))
+        assertFalse(SleepKeys.passesThrough(KeyEvent.KEYCODE_DPAD_CENTER))
+        assertFalse(SleepKeys.passesThrough(KeyEvent.KEYCODE_POWER))
+        activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT))
+        assertTrue("as outras teclas seguem acordando", activity.isFinishing)
+    }
+
+    @Test
+    fun `the time in the request wins over the configuration`() {
+        writeConfig("""{ "schema": 1, "revision": 1, "sleep": { "maxMinutes": 300 } }""")
+        val intent = Intent(context, SleepActivity::class.java).putExtra(SleepActivity.EXTRA_MAX_MINUTES, 10)
+        val activity = Robolectric.buildActivity(SleepActivity::class.java, intent).setup().get()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+        assertFalse(activity.isFinishing)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        assertTrue(activity.isFinishing)
+    }
+
+    @Test
+    fun `zero in the request stays until a key even if the configuration has a limit`() {
+        writeConfig("""{ "schema": 1, "revision": 1, "sleep": { "maxMinutes": 5 } }""")
+        val intent = Intent(context, SleepActivity::class.java).putExtra(SleepActivity.EXTRA_MAX_MINUTES, 0)
+        val activity = Robolectric.buildActivity(SleepActivity::class.java, intent).setup().get()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofHours(2))
+        assertFalse(activity.isFinishing)
+    }
+
+    @Test
+    fun `an invalid time in the request falls back to the configuration`() {
+        writeConfig("""{ "schema": 1, "revision": 1, "sleep": { "maxMinutes": 5 } }""")
+        val intent = Intent(context, SleepActivity::class.java).putExtra(SleepActivity.EXTRA_MAX_MINUTES, 9999)
+        val activity = Robolectric.buildActivity(SleepActivity::class.java, intent).setup().get()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(6))
+        assertTrue(activity.isFinishing)
+    }
+
+    @Test
+    fun `a second request while asleep restarts the countdown with its own time`() {
+        val first = Intent(context, SleepActivity::class.java).putExtra(SleepActivity.EXTRA_MAX_MINUTES, 5)
+        val controller = Robolectric.buildActivity(SleepActivity::class.java, first).setup()
+        val activity = controller.get()
+        controller.newIntent(Intent(context, SleepActivity::class.java).putExtra(SleepActivity.EXTRA_MAX_MINUTES, 60))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(30))
+        assertFalse(activity.isFinishing)
+    }
+
+    // ---------------------------------------------------------------- Rede, Entradas e o nome
+
+    private fun allowScreen(action: String) {
+        val resolve = ResolveInfo().apply {
+            activityInfo = ActivityInfo().apply {
+                packageName = "com.android.tv.settings"
+                name = "com.android.tv.settings.Screen"
+                applicationInfo = ApplicationInfo().apply { packageName = "com.android.tv.settings" }
+            }
+        }
+        shadowOf(pm).addResolveInfoForIntent(Intent(action), resolve)
+    }
+
+    @Test
+    fun `network and inputs tiles appear only when the tv has a screen for each`() {
+        val bare = home().get()
+        assertTrue(tilesOf(bare).any { it.tileId == "builtin:settings" })
+        assertTrue(tilesOf(bare).none { it.tileId == "builtin:network" || it.tileId == "builtin:inputs" })
+
+        allowScreen(android.provider.Settings.ACTION_WIFI_SETTINGS)
+        val withNetwork = home().get()
+        assertTrue(tilesOf(withNetwork).any { it.tileId == "builtin:network" })
+        assertTrue(tilesOf(withNetwork).none { it.tileId == "builtin:inputs" })
+
+        allowScreen("android.media.tv.action.SETUP_INPUTS")
+        val both = tilesOf(home().get()).map { it.tileId }
+        assertTrue(both.indexOf("builtin:network") < both.indexOf("builtin:inputs"))
+        assertEquals("os dois ficam antes de Configurações", "builtin:settings", both.last())
+    }
+
+    @Test
+    fun `the config can turn network and inputs off`() {
+        allowScreen(android.provider.Settings.ACTION_WIFI_SETTINGS)
+        allowScreen("android.media.tv.action.SETUP_INPUTS")
+        writeConfig("""{ "schema": 1, "revision": 1, "builtin": { "network": false, "inputs": false } }""")
+        assertTrue(tilesOf(home().get()).none { it.tileId == "builtin:network" || it.tileId == "builtin:inputs" })
+    }
+
+    @Test
+    fun `clicking the network tile opens the network screen`() {
+        allowScreen(android.provider.Settings.ACTION_WIFI_SETTINGS)
+        val activity = home().get()
+        tilesOf(activity).first { it.tileId == "builtin:network" }.performClick()
+        assertEquals(android.provider.Settings.ACTION_WIFI_SETTINGS, shadowOf(activity).nextStartedActivity.action)
+    }
+
+    private fun brandOf(activity: HomeActivity): android.widget.TextView =
+        collect(activity.window.decorView).filterIsInstance<android.widget.TextView>().first { it.text == "UniOver" }
+
+    @Test
+    fun `the system name sits small in a corner and the config can hide it`() {
+        val shown = brandOf(home().get())
+        assertEquals(View.VISIBLE, shown.visibility)
+        assertTrue(shown.alpha < 0.6f)
+
+        writeConfig("""{ "schema": 1, "revision": 1, "builtin": { "brand": false } }""")
+        assertEquals(View.GONE, brandOf(home().get()).visibility)
+    }
+
     // ---------------------------------------------------------------- receptor
 
     private fun send(json: String?): ConfigReceiver {
@@ -336,6 +451,20 @@ class LauncherUiTest {
         send("""{ "schema": 7, "revision": 11 }""")
         send("isso não é json")
         send(null)
+        assertEquals(0, notified)
+        assertFalse(File(context.filesDir, ConfigStore.CONFIG_NAME).exists())
+    }
+
+    @Test
+    fun `the receiver answers the level query and the manifest lists the action`() {
+        val intent = Intent(ConfigReceiver.ACTION_QUERY)
+        val answers = pm.queryBroadcastReceivers(intent, 0)
+        assertEquals(ConfigReceiver::class.java.name, answers.single().activityInfo.name)
+        assertTrue("o nível só cresce a cada ganho do app", ConfigReceiver.LEVEL >= 2)
+        // Chamado direto (sem transmissão ordenada) não grava nada nem avisa a home.
+        var notified = 0
+        ConfigSignal.listener = { notified++ }
+        ConfigReceiver().onReceive(context, intent)
         assertEquals(0, notified)
         assertFalse(File(context.filesDir, ConfigStore.CONFIG_NAME).exists())
     }

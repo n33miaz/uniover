@@ -10,7 +10,10 @@ import kotlin.math.roundToInt
  * mas a proporção do desenho aprovado (relógio grande, fileira de círculos) é a mesma em qualquer uma.
  * Referência: 1080p. Lógica pura, testada sem Android.
  */
-class Metrics(widthPx: Int, heightPx: Int) {
+class Metrics(val screenWidth: Int, val screenHeight: Int) {
+    private val widthPx = screenWidth
+    private val heightPx = screenHeight
+
     /** A unidade de medida: o lado menor da tela (a altura, com a TV na horizontal). */
     private val unit: Float = minOf(widthPx, heightPx).toFloat()
 

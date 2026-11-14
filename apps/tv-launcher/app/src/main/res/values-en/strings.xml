@@ -4,5 +4,8 @@
     <string name="sleep_name">Sleep</string>
     <string name="sleep_tile">Sleep</string>
     <string name="settings_tile">Settings</string>
+    <string name="network_tile">Network</string>
+    <string name="inputs_tile">Inputs</string>
+    <string name="brand_name">UniOver</string>
     <string name="cannot_open">Could not open this app</string>
 </resources>
