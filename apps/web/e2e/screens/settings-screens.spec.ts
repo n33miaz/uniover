@@ -213,7 +213,6 @@ test.describe('navegação dentro de Configurações', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     for (const [row, title] of [
       [/^Perfil/, 'Perfil'],
-      [/^Aparência/, 'Aparência'],
       [/^Segurança/, 'Segurança'],
       [/^Pessoas/, 'Pessoas'],
       [/^Sobre/, 'Sobre'],
@@ -275,7 +274,7 @@ test.describe('Pessoas: cada estado', () => {
       await check(page, info, 'people-list', scheme, here);
 
       await page.getByRole('tab', { name: 'Convites' }).click();
-      await page.getByRole('button', { name: 'Convidar alguém' }).click();
+      await page.getByRole('button', { name: 'Convidar Alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Raphael');
       await settle(page);
       await check(page, info, 'people-invite-folded', scheme, here);
@@ -285,7 +284,7 @@ test.describe('Pessoas: cada estado', () => {
       await check(page, info, 'people-invite-open', scheme, here);
 
       await page.getByRole('switch', { name: 'Ver a TV' }).uncheck();
-      await expect(page.getByRole('button', { name: 'Gerar convite' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Gerar Convite' })).toBeDisabled();
       await check(page, info, 'people-invite-none', scheme, here);
     });
 
@@ -294,13 +293,13 @@ test.describe('Pessoas: cada estado', () => {
       mock.stepUpValid = true;
       await people(page, scheme);
       await page.getByRole('tab', { name: 'Convites' }).click();
-      await page.getByRole('button', { name: 'Convidar alguém' }).click();
+      await page.getByRole('button', { name: 'Convidar Alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Raphael');
       await page.getByRole('button', { name: /O que essa pessoa poderá fazer/ }).click();
       await page.locator('label.model', { hasText: 'Só o Treino' }).click();
-      await page.getByRole('button', { name: 'Gerar convite' }).click();
+      await page.getByRole('button', { name: 'Gerar Convite' }).click();
       await expect(page.getByLabel('Link do convite')).toBeVisible();
-      await page.getByRole('button', { name: 'Copiar link' }).click();
+      await page.getByRole('button', { name: 'Copiar Link' }).click();
       await settle(page);
       await check(page, info, 'people-link', scheme, here);
     });

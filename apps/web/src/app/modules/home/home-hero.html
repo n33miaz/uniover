@@ -9,9 +9,4 @@
       <h1>{{ greeting() }}</h1>
     }
   </div>
-  @if (loading()) {
-    <span appSkeleton class="time-skeleton"></span>
-  } @else {
-    <p class="time">{{ time() }}</p>
-  }
 </header>

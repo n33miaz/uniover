@@ -75,7 +75,7 @@ async function showTv(page: Page) {
 async function acceptInvite(page: Page, token: string) {
   await page.goto(`/convite#${token}`);
   await expect(
-    page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
   ).toBeVisible();
   await page.getByLabel('E-mail').fill(GUEST.email);
   await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
@@ -97,7 +97,7 @@ test.describe('convite do dono (passkey)', () => {
     await page.goto('/ajustes/seguranca');
 
     // Sem passkey cadastrada não há como confirmar: cadastra uma, como o dono faz em Segurança.
-    await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
+    await page.getByRole('button', { name: 'Cadastrar Passkey' }).click();
     await passkeyPassword(page).fill(OWNER.password);
     await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
@@ -112,9 +112,9 @@ test.describe('convite do dono (passkey)', () => {
     );
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     await page.getByRole('tab', { name: 'Convites' }).click();
-    await page.getByRole('button', { name: 'Convidar alguém' }).click();
+    await page.getByRole('button', { name: 'Convidar Alguém' }).click();
     await page.getByLabel('Nome do convidado').fill(GUEST.displayName);
-    await page.getByRole('button', { name: 'Gerar convite' }).click();
+    await page.getByRole('button', { name: 'Gerar Convite' }).click();
 
     // Conceder acesso pede a confirmação com a passkey, e só depois o pedido é repetido.
     const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
@@ -185,7 +185,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
     ).toBeVisible();
 
     // O segredo sai do endereço assim que a tela o lê, e nunca aparece na tela.
@@ -345,7 +345,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
   });
 
-  test('a convidada chega às Configurações pela Início (o topo da TV não tem engrenagem): Perfil, Aparência, Dispositivos e Sobre', async ({
+  test('a convidada chega às Configurações pela Início (o topo da TV não tem engrenagem): Perfil, Segurança, Dispositivos e Sobre', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
@@ -379,7 +379,6 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
-      'Aparência',
       'Segurança',
       'Dispositivos',
       'Sobre',

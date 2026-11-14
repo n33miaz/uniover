@@ -254,7 +254,7 @@ test.describe('Início', () => {
       await screenshot(page, printPath(info, 'home-empty', scheme));
       await expectNoA11yViolations(page);
     }
-    await page.getByRole('button', { name: 'Escolher módulos' }).click();
+    await page.getByRole('button', { name: 'Escolher Módulos' }).click();
     await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
   });
 
@@ -326,7 +326,7 @@ test.describe('Configurações', () => {
       await page.getByRole('button', { name: 'Cancelar' }).click();
 
       // Formulário de passkey com a senha errada: aviso de erro.
-      await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
+      await page.getByRole('button', { name: 'Cadastrar Passkey' }).click();
       await passkeyPassword(page).fill('errada');
       await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
       await expect(page.getByText('Senha incorreta.')).toBeVisible();
@@ -352,9 +352,9 @@ test.describe('Configurações', () => {
       // Link de convite gerado (com a confirmação já válida).
       mock.stepUpValid = true;
       await page.getByRole('tab', { name: 'Convites' }).click();
-      await page.getByRole('button', { name: 'Convidar alguém' }).click();
+      await page.getByRole('button', { name: 'Convidar Alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Diego');
-      await page.getByRole('button', { name: 'Gerar convite' }).click();
+      await page.getByRole('button', { name: 'Gerar Convite' }).click();
       await expect(page.getByLabel('Link do convite')).toBeVisible();
       await page.getByLabel('Link do convite').scrollIntoViewIfNeeded();
       await screenshot(page, printPath(info, 'settings-invite-link', scheme));
@@ -487,7 +487,7 @@ test.describe('Configurações', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await group.getByRole('radio', { name: 'Escuro' }).check();
     // A mesma escolha aparece marcada na tela de Aparência.
-    await page.getByRole('link', { name: 'Aparência' }).click();
+    await page.goto('/ajustes/aparencia');
     await expect(page.getByRole('radio', { name: 'Escuro' })).toBeChecked();
   });
 

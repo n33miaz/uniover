@@ -140,9 +140,9 @@ describe('UpdateSkeleton', () => {
     await fixture.whenStable();
     expect(el.querySelector('.bs-home')).not.toBeNull();
     expect(el.querySelector('.bs-home > .bs-brand')).not.toBeNull();
-    // Engrenagem e ponto de estado no cartão de cima, mais as duas linhas de texto e a hora.
+    // Engrenagem e ponto de estado no cartão de cima, mais as duas linhas de texto.
     expect(el.querySelectorAll('.bs-home-hero .bs-hero-actions .bone').length).toBe(2);
-    expect(el.querySelectorAll('.bs-home-hero .bone').length).toBe(5);
+    expect(el.querySelectorAll('.bs-home-hero .bone').length).toBe(4);
     expect(el.querySelector('.bs-tv-shortcuts')).toBeNull();
     expect(el.querySelectorAll('.bs-module').length).toBe(8);
     expect(el.querySelector('.bs-tabs')).toBeNull();

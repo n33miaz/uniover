@@ -135,12 +135,6 @@ export class HomePage {
     return name ? `${base}, ${name}` : base;
   });
 
-  protected readonly time = computed(() =>
-    new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(
-      this.clock.now(),
-    ),
-  );
-
   protected readonly dateLabel = computed(() =>
     new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(
       this.clock.now(),

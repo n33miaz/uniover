@@ -138,10 +138,10 @@ describe('HomePage', () => {
       ),
     );
 
-  it('greets by the time of day and shows the clock', async () => {
+  it('greets by the time of day without the clock', async () => {
     const { el } = await render();
     expect(el.querySelector('h1')?.textContent).toBe('Bom dia');
-    expect(el.querySelector('.time')?.textContent).toBe('09:30');
+    expect(el.querySelector('.time')).toBeNull();
     status.set({ ...status(), userName: 'Neemias Cormino Manso' });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T20:00:00'));
     expect((await render()).el.querySelector('h1')?.textContent).toBe('Boa noite, Neemias');
@@ -518,7 +518,7 @@ describe('HomePage', () => {
   it('troca os espaços reservados pelo conteúdo sem apagar a grade já disponível', async () => {
     loading.set(true);
     const { el } = await render();
-    expect(el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(3);
+    expect(el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(2);
     expect(el.querySelectorAll('article.card')).toHaveLength(3);
     loading.set(false);
     expect((await render()).el.querySelectorAll('.hero .ui-skeleton')).toHaveLength(0);

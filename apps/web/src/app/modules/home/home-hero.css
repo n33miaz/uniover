@@ -6,7 +6,7 @@
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: var(--space-3);
   min-height: clamp(136px, 21vw, 172px);
@@ -20,7 +20,7 @@
     inset 0 1px 0 var(--a-highlight);
 }
 
-/* A cena tem proporção 3:2; a altura acompanha a largura para ela ficar no alto, acima da hora. */
+/* A cena tem proporção 3:2; a altura acompanha a largura para ela ficar no alto, acima da saudação. */
 .scene {
   --glyph-size: clamp(112px, 19vw, 156px);
   position: absolute;
@@ -32,15 +32,13 @@
   pointer-events: none;
 }
 
-.hero-text,
-.time {
+.hero-text {
   position: relative;
 }
 
 /* Sobre a faixa verde o cinza padrão quase some: a espera usa a cor da marca, mais forte no meio do brilho. */
 .date-skeleton,
-.greeting-skeleton,
-.time-skeleton {
+.greeting-skeleton {
   --skeleton-base: color-mix(in srgb, var(--a-accent) 16%, transparent);
   --skeleton-glint: color-mix(in srgb, var(--a-accent) 6%, transparent);
   display: block;
@@ -57,12 +55,6 @@
   min-height: clamp(1.35rem, 5vw, 2rem);
 }
 
-.time-skeleton {
-  width: 4.25rem;
-  min-height: 2.25rem;
-  align-self: end;
-}
-
 .date {
   margin: 0 0 var(--space-1);
   color: var(--a-ink2);
@@ -75,19 +67,10 @@
 }
 
 h1 {
-  font-size: clamp(1.125rem, 5.5vw, 2rem);
+  font-size: clamp(1.25rem, 6vw, 2.25rem);
   font-weight: 750;
   letter-spacing: -0.02em;
   white-space: nowrap;
-}
-
-.time {
-  margin: 0;
-  font-size: clamp(2rem, 5vw, 2.5rem);
-  font-weight: 750;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Celular deitado: a saudação encolhe para sobrar espaço aos cartões. */
@@ -97,11 +80,11 @@ h1 {
     padding: var(--space-4);
   }
 
-  /* Com a tela larga e baixa, a cena sai de cima da hora e fica ao lado dela. */
+  /* Com a tela larga e baixa, a cena fica ao lado do texto. */
   .scene {
     --glyph-size: 96px;
     top: 50%;
-    right: 7rem;
+    right: 1.5rem;
     translate: 0 -50%;
   }
 }
