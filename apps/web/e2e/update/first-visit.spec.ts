@@ -75,22 +75,31 @@ const noController = (page: Page) =>
  * O ciclo do worker terminou nesta aba: ele comanda a página, está `activated` e não há outro instalando nem esperando.
  * O aviso só nasce de `statechange` para `installed` ou de um worker em espera, e esses eventos chegam à aba antes de o
  * estado dela virar `activated`: daqui em diante não há de onde vir um aviso tardio. Dois quadros deixam o Angular pintar.
+ *
+ * `mayStayUncontrolled`: uma aba aberta enquanto o worker instalava pode ficar sem nenhum worker no comando mesmo depois do
+ * `clients.claim()` (o WebKit às vezes não a toma). Para o aviso isso não muda nada: ele só nasce com um worker no comando
+ * diferente do novo, e sem nenhum não há o que comparar. Nessas abas basta o ciclo ter terminado e, se houver um worker no
+ * comando, ser o ativo.
  */
-async function lifecycleSettled(page: Page): Promise<void> {
+async function lifecycleSettled(
+  page: Page,
+  { mayStayUncontrolled = false }: { mayStayUncontrolled?: boolean } = {},
+): Promise<void> {
   await expect
     .poll(
       () =>
-        page.evaluate(async () => {
+        page.evaluate(async (uncontrolledOk) => {
           const registration = await navigator.serviceWorker.getRegistration();
           const active = registration?.active;
+          const controller = navigator.serviceWorker.controller;
           return (
             !!active &&
             active.state === 'activated' &&
             !registration.installing &&
             !registration.waiting &&
-            navigator.serviceWorker.controller?.scriptURL === active.scriptURL
+            (controller === null ? uncontrolledOk : controller.scriptURL === active.scriptURL)
           );
-        }),
+        }, mayStayUncontrolled),
       { timeout: 30_000 },
     )
     .toBe(true);
@@ -142,7 +151,9 @@ test.describe('primeira visita com o worker ainda instalando', () => {
     for (const [index, path] of paths.entries()) await pages[index].goto(`${origin}${path}`);
     for (const open of pages) await expect(banner(open)).toHaveCount(0);
     await waitForServiceWorkerControl(page);
-    for (const open of pages) await lifecycleSettled(open);
+    // A primeira aba registrou o worker e passa a ser comandada por ele; as outras abriram durante a instalação.
+    await lifecycleSettled(page);
+    for (const open of pages.slice(1)) await lifecycleSettled(open, { mayStayUncontrolled: true });
     for (const open of pages) await expect(banner(open)).toHaveCount(0);
   });
 });
