@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.69.0](https://github.com/n33miaz/uniover/compare/v0.68.0...v0.69.0) (2026-11-14)
+
+
+### Identity 0.46.1
+
+#### Maintenance
+
+* no user-facing changes
+
+
+### Devices 0.63.0
+
+#### Features
+
+* **pc:** icon tab bar and calmer empty state
+
+#### Bug Fixes
+
+* **tv:** align bottom keys, cap wide layouts
+
+
+### TV 0.51.0
+
+#### Features
+
+* **tv:** show apply bar only with changes
+* **tv:** regroup the controller menu
+* **web:** unify top bar, tab bar and states
+
+#### Bug Fixes
+
+* **tv:** align bottom keys, cap wide layouts
+* **tv:** reword wake hint, drop store step
+
+
+### Training 0.45.0
+
+#### Features
+
+* **training:** lighter today card, tab Treino
+
+
+### Shopping 0.3.3
+
+#### Maintenance
+
+* no user-facing changes
+
+
+### Web 0.66.0
+
+#### Features
+
+* **tv:** show apply bar only with changes
+* **tv:** regroup the controller menu
+* **web:** unify top bar, tab bar and states
+* **pc:** icon tab bar and calmer empty state
+* **training:** lighter today card, tab Treino
+* **web:** drop home clock and theme row
+
+#### Bug Fixes
+
+* **tv:** align bottom keys, cap wide layouts
+* **tv:** reword wake hint, drop store step
+
 ## [0.68.0](https://github.com/n33miaz/uniover/compare/v0.67.0...v0.68.0) (2026-11-14)
 
 
