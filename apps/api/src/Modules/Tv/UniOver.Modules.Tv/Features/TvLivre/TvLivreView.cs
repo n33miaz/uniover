@@ -94,7 +94,7 @@ internal sealed record LivreAgentState(
 internal sealed record SetHomeRequest(bool DisableFactory = false);
 
 /// <summary>Corpo de <c>POST /livre/sleep</c>: o tempo até a TV acordar sozinha (0 a 720; 0 só acorda com tecla); sem ele vale o da configuração.</summary>
-internal sealed record SleepRequest(int? Minutes = null);
+internal sealed record SleepRequest([property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Minutes = null);
 
 /// <summary>Resposta de <c>GET /livre/sleep</c>: se o Modo Dormir está ao alcance (TV Livre instalado e agente online).</summary>
 internal sealed record SleepAvailability(bool Available);

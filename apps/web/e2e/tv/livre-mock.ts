@@ -126,6 +126,11 @@ export async function mockLivreApi(
     if (!bearer || !identity.issuedTokens.includes(bearer)) {
       return problem(route, { status: 401, kind: 'unauthenticated' });
     }
+    // O Modo Dormir é de quem controla a TV (a folha de energia o oferece); o resto do TV Livre é só do dono.
+    if (path === '/sleep' && method === 'GET') {
+      return json(route, { available: mock.view['installed'] === true });
+    }
+    if (path === '/sleep' && method === 'POST') return route.fulfill({ status: 204 });
     if (identity.role !== 'owner') return problem(route, { status: 403, kind: 'forbidden' });
 
     const failure = mock.failures[path];

@@ -134,7 +134,24 @@ test.describe('a entrada no menu da TV', () => {
     await page.goto('/tv/livre');
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('article[data-module="tv"]')).toBeVisible();
-    expect(livre.requests).toEqual([]);
+    // A única pergunta que o convidado faz é se o Modo Dormir está ao alcance (a folha de energia o oferece).
+    expect(
+      livre.requests.filter((request) => !(request.method === 'GET' && request.path === '/sleep')),
+    ).toEqual([]);
+  });
+
+  test('quem só controla a TV apaga a tela pela folha de energia, sem Desligar nem agendar', async ({
+    page,
+  }) => {
+    signInAsGuest(['module:tv', 'tv:control']);
+    await page.goto('/tv');
+    await page.getByRole('button', { name: 'Apagar a tela da TV' }).click();
+    const sheet = page.getByRole('dialog');
+    await expect(sheet.getByRole('heading', { name: 'Apagar a Tela?' })).toBeVisible();
+    await expect(button(sheet, 'Desligar')).toHaveCount(0);
+    await expect(sheet.getByText('Agendar')).toHaveCount(0);
+    await button(sheet, 'Apagar a Tela').click();
+    await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
   });
 });
 

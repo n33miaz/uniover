@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import type { TvPowerSchedule } from '../data/tv-api';
+import { TvAccess } from '../data/tv-access';
 import { TvStore } from '../data/tv-store';
 import { TvLivreApi } from '../livre/data/livre-api';
 import { describeLivreFailure } from '../livre/data/livre-errors';
@@ -37,6 +38,8 @@ import { leaveSheet } from './sheet-motion';
 })
 export class PowerSheet {
   protected readonly store = inject(TvStore);
+  /** Desligar e agendar são de quem tem a permissão de desligar; quem só controla a TV vê apenas "Apagar a Tela". */
+  protected readonly canPower = inject(TvAccess).power;
   private readonly livre = inject(TvLivreApi);
   private readonly destroy = inject(DestroyRef);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');

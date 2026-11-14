@@ -1,5 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { TvAccess } from '../data/tv-access';
 import { TvStore } from '../data/tv-store';
 import { TvLivreApi } from '../livre/data/livre-api';
 import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
@@ -537,6 +539,29 @@ describe('PowerSheet, Apagar a Tela', () => {
         (b: HTMLButtonElement) => b.textContent?.trim() === 'Apagar a Tela',
       ),
     ).toBe(false);
+  });
+
+  it('shows only Apagar a Tela, with no shutdown and no schedule, to someone who controls the TV but cannot power it off', async () => {
+    store = createFakeTvStore();
+    livre = { sleepAvailable: vi.fn().mockResolvedValue(true), sleep: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: TvStore, useValue: store },
+        { provide: TvLivreApi, useValue: livre },
+        { provide: TvAccess, useValue: { power: signal(false) } },
+      ],
+    });
+    fixture = TestBed.createComponent(PowerSheet);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    root = fixture.nativeElement;
+
+    expect(root.querySelector('h2')?.textContent).toBe('Apagar a Tela?');
+    const labels = [...root.querySelectorAll('button')].map((b) => b.textContent?.trim());
+    expect(labels).toEqual(['Apagar a Tela', 'Cancelar']);
+    expect(root.textContent).not.toContain('emissor infravermelho');
+    expect(root.querySelector('.schedule')).toBeNull();
   });
 
   it('opens the sleep mode with no time (the TV keeps its own) and leaves the sheet', async () => {

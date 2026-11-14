@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -17,6 +18,7 @@ import { SlowCommandNotice } from '../../core/connectivity/slow-command-notice';
 import { SessionState } from '../../core/session/session-state';
 import { TvAccess } from './data/tv-access';
 import { TvHelpGuides } from './data/tv-help-guides';
+import { TvLivreApi } from './livre/data/livre-api';
 import { TvPrefs } from './data/tv-prefs';
 import { TvRoundKeys } from './data/tv-round-keys';
 import { TvStore } from './data/tv-store';
@@ -163,10 +165,18 @@ export class TvPage {
     const active = this.store.powerSchedule();
     return active !== null && (active.status === 'pending' || active.status === 'dispatching');
   });
+  private readonly livre = inject(TvLivreApi);
+  /**
+   * Quem só controla a TV (sem a permissão de desligar) também vê o botão de energia, para chegar ao "Apagar a Tela", mas só
+   * se o TV Livre está na TV e o agente ao alcance; sem isso o botão abriria uma folha vazia.
+   */
+  protected readonly sleepOnly = signal(false);
   protected readonly powerLabel = computed(() =>
-    this.scheduled()
-      ? $localize`:@@tv.power.label-scheduled:Desligar a TV, há desligamento agendado`
-      : $localize`:@@tv.power.label:Desligar a TV`,
+    !this.access.power()
+      ? $localize`:@@tv.power.label-sleep:Apagar a tela da TV`
+      : this.scheduled()
+        ? $localize`:@@tv.power.label-scheduled:Desligar a TV, há desligamento agendado`
+        : $localize`:@@tv.power.label:Desligar a TV`,
   );
   /**
    * Quantos botões tem o lado mais cheio do cabeçalho (a volta e os três pontos à esquerda; o ponto de estado e o desligar à
@@ -237,10 +247,25 @@ export class TvPage {
       });
     });
 
+    effect(() => {
+      const wanted = this.access.control() && !this.access.power();
+      this.store.selectedTv(); // outra TV: pergunta de novo
+      untracked(() => {
+        if (!wanted) {
+          this.sleepOnly.set(false);
+          return;
+        }
+        void this.livre.sleepAvailable().then(
+          (available) => this.sleepOnly.set(available),
+          () => this.sleepOnly.set(false),
+        );
+      });
+    });
+
     // A sessão pode trazer outra lista de permissões com a tela aberta: o que a pessoa deixou de poder usar fecha, em vez
     // de ficar aberto (ou de reaparecer se a permissão voltar).
     effect(() => {
-      if (!this.access.power()) this.powerOpen.set(false);
+      if (!this.access.power() && !this.sleepOnly()) this.powerOpen.set(false);
       if (!this.access.control()) this.customizeOpen.set(false);
       if (!this.access.cleanup()) this.cleanupOpen.set(false);
       if (!this.hasMenu()) {

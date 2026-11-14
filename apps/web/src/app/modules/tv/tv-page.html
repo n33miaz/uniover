@@ -96,7 +96,7 @@
       @if (access.view()) {
         <app-status-indicator />
       }
-      @if (access.power()) {
+      @if (access.power() || sleepOnly()) {
         <button
           type="button"
           class="circle power"
@@ -271,7 +271,7 @@
   </app-tv-panel>
 }
 
-@if (powerOpen() && access.power()) {
+@if (powerOpen() && (access.power() || sleepOnly())) {
   <app-power-sheet (closed)="powerOpen.set(false)" />
 }
 
