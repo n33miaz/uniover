@@ -11,7 +11,7 @@
     "serve:dist": "node e2e/server/static-server.mjs 4300",
     "lint": "node scripts/check-css-vars.mjs && ng lint && tsc -p tsconfig.sw.json --noEmit",
     "test": "ng test --no-watch",
-    "test:ci": "ng test --no-watch --runner-config vitest.ci.config.ts",
+    "test:ci": "ng test --no-watch --isolate",
     "test:coverage": "ng test --no-watch --coverage",
     "e2e": "playwright test",
     "catalog": "playwright test -c playwright.catalog.config.ts",
