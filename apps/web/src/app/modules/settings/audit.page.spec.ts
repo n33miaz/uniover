@@ -364,7 +364,7 @@ describe('AuditPage', () => {
       expect(rows()).toHaveLength(2);
       expect(text()).toContain('Não foi possível carregar mais registros agora.');
 
-      button('Tentar de novo').click();
+      button('Tentar de Novo').click();
       await settle(fixture);
       expect(rows()).toHaveLength(3);
       expect(text()).not.toContain('Não foi possível carregar mais');
@@ -458,7 +458,7 @@ describe('AuditPage', () => {
       expect(t.chips()).toEqual(['Resultado: Recusado', 'Últimas 24 horas']);
 
       api.list.mockClear();
-      t.button('Limpar tudo').click();
+      t.button('Limpar Tudo').click();
       await settle(t.fixture);
       expect(api.list).toHaveBeenCalledExactlyOnceWith(EMPTY_QUERY);
       expect(t.chips()).toEqual([]);
@@ -501,7 +501,7 @@ describe('AuditPage', () => {
       await applyOutcome(t, 'Erro');
       expect(t.text()).toContain('Nenhum registro com esses filtros.');
       api.list.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-      t.button('Limpar tudo').click();
+      t.button('Limpar Tudo').click();
       await settle(t.fixture);
       expect(t.rows()).toHaveLength(1);
     });
@@ -523,7 +523,7 @@ describe('AuditPage', () => {
       expect(text()).toContain('Não foi possível carregar os registros agora.');
       expect(rows()).toHaveLength(0);
 
-      button('Tentar de novo').click();
+      button('Tentar de Novo').click();
       await settle(fixture);
       expect(rows()).toHaveLength(2);
       expect(text()).not.toContain('Não foi possível carregar os registros');

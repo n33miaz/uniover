@@ -126,7 +126,7 @@ describe('GuestsSection', () => {
 
   /** Abre o cartão de convite e digita o nome. */
   async function startInvite(fixture: Fixture, el: HTMLElement, name = 'Dani') {
-    button(el, 'Convidar alguém')!.click();
+    button(el, 'Convidar Alguém')!.click();
     await fixture.whenStable();
     fixture.detectChanges();
     type(el, '#guest-name', name);
@@ -158,7 +158,7 @@ describe('GuestsSection', () => {
       fixture.detectChanges();
       expect(tabs[1].getAttribute('aria-selected')).toBe('true');
       expect(el.querySelector<HTMLElement>('[aria-labelledby="people-tab"]')?.hidden).toBe(true);
-      expect(el.querySelector('.subhead')?.textContent).toContain('Convites pendentes');
+      expect(el.querySelector('.subhead')?.textContent).toContain('Convites Pendentes');
     });
 
     it('shows who has access first, then the pending invites, and drops invites that are not pending', async () => {
@@ -167,7 +167,7 @@ describe('GuestsSection', () => {
       expect(names).toEqual(['Bia', 'Caio', 'Alice', 'Raphael']);
       expect(el.textContent).toContain('Vale até');
       expect(el.textContent).toContain('bia@exemplo.com');
-      expect(el.querySelector('.subhead')?.textContent).toContain('Convites pendentes');
+      expect(el.querySelector('.subhead')?.textContent).toContain('Convites Pendentes');
     });
 
     it('summarizes what each person and each pending invite can do, in plain words', async () => {
@@ -264,12 +264,12 @@ describe('GuestsSection', () => {
     it('starts as a single primary button; the form only opens after it is pressed', async () => {
       const { fixture, el } = await render();
       expect(el.querySelector('form.invite')).toBeNull();
-      expect(button(el, 'Convidar alguém')!.classList.contains('primary')).toBe(true);
-      button(el, 'Convidar alguém')!.click();
+      expect(button(el, 'Convidar Alguém')!.classList.contains('primary')).toBe(true);
+      button(el, 'Convidar Alguém')!.click();
       await fixture.whenStable();
       fixture.detectChanges();
       expect(el.querySelector('form.invite')).not.toBeNull();
-      expect(button(el, 'Convidar alguém')).toBeUndefined();
+      expect(button(el, 'Convidar Alguém')).toBeUndefined();
       expect(el.querySelector('#guest-name')).not.toBeNull();
     });
 
@@ -289,10 +289,10 @@ describe('GuestsSection', () => {
 
     it('does not submit without a name', async () => {
       const { fixture, el } = await render();
-      button(el, 'Convidar alguém')!.click();
+      button(el, 'Convidar Alguém')!.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(button(el, 'Gerar convite')!.disabled).toBe(true);
+      expect(button(el, 'Gerar Convite')!.disabled).toBe(true);
       submit(el);
       expect(people.createInvite).not.toHaveBeenCalled();
     });
@@ -312,7 +312,7 @@ describe('GuestsSection', () => {
       expect(el.textContent).toContain('serve uma vez só');
       // O formulário se recolhe e o botão de convidar espera o link ser fechado.
       expect(el.querySelector('form.invite')).toBeNull();
-      expect(button(el, 'Convidar alguém')).toBeUndefined();
+      expect(button(el, 'Convidar Alguém')).toBeUndefined();
       expect(el.querySelector('.link-box .hint')?.textContent).toContain('Controlar a TV');
     });
 
@@ -358,7 +358,7 @@ describe('GuestsSection', () => {
       await startInvite(fixture, el);
       await openPermissions(fixture, el);
       await flip(fixture, el, 'Ver a TV');
-      expect(button(el, 'Gerar convite')!.disabled).toBe(true);
+      expect(button(el, 'Gerar Convite')!.disabled).toBe(true);
       expect(el.querySelector('.summary')?.textContent).toContain('Ligue ao menos um módulo');
       submit(el);
       expect(people.createInvite).not.toHaveBeenCalled();
@@ -429,11 +429,11 @@ describe('GuestsSection', () => {
       const { fixture, el } = await render();
       await startInvite(fixture, el);
       submit(el);
-      await vi.waitFor(() => expect(button(el, 'Copiar link')).toBeDefined());
+      await vi.waitFor(() => expect(button(el, 'Copiar Link')).toBeDefined());
       await fixture.whenStable();
       fixture.detectChanges();
 
-      button(el, 'Copiar link')!.click();
+      button(el, 'Copiar Link')!.click();
       await vi.waitFor(() =>
         expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/convite#${SECRET}`),
       );
@@ -446,15 +446,15 @@ describe('GuestsSection', () => {
       fixture.detectChanges();
       expect(el.querySelector('input.link')).toBeNull();
       expect(el.textContent).not.toContain(SECRET);
-      expect(button(el, 'Convidar alguém')).toBeDefined();
+      expect(button(el, 'Convidar Alguém')).toBeDefined();
     });
 
     it('says so when the browser cannot copy', async () => {
       const { fixture, el } = await render();
       await startInvite(fixture, el);
       submit(el);
-      await vi.waitFor(() => expect(button(el, 'Copiar link')).toBeDefined());
-      button(el, 'Copiar link')!.click();
+      await vi.waitFor(() => expect(button(el, 'Copiar Link')).toBeDefined());
+      button(el, 'Copiar Link')!.click();
       await vi.waitFor(() => expect(el.querySelector('.link-box .message.error')).not.toBeNull());
       expect(el.querySelector('.link-box .message.error')?.textContent).toContain(
         'Não deu para copiar sozinho',
@@ -477,7 +477,7 @@ describe('GuestsSection', () => {
       const { fixture, el } = await render();
       await startInvite(fixture, el);
       submit(el);
-      await vi.waitFor(() => expect(button(el, 'Copiar link')).toBeDefined());
+      await vi.waitFor(() => expect(button(el, 'Copiar Link')).toBeDefined());
       expect(button(el, 'Compartilhar')).toBeUndefined();
     });
   });

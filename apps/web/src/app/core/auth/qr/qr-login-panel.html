@@ -8,7 +8,7 @@
         (mousedown)="$event.preventDefault()"
         (click)="start()"
       >
-        <span i18n="@@auth.qr.title">Entrar com o celular</span>
+        <span i18n="@@auth.qr.title">Entrar com o Celular</span>
       </button>
     } @else {
       <div class="stage">
@@ -38,7 +38,7 @@
               (mousedown)="$event.preventDefault()"
               (click)="retry()"
             >
-              <span i18n="@@auth.qr.again">Gerar outro QR</span>
+              <span i18n="@@auth.qr.again">Gerar Outro QR</span>
             </button>
           }
           @case ('error') {
@@ -52,7 +52,7 @@
               (mousedown)="$event.preventDefault()"
               (click)="retry()"
             >
-              <span i18n="@@auth.qr.retry">Tentar de novo</span>
+              <span i18n="@@auth.qr.retry">Tentar de Novo</span>
             </button>
           }
           @default {

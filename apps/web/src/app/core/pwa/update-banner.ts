@@ -88,10 +88,10 @@ import { PwaUpdateService } from './pwa-update.service';
           }
           <div class="choices">
             <button #keep type="button" class="keep ui-tap" (click)="pwa.cancelUpdate()">
-              <span i18n="@@pwa.update-confirm-keep">Continuar editando</span>
+              <span i18n="@@pwa.update-confirm-keep">Continuar Editando</span>
             </button>
             <button type="button" class="action ui-tap" (click)="pwa.confirmUpdate()">
-              <span i18n="@@pwa.update-confirm-go">Atualizar mesmo assim</span>
+              <span i18n="@@pwa.update-confirm-go">Atualizar Mesmo Assim</span>
             </button>
           </div>
         </div>

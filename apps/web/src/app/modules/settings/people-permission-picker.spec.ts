@@ -52,7 +52,7 @@ describe('PeoplePermissionPicker', () => {
       Array.from(el.querySelectorAll('label.model')).map((label) => label.textContent?.trim()),
     ).toEqual(['Só controlar a TV', 'Só o Treino', 'Personalizado']);
     expect(Array.from(el.querySelectorAll('legend')).map((l) => l.textContent?.trim())).toEqual([
-      'Modelos prontos',
+      'Modelos Prontos',
       'TV',
       'Treino',
       'Compras',

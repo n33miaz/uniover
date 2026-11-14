@@ -11,7 +11,7 @@ import { SessionState } from '../../core/session/session-state';
   imports: [QrCode],
   template: `
     <section aria-labelledby="totp-title">
-      <h2 id="totp-title" i18n="@@settings.totp.title">Aplicativo autenticador</h2>
+      <h2 id="totp-title" i18n="@@settings.totp.title">Aplicativo Autenticador</h2>
       <p i18n="@@settings.totp.explain">
         Use um código do aplicativo ao entrar. Guarde os códigos de recuperação em lugar seguro.
       </p>
@@ -32,7 +32,7 @@ import { SessionState } from '../../core/session/session-state';
           (click)="closeCodes()"
           i18n="@@settings.totp.saved"
         >
-          Já guardei os códigos
+          Já Guardei os Códigos
         </button>
       } @else if (active()) {
         <p role="status" i18n="@@settings.totp.already-active">
@@ -90,7 +90,7 @@ import { SessionState } from '../../core/session/session-state';
             [disabled]="busy()"
             i18n="@@settings.totp.start"
           >
-            Cadastrar autenticador
+            Cadastrar Autenticador
           </button>
         </form>
       }

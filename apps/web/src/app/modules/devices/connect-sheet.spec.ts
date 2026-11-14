@@ -19,7 +19,7 @@ describe('ConnectSheet', () => {
     const dialog = el.querySelector('dialog')!;
     expect(dialog.hasAttribute('open')).toBe(true);
     expect(dialog.getAttribute('aria-labelledby')).toBe('connect-title');
-    expect(el.querySelector('h2')?.textContent).toBe('Conectar este PC');
+    expect(el.querySelector('h2')?.textContent).toBe('Conectar Este PC');
     expect(Array.from(el.querySelectorAll('ol > li')).map((li) => li.textContent?.trim())).toEqual([
       'Baixar e abrir o programa',
       'Escanear o QR com o celular',

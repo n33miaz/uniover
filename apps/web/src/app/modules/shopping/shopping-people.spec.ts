@@ -185,7 +185,7 @@ describe('ShoppingPeople', () => {
 
     expect(alert()).toBe('Não deu para abrir as pessoas.');
     api.group = async () => ({ id: 'group-1', isOwner: true });
-    await click('Tentar de novo');
+    await click('Tentar de Novo');
     expect(names('members')).toEqual(['Neemias', 'Raphael']);
   });
 });

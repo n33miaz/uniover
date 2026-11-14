@@ -452,7 +452,7 @@ test.describe('atalhos maiores e centralizados', () => {
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
     ).toBeVisible();
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);

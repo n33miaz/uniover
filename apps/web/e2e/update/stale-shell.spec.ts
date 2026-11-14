@@ -287,7 +287,7 @@ test.describe('atualização com a casca antiga já aberta', () => {
         timeout: 20_000,
       })
       .not.toBe(timeOrigin);
-    await expect(page.getByRole('heading', { level: 1, name: 'Conectar este PC' })).toBeVisible({
+    await expect(page.getByRole('heading', { level: 1, name: 'Conectar Este PC' })).toBeVisible({
       timeout: 20_000,
     });
     expect(await mainScript(page)).not.toBe(before);

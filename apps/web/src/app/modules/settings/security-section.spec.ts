@@ -119,7 +119,7 @@ describe('SecuritySection', () => {
 
   it('registers a passkey: asks for the password, creates the credential, completes and reloads', async () => {
     const { fixture, el } = await render();
-    button(el, 'Cadastrar passkey')!.click();
+    button(el, 'Cadastrar Passkey')!.click();
     fixture.detectChanges();
     expect(el.querySelector<HTMLInputElement>('#passkey-password')!.autocomplete).toBe(
       'current-password',
@@ -149,7 +149,7 @@ describe('SecuritySection', () => {
   it('shows a clear message when the password is wrong', async () => {
     api.registrationOptions.mockRejectedValue(new ApiProblem(403, 'invalid-password', 'x'));
     const { fixture, el } = await render();
-    button(el, 'Cadastrar passkey')!.click();
+    button(el, 'Cadastrar Passkey')!.click();
     fixture.detectChanges();
     type(el, '#passkey-password', 'errada');
     el.querySelector('form.add')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -161,7 +161,7 @@ describe('SecuritySection', () => {
   it('shows a clear message when the authenticator prompt is cancelled', async () => {
     create.mockRejectedValue(new DOMException('x', 'NotAllowedError'));
     const { fixture, el } = await render();
-    button(el, 'Cadastrar passkey')!.click();
+    button(el, 'Cadastrar Passkey')!.click();
     fixture.detectChanges();
     type(el, '#passkey-password', 'senha');
     el.querySelector('form.add')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -172,7 +172,7 @@ describe('SecuritySection', () => {
   it('offers no registration on a device without WebAuthn', async () => {
     delete (window as unknown as Record<string, unknown>)['PublicKeyCredential'];
     const { el } = await render();
-    expect(button(el, 'Cadastrar passkey')).toBeUndefined();
+    expect(button(el, 'Cadastrar Passkey')).toBeUndefined();
     expect(el.textContent).toContain('não oferece passkeys');
   });
 

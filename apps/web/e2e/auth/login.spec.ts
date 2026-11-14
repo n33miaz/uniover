@@ -55,7 +55,7 @@ test.describe('tela de entrada: estrutura', () => {
     await expect(password(page)).toHaveAttribute('enterkeyhint', 'go');
 
     // A recuperação de senha é pelo e-mail, por um link próprio; "lembrar de mim" continua não existindo.
-    await expect(page.getByRole('link', { name: 'Esqueci minha senha' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Esqueci Minha Senha' })).toHaveAttribute(
       'href',
       '/recuperar-senha',
     );

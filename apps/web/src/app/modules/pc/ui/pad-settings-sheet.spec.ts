@@ -156,7 +156,7 @@ describe('PcPadSettingsSheet', () => {
     expect(scroll()).not.toBeNull();
     expect(root.querySelectorAll('label.row')).toHaveLength(1);
     const more = [...root.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Mais ajustes',
+      (button) => button.textContent?.trim() === 'Mais Ajustes',
     )!;
     more.click();
     fixture.detectChanges();

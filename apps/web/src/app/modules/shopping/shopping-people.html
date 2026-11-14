@@ -13,7 +13,7 @@
       Não deu para abrir as pessoas.
     </p>
     <button type="button" class="ui-btn block" (click)="load()" i18n="@@shopping.people.retry">
-      Tentar de novo
+      Tentar de Novo
     </button>
   }
   @case ('ready') {
@@ -22,7 +22,7 @@
     }
 
     <section class="block">
-      <h2 class="ui-section-label" i18n="@@shopping.people.members">Quem divide a lista</h2>
+      <h2 class="ui-section-label" i18n="@@shopping.people.members">Quem Divide a Lista</h2>
       <ul class="ui-group members">
         @for (person of members(); track person.userId) {
           <li class="ui-row">

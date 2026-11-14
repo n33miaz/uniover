@@ -93,7 +93,7 @@ describe('InstallHintSheet', () => {
       expect(dialog.hasAttribute('open')).toBe(true);
       expect(dialog.classList.contains('ui-dialog')).toBe(true);
       expect(dialog.getAttribute('aria-labelledby')).toBe('install-title');
-      expect(el.querySelector('h2')?.textContent).toBe('Atalho na tela de início');
+      expect(el.querySelector('h2')?.textContent).toBe('Atalho na Tela de Início');
       expect(el.querySelector('#install-intro')?.textContent).toContain('é só um atalho');
       expect(el.querySelector('#install-intro')?.textContent).toContain('Não ocupa espaço');
     });
@@ -120,9 +120,9 @@ describe('InstallHintSheet', () => {
       expect(el.querySelectorAll('.glyph svg')).toHaveLength(3);
       // No Safari há também a confirmação de quem já adicionou o atalho à tela de início.
       expect(buttons().map((b) => b.textContent?.trim())).toEqual([
-        'Agora não',
-        'Já instalei',
-        'Não mostrar de novo',
+        'Agora Não',
+        'Já Instalei',
+        'Não Mostrar de Novo',
       ]);
     });
 
@@ -134,7 +134,7 @@ describe('InstallHintSheet', () => {
 
     it('o foco inicial está no primeiro controle', async () => {
       const { button } = await render({ userAgent: UA.safari });
-      expect(document.activeElement).toBe(button('Agora não'));
+      expect(document.activeElement).toBe(button('Agora Não'));
     });
   });
 
@@ -168,7 +168,7 @@ describe('InstallHintSheet', () => {
         expect(notice).toBe(
           `Você está na janela de outro app UniOver. Abra o endereço ${name} no navegador para instalar o atalho próprio.`,
         );
-        expect(button('Copiar endereço')).toBeTruthy();
+        expect(button('Copiar Endereço')).toBeTruthy();
       });
     }
 
@@ -197,7 +197,7 @@ describe('InstallHintSheet', () => {
   });
 
   describe('app embutido (Instagram, Facebook...)', () => {
-    it('o primeiro passo é abrir no Safari, com "Copiar endereço", e os passos do Safari vêm depois', async () => {
+    it('o primeiro passo é abrir no Safari, com "Copiar Endereço", e os passos do Safari vêm depois', async () => {
       const { stepTitles, numbers, button } = await render({ userAgent: UA.instagram });
       expect(numbers()).toEqual(['1', '2', '3', '4']);
       expect(stepTitles()[0]).toBe('Abra este endereço no Safari');
@@ -206,8 +206,8 @@ describe('InstallHintSheet', () => {
         'Toque em Adicionar à Tela de Início',
         'Toque em Adicionar',
       ]);
-      expect(button('Copiar endereço')).toBeDefined();
-      expect(document.activeElement).toBe(button('Copiar endereço'));
+      expect(button('Copiar Endereço')).toBeDefined();
+      expect(document.activeElement).toBe(button('Copiar Endereço'));
     });
 
     it('copia o endereço sem busca nem fragmento e confirma em uma região de status', async () => {
@@ -216,7 +216,7 @@ describe('InstallHintSheet', () => {
       const { el, fixture, button } = await render({ userAgent: UA.instagram });
       const status = el.querySelector('[role="status"]')!;
       expect(status.textContent).toBe(''); // a região já existe antes do texto chegar
-      button('Copiar endereço').click();
+      button('Copiar Endereço').click();
       await fixture.whenStable();
       expect(writeText).toHaveBeenCalledWith(`${location.origin}${location.pathname}`);
       expect(status.textContent).toContain('Endereço copiado');
@@ -226,7 +226,7 @@ describe('InstallHintSheet', () => {
       const execCommand = vi.fn().mockReturnValue(true);
       Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true });
       const { el, fixture, button } = await render({ userAgent: UA.instagram });
-      button('Copiar endereço').click();
+      button('Copiar Endereço').click();
       await fixture.whenStable();
       expect(execCommand).toHaveBeenCalledWith('copy');
       expect(el.querySelector('input.address')?.closest('dialog')).not.toBeNull();
@@ -247,7 +247,7 @@ describe('InstallHintSheet', () => {
       const field = el.querySelector<HTMLInputElement>('input.address')!;
       expect(field.getAttribute('aria-hidden')).toBe('true');
       expect(field.tabIndex).toBe(-1);
-      button('Copiar endereço').click();
+      button('Copiar Endereço').click();
       await fixture.whenStable();
       expect(el.querySelector('[role="status"]')?.textContent).toContain('Toque e segure');
       expect(field.classList.contains('ghost')).toBe(false);
@@ -279,8 +279,8 @@ describe('InstallHintSheet', () => {
       expect(el.querySelector('ol')).toBeNull();
       expect(buttons().map((b) => b.textContent?.trim())).toEqual([
         'Instalar',
-        'Agora não',
-        'Não mostrar de novo',
+        'Agora Não',
+        'Não Mostrar de Novo',
       ]);
     });
 
@@ -333,10 +333,10 @@ describe('InstallHintSheet', () => {
   });
 
   describe('as saídas', () => {
-    it('"Agora não" adia por 30 dias, desce a folha e avisa uma única vez', async () => {
+    it('"Agora Não" adia por 30 dias, desce a folha e avisa uma única vez', async () => {
       const { button, fixture, dialog, closed } = await render({ userAgent: UA.safari });
-      button('Agora não').click();
-      button('Agora não').click(); // toque repetido
+      button('Agora Não').click();
+      button('Agora Não').click(); // toque repetido
       await fixture.whenStable();
       expect(closed()).toBe(1);
       expect(dialog.hasAttribute('open')).toBe(false); // close() devolve o foco a quem abriu
@@ -345,17 +345,17 @@ describe('InstallHintSheet', () => {
       expect(stored().never).toBeUndefined();
     });
 
-    it('"Não mostrar de novo" é lembrado para sempre', async () => {
+    it('"Não Mostrar de Novo" é lembrado para sempre', async () => {
       const { button, fixture, closed } = await render({ userAgent: UA.safari });
-      button('Não mostrar de novo').click();
+      button('Não Mostrar de Novo').click();
       await fixture.whenStable();
       expect(closed()).toBe(1);
       expect(stored()).toEqual({ never: true });
     });
 
-    it('no iOS, "Já instalei" confirma e impede a folha automática em sessões futuras', async () => {
+    it('no iOS, "Já Instalei" confirma e impede a folha automática em sessões futuras', async () => {
       const { button, fixture, closed, hint } = await render({ userAgent: UA.safari });
-      button('Já instalei').click();
+      button('Já Instalei').click();
       await fixture.whenStable();
       expect(closed()).toBe(1);
       expect(hint.mode()).toBe('none');
@@ -372,11 +372,11 @@ describe('InstallHintSheet', () => {
       const { button, fixture, dialog, closed, el } = await render({ userAgent: UA.safari });
       const finishAnimation = holdExitAnimation(dialog);
 
-      button('Já instalei').click();
+      button('Já Instalei').click();
       fixture.detectChanges();
       expect(dialog.classList.contains('closing')).toBe(true);
       expect(el.querySelector('.steps')).not.toBeNull();
-      expect(button('Já instalei')).toBeDefined();
+      expect(button('Já Instalei')).toBeDefined();
       expect(closed()).toBe(0);
 
       finishAnimation();
@@ -384,7 +384,7 @@ describe('InstallHintSheet', () => {
       expect(closed()).toBe(1);
     });
 
-    it('Esc vale como "Agora não": o evento cancel é barrado (quem tira a folha é o hospedeiro) e a dica adia', async () => {
+    it('Esc vale como "Agora Não": o evento cancel é barrado (quem tira a folha é o hospedeiro) e a dica adia', async () => {
       const { dialog, fixture, closed } = await render({ userAgent: UA.safari });
       const cancel = new Event('cancel', { cancelable: true });
       dialog.dispatchEvent(cancel);
@@ -394,7 +394,7 @@ describe('InstallHintSheet', () => {
       expect(stored().dismissedAt).toEqual(expect.any(Number));
     });
 
-    it('o toque no fundo vale como "Agora não" e devolve o foco a quem abriu a folha', async () => {
+    it('o toque no fundo vale como "Agora Não" e devolve o foco a quem abriu a folha', async () => {
       const opener = document.createElement('button');
       document.body.append(opener);
       opener.focus();

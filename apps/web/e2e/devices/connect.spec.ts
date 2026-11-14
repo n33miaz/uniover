@@ -43,7 +43,7 @@ test.describe('link do QR do agente', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto(DEEP_LINK);
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
     await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeEnabled();
@@ -70,7 +70,7 @@ test.describe('link do QR do agente', () => {
     await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
@@ -111,9 +111,9 @@ test.describe('conectar este PC', () => {
     }, info) => {
       identity.loggedIn = true;
       await page.goto('/ajustes/dispositivos');
-      await page.getByRole('button', { name: 'Conectar este PC' }).click();
+      await page.getByRole('button', { name: 'Conectar Este PC' }).click();
 
-      const sheet = page.getByRole('dialog', { name: 'Conectar este PC' });
+      const sheet = page.getByRole('dialog', { name: 'Conectar Este PC' });
       await expect(sheet).toBeVisible();
       await expect(sheet.getByRole('listitem')).toHaveText([
         'Baixar e abrir o programa',
@@ -145,7 +145,7 @@ test.describe('conectar este PC', () => {
       await page.keyboard.press('Escape');
       await expect(sheet).toHaveCount(0);
 
-      await page.getByRole('button', { name: 'Conectar este PC' }).click();
+      await page.getByRole('button', { name: 'Conectar Este PC' }).click();
       await expect(sheet).toBeVisible();
       await page.mouse.click(5, 5); // no fundo, acima da folha
       await expect(sheet).toHaveCount(0);
@@ -155,8 +155,8 @@ test.describe('conectar este PC', () => {
   test('fora do Windows não oferece o download e explica em uma linha', async ({ page }, info) => {
     identity.loggedIn = true;
     await page.goto('/ajustes/dispositivos');
-    await expect(page.getByRole('button', { name: 'Conectar computador' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Conectar este PC' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Conectar Computador' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Conectar Este PC' })).toHaveCount(0);
     await expect(
       page.getByText('Para conectar um PC, abra esta tela nele (Windows).'),
     ).toBeVisible();

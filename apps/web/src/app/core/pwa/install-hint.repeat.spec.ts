@@ -184,7 +184,7 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
   });
 
   describe('o que já foi respondido fica respondido', () => {
-    it('"Agora não" vale 30 dias, e só no navegador', () => {
+    it('"Agora Não" vale 30 dias, e só no navegador', () => {
       const service = create({ userAgent: SAFARI });
       const t0 = Date.UTC(2026, 10, 1);
       service.dismiss(t0);
@@ -223,7 +223,7 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(next.autoOpenAllowed(Date.now() + 365 * DAY)).toBe(false);
     });
 
-    it('o "Agora não" dado num app adia os outros: um pedido só a cada 30 dias, não um por app', () => {
+    it('o "Agora Não" dado num app adia os outros: um pedido só a cada 30 dias, não um por app', () => {
       const service = create({ userAgent: SAFARI });
       service.dismiss(Date.UTC(2026, 10, 1));
       sessionStorage.clear();
@@ -272,14 +272,14 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
       expect(api.saveInstallHint).not.toHaveBeenCalled();
     });
 
-    it('"nunca" e "Agora não" da conta valem no aparelho, cada um no seu app', async () => {
+    it('"nunca" e "Agora Não" da conta valem no aparelho, cada um no seu app', async () => {
       const t0 = Date.UTC(2026, 10, 1);
       api.getInstallHint.mockResolvedValue({ tv: { never: true }, treino: { dismissedAt: t0 } });
       const service = create({ userAgent: SAFARI });
 
       await service.syncAccount(ACCOUNT);
 
-      // O "Agora não" do Treino adia a folha automática de todos; o "nunca" da TV fica só na TV.
+      // O "Agora Não" do Treino adia a folha automática de todos; o "nunca" da TV fica só na TV.
       expect(service.autoOpenAllowed(t0 + DAY)).toBe(false);
       expect(service.autoOpenAllowed(t0 + 30 * DAY)).toBe(true);
       expect(inAccount('tv', ACCOUNT)).toEqual({ never: true });
@@ -388,7 +388,7 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
     });
   });
 
-  describe('"Agora não" nunca vale mais que agora + 1 dia', () => {
+  describe('"Agora Não" nunca vale mais que agora + 1 dia', () => {
     const future = () => Date.now() + 400 * DAY;
 
     it('um valor futuro no aparelho não vale: vale o da conta, que é menor', async () => {
@@ -428,7 +428,7 @@ describe('a dica de instalação não volta para quem já respondeu', () => {
   });
 
   describe('"já instalei" soma, não apaga', () => {
-    it('acknowledgeInstalled guarda junto com o "Agora não" e o "nunca" que já havia', async () => {
+    it('acknowledgeInstalled guarda junto com o "Agora Não" e o "nunca" que já havia', async () => {
       const service = create({ userAgent: SAFARI });
       await service.syncAccount(ACCOUNT);
       service.dismiss(Date.UTC(2026, 10, 1));

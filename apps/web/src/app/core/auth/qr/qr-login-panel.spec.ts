@@ -45,7 +45,7 @@ describe('QrLoginPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  /** `open`: toca em "Entrar com o celular" (quando o botão existe), que é o que pede o primeiro QR. */
+  /** `open`: toca em "Entrar com o Celular" (quando o botão existe), que é o que pede o primeiro QR. */
   async function render(open = true) {
     const fixture = TestBed.createComponent(QrLoginPanel);
     const signedIn = vi.fn();
@@ -61,7 +61,7 @@ describe('QrLoginPanel', () => {
 
   const openButton = (el: HTMLElement) =>
     [...el.querySelectorAll<HTMLButtonElement>('button')].find(
-      (b) => b.textContent?.trim() === 'Entrar com o celular',
+      (b) => b.textContent?.trim() === 'Entrar com o Celular',
     );
   const buttonNamed = (el: HTMLElement, name: string) =>
     [...el.querySelectorAll<HTMLButtonElement>('button')].find(

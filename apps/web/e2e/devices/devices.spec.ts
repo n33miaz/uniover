@@ -55,7 +55,7 @@ async function openDevices(page: Page, browserName: string, expandMaintenance = 
   await signIn(page);
   if (browserName === 'chromium') {
     await page.goto('/ajustes/seguranca');
-    await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
+    await page.getByRole('button', { name: 'Cadastrar Passkey' }).click();
     await passkeyPassword(page).fill(OWNER.password);
     await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
@@ -107,8 +107,8 @@ test.describe('dispositivos', () => {
     // No WebKit não há autenticador virtual: só o passo da passkey é pulado (a confirmação já vale).
     if (browserName !== 'chromium') identity.stepUpValid = true;
 
-    await page.getByRole('button', { name: 'Conectar computador' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    await page.getByRole('button', { name: 'Conectar Computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
     const code = sheet.getByLabel('Código do computador');
@@ -162,8 +162,8 @@ test.describe('dispositivos', () => {
     await openDevices(page, browserName);
     if (browserName !== 'chromium') identity.stepUpValid = true;
 
-    await page.getByRole('button', { name: 'Conectar computador' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    await page.getByRole('button', { name: 'Conectar Computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     const nickname = sheet.getByLabel('Como Chamar Esta TV?');
     await expect(nickname).toHaveValue('');
     await expect(nickname).toHaveAttribute('placeholder', 'TV');
@@ -202,8 +202,8 @@ test.describe('dispositivos', () => {
     devices.openCodes.add('BCDF2345');
     await openDevices(page, browserName);
 
-    await page.getByRole('button', { name: 'Conectar computador' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    await page.getByRole('button', { name: 'Conectar Computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await typeCode(page, 'BCDF-2345');
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
     const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
@@ -225,8 +225,8 @@ test.describe('dispositivos', () => {
   }) => {
     await openDevices(page, browserName);
     identity.stepUpValid = true;
-    await page.getByRole('button', { name: 'Conectar computador' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    await page.getByRole('button', { name: 'Conectar Computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
 
     await typeCode(page, 'BCDF-2345');
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
@@ -245,13 +245,13 @@ test.describe('dispositivos', () => {
     browserName,
   }) => {
     await openDevices(page, browserName);
-    const opener = page.getByRole('button', { name: 'Conectar computador' });
+    const opener = page.getByRole('button', { name: 'Conectar Computador' });
     await opener.focus(); // o WebKit não dá foco ao botão no toque; pelo teclado há para onde voltar
     await page.keyboard.press('Enter');
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await expect(sheet).toBeVisible();
 
-    await sheet.getByRole('heading', { name: 'Conectar computador' }).click();
+    await sheet.getByRole('heading', { name: 'Conectar Computador' }).click();
     await expect(sheet).toBeVisible(); // toque dentro da folha não fecha
     await page.mouse.click(4, 4); // fora do retângulo da folha
     await expect(sheet).toHaveCount(0);
@@ -262,10 +262,10 @@ test.describe('dispositivos', () => {
   test('recusa um código sem pedir a passkey', async ({ page, browserName }) => {
     devices.openCodes.add('BCDF2345');
     await openDevices(page, browserName);
-    await page.getByRole('button', { name: 'Conectar computador' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Conectar computador' });
+    await page.getByRole('button', { name: 'Conectar Computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Conectar Computador' });
     await typeCode(page, 'bcdf2345');
-    await sheet.getByRole('button', { name: 'Recusar código' }).click();
+    await sheet.getByRole('button', { name: 'Recusar Código' }).click();
 
     await expect(page.getByText('Código recusado. Nenhum computador foi conectado.')).toBeVisible();
     await expect(sheet).toHaveCount(0);
@@ -306,15 +306,15 @@ test.describe('dispositivos', () => {
   }) => {
     devices.agents.push(storedAgent());
     await openDevices(page, browserName);
-    await expect(page.getByRole('button', { name: 'Conectar computador' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Conectar Computador' })).toBeEnabled();
 
     await context.setOffline(true);
-    await expect(page.getByRole('button', { name: 'Conectar computador' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Conectar Computador' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Tirar o acesso de PC de casa' })).toBeDisabled();
     await expect(page.getByText('Sem conexão: isto precisa de rede.')).toBeVisible();
 
     await context.setOffline(false);
-    await expect(page.getByRole('button', { name: 'Conectar computador' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Conectar Computador' })).toBeEnabled();
   });
 
   test('avisa a falha de atualização numa linha, cabe na tela e some ao dispensar', async ({

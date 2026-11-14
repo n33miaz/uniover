@@ -186,7 +186,7 @@ test.describe('head por módulo no cliente', () => {
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Criar Conta', exact: true }),
     ).toBeVisible();
     await expectHead(page, ROOT);
     await markDocument(page);

@@ -89,7 +89,7 @@ describe('QrApprovePage', () => {
 
     expect(api.qrApprove).toHaveBeenCalledWith('tok', CODE, null);
     expect(auth.authorized).toHaveBeenLastCalledWith(expect.any(Function));
-    expect(text(el)).toContain('Computador liberado');
+    expect(text(el)).toContain('Computador Liberado');
     expect(text(el)).toContain('Ele já está entrando na sua conta.');
   });
 
@@ -101,7 +101,7 @@ describe('QrApprovePage', () => {
 
     expect(api.qrDeny).toHaveBeenCalledWith('tok', CODE);
     expect(api.qrApprove).not.toHaveBeenCalled();
-    expect(text(el)).toContain('Entrada cancelada');
+    expect(text(el)).toContain('Entrada Cancelada');
   });
 
   it('asks for the password when the session is old, refuses an empty one, and sends the typed one', async () => {
@@ -120,7 +120,7 @@ describe('QrApprovePage', () => {
     await settle();
 
     expect(api.qrApprove).toHaveBeenCalledWith('tok', CODE, 'minha-senha');
-    expect(text(el)).toContain('Computador liberado');
+    expect(text(el)).toContain('Computador Liberado');
   });
 
   it('shows a wrong password under the field, clears it and lets the person try again', async () => {
@@ -180,7 +180,7 @@ describe('QrApprovePage', () => {
     if (failure) api.qrInfo.mockRejectedValue(failure);
     const { el } = await render(url);
 
-    expect(el.querySelector('h1')?.textContent).toBe('QR vencido');
+    expect(el.querySelector('h1')?.textContent).toBe('QR Vencido');
     expect(text(el)).toContain('Peça outro na tela do computador.');
     expect(el.querySelector('button')).toBeNull();
   });
@@ -189,7 +189,7 @@ describe('QrApprovePage', () => {
     api.qrInfo.mockRejectedValue(new ApiProblem(0, 'network', 'x'));
     const { el } = await render();
 
-    expect(el.querySelector('h1')?.textContent).toBe('Sem conexão');
+    expect(el.querySelector('h1')?.textContent).toBe('Sem Conexão');
     expect(el.querySelector('[role="alert"]')).not.toBeNull();
   });
 
@@ -200,7 +200,7 @@ describe('QrApprovePage', () => {
     button(el, 'Confirmar').click();
     await settle();
 
-    expect(el.querySelector('h1')?.textContent).toBe('QR vencido');
+    expect(el.querySelector('h1')?.textContent).toBe('QR Vencido');
   });
 
   it('holds the shape of the confirmation as a busy skeleton until the computer is known', async () => {

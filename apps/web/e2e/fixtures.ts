@@ -27,7 +27,7 @@ function lateToolStyle(page: Page, pattern: RegExp, detail: string): boolean {
 }
 
 /**
- * Chaves onde o app guarda a escolha de "Não mostrar de novo" da folha do atalho na tela de início: uma por app
+ * Chaves onde o app guarda a escolha de "Não Mostrar de Novo" da folha do atalho na tela de início: uma por app
  * (a raiz e cada módulo com manifest próprio).
  */
 const INSTALL_HINT_KEYS = ['', '.tv', '.treino', '.pc'].map(
@@ -44,9 +44,9 @@ export const test = base.extend<{
   _silenceInstallHint: void;
 }>({
   /**
-   * A folha "Atalho na tela de início" abre sozinha ~3 s depois da tela pronta num celular (e o projeto `iphone-12`
+   * A folha "Atalho na Tela de Início" abre sozinha ~3 s depois da tela pronta num celular (e o projeto `iphone-12`
    * tem agente de iPhone), tornando a página inerte no meio de qualquer teste. Por padrão todo teste começa com
-   * "Não mostrar de novo" já escolhido; quem testa a dica desliga com `test.use({ installHintSilenced: false })`.
+   * "Não Mostrar de Novo" já escolhido; quem testa a dica desliga com `test.use({ installHintSilenced: false })`.
    */
   installHintSilenced: [true, { option: true }],
   _silenceInstallHint: [

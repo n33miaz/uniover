@@ -11,7 +11,7 @@ import { isPlausibleEmail } from './auth-validation';
   imports: [AuthLayout, AuthField, RouterLink],
   template: `
     <app-auth-layout [attr.data-screen-ready]="'auth-recovery'">
-      <h1 i18n="@@auth.recovery.title">Recuperar senha</h1>
+      <h1 i18n="@@auth.recovery.title">Recuperar Senha</h1>
       @if (sent()) {
         <p role="status" i18n="@@auth.recovery.sent">Se este e-mail estiver cadastrado, enviaremos um link para escolher outra senha. Confira também o spam.</p>
       } @else if (available() === null) {
@@ -26,7 +26,7 @@ import { isPlausibleEmail } from './auth-validation';
             [enterKeyHint]="'go'" [error]="emailIssue()" [(value)]="email" />
           @if (error()) { <p role="alert">{{ error() }}</p> }
           <button class="ui-btn primary block" type="submit" [disabled]="busy()"
-            i18n="@@auth.recovery.send">Enviar link</button>
+            i18n="@@auth.recovery.send">Enviar Link</button>
         </form>
       }
       <p class="back"><a routerLink="/entrar" i18n="@@auth.recovery.back">Voltar para Entrar</a></p>

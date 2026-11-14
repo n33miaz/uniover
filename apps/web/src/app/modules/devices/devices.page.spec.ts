@@ -83,7 +83,7 @@ describe('DevicesPage', () => {
       providers: [
         provideRouter([]),
         { provide: DevicesApi, useValue: api },
-        // A folha de aprovação lista as pessoas para "Para quem é a TV".
+        // A folha de aprovação lista as pessoas para "Para Quem é a TV".
         { provide: AuthApi, useValue: { guests: vi.fn().mockResolvedValue([]) } },
         {
           provide: AuthService,
@@ -566,7 +566,7 @@ describe('DevicesPage', () => {
     api.list.mockRejectedValueOnce(new HttpErrorResponse({ status: 0 }));
     const { fixture, el, button } = await render();
     expect(el.textContent).toContain('Não foi possível carregar os computadores');
-    button('Tentar de novo').click();
+    button('Tentar de Novo').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(el.querySelector('.name')?.textContent).toBe('PC de casa');
@@ -897,7 +897,7 @@ describe('DevicesPage deep link and connector', () => {
     expect(link.getAttribute('href')).toBe('/conectar/conectar-uniover.cmd');
     // Sem lista de aparelhos nem "Parear aparelho" (isso é do administrador): só a aprovação do próprio PC.
     expect(Array.from(el.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual([
-      'Aprovar este computador',
+      'Aprovar Este Computador',
     ]);
     expect(el.textContent).not.toContain('Peça ao administrador para aprovar.');
     expect(api.list).not.toHaveBeenCalled();

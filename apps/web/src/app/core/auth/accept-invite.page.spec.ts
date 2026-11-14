@@ -99,7 +99,7 @@ describe('AcceptInvitePage', () => {
     const el = await render();
     expect(el.querySelector('app-auth-layout main')).not.toBeNull();
     expect(el.querySelectorAll('h1')).toHaveLength(1);
-    expect(text(el, 'h1')).toBe('Criar conta');
+    expect(text(el, 'h1')).toBe('Criar Conta');
     expect(el.querySelector('.lead')).toBeNull();
   });
 

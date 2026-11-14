@@ -315,7 +315,7 @@ test.describe('Configurações > Auditoria', () => {
       await expect(page.getByText('Nenhum registro com esses filtros.')).toBeVisible();
       await check(page, info, 'audit-empty', scheme);
 
-      await page.getByRole('button', { name: 'Limpar tudo' }).click();
+      await page.getByRole('button', { name: 'Limpar Tudo' }).click();
       await expect(page.locator('button.entry').first()).toBeVisible();
       await expect(chips(page)).toHaveCount(0);
     });
@@ -328,7 +328,7 @@ test.describe('Configurações > Auditoria', () => {
       await expect(page.getByText('Não foi possível carregar os registros agora.')).toBeVisible();
       await check(page, info, 'audit-error', scheme);
 
-      await page.getByRole('button', { name: 'Tentar de novo' }).click();
+      await page.getByRole('button', { name: 'Tentar de Novo' }).click();
       await expect(page.locator('button.entry').first()).toBeVisible();
       await expect.poll(() => audit.listRequests().length).toBeGreaterThanOrEqual(2);
     });

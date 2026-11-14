@@ -113,7 +113,7 @@ export class SyncIssuesSheet {
   }
 
   protected retryLabel(row: IssueRow): string {
-    return $localize`:@@training.issues.retry-label:Tentar de novo: ${row.subject}:subject:`;
+    return $localize`:@@training.issues.retry-label:Tentar de Novo: ${row.subject}:subject:`;
   }
 
   protected discardLabel(row: IssueRow): string {

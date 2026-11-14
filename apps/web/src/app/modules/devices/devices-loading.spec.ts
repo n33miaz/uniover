@@ -75,7 +75,7 @@ describe('DevicesPage while the list is requested', () => {
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(el.querySelector('app-loading-skeleton')).toBeNull();
-      expect(el.textContent).toContain('Tentar de novo');
+      expect(el.textContent).toContain('Tentar de Novo');
     });
   });
 });
