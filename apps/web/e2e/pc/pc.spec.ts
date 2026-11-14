@@ -1966,8 +1966,8 @@ test.describe('Teclas do pc.key.v2', () => {
       await tabs(page).getByRole('link', { name: 'Mídia' }).click();
       await expect(page).toHaveURL(/\/pc\/midia$/);
       await expect(bar(page)).toBeVisible();
-      // A barra entra deslizando: medir no primeiro quadro em que ela existe pega o botão ainda a caminho do lugar (num executor
-      // lento, fora da janela). Espera a medida assentar; uma barra que de fato fica fora continua reprovando ao fim do prazo.
+      // A folga da barra acima das abas vem da altura medida delas (um quadro depois): espera a medida assentar. Uma barra que
+      // de fato fica fora (atrás das abas ou além da borda da tela) continua reprovando ao fim do prazo.
       await expect.poll(() => hiddenControls(page)).toEqual([]);
       await bar(page).getByRole('button', { name: 'Soltar' }).click();
       await expect.poll(releases).toEqual([{ key: 'ALT' }]);

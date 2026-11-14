@@ -16,10 +16,15 @@
     0 -4px 18px color-mix(in srgb, var(--a-ink) 14%, transparent),
     inset 0 0 0 1px var(--a-accent);
 }
+/* Com letra mais larga (outra fonte do sistema ou texto ampliado) a faixa não cabe numa linha: o estado é o que cede, com
+   "segurado" descendo para baixo do Alt, e os botões (o Soltar sobretudo) seguem inteiros dentro da tela. */
 .state {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
+  justify-content: center;
+  gap: 2px var(--space-1);
+  min-width: 0;
   color: var(--a-accent-ink);
   font-size: var(--fs-small);
   font-weight: 650;
