@@ -1,0 +1,15 @@
+{
+  "project": "iphone-12",
+  "browser": "webkit",
+  "specs": [
+    "e2e/boot-skeleton.spec.ts",
+    "e2e/shell.spec.ts",
+    "e2e/auth/login.spec.ts",
+    "e2e/auth/session-refresh.spec.ts",
+    "e2e/update/stale-shell.spec.ts",
+    "e2e/screens/home-status.spec.ts",
+    "e2e/training/shell.spec.ts",
+    "e2e/tv/tv-menu.spec.ts",
+    "e2e/tv/tv-not-paired.spec.ts"
+  ]
+}

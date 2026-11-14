@@ -1,5 +1,14 @@
 name: CI
 
+# Conjunto enxuto, a cada PR e a cada push: precisa ficar em ~12 minutos, com os jobs ao mesmo tempo. O que é pesado
+# (integração da API com Postgres, E2E completo nos dois projetos, suíte inteira do agente com cobertura, auditoria de
+# PWA, APK do lançador e varredura da imagem) roda uma vez por noite em nightly.yml, fora do notebook do dono.
+#   api      compila a solução inteira com avisos como erro e roda os testes que não usam Docker
+#   web      lint, testes unitários, build de produção (com o orçamento do pacote inicial do angular.json)
+#   e2e      fumaça: um projeto (iphone-12) e só as telas críticas de .github/scripts/e2e-smoke.json
+#   agent    ruff, tipos, fronteiras do núcleo e o subconjunto rápido do pytest
+#   contracts  esquemas e exemplos (a regeneração dos tipos é do contracts-sync.yml)
+# Nenhum check daqui é exigência de merge: virar exigência (ci-ok) é decisão do dono, nas regras de branch do GitHub.
 on:
   pull_request:
     branches: [develop, main]
@@ -26,10 +35,6 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       agent: ${{ steps.filter.outputs.agent }}
       contracts: ${{ steps.filter.outputs.contracts }}
-      tv_launcher: ${{ steps.filter.outputs.tv_launcher }}
-      image: ${{ steps.filter.outputs.image }}
-      api_matrix: ${{ steps.plan.outputs.api_matrix }}
-      e2e_matrix: ${{ steps.plan.outputs.e2e_matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,22 +62,6 @@ jobs:
             contracts:
               - 'contracts/**'
               - '.github/workflows/ci.yml'
-            tv_launcher:
-              - 'apps/tv-launcher/**'
-              - 'contracts/tv-launcher/**'
-              - 'VERSION'
-              - '.github/workflows/ci.yml'
-            image:
-              - 'Dockerfile'
-              - 'modules.json'
-              - 'apps/api/**'
-              - 'apps/web/**'
-              - '.github/workflows/ci.yml'
-              - '.github/zap/**'
-      # As partes do teste da API e do E2E saem de arquivos em .github/scripts: uma fonte só para o job e para a conferência.
-      - name: Montar as matrizes de api e e2e
-        id: plan
-        run: bash .github/scripts/plan-matrices.sh >> "$GITHUB_OUTPUT"
 
   commits:
     name: commits
@@ -94,21 +83,16 @@ jobs:
           ALLOWED_EMAIL: ncormino@gmail.com
         run: bash .github/scripts/check-commits.sh "$BASE_SHA" "$HEAD_SHA"
 
-  # Testes da API em partes que rodam ao mesmo tempo. Quase todo o tempo (8 min dos ~9) é o projeto de integração:
-  # um container de Postgres e todas as classes na mesma coleção do xUnit, ou seja, em fila. Cada parte roda um recorte
-  # dele por namespace (.github/scripts/api-partitions.json); a parte "rest" é o complemento (os demais projetos de teste e
-  # qualquer namespace novo) e é ela quem compila a solução inteira com avisos como erro e confere, antes de testar, que
-  # as partes somam a suíte inteira. As outras compilam só o que o projeto de integração puxa: um artefato de build
-  # compartilhado custaria mais (subir e baixar ~100 MB por parte) do que os ~50 s que cada parte gasta compilando.
+
+  # Só o que não precisa de Docker: compila a solução inteira com avisos como erro e roda todos os projetos de teste
+  # menos o de integração (Postgres em container, ~4 a 6 min por parte), que fica na rodada noturna.
+  # Os scripts rodam de dentro de apps/api: o global.json de lá liga o Microsoft.Testing.Platform no dotnet test.
   api:
-    name: api (${{ matrix.name }})
+    name: api
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.changes.outputs.api_matrix) }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -116,24 +100,17 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: apps/api/global.json
-      # Os scripts rodam de dentro de apps/api: o global.json de lá liga o Microsoft.Testing.Platform no dotnet test.
+      # O cache do NuGet segue o arquivo de versões centralizado: muda só quando uma dependência muda.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('apps/api/Directory.Packages.props', 'apps/api/global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
       - name: Compilar a solução inteira (avisos como erro)
-        if: matrix.name == 'rest'
         working-directory: apps/api
         run: dotnet build UniOver.slnx -warnaserror
-      - name: Conferir que as partes somam a suíte inteira
-        if: matrix.name == 'rest'
-        run: bash .github/scripts/check-api-parts.sh
-      - name: Testar com cobertura (${{ matrix.name }})
-        env:
-          PART: ${{ matrix.name }}
-        run: bash .github/scripts/run-api-tests.sh "$PART"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: api-coverage-${{ matrix.name }}
-          path: apps/api/TestResults/*.cobertura.xml
-          if-no-files-found: error
+      - name: Testes (sem o projeto de integração)
+        run: bash .github/scripts/run-api-unit-tests.sh --no-build
 
   web:
     name: web
@@ -158,70 +135,22 @@ jobs:
         run: bash ../../.github/scripts/check-e2e-projects.sh
       - name: Lint
         run: npm run lint
-      - name: Testes com cobertura
-        run: npm run test:coverage
+      - name: Testes unitários
+        run: npm test
       - name: Testes do script de retenção dos arquivos com hash
         run: node --test scripts/retained-assets.test.mjs
-      - name: Build de produção
+      # O build aplica o orçamento do pacote inicial (angular.json: aviso a 500 kB, erro a 1 MB) e o dos estilos por componente.
+      - name: Build de produção (com o orçamento do pacote inicial)
         run: npm run build
 
-  # E2E em partes que rodam ao mesmo tempo (na CI cada teste é uma unidade do --shard; ver playwright.config.ts): um
-  # projeto do Playwright (e, portanto, um navegador) por parte, e cada projeto repartido com --shard k/n
-  # (.github/scripts/e2e-shards.json; o job web confere que nenhum projeto ficou de fora).
-  # Antes o --shard repartia os dois projetos juntos, por quantidade de testes: as duas primeiras partes caíam no
-  # WebKit (iphone-12) e as duas últimas no Chromium (s23-fe), e o WebKit leva quase o dobro por teste (medido: 288 a
-  # 350 s contra 165 a 196 s), então a parte mais lenta ditava o tempo de todas. Dentro de um projeto o custo por teste
-  # é parecido. Cada parte instala só o navegador que usa: o apt do --with-deps (~50 s no WebKit) é o que pesa; o download
-  # do navegador leva ~5 s e por isso não vale cache. O build de produção vem do webServer do próprio Playwright
-  # (~8 s): um job de build à parte custaria mais do que economiza.
-  # Fica de fora o PR de versão do release-please: ele só muda número de versão e o mesmo código já passou
-  # inteiro no PR da develop para a main e no push na main.
-  e2e:
-    name: e2e (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.total }})
-    needs: changes
-    if: needs.changes.outputs.web == 'true' && !startsWith(github.head_ref || '', 'release-please--')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.changes.outputs.e2e_matrix) }}
-    defaults:
-      run:
-        working-directory: apps/web
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - run: npm ci
-      - name: Instalar o navegador do Playwright
-        env:
-          BROWSER: ${{ matrix.browser }}
-        run: npx playwright install --with-deps "$BROWSER"
-      # O build de produção vem do webServer do próprio Playwright (playwright.config.ts).
-      - name: E2E (${{ matrix.project }}, parte ${{ matrix.shard }} de ${{ matrix.total }})
-        env:
-          PROJECT: ${{ matrix.project }}
-          SHARD: ${{ matrix.shard }}/${{ matrix.total }}
-        run: npx playwright test --project "$PROJECT" --shard "$SHARD"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: web-e2e-report-${{ matrix.project }}-${{ matrix.shard }}
-          path: |
-            apps/web/test-results
-            apps/web/playwright-report
-          if-no-files-found: ignore
 
-  # Auditoria de PWA: Lighthouse sobre o build servido pelo servidor de teste (mesma CSP da API) e, quando
-  # existir, a conferência dos manifests por módulo. Constrói por conta própria, então não espera o job web: roda ao
-  # mesmo tempo que ele e o e2e. Pelo mesmo motivo do e2e, não roda no PR de versão do release-please.
-  audit-pwa:
-    name: audit-pwa
+  # E2E de fumaça: um projeto só e só as telas críticas (.github/scripts/e2e-smoke.json: abertura e esqueletos, shell e
+  # Início, entrada e renovação da sessão, atualização do shell, Treino e controle da TV). Roda o iphone-12 (WebKit), o
+  # aparelho do dono, onde o defeito aparece primeiro; custa mais por teste que o Chromium, mas são ~110 dos ~1440
+  # testes. O E2E completo nos dois projetos, em partes, é da rodada noturna (nightly.yml). O build de produção vem do
+  # webServer do próprio Playwright. Fica de fora o PR de versão do release-please: ele só muda número de versão.
+  e2e-smoke:
+    name: e2e-smoke
     needs: changes
     if: needs.changes.outputs.web == 'true' && !startsWith(github.head_ref || '', 'release-please--')
     runs-on: ubuntu-latest
@@ -239,15 +168,26 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - name: Build de produção
-        run: npm run build
-      - name: Auditar o PWA
-        run: npm run audit:pwa
+      # O Playwright trata o nome do arquivo como filtro: um nome com erro de digitação seria ignorado em silêncio.
+      - name: Conferir a lista de fumaça
+        run: |
+          jq -e '.specs | length > 0' ../../.github/scripts/e2e-smoke.json >/dev/null
+          for spec in $(jq -r '.specs[]' ../../.github/scripts/e2e-smoke.json | tr -d '\r'); do
+            test -f "$spec" || { echo "::error::e2e-smoke.json lista $spec, que não existe."; exit 1; }
+          done
+      - name: Instalar o navegador do Playwright
+        run: npx playwright install --with-deps "$(jq -r .browser ../../.github/scripts/e2e-smoke.json | tr -d '\r')"
+      - name: E2E de fumaça
+        run: |
+          mapfile -t specs < <(jq -r '.specs[]' ../../.github/scripts/e2e-smoke.json | tr -d '\r')
+          npx playwright test --project="$(jq -r .project ../../.github/scripts/e2e-smoke.json | tr -d '\r')" "${specs[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: failure()
         with:
-          name: lighthouse-report
-          path: apps/web/.lighthouseci
+          name: web-e2e-smoke-report
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
           if-no-files-found: ignore
 
   agent:
@@ -255,7 +195,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.agent == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/agent
@@ -277,8 +217,9 @@ jobs:
         run: uv run mypy src tests
       - name: Fronteiras do núcleo
         run: uv run lint-imports
+      # Sem o piso de cobertura (--no-cov): ele é da suíte inteira, na rodada noturna. --durations mostra os testes mais lentos.
       - name: Testes
-        run: uv run pytest
+        run: uv run pytest --no-cov -p no:cacheprovider --durations=15
 
   contracts:
     name: contracts
@@ -302,164 +243,11 @@ jobs:
       - name: Validar esquemas e exemplos
         run: npm run validate
 
-  tv-launcher:
-    name: tv-launcher
-    needs: changes
-    if: needs.changes.outputs.tv_launcher == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: apps/tv-launcher
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # O gradle-wrapper.jar é um binário no repositório: confere o hash contra os publicados pelo Gradle.
-      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
-        with:
-          min-wrapper-count: 1
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 21
-      # Reaproveita o cache do Gradle que o deploy grava (só leitura aqui): o download pelo GitHub às vezes devolve 504.
-      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
-      # O SDK do Android já vem na imagem do runner.
-      - name: Testes de unidade e de tela
-        run: ./gradlew --no-daemon testDebugUnitTest
-      # Com os segredos do repositório o release sai assinado com a chave fixa do projeto (a mesma do build local,
-      # para a TV aceitar a atualização). Sem eles (PR de fora ou de robô, que não recebem segredos) cai na chave de
-      # depuração do runner. O keystore é decodificado num arquivo temporário e apagado ao sair do passo.
-      - name: Montar o APK de release
-        env:
-          TV_KEYSTORE_BASE64: ${{ secrets.UNIOVER_TV_KEYSTORE_BASE64 }}
-          TV_KEYSTORE_PASSWORD: ${{ secrets.UNIOVER_TV_KEYSTORE_PASSWORD }}
-          TV_KEY_ALIAS: ${{ secrets.UNIOVER_TV_KEY_ALIAS }}
-          TV_KEY_PASSWORD: ${{ secrets.UNIOVER_TV_KEY_PASSWORD }}
-        run: |
-          signed=false
-          if [ -n "$TV_KEYSTORE_BASE64" ]; then
-            keystore="$RUNNER_TEMP/uniover-tv.p12"
-            trap 'rm -f "$keystore"' EXIT
-            printf '%s' "$TV_KEYSTORE_BASE64" | base64 -d > "$keystore"
-            export UNIOVER_TV_STORE_FILE="$keystore" UNIOVER_TV_STORE_PASSWORD="$TV_KEYSTORE_PASSWORD"
-            export UNIOVER_TV_KEY_ALIAS="$TV_KEY_ALIAS" UNIOVER_TV_KEY_PASSWORD="$TV_KEY_PASSWORD"
-            signed=true
-          else
-            echo "::notice::Sem segredos de assinatura neste evento: release assinado com a chave de depuração."
-          fi
-          ./gradlew --no-daemon assembleRelease
-          if [ "$signed" = true ]; then
-            apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
-            got="$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1)"
-            want="$(tr -d "[:space:]" < signing-cert.sha256)"
-            echo "Certificado do APK: $got"
-            test "$got" = "$want" || { echo "::error::o certificado do APK não é o da chave do projeto (signing-cert.sha256)."; exit 1; }
-          fi
-
-  image:
-    name: image
-    needs: changes
-    if: needs.changes.outputs.image == 'true'
-    runs-on: ubuntu-latest
-    # Construção da imagem, duas varreduras e geração do SBOM podem variar com o cache do runner.
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        with:
-          # O runner é descartável: remover o builder no fim do job leva até ~20 s (medido) e não protege nada.
-          cleanup: false
-      - name: Construir a imagem (sem publicar)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          push: false
-          load: true
-          tags: uniover:ci
-          cache-from: type=gha
-          # Só o push (develop e main) grava o cache. Gravar em todo PR custava ~30 s por execução (medido) e o cache de
-          # um PR só serve a ele mesmo: 8,8 GB dos 10 GB do repositório eram desses blobs, expulsando os caches úteis.
-          # Os PRs continuam lendo o cache que a develop gravou.
-          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
-      - name: Trivy (relatório SARIF)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: uniover:ci
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          limit-severities-for-sarif: true
-          exit-code: "0"
-      - name: Enviar SARIF ao code scanning
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy-image
-      - name: Trivy (falha com achado CRITICAL ou HIGH)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: uniover:ci
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
-      - name: SBOM (SPDX)
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          image: uniover:ci
-          format: spdx-json
-          output-file: sbom.spdx.json
-          upload-artifact: false
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sbom-spdx
-          path: sbom.spdx.json
-      # Em produção a API exige a string de conexão. Aqui ela aponta para um banco que não existe: além de subir,
-      # prova que /health/live responde sem tocar no banco.
-      - name: Subir o contêiner
-        run: >-
-          docker run -d --name uniover -p 10000:10000 -e PORT=10000
-          -e "ConnectionStrings__Default=Host=127.0.0.1;Port=1;Database=none;Username=none;Password=none"
-          uniover:ci
-      - name: Esperar /health/live
-        run: |
-          for _ in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:10000/health/live || true)
-            if [ "$code" = "200" ]; then
-              echo "A API respondeu 200 em /health/live."
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::a API não respondeu 200 em /health/live em 60 segundos."
-          docker logs uniover
-          exit 1
-      - name: ZAP baseline
-        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
-        with:
-          target: http://localhost:10000
-          rules_file_name: .github/zap/rules.tsv
-          allow_issue_writing: false
-          fail_action: true
-          artifact_name: zap-baseline
-      - name: Parar o contêiner
-        if: always()
-        run: docker rm -f uniover
-
-  # Check único para exigir nas regras de branch: jobs pulados por caminho contam como verdes.
+  # Check único para exigir nas regras de branch (decisão do dono): jobs pulados por caminho contam como verdes.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commits, api, web, e2e, audit-pwa, agent, contracts, tv-launcher, image]
+    needs: [changes, commits, api, web, e2e-smoke, agent, contracts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
