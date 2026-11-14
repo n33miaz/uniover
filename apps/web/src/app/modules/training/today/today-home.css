@@ -3,21 +3,21 @@
 }
 
 /*
- * Densidade da primeira tela (390×664): a data, o cartão do dia, a semana com os totais e os dois atalhos cabem acima da
+ * Densidade da primeira tela (390×664): o cartão do dia, a semana com os totais e os dois atalhos cabem acima da
  * barra de baixo, sem rolar. Por isso o respiro entre os blocos é de 8 px e cada bloco é compacto.
- * O respiro entre o topo e a data é o da casca do Treino (a mesma folga de todas as telas): esta tela não soma o dela.
+ * O respiro entre o topo e o primeiro bloco é o da casca do Treino (a mesma folga de todas as telas): esta tela não soma o dela.
  */
 .home {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: 40rem;
+  max-width: var(--col-read);
   margin-inline: auto;
 }
 
 /*
  * A sugestão de programa pode abrir vazia (sem programas para mostrar): o elemento dela não pode ocupar uma linha do
- * espaçamento da coluna, senão a data desce 8 px a mais que o primeiro conteúdo das outras telas. Com `contents` o cartão,
+ * espaçamento da coluna, senão o primeiro bloco desce 8 px a mais que o primeiro conteúdo das outras telas. Com `contents` o cartão,
  * quando existe, continua sendo filho direto da coluna.
  */
 app-program-suggestion {
@@ -38,14 +38,14 @@ app-program-suggestion {
   gap: var(--space-3);
 }
 
-/* Primeira linha do cartão do dia: o rótulo à esquerda e a engrenagem no canto. O alvo da engrenagem tem 44 px, mas ele
-   sobe para dentro do respiro do cartão e desce sobre o espaço do nome, para a linha ocupar só o tamanho do rótulo. */
+/* Primeira linha do cartão do dia: o nome à esquerda e os três pontos no canto. O alvo dos pontos tem 44 px, mas ele sobe
+   para dentro do respiro do cartão e desce sobre o espaço do resumo, para a linha ocupar só o tamanho do nome. */
 .routine-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  margin-block: calc(var(--space-3) * -1) calc(var(--space-5) * -1);
+  margin-block: calc(var(--space-3) * -1) calc(var(--space-2) * -1);
 }
 
 .routine-settings {
@@ -75,16 +75,6 @@ app-program-suggestion {
 
 .routine-id {
   min-width: 0;
-}
-
-/* Rótulo pequeno em caixa alta, como o do mockup. */
-.eyebrow {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .routine-name {
@@ -149,11 +139,6 @@ app-program-suggestion {
 .routine-toggle:focus-visible {
   outline: 3px solid var(--a-accent);
   outline-offset: 2px;
-}
-
-/* A data é um rótulo pequeno (o estilo `ui-section-label`) colado no começo da tela. */
-.date {
-  line-height: 1.2;
 }
 
 .lines {

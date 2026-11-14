@@ -128,7 +128,11 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     await eventually(fixture, () =>
       expect(el.querySelectorAll('app-page-top-bar [aria-label="Mais opções"]')).toHaveLength(1),
     );
-    el.querySelector<HTMLButtonElement>('[aria-label="Mais opções"]')!.click();
+    // "Mais opções" é o mesmo desenho de três pontos em pé do app, solto no topo (nada de letras deitadas).
+    const more = el.querySelector<HTMLButtonElement>('[aria-label="Mais opções"]')!;
+    expect(more.textContent).not.toContain('•');
+    expect(more.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 24 24');
+    more.click();
     fixture.detectChanges();
     const item = Array.from(el.querySelectorAll<HTMLButtonElement>('.menu-actions button')).find(
       (button) => button.textContent?.includes('Opções do treino'),

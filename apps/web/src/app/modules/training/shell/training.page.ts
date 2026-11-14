@@ -75,7 +75,7 @@ function isWithin(path: string, section: string): boolean {
               i18n-aria-label="@@training.shell.more-options"
               (click)="menuOpen.set(true)"
             >
-              •••
+              <app-training-glyph name="dots" />
             </button>
           }
         </div>
@@ -144,19 +144,18 @@ function isWithin(path: string, section: string): boolean {
       /* O mesmo fundo da tela (sem faixa nem borda): opaco só para o conteúdo que rola não passar por baixo do título. */
       background: var(--a-bg);
     }
-    /* A pílula do topo: o anel de sincronização (quando à vista) e os três pontos, cada um com o próprio alvo de toque. */
+    /* Os três pontos em pé são um ícone solto no topo (só o "voltar" tem círculo), com o alvo de toque de 44 px. */
     .more {
       display: grid;
       place-items: center;
       width: var(--tap);
       height: var(--tap);
-      padding: 0 0 4px;
+      padding: 0;
       border: 0;
       border-radius: 50%;
       background: transparent;
       color: var(--a-ink);
-      font: 700 1rem/1 sans-serif;
-      letter-spacing: 1px;
+      --glyph-size: 22px;
       cursor: pointer;
       touch-action: manipulation;
     }

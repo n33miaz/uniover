@@ -124,7 +124,7 @@ const SCREENS: readonly Screen[] = [
     name: 'tela provisória de Hoje',
     open: async (page) => {
       await openTraining(page, '/treino');
-      await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: 'Treino', exact: true })).toBeVisible();
     },
   },
 ];

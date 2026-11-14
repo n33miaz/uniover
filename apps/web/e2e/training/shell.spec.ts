@@ -13,8 +13,8 @@ test.describe('casca do Treino', () => {
     await startTraining(context, page);
     await openTraining(page, '/treino');
     const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
-    await expect(tabs.getByRole('link')).toHaveText(['Exercício', 'Início', 'Progresso']);
-    await expect(tabs.getByRole('link', { name: 'Início' })).toHaveAttribute(
+    await expect(tabs.getByRole('link')).toHaveText(['Exercício', 'Treino', 'Progresso']);
+    await expect(tabs.getByRole('link', { name: 'Treino', exact: true })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -47,7 +47,7 @@ test.describe('casca do Treino', () => {
       'page',
     );
 
-    await tabs.getByRole('link', { name: 'Início' }).click();
+    await tabs.getByRole('link', { name: 'Treino', exact: true }).click();
     await expect(page).toHaveURL(/\/treino\/$/);
   });
 
@@ -69,7 +69,7 @@ test.describe('casca do Treino', () => {
       await expect(marked, url).toHaveText(['Exercício']);
     }
     for (const [url, label] of [
-      ['/treino', 'Início'],
+      ['/treino', 'Treino'],
       ['/treino/progresso', 'Progresso'],
       ['/treino/corpo', 'Progresso'],
     ]) {
@@ -178,12 +178,12 @@ test.describe('casca do Treino com o service worker', () => {
     await waitForServiceWorkerControl(page);
     await expect(page.locator('app-training-page')).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
-    const withSlash = await page.getByRole('heading', { name: 'Início' }).textContent();
+    await expect(page.getByRole('heading', { level: 2, name: 'Treino', exact: true })).toBeVisible();
+    const withSlash = await page.getByRole('heading', { level: 2, name: 'Treino', exact: true }).textContent();
 
     await page.goto('/treino');
-    await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
-    expect(await page.getByRole('heading', { name: 'Início' }).textContent()).toBe(withSlash);
+    await expect(page.getByRole('heading', { level: 2, name: 'Treino', exact: true })).toBeVisible();
+    expect(await page.getByRole('heading', { level: 2, name: 'Treino', exact: true }).textContent()).toBe(withSlash);
     await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
       'href',
       '/treino/manifest.webmanifest',

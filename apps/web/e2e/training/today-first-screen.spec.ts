@@ -105,7 +105,7 @@ test.describe('Hoje: a primeira tela', () => {
       const all = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll(
-            '.date, .routine, .routine-top, .routine-name, .meta, .go, .routine-toggle, .week, .week-head, .week-days, .week-bottom, .stats, .links li, .actions',
+            '.routine, .routine-top, .routine-name, .meta, .go, .routine-toggle, .week, .week-head, .week-days, .week-bottom, .stats, .links li, .actions',
           ),
         ).map((node) => {
           const r = node.getBoundingClientRect();
@@ -121,17 +121,17 @@ test.describe('Hoje: a primeira tela', () => {
     }
     expect(await page.evaluate(() => window.scrollY), 'a tela não rolou').toBe(0);
 
-    // A data abre com o mesmo respiro das outras telas (12 px sob a folga do cabeçalho): nem colada ao círculo de voltar,
-    // nem com o vão que sobrava embaixo do cabeçalho.
+    // O cartão do dia abre com o mesmo respiro das outras telas (12 px sob a folga do cabeçalho): nem colado ao círculo de
+    // voltar, nem com o vão que sobrava embaixo do cabeçalho.
     const header = await box(page, 'app-page-top-bar');
-    const date = await box(page, '.date');
-    const gap = date.y - (header.y + header.height);
-    expect(gap, 'vão entre o cabeçalho e a data').toBeGreaterThanOrEqual(12);
-    expect(gap, 'vão entre o cabeçalho e a data').toBeLessThanOrEqual(14);
+    const card = await box(page, '.routine');
+    const gap = card.y - (header.y + header.height);
+    expect(gap, 'vão entre o cabeçalho e o cartão do dia').toBeGreaterThanOrEqual(12);
+    expect(gap, 'vão entre o cabeçalho e o cartão do dia').toBeLessThanOrEqual(14);
     if (process.env['TOP_BAR_PRINTS_DIR']) {
       await screenshot(
         page,
-        `${process.env['TOP_BAR_PRINTS_DIR']}/treino-hoje-com-data-${test.info().project.name}.png`,
+        `${process.env['TOP_BAR_PRINTS_DIR']}/treino-hoje-sem-data-${test.info().project.name}.png`,
       );
     }
 
