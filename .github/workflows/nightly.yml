@@ -30,7 +30,8 @@ permissions:
 
 concurrency:
   group: nightly-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  # Um push novo no PR cancela a rodada anterior do próprio PR; a noturna e a manual nunca se cancelam.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # No horário (schedule) o commit da execução é o da main; a produção é a develop. Vazio = o commit da própria execução.
