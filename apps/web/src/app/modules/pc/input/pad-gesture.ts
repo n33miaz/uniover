@@ -34,7 +34,18 @@ export interface PadHandlers {
    * de zero. Opcional como `scrollEnd`: sem ele (ou com `pinchZoom` desligado) os dois dedos só rolam, como sempre.
    */
   zoom?(steps: number): void;
+  /**
+   * Três dedos que andaram juntos além de `threeFingerSwipePx`: uma só vez por gesto, com a direção que dominou. Opcional como
+   * `zoom`: sem ele (ou com `threeFingerGestures` desligado) três dedos se comportam exatamente como antes.
+   */
+  threeFingerSwipe?(direction: SwipeDirection): void;
 }
+
+/** A direção de um deslize de três dedos (na tela do celular: `up` é para cima, `right` para a direita). */
+export type SwipeDirection = 'left' | 'right' | 'up' | 'down';
+
+/** Quanto os três dedos precisam andar juntos (px) para valer como um deslize; menos que isso é tremor ou um toque. */
+export const THREE_FINGER_SWIPE_PX = 56;
 
 /** Quem marca o tempo da pressão longa (troca-se nos testes). */
 export interface PadTimers {
@@ -73,6 +84,13 @@ export interface PadGestureConfig {
    * PC entende o zoom: sem isso uma pinça seria um gesto sem efeito.
    */
   readonly pinchZoom: boolean;
+  /**
+   * Os gestos de três dedos (`handlers.threeFingerSwipe`): trocar de janela e ir à área de trabalho. Desligados por padrão: três
+   * dedos continuam sendo o clique do meio (um toque) ou a rolagem (andando), exatamente como antes.
+   */
+  readonly threeFingerGestures: boolean;
+  /** Quanto os três dedos andam juntos (px) até o deslize valer. */
+  readonly threeFingerSwipePx: number;
 }
 
 /** O quanto o dedo pode andar sem que isso seja movimento (e sem que deixe de ser um toque ou uma pressão parada). */
@@ -99,6 +117,8 @@ export const DEFAULT_PAD_GESTURE: PadGestureConfig = {
   lockScrollAxis: true,
   velocityWindowMs: 90,
   pinchZoom: false,
+  threeFingerGestures: false,
+  threeFingerSwipePx: THREE_FINGER_SWIPE_PX,
 };
 
 /** Se o último passo da rolagem foi há mais que isto (ms) quando os dedos saem, eles pararam antes: nada de inércia. */
@@ -157,6 +177,8 @@ export class PadGesture {
   /** A distância entre os dois dedos quando pousaram (a referência da decisão pinça ou rolagem). */
   private spreadStart = 0;
   private readonly pinch = new PinchTracker();
+  /** O deslize de três dedos deste gesto já saiu: o resto do gesto não faz mais nada até todos os dedos saírem. */
+  private swiped = false;
 
   constructor(
     private readonly handlers: PadHandlers,
@@ -167,7 +189,10 @@ export class PadGesture {
   /** Troca ajustes que a pessoa muda sem recarregar a tela (valem do próximo toque em diante). */
   configure(
     patch: Partial<
-      Pick<PadGestureConfig, 'doubleTapDrag' | 'middleClick' | 'lockScrollAxis' | 'pinchZoom'>
+      Pick<
+        PadGestureConfig,
+        'doubleTapDrag' | 'middleClick' | 'lockScrollAxis' | 'pinchZoom' | 'threeFingerGestures'
+      >
     >,
   ): void {
     this.config = { ...this.config, ...patch };
@@ -193,6 +218,7 @@ export class PadGesture {
       this.axis = null;
       this.samples = [];
       this.intent = 'undecided';
+      this.swiped = false;
       this.doubleArmed = this.isSecondTap(x, y, timeMs);
       this.chained = this.continuesChain(x, y, timeMs);
       this.chainSince = this.chain?.time ?? 0;
@@ -225,6 +251,8 @@ export class PadGesture {
     // A pinça decide antes da rolagem: dois dedos que se afastam não andam o centro, e sem isto o gesto acabaria como um toque
     // de dois dedos (o clique direito). Quando a pinça não vence, o resto segue exatamente como era.
     if (this.pinching(center)) return;
+    // Com os gestos de três dedos ligados, três dedos não rolam: andam até o deslize ou ficam quietos (o toque do meio).
+    if (this.threeFingers(center)) return;
 
     // Passou do raio de tremor: o dedo está andando, não pressionando (mesmo antes de passar do limite do movimento).
     if (
@@ -300,6 +328,7 @@ export class PadGesture {
     this.doubleArmed = false;
     this.samples = [];
     this.intent = 'undecided';
+    this.swiped = false;
     this.clearPress();
     if (this.holding) {
       this.holding = false;
@@ -366,6 +395,40 @@ export class PadGesture {
     this.chain = null;
     const steps = this.pinch.update(spread);
     if (steps !== 0) zoom.call(this.handlers, steps);
+    return true;
+  }
+
+  /**
+   * Vê se os três dedos tomam este movimento; `true` quando sim (nem rolagem nem ponteiro). Desligado, ou sem quem receba o deslize,
+   * nunca toma nada. Depois que o terceiro dedo pousou (`peak` 3) o gesto é dos três dedos até todos saírem: o dedo que sobra
+   * quando um sai também não rola. O deslize sai uma vez, assim que o centro dos três anda `threeFingerSwipePx` a partir de onde
+   * o terceiro pousou; antes disso, passar do tremor só impede o toque do meio (andou, não tocou).
+   */
+  private threeFingers(center: Point): boolean {
+    const swipe = this.handlers.threeFingerSwipe;
+    if (!this.config.threeFingerGestures || !swipe || this.holding || this.peak < 3) return false;
+    if (this.swiped || this.fingers.size < 3) {
+      this.displaced = true;
+      return true;
+    }
+    const dx = center.x - this.origin.x;
+    const dy = center.y - this.origin.y;
+    if (Math.hypot(dx, dy) < this.config.threeFingerSwipePx) {
+      if (Math.hypot(dx, dy) > this.config.slopPx) {
+        this.displaced = true;
+        this.clearPress();
+        this.chain = null;
+      }
+      return true;
+    }
+    this.swiped = true;
+    this.displaced = true;
+    this.clearPress();
+    this.chain = null;
+    swipe.call(
+      this.handlers,
+      Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up',
+    );
     return true;
   }
 
