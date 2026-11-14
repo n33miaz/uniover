@@ -43,8 +43,8 @@ test.beforeEach(async ({ context, page }) => {
   await mockTvApi(context, identity);
 });
 
-const sheetOf = (page: Page) => page.getByRole('dialog', { name: 'Atalho na tela de início' });
-const rowOf = (page: Page) => page.getByRole('button', { name: /^Adicionar à tela de início/ });
+const sheetOf = (page: Page) => page.getByRole('dialog', { name: 'Atalho na Tela de Início' });
+const rowOf = (page: Page) => page.getByRole('button', { name: /^Adicionar à Tela de Início/ });
 
 async function signInAsOwner() {
   identity.role = 'owner';
@@ -269,12 +269,12 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expect(sheet.getByRole('listitem')).toHaveCount(2);
     await expect(sheet).toContainText('Abra o menu do navegador');
     await expect(sheet).toContainText('Escolha instalar ou adicionar à tela inicial');
-    await sheet.getByRole('button', { name: 'Agora não' }).click();
+    await sheet.getByRole('button', { name: 'Agora Não' }).click();
     await page.goto('/ajustes/aparencia');
     await expect(rowOf(page)).toBeVisible();
   });
 
-  test('o dono: a folha abre uma vez, uns 3 s depois da tela pronta, e "Agora não" é lembrado', async ({
+  test('o dono: a folha abre uma vez, uns 3 s depois da tela pronta, e "Agora Não" é lembrado', async ({
     page,
   }, info) => {
     const native = info.project.name === 's23-fe';
@@ -289,7 +289,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     const sheet = sheetOf(page);
     await page.clock.fastForward(AFTER_DELAY_MS - 1000);
     await expect(sheet).toBeVisible({ timeout: 10_000 });
-    await expect(sheet.getByRole('heading', { level: 2 })).toHaveText('Atalho na tela de início');
+    await expect(sheet.getByRole('heading', { level: 2 })).toHaveText('Atalho na Tela de Início');
     await expect(sheet).toContainText('Não ocupa espaço no aparelho: é só um atalho');
     if (native) {
       await expect(sheet.getByRole('button', { name: 'Instalar' })).toBeFocused();
@@ -297,12 +297,12 @@ test.describe('no ambiente de fábrica do projeto', () => {
     } else {
       await expect(sheet.getByRole('listitem')).toHaveCount(3);
       await expect(sheet.getByRole('button').first()).toBeFocused();
-      await expect(sheet.getByRole('button').first()).toHaveText('Agora não');
+      await expect(sheet.getByRole('button').first()).toHaveText('Agora Não');
     }
     await settleAnimations(page);
     await expectNoHorizontalScroll(page);
     await expectTargets44(page);
-    // A primeira coisa que a pessoa vê: a folha que abriu sozinha (com "Agora não" e "Não mostrar de novo").
+    // A primeira coisa que a pessoa vê: a folha que abriu sozinha (com "Agora Não" e "Não Mostrar de Novo").
     for (const scheme of ['light', 'dark'] as const) {
       await useScheme(page, scheme);
       await expectNoSeriousViolations(page);
@@ -311,7 +311,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     }
     await useScheme(page, 'light');
 
-    await sheet.getByRole('button', { name: 'Agora não' }).click();
+    await sheet.getByRole('button', { name: 'Agora Não' }).click();
     await expectSheetClosed(page);
     expect(await storedMemory(page)).toEqual({ dismissedAt: expect.any(Number) });
 
@@ -322,7 +322,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expectSheetClosed(page);
   });
 
-  test('Esc vale como "Agora não"; "Não mostrar de novo" fica para sempre, e a linha de Ajustes ainda abre a folha', async ({
+  test('Esc vale como "Agora Não"; "Não Mostrar de Novo" fica para sempre, e a linha de Ajustes ainda abre a folha', async ({
     page,
     browserName,
   }, info) => {
@@ -335,7 +335,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expectSheetClosed(page);
     expect(await storedMemory(page)).toEqual({ dismissedAt: expect.any(Number) });
 
-    // O Safari apagou os dados do site (memória do aparelho e da sessão): a conta lembra o "Agora não" e a folha não volta.
+    // O Safari apagou os dados do site (memória do aparelho e da sessão): a conta lembra o "Agora Não" e a folha não volta.
     await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
     await wipeSiteData(page);
     await page.reload();
@@ -344,21 +344,21 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expectSheetClosed(page);
     await expect.poll(() => storedMemory(page)).toEqual({ dismissedAt: expect.any(Number) });
 
-    // Uma conta sem nenhuma resposta (e sem memória no aparelho): troca o "Agora não" por "Não mostrar de novo".
+    // Uma conta sem nenhuma resposta (e sem memória no aparelho): troca o "Agora Não" por "Não Mostrar de Novo".
     await wipeSiteData(page);
     for (const account of Object.keys(identity.installHints)) delete identity.installHints[account];
     await page.reload();
     await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
-    await sheetOf(page).getByRole('button', { name: 'Não mostrar de novo' }).click();
+    await sheetOf(page).getByRole('button', { name: 'Não Mostrar de Novo' }).click();
     await expectSheetClosed(page);
-    // A folha que abre sozinha já gravou o "Agora não" (ver `openAuto`); o "nunca" vem por cima.
+    // A folha que abre sozinha já gravou o "Agora Não" (ver `openAuto`); o "nunca" vem por cima.
     expect(await storedMemory(page)).toEqual({ dismissedAt: expect.any(Number), never: true });
 
     await page.reload();
     await page.clock.fastForward(AFTER_DELAY_MS);
     await expectSheetClosed(page);
 
-    // A linha permanente continua lá e abre a folha (sem "Não mostrar de novo": a pessoa pediu para ver).
+    // A linha permanente continua lá e abre a folha (sem "Não Mostrar de Novo": a pessoa pediu para ver).
     await page.goto('/ajustes/aparencia');
     await expect(rowOf(page)).toBeVisible();
     await rowOf(page).click();
@@ -395,7 +395,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
       await screenshot(page, `${SHOTS}/auto-guest-tv-${scheme}-${info.project.name}.png`);
     }
     await useScheme(page, 'light');
-    await sheet.getByRole('button', { name: 'Agora não' }).click();
+    await sheet.getByRole('button', { name: 'Agora Não' }).click();
     await expectSheetClosed(page);
     const withHint = await permanentControls(page);
 
@@ -429,7 +429,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await signInAsGuest();
     await showTv(page);
     await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
-    await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+    await sheetOf(page).getByRole('button', { name: 'Agora Não' }).click();
     await expectSheetClosed(page);
 
     await page
@@ -438,7 +438,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
       .click();
     const customize = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(customize).toBeVisible();
-    const row = customize.getByRole('button', { name: /^Adicionar à tela de início/ });
+    const row = customize.getByRole('button', { name: /^Adicionar à Tela de Início/ });
     await expect(row).toBeVisible();
     await expect(customize.locator('app-install-hint-row')).toHaveCount(1);
     await row.evaluate((element) => element.scrollIntoView({ block: 'center' }));
@@ -517,7 +517,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     const customize = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(customize).toBeVisible();
     await expect(
-      customize.getByRole('button', { name: /^Adicionar à tela de início/ }),
+      customize.getByRole('button', { name: /^Adicionar à Tela de Início/ }),
     ).toBeVisible();
   });
 
@@ -551,7 +551,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
 const MODES = [
   { name: 'ios-safari', ua: UA.safari, native: false, buttons: ['Fechar'] },
   { name: 'ios-chrome', ua: UA.chrome, native: false, buttons: ['Fechar'] },
-  { name: 'ios-in-app', ua: UA.instagram, native: false, buttons: ['Copiar endereço', 'Fechar'] },
+  { name: 'ios-in-app', ua: UA.instagram, native: false, buttons: ['Copiar Endereço', 'Fechar'] },
   { name: 'native', ua: UA.android, native: true, buttons: ['Instalar', 'Fechar'] },
 ] as const;
 
@@ -574,7 +574,7 @@ for (const mode of MODES) {
 
         const sheet = sheetOf(page);
         await expect(sheet).toBeVisible();
-        // Aberta pela pessoa: sem "Agora não" nem "Não mostrar de novo".
+        // Aberta pela pessoa: sem "Agora Não" nem "Não Mostrar de Novo".
         await expect(sheet.getByRole('button')).toHaveText(mode.buttons);
         await useScheme(page, scheme);
         await expectNoHorizontalScroll(page);
@@ -586,7 +586,7 @@ for (const mode of MODES) {
           if (mode.name === 'ios-in-app') {
             await expect(items).toHaveCount(4);
             await expect(titles.first()).toHaveText('Abra este endereço no Safari');
-            await expect(sheet.getByRole('button', { name: 'Copiar endereço' })).toBeVisible();
+            await expect(sheet.getByRole('button', { name: 'Copiar Endereço' })).toBeVisible();
           } else if (!mode.native) {
             await expect(items).toHaveCount(3);
             await expect(titles.first()).toHaveText('Toque em Compartilhar');
@@ -620,8 +620,8 @@ test.describe('modo native: o botão Instalar', () => {
     await expect(sheet).toBeVisible({ timeout: 10_000 });
     await expect(sheet.getByRole('button')).toHaveText([
       'Instalar',
-      'Agora não',
-      'Não mostrar de novo',
+      'Agora Não',
+      'Não Mostrar de Novo',
     ]);
     await expect(sheet.getByRole('button', { name: 'Instalar' })).toBeFocused();
     await settleAnimations(page);
@@ -640,8 +640,7 @@ test.describe('modo native: o botão Instalar', () => {
     // Aceito: o pedido do navegador valeu uma vez e a linha de Configurações some. A navegação é por dentro do app: recarregar
     // a página faria o script de teste disparar o pedido de novo, o que um navegador real não faz depois de instalar.
     await page.getByRole('link', { name: 'Configurações', exact: true }).click();
-    await page.getByRole('link', { name: /^Aparência/ }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Aparência' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(rowOf(page)).toHaveCount(0);
   });
 });
@@ -649,7 +648,7 @@ test.describe('modo native: o botão Instalar', () => {
 test.describe('modo ios-in-app: copiar o endereço', () => {
   test.use({ userAgent: UA.instagram });
 
-  test('"Copiar endereço" confirma em uma região de status e copia o endereço sem busca', async ({
+  test('"Copiar Endereço" confirma em uma região de status e copia o endereço sem busca', async ({
     page,
     context,
     browserName,
@@ -662,7 +661,7 @@ test.describe('modo ios-in-app: copiar o endereço', () => {
     await rowOf(page).click();
     const sheet = sheetOf(page);
     await expect(sheet).toBeVisible();
-    await sheet.getByRole('button', { name: 'Copiar endereço' }).click();
+    await sheet.getByRole('button', { name: 'Copiar Endereço' }).click();
 
     const status = sheet.getByRole('status');
     // Onde a Clipboard API é recusada o app tenta copiar por seleção; se nada copiar, mostra o endereço na mão.
@@ -714,9 +713,9 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     await page.goto('/treino');
     await expect(trainingHeading(page)).toBeVisible();
     await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
-    await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+    await sheetOf(page).getByRole('button', { name: 'Agora Não' }).click();
     await expectSheetClosed(page);
-    // O "Agora não" do Treino fica na chave do Treino; a da raiz continua como estava.
+    // O "Agora Não" do Treino fica na chave do Treino; a da raiz continua como estava.
     expect(await storedMemory(page, 'treino')).toEqual({ dismissedAt: expect.any(Number) });
     expect(await storedMemory(page)).toEqual({ installed: true, never: true });
   });
@@ -743,7 +742,7 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
     await installFakeEventSource(page);
     await signInAsOwner();
     await showHome(page);
-    await sheetOf(page).getByRole('button', { name: 'Agora não' }).click({ timeout: 10_000 });
+    await sheetOf(page).getByRole('button', { name: 'Agora Não' }).click({ timeout: 10_000 });
     await expectSheetClosed(page);
 
     // Navegação por dentro do app até a TV: continua o mesmo documento (sem recarregar). A folha automática já foi
@@ -764,7 +763,7 @@ test.describe('cada módulo é um app: a memória e o pedido de instalação sã
       .click();
     await page
       .getByRole('dialog', { name: 'Personalizar' })
-      .getByRole('button', { name: /^Adicionar à tela de início/ })
+      .getByRole('button', { name: /^Adicionar à Tela de Início/ })
       .click();
 
     // O pedido guardado ainda é o da raiz: instalar a TV recarrega a página inteira no escopo dela.
@@ -903,7 +902,7 @@ test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de 
       await expect.poll(() => storedMemory(page)).toEqual({ installed: true });
       await page.clock.fastForward(AFTER_DELAY_MS * 3);
       await expectSheetClosed(page);
-      // Nada foi enviado: a conta só guarda "Agora não" e "nunca".
+      // Nada foi enviado: a conta só guarda "Agora Não" e "nunca".
       expect(identity.installHintWrites).toBe(0);
       expect(identity.installHints).toEqual({});
     });
@@ -931,13 +930,13 @@ test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de 
       await expectSheetClosed(page);
     });
 
-    test('"Agora não" vale 30 dias: a conta o repassa, e só depois disso a folha volta uma vez', async ({
+    test('"Agora Não" vale 30 dias: a conta o repassa, e só depois disso a folha volta uma vez', async ({
       page,
     }) => {
       await signInAsOwner();
       await showHome(page);
       await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
-      await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+      await sheetOf(page).getByRole('button', { name: 'Agora Não' }).click();
       await expectSheetClosed(page);
       await expect.poll(() => identity.installHintWrites).toBeGreaterThan(0);
 
@@ -955,20 +954,20 @@ test.describe('iPhone: quem já instalou ou já respondeu não é perguntado de 
       await page.reload();
       await homeReady(page);
       await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
-      await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+      await sheetOf(page).getByRole('button', { name: 'Agora Não' }).click();
       await page.reload();
       await homeReady(page);
       await page.clock.fastForward(AFTER_DELAY_MS * 3);
       await expectSheetClosed(page);
     });
 
-    test('"Já instalei" fica no aparelho para sempre, em qualquer tempo, e nunca vai para a conta', async ({
+    test('"Já Instalei" fica no aparelho para sempre, em qualquer tempo, e nunca vai para a conta', async ({
       page,
     }) => {
       await signInAsOwner();
       await showHome(page);
       await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
-      await sheetOf(page).getByRole('button', { name: 'Já instalei' }).click();
+      await sheetOf(page).getByRole('button', { name: 'Já Instalei' }).click();
       await expectSheetClosed(page);
       expect(await storedMemory(page)).toEqual({
         dismissedAt: expect.any(Number),

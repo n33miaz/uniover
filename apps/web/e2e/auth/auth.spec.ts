@@ -335,7 +335,6 @@ test.describe('ajustes', () => {
     const rows = page.locator('a.ui-row');
     await expect(rows.locator('.ui-row-title')).toHaveText([
       'Perfil',
-      'Aparência',
       'Segurança',
       'Pessoas e Permissões',
       'TVs por Pessoa',
@@ -344,10 +343,9 @@ test.describe('ajustes', () => {
       'Atividades',
       'Sobre',
     ]);
-    await expect(rows).toHaveCount(9);
+    await expect(rows).toHaveCount(8);
     for (const [name, href] of [
       ['Perfil', '/ajustes/perfil'],
-      ['Aparência', '/ajustes/aparencia'],
       ['Segurança', '/ajustes/seguranca'],
       ['Pessoas', '/ajustes/pessoas'],
       ['TVs por Pessoa', '/ajustes/tvs-por-pessoa'],
@@ -378,10 +376,10 @@ test.describe('ajustes', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
   });
 
-  test('a Aparência tem só o tema e o atalho: os módulos ficam em Personalizar', async ({
+  test('a tela de Aparência tem só o tema e o atalho: os módulos ficam em Personalizar', async ({
     page,
   }) => {
-    await page.getByRole('link', { name: /^Aparência/ }).click();
+    await page.goto('/ajustes/aparencia');
     await expect(page).toHaveURL(/\/ajustes\/aparencia$/);
     await expect(page.getByRole('radio', { name: 'Escuro' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toHaveCount(0);

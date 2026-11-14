@@ -3,7 +3,7 @@ import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 import { HomeGlyph } from './home-glyph';
 
 /**
- * Saudação da Início: a faixa com a data, o cumprimento e a hora, e a cena da parte do dia desenhada ao fundo. É só
+ * Saudação da Início: a faixa com a data e o cumprimento, e a cena da parte do dia desenhada ao fundo. É só
  * apresentação: o que ela mostra vem pronto da página, e o `<header>` interno continua sendo o item da coluna da Início.
  */
 @Component({
@@ -18,5 +18,4 @@ export class HomeHero {
   readonly dayPart = input.required<'morning' | 'afternoon' | 'evening'>();
   readonly dateLabel = input.required<string>();
   readonly greeting = input.required<string>();
-  readonly time = input.required<string>();
 }

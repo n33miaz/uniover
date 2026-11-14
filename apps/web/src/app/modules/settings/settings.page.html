@@ -59,6 +59,7 @@
 
     <section class="section ui-rise" aria-labelledby="app-title">
       <h2 id="app-title" class="ui-section-label" i18n="@@settings.list.app">Aplicativo</h2>
+      <app-install-hint-row [tile]="true" [subtitle]="false" />
       <ul class="ui-group">
         <li>
           <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: about }" />

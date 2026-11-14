@@ -29,10 +29,23 @@ describe('InstallHintRow', () => {
     const { host, button } = await render({ userAgent: SAFARI });
     expect(host.hidden).toBe(false);
     expect(button()?.querySelector('.ui-row-title')?.textContent).toBe(
-      'Adicionar à tela de início',
+      'Adicionar à Tela de Início',
     );
     expect(button()?.querySelector('.ui-row-sub')?.textContent).toContain('não ocupa espaço');
     expect(button()?.getAttribute('type')).toBe('button');
+  });
+
+  it('sem o subtítulo, a linha traz só o título (como as outras linhas de Configurações)', async () => {
+    TestBed.configureTestingModule({
+      providers: [{ provide: INSTALL_ENV, useValue: { userAgent: SAFARI } }],
+    });
+    TestBed.inject(InstallHintService).start();
+    const fixture = TestBed.createComponent(InstallHintRow);
+    fixture.componentRef.setInput('subtitle', false);
+    await fixture.whenStable();
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('.ui-row-title')?.textContent).toBe('Adicionar à Tela de Início');
+    expect(host.querySelector('.ui-row-sub')).toBeNull();
   });
 
   it('esconde o host inteiro quando não há o que oferecer (para não deixar um vão no contêiner)', async () => {
@@ -57,7 +70,7 @@ describe('InstallHintRow', () => {
     expect(host.hidden).toBe(true);
   });
 
-  it('tocar abre a folha pela pessoa, mesmo depois de "Não mostrar de novo"', async () => {
+  it('tocar abre a folha pela pessoa, mesmo depois de "Não Mostrar de Novo"', async () => {
     const { hint, button } = await render({ userAgent: SAFARI });
     hint.never();
     button()!.click();

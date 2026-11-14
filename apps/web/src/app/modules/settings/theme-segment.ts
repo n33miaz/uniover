@@ -8,7 +8,7 @@ interface ThemeChoice {
 
 /**
  * Seletor de tema em três opções lado a lado (Claro, Escuro, Automático), para trocar na hora sem abrir outra tela. Usa
- * a mesma preferência (e a mesma persistência) da tela de Aparência: o serviço guarda a escolha só neste aparelho.
+ * a preferência do `AppearanceService`, que guarda a escolha só neste aparelho.
  */
 @Component({
   selector: 'app-theme-segment',

@@ -14,7 +14,7 @@ const PHONE_ADD_ICON = [
  * no computador sem instalação pelo navegador, a linha some inteira (o `host` fica oculto, para não deixar um vão
  * no contêiner que a hospeda).
  *
- * Mora em Ajustes (seção Aparência) e na folha Personalizar da TV: é assim que o controle (apertado) continua sem
+ * Mora em Ajustes (bloco Aplicativo da lista, sem o subtítulo) e na folha Personalizar da TV: é assim que o controle (apertado) continua sem
  * nenhum elemento fixo da dica.
  */
 @Component({
@@ -42,10 +42,12 @@ const PHONE_ADD_ICON = [
           </span>
         }
         <span class="ui-row-text">
-          <span class="ui-row-title" i18n="@@install.row.title">Adicionar à tela de início</span>
-          <span class="ui-row-sub" i18n="@@install.row.sub"
-            >Um atalho que abre como app e não ocupa espaço</span
-          >
+          <span class="ui-row-title" i18n="@@install.row.title">Adicionar à Tela de Início</span>
+          @if (subtitle()) {
+            <span class="ui-row-sub" i18n="@@install.row.sub"
+              >Um atalho que abre como app e não ocupa espaço</span
+            >
+          }
         </span>
       </button>
     </div>
@@ -66,6 +68,8 @@ export class InstallHintRow {
 
   /** Com ladrilho de ícone à esquerda, como as outras linhas de Ajustes. */
   readonly tile = input(false);
+  /** A explicação embaixo do título; a lista de Configurações, que só tem o nome em cada linha, a dispensa. */
+  readonly subtitle = input(true);
 
   protected readonly hidden = computed(() => this.hint.mode() === 'none');
 }

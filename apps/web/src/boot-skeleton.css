@@ -1221,7 +1221,7 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
 .bs-home-hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: var(--space-3);
   min-height: clamp(136px, 21vw, 172px);
@@ -1235,11 +1235,6 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-.bs-time {
-  width: clamp(76px, 18vw, 104px);
-  height: clamp(28px, 7vw, 36px);
-  border-radius: var(--radius-sm);
 }
 /* Uma linha de 44 px como a do cabeçalho de verdade; sem `flex-shrink: 0` o contêiner, cheio, a esmagava a zero. */
 .bs-brand {

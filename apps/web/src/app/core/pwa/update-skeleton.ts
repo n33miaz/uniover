@@ -80,7 +80,6 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
                   <span class="bone ui-skeleton bs-line bs-w40"></span>
                   <span class="bone ui-skeleton bs-line bs-big bs-w80"></span>
                 </span>
-                <span class="bone ui-skeleton bs-time"></span>
               </div>
               <div class="bs-section-head">
                 <span class="bone ui-skeleton bs-line bs-big bs-w30"></span>
@@ -164,8 +163,8 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
               </div>
               <div class="bs-body bs-training-today-content">
                 <div class="bs-hero">
-                  <span class="bone ui-skeleton bs-line bs-w40"></span>
                   <span class="bone ui-skeleton bs-line bs-big bs-w80"></span>
+                  <span class="bone ui-skeleton bs-line bs-w40"></span>
                   <span class="bone ui-skeleton bs-cta"></span>
                 </div>
                 <div class="bs-card">

@@ -10,7 +10,6 @@ test.use({ serviceWorkers: 'block' });
 /** Cada seção de Configurações do administrador: a linha na lista, o endereço e o título do cabeçalho. */
 const SECTIONS = [
   { row: /^Perfil/, path: '/ajustes/perfil', title: 'Perfil' },
-  { row: /^Aparência/, path: '/ajustes/aparencia', title: 'Aparência' },
   { row: /^Segurança/, path: '/ajustes/seguranca', title: 'Segurança' },
   { row: /^Pessoas e Permissões/, path: '/ajustes/pessoas', title: 'Pessoas e Permissões' },
   { row: /^Dispositivos/, path: '/ajustes/dispositivos', title: 'Dispositivos' },

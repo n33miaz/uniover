@@ -5,6 +5,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { networkProblem } from '../../core/auth/api-problem';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
+import { INSTALL_ENV, InstallHintService } from '../../core/pwa/install-hint.service';
 import { THEME_PREFERENCE_KEY } from '../../core/session/appearance.service';
 import { SettingsPage } from './settings.page';
 
@@ -70,6 +71,24 @@ describe('SettingsPage (a list of screens)', () => {
       href: a.getAttribute('href'),
     }));
 
+  describe('the install shortcut', () => {
+    const SAFARI =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+
+    it('sits in the Aplicativo block, above Sobre, and only when there is something to offer', async () => {
+      TestBed.overrideProvider(INSTALL_ENV, { useValue: { userAgent: SAFARI } });
+      TestBed.inject(InstallHintService).start();
+      const { el } = await render();
+      const block = el.querySelector('section[aria-labelledby="app-title"]')!;
+      const row = block.querySelector('app-install-hint-row')!;
+      expect(row.hasAttribute('hidden')).toBe(false);
+      expect(row.querySelector('.ui-row-title')?.textContent).toBe('Adicionar à Tela de Início');
+      expect(row.querySelector('.ui-row-sub')).toBeNull();
+      expect(row.nextElementSibling?.querySelector('a[href="/ajustes/sobre"]')).not.toBeNull();
+      expect(headings(el)).not.toContain('Aparência');
+    });
+  });
+
   describe('for the administrator', () => {
     it('lists the screens in groups: personal, administration and the app', async () => {
       const { el } = await render();
@@ -80,7 +99,6 @@ describe('SettingsPage (a list of screens)', () => {
       const { el } = await render();
       expect(rows(el)).toEqual([
         { title: 'Perfil', href: '/ajustes/perfil' },
-        { title: 'Aparência', href: '/ajustes/aparencia' },
         {
           title: 'Segurança',
           href: '/ajustes/seguranca',
@@ -180,7 +198,6 @@ describe('SettingsPage (a list of screens)', () => {
       expect(headings(el)).toEqual(['Você', 'Aplicativo']);
       expect(rows(el)).toEqual([
         { title: 'Perfil', href: '/ajustes/perfil' },
-        { title: 'Aparência', href: '/ajustes/aparencia' },
         {
           title: 'Segurança',
           href: '/ajustes/seguranca',
@@ -198,7 +215,6 @@ describe('SettingsPage (a list of screens)', () => {
       const { el } = await render();
       expect(rows(el).map((row) => row.title)).toEqual([
         'Perfil',
-        'Aparência',
         'Segurança',
         'Sobre',
       ]);
@@ -211,7 +227,6 @@ describe('SettingsPage (a list of screens)', () => {
       const { el } = await render();
       expect(rows(el).map((row) => row.title)).toEqual([
         'Perfil',
-        'Aparência',
         'Segurança',
         'Dispositivos',
         'Sobre',
@@ -239,7 +254,7 @@ describe('SettingsPage (a list of screens)', () => {
     it('shows only what is for everyone: the administrator rows wait for the role', async () => {
       api.refresh.mockRejectedValue(networkProblem());
       const { el } = await render();
-      expect(rows(el).map((r) => r.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);
+      expect(rows(el).map((r) => r.title)).toEqual(['Perfil', 'Sobre']);
     });
   });
 

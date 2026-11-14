@@ -3,6 +3,7 @@ import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
 import { SessionState } from '../../core/session/session-state';
+import { InstallHintRow } from '../../core/pwa/install-hint-row';
 import { SettingsGlyph, SettingsGlyphName } from './settings-glyph';
 import { SETTINGS_TITLES } from './settings-titles';
 import { ThemeSegment } from './theme-segment';
@@ -17,7 +18,8 @@ interface SettingsEntry {
 }
 
 /**
- * Configurações: o seletor de tema e a lista das telas, cada uma com ícone, nome e a seta. Todos veem a área pessoal e
+ * Configurações: o seletor de tema (a única porta do tema) e a lista das telas, cada uma com ícone, nome e a seta; no bloco
+ * Aplicativo, o atalho de instalar quando há o que oferecer. Todos veem a área pessoal e
  * Sobre; o administrador vê também a administração da casa.
  *
  * Só esconde o que o servidor também recusa, e nunca chama a API: nenhuma linha daqui faz pedido, então quem não é
@@ -33,6 +35,7 @@ interface SettingsEntry {
     SettingsGlyph,
     ThemeSegment,
     SettingsPageSkeleton,
+    InstallHintRow,
   ],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
@@ -53,19 +56,12 @@ export class SettingsPage {
     title: SETTINGS_TITLES.profile,
   };
 
-  private readonly appearanceEntry: SettingsEntry = {
-    id: 'appearance',
-    link: '/ajustes/aparencia',
-    glyph: 'contrast',
-    title: SETTINGS_TITLES.appearance,
-  };
-
   /**
-   * A área pessoal: Perfil, Aparência e Segurança para todos (o convidado vê lá só as próprias sessões) e o conector do
+   * A área pessoal: Perfil e Segurança para todos (o convidado vê lá só as próprias sessões) e o conector do
    * PC para o convidado que tem a TV. Com o papel desconhecido a Segurança espera: não se sabe o que mostrar nela.
    */
   protected readonly personal = computed<readonly SettingsEntry[]>(() => {
-    const entries = [this.profileEntry, this.appearanceEntry];
+    const entries = [this.profileEntry];
     const role = this.session.role();
     if (role !== null) {
       entries.push({
