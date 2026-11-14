@@ -9,6 +9,19 @@ describe('STEP_PX_BY_SPEED', () => {
     expect(STEP_PX_BY_SPEED.fast).toBeGreaterThan(DEFAULT_GESTURE.tapMaxPx);
   });
 
+  it('has seven steps, strictly from the slowest to the fastest, all above the tap limit', () => {
+    const order = ['slowest', 'slower', 'slow', 'normal', 'fast', 'faster', 'fastest'] as const;
+    const steps = order.map((speed) => STEP_PX_BY_SPEED[speed]);
+    for (let index = 1; index < steps.length; index++) {
+      expect(steps[index]).toBeLessThan(steps[index - 1]);
+    }
+    expect(Math.min(...steps)).toBeGreaterThan(DEFAULT_GESTURE.tapMaxPx);
+    // Os três de sempre não mudaram de valor.
+    expect([STEP_PX_BY_SPEED.slow, STEP_PX_BY_SPEED.normal, STEP_PX_BY_SPEED.fast]).toEqual([
+      36, 24, 16,
+    ]);
+  });
+
   it('is read live: a config whose step changes is followed by the gesture without a new one', () => {
     let step = 24;
     const gesture = new TouchGesture({

@@ -202,3 +202,24 @@ h2 {
 .footer button {
   flex: 1 1 0;
 }
+
+/* Sensibilidade do touchpad: sete níveis num controle deslizante, do mais lento ao mais rápido. */
+.speed-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.speed {
+  width: 100%;
+  min-height: var(--tap);
+  accent-color: var(--a-accent);
+}
+
+.speed-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -4px;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}

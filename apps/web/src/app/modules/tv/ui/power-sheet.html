@@ -24,6 +24,22 @@
     <p class="error" role="alert">{{ text }}</p>
   }
 
+  @if (sleepAvailable()) {
+    <!-- A alternativa que não desliga: a tela fica preta, o som e o controle continuam. Acima de Desligar, dois toques. -->
+    <button
+      type="button"
+      class="secondary sleep"
+      [disabled]="busy() || !store.canSend()"
+      (click)="blackOut()"
+      i18n="@@tv.power.black-out"
+    >
+      Apagar a Tela
+    </button>
+    <p class="text" i18n="@@tv.power.black-out-hint">
+      Deixa a tela preta e a TV ligada; qualquer botão do controle acorda.
+    </p>
+  }
+
   <!-- A ação principal: grande e destrutiva. Cancelar fica por último, e o agendamento é a segunda opção, no meio. -->
   <button
     type="button"

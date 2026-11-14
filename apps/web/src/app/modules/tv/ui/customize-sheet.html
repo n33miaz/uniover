@@ -167,20 +167,24 @@
   </div>
 
   <div class="block">
-    <span id="tv-custom-speed-label" class="label" i18n="@@tv.custom.speed"
-      >Sensibilidade do touchpad</span
-    >
-    <div class="choices three" role="group" aria-labelledby="tv-custom-speed-label">
-      @for (speed of speeds; track speed.value) {
-        <button
-          type="button"
-          class="choice"
-          [attr.aria-pressed]="prefs.padSpeed() === speed.value"
-          (click)="change({ padSpeed: speed.value })"
-        >
-          {{ speed.label }}
-        </button>
-      }
+    <label for="tv-custom-speed" class="label speed-label">
+      <span i18n="@@tv.custom.speed">Sensibilidade do touchpad</span>
+      <output for="tv-custom-speed">{{ speedLevel() }}</output>
+    </label>
+    <input
+      id="tv-custom-speed"
+      class="speed"
+      type="range"
+      min="1"
+      [max]="speedLevels"
+      step="1"
+      [value]="speedLevel()"
+      [attr.aria-valuetext]="speedText()"
+      (input)="setSpeed($event)"
+    />
+    <div class="speed-scale" aria-hidden="true">
+      <span i18n="@@tv.custom.speed.slow-end">Lenta</span>
+      <span i18n="@@tv.custom.speed.fast-end">Rápida</span>
     </div>
   </div>
 

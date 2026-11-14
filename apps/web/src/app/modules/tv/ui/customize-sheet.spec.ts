@@ -36,6 +36,12 @@ describe('CustomizeSheet', () => {
     choices(group)
       .filter((b) => b.getAttribute('aria-pressed') === 'true')
       .map((b) => b.textContent?.trim());
+  const speed = () => root.querySelector<HTMLInputElement>('#tv-custom-speed')!;
+  const slide = (level: number) => {
+    speed().value = String(level);
+    speed().dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+  };
   const toggle = (id: string) =>
     root.querySelector<HTMLInputElement>(`input[aria-labelledby="${id}"]`)!;
   const type = (text: string) => {
@@ -93,7 +99,8 @@ describe('CustomizeSheet', () => {
       expect(toggle('tv-custom-channel').checked).toBe(true);
       expect(toggle('tv-custom-vibration').checked).toBe(true);
       expect(pressed('tv-custom-page-label')).toEqual(['Última usada']);
-      expect(pressed('tv-custom-speed-label')).toEqual(['Normal']);
+      expect(speed().value).toBe('4');
+      expect(speed().getAttribute('aria-valuetext')).toContain('o normal');
     });
 
     it('offers every option, each one a button of at least the tap size (44 px by CSS) with its own state', () => {
@@ -112,11 +119,11 @@ describe('CustomizeSheet', () => {
         'Touchpad',
         'Última usada',
       ]);
-      expect(choices('tv-custom-speed-label').map((b) => b.textContent?.trim())).toEqual([
-        'Lenta',
-        'Normal',
-        'Rápida',
-      ]);
+      // A sensibilidade é um controle deslizante de sete níveis (o 4 é o de sempre), não três botões.
+      expect(speed().type).toBe('range');
+      expect([speed().min, speed().max, speed().step]).toEqual(['1', '7', '1']);
+      expect(root.querySelector('.speed-scale')!.textContent).toContain('Lenta');
+      expect(root.querySelector('.speed-scale')!.textContent).toContain('Rápida');
       for (const choice of root.querySelectorAll('.choice')) {
         expect(choice.getAttribute('type')).toBe('button');
         expect(['true', 'false']).toContain(choice.getAttribute('aria-pressed'));
@@ -236,12 +243,24 @@ describe('CustomizeSheet', () => {
       expect(pressed('tv-custom-size-label')).toEqual(['Grande']);
 
       choices('tv-custom-page-label')[1].click();
-      choices('tv-custom-speed-label')[2].click();
-      fixture.detectChanges();
+      slide(5);
       expect(prefs().startPage()).toBe('numbers');
       expect(prefs().padSpeed()).toBe('fast');
       expect(pressed('tv-custom-page-label')).toEqual(['Números']);
-      expect(pressed('tv-custom-speed-label')).toEqual(['Rápida']);
+      expect(speed().getAttribute('aria-valuetext')).toBe('Nível 5 de 7');
+    });
+
+    it('walks the seven speeds from the slowest to the fastest, the middle three being the ones that always existed', () => {
+      const seen: string[] = [];
+      for (let level = 1; level <= 7; level++) {
+        slide(level);
+        seen.push(prefs().padSpeed());
+      }
+      expect(seen).toEqual(['slowest', 'slower', 'slow', 'normal', 'fast', 'faster', 'fastest']);
+      slide(99);
+      expect(prefs().padSpeed()).toBe('fastest');
+      slide(-3);
+      expect(prefs().padSpeed()).toBe('slowest');
     });
 
     it('has the layout of the volume and channel buttons right after the size, with its own label', () => {
@@ -323,8 +342,7 @@ describe('CustomizeSheet', () => {
       choices('tv-custom-size-label')[0].click();
       choices('tv-custom-layout-label')[1].click();
       toggle('tv-custom-media').click();
-      choices('tv-custom-speed-label')[0].click();
-      fixture.detectChanges();
+      slide(1);
       expect(button('Restaurar padrão').disabled).toBe(false);
 
       button('Restaurar padrão').click();
@@ -334,6 +352,7 @@ describe('CustomizeSheet', () => {
       expect(prefs().buttonSize()).toBe('comfortable');
       expect(prefs().showMedia()).toBe(true);
       expect(prefs().padSpeed()).toBe('normal');
+      expect(speed().value).toBe('4');
       expect(prefs().pillLayout()).toBe('sides');
       expect(pressed('tv-custom-size-label')).toEqual(['Confortável']);
       expect(pressed('tv-custom-layout-label')).toEqual(['Nas laterais']);

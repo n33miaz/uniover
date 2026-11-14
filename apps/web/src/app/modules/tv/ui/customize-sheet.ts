@@ -17,8 +17,8 @@ import {
 } from '../../../shared/ui/dialog-motion';
 import {
   TV_NAME_MAX,
+  TV_PAD_SPEEDS,
   TvButtonSize,
-  TvPadSpeed,
   TvPillLayout,
   TvPrefs,
   TvPrefsValue,
@@ -84,11 +84,21 @@ export class CustomizeSheet {
     { value: 'touchpad', label: $localize`:@@tv.custom.page.touchpad:Touchpad` },
     { value: 'last', label: $localize`:@@tv.custom.page.last:Última usada` },
   ];
-  protected readonly speeds: readonly Choice<TvPadSpeed>[] = [
-    { value: 'slow', label: $localize`:@@tv.custom.speed.slow:Lenta` },
-    { value: 'normal', label: $localize`:@@tv.custom.speed.normal:Normal` },
-    { value: 'fast', label: $localize`:@@tv.custom.speed.fast:Rápida` },
-  ];
+  /** Os sete níveis da sensibilidade do touchpad, do 1 (mais lento) ao 7 (mais rápido); o 4 é o de sempre. */
+  protected readonly speedLevels = TV_PAD_SPEEDS.length;
+  protected readonly speedLevel = computed(() => TV_PAD_SPEEDS.indexOf(this.prefs.padSpeed()) + 1);
+  protected readonly speedText = computed(() => {
+    const level = this.speedLevel();
+    return level === 4
+      ? $localize`:@@tv.custom.speed.normal-level:Nível ${level}:level: de ${this.speedLevels}:total:, o normal`
+      : $localize`:@@tv.custom.speed.level:Nível ${level}:level: de ${this.speedLevels}:total:`;
+  });
+
+  protected setSpeed(event: Event): void {
+    const level = Number((event.target as HTMLInputElement).value);
+    const speed = TV_PAD_SPEEDS[Math.min(TV_PAD_SPEEDS.length, Math.max(1, Math.round(level))) - 1];
+    this.change({ padSpeed: speed });
+  }
 
   constructor() {
     afterNextRender(() => {
