@@ -64,6 +64,46 @@ public sealed class TvLayoutTests(PostgresFixture postgres)
         (await TvApp.JsonAsync(stillSaved)).GetProperty("name").GetString().Should().Be("Sala");
     }
 
+    [Theory]
+    [InlineData("slowest")]
+    [InlineData("slower")]
+    [InlineData("slow")]
+    [InlineData("normal")]
+    [InlineData("fast")]
+    [InlineData("faster")]
+    [InlineData("fastest")]
+    public async Task Layout_AcceptsEachOfTheSevenTouchpadSpeeds(string speed)
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tv = await BindDefaultAsync(app);
+        var body = new
+        {
+            name = "Sala", buttonSize = "large", showMedia = true, showChannel = true, startPage = "last",
+            padSpeed = speed, pillLayout = "sides", extraKeys = (string[]?)null, dismissedSuggestions = Array.Empty<string>(),
+        };
+
+        using var saved = await app.SendAsync(HttpMethod.Put, $"/api/v1/tv/layout?tvId={tv}", body);
+
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(saved)).GetProperty("padSpeed").GetString().Should().Be(speed);
+    }
+
+    [Fact]
+    public async Task Layout_RefusesATouchpadSpeedOutsideTheSevenLevels()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tv = await BindDefaultAsync(app);
+        var body = new
+        {
+            name = "Sala", buttonSize = "large", showMedia = true, showChannel = true, startPage = "last",
+            padSpeed = "turbo", pillLayout = "sides", extraKeys = (string[]?)null, dismissedSuggestions = Array.Empty<string>(),
+        };
+
+        using var response = await app.SendAsync(HttpMethod.Put, $"/api/v1/tv/layout?tvId={tv}", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Fact]
     public async Task LayoutRejectsUnknownFieldsInvalidValuesAndUnboundedLists()
     {

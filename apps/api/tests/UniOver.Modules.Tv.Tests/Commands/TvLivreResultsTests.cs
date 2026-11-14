@@ -117,7 +117,12 @@ public class TvLivreResultsTests
 
         document.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             "available", "supported", "installed", "version", "isHome", "factoryLauncher", "disabledPackages", "apps",
-            "stateAt", "config", "hasPhoto", "revision");
+            "stateAt", "config", "hasPhoto", "revision", "extended", "launcherLevel", "applyDeferred");
+        document.RootElement.GetProperty("extended").GetBoolean().Should().BeFalse();
+        document.RootElement.GetProperty("launcherLevel").ValueKind.Should().Be(JsonValueKind.Null);
+        document.RootElement.GetProperty("applyDeferred").GetBoolean().Should().BeFalse();
+        document.RootElement.GetProperty("config").GetProperty("builtin").EnumerateObject().Select(p => p.Name)
+            .Should().BeEquivalentTo("settings", "sleep", "network", "inputs", "brand");
         document.RootElement.GetProperty("config").EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             "clock", "wallpaper", "apps", "icons", "builtin", "sleep");
         document.RootElement.GetProperty("supported").ValueKind.Should().Be(JsonValueKind.Null);

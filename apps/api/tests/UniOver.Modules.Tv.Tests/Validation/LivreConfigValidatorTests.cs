@@ -222,6 +222,41 @@ public class LivreConfigValidatorTests
     }
 
     [Fact]
+    public void TheLauncherJson_CarriesTheNewBuiltinFlagsOnlyForAnAgentThatKnowsThem()
+    {
+        var config = Valid with { Builtin = new LivreBuiltin(true, false, Network: false, Inputs: true, Brand: false) };
+
+        var old = JsonNode.Parse(LivreConfigValidator.ToLauncherJson(config))!["builtin"]!.AsObject();
+        old.Select(p => p.Key).Should().Equal("settings", "sleep");
+
+        var extended = JsonNode.Parse(LivreConfigValidator.ToLauncherJson(config, extended: true))!["builtin"]!.AsObject();
+        extended.Select(p => p.Key).Should().Equal("settings", "sleep", "network", "inputs", "brand");
+        extended["network"]!.GetValue<bool>().Should().BeFalse();
+        extended["inputs"]!.GetValue<bool>().Should().BeTrue();
+        extended["brand"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    [Fact]
+    public void TheExtendedLauncherJson_FollowsTheLauncherContractSchema()
+    {
+        var document = JsonNode.Parse(LivreConfigValidator.ToLauncherJson(Valid, extended: true))!.AsObject();
+        document["schema"] = 1;
+        document["revision"] = 1;
+
+        IsValid(LoadLauncherSchema(), document).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TheNewBuiltinFlags_AreOnByDefault_AndAnOldStoredConfigGetsThem()
+    {
+        LivreConfig.Default.Builtin.Should().Be(new LivreBuiltin(true, false, true, true, true));
+        // Uma configuração guardada antes dos três campos (a que o launcher antigo lê) volta com eles ligados.
+        var stored = LivreConfigValidator.ToLauncherJson(Valid with { Builtin = new LivreBuiltin(true, true) });
+        stored.Should().NotContain("network");
+        LivreConfigValidator.Parse(stored).Builtin.Should().Be(new LivreBuiltin(true, true, true, true, true));
+    }
+
+    [Fact]
     public void TheLauncherJson_NeverCarriesSchemaRevisionOrThePhotoName()
     {
         var config = Valid with { Wallpaper = Valid.Wallpaper! with { Type = "photo" } };

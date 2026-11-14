@@ -70,7 +70,7 @@ internal static partial class LivreConfigValidator
         }
 
         // O limite do corpo do comando: 256 pacotes de nome longo podem passar do que o contrato da mensagem aceita.
-        if (errors.Count == 0 && ToLauncherJson(config).Length > MaxConfigJsonLength)
+        if (errors.Count == 0 && ToLauncherJson(config, extended: true).Length > MaxConfigJsonLength)
         {
             errors["apps.hidden"] = ["A configuração ficou grande demais; oculte menos apps."];
         }
@@ -212,7 +212,7 @@ internal static partial class LivreConfigValidator
     /// <c>revision</c> (vai no corpo da mensagem) e sem o nome da foto (o agente o escolhe). Só para configuração já
     /// validada. A ordem dos campos é fixa, para o mesmo conteúdo dar sempre o mesmo texto.
     /// </summary>
-    public static string ToLauncherJson(LivreConfig config)
+    public static string ToLauncherJson(LivreConfig config, bool extended = false)
     {
         ArgumentNullException.ThrowIfNull(config);
         var clock = config.Clock;
@@ -249,6 +249,15 @@ internal static partial class LivreConfigValidator
             ["builtin"] = new JsonObject { ["settings"] = builtin.Settings, ["sleep"] = builtin.Sleep },
             ["sleep"] = new JsonObject { ["maxMinutes"] = config.Sleep.MaxMinutes },
         };
+        if (extended)
+        {
+            // Os três campos novos só vão a agente que os aceita: o contrato do launcher é estrito para quem escreve.
+            var extras = document["builtin"]!.AsObject();
+            extras["network"] = builtin.Network;
+            extras["inputs"] = builtin.Inputs;
+            extras["brand"] = builtin.Brand;
+        }
+
         return document.ToJsonString();
     }
 

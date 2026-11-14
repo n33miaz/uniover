@@ -37,6 +37,17 @@ public class TvLivreMessagesTests
     }
 
     [Fact]
+    public void Sleep_CarriesTheMinutesOnlyWhenGiven()
+    {
+        TvMessages.TvLivre(Request, TvLivreAction.Sleep).Body.GetRawText()
+            .Should().Be($"{{\"action\":\"sleep\",\"requestId\":\"{Request}\"}}");
+
+        var body = TvMessages.TvLivre(Request, TvLivreAction.Sleep, minutes: 45).Body;
+        body.GetProperty("minutes").GetInt32().Should().Be(45);
+        body.GetProperty("action").GetString().Should().Be("sleep");
+    }
+
+    [Fact]
     public void Status_CarriesOnlyTheRequestIdAndTheAction()
     {
         var message = TvMessages.TvLivre(Request, TvLivreAction.Status);
