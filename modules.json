@@ -1,9 +1,9 @@
 {
-  "identity": "0.45.1",
-  "devices": "0.61.0",
+  "identity": "0.46.0",
+  "devices": "0.62.0",
   "tv": "0.50.1",
-  "training": "0.44.2",
-  "shopping": "0.3.1",
-  "web": "0.64.0",
-  "agent": "0.57.0"
+  "training": "0.44.3",
+  "shopping": "0.3.2",
+  "web": "0.65.0",
+  "agent": "0.58.0"
 }

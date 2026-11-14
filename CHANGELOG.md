@@ -1,5 +1,77 @@
 # Changelog
 
+## [0.68.0](https://github.com/n33miaz/uniover/compare/v0.67.0...v0.68.0) (2026-11-14)
+
+
+### Identity 0.46.0
+
+#### Features
+
+* **identity:** release soon modules for home
+
+#### Bug Fixes
+
+* **web:** order home and stop PC card flash
+
+
+### Devices 0.62.0
+
+#### Features
+
+* **web:** say why the direct channel closes
+
+
+### Training 0.44.3
+
+#### Bug Fixes
+
+* **web:** respect safe areas in sheet and preview
+
+
+### Shopping 0.3.2
+
+#### Bug Fixes
+
+* **shopping:** group locks and invite clock
+* **web:** one store per account in Compras
+* **web:** shopping opening failure and changes
+
+
+### Web 0.65.0
+
+#### Features
+
+* **web:** let the admin release soon modules
+* **identity:** release soon modules for home
+* **web:** say why the direct channel closes
+
+#### Bug Fixes
+
+* **web:** keep module versions on one line
+* **web:** translate the shopping module name
+* **web:** zero safe inset under open keyboard
+* **web:** paint manifest bar like the background
+* **web:** order home and stop PC card flash
+
+#### Performance Improvements
+
+* **web:** defer install hint service
+* **web:** load step-up dialog on demand
+* **web:** load update banner after paint
+
+
+### Agent 0.58.0
+
+#### Features
+
+* **agent:** log why the direct channel closes
+* **agent:** log tv key timings per minute
+
+#### Bug Fixes
+
+* **agent:** persist POWER ids on wall clock
+* **agent:** tray shortcut finds staged install
+
 ## [0.67.0](https://github.com/n33miaz/uniover/compare/v0.66.0...v0.67.0) (2026-11-13)
 
 
