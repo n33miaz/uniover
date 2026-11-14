@@ -111,7 +111,12 @@ test.describe('troca de tela', () => {
     await toSettings(page);
     await settingsReady(page);
 
-    expect((await motion(page)).animations.slice(seen)).toEqual([]);
+    // A espera pelos dados (esqueleto) pulsa em vez de brilhar com movimento reduzido, de propósito (styles.css): ela aparece se
+    // os dados demoram mais que o atraso de 200 ms, e num executor lento demoram. O que não pode haver é entrada de tela.
+    const entrances = (await motion(page)).animations
+      .slice(seen)
+      .filter((name) => name !== 'ui-pulse');
+    expect(entrances).toEqual([]);
     const names = (await sectionDelays(page)).map((entry) => entry.split('@')[0]);
     expect(new Set(names)).toEqual(new Set(['none']));
   });
@@ -213,12 +218,13 @@ test.describe('movimento reduzido', () => {
       OWNER.displayName.split(' ')[0],
     );
     await expect(page.locator('article.card')).toHaveCount(9);
-    expect(await longAnimations(page)).toEqual([]);
+    // Espera de dados (esqueleto que pulsa) some quando eles chegam: espera por isso, em vez de medir no primeiro quadro.
+    await expect.poll(() => longAnimations(page)).toEqual([]);
 
     await page.getByRole('button', { name: 'Editar' }).click();
     const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
-    expect(await longAnimations(page)).toEqual([]);
+    await expect.poll(() => longAnimations(page)).toEqual([]);
     expect(await sheet.evaluate((dialog) => getComputedStyle(dialog).transitionDuration)).toBe(
       '0s',
     );
@@ -228,6 +234,6 @@ test.describe('movimento reduzido', () => {
 
     await toSettings(page);
     await settingsReady(page);
-    expect(await longAnimations(page)).toEqual([]);
+    await expect.poll(() => longAnimations(page)).toEqual([]);
   });
 });
