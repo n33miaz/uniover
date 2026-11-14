@@ -135,8 +135,11 @@ jobs:
         run: bash ../../.github/scripts/check-e2e-projects.sh
       - name: Lint
         run: npm run lint
+      # O Vitest não tem repetição própria e, no executor de 2 núcleos, alguns testes de medida de tela e de quadro falham ao
+      # acaso (cada rodada falhou em testes diferentes, e isolados eles passam). Uma segunda tentativa da suíte inteira (~1 min)
+      # absorve isso, como o `retries` do Playwright; o aviso fica na execução para o defeito não sumir.
       - name: Testes unitários
-        run: npm test
+        run: npm test || { echo "::warning::testes unitários falharam e foram repetidos uma vez (flaky conhecido)"; npm test; }
       - name: Testes do script de retenção dos arquivos com hash
         run: node --test scripts/retained-assets.test.mjs
       # O build aplica o orçamento do pacote inicial (angular.json: aviso a 500 kB, erro a 1 MB) e o dos estilos por componente.
@@ -220,12 +223,16 @@ jobs:
       - name: Fronteiras do núcleo
         run: uv run lint-imports
       # Sem o piso de cobertura (--no-cov): ele é da suíte inteira, na rodada noturna. --durations mostra os mais lentos.
-      # Os três módulos ignorados só existem para o Windows (leem SystemRoot ao importar e quebram a coleta no Linux): quem
-      # os roda é o agent-windows.yml, que executa a suíte inteira no Windows a cada mudança em apps/agent.
+      # Os três módulos ignorados e os três testes desmarcados só fazem sentido no Windows (leem SystemRoot ao importar, usam
+      # barra invertida, ctypes.get_last_error ou o nome do mutex): quem os roda é o agent-windows.yml, que executa a suíte
+      # inteira no Windows a cada mudança em apps/agent.
       - name: Testes
         run: >-
           uv run pytest --no-cov -p no:cacheprovider --durations=15
           --ignore=tests/test_update_path.py --ignore=tests/test_upgrade_drill.py --ignore=tests/test_windows_installer.py
+          --deselect=tests/test_current_pointer.py::test_the_pointer_round_trips_with_relative_paths
+          --deselect=tests/test_memory_protection.py::test_a_priority_that_cannot_be_read_is_a_refusal_not_normal
+          --deselect=tests/test_single_instance_and_connection_trace.py::test_the_same_installation_written_differently_has_one_mutex
 
   contracts:
     name: contracts
