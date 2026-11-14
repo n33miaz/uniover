@@ -76,6 +76,20 @@ class TvLivreStateV1Body(BaseModel):
     ] = None
     apps: Annotated[list[TvLivreStateV1BodyAppsItem], Field(max_length=300)]
     at: AwareDatetime
+    launcherLevel: Annotated[
+        int | None,
+        Field(
+            description='Nível do launcher instalado (o que ele sabe fazer, não a versão). Sem o campo, o agente não soube ler (TV sem o app ou sem resposta). Só vai com a capacidade tv.livre.v2.',
+            ge=1,
+            le=99,
+        ),
+    ] = None
+    applyDeferred: Annotated[
+        bool | None,
+        Field(
+            description='Verdadeiro quando este apply só gravou a configuração porque outro app estava na frente: a tela inicial a lê sozinha na próxima vez. Só vai com a capacidade tv.livre.v2.'
+        ),
+    ] = None
 
 
 class TvLivreStateV1Message(BaseModel):

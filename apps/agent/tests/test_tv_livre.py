@@ -57,12 +57,18 @@ def state_of(manager: TvSessionManager) -> SessionState:
 
 
 def make(
-    tmp_path: Path, android: FakeAndroid | None = None, error: LauncherApkError | None = None
+    tmp_path: Path,
+    android: FakeAndroid | None = None,
+    error: LauncherApkError | None = None,
+    *,
+    extended: bool = False,
 ) -> tuple[TvLivre, FakeAndroid, LivreStateFile, FakeApkSource]:
     android = android or FakeAndroid()
     state = LivreStateFile(tmp_path / "state" / "tv-livre.json")
     apk = FakeApkSource(tmp_path, error)
-    livre = TvLivre(android, apk, state, PhotoStaging(FakeClock()), FakeClock())
+    livre = TvLivre(
+        android, apk, state, PhotoStaging(FakeClock()), FakeClock(), extended=lambda: extended
+    )
     return livre, android, state, apk
 
 
@@ -209,9 +215,9 @@ async def test_install_failure_has_a_stable_code(tmp_path: Path) -> None:
 
 
 async def installed(
-    tmp_path: Path, android: FakeAndroid | None = None
+    tmp_path: Path, android: FakeAndroid | None = None, *, extended: bool = False
 ) -> tuple[TvLivre, FakeAndroid, LivreStateFile, FakeApkSource]:
-    livre, android, state, apk = make(tmp_path, android)
+    livre, android, state, apk = make(tmp_path, android, extended=extended)
     await livre.run({"action": "install"})
     android.log.clear()
     return livre, android, state, apk
@@ -231,6 +237,43 @@ async def test_apply_pushes_a_temporary_file_then_renames_it(tmp_path: Path) -> 
     assert written["apps"] == {"mode": "listed", "items": [NETFLIX]}
     # A pré-visualização: o app é aberto para redesenhar com a configuração nova.
     assert f"am start -n {HOME_COMPONENT}" in android.log[-2:]
+
+
+async def test_apply_keeps_the_movie_when_another_app_is_in_front(tmp_path: Path) -> None:
+    livre, android, _, _ = await installed(tmp_path, extended=True)
+    android.foreground = NETFLIX
+
+    await livre.run({"action": "apply", "revision": 7, "configJson": CONFIG})
+
+    assert f"{FILES_DIR}/config.json" in android.files
+    assert f"am start -n {HOME_COMPONENT}" not in android.log
+    assert livre.take_apply_deferred() is True
+    assert livre.take_apply_deferred() is False
+
+
+@pytest.mark.parametrize("foreground", [None, PACKAGE, FACTORY_PACKAGE])
+async def test_apply_opens_the_home_when_it_is_in_front_or_nobody_knows(
+    tmp_path: Path, foreground: str | None
+) -> None:
+    livre, android, _, _ = await installed(tmp_path, extended=True)
+    android.foreground = foreground
+
+    await livre.run({"action": "apply", "revision": 7, "configJson": CONFIG})
+
+    assert f"am start -n {HOME_COMPONENT}" in android.log[-2:]
+    assert livre.take_apply_deferred() is False
+
+
+async def test_apply_never_reads_the_front_app_for_an_api_that_does_not_know_it(
+    tmp_path: Path,
+) -> None:
+    livre, android, _, _ = await installed(tmp_path, extended=False)
+    android.foreground = NETFLIX
+
+    await livre.run({"action": "apply", "revision": 7, "configJson": CONFIG})
+
+    assert f"am start -n {HOME_COMPONENT}" in android.log[-2:]
+    assert not any(command.startswith("dumpsys activity") for command in android.log)
 
 
 async def test_apply_rejects_an_invalid_config_before_touching_the_tv(tmp_path: Path) -> None:
@@ -625,6 +668,51 @@ async def test_a_failed_disable_is_forgotten(tmp_path: Path) -> None:
     assert state.load()["disabled"] == []
 
 
+# --- nível do launcher e atualização ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(("answer", "expected"), [(2, 2), (7, 7), (None, 1)])
+async def test_the_state_tells_the_launcher_level_and_an_old_launcher_is_level_one(
+    tmp_path: Path, answer: int | None, expected: int
+) -> None:
+    android = FakeAndroid()
+    android.level = answer
+    livre, android, _, _ = await installed(tmp_path, android)
+
+    assert (await livre.read_state()).launcher_level == expected
+
+
+async def test_there_is_no_level_without_the_launcher_or_when_the_adb_fails(
+    tmp_path: Path,
+) -> None:
+    livre, _, _, _ = make(tmp_path)
+    assert (await livre.read_state()).launcher_level is None
+
+    android = FakeAndroid()
+    livre, android, _, _ = await installed(tmp_path / "other", android)
+    android.fail.add("action.QUERY")
+    assert (await livre.read_state()).launcher_level is None
+
+
+async def test_updating_keeps_the_launcher_as_the_home(tmp_path: Path) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+    await livre.run({"action": "set-home"})
+    assert android.home == HOME_COMPONENT
+
+    # O sistema solta o papel ao trocar o app por cima.
+    original_install = android.install
+
+    async def install_and_lose_home(apk: Path) -> ShellResult:
+        result = await original_install(apk)
+        android.home = FACTORY
+        return result
+
+    android.install = install_and_lose_home  # type: ignore[method-assign]
+    await livre.run({"action": "install"})
+
+    assert android.home == HOME_COMPONENT
+
+
 # --- Modo Dormir -----------------------------------------------------------------------------
 
 
@@ -634,6 +722,29 @@ async def test_sleep_opens_the_sleep_activity(tmp_path: Path) -> None:
     await livre.run({"action": "sleep"})
 
     assert android.log[-1] == f"am start -n {PACKAGE}/.SleepActivity"
+
+
+async def test_sleep_carries_the_time_in_the_request(tmp_path: Path) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+
+    await livre.run({"action": "sleep", "minutes": 45})
+    assert (
+        android.log[-1]
+        == f"am start -n {PACKAGE}/.SleepActivity --ei {PACKAGE}.extra.MAX_MINUTES 45"
+    )
+
+    await livre.run({"action": "sleep", "minutes": 0})
+    assert android.log[-1].endswith("--ei br.uniover.launcher.extra.MAX_MINUTES 0")
+
+
+@pytest.mark.parametrize("minutes", [-1, 721, 1.5, "30", True])
+async def test_sleep_refuses_a_time_outside_the_contract(tmp_path: Path, minutes: object) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+
+    error = await expect_error(livre, {"action": "sleep", "minutes": minutes}, "invalid_minutes")
+
+    assert error.rejected is True
+    assert not any(command.startswith("am start") for command in android.log)
 
 
 async def test_sleep_requires_the_launcher(tmp_path: Path) -> None:

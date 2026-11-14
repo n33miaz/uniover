@@ -31,7 +31,8 @@ _ENUMS: Final[dict[str, dict[str, tuple[str, ...]]]] = {
 _BOOLEANS: Final[dict[str, tuple[str, ...]]] = {
     "clock": ("enabled", "seconds", "date"),
     "apps": ("showFactory",),
-    "builtin": ("settings", "sleep"),
+    # `network`, `inputs` e `brand` são do launcher de nível 2: um anterior os ignora.
+    "builtin": ("settings", "sleep", "network", "inputs", "brand"),
 }
 # Campos de cada seção que não são enum nem booleano (conferidos à mão abaixo).
 _OTHER: Final[dict[str, tuple[str, ...]]] = {

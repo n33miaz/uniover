@@ -5,6 +5,15 @@ círculos, fundo em degradê (ou foto), e o Modo Dormir (tela preta). É o que o
 agente do PC configura tudo por ADB.
 
 - Funciona em qualquer marca com Android TV ou Google TV (Android 9 em diante), e também em caixas Android.
+- Na fileira, além dos apps: Dormir (opcional), Rede e Entradas (aparecem só se a TV tem a tela; a das entradas depende
+  da marca e se confirma na própria TV) e Configurações. O nome do sistema fica pequeno num canto, e os ícones de apps
+  sem o desenho adaptativo são aparados e preenchem o círculo com a cor da placa, como no controle do app.
+- No Modo Dormir, volume, mudo e teclas de mídia passam sem acordar a tela; o tempo para acordar sozinho pode vir no
+  pedido (`--ei br.uniover.launcher.extra.MAX_MINUTES <0 a 720>`) e vale mais que o da configuração.
+- O **nível do app** (`ConfigReceiver.LEVEL`) é um inteiro que só cresce quando o app ganha algo que o agente ou o site
+  precisam saber; não é a versão (essa muda a cada publicação). O agente o pergunta por
+  `am broadcast -n br.uniover.launcher/.ConfigReceiver -a br.uniover.launcher.action.QUERY` (resposta `level=N`); um app
+  que não conhece a pergunta é o nível 1. Nível 2: o que está descrito acima.
 - Nenhuma permissão, nenhum serviço em segundo plano, nenhuma rede. A tela só é montada quando a home está à
   vista.
 - Quem manda é o agente: o app lê um arquivo `config.json` (contrato em

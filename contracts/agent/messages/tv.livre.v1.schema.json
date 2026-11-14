@@ -113,6 +113,12 @@
             "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$"
           },
           "description": "set-apps: pacotes a reativar."
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720,
+          "description": "sleep: minutos até a TV acordar sozinha do Modo Dormir (0 só acorda com tecla). Sem o campo vale o da configuração aplicada. Só vai a agente que declara tv.livre.v2."
         }
       }
     }

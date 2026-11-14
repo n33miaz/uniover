@@ -44,6 +44,14 @@ export interface TvLivreStateV1Body {
    */
   apps: TvLivreStateV1BodyAppsItem[];
   at: string;
+  /**
+   * Nível do launcher instalado (o que ele sabe fazer, não a versão). Sem o campo, o agente não soube ler (TV sem o app ou sem resposta). Só vai com a capacidade tv.livre.v2.
+   */
+  launcherLevel?: number;
+  /**
+   * Verdadeiro quando este apply só gravou a configuração porque outro app estava na frente: a tela inicial a lê sozinha na próxima vez. Só vai com a capacidade tv.livre.v2.
+   */
+  applyDeferred?: boolean;
 }
 export interface TvLivreStateV1BodyAppsItem {
   package: string;

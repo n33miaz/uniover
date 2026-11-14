@@ -226,8 +226,13 @@ class EnvelopeFactory:
         factory_launcher: str | None,
         disabled_packages: Sequence[str],
         apps: Sequence[tuple[str, bool, bool]],
+        launcher_level: int | None = None,
+        apply_deferred: bool | None = None,
     ) -> dict[str, Any]:
-        """`tv.livre.state.v1`: o estado do TV Livre na TV (apps: pacote, de fábrica, desativado)"""
+        """`tv.livre.state.v1`: o estado do TV Livre na TV (apps: pacote, de fábrica, desativado).
+
+        `launcher_level` e `apply_deferred` são da capacidade `tv.livre.v2`: só vão à API que a tem.
+        """
         body: dict[str, Any] = {
             "requestId": request_id,
             "supported": supported,
@@ -247,6 +252,10 @@ class EnvelopeFactory:
             body["factoryLauncher"] = factory_launcher
         if disabled_packages:
             body["disabledPackages"] = list(disabled_packages)
+        if launcher_level is not None:
+            body["launcherLevel"] = launcher_level
+        if apply_deferred is not None:
+            body["applyDeferred"] = apply_deferred
         return self._build("tv.livre.state.v1", body, correlation_id)
 
     def tv_watchdog(
