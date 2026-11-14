@@ -10,7 +10,6 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
-import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
@@ -73,7 +72,6 @@ export class TodayHome {
   private readonly catalog = inject(CatalogRepository);
   private readonly sync = inject(TrainingSync);
   private readonly prefetcher = inject(IllustrationPrefetcher);
-  private readonly runtime = inject(QUEUE_RUNTIME);
   private readonly router = inject(Router);
   protected readonly online = inject(ConnectivityService).online;
 
@@ -107,10 +105,6 @@ export class TodayHome {
   protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;
 
   protected readonly entry = this.store.selected;
-  protected readonly today = computed(() => {
-    this.store.plan();
-    return dayLabel(this.runtime.now());
-  });
   protected readonly summary = computed(() => {
     const entry = this.entry();
     return entry === undefined ? '' : routineSummary(entry);

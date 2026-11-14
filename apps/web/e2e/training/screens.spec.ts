@@ -264,7 +264,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Hoje: a tela provisória', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, '/treino');
-      await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: 'Treino', exact: true })).toBeVisible();
       await shot(page, info, 'hoje', scheme);
     });
 

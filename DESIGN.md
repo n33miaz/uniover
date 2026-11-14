@@ -459,5 +459,5 @@ Inconsistências encontradas no código (reportar ao corrigir; o código atual m
 8. `.ui-btn.secondary` só tem hover; no repouso é igual a `.ui-btn`.
 9. O fundo dos ícones de módulo da Início vem dos tokens `--a-module-app` e `--a-module-app-planned` do próprio ícone (`module-app-icon.ts`), com a mesma guarda da paleta do `styles.css`: o tema fixado no app vale mais que o do sistema.
 10. O manifesto aceita uma cor de barra só (`theme_color`, igual ao fundo claro); a cor por tema vem das `<meta name="theme-color">` do `index.html`. O Android instalado pode seguir só o manifesto na barra de navegação (sem fonte primária), então no tema escuro dessa barra o app não garante a cor. O indicador de início do iPhone não tem cor: mostra o que a página pinta atrás dele. Com o teclado aberto (`--kb-inset` ≥ 80 px) `--safe-bottom` vale 0, pela conta em `styles.css`.
-11. (Parcial) A aba do Treino que se chamava "Início" agora se chama "Treino" (`training.routes.ts`). O título oculto da tela (`h2` em `today-home.html`) ainda diz "Início"; trocar pede acertar os testes que o procuram.
+11. (Resolvida) A aba do Treino que se chamava "Início" agora se chama "Treino" (`training.routes.ts`), e o título oculto da tela (`h2` em `today-home.html`) também.
 12. Não há toast global nem tokens de z-index e de breakpoint.

@@ -191,7 +191,7 @@ test.describe('barra de baixo do Treino', () => {
     const bar = page.getByRole('navigation', { name: 'Abas do módulo' });
     const links = bar.getByRole('link');
     await expect(links).toHaveCount(3);
-    await expect(links.nth(1)).toHaveText('Início');
+    await expect(links.nth(1)).toHaveText('Treino');
     await expect(links.nth(1)).toHaveAttribute('aria-current', 'page');
     await expect(links.nth(0)).not.toHaveAttribute('aria-current', 'page');
     await expect(links.nth(2)).not.toHaveAttribute('aria-current', 'page');

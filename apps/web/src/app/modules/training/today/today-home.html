@@ -1,4 +1,4 @@
-<h2 class="ui-visually-hidden" i18n="@@training.home.title">Início</h2>
+<h2 class="ui-visually-hidden" i18n="@@training.home.title">Treino</h2>
 
 <div class="home">
   @if (message(); as note) {
@@ -19,9 +19,6 @@
       <div class="failed-text">
         <p id="failed-title" class="failed-title" i18n="@@training.today.failed-title">
           O servidor não aceitou um treino
-        </p>
-        <p i18n="@@training.today.failed-text">
-          Ele continua guardado neste aparelho. Reenviar costuma resolver.
         </p>
         <button type="button" class="secondary ui-btn" (click)="resend()">
           <app-training-glyph name="refresh" />
@@ -73,12 +70,9 @@
           <p class="meta" i18n="@@training.today.blocked-age">aberto {{ otherAge() }}</p>
         </div>
       </div>
-      <p class="blocked-text" i18n="@@training.today.blocked-text">
-        Só um aparelho treina por vez: termine o treino lá para começar aqui.
-      </p>
       @if (other.forgotten) {
         <p class="blocked-text" i18n="@@training.today.forgotten-text">
-          Já faz mais de 12 horas. Se ele ficou aberto por esquecimento, você pode encerrá-lo daqui.
+          Aberto há mais de 12 horas. Se foi esquecimento, encerre-o daqui.
         </p>
         @if (confirmingClose()) {
           <div class="ui-notice warn" role="group" [attr.aria-label]="confirmLabel">
@@ -104,7 +98,7 @@
         }
       } @else {
         <p class="blocked-hint" i18n="@@training.today.blocked-hint">
-          Se foi esquecimento, depois de 12 horas você poderá encerrá-lo daqui.
+          Termine o treino lá. Depois de 12 horas você poderá encerrá-lo daqui.
         </p>
       }
     </section>
@@ -117,15 +111,14 @@
           Baixando o catálogo…
         </h3>
         <p i18n="@@training.today.catalog-loading-text">
-          Os exercícios chegam em instantes e ficam guardados no aparelho.
+          Os exercícios ficam guardados no aparelho.
         </p>
       } @else {
         <h3 id="catalog-title" i18n="@@training.today.catalog-title">
           O Catálogo Ainda Não Chegou
         </h3>
         <p i18n="@@training.today.catalog-text">
-          Para treinar, o aparelho precisa dos exercícios. Conecte-se uma vez para baixar; depois
-          disso o treino funciona sem rede.
+          Conecte-se uma vez para baixar os exercícios.
         </p>
         <button
           type="button"
@@ -139,12 +132,12 @@
       }
     </section>
   } @else if (entry(); as current) {
-    <p class="date ui-section-label">{{ today() }}</p>
     <section class="routine ui-card" aria-labelledby="routine-title">
-      <!-- Como no mockup: "Treino de Hoje" e os três pontos na primeira linha, o nome por inteiro (numa linha) logo abaixo. -->
+      <!-- O nome da rotina por inteiro (numa linha) e, no canto, os três pontos que abrem a folha com a troca de rotina e também a meta, a ausência e a nota do dia: vale com uma rotina só. A data fica por conta do calendário logo abaixo. -->
       <div class="routine-top">
-        <p class="eyebrow" i18n="@@training.today.eyebrow">Treino de Hoje</p>
-        <!-- Os três pontos no canto do cartão abrem a folha com a troca de rotina e também a meta, a ausência e a nota do dia: vale com uma rotina só. -->
+        <h3 id="routine-title" class="routine-name one-line" [attr.aria-label]="current.routine.name">
+          {{ current.routine.name }}
+        </h3>
         <button
           type="button"
           class="routine-settings"
@@ -156,9 +149,6 @@
           <app-training-glyph name="dots" />
         </button>
       </div>
-      <h3 id="routine-title" class="routine-name one-line" [attr.aria-label]="current.routine.name">
-        {{ current.routine.name }}
-      </h3>
       <p class="meta">{{ summary() }}</p>
       @if (catalogMissing()) {
         <div class="ui-notice warn" role="status">
@@ -235,7 +225,6 @@
       }
     </ul>
   } @else if (store.resting()) {
-    <p class="date ui-section-label">{{ today() }}</p>
     <section class="routine ui-card calm" aria-labelledby="rest-title">
       <span class="ui-tile lg"><app-training-glyph name="check" /></span>
       <h3 id="rest-title" i18n="@@training.today.rest-title">Dia de Descanso</h3>
@@ -260,8 +249,7 @@
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>
       <h3 id="empty-title" i18n="@@training.today.empty-title">Sem Rotinas Ainda</h3>
       <p i18n="@@training.today.empty-text">
-        Uma rotina é a lista de exercícios de um treino. Monte a sua do zero ou comece por um modelo
-        pronto. Também dá para treinar sem rotina.
+        Monte a sua do zero ou comece por um modelo pronto.
       </p>
       <div class="actions">
         <a class="primary ui-btn" routerLink="/treino/rotinas">

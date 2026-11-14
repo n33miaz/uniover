@@ -185,6 +185,10 @@ describe('TodayPage', () => {
       const dots = routine.querySelector('button.routine-settings svg path.solid');
       expect(dots?.getAttribute('d')?.match(/z/g)).toHaveLength(3);
       expect(text(routine)).toContain('Treino A');
+      // O calendário já diz o dia: nada de data nem da etiqueta "Treino de Hoje" acima ou dentro do cartão.
+      expect(el.querySelector('.date, .eyebrow')).toBeNull();
+      expect(text(el)).not.toContain('Treino de Hoje');
+      expect(routine.querySelector('.routine-top .routine-name')).not.toBeNull();
       expect(text(routine)).toMatch(/3 exercícios · 10 séries · cerca de \d+ min/);
       const start = button(el, 'Iniciar Treino');
       expect(start.compareDocumentPosition(el.querySelector('.lines')!)).toBe(
@@ -357,16 +361,14 @@ describe('TodayPage', () => {
       expect(text(link)).toContain('Peito');
     });
 
-    it('has a single heading for Início', async () => {
+    it('has a single hidden heading, named like the tab: Treino', async () => {
       const kit = await open();
       await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
       const { el, fixture } = await show(kit);
 
       await eventually(fixture, () => expect(el.querySelector('.routine')).not.toBeNull());
-      const headings = Array.from(el.querySelectorAll('h1, h2, h3')).filter((node) =>
-        node.textContent?.includes('Início'),
-      );
-      expect(headings).toHaveLength(1);
+      const headings = Array.from(el.querySelectorAll('h2.ui-visually-hidden'));
+      expect(headings.map((node) => node.textContent?.trim())).toEqual(['Treino']);
     });
 
     it('blocks the start when another device has a workout open, and offers to end it after 12 hours', async () => {

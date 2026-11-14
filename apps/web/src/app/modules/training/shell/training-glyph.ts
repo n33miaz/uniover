@@ -62,12 +62,12 @@ const GLYPHS = {
       ],
     ],
   },
-  // Três pontos na horizontal: o botão discreto de ações do cartão de Hoje.
+  // Três pontos em pé: o desenho único de "mais opções" (topo do Treino e cartão de Hoje).
   dots: {
     layers: [
       [
         'solid',
-        'M5 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z M12 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z M19 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z',
+        'M10.4 5a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 0 0-3.2 0z M10.4 12a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 0 0-3.2 0z M10.4 19a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 0 0-3.2 0z',
       ],
     ],
   },

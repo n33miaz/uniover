@@ -9,11 +9,11 @@ describe('training routes', () => {
   const root = TRAINING_ROUTES[0];
   const children = root.children ?? [];
 
-  it('has three tabs with Início in the center and Corpo under Progresso', () => {
+  it('has three tabs with Treino in the center and Corpo under Progresso', () => {
     const tabs = (root.data as { tabs: { link: string; label: string }[] }).tabs;
     expect(tabs.map((tab) => [tab.label, tab.link])).toEqual([
       ['Exercício', '/treino/exercicios'],
-      ['Início', '/treino'],
+      ['Treino', '/treino'],
       ['Progresso', '/treino/progresso'],
     ]);
   });
@@ -96,7 +96,7 @@ describe('training routes', () => {
     ])('%s shows the tab bar with the three tabs', async (url) => {
       const { data } = await navigate(url);
       expect(data.title).toBe('Treino');
-      expect(data.tabs?.map((tab) => tab.label)).toEqual(['Exercício', 'Início', 'Progresso']);
+      expect(data.tabs?.map((tab) => tab.label)).toEqual(['Exercício', 'Treino', 'Progresso']);
     });
 
     it.each([

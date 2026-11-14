@@ -3,8 +3,8 @@ import { LoadingFrame } from '../../../shared/ui/skeleton/loading-frame';
 import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 
 /**
- * O esqueleto da aba Hoje, na ordem da tela pronta (`today-home`): a data, o cartão do dia (a primeira linha com o rótulo e
- * os três pontos, o nome, o resumo, o botão de iniciar e o "Ver Rotina") e, com `withWeek`, o cartão da semana (título e
+ * O esqueleto da aba Hoje, na ordem da tela pronta (`today-home`): o cartão do dia (a primeira linha com o nome e
+ * os três pontos, o resumo, o botão de iniciar e o "Ver Rotina") e, com `withWeek`, o cartão da semana (título e
  * setas, os sete dias, o resumo e os três números) e a ação de baixo. A página usa tudo enquanto o módulo ainda não leu
  * nada; a Início do módulo usa só o cartão do dia quando a semana (que já tem as datas) é a verdadeira.
  * `label` troca o que o leitor de tela ouve (a entrada do módulo diz que confirma a conta).
@@ -19,13 +19,11 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
   template: `
     <app-loading-frame [label]="label()">
       <div class="sk-home">
-        <span appSkeleton class="sk-date"></span>
         <div class="sk-card ui-card">
           <div class="sk-top">
-            <span appSkeleton class="sk-eyebrow"></span>
+            <span appSkeleton class="sk-name"></span>
             <span appSkeleton class="sk-dots"></span>
           </div>
-          <span appSkeleton class="sk-name"></span>
           <span appSkeleton class="sk-meta"></span>
           <span appSkeleton class="sk-go"></span>
           <span appSkeleton class="sk-toggle"></span>
@@ -71,13 +69,6 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       max-width: none;
       padding-block-start: 0;
     }
-    .sk-date {
-      display: block;
-      width: 9rem;
-      height: 14px;
-      min-height: 0;
-      margin-inline: var(--space-1);
-    }
     .sk-card {
       display: flex;
       flex-direction: column;
@@ -90,13 +81,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       justify-content: space-between;
       gap: var(--space-2);
       min-height: var(--tap);
-      margin-block: calc(var(--space-3) * -1) calc(var(--space-5) * -1);
-    }
-    .sk-eyebrow {
-      display: block;
-      width: 30%;
-      height: 12px;
-      min-height: 0;
+      margin-block: calc(var(--space-3) * -1) calc(var(--space-2) * -1);
     }
     .sk-dots {
       display: block;
