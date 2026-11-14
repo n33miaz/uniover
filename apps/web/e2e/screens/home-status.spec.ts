@@ -155,7 +155,7 @@ test.describe('Início: estado real da casa', () => {
     await expect.poll(() => openStreams(page)).toBe(0);
 
     tv.state = { ...AGENT_OFF };
-    await page.getByRole('button', { name: /Início/ }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início', exact: true }).click();
     await expect(indicator(page)).toHaveAttribute('aria-label', 'Computador desligado');
     expect(await openStreams(page)).toBe(1);
     expect(stateReads()).toBeGreaterThan(reads);
