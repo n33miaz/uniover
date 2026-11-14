@@ -21,6 +21,7 @@ export const WAKING_NOTICE_DELAY_MS = 2_000;
           <div class="ui-collapse" [animate.leave]="'leaving'">
             <div class="ui-collapse-inner">
               <p class="banner waking">
+                <span class="dot" aria-hidden="true"></span>
                 <span i18n="@@connectivity.waking">O UniOver está iniciando…</span>
                 <span aria-hidden="true" i18n="@@connectivity.waiting"
                   >aguardando há {{ connectivity.waitedSeconds() }} s</span
@@ -33,6 +34,7 @@ export const WAKING_NOTICE_DELAY_MS = 2_000;
           <div class="ui-collapse" [animate.leave]="'leaving'">
             <div class="ui-collapse-inner">
               <p class="banner offline">
+                <span class="dot" aria-hidden="true"></span>
                 @if (connectivity.windowExpired()) {
                   <span i18n="@@connectivity.no-answer"
                     >O UniOver não respondeu. O que já está neste aparelho continua
@@ -54,6 +56,7 @@ export const WAKING_NOTICE_DELAY_MS = 2_000;
     .banner {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 4px 12px;
       margin: 0;
       padding: 10px var(--gutter);
@@ -62,11 +65,32 @@ export const WAKING_NOTICE_DELAY_MS = 2_000;
       background: var(--a-elev);
       color: var(--a-ink);
     }
-    .waking span:first-child {
+    .waking span:nth-child(2) {
       font-weight: 600;
     }
-    .offline {
-      border-left: 4px solid var(--a-warn);
+    /* O ponto de estado, o mesmo desenho do app: cheio e pulsando enquanto o servidor acorda, vazado quando não há conexão. */
+    .dot {
+      flex: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .waking .dot {
+      background: var(--a-warn);
+      animation: banner-pulse 1.2s ease-in-out infinite;
+    }
+    .offline .dot {
+      box-shadow: inset 0 0 0 2px var(--a-warn);
+    }
+    @keyframes banner-pulse {
+      50% {
+        opacity: 0.35;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .waking .dot {
+        animation: none;
+      }
     }
   `,
 })

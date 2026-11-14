@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 
 /**
  * Barra superior para as páginas dos módulos. Mantém o título no centro real reservando um lado de 44 px mesmo quando
- * não há ação; os círculos seguem o mesmo visual do controle de TV. As telas existentes podem adotá-la aos poucos.
+ * não há ação. Regra do topo: o "voltar" é sempre um círculo com fundo; as outras ações são ícones soltos (sem fundo nem
+ * contorno, alvo de 44 px); "mais opções" é sempre o mesmo desenho de três pontos em pé. As telas existentes podem adotá-la aos poucos.
  */
 @Component({
   selector: 'app-page-top-bar',
@@ -109,9 +110,9 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       width: var(--tap);
       height: var(--tap);
       padding: 0;
-      border: 1px solid var(--a-line);
+      border: 0;
       border-radius: 50%;
-      background: var(--a-surface);
+      background: transparent;
       color: var(--a-ink);
       font: inherit;
       text-decoration: none;
@@ -119,7 +120,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
-    /* A pílula: vários controles no mesmo contorno (cada um com o seu alvo de 44 px); sozinho, um só vira o círculo. */
+    /* Vários ícones lado a lado (cada um com o seu alvo de 44 px), sem contorno; sozinho, um só segue com 44 px. */
     :host ::ng-deep [pageTopBarActions].pill {
       display: flex;
       width: auto;
@@ -132,7 +133,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     }
     @media (hover: hover) {
       :host ::ng-deep [pageTopBarActions]:hover {
-        border-color: var(--a-accent);
+        color: var(--a-accent);
       }
     }
     .name {

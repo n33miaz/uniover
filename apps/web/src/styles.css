@@ -39,6 +39,10 @@
   --radius-xl: 28px;
   --radius-pill: 999px;
 
+  /* Colunas com teto (regra de tamanho do DESIGN.md): leitura e controles não esticam em tela larga. */
+  --col-read: 40rem;
+  --col-control: 36rem;
+
   /* Tipografia (fonte do sistema). */
   --fs-label: 0.75rem;
   --fs-small: 0.875rem;

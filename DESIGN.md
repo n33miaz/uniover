@@ -32,11 +32,11 @@ Regras imperativas, na ordem de importância.
 6. **Sem slogan.** A marca é o logo mais o nome "UniOver", nada além disso.
 7. **Uma ação principal por tela.** Informação secundária fica atrás de um toque (folha, "Ver ...", recolher).
 8. **Texto em pt-BR.** Datas, números e rótulos em português do Brasil; o `<html>` declara `lang="pt-BR"` (`apps/web/src/index.html:2`).
-9. **Caixa das iniciais (Title Case): descreva o que o código faz, não um ideal.**
-   - Title Case (iniciais maiúsculas, conectivos em minúscula: de, do, da, em, à, os, a, para, como) em: botões de ação e títulos de tela ou de seção, sobretudo no Treino e nas telas mais novas. Exemplos reais: "Tentar de Novo" (`apps/web/src/app/shared/ui/skeleton/loading-frame.ts:55`), "Nenhum Exercício Achado", "Limpar Filtros", "Mostrar Mais" (`apps/web/src/app/modules/training/exercises/library/library.page.html:141-172`), "Concluir Série", "Definir Como Padrão", "Capacidade em Risco", "Adicionar à Tela de Início", "Ver Todos os N Passos" (`apps/web/src/app/modules/training/exercises/detail/detail.page.html:86`), "Em Breve" (`apps/web/src/app/modules/home/home-soon-badge.ts:9`).
-   - Caixa de frase (só a primeira letra) em: rótulos de campo ("Data de nascimento", "Código do computador", "Altura (cm)"), frases e dicas ("Tente outra palavra ou tire algum filtro."), textos de status com reticências ("Carregando…", "Aplicando…"), perguntas ("Como devemos te chamar?") e muitos botões antigos de entrada, Ajustes e Dispositivos ("Criar conta", "Copiar link", "Conectar este PC", "Convidar alguém", "Cancelar").
+9. **Caixa das iniciais (Title Case): botões de ação e títulos de tela ou de seção levam iniciais maiúsculas no app todo (decisão do dono); o resto fica em caixa de frase.**
+   - Title Case (iniciais maiúsculas, conectivos em minúscula: de, do, da, em, à, os, a, para, como) em: botões de ação e títulos de tela ou de seção, em todos os módulos (Entrada, Ajustes, Dispositivos, Compras e Treino); a TV segue a frente própria dela. Exemplos reais: "Tentar de Novo" (`apps/web/src/app/shared/ui/skeleton/loading-frame.ts:55`), "Nenhum Exercício Achado", "Limpar Filtros", "Mostrar Mais" (`apps/web/src/app/modules/training/exercises/library/library.page.html:141-172`), "Concluir Série", "Definir Como Padrão", "Capacidade em Risco", "Adicionar à Tela de Início", "Ver Todos os N Passos" (`apps/web/src/app/modules/training/exercises/detail/detail.page.html:86`), "Em Breve" (`apps/web/src/app/modules/home/home-soon-badge.ts:9`).
+   - Caixa de frase (só a primeira letra) em: rótulos de campo ("Data de nascimento", "Código do computador", "Altura (cm)"), frases e dicas ("Tente outra palavra ou tire algum filtro."), textos de status com reticências ("Carregando…", "Aplicando…"), perguntas ("Como devemos te chamar?") e botões de uma palavra ("Cancelar", "Continuar"). Botões de duas palavras ou mais usam Title Case ("Criar Conta", "Copiar Link", "Conectar Este PC", "Convidar Alguém").
    - `.ui-section-label` força MAIÚSCULAS por CSS (`apps/web/src/styles.css:318-326`): a caixa do texto-fonte não importa ali.
-   - A convenção não é uniforme (ex.: "Adicionar à Tela de Início" e "Atalho na tela de início" coexistem). Em tela nova do Treino, usar Title Case em títulos e botões; nas demais, seguir a vizinhança da tela.
+   - Tela nova: Title Case em títulos e botões; rótulos de campo, dicas e status em caixa de frase.
 10. **Estado nunca só por cor.** Cada fase de estado tem cor e forma próprias (ver 5.9).
 
 **Evitar:** subtítulos explicativos; slogan; título que quebra em duas linhas; tamanho de fonte fixo em título; cor hexadecimal fora da paleta; mais de uma ação primária; informação demais acima da dobra; alvo de toque menor que 44 px; animação longa ou com rebote.
@@ -122,9 +122,11 @@ Múltiplos de 4 (`apps/web/src/styles.css:26-33`).
 | `--radius-xs` | 8px | Esqueleto | `styles.css:36` |
 | `--radius-sm` | 12px | Ladrilho, campo de módulo, osso grande | `styles.css:37` |
 | `--radius` | 14px | Raio médio dos controles (botão, campo, aviso) | `styles.css:18` |
-| `--radius-lg` | 20px | Cartão e grupo (em Ajustes vira 14px: `apps/web/src/app/core/layout/app-shell.ts:76-79`) | `styles.css:38` |
+| `--radius-lg` | 20px | Cartão e grupo, inclusive em Ajustes | `styles.css:38` |
 | `--radius-xl` | 28px | Folha inferior, faixa da Início, cartão de entrada | `styles.css:39` |
 | `--radius-pill` | 999px | Chip, pílula, trilho | `styles.css:40` |
+
+Colunas com teto (3.10): `--col-read` 40rem e `--col-control` 36rem, em `styles.css`.
 
 ### 3.5 Tipografia
 
@@ -222,6 +224,21 @@ Diálogos e folhas usam a camada superior nativa do `<dialog>` modal, sem z-inde
 - Área segura de baixo, num lugar só: `--safe-inset: env(safe-area-inset-bottom, 0px)`, `--safe-floor: 0px` (8px no app instalado com ponteiro de toque), `--safe-bottom: max(var(--safe-inset), var(--safe-floor))`, `--kb-inset: 0px` (altura que o teclado virtual cobre; posto por `apps/web/src/app/core/layout/keyboard-inset.ts`). Todo rodapé, folha, aviso ou botão fixo embaixo usa `--safe-bottom`, nunca `env(safe-area-inset-bottom)` solto (`styles.css:52-62`, `248-253`). Exceção conhecida a corrigir: a folha de Créditos do Treino (`apps/web/src/app/modules/training/credits/credits.page.css:7-9`) usa `90dvh` e `env(safe-area-inset-bottom)` direto.
 - Laterais e topo: `max(var(--gutter), env(safe-area-inset-left|right))` e `env(safe-area-inset-top)` (`apps/web/src/app/shared/ui/page-top-bar.ts:51-57`, `styles.css:555-556`).
 
+### 3.10 Regra única de tamanho
+
+Uma regra só, usada por todas as telas. Ela vale para tela nova e para toda tela que for mexida; as outras entram quando forem tocadas (não há obra de uma vez).
+
+| Faixa de largura | Largura útil | Uso |
+| --- | --- | --- |
+| Estreito | até 359px | Telefones pequenos: nada pode quebrar nem encolher abaixo do alvo de toque |
+| Celular | 360px a 599px | Faixa de referência (iPhone 12 em 390px, Galaxy S23 FE em 411px) |
+| Largo | 600px ou mais | Tablet e computador: a coluna não estica |
+
+- **Altura:** "tela baixa" é menos de 560px úteis (a tela menos a barra do navegador e as bordas do aparelho). Nela o topo encolhe e a tela rola, em vez de espremer botão. A altura útil é uma só conta, feita num lugar e usada por TV, PC e Treino.
+- **Alvo de toque:** nunca menor que 44px (`--tap`). Texto e botões crescem com a tela até um teto.
+- **Coluna com teto, centrada:** leitura até `--col-read` (40rem, 640px); controles (TV e PC) até `--col-control` (36rem, 576px). Os dois são tokens em `styles.css`; use-os no lugar de `rem` solto.
+- Pontos de corte novos só nestas fronteiras (359/360 e 599/600 de largura; 560 de altura). Os cortes antigos (350, 520, 640, 700...) saem à medida que cada tela é tocada.
+
 ## 4. Layout
 
 **Alvos de verificação** (`apps/web/playwright.config.ts:26-39`):
@@ -242,7 +259,7 @@ O que cabe acima de 664 px de altura é o que se vê sem rolar: a hierarquia pre
 | Tela | Teto | Fonte |
 | --- | --- | --- |
 | Início | 46rem | `home-page.css:10` |
-| Ajustes, Dispositivos | 40rem | `apps/web/src/app/modules/settings/settings.page.css:10`, `devices.page.css:5` |
+| Ajustes, Dispositivos, Hoje do Treino | 40rem (`--col-read`) | `apps/web/src/app/modules/settings/settings.page.css:10`, `devices.page.css:5` |
 | Barra de ação fixa (conteúdo) | 40rem | `styles.css:565` |
 | Controle da TV | 36rem (60rem deitado) | `tv-page.css:19`, `386-391` |
 | Cartão de entrada | `min(100%, 26rem)` | `auth-layout.css:63-73` |
@@ -316,7 +333,7 @@ Rodapé de ação é `sticky` dentro da folha. Fechar: toque no fundo só vale s
 
 ### 5.6 Barra superior de módulo `app-page-top-bar`
 
-`apps/web/src/app/shared/ui/page-top-bar.ts:40-153`. Grade de 3 colunas `minmax(44px, 1fr) minmax(0, auto) minmax(44px, 1fr)` com `column-gap: 4px`: o título fica no centro real da tela mesmo sem ação. Altura mínima `calc(44px + 12px + 4px + env(safe-area-inset-top))`; padding superior `12px + inset`, laterais `max(--gutter, inset)`, embaixo 4px; fundo transparente. À esquerda, a seta de voltar (círculo 44px, ícone 22px, traço 2.2); ao centro `h1` de `1.35rem`, centrado, uma linha, reticências; à direita, ações em círculo ou pílula. Foco por código no `h1` (sem anel). A casca soma `padding-top: var(--gutter)` (`app-shell.ts:65-68`). O botão de Configurações existe só no topo da Início; nenhum módulo tem atalho para Ajustes (`app-shell.ts:34-35`).
+`apps/web/src/app/shared/ui/page-top-bar.ts:40-153`. Grade de 3 colunas `minmax(44px, 1fr) minmax(0, auto) minmax(44px, 1fr)` com `column-gap: 4px`: o título fica no centro real da tela mesmo sem ação. Altura mínima `calc(44px + 12px + 4px + env(safe-area-inset-top))`; padding superior `12px + inset`, laterais `max(--gutter, inset)`, embaixo 4px; fundo transparente. À esquerda, a seta de voltar (círculo 44px com fundo, ícone 22px, traço 2.2); ao centro `h1` de `1.35rem`, centrado, uma linha, reticências; à direita, as outras ações como ícones soltos (sem fundo nem contorno, alvo de 44px). Regra do topo: "voltar" é sempre o círculo com fundo; as outras ações são ícones soltos; "mais opções" é sempre o mesmo desenho de três pontos em pé (`dots`, no Treino). Foco por código no `h1` (sem anel). A casca soma `padding-top: var(--gutter)` (`app-shell.ts:65-68`). O botão de Configurações existe só no topo da Início; nenhum módulo tem atalho para Ajustes (`app-shell.ts:34-35`).
 
 ### 5.7 Barra de abas `app-tab-bar`
 
@@ -324,8 +341,8 @@ Rodapé de ação é `sticky` dentro da folha. Fechar: toque no fundo só vale s
 
 | Variante | Item | Ativo |
 | --- | --- | --- |
-| Padrão (`PC`) | Só texto, `min-height: 56px`, peso 600, `--a-ink2` | Texto `--a-accent` e borda superior 3px `--a-accent` |
-| `training` | Ícone 20px + rótulo `0.75rem`, `min-height: 64px`, coluna, sombra `0 -5px 18px` | Pílula de 64x30 `--a-accent-soft` atrás do ícone; o rótulo nunca some |
+| Só texto | Para abas sem ícone: `min-height: 56px`, peso 600, `--a-ink2` | Texto `--a-accent` e borda superior 3px `--a-accent` |
+| Ícone e nome (Treino e PC) | Vale para qualquer módulo cujas abas declaram `icon` (Treino: hoje, exercícios, progresso; PC: mouse, atalhos, mídia, mais): ícone 20px + rótulo `0.75rem`, `min-height: 64px`, coluna, sombra `0 -5px 18px` | Pílula de 64x30 `--a-accent-soft` atrás do ícone; o rótulo nunca some |
 
 Ativo marcado por `aria-current="page"`, calculado pelo caminho (`nested`, `also`).
 
@@ -343,11 +360,22 @@ Ativo marcado por `aria-current="page"`, calculado pelo caminho (`nested`, `also
 - **`.ui-dot`**: 8px, cor `currentColor` (`469-480`). Estado nunca só por cor: o ponto vem com texto ou forma.
 - **Ponto de estado do agente na Início**: 9px; `--a-ok`, `--a-warn`, `--a-ink3` (neutro); conectando usa `--a-accent` com halo leve de 1.8s (`home-page.css:98-126`); tem `role="status"` e rótulo.
 - **Ponto de estado da TV `app-status-dot`**: 24px (`1.5rem`), cada fase com cor e forma: conectada (cheio, `--a-ok`), dormindo (anel, `--dot-sleep`), conectando (alvo que pulsa, `--a-ok`), sem resposta (cheio com exclamação, `--a-warn`), agente desligado (anel com traço, `--a-ink3`), PC desligado (monitor dormindo, `--a-ink3`), sem rede (círculo cortado, `--a-bad`), atenção (exclamação, `--a-bad`) (`apps/web/src/app/modules/tv/ui/status-dot.css:55-93`, `status-dot.ts:6-14`). Pulso só sem movimento reduzido.
+- **Faixa de conexão do app (`app-connectivity-banner`)**: ponto de 10px à esquerda da linha; cheio e pulsando no tom de atenção enquanto o servidor acorda, vazado quando não há conexão.
 - **Pílula de estado do PC**: verde primeiro, estado antes de tudo; pronto usa `--a-ok-soft`/`--a-ok-ink`, desconectado usa ponto vazado (`apps/web/src/app/modules/pc/pc-page.css:15-60`).
 - **`.ui-notice`** (aviso em linha): tom por `--tone` (padrão `--a-accent`; `.ok`, `.warn`, `.bad`), fundo 10% do tom sobre `--a-surface`, borda 1px 32% do tom sobre `--a-line`, raio `--radius`, padding `--space-3 --space-4`, `--fs-small`, peso 600, texto em `--a-ink` (`611-636`). Variante de entrada: fundo 9%, borda 34%, ícone 22px (`auth-notice.css:1-40`).
 - **Toast / aviso passageiro**: não definido globalmente. Existe só na TV: fixo embaixo (`bottom: gutter + safe-bottom + kb-inset`), até 36rem, borda esquerda 4px `--a-accent` (`--a-bad` no erro), sombra `0 6px 20px rgb(0 0 0 / 0.18)`, entra por `@starting-style` (`tv-page.css:328-348`, `349-380`). Sem toque (`pointer-events: none`).
 
-### 5.10 Vazio e erro
+### 5.10 Os cinco estados: carregando, sem conexão, erro que passa, erro que bloqueia, vazio
+
+Uma forma por estado, igual em toda tela; a pessoa aprende uma vez.
+
+- **Carregando:** o desenho de espera da tela (`app-loading-frame` com `.ui-skeleton`).
+- **Sem conexão:** o ponto de estado (vazado, no tom de atenção) e uma linha curta; a faixa de topo do app (`app-connectivity-banner`) é o modelo. Com ação possível, a linha traz o botão "Tentar de Novo".
+- **Erro que passa:** aviso passageiro no mesmo lugar da tela (hoje só existe na TV), some sozinho ou ao toque.
+- **Erro que bloqueia:** caixa em linha (`.ui-notice.bad`) com o botão "Tentar de Novo"; é o único nome do botão de repetir (nada de "Tentar Novamente" nem "Tentar de novo").
+- **Vazio:** desenho, título curto e um botão.
+
+Vazio e erro, no detalhe:
 
 - Vazio: ícone ou desenho, título curto centrado (Title Case no Treino: "Nenhum Exercício Achado"), uma frase em caixa de frase com o próximo passo, e uma ação ("Limpar Filtros"). Exemplo: `library.page.html:141-146`. Na Início, vazio ocupa a linha toda (`home-page.css:246-248`).
 - Erro de leitura: frase curta ("O aparelho não conseguiu ler o catálogo.") e "Tentar de Novo" (`library.page.html:106-109`).
@@ -423,13 +451,13 @@ Inconsistências encontradas no código (reportar ao corrigir; o código atual m
 
 1. `--a-danger` é usado (com fallback `#a32929`) em nove arquivos e nunca é definido; renderiza vermelho fixo nos dois temas em vez de `--a-bad`. `check-css-vars` ignora usos com fallback. Ex.: `apps/web/src/app/modules/training/foods/food-diary.page.css:114`, `apps/web/src/app/modules/training/body/weight/weight-sheet.css:15`. O mesmo vale para `--a-accent` com fallback `#276749` (token existe; o fallback nunca vale).
 2. Osso do esqueleto de abertura `#d8e0d7` (`index.html:56`) difere de `--a-elev` `#e5ebe4` (`styles.css:6`).
-3. Raio da folha: `20px 20px 0 0` em `modules/pc/ui/confirm-sheet.css:11` e nas folhas de TV (`cleanup-sheet.css:11`, `power-sheet.css:11`); `--radius-xl` (28px) nas demais.
-4. Fundo atrás da folha: `rgb(0 0 0 / 0.45)` em `confirm-sheet.css:30`; `rgb(8 16 10 / 0.52)` nas demais (`pair-sheet.css:29`).
+3. (Resolvida) Raio e fundo atrás da folha agora são `--radius-xl` e `rgb(8 16 10 / 0.52)` também na confirmação do PC e nas folhas da TV.
+4. (Resolvida) Ver o item 3.
 5. Título da barra superior fixo em `1.35rem` (`page-top-bar.ts:148`), contra a regra de título fluido.
 6. Paleta escura duplicada (`styles.css:116-138` e `140-160`): alterar sempre os dois blocos.
 7. Dois serviços gravam `data-theme` (`ThemeService` e `AppearanceService`).
 8. `.ui-btn.secondary` só tem hover; no repouso é igual a `.ui-btn`.
 9. O fundo dos ícones de módulo da Início vem dos tokens `--a-module-app` e `--a-module-app-planned` do próprio ícone (`module-app-icon.ts`), com a mesma guarda da paleta do `styles.css`: o tema fixado no app vale mais que o do sistema.
 10. O manifesto aceita uma cor de barra só (`theme_color`, igual ao fundo claro); a cor por tema vem das `<meta name="theme-color">` do `index.html`. O Android instalado pode seguir só o manifesto na barra de navegação (sem fonte primária), então no tema escuro dessa barra o app não garante a cor. O indicador de início do iPhone não tem cor: mostra o que a página pinta atrás dele. Com o teclado aberto (`--kb-inset` ≥ 80 px) `--safe-bottom` vale 0, pela conta em `styles.css`.
-11. "Início" nomeia a tela inicial do app e também uma aba do Treino (`training.routes.ts:15`).
+11. (Parcial) A aba do Treino que se chamava "Início" agora se chama "Treino" (`training.routes.ts`). O título oculto da tela (`h2` em `today-home.html`) ainda diz "Início"; trocar pede acertar os testes que o procuram.
 12. Não há toast global nem tokens de z-index e de breakpoint.

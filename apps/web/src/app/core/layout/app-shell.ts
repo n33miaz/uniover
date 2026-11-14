@@ -43,7 +43,6 @@ const HOME_BACK: ShellBack = {
     }
     <main
       [class.no-header]="!data().title"
-      [class.settings-main]="data().settings"
       [class.training-main]="data().shellStyle === 'training'"
     >
       <router-outlet />
@@ -72,10 +71,6 @@ const HOME_BACK: ShellBack = {
     /* Sem cabeçalho (Início) o conteúdo começa abaixo da área segura do aparelho. */
     main.no-header {
       padding-top: calc(var(--gutter) + env(safe-area-inset-top));
-    }
-    /* Em Ajustes (e nas telas dentro dele) os cartões têm o canto do controle da TV, não o do cartão grande. */
-    main.settings-main {
-      --radius-lg: var(--radius);
     }
     main.training-main {
       padding: 0;
