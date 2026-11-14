@@ -822,6 +822,11 @@ tarefa que o recebeu: o que ele deixa rodando em segundo plano não a herda.
   (senão ele gera outra e a TV pergunta de novo); a chave inválida fica em `adbkey.invalido`. Uma chave válida e
   diferente nunca é sobrescrita. O resumo da chave é tirado **antes** de conectar: se o `adbkey` mudar no meio
   (o Android Studio mexe nele), nada é registrado nem guardado em nome da chave errada.
+- **Sonda silenciosa (ainda não ligada ao agente).** `adapters/adb_silent_probe.py` pode consultar a porta TCP
+  5555 com o mesmo `~/.android/adbkey` (`AdbKeys.key_path`): manda `CNXN` e, se a TV devolver um token, apenas a
+  assinatura `AUTH` tipo 2. Se a assinatura for recusada, fecha a conexão; **nunca** envia `AUTH` tipo 3
+  (`RSAPUBLICKEY`), que é o pacote que abriria o aviso na TV. Quem a integrar deve chamar
+  `AdbAuthorization.prepare()` antes de carregar a chave; por enquanto nenhum fluxo a chama.
 - **O registro e a identidade da TV.** `tv/<tv>/adb-authorization.json` guarda, por TV, o estado (`granted`,
   `verified` ou `needs_user`), o resumo da chave, o endereço e a porta, o **MAC** (tabela ARP, sem ADB: um TCP
   aberto e fechado na porta 5555 popula a tabela e não inicia aperto de mão) e o serial do aparelho. O agente só
