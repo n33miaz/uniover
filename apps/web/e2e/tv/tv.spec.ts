@@ -2564,7 +2564,9 @@ for (const screen of SCREENS) {
 
       const ring = (await page.locator('.ring').boundingBox())!;
       const stage = (await page.locator('.viewport').boundingBox())!;
-      expect(ring.width).toBeGreaterThanOrEqual(0.8 * Math.min(stage.width, stage.height));
+      // Em tela larga (640 px ou mais) o direcional para em 360 px; no celular ele segue o palco.
+      const cap = screen.width >= 640 ? 360 : Number.POSITIVE_INFINITY;
+      expect(ring.width).toBeGreaterThanOrEqual(0.8 * Math.min(stage.width, stage.height, cap));
       await screenshot(page, `test-results/tv-control-${screen.name}-${info.project.name}.png`);
       await expectNoSeriousViolations(page);
     });
