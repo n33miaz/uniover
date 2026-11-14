@@ -1,0 +1,35 @@
+name: Diag tv devices
+
+# Temporário: acha o teste que trava na partição tv-devices. Sai antes do merge.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/diag-tv.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    name: diag (${{ matrix.ns }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ns: ["UniOver.IntegrationTests.Tv*", "UniOver.IntegrationTests.Devices*"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: apps/api/global.json
+      - name: Testar
+        working-directory: apps/api
+        env:
+          NS: ${{ matrix.ns }}
+        run: >-
+          dotnet test --project tests/UniOver.IntegrationTests/UniOver.IntegrationTests.csproj
+          --output Detailed --hangdump --hangdump-timeout 6m --hangdump-type Mini
+          --filter-namespace "$NS" 2>&1 | tee ../../diag.log; exit "${PIPESTATUS[0]}"
