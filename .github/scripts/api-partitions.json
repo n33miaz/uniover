@@ -1,11 +1,30 @@
 {
   "project": "tests/UniOver.IntegrationTests/UniOver.IntegrationTests.csproj",
   "parts": [
-    { "name": "training", "namespaces": ["UniOver.IntegrationTests.Training*"] },
-    { "name": "identity", "namespaces": ["UniOver.IntegrationTests.Identity*"] },
     {
-      "name": "tv-devices",
-      "namespaces": ["UniOver.IntegrationTests.Tv*", "UniOver.IntegrationTests.Devices*"]
+      "name": "training",
+      "namespaces": ["UniOver.IntegrationTests.Training*"]
+    },
+    {
+      "name": "identity",
+      "namespaces": ["UniOver.IntegrationTests.Identity*"]
+    },
+    { "name": "tv", "namespaces": ["UniOver.IntegrationTests.Tv*"] },
+    {
+      "name": "pc-control",
+      "namespaces": ["UniOver.IntegrationTests.Devices.PcControl*"]
+    },
+    {
+      "name": "devices",
+      "namespaces": [
+        "UniOver.IntegrationTests.Devices",
+        "UniOver.IntegrationTests.Devices.Beacons*",
+        "UniOver.IntegrationTests.Devices.ClientEvents*",
+        "UniOver.IntegrationTests.Devices.Diagnostics*",
+        "UniOver.IntegrationTests.Devices.Pairing*",
+        "UniOver.IntegrationTests.Devices.RemoteCare*",
+        "UniOver.IntegrationTests.Devices.Transport*"
+      ]
     }
   ]
 }
