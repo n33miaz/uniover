@@ -61,6 +61,8 @@ jobs:
   # qualquer namespace novo) e é ela quem compila a solução inteira com avisos como erro e confere, antes de testar, que
   # as partes somam a suíte inteira. As outras compilam só o que o projeto de integração puxa: um artefato de build
   # compartilhado custaria mais (subir e baixar ~100 MB por parte) do que os ~50 s que cada parte gasta compilando.
+  # TV e Devices já foram uma parte só (~920 testes, ~24 min somados no GitHub) e batiam no teto de 20 min em toda rodada;
+  # hoje são três de tamanho parecido (~7 a 10 min de teste cada): tv, pc-control e o resto de devices.
   api:
     name: api (${{ matrix.name }})
     needs: plan

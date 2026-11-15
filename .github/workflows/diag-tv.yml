@@ -1,6 +1,7 @@
 name: Diag tv devices
 
-# Temporário: acha o teste que trava na partição tv-devices. Sai antes do merge.
+# Temporário: mede, com o tempo de cada teste, as partes que saíram da antiga tv-devices (que não travava: era grande demais
+# para o teto de 20 min). Usa as mesmas partes do nightly.yml (api-partitions.json). Sai antes do merge.
 on:
   pull_request:
     paths:
@@ -11,13 +12,13 @@ permissions:
 
 jobs:
   diag:
-    name: diag (${{ matrix.ns }})
+    name: diag (${{ matrix.part }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        ns: ["UniOver.IntegrationTests.Tv*", "UniOver.IntegrationTests.Devices*"]
+        part: [tv, pc-control, devices]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,8 +29,10 @@ jobs:
       - name: Testar
         working-directory: apps/api
         env:
-          NS: ${{ matrix.ns }}
-        run: >-
-          dotnet test --project tests/UniOver.IntegrationTests/UniOver.IntegrationTests.csproj
-          --output Detailed --hangdump --hangdump-timeout 6m --hangdump-type Mini
-          --filter-namespace "$NS" 2>&1 | tee ../../diag.log; exit "${PIPESTATUS[0]}"
+          PART: ${{ matrix.part }}
+        run: |
+          mapfile -t patterns < <(jq -r --arg n "$PART" '.parts[] | select(.name == $n) | .namespaces[]' ../../.github/scripts/api-partitions.json)
+          if [ "${#patterns[@]}" -eq 0 ]; then echo "::error::a parte \"$PART\" não existe em api-partitions.json."; exit 1; fi
+          dotnet test --project tests/UniOver.IntegrationTests/UniOver.IntegrationTests.csproj \
+            --output Detailed --hangdump --hangdump-timeout 6m --hangdump-type Mini \
+            --filter-namespace "${patterns[@]}" 2>&1 | tee ../../diag.log; exit "${PIPESTATUS[0]}"
