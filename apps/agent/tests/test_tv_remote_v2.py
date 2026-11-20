@@ -28,6 +28,7 @@ from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_remote_v2 import (
     DIRECTIONS,
     KEY_CODES,
+    STANDBY_KEY,
     AndroidTvRemoteV2,
     RemoteClient,
     _install_text_field_hook,
@@ -429,6 +430,20 @@ async def test_the_edit_key_that_erases_goes_on_the_wire_as_the_androids_del(
             await adapter.disconnect()
     assert [code for code, _ in server.keys] == [RemoteKeyCode.Value("KEYCODE_DEL")]
     assert "DEL" not in KEY_CODES
+
+
+async def test_the_standby_key_goes_on_the_wire_as_the_androids_sleep(tmp_path: Path) -> None:
+    # Só o agente a usa, depois de um POWER sem efeito: `KEYCODE_SLEEP` não liga uma TV dormindo.
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            await adapter.send_key(STANDBY_KEY)
+            await eventually(lambda: len(server.keys) == 1)
+        finally:
+            await adapter.disconnect()
+    assert [code for code, _ in server.keys] == [RemoteKeyCode.Value("KEYCODE_SLEEP")]
+    assert STANDBY_KEY not in KEY_CODES
 
 
 async def test_the_typing_keys_go_on_the_wire_as_the_androids_letter_and_punctuation_keys(

@@ -26,6 +26,8 @@ from uniover_agent.core.tv.session import (
 )
 from uniover_agent.ports import TvNotPaired, TvUnreachable
 
+STANDBY = "STANDBY"
+
 
 class TurnsOffOnPower(FakeTvRemote):
     """A TV que, ao receber `POWER`, avisa que desligou (a sessão segue aberta)."""
@@ -44,6 +46,15 @@ class DropsOnPower(FakeTvRemote):
         if key == "POWER":
             self.connect_errors = [TvUnreachable("sem resposta") for _ in range(100)]
             self.drop()
+
+
+class IgnoresPowerButSleeps(FakeTvRemote):
+    """A TV que não reage a `POWER` (nem ao do controle físico) e dorme com a tecla de dormir."""
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        await super().send_key(key, direction)
+        if key == STANDBY:
+            self.push_power(False)
 
 
 class FailsToSend(FakeTvRemote):
@@ -68,6 +79,7 @@ class Rig:
         on: bool | None = True,
         liveness: Callable[[], Awaitable[bool]] | None = None,
         power_reader: Callable[[], Awaitable[bool | None]] | None = None,
+        standby_key: str | None = None,
     ) -> None:
         self.clock = FakeClock()
         self.remote = remote
@@ -83,6 +95,7 @@ class Rig:
             liveness=liveness,
             wake_on_lan=wake_on_lan,
             power_reader=power_reader,
+            standby_key=standby_key,
         )
         self.report(on)
         keys = tv_key_handler(self.manager)
@@ -292,6 +305,44 @@ async def test_the_session_dropping_after_the_key_is_uncertain_when_the_tv_still
 async def test_the_session_dropping_after_the_key_is_uncertain_without_a_network_check() -> None:
     rig = Rig(DropsOnPower())
     assert await rig.manager.power_off() is PowerOffResult.UNCERTAIN
+
+
+# --- a TV que não reage a POWER: a tecla de dormir, que nunca liga a TV ----------------------------
+
+
+async def test_power_ignored_then_the_sleep_key_turns_the_tv_off() -> None:
+    # O caso de 20/11: o POWER saiu, a TV seguiu ligada e não avisou nada. A tecla de dormir não é
+    # interruptor (com a TV já dormindo não faz nada), então mandá-la uma vez não pode religar a TV.
+    rig = Rig(IgnoresPowerButSleeps(), standby_key=STANDBY)
+    assert await rig.manager.power_off() is PowerOffResult.OFF
+    assert rig.remote.keys == ["POWER", STANDBY]
+    assert rig.wol_calls == 0
+
+
+async def test_power_and_sleep_both_ignored_is_uncertain_and_nothing_is_repeated() -> None:
+    rig = Rig(FakeTvRemote(), standby_key=STANDBY)
+    assert await rig.manager.power_off() is PowerOffResult.UNCERTAIN
+    assert await rig.manager.power_off() is PowerOffResult.UNCERTAIN
+    assert rig.remote.keys == ["POWER", STANDBY]
+
+
+async def test_a_confirmed_power_never_sends_the_sleep_key() -> None:
+    rig = Rig(TurnsOffOnPower(), standby_key=STANDBY)
+    assert await rig.manager.power_off() is PowerOffResult.OFF
+    assert rig.remote.keys == ["POWER"]
+
+
+async def test_the_sleep_key_is_not_sent_when_the_session_dropped_after_power() -> None:
+    # A sessão caiu e a TV ainda atende: incerto, sem outra tecla numa conexão nova.
+    rig = Rig(DropsOnPower(), liveness=always_alive(), standby_key=STANDBY)
+    assert await rig.manager.power_off() is PowerOffResult.UNCERTAIN
+    assert rig.remote.keys == ["POWER"]
+
+
+async def test_without_a_sleep_key_the_driver_gets_only_power() -> None:
+    rig = Rig(IgnoresPowerButSleeps())
+    assert await rig.manager.power_off() is PowerOffResult.UNCERTAIN
+    assert rig.remote.keys == ["POWER"]
 
 
 # --- driver que só lê a energia ao abrir a sessão (Samsung) --------------------------------------

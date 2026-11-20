@@ -154,6 +154,7 @@ class TvSessionManager:
         volume_reader: Callable[[], Awaitable[int | None]] | None = None,
         offline_summary_seconds: float = OFFLINE_SUMMARY_SECONDS,
         power_reader: Callable[[], Awaitable[bool | None]] | None = None,
+        standby_key: str | None = None,
         power_off_read_timeout_seconds: float = DEFAULT_POWER_OFF_READ_TIMEOUT_SECONDS,
         power_off_confirmation_timeout_seconds: float = (
             DEFAULT_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS
@@ -178,6 +179,9 @@ class TvSessionManager:
         # Consulta de energia na hora, para o driver que só informa o estado ao abrir a sessão (a
         # Samsung). Sem ela vale o aviso que a TV empurra na conexão atual (a Android).
         self._power_reader = power_reader
+        # A tecla do driver que põe a TV em espera sem ser interruptor (Android: `KEYCODE_SLEEP`).
+        # Sem ela (Samsung) o desligamento só tem o `POWER`.
+        self._standby_key = standby_key
         self._power_off_read_timeout_seconds = power_off_read_timeout_seconds
         self._power_off_confirmation_timeout_seconds = power_off_confirmation_timeout_seconds
         self._certificate_refusals_needed = certificate_refusals_needed
@@ -447,8 +451,36 @@ class TvSessionManager:
         self._expect_off = True
         if await self._confirm_off(generation, before):
             return PowerOffResult.OFF
+        if await self._standby_once(generation):
+            return PowerOffResult.OFF
         _log.info("POWER enviado, mas a TV não confirmou o desligamento; não repito a tecla")
         return PowerOffResult.UNCERTAIN
+
+    async def _standby_once(self, generation: int) -> bool:
+        """Depois de um `POWER` sem efeito visível: a tecla de dormir, uma vez, na mesma conexão.
+
+        Há TV que deixa de atender o `POWER` (nem o do controle físico) e segue ligada, avisando
+        "ligada" pela sessão. A tecla de dormir não é interruptor: se o `POWER` chegou tarde e a
+        TV já está desligando, ela não faz nada; por isso enviá-la não arrisca religar a TV. Só vale
+        com a sessão desta mesma conexão ainda aberta (a TV seguiu ligada e na rede).
+        """
+        key = self._standby_key
+        if key is None or generation != self._connection_generation or not self._is_hot():
+            return False
+        before = self._power_sequence
+        _log.info("a TV não confirmou o POWER; envio a tecla de dormir (não liga a TV) uma vez")
+        try:
+            await self._remote.send_key(key, "SHORT")
+        except TvChannelError:
+            self._channel_lost()
+            return False
+        except Exception:
+            _log.exception("falha ao enviar a tecla de dormir para desligar a TV")
+            return False
+        if await self._confirm_off(generation, before):
+            _log.info("a TV dormiu com a tecla de dormir depois do POWER sem efeito")
+            return True
+        return False
 
     async def _read_power(self, generation: int) -> bool | None:
         """Energia agora, na conexão `generation`; `None` (nunca evidência) se não deu a tempo."""
