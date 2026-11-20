@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.74.0](https://github.com/n33miaz/uniover/compare/v0.73.1...v0.74.0) (2026-11-20)
+
+
+### Devices 0.67.0
+
+#### Features
+
+* **pc:** measure live screen latency
+
+
+### Web 0.71.0
+
+#### Features
+
+* **pc:** measure live screen latency
+
+
+### Agent 0.62.0
+
+#### Features
+
+* **pc:** measure live screen latency
+
+#### Bug Fixes
+
+* **pc:** replace screen session cleanly
+
 ## [0.73.1](https://github.com/n33miaz/uniover/compare/v0.73.0...v0.73.1) (2026-11-20)
 
 
