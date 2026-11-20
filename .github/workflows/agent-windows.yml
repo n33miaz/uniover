@@ -32,9 +32,9 @@ jobs:
   agent-windows:
     name: agent-windows
     runs-on: windows-latest
-    # A suíte inteira no Windows já passa de 25 minutos (testes reais de PowerShell e do supervisor); o teto existe para um
-    # teste travado não prender o runner.
-    timeout-minutes: 50
+    # A suíte inteira roda em 4 processos (o runner tem 4 vCPUs) e leva perto de 10 minutos; o teto existe para um teste
+    # travado não prender o runner.
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: apps/agent
@@ -49,20 +49,18 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/agent/uv.lock
       - run: uv sync --locked
-      - name: Testes do lançador, do supervisor e do instalador (nenhum pode ser pulado)
+      # Uma passada só da suíte inteira, com cobertura. Os testes do supervisor e do lançador esperam por processos reais
+      # do PowerShell (pouca CPU, muito relógio), por isso rodam em paralelo. `--dist loadfile` deixa cada arquivo inteiro
+      # num processo só e em sequência. Só o arquivo da baliza abre POSTs de baliza e só o da tarefa agendada registra
+      # tarefas "UniOver teste"; como esses testes contam o que existe na máquina inteira, dois deles ao mesmo tempo se
+      # enxergariam. Os mutex do supervisor e do lançador levam a pasta da instalação, que é a temporária de cada teste.
+      - name: Suíte inteira do agente (os testes do lançador, do supervisor e do instalador não podem ser pulados)
         run: |
-          $files = @(
-            'tests/test_launcher_recovery.py',
-            'tests/test_run_agent_state.py',
-            'tests/test_run_agent_sync.py',
-            'tests/test_installer_swap.py',
-            'tests/test_windows_installer.py',
-            'tests/test_scheduled_task.py'
-          )
-          $output = uv run pytest -q --no-cov -rs -p no:cacheprovider @files 2>&1 | Out-String
-          Write-Host $output
-          if ($LASTEXITCODE -ne 0) { throw 'testes do Windows falharam' }
-          # No Windows eles têm de rodar: pular aqui seria o mesmo que não ter o job.
-          if ($output -match 'SKIPPED') { throw 'testes que só rodam no Windows foram pulados' }
-      - name: Suíte inteira do agente
-        run: uv run pytest -rs
+          uv run pytest -rs -p no:cacheprovider -n 4 --dist loadfile --durations=30 2>&1 | Tee-Object -Variable lines
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "a suíte do agente falhou (código $code)" }
+          # No Windows eles têm de rodar: pular aqui seria o mesmo que não ter o job. Os outros pulos da suíte (permissão
+          # do POSIX, ensaio visual opt-in) continuam permitidos.
+          $windowsOnly = 'test_launcher_recovery|test_run_agent_state|test_run_agent_sync|test_installer_swap|test_windows_installer|test_scheduled_task'
+          $skipped = $lines | Where-Object { "$_" -match "^SKIPPED \[\d+\] tests[/\x5C]($windowsOnly)\.py" -or "$_" -match '^SKIPPED .*precisa do Windows' }
+          if ($skipped) { throw ("testes que só rodam no Windows foram pulados:`n" + ($skipped -join "`n")) }
