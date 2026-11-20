@@ -5,6 +5,8 @@ import { StepUpError, StepUpService } from './step-up.service';
 /** Texto de cada ação perigosa conhecida; o que não está aqui recebe uma frase genérica. */
 export function actionLabel(action: string | null): string {
   switch (action) {
+    case 'devices.pc-power':
+      return $localize`:@@auth.step-up.action.pc-power:desligar ou reiniciar o PC, ou encerrar a sessão do Windows`;
     case 'devices.pair-approve':
       return $localize`:@@auth.step-up.action.pair-approve:aprovar o pareamento de um aparelho`;
     case 'identity.passkey-remove':

@@ -125,7 +125,8 @@ class PcPower(Protocol):
         ...
 
     def shutdown(self, delay_seconds: int) -> None:
-        """Agenda o desligamento com a contagem do Windows (aviso na tela do PC)."""
+        """Agenda o desligamento com uma contagem cancelável no agente; ao fim, pede ao Windows sem
+        forçar o fechamento dos programas."""
         ...
 
     def cancel_shutdown(self) -> None:
@@ -133,8 +134,8 @@ class PcPower(Protocol):
         ...
 
     def restart(self, delay_seconds: int) -> None:
-        """Agenda o reinício com a contagem do Windows (aviso na tela do PC); `cancel_shutdown` o
-        cancela."""
+        """Agenda o reinício com uma contagem cancelável no agente (`cancel_shutdown`); ao fim, pede
+        ao Windows sem forçar o fechamento dos programas."""
         ...
 
     def hibernation_available(self) -> bool:

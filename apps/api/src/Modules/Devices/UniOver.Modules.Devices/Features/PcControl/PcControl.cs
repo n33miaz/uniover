@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -764,6 +765,9 @@ internal static class PcControlEndpoints
 {
     private static readonly string ModulePolicy = AccessPermissions.Policy(AccessPermissions.PcModule);
 
+    /// <summary>A confirmação recente que desligar, reiniciar e encerrar a sessão do PC pedem ao dono.</summary>
+    public const string PowerStepUpAction = "devices.pc-power";
+
     /// <summary>Mapeia as rotas do controle do PC em <c>/api/v1/pc</c>. Todas pedem a permissão <c>module:pc</c> (o dono tem todas).</summary>
     public static void MapPcControl(this IEndpointRouteBuilder endpoints)
     {
@@ -1113,7 +1117,8 @@ internal static class PcControlEndpoints
     }
 
     private static async Task<IResult> PowerAsync(
-        PcPowerRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+        PcPowerRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler,
+        IAuthorizationService authorization, CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId)
         {
@@ -1127,6 +1132,21 @@ internal static class PcControlEndpoints
         }
 
         var name = request!.Action!;
+        // Desligar, reiniciar e encerrar a sessão fecham o trabalho aberto: o dono confirma com a passkey há pouco, antes de
+        // qualquer coisa ir ao agente. O convidado não tem passkey e só alcança o próprio PC; segue com a confirmação na folha.
+        if (name is ("SHUTDOWN" or "RESTART" or "LOGOFF") && AccountRoles.Of(http.User) == AccountRoles.Owner)
+        {
+            var result = await authorization.AuthorizeAsync(http.User, http, StepUp.Policy(PowerStepUpAction));
+            if (!result.Succeeded)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Esta ação precisa da confirmação com a passkey.",
+                    type: ProblemDetailsExtensions.TypeBase + StepUp.RequiredProblemType,
+                    extensions: new Dictionary<string, object?> { ["code"] = StepUp.RequiredCode, ["action"] = PowerStepUpAction });
+            }
+        }
+
         var auditEvent = PowerAuditEvent(PcMessages.PowerV2Actions[name]);
         // A v1 sempre que a ação cabe nela (um agente anterior à v2 segue funcionando); só as quatro novas pedem a capacidade, e sem ela o
         // pedido volta como 409 pc-key-unsupported sem enviar nada. Hibernar pede a sua própria: o agente só a declara com a hibernação

@@ -8,6 +8,7 @@ testes montarem o agente) e recusam com `PcUnsupported`. Os eventos já chegam p
 import logging
 import ntpath
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -113,8 +114,6 @@ def _start_timer(delay: float, callback: Callable[[], None]) -> _Cancelable:
 
 KeyProbe = Callable[[int], bool]
 _UNSUPPORTED = "o controle do PC só existe no Windows"
-_SHUTDOWN_NOTICE = "O UniOver vai desligar este computador. Para cancelar: shutdown /a"
-_RESTART_NOTICE = "O UniOver vai reiniciar este computador. Para cancelar: shutdown /a"
 
 
 def _refuse_unsupported(*_args: object) -> NoReturn:
@@ -680,10 +679,6 @@ class WindowsPcInput:
             self._sync_timer()
 
 
-# `ERROR_NO_SHUTDOWN_IN_PROGRESS`: o `shutdown /a` não tinha contagem para cancelar.
-_NO_SHUTDOWN_IN_PROGRESS = 1116
-
-
 def _run_shutdown(arguments: list[str]) -> int:
     """Roda o `shutdown.exe` e devolve o código de saída: quem chama decide o que é falha."""
     if sys.platform != "win32":
@@ -706,6 +701,9 @@ class WindowsPcPower:
         monitor_off: Callable[[], bool] | None = None,
     ) -> None:
         self._run = run or _run_shutdown
+        self._can_schedule = run is not None or sys.platform == "win32"
+        self._power_lock = threading.Lock()
+        self._pending: threading.Timer | None = None
         windows = sys.platform == "win32"
         self._lock = lock or (_lock_workstation if windows else _refuse_unsupported)
         self._suspend = suspend or (_suspend if windows else _refuse_unsupported)
@@ -723,15 +721,34 @@ class WindowsPcPower:
             raise OSError("o Windows não conseguiu suspender")
 
     def shutdown(self, delay_seconds: int) -> None:
-        code = self._run(["/s", "/t", str(max(10, delay_seconds)), "/c", _SHUTDOWN_NOTICE])
-        if code != 0:
-            # Política, UAC ou erro do Windows: não pode virar "feito" nem auditoria de sucesso.
-            raise OSError(f"o Windows recusou agendar o desligamento (código {code})")
+        self._schedule("/s", delay_seconds)
 
     def restart(self, delay_seconds: int) -> None:
-        code = self._run(["/r", "/t", str(max(10, delay_seconds)), "/c", _RESTART_NOTICE])
-        if code != 0:
-            raise OSError(f"o Windows recusou agendar o reinício (código {code})")
+        self._schedule("/r", delay_seconds)
+
+    def _schedule(self, action: str, delay_seconds: int) -> None:
+        if not self._can_schedule:
+            raise PcUnsupported(_UNSUPPORTED)
+
+        def request_power() -> None:
+            with self._power_lock:
+                if self._pending is not timer:
+                    return
+                self._pending = None
+            try:
+                code = self._run([action, "/t", "0"])
+                if code != 0:
+                    _log.error("O Windows recusou a ação de energia %s (código %d).", action, code)
+            except OSError, subprocess.TimeoutExpired:
+                _log.exception("Falha ao pedir a ação de energia %s ao Windows.", action)
+
+        with self._power_lock:
+            if self._pending is not None:
+                raise OSError("já há uma ação de energia agendada")
+            timer = threading.Timer(max(10, delay_seconds), request_power)
+            timer.daemon = True
+            self._pending = timer
+            timer.start()
 
     def hibernation_available(self) -> bool:
         return self._hibernation()
@@ -752,10 +769,12 @@ class WindowsPcPower:
             raise OSError("o Windows não conseguiu apagar o monitor")
 
     def cancel_shutdown(self) -> None:
-        code = self._run(["/a"])
-        # Sem contagem em andamento não é erro (já não há desligamento pendente); o resto é.
-        if code not in (0, _NO_SHUTDOWN_IN_PROGRESS):
-            raise OSError(f"o Windows recusou cancelar o desligamento (código {code})")
+        if not self._can_schedule:
+            raise PcUnsupported(_UNSUPPORTED)
+        with self._power_lock:
+            if self._pending is not None:
+                self._pending.cancel()
+                self._pending = None
 
 
 def _start_file(target: str) -> None:
