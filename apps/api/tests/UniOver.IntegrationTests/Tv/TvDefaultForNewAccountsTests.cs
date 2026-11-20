@@ -2,10 +2,14 @@ using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 
@@ -13,8 +17,8 @@ namespace UniOver.IntegrationTests.Tv;
 
 /// <summary>
 /// A TV padrão do dono deixa de ser o padrão de toda conta sem filiação. Só a segue a conta antiga (marca gravada pela migration
-/// do Identity) e a conta que ganhou o módulo da TV (aviso da outbox do Identity, que o módulo TV transforma em marca). A conta
-/// nova sem nada disso não vê TV nenhuma e recebe 404 nas rotas da TV padrão, como para uma TV que não existe.
+/// do Identity) e a conta com a concessão vigente do módulo da TV (lida no Identity na hora, e também materializada como marca
+/// pelo aviso da outbox). A conta retirada da TV não a vê e recebe 404, como para uma TV que não existe.
 /// </summary>
 [Collection(PostgresGroup.Name)]
 public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
@@ -77,16 +81,53 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task NewAccountWithoutTheMark_SeesNoTv_AndTheDefaultTvAnswers404()
+    public async Task FirstRequestRightAfterTheInvite_SeesTheDefaultTv_EvenWithTheConsumerSuspended()
+    {
+        // Sem o consumidor, o aviso nunca vira marca: é a janela antes da entrega e também o aviso que foi para dead letter.
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { ConfigureServices = SuspendTheConsumer });
+        var defaultTvId = await DefaultTvIdAsync(app);
+
+        var (_, token) = await GuestSeed.InsertInviteAsync(app.Database, app.Time.GetUtcNow(), "Apressada");
+        using var accepted = await GuestSeed.AcceptAsync(app.Client, token, GuestSeed.NewEmail(), GuestSeed.NewPassword(), forwardedFor: "203.0.113.75");
+        var login = await GuestSeed.ReadLoginAsync(accepted);
+
+        // Logo depois do aceite, com o token que ele devolveu: a concessão vigente basta.
+        (await VisibleTvsAsync(app, login.AccessToken)).Should().Equal(defaultTvId);
+        using var state = await app.GetAsync($"/api/v1/tv/state?tvId={defaultTvId}", bearer: login.AccessToken);
+        ReachedTheTv(state.StatusCode).Should().BeTrue();
+
+        await using var db = app.Db();
+        (await db.TvDefaultFollowers.AnyAsync(Ct)).Should().BeFalse("o consumidor estava suspenso");
+    }
+
+    [Fact]
+    public async Task FirstRequestAfterTheOwnerAddsTheTv_SeesTheDefaultTv_EvenWithTheConsumerSuspended()
+    {
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { ConfigureServices = SuspendTheConsumer });
+        var defaultTvId = await DefaultTvIdAsync(app);
+        var guest = await app.NewGuestAsync("Treino depois TV", OnlyTraining, 76);
+
+        await AddTheTvModuleAsync(app, guest.UserId);
+
+        (await FollowsDefaultAsync(app, guest.UserId)).Should().BeFalse("o consumidor estava suspenso");
+        (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().Equal(defaultTvId);
+    }
+
+    [Fact]
+    public async Task NewAccountRemovedFromTheDefaultTv_SeesNoTv_AndTheDefaultTvAnswers404_DespiteTheGrant()
     {
         await using var app = await TvApp.StartAsync(postgres);
         var defaultTvId = await DefaultTvIdAsync(app);
-        var guest = await app.NewGuestAsync("Sem marca", null, 72);
+        var guest = await app.NewGuestAsync("Retirada", null, 72);
 
-        // O instante antes de o aviso chegar (ou uma conta que nunca recebeu o módulo): sem filiação, sem marca, e não é antiga.
-        await using (var db = app.Db())
+        // O dono a coloca na TV padrão e depois a tira: fica a marca de retirada, que vence a concessão e a marca de seguidor.
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterOwnerPasskeyAsync(authenticator);
+        await app.ConfirmOwnerActionAsync(authenticator, "tv.bind-agent");
+        foreach (var members in new[] { new[] { guest.UserId }, Array.Empty<Guid>() })
         {
-            await db.TvDefaultFollowers.Where(f => f.UserId == guest.UserId).ExecuteDeleteAsync(Ct);
+            using var put = await app.SendAsync(HttpMethod.Put, $"/api/v1/tv/tvs/{defaultTvId}/members", new { userIds = members });
+            put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(Ct));
         }
 
         (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().BeEmpty();
@@ -113,15 +154,7 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
 
         (await FollowsDefaultAsync(app, guest.UserId)).Should().BeFalse();
 
-        using var authenticator = new VirtualAuthenticator();
-        await app.RegisterOwnerPasskeyAsync(authenticator);
-        await app.ConfirmOwnerActionAsync(authenticator, "identity.permissions-change");
-        using (var put = await app.SendAsync(
-                   HttpMethod.Put, $"/api/v1/identity/guests/{guest.UserId}/permissions", new { permissions = TrainingAndTv }))
-        {
-            put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(Ct));
-        }
-
+        await AddTheTvModuleAsync(app, guest.UserId);
         await GuestSeed.WaitForIdentityOutboxAsync(app.Database);
         (await FollowsDefaultAsync(app, guest.UserId)).Should().BeTrue("o módulo da TV acrescentado depois tem o mesmo efeito do convite");
         (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().Equal(defaultTvId);
@@ -148,6 +181,20 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
         // A conta criada depois da migration não herda a marca.
         var newcomer = await app.NewGuestAsync("Depois", null, 74);
         (await PredatesModuleInvitesAsync(app, newcomer.UserId)).Should().BeFalse();
+    }
+
+    /// <summary>Tira o consumidor do aviso do Identity: o evento é entregue sem ninguém para gravar a marca de seguidor.</summary>
+    private static void SuspendTheConsumer(IServiceCollection services) =>
+        services.RemoveAll<IIntegrationEventHandler<GuestModulesGranted>>();
+
+    private static async Task AddTheTvModuleAsync(TvApp app, Guid guestId)
+    {
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterOwnerPasskeyAsync(authenticator);
+        await app.ConfirmOwnerActionAsync(authenticator, "identity.permissions-change");
+        using var put = await app.SendAsync(
+            HttpMethod.Put, $"/api/v1/identity/guests/{guestId}/permissions", new { permissions = TrainingAndTv });
+        put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(Ct));
     }
 
     private static async Task SeedTheOldAccountAsync(IdentityDbContext context)

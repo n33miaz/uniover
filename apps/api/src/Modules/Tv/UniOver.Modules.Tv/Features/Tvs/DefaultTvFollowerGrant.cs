@@ -10,8 +10,8 @@ namespace UniOver.Modules.Tv.Features.Tvs;
 
 /// <summary>
 /// A conta de convidado ganhou o módulo da TV (aceite do convite de conta, ou o administrador o acrescentou): ela passa a
-/// seguir a TV padrão (<see cref="TvDefaultFollower"/>), como a conta antiga sempre seguiu. Antes, toda conta sem filiação via
-/// a TV padrão; agora a conta nova só a vê com esta marca.
+/// seguir a TV padrão (<see cref="TvDefaultFollower"/>), como a conta antiga sempre seguiu. A seleção já consulta a concessão
+/// vigente no Identity quando a marca falta; a marca materializa o vínculo no schema da TV e poupa essa leitura.
 /// <para>
 /// Só grava a marca. Filiação e retirada continuam valendo antes dela na seleção, então não há bloqueio a tomar, e a
 /// reentrega do mesmo evento é inofensiva: a marca repetida é ignorada, e quem foi retirado da TV continua sem TV.

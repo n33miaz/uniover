@@ -11,7 +11,8 @@ public interface IAccountRoleDirectory
 
     /// <summary>
     /// Se a conta já existia antes de o acesso a módulos passar a ser concedido conta a conta (marca gravada uma única vez,
-    /// pela migration). Conta inexistente responde <c>false</c>: na dúvida, nada de compartilhado é mostrado.
+    /// pela migration) OU tem agora a concessão de <paramref name="modulePermission"/> (ex.: <c>module:tv</c>). É a leitura direta da
+    /// verdade do Identity: não depende de nenhum aviso já ter sido entregue. Conta inexistente responde <c>false</c>.
     /// </summary>
-    Task<bool> PredatesModuleInvitesAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<bool> PredatesInvitesOrHoldsModuleAsync(Guid userId, string modulePermission, CancellationToken cancellationToken = default);
 }
