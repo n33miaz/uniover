@@ -42,7 +42,12 @@ def test_pair_installing_keeps_the_page_in_progress_for_the_installer_to_finish(
         code = main(["pair", "--no-browser", "--installing"], secrets=FakeSecretStore())
     assert code == 0
     page = connection_page_path().read_text(encoding="utf-8")
-    assert "Terminando a instalação" in page
+    assert "Agora procurando a TV" in page
+    # As etapas mostram o celular concluído e a TV em andamento.
+    done = '<li class="done"><span class="mark" aria-hidden="true"></span><span>Ligar ao seu'
+    now = '<li class="now"><span class="mark" aria-hidden="true"></span><span>Encontrar a TV'
+    assert done in page
+    assert now in page
     assert 'http-equiv="refresh"' in page
     assert "Pode fechar esta janela" not in page
 

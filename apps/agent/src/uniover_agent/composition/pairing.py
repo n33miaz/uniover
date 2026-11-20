@@ -103,7 +103,7 @@ async def pair(  # noqa: PLR0913 - o instalador soma uma opção a cada passo
         print_qr(link)
         try:
             page = connection_page_path()
-            write_pairing_page(page, link, ticket.user_code)
+            write_pairing_page(page, link, ticket.user_code, installing=installing)
             if not no_browser and can_open_browser():
                 open_connection_page(page)
         except OSError as exc:
@@ -133,7 +133,9 @@ async def pair(  # noqa: PLR0913 - o instalador soma uma opção a cada passo
     if installing:
         # O instalador ainda tem a TV e a tarefa pela frente e é ele quem escreve o "Pronto".
         _update_page(
-            lambda page: write_progress_page(page, "PC conectado. Terminando a instalação…")
+            lambda page: write_progress_page(
+                page, "PC conectado ao seu celular. Agora procurando a TV…", "tv"
+            )
         )
     else:
         _update_page(write_connected_page)
