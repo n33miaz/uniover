@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any, Final, Protocol
+from typing import Any, Final, NoReturn, Protocol
 
 from uniover_agent.adapters import pc_inputs
 from uniover_agent.adapters.pc_inputs import RawInput
@@ -111,11 +111,15 @@ def _start_timer(delay: float, callback: Callable[[], None]) -> _Cancelable:
     return timer
 
 
-IS_WINDOWS = sys.platform == "win32"
 KeyProbe = Callable[[int], bool]
 _UNSUPPORTED = "o controle do PC só existe no Windows"
 _SHUTDOWN_NOTICE = "O UniOver vai desligar este computador. Para cancelar: shutdown /a"
 _RESTART_NOTICE = "O UniOver vai reiniciar este computador. Para cancelar: shutdown /a"
+
+
+def _refuse_unsupported(*_args: object) -> NoReturn:
+    raise PcUnsupported(_UNSUPPORTED)
+
 
 if sys.platform == "win32":
     import ctypes
@@ -442,7 +446,7 @@ class WindowsPcInput:
         start_timer: TimerStarter = _start_timer,
         key_probe: KeyProbe | None = None,
     ) -> None:
-        self._send = send or _send_input
+        self._send = send or (_send_input if sys.platform == "win32" else _refuse_unsupported)
         self._key_probe = key_probe or _key_is_down
         self._monotonic = monotonic
         self._dead_man = dead_man_seconds
@@ -682,7 +686,7 @@ _NO_SHUTDOWN_IN_PROGRESS = 1116
 
 def _run_shutdown(arguments: list[str]) -> int:
     """Roda o `shutdown.exe` e devolve o código de saída: quem chama decide o que é falha."""
-    if not IS_WINDOWS:
+    if sys.platform != "win32":
         raise PcUnsupported(_UNSUPPORTED)
     # Executável do sistema e argumentos montados aqui (nunca texto vindo da rede).
     return run_hidden(["shutdown", *arguments], capture_output=True, timeout=10).returncode
@@ -702,10 +706,13 @@ class WindowsPcPower:
         monitor_off: Callable[[], bool] | None = None,
     ) -> None:
         self._run = run or _run_shutdown
-        self._lock = lock or _lock_workstation
-        self._suspend = suspend or _suspend
-        self._hibernation = hibernation or _hibernation_enabled
-        self._monitor_off = monitor_off or _monitor_off
+        windows = sys.platform == "win32"
+        self._lock = lock or (_lock_workstation if windows else _refuse_unsupported)
+        self._suspend = suspend or (_suspend if windows else _refuse_unsupported)
+        self._hibernation = hibernation or (
+            _hibernation_enabled if windows else _refuse_unsupported
+        )
+        self._monitor_off = monitor_off or (_monitor_off if windows else _refuse_unsupported)
 
     def lock(self) -> None:
         if not self._lock():
