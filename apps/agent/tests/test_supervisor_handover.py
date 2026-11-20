@@ -879,8 +879,9 @@ def test_the_handover_runs_under_the_update_lock_and_marks_the_version_it_is_pas
         )
         assert wait_for(seen.exists, 10), "a marca da versão em passagem existia durante a passagem"
         assert wait_for(lambda: not (pc.runtime / "handover-sha.txt").exists(), 10)
-        # A trava foi solta: outro processo a toma agora.
-        with update_lock(pc.base) as taken:
+        # A trava foi solta: outro processo a toma agora. O supervisor apaga a marca antes de
+        # soltar a trava (no mesmo `finally`), então espera um pouco em vez de tentar uma vez só.
+        with update_lock(pc.base, wait_seconds=10) as taken:
             assert taken is True
 
 
