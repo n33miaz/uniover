@@ -85,6 +85,8 @@ def build(
         "tv.key.v1": FreshKeyHandler(tv or lab.tv),
         "pc.pointer.v1": lab.pointer,
         "pc.click.v1": lab.click,
+        "pc.media.query.v1": lab.tv,
+        "pc.key.v1": lab.tv_quick,
     }
     process = ProcessMessage(
         AGENT_ID,
@@ -156,6 +158,21 @@ async def test_a_tv_key_is_not_held_up_by_a_slow_pc_command() -> None:
     await settle()
     assert lab.log == ["tv:quick", "click:DOWN"]
     await process.aclose()
+
+
+async def test_media_query_does_not_delay_mouse_release_or_key() -> None:
+    lab = Lab()
+    process, _ = build(lab)
+    try:
+        await process(dump(envelope("pc.media.query.v1", {}, ts=now())))
+        await settle()
+        assert lab.log == ["tv:start"]
+        await process(click("UP"))
+        await process(dump(envelope("pc.key.v1", {"key": "A"}, ts=now())))
+        await settle()
+        assert lab.log == ["tv:start", "click:UP", "tv:quick"]
+    finally:
+        await process.aclose()
 
 
 async def test_pc_commands_keep_their_order_even_when_the_first_is_slow() -> None:
