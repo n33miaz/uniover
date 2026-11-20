@@ -1,16 +1,10 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
+import { modifierLabel } from '../data/pc-key-label';
 import { ChangeDetectionStrategy, Component, inject, input, output } from '@angular/core';
 import { PcArmed } from '../data/pc-armed';
 import { PC_MODIFIERS, type PcKey, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { PcRepeat } from './pc-repeat';
-
-/** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
-const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
-  CTRL: 'Ctrl',
-  SHIFT: 'Shift',
-  ALT: 'Alt',
-  WIN: 'Win',
-};
 
 /**
  * A barra de ações da tela do mouse: sempre à vista, sem rolagem, a um toque do touchpad. Teclado do celular, Enter, apagar
@@ -170,8 +164,10 @@ export class PcActionBar {
   readonly keyRepeat = output<{ readonly key: PcKey; readonly count: number }>();
   readonly keyboard = output<void>();
 
+  private readonly pcStatus = inject(PcAvailability).status;
+
   protected label(modifier: PcModifier): string {
-    return MODIFIER_LABEL[modifier];
+    return modifierLabel(modifier, this.pcStatus()?.system);
   }
 
   protected toggle(modifier: PcModifier): void {

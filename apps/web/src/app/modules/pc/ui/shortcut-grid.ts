@@ -1,3 +1,4 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -95,6 +96,7 @@ let nextGrid = 0;
   styleUrls: ['./shortcut-grid.css'],
 })
 export class PcShortcutGrid {
+  private readonly pcStatus = inject(PcAvailability).status;
   protected readonly store = inject(PcStore);
   protected readonly pinned = inject(PcPinned);
   private readonly input = inject(PcInput);
@@ -148,7 +150,7 @@ export class PcShortcutGrid {
   }
 
   protected keys(item: PcShortcut): string {
-    return keysText(item);
+    return keysText(item, this.pcStatus()?.system);
   }
 
   protected activate(item: PcShortcut): void {

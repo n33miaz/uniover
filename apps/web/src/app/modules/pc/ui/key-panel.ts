@@ -1,3 +1,5 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
+import { modifierLabel, systemKeyLabel } from '../data/pc-key-label';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -19,14 +21,6 @@ interface PanelKey {
   /** Posição na grade de cinco colunas (a cruz das setas). */
   readonly cell: string;
 }
-
-/** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
-const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
-  CTRL: 'Ctrl',
-  SHIFT: 'Shift',
-  ALT: 'Alt',
-  WIN: 'Win',
-};
 
 /** As teclas que só a `pc.key.v2` traz, na grade de cinco colunas (a ordem é a da leitura: dígitos, pontuação, especiais). */
 const MORE_KEYS: readonly PanelKey[] = [
@@ -153,10 +147,10 @@ const FUNCTION_KEYS = [
               class="key"
               [attr.data-key]="item.key"
               [disabled]="disabled()"
-              [attr.aria-label]="item.aria"
+              [attr.aria-label]="item.key === 'WIN' ? systemKeyAria(item.aria) : item.aria"
               (click)="press(item.key)"
             >
-              {{ item.label }}
+              {{ item.key === 'WIN' ? systemKey(item.label) : item.label }}
             </button>
           }
           <button
@@ -277,8 +271,22 @@ export class PcKeyPanel {
     },
   ];
 
+  private readonly pcStatus = inject(PcAvailability).status;
+
+  protected systemKey(fallback: string): string {
+    const system = this.pcStatus()?.system;
+    return system === 'macos' || system === 'linux' ? systemKeyLabel(system) : fallback;
+  }
+
+  protected systemKeyAria(fallback: string): string {
+    const system = this.pcStatus()?.system;
+    if (system === 'macos') return $localize`:@@pc.key.command:Tecla Comando`;
+    if (system === 'linux') return $localize`:@@pc.key.super:Tecla Super`;
+    return fallback;
+  }
+
   protected label(modifier: PcModifier): string {
-    return MODIFIER_LABEL[modifier];
+    return modifierLabel(modifier, this.pcStatus()?.system);
   }
 
   protected toggle(modifier: PcModifier): void {

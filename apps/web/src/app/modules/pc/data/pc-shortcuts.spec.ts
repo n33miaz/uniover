@@ -165,7 +165,7 @@ describe('shortcut catalog', () => {
 
   it('inside a group no two shortcuts are the same keys', () => {
     for (const group of SHORTCUT_GROUPS) {
-      const combos = SHORTCUTS.filter((shortcut) => shortcut.group === group).map(keysText);
+      const combos = SHORTCUTS.filter((shortcut) => shortcut.group === group).map((shortcut) => keysText(shortcut));
       expect(new Set(combos.filter(Boolean)).size, group).toBe(combos.filter(Boolean).length);
     }
   });
@@ -211,11 +211,11 @@ describe('shortcut catalog', () => {
     const nonKeys = SHORTCUTS.filter((shortcut) => shortcut.action.kind !== 'keys');
     expect(nonKeys.map((shortcut) => shortcut.id)).toEqual(['lock', 'slides-goto']);
     // Nenhum atalho de teclas é Win+L.
-    expect(SHORTCUTS.map(keysText)).not.toContain('Win+L');
+    expect(SHORTCUTS.map((shortcut) => keysText(shortcut))).not.toContain('Win+L');
   });
 
   it('never puts Win alone behind a shortcut that works on any agent', () => {
-    const v1Texts = SHORTCUTS.filter((shortcut) => !shortcut.needs).map(keysText);
+    const v1Texts = SHORTCUTS.filter((shortcut) => !shortcut.needs).map((shortcut) => keysText(shortcut));
     expect(v1Texts).not.toContain('Win');
     for (const text of v1Texts) expect(text).not.toMatch(/[+-]$|\+0$|\+\d$/);
   });
